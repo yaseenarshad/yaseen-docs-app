@@ -191,4 +191,14 @@ describe('the list buttons and T (YAZ-3806 T3, T4)', () => {
     expect(md(crepe)).toBe('* A\n\n  B\n  * C\n')
     expect(getZoomedItemPos(view.state)).toBe(itemPos)
   })
+
+  it('inside a zoom, the zoomed bullet\'s own line keeps its list: lifting it would end the zoom', async () => {
+    const { crepe, view } = await mount('* R\n  * A\n    * B\n')
+    const itemPos = posOf(crepe, 'A') - 2
+    expect(runCommand(crepe, zoomToKey(zoomKeyAt(view.state.doc, itemPos)))).toBe(true)
+    select(crepe, posOf(crepe, 'A'), endOf(crepe, 'B'))
+    expect(press(crepe, 'bulletList')).toBe(true)
+    expect(md(crepe)).toBe('* R\n  * A\n\n    B\n')
+    expect(getZoomedItemPos(view.state)).toBe(itemPos)
+  })
 })

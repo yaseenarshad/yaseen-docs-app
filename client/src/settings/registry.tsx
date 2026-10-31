@@ -630,20 +630,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-3806 T7: the buttons over a selection, their order and which show. One setting that travels (T5).
-        title: 'Selection toolbar',
-        hint: 'The buttons over a selection. Drag to reorder; untick to hide. Hotkeys keep working.',
-        items: [
-          {
-            id: 'selectionToolbar',
-            label: 'Selection toolbar',
-            keywords: ['toolbar', 'buttons', 'bullet', 'numbered', 'checklist', 'underline', 'hide', 'order', 'reorder', 'format'],
-            wide: true,
-            render: ({ settings, onChange }) => <ToolbarArrange value={settings.selectionToolbar} onChange={(selectionToolbar) => onChange({ ...settings, selectionToolbar })} />,
-          },
-        ],
-      },
-      {
         // YAZ-3556 D8: where "Show in sidebar" (⌘D) goes.
         title: 'Show in sidebar',
         items: [
@@ -742,6 +728,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             render: ({ settings, onChange }) => (
               <Segmented options={SECTION_LINES_OPTIONS} value={settings.sectionLines} onChange={(sectionLines) => onChange({ ...settings, sectionLines })} ariaLabel="Grey lines" />
             ),
+          },
+        ],
+      },
+      {
+        // YAZ-3806 T7: the buttons over a selection, their order and which show. One setting that travels (T5).
+        title: 'Selection toolbar',
+        hint: 'The buttons over a selection. Drag to reorder; untick to hide. Hotkeys keep working.',
+        items: [
+          {
+            id: 'selectionToolbar',
+            label: 'Selection toolbar',
+            keywords: ['toolbar', 'buttons', 'bullet', 'numbered', 'checklist', 'underline', 'hide', 'order', 'reorder', 'format'],
+            wide: true,
+            render: ({ settings, onChange }) => <ToolbarArrange value={settings.selectionToolbar} onChange={(selectionToolbar) => onChange({ ...settings, selectionToolbar })} />,
           },
         ],
       },

@@ -1134,7 +1134,7 @@
   }
 }
 
-/* Settings › Editor › Selection toolbar (YAZ-3806 T7): the sidebar Tab row panel's rows (app.css `.tab-row-panel`), one list per group. */
+/* Settings › Editor › Selection toolbar (YAZ-3806 T7): the sidebar Tab row panel's rows, one list per group; the grip and the box are its own classes (app.css `.tab-row-panel__grip` / `__check`). */
 .toolbar-arrange {
   display: flex;
   flex-direction: column;
@@ -1188,12 +1188,6 @@
   background: var(--bg-hover);
 }
 
-.toolbar-arrange__grip {
-  display: inline-flex;
-  width: 14px;
-  color: var(--fg-muted);
-}
-
 .toolbar-arrange__icon {
   display: inline-flex;
   width: 18px;
@@ -1206,28 +1200,8 @@
   height: 18px;
 }
 
-.toolbar-arrange__check {
-  flex: none;
-  display: inline-grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  font-size: 11px;
-  line-height: 1;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.toolbar-arrange__check[aria-checked='true'] {
-  color: #fff;
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.toolbar-arrange__row:has(.toolbar-arrange__check[aria-checked='false']) .toolbar-arrange__icon,
-.toolbar-arrange__row:has(.toolbar-arrange__check[aria-checked='false']) .toolbar-arrange__name {
+.toolbar-arrange__row:has(.tab-row-panel__check[aria-checked='false']) .toolbar-arrange__icon,
+.toolbar-arrange__row:has(.tab-row-panel__check[aria-checked='false']) .toolbar-arrange__name {
   opacity: 0.45;
 }
 

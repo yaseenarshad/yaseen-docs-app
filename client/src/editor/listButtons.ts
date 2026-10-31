@@ -4,7 +4,7 @@
  * A LINE is a visible textblock the selection covers (`coveredLines`, `eachVisibleTextblock`): an item line (the
  * first block of a list item) has the item's kind — `checklist` (its `checked` is a boolean), `numberedList` or
  * `bulletList`; any other line in the page, a quote or an item's later blocks is `text` (a paragraph) or `other` (a
- * heading, a code block). A line in a table cell is not a line here.
+ * heading, a code block).
  *
  *  - A button LIGHTS when every line is its kind (`allLinesAre`). T lights for plain paragraphs outside a list.
  *  - Not lit, a click makes each line its own item of that kind (`toggleListKind`): a line outside a list is
@@ -13,16 +13,18 @@
  *  - Lit, a click takes each line out of EVERY list level (`liftOut`): its children stay a list right below it, and
  *    the siblings after it follow in that list. Its heading stays a heading; T also makes it a paragraph.
  *  - Inside a zoom, a line leaves the lists only down to the zoomed bullet, so it stays in view (a block of that
- *    bullet).
+ *    bullet); the zoomed bullet's own line does not leave its list, which would end the zoom.
  *  - Hidden lines (fold, zoom) keep their kind. A click is one transaction, so one ⌘Z.
  *
  * Every change is a lift, a wrap, a split, a join or a markup change — never a replace of the lines — so the fold
  * and zoom positions, and the selection, ride the mapping.
  *
- * `listButtons` re-registers Milkdown's `turnIntoTextCommand` (T and ⌘⌥0; the slash menu's Text row calls
- * `setBlockTypeCommand` and is left as it is) and
- * `wrapInBulletListCommand` (⌘⌥8) under their own keys, as `visibleFormatting.ts` does for the marks. Register it
- * AFTER `visibleFormatting`: this rule already keeps to the visible lines.
+ * `listButtons` re-registers Milkdown's `turnIntoTextCommand` (T, ⌘⌥0, and the slash menu's Text row through
+ * `slashMenu.ts`) and `wrapInBulletListCommand` (⌘⌥8) under their own keys, as `visibleFormatting.ts` does for the
+ * marks. Register it AFTER `visibleFormatting`: this rule already keeps to the visible lines.
+ *
+ * A line in a table cell is no line here, so T does not light in a cell (it never changed one: a cell holds
+ * paragraphs only).
  */
 import { commandsCtx, EditorViewReady } from '@milkdown/kit/core'
 import type { MilkdownPlugin } from '@milkdown/kit/ctx'
@@ -193,6 +195,8 @@ const liftOut = (tr: Transaction, types: Types, pos: number, zoomed: number | nu
     const item = $line.parent
     if (item.type !== types.item || $line.index() !== 0) return inside - 1
     const itemPos = $line.before()
+    // The zoomed bullet itself stays: lifting it would end the zoom.
+    if (itemPos === zoomed) return inside - 1
     const $item = tr.doc.resolve(itemPos)
     const range = new NodeRange($item, tr.doc.resolve(itemPos + item.nodeSize), $item.depth)
     const steps = tr.steps.length
@@ -204,41 +208,39 @@ const liftOut = (tr: Transaction, types: Types, pos: number, zoomed: number | nu
   }
 }
 
-/** The lines, each mapped to where it is now, in document order. */
-const eachLine = (state: EditorState, tr: Transaction, visit: (pos: number, line: Line) => void): void => {
-  for (const line of selectedLines(state)) visit(tr.mapping.map(line.pos, 1), line)
-}
+/**
+ * A command that changes each line of the selection in ONE transaction. The lines go LAST to first: a change moves
+ * only what comes after its line's start, so each line is still where the state had it, and no position is mapped
+ * through the steps before it (that mapping made a click over 1,000 lines quadratic). Declines with no line.
+ */
+const eachLine =
+  (change: (tr: Transaction, types: Types, pos: number, zoomed: number | null) => void): Command =>
+  (state, dispatch) => {
+    const lines = selectedLines(state)
+    if (lines.length === 0) return false
+    if (dispatch === undefined) return true
+    const types = typesOf(state.schema)
+    const zoomed = getZoomedItemPos(state)
+    const tr = state.tr
+    for (let i = lines.length - 1; i >= 0; i--) change(tr, types, lines[i].pos, zoomed)
+    dispatch(tr.scrollIntoView())
+    return true
+  }
 
 /** A list button (T3): lit → every line leaves its lists; not lit → every line becomes an item of `kind`. */
-export const toggleListKind = (kind: ListKind): Command => (state, dispatch) => {
-  const lines = selectedLines(state)
-  if (lines.length === 0) return false
-  if (dispatch === undefined) return true
-  const types = typesOf(state.schema)
-  const lit = lines.every((line) => line.kind === kind)
-  const zoomed = getZoomedItemPos(state)
-  const tr = state.tr
-  eachLine(state, tr, (pos) => (lit ? liftOut(tr, types, pos, zoomed) : setKind(tr, types, pos, kind)))
-  dispatch(tr.scrollIntoView())
-  return true
-}
+export const toggleListKind = (kind: ListKind): Command => (state, dispatch, view) =>
+  eachLine(
+    allLinesAre(state, kind)
+      ? (tr, types, pos, zoomed) => void liftOut(tr, types, pos, zoomed)
+      : (tr, types, pos) => setKind(tr, types, pos, kind),
+  )(state, dispatch, view)
 
 /** T and ⌘⌥0 (T4): every line out of every list level, then a paragraph. */
-export const turnIntoText: Command = (state, dispatch) => {
-  const lines = selectedLines(state)
-  if (lines.length === 0) return false
-  if (dispatch === undefined) return true
-  const types = typesOf(state.schema)
-  const zoomed = getZoomedItemPos(state)
-  const tr = state.tr
-  eachLine(state, tr, (pos) => {
-    const at = liftOut(tr, types, pos, zoomed)
-    const block = tr.doc.nodeAt(at)!
-    if (block.type !== types.paragraph) tr.setBlockType(at, at + block.nodeSize, types.paragraph)
-  })
-  dispatch(tr.scrollIntoView())
-  return true
-}
+export const turnIntoText: Command = eachLine((tr, types, pos, zoomed) => {
+  const at = liftOut(tr, types, pos, zoomed)
+  const block = tr.doc.nodeAt(at)!
+  if (block.type !== types.paragraph) tr.setBlockType(at, at + block.nodeSize, types.paragraph)
+})
 
 /** Register with `editor.use(listButtons)`, after `visibleFormatting`. */
 export const listButtons: MilkdownPlugin = (ctx) => async () => {

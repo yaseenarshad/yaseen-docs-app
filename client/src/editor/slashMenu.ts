@@ -11,7 +11,8 @@
  *  - Bullet List: it cannot make a list inside one — it only clears the `/` (and drops a task's
  *    checkbox).
  * Every other row does there what Crepe's command does (a heading, a quote, code or a table inside
- * the item; Task List makes the item a task).
+ * the item; Task List makes the item a task) — except Text, which runs T's command (YAZ-3806 T4):
+ * the item becomes a plain line, out of every list level, as T and ⌘⌥0 make it.
  *
  * "Current time" (YAZ-3511 D22) inserts `h:mmam - ` as plain text at the caret, read at the pick.
  * It opens the way every stock row does (`clearTextInCurrentBlockCommand` removes the `/query`),
@@ -27,7 +28,7 @@
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
-import { clearTextInCurrentBlockCommand } from '@milkdown/kit/preset/commonmark'
+import { clearTextInCurrentBlockCommand, turnIntoTextCommand } from '@milkdown/kit/preset/commonmark'
 import { Plugin, type Selection } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { shallowRef } from 'vue'
@@ -49,7 +50,7 @@ export interface SlashRow {
  */
 export interface SlashMenuGroups {
   getGroup: (key: string) => { addItem: (key: string, item: SlashRow) => unknown }
-  build: () => { key: string; items: { key: string }[] }[]
+  build: () => { key: string; items: { key: string; onRun?: (ctx: Ctx) => void }[] }[]
 }
 
 /** The stock rows hidden in a list item (keys from Crepe's `menu/config.ts`); see the header. */
@@ -97,6 +98,13 @@ export const currentTimeRow: SlashRow = {
   },
 }
 
+/** The Text row (YAZ-3806 T4): the stock clear of the `/query`, then T's command — Crepe's own row sets a paragraph, which a bullet already is. */
+const textRowRun = (ctx: Ctx): void => {
+  const commands = ctx.get(commandsCtx)
+  commands.call(clearTextInCurrentBlockCommand.key)
+  commands.call(turnIntoTextCommand.key)
+}
+
 /**
  * One editor's slash extension: the `buildMenu` for `featureConfigs[CrepeFeature.BlockEdit]`
  * (Current time at the end of the Text group, the list rule, then `extend` — the Drawing row
@@ -109,6 +117,8 @@ export function createSlashMenu(extend?: (builder: SlashMenuGroups) => void): {
   const inList = shallowRef(false)
   const buildMenu = (builder: SlashMenuGroups) => {
     builder.getGroup('text').addItem('current-time', currentTimeRow)
+    const text = builder.build().find((group) => group.key === 'text')?.items.find((item) => item.key === 'text')
+    if (text !== undefined) text.onRun = textRowRun
     extend?.(builder)
     if (!inList.value) return
     for (const group of builder.build()) {

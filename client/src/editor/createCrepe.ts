@@ -214,7 +214,7 @@ import {
 import { toggleUnderline, underline, underlineSchema } from './marks/underline'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
 import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
-import { TOOLBAR_ICONS, TOOLBAR_LABELS } from './toolbarButtons'
+import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
 import { arrangeToolbar, toolbarPrefs } from './toolbarPrefs'
 import { inlineBreaks } from './inlineBreaks'
 import { lineStyle } from './line/lineStyle'
@@ -319,7 +319,7 @@ interface ToolbarBuilder {
   addGroup: (key: string, label: string) => ToolbarGroup
   getGroup: (key: string) => ToolbarGroup
   /** The builder's OWN list of groups, in strip order (Crepe's `GroupBuilder.build` hands back the array itself, not a copy). */
-  build: () => Array<{ key: string; label: string; items: Array<{ key: string }> }>
+  build: () => Array<{ key: string; label: string; items: Array<{ key: string; icon?: string }> }>
 }
 
 const viewState = (ctx: Ctx) => ctx.get(editorViewCtx).state
@@ -372,7 +372,7 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
   for (const color of [null, ...HIGHLIGHT_COLORS] as HighlightColor[]) {
     const id = color === null ? 'highlight' : (`highlight-${color}` as const)
     formatting.addItem(id, {
-      icon: TOOLBAR_ICONS[id],
+      icon: ownIcon(id),
       label: TOOLBAR_LABELS[id],
       ...(color === null ? { keymap: keymapRef(highlightKeymap.key, 'ToggleHighlight') } : {}),
       active: (ctx) => rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), color),
@@ -380,7 +380,7 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
     })
   }
   formatting.addItem('underline', {
-    icon: TOOLBAR_ICONS.underline,
+    icon: ownIcon('underline'),
     label: TOOLBAR_LABELS.underline,
     // Underline's key is the app's own keymap, not a Milkdown slice `keymapRef` can name: its row, as the note opened.
     shortcut: toDisplay(keysOf(keyRow('note.underline')!, hotkeys)[0] ?? null) || undefined,
@@ -388,10 +388,10 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
     onRun: (ctx) => runOnView(ctx, toggleUnderline(ctx)),
   })
   const blockAt = (ctx: Ctx) => viewState(ctx).selection.$from.parent
-  const group = builder.addGroup('lineType', 'Line type')
+  const group = builder.addGroup('lineType', TOOLBAR_GROUP_LABELS.lineType)
   for (const level of [1, 2, 3] as const) {
     group.addItem(`h${level}`, {
-      icon: TOOLBAR_ICONS[`h${level}`],
+      icon: ownIcon(`h${level}`),
       label: TOOLBAR_LABELS[`h${level}`],
       active: (ctx) => {
         const block = blockAt(ctx)
@@ -401,15 +401,15 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
     })
   }
   group.addItem('text', {
-    icon: TOOLBAR_ICONS.text,
+    icon: ownIcon('text'),
     label: TOOLBAR_LABELS.text,
     active: (ctx) => allLinesAre(viewState(ctx), 'text'),
     onRun: (ctx) => ctx.get(commandsCtx).call(turnIntoTextCommand.key),
   })
-  const lists = builder.addGroup('lists', 'Lists')
+  const lists = builder.addGroup('lists', TOOLBAR_GROUP_LABELS.lists)
   for (const kind of LIST_KINDS) {
     lists.addItem(kind, {
-      icon: TOOLBAR_ICONS[kind],
+      icon: ownIcon(kind),
       label: TOOLBAR_LABELS[kind],
       active: (ctx) => allLinesAre(viewState(ctx), kind),
       onRun: (ctx) => runOnView(ctx, toggleListKind(kind)),
@@ -417,7 +417,9 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
   }
   // The default order leads with the Heading group (YAZ-2700): the toolbar opens over the start of
   // the selection, so its first buttons are the ones under the hand after a double click.
-  arrangeToolbar(builder.build(), toolbarPrefs.value)
+  const groups = builder.build()
+  noteCrepeIcons(groups)
+  arrangeToolbar(groups, toolbarPrefs.value)
 }
 
 /**

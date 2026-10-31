@@ -8,18 +8,17 @@
  * HTML drag. After 3 px the row lifts and follows the pointer, clamped to its list, and the others slide apart to
  * open its gap — CSS `transform` only, no React render on the way. The release writes the new order once. Esc
  * puts the row back and writes nothing. A button moves inside its group only: which group a button is in is fixed.
+ * The last button that shows cannot be unticked: a strip with no button would open as an empty box. The grip and
+ * the box are the Tab row panel's own classes (`app.css`, `.tab-row-panel__grip` / `__check`).
  */
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react'
 import { DEFAULT_TOOLBAR, TOOLBAR_LAYOUT, type ToolbarButtonId, type ToolbarGroupId, type ToolbarPrefs } from '@shared/types'
 import { TOOLBAR_GROUP_LABELS, TOOLBAR_ICONS, TOOLBAR_LABELS } from '../editor/toolbarButtons'
+import { groupButtons } from '../editor/toolbarPrefs'
 import { DragHandleIcon } from '../views/view/icons'
 
 /** A move of less than this many px is a press, not a drag. */
 const LIFT_PX = 3
-
-/** A group's buttons, in the user's order. */
-export const groupButtons = (prefs: ToolbarPrefs, group: ToolbarGroupId): ToolbarButtonId[] =>
-  prefs.buttons.filter((button) => (TOOLBAR_LAYOUT[group] as readonly string[]).includes(button))
 
 const move = <T,>(list: readonly T[], from: number, to: number): T[] => {
   const next = list.filter((_, i) => i !== from)
@@ -129,19 +128,20 @@ export function ToolbarArrange({ value, onChange }: { value: ToolbarPrefs; onCha
     const target = e.target as Element
     const list = e.currentTarget
     // The row's own list only: a press in a group's buttons is not a drag of the group.
-    if (e.button !== 0 || dragging.current !== null || target.closest('.toolbar-arrange__check') !== null || target.closest(rowSelector)?.parentElement !== list) return
+    if (e.button !== 0 || dragging.current !== null || target.closest('.tab-row-panel__check') !== null || target.closest(rowSelector)?.parentElement !== list) return
     if (rowSelector === '.toolbar-arrange__group' && target.closest('.toolbar-arrange__head') === null) return
     e.preventDefault()
     dragging.current = dragRow(e, list, rowSelector, onDrop, () => (dragging.current = null))
   }
 
+  const lastShown = value.hidden.length === value.buttons.length - 1
   return (
     <div className="toolbar-arrange">
       <div className="toolbar-arrange__groups" onPointerDown={start('.toolbar-arrange__group', (from, to) => onChange(moveGroup(latest.current, from, to)))}>
         {value.groups.map((group) => (
           <div key={group} className="toolbar-arrange__group" data-group={group}>
             <div className="toolbar-arrange__head" title={`Drag to move ${TOOLBAR_GROUP_LABELS[group]}`}>
-              <span className="toolbar-arrange__grip" aria-hidden="true">
+              <span className="tab-row-panel__grip" aria-hidden="true">
                 <DragHandleIcon />
               </span>
               {TOOLBAR_GROUP_LABELS[group]}
@@ -149,22 +149,25 @@ export function ToolbarArrange({ value, onChange }: { value: ToolbarPrefs; onCha
             <div className="toolbar-arrange__list" onPointerDown={start('.toolbar-arrange__row', (from, to) => onChange(moveButton(latest.current, group, from, to)))}>
               {groupButtons(value, group).map((button) => {
                 const shown = !value.hidden.includes(button)
+                const icon = TOOLBAR_ICONS[button]
                 return (
                   <div key={button} className="toolbar-arrange__row" data-button={button} title={`Drag to move ${TOOLBAR_LABELS[button]}`}>
-                    <span className="toolbar-arrange__grip" aria-hidden="true">
+                    <span className="tab-row-panel__grip" aria-hidden="true">
                       <DragHandleIcon />
                     </span>
                     <button
                       type="button"
                       role="checkbox"
-                      className="toolbar-arrange__check"
+                      className="tab-row-panel__check"
                       aria-checked={shown}
                       aria-label={`Show ${TOOLBAR_LABELS[button]}`}
+                      disabled={shown && lastShown}
+                      title={shown && lastShown ? 'One button stays on the toolbar' : undefined}
                       onClick={() => onChange(toggleButton(value, button))}
                     >
                       {shown ? '✓' : ''}
                     </button>
-                    <span className="toolbar-arrange__icon" aria-hidden="true" dangerouslySetInnerHTML={{ __html: TOOLBAR_ICONS[button] }} />
+                    <span className="toolbar-arrange__icon" aria-hidden="true" dangerouslySetInnerHTML={icon === undefined ? undefined : { __html: icon }} />
                     <span className="toolbar-arrange__name">{TOOLBAR_LABELS[button]}</span>
                   </div>
                 )

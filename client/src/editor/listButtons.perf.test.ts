@@ -6,8 +6,9 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
+import type { Transaction } from '@milkdown/kit/prose/state'
 import { median } from '../test-perf'
-import { allLinesAre } from './listButtons'
+import { allLinesAre, toggleListKind } from './listButtons'
 import { endOf, mount, posOf, pressKey, select, unmountAll } from './marks/markTestKit'
 
 afterEach(unmountAll)
@@ -44,5 +45,27 @@ describe('listButtons', () => {
     const [median, worst] = await litCheck(PLAIN, 'L0', `L${PARENTS * 5 - 1}`, false)
     console.log(`listButtons perf: plain, ${PARENTS * 5} lines, median ${median.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 10`)
     expect(median).toBeLessThan(10)
+  })
+
+  // A click is one transaction of about two steps per line (a wrap or a split, then a join); 1,000 lines is a big
+  // selection for a toolbar click. Logged, not gated: the time swings with the machine's load. Measured at load 75
+  // (YAZ-3806 3B): the BUILD of the transaction went from 1,156 ms to 283 ms for 1,000 plain lines once the lines
+  // went last to first (no position maps through the steps before it). Applying it and drawing 1,000 new items
+  // (Crepe's item views) is the rest, as for a plain `setBlockType` over 1,000 headings.
+  it.each([
+    ['1,000 plain lines → Bullet', Array.from({ length: 1000 }, (_, i) => `L${i}\n`).join('\n'), 'bulletList'],
+    ['1,000 bullets → Numbered (one list, a new type)', Array.from({ length: 1000 }, (_, i) => `* L${i}\n`).join(''), 'numberedList'],
+    ['1,000 bullets, the lit Bullet → plain text', Array.from({ length: 1000 }, (_, i) => `* L${i}\n`).join(''), 'bulletList'],
+  ] as const)('perf smoke: one click over %s', async (name, markdown, kind) => {
+    const { crepe } = await mount(markdown)
+    select(crepe, posOf(crepe, 'L0'), endOf(crepe, 'L999'))
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    let tr: Transaction | null = null
+    let start = performance.now()
+    expect(toggleListKind(kind)(view.state, (built) => (tr = built))).toBe(true)
+    const build = performance.now() - start
+    start = performance.now()
+    view.dispatch(tr!)
+    console.log(`listButtons perf: click over ${name}, ${tr!.steps.length} steps, build ${build.toFixed(0)} ms, apply and draw ${(performance.now() - start).toFixed(0)} ms`)
   })
 })

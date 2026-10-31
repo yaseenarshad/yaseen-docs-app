@@ -6,9 +6,14 @@
  * editor at once. `App.tsx` sets it from the settings. The bundle has one copy of Vue, the one Crepe imports.
  */
 import { shallowRef } from 'vue'
-import { DEFAULT_TOOLBAR, TOOLBAR_LAYOUT, type ToolbarPrefs } from '@shared/types'
+import { DEFAULT_TOOLBAR, TOOLBAR_LAYOUT, type ToolbarButtonId, type ToolbarGroupId, type ToolbarPrefs } from '@shared/types'
+import { TOOLBAR_GROUP_LABELS } from './toolbarButtons'
 
 export const toolbarPrefs = shallowRef<ToolbarPrefs>(DEFAULT_TOOLBAR)
+
+/** A group's buttons, in the user's order (the strip's and Settings' one rule). */
+export const groupButtons = (prefs: ToolbarPrefs, group: ToolbarGroupId): ToolbarButtonId[] =>
+  prefs.buttons.filter((button) => (TOOLBAR_LAYOUT[group] as readonly string[]).includes(button))
 
 /** The shape of Crepe's toolbar groups that the order needs. */
 interface Group<Item extends { key: string }> {
@@ -25,16 +30,13 @@ interface Group<Item extends { key: string }> {
  */
 export function arrangeToolbar<Item extends { key: string }>(groups: Group<Item>[], prefs: ToolbarPrefs): void {
   const items = new Map(groups.flatMap((group) => group.items.map((item) => [item.key, item] as const)))
-  const rank = new Map<string, number>(prefs.buttons.map((key, index) => [key, index]))
   const hidden = new Set<string>(prefs.hidden)
   const arranged: Group<Item>[] = prefs.groups.map((key) => ({
     key,
-    label: key,
-    items: [...TOOLBAR_LAYOUT[key]]
-      .sort((a, b) => rank.get(a)! - rank.get(b)!)
-      .flatMap((id) => (hidden.has(id) ? [] : (items.get(id) ?? []))),
+    label: TOOLBAR_GROUP_LABELS[key],
+    items: groupButtons(prefs, key).flatMap((id) => (hidden.has(id) ? [] : (items.get(id) ?? []))),
   }))
-  const others = [...items.values()].filter((item) => !rank.has(item.key))
+  const others = [...items.values()].filter((item) => !(prefs.buttons as readonly string[]).includes(item.key))
   if (others.length > 0) arranged.push({ key: 'other', label: 'Other', items: others })
   groups.splice(0, groups.length, ...arranged.filter((group) => group.items.length > 0))
 }
