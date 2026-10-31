@@ -624,13 +624,19 @@ export function moveCaretIntoZoom(crepe: Crepe): boolean {
 /**
  * The caret a page view kept (YAZ-3737 D3): a woken tab, a copy. Cut to the document, which may have changed on disk
  * meanwhile (S24), and moved to the nearest places text can go. Run once the editor is made, before the caret grab.
+ * Crepe's list-item views put back, one frame after they mount, the caret the new editor had then: its start (the
+ * pinned `@milkdown/components` restore, YAZ-2131 4B). So the caret goes there again on the next frame (YAZ-3926).
  */
 export function placeCaret(crepe: Crepe, at: { anchor: number; head: number }): void {
-  crepe.editor.action((ctx) => {
-    const view = ctx.get(editorViewCtx)
+  const view = editorViewOf(crepe)
+  const place = () => {
     const { doc } = view.state
     const pos = (n: number) => doc.resolve(Math.max(0, Math.min(n, doc.content.size)))
     view.dispatch(view.state.tr.setSelection(TextSelection.between(pos(at.anchor), pos(at.head))))
+  }
+  place()
+  requestAnimationFrame(() => {
+    if (!view.isDestroyed) place()
   })
 }
 

@@ -101,7 +101,8 @@ const WORDS: readonly (readonly [FileKind | null, string, string])[] = [
   ['diagram', 'diagram', 'diagrams'],
   ['pdf', 'PDF', 'PDFs'],
   ['image', 'image', 'images'],
-  ['text', 'text file', 'text files'],
+  // A `text` tab is a code file: the app's word for it, as Settings › Code says (YAZ-3871).
+  ['text', 'code file', 'code files'],
   [null, 'other file', 'other files'],
 ]
 

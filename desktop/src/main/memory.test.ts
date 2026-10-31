@@ -102,7 +102,7 @@ describe('memory meter', () => {
   })
 
   it('openText names what a window has open', () => {
-    expect(openText(['/v/a.pdf', '/v/b.png', '/v/c.ts', '/v/d.ts', '/v/e.unknownext'])).toBe('1 PDF, 1 image, 2 text files, 1 other file')
+    expect(openText(['/v/a.pdf', '/v/b.png', '/v/c.ts', '/v/d.ts', '/v/e.unknownext'])).toBe('1 PDF, 1 image, 2 code files, 1 other file')
     expect(openText([])).toBe('')
   })
 })
