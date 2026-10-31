@@ -57,13 +57,13 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 const resolveKnown = (target: string) => (target === 'Known' ? '/vault/Known.md' : null)
 
 /** `ids`: whether the snapshot's vault uses IDs (YAZ-2523): it does unless a test says otherwise. `letters`: its ID letters (YAZ-2677 R9). */
-async function mount(markdown: string, resolve?: (target: string) => string | null, createFolder: () => string = () => '', viewOnly?: MutableViewOnlyLinkSource, ids = true, letters: readonly string[] = []) {
+async function mount(markdown: string, resolve?: (target: string) => string | null, createFolder: () => string = () => '', viewOnly?: MutableViewOnlyLinkSource, ids = true, letters: readonly string[] = [], vaultsOfLetters?: (letters: string) => string[]) {
   const source = createWikilinkResolveSource()
   if (resolve !== undefined) source.update(resolve, undefined, undefined, ids, letters)
   const nav: NavMocks = { root: '/vault', createFolder, openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, wikilinks: source, viewOnlyLinks: viewOnly, wikilinkNav: nav })
+  const crepe = createCrepe({ root, defaultValue: markdown, wikilinks: source, viewOnlyLinks: viewOnly, wikilinkNav: nav, vaultsOfLetters })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, root, nav, source }
@@ -405,8 +405,9 @@ describe('wikilink click: id links (YAZ-2293)', () => {
   })
 
   it.each([
-    ['a plain click', `pad [[${DEAD}]] tail\n`, DEAD, {}],
-    ['a ⌘-click', `pad [[${DEAD}]] tail\n`, DEAD, { metaKey: true }],
+    // The pill says so (YAZ-3905 S10).
+    ['a plain click', `pad [[${DEAD}]] tail\n`, `Missing note · ${DEAD}`, {}],
+    ['a ⌘-click', `pad [[${DEAD}]] tail\n`, `Missing note · ${DEAD}`, { metaKey: true }],
     ['a click on its label', `pad [[${DEAD}|old label]] tail\n`, 'old label', {}],
   ])('an id no note has is never created — %s says the note is gone and does nothing else', async (_name, markdown, shown, init) => {
     const { root, nav } = await mount(markdown, resolveId)
@@ -479,10 +480,10 @@ describe('wikilink click: number IDs, and what is an ID of this vault (YAZ-2677 
     ['with the vault\'s letters', 'YAZ-99'],
     ['in another case', 'yaz-99'],
     ['with letters the vault had before', 'OLD-99'],
-  ])('S25: a link to a deleted note %s is shown as missing, with the raw ID, and a click does not offer to create it', async (_name, typed) => {
+  ])('S25: a link to a deleted note %s is shown as missing, with the ID as the app writes it (YAZ-3905 S10), and a click does not offer to create it', async (_name, typed) => {
     const { root, nav } = await mounted(`pad [[${typed}]] tail\n`)
-    expect(linkSpan(root, typed).classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(true)
-    expect(mousedown(linkSpan(root, typed))).toBe(false)
+    expect(linkSpan(root, 'Missing note · YAZ-99').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(true)
+    expect(mousedown(linkSpan(root, 'Missing note · YAZ-99'))).toBe(false)
     await vi.advanceTimersByTimeAsync(0)
     expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('That note no longer exists')
     expect(nav.openCurrent).not.toHaveBeenCalled()
@@ -505,6 +506,30 @@ describe('wikilink click: number IDs, and what is an ID of this vault (YAZ-2677 
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
     expect(createFile).toHaveBeenCalledExactlyOnceWith({ path: '/vault/COVID-19.md', content: '' })
     expect(nav.onNotice).not.toHaveBeenCalled()
+  })
+
+  // YAZ-3905 S23: an ID of another vault of the window is no name to create here. The window's vaults: `INL` is one's, `TWO` two's.
+  const vaultsOfLetters = (letters: string) => (letters === 'INL' ? ['In-harness-lab'] : letters === 'TWO' ? ['Alpha', 'Beta'] : [])
+  it.each([
+    ['one open vault has its letters: the notice names it', 'INL-4', 'This ID belongs to the In-harness-lab vault. Use a link to that vault.'],
+    ['two open vaults share its letters: "another vault"', 'TWO-3', 'This ID belongs to another vault. Use a link to that vault.'],
+  ])('S23: an ID of another vault, %s; a click and a ⌘-click make no page and open nothing', async (_name, typed, notice) => {
+    const { root, nav } = await mount(`pad [[${typed}]] tail\n`, resolve, undefined, undefined, true, LETTERS, vaultsOfLetters)
+    expect(mousedown(linkSpan(root, typed))).toBe(false)
+    mousedown(linkSpan(root, typed), { metaKey: true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nav.onNotice.mock.calls).toEqual([[notice], [notice]])
+    expect(nav.openCurrent).not.toHaveBeenCalled()
+    expect(nav.openBackground).not.toHaveBeenCalled()
+    expect(createFile).not.toHaveBeenCalled()
+    expect(mintNoteId).not.toHaveBeenCalled()
+  })
+
+  it('S23: this vault\'s letters win — `[[YAZ-99]]` is a deleted note of this vault, whatever another vault uses', async () => {
+    const { root, nav } = await mount('pad [[YAZ-99]] tail\n', resolve, undefined, undefined, true, LETTERS, () => ['Elsewhere'])
+    mousedown(linkSpan(root, 'Missing note · YAZ-99'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('That note no longer exists')
   })
 })
 

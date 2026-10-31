@@ -61,10 +61,10 @@
  *  - Wikilink hover (YAZ-3403, `wikilink/wikilinkHover.ts`): the pointer on a resolved `.wikilink` span tells the
  *    host which page it opens, for the hover panel. Registered only when `opts.wikilinkHover` is passed: the
  *    note editor's, never a read-only preview's.
- *  - Link menu (YAZ-2293, YAZ-3609 D23, `wikilink/wikilinkMenu.ts`): right-click on a rendered
- *    `[[link]]` shows the one link menu (`linkMenu.ts`): its name and id, Open, Open in new tab,
- *    Copy link, Copy ID, Edit link, Remove link. Registered with the click plugin, on the same
- *    source, nav and follow.
+ *  - Link menu (YAZ-2293, YAZ-3609 D23, YAZ-3740, `wikilink/wikilinkMenu.ts`): right-click on a rendered
+ *    `[[link]]` shows the one link menu (`linkMenu.ts`): its name and id, the Open rows and Show in
+ *    sidebar, the copy rows, Focus, Favorites and "Open in ▸", Edit link, Remove link. Registered with
+ *    the click plugin, on the same source, nav and follow.
  *  - Wikilink picker (GRO-2191, `wikilink/wikilinkPicker.ts`): typing `[[` opens the vault-wide
  *    suggestion popup (candidates via `opts.wikilinkCandidates`); Enter/click inserts plain
  *    `[[name]]` text — and the Create row also makes the page through `opts.wikilinkNav`
@@ -272,7 +272,7 @@ import { createWikilinkClick, wikilinkFollower, type WikilinkNav } from './wikil
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
 import { createWikilinkMenu } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
-import { createWikilink, createWikilinkResolveSource, linksAsShown, type LinkLook, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createWikilink, createWikilinkResolveSource, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
 import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
@@ -306,6 +306,8 @@ export interface CreateCrepeOptions {
   wikilinkCandidates?: WikilinkCandidateSource
   /** Wikilink click navigation (GRO-2192): tabs API + create-on-click handlers. Absent → links render but clicks fall through to plain editing (the click plugin is not registered). */
   wikilinkNav?: WikilinkNav
+  /** The window's vaults by their ID letters (YAZ-3905 S23): an unresolved `[[INL-4]]` names its vault, and a click makes no page. Absent → none. */
+  vaultsOfLetters?: VaultsOfLetters
   /** Wikilink hover (YAZ-3403): the host's hover panel hears which page a resolved link opens. Absent → the hover plugin is not registered. */
   wikilinkHover?: WikilinkHover
   /** Standard Markdown link actions (YAZ-1309, YAZ-3609): a click opens (in a tab for a vault of the window), a pill look, the one link menu. Absent → Crepe's stock behavior. */
@@ -553,17 +555,17 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableFreeze)
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
-  crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook))
+  crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook, opts.vaultsOfLetters))
   // An ID link is one unit (YAZ-3744 D1): the caret steps over it, Backspace removes it whole.
   crepe.editor.use(createIdLinkCaret(wikilinks))
   if (opts.wikilinkNav !== undefined) {
     // A click and the link menu's Open rows follow a link the same way (YAZ-3609 D23).
-    const follow = wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks)
-    crepe.editor.use(createWikilinkClick(follow)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow))
+    const follow = wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks, opts.vaultsOfLetters)
+    crepe.editor.use(createWikilinkClick(follow)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
-  crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav))
+  crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav, opts.linkLook))
   if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))
   // Images (YAZ-1656): the node view takes the options directly; the ctx slice carries the SAME
   // object to `clipboardPaste`, which has no constructor of its own. Injected on every editor (null

@@ -144,7 +144,8 @@ test('step 1f — a pill into the other vault names it (D22); a pill and a [[lin
   expect(await last.evaluate((el) => getComputedStyle(el, '::after').content)).not.toBe('none')
   expect(await editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).evaluate((el) => getComputedStyle(el, '::after').content)).toBe('none')
   const rows = () => win.locator('.ctx-menu--editor .ctx-menu__item').allTextContents()
-  const LINK_ROWS = ['Open', 'Open in new tab', 'Copy link', 'Edit link', 'Remove link']
+  // The one link menu of a page that is there (YAZ-3740): no "Copy link"; "Open in" is the parent of its flyout.
+  const LINK_ROWS = ['Open', 'Open in new tab', 'Show in sidebar', 'Copy name', 'Copy path', 'Add to favorites', 'Add to focus', 'Open in', 'Edit link', 'Remove link']
   await editorOf(win).locator('.link-pill--first', { hasText: 'the gym plan' }).click({ button: 'right' })
   await expect.poll(rows).toEqual([`Plan (${PERSONAL})`, ...LINK_ROWS])
   await shoot(win, 'workspace-links-01f-menu')

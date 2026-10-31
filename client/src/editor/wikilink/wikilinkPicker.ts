@@ -31,6 +31,10 @@
  *    KeymapManager runs equal priorities in addition order, so an open picker wins
  *    (`wikilinkPicker.test.ts` pins it).
  *
+ * A row reads as the sidebar names the page (YAZ-3778 S14): a view-only file without the extension the sidebar
+ * hides (`fileLabel`: a drawing's, a diagram's), and with the file's icon before it, as a pill has (`LinkLook`).
+ * What the row inserts does not change.
+ *
  * Matching is the shared `links/completion.ts` (one matcher with the Bases cell editors —
  * locked ruling): case-insensitive substring, cap 8. A note with frontmatter aliases (E2,
  * GRO-2214) is offered twice — under its name (inserting `[[Name]]`) and under each alias,
@@ -51,11 +55,14 @@ import { Plugin, PluginKey, TextSelection, type Command } from '@milkdown/kit/pr
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { SlashProvider } from '@milkdown/kit/plugin/slash'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import { fileKind, isViewOnly } from '@shared/fileKind'
+import { basename } from '@shared/types'
 import { api } from '../../api'
+import { fileLabel } from '../../lib/pageLabel'
 import { matchLinkCandidates, trailingLinkFragment, type LinkCandidate } from '../../links/completion'
 import { createFromLink } from './createFromLink'
 import type { WikilinkNav } from './wikilinkClick'
-import { linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
+import { linkPageName, type LinkLook, type WikilinkResolveSource } from './wikilinkPlugin'
 import './wikilinkPicker.css'
 
 export const WIKILINK_PICKER_CLASS = 'wikilink-picker'
@@ -106,6 +113,8 @@ interface PickerRow {
   label: string
   insert: string
   create: boolean
+  /** The page the row names (`LinkCandidate.path`): its icon. */
+  path?: string
 }
 
 interface PickerSession {
@@ -162,7 +171,8 @@ function findContext(state: EditorState): { from: number; to: number; fragment: 
 /** Matches through the shared matcher; a non-empty fragment nothing matches offers Create. */
 function rowsFor(fragment: string, candidates: readonly LinkCandidate[]): PickerRow[] {
   const matches = matchLinkCandidates(candidates, fragment)
-  if (matches.length > 0) return matches.map(({ label, insert }) => ({ label, insert, create: false }))
+  // A view-only file reads as the sidebar names it (YAZ-3778 S14): `LN Scenarios Diagram.drawio` → `LN Scenarios Diagram`.
+  if (matches.length > 0) return matches.map(({ label, insert, path }) => ({ label: isViewOnly(insert) ? fileLabel(label) : label, insert, create: false, path }))
   return fragment.trim() === '' ? [] : [{ label: fragment, insert: fragment, create: true }]
 }
 
@@ -324,7 +334,7 @@ export const createWikilinkPickerKeymap = (links: WikilinkResolveSource, nav?: W
   }))
 
 /** The popup element + its rows; mousedown-preventDefault so picking never blurs the editor. */
-function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: WikilinkNav): { element: HTMLElement; render: (session: PickerSession | null) => void } {
+function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: WikilinkNav, look?: LinkLook): { element: HTMLElement; render: (session: PickerSession | null) => void } {
   const element = document.createElement('div')
   element.className = WIKILINK_PICKER_CLASS
   element.setAttribute('role', 'listbox')
@@ -342,6 +352,14 @@ function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: Wikili
       item.className = row.create ? `${WIKILINK_PICKER_ITEM_CLASS} ${WIKILINK_PICKER_CREATE_CLASS}` : WIKILINK_PICKER_ITEM_CLASS
       item.setAttribute('aria-selected', String(i === session.selected))
       item.textContent = row.create ? `Create "${row.label}"` : row.label
+      // The file's icon, as the pill has it (S14): an empty span that draws it, as the sidebar's `FileIcon`.
+      if (!row.create && row.path !== undefined && look !== undefined) {
+        const icon = document.createElement('span')
+        // A folder's row names its directory: no file kind, as `linkIcon` tells it.
+        for (const [name, value] of Object.entries(look.icon(row.path, fileKind(basename(row.path)) === null))) icon.setAttribute(name, value)
+        icon.setAttribute('aria-hidden', 'true')
+        item.prepend(icon)
+      }
       item.addEventListener('mousedown', (e) => e.preventDefault())
       item.addEventListener('click', () => {
         // Re-read the live session: the state may have moved between render and click.
@@ -358,7 +376,7 @@ function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: Wikili
   return { element, render }
 }
 
-export function createWikilinkPicker(source: WikilinkCandidateSource, links: WikilinkResolveSource, nav?: WikilinkNav) {
+export function createWikilinkPicker(source: WikilinkCandidateSource, links: WikilinkResolveSource, nav?: WikilinkNav, look?: LinkLook) {
   return $prose(
     () =>
       new Plugin<PickerState>({
@@ -369,7 +387,7 @@ export function createWikilinkPicker(source: WikilinkCandidateSource, links: Wik
             tr.docChanged || tr.selectionSet || tr.getMeta(pickerKey) !== undefined ? compute(state, value, tr, source) : value,
         },
         view: (editorView) => {
-          const popup = buildPopup(editorView, links, nav)
+          const popup = buildPopup(editorView, links, nav, look)
           // Attached (hidden) from the start — the provider would only append it on its first
           // debounced pass; its later appendChild of the same node into the same parent is a no-op.
           popup.element.dataset.show = 'false'

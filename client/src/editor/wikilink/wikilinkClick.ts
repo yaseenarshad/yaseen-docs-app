@@ -38,11 +38,15 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { vaultNoteId } from '@shared/noteId'
 import { createFromLink } from './createFromLink'
-import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
+import type { LinkActions } from '../linkMenu'
+import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, linkPageName, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 
-/** How clicks leave the editor: App threads this window's tabs API + notice setter (via Editor). */
-export interface WikilinkNav {
+/**
+ * How clicks leave the editor: App threads this window's tabs API + notice setter (via Editor). The link menu's
+ * place rows (YAZ-3740: `showInSidebar`, Focus and Favorites, "Open in ▸") are App's `LinkActions`: absent, no row.
+ */
+export interface WikilinkNav extends LinkActions {
   /** Vault root — every created path is built under it. */
   root: string
   /**
@@ -94,7 +98,7 @@ export function wikilinkMatchAt(doc: ProseNode, pos: number): { from: number; to
  * unresolved link is created first. One for an editor, so the click and the link menu's Open rows
  * (YAZ-3609 D23) share the notes being made.
  */
-export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav, viewOnly?: ViewOnlyLinkSource): (inner: string, background: boolean) => void {
+export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav, viewOnly?: ViewOnlyLinkSource, vaultsOf?: VaultsOfLetters): (inner: string, background: boolean) => void {
   /** The dead links whose note is being made (null), or was made at that path and is not in the index yet (YAZ-2478): a click on one makes nothing more. */
   const making = new Map<string, string | null>()
   return (inner, background) => {
@@ -127,6 +131,7 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
     }
     const path = resolve(page)
     const made = making.get(page)
+    let other: ReturnType<typeof otherVaultId> = null
     if (path !== null) {
       making.delete(page)
       open(path)
@@ -135,6 +140,9 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
     // created under an ID. Other `LETTERS-NUMBER` text is a name, created like any name
     // (R6, S21, S22); a vault that does not use IDs has no letters, so only an old ID is one there.
     else if (vaultNoteId(page, source.letters) !== undefined) nav.onNotice(source.ids ? 'That note no longer exists' : 'This vault does not use IDs, so this link cannot be opened')
+    // An ID of another vault of the window (YAZ-3905 S23): no page of that name is made here; the notice says
+    // whose it is. This narrows R6 for this one case: other `LETTERS-NUMBER` text is still a name.
+    else if ((other = otherVaultId(inner, source, vaultsOf)) !== null) nav.onNotice(`This ID belongs to ${other.vault === null ? 'another vault' : `the ${other.vault} vault`}. Use a link to that vault.`)
     else if (made === undefined) {
       making.set(page, null)
       void createFromLink(nav.root, inner, source.ids, nav.createFolder(), undefined, source.folders).then((result) => {

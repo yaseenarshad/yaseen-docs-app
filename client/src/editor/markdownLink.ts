@@ -16,9 +16,11 @@ import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { fileKind } from '@shared/fileKind'
-import { copyLink, linkMenuRows, openMenuAt, type LinkMenu } from './linkMenu'
+import { fileLabel } from '../lib/pageLabel'
+import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkActions, type LinkMenu } from './linkMenu'
 
-export interface MarkdownLinkNav {
+/** The link menu's place rows (YAZ-3740: `showInSidebar`, Focus and Favorites, "Open in ▸") are App's `LinkActions`: absent, no row. */
+export interface MarkdownLinkNav extends LinkActions {
   open: (href: string) => Promise<void> | void
   /** A link to a page, folder or file of this vault (YAZ-3609 D8): its path, or null to leave it to `open`. */
   inApp?: (href: string) => string | null
@@ -163,19 +165,27 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
 }
 
 /**
- * The one link menu's rows for a Markdown link (YAZ-3609 D23, `linkMenu.ts`). A link into a vault of the window
- * names its page (and its vault, D22) and opens in a new tab too; a web link opens only through the OS.
+ * The one link menu's rows for a Markdown link (YAZ-3609 D23, YAZ-3740, `linkMenu.ts`). A link into a vault of the
+ * window names its page (and its vault, D22), opens in a new tab too, and copies its name; one whose page is there
+ * has the place rows (Show in sidebar, Copy path, Focus, Favorites, "Open in ▸"). Any other link opens only through
+ * the OS, and "Copy address" copies its href.
  */
 function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, background: boolean) => void): LinkMenu {
   const path = nav.vaultPath?.(hit.href) ?? null
-  const name = path === null ? null : path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1).replace(/\.md$/i, '')
+  // The page's name as the sidebar shows it (YAZ-3778 D2): no `.md`, no drawing's or diagram's extension.
+  const name = path === null ? null : fileLabel(path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1))
   const vault = path === null ? null : (nav.vaultTag?.(path) ?? null)
   const local = hit.href.startsWith('#')
+  // Only a file or folder that is there, found as a click finds it.
+  const found = path === null ? null : (nav.inApp?.(hit.href) ?? null)
+  const leaf = found === null ? '' : found.slice(Math.max(found.lastIndexOf('/'), found.lastIndexOf('\\')) + 1)
   return {
     labels: name === null || name === '' ? [] : [vault === null ? name : `${name} (${vault})`],
     open: local ? undefined : () => follow(hit.href, false),
     openNew: path === null ? undefined : () => follow(hit.href, true),
-    copyLink: () => copyLink(hit.href, nav.onNotice, nav.copy),
+    copyName: name === null || name === '' ? undefined : { hint: name, run: () => copyText(name, 'name', nav.onNotice, nav.copy) },
+    copyAddress: path === null ? () => copyText(hit.href, 'address', nav.onNotice, nav.copy) : undefined,
+    ...(found === null ? {} : placeRows(found, fileKind(leaf) !== null, nav, nav.onNotice, nav.copy)),
     edit: view.editable ? () => ctx.get(linkTooltipAPI.key).editLink(hit.mark, hit.from, hit.to) : undefined,
     remove: view.editable ? () => ctx.get(linkTooltipAPI.key).removeLink(hit.from, hit.to) : undefined,
   }
