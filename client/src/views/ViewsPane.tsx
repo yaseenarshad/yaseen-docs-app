@@ -412,9 +412,6 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
     },
   }
 
-  // A table or board whose own Preview is on keeps its own card, and takes no shared panel: never two.
-  const ownCard = view.preview === true && (view.type === 'table' || view.type === 'board')
-  const hoverHere = ownCard ? undefined : viewHover
   return (
     <div ref={paneRef} className="views-pane">
       <Toolbar
@@ -463,7 +460,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
         />
       ) : view.type === 'table' ? (
         <TableView
-          hover={hoverHere}
+          hover={viewHover}
           readOnly={readOnly}
           def={def}
           view={view}
@@ -488,8 +485,6 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
           vaultFolders={vaultFolders}
           resolve={resolve}
           resolveLink={folder.resolveLink}
-          preview={view.preview === true}
-          wikilinks={folder.wikilinks}
           declareColumn={folder.setColumns}
           deleteColumn={folder.deleteColumn}
           valueCount={folder.valueCount}
@@ -498,7 +493,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
         />
       ) : view.type === 'board' ? (
         <BoardView
-          hover={hoverHere}
+          hover={viewHover}
           readOnly={readOnly}
           settings={folder.settings}
           def={def}
@@ -516,13 +511,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
           onNewInGroup={onNewNote}
-          preview={view.preview === true}
-          wikilinks={folder.wikilinks}
           resolve={resolve}
         />
       ) : view.type === 'cards' ? (
         <CardsView
-          hover={hoverHere}
+          hover={viewHover}
           readOnly={readOnly}
           def={def}
           view={view}
@@ -547,7 +540,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
         />
       ) : view.type === 'list' ? (
         <ListView
-          hover={hoverHere}
+          hover={viewHover}
           readOnly={readOnly}
           def={def}
           view={view}

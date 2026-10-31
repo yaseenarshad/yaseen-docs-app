@@ -19,7 +19,7 @@ import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 
 export interface CardsViewProps {
-  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): absent while the setting is off, or while this view's own Preview is on. */
+  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): Settings › Preview on hover › Folder views turns it on or off (YAZ-3743). */
   hover?: ViewHover
   def: ViewSet
   view: ViewDef
