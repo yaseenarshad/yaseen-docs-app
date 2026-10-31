@@ -202,7 +202,7 @@ test('step 8b — ⌘Z gives the path back; a pasted link opens its note, and Ba
   await expect(editorOf(win)).toContainText(`${ideas}${ideas}`) // the path is back, after the one Keep as path left
   await pasteText(win, ideas)
   await win.keyboard.press('Escape') // the chip closes; the caret stays
-  await editorOf(win).getByText(HUB_BODY).click() // the caret leaves the link: it collapses
+  await editorOf(win).getByText(HUB_BODY).click() // the caret leaves the new link (a pill already: every link is one unit, YAZ-3935)
   await linkIn(win, 'Ideas').click({ modifiers: ['Meta'] })
   await expect(activeTab(win)).toHaveText('Ideas') // Ideas is open since step 2: its tab comes to the front
   // The tab that came to the front is a step of the window's one Back list (YAZ-3647 D4): Back returns to the hub's tab.

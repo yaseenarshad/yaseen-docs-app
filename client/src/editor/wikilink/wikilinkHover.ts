@@ -1,6 +1,7 @@
 /**
  * Hover on wiki links (YAZ-3403): resting the pointer on a resolved `[[link]]` in a note says which page it opens,
- * so the editor's host can show the sidebar's hover panel beside it. Wired through `createCrepe({ wikilinkHover })`,
+ * so the editor's host can show the sidebar's hover panel beside it, with one line on how to open it (YAZ-3935:
+ * "⌘-click to open", from the bound gesture; the host reads `editable` for a read-only note's "Click to open"). Wired through `createCrepe({ wikilinkHover })`,
  * and only by the note editor: the read-only previews never pass it.
  *
  * On the view's own DOM events (`handleDOMEvents`), never a document listener: many editors are mounted at once.

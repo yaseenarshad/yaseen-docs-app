@@ -52,14 +52,17 @@
  *    live-preview style via decorations only (brackets hidden, alias/heading display,
  *    caret-adjacency reveal, resolved/unresolved via `opts.wikilinks`; an id link's id hidden
  *    too, its note's current title drawn by a widget, YAZ-2293) — never a schema or serializer
- *    change, round-trip byte-identical. The exception to the reveal: an ID link that shows its
- *    title opens only from "Edit link" (YAZ-3744 D1).
- *  - ID link caret (YAZ-3744 D1, `wikilink/idLinkCaret.ts`): a caret that lands inside a closed
- *    ID link steps over it; Backspace after it and Delete before it remove it whole.
- *  - Wikilink click navigation (GRO-2192, `wikilink/wikilinkClick.ts`): MOUSEDOWN on a
- *    collapsed `.wikilink` span navigates (plain → current tab, ⌘ → background tab,
- *    unresolved → create-then-open via `createFromLink`) and preventDefaults so the caret
- *    never lands in the match (no raw-text flash); revealed raw text stays editable.
+ *    change, round-trip byte-identical. Every link is one unit (YAZ-3744 D1, YAZ-3935): it opens
+ *    its raw text only from "Edit link".
+ *  - Link caret (YAZ-3744 D1, YAZ-3935, `wikilink/idLinkCaret.ts`): a caret that lands inside a
+ *    closed link steps over it; Backspace after it and Delete before it remove it whole; a
+ *    double-click on a word next to a link selects only that word.
+ *  - Wikilink clicks (GRO-2192, YAZ-3935, YAZ-3936, `wikilink/wikilinkClick.ts`): MOUSEDOWN on a
+ *    collapsed `.wikilink` span. In an editable note a plain click puts the caret at the pill's
+ *    nearer edge and a double-click selects the link; the gestures of Settings › Hotkeys ›
+ *    "Links in a note" open it (⌘ → this tab, ⌘⇧ → background tab by default; unresolved →
+ *    create-then-open via `createFromLink`); a read-only note opens on a plain click. Both
+ *    preventDefault, so the link never flashes its raw text; revealed raw text stays editable.
  *    Registered only when `opts.wikilinkNav` provides the handlers.
  *  - Wikilink hover (YAZ-3403, `wikilink/wikilinkHover.ts`): the pointer on a resolved `.wikilink` span tells the
  *    host which page it opens, for the hover panel. Registered only when `opts.wikilinkHover` is passed: the
@@ -74,8 +77,9 @@
  *    (YAZ-1357). Its keymap MUST be `use`d before `outlinerKeymap`: both bind Enter at
  *    priority 100 and equal priorities run in addition order — the picker wins while open and
  *    declines (falls through) while closed.
- *  - Standard Markdown links (YAZ-1309, `markdownLink.ts`): a primary mousedown opens before caret
- *    placement — a link into a vault of the window in a tab (⌘: a background tab, YAZ-3609 D8, D14),
+ *  - Standard Markdown links (YAZ-1309, `markdownLink.ts`): an open gesture (YAZ-3936; a plain
+ *    click in an editable note puts the caret, YAZ-3935) opens before caret placement — a link into
+ *    a vault of the window in a tab (where the gesture says, YAZ-3609 D8, D14),
  *    anything else through the host — and such a link draws as a pill (D19); right-click shows the
  *    one link menu (D23, `linkMenu.ts`). Edit/remove
  *    reuse Crepe's link-tooltip API, including one logical range when formatting splits the DOM

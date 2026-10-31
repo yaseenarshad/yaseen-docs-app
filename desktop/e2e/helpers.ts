@@ -583,9 +583,9 @@ export async function closeWindow(app: ElectronApplication, winId: string): Prom
  *  - `Home` / `End` do NOT move the caret on macOS. `Meta+ArrowLeft` / `Meta+ArrowRight` do — and
  *    `Meta+ArrowUp` / `Meta+ArrowDown` are the outliner's own fold keys, so they never move it.
  *  - a resolved wikilink renders its `[[ ]]` as `display: none` spans, and a caret cannot stop
- *    inside hidden text — so end-of-line lands in FRONT of the closing `]]` until the plugin's
- *    REVEAL rule steps the decorations aside, which the click itself triggers. The second attempt,
- *    on the raw text, lands properly.
+ *    inside hidden text — so end-of-line can land in FRONT of the closing `]]` until the link's
+ *    caret rule steps it over the whole link (every link is one unit since YAZ-3935; a click on a
+ *    pill puts the caret at its nearer edge). The second attempt lands properly.
  *  - the browser owns the DOM selection but ProseMirror owns `state.selection`, and PM reads the
  *    browser's only on its own deferred flush. Every keyboard COMMAND runs against PM's — so an
  *    Enter sent too early splits the document where PM still THINKS the caret is (on a freshly
