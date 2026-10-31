@@ -519,6 +519,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // what it held for it.
   handleWithEvent(CONTRACT.link.ready, async (e) => windows.handleLinkReady(e.sender))
 
-  // The renderer's ack in the flush handshake (fire-and-forget send, so no envelope).
-  ipcMain.on(SPECIAL.appFlushed, (e) => windows.handleFlushed(e.sender))
+  // The renderer's ack in the flush handshake (fire-and-forget send, so no envelope). Only `{ clean: true }`
+  // is clean (YAZ-3737 D2): any other payload must not let a reload drop typing.
+  ipcMain.on(SPECIAL.appFlushed, (e, ack: unknown) => windows.handleFlushed(e.sender, (ack as { clean?: unknown } | undefined)?.clean === true))
 }

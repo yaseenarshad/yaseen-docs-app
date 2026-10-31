@@ -657,7 +657,7 @@ export const SPECIAL = {
   watchSubscribe: 'watch:subscribe',
   watchUnsubscribe: 'watch:unsubscribe',
   watchEvent: 'watch:event',
-  /** The close/quit flush handshake (GRO-2160): main sends `app:flush` and holds the window until `app:flushed`. */
+  /** The close/quit/reload flush handshake (GRO-2160): main sends `app:flush` and holds the window until `app:flushed` `{ clean }` (YAZ-3737 D2). */
   appFlush: 'app:flush',
   appFlushed: 'app:flushed',
   /** Edit › Copy as / Paste as: the focused editor claims the gesture, else the preload's native fallback answers through the two invokes. */
@@ -682,8 +682,12 @@ export type YaseenDocsApi = Bridge<typeof CONTRACT> & {
   /** One watcher per root in main (`fs/treeWatcher.ts`), shared by every window; late joiners get `ready` at once. */
   watch(root: string, listener: (ev: WatchEvent) => void): () => void
   window: {
-    /** The close/quit flush handshake (GRO-2160): main holds the window until every listener settled (hard 5s cap in main). */
-    onFlush(listener: () => Promise<void> | void): () => void
+    /**
+     * The close/quit/reload flush handshake (GRO-2160): main holds the window until every listener settled (hard 5s cap in main).
+     * A listener answers whether its saves are clean (YAZ-3737 D2): `false`, a throw or a rejection makes the ack not clean,
+     * and a reload then does not run. Nothing (`undefined`) counts as clean.
+     */
+    onFlush(listener: () => Promise<boolean | void> | boolean | void): () => void
   }
   file: {
     /** The path on disk of a `File` dropped from Finder (YAZ-3253 D3): `webUtils.getPathForFile`, since Electron removed `File.path`. Empty for a `File` made in JS. */

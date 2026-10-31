@@ -34,10 +34,15 @@ function buildBridge(table: object): Record<string, unknown> {
  * The close/quit flush handshake (GRO-2160): main sends `app:flush` and holds the window until
  * `app:flushed` comes back. Every registered listener is awaited (none registered — e.g. the
  * Welcome window — acks at once); a rejection still acks, main's 5s cap is the only other out.
+ * The ack carries `{ clean }` (YAZ-3737 D2): false when a listener answered `false` or threw, so a
+ * reload never drops typing a save could not write. Close and quit ignore it.
  */
-const flushListeners = new Set<() => Promise<void> | void>()
+const flushListeners = new Set<() => Promise<boolean | void> | boolean | void>()
 ipcRenderer.on(SPECIAL.appFlush, () => {
-  void Promise.allSettled([...flushListeners].map(async (listener) => listener())).then(() => ipcRenderer.send(SPECIAL.appFlushed))
+  void Promise.allSettled([...flushListeners].map(async (listener) => listener())).then((results) => {
+    const clean = results.every((r) => r.status === 'fulfilled' && r.value !== false)
+    ipcRenderer.send(SPECIAL.appFlushed, { clean })
+  })
 })
 
 // Each editor claims only its own focused surface. Ordinary inputs retain native insertion.

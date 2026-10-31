@@ -109,12 +109,34 @@ describe('preload bridge specials', () => {
     expect(ipcRenderer.send).not.toHaveBeenCalled()
     release()
     await settle()
-    expect(ipcRenderer.send).toHaveBeenCalledWith(SPECIAL.appFlushed)
-    // No listeners registered (Welcome window): the ack comes straight away.
+    expect(ipcRenderer.send).toHaveBeenCalledExactlyOnceWith(SPECIAL.appFlushed, { clean: true })
+    // No listeners registered (Welcome window): the ack comes straight away, clean.
     off()
     vi.mocked(ipcRenderer.send).mockClear()
     flushRequested()
     await settle()
-    expect(ipcRenderer.send).toHaveBeenCalledWith(SPECIAL.appFlushed)
+    expect(ipcRenderer.send).toHaveBeenCalledExactlyOnceWith(SPECIAL.appFlushed, { clean: true })
+  })
+
+  it('the ack is clean only when no listener answered false or threw (YAZ-3737 D2)', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const flushRequested = vi.mocked(ipcRenderer.on).mock.calls.find(([ch]) => ch === SPECIAL.appFlush)?.[1] as unknown as () => void
+    const ackFor = async (...listeners: Array<() => Promise<boolean | void> | boolean | void>): Promise<unknown> => {
+      const offs = listeners.map((l) => bridge.window.onFlush(l))
+      vi.mocked(ipcRenderer.send).mockClear()
+      flushRequested()
+      await new Promise((r) => setTimeout(r))
+      offs.forEach((off) => off())
+      return vi.mocked(ipcRenderer.send).mock.calls.find(([ch]) => ch === SPECIAL.appFlushed)?.[1]
+    }
+    expect(await ackFor(() => undefined, async () => true)).toEqual({ clean: true })
+    expect(await ackFor(async () => true, async () => false)).toEqual({ clean: false }) // a save with a conflict
+    expect(
+      await ackFor(() => {
+        throw new Error('boom')
+      }),
+    ).toEqual({ clean: false })
+    expect(await ackFor(() => Promise.reject(new Error('write failed')))).toEqual({ clean: false })
   })
 })

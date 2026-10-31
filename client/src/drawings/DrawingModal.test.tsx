@@ -45,7 +45,7 @@ const readAsset = vi.mocked(api.readAsset)
 const writeAsset = vi.mocked(api.writeAsset)
 const onFlush = vi.mocked(api.window.onFlush)
 /** The quit handshake's listener, as the modal registered it (main calls it before a window closes). */
-let quitFlush: (() => Promise<void> | void) | null = null
+let quitFlush: (() => Promise<boolean | void> | boolean | void) | null = null
 
 const ROOT = '/v'
 const TARGET = 'Sketch.excalidraw'
@@ -295,6 +295,8 @@ describe('autosave (YAZ-3528 D1)', () => {
     expect(writeAsset).toHaveBeenCalledTimes(1)
     expect(poked).toEqual([])
     expect(onClose).not.toHaveBeenCalled()
+    // The window's flush says not clean (YAZ-3737 D2): a reload would drop this canvas.
+    expect(await act(async () => quitFlush?.())).toBe(false)
   })
 
   it('S12: Keep mine writes this canvas over the disk mtime the conflict reported, and the autosave goes on', async () => {

@@ -877,12 +877,17 @@ describe('registerWindowIpc', () => {
     })
   })
 
-  it('app:flushed routes the renderer ack to the manager by sender', () => {
+  it('app:flushed routes the renderer ack to the manager by sender; only `{ clean: true }` is clean (YAZ-3737 D2)', () => {
     const call = vi.mocked(ipcMain.on).mock.calls.find(([ch]) => ch === SPECIAL.appFlushed)
     expect(call).toBeDefined()
-    const handler = call?.[1] as unknown as (e: { sender: { id: number } }) => void
-    handler({ sender })
-    expect(manager.handleFlushed).toHaveBeenCalledWith(sender)
+    const handler = call?.[1] as unknown as (e: { sender: { id: number } }, ack?: unknown) => void
+    for (const ack of [{ clean: true }, { clean: false }, undefined, { clean: 'yes' }]) handler({ sender }, ack)
+    expect(manager.handleFlushed.mock.calls).toEqual([
+      [sender, true],
+      [sender, false],
+      [sender, false],
+      [sender, false],
+    ])
   })
 
   it('link:ready tells the manager which renderer now listens for link pushes (YAZ-2589 A2)', async () => {

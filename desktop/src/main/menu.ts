@@ -59,6 +59,8 @@ export interface MenuHandlers {
   forward(): void
   /** View › Toggle Sidebar: ask only the focused renderer to toggle its window identity. */
   toggleSidebar(): void
+  /** View › Reload (⌘R, YAZ-3737 D2): the focused window's safe reload — flush, and reload only when every save landed; else a notice in that window. */
+  reload(): void
   /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused note (YAZ-1710), else the sidebar zoom (YAZ-3389). */
   zoom(step: ZoomStep): void
   openHelp(): void
@@ -233,7 +235,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
         // ⌘⇧B, a menu key since YAZ-3564 D10: it fires in a note too, where ⌘B is Bold. A note's Quote gave the key up.
         { id: 'menu.view.toggle-sidebar', label: 'Toggle Sidebar', ...key('toggleSidebar'), click: () => handlers.toggleSidebar() },
         { type: 'separator' },
-        { role: 'reload' },
+        // Not the stock role (YAZ-3737 D2): `role: 'reload'` reloads with no flush, so typing that waits to save was lost.
+        { id: 'menu.view.reload', label: 'Reload', accelerator: 'CmdOrCtrl+R', click: () => handlers.reload() },
         ...(isDev ? [{ role: 'toggleDevTools' } satisfies MenuItemConstructorOptions] : []),
         { type: 'separator' },
         // Not the stock zoom roles (YAZ-1710): a registered accelerator never reaches the page on
@@ -430,7 +433,10 @@ export interface MenuHost {
   checkForUpdates(): void
 }
 
-type MenuWindows = Pick<WindowManager, 'openRecentBeside' | 'linkNotice' | 'idFor' | 'openFilesWindow' | 'closeWindow'>
+type MenuWindows = Pick<WindowManager, 'openRecentBeside' | 'linkNotice' | 'idFor' | 'openFilesWindow' | 'closeWindow' | 'reloadWindow'>
+
+/** What ⌘R says in a window it did not reload (YAZ-3737 D2): a save had a conflict, failed, or did not answer in 5 s. */
+export const RELOAD_NOT_CLEAN_NOTICE = 'Not reloaded: some changes are not saved yet'
 
 export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHandlers {
   return {
@@ -513,6 +519,17 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     },
     toggleSidebar() {
       host.focusedWebContents()?.send(CONTRACT.menu.onToggleSidebar.channel)
+    },
+    reload() {
+      // The target is kept from BEFORE the flush: focus can move while it runs, and the notice belongs to this window.
+      // Its page listens (it just acked), so the notice goes straight to it on `link:notice`. A window that closed
+      // meanwhile (its id is gone) hears nothing.
+      const target = host.focusedWebContents()
+      const id = target === undefined ? undefined : windows.idFor(target)
+      if (target === undefined || id === undefined) return
+      void windows.reloadWindow(id).then((reloaded) => {
+        if (!reloaded && windows.idFor(target) === id) target.send(CONTRACT.link.onNotice.channel, RELOAD_NOT_CLEAN_NOTICE)
+      })
     },
     zoom(step) {
       host.focusedWebContents()?.send(CONTRACT.menu.onZoom.channel, step)

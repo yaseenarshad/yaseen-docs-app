@@ -60,7 +60,8 @@ const DEFAULT_BOUNDS: WindowBounds = { x: 100, y: 100, width: 1200, height: 800 
 
 /** The slice of `BrowserWindow` the manager drives; a test fake implements it in a few lines. */
 export interface ManagedWindow {
-  webContents: { id: number; send(channel: string, ...args: unknown[]): void }
+  /** `reload()` like Electron's: the same `webContents` loads its page again (YAZ-3737 D2, only after a clean flush). */
+  webContents: { id: number; send(channel: string, ...args: unknown[]): void; reload(): void }
   getBounds(): WindowBounds
   isDestroyed(): boolean
   isMinimized(): boolean
@@ -245,8 +246,14 @@ export interface WindowManager extends WindowLookup {
   vaultNotice(root: string, message: string): void
   /** `link:ready` arrived from this renderer (wired in `ipc/window.ts`): it listens now, so the link pushes held for it go out (YAZ-2589 A2). */
   handleLinkReady(sender: { id: number }): void
-  /** `app:flushed` arrived from this renderer (wired in `ipc/window.ts`). */
-  handleFlushed(sender: { id: number }): void
+  /** `app:flushed` arrived from this renderer (wired in `ipc/window.ts`): `clean` is its ack's `{ clean }` (YAZ-3737 D2). */
+  handleFlushed(sender: { id: number }, clean: boolean): void
+  /**
+   * The safe reload (YAZ-3737 D2) of ⌘R and the memory reload: flush the window `id`, then reload its page only when
+   * the flush was clean — every save landed and the 5 s cap did not fire. `false` = not reloaded: not clean, no live
+   * window, or the app quits. The caller says why, if anyone should hear it.
+   */
+  reloadWindow(id: string): Promise<boolean>
   /** `before-quit`: record the vault of the window in front (YAZ-2589 A1), then handshake every window at once (YAZ-2198); `windows[]` is kept, and the next launch brings back what it is asked for. */
   flushAllForQuit(): Promise<void>
   /**
@@ -525,9 +532,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     scaleFilesWindow(entry, from, appZoomFactor(store.get().settings))
   }
   /** In-flight flush handshakes by `webContents.id`; `settle` answers ack and timeout alike. */
-  const pendingFlush = new Map<number, { done: Promise<void>; settle: () => void }>()
+  const pendingFlush = new Map<number, { done: Promise<boolean>; settle: (clean: boolean) => void }>()
   /** Windows closing as part of the quit keep their state entry: the next launch can bring them back. */
   let quitting = false
+  /** Windows whose close handshake runs, by id, until `closed` (a reload must not run on one, YAZ-3737 D2). */
+  const closingWins = new Set<string>()
   /**
    * Link pushes that wait, by `webContents.id` (YAZ-2589 A2). A page that is still loading hears
    * nothing, and at launch every window is loading when the waiting links are handled. So a push is
@@ -577,20 +586,21 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   /**
    * One handshake: send `app:flush`, resolve on `handleFlushed` from the same renderer or after
    * FLUSH_TIMEOUT_MS. A second request while one is pending joins it (a close racing the quit).
+   * It resolves to the ack's `clean` (YAZ-3737 D2); the cap settles it as not clean. Close and quit ignore it.
    */
-  const flushRenderer = (win: ManagedWindow): Promise<void> => {
+  const flushRenderer = (win: ManagedWindow): Promise<boolean> => {
     const wcId = win.webContents.id
     const pending = pendingFlush.get(wcId)
     if (pending !== undefined) return pending.done
-    let resolve!: () => void
-    const done = new Promise<void>((r) => {
+    let resolve!: (clean: boolean) => void
+    const done = new Promise<boolean>((r) => {
       resolve = r
     })
-    const timer = setTimeout(settle, FLUSH_TIMEOUT_MS)
-    function settle(): void {
+    const timer = setTimeout(() => settle(false), FLUSH_TIMEOUT_MS)
+    function settle(clean: boolean): void {
       clearTimeout(timer)
       pendingFlush.delete(wcId)
-      resolve()
+      resolve(clean)
     }
     pendingFlush.set(wcId, { done, settle })
     win.webContents.send(SPECIAL.appFlush)
@@ -641,11 +651,10 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     })
 
     /** `close` is always intercepted: the window only goes away via `destroy()` after its flush. */
-    let closing = false
     win.on('close', (e) => {
       e.preventDefault()
-      if (closing || quitting) return // its handshake is already running (or the quit sequence owns it)
-      closing = true
+      if (closingWins.has(id) || quitting) return // its handshake is already running (or the quit sequence owns it)
+      closingWins.add(id)
       cancelBoundsTimer()
       commitBounds(id, win)
       void flushRenderer(win).then(() => {
@@ -657,6 +666,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       cancelBoundsTimer()
       unregister()
       live.delete(id)
+      closingWins.delete(id)
       // Closed before it asked (YAZ-2951 S20): what it would have read goes with it.
       startViews.delete(id)
       emptyStarts.delete(id)
@@ -1114,8 +1124,18 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       if (id !== undefined && zoomMenus.has(id)) zoomMenuClosed(id)
     },
 
-    handleFlushed(sender) {
-      pendingFlush.get(sender.id)?.settle()
+    handleFlushed(sender, clean) {
+      pendingFlush.get(sender.id)?.settle(clean)
+    },
+
+    async reloadWindow(id) {
+      const win = liveWindow(id)
+      if (win === undefined || quitting || closingWins.has(id)) return false
+      const clean = await flushRenderer(win)
+      // A close or the quit can join this flush and take the window right after it.
+      if (!clean || quitting || closingWins.has(id) || win.isDestroyed()) return false
+      win.webContents.reload()
+      return true
     },
 
     openFilesWindow(from, root) {
