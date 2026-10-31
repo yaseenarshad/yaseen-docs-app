@@ -8,6 +8,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuAction, MenuItem, MenuSection } from '../../sidebar/menuSections'
 import { getMarkdownForSave } from '../createCrepe'
@@ -139,6 +140,23 @@ describe('Align ▸, Fill ▸, Text colour ▸ and Sort (YAZ-3820)', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
+  it('Align ▸ the column\'s own alignment clears the cell\'s: it follows its column again (YAZ-3819)', async () => {
+    const { crepe, view } = await mount('| h1 | h2 |\n| -- | -: |\n| a | b |\n\n<!-- table: align B2 center -->\n')
+    row(view, 1, 1, 'table-align-right').onSelect()
+    expect(view.state.doc.nodeAt(cellPos(view, 1, 1))!.attrs.align).toBeNull()
+    expect(getMarkdownForSave(crepe)).not.toContain('<!--')
+  })
+
+  it('Custom colour… goes to the clicked cell even after an edit above it moved it', async () => {
+    const { view } = await mount(TABLE)
+    row(view, 2, 1, 'table-fill-custom').onSelect()
+    view.dispatch(view.state.tr.insertText('more ', cellPos(view, 0, 0) + 2))
+    const input = document.querySelector<HTMLInputElement>('input.table-colour-input')!
+    input.value = '#00aa55'
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    expect([1, 2].map((r) => [0, 1].map((c) => view.state.doc.nodeAt(cellPos(view, r, c))!.attrs.fill))).toEqual([[null, null], [null, '#00aa55']])
+  })
+
   it('Text colour ▸ a name, then Default colour', async () => {
     const { crepe, view } = await mount(TABLE)
     const before = getMarkdownForSave(crepe)
@@ -154,6 +172,7 @@ describe('Align ▸, Fill ▸, Text colour ▸ and Sort (YAZ-3820)', () => {
     const opened = vi.spyOn(HTMLInputElement.prototype, 'click')
     row(view, 1, 1, 'table-fill-custom').onSelect()
     expect(opened).toHaveBeenCalledOnce()
+    opened.mockRestore()
     const input = document.querySelector<HTMLInputElement>('input.table-colour-input')!
     input.value = '#00aa55'
     input.dispatchEvent(new Event('change', { bubbles: true }))
@@ -175,6 +194,20 @@ describe('Align ▸, Fill ▸, Text colour ▸ and Sort (YAZ-3820)', () => {
     expect(texts(view)[0]).toEqual(['Fruit', 'Id'])
     undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('Sort moves the same row nodes, so each cell keeps its fill, colour and own alignment', async () => {
+    const { view } = await mount(`${SORT}\n<!-- table: fill A3 blue, color B3 red, align B3 center -->\n`)
+    const body = () => { const out: ProseNode[] = []; view.state.doc.firstChild!.forEach((r, _, i) => { if (i > 0) out.push(r) }); return out }
+    const byFruit = new Map(body().map((r) => [r.child(0).textContent, r]))
+    row(view, 2, 0, 'table-sort-asc').onSelect()
+    // The same nodes, in the new order: none was made again.
+    const order = ['apple', 'banana', 'pear', 'Pear', '']
+    body().forEach((r, i) => expect(r).toBe(byFruit.get(order[i]!)))
+    // The empty-fruit row (row 3 before) is last now, with its attributes.
+    const last = view.state.doc.firstChild!.lastChild!
+    expect(last.child(0).attrs.fill).toBe('blue')
+    expect([last.child(1).attrs.color, last.child(1).attrs.align]).toEqual(['red', 'center'])
   })
 
   it('Sort by the selected column keeps the cells selected', async () => {

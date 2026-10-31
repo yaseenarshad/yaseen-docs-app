@@ -37,12 +37,20 @@
   (`client/src/editor/noteMenu.tsx`, `client/src/editor/table/tableMenu.ts`). The
   header row's handle sends no event. In a read-only note a handle selects
   nothing and sends nothing. Sort and Duplicate row are app commands now
-  (`tableMenu.ts`), so `operation.ts` keeps only the selection.
+  (`tableMenu.ts`), so `operation.ts` keeps only the selection. The app's
+  listener has its own copy of the event name (`TABLE_HANDLE_MENU` in
+  `noteMenu.tsx`); `noteMenu.test.tsx` clicks a real handle, so the two names
+  cannot drift apart. Left as upstream has them, and dead now that
+  `.button-group` is gone: its null-safe lookups in `view/pointer.ts`,
+  `view/utils.ts` and `dnd/create-drag-handler.ts`, and the unused button keys
+  of `config.ts` (`add_row`, `delete_*`, `align_col_*`). The
+  `TableHandleMenuDetail` type in `view/operation.d.ts` (internal, not
+  exported by the package) has no user. Removing them needs a rebuild of the archive.
 - YAZ-3696 2D (YAZ-3800): the hover "+" insert lines are gone. A pointer at a cell
   edge shows no line, and the two "+" buttons and their handlers (`onAddRow`,
   `onAddCol`, `lineHoverIndex`) are removed. The two line elements stay, with no
-  button, as the drop line of a row or column drag. Insert is in the handle menus
-  and the note's right-click menu.
+  button, as the drop line of a row or column drag. Insert is in the note's
+  table menu, from a right-click or a handle.
 - YAZ-3696 2E (YAZ-3801): a right-click on a column or row handle does what a
   click does (`preventDefault` and `stopPropagation`, so the note's own
   right-click does not run on it). Its mousedown does not reach the editor. A

@@ -182,8 +182,9 @@
  *  - Fill down (YAZ-3696 S4, `table/tableFill.ts` + `fillSeries.ts`): a widget handle in the corner of
  *    the selected cells; a drag down or right fills series up to the table's edge, on mouseup.
  *  - Table menus (YAZ-3766): the table's settings on its six-dot handle (`table/tableRows.ts`), the
- *    cell toolbar over two or more selected cells (`table/cellToolbar.ts`), and frozen rows and
- *    columns (`table/tableFreeze.ts`; the right-click Table part is `noteMenu.tsx`'s).
+ *    cell toolbar over two or more selected cells (`table/cellToolbar.ts`; its custom colour pick,
+ *    `table/colours.ts`), and frozen rows and columns (`table/tableFreeze.ts`; the right-click
+ *    Table part is `noteMenu.tsx`'s).
  */
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
@@ -235,6 +236,7 @@ import { tableStyle } from './table/tableStyle'
 import { tableFill } from './table/tableFill'
 import { tableRows } from './table/tableRows'
 import { cellToolbar } from './table/cellToolbar'
+import { customColourPick } from './table/colours'
 import { tableFreeze } from './table/tableFreeze'
 import { lineView } from './line/lineView'
 import { lineRows } from './line/lineRows'
@@ -506,6 +508,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableFill)
   // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.
   crepe.editor.use(cellToolbar)
+  // A custom colour pick's target cells (YAZ-3817), kept through edits while the system picker is open.
+  crepe.editor.use(customColourPick)
   // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.
   crepe.editor.use(tableFreeze)
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.

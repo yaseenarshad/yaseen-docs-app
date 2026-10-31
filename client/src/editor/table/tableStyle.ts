@@ -136,19 +136,25 @@ const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align
 
 /**
  * The cell attributes of ours that a cell's DOM carries: `data-fill` / `data-color` hold the colour
- * itself, and a custom one (`#rrggbb`) also goes in `style` for `table.css` (YAZ-3817), after the
- * GFM alignment's `text-align`. A cell's own alignment (`data-align`) is that `text-align` in place
- * of its column's, so it wins on the page and in a copy to Docs (YAZ-3819).
+ * itself, and a custom one (`#rrggbb`) also goes in `style` for `table.css` (YAZ-3817), after GFM's
+ * own style. A cell's own alignment (`data-align`) is the `text-align` in GFM's style in place of its
+ * column's, so it wins on the page and in a copy to Docs (YAZ-3819). Then the column's goes in
+ * `data-column-align`, so a paste in this app gives the column its own alignment back, not the cell's.
  */
 const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<string, string> => {
   const out = { ...base }
   const fill = cellColor(node.attrs.fill)
   const color = cellColor(node.attrs.color)
   const align = cellAlign(node.attrs.align)
-  const style = align === null ? [base.style] : [`text-align: ${align}`]
+  // GFM's own style, less its `text-align` when the cell has its own.
+  const style = (base.style ?? '').split(';').map((part) => part.trim()).filter((part) => part !== '' && (align === null || !part.startsWith('text-align')))
   if (fill !== null) out['data-fill'] = fill
   if (color !== null) out['data-color'] = color
-  if (align !== null) out['data-align'] = align
+  if (align !== null) {
+    out['data-align'] = align
+    out['data-column-align'] = (node.attrs.alignment as string | null) ?? 'left'
+    style.unshift(`text-align: ${align}`)
+  }
   if (fill?.startsWith('#')) style.push(`--table-fill-custom: ${fill}`)
   if (color?.startsWith('#')) style.push(`--table-text-custom: ${color}`)
   const joined = style.filter(Boolean).join('; ')
@@ -163,8 +169,8 @@ interface CellData {
 /**
  * A cell schema with `fill` and `color` (YAZ-3696 D3 / D8; a name or `#rrggbb`, YAZ-3817) and its
  * own `align` (YAZ-3819): `null` by default, carried by `data-fill` / `data-color` / `data-align` on
- * the DOM, and read from the cell's `data.tableCell` on load. The
- * runner is GFM's (open the cell with its alignment, then its paragraph), with our attributes.
+ * the DOM (the column's alignment in `data-column-align`), and read from the cell's `data.tableCell`
+ * on load. The runner is GFM's (open the cell with its alignment, then its paragraph), with our attributes.
  */
 export function withCellStyle(spec: NodeSchema): NodeSchema {
   const toDOM = spec.toDOM!
@@ -178,11 +184,14 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
         getAttrs: (dom: HTMLElement) => {
           const base = getAttrs ? getAttrs(dom) : {}
           if (base === false || base === null) return base
+          const align = cellAlign(dom.getAttribute('data-align'))
           return {
             ...base,
+            // GFM read the cell's own `text-align`: the column's is in `data-column-align`.
+            ...(align !== null && { alignment: cellAlign(dom.getAttribute('data-column-align')) ?? base.alignment }),
             fill: cellColor(dom.getAttribute('data-fill')),
             color: cellColor(dom.getAttribute('data-color')),
-            align: cellAlign(dom.getAttribute('data-align')),
+            align,
           }
         },
       }

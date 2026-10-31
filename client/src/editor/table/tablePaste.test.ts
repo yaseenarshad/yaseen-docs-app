@@ -4,12 +4,13 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { undo } from '@milkdown/kit/prose/history'
-import { Fragment, Slice, type Node as ProseNode } from '@milkdown/kit/prose/model'
+import { DOMParser as PMDOMParser, Fragment, Slice, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { TABLE, cellPos, mountTable, unmountAll } from './tableTestKit'
 import { pasteIntoCells } from './tablePaste'
+import { FILL_WASH } from './colours'
 import tableCss from './table.css?inline'
 import appCss from '../../app.css?inline'
 
@@ -272,8 +273,8 @@ describe('copy cells to Google Docs with their lines (YAZ-3802, demo round 1 dec
       expect(cells[col].style.backgroundColor, name).toBe(overWhite(light(`--table-fill-${name}`)))
       expect(cells[col].style.color, name).toBe(computed(light(`--table-text-${name}`)))
     })
-    // A custom fill draws at 35%: over white, as the page shows it.
-    expect(cells[names.length].style.backgroundColor).toBe(overWhite('rgba(255, 136, 0, 0.35)'))
+    // A custom fill draws at its wash (`FILL_WASH`): over white, as the page shows it.
+    expect(cells[names.length].style.backgroundColor).toBe(overWhite(`rgba(255, 136, 0, ${FILL_WASH})`))
     expect(cells[names.length].style.color).toBe(computed('#1a2b3c'))
   })
 
@@ -294,6 +295,23 @@ describe('copy cells to Google Docs with their lines (YAZ-3802, demo round 1 dec
     caretIn(view, 2, 1)
     pasteHtml(view, copied.html, copied.text)
     expect([cellAt(view, 2, 1).attrs.align, cellAt(view, 2, 2).attrs.align]).toEqual(['right', null])
+  })
+
+  it('a copied table keeps each column\'s alignment apart from a cell\'s own: a paste makes no `:-` from it (YAZ-3819)', async () => {
+    const view = await mountTable('| h1 | h2 |\n| --: | --- |\n| a | b |\n')
+    setCell(view, 0, 0, { align: 'center' })
+    view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
+    const box = document.createElement('div')
+    box.innerHTML = copy(view).html
+    const header = box.querySelector<HTMLElement>('th')!
+    // A copy to Docs shows the cell's own alignment.
+    expect(header.style.textAlign).toBe('center')
+    const parsed = PMDOMParser.fromSchema(view.state.schema).parse(box)
+    const cells: Array<[unknown, unknown]> = []
+    parsed.descendants((node) => {
+      if (node.type.spec.tableRole === 'cell' || node.type.spec.tableRole === 'header_cell') cells.push([node.attrs.alignment, node.attrs.align])
+    })
+    expect(cells).toEqual([['right', 'center'], ['left', null], ['right', null], ['left', null]])
   })
 
   it('a whole table copied with the text around it has the same styles', async () => {

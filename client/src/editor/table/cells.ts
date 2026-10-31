@@ -16,3 +16,17 @@ export function setCellsAttr(tr: Transaction, rect: TableRect, attr: string, val
   }
   return tr
 }
+
+/**
+ * Each cell of `rect` aligned to `align`, in `tr` (YAZ-3819): the cell's own `align`, or `null`
+ * where `align` is its column's GFM `alignment` (none counts as left), so the cell follows its
+ * column and the file gets no part that changes nothing.
+ */
+export function setCellsAlign(tr: Transaction, rect: TableRect, align: string): Transaction {
+  for (const at of rect.map.cellsInRect(rect)) {
+    const cell = rect.table.nodeAt(at)!
+    const value = ((cell.attrs.alignment as string | null) ?? 'left') === align ? null : align
+    if (cell.attrs.align !== value) tr.setNodeAttribute(rect.tableStart + at, 'align', value)
+  }
+  return tr
+}

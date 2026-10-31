@@ -13,14 +13,15 @@
  *   Each is a label, three fixed quick swatches (Fill: yellow, green, blue; Text: red, blue, green)
  *   and a ▾ that opens a palette (YAZ-3817, demo round 2): the labeled clear item ("No fill" /
  *   "Default colour") first, then the ten named colours in a 5 × 2 grid, then "Custom colour…",
- *   which opens the system colour picker (`<input type="color">`). A custom colour saves as
- *   `#rrggbb`, on the input's `change` only (its live `input` events do nothing), so one pick is one
- *   undo step. One palette is open at a time; it closes on a pick, on Escape, on a second ▾ click,
+ *   which opens the system colour picker (`colours.ts`) for the cells selected then. A custom
+ *   colour saves as `#rrggbb`, on the input's `change` only (its live `input` events do nothing), so
+ *   one pick is one undo step. One palette is open at a time; it closes on a pick, on Escape, on a second ▾ click,
  *   on a mousedown in the editor and when the toolbar hides.
  * - A mark turns ON in every cell when any selected cell with text lacks it on some of its text,
  *   and OFF in all of them when every one has it (as Sheets does).
  * - Align sets the selected cells' own `align` (YAZ-3819), saved in the table comment; it wins over
- *   the column's GFM alignment (the `:-` row), which stays.
+ *   the column's GFM alignment (the `:-` row), which stays. A pick equal to a cell's column alignment
+ *   clears the cell's own, so the cell follows its column again.
  * - Clear cells is prosemirror-tables' `deleteCellSelection` (Delete's own): the text goes, the
  *   cells keep their attributes.
  *
@@ -34,16 +35,11 @@ import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown
 import { CellSelection, deleteCellSelection, selectedRect } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { setCellsAttr } from './cells'
-import { CELL_ALIGNS, TABLE_COLORS, cellColor, type CellAlign, type TableColor } from './tableStyle'
-
-/** A menu label from a value: `blue` → `Blue`. */
-export const capital = (word: string) => word[0].toUpperCase() + word.slice(1)
+import { setCellsAlign, setCellsAttr } from './cells'
+import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
+import { CELL_ALIGNS, TABLE_COLORS, type CellAlign, type TableColor } from './tableStyle'
 
 const SVG = (body: string) => `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${body}</svg>`
-/** Each swatch's colour: a fill at full strength in light and dark (`table.css`; the cells keep their wash). */
-export const fillSwatch = (c: TableColor) => `var(--table-fill-solid-${c})`
-export const textSwatch = (c: TableColor) => `var(--table-text-${c})`
 const CARET = SVG('<path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>')
 
 /** A letter drawn as text, as createCrepe's heading glyphs. */
@@ -56,38 +52,17 @@ const alignIcon = (align: CellAlign) => {
 }
 const CLEAR = SVG('<path d="M8 8l8 8M16 8l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
 
-/**
- * The system colour picker (YAZ-3817), for the toolbar and the table menu (YAZ-3820): one hidden
- * `<input type="color">` per document (not `display: none`, so its `click()` opens the picker). Its
- * `change` gives `onPick` the colour as `#rrggbb`; its live `input` events do nothing, so one pick
- * is one undo step.
- */
-const pickers = new WeakMap<Document, { input: HTMLInputElement; onPick: (color: string) => void }>()
-export function pickCustomColour(doc: Document, onPick: (color: string) => void): void {
-  let picker = pickers.get(doc)
-  if (picker === undefined) {
-    const input = doc.createElement('input')
-    input.type = 'color'
-    input.className = 'table-colour-input'
-    input.tabIndex = -1
-    input.setAttribute('aria-hidden', 'true')
-    doc.body.appendChild(input)
-    const made = { input, onPick }
-    input.addEventListener('change', () => {
-      const color = cellColor(input.value)
-      if (color !== null) made.onPick(color)
-    })
-    pickers.set(doc, made)
-    picker = made
-  }
-  picker.onPick = onPick
-  picker.input.click()
-}
-
 /** One cell attribute on every selected cell, in one transaction. */
-function setCells(view: EditorView, attr: 'fill' | 'color' | 'align', value: string | null): void {
+function setCells(view: EditorView, attr: 'fill' | 'color', value: string | null): void {
   if (!(view.state.selection instanceof CellSelection)) return
   const tr = setCellsAttr(closeHistory(view.state.tr), selectedRect(view.state), attr, value)
+  if (tr.docChanged) view.dispatch(tr)
+}
+
+/** The selected cells' own alignment: `null` where it is the column's (`setCellsAlign`). */
+function alignCells(view: EditorView, align: CellAlign): void {
+  if (!(view.state.selection instanceof CellSelection)) return
+  const tr = setCellsAlign(closeHistory(view.state.tr), selectedRect(view.state), align)
   if (tr.docChanged) view.dispatch(tr)
 }
 
@@ -130,7 +105,7 @@ const PARTS: Part[] = [
   { name: 'Italic', icon: letter('I', 'font-style="italic"'), run: (v) => toggleMark(v, 'emphasis') },
   { name: 'Strikethrough', icon: letter('S', 'text-decoration="line-through"'), run: (v) => toggleMark(v, 'strike_through') },
   'divider',
-  ...CELL_ALIGNS.map((a) => ({ name: `Align ${a}`, icon: alignIcon(a), run: (v: EditorView) => setCells(v, 'align', a) })),
+  ...CELL_ALIGNS.map((a) => ({ name: `Align ${a}`, icon: alignIcon(a), run: (v: EditorView) => alignCells(v, a) })),
   'divider',
   { name: 'Clear cells', icon: CLEAR, run: clearCells },
 ]
@@ -214,7 +189,9 @@ function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes)
     button.appendChild(swatch)
     swatches.appendChild(button)
   }
-  const custom = item('Custom colour…', () => pickCustomColour(view.dom.ownerDocument, (color) => setCells(view, group.attr, color)), 'cell-toolbar__clear')
+  const custom = item('Custom colour…', () => {
+    if (view.state.selection instanceof CellSelection) pickCustomColour(view, view.state.selection, group.attr)
+  }, 'cell-toolbar__custom')
   custom.textContent = 'Custom colour…'
   palette.append(clear, swatches, custom)
   box.append(arrow, palette)

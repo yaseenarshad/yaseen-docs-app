@@ -10,6 +10,7 @@ import { undo } from '@milkdown/kit/prose/history'
 import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
+import { TABLE_HANDLE_MENU } from '../noteMenu'
 import { cellDOM, cellPos, dragColumnEdge, mountTable as mount, mouseAt, unmountAll } from './tableTestKit'
 
 afterEach(unmountAll)
@@ -193,7 +194,7 @@ function clickHandle(view: EditorView, kind: 'col' | 'row', row: number, col: nu
 /** Each ask for the app's table menu that reaches the editor's DOM (YAZ-3820), from now on. */
 function asks(view: EditorView): Array<{ x: number; y: number; pos: number }> {
   const got: Array<{ x: number; y: number; pos: number }> = []
-  view.dom.addEventListener('milkdown-table-handle-menu', (e) => got.push((e as CustomEvent).detail))
+  view.dom.addEventListener(TABLE_HANDLE_MENU, (e) => got.push((e as CustomEvent).detail))
   return got
 }
 const rowsOf = (view: EditorView) => {

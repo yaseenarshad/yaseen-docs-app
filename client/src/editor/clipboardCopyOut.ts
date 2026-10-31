@@ -9,6 +9,7 @@ import { clipboardPlainText } from './clipboardPlainText'
 import { eachVisibleTextblock } from './lineSelection'
 import { rowShortcuts } from './noteKeys'
 import { getZoomedItemPos } from './outline/zoom'
+import { FILL_WASH } from './table/colours'
 import { cellColor, type TableColor } from './table/tableComment'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 
@@ -126,7 +127,7 @@ export const copyVisibleHotkey = $shortcut((ctx) => rowShortcuts(ctx, 'note.copy
 /**
  * A copied cell's colours in the light theme (YAZ-3802, YAZ-3817): the text colours of table.css `:root`,
  * and each fill's see-through wash (`--table-fill-*`) as it shows over white, because Docs needs a solid
- * colour. A custom colour copies as picked; a custom fill as its 35% wash over white, as the page draws it.
+ * colour. A custom colour copies as picked; a custom fill as its wash over white, as the page draws it.
  */
 const COPY_FILL: Record<TableColor, string> = {
   red: '#ffc5c2', orange: '#ffdab7', yellow: '#ffee99', green: '#c2ecd0', teal: '#b4e8e5',
@@ -136,9 +137,9 @@ const COPY_TEXT: Record<TableColor, string> = {
   red: '#c0392b', orange: '#b45309', yellow: '#a16207', green: '#2e7d32', teal: '#0f766e',
   blue: '#1d5fbf', purple: '#7b3fbf', pink: '#c2185b', grey: '#6b6b6b', brown: '#8b5a2b',
 }
-/** `#rrggbb` at 35% over white. */
+/** `#rrggbb` at its wash (`FILL_WASH`, table.css `--table-fill-wash`) over white. */
 const washOverWhite = (hex: string): string =>
-  `#${[1, 3, 5].map((i) => Math.round(255 - (255 - parseInt(hex.slice(i, i + 2), 16)) * 0.35).toString(16).padStart(2, '0')).join('')}`
+  `#${[1, 3, 5].map((i) => Math.round(255 - (255 - parseInt(hex.slice(i, i + 2), 16)) * FILL_WASH).toString(16).padStart(2, '0')).join('')}`
 const copyFill = (fill: string | null) => (fill === null ? undefined : fill.startsWith('#') ? washOverWhite(fill) : COPY_FILL[fill as TableColor])
 const copyText = (color: string | null) => (color === null ? undefined : color.startsWith('#') ? color : COPY_TEXT[color as TableColor])
 

@@ -11,8 +11,9 @@
  * comment (`tableStyle.ts`). "Align all columns" is no comment part: it sets every cell's GFM
  * `alignment`, which the save writes in the `:-` row, so GitHub and Obsidian show it too, and clears
  * the cells' own alignment (YAZ-3819) in the same step. Its value
- * is the alignment all columns share; mixed columns read as the default. "Fit columns to the page"
- * clears every cell's `colwidth`, and is disabled while no column has a width. A read-only note
+ * is the alignment all columns share; mixed columns read as the default. While any cell has its own
+ * alignment it reads "Mixed": no item has ✓, so a pick of the shown value clears them too. "Fit
+ * columns to the page" clears every cell's `colwidth`, and is disabled while no column has a width. A read-only note
  * shows no rows (R3).
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
@@ -21,7 +22,7 @@ import { TableMap } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuChoice, MenuChoiceField, MenuItem, MenuNumberField, RowProvider } from '../blockHandleMenu'
 import { setCellsAttr } from './cells'
-import { capital } from './cellToolbar'
+import { capital } from './colours'
 import { CELL_ALIGNS, TABLE_DEFAULTS, type CellAlign, type TableAttrs } from './tableStyle'
 
 /** Crepe's look of a border (table.css): 1px, 20% of the outline colour. */
@@ -98,9 +99,10 @@ export const tableRows: RowProvider = (view, target) => {
   const attrs = table.node.attrs as TableAttrs
   const current = attrs.border ?? BORDER_DEFAULT
   const cells = cellsOf(table.node)
-  // No alignment on every cell (GFM's `---`) is the default; so are mixed columns.
+  // No alignment on every cell (GFM's `---`) is the default; so are mixed columns. A cell's own
+  // alignment makes it "Mixed", a value no item has: no ✓, and every pick runs (YAZ-3819).
   const aligns = new Set(cells.map((cell) => (cell.attrs.alignment as string | null) ?? null))
-  const align = aligns.size === 1 ? [...aligns][0]! : null
+  const align = cells.some((cell) => cell.attrs.align !== null) ? 'Mixed' : aligns.size === 1 ? [...aligns][0]! : null
   const thickness: MenuNumberField = {
     kind: 'number',
     label: 'Border thickness',

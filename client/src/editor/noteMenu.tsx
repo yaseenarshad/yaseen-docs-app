@@ -147,8 +147,11 @@ interface OpenMenu {
   focused: HTMLElement | null
 }
 
-/** The vendored table block's ask for the table menu (YAZ-3820): `{ x, y, pos }` in `detail`. */
-const TABLE_HANDLE_MENU = 'milkdown-table-handle-menu'
+/**
+ * The vendored table block's ask for the table menu (YAZ-3820): `{ x, y, pos }` in `detail`. The
+ * package sends its own copy of this name (`operation.ts`); `noteMenu.test.tsx` clicks a real handle.
+ */
+export const TABLE_HANDLE_MENU = 'milkdown-table-handle-menu'
 
 /** The menu for `view`'s note: a right-click in the note, or a table handle, opens it; nothing renders while it is shut. */
 export function NoteMenu({ view }: { view: EditorView | null }) {

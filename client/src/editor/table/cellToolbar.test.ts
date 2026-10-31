@@ -162,6 +162,7 @@ describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
     const opened = vi.spyOn(HTMLInputElement.prototype, 'click')
     pick(view, 'Fill colours', 'Custom colour…')
     expect(opened).toHaveBeenCalledOnce()
+    opened.mockRestore()
     const input = customInput()
     expect(isOpen(view, 'Fill colours')).toBe(false)
     // The picker's live `input` events change nothing; its `change` is the pick.
@@ -183,6 +184,74 @@ describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
     expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #ff8800 -->\n`)
     undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  /** Open Custom colour… of `arrow` on the selected cells, and pick `color` in the system picker. */
+  function pickCustom(view: EditorView, arrow: string, color: string) {
+    pick(view, arrow, 'Custom colour…')
+    customInput().value = color
+    customInput().dispatchEvent(new Event('change', { bubbles: true }))
+  }
+
+  it('the picker opens on the cells\' own custom colour, else on black, so the same colour picked again still applies', async () => {
+    const { view } = await mount(TABLE)
+    await select(view, [1, 0], [2, 1])
+    pick(view, 'Fill colours', 'Custom colour…')
+    expect(customInput().value).toBe('#000000')
+    customInput().value = '#ff8800'
+    customInput().dispatchEvent(new Event('change', { bubbles: true }))
+    await select(view, [1, 0], [1, 1])
+    pick(view, 'Fill colours', 'Custom colour…')
+    expect(customInput().value).toBe('#ff8800')
+    // Other cells: the picker starts on black again, so the same pick is a change and applies.
+    await select(view, [0, 0], [0, 1])
+    pickCustom(view, 'Fill colours', '#ff8800')
+    expect([cellAttr(view, 0, 0, 'fill'), cellAttr(view, 0, 1, 'fill')]).toEqual(['#ff8800', '#ff8800'])
+  })
+
+  it('a pick goes to the cells chosen when the picker opened, through later edits and a new selection', async () => {
+    const { view } = await mount(TABLE)
+    await select(view, [1, 0], [1, 1])
+    pick(view, 'Text colours', 'Custom colour…')
+    // While the system picker is open: an edit above the cells moves them, and the user selects other cells.
+    view.dispatch(view.state.tr.insertText('more ', cellPos(view, 0, 0) + 2))
+    await select(view, [2, 0], [2, 1])
+    customInput().value = '#1a2b3c'
+    customInput().dispatchEvent(new Event('change', { bubbles: true }))
+    expect([1, 2].map((r) => [0, 1].map((c) => cellAttr(view, r, c, 'color')))).toEqual([['#1a2b3c', '#1a2b3c'], [null, null]])
+    // The pick is spent: a second change applies nothing.
+    const after = view.state.doc
+    customInput().value = '#445566'
+    customInput().dispatchEvent(new Event('change', { bubbles: true }))
+    expect(view.state.doc).toBe(after)
+  })
+
+  it('a pick does nothing when its cells are gone or the note is closed, with no error; a removed input comes back', async () => {
+    const errors: unknown[] = []
+    const onError = (e: ErrorEvent) => errors.push(e.error)
+    window.addEventListener('error', onError)
+    const { view } = await mount(`para\n\n${TABLE}`)
+    await select(view, [1, 0], [1, 1])
+    pick(view, 'Fill colours', 'Custom colour…')
+    let table = -1
+    view.state.doc.forEach((node, pos) => { if (node.type.name === 'table') table = pos })
+    view.dispatch(view.state.tr.delete(table, table + view.state.doc.nodeAt(table)!.nodeSize))
+    const gone = view.state.doc
+    customInput().value = '#ff8800'
+    customInput().dispatchEvent(new Event('change', { bubbles: true }))
+    expect(view.state.doc).toBe(gone)
+    // The input left the page: the next open puts it back.
+    customInput().remove()
+    const other = await mount(TABLE)
+    await select(other.view, [1, 0], [1, 1])
+    pick(other.view, 'Fill colours', 'Custom colour…')
+    expect(customInput().isConnected).toBe(true)
+    // ⌘W while the picker is open: the view is destroyed, and the pick is dropped.
+    other.view.destroy()
+    customInput().value = '#ff8800'
+    customInput().dispatchEvent(new Event('change', { bubbles: true }))
+    window.removeEventListener('error', onError)
+    expect(errors).toEqual([])
   })
 
   it('one palette open at a time; it closes on Escape, on a second click of ▾ and when the toolbar hides', async () => {
@@ -274,6 +343,18 @@ describe('each button acts on every selected cell, in one undo step', () => {
     expect(cellAttr(again.view, 1, 1, 'align')).toBe('center')
     undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('a pick equal to the column\'s alignment clears the cell\'s own: the cell follows its column (YAZ-3819)', async () => {
+    const { crepe, view } = await mount('| h1 | h2 | h3 |\n| -- | -: | -- |\n| a | b | c |\n\n<!-- table: align A2:C2 center -->\n')
+    await select(view, [1, 0], [1, 2])
+    const own = () => [0, 1, 2].map((col) => cellAttr(view, 1, col, 'align'))
+    button(view, 'Align right').click()
+    expect(own()).toEqual(['right', null, 'right'])
+    // No `align` column (`--`) counts as left.
+    button(view, 'Align left').click()
+    expect(own()).toEqual([null, 'left', null])
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: align B2 left -->')
   })
 
   it('Clear cells empties the text and keeps the attributes', async () => {

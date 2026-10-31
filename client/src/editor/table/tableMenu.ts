@@ -5,18 +5,18 @@
  * (`noteMenu.tsx`). Five groups:
  * - Insert row above / below, Insert column left / right, Duplicate row;
  * - Delete row, Delete column, Clear cells;
- * - Align ▸ (the cells' own alignment, YAZ-3819), Fill ▸ and Text colour ▸ (the cell toolbar's
- *   palette: the clear item, the ten names, Custom colour…, YAZ-3817);
+ * - Align ▸ (the cells' own alignment, YAZ-3819; the column's own value clears it), Fill ▸ and
+ *   Text colour ▸ (the cell toolbar's palette: the clear item, the ten names, Custom colour…,
+ *   YAZ-3817, on the target cells of the moment it opens, `colours.ts`);
  * - Sort A to Z, Sort Z to A, by the target's left column;
  * - Freeze up to this row, Freeze up to this column, Unfreeze rows, Unfreeze columns.
  *
  * A row acts on the CellSelection when there is one in the clicked table, else on the clicked cell:
  * the prosemirror-tables command runs on a state whose selection is that cell, and the note keeps
  * its own selection. Each row is one transaction with the history closed (one undo step, R4).
- * The header row (row 1) has no row above it and is never deleted, and the last body row or column
- * is not deleted either (GFM needs a header row and one row, and the table one column), nor
- * duplicated. A new row
- * takes each column's alignment, as Milkdown's own row does.
+ * The header row (row 1) has no row above it, and it is never deleted or duplicated. The last body
+ * row or column is not deleted either (GFM needs a header row and one row, and the table one
+ * column). A new row takes each column's alignment, as Milkdown's own row does.
  *
  * The labels count the target's rows and columns, as in Sheets (YAZ-3801): "Insert 2 rows above",
  * "Delete 3 columns"; one row or column keeps the singular label. Insert N inserts N.
@@ -43,9 +43,9 @@ import {
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createElement } from 'react'
 import type { MenuAction, MenuParent, MenuSection } from '../../sidebar/menuSections'
-import { setCellsAttr } from './cells'
-import { capital, fillSwatch, pickCustomColour, textSwatch } from './cellToolbar'
-import { CELL_ALIGNS, TABLE_COLORS, type TableColor } from './tableStyle'
+import { setCellsAlign, setCellsAttr } from './cells'
+import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
+import { CELL_ALIGNS, TABLE_COLORS, type CellAlign, type TableColor } from './tableStyle'
 
 type Command = (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean
 
@@ -118,11 +118,20 @@ const columns =
 /** "Delete row" for one, "Delete 2 rows" for two (YAZ-3801). */
 const counted = (count: number, one: string, many: string): string => (count > 1 ? many.replace('N', String(count)) : one)
 
-/** One cell attribute (`fill`, `color`, `align`) on every target cell. */
+/** One cell attribute (`fill`, `color`) on every target cell. */
 const cellsAttr =
-  (attr: 'fill' | 'color' | 'align', value: string | null): Command =>
+  (attr: 'fill' | 'color', value: string | null): Command =>
   (state, dispatch) => {
     const tr = setCellsAttr(state.tr, selectedRect(state), attr, value)
+    if (tr.docChanged) dispatch?.(tr)
+    return true
+  }
+
+/** The target cells' own alignment: `null` where it is the column's (`setCellsAlign`, YAZ-3819). */
+const cellsAlign =
+  (align: CellAlign): Command =>
+  (state, dispatch) => {
+    const tr = setCellsAlign(state.tr, selectedRect(state), align)
     if (tr.docChanged) dispatch?.(tr)
     return true
   }
@@ -182,6 +191,12 @@ function setFreeze(view: EditorView, tableStart: number, attr: 'freezeRows' | 'f
   view.dispatch(closeHistory(view.state.tr).setNodeAttribute(pos, attr, count))
 }
 
+/** Custom colour… on the target cells of this moment: the pick goes to them (`colours.ts`). */
+function customColour(view: EditorView, pointer: number, attr: 'fill' | 'color'): void {
+  const cell = clickedCell(view.state.doc, pointer)
+  if (cell !== null) pickCustomColour(view, targetSelection(view.state, cell), attr)
+}
+
 /** A colour's swatch before its label, as the cell toolbar's palette draws it. */
 const swatch = (background: string) => createElement('span', { className: 'table-menu-swatch', style: { background } })
 
@@ -206,7 +221,7 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
     children: [
       [item(`${attr}-none`, clear, run(cellsAttr(attr, null)))],
       TABLE_COLORS.map((c) => ({ ...item(`${attr}-${c}`, capital(c), run(cellsAttr(attr, c))), icon: swatch(color(c)) })),
-      [item(`${attr}-custom`, 'Custom colour…', () => pickCustomColour(view.dom.ownerDocument, (picked) => runOn(view, pointer, cellsAttr(attr, picked))))],
+      [item(`${attr}-custom`, 'Custom colour…', () => customColour(view, pointer, attr))],
     ],
   })
   return [
@@ -223,7 +238,7 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
       item('clear', 'Clear cells', run(deleteCellSelection)),
     ],
     [
-      { id: 'table-align', label: 'Align', children: [CELL_ALIGNS.map((a) => item(`align-${a}`, capital(a), run(cellsAttr('align', a))))] },
+      { id: 'table-align', label: 'Align', children: [CELL_ALIGNS.map((a) => item(`align-${a}`, capital(a), run(cellsAlign(a))))] },
       palette('fill', 'Fill', 'No fill', fillSwatch),
       palette('color', 'Text colour', 'Default colour', textSwatch),
     ],

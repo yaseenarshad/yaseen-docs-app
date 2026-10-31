@@ -11,9 +11,9 @@ import type { MenuAction, MenuItem, MenuSection } from '../sidebar/menuSections'
 import type { CopyAsMode } from '@shared/types'
 import { caretIn, endOf, md, mount, posOf, runCommand, select, unmountAll } from './marks/markTestKit'
 import { toggleOutlineFold } from './outline/outlineFolding'
-import { misspellingAt, NoteMenu, noteMenuSections } from './noteMenu'
+import { misspellingAt, NoteMenu, noteMenuSections, TABLE_HANDLE_MENU } from './noteMenu'
 import { CellSelection } from '@milkdown/kit/prose/tables'
-import { cellPos } from './table/tableTestKit'
+import { cellDOM, cellPos, mountNote as mountTable, mouseAt, unmountAll as unmountTables } from './table/tableTestKit'
 
 let root: Root | null = null
 afterEach(async () => {
@@ -21,6 +21,7 @@ afterEach(async () => {
   root = null
   document.body.querySelectorAll('.ctx-overlay').forEach((el) => el.remove())
   await unmountAll()
+  await unmountTables()
 })
 
 /** Each row as `label` (`*` when inert), a parent's flyout after it in brackets. */
@@ -204,7 +205,7 @@ describe('the right-click (YAZ-3653)', () => {
     expect(fromCell).toContain('Sort A to Z')
     act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(document.querySelector('.ctx-menu')).toBeNull()
-    act(() => void view.dom.dispatchEvent(new CustomEvent('milkdown-table-handle-menu', { bubbles: true, detail: { x: 70, y: 80, pos: cellPos(view, 0, 1) } })))
+    act(() => void view.dom.dispatchEvent(new CustomEvent(TABLE_HANDLE_MENU, { bubbles: true, detail: { x: 70, y: 80, pos: cellPos(view, 0, 1) } })))
     expect(labels()).toEqual(fromCell)
     const menu = document.querySelector<HTMLElement>('.ctx-menu')!
     expect([menu.style.left, menu.style.top]).toEqual(['70px', '80px'])
@@ -213,6 +214,25 @@ describe('the right-click (YAZ-3653)', () => {
     act(() => remove.click())
     expect(view.state.doc.firstChild!.firstChild!.childCount).toBe(1)
     expect(view.state.doc.firstChild!.textContent).toBe('h1a')
+  })
+
+  it('a click on the real column handle of the table block opens the menu with the Table part (YAZ-3820)', async () => {
+    const { view } = await mountTable()
+    window.yaseenDocs = { ...window.yaseenDocs, spell: { suggestions: () => null } } as typeof window.yaseenDocs
+    const host = document.createElement('div')
+    document.body.append(host)
+    act(() => {
+      root = createRoot(host)
+      root.render(<NoteMenu view={view} />)
+    })
+    // Hover a cell of column B, so the handle belongs to it, then click the handle: the vendored DOM sends its event.
+    mouseAt('pointermove', cellDOM(view, 1, 1).firstChild!, 150, 45)
+    const handle = view.dom.querySelector<HTMLElement>('.milkdown-table-block [data-role="col-drag-handle"]')!
+    act(() => void handle.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 7, clientY: 9 })))
+    const labels = [...document.querySelectorAll('.ctx-menu [role=menuitem]')].map((b) => b.textContent)
+    expect(labels).toContain('Sort A to Z')
+    expect(labels).toContain('Delete column')
+    expect((view.state.selection as CellSelection).isColSelection()).toBe(true)
   })
 
   it('on an image: the native image menu stays', async () => {

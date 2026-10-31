@@ -11,8 +11,10 @@
 /* The ten cell colours (YAZ-3817), each in light and dark. Fills are see-through washes, so the
    text stays readable; in light, yellow, green, blue and pink are the highlight washes (YAZ-1480,
    app.css `--mark-bg*`), as before. Text colours are darker shades in light and lighter in dark.
-   `clipboardCopyOut.ts` holds the light shades as they show over white (a copy to Docs). */
+   `clipboardCopyOut.ts` holds the light shades as they show over white (a copy to Docs).
+   `--table-fill-wash` is a custom fill's strength, in both themes: `colours.ts` `FILL_WASH` for a copy. */
 :root {
+  --table-fill-wash: 35%;
   --table-fill-red: rgba(255, 90, 80, 0.35);
   --table-fill-orange: rgba(255, 150, 50, 0.35);
   --table-fill-yellow: var(--mark-bg);
@@ -100,7 +102,7 @@
 }
 
 /* Fills and text colours: a name, or a custom `#rrggbb` from the cell's own `--table-fill-custom` /
-   `--table-text-custom` (YAZ-3817). A custom fill draws at 35%, as the highlight, a custom text colour as picked. */
+   `--table-text-custom` (YAZ-3817). A custom fill draws at `--table-fill-wash`, a custom text colour as picked. */
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='red'] { --table-cell-tint: var(--table-fill-red); }
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='orange'] { --table-cell-tint: var(--table-fill-orange); }
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='yellow'] { --table-cell-tint: var(--table-fill-yellow); }
@@ -111,7 +113,7 @@
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='pink'] { --table-cell-tint: var(--table-fill-pink); }
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='grey'] { --table-cell-tint: var(--table-fill-grey); }
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='brown'] { --table-cell-tint: var(--table-fill-brown); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill^='#'] { --table-cell-tint: color-mix(in srgb, var(--table-fill-custom) 35%, transparent); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill^='#'] { --table-cell-tint: color-mix(in srgb, var(--table-fill-custom) var(--table-fill-wash), transparent); }
 
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='red'] { color: var(--table-text-red); }
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
@@ -332,7 +334,7 @@
   background: var(--crepe-color-selected);
 }
 
-/* The system colour picker's input (`pickCustomColour`, on the page's body): hidden, but not
+/* The system colour picker's input (`colours.ts` `pickCustomColour`, on the page's body): hidden, but not
    `display: none`, so its `click()` opens the picker. */
 .table-colour-input {
   position: fixed;
@@ -363,7 +365,8 @@
   display: none;
 }
 
-.milkdown .cell-toolbar .cell-toolbar__clear {
+/* The palette's text items: the clear item and "Custom colour…". */
+.milkdown .cell-toolbar :is(.cell-toolbar__clear, .cell-toolbar__custom) {
   display: block;
   width: 100%;
   padding: 5px 7px;
@@ -378,7 +381,7 @@
   cursor: pointer;
 }
 
-.milkdown .cell-toolbar .cell-toolbar__clear:hover {
+.milkdown .cell-toolbar :is(.cell-toolbar__clear, .cell-toolbar__custom):hover {
   background: var(--bg-hover);
 }
 

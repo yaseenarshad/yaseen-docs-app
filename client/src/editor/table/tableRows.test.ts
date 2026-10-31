@@ -222,6 +222,20 @@ describe('each setting saves in the comment, one undo step each', () => {
     expect(getMarkdownForSave(crepe)).toBe(note)
   })
 
+  it.each<[string, string, string]>([
+    ['a `---` table, "Default (Left)"', SMALL, 'Default (Left)'],
+    ['an all-Left table, "Left"', '| a  | b  |\n| :- | :- |\n| 1  | 2  |\n', 'Left'],
+  ])('while a cell has its own alignment, no item has ✓ and the value it would show still runs: %s (YAZ-3819)', async (_, table, text) => {
+    const { crepe, view } = await openOnTable(`${table}\n<!-- table: align B2 center -->\n`)
+    const picker = pickerNamed(view, 'Align all columns')
+    expect(picker.querySelector('.block-menu-picker__value')!.textContent).toBe('Mixed ▾')
+    picker.querySelector<HTMLButtonElement>('.block-menu-picker__value')!.click()
+    expect(picker.querySelectorAll('[aria-pressed="true"]')).toHaveLength(0)
+    pick(view, 'Align all columns', text)
+    expect(getMarkdownForSave(crepe)).toBe(table)
+    expect(view.state.doc.firstChild!.child(1).child(1).attrs.align).toBeNull()
+  })
+
   it('"Fit columns to the page" clears every width in one step', async () => {
     const note = `${SMALL}\n<!-- table: widths 140 auto, stripes -->\n`
     const { crepe, view } = await openOnTable(note)
