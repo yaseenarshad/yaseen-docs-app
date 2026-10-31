@@ -12,7 +12,7 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { OutsideChangeGlow } from '@shared/types'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
-import { undoLastHeadingFold } from '../outline/headingFolding'
+import { getHeadingFoldKey, HEADING_FOLDED_ATTR, undoLastHeadingFold } from '../outline/headingFolding'
 import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { getZoomedItemPos } from '../outline/zoom'
@@ -81,6 +81,12 @@ const press = (view: EditorView, key: string, keyCode: number, mod = false): voi
 }
 
 describe('the change list (D3, D4)', () => {
+  it('an outside task tick and an outside heading level change glow and count (checker 4B)', async () => {
+    const { crepe, channel } = await mount('## Section\n\n- [ ] task one\n- [ ] task two\n')
+    outsideEdit(crepe, (md) => md.replace('[ ] task one', '[x] task one').replace('## Section', '### Section'))
+    expect(channel.getState().count).toBe(2)
+  })
+
   it('glows the changed words; the count is the changed textblocks, and two ranges in one line are one change', async () => {
     const { crepe, root, view, channel } = await mount('Alpha one\n\nBeta two\n\nGamma three\n')
     outsideEdit(crepe, (md) => md.replace('Alpha one', 'Alpha ONE').replace('Gamma three', 'Gamma THREE'))
@@ -334,6 +340,25 @@ describe('Next change (D9)', () => {
     expect(folded).toHaveLength(1)
     expect(folded[0].textContent).toContain('Kiwi')
     expect(folded[0].textContent).not.toContain('Child')
+  })
+
+  it('opens the folded heading that hides a change silently, and folds it again on the next Next', async () => {
+    const doc = '# Summary\n\nTop line\n\n## Details\n\nWe fly on Monday.\n'
+    const { crepe, root, view, channel } = await mount(doc, { headingFolding: { seedCollapsedKeys: () => new Set([getHeadingFoldKey('Details', 0)]) } })
+    const headingFolded = () => root.querySelectorAll(`[${HEADING_FOLDED_ATTR}]`).length
+    const foldedBefore = headingFolded()
+    expect(foldedBefore).toBeGreaterThan(0)
+    outsideEdit(crepe, (md) => md.replace('Top line', 'Top line grown').replace('Monday', 'Tuesday'))
+    const selection = view.state.selection
+    channel.next() // the first change, above the heading
+    expect(headingFolded()).toBe(foldedBefore)
+    channel.next() // the change under the folded heading
+    expect(headingFolded()).toBe(0)
+    expect(root.querySelector(`.${OUTSIDE_ACTIVE_CLASS}`)?.closest('p')?.textContent).toContain('Tuesday')
+    expect(view.state.selection.eq(selection)).toBe(true)
+    expect(undoLastHeadingFold(view.state)).toBe(false)
+    channel.next() // back to the first: the heading folds again
+    expect(headingFolded()).toBe(foldedBefore)
   })
 
   it('a change outside the zoomed bullet zooms out first, and the host hears it', async () => {

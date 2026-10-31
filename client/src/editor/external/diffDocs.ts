@@ -49,6 +49,15 @@ const changedAttrs = (a: ProseNode, b: ProseNode): Attrs => {
 
 const attrRange = (pos: number, a: ProseNode, b: ProseNode): ReplaceRange => ({ from: pos, to: pos, slice: Slice.empty, attrs: changedAttrs(a, b) })
 
+/**
+ * Attrs the editor works out by itself, never a change anyone made (YAZ-3704 4A, 4B): an ordered item's
+ * `label` (its number), a list's `spread` (blank lines between items) and a heading's `id` (from its text;
+ * the live doc has one, a freshly parsed file does not). A range of only these changes nothing you see.
+ */
+const DERIVED_ATTRS = new Set(['label', 'spread', 'id'])
+
+export const onlyDerived = (range: ReplaceRange): boolean => range.attrs !== undefined && Object.keys(range.attrs).every((key) => DERIVED_ATTRS.has(key))
+
 /** Offset of child `index` within its parent's content. */
 const offsetOfChild = (node: ProseNode, index: number): number => {
   let offset = 0

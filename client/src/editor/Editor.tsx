@@ -873,8 +873,10 @@ function CrepeHost({
         // placed (D2), and then nothing changed. A merge makes the new file the baseline, so the merged
         // note differs from it and the autosave writes it 500 ms later, against the new mtime.
         const split = splitFrontmatter(fresh.content)
-        if (mergeExternalMarkdown(crepe, diskParts().body, split.body, quiet) === 'conflict') return reportConflict(mtime)
-        markReloaded(() => split.body, fresh.mtime, split.frontmatter, split.body)
+        const merge = mergeExternalMarkdown(crepe, diskParts().body, split.body, quiet)
+        if (merge === 'conflict') return reportConflict(mtime)
+        // 'unchanged': the file already holds the typing, so the live note is the baseline and nothing saves.
+        markReloaded(merge === 'unchanged' ? () => getMarkdownForSave(crepe) : () => split.body, fresh.mtime, split.frontmatter, split.body)
         c.update(getMarkdownForSave(crepe))
         setDisk(fresh.content)
         diskLanded()

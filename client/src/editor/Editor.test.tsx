@@ -797,6 +797,23 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
     expect(writeFile).toHaveBeenLastCalledWith({ path: PATH, content: `${FM}# Hello AI\n\nunsaved edit\n`, expectedMtime: 2 })
   })
 
+  it('Reload lands the last saved body quietly first, so only the outside changes glow, never the dropped typing (YAZ-3704)', async () => {
+    const el = await mount(FM + BODY)
+    type('# Hello\n\nunsaved edit\n')
+    diskHas(FM + '# Someone else\n', 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(el.querySelector('.conflict-bar')).not.toBeNull()
+    diskHas(FM + '# Someone else\n', 2) // reload() reads
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.conflict-bar button')].find((b) => b.textContent === 'Reload')!.click())
+    await settle()
+    // First the body as last saved, quietly; then the new file, which the change list hears.
+    expect(applyExternalMock.mock.calls.map(([, body, quiet]) => [body, quiet])).toEqual([
+      [BODY, true],
+      ['# Someone else\n', false],
+    ])
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+  })
+
   it('a save the disk refuses shows the bar when the merge cannot place the typing (YAZ-3704 D2)', async () => {
     const el = await mount(FM + BODY)
     type('# Hello\n\nunsaved edit\n')

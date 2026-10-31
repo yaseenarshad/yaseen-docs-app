@@ -67,6 +67,22 @@ const spyDispatch = (crepe: Crepe): Transaction[] => {
 }
 
 describe('mergeExternalMarkdown (YAZ-3704 D1)', () => {
+  it('merges a paragraph the outside edit adds right before a heading while the typing is elsewhere (checker 4A)', async () => {
+    const base = 'Intro line\n\n## Section\n\nBody line\n'
+    const { crepe } = await mount(base)
+    typeBefore(crepe, 'Body line', 'USER-')
+    expect(mergeExternalMarkdown(crepe, base, base.replace('## Section', 'New para\n\n## Section'))).toBe('merged')
+    expect(getMarkdownForSave(crepe)).toContain('USER-Body line')
+    expect(getMarkdownForSave(crepe)).toContain('New para')
+  })
+
+  it('lands nothing when the new file equals the live note, also when the note has a heading (checker 4A)', async () => {
+    const base = '# Title\n\nAlpha\n'
+    const { crepe } = await mount(base)
+    typeBefore(crepe, 'Alpha', 'USER-')
+    expect(mergeExternalMarkdown(crepe, base, getMarkdownForSave(crepe))).toBe('unchanged')
+  })
+
   it('merges an outside edit of another line: both edits stay', async () => {
     const { crepe } = await mount()
     typeBefore(crepe, 'Child', 'USER-')
@@ -152,7 +168,7 @@ describe('mergeExternalMarkdown (YAZ-3704 D1)', () => {
     const { crepe } = await mount()
     typeBefore(crepe, 'Child', 'USER-')
     const seen = spyDispatch(crepe)
-    expect(mergeExternalMarkdown(crepe, BASE, getMarkdownForSave(crepe))).toBe('merged')
+    expect(mergeExternalMarkdown(crepe, BASE, getMarkdownForSave(crepe))).toBe('unchanged')
     expect(seen).toHaveLength(0)
   })
 

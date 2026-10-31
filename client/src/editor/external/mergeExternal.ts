@@ -11,7 +11,8 @@
  *  - a rewrite: one outside range covers `REWRITE_SHARE` of the note — the rule `applyExternalMarkdown`
  *    rebuilds on, so a rewrite never lands as one huge glow with every fold mapped onto one point;
  *  - D2: a range of yours and a range of theirs touch the same block (line, bullet, heading, cell)
- *    — "the AI rewrote the line you are typing in" must never merge silently;
+ *    — "the AI rewrote the line you are typing in" must never merge silently. An attr change alone (a
+ *    heading's id, a number, a task ticked) touches no block: the order check below still guards it;
  *  - the two orders disagree: yours mapped over theirs, applied on THEIRS, must give the same doc as
  *    theirs mapped over yours, applied on YOURS. A merge that depends on its order is a guess.
  *
@@ -24,7 +25,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Transform } from '@milkdown/kit/prose/transform'
 import { normalizeEmptyItems } from '../listItemRoundTrip'
 import { EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, replaceTracked, REWRITE_SHARE, withTrailingParagraphOf } from './applyExternalMarkdown'
-import { diffDocs, type ReplaceRange } from './diffDocs'
+import { diffDocs, onlyDerived, type ReplaceRange } from './diffDocs'
 
 /** The span of the textblock a range touches; a range between blocks (a bullet added or removed) stays as it is. */
 const blockSpan = (doc: ProseNode, { from, to }: ReplaceRange): { from: number; to: number } => {
@@ -35,8 +36,9 @@ const blockSpan = (doc: ProseNode, { from, to }: ReplaceRange): { from: number; 
 
 /** D2: a range of yours and a range of theirs in ONE block, or touching, is a conflict. */
 const touchSameBlock = (base: ProseNode, mine: readonly ReplaceRange[], theirs: readonly ReplaceRange[]): boolean => {
-  const theirSpans = theirs.map((range) => blockSpan(base, range))
+  const theirSpans = theirs.filter((range) => range.attrs === undefined).map((range) => blockSpan(base, range))
   return mine.some((range) => {
+    if (range.attrs !== undefined) return false
     const a = blockSpan(base, range)
     return theirSpans.some((b) => a.from <= b.to && b.from <= a.to)
   })
@@ -46,8 +48,12 @@ const touchSameBlock = (base: ProseNode, mine: readonly ReplaceRange[], theirs: 
  * `quiet` (a copy of this note in another tab saved — the user's own typing) leaves the change list
  * alone, exactly as `applyExternalMarkdown`'s own flag does.
  */
-export const mergeExternalMarkdown = (crepe: Crepe, baseBody: string, diskBody: string, quiet = false): 'merged' | 'conflict' => {
-  let result: 'merged' | 'conflict' = 'conflict'
+/**
+ * 'unchanged': the new file already IS the live note, apart from what the editor works out itself (a
+ * heading's id): nothing lands, and the caller has nothing to save either (YAZ-3704 4A).
+ */
+export const mergeExternalMarkdown = (crepe: Crepe, baseBody: string, diskBody: string, quiet = false): 'merged' | 'unchanged' | 'conflict' => {
+  let result: 'merged' | 'unchanged' | 'conflict' = 'conflict'
   crepe.editor.action((ctx) => {
     const view = ctx.get(editorViewCtx)
     const parse = ctx.get(parserCtx)
@@ -56,8 +62,8 @@ export const mergeExternalMarkdown = (crepe: Crepe, baseBody: string, diskBody: 
     if (base === null || typeof base === 'string' || fresh === null || typeof fresh === 'string') return
     const live = view.state.doc
     const theirsDoc = withTrailingParagraphOf(live, fresh)
-    if (live.eq(theirsDoc)) {
-      result = 'merged' // both sides made the same note: nothing to land
+    if (diffDocs(live, theirsDoc).every(onlyDerived)) {
+      result = 'unchanged' // both sides made the same note
       return
     }
     const baseDoc = withTrailingParagraphOf(live, base)

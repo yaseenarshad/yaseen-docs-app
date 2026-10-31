@@ -24,7 +24,7 @@ import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Transform } from '@milkdown/kit/prose/transform'
 import { getZoomKeyOf, setMarkdown, zoomPageTo } from '../createCrepe'
 import { normalizeEmptyItems } from '../listItemRoundTrip'
-import { diffDocs, type ReplaceRange } from './diffDocs'
+import { diffDocs, onlyDerived, type ReplaceRange } from './diffDocs'
 
 /** Share of the old document one range may cover before the edit counts as a rewrite (the merge refuses one too). */
 export const REWRITE_SHARE = 0.8
@@ -49,13 +49,20 @@ export interface OutsideRange {
  * Lands `ranges` on `tr` right-to-left (each position through `map`, old → `tr`'s coordinates) and
  * says where each one's new content ended up in the FINAL doc: the step's own map, then every later step.
  * `old` is the document the ranges' positions are in, for the removed text. An attr range changes its
- * node's attrs in place (an `AttrStep`, which moves no position) and lands nothing to show.
+ * node's attrs in place (an `AttrStep`, which moves no position). One of only derived attrs (a number, a
+ * heading id) lands nothing to show; any other (a task ticked, a heading's level) shows on its node's first
+ * line of text (YAZ-3704 4B).
  */
 export const replaceTracked = (tr: Transform, ranges: readonly ReplaceRange[], old: ProseNode, map: (pos: number) => number = (pos) => pos): OutsideRange[] => {
   const placed: { step: number; removed: string }[] = []
-  for (const { from, to, slice, attrs } of [...ranges].sort((a, b) => b.from - a.from)) {
+  const shown: { step: number; from: number; to: number }[] = []
+  for (const range of [...ranges].sort((a, b) => b.from - a.from)) {
+    const { from, to, slice, attrs } = range
     if (attrs !== undefined) {
-      for (const [key, value] of Object.entries(attrs)) tr.setNodeAttribute(map(from), key, value)
+      const at = map(from)
+      for (const [key, value] of Object.entries(attrs)) tr.setNodeAttribute(at, key, value)
+      const text = onlyDerived(range) ? null : firstLineOf(tr.doc, at)
+      if (text !== null) shown.push({ step: tr.steps.length - 1, ...text })
       continue
     }
     const step = tr.steps.length
@@ -71,7 +78,27 @@ export const replaceTracked = (tr: Transform, ranges: readonly ReplaceRange[], o
     })
     const later = tr.mapping.slice(step + 1)
     return { from: later.map(start, -1), to: later.map(end, 1), removed }
+  }).concat(
+    shown.map(({ step, from, to }) => {
+      const later = tr.mapping.slice(step + 1)
+      return { from: later.map(from, 1), to: later.map(to, -1), removed: '' }
+    }),
+  )
+}
+
+/** The content of the node at `pos` when it is a textblock, else of its first textblock (an item's first line). */
+const firstLineOf = (doc: ProseNode, pos: number): { from: number; to: number } | null => {
+  const node = doc.nodeAt(pos)
+  if (node === null) return null
+  if (node.isTextblock) return { from: pos + 1, to: pos + 1 + node.content.size }
+  let line: { from: number; to: number } | null = null
+  node.descendants((child, offset) => {
+    if (line !== null) return false
+    if (!child.isTextblock) return true
+    line = { from: pos + 2 + offset, to: pos + 2 + offset + child.content.size }
+    return false
   })
+  return line
 }
 
 const isEmptyParagraph = (node: ProseNode | null): boolean => node !== null && node.type.name === 'paragraph' && node.content.size === 0
