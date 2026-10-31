@@ -2,7 +2,7 @@
  * The one link menu (YAZ-3740) on a real editor, for each kind of link: the exact rows, their order, their groups
  * and their hints, and that each new row calls App's door with the link's target. Its flyout ("Open in ▸",
  * YAZ-3901) on `openMenuAt`: pointer and keys. A missing note and an ID of another vault of the window (YAZ-3905):
- * their pills and their menus.
+ * their menus (their pills are `wikilinkPlugin.test.ts`'s).
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -13,7 +13,7 @@ import { SWITCH_MS } from '../sidebar/ContextMenu'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { openMenuAt, type LinkActions } from './linkMenu'
 import type { MarkdownLinkNav } from './markdownLink'
-import { WIKILINK_CLASS, WIKILINK_UNRESOLVED_CLASS, createWikilinkResolveSource, type VaultsOfLetters } from './wikilink/wikilinkPlugin'
+import { WIKILINK_CLASS, createWikilinkResolveSource, type VaultsOfLetters } from './wikilink/wikilinkPlugin'
 
 const record = (path: string, title: string, id?: string): IndexRecord => ({
   path, name: path.slice(path.lastIndexOf('/') + 1), basename: 'x', title, folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1,
@@ -350,16 +350,7 @@ describe('the flyout of a parent row (YAZ-3901)', () => {
   })
 })
 
-describe('a missing note and an ID of another vault (YAZ-3905)', () => {
-  const pills = (root: HTMLElement) => Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).map((el) => [el.textContent, el.classList.contains(WIKILINK_UNRESOLVED_CLASS)])
-
-  it('S10: an ID of this vault whose note is gone reads "Missing note · YAS-999", dimmed; the note keeps every byte', async () => {
-    const md = 'pad [[YAS-999]] tail\n'
-    const { crepe, root } = await mount(md)
-    expect(pills(root)).toEqual([['Missing note · YAS-999', true]])
-    expect(getMarkdownForSave(crepe)).toBe(md)
-  })
-
+describe('the menus of a missing note and an ID of another vault (YAZ-3905; their pills: wikilinkPlugin.test.ts)', () => {
   it('S10: its menu says what it can, and copies the ID', async () => {
     const { root, view, onNotice } = await mount('pad [[YAS-999]] tail\n')
     const menu = menuOf(root, view, 'Missing note · YAS-999')
@@ -369,25 +360,18 @@ describe('a missing note and an ID of another vault (YAZ-3905)', () => {
     await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith('Copied ID'))
   })
 
-  it('S23: an ID with another open vault\'s letters names that vault, dimmed, and its menu says whose ID it is', async () => {
-    const md = 'pad [[INL-4]] tail\n'
-    const { crepe, root, view } = await mount(md)
-    expect(pills(root)).toEqual([['INL-4', true], [' (In-harness-lab)', true]])
+  it('S23: an ID with another open vault\'s letters: its menu says whose ID it is', async () => {
+    const { root, view } = await mount('pad [[INL-4]] tail\n')
     expect(shape(menuOf(root, view, 'INL-4'))).toEqual(['(INL-4)', '(ID from the In-harness-lab vault)', '──', 'Copy ID · INL-4', '──', 'Edit link', 'Remove link'])
-    expect(getMarkdownForSave(crepe)).toBe(md)
   })
 
   it('S23: letters that two open vaults share name no vault: "another vault"', async () => {
     const { root, view } = await mount('pad [[TWO-3]] tail\n')
-    expect(pills(root)).toEqual([['TWO-3', true], [' (another vault)', true]])
     expect(shape(menuOf(root, view, 'TWO-3'))).toEqual(['(TWO-3)', '(ID from another vault)', '──', 'Copy ID · TWO-3', '──', 'Edit link', 'Remove link'])
   })
 
-  it('S23: this vault\'s letters win, and letters no open vault has stay a name link', async () => {
-    const { root, view } = await mount('a [[YAS-999]] b [[GPT-4]] c\n', true, (letters) => (letters === 'YAS' || letters === 'GPT' ? ['Elsewhere'] : []))
-    expect(pills(root)).toEqual([['Missing note · YAS-999', true], ['GPT-4', true], [' (Elsewhere)', true]])
+  it('S23: letters no open vault has stay a name link, with a name link\'s menu', async () => {
     const plain = await mount('pad [[GPT-4]] tail\n')
-    expect(pills(plain.root)).toEqual([['GPT-4', true]])
     expect(shape(menuOf(plain.root, plain.view, 'GPT-4'))).toEqual(['(GPT-4)', '──', 'Open', 'Open in new tab', '──', 'Copy name · GPT-4', '──', 'Edit link', 'Remove link'])
   })
 })

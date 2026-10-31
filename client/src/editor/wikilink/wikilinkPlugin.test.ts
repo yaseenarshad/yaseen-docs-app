@@ -25,16 +25,17 @@ import {
   createWikilinkResolveSource,
   linkDisplayText,
   type MutableWikilinkResolveSource,
+  type VaultsOfLetters,
 } from './wikilinkPlugin'
 import { createViewOnlyLinkSource } from './viewOnlyLinkSource'
 import { buildViewOnlyCatalogFromEntries, type ViewOnlyEntry } from '../../links/viewOnlyCatalog'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-async function mount(markdown: string, wikilinks?: MutableWikilinkResolveSource) {
+async function mount(markdown: string, wikilinks?: MutableWikilinkResolveSource, vaultsOfLetters?: VaultsOfLetters) {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, wikilinks })
+  const crepe = createCrepe({ root, defaultValue: markdown, wikilinks, vaultsOfLetters })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, root }
@@ -612,5 +613,43 @@ describe('a link shows its page name (YAZ-3778 D2, D3, S12, S13)', () => {
   it('S13: a link\'s name gets no spellcheck underline', async () => {
     const { root } = await mountNamed('a [[Plan.md]] b\n')
     expect(root.querySelector(`.${WIKILINK_CLASS}`)?.getAttribute('spellcheck')).toBe('false')
+  })
+})
+
+describe('a missing note and an ID of another vault (YAZ-3905 S10, S23)', () => {
+  /** The window's other vaults: one uses `INL`, two use `TWO`. */
+  const vaultsOf: VaultsOfLetters = (letters) => (letters === 'INL' ? ['In-harness-lab'] : letters === 'TWO' ? ['Alpha', 'Beta'] : [])
+  const pills = (root: HTMLElement) => Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).map((el) => [el.textContent, el.classList.contains(WIKILINK_UNRESOLVED_CLASS)])
+  /** A note of a vault that uses IDs (`YAS`) where no link finds a note. */
+  async function mountIds(markdown: string, letters: VaultsOfLetters = vaultsOf) {
+    const source = createWikilinkResolveSource()
+    source.update(() => null, [], [], true, ['YAS'])
+    return mount(markdown, source, letters)
+  }
+
+  it('S10: an ID of this vault whose note is gone reads "Missing note · YAS-999", dimmed; the note keeps every byte', async () => {
+    const md = 'pad [[YAS-999]] tail\n'
+    const { crepe, root } = await mountIds(md)
+    expect(pills(root)).toEqual([['Missing note · YAS-999', true]])
+    expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+
+  it('S23: an ID with another open vault\'s letters names that vault, dimmed; the note keeps every byte', async () => {
+    const md = 'pad [[INL-4]] tail\n'
+    const { crepe, root } = await mountIds(md)
+    expect(pills(root)).toEqual([['INL-4', true], [' (In-harness-lab)', true]])
+    expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+
+  it('S23: letters that two open vaults share name no vault: "another vault"', async () => {
+    const { root } = await mountIds('pad [[TWO-3]] tail\n')
+    expect(pills(root)).toEqual([['TWO-3', true], [' (another vault)', true]])
+  })
+
+  it('S23: this vault\'s letters win, and letters no open vault has stay a name link', async () => {
+    const { root } = await mountIds('a [[YAS-999]] b [[GPT-4]] c\n', (letters) => (letters === 'YAS' || letters === 'GPT' ? ['Elsewhere'] : []))
+    expect(pills(root)).toEqual([['Missing note · YAS-999', true], ['GPT-4', true], [' (Elsewhere)', true]])
+    const plain = await mountIds('pad [[GPT-4]] tail\n')
+    expect(pills(plain.root)).toEqual([['GPT-4', true]])
   })
 })
