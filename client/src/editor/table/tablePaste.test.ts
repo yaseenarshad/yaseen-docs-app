@@ -5,11 +5,13 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { undo } from '@milkdown/kit/prose/history'
 import { Fragment, Slice, type Node as ProseNode } from '@milkdown/kit/prose/model'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { cellPos, mountTable, unmountAll } from './tableTestKit'
+import { TABLE, cellPos, mountTable, unmountAll } from './tableTestKit'
 import { pasteIntoCells } from './tablePaste'
+import tableCss from './table.css?inline'
+import appCss from '../../app.css?inline'
 
 afterEach(unmountAll)
 
@@ -204,6 +206,81 @@ describe('copy cells (S1)', () => {
     expect(text).toBe('a\tb\nc\td')
     expect(html).toMatch(/^<table[^>]*><tbody><tr[^>]*><td/)
     expect(html.match(/<td/g)).toHaveLength(4)
+  })
+})
+
+describe('copy cells to Google Docs with their lines (YAZ-3802, demo round 1 decision 13)', () => {
+  /** A `:root` custom property of a CSS file (the light theme), as a computed colour. */
+  const lightVar = (css: string, name: string) => {
+    const root = css.slice(css.indexOf(':root'), css.indexOf("[data-theme='dark']"))
+    return new RegExp(`${name}:\\s*([^;]+);`).exec(root)![1].trim()
+  }
+  /** `rgba(r, g, b, a)` painted over white, as `rgb(r, g, b)`. */
+  const overWhite = (rgba: string) => {
+    const [r, g, b, a] = rgba.match(/[\d.]+/g)!.map(Number)
+    return `rgb(${[r, g, b].map((c) => Math.round(255 - (255 - c) * a)).join(', ')})`
+  }
+  /** A colour as the browser's style reads it. */
+  const computed = (color: string) => {
+    const el = document.createElement('i')
+    el.style.color = color
+    return el.style.color
+  }
+
+  it('the copied HTML of a 2 × 2 selection has the borders, the fill, the text colour and a bold header', async () => {
+    const view = await mountTable()
+    setCell(view, 1, 0, { fill: 'blue' })
+    setCell(view, 1, 1, { color: 'red', fill: 'yellow' })
+    selectCells(view, [0, 0], [1, 1])
+    const { html, text } = copy(view)
+    const box = document.createElement('div')
+    box.innerHTML = html
+    expect(box.querySelector('table')!.style.borderCollapse).toBe('collapse')
+    const cells = [...box.querySelectorAll<HTMLElement>('th, td')]
+    expect(cells.map((c) => c.tagName)).toEqual(['TH', 'TH', 'TD', 'TD'])
+    for (const cell of cells) {
+      expect(cell.style.border).toBe(`1px solid ${computed('#999')}`)
+      expect(cell.style.padding).toBe('4px 8px')
+    }
+    expect(cells.map((c) => c.style.fontWeight)).toEqual(['bold', 'bold', '', ''])
+    // The light theme's colours: a fill is its see-through wash painted over white.
+    expect(cells[2].style.backgroundColor).toBe(overWhite(lightVar(appCss, '--mark-bg-blue')))
+    expect(cells[3].style.backgroundColor).toBe(overWhite(lightVar(appCss, '--mark-bg')))
+    expect(cells[3].style.color).toBe(computed(lightVar(tableCss, '--table-text-red')))
+    // A cell with no fill or colour gets none.
+    expect([cells[0].style.backgroundColor, cells[1].style.backgroundColor, cells[0].style.color, cells[2].style.color]).toEqual(['', '', '', ''])
+    // The tab-separated text is unchanged.
+    expect(text).toBe('h1\th2\na\tb')
+  })
+
+  it('a whole table copied with the text around it has the same styles', async () => {
+    const view = await mountTable(`Before\n\n${TABLE}\nAfter\n`)
+    view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
+    const box = document.createElement('div')
+    box.innerHTML = copy(view).html
+    expect(box.querySelectorAll('table')).toHaveLength(1)
+    expect(box.querySelector('table')!.style.borderCollapse).toBe('collapse')
+    const cells = [...box.querySelectorAll<HTMLElement>('th, td')]
+    expect(cells).toHaveLength(6)
+    for (const cell of cells) expect(cell.style.border).toBe(`1px solid ${computed('#999')}`)
+    // Only tables: the paragraphs around it keep the copy's own styles.
+    expect([...box.querySelectorAll('p')].some((p) => p.style.border !== '')).toBe(false)
+  })
+
+  it('a paste of that HTML into a table still fills the cells and takes no inline style', async () => {
+    const view = await mountTable('| h1 | h2 | h3 |\n| --- | --- | --- |\n| a | b | c |\n| d | e | f |\n| g | h | i |\n')
+    setCell(view, 1, 0, { fill: 'green' })
+    setCell(view, 1, 1, { color: 'blue' })
+    const plain = { ...cellAt(view, 3, 2).attrs }
+    selectCells(view, [1, 0], [2, 1])
+    const copied = copy(view)
+    expect(copied.html).toContain('border: 1px solid')
+    caretIn(view, 2, 1)
+    pasteHtml(view, copied.html, copied.text)
+    expect(grid(view)).toEqual([['h1', 'h2', 'h3'], ['a', 'b', 'c'], ['d', 'a', 'b'], ['g', 'd', 'e']])
+    expect(cellAt(view, 2, 1).attrs.fill).toBe('green')
+    expect(cellAt(view, 2, 2).attrs.color).toBe('blue')
+    expect(cellAt(view, 3, 2).attrs).toEqual(plain)
   })
 })
 

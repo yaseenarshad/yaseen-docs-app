@@ -28,6 +28,18 @@ async function select(view: EditorView, from: [number, number], to: [number, num
   view.dispatch(view.state.tr.setSelection(CellSelection.create(view.state.doc, cellPos(view, ...from), cellPos(view, ...to))))
   await settle()
 }
+/** The colour of the bar under the icon of the button `label`. */
+const barOf = (view: EditorView, label: string) => button(view, label).querySelector<SVGElement>('.cell-toolbar__bar')!.style.fill
+/** The palette that the ▾ button `arrow` opens and controls. */
+const paletteOf = (view: EditorView, arrow: string) => document.getElementById(button(view, arrow).getAttribute('aria-controls')!)!
+const isOpen = (view: EditorView, arrow: string) => !paletteOf(view, arrow).hidden && button(view, arrow).getAttribute('aria-expanded') === 'true'
+/** Open the palette of `arrow` and click its item `label`. */
+function pick(view: EditorView, arrow: string, label: string) {
+  button(view, arrow).click()
+  const item = paletteOf(view, arrow).querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+  if (item === null) throw new Error(`no palette item ${label}`)
+  item.click()
+}
 const cellAttr = (view: EditorView, row: number, col: number, attr: string) => view.state.doc.nodeAt(cellPos(view, row, col))!.attrs[attr]
 
 describe('when the toolbar shows', () => {
@@ -35,10 +47,11 @@ describe('when the toolbar shows', () => {
     const { view } = await mount(TABLE)
     await select(view, [1, 0], [2, 1])
     expect(shown(view)).toBe(true)
-    const items = [...toolbarOf(view)!.children].map((el) => (el.tagName === 'BUTTON' ? el.getAttribute('aria-label') : el.className))
+    const items = [...toolbarOf(view)!.querySelectorAll(':scope > *, :scope > .cell-toolbar__split > button')]
+      .filter((el) => !el.classList.contains('cell-toolbar__split'))
+      .map((el) => (el.tagName === 'BUTTON' ? el.getAttribute('aria-label') : el.className))
     expect(items).toEqual([
-      'cell-toolbar__label', 'Fill yellow', 'Fill green', 'Fill blue', 'Fill pink', 'No fill', 'divider',
-      'cell-toolbar__label', 'Red text', 'Orange text', 'Green text', 'Blue text', 'Grey text', 'Default text colour', 'divider',
+      'Fill yellow', 'Fill colours', 'Red text', 'Text colours', 'divider',
       'Bold', 'Italic', 'Strikethrough', 'divider',
       'Align left', 'Align center', 'Align right', 'divider',
       'Clear cells',
@@ -74,15 +87,92 @@ describe('when the toolbar shows', () => {
   })
 })
 
+// The last colours live in the module for the window, so this block runs first in the file: it reads the start values.
+describe('the Fill and Text buttons and their palettes (YAZ-3803, demo round 1 decisions 1 and 12)', () => {
+  it('start with yellow and red; the icon applies the last colour, in one undo step', async () => {
+    const { crepe, view } = await mount(TABLE)
+    const before = getMarkdownForSave(crepe)
+    await select(view, [1, 0], [2, 1])
+    expect(barOf(view, 'Fill yellow')).toBe('var(--table-fill-solid-yellow)')
+    expect(barOf(view, 'Red text')).toBe('var(--table-text-red)')
+    button(view, 'Fill yellow').click()
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 yellow -->\n`)
+    button(view, 'Red text').click()
+    expect(getMarkdownForSave(crepe)).toContain('color A2:B3 red')
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 yellow -->\n`)
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('each palette lists its clear item first, labeled, then solid swatches', async () => {
+    const { view } = await mount(TABLE)
+    await select(view, [1, 0], [2, 1])
+    const items = (arrow: string) => [...paletteOf(view, arrow).querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))
+    expect(items('Fill colours')).toEqual(['No fill', 'Yellow', 'Green', 'Blue', 'Pink'])
+    expect(items('Text colours')).toEqual(['Default colour', 'Red', 'Orange', 'Green', 'Blue', 'Grey'])
+    expect(paletteOf(view, 'Fill colours').querySelector('button')!.textContent).toBe('No fill')
+    expect(paletteOf(view, 'Text colours').querySelector('button')!.textContent).toBe('Default colour')
+    const swatch = (arrow: string, label: string) =>
+      paletteOf(view, arrow).querySelector<HTMLElement>(`button[aria-label="${label}"] .cell-toolbar__swatch`)!.style.background
+    expect(swatch('Fill colours', 'Pink')).toBe('var(--table-fill-solid-pink)')
+    expect(swatch('Text colours', 'Grey')).toBe('var(--table-text-grey)')
+  })
+
+  it('a palette item applies its colour and becomes the last colour; the clear items do not change it', async () => {
+    const { crepe, view } = await mount(TABLE)
+    const before = getMarkdownForSave(crepe)
+    await select(view, [1, 0], [2, 1])
+    pick(view, 'Fill colours', 'Green')
+    expect(isOpen(view, 'Fill colours')).toBe(false)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 green -->\n`)
+    expect(barOf(view, 'Fill green')).toBe('var(--table-fill-solid-green)')
+    pick(view, 'Fill colours', 'No fill')
+    expect(getMarkdownForSave(crepe)).toBe(before)
+    button(view, 'Fill green').click()
+    expect(getMarkdownForSave(crepe)).toContain('fill A2:B3 green')
+    pick(view, 'Text colours', 'Blue')
+    expect(barOf(view, 'Blue text')).toBe('var(--table-text-blue)')
+    pick(view, 'Text colours', 'Default colour')
+    expect(getMarkdownForSave(crepe)).not.toContain('color')
+    expect(barOf(view, 'Blue text')).toBe('var(--table-text-blue)')
+    // One undo step per click: Default colour, Blue, Fill green, No fill, Green.
+    for (let i = 0; i < 5; i++) undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('one palette open at a time; it closes on Escape, on a second click of ▾ and when the toolbar hides', async () => {
+    const { view } = await mount(TABLE)
+    await select(view, [1, 0], [2, 1])
+    button(view, 'Fill colours').click()
+    expect(isOpen(view, 'Fill colours')).toBe(true)
+    button(view, 'Text colours').click()
+    expect(isOpen(view, 'Fill colours')).toBe(false)
+    expect(isOpen(view, 'Text colours')).toBe(true)
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    view.dom.dispatchEvent(escape)
+    expect(isOpen(view, 'Text colours')).toBe(false)
+    expect(escape.defaultPrevented).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(CellSelection)
+    button(view, 'Fill colours').click()
+    button(view, 'Fill colours').click()
+    expect(isOpen(view, 'Fill colours')).toBe(false)
+    button(view, 'Fill colours').click()
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 1, 0) + 2)))
+    await settle()
+    expect(isOpen(view, 'Fill colours')).toBe(false)
+  })
+})
+
 describe('each button acts on every selected cell, in one undo step', () => {
   it('Fill and No fill', async () => {
     const { crepe, view } = await mount(TABLE)
     const before = getMarkdownForSave(crepe)
     await select(view, [1, 0], [2, 1])
-    button(view, 'Fill blue').click()
+    pick(view, 'Fill colours', 'Blue')
     expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 blue -->\n`)
     expect(view.state.selection).toBeInstanceOf(CellSelection)
-    button(view, 'No fill').click()
+    pick(view, 'Fill colours', 'No fill')
     expect(getMarkdownForSave(crepe)).toBe(before)
     undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toContain('fill A2:B3 blue')
@@ -94,9 +184,9 @@ describe('each button acts on every selected cell, in one undo step', () => {
     const { crepe, view } = await mount(TABLE)
     const before = getMarkdownForSave(crepe)
     await select(view, [0, 0], [1, 1])
-    button(view, 'Red text').click()
+    pick(view, 'Text colours', 'Red')
     expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: color A1:B2 red -->\n`)
-    button(view, 'Default text colour').click()
+    pick(view, 'Text colours', 'Default colour')
     expect(getMarkdownForSave(crepe)).toBe(before)
     undo(view.state, view.dispatch)
     undo(view.state, view.dispatch)

@@ -9,6 +9,7 @@ import { clipboardPlainText } from './clipboardPlainText'
 import { eachVisibleTextblock } from './lineSelection'
 import { rowShortcuts } from './noteKeys'
 import { getZoomedItemPos } from './outline/zoom'
+import type { FillColor, TextColor } from './table/tableStyle'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 
 export const CLIPBOARD_EMPTY_PARAGRAPH = 'data-mdapp-empty-paragraph'
@@ -122,6 +123,48 @@ const copyVisible: Command = (state, dispatch) => {
 
 export const copyVisibleHotkey = $shortcut((ctx) => rowShortcuts(ctx, 'note.copyVisible', 'CopyWithoutFoldedLines', { onRun: () => copyVisible }))
 
+/**
+ * A copied cell's colours in the light theme (YAZ-3802): the text colours of table.css `:root`, and each
+ * fill's see-through wash (app.css `--mark-bg*`) as it shows over white, because Docs needs a solid colour.
+ */
+const COPY_FILL: Record<FillColor, string> = { yellow: '#ffee99', green: '#c2ecd0', blue: '#c2deff', pink: '#ffd0e5' }
+const COPY_TEXT: Record<TextColor, string> = { red: '#c0392b', orange: '#b45309', green: '#2e7d32', blue: '#1d5fbf', grey: '#6b6b6b' }
+
+/**
+ * Inline styles on copied tables (YAZ-3802, demo round 1 decision 13): Google Docs and Sheets read
+ * only these, so the lines, fills, text colours and the bold header show there. A paste into this
+ * app reads the cells' `data-fill` / `data-color` and ignores the styles.
+ */
+function styleTables(dom: DocumentFragment): void {
+  for (const table of dom.querySelectorAll('table')) table.style.borderCollapse = 'collapse'
+  for (const cell of dom.querySelectorAll<HTMLElement>('th, td')) {
+    cell.style.border = '1px solid #999'
+    cell.style.padding = '4px 8px'
+    if (cell.tagName === 'TH') cell.style.fontWeight = 'bold'
+    const fill = COPY_FILL[cell.dataset.fill as FillColor]
+    if (fill !== undefined) cell.style.backgroundColor = fill
+    const color = COPY_TEXT[cell.dataset.color as TextColor]
+    if (color !== undefined) cell.style.color = color
+  }
+}
+
+/**
+ * Copied CELLS are rows: ProseMirror wraps them in a `<table>` of its own after the serializer (its
+ * `wrapMap`), made by the detached document it hands the serializer for this one copy. So that
+ * document's tables are made collapsed too. Never the page's own document.
+ */
+const collapsing = new WeakSet<Document>()
+function collapseTablesOf(doc: Document | undefined): void {
+  if (doc === undefined || doc === document || collapsing.has(doc)) return
+  collapsing.add(doc)
+  const create = doc.createElement.bind(doc)
+  doc.createElement = ((tag: string, options?: ElementCreationOptions) => {
+    const el = create(tag, options)
+    if (tag === 'table') el.style.borderCollapse = 'collapse'
+    return el
+  }) as Document['createElement']
+}
+
 /** Copy-only formats: readable text, rich HTML and explicitly requested Markdown; saves stay unchanged. */
 export const clipboardCopyOut = $prose((ctx) => {
   let copyMarkdown: ((slice: Slice, view: EditorView) => string) | undefined
@@ -150,6 +193,8 @@ export const clipboardCopyOut = $prose((ctx) => {
     clipboardSerializer.serializeFragment = (fragment, options, target) => {
       const dom = serializeFragment(fragment, options, target)
       dom.firstElementChild?.setAttribute(APP_CLIPBOARD, 'true')
+      if (dom instanceof DocumentFragment) styleTables(dom)
+      collapseTablesOf(options?.document)
       return dom
     }
     return {
