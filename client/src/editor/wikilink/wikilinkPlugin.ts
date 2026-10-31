@@ -371,6 +371,49 @@ function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Se
   })
 }
 
+/**
+ * A link of a textblock that shows as a pill (YAZ-3744 S9): its range, the ranges it hides (`wikilink__syntax`: the
+ * brackets, an ID, an alias's target, hidden folders and extensions, each `#`), and the title an ID link shows in place
+ * of its ID (the widget at `from + 2`), else null.
+ */
+export interface PillLink {
+  from: number
+  to: number
+  hidden: readonly (readonly [number, number])[]
+  title: string | null
+}
+
+/** The class an inline decoration puts on its text. `attrs` is ProseMirror's own field: the typings leave it out. */
+const decorationClass = (decoration: Decoration): string | undefined =>
+  (decoration as unknown as { type: { attrs?: { class?: string } } }).type.attrs?.class
+
+/**
+ * The pills of one textblock at `pos`, drawn by `decorate` itself, so they hide exactly what the note hides. For ⌘F
+ * (`findInPage.ts`). A link the selection opens (`decorateBlock`'s reveal rule) is plain text and left out, and so is
+ * a link with nothing to show.
+ */
+export function pillLinks(block: ProseNode, pos: number, sel: Selection, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): PillLink[] {
+  if (!block.textContent.includes('[[')) return []
+  const pills: PillLink[] = []
+  eachPlainRun(block, pos + 1, (text, runPos) => {
+    for (const m of text.matchAll(WIKILINK_RE)) {
+      if (m[1] === '!') continue
+      const from = runPos + m.index
+      const to = from + m[0].length
+      if (showsTitle(m[2], source) ? sel.from > from && sel.to < to : touches(sel, from, to)) continue
+      const drawn: Decoration[] = []
+      decorate(drawn, from, m[2], source, viewOnly)
+      if (drawn.length === 0) continue
+      const hidden = drawn.filter((d) => d.from < d.to && decorationClass(d) === WIKILINK_SYNTAX_CLASS).map((d) => [d.from, d.to] as const)
+      const title = drawn.some((d) => d.from === d.to)
+        ? (idLinkTitle(linkPageName(m[2]), source.resolve, pathTitles(source.records, source.folders)) ?? null)
+        : null
+      pills.push({ from, to, hidden, title })
+    }
+  })
+  return pills
+}
+
 function build(state: EditorState, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook): DecorationSet {
   const decorations: Decoration[] = []
   state.doc.descendants((node, pos) => {

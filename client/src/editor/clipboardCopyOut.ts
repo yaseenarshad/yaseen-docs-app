@@ -107,6 +107,12 @@ const visibleSlice = (state: EditorState, range: CopyRange | null): { slice: Sli
 /** Without folded lines' toast (YAZ-3653): the host's notice, or none (a preview, a test). */
 export const copyNoticeCtx = createSlice<((text: string) => void) | null, 'copyNotice'>(null, 'copyNotice')
 
+/**
+ * How a plain-text copy names a text's `[[links]]` (YAZ-3744 S8): as the note shows them, an ID link with its ID.
+ * createCrepe gives the editor's link sources; none (a bare mount) copies links as written.
+ */
+export const copyLinkTextCtx = createSlice<((text: string) => string) | null, 'copyLinkText'>(null, 'copyLinkText')
+
 /** What the toast says: the lines a copy left out, so a copy that dropped them reads as meant. */
 const copiedText = (left: number): string =>
   left === 0 ? 'Copied. Nothing in it was folded' : `Copied, ${left} folded line${left === 1 ? '' : 's'} left out`
@@ -180,6 +186,8 @@ function collapseTablesOf(doc: Document | undefined): void {
 
 /** Copy-only formats: readable text, rich HTML and explicitly requested Markdown; saves stay unchanged. */
 export const clipboardCopyOut = $prose((ctx) => {
+  // Read at each copy: the app's own HTML flavour keeps the raw links, so a paste into a note keeps them (S8).
+  const plainText = (slice: Slice) => clipboardPlainText(slice, (ctx.isInjected(copyLinkTextCtx) ? ctx.get(copyLinkTextCtx) : null) ?? undefined)
   let copyMarkdown: ((slice: Slice, view: EditorView) => string) | undefined
   ctx.update(editorViewOptionsCtx, (prev) => {
     const stock = ctx.get(prosePluginsCtx).find((plugin) => plugin.props.clipboardTextSerializer)
@@ -213,7 +221,7 @@ export const clipboardCopyOut = $prose((ctx) => {
     return {
       ...prev,
       clipboardSerializer,
-      clipboardTextSerializer: clipboardPlainText,
+      clipboardTextSerializer: plainText,
     }
   })
   return new Plugin({
@@ -239,7 +247,7 @@ export const clipboardCopyOut = $prose((ctx) => {
         }
         if (view.state.selection.empty) return ''
         const slice = view.state.selection.content()
-        return mode === 'plain' ? clipboardPlainText(slice) : copyMarkdown?.(slice, view) ?? ''
+        return mode === 'plain' ? plainText(slice) : copyMarkdown?.(slice, view) ?? ''
       })
       return { destroy: () => unsubscribe?.() }
     },
