@@ -32,8 +32,8 @@
  *    quote), whose format wins, with one space between two words; an empty line just goes; a removed
  *    bullet's children keep their place on screen; a fold the lines would move into opens, and ⌘Z
  *    closes it again (`foldReveal.ts`). Into a code block or a table, or at the top of a zoom, nothing
- *    happens; a rule next to the caret is selected; at the top of the note a bullet lifts and a heading
- *    becomes text. Crepe's `joinBackward` produced stray `* * child` lists, second paragraphs and bigger
+ *    happens; a rule next to the caret is selected; at the top of the note an empty line goes, a bullet
+ *    lifts and a heading becomes text. Crepe's `joinBackward` produced stray `* * child` lists, second paragraphs and bigger
  *    headings, and joined text into hidden lines.
  */
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -341,7 +341,8 @@ const besideLeaf = (state: EditorState, dispatch: ((tr: Transaction) => void) | 
  * Backspace (and ⇧⌫, ⌃H, ⌥⌫, ⌘⌫) at the START of an item's first block, of a top-level heading or of a top-level
  * paragraph (D5, D6, YAZ-3780): join into the previous VISIBLE line, never a hidden one. No space right after an Enter,
  * so undoing a slip gives the word back (D7). A rule above is selected (an empty caret line goes first). At the top of the note an item lifts to a
- * paragraph (GRO-2012), a heading becomes a paragraph and a paragraph declines; at the top of a zoom nothing happens.
+ * paragraph (GRO-2012), an empty line goes and the next line moves up (YAZ-3798), a heading becomes a paragraph and a
+ * paragraph declines; at the top of a zoom nothing happens.
  * Mid-line it declines: native deletion.
  */
 const backspaceCommand = (itemType: NodeType, paragraphType: NodeType): Command => (state, dispatch, view) => {
@@ -354,6 +355,10 @@ const backspaceCommand = (itemType: NodeType, paragraphType: NodeType): Command 
   if ($prev === null) {
     if (getZoomedItemPos(state) !== null) return true
     if (inItem) return liftListItem(itemType)(state, dispatch)
+    // An empty line at the top of the note just goes: the next line moves up with its format and fold (YAZ-3798).
+    const $next = isEmptyLine($from) ? nextVisibleTextblock(state, $from, 1) : null
+    if ($next instanceof NodeSelection) return besideLeaf(state, dispatch, $from, $next)
+    if ($next !== null) return joinLines(state, dispatch, $from, $next, false)
     return $from.parent.type !== paragraphType && setBlockType(paragraphType)(state, dispatch)
   }
   return joinLines(state, dispatch, $prev, $from, !(view !== undefined && enterBefore.get(view)?.previous === true))

@@ -808,6 +808,7 @@ const UNDO_ROWS: UndoRow[] = [
   ['3F Delete in an empty bullet above a code block', '* a\n*\n\n```\ncode\n```\n', null, null, (c) => (select(c, posOf(c, 'a') + 5), press(c, 'Delete'))],
   ['3F Delete above a rule', 'text\n\n---\n\nafter\n', null, (c) => insertEmptyParagraph(c, posOf(c, 'text') + 5), (c) => press(c, 'Delete')],
   ['3F Backspace below a rule', 'text\n\n---\n\nafter\n', null, (c) => insertEmptyParagraph(c, posOf(c, 'after') - 1), (c) => press(c, 'Backspace')],
+  ['6C Backspace on an empty top line', '## Sec\n\nhidden\n\n## Next\n', 'Sec', toTop, (c) => press(c, 'Backspace')],
   ['3H Delete in a quote', '> one\n>\n> two\n', null, null, (c) => (caretIn(c, 'one'), press(c, 'Delete'))],
 ]
 
@@ -1034,6 +1035,67 @@ describe('YAZ-3695 round 1 bugs', () => {
     press(crepe, 'Backspace')
     expect(md(crepe)).toBe('* a\n  * ak b\n  * c\n    * ck\n')
     expect(isOpen(root, 'c')).toBe(true)
+  })
+})
+
+describe('YAZ-3695 6C. Backspace on an empty line at the top of the note removes it (YAZ-3798)', () => {
+  it('a folded heading below moves up, stays folded, and gets the caret at its start', async () => {
+    const { crepe, root } = await mount('## Plan for May\n\nfirst hidden line\n\n## Next Section\n')
+    fold(root, 'Plan for May')
+    toTop(crepe)
+    expect(press(crepe, 'Backspace')).toBe(true)
+    expect(md(crepe)).toBe('## Plan for May\n\nfirst hidden line\n\n## Next Section\n')
+    expect(isFolded(root, 'Plan for May')).toBe(true)
+    expect(caretPos(crepe)).toBe(posOf(crepe, 'Plan for May'))
+  })
+
+  it('an open heading below stays open', async () => {
+    const { crepe, root } = await mount('## Plan for May\n\nbody\n')
+    toTop(crepe)
+    press(crepe, 'Backspace')
+    expect(md(crepe)).toBe('## Plan for May\n\nbody\n')
+    expect(isOpen(root, 'Plan for May')).toBe(true)
+  })
+
+  it('a paragraph or a bullet below moves up with its format', async () => {
+    const para = await mount('text below\n')
+    toTop(para.crepe)
+    press(para.crepe, 'Backspace')
+    expect(md(para.crepe)).toBe('text below\n')
+    expect(caretPos(para.crepe)).toBe(posOf(para.crepe, 'text below'))
+    const bullet = await mount(AKB)
+    fold(bullet.root, 'a')
+    toTop(bullet.crepe)
+    press(bullet.crepe, 'Backspace')
+    expect(md(bullet.crepe)).toBe(AKB)
+    expect(isFolded(bullet.root, 'a')).toBe(true)
+  })
+
+  it('a rule below: the empty line goes and the rule is selected', async () => {
+    const { crepe } = await mount('---\n\nafter\n')
+    const before = md(crepe)
+    toTop(crepe)
+    press(crepe, 'Backspace')
+    expect(md(crepe)).toBe(before)
+    expect(crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.selection instanceof NodeSelection)).toBe(true)
+  })
+
+  it('Enter at the start of the top line, then Backspace on the new empty line: back as it was', async () => {
+    const { crepe, root } = await mount('## Plan for May\n\nbody\n')
+    fold(root, 'Plan for May')
+    caretIn(crepe, 'Plan', 0)
+    press(crepe, 'Enter')
+    select(crepe, 1)
+    press(crepe, 'Backspace')
+    expect(md(crepe)).toBe('## Plan for May\n\nbody\n')
+    expect(isFolded(root, 'Plan for May')).toBe(true)
+  })
+
+  it('the only line of the note: nothing happens', async () => {
+    const { crepe } = await mount('')
+    select(crepe, 1)
+    expect(press(crepe, 'Backspace')).toBe(false)
+    expect(viewOf(crepe).state.doc.childCount).toBe(1)
   })
 })
 
