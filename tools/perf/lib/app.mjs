@@ -132,6 +132,23 @@ export function usage(pids) {
   )
 }
 
+/** `footprint -f bytes` output → MB per pid: macOS's physical footprint (Activity Monitor's Memory column). */
+export function parseFootprint(text) {
+  return new Map([...text.matchAll(/\[(\d+)\]: \d+-bit\s+Footprint: (\d+) B/g)].map(([, pid, bytes]) => [Number(pid), Math.round(Number(bytes) / 104857.6) / 10]))
+}
+
+/**
+ * The physical footprint of each pid (MB). Unlike RSS it counts compressed pages and leaves out clean and
+ * reclaimable ones, so it does not swing with the Mac's memory pressure (YAZ-3862). A pid that is gone is left out.
+ */
+export function footprints(pids) {
+  try {
+    return parseFootprint(execFileSync('footprint', ['-f', 'bytes', '--noCategories', ...pids.flatMap((p) => ['-p', String(p)])], { stdio: ['ignore', 'pipe', 'ignore'] }).toString())
+  } catch (e) {
+    return parseFootprint(e.stdout?.toString() ?? '')
+  }
+}
+
 /**
  * Starts `bin` on `profile`. `spawnedAt` is epoch ms. Main runs with `--inspect=0` so the harness can
  * read main's own clock and call `app.quit()` (the ⌘Q path) — on every build alike, so A/B stays fair.

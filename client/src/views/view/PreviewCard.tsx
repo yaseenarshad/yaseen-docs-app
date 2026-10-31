@@ -34,18 +34,28 @@ interface CacheEntry {
   content: Promise<FileResponse>
 }
 
+/** How many bodies the cache keeps, least recently hovered out first (YAZ-3737): a long hover session must not keep every note it showed. */
+export const PREVIEW_CACHE_LIMIT = 50
+
 const cache = new Map<string, CacheEntry>()
 
 function readCached(record: IndexRecord): Promise<FileResponse> {
   const hit = cache.get(record.path)
-  if (hit !== undefined && hit.mtime === record.mtime) return hit.content
+  if (hit !== undefined && hit.mtime === record.mtime) {
+    // Map iterates in insertion order: re-set to move the hit to the back, the most recently seen.
+    cache.delete(record.path)
+    cache.set(record.path, hit)
+    return hit.content
+  }
   const entry: CacheEntry = { mtime: record.mtime, content: api.readFile(record.path) }
   // Consumers handle the failure; this both silences the unhandled-rejection noise and un-caches
   // the rejection so the next hover reads again. Only THIS entry goes — a newer read may have won.
   entry.content.catch(() => {
     if (cache.get(record.path) === entry) cache.delete(record.path)
   })
+  cache.delete(record.path)
   cache.set(record.path, entry)
+  if (cache.size > PREVIEW_CACHE_LIMIT) cache.delete(cache.keys().next().value as string)
   return entry.content
 }
 

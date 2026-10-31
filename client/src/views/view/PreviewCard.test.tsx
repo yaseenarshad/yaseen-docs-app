@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
-import { CLOSE_GRACE_MS, OPEN_DELAY_MS, usePreview, _resetPreviewCache } from './PreviewCard'
+import { CLOSE_GRACE_MS, OPEN_DELAY_MS, PREVIEW_CACHE_LIMIT, usePreview, _resetPreviewCache } from './PreviewCard'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -195,6 +195,27 @@ describe('the content cache', () => {
     _resetPreviewCache()
     await cycle(rec({ mtime: 2 }))
     expect(readFile).toHaveBeenCalledTimes(3)
+  })
+
+  it(`keeps at most PREVIEW_CACHE_LIMIT bodies (YAZ-3737): the least recently hovered is read again`, async () => {
+    const records = Array.from({ length: PREVIEW_CACHE_LIMIT + 1 }, (_, i) => rec({ path: `/vault/n${i}.md` }))
+    mount(records)
+    const hover = async (record: IndexRecord) => {
+      enter(row(record.path))
+      await advance(OPEN_DELAY_MS)
+      leave(row(record.path))
+      await advance(CLOSE_GRACE_MS)
+    }
+    await hover(records[0])
+    for (const r of records.slice(2)) await hover(r)
+    await hover(records[0]) // a hit: n0 is now the most recently seen, so n2 is the oldest
+    await hover(records[1]) // the 51st body: n2 goes
+    expect(readFile).toHaveBeenCalledTimes(PREVIEW_CACHE_LIMIT + 1)
+    await hover(records[0])
+    expect(readFile).toHaveBeenCalledTimes(PREVIEW_CACHE_LIMIT + 1)
+    await hover(records[2])
+    expect(readFile).toHaveBeenCalledTimes(PREVIEW_CACHE_LIMIT + 2)
+    expect(readFile).toHaveBeenLastCalledWith('/vault/n2.md')
   })
 })
 

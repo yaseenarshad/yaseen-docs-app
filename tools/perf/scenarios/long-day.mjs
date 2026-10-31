@@ -2,8 +2,11 @@
  * long-day (YAZ-3861, YAZ-3737 D7, S11, S12): one window works through a day of tabs, and its memory must come
  * back down. `--cycles` cycles (default 10); each opens 20 kept tabs (a double click on the tree row), switches
  * tabs, types, opens and hides the right panel, then closes every tab it opened (`button.tabbar__close`, not ⌘W).
- * After each cycle: GC 3 times, then the renderer's JS heap (and its workers' heaps), the RSS summed over EVERY renderer helper of the app
- * (draw.io runs on `app://drawio`, maybe in its own process) and main's JS heap after GC (S12).
+ * After each cycle: GC 3 times, then the renderer's JS heap (and its workers' heaps), the RSS and the
+ * physical footprint summed over EVERY renderer helper of the app (draw.io runs on `app://drawio`, in its own process while
+ * a diagram is open) and main's JS heap after GC (S12). The run ends idle: it waits for the TS worker to stop (2 min after the
+ * last code tab closes, YAZ-3862), then 30 s more, then one more sample. The `…EndMb` numbers are that one, the
+ * `…LastCycleMb` ones the last cycle's.
  * Before the cycles, S11: the base cost of a window with no tab and one with one tab on the same vault, and of a
  * window on an empty vault; the gap is what the vault's index and tree cost each window.
  *
@@ -16,7 +19,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { sentinel, writeCode, writeDrawing, writeNote, writeVault } from '../genVault.mjs'
-import { helpers, sleep, usage } from '../lib/app.mjs'
+import { footprints, helpers, sleep, usage } from '../lib/app.mjs'
 import { ACTIVE, js, painted, row, session, tab } from '../lib/session.mjs'
 import { slope } from '../lib/stats.mjs'
 import { CODE_SHOWN, writeBigCode } from './bigCode.mjs'
@@ -75,10 +78,20 @@ export function setup(dir, { cycles = 10, snapshots = null } = {}) {
   }
 }
 
-/** The four numbers a leak shows in, from the heap after GC of each cycle (MB): start is cycle 1, after the first loads. */
+/**
+ * The cycles the ratio leaves out (YAZ-3862): V8 compiles the app's code over the first cycles. In the before run
+ * that compiled code was +5.9 MB of the +6.6 MB from cycle 1 to 10 (YAZ-3861 snapshots), so a ratio from cycle 1
+ * failed on code, not data. From cycle 3 on the heap grows less than 0.5 MB per cycle.
+ */
+export const WARM_CYCLES = 2
+
+/**
+ * The numbers a leak shows in, from the heap after GC of each cycle (MB). The ratio's start is the heap after the
+ * warm cycles (cycle 3; the last one when there are fewer). The slope, the main leak signal, takes every cycle.
+ */
 export function leakMetrics(heapsMb) {
-  const [start, end] = [heapsMb[0], heapsMb.at(-1)]
-  return { heapStartMb: start, heapEndMb: end, heapEndOverStartRatio: end / start, heapSlopeMbPerCycle: slope(heapsMb) }
+  const [first, start, end] = [heapsMb[0], heapsMb[Math.min(WARM_CYCLES, heapsMb.length - 1)], heapsMb.at(-1)]
+  return { heapCycle1Mb: first, heapStartMb: start, heapEndMb: end, heapEndOverStartRatio: end / start, heapSlopeMbPerCycle: slope(heapsMb) }
 }
 
 /** In the page: true once `f` is on screen in the tab in front. */
@@ -159,12 +172,20 @@ async function cycle(page, files, n) {
   await closeAll(page, files)
 }
 
-/** RSS summed over every renderer helper of the app, how many there are, and the RSS of the window's own one (`pid`). */
+/**
+ * RSS and physical footprint summed over every renderer helper of the app, how many there are, and the window's own
+ * one (`pid`). On macOS, RSS swings with memory pressure (compressed pages leave it); the footprint does not (YAZ-3862).
+ */
 function renderers(mainPid, windowPid) {
   const pids = helpers(mainPid).filter((h) => h.type === 'renderer').map((h) => h.pid)
   const rss = usage(pids)
-  return { rendererRssMb: Math.round([...rss.values()].reduce((a, u) => a + u.rssMb, 0) * 10) / 10, renderers: rss.size, windowRssMb: rss.get(windowPid)?.rssMb ?? null }
+  const foot = footprints(pids)
+  const sum = (m, key) => Math.round([...m.values()].reduce((a, v) => a + (key ? v[key] : v), 0) * 10) / 10
+  return { rendererRssMb: sum(rss, 'rssMb'), rendererFootprintMb: sum(foot), renderers: rss.size, windowRssMb: rss.get(windowPid)?.rssMb ?? null, windowFootprintMb: foot.get(windowPid) ?? null }
 }
+
+/** How long the end of the run sits idle after the TS worker stopped: macOS gets a stopped worker's memory back 15 to 30 s later (YAZ-3862). */
+const SETTLE_MS = 30_000
 
 /** A session's JS heap after GC (MB): 3 collections, then `Runtime.getHeapUsage`. */
 async function heapAfterGc(s, times = 3) {
@@ -186,6 +207,20 @@ async function watchWorkers(page) {
   page.on('Target.detachedFromTarget', ({ sessionId }) => workers.delete(sessionId))
   await page.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true })
   return workers
+}
+
+/**
+ * Waits until the page has no TS worker, at most `TS_WORKER_WAIT_MS`: the app stops it 2 min after the last code tab
+ * closes (YAZ-3862, `client/src/code/tsWorkerStop.ts`). Returns the seconds it took, or null when it is still there.
+ */
+const TS_WORKER_WAIT_MS = 150_000
+async function tsWorkerStop(workers) {
+  const t0 = performance.now()
+  while ([...workers.values()].some((url) => url.includes('tsWorker'))) {
+    if (performance.now() - t0 > TS_WORKER_WAIT_MS) return null
+    await sleep(250)
+  }
+  return Math.round((performance.now() - t0) / 100) / 10
 }
 
 /** The workers' JS heap after GC, summed (MB), and how many there are. A worker that ends mid-read is left out. */
@@ -283,17 +318,30 @@ export async function run(app, fx) {
       if (snapshots !== null && (n === 1 || n === cycles)) await snapshot(page, path.join(snapshots, `cycle-${n}.heapsnapshot`))
     }
     const last = series.at(-1)
+    // The end, every tab closed: the TS worker stops, then SETTLE_MS more idle.
+    const tsWorkerStopSec = await tsWorkerStop(workers)
+    await sleep(SETTLE_MS)
+    const settled = { tsWorkerStopSec, ...(await sample(proc, page, windowPid, workers)) }
+    console.error(`long-day settled: ${JSON.stringify(settled)}`)
     return {
       ...leakMetrics(series.map((s) => s.heapMb)),
       heapBeforeCyclesMb: before.heapMb,
       rendererRssBeforeCyclesMb: before.rendererRssMb,
+      rendererFootprintBeforeCyclesMb: before.rendererFootprintMb,
       rendererRssStartMb: series[0].rendererRssMb,
-      rendererRssEndMb: last.rendererRssMb,
+      rendererRssLastCycleMb: last.rendererRssMb,
+      rendererRssEndMb: settled.rendererRssMb,
+      rendererFootprintStartMb: series[0].rendererFootprintMb,
+      rendererFootprintLastCycleMb: last.rendererFootprintMb,
+      rendererFootprintEndMb: settled.rendererFootprintMb,
+      rendererFootprintSlopeMbPerCycle: slope(series.map((s) => s.rendererFootprintMb)),
+      heapSettledMb: settled.heapMb,
+      windowFootprintEndMb: settled.windowFootprintMb,
       rendererRssSlopeMbPerCycle: slope(series.map((s) => s.rendererRssMb)),
-      renderersEnd: last.renderers,
-      windowRssEndMb: last.windowRssMb,
-      workerHeapEndMb: last.workerHeapMb,
-      workersEnd: last.workers,
+      renderersEnd: settled.renderers,
+      windowRssEndMb: settled.windowRssMb,
+      workerHeapEndMb: settled.workerHeapMb,
+      workersEnd: settled.workers,
       domNodesEnd: last.domNodes,
       documentsEnd: last.documents,
       listenersEnd: last.listeners,
@@ -301,7 +349,7 @@ export async function run(app, fx) {
       mainHeapEndMb: last.mainHeapMb,
       mainHeapSlopeMbPerCycle: slope(series.map((s) => s.mainHeapMb)),
       ...s11,
-      series,
+      series: [...series, { cycle: 'settled', ...settled }],
     }
   })
 }

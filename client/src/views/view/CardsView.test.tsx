@@ -292,6 +292,22 @@ describe('covers', () => {
     expect([...el.querySelectorAll('img.view-card__cover')]).toHaveLength(2)
   })
 
+  it('the cover cache is bounded (YAZ-3737): past 100 covers the least recently seen is read again', async () => {
+    const { api } = await import('../../api')
+    const many = Array.from({ length: 101 }, (_, i) => `pic-${i}.png`)
+    for (const ref of many) assetRefs.add(ref)
+    const { el } = mount(WITH_IMAGE, { records: many.map((ref, i) => cover(`n${i}`, { cover: `[[${ref}]]` })) })
+    await settle()
+    expect(api.readAsset).toHaveBeenCalledTimes(101)
+    expect(el.querySelectorAll('img.view-card__cover')).toHaveLength(101)
+    unmount()
+    vi.mocked(api.readAsset).mockClear()
+    mount(WITH_IMAGE, { records: [cover('first', { cover: '[[pic-0.png]]' }), cover('last', { cover: '[[pic-100.png]]' })] })
+    await settle()
+    expect(vi.mocked(api.readAsset).mock.calls.map(([, ref]) => ref)).toEqual(['pic-0.png'])
+    for (const ref of many) assetRefs.delete(ref)
+  })
+
   it('imageFit and imageAspectRatio land as CSS custom properties; the defaults are cover and 1', async () => {
     const { el } = mount(WITH_IMAGE, { records: COVER_RECORDS })
     await settle()
