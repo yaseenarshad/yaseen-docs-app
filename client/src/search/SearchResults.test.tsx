@@ -33,12 +33,12 @@ const dir = (name: string, folder = ''): SearchCandidate => ({
 let reactRoot: Root | null = null
 let container: HTMLElement | null = null
 
-function render(results: SearchCandidate[], selected = 0) {
+function render(results: SearchCandidate[], selected = 0, query = '') {
   const props = { onSelect: vi.fn(), onActivate: vi.fn(), onRowContextMenu: vi.fn() }
   container = document.createElement('div')
   document.body.appendChild(container)
   reactRoot = createRoot(container)
-  act(() => reactRoot?.render(<StrictMode><SearchResults results={results} selected={selected} {...props} /></StrictMode>))
+  act(() => reactRoot?.render(<StrictMode><SearchResults results={results} query={query} selected={selected} {...props} /></StrictMode>))
   return { el: container, ...props }
 }
 
@@ -53,6 +53,12 @@ afterEach(() => {
 })
 
 describe('SearchResults (YAZ-803)', () => {
+  it('YAZ-3748 B3: each label marks the parts the query matched, as the search tree does: a word match marks each word', () => {
+    const { el } = render([cand('Working Log'), cand('Working-Log'), cand('Yaseen-Eval-Work-Workinglog')], 0, 'working log')
+    expect(rows(el).map((r) => [...r.querySelectorAll('.search-results__label .tree__mark')].map((m) => m.textContent))).toEqual([['Working Log'], ['Working', 'Log'], ['Workinglog']])
+    expect(rows(el)[1].querySelector('.search-results__label')?.textContent).toBe('Working-Log') // the hyphen stays, plain
+  })
+
   it('renders one row per result, in the order given', () => {
     const { el } = render([cand('Beta'), cand('Alpha')])
     expect(rows(el).map((r) => r.querySelector('.search-results__label')?.textContent)).toEqual(['Beta', 'Alpha'])

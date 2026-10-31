@@ -71,6 +71,7 @@ describe('ShortcutPicker (YAZ-2290 D2)', () => {
     const { el } = render()
     expect(el.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Add note shortcut')
     expect(document.activeElement).toBe(input(el))
+    expect(input(el).getAttribute('spellcheck')).toBe('false') // YAZ-3748 B2: names, no red line
     // Alpha lives in Projects and Linked is already a shortcut there: neither is offered.
     expect(labels(el)).toEqual(['Health', 'Wellbeing — Health', 'Heat pump', 'Top'])
   })
