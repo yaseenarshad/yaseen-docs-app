@@ -809,6 +809,67 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
     expect(crepe().md).toBe('# Hello\n\nunsaved edit\n')
   })
 
+  /** The channel the host handed `createCrepe` (YAZ-3704 D6): the one the one-line note reads. */
+  const outsideChannel = () => {
+    const channel = createCrepeMock.mock.calls.at(-1)?.[0].outsideChanges
+    if (channel === undefined) throw new Error('no outside changes channel')
+    return channel
+  }
+
+  it('the one-line note of outside changes sits in the conflict bar\'s place and hides while that bar shows (YAZ-3704 D6)', async () => {
+    const el = await mount(FM + BODY)
+    act(() => outsideChannel().sync({ count: 2, wholeNote: false, activeIndex: -1 }))
+    expect(el.querySelector('.outside-changes-bar')?.textContent).toContain('2 outside changes in this note')
+    type('# Hello\n\nunsaved edit\n')
+    diskHas(FM + '# Someone else\n', 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(el.querySelector('.conflict-bar')?.textContent).toContain('File changed on disk.')
+    expect(el.querySelector('.outside-changes-bar')).toBeNull()
+    // Keep mine solves the conflict: the note comes back.
+    await act(async () => {
+      ;[...el.querySelectorAll<HTMLButtonElement>('.conflict-bar button')].find((b) => b.textContent === 'Keep mine')?.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    expect(el.querySelector('.outside-changes-bar')?.textContent).toContain('2 outside changes in this note')
+  })
+
+  it('an outside rewrite that rebuilds the note says "whole note"; a quiet rebuild (a copy of this tab) does not (YAZ-3704)', async () => {
+    await mount(FM + BODY)
+    const markWholeNote = vi.spyOn(outsideChannel(), 'markWholeNote')
+    applyExternalMock.mockReturnValueOnce('rebuilt')
+    diskHas(FM + '# Rewritten\n', 2)
+    diskHas(FM + '# Rewritten\n', 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(markWholeNote).toHaveBeenCalledTimes(1)
+    applyExternalMock.mockReturnValueOnce('rebuilt')
+    diskHas(FM + '# Rewritten by my other tab\n', 3)
+    diskHas(FM + '# Rewritten by my other tab\n', 3)
+    await act(async () => {
+      announceTwinSave(PATH, 3)
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(applyExternalMock).toHaveBeenLastCalledWith(expect.anything(), '# Rewritten by my other tab\n', true)
+    expect(markWholeNote).toHaveBeenCalledTimes(1)
+  })
+
+  it('the Glow setting reaches the editor through the channel and rebuilds no editor (YAZ-3704 D5)', async () => {
+    readFile.mockResolvedValueOnce({ path: PATH, content: FM + BODY, mtime: 1, size: (FM + BODY).length })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const props = { root: '/vault', path: PATH, watch, onOpenFile: openFile, commentsOrder: 'oldest' as const, onChangeCommentsOrder: noop, wikilinks: createWikilinkResolveSource(), onRetitle: noop }
+    act(() => root?.render(<Editor {...props} outsideChangeGlow="10s" />))
+    await settle()
+    await settle()
+    expect(createCrepeMock).toHaveBeenCalledTimes(1)
+    expect(outsideChannel().getGlow()).toBe('10s')
+    act(() => root?.render(<Editor {...props} outsideChangeGlow="off" />))
+    await settle()
+    expect(createCrepeMock).toHaveBeenCalledTimes(1)
+    expect(outsideChannel().getGlow()).toBe('off')
+  })
+
   it('a real body change on disk while clean still reloads the document', async () => {
     const el = await mount(FM + BODY)
     const next = FM + '# Someone else\n'

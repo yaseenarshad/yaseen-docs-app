@@ -134,11 +134,11 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tocOnByDefault', 'tableOfContents', 'tocLines']
+const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
-const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents']
+const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Table of contents', 'Outside changes']
 /** Settings › Excalidraw canvas (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
 const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
@@ -160,6 +160,7 @@ const HOTKEY_ROWS = groupsOf(HOTKEYS_SECTION, DEFAULT_CTX)
 const THREADING_HINT = 'Guide lines that connect nested bullets.'
 const TEXT_FORMATTING_HINT = 'How text looks in every note of this vault.'
 const TOC_HINT = 'The headings or the bullets of a note, at its right edge.'
+const OUTSIDE_CHANGES_HINT = 'Text that an AI or another app changed in an open note.'
 const SECTION_INDENT_HINT = 'Text stands below its heading, with lines that show the sections. Turn it on for a note from the page cog. The purple path uses the Bullet threading settings above.'
 
 describe('SettingsDialog shell (D1)', () => {
@@ -353,7 +354,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
 
     clickNav(el, 'Editor')
     expect(groupTitles(el)).toEqual(EDITOR_GROUPS)
-    expect(hints()).toEqual([THREADING_HINT, SECTION_INDENT_HINT, TOC_HINT])
+    expect(hints()).toEqual([THREADING_HINT, SECTION_INDENT_HINT, TOC_HINT, OUTSIDE_CHANGES_HINT])
     // The threading rows carry the shortened labels; the group names the feature.
     expect(['bulletThreading', 'threadWidth', 'threadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Show', 'Line width', 'Line colour'])
     for (const id of ['bulletThreading', 'threadWidth', 'threadColor']) expect(row(el, id)?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Bullet threading')
@@ -649,6 +650,26 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(onChange.mock.calls.map((call) => call[0])).toEqual([
       { ...DEFAULT_SETTINGS, sectionStep: 36 },
       { ...DEFAULT_SETTINGS, sectionLines: 'hover' },
+    ])
+  })
+
+  it('"Glow" under "Outside changes", the last group of the Editor page: four choices, Until I check it by default; a pick writes the whole object with only its field changed (YAZ-3704 D5)', () => {
+    const { el, onChange } = mountOn('Editor')
+    const group = row(el, 'outsideChangeGlow')?.closest('.settings-group')
+    expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Outside changes')
+    expect(group?.querySelector('.settings-group__hint')?.textContent).toBe(OUTSIDE_CHANGES_HINT)
+    expect(row(el, 'outsideChangeGlow')?.querySelector('.setting__label')?.textContent).toBe('Glow')
+    expect(rowButtons(el, 'outsideChangeGlow').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['Until I check it', 'true'],
+      ['10 seconds', 'false'],
+      ['1 minute', 'false'],
+      ['Off', 'false'],
+    ])
+    act(() => rowButtons(el, 'outsideChangeGlow')[2].click())
+    act(() => rowButtons(el, 'outsideChangeGlow')[3].click())
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([
+      { ...DEFAULT_SETTINGS, outsideChangeGlow: '60s' },
+      { ...DEFAULT_SETTINGS, outsideChangeGlow: 'off' },
     ])
   })
 

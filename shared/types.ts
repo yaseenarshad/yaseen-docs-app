@@ -1543,6 +1543,8 @@ export interface SettingsState {
   tableOfContentsWidth: number
   /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
   tocLines: TocLines
+  /** Settings › Editor › Outside changes (YAZ-3704 D5): how long the words that an AI or another app changed in an open note glow. `off`: no glow and no one-line note; the merge still runs. */
+  outsideChangeGlow: OutsideChangeGlow
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
   sidebarLines: TocLines
   /** The sidebar tree (YAZ-3309 D7, D8): how its level lines look — `plain` grey lines (the default), or `thread`: the bullet-threading path to the row under the mouse. It travels with the settings folder. */
@@ -1707,6 +1709,10 @@ export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
 export type TocLines = 'hover' | 'always' | 'off'
 export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
 
+/** Outside changes (YAZ-3704 D5): a glow stays until you check it, ends after 10 s or 1 min, or never shows. */
+export type OutsideChangeGlow = 'until-checked' | '10s' | '60s' | 'off'
+export const OUTSIDE_CHANGE_GLOWS: readonly OutsideChangeGlow[] = ['until-checked', '10s', '60s', 'off']
+
 /** The sidebar tree (YAZ-3309 D7, D8): the look of its level lines. */
 export type SidebarLineStyle = 'plain' | 'thread'
 export const SIDEBAR_LINE_STYLES: readonly SidebarLineStyle[] = ['plain', 'thread']
@@ -1865,6 +1871,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tocOnByDefault: true,
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
+  outsideChangeGlow: 'until-checked',
   sidebarLines: 'hover',
   sidebarLineStyle: 'plain',
   sidebarThreadColor: null,
