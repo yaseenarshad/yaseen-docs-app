@@ -241,3 +241,26 @@ describe('checker round 1 (PR #220)', () => {
     expect(lit === false || md(crepe) !== '* a\n\n  cont\n').toBe(true)
   })
 })
+
+describe('checker round 2 (PR #220)', () => {
+  it.each([
+    ['1. a\n2. b\n3. c\n', 'b', 'numberedList', '1. a\n\nb\n\n3. c\n'],
+    ['1. a\n2. b\n3. c\n', 'b', 'text', '1. a\n\nb\n\n3. c\n'],
+    ['1. a\n2. b\n3. c\n', 'a', 'numberedList', 'a\n\n2. b\n3. c\n'],
+  ] as const)('4F: %j, the lit button or T on %s: the numbered lines after it keep their numbers', async (doc, line, button, out) => {
+    const { crepe } = await mount(doc)
+    select(crepe, posOf(crepe, line), endOf(crepe, line))
+    expect(press(crepe, button)).toBe(true)
+    expect(md(crepe)).toBe(out)
+  })
+
+  it.each([
+    ['* [x] a\n\n  cont\n', 'checklist', '* [x] a\n* [ ] cont\n'],
+    ['1. a\n\n   cont\n2. b\n', 'bulletList', '1. a\n\n* cont\n\n2. b\n'],
+  ] as const)('4G: %j, %s on a bullet\'s second paragraph: a new line, and the numbers below stay', async (doc, button, out) => {
+    const { crepe } = await mount(doc)
+    select(crepe, posOf(crepe, 'cont'), endOf(crepe, 'cont'))
+    expect(press(crepe, button)).toBe(true)
+    expect(md(crepe)).toBe(out)
+  })
+})

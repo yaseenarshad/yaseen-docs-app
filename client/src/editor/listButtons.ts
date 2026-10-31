@@ -105,6 +105,17 @@ const joinNeighbours = (tr: Transaction, listPos: number): void => {
   if (canJoin(tr.doc, listPos) && tr.doc.resolve(listPos).nodeBefore?.type === list.type) tr.join(listPos)
 }
 
+/**
+ * A part of `list` (no items yet) that starts with its item `index`. A numbered part starts at the number that item
+ * shows (its `label`, which Milkdown keeps in step), so the lines after a split keep their numbers on disk (checker
+ * 4B, 4F); a bullet list's attributes are copied as they are.
+ */
+const partFrom = (list: ProseNode, index: number): ProseNode => {
+  if (!('order' in list.attrs)) return list.type.create(list.attrs)
+  const shown = Number.parseInt(String(list.child(index).attrs.label), 10)
+  return list.type.create({ ...list.attrs, order: Number.isNaN(shown) ? (list.attrs.order as number) + index : shown })
+}
+
 /** The item attributes of `kind`; a checklist line keeps its tick. */
 const itemAttrs = (kind: ListKind, item: ProseNode | null) => ({
   ...item?.attrs,
@@ -125,7 +136,8 @@ const isItemLine = ($pos: ResolvedPos, types: Types): boolean => $pos.parent.typ
 const ownItem = (tr: Transaction, types: Types, pos: number, zoomed: number | null): number => {
   const $pos = tr.doc.resolve(pos)
   if ($pos.parent.type !== types.item || $pos.index() === 0 || $pos.before() === zoomed) return pos
-  tr.split(pos, 1)
+  // A new line: no tick of the item it came from (checker 4G).
+  tr.split(pos, 1, [{ type: types.item, attrs: { ...$pos.parent.attrs, checked: null } }])
   return pos + 2
 }
 
@@ -174,8 +186,8 @@ const setKind = (tr: Transaction, types: Types, run: readonly number[], kind: Li
   const to = from + lines.length
   const lastItem = lines[lines.length - 1] - 1
   const firstItem = first - 1
-  // The numbered part after the run keeps its numbers: it starts where it stood (checker 4B).
-  if (to < list.childCount) tr.split(lastItem + tr.doc.nodeAt(lastItem)!.nodeSize, 1, [{ type: list.type, attrs: list.type === types.ordered ? { ...list.attrs, order: list.attrs.order + to } : list.attrs }])
+  // The numbered part after the run keeps its numbers (checker 4B).
+  if (to < list.childCount) tr.split(lastItem + tr.doc.nodeAt(lastItem)!.nodeSize, 1, [{ type: list.type, attrs: partFrom(list, to).attrs }])
   let listPos = $first.before(-1)
   if (from > 0) {
     tr.split(firstItem, 1)
@@ -187,7 +199,8 @@ const setKind = (tr: Transaction, types: Types, run: readonly number[], kind: Li
 
 /*
  * The two lifts of `prosemirror-schema-list`'s `liftListItem`, on a transaction already in progress (the module
- * exports only the command, which starts its own). Unchanged apart from that and the early returns.
+ * exports only the command, which starts its own). Unchanged apart from that, the early returns, and the list part
+ * after the lifted item, which keeps its numbers (`partFrom`, checker 4F).
  */
 
 /** Lift the items of `range` one level, into the list around their list; the siblings after them become their children. */
@@ -195,7 +208,7 @@ const liftToOuterList = (tr: Transaction, itemType: NodeType, range: NodeRange):
   const end = range.end
   const endOfList = range.$to.end(range.depth)
   if (end < endOfList) {
-    tr.step(new ReplaceAroundStep(end - 1, endOfList, end, endOfList, new Slice(Fragment.from(itemType.create(null, range.parent.copy())), 1, 0), 1, true))
+    tr.step(new ReplaceAroundStep(end - 1, endOfList, end, endOfList, new Slice(Fragment.from(itemType.create(null, partFrom(range.parent, range.endIndex))), 1, 0), 1, true))
     range = new NodeRange(tr.doc.resolve(range.$from.pos), tr.doc.resolve(endOfList), range.depth)
   }
   const target = liftTarget(range)
@@ -224,7 +237,7 @@ const liftOutOfList = (tr: Transaction, range: NodeRange): void => {
       start + 1,
       end - 1,
       new Slice(
-        (atStart ? Fragment.empty : Fragment.from(list.copy(Fragment.empty))).append(atEnd ? Fragment.empty : Fragment.from(list.copy(Fragment.empty))),
+        (atStart ? Fragment.empty : Fragment.from(list.copy(Fragment.empty))).append(atEnd ? Fragment.empty : Fragment.from(partFrom(list, range.endIndex))),
         atStart ? 0 : 1,
         atEnd ? 0 : 1,
       ),
