@@ -398,9 +398,9 @@ function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
 
 // ---------- the page's filters (YAZ-3564 K7) ----------
 
-/** The page's filters: one place or all, only shared keys, only changed keys. The dialog holds it and hands it in `ctx`. */
+/** The page's filters: one place, the clicks (YAZ-3747 demo), or all; only shared keys; only changed keys. The dialog holds it and hands it in `ctx`. */
 export interface HotkeyFilter {
-  scope: KeyScope | 'all'
+  scope: KeyScope | 'all' | 'clicks'
   shared: boolean
   changed: boolean
 }
@@ -409,6 +409,12 @@ export const NO_FILTER: HotkeyFilter = { scope: 'all', shared: false, changed: f
 const isFiltered = (ctx: SettingsCtx): boolean => {
   const f = ctx.hotkeyFilter ?? NO_FILTER
   return f.scope !== 'all' || f.shared || f.changed
+}
+
+/** The "Clicks" chip alone: the built-in clicks and the clicks' legend show with the changeable ones. */
+const clicksOnly = (ctx: SettingsCtx): boolean => {
+  const f = ctx.hotkeyFilter ?? NO_FILTER
+  return f.scope === 'clicks' && !f.shared && !f.changed
 }
 
 /** Whether a row shows under the filters: its place, "Shared keys only" (its key card is shared, or its key went to an App key), "Changed from default". */
@@ -420,7 +426,8 @@ function inFilter(row: KeyRow, ctx: SettingsCtx): boolean {
   return true
 }
 
-const CHIPS: readonly (KeyScope | 'all')[] = ['all', 'app', 'note', 'drawing', 'diagram', 'code', 'views']
+// "Clicks" (YAZ-3747 demo): only the click and drag cards. "Press keys to search" hears keys only.
+const CHIPS: readonly HotkeyFilter['scope'][] = ['all', 'app', 'note', 'drawing', 'diagram', 'code', 'views', 'clicks']
 
 /** The group chips and the two switches at the top of the page (K7). */
 function FilterBar({ filter, onFilter }: { filter: HotkeyFilter; onFilter: (next: HotkeyFilter) => void }) {
@@ -429,7 +436,7 @@ function FilterBar({ filter, onFilter }: { filter: HotkeyFilter; onFilter: (next
       <span className="hotkeys__chips">
         {CHIPS.map((scope) => (
           <button key={scope} type="button" className={`hotkeys__chip${filter.scope === scope ? ' hotkeys__chip--on' : ''}`} aria-pressed={filter.scope === scope} onClick={() => onFilter({ ...filter, scope })}>
-            {scope === 'all' ? 'All' : SCOPE_TITLES[scope]}
+            {scope === 'all' ? 'All' : scope === 'clicks' ? 'Clicks' : SCOPE_TITLES[scope]}
           </button>
         ))}
       </span>
@@ -1018,10 +1025,10 @@ function GestureBox({ row, ctx }: { row: GestureRow; ctx: SettingsCtx }) {
   )
 }
 
-/** Whether the click rows show under the filters (YAZ-3564 K7): no place chip, no "Shared keys only"; "Changed from default" keeps the changed ones. */
+/** Whether the click rows show under the filters (YAZ-3564 K7): All or Clicks, no "Shared keys only"; "Changed from default" keeps the changed ones. */
 function clickInFilter(ctx: SettingsCtx, changed: boolean): boolean {
   const f = ctx.hotkeyFilter ?? NO_FILTER
-  return f.scope === 'all' && !f.shared && (!f.changed || changed)
+  return (f.scope === 'all' || f.scope === 'clicks') && !f.shared && (!f.changed || changed)
 }
 
 /** The changed click rows the page shows now: "Reset all" lists them with the keys. */
@@ -1038,13 +1045,13 @@ const gestureItem = (row: GestureRow): SettingDef => ({
   render: (ctx) => <GestureBox row={row} ctx={ctx} />,
 })
 
-/** A built-in click or drag (YAZ-1679): a box like a built-in key's, its gesture as muted text. Shown while no filter stands. */
+/** A built-in click or drag (YAZ-1679): a box like a built-in key's, its gesture as muted text. Shown while no filter stands, or "Clicks" alone. */
 const tipItem = (tip: MouseTip): SettingDef => ({
   id: `hotkey-mouse-${slug(shortLabel(tip.label))}`,
   label: tip.label,
   keywords: [tip.gesture, tip.place.toLowerCase(), 'mouse', ...ROW_KEYWORDS],
   bare: true,
-  available: (ctx) => !isFiltered(ctx),
+  available: (ctx) => !isFiltered(ctx) || clicksOnly(ctx),
   render: () => (
     <div className="hotkeys__box hotkeys__box--fixed">
       <div className="hotkeys__box-tab">{tip.place}</div>
@@ -1089,13 +1096,13 @@ function clickCardsOf(overrides: HotkeyOverrides): { cards: ClickCard[]; none: G
   return clickCache
 }
 
-/** How the clicks read, said once (shown while no filter stands). */
+/** How the clicks read, said once (shown while no filter stands, or "Clicks" alone). */
 const clickLegendItem: SettingDef = {
   id: 'hotkeys-click-legend',
   label: 'How clicks work',
   keywords: ['mouse', 'click', 'drag', 'gesture', ...ROW_KEYWORDS],
   bare: true,
-  available: (ctx) => !isFiltered(ctx),
+  available: (ctx) => !isFiltered(ctx) || clicksOnly(ctx),
   render: () => <p className="hotkeys__line">One card per click or drag, one box per place. Links in a note and Bullet dots are yours to change: click the box, then hold the keys and click it again.</p>,
 }
 

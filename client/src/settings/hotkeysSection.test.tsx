@@ -390,6 +390,18 @@ describe('the clicks and drags (YAZ-3936)', () => {
     expect(drag.querySelector('.hotkeys__hint')?.textContent).toBe('Built in')
   })
 
+  it('the "Clicks" chip shows only the click and drag cards, the built-in ones too; All brings the keys back (YAZ-3747 demo)', async () => {
+    await mount()
+    const chip = (text: string) => button(el.querySelector('.hotkeys__filters') as HTMLElement, text)
+    const isClick = (id: string | undefined) => /^hotkey-(links|bullets|mouse)-/.test(id ?? '')
+    click(chip('Clicks'))
+    const shown = shownRows().filter((id) => id?.startsWith('hotkey'))
+    expect(shown).toEqual(expect.arrayContaining(['hotkeys-click-legend', 'hotkey-links-thisTab', 'hotkey-bullets-newTab', 'hotkey-mouse-move-block']))
+    expect(shown.filter((id) => id !== 'hotkeys-click-legend').every(isClick)).toBe(true)
+    click(chip('All'))
+    expect(shownRows()).toEqual(expect.arrayContaining(['hotkey-goTo', 'hotkey-links-thisTab']))
+  })
+
   it('record: click the box, hold the keys and click it again → the pop-up, nothing written; Save writes only the change; Reset asks, then puts the default back', async () => {
     await mount()
     click(clickBox('links-newTab'))
