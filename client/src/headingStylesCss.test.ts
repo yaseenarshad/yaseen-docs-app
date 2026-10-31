@@ -63,6 +63,19 @@ describe('heading styles CSS contract (YAZ-3049 D2, D7)', () => {
     expect(bulletsCss).toMatch(/--list-label-height:\s*calc\(var\(--crepe-base-font-size\) \* var\(--edit-line-height, 1\.5\)/)
   })
 
+  it('every heading level has 3 × gap above and 1 × gap below, and the section lines cross both (YAZ-3794)', () => {
+    for (const { n } of LEVELS) {
+      expect(ruleBody(appCss, `.editor-instance .milkdown .ProseMirror h${n}`), `h${n}`).toMatch(
+        /margin:\s*calc\(var\(--edit-block-gap, 4px\) \* 3\) 0 var\(--edit-block-gap, 4px\);/,
+      )
+    }
+    // Inside a bullet a heading is an outline row: no margin at all.
+    expect(appCss).toMatch(/\.ProseMirror li h6 \{\s*margin:\s*0;/)
+    expect(ruleBody(sectionIndentCss, '.editor-instance .milkdown > .ProseMirror > :is(h2, h3, h4, h5, h6)[data-sd]')).toMatch(
+      /border-image-outset:\s*calc\(var\(--edit-block-gap, 4px\) \* 3\) 0 var\(--edit-block-gap, 4px\);/,
+    )
+  })
+
   it('a heading in a section needs no rule of its own: the wash starts at the words', () => {
     expect(sectionIndentCss).not.toMatch(/:is\(h1, h2, h3, h4, h5, h6\)\[data-sd\]/)
   })

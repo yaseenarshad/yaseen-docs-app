@@ -15,7 +15,6 @@ import '@milkdown/crepe/theme/common/cursor.css'
 import '@milkdown/crepe/theme/common/image-block.css'
 import '@milkdown/crepe/theme/common/link-tooltip.css'
 import '@milkdown/crepe/theme/common/list-item.css'
-import '@milkdown/crepe/theme/common/placeholder.css'
 import '@milkdown/crepe/theme/common/toolbar.css'
 import '@milkdown/crepe/theme/common/table.css'
 // The frame theme vars are NOT imported statically: App injects frame / frame-dark per the

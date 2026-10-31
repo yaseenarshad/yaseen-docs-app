@@ -180,6 +180,8 @@ import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
   hardbreakClearMarkPlugin,
+  headingKeymap,
+  listItemKeymap,
   orderedListKeymap,
   remarkPreserveEmptyLinePlugin,
   turnIntoTextCommand,
@@ -237,7 +239,8 @@ import { headingLevelTag } from './outline/headingLevelTag'
 import { headingText } from './outline/headingText'
 import { foldAllHotkeys } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
-import { outlinerKeymap } from './outline/listCommands'
+import { caretReveal, foldHistory } from './outline/foldReveal'
+import { enterTracker, outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
 import { openBulletRow } from './outline/openBulletRow'
@@ -531,6 +534,11 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.config((ctx) => {
     ctx.inject(noteHotkeysCtx, opts.hotkeys ?? {})
     applyNoteKeys(ctx)
+    // YAZ-3695 D3: Delete at a line's start deletes the next character. Milkdown's `LiftFirstListItem` (a `joinBackward`)
+    // keeps Backspace only, and `DowngradeHeading` (a heading one level BIGGER) loses both: the outliner's join (D6) owns
+    // Backspace at a heading's start. `applyNoteKeys` leaves both entries alone: they are on no key row.
+    ctx.update(listItemKeymap.key, (prev) => ({ ...prev, LiftFirstListItem: { ...prev.LiftFirstListItem, shortcuts: 'Backspace' } }))
+    ctx.update(headingKeymap.key, (prev) => ({ ...prev, DowngradeHeading: { ...prev.DowngradeHeading, shortcuts: [] } }))
   })
   if (opts.image !== undefined) crepe.editor.use(createImageView(opts.image))
   // The line (YAZ-3164): its look and its length handle, on every editor — the line's style is in the schema.
@@ -561,6 +569,11 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // Backspace/Enter require an empty selection, so nothing else moves.
   crepe.editor.use(lineKeymap)
   crepe.editor.use(outlinerKeymap)
+  // YAZ-3695 D7: the outliner's Backspace puts no space in a join right after an Enter; this DOM keydown handler tells it.
+  crepe.editor.use(enterTracker)
+  // YAZ-3695 (11): after an edit, a caret in a folded line opens the folds that hide it. Before it: ⌘Z / ⌘⇧Z close and
+  // open again the folds an edit opened (YAZ-3781), so the guard sees the folds as ⌘Z left them.
+  crepe.editor.use(foldHistory).use(caretReveal)
   // The document-wide coordinator runs first: it owns Mod-Shift-U/I and consumes Mod-z only when
   // BOTH fold plugins are pending from that one atomic gesture. Individual heading/bullet folds
   // fall through to their existing undo handlers; foreign view actions still clear stale pending

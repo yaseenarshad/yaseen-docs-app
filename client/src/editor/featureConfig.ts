@@ -17,7 +17,6 @@ export const ENABLED_FEATURES = [
   CrepeFeature.Cursor,
   CrepeFeature.LinkTooltip,
   CrepeFeature.ListItem,
-  CrepeFeature.Placeholder,
   CrepeFeature.Table,
   CrepeFeature.Toolbar,
 ] as const
@@ -28,6 +27,8 @@ export const DISABLED_FEATURES = [
   /** `$…$` is inline math to it, so `$500K–$1M` renders as a formula — this is a business
       wiki, and dollars are dollars (YAZ-977). */
   CrepeFeature.Latex,
+  /** "Please enter…" on every empty line the caret is on: noise in the page, and Google Docs shows none (YAZ-3695, 12). */
+  CrepeFeature.Placeholder,
   CrepeFeature.TopBar,
   CrepeFeature.AI,
 ] as const
