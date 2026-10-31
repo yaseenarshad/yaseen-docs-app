@@ -208,6 +208,20 @@ describe('each setting saves in the comment, one undo step each', () => {
     expect(mixed).toContain('| :- | -: |')
   })
 
+  it('"Align all columns" also clears each cell\'s own alignment, in the same step (YAZ-3819)', async () => {
+    const note = `${SMALL}\n<!-- table: align A1 center B2 right -->\n`
+    const { crepe, view } = await openOnTable(note)
+    pick(view, 'Align all columns', 'Center')
+    expect(getMarkdownForSave(crepe)).toBe('|  a  |  b  |\n| :-: | :-: |\n|  1  |  2  |\n')
+    const own: unknown[] = []
+    view.state.doc.descendants((node) => {
+      if (node.type.name === 'table_cell' || node.type.name === 'table_header') own.push(node.attrs.align)
+    })
+    expect(own).toEqual([null, null, null, null])
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe(note)
+  })
+
   it('"Fit columns to the page" clears every width in one step', async () => {
     const note = `${SMALL}\n<!-- table: widths 140 auto, stripes -->\n`
     const { crepe, view } = await openOnTable(note)

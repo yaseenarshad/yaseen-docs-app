@@ -69,7 +69,7 @@ export function fillCells(state: EditorState, source: FillSource, axis: FillAxis
     fillSeries(texts, n).forEach((value, i) => {
       const from = sources[i % length]!
       const content = value === texts[i % length] ? from.content : textCell(state.schema, value).content
-      const filled: Cell = { content, style: { fill: from.attrs.fill, color: from.attrs.color } }
+      const filled: Cell = { content, style: { fill: from.attrs.fill, color: from.attrs.color, align: from.attrs.align } }
       if (axis === 'down') grid[i]![line] = filled
       else grid[line]![i] = filled
     })

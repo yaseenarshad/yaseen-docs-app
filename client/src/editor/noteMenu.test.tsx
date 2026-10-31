@@ -12,6 +12,8 @@ import type { CopyAsMode } from '@shared/types'
 import { caretIn, endOf, md, mount, posOf, runCommand, select, unmountAll } from './marks/markTestKit'
 import { toggleOutlineFold } from './outline/outlineFolding'
 import { misspellingAt, NoteMenu, noteMenuSections } from './noteMenu'
+import { CellSelection } from '@milkdown/kit/prose/tables'
+import { cellPos } from './table/tableTestKit'
 
 let root: Root | null = null
 afterEach(async () => {
@@ -189,6 +191,28 @@ describe('the right-click (YAZ-3653)', () => {
     document.getSelection()!.setBaseAndExtent(text, 0, text, 3)
     expect(view.state.selection.empty).toBe(true)
     expect(shape(noteMenuSections(view, null, vi.fn()))[0]).toEqual(['Cut', 'Copy', 'Copy as [Plain text, Markdown | Without folded lines]'])
+  })
+
+  it('a table handle opens the same menu as a right-click in its cell, at the handle, on the cells it selected (YAZ-3820)', async () => {
+    const { view } = await open('| h1 | h2 |\n| -- | -- |\n| a | b |\n')
+    const labels = () => [...document.querySelectorAll('.ctx-menu [role=menuitem]')].map((b) => b.textContent)
+    // The handle selected column B, then asks for the menu at a cell of it in row 1.
+    view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, 1)))))
+    pointAt(view, cellPos(view, 0, 1) + 2)
+    rightClick(view.dom.querySelectorAll('th')[1]!)
+    const fromCell = labels()
+    expect(fromCell).toContain('Sort A to Z')
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    act(() => void view.dom.dispatchEvent(new CustomEvent('milkdown-table-handle-menu', { bubbles: true, detail: { x: 70, y: 80, pos: cellPos(view, 0, 1) } })))
+    expect(labels()).toEqual(fromCell)
+    const menu = document.querySelector<HTMLElement>('.ctx-menu')!
+    expect([menu.style.left, menu.style.top]).toEqual(['70px', '80px'])
+    // An item acts on the cells the handle selected: the whole column goes.
+    const remove = [...document.querySelectorAll<HTMLElement>('.ctx-menu [role=menuitem]')].find((b) => b.textContent === 'Delete column')!
+    act(() => remove.click())
+    expect(view.state.doc.firstChild!.firstChild!.childCount).toBe(1)
+    expect(view.state.doc.firstChild!.textContent).toBe('h1a')
   })
 
   it('on an image: the native image menu stays', async () => {

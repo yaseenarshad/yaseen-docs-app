@@ -156,7 +156,8 @@ describe('settings set by a transaction', () => {
     const { crepe, view } = await mount(SMALL)
     const pos = tablePos(view)
     const tr = view.state.tr.setNodeMarkup(pos, undefined, { ...view.state.doc.nodeAt(pos)!.attrs, height: 'huge' })
-    tr.setNodeMarkup(pos + 2, undefined, { ...view.state.doc.nodeAt(pos + 2)!.attrs, fill: 'purple' })
+    tr.setNodeMarkup(pos + 2, undefined, { ...view.state.doc.nodeAt(pos + 2)!.attrs, fill: 'magenta' })
+    tr.setNodeMarkup(pos + 2 + view.state.doc.nodeAt(pos + 2)!.nodeSize, undefined, { ...view.state.doc.nodeAt(pos + 2)!.attrs, color: '#ff88' })
     view.dispatch(tr)
     expect(getMarkdownForSave(crepe)).toBe(SMALL)
   })
@@ -183,6 +184,62 @@ describe('parseDOM / toDOM: a copy inside the app keeps the settings', () => {
     const { view } = await mount(SMALL)
     const dom = DOMSerializer.fromSchema(view.state.schema).serializeNode(tables(view.state.doc)[0]) as HTMLElement
     expect(dom.outerHTML).not.toMatch(/data-(table|fill|color)/)
+  })
+})
+
+describe('custom colours (YAZ-3817)', () => {
+  const CUSTOM = `${SMALL}\n<!-- table: fill A2 #ff8800 B2 teal, color B2 #1a2b3c -->\n`
+
+  it('load into the cells, save the same bytes, and draw by a custom property on the cell', async () => {
+    expect(await save(CUSTOM)).toBe(CUSTOM)
+    const { root, view } = await mount(CUSTOM)
+    const [table] = tables(view.state.doc)
+    expect(cellAttr(table, 'fill')).toEqual([[null, null], ['#ff8800', 'teal']])
+    expect(cellAttr(table, 'color')).toEqual([[null, null], [null, '#1a2b3c']])
+    const [a2, b2] = root.querySelectorAll<HTMLElement>('td')
+    expect(a2.getAttribute('data-fill')).toBe('#ff8800')
+    expect(a2.style.getPropertyValue('--table-fill-custom')).toBe('#ff8800')
+    expect(b2.getAttribute('data-fill')).toBe('teal')
+    expect(b2.style.getPropertyValue('--table-fill-custom')).toBe('')
+    expect(b2.getAttribute('data-color')).toBe('#1a2b3c')
+    expect(b2.style.getPropertyValue('--table-text-custom')).toBe('#1a2b3c')
+    // The GFM alignment's style stays.
+    expect(a2.style.textAlign).toBe('left')
+  })
+
+  it('a copy inside the app keeps them', async () => {
+    const { view } = await mount(CUSTOM)
+    const { schema } = view.state
+    const holder = document.createElement('div')
+    holder.appendChild(DOMSerializer.fromSchema(schema).serializeNode(tables(view.state.doc)[0]))
+    const [copy] = tables(DOMParser.fromSchema(schema).parse(holder))
+    expect(cellAttr(copy, 'fill')).toEqual([[null, null], ['#ff8800', 'teal']])
+    expect(cellAttr(copy, 'color')).toEqual([[null, null], [null, '#1a2b3c']])
+  })
+})
+
+describe('a cell\'s own alignment (YAZ-3819)', () => {
+  const ALIGNED = '|  a | b |\n| -: | - |\n|  1 | 2 |\n\n<!-- table: align A2 center -->\n'
+
+  it('loads into the cell, saves the same bytes, and wins over the column alignment on the page', async () => {
+    expect(await save(ALIGNED)).toBe(ALIGNED)
+    const { root, view } = await mount(ALIGNED)
+    const [table] = tables(view.state.doc)
+    expect(cellAttr(table, 'align')).toEqual([[null, null], ['center', null]])
+    expect(cellAttr(table, 'alignment')).toEqual([['right', null], ['right', null]])
+    const [h1] = root.querySelectorAll<HTMLElement>('th')
+    const [a2, b2] = root.querySelectorAll<HTMLElement>('td')
+    expect([h1.style.textAlign, a2.style.textAlign, b2.style.textAlign]).toEqual(['right', 'center', 'left'])
+    expect(a2.getAttribute('data-align')).toBe('center')
+  })
+
+  it('a copy inside the app keeps it', async () => {
+    const { view } = await mount(ALIGNED)
+    const { schema } = view.state
+    const holder = document.createElement('div')
+    holder.appendChild(DOMSerializer.fromSchema(schema).serializeNode(tables(view.state.doc)[0]))
+    const [copy] = tables(DOMParser.fromSchema(schema).parse(holder))
+    expect(cellAttr(copy, 'align')).toEqual([[null, null], ['center', null]])
   })
 })
 

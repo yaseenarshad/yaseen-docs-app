@@ -26,37 +26,29 @@
   after a drag. A table with no `colwidth` keeps its old look (no minimum
   width). `columnResizing` itself is not vendored: `client/src/editor/table/tableColumnResize.ts`
   loads it as installed.
-- YAZ-3696 D9 (YAZ-3762): the column and row handles open labeled menus in
-  place of the icon strips. Column: Insert column left, Insert column right,
-  Align left, Align center, Align right, Sort A to Z, Sort Z to A, Clear column,
-  Delete column. Row: Insert row above, Insert row below, Duplicate row, Clear
-  row, Delete row. A separator splits the groups. The header row has no row
-  menu, as before. Sort and Duplicate row are new commands in `operation.ts`
-  (`sortRows`, `duplicateRows`); the other items call the GFM preset and
-  `prosemirror-tables` commands. The labels are fixed text, so
-  `renderButton` no longer draws the align and delete icons. An item acts on
-  `pointerdown` and stops its `click`, so the click does not reach the handle
-  and open the menu again. In a read-only note a handle click opens no menu.
-  As in the note's right-click menu, "Delete row" is disabled when the
-  selection holds the header row or every body row, and "Delete column" when
-  it holds every column (YAZ-3773): each item can carry a `disabled` check,
-  the menu sets each button's `disabled` when it opens, and the item does not
-  act while the check holds. Each item first dispatches `closeHistory`, so it
-  is one undo step of its own. The menu CSS is in `client/src/app.css`.
+- YAZ-3696 D9 (YAZ-3762), YAZ-3820: the column and row handles have no menu
+  of their own. Upstream's icon strips (`.button-group`: align and delete) are
+  gone, and the labeled menus that D9 put in their place are gone too. A click
+  or right-click on a handle selects (see 2E below), then sends the DOM event
+  `milkdown-table-handle-menu` from the handle. It bubbles, and its `detail` is
+  `{ x, y, pos }`: the pointer, and the position of a cell of the handle's column
+  in row 1 (of its row in column A). The app's note menu listens on the editor's
+  DOM and opens there, with the same Table part as a right-click in a cell
+  (`client/src/editor/noteMenu.tsx`, `client/src/editor/table/tableMenu.ts`). The
+  header row's handle sends no event. In a read-only note a handle selects
+  nothing and sends nothing. Sort and Duplicate row are app commands now
+  (`tableMenu.ts`), so `operation.ts` keeps only the selection.
 - YAZ-3696 2D (YAZ-3800): the hover "+" insert lines are gone. A pointer at a cell
   edge shows no line, and the two "+" buttons and their handlers (`onAddRow`,
   `onAddCol`, `lineHoverIndex`) are removed. The two line elements stay, with no
   button, as the drop line of a row or column drag. Insert is in the handle menus
   and the note's right-click menu.
-- YAZ-3696 2E (YAZ-3801): a right-click on a column or row handle selects as a
-  click does and opens its menu (`preventDefault` and `stopPropagation`, so the
-  note's text menu does not open). Its mousedown does not reach the editor. A
+- YAZ-3696 2E (YAZ-3801): a right-click on a column or row handle does what a
+  click does (`preventDefault` and `stopPropagation`, so the note's own
+  right-click does not run on it). Its mousedown does not reach the editor. A
   handle click keeps a selection of whole columns (rows, without the header row)
   that holds the hovered one; Shift + click grows the selection to the hovered
-  column (row). The labels count the selection when the menu opens: "Insert 3
-  columns left", "Delete 2 rows"; one keeps the singular label. Insert N inserts N
-  in one transaction (`insertColumns`, `insertRows` in `operation.ts`; the same
-  cells stay selected). The header-row and last-row/column guards stay.
+  column (row). The app's menu counts the selection in its labels.
 
 Upstream PR: prepared, awaiting Yasin's go (the patch and PR text are in
 `client/vendor/upstream/list-item-restore/`); drop this hunk under

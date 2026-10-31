@@ -10,16 +10,17 @@
  * right; Clear cells. Each button acts on EVERY selected cell in one transaction with the history
  * closed, so each click is one undo step (R4), and the cells stay selected.
  * - Fill and Text set the cells' `fill` / `color` (`tableStyle.ts`; the save writes the comment).
- *   Each is a split button, as Sheets' (YAZ-3803, demo round 1 decisions 1 and 12): the icon, with
- *   a bar in the last colour used, applies that colour; the ▾ opens a palette, the labeled clear
- *   item ("No fill" / "Default colour") first, then solid swatches. A swatch becomes the last
- *   colour; the clear item does not. The last colours start as yellow and red, one pair per window,
- *   in memory. One palette is open at a time; it closes on a pick, on Escape, on a second ▾ click,
+ *   Each is a label, three fixed quick swatches (Fill: yellow, green, blue; Text: red, blue, green)
+ *   and a ▾ that opens a palette (YAZ-3817, demo round 2): the labeled clear item ("No fill" /
+ *   "Default colour") first, then the ten named colours in a 5 × 2 grid, then "Custom colour…",
+ *   which opens the system colour picker (`<input type="color">`). A custom colour saves as
+ *   `#rrggbb`, on the input's `change` only (its live `input` events do nothing), so one pick is one
+ *   undo step. One palette is open at a time; it closes on a pick, on Escape, on a second ▾ click,
  *   on a mousedown in the editor and when the toolbar hides.
  * - A mark turns ON in every cell when any selected cell with text lacks it on some of its text,
  *   and OFF in all of them when every one has it (as Sheets does).
- * - Align sets the GFM alignment of each selected COLUMN, every row of it: the `:-` row has one
- *   alignment per column, so a column is the smallest thing it can hold.
+ * - Align sets the selected cells' own `align` (YAZ-3819), saved in the table comment; it wins over
+ *   the column's GFM alignment (the `:-` row), which stays.
  * - Clear cells is prosemirror-tables' `deleteCellSelection` (Delete's own): the text goes, the
  *   cells keep their attributes.
  *
@@ -34,41 +35,57 @@ import { CellSelection, deleteCellSelection, selectedRect } from '@milkdown/kit/
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { setCellsAttr } from './cells'
-import { FILL_COLORS, TEXT_COLORS, type FillColor, type TextColor } from './tableStyle'
+import { CELL_ALIGNS, TABLE_COLORS, cellColor, type CellAlign, type TableColor } from './tableStyle'
 
-/** A column's GFM alignments, as the toolbar and "Align all columns" (`tableRows.ts`) offer them. */
-export const ALIGNS = ['left', 'center', 'right'] as const
-export type TableAlign = (typeof ALIGNS)[number]
 /** A menu label from a value: `blue` → `Blue`. */
 export const capital = (word: string) => word[0].toUpperCase() + word.slice(1)
 
 const SVG = (body: string) => `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${body}</svg>`
-/** Each palette swatch's colour: solid in light and dark (`table.css`; the cells keep their wash). */
-const fillSwatch = (c: FillColor) => `var(--table-fill-solid-${c})`
-const textSwatch = (c: TextColor) => `var(--table-text-${c})`
-/** An icon over a bar that shows the last colour (Material's format_color_fill / format_color_text). */
-const barIcon = (path: string) => SVG(`<path d="${path}" fill="currentColor"/><rect class="cell-toolbar__bar" x="2" y="19.5" width="20" height="3.5" rx="1"/>`)
-const BUCKET = barIcon(
-  'M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.59-.59 1.54 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10L10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z',
-)
-const LETTER_A = barIcon('M11 2L5.5 16h2.25l1.12-3h6.25l1.12 3h2.25L13 2h-2zm-1.38 9L12 4.67 14.38 11H9.62z')
+/** Each swatch's colour: a fill at full strength in light and dark (`table.css`; the cells keep their wash). */
+export const fillSwatch = (c: TableColor) => `var(--table-fill-solid-${c})`
+export const textSwatch = (c: TableColor) => `var(--table-text-${c})`
 const CARET = SVG('<path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>')
-
-/** The last colours used, for the window, in memory (YAZ-3803): each icon button applies its one. */
-const last: { fill: FillColor; color: TextColor } = { fill: 'yellow', color: 'red' }
 
 /** A letter drawn as text, as createCrepe's heading glyphs. */
 const letter = (text: string, style: string) =>
   SVG(`<text x="12" y="17" text-anchor="middle" font-size="15" font-family="inherit" fill="currentColor" ${style}>${text}</text>`)
 /** Three lines, the short ones placed to the side the text aligns to. */
-const alignIcon = (align: TableAlign) => {
+const alignIcon = (align: CellAlign) => {
   const x = align === 'left' ? 5 : align === 'center' ? 8 : 11
   return SVG(`<path d="M5 7h14M${x} 12h8M5 17h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`)
 }
 const CLEAR = SVG('<path d="M8 8l8 8M16 8l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
 
+/**
+ * The system colour picker (YAZ-3817), for the toolbar and the table menu (YAZ-3820): one hidden
+ * `<input type="color">` per document (not `display: none`, so its `click()` opens the picker). Its
+ * `change` gives `onPick` the colour as `#rrggbb`; its live `input` events do nothing, so one pick
+ * is one undo step.
+ */
+const pickers = new WeakMap<Document, { input: HTMLInputElement; onPick: (color: string) => void }>()
+export function pickCustomColour(doc: Document, onPick: (color: string) => void): void {
+  let picker = pickers.get(doc)
+  if (picker === undefined) {
+    const input = doc.createElement('input')
+    input.type = 'color'
+    input.className = 'table-colour-input'
+    input.tabIndex = -1
+    input.setAttribute('aria-hidden', 'true')
+    doc.body.appendChild(input)
+    const made = { input, onPick }
+    input.addEventListener('change', () => {
+      const color = cellColor(input.value)
+      if (color !== null) made.onPick(color)
+    })
+    pickers.set(doc, made)
+    picker = made
+  }
+  picker.onPick = onPick
+  picker.input.click()
+}
+
 /** One cell attribute on every selected cell, in one transaction. */
-function setCells(view: EditorView, attr: 'fill' | 'color', value: string | null): void {
+function setCells(view: EditorView, attr: 'fill' | 'color' | 'align', value: string | null): void {
   if (!(view.state.selection instanceof CellSelection)) return
   const tr = setCellsAttr(closeHistory(view.state.tr), selectedRect(view.state), attr, value)
   if (tr.docChanged) view.dispatch(tr)
@@ -100,14 +117,6 @@ function toggleMark(view: EditorView, name: string): void {
   if (tr.docChanged) view.dispatch(tr)
 }
 
-/** The alignment of each selected column, every row of it. */
-function alignColumns(view: EditorView, align: TableAlign): void {
-  if (!(view.state.selection instanceof CellSelection)) return
-  const rect = selectedRect(view.state)
-  const tr = setCellsAttr(closeHistory(view.state.tr), { ...rect, top: 0, bottom: rect.map.height }, 'alignment', align)
-  if (tr.docChanged) view.dispatch(tr)
-}
-
 function clearCells(view: EditorView): void {
   deleteCellSelection(view.state, (tr: Transaction) => view.dispatch(closeHistory(tr)))
 }
@@ -121,7 +130,7 @@ const PARTS: Part[] = [
   { name: 'Italic', icon: letter('I', 'font-style="italic"'), run: (v) => toggleMark(v, 'emphasis') },
   { name: 'Strikethrough', icon: letter('S', 'text-decoration="line-through"'), run: (v) => toggleMark(v, 'strike_through') },
   'divider',
-  ...ALIGNS.map((a) => ({ name: `Align ${a}`, icon: alignIcon(a), run: (v: EditorView) => alignColumns(v, a) })),
+  ...CELL_ALIGNS.map((a) => ({ name: `Align ${a}`, icon: alignIcon(a), run: (v: EditorView) => setCells(v, 'align', a) })),
   'divider',
   { name: 'Clear cells', icon: CLEAR, run: clearCells },
 ]
@@ -138,54 +147,47 @@ function toolButton(name: string, icon: string, className = 'toolbar-item'): HTM
   return button
 }
 
-/** One split button's settings: the cell attribute, its colours, and the names and swatches. */
-interface ColourSplit<C extends string> {
+/** One colour group's settings: the cell attribute, its quick colours, and the names and swatches. */
+interface ColourGroup {
   attr: 'fill' | 'color'
-  colors: readonly C[]
-  get: () => C
-  set: (c: C) => void
-  icon: string
-  /** The icon button's name for the colour it applies: `Fill yellow`, `Red text`. */
-  name: (c: C) => string
+  label: string
+  quick: readonly TableColor[]
+  /** A quick swatch's content, in its colour. */
+  quickIcon: (c: TableColor) => string
+  /** A quick swatch's name: `Fill yellow`, `Red text`. */
+  name: (c: TableColor) => string
   menu: string
   clear: string
-  swatch: (c: C) => string
+  swatch: (c: TableColor) => string
 }
 
 let paletteIds = 0
 
-/**
- * The toolbar's one open palette: `toggle` opens a palette (closing the other) or closes it. Each
- * split button adds its `paint` to `paints`, which the toolbar runs when it shows: another editor in
- * this window may have picked a colour since.
- */
+/** The toolbar's one open palette: `toggle` opens a palette (closing the other) or closes it. */
 interface Palettes {
   toggle: (palette: HTMLElement, arrow: HTMLElement) => void
   close: () => void
-  paints: Array<() => void>
 }
 
-/** A split button: the icon applies the last colour, the ▾ opens the palette. */
-function renderSplit<C extends string>(view: EditorView, split: ColourSplit<C>, palettes: Palettes): HTMLElement {
+/** A colour group: the label, the quick swatches, and the ▾ with its palette. */
+function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes): HTMLElement {
   const box = document.createElement('span')
-  box.className = 'cell-toolbar__split'
-  const apply = toolButton(split.name(split.get()), split.icon)
-  const bar = apply.querySelector<SVGElement>('.cell-toolbar__bar')!
-  const paint = () => {
-    const name = split.name(split.get())
-    apply.title = name
-    apply.setAttribute('aria-label', name)
-    bar.style.fill = split.swatch(split.get())
+  box.className = 'cell-toolbar__colours'
+  const label = document.createElement('span')
+  label.className = 'cell-toolbar__label'
+  label.textContent = group.label
+  box.appendChild(label)
+  for (const c of group.quick) {
+    const button = toolButton(group.name(c), group.quickIcon(c), 'toolbar-item cell-toolbar__quick')
+    button.addEventListener('click', () => setCells(view, group.attr, c))
+    box.appendChild(button)
   }
-  paint()
-  palettes.paints.push(paint)
-  apply.addEventListener('click', () => setCells(view, split.attr, split.get()))
-  const arrow = toolButton(split.menu, CARET, 'toolbar-item cell-toolbar__arrow')
+  const arrow = toolButton(group.menu, CARET, 'toolbar-item cell-toolbar__arrow')
   const palette = document.createElement('div')
   palette.className = 'cell-toolbar__palette'
   palette.id = `cell-toolbar-palette-${++paletteIds}`
   palette.setAttribute('role', 'menu')
-  palette.setAttribute('aria-label', split.menu)
+  palette.setAttribute('aria-label', group.menu)
   palette.hidden = true
   arrow.setAttribute('aria-haspopup', 'menu')
   arrow.setAttribute('aria-expanded', 'false')
@@ -200,33 +202,31 @@ function renderSplit<C extends string>(view: EditorView, split: ColourSplit<C>, 
     })
     return button
   }
-  const clear = item(split.clear, () => setCells(view, split.attr, null), 'cell-toolbar__clear')
-  clear.textContent = split.clear
+  const clear = item(group.clear, () => setCells(view, group.attr, null), 'cell-toolbar__clear')
+  clear.textContent = group.clear
   const swatches = document.createElement('div')
   swatches.className = 'cell-toolbar__swatches'
-  for (const c of split.colors) {
-    const button = item(capital(c), () => {
-      split.set(c)
-      paint()
-      setCells(view, split.attr, c)
-    }, 'cell-toolbar__swatch-item')
+  for (const c of TABLE_COLORS) {
+    const button = item(capital(c), () => setCells(view, group.attr, c), 'cell-toolbar__swatch-item')
     const swatch = document.createElement('span')
     swatch.className = 'cell-toolbar__swatch'
-    swatch.style.background = split.swatch(c)
+    swatch.style.background = group.swatch(c)
     button.appendChild(swatch)
     swatches.appendChild(button)
   }
-  palette.append(clear, swatches)
-  box.append(apply, arrow, palette)
+  const custom = item('Custom colour…', () => pickCustomColour(view.dom.ownerDocument, (color) => setCells(view, group.attr, color)), 'cell-toolbar__clear')
+  custom.textContent = 'Custom colour…'
+  palette.append(clear, swatches, custom)
+  box.append(arrow, palette)
   return box
 }
 
-const FILL: ColourSplit<FillColor> = {
-  attr: 'fill', colors: FILL_COLORS, get: () => last.fill, set: (c) => { last.fill = c }, icon: BUCKET,
+const FILL: ColourGroup = {
+  attr: 'fill', label: 'Fill', quick: ['yellow', 'green', 'blue'], quickIcon: (c) => `<span class="cell-toolbar__swatch" style="background: ${fillSwatch(c)}"></span>`,
   name: (c) => `Fill ${c}`, menu: 'Fill colours', clear: 'No fill', swatch: fillSwatch,
 }
-const TEXT: ColourSplit<TextColor> = {
-  attr: 'color', colors: TEXT_COLORS, get: () => last.color, set: (c) => { last.color = c }, icon: LETTER_A,
+const TEXT: ColourGroup = {
+  attr: 'color', label: 'Text', quick: ['red', 'blue', 'green'], quickIcon: (c) => SVG(`<text x="12" y="18" text-anchor="middle" font-size="17" font-weight="700" font-family="inherit" fill="${textSwatch(c)}">A</text>`),
   name: (c) => `${capital(c)} text`, menu: 'Text colours', clear: 'Default colour', swatch: textSwatch,
 }
 
@@ -242,7 +242,7 @@ function renderStrip(view: EditorView, palettes: Palettes): HTMLElement {
       line.className = 'divider'
       strip.appendChild(line)
     } else if (part === 'colours') {
-      strip.append(renderSplit(view, FILL, palettes), renderSplit(view, TEXT, palettes))
+      strip.append(renderColours(view, FILL, palettes), renderColours(view, TEXT, palettes))
     } else {
       const button = toolButton(part.name, part.icon)
       button.addEventListener('click', () => part.run(view))
@@ -261,8 +261,7 @@ class CellToolbarView {
   #dragging = false
 
   constructor(readonly view: EditorView) {
-    const paints: Array<() => void> = []
-    const strip = renderStrip(view, { toggle: this.#togglePalette, close: this.#closePalettes, paints })
+    const strip = renderStrip(view, { toggle: this.#togglePalette, close: this.#closePalettes })
     this.#strip = strip
     this.#provider = new TooltipProvider({
       content: strip,
@@ -273,7 +272,6 @@ class CellToolbarView {
         return !this.#dragging && v.editable && focused && manyCells(v.state)
       },
     })
-    this.#provider.onShow = () => paints.forEach((paint) => paint())
     this.#provider.onHide = this.#closePalettes
     view.dom.addEventListener('mousedown', this.#down)
     view.dom.ownerDocument.addEventListener('mouseup', this.#up)

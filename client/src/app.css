@@ -665,42 +665,6 @@ button {
   pointer-events: none;
 }
 
-/* Labeled row and column menus (YAZ-3696 D9): Crepe's strip of icons becomes a column of labeled
-   items under the handle, on the same surface (Crepe's colour variables, so light and dark follow).
-   The strip's hover bridge (`::after`) moves to the gap above the menu. */
-.editor-instance .milkdown .milkdown-table-block .cell-handle .button-group {
-  top: calc(100% + 4px);
-  left: 0;
-  transform: none;
-  flex-direction: column;
-  min-width: 180px;
-  padding: 4px;
-  cursor: default;
-}
-.editor-instance .milkdown .milkdown-table-block .cell-handle .button-group::after {
-  top: -8px;
-  bottom: auto;
-}
-.editor-instance .milkdown .milkdown-table-block .cell-handle .button-group button {
-  margin: 0;
-  padding: 4px 12px;
-  justify-content: flex-start;
-  white-space: nowrap;
-  font: inherit;
-  color: var(--crepe-color-on-surface);
-}
-/* An item that cannot act (the last body row or column, as in the right-click menu) is dimmed. */
-.editor-instance .milkdown .milkdown-table-block .cell-handle .button-group button:disabled {
-  opacity: 0.4;
-  background: none;
-  cursor: default;
-}
-.editor-instance .milkdown .milkdown-table-block .cell-handle .button-group .separator {
-  height: 1px;
-  margin: 4px 0;
-  background: color-mix(in srgb, var(--crepe-color-outline), transparent 80%);
-}
-
 /* The block handle's plus is noise — Enter at line end does the same (GRO-2025).
    First .operation-item is the plus, last is the 6-dot drag handle (Crepe renders exactly two). */
 .editor-instance .milkdown .milkdown-block-handle .operation-item:first-child {

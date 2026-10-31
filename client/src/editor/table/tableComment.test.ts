@@ -84,6 +84,39 @@ describe('ranges', () => {
   })
 })
 
+describe('named and custom colours (YAZ-3817)', () => {
+  it.each(['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey', 'brown'])('%s is a fill and a text colour', (name) => {
+    const comment = `<!-- table: fill A1 ${name}, color B2 ${name} -->`
+    expect(parseTableComment(comment)).toEqual(style({ fill: new Map([['A1', name]]), color: new Map([['B2', name]]) }))
+    expect(formatTableComment(parseTableComment(comment)!)).toBe(comment)
+  })
+
+  it('a custom colour is `#rrggbb`, read in any case and written lowercase', () => {
+    const parsed = parseTableComment('<!-- table: fill A1:B1 #ff8800 C2 teal, color B2 #1A2B3C -->')
+    expect(parsed?.fill).toEqual(new Map([['A1', '#ff8800'], ['B1', '#ff8800'], ['C2', 'teal']]))
+    expect(parsed?.color).toEqual(new Map([['B2', '#1a2b3c']]))
+    expect(formatTableComment(parsed!)).toBe('<!-- table: fill A1:B1 #ff8800 C2 teal, color B2 #1a2b3c -->')
+  })
+
+  it.each(['#ff88', '#ff88000', '#gg8800', 'ff8800', '#ff8800aa'])('%s is no colour: the part is ignored', (value) => {
+    expect(parseTableComment(`<!-- table: fill A1 ${value}, stripes -->`)).toEqual(style({ stripes: true }))
+  })
+})
+
+describe('a cell\'s own alignment (YAZ-3819)', () => {
+  it('`align` takes A1 ranges and left, center or right; it is written after `color`', () => {
+    const comment = '<!-- table: fill A1 blue, color A1 red, align B2:C3 center A4 right, stripes -->'
+    const parsed = parseTableComment(comment)
+    expect(parsed?.align).toEqual(new Map([['B2', 'center'], ['C2', 'center'], ['B3', 'center'], ['C3', 'center'], ['A4', 'right']]))
+    expect(formatTableComment(parsed!)).toBe(comment)
+    expect(formatTableComment(parseTableComment('<!-- table: align A1 left, color A1 red -->')!)).toBe('<!-- table: color A1 red, align A1 left -->')
+  })
+
+  it.each(['align A1 middle', 'align A1 #ff8800', 'align A1 red', 'align center'])('%s is ignored', (part) => {
+    expect(parseTableComment(`<!-- table: ${part}, stripes -->`)).toEqual(style({ stripes: true }))
+  })
+})
+
 describe('the fixed order', () => {
   const all = '<!-- table: widths 140 240 auto, fill A1:C1 blue B3 green, color B2:B5 red, border 2px 40%, header plain, stripes, height compact, nowrap, freeze 2 rows 1 col -->'
 
@@ -108,7 +141,7 @@ describe('tolerant reading', () => {
   })
 
   it('a known part with a value it does not know is ignored', () => {
-    expect(parseTableComment('<!-- table: fill A1 purple, header fancy, stripes -->')).toEqual(style({ stripes: true }))
+    expect(parseTableComment('<!-- table: fill A1 magenta, header fancy, stripes -->')).toEqual(style({ stripes: true }))
     expect(parseTableComment('<!-- table: widths 140 wide, border 2px, freeze 0 rows, nowrap -->')).toEqual(style({ nowrap: true }))
   })
 

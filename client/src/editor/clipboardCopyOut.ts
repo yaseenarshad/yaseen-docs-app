@@ -9,7 +9,7 @@ import { clipboardPlainText } from './clipboardPlainText'
 import { eachVisibleTextblock } from './lineSelection'
 import { rowShortcuts } from './noteKeys'
 import { getZoomedItemPos } from './outline/zoom'
-import type { FillColor, TextColor } from './table/tableStyle'
+import { cellColor, type TableColor } from './table/tableComment'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 
 export const CLIPBOARD_EMPTY_PARAGRAPH = 'data-mdapp-empty-paragraph'
@@ -124,11 +124,23 @@ const copyVisible: Command = (state, dispatch) => {
 export const copyVisibleHotkey = $shortcut((ctx) => rowShortcuts(ctx, 'note.copyVisible', 'CopyWithoutFoldedLines', { onRun: () => copyVisible }))
 
 /**
- * A copied cell's colours in the light theme (YAZ-3802): the text colours of table.css `:root`, and each
- * fill's see-through wash (app.css `--mark-bg*`) as it shows over white, because Docs needs a solid colour.
+ * A copied cell's colours in the light theme (YAZ-3802, YAZ-3817): the text colours of table.css `:root`,
+ * and each fill's see-through wash (`--table-fill-*`) as it shows over white, because Docs needs a solid
+ * colour. A custom colour copies as picked; a custom fill as its 35% wash over white, as the page draws it.
  */
-const COPY_FILL: Record<FillColor, string> = { yellow: '#ffee99', green: '#c2ecd0', blue: '#c2deff', pink: '#ffd0e5' }
-const COPY_TEXT: Record<TextColor, string> = { red: '#c0392b', orange: '#b45309', green: '#2e7d32', blue: '#1d5fbf', grey: '#6b6b6b' }
+const COPY_FILL: Record<TableColor, string> = {
+  red: '#ffc5c2', orange: '#ffdab7', yellow: '#ffee99', green: '#c2ecd0', teal: '#b4e8e5',
+  blue: '#c2deff', purple: '#deccff', pink: '#ffd0e5', grey: '#dadada', brown: '#e1d0be',
+}
+const COPY_TEXT: Record<TableColor, string> = {
+  red: '#c0392b', orange: '#b45309', yellow: '#a16207', green: '#2e7d32', teal: '#0f766e',
+  blue: '#1d5fbf', purple: '#7b3fbf', pink: '#c2185b', grey: '#6b6b6b', brown: '#8b5a2b',
+}
+/** `#rrggbb` at 35% over white. */
+const washOverWhite = (hex: string): string =>
+  `#${[1, 3, 5].map((i) => Math.round(255 - (255 - parseInt(hex.slice(i, i + 2), 16)) * 0.35).toString(16).padStart(2, '0')).join('')}`
+const copyFill = (fill: string | null) => (fill === null ? undefined : fill.startsWith('#') ? washOverWhite(fill) : COPY_FILL[fill as TableColor])
+const copyText = (color: string | null) => (color === null ? undefined : color.startsWith('#') ? color : COPY_TEXT[color as TableColor])
 
 /**
  * Inline styles on copied tables (YAZ-3802, demo round 1 decision 13): Google Docs and Sheets read
@@ -141,9 +153,9 @@ function styleTables(dom: DocumentFragment): void {
     cell.style.border = '1px solid #999'
     cell.style.padding = '4px 8px'
     if (cell.tagName === 'TH') cell.style.fontWeight = 'bold'
-    const fill = COPY_FILL[cell.dataset.fill as FillColor]
+    const fill = copyFill(cellColor(cell.dataset.fill))
     if (fill !== undefined) cell.style.backgroundColor = fill
-    const color = COPY_TEXT[cell.dataset.color as TextColor]
+    const color = copyText(cellColor(cell.dataset.color))
     if (color !== undefined) cell.style.color = color
   }
 }

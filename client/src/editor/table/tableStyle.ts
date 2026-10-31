@@ -4,7 +4,7 @@
  * `{ px, darkness }`), `header` (`shaded` | `plain`), `stripes`, `height` (`compact` | `normal` |
  * `tall`), `wrap`, `freezeRows` and `freezeCols`. A column's alignment is the cells' own GFM
  * `alignment` (the `:-` row), not ours (YAZ-3767). Each
- * cell gets `fill` and `color` (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
+ * cell gets `fill`, `color` and its own `align` (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
  * column's width is the cells' own `colwidth` (prosemirror-tables). Markdown has no syntax for any.
  *
  * ON DISK a plain table is the GFM table, exactly the bytes of before (R5). A table with settings
@@ -36,19 +36,7 @@ import type { NodeSchema } from '@milkdown/kit/transformer'
 import { $prose, $remark } from '@milkdown/kit/utils'
 import type { Nodes, Table } from 'mdast'
 import { joinNextComment } from '../joinComment'
-import {
-  BORDER_PX_MAX,
-  FILL_COLORS,
-  TEXT_COLORS,
-  WIDTH_MAX,
-  cellAddress,
-  formatTableComment,
-  parseTableComment,
-  plainTable,
-  type FillColor,
-  type TableStyle,
-  type TextColor,
-} from './tableComment'
+import { BORDER_PX_MAX, WIDTH_MAX, cellAddress, cellAlign, cellColor, formatTableComment, parseTableComment, plainTable, type TableStyle } from './tableComment'
 import './table.css'
 
 export * from './tableComment'
@@ -68,8 +56,8 @@ export type TableAttrs = typeof TABLE_DEFAULTS
 const isWhole = (n: unknown, min: number, max: number): n is number => Number.isInteger(n) && (n as number) >= min && (n as number) <= max
 
 /** The table-level parts of the node's attributes, every value checked: an unknown value is the default. */
-function tableLevel(attrs: Record<string, unknown>): Omit<TableStyle, 'widths' | 'fill' | 'color'> {
-  const out: Omit<TableStyle, 'widths' | 'fill' | 'color'> = {}
+function tableLevel(attrs: Record<string, unknown>): Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align'> {
+  const out: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align'> = {}
   const border = attrs.border as { px?: unknown; darkness?: unknown } | null
   if (border && isWhole(border.px, 0, BORDER_PX_MAX) && isWhole(border.darkness, 0, 100)) out.border = { px: border.px, darkness: border.darkness }
   if (attrs.header === 'plain') out.header = 'plain'
@@ -94,9 +82,12 @@ function tableStyleOf(table: ProseNode): TableStyle {
   table.forEach((row, _, r) => {
     row.forEach((cell, __, c) => {
       if (r === 0) style.widths.push(widthOf(cell))
-      const { fill, color } = cell.attrs
-      if (FILL_COLORS.includes(fill)) style.fill.set(cellAddress(r, c), fill as FillColor)
-      if (TEXT_COLORS.includes(color)) style.color.set(cellAddress(r, c), color as TextColor)
+      const fill = cellColor(cell.attrs.fill)
+      const color = cellColor(cell.attrs.color)
+      const align = cellAlign(cell.attrs.align)
+      if (fill !== null) style.fill.set(cellAddress(r, c), fill)
+      if (color !== null) style.color.set(cellAddress(r, c), color)
+      if (align !== null) style.align.set(cellAddress(r, c), align)
     })
   })
   return style
@@ -133,7 +124,7 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
 }
 
 /** The node attributes for table-level parts. */
-const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color'>): TableAttrs => ({
+const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align'>): TableAttrs => ({
   border: style.border ?? null,
   header: style.header ?? 'shaded',
   stripes: style.stripes === true,
@@ -143,28 +134,43 @@ const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color'>): Table
   freezeCols: style.freeze?.cols ?? 0,
 })
 
-/** The cell attributes of ours that a cell's DOM carries. */
-const cellDomAttrs = (node: ProseNode): Record<string, string> => {
-  const out: Record<string, string> = {}
-  if (FILL_COLORS.includes(node.attrs.fill)) out['data-fill'] = node.attrs.fill
-  if (TEXT_COLORS.includes(node.attrs.color)) out['data-color'] = node.attrs.color
+/**
+ * The cell attributes of ours that a cell's DOM carries: `data-fill` / `data-color` hold the colour
+ * itself, and a custom one (`#rrggbb`) also goes in `style` for `table.css` (YAZ-3817), after the
+ * GFM alignment's `text-align`. A cell's own alignment (`data-align`) is that `text-align` in place
+ * of its column's, so it wins on the page and in a copy to Docs (YAZ-3819).
+ */
+const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<string, string> => {
+  const out = { ...base }
+  const fill = cellColor(node.attrs.fill)
+  const color = cellColor(node.attrs.color)
+  const align = cellAlign(node.attrs.align)
+  const style = align === null ? [base.style] : [`text-align: ${align}`]
+  if (fill !== null) out['data-fill'] = fill
+  if (color !== null) out['data-color'] = color
+  if (align !== null) out['data-align'] = align
+  if (fill?.startsWith('#')) style.push(`--table-fill-custom: ${fill}`)
+  if (color?.startsWith('#')) style.push(`--table-text-custom: ${color}`)
+  const joined = style.filter(Boolean).join('; ')
+  if (joined !== '') out.style = joined
   return out
 }
 
 interface CellData {
-  tableCell?: { fill: FillColor | null; color: TextColor | null; colwidth: number[] | null }
+  tableCell?: { fill: string | null; color: string | null; align: string | null; colwidth: number[] | null }
 }
 
 /**
- * A cell schema with `fill` and `color` (YAZ-3696 D3 / D8): `null` by default, carried by
- * `data-fill` / `data-color` on the DOM, and read from the cell's `data.tableCell` on load. The
+ * A cell schema with `fill` and `color` (YAZ-3696 D3 / D8; a name or `#rrggbb`, YAZ-3817) and its
+ * own `align` (YAZ-3819): `null` by default, carried by `data-fill` / `data-color` / `data-align` on
+ * the DOM, and read from the cell's `data.tableCell` on load. The
  * runner is GFM's (open the cell with its alignment, then its paragraph), with our attributes.
  */
 export function withCellStyle(spec: NodeSchema): NodeSchema {
   const toDOM = spec.toDOM!
   return {
     ...spec,
-    attrs: { ...spec.attrs, fill: { default: null }, color: { default: null } },
+    attrs: { ...spec.attrs, fill: { default: null }, color: { default: null }, align: { default: null } },
     parseDOM: spec.parseDOM?.map((rule) => {
       const { getAttrs } = rule as TagParseRule
       return {
@@ -172,19 +178,18 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
         getAttrs: (dom: HTMLElement) => {
           const base = getAttrs ? getAttrs(dom) : {}
           if (base === false || base === null) return base
-          const fill = dom.getAttribute('data-fill')
-          const color = dom.getAttribute('data-color')
           return {
             ...base,
-            fill: FILL_COLORS.includes(fill as FillColor) ? fill : null,
-            color: TEXT_COLORS.includes(color as TextColor) ? color : null,
+            fill: cellColor(dom.getAttribute('data-fill')),
+            color: cellColor(dom.getAttribute('data-color')),
+            align: cellAlign(dom.getAttribute('data-align')),
           }
         },
       }
     }),
     toDOM: (node) => {
       const [tag, attrs, hole] = toDOM(node) as [string, Record<string, string>, 0]
-      return [tag, { ...attrs, ...cellDomAttrs(node) }, hole]
+      return [tag, cellDomAttrs(node, attrs), hole]
     },
     parseMarkdown: {
       match: spec.parseMarkdown.match,
@@ -214,8 +219,9 @@ function applyStyle(table: Table, style: TableStyle): void {
       const width = style.widths[c] ?? null
       const fill = style.fill.get(cellAddress(r, c)) ?? null
       const color = style.color.get(cellAddress(r, c)) ?? null
-      if (width === null && fill === null && color === null) return
-      cell.data = { ...cell.data, tableCell: { fill, color, colwidth: width === null ? null : [width] } } as typeof cell.data
+      const align = style.align.get(cellAddress(r, c)) ?? null
+      if (width === null && fill === null && color === null && align === null) return
+      cell.data = { ...cell.data, tableCell: { fill, color, align, colwidth: width === null ? null : [width] } } as typeof cell.data
     })
   })
 }

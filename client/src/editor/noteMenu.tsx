@@ -147,7 +147,10 @@ interface OpenMenu {
   focused: HTMLElement | null
 }
 
-/** The menu for `view`'s note: a right-click in the note opens it; nothing renders while it is shut. */
+/** The vendored table block's ask for the table menu (YAZ-3820): `{ x, y, pos }` in `detail`. */
+const TABLE_HANDLE_MENU = 'milkdown-table-handle-menu'
+
+/** The menu for `view`'s note: a right-click in the note, or a table handle, opens it; nothing renders while it is shut. */
 export function NoteMenu({ view }: { view: EditorView | null }) {
   const [menu, setMenu] = useState<OpenMenu | null>(null)
   useEffect(() => {
@@ -166,8 +169,19 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
         focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null,
       })
     }
+    // A table's row or column handle (YAZ-3820): it selected its cells, and asks for this menu as a
+    // right-click in `pos`, a cell of its row or column (the vendored table block, `operation.ts`).
+    const onHandleMenu = (event: Event) => {
+      const { x, y, pos } = (event as CustomEvent<{ x: number; y: number; pos: number }>).detail
+      const active = document.activeElement
+      setMenu({ x, y, misspelling: null, pointer: pos + 1, doc: view.state.doc, focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null })
+    }
     view.dom.addEventListener('contextmenu', onContextMenu)
-    return () => view.dom.removeEventListener('contextmenu', onContextMenu)
+    view.dom.addEventListener(TABLE_HANDLE_MENU, onHandleMenu)
+    return () => {
+      view.dom.removeEventListener('contextmenu', onContextMenu)
+      view.dom.removeEventListener(TABLE_HANDLE_MENU, onHandleMenu)
+    }
   }, [view])
   if (view === null || menu === null) return null
   const refocus = () => (menu.focused ?? view.dom).focus()

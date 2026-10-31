@@ -1,6 +1,7 @@
 /**
  * The vendored table block (`client/vendor/milkdown-components-7.22.1-yaz1410.*`) on the real editor in jsdom:
- * mouse cell select and no redraw on a decoration change (YAZ-3696 B2, B4), column resize (D2).
+ * mouse cell select and no redraw on a decoration change (YAZ-3696 B2, B4), column resize (D2), no insert
+ * line (YAZ-3800), and the handles that ask for the app's table menu (YAZ-3820).
  * jsdom has no layout: `tableTestKit` gives each cell a 100 × 30 px box.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -183,184 +184,37 @@ describe('table block: no insert line (YAZ-3800)', () => {
   })
 })
 
-const COL_MENU = [['Insert column left', 'Insert column right'], ['Align left', 'Align center', 'Align right'], ['Sort A to Z', 'Sort Z to A'], ['Clear column', 'Delete column']]
-const ROW_MENU = [['Insert row above', 'Insert row below', 'Duplicate row'], ['Clear row', 'Delete row']]
 const handle = (view: EditorView, kind: 'col' | 'row') => view.dom.querySelector<HTMLElement>(`.milkdown-table-block [data-role="${kind}-drag-handle"]`)!
-/** The menu as the user reads it: the labels, with `|` for a separator. */
-const menuLabels = (view: EditorView, kind: 'col' | 'row') =>
-  Array.from(handle(view, kind).querySelector('.button-group')!.children, item => item.tagName === 'BUTTON' ? item.textContent : '|')
-/** Hover the cell (row, col), then click its column or row handle: what the user does to open the menu. */
-function openMenu(view: EditorView, kind: 'col' | 'row', row: number, col: number) {
+/** Hover the cell (row, col), then click its column or row handle. */
+function clickHandle(view: EditorView, kind: 'col' | 'row', row: number, col: number, init: MouseEventInit = {}) {
   mouse('pointermove', cellDOM(view, row, col).firstChild!, row, col)
-  handle(view, kind).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  handle(view, kind).dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 7, clientY: 9, ...init }))
 }
-/** Click a menu item (pointerdown, then the click that bubbles); answers how many transactions changed the document. */
-function choose(view: EditorView, kind: 'col' | 'row', label: string): number {
-  const item = Array.from(handle(view, kind).querySelectorAll('.button-group button')).find(button => button.textContent === label)!
-  const dispatch = view.dispatch.bind(view)
-  let changes = 0
-  view.dispatch = tr => { if (tr.docChanged) changes++; dispatch(tr) }
-  item.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
-  item.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-  view.dispatch = dispatch
-  return changes
+/** Each ask for the app's table menu that reaches the editor's DOM (YAZ-3820), from now on. */
+function asks(view: EditorView): Array<{ x: number; y: number; pos: number }> {
+  const got: Array<{ x: number; y: number; pos: number }> = []
+  view.dom.addEventListener('milkdown-table-handle-menu', (e) => got.push((e as CustomEvent).detail))
+  return got
 }
 const rowsOf = (view: EditorView) => {
   const table = view.state.doc.firstChild!, rows: string[][] = []
   table.forEach(row => { const cells: string[] = []; row.forEach(cell => { cells.push(cell.textContent) }); rows.push(cells) })
   return rows
 }
-/** The action is one undo step: one undo gives the table from before. */
-function undoesInOne(view: EditorView, before: Node) {
-  undo(view.state, view.dispatch)
-  expect(view.state.doc.firstChild!.eq(before)).toBe(true)
-}
-
-describe('table block: labeled row and column menus (YAZ-3696 D9)', () => {
-  it('a click on a column handle selects the column and opens the labeled menu', async () => {
-    const view = await mount()
-    openMenu(view, 'col', 1, 1)
-    const selection = view.state.selection as CellSelection
-    expect(selection).toBeInstanceOf(CellSelection)
-    expect(selection.isColSelection()).toBe(true)
-    expect(selection.$headCell.pos === cellPos(view, 0, 1) || selection.$anchorCell.pos === cellPos(view, 0, 1)).toBe(true)
-    expect(handle(view, 'col').querySelector('.button-group')!.getAttribute('data-show')).toBe('true')
-    expect(menuLabels(view, 'col')).toEqual(COL_MENU.flatMap((group, i) => i === 0 ? group : ['|', ...group]))
-  })
-
-  it('a click on a row handle selects the row and opens the labeled menu; the header row has none', async () => {
-    const view = await mount()
-    openMenu(view, 'row', 1, 0)
-    expect((view.state.selection as CellSelection).isRowSelection()).toBe(true)
-    expect(handle(view, 'row').querySelector('.button-group')!.getAttribute('data-show')).toBe('true')
-    expect(menuLabels(view, 'row')).toEqual(ROW_MENU.flatMap((group, i) => i === 0 ? group : ['|', ...group]))
-    await new Promise(resolve => setTimeout(resolve, 30))
-    handle(view, 'row').dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    openMenu(view, 'row', 0, 0)
-    expect(handle(view, 'row').querySelector('.button-group')!.getAttribute('data-show')).toBe('false')
-  })
-
-  it.each([
-    ['Insert column left', [['h1', '', 'h2'], ['a', '', 'b'], ['c', '', 'd']]],
-    ['Insert column right', [['h1', 'h2', ''], ['a', 'b', ''], ['c', 'd', '']]],
-    ['Clear column', [['h1', ''], ['a', ''], ['c', '']]],
-    ['Delete column', [['h1'], ['a'], ['c']]],
-  ])('%s: one transaction, one undo step', async (label, rows) => {
-    const view = await mount()
-    const before = view.state.doc.firstChild!
-    openMenu(view, 'col', 1, 1)
-    expect(choose(view, 'col', label)).toBe(1)
-    expect(rowsOf(view)).toEqual(rows)
-    expect(handle(view, 'col').querySelector('.button-group')!.getAttribute('data-show')).toBe('false')
-    undoesInOne(view, before)
-  })
-
-  it.each(['left', 'center', 'right'])('Align %s sets the alignment of each cell of the column', async align => {
-    const view = await mount('| h1 | h2 |\n| :-: | --- |\n| a | b |\n| c | d |\n')
-    const before = view.state.doc.firstChild!
-    openMenu(view, 'col', 1, 1)
-    expect(choose(view, 'col', `Align ${align}`)).toBe(1)
-    expect([0, 1, 2].map(row => view.state.doc.nodeAt(cellPos(view, row, 1))!.attrs.alignment)).toEqual([align, align, align])
-    expect(view.state.doc.nodeAt(cellPos(view, 1, 0))!.attrs.alignment).toBe('center')
-    undoesInOne(view, before)
-  })
-
-  const SORT = '| Fruit | Id |\n| --- | --- |\n| pear | 10 |\n|  | 2 |\n| apple | 9 |\n| Pear | 100 |\n| banana |  |\n'
-  it.each([
-    ['Sort A to Z', 0, ['apple', 'banana', 'pear', 'Pear', '']],
-    ['Sort Z to A', 0, ['pear', 'Pear', 'banana', 'apple', '']],
-    ['Sort A to Z', 1, ['', 'apple', 'pear', 'Pear', 'banana']],
-  ])('%s on column %i: the header stays first, empty cells last, equal cells keep their order, whole rows move', async (label, col, fruit) => {
-    const view = await mount(SORT)
-    const before = view.state.doc.firstChild!
-    const byFruit = new Map<string, Node>()
-    before.forEach((row, _, i) => { if (i > 0) byFruit.set(row.firstChild!.textContent, row) })
-    openMenu(view, 'col', 1, col)
-    expect(choose(view, 'col', label)).toBe(1)
-    const table = view.state.doc.firstChild!
-    expect(table.firstChild!.eq(before.firstChild!)).toBe(true)
-    expect(rowsOf(view).slice(1).map(row => row[0])).toEqual(fruit)
-    // The same row nodes in a new order: each cell keeps its attributes.
-    table.forEach((row, _, i) => { if (i > 0) expect(row).toBe(byFruit.get(row.firstChild!.textContent)) })
-    expect((view.state.selection as CellSelection).isColSelection()).toBe(true)
-    undoesInOne(view, before)
-  })
-
-  it.each([
-    ['Insert row above', [['h1', 'h2'], ['', ''], ['a', 'b'], ['c', 'd']]],
-    ['Insert row below', [['h1', 'h2'], ['a', 'b'], ['', ''], ['c', 'd']]],
-    ['Duplicate row', [['h1', 'h2'], ['a', 'b'], ['a', 'b'], ['c', 'd']]],
-    ['Clear row', [['h1', 'h2'], ['', ''], ['c', 'd']]],
-    ['Delete row', [['h1', 'h2'], ['c', 'd']]],
-  ])('%s: one transaction, one undo step', async (label, rows) => {
-    const view = await mount()
-    const before = view.state.doc.firstChild!
-    openMenu(view, 'row', 1, 0)
-    expect(choose(view, 'row', label)).toBe(1)
-    expect(rowsOf(view)).toEqual(rows)
-    expect(handle(view, 'row').querySelector('.button-group')!.getAttribute('data-show')).toBe('false')
-    undoesInOne(view, before)
-  })
-
-  it('as the right-click menu: the last body row and the last column cannot be deleted', async () => {
-    const view = await mount('| h1 |\n| --- |\n| a |\n')
-    const button = (kind: 'col' | 'row', label: string) =>
-      Array.from(handle(view, kind).querySelectorAll('button')).find(b => b.textContent === label)!
-    openMenu(view, 'row', 1, 0)
-    expect(button('row', 'Delete row').disabled).toBe(true)
-    expect(button('row', 'Duplicate row').disabled).toBe(false)
-    expect(choose(view, 'row', 'Delete row')).toBe(0)
-    openMenu(view, 'col', 1, 0)
-    expect(button('col', 'Delete column').disabled).toBe(true)
-    expect(choose(view, 'col', 'Delete column')).toBe(0)
-    expect(rowsOf(view)).toEqual([['h1'], ['a']])
-    // Two columns: the column can go again.
-    choose(view, 'col', 'Insert column right')
-    openMenu(view, 'col', 1, 0)
-    expect(button('col', 'Delete column').disabled).toBe(false)
-  })
-
-  it('an item is its own undo step, apart from the typing just before it (R4)', async () => {
-    const view = await mount()
-    // Typed in the row the item deletes: without a closed history, the two would join.
-    view.dispatch(view.state.tr.insertText('x', cellPos(view, 1, 0) + 2))
-    const typed = view.state.doc.firstChild!
-    openMenu(view, 'row', 1, 0)
-    expect(choose(view, 'row', 'Delete row')).toBe(1)
-    undoesInOne(view, typed)
-  })
-
-  it('in a read-only note a handle click opens no menu, and an open menu changes nothing', async () => {
-    const view = await mount()
-    openMenu(view, 'col', 1, 1)
-    view.setProps({ editable: () => false })
-    const before = view.state.doc
-    expect(choose(view, 'col', 'Delete column')).toBe(0)
-    expect(view.state.doc).toBe(before)
-    handle(view, 'col').querySelector('.button-group')!.setAttribute('data-show', 'false')
-    handle(view, 'col').dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    expect(handle(view, 'col').querySelector('.button-group')!.getAttribute('data-show')).toBe('false')
-  })
-})
-
-// YAZ-3801 (2E): a right-click on a handle opens its labeled menu; the labels count the selection.
-const WIDE = '| h1 | h2 | h3 | h4 |\n| --- | --- | --- | --- |\n| a | b | c | d |\n| e | f | g | h |\n| i | j | k | l |\n'
 /** A right-click on the handle: answers whether the note's own `contextmenu` listener heard it. */
 function rightClick(view: EditorView, kind: 'col' | 'row'): boolean {
   let heard = false
   const listener = () => { heard = true }
   view.dom.addEventListener('contextmenu', listener)
-  const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })
+  const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 7, clientY: 9 })
   handle(view, kind).dispatchEvent(event)
   view.dom.removeEventListener('contextmenu', listener)
   expect(event.defaultPrevented).toBe(true)
   return heard
 }
+const WIDE = '| h1 | h2 | h3 | h4 |\n| --- | --- | --- | --- |\n| a | b | c | d |\n| e | f | g | h |\n| i | j | k | l |\n'
 const selectCols = (view: EditorView, from: number, to: number) =>
   view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, from)), view.state.doc.resolve(cellPos(view, 0, to)))))
-const selectRows = (view: EditorView, from: number, to: number) =>
-  view.dispatch(view.state.tr.setSelection(CellSelection.rowSelection(view.state.doc.resolve(cellPos(view, from, 0)), view.state.doc.resolve(cellPos(view, to, 0)))))
-const isOpen = (view: EditorView, kind: 'col' | 'row') => handle(view, kind).querySelector('.button-group')!.getAttribute('data-show') === 'true'
 /** The [row, column] of each selected cell. */
 const selectedRect = (view: EditorView) => {
   const selection = view.state.selection as CellSelection
@@ -372,116 +226,77 @@ const selectedRect = (view: EditorView) => {
   return cells
 }
 
-describe('table block: right-click on a handle (YAZ-3801)', () => {
-  it.each(['col', 'row'] as const)('a right-click on the %s handle selects it and opens its menu, not the note menu', async kind => {
+describe('table block: a handle opens the app\'s table menu (YAZ-3820)', () => {
+  it('the block has no menu of its own', async () => {
     const view = await mount()
+    expect(view.dom.querySelector('.milkdown-table-block .button-group')).toBeNull()
+  })
+
+  it('a click on a column handle selects the column and asks for the menu at a cell of it in row 1', async () => {
+    const view = await mount()
+    const got = asks(view)
+    clickHandle(view, 'col', 1, 1)
+    const selection = view.state.selection as CellSelection
+    expect(selection.isColSelection()).toBe(true)
+    expect(new Set(selectedRect(view).map(([, c]) => c))).toEqual(new Set([1]))
+    expect(got).toEqual([{ x: 7, y: 9, pos: cellPos(view, 0, 1) }])
+  })
+
+  it('a click on a row handle selects the row and asks at a cell of it in column A; the header row asks nothing', async () => {
+    const view = await mount()
+    const got = asks(view)
+    clickHandle(view, 'row', 2, 1)
+    expect((view.state.selection as CellSelection).isRowSelection()).toBe(true)
+    expect(got).toEqual([{ x: 7, y: 9, pos: cellPos(view, 2, 0) }])
+    await new Promise(resolve => setTimeout(resolve, 30))
+    clickHandle(view, 'row', 0, 0)
+    expect(got).toHaveLength(1)
+  })
+
+  it.each(['col', 'row'] as const)('a right-click on the %s handle does the same, and the note\'s own right-click does not run', async kind => {
+    const view = await mount()
+    const got = asks(view)
     mouse('pointermove', cellDOM(view, 1, 1).firstChild!, 1, 1)
     expect(rightClick(view, kind)).toBe(false)
     const selection = view.state.selection as CellSelection
     expect(kind === 'col' ? selection.isColSelection() : selection.isRowSelection()).toBe(true)
-    expect(isOpen(view, kind)).toBe(true)
-    // A second right-click keeps it open (a left click toggles it).
-    rightClick(view, kind)
-    expect(isOpen(view, kind)).toBe(true)
-    expect(menuLabels(view, kind)).toEqual((kind === 'col' ? COL_MENU : ROW_MENU).flatMap((group, i) => i === 0 ? group : ['|', ...group]))
+    expect(got).toEqual([{ x: 7, y: 9, pos: kind === 'col' ? cellPos(view, 0, 1) : cellPos(view, 1, 0) }])
   })
 
-  it('the header row has no row menu on a right-click either', async () => {
+  it('in a read-only note a handle click or right-click selects nothing and asks nothing', async () => {
     const view = await mount()
-    mouse('pointermove', cellDOM(view, 0, 0).firstChild!, 0, 0)
-    expect(rightClick(view, 'row')).toBe(false)
-    expect(isOpen(view, 'row')).toBe(false)
-  })
-
-  it('in a read-only note a right-click on a handle selects nothing and opens no menu', async () => {
-    const view = await mount()
+    const got = asks(view)
     mouse('pointermove', cellDOM(view, 1, 1).firstChild!, 1, 1)
     view.setProps({ editable: () => false })
     const before = view.state.selection
+    handle(view, 'col').dispatchEvent(new MouseEvent('click', { bubbles: true }))
     handle(view, 'col').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
     expect(view.state.selection).toBe(before)
-    expect(isOpen(view, 'col')).toBe(false)
+    expect(got).toEqual([])
   })
-})
 
-describe('table block: menu labels count the selection (YAZ-3801)', () => {
-  it('a handle click in a selection of whole columns keeps it; outside it, selects the one column', async () => {
+  it('a handle click in a selection of whole columns keeps it; outside it, selects the one column (YAZ-3801)', async () => {
     const view = await mount(WIDE)
     selectCols(view, 0, 2)
-    openMenu(view, 'col', 1, 1)
+    clickHandle(view, 'col', 1, 1)
     expect(new Set(selectedRect(view).map(([, c]) => c))).toEqual(new Set([0, 1, 2]))
-    expect(menuLabels(view, 'col')).toEqual([
-      'Insert 3 columns left', 'Insert 3 columns right', '|', 'Align left', 'Align center', 'Align right', '|',
-      'Sort A to Z', 'Sort Z to A', '|', 'Clear 3 columns', 'Delete 3 columns',
-    ])
     await new Promise(resolve => setTimeout(resolve, 30))
-    openMenu(view, 'col', 1, 3)
+    clickHandle(view, 'col', 1, 3)
     expect(new Set(selectedRect(view).map(([, c]) => c))).toEqual(new Set([3]))
-    expect(menuLabels(view, 'col')[0]).toBe('Insert column left')
   })
 
-  it('Shift + click on a handle grows the selection to that column or row', async () => {
+  it('Shift + click on a handle grows the selection to that column or row (YAZ-3801)', async () => {
     const view = await mount(WIDE)
     // The handles follow the pointer once each 20 ms (a throttle).
     const pause = () => new Promise(resolve => setTimeout(resolve, 30))
-    openMenu(view, 'col', 1, 0)
+    clickHandle(view, 'col', 1, 0)
     await pause()
-    mouse('pointermove', cellDOM(view, 1, 2).firstChild!, 1, 2)
-    handle(view, 'col').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+    clickHandle(view, 'col', 1, 2, { shiftKey: true })
     expect(new Set(selectedRect(view).map(([, c]) => c))).toEqual(new Set([0, 1, 2]))
-    expect(menuLabels(view, 'col').at(-1)).toBe('Delete 3 columns')
     await pause()
-    openMenu(view, 'row', 1, 0)
+    clickHandle(view, 'row', 1, 0)
     await pause()
-    mouse('pointermove', cellDOM(view, 2, 0).firstChild!, 2, 0)
-    handle(view, 'row').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+    clickHandle(view, 'row', 2, 0, { shiftKey: true })
     expect(new Set(selectedRect(view).map(([r]) => r))).toEqual(new Set([1, 2]))
-    expect(menuLabels(view, 'row').at(-1)).toBe('Delete 2 rows')
-  })
-
-  // Columns 2 and 3 (h2, h3) selected.
-  it.each([
-    ['Insert 2 columns left', [['h1', '', '', 'h2', 'h3', 'h4'], ['a', '', '', 'b', 'c', 'd']]],
-    ['Insert 2 columns right', [['h1', 'h2', 'h3', '', '', 'h4'], ['a', 'b', 'c', '', '', 'd']]],
-    ['Clear 2 columns', [['h1', '', '', 'h4'], ['a', '', '', 'd']]],
-    ['Delete 2 columns', [['h1', 'h4'], ['a', 'd']]],
-  ])('%s: one transaction, one undo step', async (label, rows) => {
-    const view = await mount(WIDE)
-    const before = view.state.doc.firstChild!
-    selectCols(view, 1, 2)
-    openMenu(view, 'col', 1, 1)
-    expect(choose(view, 'col', label)).toBe(1)
-    expect(rowsOf(view).slice(0, 2)).toEqual(rows)
-    if (label.startsWith('Insert')) expect(new Set(selectedRect(view).map(([, c]) => rowsOf(view)[0]![c]))).toEqual(new Set(['h2', 'h3']))
-    undoesInOne(view, before)
-  })
-
-  it.each([
-    ['Insert 2 rows above', [['h1'], [''], [''], ['a'], ['e'], ['i']]],
-    ['Insert 2 rows below', [['h1'], ['a'], ['e'], [''], [''], ['i']]],
-    ['Duplicate 2 rows', [['h1'], ['a'], ['e'], ['a'], ['e'], ['i']]],
-    ['Clear 2 rows', [['h1'], [''], [''], ['i']]],
-    ['Delete 2 rows', [['h1'], ['i']]],
-  ])('%s: one transaction, one undo step', async (label, rows) => {
-    const view = await mount(WIDE)
-    const before = view.state.doc.firstChild!
-    selectRows(view, 1, 2)
-    openMenu(view, 'row', 2, 0)
-    expect(choose(view, 'row', label)).toBe(1)
-    expect(rowsOf(view).map(row => [row[0]])).toEqual(rows)
-    undoesInOne(view, before)
-  })
-
-  it('the guards stay: never the last column, never every body row', async () => {
-    const view = await mount('| h1 | h2 |\n| --- | --- |\n| a | b |\n| c | d |\n')
-    const button = (kind: 'col' | 'row', label: string) =>
-      Array.from(handle(view, kind).querySelectorAll('button')).find(b => b.textContent === label)!
-    selectCols(view, 0, 1)
-    openMenu(view, 'col', 1, 0)
-    expect(button('col', 'Delete 2 columns').disabled).toBe(true)
-    selectRows(view, 1, 2)
-    openMenu(view, 'row', 1, 0)
-    expect(button('row', 'Delete 2 rows').disabled).toBe(true)
-    expect(choose(view, 'row', 'Delete 2 rows')).toBe(0)
   })
 })

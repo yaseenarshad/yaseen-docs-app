@@ -253,6 +253,49 @@ describe('copy cells to Google Docs with their lines (YAZ-3802, demo round 1 dec
     expect(text).toBe('h1\th2\na\tb')
   })
 
+  it('each named colour copies as its light shade, a custom one as picked (YAZ-3817)', async () => {
+    const names = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey', 'brown']
+    /** A light value of table.css, through one `var()` of app.css (the highlight washes). */
+    const light = (name: string) => {
+      const value = lightVar(tableCss, name)
+      const ref = /^var\((--[\w-]+)\)$/.exec(value)?.[1]
+      return ref === undefined ? value : lightVar(appCss, ref)
+    }
+    const view = await mountTable(`| ${names.join(' | ')} | x |\n|${' - |'.repeat(names.length + 1)}\n|${' a |'.repeat(names.length + 1)}\n`)
+    names.forEach((name, col) => setCell(view, 1, col, { fill: name, color: name }))
+    setCell(view, 1, names.length, { fill: '#ff8800', color: '#1a2b3c' })
+    selectCells(view, [1, 0], [1, names.length])
+    const box = document.createElement('div')
+    box.innerHTML = copy(view).html
+    const cells = [...box.querySelectorAll<HTMLElement>('td')]
+    names.forEach((name, col) => {
+      expect(cells[col].style.backgroundColor, name).toBe(overWhite(light(`--table-fill-${name}`)))
+      expect(cells[col].style.color, name).toBe(computed(light(`--table-text-${name}`)))
+    })
+    // A custom fill draws at 35%: over white, as the page shows it.
+    expect(cells[names.length].style.backgroundColor).toBe(overWhite('rgba(255, 136, 0, 0.35)'))
+    expect(cells[names.length].style.color).toBe(computed('#1a2b3c'))
+  })
+
+  it('a cell\'s own alignment copies as its `text-align`; the others keep their column\'s (YAZ-3819)', async () => {
+    const view = await mountTable()
+    setCell(view, 1, 0, { align: 'center' })
+    selectCells(view, [1, 0], [1, 1])
+    const box = document.createElement('div')
+    box.innerHTML = copy(view).html
+    expect([...box.querySelectorAll<HTMLElement>('td')].map((td) => td.style.textAlign)).toEqual(['center', 'left'])
+  })
+
+  it('a paste brings each cell\'s own alignment with it (YAZ-3819)', async () => {
+    const view = await mountTable('| h1 | h2 | h3 |\n| --- | --- | --- |\n| a | b | c |\n| d | e | f |\n')
+    setCell(view, 1, 0, { align: 'right' })
+    selectCells(view, [1, 0], [1, 1])
+    const copied = copy(view)
+    caretIn(view, 2, 1)
+    pasteHtml(view, copied.html, copied.text)
+    expect([cellAt(view, 2, 1).attrs.align, cellAt(view, 2, 2).attrs.align]).toEqual(['right', null])
+  })
+
   it('a whole table copied with the text around it has the same styles', async () => {
     const view = await mountTable(`Before\n\n${TABLE}\nAfter\n`)
     view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))

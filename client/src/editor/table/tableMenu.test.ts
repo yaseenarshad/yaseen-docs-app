@@ -45,16 +45,22 @@ const tableAttrs = (view: EditorView) => {
 }
 
 describe('the Table part', () => {
-  it('shows after the paste rows when the right-click is in a cell, in three groups', async () => {
+  it('shows after the paste rows when the right-click is in a cell, in five groups (YAZ-3820)', async () => {
     const { view } = await mount(TABLE)
     const sections = sectionsAt(view, 1, 0).filter((s) => s.length > 0)
     const labels = sections.map((s) => s.map((item) => (item.children === undefined ? item.label : `${item.label} [${item.children.map((g) => g.map((c) => c.label).join(', ')).join(' | ')}]`)))
-    expect(labels.slice(-3)).toEqual([
-      ['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right'],
-      ['Delete row', 'Delete column', 'Clear cells', 'Fill [Yellow, Green, Blue, Pink | None]'],
+    const colours = 'Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, Grey, Brown'
+    expect(labels.slice(-5)).toEqual([
+      ['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row'],
+      ['Delete row', 'Delete column', 'Clear cells'],
+      ['Align [Left, Center, Right]', `Fill [No fill | ${colours} | Custom colour…]`, `Text colour [Default colour | ${colours} | Custom colour…]`],
+      ['Sort A to Z', 'Sort Z to A'],
       ['Freeze up to this row', 'Freeze up to this column', 'Unfreeze rows', 'Unfreeze columns'],
     ])
-    expect(labels.at(-4)?.[0]).toBe('Paste')
+    expect(labels.at(-6)?.[0]).toBe('Paste')
+    // The palettes' swatches, as the cell toolbar's.
+    const teal = row(view, 1, 0, 'table-fill-teal').icon as { props: { style: { background: string } } }
+    expect(teal.props.style.background).toBe('var(--table-fill-solid-teal)')
   })
 
   it('is absent outside a table and in a read-only note', async () => {
@@ -70,6 +76,7 @@ describe('the Table part', () => {
     expect(row(view, 0, 0, 'table-insert-row-above').disabled).toBe(true)
     expect(row(view, 0, 0, 'table-delete-row').disabled).toBe(true)
     expect(row(view, 0, 0, 'table-insert-row-below').disabled).toBeFalsy()
+    expect(row(view, 0, 0, 'table-duplicate-rows').disabled).toBe(true)
   })
 })
 
@@ -82,6 +89,7 @@ describe('each row, on the clicked cell, one undo step', () => {
     ['table-delete-row', [['h1', 'h2'], ['a', 'b']]],
     ['table-delete-col', [['h1'], ['a'], ['c']]],
     ['table-clear', [['h1', 'h2'], ['a', 'b'], ['c', '']]],
+    ['table-duplicate-rows', [['h1', 'h2'], ['a', 'b'], ['c', 'd'], ['c', 'd']]],
   ])('%s', async (id, after) => {
     const { crepe, view } = await mount(TABLE)
     const before = getMarkdownForSave(crepe)
@@ -116,6 +124,65 @@ describe('each row, on the clicked cell, one undo step', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
     undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toContain('fill B2 blue')
+  })
+})
+
+describe('Align ▸, Fill ▸, Text colour ▸ and Sort (YAZ-3820)', () => {
+  it('Align ▸ sets the target cells\' own alignment, one undo step (YAZ-3819)', async () => {
+    const { crepe, view } = await mount(TABLE)
+    const before = getMarkdownForSave(crepe)
+    view.dispatch(view.state.tr.setSelection(CellSelection.create(view.state.doc, cellPos(view, 1, 0), cellPos(view, 1, 1))))
+    row(view, 1, 0, 'table-align-right').onSelect()
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: align A2:B2 right -->\n`)
+    expect(view.state.doc.nodeAt(cellPos(view, 1, 0))!.attrs.alignment).toBeNull()
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('Text colour ▸ a name, then Default colour', async () => {
+    const { crepe, view } = await mount(TABLE)
+    const before = getMarkdownForSave(crepe)
+    row(view, 2, 1, 'table-color-purple').onSelect()
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: color B3 purple -->\n`)
+    row(view, 2, 1, 'table-color-none').onSelect()
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('Custom colour… opens the system picker; its change sets the clicked cell, one undo step', async () => {
+    const { crepe, view } = await mount(TABLE)
+    const before = getMarkdownForSave(crepe)
+    const opened = vi.spyOn(HTMLInputElement.prototype, 'click')
+    row(view, 1, 1, 'table-fill-custom').onSelect()
+    expect(opened).toHaveBeenCalledOnce()
+    const input = document.querySelector<HTMLInputElement>('input.table-colour-input')!
+    input.value = '#00aa55'
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill B2 #00aa55 -->\n`)
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  const SORT = '| Fruit | Id |\n| --- | --- |\n| pear | 10 |\n|  | 2 |\n| apple | 9 |\n| Pear | 100 |\n| banana |  |\n'
+  it.each<[string, number, string[]]>([
+    ['table-sort-asc', 0, ['apple', 'banana', 'pear', 'Pear', '']],
+    ['table-sort-desc', 0, ['pear', 'Pear', 'banana', 'apple', '']],
+    ['table-sort-asc', 1, ['', 'apple', 'pear', 'Pear', 'banana']],
+  ])('%s by column %i: the header stays first, empty cells last, equal cells keep their order, whole rows move', async (id, col, fruit) => {
+    const { crepe, view } = await mount(SORT)
+    const before = getMarkdownForSave(crepe)
+    row(view, 2, col, id).onSelect()
+    expect(texts(view).slice(1).map((r) => r[0])).toEqual(fruit)
+    expect(texts(view)[0]).toEqual(['Fruit', 'Id'])
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('Sort by the selected column keeps the cells selected', async () => {
+    const { view } = await mount(SORT)
+    view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, 0)))))
+    row(view, 0, 0, 'table-sort-asc').onSelect()
+    expect(texts(view).slice(1).map((r) => r[0])).toEqual(['apple', 'banana', 'pear', 'Pear', ''])
+    expect((view.state.selection as CellSelection).isColSelection()).toBe(true)
   })
 })
 
@@ -208,12 +275,12 @@ const labelsOf = (view: EditorView, r: number, c: number) =>
 describe('the labels count the selection (YAZ-3801)', () => {
   it('one cell: the labels as before', async () => {
     const { view } = await mount(WIDE)
-    expect(labelsOf(view, 1, 0)).toEqual(['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Delete row', 'Delete column', 'Clear cells', 'Fill'])
+    expect(labelsOf(view, 1, 0)).toEqual(['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Delete row', 'Delete column', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A'])
   })
 
   it.each<[[number, number], [number, number], string[]]>([
-    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Fill']],
-    [[1, 1], [1, 3], ['Insert row above', 'Insert row below', 'Insert 3 columns left', 'Insert 3 columns right', 'Delete row', 'Delete 3 columns', 'Clear cells', 'Fill']],
+    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate 2 rows', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A']],
+    [[1, 1], [1, 3], ['Insert row above', 'Insert row below', 'Insert 3 columns left', 'Insert 3 columns right', 'Duplicate row', 'Delete row', 'Delete 3 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A']],
   ])('cells %j to %j', async (from, to, labels) => {
     const { view } = await mount(WIDE)
     selectCells(view, from, to)
@@ -224,6 +291,7 @@ describe('the labels count the selection (YAZ-3801)', () => {
     ['table-insert-row-above', [1, 0], [2, 0], ['h1', '', '', 'a', 'e', 'i']],
     ['table-insert-row-below', [1, 0], [2, 0], ['h1', 'a', 'e', '', '', 'i']],
     ['table-delete-row', [1, 0], [2, 0], ['h1', 'i']],
+    ['table-duplicate-rows', [1, 0], [2, 0], ['h1', 'a', 'e', 'a', 'e', 'i']],
   ])('%s on 2 rows: 2 rows, one undo step', async (id, from, to, firstColumn) => {
     const { crepe, view } = await mount(WIDE)
     const before = getMarkdownForSave(crepe)

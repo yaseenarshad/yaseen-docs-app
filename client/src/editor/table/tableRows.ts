@@ -9,7 +9,8 @@
  * hold the default a second time (YAZ-3791, as the line pickers, YAZ-3208 D11). Each pick
  * is ONE transaction with the history closed first, so one ⌘Z (R4); the save writes it in the table
  * comment (`tableStyle.ts`). "Align all columns" is no comment part: it sets every cell's GFM
- * `alignment`, which the save writes in the `:-` row, so GitHub and Obsidian show it too. Its value
+ * `alignment`, which the save writes in the `:-` row, so GitHub and Obsidian show it too, and clears
+ * the cells' own alignment (YAZ-3819) in the same step. Its value
  * is the alignment all columns share; mixed columns read as the default. "Fit columns to the page"
  * clears every cell's `colwidth`, and is disabled while no column has a width. A read-only note
  * shows no rows (R3).
@@ -20,8 +21,8 @@ import { TableMap } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuChoice, MenuChoiceField, MenuItem, MenuNumberField, RowProvider } from '../blockHandleMenu'
 import { setCellsAttr } from './cells'
-import { ALIGNS, capital, type TableAlign } from './cellToolbar'
-import { TABLE_DEFAULTS, type TableAttrs } from './tableStyle'
+import { capital } from './cellToolbar'
+import { CELL_ALIGNS, TABLE_DEFAULTS, type CellAlign, type TableAttrs } from './tableStyle'
 
 /** Crepe's look of a border (table.css): 1px, 20% of the outline colour. */
 const BORDER_DEFAULT = { px: 1, darkness: 20 }
@@ -59,12 +60,14 @@ function setTable(view: EditorView, pos: number, attrs: Partial<TableAttrs>): vo
   view.dispatch(closeHistory(view.state.tr).setNodeMarkup(pos, undefined, next))
 }
 
-/** One cell attribute on every cell of the table, in one transaction. */
-function setCells(view: EditorView, pos: number, attr: string, value: unknown): void {
+/** Cell attributes on every cell of the table, in one transaction. */
+function setCells(view: EditorView, pos: number, attrs: Record<string, unknown>): void {
   const table = view.state.doc.nodeAt(pos)
   if (table?.type.name !== 'table') return
   const map = TableMap.get(table)
-  const tr = setCellsAttr(closeHistory(view.state.tr), { map, table, tableStart: pos + 1, left: 0, top: 0, right: map.width, bottom: map.height }, attr, value)
+  const rect = { map, table, tableStart: pos + 1, left: 0, top: 0, right: map.width, bottom: map.height }
+  const tr = closeHistory(view.state.tr)
+  for (const [attr, value] of Object.entries(attrs)) setCellsAttr(tr, rect, attr, value)
   if (tr.docChanged) view.dispatch(tr)
 }
 
@@ -127,7 +130,7 @@ export const tableRows: RowProvider = (view, target) => {
   const fit = {
     label: 'Fit columns to the page',
     disabled: cells.every((cell) => cell.attrs.colwidth === null),
-    run: () => setCells(view, pos, 'colwidth', null),
+    run: () => setCells(view, pos, { colwidth: null }),
   }
   const items: MenuItem[] = [
     thickness,
@@ -139,10 +142,11 @@ export const tableRows: RowProvider = (view, target) => {
       kind: 'choice',
       label: 'Align all columns',
       value: align,
-      choices: ALIGNS.map((value) => ({ value, label: capital(value) })),
+      choices: CELL_ALIGNS.map((value) => ({ value, label: capital(value) })),
       fallback: 'left',
       // "Default" is GFM's own: no alignment (`---`).
-      run: (picked) => setCells(view, pos, 'alignment', picked as TableAlign | null),
+      // The cells' own alignment goes too (YAZ-3819), so the table shows what was picked.
+      run: (picked) => setCells(view, pos, { alignment: picked as CellAlign | null, align: null }),
     },
     fit,
     choice('Stripes', attrs.stripes ? 'on' : 'off', 'off', [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], (on) => setTable(view, pos, { stripes: on === 'on' })),

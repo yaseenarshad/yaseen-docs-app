@@ -387,39 +387,7 @@
      return false
 --- a/src/table-block/view/component.tsx
 +++ b/src/table-block/view/component.tsx
-@@ -17,12 +17,30 @@
- import { Icon } from '../../__internal__/components/icon'
- import { keepAlive } from '../../__internal__/keep-alive'
- import { useDragHandlers } from './drag'
--import { useOperation } from './operation'
-+import { useOperation, type MenuItem } from './operation'
- import { usePointerHandlers } from './pointer'
- import { recoveryStateBetweenUpdate } from './utils'
- 
- keepAlive(h)
- 
-+// YAZ-3696 D9: a labeled menu, its groups split by a separator. An item acts on pointerdown;
-+// its click stays off the handle, whose click selects the column or row and toggles the menu.
-+// The labels are for one column or row; the menu sets them for the selection when it opens.
-+function renderMenu(groups: MenuItem[][]) {
-+  return groups.flatMap((group, index) => [
-+    ...(index > 0 ? [<div class="separator" role="separator" />] : []),
-+    ...group.map(([label, onPointerdown]) => (
-+      <button
-+        type="button"
-+        onPointerdown={onPointerdown}
-+        onClick={(e: MouseEvent) => e.stopPropagation()}
-+      >
-+        {label(1)}
-+      </button>
-+    )),
-+  ])
-+}
-+
- type TableBlockProps = {
-   view: EditorView
-   ctx: Ctx
-@@ -77,7 +95,6 @@
+@@ -77,7 +77,6 @@
      const tableWrapperRef = ref<HTMLDivElement>()
      const dragPreviewRef = ref<HTMLDivElement>()
      const hoverIndex = ref<CellIndex>([0, 0])
@@ -427,7 +395,7 @@
      const dragInfo = ref<DragInfo>()
  
      const refs: Refs = {
-@@ -89,20 +106,24 @@
+@@ -89,20 +88,23 @@
        colHandleRef,
        rowHandleRef,
        hoverIndex,
@@ -445,15 +413,14 @@
 -      deleteSelected,
 -      onAlign,
 -    } = useOperation(refs, ctx, getPos)
-+    const { selectCol, selectRow, openCol, openRow, colMenu, rowMenu } =
-+      useOperation(refs, ctx, getPos)
-+    // YAZ-3801: a right-click on a handle opens its menu, not the note's text menu. Its
-+    // mousedown (a ⌃-click is a right-click on macOS) stays off the editor, so the editor does not
-+    // move the selection.
-+    const contextMenu = (open: (e: MouseEvent) => void) => (e: MouseEvent) => {
++    const { selectCol, selectRow } = useOperation(refs, ctx, getPos)
++    // YAZ-3801, YAZ-3820: a right-click on a handle does what a click does (it selects, then asks
++    // the app for its table menu), not the note's own right-click. Its mousedown (a ⌃-click is a
++    // right-click on macOS) stays off the editor, so the editor does not move the selection.
++    const contextMenu = (select: (e: MouseEvent) => void) => (e: MouseEvent) => {
 +      e.preventDefault()
 +      e.stopPropagation()
-+      open(e)
++      select(e)
 +    }
 +    const rightDown = (e: MouseEvent) => {
 +      if (e.button !== 0 || e.ctrlKey) e.stopPropagation()
@@ -461,19 +428,22 @@
  
      onMounted(() => {
        requestAnimationFrame(() => {
-@@ -128,6 +149,8 @@
+@@ -128,29 +130,13 @@
              class="handle cell-handle"
              onDragstart={dragCol}
              onClick={selectCol}
-+            onContextmenu={contextMenu(openCol)}
++            onContextmenu={contextMenu(selectCol)}
 +            onMousedown={rightDown}
              onPointerdown={(e: PointerEvent) => e.stopPropagation()}
              onPointermove={(e: PointerEvent) => e.stopPropagation()}
              ref={colHandleRef}
-@@ -138,18 +161,7 @@
-               class="button-group"
-               onPointermove={(e: PointerEvent) => e.stopPropagation()}
-             >
+           >
+             <Icon icon={config.renderButton('col_drag_handle')} />
+-            <div
+-              data-show="false"
+-              class="button-group"
+-              onPointermove={(e: PointerEvent) => e.stopPropagation()}
+-            >
 -              <button type="button" onPointerdown={onAlign('left')}>
 -                <Icon icon={config.renderButton('align_col_left')} />
 -              </button>
@@ -486,31 +456,34 @@
 -              <button type="button" onPointerdown={deleteSelected}>
 -                <Icon icon={config.renderButton('delete_col')} />
 -              </button>
-+              {renderMenu(colMenu)}
-             </div>
+-            </div>
            </div>
            <div
-@@ -160,6 +172,8 @@
+             data-show="false"
+@@ -160,20 +146,13 @@
              class="handle cell-handle"
              onDragstart={dragRow}
              onClick={selectRow}
-+            onContextmenu={contextMenu(openRow)}
++            onContextmenu={contextMenu(selectRow)}
 +            onMousedown={rightDown}
              onPointerdown={(e: PointerEvent) => e.stopPropagation()}
              onPointermove={(e: PointerEvent) => e.stopPropagation()}
              ref={rowHandleRef}
-@@ -170,9 +184,7 @@
-               class="button-group"
-               onPointermove={(e: PointerEvent) => e.stopPropagation()}
-             >
+           >
+             <Icon icon={config.renderButton('row_drag_handle')} />
+-            <div
+-              data-show="false"
+-              class="button-group"
+-              onPointermove={(e: PointerEvent) => e.stopPropagation()}
+-            >
 -              <button type="button" onPointerdown={deleteSelected}>
 -                <Icon icon={config.renderButton('delete_row')} />
 -              </button>
-+              {renderMenu(rowMenu)}
-             </div>
+-            </div>
            </div>
            <div class="table-wrapper" ref={tableWrapperRef}>
-@@ -186,32 +198,25 @@
+             <div
+@@ -186,32 +165,25 @@
                  <tbody></tbody>
                </table>
              </div>
@@ -550,40 +523,43 @@
          </div>
 --- a/src/table-block/view/operation.ts
 +++ b/src/table-block/view/operation.ts
-@@ -1,148 +1,373 @@
+@@ -1,148 +1,104 @@
  import type { Ctx } from '@milkdown/ctx'
-+import type { Node } from '@milkdown/prose/model'
-+import type { Command, EditorState } from '@milkdown/prose/state'
  
--import { commandsCtx, editorViewCtx } from '@milkdown/core'
-+import { commandsCtx, editorViewCtx, type CmdKey } from '@milkdown/core'
- import {
+ import { commandsCtx, editorViewCtx } from '@milkdown/core'
+-import {
 -  addColAfterCommand,
 -  addColBeforeCommand,
 -  addRowAfterCommand,
 -  addRowBeforeCommand,
-   deleteSelectedCellsCommand,
-+  selectCol as selectColumn,
-   selectColCommand,
-   selectRowCommand,
-   setAlignCommand,
- } from '@milkdown/preset-gfm'
-+import { closeHistory } from '@milkdown/prose/history'
-+import {
-+  CellSelection,
-+  addColumn,
-+  deleteCellSelection,
-+  isInTable,
-+  selectedRect,
-+} from '@milkdown/prose/tables'
+-  deleteSelectedCellsCommand,
+-  selectColCommand,
+-  selectRowCommand,
+-  setAlignCommand,
+-} from '@milkdown/preset-gfm'
++import { selectColCommand, selectRowCommand } from '@milkdown/preset-gfm'
++import { CellSelection, TableMap, selectedRect } from '@milkdown/prose/tables'
  
  import type { Refs } from './types'
  
--export function useOperation(
--  refs: Refs,
--  ctx?: Ctx,
--  getPos?: () => number | undefined
--) {
++/**
++ * YAZ-3820: a handle click or right-click asks the app for its table menu with this event, sent
++ * on the handle (it bubbles to the editor's DOM). The block has no menu of its own: the app's note
++ * menu opens at `x`, `y`, as on a right-click in the cell at `pos` (a cell of the handle's
++ * column in row 1, or of its row in column A), on the cells the click selected.
++ */
++export const TABLE_HANDLE_MENU = 'milkdown-table-handle-menu'
++export interface TableHandleMenuDetail {
++  x: number
++  y: number
++  pos: number
++}
++
+ export function useOperation(
+   refs: Refs,
+   ctx?: Ctx,
+   getPos?: () => number | undefined
+ ) {
 -  const {
 -    xLineHandleRef,
 -    contentWrapperRef,
@@ -592,230 +568,41 @@
 -    hoverIndex,
 -    lineHoverIndex,
 -  } = refs
--
--  const onAddRow = () => {
--    if (!ctx) return
--    const xHandle = xLineHandleRef.value
--    if (!xHandle) return
-+/**
-+ * One labeled menu item (YAZ-3696 D9): its text for the number of selected columns or rows
-+ * (YAZ-3801), what a pointerdown on it does, and when it is disabled.
-+ */
-+export type MenuItem = [
-+  label: (count: number) => string,
-+  onPointerdown: (e: PointerEvent) => void,
-+  disabled?: (state: EditorState) => boolean,
-+]
- 
--    const [rowIndex] = lineHoverIndex.value!
--    if (rowIndex < 0) return
-+// YAZ-3696 D9: as the note's right-click menu, the last body row and the last column are never
-+// deleted (GFM needs a header row and one row; the table needs one column).
-+const allBodyRows = (state: EditorState) => {
-+  if (!isInTable(state)) return true
-+  const { top, bottom, map } = selectedRect(state)
-+  return top === 0 || bottom - top >= map.height - 1
-+}
-+const allColumns = (state: EditorState) => {
-+  if (!isInTable(state)) return true
-+  const { left, right, map } = selectedRect(state)
-+  return right - left >= map.width
-+}
- 
--    if (!ctx.get(editorViewCtx).editable) return
-+// "9" before "10"; case and accents do not count.
-+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
- 
--    const rows = Array.from(
--      contentWrapperRef.value?.querySelectorAll('tr') ?? []
--    )
--    const commands = ctx.get(commandsCtx)
--    const pos = (getPos?.() ?? 0) + 1
--    if (rows.length === rowIndex) {
--      commands.call(selectRowCommand.key, { pos, index: rowIndex - 1 })
--      commands.call(addRowAfterCommand.key)
--    } else {
--      commands.call(selectRowCommand.key, { pos, index: rowIndex })
--      commands.call(addRowBeforeCommand.key)
-+/**
-+ * YAZ-3696 D9: sort the body rows by the text of the selected column. The header row stays
-+ * first, empty cells go last, equal cells keep their order. The whole rows move, so each cell
-+ * keeps its attributes. One transaction, which selects the column again. GFM cells have no
-+ * colspan, so the column is the cell index in each row.
-+ */
-+export function sortRows(direction: 1 | -1): Command {
-+  return (state, dispatch) => {
-+    if (!isInTable(state)) return false
-+    const { table, tableStart, left } = selectedRect(state)
-+    const rows: Node[] = []
-+    table.forEach((row, _, index) => {
-+      if (index > 0) rows.push(row)
-+    })
-+    const sorted = rows
-+      .map((row, index) => ({ row, index, text: row.child(left).textContent.trim() }))
-+      .sort((a, b) => {
-+        if (!a.text !== !b.text) return a.text ? -1 : 1
-+        return direction * collator.compare(a.text, b.text) || a.index - b.index
-+      })
-+      .map(({ row }) => row)
-+    if (sorted.every((row, index) => row === rows[index])) return true
-+    if (dispatch) {
-+      const from = tableStart + table.firstChild!.nodeSize
-+      const tr = state.tr.replaceWith(from, tableStart + table.content.size, sorted)
-+      dispatch(selectColumn(left, tableStart)(tr))
-     }
--
--    commands.call(selectRowCommand.key, { pos, index: rowIndex })
--    xHandle.dataset.show = 'false'
-+    return true
-   }
-+}
- 
--  const onAddCol = () => {
--    if (!ctx) return
--    const xHandle = xLineHandleRef.value
--    if (!xHandle) return
--
--    const [_, colIndex] = lineHoverIndex.value!
--    if (colIndex < 0) return
--
--    if (!ctx.get(editorViewCtx).editable) return
--
--    const cols = Array.from(
--      contentWrapperRef.value?.querySelector('tr')?.children ?? []
--    )
--    const commands = ctx.get(commandsCtx)
--
--    const pos = (getPos?.() ?? 0) + 1
--    if (cols.length === colIndex) {
--      commands.call(selectColCommand.key, { pos, index: colIndex - 1 })
--      commands.call(addColAfterCommand.key)
--    } else {
--      commands.call(selectColCommand.key, { pos, index: colIndex })
--      commands.call(addColBeforeCommand.key)
-+/** YAZ-3696 D9: copy the selected body rows below the last of them. */
-+export const duplicateRows: Command = (state, dispatch) => {
-+  if (!isInTable(state)) return false
-+  const { table, tableStart, top, bottom } = selectedRect(state)
-+  if (top === 0) return false
-+  if (dispatch) {
-+    const rows: Node[] = []
-+    let pos = tableStart
-+    for (let index = 0; index < bottom; index++) {
-+      const row = table.child(index)
-+      if (index >= top) rows.push(row)
-+      pos += row.nodeSize
-     }
-+    dispatch(state.tr.insert(pos, rows))
-+  }
-+  return true
-+}
- 
--    commands.call(selectColCommand.key, { pos, index: colIndex })
-+/**
-+ * YAZ-3801: insert as many columns as the selection holds, left or right of it, in one
-+ * transaction (`addColumnBefore` and `addColumnAfter` of `prosemirror-tables` insert one). The
-+ * same cells stay selected: a mapped column selection of a one-column table is also a row
-+ * selection, and `CellSelection.map` grew it over the new columns.
-+ */
-+export function insertColumns(side: 'left' | 'right'): Command {
-+  return (state, dispatch) => {
-+    if (!isInTable(state)) return false
-+    if (dispatch) {
-+      const rect = selectedRect(state)
-+      const at = side === 'left' ? rect.left : rect.right
-+      // `addColumn` maps the rect's positions through the transaction's steps.
-+      const tr = state.tr
-+      for (let i = rect.left; i < rect.right; i++) addColumn(tr, rect, at)
-+      const { selection } = state
-+      if (selection instanceof CellSelection) {
-+        const cell = (pos: number) => tr.doc.resolve(tr.mapping.map(pos))
-+        tr.setSelection(
-+          new CellSelection(
-+            cell(selection.$anchorCell.pos),
-+            cell(selection.$headCell.pos)
-+          )
-+        )
-+      }
-+      dispatch(tr)
-+    }
-+    return true
-   }
-+}
- 
--  const selectCol = () => {
--    if (!ctx) return
--    const [_, colIndex] = hoverIndex.value!
--    const commands = ctx.get(commandsCtx)
--    const pos = (getPos?.() ?? 0) + 1
--    commands.call(selectColCommand.key, { pos, index: colIndex })
--    const buttonGroup =
--      colHandleRef.value?.querySelector<HTMLElement>('.button-group')
--    if (buttonGroup)
--      buttonGroup.dataset.show =
--        buttonGroup.dataset.show === 'true' ? 'false' : 'true'
-+/**
-+ * YAZ-3801: insert as many body rows as the selection holds, above or below it, in one
-+ * transaction. Each cell takes its column's alignment, as GFM's `addRowWithAlignment` does.
-+ */
-+export function insertRows(side: 'above' | 'below'): Command {
-+  return (state, dispatch) => {
-+    if (!isInTable(state)) return false
-+    const { table, tableStart, map, top, bottom } = selectedRect(state)
-+    const at = side === 'above' ? top : bottom
-+    if (at === 0) return false
-+    if (dispatch) {
-+      let pos = tableStart
-+      for (let i = 0; i < at; i++) pos += table.child(i).nodeSize
-+      const { table_row: rowType, table_cell: cellType } = state.schema.nodes
-+      const rows = Array.from({ length: bottom - top }, () =>
-+        rowType!.create(
-+          null,
-+          Array.from({ length: map.width }, (_, col) =>
-+            cellType!.createAndFill({
-+              alignment: table.nodeAt(map.map[col]!)?.attrs.alignment,
-+            })!
-+          )
-+        )
-+      )
-+      dispatch(state.tr.insert(pos, rows))
-+    }
-+    return true
-   }
-+}
-+
-+/** YAZ-3801: "Delete column" for one, "Delete 3 columns" for three. */
-+const counted =
-+  (one: string, many: (count: number) => string) => (count: number) =>
-+    count > 1 ? many(count) : one
-+
-+export function useOperation(
-+  refs: Refs,
-+  ctx?: Ctx,
-+  getPos?: () => number | undefined
-+) {
 +  const { colHandleRef, rowHandleRef, hoverIndex } = refs
  
--  const selectRow = () => {
+-  const onAddRow = () => {
 +  /**
 +   * YAZ-3801: what a handle click (left or right) selects. A selection of whole columns (rows)
 +   * that holds the hovered one stays, so the menu acts on all of them; a row selection stays only
 +   * without the header row. Shift grows the selection to the hovered column (row), as in Sheets.
-+   * Else the hovered column (row) alone. Then the menu opens (`open`), or toggles on a left click.
++   * Else the hovered column (row) alone. Then the app's menu opens (YAZ-3820); the header row has
++   * no row menu.
 +   */
-+  const select = (kind: 'col' | 'row', e: MouseEvent, open: boolean) => {
++  const select = (kind: 'col' | 'row', e: MouseEvent) => {
      if (!ctx) return
--    const [rowIndex, _] = hoverIndex.value!
+-    const xHandle = xLineHandleRef.value
+-    if (!xHandle) return
+-
+-    const [rowIndex] = lineHoverIndex.value!
+-    if (rowIndex < 0) return
+-
+-    if (!ctx.get(editorViewCtx).editable) return
+-
+-    const rows = Array.from(
+-      contentWrapperRef.value?.querySelectorAll('tr') ?? []
+-    )
 -    const commands = ctx.get(commandsCtx)
 +    const view = ctx.get(editorViewCtx)
 +    // YAZ-3696 R3: a read-only note opens no menu.
 +    if (!view.editable) return
 +    const [rowIndex, colIndex] = hoverIndex.value!
      const pos = (getPos?.() ?? 0) + 1
--    commands.call(selectRowCommand.key, { pos, index: rowIndex })
--    const buttonGroup =
--      rowHandleRef.value?.querySelector<HTMLElement>('.button-group')
--    if (buttonGroup && rowIndex > 0)
+-    if (rows.length === rowIndex) {
+-      commands.call(selectRowCommand.key, { pos, index: rowIndex - 1 })
+-      commands.call(addRowAfterCommand.key)
+-    } else {
+-      commands.call(selectRowCommand.key, { pos, index: rowIndex })
+-      commands.call(addRowBeforeCommand.key)
 +    const { selection } = view.state
 +    const own =
 +      selection instanceof CellSelection &&
@@ -854,23 +641,80 @@
 +          pos,
 +          index: kind === 'col' ? colIndex : rowIndex,
 +        })
-+    }
-+    const buttonGroup = (
-+      kind === 'col' ? colHandleRef : rowHandleRef
-+    ).value?.querySelector<HTMLElement>('.button-group')
-+    if (buttonGroup && (kind === 'col' || rowIndex > 0)) {
-       buttonGroup.dataset.show =
--        buttonGroup.dataset.show === 'true' ? 'false' : 'true'
-+        open || buttonGroup.dataset.show !== 'true' ? 'true' : 'false'
-+      refresh(buttonGroup, kind === 'col' ? colMenu : rowMenu, kind, ctx)
-+    }
+     }
+-
+-    commands.call(selectRowCommand.key, { pos, index: rowIndex })
+-    xHandle.dataset.show = 'false'
+-  }
+-
+-  const onAddCol = () => {
+-    if (!ctx) return
+-    const xHandle = xLineHandleRef.value
+-    if (!xHandle) return
+-
+-    const [_, colIndex] = lineHoverIndex.value!
+-    if (colIndex < 0) return
+-
+-    if (!ctx.get(editorViewCtx).editable) return
+-
+-    const cols = Array.from(
+-      contentWrapperRef.value?.querySelector('tr')?.children ?? []
+-    )
+-    const commands = ctx.get(commandsCtx)
+-
+-    const pos = (getPos?.() ?? 0) + 1
+-    if (cols.length === colIndex) {
+-      commands.call(selectColCommand.key, { pos, index: colIndex - 1 })
+-      commands.call(addColAfterCommand.key)
+-    } else {
+-      commands.call(selectColCommand.key, { pos, index: colIndex })
+-      commands.call(addColBeforeCommand.key)
++    const table = view.state.doc.nodeAt(pos - 1)
++    if (!table || (kind === 'row' && rowIndex === 0)) return
++    const detail: TableHandleMenuDetail = {
++      x: e.clientX,
++      y: e.clientY,
++      pos:
++        pos +
++        TableMap.get(table).positionAt(
++          kind === 'col' ? 0 : rowIndex,
++          kind === 'col' ? colIndex : 0,
++          table
++        ),
+     }
+-
+-    commands.call(selectColCommand.key, { pos, index: colIndex })
++    ;(kind === 'col' ? colHandleRef : rowHandleRef).value?.dispatchEvent(
++      new CustomEvent(TABLE_HANDLE_MENU, { bubbles: true, detail })
++    )
    }
-+  const selectCol = (e: MouseEvent) => select('col', e, false)
-+  const selectRow = (e: MouseEvent) => select('row', e, false)
-+  // YAZ-3801: a right-click on a handle opens its menu, not the note's text menu.
-+  const openCol = (e: MouseEvent) => select('col', e, true)
-+  const openRow = (e: MouseEvent) => select('row', e, true)
  
+-  const selectCol = () => {
+-    if (!ctx) return
+-    const [_, colIndex] = hoverIndex.value!
+-    const commands = ctx.get(commandsCtx)
+-    const pos = (getPos?.() ?? 0) + 1
+-    commands.call(selectColCommand.key, { pos, index: colIndex })
+-    const buttonGroup =
+-      colHandleRef.value?.querySelector<HTMLElement>('.button-group')
+-    if (buttonGroup)
+-      buttonGroup.dataset.show =
+-        buttonGroup.dataset.show === 'true' ? 'false' : 'true'
+-  }
+-
+-  const selectRow = () => {
+-    if (!ctx) return
+-    const [rowIndex, _] = hoverIndex.value!
+-    const commands = ctx.get(commandsCtx)
+-    const pos = (getPos?.() ?? 0) + 1
+-    commands.call(selectRowCommand.key, { pos, index: rowIndex })
+-    const buttonGroup =
+-      rowHandleRef.value?.querySelector<HTMLElement>('.button-group')
+-    if (buttonGroup && rowIndex > 0)
+-      buttonGroup.dataset.show =
+-        buttonGroup.dataset.show === 'true' ? 'false' : 'true'
+-  }
+-
 -  const deleteSelected = (e: PointerEvent) => {
 -    if (!ctx) return
 -
@@ -882,150 +726,33 @@
 -    commands.call(deleteSelectedCellsCommand.key)
 -    requestAnimationFrame(() => {
 -      ctx.get(editorViewCtx).focus()
-+  // YAZ-3696 D9, YAZ-3801: on open, each item's button gets its label for the number of selected
-+  // columns (rows), and is disabled when the item cannot act on the selection. The buttons are
-+  // the menu's items, in order.
-+  const refresh = (
-+    group: HTMLElement,
-+    menu: MenuItem[][],
-+    kind: 'col' | 'row',
-+    editor: Ctx
-+  ) => {
-+    const { state } = editor.get(editorViewCtx)
-+    let count = 1
-+    if (isInTable(state)) {
-+      const { left, right, top, bottom } = selectedRect(state)
-+      count = kind === 'col' ? right - left : bottom - top
-+    }
-+    const buttons = group.querySelectorAll('button')
-+    menu.flat().forEach(([label, , disabled], index) => {
-+      const button = buttons[index]
-+      if (!button) return
-+      button.textContent = label(count)
-+      button.disabled = disabled?.(state) ?? false
-     })
-   }
- 
+-    })
+-  }
+-
 -  const onAlign =
 -    (direction: 'left' | 'center' | 'right') => (e: PointerEvent) => {
-+  // A menu item acts on the selection the handle click made, closes the menus and gives the
-+  // focus back to the editor. Each command is one transaction, after a closed history: one undo
-+  // step of its own (YAZ-3696 R4).
-+  const item = (
-+    label: string | ((count: number) => string),
-+    run: (editor: Ctx) => void,
-+    disabled?: (state: EditorState) => boolean
-+  ): MenuItem => [
-+    typeof label === 'string' ? () => label : label,
-+    (e: PointerEvent) => {
-       if (!ctx) return
- 
+-      if (!ctx) return
+-
 -      if (!ctx.get(editorViewCtx).editable) return
-+      const view = ctx.get(editorViewCtx)
-+      if (!view.editable) return
- 
-       e.preventDefault()
-       e.stopPropagation()
+-
+-      e.preventDefault()
+-      e.stopPropagation()
 -      const commands = ctx.get(commandsCtx)
 -      commands.call(setAlignCommand.key, direction)
-+      if (disabled?.(view.state)) return
-+      view.dispatch(closeHistory(view.state.tr))
-+      run(ctx)
-+      for (const handle of [colHandleRef.value, rowHandleRef.value])
-+        handle?.querySelector('.button-group')?.setAttribute('data-show', 'false')
-       requestAnimationFrame(() => {
+-      requestAnimationFrame(() => {
 -        ctx.get(editorViewCtx).focus()
-+        view.focus()
-       })
+-      })
 -    }
-+    },
-+    disabled,
-+  ]
-+  const call = <T>(
-+    label: string | ((count: number) => string),
-+    key: CmdKey<T>,
-+    payload?: T,
-+    disabled?: (state: EditorState) => boolean
-+  ) =>
-+    item(label, (editor) => editor.get(commandsCtx).call(key, payload), disabled)
-+  const prose = (label: string | ((count: number) => string), command: Command) =>
-+    item(label, (editor) => {
-+      const view = editor.get(editorViewCtx)
-+      command(view.state, view.dispatch)
-+    })
-+
-+  // YAZ-3696 D9: the labeled menus, in groups (a separator between two groups). YAZ-3801: the
-+  // labels count the selected columns (rows), as in Sheets.
-+  const colMenu: MenuItem[][] = [
-+    [
-+      prose(
-+        counted('Insert column left', (n) => `Insert ${n} columns left`),
-+        insertColumns('left')
-+      ),
-+      prose(
-+        counted('Insert column right', (n) => `Insert ${n} columns right`),
-+        insertColumns('right')
-+      ),
-+    ],
-+    [
-+      call('Align left', setAlignCommand.key, 'left'),
-+      call('Align center', setAlignCommand.key, 'center'),
-+      call('Align right', setAlignCommand.key, 'right'),
-+    ],
-+    [prose('Sort A to Z', sortRows(1)), prose('Sort Z to A', sortRows(-1))],
-+    [
-+      prose(
-+        counted('Clear column', (n) => `Clear ${n} columns`),
-+        deleteCellSelection
-+      ),
-+      call(
-+        counted('Delete column', (n) => `Delete ${n} columns`),
-+        deleteSelectedCellsCommand.key,
-+        undefined,
-+        allColumns
-+      ),
-+    ],
-+  ]
-+  const rowMenu: MenuItem[][] = [
-+    [
-+      prose(
-+        counted('Insert row above', (n) => `Insert ${n} rows above`),
-+        insertRows('above')
-+      ),
-+      prose(
-+        counted('Insert row below', (n) => `Insert ${n} rows below`),
-+        insertRows('below')
-+      ),
-+      prose(
-+        counted('Duplicate row', (n) => `Duplicate ${n} rows`),
-+        duplicateRows
-+      ),
-+    ],
-+    [
-+      prose(
-+        counted('Clear row', (n) => `Clear ${n} rows`),
-+        deleteCellSelection
-+      ),
-+      call(
-+        counted('Delete row', (n) => `Delete ${n} rows`),
-+        deleteSelectedCellsCommand.key,
-+        undefined,
-+        allBodyRows
-+      ),
-+    ],
-+  ]
- 
+-
    return {
 -    onAddRow,
 -    onAddCol,
-     selectCol,
-     selectRow,
+-    selectCol,
+-    selectRow,
 -    deleteSelected,
 -    onAlign,
-+    openCol,
-+    openRow,
-+    colMenu,
-+    rowMenu,
++    selectCol: (e: MouseEvent) => select('col', e),
++    selectRow: (e: MouseEvent) => select('row', e),
    }
  }
 --- a/src/table-block/view/types.ts
@@ -1039,23 +766,18 @@
  }
 --- a/lib/table-block/index.js
 +++ b/lib/table-block/index.js
-@@ -1,12 +1,12 @@
+@@ -1,8 +1,7 @@
  import { $ctx, $view } from '@milkdown/utils';
 -import { selectColCommand, moveColCommand, selectRowCommand, moveRowCommand, setAlignCommand, deleteSelectedCellsCommand, addColAfterCommand, addColBeforeCommand, addRowAfterCommand, addRowBeforeCommand, tableSchema } from '@milkdown/preset-gfm';
-+import { selectColCommand, moveColCommand, selectRowCommand, moveRowCommand, selectCol as selectColumn, setAlignCommand, deleteSelectedCellsCommand, tableSchema } from '@milkdown/preset-gfm';
++import { selectColCommand, moveColCommand, selectRowCommand, moveRowCommand, tableSchema } from '@milkdown/preset-gfm';
  import { findParent } from '@milkdown/prose';
 -import { TextSelection, NodeSelection } from '@milkdown/prose/state';
 -import { CellSelection, findTable } from '@milkdown/prose/tables';
-+import { CellSelection, findTable, addColumn, deleteCellSelection, isInTable, selectedRect, updateColumnsOnResize } from '@milkdown/prose/tables';
++import { CellSelection, findTable, TableMap, selectedRect, updateColumnsOnResize } from '@milkdown/prose/tables';
  import { h, onMounted, onUnmounted, defineComponent, ref, shallowRef, createApp } from 'vue';
  import clsx from 'clsx';
  import DOMPurify from 'dompurify';
- import { editorViewCtx, commandsCtx } from '@milkdown/core';
-+import { closeHistory } from '@milkdown/prose/history';
- import { computePosition, offset } from '@floating-ui/dom';
- import { throttle } from 'lodash-es';
- 
-@@ -155,10 +155,16 @@
+@@ -155,10 +154,16 @@
    return context;
  }
  
@@ -1072,7 +794,7 @@
    const { width: tableWidth, height: tableHeight } = tableContent.querySelector("tbody").getBoundingClientRect();
    if (axis === "y") {
      const rows = tableContent.querySelectorAll("tr");
-@@ -167,8 +173,8 @@
+@@ -167,8 +172,8 @@
      previewRoot.appendChild(row.cloneNode(true));
      const height = row.getBoundingClientRect().height;
      Object.assign(preview.style, {
@@ -1083,7 +805,7 @@
      });
      preview.dataset.show = "true";
      return;
-@@ -186,8 +192,8 @@
+@@ -186,8 +191,8 @@
        previewRoot.appendChild(tr);
      });
      Object.assign(preview.style, {
@@ -1094,7 +816,7 @@
      });
      preview.dataset.show = "true";
      return;
-@@ -435,17 +441,19 @@
+@@ -435,17 +440,19 @@
      const info = dragInfo.value;
      if (!info) return;
      if (!contentRoot.offsetParent) return;
@@ -1119,7 +841,7 @@
        preview.style.left = `${previewLeftOffset}px`;
        const dragOverColumn = getDragOverColumn(contentRoot, e.clientX);
        if (dragOverColumn) {
-@@ -455,24 +463,25 @@
+@@ -455,24 +462,25 @@
          info.endIndex = index;
          computePosition(col, yHandle, {
            placement: direction === "left" ? "left" : "right",
@@ -1152,7 +874,7 @@
        preview.style.top = `${previewTopOffset}px`;
        preview.style.left = `${wrapperOffsetLeft}px`;
        const dragOverRow = getDragOverRow(contentRoot, e.clientY);
-@@ -483,11 +492,11 @@
+@@ -483,11 +491,11 @@
          info.endIndex = index;
          computePosition(row, xHandle, {
            placement: direction === "up" ? "top" : "bottom",
@@ -1166,11 +888,12 @@
              top: `${y}px`
            });
          }).catch(console.error);
-@@ -578,111 +587,254 @@
+@@ -578,111 +586,55 @@
    };
  }
  
--function useOperation(refs, ctx, getPos) {
++const TABLE_HANDLE_MENU = "milkdown-table-handle-menu";
+ function useOperation(refs, ctx, getPos) {
 -  const {
 -    xLineHandleRef,
 -    contentWrapperRef,
@@ -1181,7 +904,10 @@
 -  } = refs;
 -  const onAddRow = () => {
 -    var _a, _b, _c;
--    if (!ctx) return;
++  const { colHandleRef, rowHandleRef, hoverIndex } = refs;
++  const select = (kind, e) => {
++    var _a, _b;
+     if (!ctx) return;
 -    const xHandle = xLineHandleRef.value;
 -    if (!xHandle) return;
 -    const [rowIndex] = lineHoverIndex.value;
@@ -1198,167 +924,10 @@
 -    } else {
 -      commands.call(selectRowCommand.key, { pos, index: rowIndex });
 -      commands.call(addRowBeforeCommand.key);
-+const collator = new Intl.Collator(void 0, { numeric: true, sensitivity: "base" });
-+const allBodyRows = (state) => {
-+  if (!isInTable(state)) return true;
-+  const { top, bottom, map } = selectedRect(state);
-+  return top === 0 || bottom - top >= map.height - 1;
-+};
-+const allColumns = (state) => {
-+  if (!isInTable(state)) return true;
-+  const { left, right, map } = selectedRect(state);
-+  return right - left >= map.width;
-+};
-+function sortRows(direction) {
-+  return (state, dispatch) => {
-+    if (!isInTable(state)) return false;
-+    const { table, tableStart, left } = selectedRect(state);
-+    const rows = [];
-+    table.forEach((row, _, index) => {
-+      if (index > 0) rows.push(row);
-+    });
-+    const sorted = rows.map((row, index) => ({ row, index, text: row.child(left).textContent.trim() })).sort((a, b) => {
-+      if (!a.text !== !b.text) return a.text ? -1 : 1;
-+      return direction * collator.compare(a.text, b.text) || a.index - b.index;
-+    }).map(({ row }) => row);
-+    if (sorted.every((row, index) => row === rows[index])) return true;
-+    if (dispatch) {
-+      const from = tableStart + table.firstChild.nodeSize;
-+      const tr = state.tr.replaceWith(from, tableStart + table.content.size, sorted);
-+      dispatch(selectColumn(left, tableStart)(tr));
-     }
--    commands.call(selectRowCommand.key, { pos, index: rowIndex });
--    xHandle.dataset.show = "false";
-+    return true;
-   };
--  const onAddCol = () => {
--    var _a, _b, _c, _d;
--    if (!ctx) return;
--    const xHandle = xLineHandleRef.value;
--    if (!xHandle) return;
--    const [_, colIndex] = lineHoverIndex.value;
--    if (colIndex < 0) return;
--    if (!ctx.get(editorViewCtx).editable) return;
--    const cols = Array.from(
--      (_c = (_b = (_a = contentWrapperRef.value) == null ? void 0 : _a.querySelector("tr")) == null ? void 0 : _b.children) != null ? _c : []
--    );
--    const commands = ctx.get(commandsCtx);
--    const pos = ((_d = getPos == null ? void 0 : getPos()) != null ? _d : 0) + 1;
--    if (cols.length === colIndex) {
--      commands.call(selectColCommand.key, { pos, index: colIndex - 1 });
--      commands.call(addColAfterCommand.key);
--    } else {
--      commands.call(selectColCommand.key, { pos, index: colIndex });
--      commands.call(addColBeforeCommand.key);
-+}
-+const duplicateRows = (state, dispatch) => {
-+  if (!isInTable(state)) return false;
-+  const { table, tableStart, top, bottom } = selectedRect(state);
-+  if (top === 0) return false;
-+  if (dispatch) {
-+    const rows = [];
-+    let pos = tableStart;
-+    for (let index = 0; index < bottom; index++) {
-+      const row = table.child(index);
-+      if (index >= top) rows.push(row);
-+      pos += row.nodeSize;
-+    }
-+    dispatch(state.tr.insert(pos, rows));
-+  }
-+  return true;
-+};
-+function insertColumns(side) {
-+  return (state, dispatch) => {
-+    if (!isInTable(state)) return false;
-+    if (dispatch) {
-+      const rect = selectedRect(state);
-+      const at = side === "left" ? rect.left : rect.right;
-+      const tr = state.tr;
-+      for (let i = rect.left; i < rect.right; i++) addColumn(tr, rect, at);
-+      const { selection } = state;
-+      if (selection instanceof CellSelection) {
-+        const cell = (pos) => tr.doc.resolve(tr.mapping.map(pos));
-+        tr.setSelection(
-+          new CellSelection(
-+            cell(selection.$anchorCell.pos),
-+            cell(selection.$headCell.pos)
-+          )
-+        );
-+      }
-+      dispatch(tr);
-     }
--    commands.call(selectColCommand.key, { pos, index: colIndex });
-+    return true;
-   };
--  const selectCol = () => {
--    var _a, _b;
--    if (!ctx) return;
--    const [_, colIndex] = hoverIndex.value;
--    const commands = ctx.get(commandsCtx);
--    const pos = ((_a = getPos == null ? void 0 : getPos()) != null ? _a : 0) + 1;
--    commands.call(selectColCommand.key, { pos, index: colIndex });
--    const buttonGroup = (_b = colHandleRef.value) == null ? void 0 : _b.querySelector(".button-group");
--    if (buttonGroup)
--      buttonGroup.dataset.show = buttonGroup.dataset.show === "true" ? "false" : "true";
-+}
-+function insertRows(side) {
-+  return (state, dispatch) => {
-+    if (!isInTable(state)) return false;
-+    const { table, tableStart, map, top, bottom } = selectedRect(state);
-+    const at = side === "above" ? top : bottom;
-+    if (at === 0) return false;
-+    if (dispatch) {
-+      let pos = tableStart;
-+      for (let i = 0; i < at; i++) pos += table.child(i).nodeSize;
-+      const { table_row: rowType, table_cell: cellType } = state.schema.nodes;
-+      const rows = Array.from(
-+        { length: bottom - top },
-+        () => rowType.create(
-+          null,
-+          Array.from(
-+            { length: map.width },
-+            (_, col) => {
-+              var _a;
-+              return cellType.createAndFill({
-+                alignment: (_a = table.nodeAt(map.map[col])) == null ? void 0 : _a.attrs.alignment
-+              });
-+            }
-+          )
-+        )
-+      );
-+      dispatch(state.tr.insert(pos, rows));
-+    }
-+    return true;
-   };
--  const selectRow = () => {
-+}
-+const counted = (one, many) => (count) => count > 1 ? many(count) : one;
-+function useOperation(refs, ctx, getPos) {
-+  const { colHandleRef, rowHandleRef, hoverIndex } = refs;
-+  const select = (kind, e, open) => {
-     var _a, _b;
-     if (!ctx) return;
--    const [rowIndex, _] = hoverIndex.value;
--    const commands = ctx.get(commandsCtx);
 +    const view = ctx.get(editorViewCtx);
 +    if (!view.editable) return;
 +    const [rowIndex, colIndex] = hoverIndex.value;
-     const pos = ((_a = getPos == null ? void 0 : getPos()) != null ? _a : 0) + 1;
--    commands.call(selectRowCommand.key, { pos, index: rowIndex });
--    const buttonGroup = (_b = rowHandleRef.value) == null ? void 0 : _b.querySelector(".button-group");
--    if (buttonGroup && rowIndex > 0)
--      buttonGroup.dataset.show = buttonGroup.dataset.show === "true" ? "false" : "true";
--  };
--  const deleteSelected = (e) => {
--    if (!ctx) return;
--    if (!ctx.get(editorViewCtx).editable) return;
--    e.preventDefault();
--    e.stopPropagation();
--    const commands = ctx.get(commandsCtx);
--    commands.call(deleteSelectedCellsCommand.key);
--    requestAnimationFrame(() => {
--      ctx.get(editorViewCtx).focus();
--    });
++    const pos = ((_a = getPos == null ? void 0 : getPos()) != null ? _a : 0) + 1;
 +    const { selection } = view.state;
 +    const own = selection instanceof CellSelection && selection.$anchorCell.start(-1) === pos;
 +    const rect = own ? selectedRect(view.state) : void 0;
@@ -1379,13 +948,65 @@
 +        pos,
 +        index: kind === "col" ? colIndex : rowIndex
 +      });
-+    }
-+    const buttonGroup = (_b = (kind === "col" ? colHandleRef : rowHandleRef).value) == null ? void 0 : _b.querySelector(".button-group");
-+    if (buttonGroup && (kind === "col" || rowIndex > 0)) {
-+      buttonGroup.dataset.show = open || buttonGroup.dataset.show !== "true" ? "true" : "false";
-+      refresh(buttonGroup, kind === "col" ? colMenu : rowMenu, kind, ctx);
-+    }
-   };
+     }
+-    commands.call(selectRowCommand.key, { pos, index: rowIndex });
+-    xHandle.dataset.show = "false";
+-  };
+-  const onAddCol = () => {
+-    var _a, _b, _c, _d;
+-    if (!ctx) return;
+-    const xHandle = xLineHandleRef.value;
+-    if (!xHandle) return;
+-    const [_, colIndex] = lineHoverIndex.value;
+-    if (colIndex < 0) return;
+-    if (!ctx.get(editorViewCtx).editable) return;
+-    const cols = Array.from(
+-      (_c = (_b = (_a = contentWrapperRef.value) == null ? void 0 : _a.querySelector("tr")) == null ? void 0 : _b.children) != null ? _c : []
+-    );
+-    const commands = ctx.get(commandsCtx);
+-    const pos = ((_d = getPos == null ? void 0 : getPos()) != null ? _d : 0) + 1;
+-    if (cols.length === colIndex) {
+-      commands.call(selectColCommand.key, { pos, index: colIndex - 1 });
+-      commands.call(addColAfterCommand.key);
+-    } else {
+-      commands.call(selectColCommand.key, { pos, index: colIndex });
+-      commands.call(addColBeforeCommand.key);
+-    }
+-    commands.call(selectColCommand.key, { pos, index: colIndex });
+-  };
+-  const selectCol = () => {
+-    var _a, _b;
+-    if (!ctx) return;
+-    const [_, colIndex] = hoverIndex.value;
+-    const commands = ctx.get(commandsCtx);
+-    const pos = ((_a = getPos == null ? void 0 : getPos()) != null ? _a : 0) + 1;
+-    commands.call(selectColCommand.key, { pos, index: colIndex });
+-    const buttonGroup = (_b = colHandleRef.value) == null ? void 0 : _b.querySelector(".button-group");
+-    if (buttonGroup)
+-      buttonGroup.dataset.show = buttonGroup.dataset.show === "true" ? "false" : "true";
+-  };
+-  const selectRow = () => {
+-    var _a, _b;
+-    if (!ctx) return;
+-    const [rowIndex, _] = hoverIndex.value;
+-    const commands = ctx.get(commandsCtx);
+-    const pos = ((_a = getPos == null ? void 0 : getPos()) != null ? _a : 0) + 1;
+-    commands.call(selectRowCommand.key, { pos, index: rowIndex });
+-    const buttonGroup = (_b = rowHandleRef.value) == null ? void 0 : _b.querySelector(".button-group");
+-    if (buttonGroup && rowIndex > 0)
+-      buttonGroup.dataset.show = buttonGroup.dataset.show === "true" ? "false" : "true";
+-  };
+-  const deleteSelected = (e) => {
+-    if (!ctx) return;
+-    if (!ctx.get(editorViewCtx).editable) return;
+-    e.preventDefault();
+-    e.stopPropagation();
+-    const commands = ctx.get(commandsCtx);
+-    commands.call(deleteSelectedCellsCommand.key);
+-    requestAnimationFrame(() => {
+-      ctx.get(editorViewCtx).focus();
+-    });
+-  };
 -  const onAlign = (direction) => (e) => {
 -    if (!ctx) return;
 -    if (!ctx.get(editorViewCtx).editable) return;
@@ -1395,124 +1016,35 @@
 -    commands.call(setAlignCommand.key, direction);
 -    requestAnimationFrame(() => {
 -      ctx.get(editorViewCtx).focus();
-+  const selectCol = (e) => select("col", e, false);
-+  const selectRow = (e) => select("row", e, false);
-+  const openCol = (e) => select("col", e, true);
-+  const openRow = (e) => select("row", e, true);
-+  const refresh = (group, menu, kind, editor) => {
-+    const { state } = editor.get(editorViewCtx);
-+    let count = 1;
-+    if (isInTable(state)) {
-+      const { left, right, top, bottom } = selectedRect(state);
-+      count = kind === "col" ? right - left : bottom - top;
-+    }
-+    const buttons = group.querySelectorAll("button");
-+    menu.flat().forEach(([label, , disabled], index) => {
-+      var _a;
-+      const button = buttons[index];
-+      if (!button) return;
-+      button.textContent = label(count);
-+      button.disabled = (_a = disabled == null ? void 0 : disabled(state)) != null ? _a : false;
-     });
+-    });
++    const table = view.state.doc.nodeAt(pos - 1);
++    if (!table || kind === "row" && rowIndex === 0) return;
++    const detail = {
++      x: e.clientX,
++      y: e.clientY,
++      pos: pos + TableMap.get(table).positionAt(
++        kind === "col" ? 0 : rowIndex,
++        kind === "col" ? colIndex : 0,
++        table
++      )
++    };
++    (_b = (kind === "col" ? colHandleRef : rowHandleRef).value) == null ? void 0 : _b.dispatchEvent(
++      new CustomEvent(TABLE_HANDLE_MENU, { bubbles: true, detail })
++    );
    };
-+  const item = (label, run, disabled) => [
-+    typeof label === "string" ? () => label : label,
-+    (e) => {
-+      var _a;
-+      if (!ctx) return;
-+      const view = ctx.get(editorViewCtx);
-+      if (!view.editable) return;
-+      e.preventDefault();
-+      e.stopPropagation();
-+      if (disabled == null ? void 0 : disabled(view.state)) return;
-+      view.dispatch(closeHistory(view.state.tr));
-+      run(ctx);
-+      for (const handle of [colHandleRef.value, rowHandleRef.value])
-+        (_a = handle == null ? void 0 : handle.querySelector(".button-group")) == null ? void 0 : _a.setAttribute("data-show", "false");
-+      requestAnimationFrame(() => {
-+        view.focus();
-+      });
-+    },
-+    disabled
-+  ];
-+  const call = (label, key, payload, disabled) => item(label, (editor) => editor.get(commandsCtx).call(key, payload), disabled);
-+  const prose = (label, command) => item(label, (editor) => {
-+    const view = editor.get(editorViewCtx);
-+    command(view.state, view.dispatch);
-+  });
-+  const colMenu = [
-+    [
-+      prose(
-+        counted("Insert column left", (n) => `Insert ${n} columns left`),
-+        insertColumns("left")
-+      ),
-+      prose(
-+        counted("Insert column right", (n) => `Insert ${n} columns right`),
-+        insertColumns("right")
-+      )
-+    ],
-+    [
-+      call("Align left", setAlignCommand.key, "left"),
-+      call("Align center", setAlignCommand.key, "center"),
-+      call("Align right", setAlignCommand.key, "right")
-+    ],
-+    [prose("Sort A to Z", sortRows(1)), prose("Sort Z to A", sortRows(-1))],
-+    [
-+      prose(
-+        counted("Clear column", (n) => `Clear ${n} columns`),
-+        deleteCellSelection
-+      ),
-+      call(
-+        counted("Delete column", (n) => `Delete ${n} columns`),
-+        deleteSelectedCellsCommand.key,
-+        void 0,
-+        allColumns
-+      )
-+    ]
-+  ];
-+  const rowMenu = [
-+    [
-+      prose(
-+        counted("Insert row above", (n) => `Insert ${n} rows above`),
-+        insertRows("above")
-+      ),
-+      prose(
-+        counted("Insert row below", (n) => `Insert ${n} rows below`),
-+        insertRows("below")
-+      ),
-+      prose(
-+        counted("Duplicate row", (n) => `Duplicate ${n} rows`),
-+        duplicateRows
-+      )
-+    ],
-+    [
-+      prose(
-+        counted("Clear row", (n) => `Clear ${n} rows`),
-+        deleteCellSelection
-+      ),
-+      call(
-+        counted("Delete row", (n) => `Delete ${n} rows`),
-+        deleteSelectedCellsCommand.key,
-+        void 0,
-+        allBodyRows
-+      )
-+    ]
-+  ];
    return {
 -    onAddRow,
 -    onAddCol,
-     selectCol,
-     selectRow,
+-    selectCol,
+-    selectRow,
 -    deleteSelected,
 -    onAlign
-+    openCol,
-+    openRow,
-+    colMenu,
-+    rowMenu
++    selectCol: (e) => select("col", e),
++    selectRow: (e) => select("row", e)
    };
  }
  
-@@ -695,15 +847,12 @@
+@@ -695,15 +647,12 @@
        xLineHandleRef,
        colHandleRef,
        rowHandleRef,
@@ -1529,7 +1061,7 @@
      const rowHandle = rowHandleRef.value;
      if (!rowHandle) return;
      const colHandle = colHandleRef.value;
-@@ -712,58 +861,10 @@
+@@ -712,58 +661,10 @@
      if (!index) return;
      const dom = getRelatedDOM(contentWrapperRef, index);
      if (!dom) return;
@@ -1588,28 +1120,7 @@
      yHandle.dataset.show = "false";
      xHandle.dataset.show = "false";
      rowHandle.dataset.show = "true";
-@@ -808,6 +909,20 @@
- }
- 
- keepAlive(h);
-+function renderMenu(groups) {
-+  return groups.flatMap((group, index) => [
-+    ...index > 0 ? [/* @__PURE__ */ h("div", { class: "separator", role: "separator" })] : [],
-+    ...group.map(([label, onPointerdown]) => /* @__PURE__ */ h(
-+      "button",
-+      {
-+        type: "button",
-+        onPointerdown,
-+        onClick: (e) => e.stopPropagation()
-+      },
-+      label(1)
-+    ))
-+  ]);
-+}
- const TableBlock = defineComponent({
-   props: {
-     view: {
-@@ -853,7 +968,6 @@
+@@ -853,7 +754,6 @@
      const tableWrapperRef = ref();
      const dragPreviewRef = ref();
      const hoverIndex = ref([0, 0]);
@@ -1617,7 +1128,7 @@
      const dragInfo = ref();
      const refs = {
        dragPreviewRef,
-@@ -864,19 +978,19 @@
+@@ -864,19 +764,19 @@
        colHandleRef,
        rowHandleRef,
        hoverIndex,
@@ -1634,11 +1145,11 @@
 -      deleteSelected,
 -      onAlign
 -    } = useOperation(refs, ctx, getPos);
-+    const { selectCol, selectRow, openCol, openRow, colMenu, rowMenu } = useOperation(refs, ctx, getPos);
-+    const contextMenu = (open) => (e) => {
++    const { selectCol, selectRow } = useOperation(refs, ctx, getPos);
++    const contextMenu = (select) => (e) => {
 +      e.preventDefault();
 +      e.stopPropagation();
-+      open(e);
++      select(e);
 +    };
 +    const rightDown = (e) => {
 +      if (e.button !== 0 || e.ctrlKey) e.stopPropagation();
@@ -1646,46 +1157,58 @@
      onMounted(() => {
        requestAnimationFrame(() => {
          if (view.editable) recoveryStateBetweenUpdate(refs, view, node.value);
-@@ -902,6 +1016,8 @@
+@@ -902,23 +802,13 @@
              class: "handle cell-handle",
              onDragstart: dragCol,
              onClick: selectCol,
-+            onContextmenu: contextMenu(openCol),
++            onContextmenu: contextMenu(selectCol),
 +            onMousedown: rightDown,
              onPointerdown: (e) => e.stopPropagation(),
              onPointermove: (e) => e.stopPropagation(),
              ref: colHandleRef
-@@ -914,10 +1030,7 @@
-               class: "button-group",
-               onPointermove: (e) => e.stopPropagation()
-             },
+           },
+-          /* @__PURE__ */ h(Icon, { icon: config.renderButton("col_drag_handle") }),
+-          /* @__PURE__ */ h(
+-            "div",
+-            {
+-              "data-show": "false",
+-              class: "button-group",
+-              onPointermove: (e) => e.stopPropagation()
+-            },
 -            /* @__PURE__ */ h("button", { type: "button", onPointerdown: onAlign("left") }, /* @__PURE__ */ h(Icon, { icon: config.renderButton("align_col_left") })),
 -            /* @__PURE__ */ h("button", { type: "button", onPointerdown: onAlign("center") }, /* @__PURE__ */ h(Icon, { icon: config.renderButton("align_col_center") })),
 -            /* @__PURE__ */ h("button", { type: "button", onPointerdown: onAlign("right") }, /* @__PURE__ */ h(Icon, { icon: config.renderButton("align_col_right") })),
 -            /* @__PURE__ */ h("button", { type: "button", onPointerdown: deleteSelected }, /* @__PURE__ */ h(Icon, { icon: config.renderButton("delete_col") }))
-+            renderMenu(colMenu)
-           )
+-          )
++          /* @__PURE__ */ h(Icon, { icon: config.renderButton("col_drag_handle") })
          ),
          /* @__PURE__ */ h(
-@@ -930,6 +1043,8 @@
+           "div",
+@@ -930,20 +820,13 @@
              class: "handle cell-handle",
              onDragstart: dragRow,
              onClick: selectRow,
-+            onContextmenu: contextMenu(openRow),
++            onContextmenu: contextMenu(selectRow),
 +            onMousedown: rightDown,
              onPointerdown: (e) => e.stopPropagation(),
              onPointermove: (e) => e.stopPropagation(),
              ref: rowHandleRef
-@@ -942,7 +1057,7 @@
-               class: "button-group",
-               onPointermove: (e) => e.stopPropagation()
-             },
+           },
+-          /* @__PURE__ */ h(Icon, { icon: config.renderButton("row_drag_handle") }),
+-          /* @__PURE__ */ h(
+-            "div",
+-            {
+-              "data-show": "false",
+-              class: "button-group",
+-              onPointermove: (e) => e.stopPropagation()
+-            },
 -            /* @__PURE__ */ h("button", { type: "button", onPointerdown: deleteSelected }, /* @__PURE__ */ h(Icon, { icon: config.renderButton("delete_row") }))
-+            renderMenu(rowMenu)
-           )
+-          )
++          /* @__PURE__ */ h(Icon, { icon: config.renderButton("row_drag_handle") })
          ),
          /* @__PURE__ */ h("div", { class: "table-wrapper", ref: tableWrapperRef }, /* @__PURE__ */ h(
-@@ -959,51 +1074,44 @@
+           "div",
+@@ -959,51 +842,44 @@
            {
              "data-show": "false",
              contenteditable: "false",
@@ -1744,7 +1267,7 @@
      this.nodeRef = shallowRef(node);
      const app = createApp(TableBlock, {
        view,
-@@ -1011,7 +1119,9 @@
+@@ -1011,7 +887,9 @@
        getPos,
        config: ctx.get(tableBlockConfig.key),
        onMount: (div) => {
@@ -1754,7 +1277,7 @@
        },
        node: this.nodeRef
      });
-@@ -1022,20 +1132,23 @@
+@@ -1022,20 +900,23 @@
    update(node) {
      if (node.type !== this.node.type) return false;
      if (node.sameMarkup(this.node) && node.content.eq(this.node.content))
@@ -1784,7 +1307,7 @@
      }
      return false;
    }
-@@ -1053,38 +1166,6 @@
+@@ -1053,38 +934,6 @@
      this.contentDOM.remove();
    }
  }
@@ -1823,26 +1346,22 @@
  const tableBlockView = $view(
    tableSchema.node,
    (ctx) => {
-@@ -1101,4 +1182,3 @@
+@@ -1101,4 +950,3 @@
  const tableBlock = [tableBlockConfig, tableBlockView];
  
  export { TableNodeView, tableBlock, tableBlockConfig, tableBlockView };
 -//# sourceMappingURL=index.js.map
 --- a/lib/table-block/view/operation.d.ts
 +++ b/lib/table-block/view/operation.d.ts
-@@ -1,11 +1,21 @@
+@@ -1,11 +1,13 @@
  import type { Ctx } from '@milkdown/ctx';
-+import type { Command, EditorState } from '@milkdown/prose/state';
  import type { Refs } from './types';
-+export type MenuItem = [
-+    label: (count: number) => string,
-+    onPointerdown: (e: PointerEvent) => void,
-+    disabled?: (state: EditorState) => boolean
-+];
-+export declare function sortRows(direction: 1 | -1): Command;
-+export declare const duplicateRows: Command;
-+export declare function insertColumns(side: 'left' | 'right'): Command;
-+export declare function insertRows(side: 'above' | 'below'): Command;
++export declare const TABLE_HANDLE_MENU = "milkdown-table-handle-menu";
++export interface TableHandleMenuDetail {
++    x: number;
++    y: number;
++    pos: number;
++}
  export declare function useOperation(refs: Refs, ctx?: Ctx, getPos?: () => number | undefined): {
 -    onAddRow: () => void;
 -    onAddCol: () => void;
@@ -1852,10 +1371,6 @@
 -    onAlign: (direction: 'left' | 'center' | 'right') => (e: PointerEvent) => void;
 +    selectCol: (e: MouseEvent) => void;
 +    selectRow: (e: MouseEvent) => void;
-+    openCol: (e: MouseEvent) => void;
-+    openRow: (e: MouseEvent) => void;
-+    colMenu: MenuItem[][];
-+    rowMenu: MenuItem[][];
  };
  //# sourceMappingURL=operation.d.ts.map
 \ No newline at end of file

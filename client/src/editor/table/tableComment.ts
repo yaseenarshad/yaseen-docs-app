@@ -5,9 +5,10 @@
  * page, as it does for the line comment (`line/lineComment.ts`). `tableStyle.ts` re-exports all of it.
  *
  * The parts, in their fixed order, each only when set:
- * `widths 140 240 auto, fill A1:C1 blue B3 green, color B2:B5 red, border 2px 40%, header plain,
- * stripes, height compact, nowrap, freeze 2 rows 1 col`. A column's alignment is no part: it is the
- * GFM `:-` row, so GitHub and Obsidian show it too ("Align all columns" sets it, YAZ-3767). Cells are A1 addresses:
+ * `widths 140 240 auto, fill A1:C1 blue B3 #ff8800, color B2:B5 red, align B2:C3 center, border 2px 40%,
+ * header plain, stripes, height compact, nowrap, freeze 2 rows 1 col`. A column's alignment is no
+ * part: it is the GFM `:-` row, so GitHub and Obsidian show it too ("Align all columns" sets it,
+ * YAZ-3767); `align` is a cell's own, which wins over its column's (YAZ-3819). Cells are A1 addresses:
  * columns are letters (A…Z, AA…), rows are numbers, row 1 is the header row.
  *
  * The reader is tolerant: an unknown part, or a known part with a value it does not know, is
@@ -15,19 +16,33 @@
  * editor keeps it as an HTML node with its text.
  */
 
-/** The cell fills: the highlight colours (YAZ-1480, `marks/highlight.ts`), yellow included. */
-export const FILL_COLORS = ['yellow', 'green', 'blue', 'pink'] as const
-export type FillColor = (typeof FILL_COLORS)[number]
-/** The cell text colours (YAZ-3696 D8). */
-export const TEXT_COLORS = ['red', 'orange', 'green', 'blue', 'grey'] as const
-export type TextColor = (typeof TEXT_COLORS)[number]
+/**
+ * The cell colours, for fill and text (YAZ-3817, from YAZ-3696 D3 / D8): ten names, each with its own
+ * light and dark shade (`table.css`). A custom colour is `#rrggbb`, lowercase.
+ */
+export const TABLE_COLORS = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey', 'brown'] as const
+export type TableColor = (typeof TABLE_COLORS)[number]
 
-/** A table's settings. `fill` and `color` are keyed by A1 address (`cellAddress`). An absent part is the default. */
+/** A cell's fill or text colour, checked: a name, or `#rrggbb` (any case in, lowercase out), else `null`. */
+export function cellColor(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  if ((TABLE_COLORS as readonly string[]).includes(value)) return value
+  return /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : null
+}
+
+/** A cell's own alignment (YAZ-3819); a column's is the GFM `:-` row. */
+export const CELL_ALIGNS = ['left', 'center', 'right'] as const
+export type CellAlign = (typeof CELL_ALIGNS)[number]
+/** A cell's own alignment, checked, or `null`. */
+export const cellAlign = (value: unknown): CellAlign | null => ((CELL_ALIGNS as readonly unknown[]).includes(value) ? (value as CellAlign) : null)
+
+/** A table's settings. `fill`, `color` and `align` are keyed by A1 address (`cellAddress`). An absent part is the default. */
 export interface TableStyle {
   /** Per column, px; `null` is `auto`. */
   widths: Array<number | null>
-  fill: Map<string, FillColor>
-  color: Map<string, TextColor>
+  fill: Map<string, string>
+  color: Map<string, string>
+  align: Map<string, CellAlign>
   /** Thickness in px and darkness in % of the outline colour. */
   border?: { px: number; darkness: number }
   /** The header row's look; shaded is the default. */
@@ -39,7 +54,7 @@ export interface TableStyle {
   freeze?: { rows: number; cols: number }
 }
 
-export const plainTable = (): TableStyle => ({ widths: [], fill: new Map(), color: new Map() })
+export const plainTable = (): TableStyle => ({ widths: [], fill: new Map(), color: new Map(), align: new Map() })
 
 export const BORDER_PX_MAX = 10
 export const WIDTH_MAX = 9999
@@ -82,14 +97,18 @@ function readRange(text: string): string[] | null {
   return out
 }
 
-/** `A1:C1 B5 blue B3 green`: each colour takes the addresses before it. `null` when any word is wrong. */
-function readCells<C extends string>(words: string[], colors: readonly C[]): Map<string, C> | null {
-  const out = new Map<string, C>()
+/**
+ * `A1:C1 B5 blue B3 #ff8800`: each value (`check` gives it, or `null` for an address) takes the
+ * addresses before it. `null` when any word is wrong.
+ */
+function readCells<V extends string>(words: string[], check: (word: string) => V | null): Map<string, V> | null {
+  const out = new Map<string, V>()
   let pending: string[] = []
   for (const word of words) {
-    if ((colors as readonly string[]).includes(word)) {
+    const value = check(word)
+    if (value !== null) {
       if (pending.length === 0) return null
-      for (const address of pending) out.set(address, word as C)
+      for (const address of pending) out.set(address, value)
       pending = []
       continue
     }
@@ -120,10 +139,15 @@ function readPart(style: TableStyle, word: string, rest: string[]): boolean {
     }
     case 'fill':
     case 'color': {
-      const cells = word === 'fill' ? readCells(rest, FILL_COLORS) : readCells(rest, TEXT_COLORS)
+      const cells = readCells(rest, cellColor)
       if (cells === null) return false
-      if (word === 'fill') style.fill = cells as Map<string, FillColor>
-      else style.color = cells as Map<string, TextColor>
+      style[word] = cells
+      return true
+    }
+    case 'align': {
+      const cells = readCells(rest, cellAlign)
+      if (cells === null) return false
+      style.align = cells
       return true
     }
     case 'border': {
@@ -219,6 +243,7 @@ export function formatTableComment(style: TableStyle): string | null {
   if (style.widths.some((w) => w !== null)) parts.push(`widths ${style.widths.map((w) => w ?? 'auto').join(' ')}`)
   if (style.fill.size > 0) parts.push(`fill ${formatCells(style.fill)}`)
   if (style.color.size > 0) parts.push(`color ${formatCells(style.color)}`)
+  if (style.align.size > 0) parts.push(`align ${formatCells(style.align)}`)
   if (style.border) parts.push(`border ${style.border.px}px ${style.border.darkness}%`)
   if (style.header) parts.push(`header ${style.header}`)
   if (style.stripes) parts.push('stripes')

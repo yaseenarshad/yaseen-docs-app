@@ -11,7 +11,7 @@
  *   the cell paste of today (YAZ-1452 / YAZ-1462), and paths stay one line (YAZ-3631).
  * - TAB-SEPARATED TEXT is one rule in a table and outside one (`tsvRows`): a line that starts with a
  *   tab has an empty first cell, and that is indented code, not a sheet: the text stays text.
- * - Cells from HTML bring their `fill` and `color` (none from Sheets, so the target's go, as in
+ * - Cells from HTML bring their `fill`, `color` and own `align` (none from Sheets, so the target's go, as in
  *   Sheets); text changes the text only. A pasted cell takes its target row's type (header or
  *   body) and keeps its column's `alignment` and `colwidth`.
  * - WRITE: GFM tables have no merged cells, so the changed rows are built here and written by ONE
@@ -27,10 +27,10 @@ import { CellSelection, TableMap, __pastedCells, isInTable, selectedRect } from 
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { cellPosAt } from './cells'
 
-/** One pasted cell: its block content, and its `fill` / `color` when it came from HTML (or the source cell, for fill down). */
+/** One pasted cell: its block content, and its `fill` / `color` / `align` when it came from HTML (or the source cell, for fill down). */
 export interface Cell {
   content: Fragment
-  style: { fill: unknown; color: unknown } | null
+  style: { fill: unknown; color: unknown; align: unknown } | null
 }
 
 export const textCell = (schema: Schema, text: string): Cell => ({
@@ -55,7 +55,7 @@ function sliceCells(slice: Slice, html: string): Cell[][] | null {
   if (pasted === null) return null
   const rows = pasted.rows.map((row) => {
     const cells: Cell[] = []
-    row.forEach((cell) => cells.push({ content: cell.content, style: { fill: cell.attrs.fill ?? null, color: cell.attrs.color ?? null } }))
+    row.forEach((cell) => cells.push({ content: cell.content, style: { fill: cell.attrs.fill ?? null, color: cell.attrs.color ?? null, align: cell.attrs.align ?? null } }))
     return { cells, header: row.firstChild?.type.spec.tableRole === 'header_cell', empty: row.textBetween(0, row.size) === '' }
   })
   if (rows.length > 1 && rows[0]!.header && rows[0]!.empty && !/<th[\s>]/i.test(html)) rows.shift()
