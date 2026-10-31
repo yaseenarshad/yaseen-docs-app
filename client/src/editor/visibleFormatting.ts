@@ -1,10 +1,11 @@
 /**
  * Formatting acts on the lines you SEE (YAZ-3209). A selection over folded bullets, a folded
  * heading, or out of the zoom spans hidden lines. Bold, Italic, Strikethrough, inline code and
- * H1 / H2 / H3 / T change only the visible ones, and Crepe's toolbar lights Bold, Italic,
+ * H1 / H2 / H3 change only the visible ones, and Crepe's toolbar lights Bold, Italic,
  * Strikethrough and code only for a mark on a visible line. `⌘C` / `⌘X` still carry the hidden
- * lines (YAZ-1734 D6, D7). Underline (`marks/underline.ts`), the swatches (`marks/highlight.ts`)
- * and `Mod-Enter` (`outline/hotkeys.ts`) use the same helpers from `lineSelection.ts`.
+ * lines (YAZ-1734 D6, D7). Underline (`marks/underline.ts`), the swatches (`marks/highlight.ts`),
+ * `Mod-Enter` (`outline/hotkeys.ts`), and T and the list buttons (`listButtons.ts`) use the same
+ * helpers from `lineSelection.ts`.
  *
  * Milkdown's own commands are re-registered under their SAME keys, so Crepe's toolbar buttons and
  * every keymap that calls them by key follow with no other change. `EditorViewReady` comes after
@@ -19,7 +20,6 @@ import {
   toggleEmphasisCommand,
   toggleInlineCodeCommand,
   toggleStrongCommand,
-  turnIntoTextCommand,
   wrapInHeadingCommand,
 } from '@milkdown/kit/preset/commonmark'
 import { toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
@@ -55,7 +55,7 @@ const toggleInlineCode = (code: MarkType): Command => (state, dispatch) => {
 export const visibleFormatting: MilkdownPlugin = (ctx) => async () => {
   await ctx.wait(EditorViewReady)
   const commands = ctx.get(commandsCtx)
-  for (const { key } of [toggleStrongCommand, toggleEmphasisCommand, toggleStrikethroughCommand, turnIntoTextCommand]) wrap(commands, key)
+  for (const { key } of [toggleStrongCommand, toggleEmphasisCommand, toggleStrikethroughCommand]) wrap(commands, key)
   wrap(commands, wrapInHeadingCommand.key)
   commands.create(toggleInlineCodeCommand.key, () => toggleInlineCode(inlineCodeSchema.type(ctx)))
   // The toolbar's lit state: a button lights for a mark on a VISIBLE line only. The Link button
