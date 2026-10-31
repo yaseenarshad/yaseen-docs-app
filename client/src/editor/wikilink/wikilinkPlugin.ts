@@ -298,9 +298,9 @@ export function eachPlainRun(block: ProseNode, base: number, cb: (text: string, 
 }
 
 /** Push a hidden-syntax decoration (empty ranges are skipped). */
-function hide(out: Decoration[], from: number, to: number, extra?: string): void {
+function hide(out: Decoration[], from: number, to: number): void {
   // `syntax` in the spec: what ⌘F reads as hidden (`pillLinks`, YAZ-3744 S9).
-  if (from < to) out.push(Decoration.inline(from, to, { class: extra === undefined ? WIKILINK_SYNTAX_CLASS : `${WIKILINK_SYNTAX_CLASS} ${extra}` }, { syntax: true }))
+  if (from < to) out.push(Decoration.inline(from, to, { class: WIKILINK_SYNTAX_CLASS }, { syntax: true }))
 }
 
 /** The DOM an id link's title widget draws: the classes its id text would have worn, and the file's icon (D13). */
@@ -412,9 +412,12 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
           const [lead, trail] = resolved ? pageTrim(part) : [0, 0]
           hide(out, at, at + lead)
           shown(at + lead, at + part.length - trail)
-          // A drawing's or a diagram's extension shows again with File icons Off, as the sidebar's (`name-ending`, app.css).
+          // A drawing's or a diagram's extension is the pill's last piece, shown only with File icons Off, as the sidebar's
+          // `name-ending` (app.css; YAZ-3924). ⌘F reads it as hidden text (`syntax`), as it is with the icons on.
           const name = part.slice(lead)
-          hide(out, at + part.length - trail, at + part.length, boardBaseName(name) !== name ? 'name-ending' : undefined)
+          if (trail > 0 && boardBaseName(name) !== name)
+            out.push(Decoration.inline(at + part.length - trail, at + part.length, { class: `${cls} name-ending`, spellcheck: 'false' }, { syntax: true }))
+          else hide(out, at + part.length - trail, at + part.length)
           if (other !== null) out.push(Decoration.widget(at + part.length, () => vaultSpan(cls, other.vault ?? 'another vault'), { side: -1, key: `vault:${other.vault ?? ''}` }))
         } else if (segments === 0) shown(at, at + part.length)
         else out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}`, spellcheck: 'false' }))
@@ -455,7 +458,7 @@ function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Se
 
 /**
  * A link of a textblock that shows as a pill (YAZ-3744 S9): its range, the ranges it hides (`wikilink__syntax`: the
- * brackets, an ID, an alias's target, hidden folders and extensions, each `#`), and the text the widget at `from + 2`
+ * brackets, an ID, an alias's target, hidden folders and extensions, each `#`), and the text the title widget
  * shows in place of its ID (an ID link's title, or "Missing note · YAS-466", S10), else null.
  */
 export interface PillLink {

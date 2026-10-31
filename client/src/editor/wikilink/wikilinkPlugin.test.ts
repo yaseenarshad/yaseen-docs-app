@@ -50,9 +50,9 @@ function caret(crepe: Crepe, pos: number): void {
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)))
 }
 
-/** Visible link segments, in document order (never merged: syntax spans separate them). */
+/** Visible link segments, in document order (never merged: syntax spans separate them). A drawing's ending shows only with File icons Off (YAZ-3924). */
 function links(root: HTMLElement): string[] {
-  return Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).map((el) => el.textContent ?? '')
+  return Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}:not(.name-ending)`)).map((el) => el.textContent ?? '')
 }
 
 /** All hidden syntax text joined — PM may merge adjacent same-class segments, the text cannot change. */
@@ -610,9 +610,14 @@ describe('a link shows its page name (YAZ-3778 D2, D3, S12, S13)', () => {
     expect(linkDisplayText('folder/', undefined, () => true)).toBe('folder/')
   })
 
-  it('with File icons Off a drawing\'s and a diagram\'s extension can show again (the sidebar\'s `name-ending`); a note\'s never', async () => {
-    const { root } = await mountNamed('a [[LN Scenarios Diagram.drawio]] b [[Plan.md]] c\n')
-    expect(Array.from(root.querySelectorAll('.name-ending')).map((el) => el.textContent)).toEqual(['.drawio'])
+  it('YAZ-3924: with File icons Off a drawing\'s or a diagram\'s extension is a piece of the pill, with no spellcheck; a note\'s never shows', async () => {
+    const { root } = await mountNamed('a [[LN Scenarios Diagram.drawio]] b [[Our Eval System.excalidraw]] c [[Plan.md]] d\n')
+    const endings = Array.from(root.querySelectorAll<HTMLElement>('.name-ending'))
+    expect(endings.map((el) => el.textContent)).toEqual(['.drawio', '.excalidraw'])
+    for (const el of endings) {
+      expect(el.classList.contains(WIKILINK_CLASS)).toBe(true)
+      expect(el.getAttribute('spellcheck')).toBe('false')
+    }
   })
 
   it('S13: a link\'s name gets no spellcheck underline', async () => {
