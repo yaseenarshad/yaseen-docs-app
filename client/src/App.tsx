@@ -2726,6 +2726,8 @@ export function App() {
       // YAZ-3564: the keys the user changed; a drawing follows them at once (K4).
       hotkeys: settings.hotkeys,
       hotkeysAside: settings.hotkeysAside,
+      // YAZ-3704 D5: how long the words an outside save changed glow, a SETTING; it reaches the editor through a channel, never a rebuild.
+      outsideChangeGlow: settings.outsideChangeGlow,
       // Upkeep off (🔒 D7): no settings, so no Reviews section.
       reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
     }

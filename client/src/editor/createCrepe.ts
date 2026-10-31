@@ -100,6 +100,10 @@
  *  - CMD+F find (YAZ-968, `find/findInPage.ts`): matches + highlight decorations + fold-reveal,
  *    driven through the `FindChannel` the host also gives the find bar. Registered only when
  *    `opts.find` supplies that channel; every transaction it makes is metadata-only.
+ *  - Outside changes (YAZ-3704 D3–D9, `external/outsideChanges.ts`): the words an outside save changed glow,
+ *    removed text is a thin red mark, each changed line has a Checked button on hover; the one-line note reads
+ *    the count and drives Next through the `OutsideChangesChannel` the host also gives the bar. Registered only
+ *    when `opts.outsideChanges` supplies that channel. Memory only; every transaction it makes is metadata-only.
  *  - Table of contents (YAZ-2700, `toc/tocPlugin.ts`): the note's rows — its H1-H5 outside lists,
  *    or its bullets three levels deep when it has fewer than two of those, or what the reader
  *    chose for this note (the channel's source, D14: every heading, or the bullets) — scanned at
@@ -218,6 +222,8 @@ import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
 import { createImageView } from './image/imageView'
 import type { FindChannel } from './find/findChannel'
 import { createFindInPage } from './find/findInPage'
+import type { OutsideChangesChannel } from './external/outsideChangesChannel'
+import { createOutsideChanges } from './external/outsideChanges'
 import type { TocChannel } from './toc/tocChannel'
 import { createTableOfContents } from './toc/tocPlugin'
 import { bulletThreading } from './outline/bulletThreading'
@@ -293,6 +299,8 @@ export interface CreateCrepeOptions {
   zoom?: ZoomOptions
   /** CMD+F channel (YAZ-968): the host's one channel per mount, shared with the find bar. Absent → no find engine at all. */
   find?: FindChannel
+  /** Outside changes channel (YAZ-3704 D6): the host's one channel per mount, shared with the one-line note. Absent → no change list at all. */
+  outsideChanges?: OutsideChangesChannel
   /** Table of contents channel (YAZ-2700): the host's one channel per mount, shared with the table of contents. Absent → the note is never scanned. */
   toc?: TocChannel
   /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
@@ -526,6 +534,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(headingLevelTag)
   crepe.editor.use(headingText)
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find))
+  if (opts.outsideChanges !== undefined) crepe.editor.use(createOutsideChanges(opts.outsideChanges))
   if (opts.toc !== undefined) crepe.editor.use(createTableOfContents(opts.toc))
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { title: () => 'Untitled' }))
   crepe.editor.use(guideLines)

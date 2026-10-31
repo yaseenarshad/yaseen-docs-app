@@ -30,12 +30,24 @@ export interface AutosaveHandle {
   absorbFrontmatterOnly: (diskContent: string, diskMtime: number) => boolean
   /** The file as it sits on disk now, in the two parts it was read or written in: what a line number counts in (YAZ-2643). */
   diskParts: () => { frontmatter: string; body: string }
+  /**
+   * Who hears a save the disk refused (YAZ-3704 D1): the editor tries its merge first and shows the
+   * bar itself only when that fails. With nobody listening, the refusal shows the bar, as before.
+   * Returns the unsubscribe.
+   */
+  onSaveRefused: (listener: (diskMtime: number) => void) => () => void
 }
 
 /** Owns the Autosave controller for one open file (`path`): debounce, flush on unmount and window close. */
 export function useAutosave(path: string): AutosaveHandle {
   const [status, setStatus] = useState<SaveStatus>('saved')
-  const [conflictMtime, setConflictMtime] = useState<number | null>(null)
+  const [conflictMtime, setConflict] = useState<number | null>(null)
+  /** The bar is up: a refused save then only joins it, the merge already had its go (YAZ-3704 D1). */
+  const conflictShownRef = useRef(false)
+  const setConflictMtime = useCallback((diskMtime: number | null) => {
+    conflictShownRef.current = diskMtime !== null
+    setConflict(diskMtime)
+  }, [])
   const ref = useRef<{ autosave: Autosave; getContent: () => string } | null>(null)
   /** Raw frontmatter block re-prepended on every save; updated when the file is reloaded from disk. */
   const frontmatterRef = useRef('')
@@ -47,6 +59,8 @@ export function useAutosave(path: string): AutosaveHandle {
    * `carryEditorAcrossRename` cannot ALSO resurrect the old file on unmount.
    */
   const retiredRef = useRef(false)
+  /** The editor's merge for a refused save (YAZ-3704 D1); null shows the bar at once. */
+  const refusedRef = useRef<((diskMtime: number) => void) | null>(null)
 
   const attach = useCallback(
     (getContent: () => string, mtime: number, frontmatter: string, diskBody: string) => {
@@ -81,14 +95,14 @@ export function useAutosave(path: string): AutosaveHandle {
           }
         },
         onStatus: setStatus,
-        onConflict: setConflictMtime,
+        onConflict: (diskMtime) => (conflictShownRef.current ? setConflictMtime : (refusedRef.current ?? setConflictMtime))(diskMtime),
       })
       ref.current = { autosave, getContent }
       setStatus('saved')
       setConflictMtime(null)
       return autosave
     },
-    [path],
+    [path, setConflictMtime],
   )
 
   const flushNow = useCallback(() => {
@@ -151,14 +165,14 @@ export function useAutosave(path: string): AutosaveHandle {
     if (s === null || retiredRef.current || conflictMtime === null) return
     setConflictMtime(null)
     void s.autosave.adopt(conflictMtime)
-  }, [conflictMtime])
+  }, [conflictMtime, setConflictMtime])
 
   const markReloaded = useCallback((getContent: () => string, mtime: number, frontmatter: string, diskBody: string) => {
     frontmatterRef.current = frontmatter
     diskBodyRef.current = diskBody
     ref.current?.autosave.reset(getContent(), mtime)
     setConflictMtime(null)
-  }, [])
+  }, [setConflictMtime])
 
   const absorbFrontmatterOnly = useCallback((diskContent: string, diskMtime: number): boolean => {
     const s = ref.current
@@ -172,5 +186,12 @@ export function useAutosave(path: string): AutosaveHandle {
 
   const diskParts = useCallback(() => ({ frontmatter: frontmatterRef.current, body: diskBodyRef.current }), [])
 
-  return { status, conflictMtime, attach, keepMine, markReloaded, reportConflict: setConflictMtime, absorbFrontmatterOnly, diskParts }
+  const onSaveRefused = useCallback((listener: (diskMtime: number) => void) => {
+    refusedRef.current = listener
+    return () => {
+      if (refusedRef.current === listener) refusedRef.current = null
+    }
+  }, [])
+
+  return { status, conflictMtime, attach, keepMine, markReloaded, reportConflict: setConflictMtime, absorbFrontmatterOnly, diskParts, onSaveRefused }
 }

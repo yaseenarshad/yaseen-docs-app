@@ -1,0 +1,92 @@
+/* Outside changes (YAZ-3704 D4–D8): the glow on the changed words, the thin red mark of removed text,
+   the Checked button of a changed line, and the one-line note (OutsideChangesBar.tsx).
+
+   The glow tokens live on :root beside app.css's palette and swap under [data-theme='dark'], as
+   find.css's do. The note is the conflict bar's family, but calm: it informs, it asks for nothing. */
+:root {
+  --outside-change-bg: rgba(124, 58, 237, 0.14);
+}
+
+[data-theme='dark'] {
+  --outside-change-bg: rgba(167, 139, 250, 0.22);
+}
+
+.outside-change {
+  background: var(--outside-change-bg);
+  border-radius: 2px;
+}
+
+/* Next change's ring (D9): on the glow, on a removed mark, or on the block when it has neither. */
+.outside-change--active {
+  box-shadow: 0 0 0 2px var(--agent);
+}
+
+/* D7: a thin red bar where text was; the padding widens what the mouse can rest on, not the bar. */
+.outside-removed {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  padding: 0 3px;
+  margin: 0 -2px;
+  vertical-align: text-bottom;
+  background: var(--danger);
+  background-clip: content-box;
+  border-radius: 1px;
+  cursor: help;
+}
+
+/* Between two blocks (a bullet removed): a thin line instead of a bar. */
+.outside-removed--between {
+  display: block;
+  width: auto;
+  height: 2px;
+  padding: 3px 0;
+  margin: -3px 0;
+}
+
+/* D8: shown only while the mouse is over the changed line. */
+.outside-checked {
+  display: none;
+  margin-left: 8px;
+  padding: 0 6px;
+  font: 12px/18px var(--font);
+  color: var(--fg-muted);
+  vertical-align: text-bottom;
+  cursor: pointer;
+  user-select: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.outside-change-block:hover .outside-checked {
+  display: inline-block;
+}
+
+.outside-checked:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.outside-changes-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border);
+}
+
+.outside-changes-bar button {
+  padding: 3px 10px;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.outside-changes-bar button:hover {
+  background: var(--bg-hover);
+}
