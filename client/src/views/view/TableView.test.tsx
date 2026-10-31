@@ -609,11 +609,24 @@ describe('column resize', () => {
     mouse(window, 'mousemove', 130)
     expect(onChange).not.toHaveBeenCalled()
     expect(q<HTMLElement>(el, '.view-table th:nth-child(3)').style.width).toBe('180px') // 150 default + 30
+    // YAZ-3719 1B: no frame takes the mouse while the edge is held, so a release over a diagram still ends it.
+    expect(document.body.classList.contains('drag-held')).toBe(true)
     mouse(window, 'mouseup', 130)
+    expect(document.body.classList.contains('drag-held')).toBe(false)
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].columnSize).toEqual({ 'note.priority': 180 })
     expect(yaml()).toContain('columnSize:')
     expect(yaml()).toContain('note.priority: 180')
+  })
+
+  it('YAZ-3719 1B: a right press on a header handle starts no drag', () => {
+    const { el, onChange } = mount(TYPED_BASE)
+    const handle = el.querySelectorAll('.view-table__resize')[1]
+    act(() => void handle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 2, clientX: 100 })))
+    expect(document.body.classList.contains('drag-held')).toBe(false)
+    mouse(window, 'mousemove', 130)
+    mouse(window, 'mouseup', 130)
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('a drag starts from the stored width and clamps at the minimum', () => {

@@ -16,6 +16,7 @@ import { Popover } from './Popover'
 import { usePreview } from './PreviewCard'
 import type { ResolveLink, WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { cssZoom } from '../../lib/cssZoom'
+import { holdColResize } from '../../lib/colResize'
 import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader'
 import { openByGesture } from '../../lib/openGesture'
 import { frozenColumnCount } from './frozenColumns'
@@ -288,6 +289,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const firstDataRow = visible.find((l): l is Extract<Line, { row: Row }> => 'row' in l)?.r
 
   const startResize = (key: string) => (e: ReactMouseEvent) => {
+    // The left button only (YAZ-3719 1B): a right press's release can go to the native menu and never come.
+    if (e.button !== 0) return
     e.preventDefault()
     const start = widthOf(key)
     const x0 = e.clientX
@@ -300,6 +303,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const up = () => {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
+      holdColResize(false)
       setDrag(null)
       if (width !== start)
         onUpdate((d) => {
@@ -308,6 +312,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
+    holdColResize(true)
   }
 
   const setSummary = (key: string, kind: string | null) =>
