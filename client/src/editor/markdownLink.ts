@@ -54,7 +54,8 @@ interface LinkHit {
   to: number
 }
 
-const markdownLinkKey = new PluginKey<DecorationSet>('mdapp-markdown-link')
+/** Its decorations are read by `pillSelection.ts`: a selected link's pieces. */
+export const markdownLinkKey = new PluginKey<DecorationSet>('mdapp-markdown-link')
 const REDRAW = 'redraw-pills'
 
 const addLinkOf = new WeakMap<EditorView, (range?: { from: number; to: number }) => boolean>()

@@ -98,6 +98,15 @@
 .wikilink.find-match--active {
   background: var(--find-match-active-bg);
 }
+/* A link inside a selection is one lit box, its icon and padding too (YAZ-3747 demo, `pillSelection.ts`). The
+   browser's own colour stays off its letters: it would draw a second, patchy box inside this one. */
+.wikilink.wikilink--selected {
+  background: Highlight;
+}
+.wikilink--selected::selection,
+.wikilink--selected *::selection {
+  background: transparent;
+}
 
 /* Target not in the vault index — dimmed, Obsidian-style. */
 .wikilink--unresolved {

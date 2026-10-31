@@ -57,6 +57,8 @@
  *  - Link caret (YAZ-3744 D1, YAZ-3935, `wikilink/idLinkCaret.ts`): a caret that lands inside a
  *    closed link steps over it; Backspace after it and Delete before it remove it whole; a
  *    double-click on a word next to a link selects only that word.
+ *  - Pill selection (YAZ-3747 demo, `wikilink/pillSelection.ts`): a link inside a selection lights
+ *    up as one box, its icon and padding too.
  *  - Wikilink clicks (GRO-2192, YAZ-3935, YAZ-3936, `wikilink/wikilinkClick.ts`): MOUSEDOWN on a
  *    collapsed `.wikilink` span. In an editable note a plain click puts the caret at the pill's
  *    nearer edge and a double-click selects the link; the gestures of Settings › Hotkeys ›
@@ -281,6 +283,7 @@ import { createWikilinkMenu } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
+import { createPillSelection } from './wikilink/pillSelection'
 import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import { claimPage } from '../lib/readOnlyCaret'
@@ -565,6 +568,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook, opts.vaultsOfLetters))
   // Every [[link]] is one unit (YAZ-3744 D1, YAZ-3935): the caret steps over it, Backspace removes it whole.
   crepe.editor.use(createIdLinkCaret())
+  // A selected link is one lit box, not its letters alone (YAZ-3747 demo).
+  crepe.editor.use(createPillSelection())
   if (opts.wikilinkNav !== undefined) {
     // A click and the link menu's Open rows follow a link the same way (YAZ-3609 D23).
     const follow = wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks, opts.vaultsOfLetters)

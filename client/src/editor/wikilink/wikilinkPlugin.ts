@@ -275,7 +275,8 @@ export function linksAsShown(text: string, source: WikilinkResolveSource, viewOn
     bang === '!' ? raw : linkDisplayText(inner, titleOf, () => linkIsResolved(inner, source, viewOnly)) || raw)
 }
 
-const wikilinkKey = new PluginKey<DecorationSet>('mdapp-wikilink')
+/** Its decorations are read by `pillSelection.ts`: a selected link's pieces. */
+export const wikilinkKey = new PluginKey<DecorationSet>('mdapp-wikilink')
 
 /**
  * Calls `cb` for every maximal run of plain text (consecutive text children WITHOUT the
