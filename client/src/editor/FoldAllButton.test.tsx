@@ -1,7 +1,7 @@
 /**
- * The note's fold-all button (YAZ-3938 D1, D2) on a real editor: the button with the read and the run
- * `Editor.tsx` gives it, so the folds are the ⌘⇧U / ⌘⇧I command's. The code tab's button is in
- * `code/CodeEditor.test.tsx`.
+ * The note's fold-all button (YAZ-3938 D1, D2) on a real editor, with a read and a run like the ones
+ * `Editor.tsx` gives it: the folds are the ⌘⇧U / ⌘⇧I command's. The wiring in `Editor.tsx` itself is
+ * pinned in `Editor.test.tsx`; the code tab's button is in `code/CodeEditor.test.tsx`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -98,11 +98,14 @@ describe('the note fold-all button (YAZ-3938)', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
-  it('D2: while anything is open the button collapses all — one chevron opened after Collapse all turns it back', async () => {
+  it('D1: while anything is open the button collapses all — one chevron opened after Collapse all turns it back', async () => {
     const { host, button } = await mount(MIXED)
     await click(button)
     expect(folded(host)).toBe(3)
+    // The pointer rests on the button while a chevron opens: a move over it reads the label again.
     act(() => host.querySelector<HTMLButtonElement>(`.${OUTLINE_TOGGLE_CLASS}`)!.click())
+    await act(async () => void button.dispatchEvent(new MouseEvent('pointermove', { bubbles: true })))
+    expect(button.getAttribute('aria-label')).toMatch(/^Collapse all/)
     expect(folded(host)).toBe(2)
     await hover(button)
     expect(button.getAttribute('aria-label')).toMatch(/^Collapse all/)
@@ -110,7 +113,7 @@ describe('the note fold-all button (YAZ-3938)', () => {
     expect(folded(host)).toBe(3)
   })
 
-  it('D2: nothing to fold — the label says so and a click changes nothing', async () => {
+  it('D1: nothing to fold — the label says so and a click changes nothing', async () => {
     const { host, button } = await mount('Just a line.\n\nAnother line.\n')
     await hover(button)
     expect(button.getAttribute('aria-label')).toBe('Nothing to fold')
@@ -140,7 +143,7 @@ describe('the note fold-all button (YAZ-3938)', () => {
     }
   })
 
-  it('D2, the typing budget: edits and caret moves never read the fold state; only a look or a click does', async () => {
+  it('D2, the typing budget: edits never read the fold state; only a look or a click does', async () => {
     const read = vi.fn((v: EditorView) => nextDocumentFold(v.state))
     const { view, button } = await mount(MIXED, read)
     for (const ch of 'typing') act(() => view.dispatch(view.state.tr.insertText(ch, 3)))

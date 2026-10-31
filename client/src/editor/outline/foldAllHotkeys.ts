@@ -2,7 +2,8 @@
  * Document-wide fold-all hotkeys. Bullet and heading folds keep independent plugin state, but
  * Cmd+Shift+U / Cmd+Shift+I are one user gesture: one metadata-only transaction updates both and
  * one Cmd+Z restores both exact prior sets. Individual chevrons and caret-local folds stay owned by
- * their existing keymaps.
+ * their existing keymaps. The note's fold-all button (YAZ-3938, `FoldAllButton.tsx`) runs the same
+ * command, so one Cmd+Z undoes a click too.
  */
 import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'

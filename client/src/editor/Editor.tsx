@@ -974,7 +974,7 @@ function CrepeHost({
             if (readyCrepe === null || crepeRef.current !== readyCrepe) return
             const view = editorViewOf(readyCrepe)
             setAllDocumentFolds(collapse)(view.state, view.dispatch)
-            view.focus()
+            focusEditor(readyCrepe)
           }}
           keys={{ collapse: 'note.foldAll', expand: 'note.unfoldAll' }}
         />

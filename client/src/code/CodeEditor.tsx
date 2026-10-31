@@ -225,7 +225,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
   /** The Outline's editor and feed (YAZ-3486): set once the editor exists, cleared with it. */
   const [outline, setOutline] = useState<{ editor: OutlineEditorLike; feed: OutlineFeed } | null>(null)
 
-  /** A menu row: Monaco's own action, so the folds are saved as any fold is (`attachFolds`). */
+  /** A chevron menu row or the fold-all chip (YAZ-3938): Monaco's own action, so the folds are saved as any fold is (`attachFolds`). */
   const runFold = (action: 'editor.foldAll' | 'editor.unfoldAll'): void => {
     editorRef.current?.trigger('keyboard', action, null)
   }

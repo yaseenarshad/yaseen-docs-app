@@ -101,6 +101,11 @@ vi.mock('./lineNumbers/lineNumbers', async () => {
 // Section indent (YAZ-2709): the fake Crepe has no view to send the switch to. The real plugin is
 // covered by outline/sectionIndent.test.ts; what the host SENDS is the thing under test here.
 vi.mock('./outline/sectionIndent', () => ({ showSectionIndent: vi.fn() }))
+
+// The fold-all button (YAZ-3938): the fake Crepe has no fold plugins. The real command is covered by
+// FoldAllButton.test.tsx; what the host WIRES to the button is the thing under test here.
+const foldAll = vi.hoisted(() => ({ next: 'collapse' as 'collapse' | 'expand' | 'none', command: vi.fn(() => true) }))
+vi.mock('./outline/foldAllHotkeys', () => ({ nextDocumentFold: vi.fn(() => foldAll.next), setAllDocumentFolds: vi.fn(() => foldAll.command) }))
 /** The drawing tab's host (YAZ-3028): a stand-in that records what Editor hands it. */
 const drawingTab = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }))
 vi.mock('../drawings/DrawingEditor', () => ({
@@ -121,7 +126,8 @@ vi.mock('./external/applyExternalMarkdown', () => ({
 import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
-import { createCrepe, focusEditor, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
+import { setAllDocumentFolds } from './outline/foldAllHotkeys'
+import { createCrepe, editorViewOf, focusEditor, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
 import { _resetRenameContinuity, carryEditorAcrossRename, registerRenameContinuity } from '../lib/renameContinuity'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import type { BlockLines } from './lineNumbers/blockLines'
@@ -1601,7 +1607,34 @@ describe('the page settings cog (YAZ-2643)', () => {
     return container
   }
 
-  it('is the first chip of a Markdown note after the fold-all button (YAZ-3938): cog, zoom pill, sync chip, save chip (S1)', async () => {
+  it('YAZ-3938 D1: the fold-all button stands first, left of the cog; a click runs the fold-all command on the note, then gives the note the focus', async () => {
+    readFile.mockResolvedValueOnce({ path: PATH, content: BODY, mtime: 1, size: BODY.length })
+    const view = { state: { doc: 'the state' }, dispatch: vi.fn(), dom: document.createElement('div') }
+    vi.mocked(editorViewOf).mockReturnValue(view as never)
+    try {
+      await open(PATH)
+      const button = container!.querySelector<HTMLButtonElement>('.status-chips > .fold-all__trigger:first-child')!
+      vi.mocked(focusEditor).mockClear()
+      foldAll.next = 'collapse'
+      await act(async () => button.click())
+      expect(setAllDocumentFolds).toHaveBeenLastCalledWith(true)
+      expect(foldAll.command).toHaveBeenLastCalledWith(view.state, view.dispatch)
+      expect(focusEditor).toHaveBeenCalledTimes(1)
+      expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+      foldAll.next = 'expand'
+      await act(async () => button.click())
+      expect(setAllDocumentFolds).toHaveBeenLastCalledWith(false)
+      foldAll.next = 'none'
+      foldAll.command.mockClear()
+      await act(async () => button.click())
+      expect(foldAll.command).not.toHaveBeenCalled()
+      expect(button.getAttribute('aria-label')).toBe('Nothing to fold')
+    } finally {
+      vi.mocked(editorViewOf).mockReturnValue(null as never)
+    }
+  })
+
+  it('the cog comes right after the fold-all button on a Markdown note: then zoom pill, sync chip, save chip (S1)', async () => {
     readFile.mockResolvedValueOnce({ path: PATH, content: BODY, mtime: 1, size: BODY.length })
     await open(PATH, { sync: { root: '/vault', state: 'synced' }, onSyncNow: noop })
     const chips = [...container!.querySelector('.status-chips')!.children].map((chip) => chip.className.split(' ')[0])
