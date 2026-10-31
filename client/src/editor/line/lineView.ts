@@ -33,6 +33,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { NodeSelection } from '@milkdown/kit/prose/state'
 import type { EditorView, NodeView, ViewMutationRecord } from '@milkdown/kit/prose/view'
 import { $view } from '@milkdown/kit/utils'
+import { holdFrames } from '../../lib/colResize'
 import { LINE_WIDTH_DEFAULT, MIN_LINE_WIDTH, PATTERN_ATTR, lineSchema, lineStyleOf, lineStyleProperties } from './lineStyle'
 import './line.css'
 
@@ -96,6 +97,7 @@ class LineNodeView implements NodeView {
       document.removeEventListener('mouseup', onUp)
       document.removeEventListener('keydown', onKey, true)
       window.removeEventListener('blur', onUp)
+      holdFrames(false)
       this.dom.classList.remove(LINE_DRAGGING_CLASS)
     }
     const onMove = (e: MouseEvent): void => {
@@ -124,6 +126,7 @@ class LineNodeView implements NodeView {
     document.addEventListener('mouseup', onUp)
     document.addEventListener('keydown', onKey, true)
     window.addEventListener('blur', onUp)
+    holdFrames(true)
   }
 
   /** ONE document change per gesture: the new length, the line selected again, everything else untouched. */

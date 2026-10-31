@@ -98,7 +98,7 @@ function typeInTurn(views: EditorView[]): number[][] {
 }
 
 describe('S6: a 500 × 10 table stays fast', () => {
-  it('perf smoke: opens, types, and pastes 50 × 4 in under 50 ms; frozen and styled, it types as fast', async () => {
+  it('perf smoke: opens, types, and pastes 50 × 4 in under 150 ms; frozen and styled, it types as fast', async () => {
     const opens: number[] = []
     const keys = { note: [] as number[], table: [] as number[], frozen: [] as number[], styled: [] as number[] }
     const pastes: number[] = []
@@ -132,7 +132,9 @@ describe('S6: a 500 × 10 table stays fast', () => {
     // by counts; the 60 ms ceiling above still catches a gross cost in a frozen table.
     expect(frozen).toBeLessThan(60)
     expect(styled).toBeLessThan(60)
-    // The approved number (YAZ-3697): ~15 ms measured.
-    expect(paste).toBeLessThan(50)
+    // The approved number (YAZ-3697): ~15 ms measured. The GitHub runner takes 60–87 ms (jsdom) since PR #219, and a
+    // loaded Mac 115 ms, so 50 failed every CI run on `main` (YAZ-3743, Yaseen's OK). 150 ms still catches a rescan of
+    // the table per pasted cell, which costs seconds.
+    expect(paste).toBeLessThan(150)
   }, 120_000)
 })
