@@ -33,7 +33,8 @@ const REPORT: MemoryReport = {
         tab('/v/ideas.md', { title: 'Ideas', state: 'asleep', lastSeen: NOW - 2 * 60 * MIN, changed: new Date(2026, 9, 20, 9, 0).getTime() }),
         tab('/v/plan.md', { title: 'Plan', lastSeen: NOW - 18 * MIN, sleepsAt: NOW + 11.5 * MIN, changed: new Date(2026, 9, 30, 8, 0).getTime() }),
         tab('/v/draft.md', { title: 'Draft', state: 'unsaved', lastSeen: NOW - 2 * MIN, changed: NOW - 20_000 }),
-        tab('/v/never.md', { title: 'Kept awake' }), // "Never", or not shown since the window started: no timer
+        tab('/v/never.md', { title: 'Kept awake' }), // "Never": no timer
+        tab('/v/later.md', { title: 'Later', state: 'unloaded', changed: NOW - 3 * MIN }), // not opened since the window started
         tab('/v/board.excalidraw', { title: 'Board', state: 'asleep', lastSeen: NOW - 30 * MIN }), // a failed stat: no Changed
       ],
     },
@@ -86,13 +87,13 @@ const tabRows = (key: string) => [...el.querySelectorAll<HTMLTableRowElement>(`[
 describe('Settings › Memory (YAZ-3737 D9)', () => {
   it('YAZ-3945: a table with headers; a row for each window with its full name, then App core and Code helpers; "Growing" only for the window that grew; the hover text; no ⓘ by the title', async () => {
     await mountMemory()
-    expect([...el.querySelectorAll('.memory__table thead th')].map((th) => th.textContent)).toEqual(['Tab', 'State', 'Last seen', 'Changed', 'Memory'])
+    expect([...el.querySelectorAll('.memory__table thead th')].map((th) => th.firstChild!.textContent!.trim())).toEqual(['Tab', 'State', 'Last seen', 'Changed', 'Memory'])
     expect([...el.querySelectorAll<HTMLElement>('[data-memory-row]')].map((r) => r.dataset.memoryRow)).toEqual(['w1', 'w2', 'w3', 'core', 'helpers'])
-    // The name runs across Tab to Changed; the size and the bar sit under Memory.
-    expect([...row('w1').cells].map((c) => c.colSpan)).toEqual([4, 1])
-    expect(cells(row('w1'))[1]).toBe('800.0 MB')
+    // The name runs across Tab to Last seen (YAZ-3958); Changed is empty; the size and the bar sit under Memory.
+    expect([...row('w1').cells].map((c) => c.colSpan)).toEqual([3, 1, 1])
+    expect(cells(row('w1'))[2]).toBe('800.0 MB')
     expect(row('w1').querySelector('.memory__name')!.textContent).toBe('App Memory Bloat Fix demo, a long window name')
-    expect(row('w1').querySelector<HTMLElement>('.memory__name')!.title).toBe('4 notes, 1 drawing')
+    expect(row('w1').querySelector<HTMLElement>('.memory__name')!.title).toBe('App Memory Bloat Fix demo, a long window name\n4 notes, 1 drawing')
     expect(row('w2').querySelector('.memory__grew')).toBeNull()
     expect(row('core').querySelector('.memory__name')!.textContent).toBe('App core')
     expect(row('helpers').querySelector('.memory__size')!.textContent).toBe('500.0 MB')
@@ -101,10 +102,10 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     // The biggest row fills its bar.
     expect(row('w1').querySelector<HTMLElement>('.storage__fill')!.style.width).toBe('100%')
     expect(row('w2').querySelector<HTMLElement>('.storage__fill')!.style.width).toBe('50%')
-    expect(row('w1').cells[1].title).toBe('JS heap 100.0 MB · Other 700.0 MB')
-    expect(row('w2').cells[1].title).toBe('')
-    expect(row('core').cells[1].title).toBe('Main 200.0 MB · GPU 60.0 MB · Utility 40.0 MB · Other 0 B')
-    expect(row('helpers').cells[1].title).toBe('2 helpers')
+    expect(row('w1').cells[2].title).toBe('JS heap 100.0 MB · Other 700.0 MB')
+    expect(row('w2').cells[2].title).toBe('')
+    expect(row('core').cells[2].title).toBe('Main 200.0 MB · GPU 60.0 MB · Utility 40.0 MB · Other 0 B')
+    expect(row('helpers').cells[2].title).toBe('2 helpers')
     expect(el.querySelector('.memory__table')!.parentElement!.textContent).not.toContain('Total')
     // YAZ-3932 round 2: the ⓘ left the title.
     expect(el.querySelector('.settings-section__title ~ .memory__info, .settings-section__head')).toBeNull()
@@ -136,6 +137,14 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect(tip.hidden).toBe(true)
     act(() => tipOf('w1').info.click())
     expect(tabRows('w1')).toEqual([])
+    // YAZ-3958: the State header's ⓘ lists each state, one per line; the window name stops before Changed.
+    const stateInfo = document.querySelector<HTMLButtonElement>('th .memory__info-btn[aria-label="What each state means"]')!
+    const stateTip = document.getElementById(stateInfo.getAttribute('aria-describedby')!)!
+    act(() => stateInfo.focus())
+    expect(stateTip.hidden).toBe(false)
+    expect(stateTip.textContent!.split('\n').map((line) => line.split(':')[0])).toEqual(['In view', 'Awake · sleeps in N min', 'Awake · not saved yet', 'Asleep', 'Not loaded', 'Awake'])
+    expect(row('w1').querySelector<HTMLTableCellElement>('.memory__head')!.colSpan).toBe(3)
+    expect(row('w1').querySelector<HTMLElement>('.memory__name')!.title).toBe('App Memory Bloat Fix demo, a long window name\n4 notes, 1 drawing')
   })
 
   it('YAZ-3934, YAZ-3946: a click on a window row opens its tab rows, awake first: title, state, last seen, changed, and an empty Memory cell; it follows the next report; a click closes it', async () => {
@@ -149,14 +158,15 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect(row('w1').querySelector('.memory__arrow')!.textContent).toBe('▾')
     // The tab bar's titles, not file names; strip order inside each group.
     expect(tabRows('w1').map(cells)).toEqual([
-      ['00 START HERE', 'On show', '', '5 min ago', ''],
+      ['00 START HERE', 'In view', '', '5 min ago', ''],
       ['Plan', 'Awake · sleeps in 12 min', '18 min ago', 'Yesterday', ''],
       ['Draft', 'Awake · not saved yet', '2 min ago', 'now', ''],
       ['Kept awake', 'Awake', '', '', ''],
       ['Ideas', 'Asleep', '2 h ago', 'Oct 20', ''],
+      ['Later', 'Not loaded', '', '3 min ago', ''], // YAZ-3958: idle as an asleep tab, so below and dimmed
       ['Board', 'Asleep', '30 min ago', '', ''],
     ])
-    expect(tabRows('w1').map((tr) => tr.classList.contains('memory__tab--asleep'))).toEqual([false, false, false, false, true, true])
+    expect(tabRows('w1').map((tr) => tr.classList.contains('memory__tab--asleep'))).toEqual([false, false, false, false, true, true, true])
     expect(tabRows('w1')[4].querySelector<HTMLElement>('[aria-label="asleep"]')!.title).toBe('Asleep: it uses almost no memory.')
     expect(tabRows('w1').every((tr) => tr.cells[4].childElementCount === 0)).toBe(true) // no size for a tab
     expect(tabRows('w2')).toEqual([]) // only the row clicked opens
@@ -171,11 +181,12 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     vi.setSystemTime(NOW + MIN - MEMORY_SAMPLE_MS) // the 30 s refresh moves the clock on too
     await act(async () => void vi.advanceTimersByTime(MEMORY_SAMPLE_MS))
     expect(tabRows('w1').map((tr) => [tr.cells[0].textContent, tr.cells[1].textContent])).toEqual([
-      ['00 START HERE', 'On show'],
+      ['00 START HERE', 'In view'],
       ['Ideas', 'Awake'],
       ['Plan', 'Awake · sleeps in 11 min'],
       ['Draft', 'Awake · not saved yet'],
       ['Kept awake', 'Awake'],
+      ['Later', 'Not loaded'],
       ['Board', 'Asleep'],
     ])
     act(() => row('w1').click())

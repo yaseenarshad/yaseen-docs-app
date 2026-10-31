@@ -66,7 +66,7 @@ export async function askViews(wc: Page): Promise<(StartView | null)[] | null> {
   })
 }
 
-const TAB_STATES: readonly MemoryTabState[] = ['shown', 'awake', 'unsaved', 'asleep']
+const TAB_STATES: readonly MemoryTabState[] = ['shown', 'awake', 'unsaved', 'unloaded', 'asleep']
 const stampOf = (v: unknown): number | null => (isFiniteNumber(v) ? v : null)
 
 /**

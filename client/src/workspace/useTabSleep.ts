@@ -250,6 +250,8 @@ export function useTabSleep(world: SleepWorld, doors: SleepDoors): TabSleep {
       if (asleepRef.current.has(id)) return { id, path, state: 'asleep', lastSeen, sleepsAt: null }
       if (!w.away && id === w.shown) return { id, path, state: 'shown', lastSeen: null, sleepsAt: null }
       if (after !== null && dirty.has(path)) return { id, path, state: 'unsaved', lastSeen, sleepsAt: null }
+      // Not opened since the window started (YAZ-3958): no editor, so almost no memory, as an asleep tab.
+      if (!w.mounted.includes(id)) return { id, path, state: 'unloaded', lastSeen, sleepsAt: null }
       // The timer runs for a mounted tab with a stamp that a round may put to sleep (the rounds' own test).
       const at = lastShown.current.get(id)
       const runs = after !== null && at !== undefined && w.mounted.includes(id) && maySleep(id, w, null)

@@ -6687,7 +6687,7 @@ describe('App tab sleep (YAZ-3737 5A, S18; 5B D11, S7)', () => {
     expect(askTabs()!.map(({ path, title, state, sleepsAt }) => [path, title, state, sleepsAt])).toEqual([
       ['/v/a.md', 'Start here', 'shown', null],
       ['/v/b.md', 'b', 'asleep', null],
-      ['/v/c.md', 'c', 'awake', null],
+      ['/v/c.md', 'c', 'unloaded', null], // YAZ-3958: never opened, so no editor
     ])
     expect(askTabs()!.map((t) => typeof t.lastSeen)).toEqual(['object', 'number', 'object'])
   }, 15_000)

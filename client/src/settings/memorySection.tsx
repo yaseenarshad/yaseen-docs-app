@@ -7,7 +7,7 @@
  *
  *   Tab                          State                    Last seen   Changed     Memory
  *   ▾ Writing ⓘ  Growing                                                         ▓▓▓▓▓▓░  812.4 MB
- *       00 START HERE            On show                              5 min ago
+ *       00 START HERE            In view                              5 min ago
  *       Plan                     Awake · sleeps in 12 min 18 min ago  Yesterday
  *       Draft                    Awake · not saved yet    2 min ago   now
  *       Ideas                    Asleep zzz               2 h ago     Oct 20         (dimmed: asleep)
@@ -15,15 +15,16 @@
  *     App core ⓘ                                                                  ▓▓▓░░░░  390.2 MB
  *     Code helpers ⓘ                                                              ▓▓▓▓░░░  610.7 MB  (only while a helper runs)
  *
- * Windows in the order they opened (main's order), so a row never moves under the pointer. A window's full name runs
- * across the first four columns, cut only when it is wider than the page; the page never scrolls sideways. The
+ * Windows in the order they opened (main's order), so a row never moves under the pointer. A window's name runs across
+ * Tab to Last seen and ends with "…" before Changed (YAZ-3958; the full name on hover); the page never scrolls sideways. The
  * biggest row fills its bar. "Growing" (YAZ-3933, the app's orange) = it grew more than 150 MB or 20 % in the last
  * hour (main decides). Each kind of row has its own ⓘ (YAZ-3932, round 2), on hover and on keyboard focus. Hover on a
  * name: what a window has open; on a size: a window's JS heap and the rest, App core's parts, the helper count.
  *
- * A click on a window row opens (▾) or closes (▸) its tab rows (YAZ-3934): awake tabs first, then the sleeping ones,
- * dimmed with the tab bar's zzz, strip order kept in each group. Each tab row (YAZ-3946) shows its title as the tab bar
- * shows it, its state ("On show", "Awake · sleeps in N min", "Awake · not saved yet", "Awake", "Asleep"), when it was
+ * A click on a window row opens (▾) or closes (▸) its tab rows (YAZ-3934): the tabs that hold memory first, then the
+ * asleep ones (with the tab bar's zzz) and the not-loaded ones, dimmed, strip order kept in each group. Each tab row (YAZ-3946) shows its title as the tab bar
+ * shows it, its state ("In view", "Awake · sleeps in N min", "Awake · not saved yet", "Not loaded", "Awake", "Asleep";
+ * the State header's ⓘ says each, YAZ-3958), when it was
  * last seen and when its file last changed. Its Memory cell is empty: all the tabs of a window share one heap, so a
  * number would be a guess. A window that did not answer main's tabs ask shows its stored tabs with empty facts. A
  * window with no tab, App core and Code helpers do not open. The report comes from main (`memory.report`) while the
@@ -48,14 +49,24 @@ const INFO = {
   helpers: 'These run only while code files are open. They stop 2 minutes after you close the last one.',
 } as const
 
+/** The State header's ⓘ (YAZ-3958): one line for each state a tab row can show. */
+const STATES_INFO = [
+  'In view: the tab you look at now. It never sleeps.',
+  'Awake · sleeps in N min: it uses memory. It sleeps in N minutes.',
+  'Awake · not saved yet: it has typing that is not saved yet. It sleeps after the save.',
+  'Asleep: it uses almost no memory. A click wakes it.',
+  'Not loaded: you have not opened it since the app started. It uses almost no memory.',
+  'Awake: Sleep is set to Never, so it does not sleep.',
+].join('\n')
+
 /** A row's ⓘ (YAZ-3932): its line shows while the pointer is on it or it has the focus. */
-function Info({ text }: { text: string }) {
+function Info({ text, label = 'What this row means' }: { text: string; label?: string }) {
   const [shown, setShown] = useState(false)
   const tip = useId()
   return (
     <span className="memory__info" onMouseEnter={() => setShown(true)} onMouseLeave={() => setShown(false)}>
       {/* A click on the ⓘ does not open or close its row. */}
-      <button type="button" className="memory__info-btn" aria-label="What this row means" aria-describedby={tip} onClick={(e) => e.stopPropagation()} onFocus={() => setShown(true)} onBlur={() => setShown(false)}>
+      <button type="button" className="memory__info-btn" aria-label={label} aria-describedby={tip} onClick={(e) => e.stopPropagation()} onFocus={() => setShown(true)} onBlur={() => setShown(false)}>
         ⓘ
       </button>
       <span id={tip} role="tooltip" className="memory__tip" hidden={!shown}>
@@ -115,7 +126,9 @@ export function agoText(then: number, now: number): string {
 function stateText(tab: MemoryTabRow, now: number): string {
   switch (tab.state) {
     case 'shown':
-      return 'On show'
+      return 'In view'
+    case 'unloaded':
+      return 'Not loaded'
     case 'unsaved':
       return 'Awake · not saved yet'
     case 'asleep':
@@ -131,14 +144,17 @@ function stateText(tab: MemoryTabRow, now: number): string {
 /** No titles here: Settings has no index, so a tab whose window did not answer shows its file name. */
 const NO_TITLES = new Map<string, string>()
 
-/** A window's tab rows (YAZ-3934, YAZ-3946): awake first, then asleep, each group in strip order. */
+/** A tab that holds almost no memory (YAZ-3958): asleep, or not loaded. Its row goes below and is dimmed. */
+const idle = (t: MemoryTabRow) => t.state === 'asleep' || t.state === 'unloaded'
+
+/** A window's tab rows (YAZ-3934, YAZ-3946): the tabs that hold memory first, then the idle ones, each group in strip order. */
 function TabRows({ tabs }: { tabs: MemoryTabRow[] }) {
   const now = Date.now()
-  const ordered = [...tabs.filter((t) => t.state !== 'asleep'), ...tabs.filter((t) => t.state === 'asleep')]
+  const ordered = [...tabs.filter((t) => !idle(t)), ...tabs.filter(idle)]
   return ordered.map((t, i) => {
     const state = stateText(t, now)
     return (
-      <tr key={i} className={t.state === 'asleep' ? 'memory__tab memory__tab--asleep' : 'memory__tab'}>
+      <tr key={i} className={idle(t) ? 'memory__tab memory__tab--asleep' : 'memory__tab'}>
         <td className="memory__tab-name">{t.title ?? pageLabel(t.path, false, NO_TITLES)}</td>
         <td title={state}>
           {state}
@@ -177,7 +193,9 @@ function MemoryRows() {
       <thead>
         <tr>
           <th scope="col">Tab</th>
-          <th scope="col">State</th>
+          <th scope="col" className="memory__state-head">
+            State <Info text={STATES_INFO} label="What each state means" />
+          </th>
           <th scope="col">Last seen</th>
           <th scope="col">Changed</th>
           <th scope="col">Memory</th>
@@ -191,7 +209,7 @@ function MemoryRows() {
             <span className="memory__arrow" aria-hidden="true">
               {opens ? (expanded ? '▾' : '▸') : ''}
             </span>
-            <span className="memory__name" title={row.open === undefined || row.open === '' ? undefined : row.open}>
+            <span className="memory__name" title={row.open === undefined || row.open === '' ? row.name : `${row.name}\n${row.open}`}>
               {row.name}
             </span>
           </>
@@ -199,7 +217,7 @@ function MemoryRows() {
         return (
           <tbody key={row.key} data-memory-row={row.key}>
             <tr className={opens ? 'memory__row memory__row--window' : 'memory__row'} onClick={opens ? () => toggle(row.key) : undefined}>
-              <td colSpan={4} className="memory__head">
+              <td colSpan={3} className="memory__head">
                 <span className="memory__head-line">
                   {opens ? (
                     // The row's click opens it; this button is its keyboard door (Enter and Space click it).
@@ -217,6 +235,7 @@ function MemoryRows() {
                   )}
                 </span>
               </td>
+              <td />
               <td title={row.hint}>
                 <span className="memory__memory">
                   <span className="storage__bar memory__bar" aria-hidden="true">

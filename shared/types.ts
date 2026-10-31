@@ -3043,9 +3043,10 @@ export interface MemoryWindowRow {
 
 /**
  * A tab's sleep state as its window says it (YAZ-3946): `shown` = the tab on show (it never sleeps); `unsaved` = its
- * file is not saved yet (it does not sleep); `awake` with `sleepsAt` = its sleep timer runs, without = it does not.
+ * file is not saved yet (it does not sleep); `unloaded` = not opened since the window started, so no editor (YAZ-3958);
+ * `awake` with `sleepsAt` = its sleep timer runs, without = it does not (Sleep is Never).
  */
-export type MemoryTabState = 'shown' | 'awake' | 'unsaved' | 'asleep'
+export type MemoryTabState = 'shown' | 'awake' | 'unsaved' | 'unloaded' | 'asleep'
 
 /** What a window answers main's tabs ask (`window.onTabs`, YAZ-3946) for one tab, in strip order. Times are epoch ms. */
 export interface MemoryTabFacts {

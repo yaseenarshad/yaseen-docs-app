@@ -247,7 +247,7 @@ describe('Settings › Memory\'s facts (YAZ-3946)', () => {
       ['b', 'awake', t0, t0 + 15 * MIN],
       ['c', 'awake', null, null], // mounted at boot: no stamp before the first round
       ['d', 'unsaved', null, null],
-      ['e', 'awake', null, null],
+      ['e', 'unloaded', null, null], // YAZ-3958: no editor
     ])
     // The first round starts c's clock, but nobody saw c.
     await pass(MIN)
@@ -270,7 +270,7 @@ describe('Settings › Memory\'s facts (YAZ-3946)', () => {
       ['b', 'asleep', null],
       ['c', 'awake', null],
       ['d', 'awake', null],
-      ['e', 'awake', null],
+      ['e', 'unloaded', null],
     ])
   })
 })

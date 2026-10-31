@@ -1110,6 +1110,17 @@
   white-space: normal;
 }
 
+/* The State header's ⓘ (YAZ-3958): its list of states, one per line, wider than its column. */
+.memory__table .memory__state-head {
+  position: relative;
+  overflow: visible;
+}
+
+.memory__state-head .memory__tip {
+  width: 340px;
+  white-space: pre-line;
+}
+
 .memory__tip[hidden] {
   display: none;
 }
