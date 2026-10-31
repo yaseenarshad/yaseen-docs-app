@@ -90,8 +90,9 @@
  *  - Typing a list marker (YAZ-3727 D8, D9, `listMarkerTyping.ts`): replaces Milkdown's `1. ` and `* ` input rules. A
  *    typed space after `n.` or `*` / `-` / `+` at the start of a PLAIN line goes in as text, then the line becomes a list
  *    line as its own undo step; ⌘Z or Backspace right after gives back the plain text. Never on Enter; inside a list
- *    item the marker stays text (`* 6) text` stays literal bullet text, YAZ-1329). Right-click Number children is the
- *    one command that numbers children; the `Mod-Alt-7` keymap and the slash-menu Ordered List row stay removed.
+ *    item the marker stays text (`* 6) text` stays literal bullet text, YAZ-1329). Right-click Number children and the
+ *    toolbar's Numbered button (YAZ-3806 T2) are the click paths; the `Mod-Alt-7` keymap and the slash-menu Ordered List
+ *    row stay removed.
  *  - Drawing slash item (YAZ-877, `drawingMenu.ts`): rides Crepe's OWN BlockEdit menu via
  *    `featureConfigs[BlockEdit].buildMenu` — never a parallel slash plugin. Registered only when
  *    `opts.drawing` supplies the creator; the shared config always omits Ordered List.
@@ -214,7 +215,7 @@ import {
   wrapInOrderedListInputRule,
 } from '@milkdown/kit/preset/commonmark'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
-import { Selection } from '@milkdown/kit/prose/state'
+import { type Command, Selection } from '@milkdown/kit/prose/state'
 import { $shortcut, replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
 import { readOnlyKeys } from './readOnlyKeys'
@@ -238,8 +239,11 @@ import {
   normalizeEmptyItems,
   restoreItemLine,
 } from './listItemRoundTrip'
-import { underline } from './marks/underline'
+import { toggleUnderline, underline, underlineSchema } from './marks/underline'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
+import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
+import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
+import { arrangeToolbar, toolbarPrefs } from './toolbarPrefs'
 import { inlineBreaks } from './inlineBreaks'
 import { textStringify } from './textStringify'
 import { lineStyle } from './line/lineStyle'
@@ -251,7 +255,7 @@ import { customColourPick } from './table/colours'
 import { tableFreeze } from './table/tableFreeze'
 import { lineView } from './line/lineView'
 import { lineRows } from './line/lineRows'
-import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
+import { liftHeadlessItems, lineKeymap, visibleRangeHasMark, visibleTypeOver } from './lineSelection'
 import { visibleFormatting } from './visibleFormatting'
 import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
@@ -285,7 +289,8 @@ import { createWikilink, createWikilinkResolveSource, type LinkLook, type Wikili
 import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import { claimPage } from '../lib/readOnlyCaret'
-import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import { toDisplay, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { keyRow, keysOf } from '@shared/keys'
 import { applyNoteKeys, noteHotkeysCtx } from './noteKeys'
 
 export interface CreateCrepeOptions {
@@ -345,10 +350,6 @@ export interface CreateCrepeOptions {
   onCopyNotice?: (text: string) => void
 }
 
-/** An `Hn` / `T` glyph for the toolbar, drawn as text — the label IS the icon. */
-const headingIcon = (label: string): string =>
-  `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><text x="12" y="16.5" text-anchor="middle" font-size="12" font-weight="700" font-family="inherit" fill="currentColor">${label}</text></svg>`
-
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
 interface ToolbarGroup {
   addItem: (key: string, item: ToolbarItem & { onRun: (ctx: Ctx) => void }) => unknown
@@ -357,19 +358,23 @@ interface ToolbarBuilder {
   addGroup: (key: string, label: string) => ToolbarGroup
   getGroup: (key: string) => ToolbarGroup
   /** The builder's OWN list of groups, in strip order (Crepe's `GroupBuilder.build` hands back the array itself, not a copy). */
-  build: () => unknown[]
+  build: () => Array<{ key: string; label: string; items: Array<{ key: string; icon?: string }> }>
 }
 
-/** A colour dot for the toolbar; the fill IS the wash token, so the button previews the real colour. */
-const swatchIcon = (color: HighlightColor): string =>
-  `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="7" fill="var(${color ? `--mark-bg-${color}` : '--mark-bg'})" stroke="currentColor" stroke-opacity="0.35" stroke-width="1"/></svg>`
+const viewState = (ctx: Ctx) => ctx.get(editorViewCtx).state
+/** Run a ProseMirror command on the editor's view, as Crepe's own buttons do through their commands. */
+const runOnView = (ctx: Ctx, command: Command): void => {
+  const view = ctx.get(editorViewCtx)
+  command(view.state, view.dispatch, view)
+}
 
 /**
- * The selection toolbar (YAZ-923 + YAZ-1480 + YAZ-2700 D13).
+ * The selection toolbar (YAZ-923 + YAZ-1480 + YAZ-2700 D13 + YAZ-3806).
  *
- * THE STRIP, left to right: the Heading group (H1, H2, H3, T), then Crepe's own Formatting group
- * (Bold, Italic, Strikethrough, the four swatches), then Crepe's code and link. The tab order is
- * that same order.
+ * THE STRIP, by default, left to right (YAZ-3806): the Heading group (H1, H2, H3, T), the Lists
+ * group (Checklist, Bullet list, Numbered list), Crepe's own Formatting group (Bold, Italic,
+ * Underline, Strikethrough, the four swatches), then Crepe's code and link. The user reorders and
+ * hides groups and buttons in Settings (`toolbarPrefs.ts`); the tab order is the strip's order.
  *
  * The four highlight swatches (YAZ-1480 — yellow, green, blue, pink) join Crepe's OWN Formatting
  * group right after Strikethrough: `getGroup('formatting')` reaches it because `buildToolbar`
@@ -382,34 +387,51 @@ const swatchIcon = (color: HighlightColor): string =>
  * The Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what block is
  * this?" — the invisible `##` made visible — and whose click switches it, through the same
  * commands the typed markdown runs. `T` is the way back to plain text without backspacing hashes
- * you cannot see. It is ADDED last, the only place `addGroup` can put it, and then moved to the
- * FRONT of the builder's list (YAZ-2700 D13, the last lines below).
+ * you cannot see, and out of a list too (YAZ-3806 T4): it lights only for plain text outside a list.
  *
- * 🔒 That move counts on `builder.build()` handing back the builder's OWN array and not a copy.
- * It does in the Crepe this app installs (`@milkdown/crepe` 7.22.1, from the registry — the
- * tarballs in `client/vendor` patch `@milkdown/components` and `@milkdown/plugin-tooltip`, not
- * Crepe): `utils/group-builder.ts` is `build = () => this.#groups`, and the toolbar reads its
- * groups through that same call right after this function returns. A Crepe whose `build()`
- * copied would leave the Heading group last and raise nothing; `headingToolbar.test.ts` reads
- * the strip of a real editor and fails on it.
+ * The Lists group (YAZ-3806 T1, T3): one rule for the three buttons, in `listButtons.ts`. Numbers
+ * stay a deliberate act (T2): the Numbered button is a click, like the block handle's command.
+ * Underline (T8) runs ⌘U's own command and lights like Bold.
+ *
+ * `addGroup` can only append, so the groups are added in any order and then put in the user's
+ * order (`arrangeToolbar`, the last line below). Crepe builds the strip in a Vue `computed` that
+ * calls this function, and `toolbarPrefs` is a Vue ref: a change in Settings rebuilds the strip of
+ * every open editor at once (T6).
+ *
+ * 🔒 The order counts on `builder.build()` handing back the builder's OWN array and not a copy.
+ * It does in the Crepe this app installs (`@milkdown/crepe` 7.22.1, from
+ * `client/vendor/milkdown-crepe-7.22.1-yaz3550.tgz`, whose patch does not touch the toolbar):
+ * `utils/group-builder.ts` is `build = () => this.#groups`, and the toolbar reads its groups
+ * through that same call right after this function returns. A Crepe whose `build()` copied
+ * would keep Crepe's order and raise nothing; `headingToolbar.test.ts` reads the strip of a real
+ * editor and fails on it.
  */
-function buildToolbar(builder: ToolbarBuilder): void {
+function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined): void {
   const formatting = builder.getGroup('formatting')
   for (const color of [null, ...HIGHLIGHT_COLORS] as HighlightColor[]) {
-    formatting.addItem(color === null ? 'highlight' : `highlight-${color}`, {
-      icon: swatchIcon(color),
-      label: color === null ? 'Highlight' : `Highlight ${color}`,
+    const id = color === null ? 'highlight' : (`highlight-${color}` as const)
+    formatting.addItem(id, {
+      icon: ownIcon(id),
+      label: TOOLBAR_LABELS[id],
       ...(color === null ? { keymap: keymapRef(highlightKeymap.key, 'ToggleHighlight') } : {}),
       active: (ctx) => rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), color),
       onRun: (ctx) => ctx.get(commandsCtx).call(setHighlightCommand.key, color),
     })
   }
-  const blockAt = (ctx: Ctx) => ctx.get(editorViewCtx).state.selection.$from.parent
-  const group = builder.addGroup('heading', 'Heading')
+  formatting.addItem('underline', {
+    icon: ownIcon('underline'),
+    label: TOOLBAR_LABELS.underline,
+    // Underline's key is the app's own keymap, not a Milkdown slice `keymapRef` can name: its row, as the note opened.
+    shortcut: toDisplay(keysOf(keyRow('note.underline')!, hotkeys)[0] ?? null) || undefined,
+    active: (ctx) => visibleRangeHasMark(viewState(ctx), underlineSchema.type(ctx)),
+    onRun: (ctx) => runOnView(ctx, toggleUnderline(ctx)),
+  })
+  const blockAt = (ctx: Ctx) => viewState(ctx).selection.$from.parent
+  const group = builder.addGroup('lineType', TOOLBAR_GROUP_LABELS.lineType)
   for (const level of [1, 2, 3] as const) {
     group.addItem(`h${level}`, {
-      icon: headingIcon(`H${level}`),
-      label: `Heading ${level}`,
+      icon: ownIcon(`h${level}`),
+      label: TOOLBAR_LABELS[`h${level}`],
       active: (ctx) => {
         const block = blockAt(ctx)
         return block.type.name === 'heading' && block.attrs.level === level
@@ -418,19 +440,25 @@ function buildToolbar(builder: ToolbarBuilder): void {
     })
   }
   group.addItem('text', {
-    icon: headingIcon('T'),
-    label: 'Text',
-    active: (ctx) => blockAt(ctx).type.name === 'paragraph',
+    icon: ownIcon('text'),
+    label: TOOLBAR_LABELS.text,
+    active: (ctx) => allLinesAre(viewState(ctx), 'text'),
     onRun: (ctx) => ctx.get(commandsCtx).call(turnIntoTextCommand.key),
   })
-  // The Heading group LEADS the strip (YAZ-2700): the toolbar opens over the start of the
-  // selection, so its first buttons are the ones under the hand after a double click — and
-  // H1/H2/H3/T are pressed far more than Bold. `addGroup` can only append and the builder has no
-  // way to reorder, so the group just added is moved to the front of the builder's own list;
-  // the strip, its dividers and the tab order all follow from that one order.
+  const lists = builder.addGroup('lists', TOOLBAR_GROUP_LABELS.lists)
+  for (const kind of LIST_KINDS) {
+    lists.addItem(kind, {
+      icon: ownIcon(kind),
+      label: TOOLBAR_LABELS[kind],
+      active: (ctx) => allLinesAre(viewState(ctx), kind),
+      onRun: (ctx) => runOnView(ctx, toggleListKind(kind)),
+    })
+  }
+  // The default order leads with the Heading group (YAZ-2700): the toolbar opens over the start of
+  // the selection, so its first buttons are the ones under the hand after a double click.
   const groups = builder.build()
-  const heading = groups.pop()
-  if (heading !== undefined) groups.unshift(heading)
+  noteCrepeIcons(groups)
+  arrangeToolbar(groups, toolbarPrefs.value)
 }
 
 /**
@@ -469,7 +497,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // active button is the answer to "what is this?", and whose click is the switch. The
       // markdown stays the source of truth; these call the same commands typing `##` does.
       // YAZ-1480 adds Highlight into Crepe's own Formatting group from the same builder.
-      [CrepeFeature.Toolbar]: { buildToolbar },
+      [CrepeFeature.Toolbar]: { buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys) },
       // Native text carets track document zoom without a second painted overlay.
       [CrepeFeature.Cursor]: { virtual: false },
       // YAZ-2270: long lines wrap like prose instead of scrolling sideways, and colours come from
@@ -496,6 +524,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // YAZ-3209: over hidden lines, Bold, Italic, Strikethrough, code and H1-H3 / T change the visible
   // ones only, and the toolbar lights for visible lines only. After the presets, by `EditorViewReady`.
   crepe.editor.use(visibleFormatting)
+  // T / ⌘⌥0 out of every list level, ⌘⌥8 = the Bullet button (YAZ-3806 T3, T4). After visibleFormatting: it replaces T.
+  crepe.editor.use(listButtons)
   // Milkdown's empty-line plugin deletes every inline <br> on parse (YAZ-1452). Ours must run
   // first; re-registering Milkdown's AFTER keeps its id resolvable so empty paragraphs still
   // serialise as `<br />`.
@@ -579,7 +609,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(copyVisibleHotkey)
   crepe.editor.use(blockHandleGate)
   // YAZ-3727 D8, D9: Milkdown's list typing rules fire inside bullets and on Enter, and undo badly; ours
-  // replace them (plain lines, a typed space, a clean undo). Mod-Alt-7 and the slash-menu row stay absent.
+  // replace them (plain lines, a typed space, a clean undo). The toolbar's Numbered button (YAZ-3806 T2) is the click
+  // path; Mod-Alt-7 and the slash-menu row stay absent.
   void crepe.editor.remove([wrapInOrderedListInputRule, wrapInBulletListInputRule, ...orderedListKeymap])
   crepe.editor.use(listMarkerTyping).use(undoListMarker)
   // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its children (Number children),
