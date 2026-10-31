@@ -49,9 +49,12 @@ function gapAround(state: EditorState, pos: number): { from: number; to: number 
   return { from, to }
 }
 
+/** How long after a double-click its word selection may arrive (the browser makes it at once; ProseMirror reads it a moment later). */
+const WORD_MS = 500
+
 export const createIdLinkCaret = () => {
-  /** Where the latest double-click on text (not on a pill) landed, until its word selection arrives. */
-  let wordAt: number | null = null
+  /** Where the latest double-click on text (not on a pill) landed, and when, until its word selection arrives. */
+  let word: { pos: number; at: number } | null = null
   return $prose(
     () =>
       new Plugin({
@@ -61,18 +64,16 @@ export const createIdLinkCaret = () => {
           // index update sets no selection, and costs no scan. A composition (an accent, a Japanese word) is left alone
           // until it ends: it owns the caret meanwhile.
           let moved = false
-          let pointer = false
           for (const tr of trs) {
             if (tr.docChanged || tr.getMeta(OPEN_ID_LINK) !== undefined || tr.getMeta('composition') !== undefined) return null
             moved ||= tr.selectionSet
-            pointer ||= tr.getMeta('pointer') === true
           }
           if (!moved || !(state.selection instanceof TextSelection)) return null
           const { anchor, head, empty } = state.selection
-          if (pointer && !empty && wordAt !== null) {
-            // The double-click's word (C2): cut where a link starts or ends, on the word's side of it.
-            const gap = gapAround(state, wordAt)
-            wordAt = null
+          if (!empty && word !== null) {
+            // The double-click's word (C2), the first range after it: cut where a link starts or ends, on the word's side of it.
+            const gap = Date.now() - word.at < WORD_MS ? gapAround(state, word.pos) : null
+            word = null
             const from = Math.max(state.selection.from, gap?.from ?? 0)
             const to = Math.min(state.selection.to, gap?.to ?? state.doc.content.size)
             if (gap !== null && from < to && (from !== state.selection.from || to !== state.selection.to)) {
@@ -90,12 +91,13 @@ export const createIdLinkCaret = () => {
             mousedown: (view, event) => {
               // Only a double-click on text is noted; the click itself stays the browser's.
               const onPill = event.target instanceof Element && event.target.closest(`.${WIKILINK_CLASS}`) !== null
-              wordAt = null
+              word = null
               if (event.detail !== 2 || event.button !== 0 || onPill) return false
               try {
-                wordAt = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null
+                const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
+                word = pos === undefined ? null : { pos, at: Date.now() }
               } catch {
-                wordAt = null // no layout (a test's DOM): the word is the browser's alone
+                word = null // no layout (a test's DOM): the word is the browser's alone
               }
               return false
             },
