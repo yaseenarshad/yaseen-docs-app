@@ -19,6 +19,7 @@
  * the index stores no positions, and nothing is read until the section is expanded. A folder's
  * are the lines of its outlines, which the index already holds (`folderMentionSnippets`).
  */
+import { isViewOnly } from '@shared/fileKind'
 import type { IndexRecord } from '@shared/types'
 import { WIKILINK_RE, idLinkTitle, linkDisplayText, linkPageName, type ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { pathTitles, type PathTitles } from '../lib/pageLabel'
@@ -104,6 +105,7 @@ function lineSnippet(
   first: number,
   isMention: (m: RegExpExecArray) => boolean,
   titleOf: (target: string) => string | undefined,
+  named: (page: string) => boolean,
 ): { snippet: MentionSnippet; lineEnd: number } {
   const endOfLine = (pos: number): number => {
     const nl = content.indexOf('\n', pos)
@@ -128,7 +130,7 @@ function lineSnippet(
     text += content.slice(cursor, m.index)
     // Embeds are undecorated in the editor and empty-display forms stay raw (FN12): both keep
     // their raw text here too — the snippet reads exactly like the document.
-    const display = m[1] === '!' ? '' : linkDisplayText(m[2], titleOf)
+    const display = m[1] === '!' ? '' : linkDisplayText(m[2], titleOf, named)
     const shown = display === '' ? m[0] : display
     if (isMention(m)) ranges.push({ from: text.length, to: text.length + shown.length })
     text += shown
@@ -180,7 +182,9 @@ export function mentionSnippets(content: string, target: string, resolve: Resolv
   const out: MentionSnippet[] = []
   for (let i = 0; i < matches.length && out.length < limit; i++) {
     if (!isMention(matches[i])) continue
-    const { snippet, lineEnd } = lineSnippet(content, matches, i, isMention, (page) => idLinkTitle(page, resolve, titles))
+    // A page that is found reads by its name, as the editor draws it (YAZ-3778 D2, D3); a view-only file's resolver is not here.
+    const named = (page: string) => resolve(page) !== null || isViewOnly(page)
+    const { snippet, lineEnd } = lineSnippet(content, matches, i, isMention, (page) => idLinkTitle(page, resolve, titles), named)
     out.push(snippet)
     while (i + 1 < matches.length && matches[i + 1].index < lineEnd) i++ // this line is spoken for
   }

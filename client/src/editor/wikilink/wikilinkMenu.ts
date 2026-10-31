@@ -20,6 +20,7 @@ import { copyNoteId } from '../../lib/copyNoteId'
 import { pathTitles } from '../../lib/pageLabel'
 import { folderLabel, folderRecord } from '../../links/shortcuts'
 import { copyLink, linkMenuRows, openMenuAt } from '../linkMenu'
+import { OPEN_ID_LINK } from './idLinkCaret'
 import { wikilinkMatchAt, type WikilinkNav } from './wikilinkClick'
 import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
 
@@ -84,7 +85,8 @@ export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkN
                 // The caret inside the raw `[[…]]`, its target selected: the link shows as text to type over.
                 edit: view.editable
                   ? () => {
-                      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from + 2, from + 2 + inner.split('|')[0].length)))
+                      // The one way into an ID link (YAZ-3744 D1): the caret plugin lets this selection stay inside.
+                      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from + 2, from + 2 + inner.split('|')[0].length)).setMeta(OPEN_ID_LINK, true))
                       view.focus()
                     }
                   : undefined,

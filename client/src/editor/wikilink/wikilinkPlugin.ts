@@ -15,6 +15,9 @@
  *    the index at each build, so a rename changes what the link shows and not one byte of the
  *    document. A hand-typed `[[<id>|label]]` shows its label; an id no note has, and any id before
  *    the index loads, shows as the raw id, like a name,
+ *  - a link that resolves shows its page's NAME (YAZ-3778 D2, D3): the folders of a pathed
+ *    `[[folder/name]]` and an extension the sidebar hides (`.md`, a drawing's, a diagram's) are
+ *    syntax too. A dead link keeps its text (S12),
  *  - a match whose display would be EMPTY (`[[Note|]]`, `[[|]]`, `[[#]]`) stays raw — no
  *    decorations at all, so nothing ever collapses to a zero-width invisible run (FN12,
  *    GRO-2197),
@@ -29,6 +32,10 @@
  * against hidden text, because by the time it reaches a match boundary the match is already raw.
  * The title widget sits INSIDE the match (after the `[[`), so the same rule covers it: no caret
  * is ever beside it, and it is gone before the caret reaches the id.
+ *
+ * An ID link that shows its title is the exception (YAZ-3744 D1): it opens only with the selection
+ * STRICTLY inside it, which "Edit link" alone puts there. Its sibling `idLinkCaret.ts` steps a
+ * caret over it and removes it whole, so no caret is left against its hidden text.
  *
  * Exclusions: `![[…]]` embeds (image embeds stay plain),
  * `code_block` nodes and inline-`code` marked text (mirrors the index's `stripCode`,
@@ -47,7 +54,7 @@ import { WIKILINK_RE } from '@shared/linkRewrite'
 import { isNoteId } from '@shared/noteId'
 import { fileKind } from '@shared/fileKind'
 import { basename, type IndexRecord } from '@shared/types'
-import { pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
+import { fileLabel, pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import './wikilink.css'
 
@@ -170,21 +177,56 @@ export function idLinkTitle(target: string, resolve: ResolveLink | null, titles:
   return path === null ? undefined : pageLabel(path, false, titles)
 }
 
+/** An unpiped ID link that shows its note's title (YAZ-3744 D1): one unit, which the caret steps over (`idLinkCaret.ts`). */
+export function showsTitle(inner: string, source: WikilinkResolveSource): boolean {
+  return !inner.includes('|') && idLinkTitle(linkPageName(inner), source.resolve, pathTitles(source.records, source.folders)) !== undefined
+}
+
+/**
+ * The hidden ends of a link's page part (YAZ-3778 D2, D3): the folders before its name, and an extension the
+ * sidebar hides (`fileLabel`: a note's, a drawing's, a diagram's). `[0, 0]` when nothing would be left.
+ */
+function pageTrim(page: string): [lead: number, trail: number] {
+  const lead = page.lastIndexOf('/') + 1
+  const name = page.slice(lead)
+  const bare = fileLabel(name)
+  return bare.trim() === '' ? [0, 0] : [lead, name.length - bare.length]
+}
+
 /**
  * The DISPLAY text the collapsed decorations show for a raw `[[inner]]` match: the alias after
  * the first `|` when piped, else the non-empty `#`-split parts joined with the ` > ` separator
  * the CSS draws between segments — the page part replaced by `titleOf`'s answer when it has one
- * (an id link's title, `idLinkTitle`). '' means NOTHING would be visible (`[[Note|]]`, `[[|]]`,
- * `[[#]]`) — such a match stays raw (FN12, GRO-2197; see `decorate`). Exported for the
- * backlinks snippets (FN9, GRO-2197), which must read exactly as the editor renders: one
- * mapping, never a second regex.
+ * (an id link's title, `idLinkTitle`), else, when `named` says the page is found, by its name
+ * (`pageTrim`, YAZ-3778 D2, D3; a dead link keeps its text, S12). '' means NOTHING would be
+ * visible (`[[Note|]]`, `[[|]]`, `[[#]]`) — such a match stays raw (FN12, GRO-2197; see
+ * `decorate`). Exported for the backlinks snippets (FN9, GRO-2197), which must read exactly as
+ * the editor renders: one mapping, never a second regex.
  */
-export function linkDisplayText(inner: string, titleOf?: (target: string) => string | undefined): string {
+export function linkDisplayText(inner: string, titleOf?: (target: string) => string | undefined, named?: (page: string) => boolean): string {
   const pipe = inner.indexOf('|')
   if (pipe >= 0) return inner.slice(pipe + 1)
   const parts = inner.split('#')
-  parts[0] = titleOf?.(parts[0].trim()) ?? parts[0]
+  const page = parts[0]
+  const [lead, trail] = named?.(page.trim()) === true ? pageTrim(page) : [0, 0]
+  parts[0] = titleOf?.(page.trim()) ?? page.slice(lead, page.length - trail)
   return parts.filter((part) => part.length > 0).join(' > ')
+}
+
+/**
+ * `text` with each `[[link]]` as the note shows it (YAZ-3744 D6): a crumb, a tab's label, a TOC row, a plain-text
+ * copy. Embeds and links with nothing to show stay as written. `withId` adds an ID link's ID after its title
+ * (YAZ-3744 S8): "AR v2 plan (YAS-466)", for a copy that leaves the app.
+ */
+export function linksAsShown(text: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, withId = false): string {
+  if (!text.includes('[[')) return text
+  const titles = pathTitles(source.records, source.folders)
+  const titleOf = (target: string) => {
+    const title = idLinkTitle(target, source.resolve, titles)
+    return title === undefined || !withId ? title : `${title} (${target})`
+  }
+  return text.replace(WIKILINK_RE, (raw, bang: string, inner: string) =>
+    bang === '!' ? raw : linkDisplayText(inner, titleOf, () => linkIsResolved(inner, source, viewOnly)) || raw)
 }
 
 const wikilinkKey = new PluginKey<DecorationSet>('mdapp-wikilink')
@@ -221,6 +263,7 @@ function titleSpan(cls: string, title: string, icon?: Record<string, string>): H
   const span = document.createElement('span')
   for (const [name, value] of Object.entries(icon ?? {})) span.setAttribute(name, value)
   span.className = icon === undefined ? cls : `${cls} ${icon.class}`
+  span.spellcheck = false
   span.textContent = title
   return span
 }
@@ -263,7 +306,8 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
    * (YAZ-3648) and the text stays real text, which find highlights and the caret walks (YAZ-3657).
    */
   const shown = (from: number, to: number) => {
-    out.push(Decoration.inline(from, to, icon === undefined ? { class: cls } : { ...icon.attrs, class: `${cls} ${icon.attrs.class}` }))
+    // No spellcheck underline on a link's name (YAZ-3778 S13): it is a page's name, not a word to check.
+    out.push(Decoration.inline(from, to, icon === undefined ? { class: cls, spellcheck: 'false' } : { ...icon.attrs, class: `${cls} ${icon.attrs.class}`, spellcheck: 'false' }))
   }
   const innerStart = start + 2
   const end = innerStart + inner.length + 2
@@ -291,8 +335,15 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
         out.push(Decoration.widget(at, () => titleSpan(cls, title, icon?.attrs), { key: `${title}|${icon?.key ?? ''}` }))
         segments++
       } else if (part.length > 0) {
-        if (segments === 0) shown(at, at + part.length)
-        else out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}` }))
+        if (i === 0) {
+          // The page's name (YAZ-3778 D2, D3): its folders and an extension the sidebar hides are syntax too; the
+          // icon says the kind, the hover and the menu the place. A dead link keeps its text (S12): it shows what is missing.
+          const [lead, trail] = resolved ? pageTrim(part) : [0, 0]
+          hide(out, at, at + lead)
+          shown(at + lead, at + part.length - trail)
+          hide(out, at + part.length - trail, at + part.length)
+        } else if (segments === 0) shown(at, at + part.length)
+        else out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}`, spellcheck: 'false' }))
         segments++
       }
       at += part.length
@@ -313,7 +364,8 @@ function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Se
       if (m[1] === '!') continue // embeds are someone else's (or nobody's) business
       const from = runPos + m.index
       const to = from + m[0].length
-      if (touches(sel, from, to)) continue // caret inside/adjacent → raw, editable syntax
+      // An ID link that shows its title opens only with the selection strictly inside it: "Edit link" (YAZ-3744 D1).
+      if (showsTitle(m[2], source) ? sel.from > from && sel.to < to : touches(sel, from, to)) continue // caret inside/adjacent → raw, editable syntax
       decorate(out, from, m[2], source, viewOnly, look)
     }
   })

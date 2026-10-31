@@ -63,10 +63,9 @@
 .milkdown[data-pill-hover] .milkdown-link-preview {
   display: none;
 }
-/* A pill into another vault of the window names that vault in brackets after its text, quietly (YAZ-3609 D22). */
-/* A piece that find cuts is several spans, each with the attribute: only the very last span says it. */
-.link-pill--last[data-vault]:not(:has(+ .wikilink))::after {
-  content: ' (' attr(data-vault) ')';
+/* A pill into another vault names that vault in brackets after its text, quietly (YAZ-3609 D22): its own piece at the
+   pill's end, so the caret at the link's end shows after it (YAZ-3738 D4). The piece rules above join it to the pill. */
+.wikilink.link-pill__vault {
   color: var(--fg-muted);
   font-size: 0.85em;
 }

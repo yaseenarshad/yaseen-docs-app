@@ -105,6 +105,15 @@ function linkHit(view: EditorView, ctx: Ctx, target: EventTarget | null): LinkHi
   return { href: mark.attrs.href, mark, from: spans[first]!.from, to: spans[last]!.to }
 }
 
+/** The vault name a pill into another vault ends with (D22, YAZ-3738 D4): a piece of the pill, never text. */
+const vaultSpan = (vault: string): HTMLElement => {
+  const span = document.createElement('span')
+  span.className = 'wikilink link-pill link-pill--last link-pill__vault'
+  span.spellcheck = false
+  span.textContent = ` (${vault})`
+  return span
+}
+
 /**
  * The link pills of the textblocks between `from` and `to` (D19), in `set` with those blocks' old pills
  * replaced: each run of one link mark whose path is in a vault of the window. The first piece of a run
@@ -127,10 +136,13 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
         const vault = nav.vaultTag?.(path) ?? null
         run.pieces.forEach(([start, end], i) => {
           const edges = `${i === 0 ? ' link-pill--first' : ''}${i === last ? ' link-pill--last' : ''}`
-          const attrs: Record<string, string> = i === 0 ? { ...icon, class: `wikilink link-pill${edges} ${icon.class}` } : { class: `wikilink link-pill${edges}` }
-          if (i === last && vault !== null) attrs['data-vault'] = vault
+          const attrs: Record<string, string> = i === 0 ? { ...icon, class: `wikilink link-pill${edges} ${icon.class}`, spellcheck: 'false' } : { class: `wikilink link-pill${edges}`, spellcheck: 'false' }
           fresh.push(Decoration.inline(start, end, attrs))
         })
+        // Its vault's name is the pill's last piece (YAZ-3738 D4): drawn before the caret at the link's end, so the
+        // caret shows after the whole pill. Inside the link's anchor: a click on it opens the link, as on the text.
+        const mark = run.mark
+        if (vault !== null) fresh.push(Decoration.widget(run.pieces[last]![1], () => vaultSpan(vault), { side: -1, marks: [mark], key: `vault:${vault}` }))
       }
       run = null
     }

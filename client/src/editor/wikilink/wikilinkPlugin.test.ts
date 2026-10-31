@@ -15,6 +15,7 @@ import { canSplit } from '@milkdown/kit/prose/transform'
 import type { Decoration, DecorationSet, EditorView } from '@milkdown/kit/prose/view'
 import type { IndexRecord } from '@shared/types'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { OPEN_ID_LINK } from './idLinkCaret'
 import { random } from '../testRandom'
 import {
   WIKILINK_CLASS,
@@ -22,8 +23,11 @@ import {
   WIKILINK_SYNTAX_CLASS,
   WIKILINK_UNRESOLVED_CLASS,
   createWikilinkResolveSource,
+  linkDisplayText,
   type MutableWikilinkResolveSource,
 } from './wikilinkPlugin'
+import { createViewOnlyLinkSource } from './viewOnlyLinkSource'
+import { buildViewOnlyCatalogFromEntries, type ViewOnlyEntry } from '../../links/viewOnlyCatalog'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -350,19 +354,21 @@ describe("wikilink decorations: an id link shows the note's current title (YAZ-2
     expect(segments[1].classList.contains(WIKILINK_SUB_CLASS)).toBe(true)
   })
 
-  it('the reveal rule drops the title with the rest: a caret touching the match shows the raw [[id]]', async () => {
+  it('YAZ-3744 D1: a caret at either edge keeps the title; only a selection strictly inside ("Edit link") shows the raw [[id]]', async () => {
     // 'pad [[k3m9x2pq7abc]] tail' — the match spans positions 5..21.
     const { crepe, root } = await mount(`pad [[${ID}]] tail\n`, sourceOf(resolveId))
     const view = viewOf(crepe)
-    for (const pos of [5, 7, 13, 21]) {
+    for (const pos of [4, 5, 21, 22]) {
       caret(crepe, pos)
-      expect(links(root), `caret at ${pos}`).toEqual([])
-      expect(syntax(root)).toBe('')
-      expect(view.dom.textContent).toContain(`[[${ID}]]`)
-      expect(view.dom.textContent).not.toContain('Road Map')
+      expect(links(root), `caret at ${pos}`).toEqual(['Road Map'])
+      expect(view.dom.textContent).not.toContain(`[[${ID}]]`)
     }
-    caret(crepe, 4)
-    expect(links(root)).toEqual(['Road Map'])
+    // "Edit link" selects the id with the one meta that may stay inside (idLinkCaret.ts).
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 7, 19)).setMeta(OPEN_ID_LINK, true))
+    expect(links(root)).toEqual([])
+    expect(view.dom.textContent).toContain(`[[${ID}]]`)
+    expect(view.dom.textContent).not.toContain('Road Map')
+    // The caret leaves: the link closes.
     caret(crepe, 22)
     expect(links(root)).toEqual(['Road Map'])
   })
@@ -550,5 +556,61 @@ describe('a resolved link is a pill with its file icon (YAZ-3609 D13)', () => {
     const { crepe, root } = await mountLook('See [[Roadmap]]\n')
     caret(crepe, 'See [[Roadmap]]'.length + 1)
     expect(root.querySelector('.wikilink__icon')).toBeNull()
+  })
+})
+
+describe('a link shows its page name (YAZ-3778 D2, D3, S12, S13)', () => {
+  const FOUND: Record<string, string> = {
+    'Plan.md': '/v/Plan.md',
+    'yaseen/evals/1-business-context/fernhill': '/v/yaseen/evals/1-business-context/fernhill',
+    'Notes/Report.pdf': '/v/Notes/Report.pdf',
+  }
+
+  async function mountNamed(markdown: string) {
+    const source = createWikilinkResolveSource()
+    source.update((target) => FOUND[target] ?? null)
+    const viewOnly = createViewOnlyLinkSource()
+    viewOnly.update(buildViewOnlyCatalogFromEntries('/v', [
+      { path: '/v/LN Scenarios Diagram.drawio', name: 'LN Scenarios Diagram.drawio', kind: 'diagram' },
+      { path: '/v/Our Eval System.excalidraw', name: 'Our Eval System.excalidraw', kind: 'drawing' },
+      { path: '/v/Report.pdf', name: 'Report.pdf', kind: 'pdf' },
+    ] as ViewOnlyEntry[]))
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: markdown, wikilinks: source, viewOnlyLinks: viewOnly })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    return { crepe, root, source, viewOnly }
+  }
+
+  it('hides a diagram\'s, a drawing\'s and a note\'s extension; a PDF keeps its own; the file keeps every byte', async () => {
+    const md = 'a [[LN Scenarios Diagram.drawio]] b [[Our Eval System.excalidraw]] c [[Plan.md]] d [[Report.pdf]] e\n'
+    const { crepe, root } = await mountNamed(md)
+    expect(links(root)).toEqual(['LN Scenarios Diagram', 'Our Eval System', 'Plan', 'Report.pdf'])
+    expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+
+  it('a pathed link shows only its name, with its heading part; an alias is left as written', async () => {
+    const { root } = await mountNamed('a [[yaseen/evals/1-business-context/fernhill]] b [[yaseen/evals/1-business-context/fernhill#Intro]] c [[Plan.md|the plan.md]] d\n')
+    expect(links(root)).toEqual(['fernhill', 'fernhill', 'Intro', 'the plan.md'])
+  })
+
+  it('S12: a dead link keeps its whole text, so it shows what is missing', async () => {
+    const { root } = await mountNamed('a [[old/Gone Diagram.drawio]] b [[gone/Note.md]] c\n')
+    expect(links(root)).toEqual(['old/Gone Diagram.drawio', 'gone/Note.md'])
+    expect(root.querySelectorAll(`.${WIKILINK_UNRESOLVED_CLASS}`)).toHaveLength(2)
+  })
+
+  it('the shared display text agrees: linkDisplayText trims only a page that is found', () => {
+    expect(linkDisplayText('a/b/LN.drawio', undefined, () => true)).toBe('LN')
+    expect(linkDisplayText('a/b/LN.drawio', undefined, () => false)).toBe('a/b/LN.drawio')
+    expect(linkDisplayText('a/b/LN.drawio#H', undefined, () => true)).toBe('LN > H')
+    expect(linkDisplayText('.excalidraw', undefined, () => true)).toBe('.excalidraw')
+    expect(linkDisplayText('folder/', undefined, () => true)).toBe('folder/')
+  })
+
+  it('S13: a link\'s name gets no spellcheck underline', async () => {
+    const { root } = await mountNamed('a [[Plan.md]] b\n')
+    expect(root.querySelector(`.${WIKILINK_CLASS}`)?.getAttribute('spellcheck')).toBe('false')
   })
 })

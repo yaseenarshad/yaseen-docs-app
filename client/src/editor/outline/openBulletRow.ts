@@ -26,5 +26,5 @@ export function openBulletRow(view: EditorView, target: HandleTarget, open: Zoom
   const item = nearestListItem(view.state.doc, target.inside)
   const key = item === null ? null : zoomKeyAt(view.state.doc, item.pos)
   if (item === null || key === null) return []
-  return [{ label: 'Open in new tab', group: 'open', icon: newTabGlyph, hint: '⇧-click', run: () => open(key, false, zoomLabelAt(view.state.doc, item.pos)) }]
+  return [{ label: 'Open in new tab', group: 'open', icon: newTabGlyph, hint: '⇧-click', run: () => open(key, false, zoomLabelAt(view.state, item.pos)) }]
 }

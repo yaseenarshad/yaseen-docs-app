@@ -272,7 +272,8 @@ import { createWikilinkClick, wikilinkFollower, type WikilinkNav } from './wikil
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
 import { createWikilinkMenu } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
-import { createWikilink, createWikilinkResolveSource, type LinkLook, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createWikilink, createWikilinkResolveSource, linksAsShown, type LinkLook, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createIdLinkCaret } from './wikilink/idLinkCaret'
 import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import { claimPage } from '../lib/readOnlyCaret'
@@ -526,8 +527,15 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(headingLevelTag)
   crepe.editor.use(headingText)
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find))
-  if (opts.toc !== undefined) crepe.editor.use(createTableOfContents(opts.toc))
-  crepe.editor.use(createOutlineZoom(opts.zoom ?? { title: () => 'Untitled' }))
+  // ONE resolve source instance feeds the decorations, the click plugin's routing, and every label that names a link.
+  const wikilinks = opts.wikilinks ?? createWikilinkResolveSource()
+  // A missing catalog must stay passive: recognized non-Markdown targets can never fall through
+  // to Markdown creation, including in isolated createCrepe consumers outside App.
+  const viewOnlyLinks = opts.viewOnlyLinks ?? createViewOnlyLinkSource()
+  // A row of the table of contents, a crumb, the tab's tooltip and its Back list name a line's links as the note shows them (YAZ-3744 D6).
+  const linkText = (text: string) => linksAsShown(text, wikilinks, viewOnlyLinks)
+  if (opts.toc !== undefined) crepe.editor.use(createTableOfContents(opts.toc, { linkText, subscribe: wikilinks.subscribe }))
+  crepe.editor.use(createOutlineZoom({ title: () => 'Untitled', ...opts.zoom, linkText }))
   crepe.editor.use(guideLines)
   crepe.editor.use(bulletThreading)
   crepe.editor.use(sectionIndent)
@@ -544,12 +552,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableFreeze)
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
-  // ONE resolve source instance feeds both the decorations and the click plugin's routing.
-  const wikilinks = opts.wikilinks ?? createWikilinkResolveSource()
-  // A missing catalog must stay passive: recognized non-Markdown targets can never fall through
-  // to Markdown creation, including in isolated createCrepe consumers outside App.
-  const viewOnlyLinks = opts.viewOnlyLinks ?? createViewOnlyLinkSource()
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook))
+  // An ID link is one unit (YAZ-3744 D1): the caret steps over it, Backspace removes it whole.
+  crepe.editor.use(createIdLinkCaret(wikilinks))
   if (opts.wikilinkNav !== undefined) {
     // A click and the link menu's Open rows follow a link the same way (YAZ-3609 D23).
     const follow = wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks)

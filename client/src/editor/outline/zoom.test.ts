@@ -11,6 +11,7 @@ import { createCrepe, getMarkdownForSave, getZoomKeyOf, moveCaretIntoZoom, setMa
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
 import { getZoomedItemPos, itemPosForZoomKey, KEY_SETTLE_MS, ZOOM_ANCESTOR_CLASS, ZOOM_CRUMB_CLASS, ZOOM_CRUMBS_CLASS, ZOOM_HIDDEN_CLASS, zoomKeyAt } from './zoom'
 import { defaultRightPanelIdentity } from '@shared/types'
+import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { NO_STEPS, tabById, workspaceReducer, type WorkspaceAction, type WorkspaceState } from '../../workspace/useWorkspace'
 
 const OUTLINE = `Intro paragraph
@@ -627,5 +628,24 @@ describe('a renamed bullet\'s key reaches its steps when the level changes or th
     const again = await mount(text, { zoom: { title: () => 'Notes', startKey: tabById(w.s, id)!.zoom ?? null } })
     expect(tabById(w.s, id)!.zoom).toBe(keyAt(again.crepe, 'L2 aX'))
     expect(zoomedPos(again.crepe)).toBe(posOf(again.crepe, 'L2 aX') - 2)
+  })
+})
+
+describe('the crumbs and the labels name a bullet\'s links as the note shows them (YAZ-3744 D6)', () => {
+  const ID = 'k3m9x2pq7abc'
+  const md = `* [[${ID}]]\n  * AR\n    * Confirm value pairs\n`
+
+  it('a crumb, the zoom label and "Open in new tab"\'s label show the title; the zoom key keeps the raw text', async () => {
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update((target) => (target === ID ? '/v/AR v2 plan.md' : null))
+    const onZoom = vi.fn()
+    const { crepe, root } = await mount(md, { wikilinks, zoom: { title: () => '10_30- Fri', onZoom } })
+    clickGlyph(root, 'AR')
+    expect(crumbLabels(root)).toEqual(['10_30- Fri', 'AR v2 plan', 'AR'])
+    const key = getZoomKeyOf(crepe)
+    expect(key).not.toBeNull()
+    clickCrumb(root, 'AR v2 plan')
+    expect(onZoom.mock.calls.at(-1)?.[2]).toBe('AR v2 plan')
+    expect(getZoomKeyOf(crepe)).not.toContain('AR v2 plan')
   })
 })
