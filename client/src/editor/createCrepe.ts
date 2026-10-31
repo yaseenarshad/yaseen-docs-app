@@ -251,7 +251,7 @@ import { lineNumbers } from './lineNumbers/lineNumbers'
 import { tableColumnResize } from './table/tableColumnResize'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
-import { clipboardCopyOut, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
+import { clipboardCopyOut, copyLinkTextCtx, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
 import { clipboardPaste } from './clipboardPaste'
 import { pathPasteCtx, relativeLinks, type PathPasteOptions } from './pathPaste'
 import { guideLines } from './outline/guideLines'
@@ -526,12 +526,13 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createHeadingFolding(opts.headingFolding))
   crepe.editor.use(headingLevelTag)
   crepe.editor.use(headingText)
-  if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find))
   // ONE resolve source instance feeds the decorations, the click plugin's routing, and every label that names a link.
   const wikilinks = opts.wikilinks ?? createWikilinkResolveSource()
   // A missing catalog must stay passive: recognized non-Markdown targets can never fall through
   // to Markdown creation, including in isolated createCrepe consumers outside App.
   const viewOnlyLinks = opts.viewOnlyLinks ?? createViewOnlyLinkSource()
+  // ⌘F reads a pill as the note draws it (YAZ-3744 S9): the same two sources.
+  if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find, { wikilinks, viewOnly: viewOnlyLinks }))
   // A row of the table of contents, a crumb, the tab's tooltip and its Back list name a line's links as the note shows them (YAZ-3744 D6).
   const linkText = (text: string) => linksAsShown(text, wikilinks, viewOnlyLinks)
   if (opts.toc !== undefined) crepe.editor.use(createTableOfContents(opts.toc, { linkText, subscribe: wikilinks.subscribe }))
@@ -570,6 +571,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.config((ctx) => {
     ctx.inject(imageOptionsCtx, opts.image ?? null)
     ctx.inject(copyNoticeCtx, opts.onCopyNotice ?? null)
+    // A plain-text copy names each link as the note shows it, an ID link with its ID (YAZ-3744 S8).
+    ctx.inject(copyLinkTextCtx, (text) => linksAsShown(text, wikilinks, viewOnlyLinks, true))
   })
   // The note keys (YAZ-3564 K4): the user's changes for the app's keymaps, and Milkdown's keymap slices set from them,
   // before any keymap is read.
