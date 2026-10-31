@@ -50,10 +50,13 @@ function aimAt(view: EditorView, label: string): void {
 }
 
 const popupOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTMLElement>('.ctx-menu--editor')
+/** The children row, after the four "turn into" rows (YAZ-3727 D13); null when it is not shown. */
+const childrenRowOf = (view: EditorView) =>
+  [...popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((row) => /^(Number|Bullet) children$/.test(row.textContent ?? '')) ?? null
 const rowOf = (view: EditorView) => {
-  const rows = popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')
-  expect(rows).toHaveLength(1)
-  return rows[0]!
+  const row = childrenRowOf(view)
+  expect(row).not.toBeNull()
+  return row!
 }
 const rightClick = (item: HTMLElement) =>
   item.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
@@ -80,21 +83,18 @@ describe('numberChildrenRow', () => {
     expect(getMarkdownForSave(crepe)).toBe(TREE)
   })
 
-  it('is disabled on a leaf item', async () => {
-    const { crepe, view, item } = await mount(TREE)
+  it('is absent on a leaf item: it would do nothing (it was a disabled row before YAZ-3727 D13)', async () => {
+    const { view, item } = await mount(TREE)
     aimAt(view, 'deep')
     rightClick(item)
-    const row = rowOf(view)
-    expect(row.hasAttribute('disabled')).toBe(true)
-    row.click()
-    expect(getMarkdownForSave(crepe)).toBe(TREE)
+    expect(childrenRowOf(view)).toBeNull()
   })
 
-  it('is absent on a heading: not in a list item (YAZ-3696 B3)', async () => {
+  it('is absent on a heading: not in a list item (YAZ-3696 B3); the heading\'s menu has the "turn into" rows only (D13)', async () => {
     const { view, item } = await mount('# H\n\ntext\n')
     aimAt(view, 'H')
     rightClick(item)
-    expect(popupOf(view)).toBeNull()
+    expect(childrenRowOf(view)).toBeNull()
   })
 })
 
@@ -144,7 +144,7 @@ describe('writtenNumbersRow: a numbered list becomes bullets with its numbers wr
     let { view, item } = await mount('1. a\n   * kid\n2. b\n')
     aimAt(view, 'a')
     rightClick(item)
-    expect(labels(view)).toEqual(['Number children', ROW])
+    expect(labels(view).slice(-2)).toEqual(['Number children', ROW])
     ;({ view, item } = await mount('* a\n* b\n'))
     aimAt(view, 'a')
     rightClick(item)

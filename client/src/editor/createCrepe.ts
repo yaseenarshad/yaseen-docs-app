@@ -85,8 +85,9 @@
  *  - Block handle menu (YAZ-726, `blockHandleMenu.ts`): right-click on the 6-dot handle opens a
  *    `.ctx-menu` popup; rows (or picker rows, YAZ-3164) are data from a provider;
  *    capture-suppresses Crepe's right-button mousedown/mouseup so the selection/focus don't jump.
- *    First row: Number children ↔ Bullet children (YAZ-729, `outline/numberChildrenRow.ts`),
- *    disabled when the item has no direct child list. On a numbered line, "Bullets with written numbers" turns its list
+ *    Rows: the line's kind, Text / Checklist / Bullet list / Numbered list, the toolbar's commands on the line
+ *    right-clicked (YAZ-3727 D13, `outline/turnIntoRows.ts`, also on a plain line or a heading); then Number children
+ *    ↔ Bullet children (YAZ-729, `outline/numberChildrenRow.ts`), only when the item has a direct child list. On a numbered line, "Bullets with written numbers" turns its list
  *    into bullets with each number written as `n) ` text (YAZ-3727 D12, `writtenNumbersRow`).
  *  - Typing a list marker (YAZ-3727 D8, D9, `listMarkerTyping.ts`): replaces Milkdown's `1. ` and `* ` input rules. A
  *    typed space after `n.` or `*` / `-` / `+` at the start of a PLAIN line goes in as text, then the line becomes a list
@@ -268,6 +269,7 @@ import { clipboardPaste } from './clipboardPaste'
 import { pathPasteCtx, relativeLinks, type PathPasteOptions } from './pathPaste'
 import { guideLines } from './outline/guideLines'
 import { numberChildrenRow, writtenNumbersRow } from './outline/numberChildrenRow'
+import { turnIntoRows } from './outline/turnIntoRows'
 import { createHeadingFolding, type HeadingFoldingOptions } from './outline/headingFolding'
 import { headingHotkeys } from './outline/headingHotkeys'
 import { headingLevelTag } from './outline/headingLevelTag'
@@ -614,10 +616,11 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // path; Mod-Alt-7 and the slash-menu row stay absent.
   void crepe.editor.remove([wrapInOrderedListInputRule, wrapInBulletListInputRule, ...orderedListKeymap])
   crepe.editor.use(listMarkerTyping).use(undoListMarker)
-  // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its children (Number children),
-  // its own numbered list as bullets with written numbers (YAZ-3727 D12),
+  // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its kind (Text, Checklist,
+  // Bullet list, Numbered list: the toolbar's, YAZ-3727 D13), its children (Number children, when it has any), its
+  // own numbered list as bullets with written numbers (YAZ-3727 D12),
   // then a line's pickers (YAZ-3164 D3), or a table's settings (YAZ-3767 D7). A new row joins its group.
-  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...numberChildrenRow(view, target, ctx), ...writtenNumbersRow(view, target, ctx), ...lineRows(view, target, ctx), ...tableRows(view, target, ctx)]))
+  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...turnIntoRows(view, target, ctx), ...numberChildrenRow(view, target, ctx), ...writtenNumbersRow(view, target, ctx), ...lineRows(view, target, ctx), ...tableRows(view, target, ctx)]))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.

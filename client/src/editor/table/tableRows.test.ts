@@ -103,9 +103,10 @@ describe('the menu on a table', () => {
     expect([value('Border thickness'), value('Border darkness'), value('Header row'), value('Row height')]).toEqual(['3px ▾', 'Default (20%) ▾', 'Plain ▾', 'Tall ▾'])
   })
 
-  it('a table in a bullet keeps "Number children"', async () => {
+  it('a table in a bullet shows its settings, not the bullet\'s rows: no line, no children (YAZ-3727 D13)', async () => {
     const { view } = await openOnTable(`* item\n\n  ${SMALL.trimEnd().split('\n').join('\n  ')}\n`)
-    expect(popupOf(view)!.querySelector('.ctx-menu__item')?.textContent).toBe('Number children')
+    const rows = [...popupOf(view)!.querySelectorAll('.ctx-menu__item')].map((row) => row.textContent)
+    for (const bullet of ['Text', 'Checklist', 'Bullet list', 'Numbered list', 'Number children']) expect(rows).not.toContain(bullet)
     expect(pickerNamed(view, 'Stripes')).toBeTruthy()
   })
 
@@ -137,14 +138,14 @@ describe('the menu on a table', () => {
       expect(labels(view)).toEqual(SETTINGS)
     })
 
-    it('a table in a bullet: the probe in its first header cell opens the bullet\'s row and the eight settings', async () => {
+    it('a table in a bullet: the probe in its first header cell opens the eight settings', async () => {
       const { view } = await openWithHit(BULLET, firstHeader)
-      expect(labels(view)).toEqual(['Number children', ...SETTINGS])
+      expect(labels(view)).toEqual(SETTINGS)
     })
 
-    it('the bullet\'s own handle (the probe on its line) shows the bullet\'s row only, no table settings', async () => {
+    it('the bullet\'s own handle (the probe on its line) shows the bullet\'s rows only, no table settings (YAZ-3727 D13)', async () => {
       const { view } = await openWithHit(BULLET, (v) => v.dom.querySelector('li p')!)
-      expect(labels(view)).toEqual(['Number children'])
+      expect(labels(view)).toEqual(['Text', 'Checklist', 'Bullet list', 'Numbered list'])
     })
   })
 
