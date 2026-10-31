@@ -179,11 +179,11 @@ export function mentionSnippets(content: string, target: string, resolve: Resolv
     const page = linkPageName(m[2])
     return page !== '' && resolve(page) === target // '' = the same-file `[[#heading]]` form
   }
+  // A found page reads by its name (YAZ-3778 D2, D3). Not `linkIsResolved`: no view-only resolver reaches here, so a gone `[[x.drawio]]` reads "x".
+  const named = (page: string) => resolve(page) !== null || isViewOnly(page)
   const out: MentionSnippet[] = []
   for (let i = 0; i < matches.length && out.length < limit; i++) {
     if (!isMention(matches[i])) continue
-    // A page that is found reads by its name, as the editor draws it (YAZ-3778 D2, D3); a view-only file's resolver is not here.
-    const named = (page: string) => resolve(page) !== null || isViewOnly(page)
     const { snippet, lineEnd } = lineSnippet(content, matches, i, isMention, (page) => idLinkTitle(page, resolve, titles), named)
     out.push(snippet)
     while (i + 1 < matches.length && matches[i + 1].index < lineEnd) i++ // this line is spoken for
