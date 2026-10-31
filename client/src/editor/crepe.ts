@@ -18,7 +18,6 @@ import { codeMirror } from '@milkdown/crepe/feature/code-mirror'
 import { cursor } from '@milkdown/crepe/feature/cursor'
 import { linkTooltip } from '@milkdown/crepe/feature/link-tooltip'
 import { listItem } from '@milkdown/crepe/feature/list-item'
-import { placeholder } from '@milkdown/crepe/feature/placeholder'
 import { table } from '@milkdown/crepe/feature/table'
 import { toolbar } from '@milkdown/crepe/feature/toolbar'
 import type { CrepeConfig, CrepeFeature as PackageCrepeFeature } from '@milkdown/crepe'
@@ -49,7 +48,6 @@ const LOADERS: Partial<Record<CrepeFeature, Loader>> = {
   [CrepeFeature.ListItem]: listItem as Loader,
   [CrepeFeature.LinkTooltip]: linkTooltip as Loader,
   [CrepeFeature.BlockEdit]: blockEdit as Loader,
-  [CrepeFeature.Placeholder]: placeholder as Loader,
   [CrepeFeature.Toolbar]: toolbar as Loader,
   [CrepeFeature.CodeMirror]: codeMirror as Loader,
   [CrepeFeature.Table]: table as Loader,

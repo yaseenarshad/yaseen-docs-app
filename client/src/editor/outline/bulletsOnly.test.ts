@@ -115,7 +115,7 @@ describe('bullets-only outline editor (YAZ-901)', () => {
   })
 
   it('drops BlockEdit and Toolbar, keeps the outline features', () => {
-    expect(outlineFeatures).toMatchObject({ 'block-edit': false, toolbar: false, 'list-item': true, placeholder: true })
+    expect(outlineFeatures).toMatchObject({ 'block-edit': false, toolbar: false, 'list-item': true, placeholder: false })
   })
 
   describe('markdown input rules decline instead of firing', () => {
