@@ -15,6 +15,10 @@
  *    bullet, or the reverse: Markdown keeps one kind per list) moves the covered items into the
  *    last item of the list above, as `sinkListItem` does inside one list (YAZ-3727 D3). They join
  *    that item's child list and take its kind; with no child list they keep their own (D4).
+ *  - Tab inside one list makes a sublist the way its siblings did (YAZ-3727 D10): into the item above's own sublist,
+ *    of either kind, taking its kind; else a new sublist of the kind of the nearest sibling's sublist, above first,
+ *    then below; else bullets. `sinkListItem` alone wrapped the line in its parent's kind (a number under a number)
+ *    and made a second sublist beside one of the other kind.
  *  - Tab, Shift-Tab, Mod-] and Mod-[ act on the lines the selection COVERS (YAZ-3003): a keyboard
  *    line selection touches the parent or the next sibling at zero width, and that line stays put.
  *    So Shift-Tab and Mod-[ are ours now: the zoom guard first, then Crepe's own lift. A text
@@ -42,7 +46,7 @@
  *    a list that ends right above the line's own list (YAZ-3727 D5).
  */
 import type { Ctx } from '@milkdown/kit/ctx'
-import { listItemSchema, paragraphSchema } from '@milkdown/kit/preset/commonmark'
+import { bulletListSchema, listItemSchema, paragraphSchema } from '@milkdown/kit/preset/commonmark'
 import { setBlockType } from '@milkdown/kit/prose/commands'
 import { Fragment, type Node as ProseNode, type NodeType, type ResolvedPos, Slice } from '@milkdown/kit/prose/model'
 import { liftListItem, sinkListItem } from '@milkdown/kit/prose/schema-list'
@@ -54,7 +58,7 @@ import { deleteBlockAndEmptyWrappers, emptyWrapperDepth, liftHeadlessItem, nextV
 import { rowShortcuts } from '../noteKeys'
 import { type Folds, openFolds, recordOpenedFolds } from './foldReveal'
 import { headingLevel, isHeadingCollapsed } from './headingFolding'
-import { findNestedList, isListItem, LIST_NODE_NAMES } from './listNodes'
+import { findNestedList, findNestedLists, isListItem, LIST_NODE_NAMES } from './listNodes'
 import { isOutlineItemCollapsed } from './outlineFolding'
 import { blockEscapingLift, getZoomedItemPos } from './zoom'
 
@@ -107,10 +111,57 @@ const sinkIntoListAbove = (itemType: NodeType): Command => (state, dispatch) => 
   return true
 }
 
-const indentCommand = (itemType: NodeType): Command =>
+/** The kind of the nearest sublist among the items of `list` before `start`, nearest first, then from `end` on; null when none has one. */
+const siblingSublistKind = (list: ProseNode, start: number, end: number): NodeType | null => {
+  const kindOf = (index: number): NodeType | null => findNestedLists(list.child(index)).at(-1)?.list.type ?? null
+  for (let index = start - 1; index >= 0; index--) {
+    const kind = kindOf(index)
+    if (kind) return kind
+  }
+  for (let index = end; index < list.childCount; index++) {
+    const kind = kindOf(index)
+    if (kind) return kind
+  }
+  return null
+}
+
+/**
+ * Tab inside one list (YAZ-3727 D10): `sinkListItem`, then the sublist the lines went into is set as their siblings'
+ * sublists are. In the same transaction, so ⌘Z undoes it at once. False when the lines cannot sink in their list.
+ */
+const sinkInList = (itemType: NodeType, bulletType: NodeType): Command => (state, dispatch) => {
+  const { $from, $to } = state.selection
+  const range = $from.blockRange($to, (node) => node.childCount > 0 && node.firstChild!.type === itemType)
+  if (!range || range.startIndex === 0) return false
+  if (!dispatch) return sinkListItem(itemType)(state)
+  let sunk: Transaction | null = null
+  if (!sinkListItem(itemType)(state, (tr) => { sunk = tr })) return false
+  const tr = sunk as unknown as Transaction
+  const above = range.parent.child(range.startIndex - 1)
+  const ownSublist = above.lastChild !== null && LIST_NODE_NAMES.has(above.lastChild.type.name)
+  // The lines' list now: the parent of the item that holds the caret's line.
+  const $line = tr.doc.resolve(tr.mapping.map($from.pos))
+  const listPos = $line.before($line.depth - 2)
+  const list = $line.node($line.depth - 2)
+  const $list = tr.doc.resolve(listPos)
+  if (ownSublist) {
+    // `sinkListItem` joins a sublist of its own kind only; one of the other kind is joined here, and its kind wins.
+    if ($list.nodeBefore && LIST_NODE_NAMES.has($list.nodeBefore.type.name) && canJoin(tr.doc, listPos)) tr.join(listPos)
+  } else {
+    const kind = siblingSublistKind(range.parent, range.startIndex, range.endIndex) ?? bulletType
+    const index = $list.index()
+    if (kind !== list.type && $list.parent.canReplaceWith(index, index + 1, kind)) {
+      tr.setNodeMarkup(listPos, kind, kind.spec.attrs && 'spread' in kind.spec.attrs ? { spread: list.attrs.spread } : null)
+    }
+  }
+  dispatch(tr)
+  return true
+}
+
+const indentCommand = (itemType: NodeType, bulletType: NodeType): Command =>
   onCoveredLines((state, dispatch) => {
     if (!selectionInListItems(state, itemType)) return spansLines(state)
-    if (!sinkListItem(itemType)(state, dispatch)) sinkIntoListAbove(itemType)(state, dispatch)
+    if (!sinkInList(itemType, bulletType)(state, dispatch)) sinkIntoListAbove(itemType)(state, dispatch)
     // Handled either way: a first sibling cannot sink, and the indent plugin must not insert spaces.
     return true
   })
@@ -434,9 +485,10 @@ const DELETE_KEYS = ['Delete', 'Ctrl-d', 'Alt-Delete', 'Mod-Delete', 'Ctrl-Alt-B
 export const outlinerKeymap = $shortcut((ctx: Ctx) => {
   const itemType = listItemSchema.type(ctx)
   const paragraphType = paragraphSchema.type(ctx)
+  const bulletType = bulletListSchema.type(ctx)
   return {
-    Tab: { key: 'Tab', priority: PRIORITY, onRun: () => indentCommand(itemType) },
-    ...rowShortcuts(ctx, 'note.indent', 'IndentBracket', { priority: PRIORITY, onRun: () => indentCommand(itemType) }),
+    Tab: { key: 'Tab', priority: PRIORITY, onRun: () => indentCommand(itemType, bulletType) },
+    ...rowShortcuts(ctx, 'note.indent', 'IndentBracket', { priority: PRIORITY, onRun: () => indentCommand(itemType, bulletType) }),
     Outdent: { key: 'Shift-Tab', priority: PRIORITY, onRun: () => outdentCommand(itemType) },
     ...rowShortcuts(ctx, 'note.outdent', 'OutdentBracket', { priority: PRIORITY, onRun: () => outdentCommand(itemType) }),
     Enter: { key: 'Enter', priority: PRIORITY, onRun: () => enterCommand(itemType, paragraphType) },

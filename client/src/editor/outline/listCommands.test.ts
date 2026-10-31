@@ -165,13 +165,13 @@ describe('Tab (indent)', () => {
     expect(md(crepe)).toBe(OUTLINE)
   })
 
-  it('indents ordered and task items too', async () => {
+  it('indents ordered and task items too (a new sublist under a number is bullets, YAZ-3727 D10)', async () => {
     const { crepe } = await mount('1. one\n2. two\n\n* [ ] task a\n* [x] task b\n')
     caretIn(crepe, 'two')
     press(crepe, 'Tab')
     caretIn(crepe, 'task b')
     press(crepe, 'Tab')
-    expect(md(crepe)).toBe('1. one\n   1. two\n\n* [ ] task a\n  * [x] task b\n')
+    expect(md(crepe)).toBe('1. one\n   * two\n\n* [ ] task a\n  * [x] task b\n')
   })
 })
 
@@ -1256,5 +1256,93 @@ describe('YAZ-3727 3- Tab, Shift-Tab and joins across bullets and numbers (D3, D
     press(crepe, 'Mod-z')
     expect(md(crepe)).toBe(markdown)
     if (folded !== null) expect(isFolded(root, folded)).toBe(true)
+  })
+})
+
+describe('YAZ-3727 6B. Tab makes a sublist in its siblings\' kind, else bullets (D10)', () => {
+  it('under a number with no sibling sublist: the new sublist is bullets', async () => {
+    const { crepe } = await mount('1. one\n2. two\n')
+    caretIn(crepe, 'two')
+    expect(press(crepe, 'Tab')).toBe(true)
+    expect(md(crepe)).toBe('1. one\n   * two\n')
+  })
+
+  it('under a bullet with no sibling sublist: still bullets', async () => {
+    const { crepe } = await mount('* one\n* two\n')
+    caretIn(crepe, 'two')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* one\n  * two\n')
+  })
+
+  it('the sibling above has a bullet sublist: the new one is bullets (the demo case)', async () => {
+    const { crepe } = await mount('1. this is just\n   * a child\n2. test\n3. next\n')
+    caretIn(crepe, 'next')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. this is just\n   * a child\n2. test\n   * next\n')
+  })
+
+  it('the sibling above has a numbered sublist: the new one is numbers, under a number or a bullet', async () => {
+    let { crepe } = await mount('1. a\n   1. ak\n2. b\n3. c\n')
+    caretIn(crepe, 'c')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   1. ak\n2. b\n   1. c\n')
+    ;({ crepe } = await mount('* a\n  1. ak\n* b\n* c\n'))
+    caretIn(crepe, 'c')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* a\n  1. ak\n* b\n  1. c\n')
+  })
+
+  it('the nearest sibling above wins over one further up', async () => {
+    const { crepe } = await mount('1. a\n   * ak\n2. b\n   1. bk\n3. c\n4. d\n')
+    caretIn(crepe, 'd')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   * ak\n2. b\n   1. bk\n3. c\n   1. d\n')
+  })
+
+  it('no sibling above has a sublist: the nearest one below gives the kind', async () => {
+    const { crepe } = await mount('1. a\n2. b\n3. c\n   1. ck\n')
+    caretIn(crepe, 'b')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   1. b\n2. c\n   1. ck\n')
+  })
+
+  it('the item above has a sublist of the other kind: the line joins it and takes its kind', async () => {
+    let { crepe } = await mount('1. a\n   * ak\n2. b\n')
+    caretIn(crepe, 'b')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   * ak\n   * b\n')
+    ;({ crepe } = await mount('* a\n  1. ak\n* b\n'))
+    caretIn(crepe, 'b')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* a\n  1. ak\n  2. b\n')
+  })
+
+  it('a selection over two lines: both go into one bullet sublist', async () => {
+    const { crepe } = await mount('1. a\n2. b\n3. c\n')
+    select(crepe, posOf(crepe, 'b', 0), posOf(crepe, 'c', 1))
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   * b\n   * c\n')
+  })
+
+  it('the moved line keeps its own children', async () => {
+    const { crepe } = await mount('1. a\n2. b\n   1. bk\n')
+    caretIn(crepe, 'b')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   * b\n     1. bk\n')
+  })
+
+  it('⌘Z undoes the Tab and the kind in one step', async () => {
+    const { crepe } = await mount('1. one\n2. two\n')
+    caretIn(crepe, 'two')
+    press(crepe, 'Tab')
+    expect(press(crepe, 'Mod-z')).toBe(true)
+    expect(md(crepe)).toBe('1. one\n2. two\n')
+  })
+
+  it('Tab of a numbered run into the bullet above (D3) keeps the numbers: D10 is for Tab inside one list', async () => {
+    const { crepe } = await mount('* Keys\n\n1. id\n2. version\n')
+    caretIn(crepe, 'id')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* Keys\n  1. id\n\n1. version\n')
   })
 })
