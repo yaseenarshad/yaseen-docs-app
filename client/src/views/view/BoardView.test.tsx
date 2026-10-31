@@ -17,11 +17,8 @@ import { api, BridgeRequestError } from '../../api'
 import { type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
-import { createCrepe } from '../../editor/createCrepe'
-import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { TEST_RECORDS } from '../testRecords'
 import { normalizeBoardWidth } from './PropertiesMenu'
-import { OPEN_DELAY_MS } from './PreviewCard'
 import viewsCss from '../views.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -29,7 +26,6 @@ import viewsCss from '../views.css?inline'
 /** YAZ-846: `folder` is required — the folder view is the only mount there is. */
 const HOST = testFolderHost()
 
-/** Preview mode's fetch and Crepe (YAZ-1244) are stand-ins here — the real render is PreviewCard.crepe.test.tsx's. */
 vi.mock('../../api', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../api')>()
   return {
@@ -37,17 +33,10 @@ vi.mock('../../api', async (importOriginal) => {
     api: {
       ...original.api,
       shell: { reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }) },
-      readFile: vi.fn(async (path: string) => ({ path, content: `body of ${path}\n`, mtime: 1, size: 1 })),
     },
   }
 })
 const reveal = vi.mocked(api.shell.reveal)
-vi.mock('../../editor/createCrepe', () => ({
-  createCrepe: vi.fn((opts: { root: HTMLElement; defaultValue?: string }) => {
-    opts.root.textContent = opts.defaultValue ?? ''
-    return { create: vi.fn(async () => {}), setReadonly: vi.fn(), destroy: vi.fn() }
-  }),
-}))
 
 /** In-memory stand-in for the main-owned store: collapse state must go through here, not the file. */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
@@ -1110,63 +1099,3 @@ ${cardStyle}
   })
 })
 
-/**
- * Preview mode's wiring (YAZ-1244): `preview: true` hands every card `usePreview`'s hover pair;
- * absent attaches nothing. A drag start shuts the card. The card's own timing/cache matrix is
- * PreviewCard.test.tsx's.
- */
-describe('preview mode (YAZ-1244)', () => {
-  const PREVIEW_BOARD = `${BOARD_BASE}    preview: true\n`
-  const settle = (ms: number) => act(async () => new Promise((resolve) => setTimeout(resolve, ms)).then(() => undefined))
-  const hover = (el: Element) => act(() => void el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
-  const previewCard = (): HTMLElement | null => document.body.querySelector('.view-preview')
-
-  it("resting on a card opens the preview with that page's body", async () => {
-    const { el } = mount(PREVIEW_BOARD)
-    hover(q<HTMLElement>(el, '.view-board__card'))
-    await settle(OPEN_DELAY_MS + 50)
-    expect(previewCard()).not.toBeNull()
-    expect(previewCard()!.textContent).toContain('body of /vault/')
-  })
-
-  it("the preview is handed the window's link source, so an id link in it reads as a title (YAZ-2293)", async () => {
-    const wikilinks = createWikilinkResolveSource()
-    const { el } = mount(PREVIEW_BOARD, { folder: testFolderHost({ wikilinks }) })
-    hover(q<HTMLElement>(el, '.view-board__card'))
-    await settle(OPEN_DELAY_MS + 50)
-    expect(vi.mocked(createCrepe).mock.lastCall?.[0].wikilinks).toBe(wikilinks)
-  })
-
-  it('preview off: hovering opens nothing', async () => {
-    const { el } = mount(BOARD_BASE)
-    hover(q<HTMLElement>(el, '.view-board__card'))
-    await settle(OPEN_DELAY_MS + 50)
-    expect(previewCard()).toBeNull()
-  })
-
-  it('a drag start closes the preview', async () => {
-    const { el } = mount(PREVIEW_BOARD)
-    const target = q<HTMLElement>(el, '.view-board__card')
-    hover(target)
-    await settle(OPEN_DELAY_MS + 50)
-    expect(previewCard()).not.toBeNull()
-    act(() => void target.dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true })))
-    draw()
-    expect(previewCard()).toBeNull()
-  })
-
-  it('a secondary click closes the preview and opens page actions for that exact card', async () => {
-    const openBackground = vi.fn()
-    const { el } = mount(PREVIEW_BOARD, { folder: testFolderHost({ openBackground }) })
-    const target = cardNamed(el, 'Agentic Agency')
-    hover(target)
-    await settle(OPEN_DELAY_MS + 50)
-    expect(previewCard()).not.toBeNull()
-
-    rightClick(target)
-    expect(previewCard()).toBeNull()
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder'])
-    click(itemNamed(el, 'Open in new tab')!)
-    expect(openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
-  })
-})

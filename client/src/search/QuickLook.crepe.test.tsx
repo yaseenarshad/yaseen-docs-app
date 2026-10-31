@@ -13,9 +13,16 @@ import { QuickLook } from './QuickLook'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 const CONTENT = '---\ntitle: Alpha\n---\n\n# Hello panel\n\nthe saved text\n'
+/** A note with an id link (YAZ-2293): the link has no readable text of its own. */
+const LINKED = '---\ntitle: Linked\n---\n\nthis note links [[k3m9x2pq7abc]]\n'
 
 vi.mock('../api', () => ({
-  api: { readFile: vi.fn(async (path: string) => ({ path, content: CONTENT, mtime: 1, size: CONTENT.length })) },
+  api: {
+    readFile: vi.fn(async (path: string) => {
+      const content = path.endsWith('Linked.md') ? LINKED : CONTENT
+      return { path, content, mtime: 1, size: content.length }
+    }),
+  },
 }))
 
 let root: Root | null = null
@@ -60,5 +67,16 @@ describe('the real Crepe in the preview panel', () => {
     await waitFor(() => pm.getAttribute('contenteditable') === 'false')
     expect(container.querySelector('.quicklook__body')!.textContent).not.toContain('title: Alpha')
     expect(document.activeElement).toBe(bar)
+  })
+
+  it("an id link shows the note's title, resolved through the window's source (YAZ-2293; moved here from the folder views' removed card, YAZ-3743)", async () => {
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update((target) => (target === 'k3m9x2pq7abc' ? '/vault/Projects/Road Map.md' : null))
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<QuickLook path="/v/Linked.md" title="Linked" watch={{ subscribe: () => () => undefined }} wikilinks={wikilinks} onClose={() => undefined} />))
+    await waitFor(() => container!.querySelector('.quicklook .wikilink') !== null)
+    expect(container.querySelector('.quicklook .wikilink')!.textContent).toBe('Road Map')
   })
 })

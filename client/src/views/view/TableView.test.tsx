@@ -13,10 +13,8 @@ import { api, BridgeRequestError } from '../../api'
 import { type ViewSet, type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
-import { createCrepe } from '../../editor/createCrepe'
 import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { TEST_RECORDS } from '../testRecords'
-import { OPEN_DELAY_MS } from './PreviewCard'
 import { HOVER_PREVIEW_DWELL_MS } from '../../sidebar/HoverPreviewHost'
 import { spacePanel } from '../../tabs/cardPreview'
 
@@ -29,14 +27,14 @@ vi.mock('../../api', async (importOriginal) => {
     api: {
       ...original.api,
       shell: { reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }) },
-      // Preview mode's fetch (YAZ-1244): a body for every path, so the hover card always has content.
+      // The hover panel's fetch: a body for every path, so the panel always has content.
       readFile: vi.fn(async (path: string) => ({ path, content: `body of ${path}\n`, mtime: 1, size: 1 })),
     },
   }
 })
 const reveal = vi.mocked(api.shell.reveal)
 
-/** Preview mode's Crepe (YAZ-1244) is a stand-in here — the real render is PreviewCard.crepe.test.tsx's. */
+/** The hover panel's Crepe is a stand-in here — the real read-only render is proven in `search/QuickLook.crepe.test.tsx`. */
 vi.mock('../../editor/createCrepe', () => ({
   createCrepe: vi.fn((opts: { root: HTMLElement; defaultValue?: string }) => {
     opts.root.textContent = opts.defaultValue ?? ''
@@ -912,13 +910,11 @@ describe('windowing', () => {
 })
 
 /**
- * Preview mode's wiring (YAZ-1244): `preview: true` on the view hands every data row `usePreview`'s
- * hover pair; absent attaches nothing at all. A drag start shuts the card — moving a row and
- * peeking at one are different gestures. The card's own timing/cache matrix is PreviewCard.test.tsx's.
+ * The hover preview of the folder views (YAZ-3403 D9, YAZ-3743 D1, D2): Settings › Preview on hover › Folder views is
+ * the ONE switch. Every layout shows the sidebar's panel beside the item; there is no per-view eye and no own card, and
+ * an old `preview` key in a file changes nothing. These mount the whole `ViewsPane`, as the folder page does.
  */
-describe('preview mode (YAZ-1244)', () => {
-  const PREVIEW_BASE = 'views:\n  - type: table\n    name: T\n    preview: true\n    order:\n      - file.name\n'
-  const PREVIEW_GROUPED = `${PREVIEW_BASE}    groupBy:\n      property: note.status\n`
+describe('hover preview in folder views (YAZ-3403, YAZ-3743)', () => {
   const settle = (ms: number) => act(async () => new Promise((resolve) => setTimeout(resolve, ms)).then(() => undefined))
   const hover = (el: Element) => act(() => void el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
   const firstRow = (el: ParentNode): HTMLElement => {
@@ -926,78 +922,74 @@ describe('preview mode (YAZ-1244)', () => {
     if (row === null) throw new Error('no data row')
     return row
   }
-  const card = (): HTMLElement | null => document.body.querySelector('.view-preview')
+  const notePanel = () => document.body.querySelector('.note-preview')
+  const on = { hoverPreview: true, previewScope: () => ({ root: '/vault', wikilinks: createWikilinkResolveSource(), textVars: {} }) }
+  const TABLE = 'views:\n  - type: table\n    name: T\n    order:\n      - file.name\n'
+  const unmount = () => {
+    act(() => root?.unmount())
+    container?.remove()
+  }
 
-  it("resting on a row opens the card with that page's body", async () => {
-    const { el } = mount(PREVIEW_BASE)
-    hover(firstRow(el))
-    await settle(OPEN_DELAY_MS + 50)
-    expect(card()).not.toBeNull()
-    expect(card()!.textContent).toContain('body of /vault/')
+  it('YAZ-3743 D1: with the setting on, every layout shows the shared panel beside the item', async () => {
+    const layouts: [string, (el: ParentNode) => Element][] = [
+      [TABLE, firstRow],
+      ['views:\n  - type: board\n    name: B\n    groupBy:\n      property: note.status\n', (el) => q(el, '.view-board__card')],
+      ['views:\n  - type: cards\n    name: C\n', (el) => q(el, '.view-card')],
+      ['views:\n  - type: list\n    name: L\n', (el) => q(el, '.view-list__item')],
+    ]
+    for (const [text, item] of layouts) {
+      const { el } = mount(text, on)
+      hover(item(el))
+      await settle(HOVER_PREVIEW_DWELL_MS + 50)
+      expect(notePanel(), text).not.toBeNull()
+      unmount()
+    }
   })
 
-  it("the preview is handed the window's link source, so an id link in it reads as a title (YAZ-2293)", async () => {
-    const wikilinks = createWikilinkResolveSource()
-    const { el } = mount(PREVIEW_BASE, { folder: testFolderHost({ wikilinks }) })
+  it('YAZ-3743 D1: with the setting off, nothing opens', async () => {
+    const { el } = mount(TABLE, { ...on, hoverPreview: false })
     hover(firstRow(el))
-    await settle(OPEN_DELAY_MS + 50)
-    expect(vi.mocked(createCrepe).mock.lastCall?.[0].wikilinks).toBe(wikilinks)
+    await settle(HOVER_PREVIEW_DWELL_MS + 50)
+    expect(notePanel()).toBeNull()
   })
 
-  it('preview off: hovering opens nothing', async () => {
-    const { el } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n')
+  it('YAZ-3743 D1, D2: no folder view has an eye, and an old `preview: true` key opens the shared panel, never a second card', async () => {
+    for (const type of ['table', 'board', 'cards', 'list']) {
+      const { el } = mount(`views:\n  - type: ${type}\n    name: V\n    preview: true\n`, on)
+      expect(el.querySelector('[aria-label="Preview on hover"]'), type).toBeNull()
+      unmount()
+    }
+    const { el } = mount(TABLE.replace('    order:', '    preview: true\n    order:'), on)
     hover(firstRow(el))
-    await settle(OPEN_DELAY_MS + 50)
-    expect(card()).toBeNull()
+    await settle(HOVER_PREVIEW_DWELL_MS + 50)
+    expect(notePanel()).not.toBeNull()
+    expect(document.body.querySelectorAll('.note-preview')).toHaveLength(1)
   })
 
-  it('YAZ-3403 S32, S33, D9: with Preview on hover › Folder views on, a cards view shows the shared note panel, but not while the Space panel shows; a table whose own Preview is on shows only its own card — never two panels', async () => {
-    const shared = { hoverPreview: true, previewScope: () => ({ root: '/vault', wikilinks: createWikilinkResolveSource(), textVars: {} }) }
-    const notePanel = () => document.body.querySelector('.note-preview')
-    const { el: cardsEl } = mount('views:\n  - type: cards\n    name: C\n    order:\n      - file.name\n', shared)
-    // App's Space panel shows: the rest opens no hover panel (App writes the flag; the dwell reads it live).
+  it('YAZ-3403 S32, S33: no panel opens while the Space panel shows', async () => {
+    const { el } = mount(TABLE, on)
     spacePanel.shown = true
     try {
-      hover(q(cardsEl, '.view-card'))
+      hover(firstRow(el))
       await settle(HOVER_PREVIEW_DWELL_MS + 50)
       expect(notePanel()).toBeNull()
     } finally {
       spacePanel.shown = false
     }
-    hover(q(cardsEl, '.view-card'))
-    await settle(Math.max(OPEN_DELAY_MS, HOVER_PREVIEW_DWELL_MS) + 50)
-    expect(notePanel()).not.toBeNull()
-    act(() => root?.unmount())
-    container?.remove()
-
-    const { el } = mount(PREVIEW_BASE, shared)
-    expect(firstRow(el).hasAttribute('data-hover-item')).toBe(false)
-    hover(firstRow(el))
-    await settle(Math.max(OPEN_DELAY_MS, HOVER_PREVIEW_DWELL_MS) + 50)
-    expect(card()).not.toBeNull()
-    expect(notePanel()).toBeNull()
   })
 
-  it('a drag start closes the card', async () => {
-    const { el } = mount(PREVIEW_GROUPED)
-    hover(firstRow(el))
-    await settle(OPEN_DELAY_MS + 50)
-    expect(card()).not.toBeNull()
-    act(() => void firstRow(el).dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true })))
-    draw()
-    expect(card()).toBeNull()
-  })
-
-  it('a secondary click closes the preview and opens page actions for that exact row', async () => {
+  it('a right-click closes the panel and opens the page actions for that exact row', async () => {
     const openBackground = vi.fn()
-    const { el } = mount(PREVIEW_BASE, { folder: testFolderHost({ openBackground }) })
+    const { el } = mount(TABLE, { ...on, folder: testFolderHost({ openBackground }) })
     const target = firstRow(el)
     hover(target)
-    await settle(OPEN_DELAY_MS + 50)
-    expect(card()).not.toBeNull()
+    await settle(HOVER_PREVIEW_DWELL_MS + 50)
+    expect(notePanel()).not.toBeNull()
 
-    rightClick(q(target, 'td[data-cell]'))
-    expect(card()).toBeNull()
+    const cell = q(target, 'td[data-cell]')
+    act(() => void cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 2 })))
+    rightClick(cell)
+    expect(notePanel()).toBeNull()
     expect([...el.querySelectorAll('.ctx-menu [role="menuitem"]')].map((item) => item.textContent)).toEqual([
       'Open',
       'Open in new tab',

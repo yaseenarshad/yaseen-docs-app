@@ -10,8 +10,6 @@ import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, rowTitle } from './GroupHeader'
 import { useFlip } from './flip'
 import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, groupTakesNew, useGroupDrag } from './groupDrag'
-import { usePreview } from './PreviewCard'
-import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { allPropertyKeys } from './properties'
 import { PageContextMenu } from './PageContextMenu'
 import { NO_READ_ONLY } from '../readOnlyRows'
@@ -19,8 +17,8 @@ import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 
 export interface BoardViewProps {
-  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): absent while the setting is off, or while this view's own Preview is on. */
-  hover?: ViewHover
+  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): `ViewsPane` always passes it; Settings › Preview on hover › Folder views starts or stops the dwell (YAZ-3743). */
+  hover: ViewHover
   def: ViewSet
   view: ViewDef
   viewIndex: number
@@ -49,10 +47,6 @@ export interface BoardViewProps {
   moveError: { path: string; message: string } | null
   /** Create a note seeded at one group level; nested spots let ViewsPane seed the outer too. A `name` is the inline add's typed one. */
   onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
-  /** Preview mode (`view.preview`, YAZ-1244): resting on a card pops its page read-only. */
-  preview?: boolean
-  /** The window's link source, for the preview: an id link in it reads as its note's title (YAZ-2293). */
-  wikilinks?: WikilinkResolveSource
   /** ViewsPane's whole-vault resolver: a column header and a card value read an id link as its note's title (YAZ-2293 D8). */
   resolve?: Resolver
 }
@@ -105,13 +99,10 @@ export function BoardView({
   onMoveToGroup,
   moveError,
   onNewInGroup,
-  preview = false,
-  wikilinks,
   resolve,
   readOnly = NO_READ_ONLY,
   hover,
 }: BoardViewProps) {
-  const { rowProps, card, close } = usePreview(preview, wikilinks)
   const levelKeys = [groupByKey(view), groupByKey(view, 1)]
   const dnd = useGroupDrag(levelKeys, onMoveToGroup)
   const adds = [0, 1].map((level) => groupTakesNew(view, level))
@@ -224,7 +215,6 @@ export function BoardView({
   const openCardMenu = (event: ReactMouseEvent, row: Row): void => {
     event.preventDefault()
     suppressOnce()
-    close()
     setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, title: row.record.title })
   }
   const dragSource = (row: Row, group: Group, at: GroupSpot): Record<string, unknown> => {
@@ -247,8 +237,7 @@ export function BoardView({
           data-flip-key={row.record.path}
           className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
           {...dragSource(row, group, at)}
-          {...rowProps(row.record)}
-          {...hover?.itemProps(row.record.path)}
+          {...hover.itemProps(row.record.path)}
           // Every card is a focusable "cell" (YAZ-1557 D2): a plain click SELECTS it, and only the
           // title, Enter, or a modifier opens — so a card without a title still has a name to read.
           tabIndex={0}
@@ -262,9 +251,6 @@ export function BoardView({
             event.preventDefault()
             openCard(row, event)
           }}
-          // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart rather
-          // than replacing it (YAZ-1244): a card must never hang over a drag.
-          onDragStartCapture={close}
           onContextMenu={(event) => openCardMenu(event, row)}
         >
           {lines.map((line, i) => (
@@ -418,8 +404,6 @@ export function BoardView({
           onClose={() => setMenu(null)}
         />
       )}
-      {/* Outside the horizontal scroller on purpose (YAZ-1244): the card is placed against the viewport. */}
-      {card}
     </>
   )
 }
