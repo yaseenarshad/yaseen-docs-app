@@ -255,7 +255,8 @@ export function eachPlainRun(block: ProseNode, base: number, cb: (text: string, 
 
 /** Push a hidden-syntax decoration (empty ranges are skipped). */
 function hide(out: Decoration[], from: number, to: number): void {
-  if (from < to) out.push(Decoration.inline(from, to, { class: WIKILINK_SYNTAX_CLASS }))
+  // `syntax` in the spec: what ⌘F reads as hidden (`pillLinks`, YAZ-3744 S9).
+  if (from < to) out.push(Decoration.inline(from, to, { class: WIKILINK_SYNTAX_CLASS }, { syntax: true }))
 }
 
 /** The DOM an id link's title widget draws: the classes its id text would have worn, and the file's icon (D13). */
@@ -383,10 +384,6 @@ export interface PillLink {
   title: string | null
 }
 
-/** The class an inline decoration puts on its text. `attrs` is ProseMirror's own field: the typings leave it out. */
-const decorationClass = (decoration: Decoration): string | undefined =>
-  (decoration as unknown as { type: { attrs?: { class?: string } } }).type.attrs?.class
-
 /**
  * The pills of one textblock at `pos`, drawn by `decorate` itself, so they hide exactly what the note hides. For ⌘F
  * (`findInPage.ts`). A link the selection opens (`decorateBlock`'s reveal rule) is plain text and left out, and so is
@@ -404,7 +401,7 @@ export function pillLinks(block: ProseNode, pos: number, sel: Selection, source:
       const drawn: Decoration[] = []
       decorate(drawn, from, m[2], source, viewOnly)
       if (drawn.length === 0) continue
-      const hidden = drawn.filter((d) => d.from < d.to && decorationClass(d) === WIKILINK_SYNTAX_CLASS).map((d) => [d.from, d.to] as const)
+      const hidden = drawn.filter((d) => d.from < d.to && d.spec.syntax === true).map((d) => [d.from, d.to] as const)
       const title = drawn.some((d) => d.from === d.to)
         ? (idLinkTitle(linkPageName(m[2]), source.resolve, pathTitles(source.records, source.folders)) ?? null)
         : null
