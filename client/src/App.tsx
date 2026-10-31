@@ -26,6 +26,7 @@ import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './link
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument } from './lib/focusHandoff'
+import { osVerbs } from './lib/osVerbs'
 import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, shows, unlessFailed, type DragOutAsk, type NamedItem, type Notice, type NoticeKind, type NoticeType } from './lib/notice'
 import { treeHasPath } from './lib/treeState'
 import { NoticeToast } from './components/NoticeToast'
@@ -873,22 +874,17 @@ export function App() {
   linkDoors.current = { showInSidebar, lists, scopeOf, nameOf, notify }
   const linkActions = useMemo<LinkActions>(() => {
     const door = () => linkDoors.current
-    /** A bridge call's failure as the sidebar says it: a gone file by its name, else the error. */
-    const os = (call: Promise<unknown>, path: string, gone: (name: string) => string, failed: string) =>
-      void call.catch((err: unknown) => door().notify(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? gone(door().nameOf(path)) : `${failed}: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+    // The sidebar's verbs and notices (`lib/osVerbs.ts`); "New window" opens the vault that holds the file, alone (YAZ-2602 S33).
+    const os = osVerbs((message) => door().notify(message, 'error'), (path) => door().nameOf(path), (path) => door().scopeOf(path).root)
     return {
       showInSidebar: (path) => door().showInSidebar(path),
       listState: (path) => door().lists.stateOf(path),
       toggleFavorite: (paths, isOn) => door().lists.toggleFavorite(paths, isOn),
       toggleFocus: (paths, isOn) => void door().lists.toggleFocus(paths, isOn),
-      // The vault that holds the file, alone, as the sidebar's "Open in ▸ New window" (YAZ-2602 S33).
-      openNewWindow: (path) => {
-        const root = door().scopeOf(path).root
-        if (root !== null) api.window.open({ root, file: path }).catch((err: unknown) => console.error('[link menu] window.open failed:', err))
-      },
-      openVsCode: (path) => os(api.shell.openVsCode({ path }), path, (name) => `Can't open "${name}" in VS Code — it is no longer there`, "Can't open in VS Code"),
-      openDefault: (path) => os(api.shell.openDefault({ path }), path, (name) => `Can't open "${name}" — it is no longer there`, `Can't open "${door().nameOf(path)}"`),
-      reveal: (path) => os(api.shell.reveal({ path }), path, (name) => `Can't reveal "${name}" — it is no longer there`, "Can't reveal"),
+      openNewWindow: os.openNewWindow,
+      openVsCode: os.openVsCode,
+      openDefault: os.openDefault,
+      reveal: os.reveal,
     }
   }, [])
 
