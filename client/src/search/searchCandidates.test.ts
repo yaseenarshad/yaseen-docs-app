@@ -38,13 +38,41 @@ describe('searchCandidates', () => {
   })
 
   it('E: a note is matched on its title and labelled with it, on its alias rows too; an alias equal to the title is skipped (YAZ-2420 D14)', () => {
-    const rows = searchCandidates([rec('/vault/up-001-abdul-k3m9x2pq7abc.md', ['Abdul', 'up-001 - abdul'], 'UP-001 - Abdul')])
+    // The id the file name holds (YAZ-3748 B4): a file the app named from the title and id adds no file-name row.
+    const rows = searchCandidates([{ ...rec('/vault/up-001-abdul-k3m9x2pq7abc.md', ['Abdul', 'up-001 - abdul'], 'UP-001 - Abdul'), id: 'k3m9x2pq7abc' }])
     expect(rows.map((c) => [c.name, c.label])).toEqual([
       ['UP-001 - Abdul', 'UP-001 - Abdul'],
       ['Abdul', 'Abdul — UP-001 - Abdul'],
     ])
     expect(searchTitles(rows, '001 - ab').map((c) => c.label)).toEqual(['UP-001 - Abdul'])
     expect(searchTitles(rows, 'k3m9')).toEqual([])
+  })
+
+  it('YAZ-3748 B4: a file named by hand is one more row, `basename — Title`, found by the file name; a name the app made from the title, the title itself or an alias adds none', () => {
+    const rows = searchCandidates([
+      rec('/vault/2026-10-28-sync.md', [], 'Weekly sync'),
+      { ...rec('/vault/2026-10-29-sync.md', [], 'Weekly sync 2'), id: 'k3m9x2pq' }, // an id does not hide a name given by hand
+      { ...rec('/vault/working-log-k3m9x2pq.md', [], 'Working Log'), id: 'k3m9x2pq' }, // `noteFileName`: the app named it
+      { ...rec('/vault/old-title-yaz-12.md', [], 'New title'), id: 'YAZ-12' }, // a name built for an older title: the id finds it (4A finding 5)
+      { ...rec('/vault/k3m9x2pq7abc.md', [], 'Bare id'), id: 'k3m9x2pq7abc' }, // the file name is the id
+      rec('/vault/plan-b.md', [], 'Plan B'), // `kebabTitle`, a vault with no ids
+      rec('/vault/Notes.md'), // no `title:`: the title is the file name
+      rec('/vault/cac.md', ['CAC'], 'Customer Acquisition Cost'), // the file name is an alias
+    ])
+    expect(rows.map((c) => c.label)).toEqual([
+      'Weekly sync',
+      '2026-10-28-sync — Weekly sync',
+      'Weekly sync 2',
+      '2026-10-29-sync — Weekly sync 2',
+      'Working Log',
+      'New title',
+      'Bare id',
+      'Plan B',
+      'Notes',
+      'Customer Acquisition Cost',
+      'CAC — Customer Acquisition Cost',
+    ])
+    expect(searchTitles(rows, '2026-10-28').map((c) => [c.label, c.path])).toEqual([['2026-10-28-sync — Weekly sync', '/vault/2026-10-28-sync.md']])
   })
 
   it('a root-level record carries an empty folder', () => {
@@ -125,10 +153,11 @@ describe('fileCandidates (🔒 D3, YAZ-2620)', () => {
     expect(searchTitles(rows, 'excalidraw').map((c) => c.path)).toEqual(['/vault/Flow.excalidraw'])
   })
 
-  it('S12, S19: a note still matches by its title and aliases, never by its file name; a tie is folder, then note, then other file', () => {
+  it('S12, S19: a note still matches by its title and aliases, never by a file name that the app made from the title (YAZ-3748 B4); a tie is folder, then note, then other file', () => {
     const notes = searchCandidates([rec('/vault/up-001-abdul.md', ['Plan'], 'UP-001 - Abdul')])
     const rows = [...folderCandidates('/vault', ['/vault/plan'], []), ...notes, ...fileCandidates('/vault', ['/vault/bin/plan', '/vault/up-001-abdul.py'])]
-    expect(searchTitles(rows, 'up-001-abdul').map((c) => c.path)).toEqual(['/vault/up-001-abdul.py'])
+    // The other file holds the text. The note's TITLE holds each of its words, so it follows as a word match (YAZ-3748 D2): by its title, not its file name.
+    expect(searchTitles(rows, 'up-001-abdul').map((c) => [c.path, c.label])).toEqual([['/vault/up-001-abdul.py', 'up-001-abdul.py'], ['/vault/up-001-abdul.md', 'UP-001 - Abdul']])
     // `plan` three times, each an exact name: the folder, the note's alias, the file with no extension.
     expect(searchTitles(rows, 'plan').map((c) => [c.kind, c.label])).toEqual([['dir', 'plan'], ['file', 'Plan — UP-001 - Abdul'], ['file', 'plan']])
   })
@@ -295,7 +324,8 @@ describe('searchRows: the search box finds a note by its number (YAZ-2677 D9)', 
   it('S71: `YAZ-12`, `yaz-12`, `yaz12` and `yaz 12` all have `YAZ-12` as the first row; the title matches for the same text come after it', () => {
     for (const typed of ['YAZ-12', 'yaz-12', 'yaz12', 'yaz 12', ' Yaz-12 ']) expect(found(typed)[0]).toBe('YAZ-12 — Plan')
     expect(found('YAZ-12')).toEqual(['YAZ-12 — Plan', 'Fix for YAZ-12'])
-    expect(found('yaz12')).toEqual(['YAZ-12 — Plan'])
+    // `yaz12` is in `Fix for YAZ-12` once its marks are out: a joined match (YAZ-3748 D2), after the ID.
+    expect(found('yaz12')).toEqual(['YAZ-12 — Plan', 'Fix for YAZ-12'])
   })
 
   it('S72: `yaz-12` does not show `YAZ-1` or `YAZ-120`, nor the other vault\'s note 12: an ID matches whole', () => {
@@ -313,7 +343,9 @@ describe('searchRows: the search box finds a note by its number (YAZ-2677 D9)', 
   })
 
   it('S74: a pasted link `[[YAZ-12]]`, a file name `plan-yaz-12.md` and a whole path are that note (YAZ-2420 D32)', () => {
-    for (const pasted of ['[[YAZ-12]]', '[[yaz-12|the plan]]', 'plan-yaz-12.md', '/Users/y/vault/work/plan-yaz-12.md']) expect(found(pasted)).toEqual(['YAZ-12 — Plan'])
+    for (const pasted of ['[[yaz-12|the plan]]', 'plan-yaz-12.md', '/Users/y/vault/work/plan-yaz-12.md']) expect(found(pasted)).toEqual(['YAZ-12 — Plan'])
+    // `[[YAZ-12]]` reads as the words `yaz` and `12`, which start words of `Fix for YAZ-12` (YAZ-3748 D2): as `YAZ-12` typed (S71), after the ID.
+    expect(found('[[YAZ-12]]')).toEqual(['YAZ-12 — Plan', 'Fix for YAZ-12'])
   })
 
   it('S75: an old ID, pasted or typed, is its note under its title, as before', () => {

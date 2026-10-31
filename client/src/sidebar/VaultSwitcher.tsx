@@ -38,7 +38,7 @@
  * filter matches the display name AND the folder name (D6) — one row per vault, at its better rank.
  *
  * The keyboard model (D7): ranking is `matchLinkCandidates` over those names (the `[[` picker's
- * ranking: exact, then prefix, then substring; an empty query is MRU order), and the ranked rows
+ * ranking: exact, then prefix, then substring, then a word match, then a joined match (YAZ-3748 D2); an empty query is MRU order), and the ranked rows
  * are then put in the two groups (YAZ-2555 A6) — a group with no match shows no label. One highlighted row;
  * with an EMPTY query it starts on the first row that is NOT the current vault — so ⌘O ⏎ jumps to
  * the last-used OTHER vault, an open one first, like ⌘Tab — with a typed query on the top row, and with no match on

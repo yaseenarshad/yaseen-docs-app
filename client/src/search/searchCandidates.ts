@@ -7,7 +7,8 @@
  * row (`folderCandidates`, fed from the tree the Sidebar already holds — 🔒 D1), matched by its own
  * title through the same matcher, in the same ranking. Amended again by 🔒 D3 on YAZ-2620: the
  * search finds each row the tree shows, so a tree file that is no note is one row too
- * (`fileCandidates`), matched by its file name. The sidebar draws the ranked rows as a tree
+ * (`fileCandidates`), matched by its file name. Amended by B4 on YAZ-3748: a note whose file name was given by hand is
+ * one more row, matched by that file name (`ownFileName`). The sidebar draws the ranked rows as a tree
  * (`searchTree`); the shortcut picker, over notes alone, as the flat list.
  *
  * Deliberately NOT `linkCandidates`: a link candidate must insert text that resolves back to its
@@ -17,6 +18,7 @@
  */
 import { boardBaseName } from '@shared/fileKind'
 import { holdsId } from '@shared/noteId'
+import { kebabTitle } from '@shared/noteName'
 import type { IndexRecord } from '@shared/types'
 import { basename, relTo } from '../lib/paths'
 import { matchLinkCandidates } from '../links/completion'
@@ -26,11 +28,11 @@ import { foldersByDir } from '../links/shortcuts'
 export interface SearchCandidate {
   /** What the row is: a note or another file (`file`), or a folder (`dir`). Enter OPENS a file's page and shows a folder in Files (YAZ-2662 D1). */
   kind: 'file' | 'dir'
-  /** The text the query matches: the note's title, one of its aliases, the folder's title, or another file's name. */
+  /** The text the query matches: the note's title, one of its aliases, its file name given by hand (YAZ-3748 B4), the folder's title, or another file's name. */
   name: string
   /** `name.toLowerCase()`, precomputed so the ranking scan (GRO-2197) allocates nothing per keystroke. */
   lower: string
-  /** Row text: the title, or `Alias — Title` (the alias row's disambiguation). */
+  /** Row text: the title, `Alias — Title` (the alias row's disambiguation), or `basename — Title` (the file-name row, B4). */
   label: string
   /** Absolute path — the open (or reveal) action's target. */
   path: string
@@ -49,7 +51,9 @@ export const SEARCH_CAP = 50
  * Candidates for one index snapshot, in records order (i.e. path-sorted): every record under its
  * title, followed by one row per frontmatter alias. An alias equal to its own title
  * (case-insensitively) is SKIPPED — it would only duplicate the row above it (mirrors
- * `linkCandidates`' degenerate-alias skip). `letters` are the vault's ID letters
+ * `linkCandidates`' degenerate-alias skip). Then one row for the FILE NAME, read `basename — Title` as an alias row
+ * is, when the note was named by hand (`ownFileName`, YAZ-3748 B4): `2026-10-28` finds `2026-10-28-sync.md` titled
+ * "Weekly sync". `linkCandidates` gets no such row. `letters` are the vault's ID letters
  * (`IndexResponse.letters`): the ones it had before ride on each row that has an id.
  */
 export function searchCandidates(records: readonly IndexRecord[], letters: readonly string[] = []): SearchCandidate[] {
@@ -57,8 +61,26 @@ export function searchCandidates(records: readonly IndexRecord[], letters: reado
   return records.flatMap((r) => {
     const row = (name: string, label: string): SearchCandidate => ({ kind: 'file', name, lower: name.toLowerCase(), label, path: r.path, folder: r.folder })
     const aliases = r.aliases.filter((alias) => alias.toLowerCase() !== r.title.toLowerCase())
-    return [{ ...row(r.title, r.title), id: r.id, ...was }, ...aliases.map((alias) => row(alias, `${alias} — ${r.title}`))]
+    const rows = [{ ...row(r.title, r.title), id: r.id, ...was }, ...aliases.map((alias) => row(alias, `${alias} — ${r.title}`))]
+    if (ownFileName(r)) rows.push(row(r.basename, `${r.basename} — ${r.title}`))
+    return rows
   })
+}
+
+/**
+ * True when a note's file name says something its title and aliases do not (YAZ-3748 B4, as the lead narrowed it, and
+ * 4A finding 5): the basename is, in any case, neither the title nor an alias; for a note with an id, it is not the id
+ * and does not end with `-<id>`; for a note without one, it is not `kebabTitle(title)`. An ID vault names each file
+ * from its title and id (`working-log-k3m9x2pq.md`), and a name it built for an older title keeps the id too: the id
+ * already finds that note (`holdsId`), so a row would only double every row. `kebabTitle` runs only for a note without
+ * an id. Read once per index snapshot.
+ */
+function ownFileName(r: IndexRecord): boolean {
+  const file = r.basename.toLowerCase()
+  if (file === r.title.toLowerCase() || r.aliases.some((alias) => alias.toLowerCase() === file)) return false
+  if (r.id === undefined) return file !== kebabTitle(r.title).toLowerCase()
+  const id = r.id.toLowerCase()
+  return file !== id && !file.endsWith(`-${id}`)
 }
 
 /** The letters a vault had before, as a candidate carries them: one shared list, and no key at all for a vault that had none. */
@@ -111,7 +133,7 @@ function firstRows(rows: SearchCandidate[], first: ReadonlySet<string>): SearchC
 }
 
 /**
- * Rows matching `query`, ranked exact → prefix → substring by the shared matcher, capped at SEARCH_CAP.
+ * Rows matching `query`, ranked exact → prefix → substring → word → joined by the shared matcher (YAZ-3748 D2), capped at SEARCH_CAP.
  * `first` is the paths of the rows that are a pinned item or are inside one (YAZ-2662 D4): each
  * match there goes before each other match, each part in its ranked order, and the cap cuts AFTER
  * that, so it cuts no pinned match while another match shows. Without it — the shortcut picker's

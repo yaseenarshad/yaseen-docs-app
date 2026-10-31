@@ -32,12 +32,13 @@
  *    (`wikilinkPicker.test.ts` pins it).
  *
  * Matching is the shared `links/completion.ts` (one matcher with the Bases cell editors —
- * locked ruling): case-insensitive substring, cap 8. A note with frontmatter aliases (E2,
- * GRO-2214) is offered twice — under its name (inserting `[[Name]]`) and under each alias,
- * which READS `CAC — Customer Acquisition Cost` and INSERTS the piped `[[Customer Acquisition
- * Cost|CAC]]`, so the link targets the note and displays the alias. A note with a frontmatter
- * `id` (YAZ-2293, 🔒) is offered under the same rows but every one of them inserts the plain
- * `[[id]]`. When nothing matches a non-empty fragment, a single "Create" row creates the page
+ * locked ruling): case-insensitive, by text and then by words (YAZ-3748 D1), cap 8. A note
+ * with frontmatter aliases (E2, GRO-2214) is offered twice — under its name (inserting
+ * `[[Name]]`) and under each alias, which READS `CAC — Customer Acquisition Cost` and INSERTS
+ * the piped `[[Customer Acquisition Cost|CAC]]`, so the link targets the note and displays the
+ * alias. A note with a frontmatter `id` (YAZ-2293, 🔒) is offered under the same rows but every
+ * one of them inserts the plain `[[id]]`. When no row's name is the non-empty fragment
+ * (YAZ-3748 B1: it was when nothing matched), a "Create" row below the matches creates the page
  * (YAZ-1357, 🔒 D3 revised — through Links C's own `createFromLink`, staying put; see
  * `createPage`) and links it by the id it is born with — the vault's next number, which the door
  * in the main process gives (YAZ-2677 D4), so the link is `[[typed text]]` for the moment the
@@ -99,7 +100,7 @@ export function createWikilinkCandidateSource(): MutableWikilinkCandidateSource 
  * One popup row: shows `label`, inserts `[[insert]]` — the two differ for every row of a note
  * with an id (it inserts the id, YAZ-2293) and for an id-less note's alias row, which reads
  * `CAC — Customer Acquisition Cost` and inserts the piped `[[Customer Acquisition Cost|CAC]]`
- * (E2, GRO-2214). `create` rows show as Create "…" (nothing matched) and make the
+ * (E2, GRO-2214). `create` rows show as Create "…" (no row has the typed name, B1) and make the
  * page — `insert` is then its typed NAME, and the link goes in by the new page's id (`insertRow`).
  */
 interface PickerRow {
@@ -159,11 +160,18 @@ function findContext(state: EditorState): { from: number; to: number; fragment: 
   return { from: $from.pos - fragment.length - 2, to: $from.pos, fragment }
 }
 
-/** Matches through the shared matcher; a non-empty fragment nothing matches offers Create. */
+/**
+ * Matches through the shared matcher, then Create for a non-empty fragment that no matched row is NAMED (trimmed, any
+ * case; YAZ-3748 B1). The word tiers find more rows than the text did, so "nothing matched" no longer means "no page has
+ * this name": `q4 meeting notes` finds `Meeting notes Q4` and still offers to create its own page. An exact name ranks
+ * first (tier 0), so it is among the matches whenever one exists.
+ */
 function rowsFor(fragment: string, candidates: readonly LinkCandidate[]): PickerRow[] {
   const matches = matchLinkCandidates(candidates, fragment)
-  if (matches.length > 0) return matches.map(({ label, insert }) => ({ label, insert, create: false }))
-  return fragment.trim() === '' ? [] : [{ label: fragment, insert: fragment, create: true }]
+  const rows = matches.map(({ label, insert }): PickerRow => ({ label, insert, create: false }))
+  const typed = fragment.trim().toLowerCase()
+  if (typed === '' || matches.some((m) => (m.lower ?? m.name.toLowerCase()) === typed)) return rows
+  return [...rows, { label: fragment, insert: fragment, create: true }]
 }
 
 /**
