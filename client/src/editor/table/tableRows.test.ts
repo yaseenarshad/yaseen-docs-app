@@ -147,7 +147,7 @@ describe('the menu on a table', () => {
     it('the bullet\'s own handle (the probe on its line) shows the bullet\'s rows only, no table settings (YAZ-3727 D13)', async () => {
       const { view } = await openWithHit(BULLET, (v) => v.dom.querySelector('li p')!)
       expect(labels(view)).toEqual([])
-      expect([...popupOf(view)!.querySelectorAll('.ctx-menu__strip button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Checklist', 'Bullet list', 'Numbered list', 'Text'])
+      expect([...popupOf(view)!.querySelectorAll('.ctx-menu__strip button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Bullet list', 'Numbered list', 'Checklist', 'Text'])
     })
   })
 

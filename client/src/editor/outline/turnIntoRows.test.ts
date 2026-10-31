@@ -1,6 +1,6 @@
 /**
- * The block menu's strip (YAZ-3727 D13, D14) through the real createCrepe wiring: Checklist, Bullet list, Numbered
- * list and Text as one row of toolbar buttons, the toolbar's own commands (`listButtons.ts`). With nothing highlighted
+ * The block menu's strip (YAZ-3727 D13, D14, D18) through the real createCrepe wiring: Bullet list, Numbered list,
+ * Checklist and Text as one row of toolbar buttons, the toolbar's own commands (`listButtons.ts`). With nothing highlighted
  * they change the whole list the line is in (one level); with text highlighted, the highlighted lines. The lit button
  * takes the lines out of their list, as on the toolbar. A plain line or a heading has the strip too (that line only);
  * a code block has none. "Number children" shows only when the line has children.
@@ -78,7 +78,7 @@ function posOf(view: EditorView, text: string, offset = 0): number {
   return pos
 }
 
-const STRIP = (lit: string | null) => `[${['Checklist', 'Bullet list', 'Numbered list', 'Text'].map((label) => (label === lit ? `${label}*` : label)).join(', ')}]`
+const STRIP = (lit: string | null) => `[${['Bullet list', 'Numbered list', 'Checklist', 'Text'].map((label) => (label === lit ? `${label}*` : label)).join(', ')}]`
 
 /** ⌘. through the editor's keymaps: zoom into the bullet that holds the caret. */
 function zoomInto(view: EditorView, text: string): void {
@@ -88,7 +88,7 @@ function zoomInto(view: EditorView, text: string): void {
 }
 
 describe('the block menu\'s strip turns a list into a checklist, bullets, numbers or text (YAZ-3727 D13, D14)', () => {
-  it('on a bullet: one strip, the toolbar\'s order with T last, icons only, Bullet list lit; no "Number children" on a line with no children', async () => {
+  it('on a bullet: one strip, bullets, numbers, checklist, then T (D18), icons only, Bullet list lit; no "Number children" on a line with no children', async () => {
     const { view, item } = await mount('* a\n* b\n* c\n')
     aimAt(view, 'b')
     rightClick(item)

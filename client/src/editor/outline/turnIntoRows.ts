@@ -1,8 +1,8 @@
 /**
- * The block menu's strip (YAZ-3727 D13, D14): Checklist, Bullet list, Numbered list and Text, the selection toolbar's
+ * The block menu's strip (YAZ-3727 D13, D14, D18): Bullet list, Numbered list, Checklist and Text, the selection toolbar's
  * list buttons and T (`listButtons.ts`, YAZ-3806) as one row of icon buttons, from a right-click on a line's handle or
  * dot, or on its text (D15, in the note's own menu: `blockMenuItems`), for those who find the bullet easier to reach than a selection. The same commands, so the same rule: one
- * transaction, folds and zoom kept, and the lit button takes the lines out of their list. T is last: the least used.
+ * transaction, folds and zoom kept, and the lit button takes the lines out of their list. The most used first (D18); T is last: the least used.
  *
  * The LINE is the item's first block, or the paragraph or heading, that the handle points at; never a code block, a
  * table cell, or a table, rule or image the handle points at (also in a bullet). Which lines change:
@@ -15,7 +15,7 @@
 import { TextSelection, type Command, type EditorState, type Selection } from '@milkdown/kit/prose/state'
 import type { Node } from '@milkdown/kit/prose/model'
 import type { MenuStrip, RowProvider } from '../blockHandleMenu'
-import { allLinesAre, LIST_KINDS, listLines, toggleListKind, turnLinesIntoText, type LinePick, type ListKind } from '../listButtons'
+import { allLinesAre, listLines, toggleListKind, turnLinesIntoText, type LinePick, type ListKind } from '../listButtons'
 import { ownIcon, TOOLBAR_LABELS } from '../toolbarButtons'
 import { getZoomedItemPos } from './zoom'
 
@@ -45,6 +45,9 @@ function wholeList(state: EditorState, line: number): number | null {
   if ($line.before(-1) === getZoomedItemPos(state)) return null
   return $line.before(-2)
 }
+
+/** The strip's order (D18): the most used first. The toolbar keeps its own (`LIST_KINDS`). */
+const STRIP_KINDS: readonly ListKind[] = ['bulletList', 'numberedList', 'checklist']
 
 /** The toolbar's T is drawn as SVG text; a strip button holds no text (its tooltip names it), so here it is a shape. */
 const T_GLYPH = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M7 6.5h10v2.4h-3.8V18h-2.4V8.9H7z"/></svg>'
@@ -81,7 +84,7 @@ export const turnIntoRows: RowProvider = (view, target) => {
     kind: 'strip',
     label: 'Turn into',
     group: 'kind',
-    buttons: [...LIST_KINDS.map((kind) => button(kind, toggleListKind(kind, pick))), button('text', turnLinesIntoText(pick))],
+    buttons: [...STRIP_KINDS.map((kind) => button(kind, toggleListKind(kind, pick))), button('text', turnLinesIntoText(pick))],
   }
   return [strip]
 }

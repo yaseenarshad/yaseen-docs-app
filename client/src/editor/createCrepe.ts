@@ -85,7 +85,7 @@
  *  - Block handle menu (YAZ-726, `blockHandleMenu.ts`): right-click on the 6-dot handle opens a
  *    `.ctx-menu` popup; rows (or picker rows, YAZ-3164) are data from a provider;
  *    capture-suppresses Crepe's right-button mousedown/mouseup so the selection/focus don't jump.
- *    Rows: the line's kind, one strip of the toolbar's buttons (Checklist, Bullet list, Numbered list, T), for the
+ *    Rows: the line's kind, one strip of the toolbar's buttons (Bullet list, Numbered list, Checklist, T; D18), for the
  *    whole list the line is in, or the highlighted lines (YAZ-3727 D13, D14, `outline/turnIntoRows.ts`, also on a
  *    plain line or a heading); then Number children
  *    ↔ Bullet children (YAZ-729, `outline/numberChildrenRow.ts`), only when the item has a direct child list. On a numbered line, "Bullets with written numbers" turns its list

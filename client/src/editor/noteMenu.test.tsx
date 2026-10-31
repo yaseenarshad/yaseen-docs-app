@@ -135,7 +135,7 @@ describe('the right-click (YAZ-3653)', () => {
     const event = rightClick(view.dom.querySelector('p')!)
     expect(event.defaultPrevented).toBe(true)
     // The bullet's Turn into strip first (YAZ-3727 D15), then the clipboard rows.
-    expect([...document.querySelectorAll('.ctx-menu [role=menuitem]')].map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['Checklist', 'Bullet list', 'Numbered list', 'Text', 'Cut', 'Copy', 'Copy as', 'Paste', 'Paste as'])
+    expect([...document.querySelectorAll('.ctx-menu [role=menuitem]')].map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['Bullet list', 'Numbered list', 'Checklist', 'Text', 'Cut', 'Copy', 'Copy as', 'Paste', 'Paste as'])
   })
 
   it('Without folded lines on a right-clicked bullet: main is asked, and the copy is that bullet without its folded lines', async () => {
@@ -272,7 +272,7 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
         el.classList.contains('ctx-menu__strip') ? `<${[...el.querySelectorAll('button')].map((b) => `${b.getAttribute('aria-label')}${b.getAttribute('aria-pressed') === 'true' ? '*' : ''}`).join(', ')}>` : el.textContent,
       ),
     )
-  const STRIP = (lit: string | null) => `<${['Checklist', 'Bullet list', 'Numbered list', 'Text'].map((label) => (label === lit ? `${label}*` : label)).join(', ')}>`
+  const STRIP = (lit: string | null) => `<${['Bullet list', 'Numbered list', 'Checklist', 'Text'].map((label) => (label === lit ? `${label}*` : label)).join(', ')}>`
   const CLIPBOARD = [['Cut', 'Copy', 'Copy as'], ['Paste', 'Paste as']]
   const press = (label: string) => act(() => document.querySelector<HTMLButtonElement>(`.ctx-menu__strip button[aria-label="${label}"]`)!.click())
 
