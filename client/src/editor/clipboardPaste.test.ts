@@ -308,6 +308,18 @@ describe('pasted numbers: a plain run is a real list (YAZ-3727 D6), any other la
     expect(undo(view.state, view.dispatch)).toBe(true)
     expect(view.state.doc.toJSON()).toEqual(before)
   })
+  it('Google Docs: a lettered sublist stays under its parent, and the parent numbers stay 1, 2 (YAZ-3911)', async () => {
+    const { view, crepe } = await mount()
+    pasteHtml(
+      view,
+      '<b id="docs-internal-guid-1"><ol><li dir="ltr" style="list-style-type:decimal" aria-level="1"><p dir="ltr"><span>One</span></p></li>' +
+        '<ol><li dir="ltr" style="list-style-type:lower-alpha" aria-level="2"><p dir="ltr"><span>Sub a</span></p></li></ol>' +
+        '<li dir="ltr" style="list-style-type:decimal" aria-level="1"><p dir="ltr"><span>Two</span></p></li></ol></b>',
+      'One\nSub a\nTwo',
+    )
+    expect(numberedLists(view)).toEqual(['1: One, Two'])
+    expect(getMarkdownForSave(crepe)).toContain('a. Sub a')
+  })
 })
 
 describe('explicit paste modes through the native menu subscription', () => {

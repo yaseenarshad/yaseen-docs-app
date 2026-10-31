@@ -109,6 +109,24 @@ describe('typing a marker on a plain line starts a list line (YAZ-3727 D8)', () 
     expect(saved(crepe)).toBe('1. a / 2. b /  / 5) c')
   })
 
+  it('a plain line right above a list of the same kind joins it: "1. " above "1. b" numbers on, "* " above "* b" (YAZ-3852 nit 1)', async () => {
+    const numbered = await mount('a\n\n1. b\n2. c\n', 'a')
+    numbered.view.dispatch(numbered.view.state.tr.setSelection(TextSelection.create(numbered.view.state.doc, numbered.view.state.selection.from - 1)))
+    type(numbered.view, '1. ')
+    expect(saved(numbered.crepe)).toBe('1. a / 2. b / 3. c')
+    const bullets = await mount('a\n\n* b\n', 'a')
+    bullets.view.dispatch(bullets.view.state.tr.setSelection(TextSelection.create(bullets.view.state.doc, bullets.view.state.selection.from - 1)))
+    type(bullets.view, '* ')
+    expect(saved(bullets.crepe)).toBe('* a / * b')
+    // A number that neither starts that list nor comes right before it stays a list of its own.
+    const apart = await mount('a\n\n1. b\n', 'a')
+    apart.view.dispatch(apart.view.state.tr.setSelection(TextSelection.create(apart.view.state.doc, apart.view.state.selection.from - 1)))
+    type(apart.view, '5. ')
+    let lists = 0
+    apart.view.state.doc.forEach((node) => { if (node.type.name === 'ordered_list') lists++ })
+    expect(lists).toBe(2)
+  })
+
   it('a plain "* " right after a bullet list joins it', async () => {
     const { crepe, view } = await mount('* a\n\nc\n', 'c')
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from - 1)))

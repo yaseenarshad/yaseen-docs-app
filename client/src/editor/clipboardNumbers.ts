@@ -108,6 +108,12 @@ export function literalNumberedHTML(html: string, keepPlain: boolean): string {
   if (!template) return html
   // Foreign context can recreate an ordered list even when its visible HTML has no OL.
   for (const node of template.content.querySelectorAll('[data-pm-slice]')) node.removeAttribute('data-pm-slice')
+  // Google Docs puts a sublist beside the items, not in one: move it into the item before it, as ProseMirror would, so
+  // a lettered sublist that turns into text below stays under its parent and takes no number of its own (YAZ-3911).
+  for (const nested of template.content.querySelectorAll('ol > ol, ol > ul, ul > ol, ul > ul')) {
+    const before = nested.previousElementSibling
+    if (before?.tagName === 'LI') before.append(nested)
+  }
   // Prefix parents before converting children, so empty parent labels stay separate.
   for (const list of template.content.querySelectorAll('ol')) {
     const items = [...list.children].filter((child): child is HTMLLIElement => child.tagName === 'LI')

@@ -8,7 +8,8 @@
  *    after `n.` or `*` / `-` / `+` that is the whole text from the line start to the caret, on a line that is in no list
  *    item and not code. The space goes in as plain typing (it joins the typing's undo step); THEN the line becomes a list
  *    line as its own undo step (`closeHistory`). A number starts its list at `n`; right after a numbered list it joins
- *    that list when it follows on (`childCount + order === n`), and a bullet joins a bullet list right above. Inside a
+ *    that list when it follows on (`childCount + order === n`), and a bullet joins a bullet list right above; right
+ *    before a list of its kind it joins that one too (a number when the list starts at `n` or `n + 1`). Inside a
  *    list item the marker stays text (YAZ-1329: `* 6) text` is bullet text).
  *  - `undoListMarker` ($shortcut, Backspace at priority 200, above the outliner's 100): right after a conversion it runs
  *    history `undo`, the same as ⌘Z: the line is plain `1. ` again, caret after the space. A second ⌘Z takes the typed
@@ -62,6 +63,11 @@ export const listMarkerTyping = $prose((ctx) => {
         // No list fits here (a table cell): the space stays as typed text.
         if (!range || !wrapping) return true
         tr.wrap(range, wrapping)
+        // Right above a list of the same kind: join it too (a number when that list starts at `n` or `n + 1`), so the
+        // file holds one list, not two that remark keeps apart with `1)` (YAZ-3852 nit 1). Below first: it moves nothing above.
+        const listEnd = start - 1 + tr.doc.nodeAt(start - 1)!.nodeSize
+        const after = tr.doc.resolve(listEnd).nodeAfter
+        if (after?.type === listType && canJoin(tr.doc, listEnd) && (listType === bulletType || [order, order + 1].includes(after.attrs.order as number))) tr.join(listEnd)
         const before = tr.doc.resolve(start - 1).nodeBefore
         if (before?.type === listType && canJoin(tr.doc, start - 1) && (listType === bulletType || before.childCount + (before.attrs.order as number) === order)) tr.join(start - 1)
         view.dispatch(tr.setMeta(typingKey, true))

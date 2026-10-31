@@ -104,6 +104,16 @@ describe('listMarkers: the marker follows its list (YAZ-3727 D2)', () => {
     expect(markers(crepe)).toEqual(['Keys: bullet •', 'version: ordered 1.', 'status: ordered 2.'])
   })
 
+  it('an attribute-only step (the list start set to 5) relabels the list: it is not typing (YAZ-3852 nit 2)', async () => {
+    const { crepe } = await mount('1. one\n2. two\n')
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.setNodeAttribute(0, 'order', 5))
+    })
+    expect(md(crepe)).toBe('5. one\n6. two\n')
+    expect(markers(crepe)).toEqual(['one: ordered 5.', 'two: ordered 6.'])
+  })
+
   it('a numbered list that starts at 8 keeps 8, 9, 10 after an edit', async () => {
     const { crepe } = await mount('8. eight\n9. nine\n10. ten\n')
     select(crepe, endOf(crepe, 'nine'))

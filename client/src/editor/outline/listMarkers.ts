@@ -19,6 +19,7 @@
 import { listItemSchema, orderedListSchema } from '@milkdown/kit/preset/commonmark'
 import type { Node } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { AttrStep } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { LIST_NODE_NAMES } from './listNodes'
 
@@ -39,6 +40,8 @@ export const listMarkers = $prose(
         // changes no label. Both sides: a join deletes across two items, yet lands inside one textblock.
         const typing = transactions.every((tr) =>
           tr.steps.every((step, i) => {
+            // An attribute step maps no range, yet can change a list's start (YAZ-3852 nit 2).
+            if (step instanceof AttrStep) return false
             const before = tr.docs[i]
             const after = tr.docs[i + 1] ?? tr.doc
             let inside = true
@@ -54,13 +57,16 @@ export const listMarkers = $prose(
         // The ranges the change wrote, mapped forward to the new document.
         const ranges: Array<[number, number]> = []
         for (const tr of transactions) {
-          for (const map of tr.mapping.maps) {
+          tr.steps.forEach((step, i) => {
+            const map = tr.mapping.maps[i]
             for (const range of ranges) {
               range[0] = map.map(range[0], -1)
               range[1] = map.map(range[1], 1)
             }
             map.forEach((_oldFrom, _oldTo, from, to) => ranges.push([from, to]))
-          }
+            // An attribute step writes no range: its node is the range.
+            if (step instanceof AttrStep) ranges.push([step.pos, step.pos + 1])
+          })
         }
         // Each list that holds an end of a written range, or sits inside one, once (keyed by its position).
         const { doc } = state
