@@ -366,6 +366,29 @@ describe('the window\'s Back list (YAZ-3647 D2, replaces GRO-2091 A): each zoom 
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L1 a') - 2)
   })
 
+  it('a dot and a crumb read the "Bullet dots" gestures at the click (YAZ-3936): swapped bindings swap what they do; a click no row has is the editor\'s', async () => {
+    const onOpen = vi.fn()
+    let hotkeys: Record<string, string | null> = {}
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onOpen, hotkeys: () => hotkeys } })
+    const glyph = itemEl(root, 'L2 a').querySelector<HTMLElement>(':scope > .label-wrapper')!
+    const click = (el: HTMLElement, init: MouseEventInit = {}) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init }))
+    // ⌘-click zooms in, a plain click opens behind, ⇧-click is no row's.
+    hotkeys = { 'bullets.thisTab': 'CmdOrCtrl+Click', 'bullets.backgroundTab': 'Click', 'bullets.newTab': null }
+    click(glyph)
+    expect(onOpen.mock.calls).toEqual([[keyAt(crepe, 'L2 a'), true, 'L2 a']])
+    expect(click(glyph, { shiftKey: true })).toBe(true) // not prevented: the editor's
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(zoomedPos(crepe)).toBeNull()
+    click(glyph, { metaKey: true })
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
+    // A crumb follows them too; any other click on a crumb zooms.
+    const crumb = (label: string) => [...root.querySelectorAll<HTMLButtonElement>(`.${ZOOM_CRUMB_CLASS}`)].find((b) => b.textContent === label)!
+    click(crumb('Notes'))
+    expect(onOpen.mock.calls.at(-1)).toEqual([null, true, null])
+    click(crumb('Notes'), { shiftKey: true })
+    expect(zoomedPos(crepe)).toBeNull()
+  })
+
   it('⇧-click on a bullet\'s text extends the selection and opens no tab: only the dot opens one (YAZ-3647 E5)', async () => {
     const onOpen = vi.fn()
     const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onOpen } })

@@ -1,7 +1,9 @@
 /**
  * Standard Markdown link interaction (YAZ-1309).
  *
- * A primary mousedown owns navigation before ProseMirror can move the caret. Right-click owns the
+ * A primary mousedown with an open gesture (Settings › Hotkeys › "Links in a note", YAZ-3936) owns navigation before
+ * ProseMirror can move the caret; a plain click in an editable note puts the caret in the link's words, as on text
+ * (YAZ-3935), and a read-only note keeps "a click opens". Right-click owns the
  * one link menu (YAZ-3609 D23, `linkMenu.ts`), whose edit/remove actions delegate to Crepe's existing link-tooltip
  * API; no parallel link model or serializer is introduced. Fragment-only hrefs deliberately fall
  * through because they are document-local. A link into a vault of the window opens in a tab here
@@ -16,6 +18,9 @@ import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { fileKind } from '@shared/fileKind'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import type { GestureAction } from '@shared/keys'
+import { linkClickAction } from './linkGesture'
 import { fileLabel } from '../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkActions, type LinkMenu } from './linkMenu'
 import { vaultSpan } from './wikilink/wikilinkPlugin'
@@ -25,8 +30,10 @@ export interface MarkdownLinkNav extends LinkActions {
   open: (href: string) => Promise<void> | void
   /** A link to a page, folder or file of this vault (YAZ-3609 D8): its path, or null to leave it to `open`. */
   inApp?: (href: string) => string | null
-  /** Opens that path: in this tab, or in a background tab for a ⌘-click. */
-  openPath?: (path: string, background: boolean) => void
+  /** Opens that path where the open gesture says (YAZ-3936): this tab, a new tab or a background tab. */
+  openPath?: (path: string, where: GestureAction) => void
+  /** The user's changes of Settings › Hotkeys (`settings.hotkeys`), read at each click: the gestures that open a link. Absent → the defaults. */
+  hotkeys?: () => HotkeyOverrides | undefined
   /** A link into a vault the app knows but this window does not show (YAZ-3609 D21): true when the host asked to add it. */
   elsewhere?: (href: string, background: boolean) => boolean
   /** A link into a vault of this window, found or not (YAZ-3609 D19): its absolute path, or null. Such a link is a pill. */
@@ -162,7 +169,7 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
  * has the place rows (Show in sidebar, Copy path, Focus, Favorites, "Open in ▸"). Any other link opens only through
  * the OS, and "Copy address" copies its href.
  */
-function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, background: boolean) => void): LinkMenu {
+function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, where: GestureAction) => void): LinkMenu {
   const path = nav.vaultPath?.(hit.href) ?? null
   // The page's name as the sidebar shows it (YAZ-3778 D2): no `.md`, no drawing's or diagram's extension.
   const name = path === null ? null : fileLabel(path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1))
@@ -172,8 +179,8 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
   const found = path === null ? null : (nav.inApp?.(hit.href) ?? null)
   return {
     labels: name === null || name === '' ? [] : [vault === null ? name : `${name} (${vault})`],
-    open: local ? undefined : () => follow(hit.href, false),
-    openNew: path === null ? undefined : () => follow(hit.href, true),
+    open: local ? undefined : () => follow(hit.href, 'thisTab'),
+    openNew: path === null ? undefined : () => follow(hit.href, 'backgroundTab'),
     copyName: name === null || name === '' ? undefined : () => copyText(name, 'name', nav.onNotice, nav.copy, true),
     copyAddress: path === null ? () => copyText(hit.href, 'address', nav.onNotice, nav.copy) : undefined,
     ...(found === null ? {} : placeRows(found, nav, nav.onNotice, nav.copy)),
@@ -186,12 +193,12 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
   $prose((ctx) => {
     let close = () => {}
 
-    /** Opens `href` as a click on a link does: a page or file of a vault in the window in a tab (⌘: behind, D8, D14), anything else through the OS. */
+    /** Opens `href` as an open gesture does: a page or file of a vault in the window in a tab, `where` it says (D8, D14, YAZ-3936), anything else through the OS. */
     const type = linkSchema.type(ctx)
-    const follow = (href: string, background: boolean) => {
+    const follow = (href: string, where: GestureAction) => {
       const path = nav.inApp?.(href) ?? null
-      if (path !== null && nav.openPath !== undefined) nav.openPath(path, background)
-      else if (nav.elsewhere?.(href, background) !== true) attempt(() => nav.open(href), 'Could not open link', nav.onNotice)
+      if (path !== null && nav.openPath !== undefined) nav.openPath(path, where)
+      else if (nav.elsewhere?.(href, where === 'backgroundTab') !== true) attempt(() => nav.open(href), 'Could not open link', nav.onNotice)
     }
 
     return new Plugin<DecorationSet>({
@@ -229,11 +236,14 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
         decorations: (state) => markdownLinkKey.getState(state),
         handleDOMEvents: {
           mousedown: (view, event) => {
-            if (event.button !== 0 || event.altKey || event.shiftKey || event.ctrlKey) return false
+            if (event.button !== 0) return false
             const hit = linkHit(view, ctx, event.target)
             if (hit === null || hit.href.startsWith('#')) return false
+            // Only an open gesture opens (YAZ-3936); a plain click in an editable note puts the caret in the words (YAZ-3935).
+            const where = linkClickAction(view, event, nav.hotkeys?.())
+            if (where === null) return false
             event.preventDefault()
-            follow(hit.href, event.metaKey)
+            follow(hit.href, where)
             return true
           },
           contextmenu: (view, event) => {
@@ -270,7 +280,7 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
           event.preventDefault()
           event.stopPropagation()
           const href = anchor.getAttribute('href') ?? ''
-          if (href !== '' && !href.startsWith('#')) follow(href, event.metaKey || event.button === 1)
+          if (href !== '' && !href.startsWith('#')) follow(href, event.metaKey || event.button === 1 ? 'backgroundTab' : 'thisTab')
         }
         document.addEventListener('click', onPreviewClick, true)
         document.addEventListener('auxclick', onPreviewClick, true)

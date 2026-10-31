@@ -133,7 +133,7 @@ test('step 6 — the links now render UNRESOLVED, and clicking one recreates the
   await expect(link).toBeVisible()
   await expect(link).toHaveClass(/wikilink--unresolved/)
   await shoot(win, 'delete-06-unresolved-link')
-  await link.click()
+  await link.click({ modifiers: ['Meta'] }) // an open gesture (YAZ-3936): a plain click puts the caret
   // Create-on-click makes the page again, named as the link spells it (a plain vault, YAZ-2523
   // 🔒 V3) — an accidental delete is recoverable here.
   await expect.poll(() => readFile(path.join(vault, 'Doomed.md'), 'utf8').catch(() => null)).toBe('')

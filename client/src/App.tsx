@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
-import type { KeyScope } from '@shared/keys'
+import type { GestureAction, KeyScope } from '@shared/keys'
 import type { TextFormatting } from '@shared/textFormatting'
 import { BETWEEN_VAULTS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import { api, BridgeRequestError } from './api'
@@ -1136,20 +1136,19 @@ export function App() {
   // Ref-backed, because a new `onOpenFile` identity would rebuild every mounted editor.
   const reviewing = useRef(false)
   reviewing.current = reviewer !== null
-  // A link click opens where Settings › Files & Links › Open a link in says (YAZ-3609 D11), read through a ref too.
-  const linkOpen = useRef(settings.linkOpen)
-  linkOpen.current = settings.linkOpen
   const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : navigate)(path), [openBackground, navigate])
   /** The open tabs' pages, read at click time: a link to one of them goes to its tab, whatever the setting says. */
   const openPaths = useRef(tabs)
   openPaths.current = tabs
-  /** A click on a link in a note (YAZ-3609 D11): where the setting says. A folder view's row, a backlink and a code jump use `openFromPage`. */
-  const openLink = useCallback((path: string) => {
+  /**
+   * A link opened from a note: where its gesture's action says (YAZ-3936, Settings › Hotkeys › "Links in a note"), this
+   * tab when none says. A folder view's row, a backlink and a code jump use `openFromPage`.
+   */
+  const openLink = useCallback((path: string, where: GestureAction = 'thisTab') => {
     // Back returns to the page with the link wherever the page opens: the window's one Back list (YAZ-3647 D4). A review's open is no link click.
-    if (reviewing.current) openBackground(path)
-    // A page another tab shows: go to that tab (D10), as "This tab" does. A background open would do nothing.
-    else if (linkOpen.current === 'this-tab' || openPaths.current.some((tab) => tab.path === path)) navigate(path)
-    else if (linkOpen.current === 'background-tab') openBackground(path)
+    if (reviewing.current || where === 'backgroundTab') openBackground(path)
+    // A page another tab shows: go to that tab (D10), as "This tab" does.
+    else if (where === 'thisTab' || openPaths.current.some((tab) => tab.path === path)) navigate(path)
     else openKept(path)
   }, [openBackground, navigate, openKept])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.

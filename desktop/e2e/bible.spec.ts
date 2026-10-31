@@ -245,14 +245,14 @@ test('step 3 — navigating the encyclopedia: click → current tab, ⌘-click �
   await expect(editorOf(win)).toContainText('Open pipeline through to closed-won')
   await expect(tabsOf(win)).toHaveCount(1)
 
-  await linkIn(win, 'CRM Hygiene').click()
+  await linkIn(win, 'CRM Hygiene').click({ modifiers: ['Meta'] }) // Links › Open in this tab (YAZ-3936)
   await expect(activeTab(win)).toHaveText('CRM Hygiene')
   await expect(editorOf(win)).toContainText('The parent SKU')
   await expect(tabsOf(win)).toHaveCount(1) // the funnel page's slot, not a new tab
 
   await fileRow(win, 'Sales-Conversion').click()
   await expect(editorOf(win)).toContainText('Open pipeline through to closed-won')
-  await linkIn(win, 'Win Rate').click({ modifiers: ['Meta'] })
+  await linkIn(win, 'Win Rate').click({ modifiers: ['Meta', 'Shift'] }) // Links › Open in a background tab (YAZ-3936)
   await expect(tabsOf(win)).toHaveText(['Sales-Conversion', 'Win Rate'])
   await expect(activeTab(win)).toHaveText('Sales-Conversion') // background: activation never moves
   await shoot(win, 'bible-03-wikilink-navigation')

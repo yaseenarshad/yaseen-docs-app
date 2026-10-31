@@ -199,7 +199,7 @@ test('step 3c — D8: a read-only outline keeps every view action, with the mous
   expect(await win.evaluate(() => document.getSelection()?.toString())).toContain('child-e2e')
   await win.waitForTimeout(700)
   expect(await readFile(outlinePath, 'utf8')).toBe(OUTLINE_BODY)
-  // A link still opens: the wiki link goes to its note.
+  // A link still opens with a plain click in a read-only note (YAZ-3879 point 6): the wiki link goes to its note.
   await editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).first().click()
   await expect(layer(win).locator('.page-title__text')).toHaveText('Ideas')
   expect(await readFile(outlinePath, 'utf8')).toBe(OUTLINE_BODY)
@@ -342,7 +342,7 @@ test('step 3f — YAZ-3140: after a click or a drag on a read-only TITLE the pag
   await pageHoldsTheKeys()
   // A wikilink open: the app reveals the note in the sidebar and focuses its row, as on main — the row holds the keys.
   await fileRow(win, 'Ideas').click()
-  await editorOf(win).locator('.wikilink', { hasText: 'Locked outline' }).first().click()
+  await editorOf(win).locator('.wikilink', { hasText: 'Locked outline' }).first().click({ modifiers: ['Meta'] }) // Ideas is editable: an open gesture (YAZ-3936)
   await expect(shown('parent-e2e')).toBeVisible()
   expect(await win.evaluate(() => document.activeElement?.closest('.tree__row') != null)).toBe(true)
   // A route with no click in the page claims the page it focuses (YAZ-3145; first launch and a tab open

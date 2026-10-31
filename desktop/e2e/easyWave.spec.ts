@@ -114,9 +114,9 @@ async function startAt(w: Page, label: string, body: string): Promise<void> {
   await expect(forwardBtn(w)).toBeDisabled()
 }
 
-/** Clicks the body wiki link `text` and waits for the SAME tab to land on `label`. */
+/** ⌘-clicks the body wiki link `text` (Links › Open in this tab, YAZ-3936) and waits for the SAME tab to land on `label`. */
 async function followLink(w: Page, text: string, label: string, body: string): Promise<void> {
-  await linkIn(w, text).click()
+  await linkIn(w, text).click({ modifiers: ['Meta'] })
   await expect(activeTab(w)).toHaveText(label)
   await expect(editorOf(w)).toContainText(body)
 }
@@ -258,7 +258,7 @@ test('step 7 — (c) a link to an already-open file activates ITS tab, and Back 
 
   // The body link now points at a file that is ALREADY open: de-dup by path wins — the CAC tab
   // activates and no third tab appears. The page that came to the front is a step (D4).
-  await linkIn(win, 'CAC').click()
+  await linkIn(win, 'CAC').click({ modifiers: ['Meta'] })
   await expect(activeTab(win)).toHaveText('CAC')
   await expect(tabsOf(win)).toHaveCount(2)
   await expect(backBtn(win)).toBeEnabled() // one list for the window: CAC's tab can go back to Lead Gen

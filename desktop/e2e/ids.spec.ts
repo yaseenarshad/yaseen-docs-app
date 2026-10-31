@@ -204,7 +204,7 @@ test('step 4 — a file from outside gets the next number at once, and a link ty
 
   await fileRow(win, 'Typed').click()
   await expect(linkIn(win, 'Guide')).toBeVisible() // the app shows the title, not the ID
-  await linkIn(win, 'Guide').click()
+  await linkIn(win, 'Guide').click({ modifiers: ['Meta'] })
   await expect(activeTab(win)).toHaveText('Guide')
 })
 
@@ -297,7 +297,7 @@ test('step 7 — "Change letters": each ID, link and file name follows, and a li
   await expect(fileRow(win, 'Late')).toBeVisible()
   await fileRow(win, 'Late').click()
   await expect(linkIn(win, 'Fresh idea')).toBeVisible()
-  await linkIn(win, 'Fresh idea').click()
+  await linkIn(win, 'Fresh idea').click({ modifiers: ['Meta'] })
   await expect(activeTab(win)).toHaveText('Fresh idea')
   expect(await read(path.join(vault, 'Late.md'))).toContain(`[[${freshId}]]`) // the old link is still on disk
   await shoot(win, 'ids-07b-old-link-opens')
@@ -330,7 +330,7 @@ test('step 8 — "Change letters" in one window: a second window on the vault op
   await expect(fileRow(other, 'Later')).toBeVisible()
   await fileRow(other, 'Later').click()
   await expect(linkIn(other, 'Fresh idea')).toBeVisible()
-  await linkIn(other, 'Fresh idea').click()
+  await linkIn(other, 'Fresh idea').click({ modifiers: ['Meta'] })
   await expect(activeTab(other)).toHaveText('Fresh idea')
   await shoot(other, 'ids-08-other-window-old-link-opens')
   await quitApp(app)

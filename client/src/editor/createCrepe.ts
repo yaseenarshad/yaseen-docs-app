@@ -564,7 +564,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.wikilinkNav !== undefined) {
     // A click and the link menu's Open rows follow a link the same way (YAZ-3609 D23).
     const follow = wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks, opts.vaultsOfLetters)
-    crepe.editor.use(createWikilinkClick(follow)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
+    const nav = opts.wikilinkNav
+    crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.())).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))

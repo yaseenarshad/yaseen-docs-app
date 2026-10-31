@@ -3,7 +3,7 @@ import type { ReviewSettings } from '@shared/reviews'
 import { DEFAULT_SETTINGS, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
-import type { HotkeyAside } from '@shared/keys'
+import type { GestureAction, HotkeyAside } from '@shared/keys'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { createDrawing } from '../drawings/createDrawing'
@@ -95,6 +95,9 @@ const MemoReviewsSection = memo(ReviewsSection)
 /** Up to 200 names (YAZ-2700): the same reason, and every one of its props is stable across a save. */
 const MemoTableOfContents = memo(TableOfContents)
 
+/** The user's key and click changes as they are now (YAZ-3936): a click on a link or a bullet dot reads its gesture then. */
+const hotkeysNow = (): HotkeyOverrides | undefined => storage.getSettings()?.hotkeys
+
 interface EditorProps {
   /** Open root folder; fold state is persisted per root + file. */
   root: string
@@ -110,12 +113,12 @@ interface EditorProps {
    */
   onOpenFileBackground?: (path: string) => void
   /**
-   * A click on a link in the note (YAZ-3609 D11): where Settings › "Open a link in" says. Only the
-   * note's `[[links]]` and Markdown links use it; a row of a folder view, a backlink and a code jump
-   * open through `onOpenFile`. Absent → `onOpenFile`.
+   * An open gesture on a link in the note (YAZ-3936): `where` its action says, this tab or a new tab. Only the note's
+   * `[[links]]` and Markdown links use it; a row of a folder view, a backlink and a code jump open through
+   * `onOpenFile`. Absent → `onOpenFile`.
    */
-  onOpenLink?: (path: string) => void
-  /** ⌘-click on a link in the note: a background tab whose Back returns to the note (YAZ-3644). Absent → `onOpenFileBackground`. */
+  onOpenLink?: (path: string, where?: GestureAction) => void
+  /** "Open in a background tab" on a link in the note: a background tab whose Back returns to the note (YAZ-3644). Absent → `onOpenFileBackground`. */
   onOpenLinkBackground?: (path: string) => void
   /**
    * The link menu's place rows (YAZ-3740): Show in sidebar, Focus and Favorites, "Open in ▸" — App's one object for
@@ -373,7 +376,7 @@ function CrepeHost({
   onOpenFile: (path: string) => void
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
-  onOpenLink?: (path: string) => void
+  onOpenLink?: (path: string, where?: GestureAction) => void
   onOpenLinkBackground?: (path: string) => void
   linkActions?: LinkActions
   onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType) => void
@@ -693,6 +696,7 @@ function CrepeHost({
         title: () => titleRef.current,
         startKey: zoomKeyRef.current ?? start?.zoomKey,
         onZoom: reportZoom,
+        hotkeys: hotkeysNow,
         onOpen: tabRef.current.onOpenBullet === undefined ? undefined : (zoom, behind, label) => {
           const { tabId: id, onOpenBullet: open } = tabRef.current
           if (id !== undefined) open?.(id, zoom, behind, label)
@@ -702,16 +706,24 @@ function CrepeHost({
       wikilinks,
       viewOnlyLinks,
       wikilinkCandidates,
-      // Wiki-link click navigation (Links C, GRO-2192): plain click → current tab, ⌘ → background
-      // tab, unresolved → create (bare targets under `createFolder` — App's `newNoteFolderFor`
-      // getter over the Files & Links location setting, C2- GRO-2240, bound to THIS file's path
-      // so the page lands beside the editor the link was clicked in, YAZ-1643; absent → the
-      // vault root) then open. Wired only when App threads the background opener — mounts
-      // without it keep clicks as plain editing.
+      // Wiki-link navigation (Links C, GRO-2192): the open gestures of Settings › Hotkeys (YAZ-3936, read at each click)
+      // open in this tab, a new tab or a background tab; unresolved → create (bare targets under `createFolder` — App's
+      // `newNoteFolderFor` getter over the Files & Links location setting, C2- GRO-2240, bound to THIS file's path so
+      // the page lands beside the editor the link was clicked in, YAZ-1643; absent → the vault root) then open. Wired
+      // only when App threads the background opener — mounts without it keep clicks as plain editing.
       wikilinkNav:
         onOpenLinkBackground === undefined
           ? undefined
-          : { ...linkActions, root, createFolder: () => newNoteFolderFor?.(file.path) ?? '', openCurrent: onOpenLink, openBackground: onOpenLinkBackground, onNotice: onNotice ?? (() => undefined) },
+          : {
+              ...linkActions,
+              root,
+              createFolder: () => newNoteFolderFor?.(file.path) ?? '',
+              openCurrent: (path) => onOpenLink(path, 'thisTab'),
+              openNewTab: (path) => onOpenLink(path, 'newTab'),
+              openBackground: onOpenLinkBackground,
+              hotkeys: hotkeysNow,
+              onNotice: onNotice ?? (() => undefined),
+            },
       // The window's vaults by their ID letters (YAZ-3905 S23): an unresolved `[[INL-4]]` names its vault.
       vaultsOfLetters: (letters) => vaultLinks.current?.vaultsOfLetters?.(letters) ?? [],
       // The hover panel of a resolved [[link]] (YAZ-3403): this note editor's alone, never a read-only preview's.
@@ -726,7 +738,8 @@ function CrepeHost({
         open: (href) => api.shell.openLink({ href, sourcePath: file.path }),
         // A link to a page or file of this vault opens in a tab, like a [[link]] (YAZ-3609 D8).
         inApp: (href) => (linkPlace === undefined ? null : hrefTarget(href, linkPlace)),
-        openPath: (target, background) => (background ? onOpenLinkBackground ?? onOpenLink : onOpenLink)(target),
+        openPath: (target, where) => (where === 'backgroundTab' ? (onOpenLinkBackground ?? onOpenLink)(target) : onOpenLink(target, where)),
+        hotkeys: hotkeysNow,
         // A link into a vault the app knows but this window does not show asks to add that vault (YAZ-3609 D21).
         elsewhere: (href, background) => {
           const target = hrefPath(href, file.path)

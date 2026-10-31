@@ -136,6 +136,8 @@ const captured = vi.hoisted(() => ({
   /** Sidebar stub renders — one per App render while the sidebar is open. */
   sidebarRenders: 0,
   editorOpeners: [] as { path: string | null; open: (path: string) => void }[],
+  /** Each Editor stub render's link opener (YAZ-3936): where an open gesture's action sends a link. */
+  linkOpeners: [] as { path: string | null; open?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void }[],
   /** The page title's commit, as the newest editor was handed it (YAZ-2420 D16). */
   editorRetitle: undefined as ((path: string, title: string, kind: 'file' | 'dir') => void) | undefined,
   viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
@@ -150,10 +152,11 @@ const captured = vi.hoisted(() => ({
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, reviewSettings, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; reviewSettings?: unknown; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
     captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView })
     if (tabId !== undefined && onZoom !== undefined) captured.zoomDoors.set(tabId, onZoom)
     captured.editorOpeners.push({ path, open: onOpenFile })
+    captured.linkOpeners.push({ path, open: onOpenLink })
     captured.editorRetitle = onRetitle
     captured.viewOnlyLinks.push(viewOnlyLinks)
     return (
@@ -621,6 +624,7 @@ afterEach(() => {
   captured.sidebar = null
   captured.startPage = null
   captured.editorOpeners = []
+  captured.linkOpeners = []
   captured.viewOnlyLinks = []
   captured.editors = []
   history.replaceState(null, '', '/')
@@ -3174,6 +3178,24 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => emitLinkOpenFile('/v/c.md'))
     expect(stripLabels(el)).toEqual(['a', 'b', 'c']) // no kept tab is replaced
     expect(activeLabel(el)).toBe('c')
+  })
+
+  it('a link opens where its gesture\'s action says (YAZ-3936): this tab, a new tab in front, a background tab; a page another tab shows goes to that tab', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const openLink = (path: string, where: 'thisTab' | 'newTab' | 'backgroundTab') => act(() => captured.linkOpeners.filter((o) => o.path === '/v/a.md').at(-1)?.open?.(path, where))
+    openLink('/v/c.md', 'backgroundTab')
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
+    expect(activeLabel(el)).toBe('a')
+    openLink('/v/b.md', 'newTab') // b has a tab: it comes to the front, no copy
+    expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
+    expect(activeLabel(el)).toBe('b')
+    act(() => captured.linkOpeners.filter((o) => o.path === '/v/b.md').at(-1)?.open?.('/v/d.md', 'newTab'))
+    expect(stripLabels(el)).toHaveLength(4)
+    expect(activeLabel(el)).toBe('d')
+    const four = stripLabels(el)
+    act(() => captured.linkOpeners.filter((o) => o.path === '/v/d.md').at(-1)?.open?.('/v/e.md', 'thisTab'))
+    expect(stripLabels(el)).toEqual(four.map((label) => (label === 'd' ? 'e' : label))) // this tab: d's tab shows e
+    expect(activeLabel(el)).toBe('e')
   })
 
   it('a tab\'s menu offers "Copy path" and no "Copy ID", for a note whose id the window\'s index holds as for a note with none, a PDF and an image (YAZ-2420 D31)', async () => {

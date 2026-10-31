@@ -40,6 +40,10 @@ const popupOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTML
 const rowsOf = (view: EditorView) => Array.from(popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
 const rowNamed = (view: EditorView, label: string) => rowsOf(view).find((row) => row.textContent === label)!
 
+/** The default "Links in a note" gestures (YAZ-3936): ⌘-click opens in this tab, ⌘⇧-click in a background tab. */
+const OPEN: MouseEventInit = { button: 0, metaKey: true }
+const BEHIND: MouseEventInit = { button: 0, metaKey: true, shiftKey: true }
+
 function mouse(target: Element, type: 'mousedown' | 'contextmenu', init: MouseEventInit = {}): MouseEvent {
   const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 10, clientY: 10, ...init })
   target.dispatchEvent(event)
@@ -47,9 +51,9 @@ function mouse(target: Element, type: 'mousedown' | 'contextmenu', init: MouseEv
 }
 
 describe('primary click', () => {
-  it('opens the href immediately, prevents caret placement, and does not change Markdown', async () => {
+  it('an open gesture opens the href immediately, prevents caret placement, and does not change Markdown', async () => {
     const { crepe, nav, root } = await mount()
-    const event = mouse(anchorOf(root), 'mousedown', { button: 0 })
+    const event = mouse(anchorOf(root), 'mousedown', OPEN)
 
     expect(event.defaultPrevented).toBe(true)
     expect(nav.open).toHaveBeenCalledWith('https://example.com')
@@ -60,14 +64,16 @@ describe('primary click', () => {
     const { nav, root } = await mount('[**Bold** label](relative/file.pdf)\n')
     const formattedSegment = Array.from(root.querySelectorAll('a')).find((anchor) => anchor.textContent === 'Bold')
     expect(formattedSegment).toBeDefined()
-    mouse(formattedSegment!, 'mousedown', { button: 0 })
+    mouse(formattedSegment!, 'mousedown', OPEN)
     expect(nav.open).toHaveBeenCalledWith('relative/file.pdf')
   })
 
   it.each([
     ['fragment-only links', '[Section](#section)\n', { button: 0 }],
     ['middle clicks', '[Example](https://example.com)\n', { button: 1 }],
-    ['modified clicks', '[Example](https://example.com)\n', { button: 0, shiftKey: true }],
+    ['a click no gesture has', '[Example](https://example.com)\n', { button: 0, shiftKey: true }],
+    // YAZ-3935 C1: in an editable note a plain click puts the caret in the link's words, as on text.
+    ['a plain click', '[Example](https://example.com)\n', { button: 0 }],
   ])('leaves %s to the editor/browser', async (_name, markdown, init) => {
     const { nav, root } = await mount(markdown)
     const event = mouse(anchorOf(root), 'mousedown', init)
@@ -79,7 +85,7 @@ describe('primary click', () => {
     const open = vi.fn().mockRejectedValue(new Error('no handler'))
     const onNotice = vi.fn()
     const { root } = await mount(undefined, { open, onNotice })
-    mouse(anchorOf(root), 'mousedown', { button: 0 })
+    mouse(anchorOf(root), 'mousedown', OPEN)
     await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith('Could not open link: no handler'))
   })
 
@@ -89,24 +95,46 @@ describe('primary click', () => {
     })
     const onNotice = vi.fn()
     const { root } = await mount(undefined, { open, onNotice })
-    expect(() => mouse(anchorOf(root), 'mousedown', { button: 0 })).not.toThrow()
+    expect(() => mouse(anchorOf(root), 'mousedown', OPEN)).not.toThrow()
     await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith('Could not open link: bridge unavailable'))
   })
 })
 
+describe('the gestures of Settings › Hotkeys, read at the click (YAZ-3936)', () => {
+  it('a changed binding works at once: "the old way" makes a plain click open; Open in a new tab goes where its gesture says', async () => {
+    const openPath = vi.fn()
+    let hotkeys = {}
+    const { root } = await mount('[Note](../note.md)\n', { inApp: () => '/v/note.md', openPath, hotkeys: () => hotkeys })
+    expect(mouse(anchorOf(root), 'mousedown', { button: 0 }).defaultPrevented).toBe(false)
+    hotkeys = { 'links.thisTab': 'Click', 'links.newTab': 'Alt+Click' }
+    expect(mouse(anchorOf(root), 'mousedown', { button: 0 }).defaultPrevented).toBe(true)
+    mouse(anchorOf(root), 'mousedown', { button: 0, altKey: true })
+    expect(mouse(anchorOf(root), 'mousedown', OPEN).defaultPrevented).toBe(false) // ⌘-click has no action now
+    expect(openPath.mock.calls).toEqual([['/v/note.md', 'thisTab'], ['/v/note.md', 'newTab']])
+  })
+
+  it('a read-only note keeps "a click opens" (YAZ-3879 point 6)', async () => {
+    const openPath = vi.fn()
+    const { crepe, root } = await mount('[Note](../note.md)\n', { inApp: () => '/v/note.md', openPath })
+    crepe.setReadonly(true)
+    expect(mouse(anchorOf(root), 'mousedown', { button: 0 }).defaultPrevented).toBe(true)
+    expect(openPath).toHaveBeenCalledExactlyOnceWith('/v/note.md', 'thisTab')
+  })
+})
+
 describe('a link into a vault this window does not show (YAZ-3609 D21)', () => {
-  it('asks the host to add the vault, and never sends the link to the OS; ⌘ asks for a background tab', async () => {
+  it('asks the host to add the vault, and never sends the link to the OS; ⌘⇧ asks for a background tab', async () => {
     const elsewhere = vi.fn(() => true)
     const { nav, root } = await mount('[Old](../Archive/old.md)\n', { inApp: () => null, elsewhere })
-    mouse(anchorOf(root), 'mousedown', { button: 0 })
-    mouse(anchorOf(root), 'mousedown', { button: 0, metaKey: true })
+    mouse(anchorOf(root), 'mousedown', OPEN)
+    mouse(anchorOf(root), 'mousedown', BEHIND)
     expect(elsewhere.mock.calls).toEqual([['../Archive/old.md', false], ['../Archive/old.md', true]])
     expect(nav.open).not.toHaveBeenCalled()
   })
 
   it('V4 a file in no vault the app knows still goes to the OS', async () => {
     const { nav, root } = await mount('[Elsewhere](/tmp/x.md)\n', { inApp: () => null, elsewhere: () => false })
-    mouse(anchorOf(root), 'mousedown', { button: 0 })
+    mouse(anchorOf(root), 'mousedown', OPEN)
     expect(nav.open).toHaveBeenCalledWith('/tmp/x.md')
   })
 })
@@ -115,25 +143,25 @@ describe('a link to this vault opens in a tab (YAZ-3609 D8, D9)', () => {
   const inApp = (href: string) => (href === '../note.md' ? '/v/note.md' : null)
 
   it.each([
-    ['L1 a click opens the current tab', {}, false],
-    ['L1 a ⌘-click opens a background tab', { metaKey: true }, true],
-  ])('%s, and never asks the OS', async (_name, init, background) => {
+    ['L1 a ⌘-click opens the current tab', OPEN, 'thisTab'],
+    ['L1 a ⌘⇧-click opens a background tab', BEHIND, 'backgroundTab'],
+  ])('%s, and never asks the OS', async (_name, init, where) => {
     const openPath = vi.fn()
     const { crepe, nav, root } = await mount('[Note](../note.md)\n', { inApp, openPath })
-    const event = mouse(anchorOf(root), 'mousedown', { button: 0, ...init })
+    const event = mouse(anchorOf(root), 'mousedown', init)
     expect(event.defaultPrevented).toBe(true)
-    expect(openPath).toHaveBeenCalledWith('/v/note.md', background)
+    expect(openPath).toHaveBeenCalledWith('/v/note.md', where)
     expect(nav.open).not.toHaveBeenCalled()
     expect(getMarkdownForSave(crepe)).toBe('[Note](../note.md)\n')
   })
 
   it.each([
-    ['L9 a click on a web link', {}],
-    ['D9 a ⌘-click on a web link', { metaKey: true }],
+    ['L9 a ⌘-click on a web link', OPEN],
+    ['D9 a ⌘⇧-click on a web link', BEHIND],
   ])('%s goes to the OS, as before', async (_name, init) => {
     const openPath = vi.fn()
     const { nav, root } = await mount('[Example](https://example.com)\n', { inApp, openPath })
-    const event = mouse(anchorOf(root), 'mousedown', { button: 0, ...init })
+    const event = mouse(anchorOf(root), 'mousedown', init)
     expect(event.defaultPrevented).toBe(true)
     expect(nav.open).toHaveBeenCalledWith('https://example.com')
     expect(openPath).not.toHaveBeenCalled()
@@ -183,11 +211,11 @@ describe('a Markdown link into a vault of the window is a pill (YAZ-3609 D19)', 
     expect(root.querySelector('.link-pill__vault')?.closest('a')).not.toBeNull()
   })
 
-  it('a click on the pill opens the link', async () => {
+  it('an open gesture on the pill opens the link', async () => {
     const openPath = vi.fn()
     const { root } = await mount('[Plan](../plan.md)\n', { vaultPath, icon, inApp: (href) => vaultPath(href), openPath })
-    mouse(root.querySelector('.link-pill')!, 'mousedown', { button: 0 })
-    expect(openPath).toHaveBeenCalledWith('/v/plan.md', false)
+    mouse(root.querySelector('.link-pill')!, 'mousedown', OPEN)
+    expect(openPath).toHaveBeenCalledWith('/v/plan.md', 'thisTab')
   })
 
   it('YAZ-3655 text typed inside and right after a pill is real text: it saves, and the pill follows its link', async () => {
@@ -218,7 +246,7 @@ describe('the address in the link popup (YAZ-3645)', () => {
     const event = new MouseEvent('click', { bubbles: true, cancelable: true })
     vault.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(true)
-    expect(openPath).toHaveBeenCalledWith('/v/note.md', false)
+    expect(openPath).toHaveBeenCalledWith('/v/note.md', 'thisTab')
     popup('https://example.com').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
     expect(nav.open).toHaveBeenCalledWith('https://example.com')
     expect(root).toBeDefined()
@@ -283,7 +311,7 @@ describe('right-click menu', () => {
     expect(nav.open).toHaveBeenCalledExactlyOnceWith('https://example.com')
   })
 
-  it('D23 a link into a vault of the window: its name and vault, Open and Open in new tab, as a click and a ⌘-click', async () => {
+  it('D23 a link into a vault of the window: its name and vault, Open (this tab) and Open in new tab (behind)', async () => {
     const openPath = vi.fn()
     const { root, view } = await mount('[the plan](../Other/Plan.md)\n', {
       inApp: () => '/Other/Plan.md',
@@ -299,7 +327,7 @@ describe('right-click menu', () => {
     rowNamed(view, 'Open in new tab').click()
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
     rowNamed(view, 'Open').click()
-    expect(openPath.mock.calls).toEqual([['/Other/Plan.md', true], ['/Other/Plan.md', false]])
+    expect(openPath.mock.calls).toEqual([['/Other/Plan.md', 'backgroundTab'], ['/Other/Plan.md', 'thisTab']])
   })
 
   it('a read-only note (YAZ-3076 D2) offers no Edit and no Remove: they would change the note', async () => {

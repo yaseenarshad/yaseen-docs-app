@@ -22,7 +22,7 @@ import { pathTitles } from '../../lib/pageLabel'
 import { folderLabel, folderRecord } from '../../links/shortcuts'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkMenu } from '../linkMenu'
 import { OPEN_ID_LINK } from './idLinkCaret'
-import { linkPosAtDOM, wikilinkMatchAt, type WikilinkNav } from './wikilinkClick'
+import { linkPosAtDOM, wikilinkMatchAt, type LinkFollow, type WikilinkNav } from './wikilinkClick'
 import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './viewOnlyLinkSource'
 
@@ -46,7 +46,7 @@ function idOf(inner: string, source: WikilinkResolveSource): string | null {
 }
 
 /** The one link menu of the `[[inner]]` at `from`..`to` (YAZ-3740, YAZ-3905). */
-function menuOf(view: EditorView, from: number, to: number, inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: (inner: string, background: boolean) => void, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined): LinkMenu {
+function menuOf(view: EditorView, from: number, to: number, inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined): LinkMenu {
   const page = linkPageName(inner)
   const titles = pathTitles(source.records, source.folders)
   const titleOf = (target: string) => idLinkTitle(target, source.resolve, titles)
@@ -81,8 +81,8 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
   return {
     labels: [...(name === undefined ? [] : [name]), ...(id === null ? [] : [id])],
     // `[[#heading]]` of this note: the heading jump is GRO-2239, so nothing to open.
-    open: page === '' ? undefined : () => follow(inner, false),
-    openNew: page === '' ? undefined : () => follow(inner, true),
+    open: page === '' ? undefined : () => follow(inner, 'thisTab'),
+    openNew: page === '' ? undefined : () => follow(inner, 'backgroundTab'),
     ...(id !== null && title !== undefined
       ? { copyNameAndId: () => copyText(nameAndId(title, id), 'name and ID', nav.onNotice, undefined, true) }
       : shown !== '' && found ? { copyName: () => copyText(shown, 'name', nav.onNotice, undefined, true) } : {}),
@@ -93,7 +93,7 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
   }
 }
 
-export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkNav, follow: (inner: string, background: boolean) => void, viewOnly?: ViewOnlyLinkSource, vaultsOf?: VaultsOfLetters) {
+export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly?: ViewOnlyLinkSource, vaultsOf?: VaultsOfLetters) {
   return $prose(() => {
     let close = () => {}
     return new Plugin({

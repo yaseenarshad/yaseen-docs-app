@@ -218,7 +218,7 @@ test('step 3 — clicking the rewritten link in A navigates to the renamed B2', 
   const link = editorOf(win).locator('.wikilink', { hasText: 'B2' }).first()
   await expect(link).toBeVisible()
   await expect(link).not.toHaveClass(/wikilink--unresolved/)
-  await link.click()
+  await link.click({ modifiers: ['Meta'] }) // an open gesture (YAZ-3936): a plain click puts the caret
   await expect(activeTab(win)).toHaveText('B2')
   await expect(editorOf(win)).toContainText(B_BODY)
   await shoot(win, 'rename-03-link-navigates')

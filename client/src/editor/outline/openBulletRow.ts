@@ -1,13 +1,14 @@
 /**
  * "Open in new tab" (YAZ-3646 D8, D9): the first row of a bullet's menu, from its dot or its 6-dot handle,
- * in a group of its own. The bullet opens in a copy of this tab right after it, zoomed into it; ⇧-click on
- * the dot does the same, so the row says so. No row off a list item, or in a page with no tab (`open`).
+ * in a group of its own. The bullet opens in a copy of this tab right after it, zoomed into it; the dot's "Open in a
+ * new tab" gesture (Settings › Hotkeys › "Bullet dots", ⇧-click by default, YAZ-3936) does the same, so the row says
+ * it, as it is now. No row off a list item, or in a page with no tab (`open`).
  */
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuRow } from '../blockHandleMenu'
 import type { HandleTarget } from '../blockHandleTarget'
 import { nearestListItem } from './numberChildren'
-import { zoomKeyAt, zoomLabelAt, type ZoomOptions } from './zoom'
+import { bulletGestureText, zoomKeyAt, zoomLabelAt, type ZoomOptions } from './zoom'
 
 const SVG = 'http://www.w3.org/2000/svg'
 
@@ -26,5 +27,6 @@ export function openBulletRow(view: EditorView, target: HandleTarget, open: Zoom
   const item = nearestListItem(view.state.doc, target.inside)
   const key = item === null ? null : zoomKeyAt(view.state.doc, item.pos)
   if (item === null || key === null) return []
-  return [{ label: 'Open in new tab', group: 'open', icon: newTabGlyph, hint: '⇧-click', run: () => open(key, false, zoomLabelAt(view.state, item.pos)) }]
+  const hint = bulletGestureText(view.state, 'newTab')
+  return [{ label: 'Open in new tab', group: 'open', icon: newTabGlyph, ...(hint === '' ? {} : { hint }), run: () => open(key, false, zoomLabelAt(view.state, item.pos)) }]
 }
