@@ -121,7 +121,7 @@ describe('editor/crepe (YAZ-2184)', () => {
     const style = createRequire(import.meta.url).resolve('@milkdown/crepe/theme/common/style.css')
     const packageFiles = [...readFileSync(style, 'utf8').matchAll(/@import '\.\/([\w-]+)\.css'/g)].map((m) => m[1])
     const imported = [...readFileSync(join(SRC, 'main.tsx'), 'utf8').matchAll(/import '@milkdown\/crepe\/theme\/common\/([\w-]+)\.css'/g)].map((m) => m[1])
-    expect(imported).toEqual(packageFiles.filter((f) => !['latex', 'top-bar', 'diff', 'ai'].includes(f)))
+    expect(imported).toEqual(packageFiles.filter((f) => !['latex', 'placeholder', 'top-bar', 'diff', 'ai'].includes(f)))
   })
 
   it("the KaTeX stylesheet latex.css used to carry now loads with the drawing surface (Excalidraw's Mermaid dialog)", () => {

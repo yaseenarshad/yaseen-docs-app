@@ -521,10 +521,10 @@ button {
   line-height: 1.3;
 }
 
-/* Heading margins scale with the block-gap setting (GRO-2071): Crepe's stock margins
-   (32/28/24/20/16/16px) are exactly 8/7/6/5/4/4 × the 4px default gap, so the Default
-   preset is pixel-identical to Crepe. bullets.css derives its heading-row label offsets
-   from the same calc — change one, change both.
+/* Heading margins scale with the block-gap setting (GRO-2071). Every level gets 3 × gap above
+   and 1 × gap below (YAZ-3794): the size already marks a new section, so a dense note keeps its
+   rhythm, and a heading stays closer to the text it starts than to the text above.
+   sectionIndent.css reaches its lines across these margins — change one, change both.
    Heading styles (YAZ-3049 D2): each level reads its own `--hN-*` variables, set on each page
    layer from its vault's text formatting (YAZ-3067 D12, settings/headingStyles.ts) only for a
    changed field. Each fallback is the look of 1.0.14; the em fallback follows the vault's Text
@@ -535,7 +535,7 @@ button {
   font-weight: var(--h1-weight, 700);
   text-decoration: var(--h1-decoration, none);
   --heading-bg: var(--h1-bg, none);
-  margin-top: calc(var(--edit-block-gap, 4px) * 8);
+  margin: calc(var(--edit-block-gap, 4px) * 3) 0 var(--edit-block-gap, 4px);
 }
 
 /* A heading BETWEEN blocks earns its lead-in; the document's FIRST block does not (YAZ-918,
@@ -552,7 +552,7 @@ button {
   font-weight: var(--h2-weight, 600);
   text-decoration: var(--h2-decoration, none);
   --heading-bg: var(--h2-bg, none);
-  margin-top: calc(var(--edit-block-gap, 4px) * 7);
+  margin: calc(var(--edit-block-gap, 4px) * 3) 0 var(--edit-block-gap, 4px);
 }
 
 .editor-instance .milkdown .ProseMirror h3 {
@@ -560,7 +560,7 @@ button {
   font-weight: var(--h3-weight, 600);
   text-decoration: var(--h3-decoration, none);
   --heading-bg: var(--h3-bg, none);
-  margin-top: calc(var(--edit-block-gap, 4px) * 6);
+  margin: calc(var(--edit-block-gap, 4px) * 3) 0 var(--edit-block-gap, 4px);
 }
 
 .editor-instance .milkdown .ProseMirror h4 {
@@ -568,7 +568,7 @@ button {
   font-weight: var(--h4-weight, 600);
   text-decoration: var(--h4-decoration, none);
   --heading-bg: var(--h4-bg, none);
-  margin-top: calc(var(--edit-block-gap, 4px) * 5);
+  margin: calc(var(--edit-block-gap, 4px) * 3) 0 var(--edit-block-gap, 4px);
 }
 
 .editor-instance .milkdown .ProseMirror h5 {
@@ -576,7 +576,7 @@ button {
   font-weight: var(--h5-weight, 600);
   text-decoration: var(--h5-decoration, none);
   --heading-bg: var(--h5-bg, none);
-  margin-top: calc(var(--edit-block-gap, 4px) * 4);
+  margin: calc(var(--edit-block-gap, 4px) * 3) 0 var(--edit-block-gap, 4px);
 }
 
 .editor-instance .milkdown .ProseMirror h6 {
@@ -584,7 +584,7 @@ button {
   font-weight: var(--h6-weight, 600);
   text-decoration: var(--h6-decoration, none);
   --heading-bg: var(--h6-bg, none);
-  margin-top: calc(var(--edit-block-gap, 4px) * 4);
+  margin: calc(var(--edit-block-gap, 4px) * 3) 0 var(--edit-block-gap, 4px);
 }
 
 /* Heading styles (YAZ-3049 D7): a highlight hugs the words, and every heading keeps its full
@@ -634,7 +634,7 @@ button {
 .editor-instance .milkdown .ProseMirror li h4,
 .editor-instance .milkdown .ProseMirror li h5,
 .editor-instance .milkdown .ProseMirror li h6 {
-  margin-top: 0;
+  margin: 0;
   padding: var(--edit-block-gap, 4px) 0;
 }
 
