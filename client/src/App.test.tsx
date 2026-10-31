@@ -6585,6 +6585,26 @@ describe('App Files window (YAZ-3357)', () => {
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ tabs: expect.arrayContaining(['/v/a.md']) }))
   })
 
+  it('YAZ-3776: the daily note button in a Files window asks main too: ⌘-click for a background tab, a click as a row click', async () => {
+    noPopup()
+    const daily = dailyNoteName(DEFAULT_SETTINGS.dailyNoteFormat, new Date()).trim()
+    const state = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyNotes: true, dailyNoteFolder: 'Daily' }, windows: [entry({ ...FILES }), entry({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })] }
+    const { bridge } = await mount(state, FILES, { [`/v/Daily/${daily}.md`]: { content: '', mtime: 1 } }, (b) => {
+      b.bridge.index.mockImplementation(async (root: string) => ({ root, records: [], folders: [], generatedAt: 1, ids: false }))
+      b.bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [{ type: 'dir', name: 'Daily', path: '/v/Daily', children: [{ type: 'file', name: `${daily}.md`, path: `/v/Daily/${daily}.md`, size: 1, mtime: 1, kind: 'markdown' }] }], generatedAt: 1 }))
+    })
+    const sidebar = await filesSidebar()
+    // The note is on disk but not in the (empty) index, so it is made: the create finds it, and it opens (a vault without IDs).
+    act(() => sidebar.onOpenDailyNote?.(true))
+    await vi.waitFor(() => expect(bridge.window.openFromFiles).toHaveBeenCalledTimes(1), { timeout: SLOW_RUNNER_MS })
+    act(() => sidebar.onOpenDailyNote?.(false))
+    await vi.waitFor(() => expect(bridge.window.openFromFiles).toHaveBeenCalledTimes(2), { timeout: SLOW_RUNNER_MS })
+    expect(bridge.window.openFromFiles.mock.calls.map(([action]) => action)).toEqual([
+      { kind: 'open', path: `/v/Daily/${daily}.md`, how: 'background' },
+      { kind: 'open', path: `/v/Daily/${daily}.md`, how: 'preview' },
+    ])
+  })
+
   it('D13: a Files window hands its sidebar "Make full window", which asks main; a full window hands none', async () => {
     noPopup()
     const { bridge } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES })] }, FILES)
