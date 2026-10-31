@@ -186,7 +186,7 @@ export function createMemoryMeter<W extends MeterWindow>(host: MemoryHost<W>, no
         jsHeapBytes: heaps[i],
         grew: grewSince(rings.get(entry.id) ?? [], bytes, t),
       }))
-      return { windows: rows.sort((a, b) => b.bytes - a.bytes), core, helpers: helperRow }
+      return { windows: rows, core, helpers: helperRow }
     },
     forget(id) {
       rings.delete(id)

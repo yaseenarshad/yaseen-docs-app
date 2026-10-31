@@ -5,6 +5,7 @@ import path from 'node:path'
 import { defaultRightPanelIdentity, type PageView, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { createStore, type Store } from './store'
+import { RELOAD_QUIET_MS } from './memory'
 import {
   BOUNDS_DEBOUNCE_MS,
   FLUSH_TIMEOUT_MS,
@@ -332,7 +333,7 @@ describe('createWindowManager: close', () => {
 })
 
 describe('createWindowManager: reloadWindow (YAZ-3737 D2)', () => {
-  it('flushes first and reloads only on a clean ack; a dirty ack or the 5 s cap leaves the page as it is', async () => {
+  it('⌘R flushes first; a dirty ack leaves the page as it is; a clean ack or no ack in the 5 s cap reloads (a hung page, as before)', async () => {
     const { manager, w1 } = seedTwo()
     const clean = manager.reloadWindow('w1')
     expect(w1.flushCount()).toBe(1)
@@ -346,11 +347,15 @@ describe('createWindowManager: reloadWindow (YAZ-3737 D2)', () => {
     manager.handleFlushed(w1.webContents, false)
     await expect(dirty).resolves.toBe(false)
 
-    // A hung renderer: the cap settles the flush as not clean.
-    const hung = manager.reloadWindow('w1')
-    await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS)
-    await expect(hung).resolves.toBe(false)
     expect(w1.webContents.reload).toHaveBeenCalledOnce()
+
+    // A hung renderer never acks: after the cap ⌘R reloads it, as `role: 'reload'` did before D2.
+    const hung = manager.reloadWindow('w1')
+    await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS - 1)
+    expect(w1.webContents.reload).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(hung).resolves.toBe(true)
+    expect(w1.webContents.reload).toHaveBeenCalledTimes(2)
     expect(w1.isDestroyed()).toBe(false)
   })
 
@@ -376,8 +381,14 @@ describe('createWindowManager: reloadWindow (YAZ-3737 D2)', () => {
 describe('createWindowManager: the memory reload (YAZ-3737 D4, D6, S22)', () => {
   const VIEWS = [null, { path: '/v/a.md', view: { scrollTop: 300, zoomKey: null, folds: [], magnification: 100 } }]
 
-  it('memoryReload keeps the views and size for the next page, ONE time, after a clean flush; a flush that is not clean drops them', async () => {
+  it('memoryReload keeps the views and size for the next page, ONE time, after a clean flush; a dirty ack or no ack drops them', async () => {
     const { manager, w1 } = seedTwo()
+    vi.setSystemTime(Date.now() + RELOAD_QUIET_MS) // D6: it lost the focus long enough ago
+    const hung = manager.memoryReload('w1', VIEWS, 1740)
+    await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS)
+    await expect(hung).resolves.toBe(false) // unlike ⌘R: no ack is not clean
+    expect(manager.takeReload('w1')).toBeUndefined()
+
     const dirty = manager.memoryReload('w1', VIEWS, 1740)
     manager.handleFlushed(w1.webContents, false)
     await expect(dirty).resolves.toBe(false)
@@ -397,6 +408,38 @@ describe('createWindowManager: the memory reload (YAZ-3737 D4, D6, S22)', () => 
     await closing
     w1.destroy()
     expect(manager.takeReload('w1')).toBeUndefined()
+  })
+
+  it('memoryReload checks the focus again after the flush (D6): a window that took it during the views ask or the flush stays', async () => {
+    const { manager, w1, w2 } = seedTwo()
+    vi.setSystemTime(Date.now() + RELOAD_QUIET_MS)
+    // It has the focus when the ack comes.
+    const focused = manager.memoryReload('w1', VIEWS, 1740)
+    w1.emit('focus')
+    manager.handleFlushed(w1.webContents, true)
+    await expect(focused).resolves.toBe(false)
+    // It had the focus and lost it to w2: it was used under RELOAD_QUIET_MS ago.
+    w1.emit('blur')
+    w2.emit('focus')
+    const justUsed = manager.memoryReload('w1', VIEWS, 1740)
+    manager.handleFlushed(w1.webContents, true)
+    await expect(justUsed).resolves.toBe(false)
+    // The app lost the focus with w1 in front: it is still the window focused last.
+    vi.setSystemTime(Date.now() + RELOAD_QUIET_MS)
+    w1.emit('focus')
+    w1.emit('blur')
+    vi.setSystemTime(Date.now() + RELOAD_QUIET_MS)
+    const last = manager.memoryReload('w1', VIEWS, 1740)
+    manager.handleFlushed(w1.webContents, true)
+    await expect(last).resolves.toBe(false)
+    expect(w1.webContents.reload).not.toHaveBeenCalled()
+    expect(manager.takeReload('w1')).toBeUndefined()
+    // Another window in front, w1 away long enough: it reloads.
+    w2.emit('focus')
+    const away = manager.memoryReload('w1', VIEWS, 1740)
+    manager.handleFlushed(w1.webContents, true)
+    await expect(away).resolves.toBe(true)
+    expect(w1.webContents.reload).toHaveBeenCalledOnce()
   })
 
   it('a reload holds the link pushes again until the new page says link:ready (S22)', async () => {

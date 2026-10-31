@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { ipcMain } from 'electron'
-import { isRecord } from '@shared/guards'
+import { isFiniteNumber, isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { StartView } from '@shared/types'
 import type { MemoryMeter } from '../memory'
@@ -48,7 +48,7 @@ function answer(e: { sender: { id: number } }, token: unknown, value: unknown): 
  */
 export async function askHeap(wc: Page): Promise<number | null> {
   const bytes = await ask(wc, SPECIAL.memoryHeap, HEAP_WAIT_MS)
-  return typeof bytes === 'number' && Number.isFinite(bytes) ? bytes : null
+  return isFiniteNumber(bytes) ? bytes : null
 }
 
 /**

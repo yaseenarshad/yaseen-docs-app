@@ -55,14 +55,14 @@ describe('perf ceilings (YAZ-3044 A19)', () => {
     expect(summarizeRuns([{ r: 1.144 }, { r: 123.44 }]).r).toMatchObject({ min: 1.14, max: 123.4 })
   })
 
-  it('budget.json holds long-day\'s four ceilings and long-day-open\'s one at tolerance 0: ratio 1.1, slope 1 MB per cycle, renderer RSS and footprint, heap after a wake (YAZ-3737 D7, YAZ-3862, YAZ-3915)', () => {
+  it('budget.json holds long-day\'s four ceilings and long-day-open\'s one at tolerance 0: ratio 1.1, slope 1 MB per cycle, footprint 300 MB, worker heap 10 MB, heap after a wake (YAZ-3737 D7, YAZ-3862, YAZ-3870, YAZ-3915)', () => {
     const { perf } = JSON.parse(fs.readFileSync(new URL('./budget.json', import.meta.url), 'utf8'))
     expect(perf['long-day.heapEndOverStartRatio']).toMatchObject({ max: 1.1, tolerance: 0 })
     expect(perf['long-day.heapSlopeMbPerCycle']).toMatchObject({ max: 1, tolerance: 0 })
-    expect(perf['long-day.rendererRssEndMb']).toMatchObject({ tolerance: 0 })
-    expect(perf['long-day.rendererRssEndMb'].max).toBeGreaterThan(0)
-    expect(perf['long-day.rendererFootprintEndMb']).toMatchObject({ tolerance: 0 })
-    expect(perf['long-day.rendererFootprintEndMb'].max).toBeGreaterThan(0)
+    expect(perf['long-day.rendererFootprintEndMb']).toMatchObject({ max: 300, tolerance: 0 })
+    expect(perf['long-day.workerHeapEndMb']).toMatchObject({ max: 10, tolerance: 0 })
+    // RSS swings with memory pressure on macOS (YAZ-3915): reported, never gated.
+    expect(perf['long-day.rendererRssEndMb']).toBeUndefined()
     // long-day-open's one row (YAZ-3915): the JS heap with the tabs asleep and one woken; RSS swings with memory pressure.
     expect(perf['long-day-open.heapAfterWakeMb']).toMatchObject({ max: 55, tolerance: 0 })
     // None is load-sensitive: the names end in neither Ms, Sec nor Pct.

@@ -935,12 +935,6 @@
 }
 
 /* Settings › Memory (YAZ-3737 D9): one grid row per window, App core, Code helpers; the bar is Storage's. */
-.memory {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .memory__rows {
   margin: 0;
   padding: 0;

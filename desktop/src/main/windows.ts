@@ -12,6 +12,7 @@ import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, F
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import { appZoomFactor } from './appZoom'
+import { RELOAD_QUIET_MS } from './memory'
 
 export interface WindowLike {
   webContents: { id: number }
@@ -43,6 +44,8 @@ export function idFor(webContents: { id: number }): string | undefined {
 
 /** A hung save can never block close or quit: the flush handshake gives up after this long. */
 export const FLUSH_TIMEOUT_MS = 5000
+/** How a flush handshake ended (YAZ-3737 D2): the ack said clean, the ack said not clean, or no ack in FLUSH_TIMEOUT_MS. */
+type FlushAck = 'clean' | 'dirty' | 'timeout'
 /** `move`/`resize` fire for every pixel of a drag; one store commit (= one `state:changed` broadcast) per burst. */
 export const BOUNDS_DEBOUNCE_MS = 250
 /** `duplicateWindow` offsets the copy so it does not sit exactly on its source. */
@@ -259,14 +262,16 @@ export interface WindowManager extends WindowLookup {
   /** `app:flushed` arrived from this renderer (wired in `ipc/window.ts`): `clean` is its ack's `{ clean }` (YAZ-3737 D2). */
   handleFlushed(sender: { id: number }, clean: boolean): void
   /**
-   * The safe reload (YAZ-3737 D2) of ⌘R and the memory reload: flush the window `id`, then reload its page only when
-   * the flush was clean — every save landed and the 5 s cap did not fire. `false` = not reloaded: not clean, no live
-   * window, or the app quits. The caller says why, if anyone should hear it.
+   * The safe reload of ⌘R (YAZ-3737 D2): flush the window `id`, then reload its page unless the ack said not clean (a
+   * save conflict or a failed write). No ack in the 5 s cap reloads, as ⌘R always did: a hung page can still reload.
+   * `false` = not reloaded: not clean, no live window, or the app quits. The caller says why, if anyone should hear it.
    */
   reloadWindow(id: string): Promise<boolean>
   /**
-   * The memory reload (YAZ-3737 D4): keep `views` and `mb` for the window `id`'s next page (`takeReload`), then
-   * `reloadWindow`. Not reloaded (the flush was not clean, or no live window): they go, and the answer is `false`.
+   * The memory reload (YAZ-3737 D4): keep `views` and `mb` for the window `id`'s next page (`takeReload`), flush, then
+   * reload only on a clean ack, and only when the window still has no focus by D6's rules (it can take the focus during
+   * the views ask and the flush). Not reloaded (no clean ack, it took the focus, or no live window): they go, and the
+   * answer is `false`.
    */
   memoryReload(id: string, views: (StartView | null)[], mb: number): Promise<boolean>
   /** When the live window `id` lost the focus (YAZ-3737 D6): its last `blur`, else when it opened. `null` = it has the focus, or is not live. */
@@ -563,7 +568,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     scaleFilesWindow(entry, from, appZoomFactor(store.get().settings))
   }
   /** In-flight flush handshakes by `webContents.id`; `settle` answers ack and timeout alike. */
-  const pendingFlush = new Map<number, { done: Promise<boolean>; settle: (clean: boolean) => void }>()
+  const pendingFlush = new Map<number, { done: Promise<FlushAck>; settle: (ack: FlushAck) => void }>()
   /** Windows closing as part of the quit keep their state entry: the next launch can bring them back. */
   let quitting = false
   /** Windows whose close handshake runs, by id, until `closed` (a reload must not run on one, YAZ-3737 D2). */
@@ -617,21 +622,21 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   /**
    * One handshake: send `app:flush`, resolve on `handleFlushed` from the same renderer or after
    * FLUSH_TIMEOUT_MS. A second request while one is pending joins it (a close racing the quit).
-   * It resolves to the ack's `clean` (YAZ-3737 D2); the cap settles it as not clean. Close and quit ignore it.
+   * It resolves to the ack's `clean` or `dirty`, or to `timeout` from the cap (YAZ-3737 D2). Close and quit ignore it.
    */
-  const flushRenderer = (win: ManagedWindow): Promise<boolean> => {
+  const flushRenderer = (win: ManagedWindow): Promise<FlushAck> => {
     const wcId = win.webContents.id
     const pending = pendingFlush.get(wcId)
     if (pending !== undefined) return pending.done
-    let resolve!: (clean: boolean) => void
-    const done = new Promise<boolean>((r) => {
+    let resolve!: (ack: FlushAck) => void
+    const done = new Promise<FlushAck>((r) => {
       resolve = r
     })
-    const timer = setTimeout(() => settle(false), FLUSH_TIMEOUT_MS)
-    function settle(clean: boolean): void {
+    const timer = setTimeout(() => settle('timeout'), FLUSH_TIMEOUT_MS)
+    function settle(ack: FlushAck): void {
       clearTimeout(timer)
       pendingFlush.delete(wcId)
-      resolve(clean)
+      resolve(ack)
     }
     pendingFlush.set(wcId, { done, settle })
     win.webContents.send(SPECIAL.appFlush)
@@ -920,13 +925,16 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     return { opened: true, missing }
   }
 
-  /** The safe reload (YAZ-3737 D2): see `WindowManager.reloadWindow`. */
-  const reloadWindow = async (id: string): Promise<boolean> => {
+  /**
+   * Flush the window `id`, then reload its page when `may(ack)` holds after the flush (YAZ-3737 D2). ⌘R and the memory
+   * reload differ only in `may`: see `WindowManager.reloadWindow` and `memoryReload`.
+   */
+  const reloadAfterFlush = async (id: string, may: (ack: FlushAck) => boolean): Promise<boolean> => {
     const win = liveWindow(id)
     if (win === undefined || quitting || closingWins.has(id)) return false
-    const clean = await flushRenderer(win)
+    const ack = await flushRenderer(win)
     // A close or the quit can join this flush and take the window right after it.
-    if (!clean || quitting || closingWins.has(id) || win.isDestroyed()) return false
+    if (!may(ack) || quitting || closingWins.has(id) || win.isDestroyed()) return false
     // The new page hears no push until its `link:ready`, as at the window's start (YAZ-2589 A2): hold them again (S22).
     if (!heldLinks.has(win.webContents.id)) heldLinks.set(win.webContents.id, [])
     win.webContents.reload()
@@ -1184,14 +1192,20 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     },
 
     handleFlushed(sender, clean) {
-      pendingFlush.get(sender.id)?.settle(clean)
+      pendingFlush.get(sender.id)?.settle(clean ? 'clean' : 'dirty')
     },
 
-    reloadWindow,
+    reloadWindow: (id) => reloadAfterFlush(id, (ack) => ack !== 'dirty'),
 
     async memoryReload(id, views, mb) {
       reloads.set(id, { views, mb })
-      const reloaded = await reloadWindow(id)
+      // D6 again after the views ask and the flush (about 6 s): a window that took the focus meanwhile has no
+      // `blurredSince`, or a new one under RELOAD_QUIET_MS, or is `focusOrder[0]`.
+      const away = (): boolean => {
+        const at = blurredSince.get(id)
+        return at !== undefined && focusOrder[0] !== id && Date.now() - at >= RELOAD_QUIET_MS
+      }
+      const reloaded = await reloadAfterFlush(id, (ack) => ack === 'clean' && away())
       if (!reloaded) reloads.delete(id)
       return reloaded
     },

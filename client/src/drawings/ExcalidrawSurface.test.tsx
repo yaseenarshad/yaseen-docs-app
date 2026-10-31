@@ -107,6 +107,26 @@ describe('a woken drawing keeps its pan and zoom (YAZ-3737 D13)', () => {
   })
 })
 
+describe('a reload from disk drops the images nothing shows (YAZ-3737 D14)', () => {
+  it('replaceScene puts in the new scene and its files, THEN prunes the engine`s files', async () => {
+    let handle: { replaceScene(scene: unknown): number } | null = null
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onApi={(api) => (handle = api as never)} />)
+    })
+    const order: string[] = []
+    const raw = { getAppState: () => ({}), updateFrameRendering: () => undefined, updateScene: vi.fn(() => void order.push('scene')), addFiles: vi.fn(() => void order.push('files')), pruneFiles: vi.fn(() => void order.push('prune')) }
+    act(() => (last().onExcalidrawAPI as (api: unknown) => void)(raw))
+    const file = { id: 'img', mimeType: 'image/png', dataURL: 'data:image/png;base64,AA==', created: 1 }
+    handle!.replaceScene({ elements: [], appState: {}, files: { img: file } })
+    expect(raw.addFiles).toHaveBeenCalledExactlyOnceWith([file])
+    expect(raw.pruneFiles).toHaveBeenCalledOnce()
+    expect(order).toEqual(['scene', 'files', 'prune'])
+  })
+})
+
 /**
  * The canvas panel's handle on a read-only drawing (YAZ-3076 D2, S26): the panel can still look
  * and present, but its inserts, its slide reorder and its slide rename change nothing.

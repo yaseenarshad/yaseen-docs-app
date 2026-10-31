@@ -211,14 +211,24 @@ describe('the zzz mark and the hover wake (D11, S7)', () => {
     expect(sleep).not.toHaveBeenCalled()
   })
 
-  it('a sleeping tab that closes leaves no view behind', async () => {
+  it('a kept view of a tab that is gone goes at the second round that misses it: a slept tab closed, a reload\'s view of a tab closed before it mounted (YAZ-3870)', async () => {
     layer('b', VIEW_B)
     render(world({ mounted: ['a', 'b'] }))
     await pass(17 * MIN)
     expect(startView.has('b')).toBe(true)
-    change({ tabs: TABS.filter((t) => t.id !== 'b') })
+    // A memory reload gave 'c' a view (D4); 'c' closes before it ever mounts. 'b' closes asleep.
+    startView.set('c', VIEW_B)
+    change({ tabs: TABS.filter((t) => t.id === 'a') })
     await pass(SLEEP_TICK_MS)
-    expect(startView.has('b')).toBe(false)
+    expect([startView.has('b'), startView.has('c')]).toEqual([true, true]) // one miss: a moved tab's view may be just before its render
+    await pass(SLEEP_TICK_MS)
+    expect([startView.has('b'), startView.has('c')]).toEqual([false, false])
+    // A view whose tab shows up by the next round stays.
+    startView.set('n', VIEW_B)
+    await pass(SLEEP_TICK_MS)
+    change({ tabs: [...TABS.filter((t) => t.id === 'a'), { id: 'n', path: '/v/n.md' }] })
+    await pass(2 * SLEEP_TICK_MS)
+    expect(startView.has('n')).toBe(true)
   })
 })
 

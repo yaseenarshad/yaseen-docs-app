@@ -43,15 +43,15 @@ function setup(windows: FakeWindow[], metrics: MeterProcess[], helpers: number[]
 }
 
 describe('memory meter', () => {
-  it('a window counts its renderer and its frame processes; preview popups and shared processes count once; the rest is App core', async () => {
+  it('a window counts its renderer and its frame processes; preview popups and shared processes count once; the rest is App core; rows keep the window order, not the size (YAZ-3870)', async () => {
     const a = win('a', [10, 11], { tabs: ['/v/a.md', '/v/b.md', '/v/c.excalidraw', '/v/d.drawio'], name: 'Writing' })
     const b = win('b', [20, 11]) // 11 already counted for `a`
     const popup = win('popup', [10], { popup: true })
     const { meter } = setup([a, popup, b], [proc(1, 'Browser', 200), proc(2, 'GPU', 100), proc(3, 'Utility', 30), proc(10, 'Tab', 300), proc(11, 'Tab', 150), proc(20, 'Tab', 500), proc(30, 'Tab', 50)])
     const report = await meter.report()
     expect(report.windows).toEqual([
-      { id: 'b', title: 'title b', open: '', bytes: 500 * MB, jsHeapBytes: null, grew: false },
       { id: 'a', title: 'Writing', open: '2 notes, 1 drawing, 1 diagram', bytes: 450 * MB, jsHeapBytes: 40 * MB, grew: false },
+      { id: 'b', title: 'title b', open: '', bytes: 500 * MB, jsHeapBytes: null, grew: false },
     ])
     expect(report.core).toEqual({ bytes: 380 * MB, main: 200 * MB, gpu: 100 * MB, utility: 30 * MB, other: 50 * MB })
     expect(report.helpers).toBeNull()

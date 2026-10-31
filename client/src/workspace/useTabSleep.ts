@@ -129,6 +129,8 @@ export function useTabSleep(world: SleepWorld, doors: SleepDoors): TabSleep {
     let alive = true
     let busy = false
     let lastTick = Date.now()
+    /** Kept views whose tab the last round did not find. */
+    let orphans: ReadonlySet<string> = NONE
     const round = async (): Promise<void> => {
       const t = Date.now()
       const gap = t - lastTick
@@ -143,12 +145,15 @@ export function useTabSleep(world: SleepWorld, doors: SleepDoors): TabSleep {
       const w = live.current
       const ids = new Set(w.tabs.map((tab) => tab.id))
       for (const id of [...stamps.keys()]) if (!ids.has(id)) stamps.delete(id)
-      // A woken tab is no longer asleep; a closed one leaves its kept view behind.
+      // A kept view of a tab that is gone goes: a slept tab closed, or a tab a memory reload gave a view to (D4) that
+      // closed before it mounted. Only at the second round that misses its tab: a view set by an IPC push (a moved tab)
+      // comes just before its tab's render, and a round can run in between.
+      const views = doorsRef.current.startView
+      for (const id of [...views.keys()]) if (!ids.has(id) && orphans.has(id)) views.delete(id)
+      orphans = new Set([...views.keys()].filter((id) => !ids.has(id)))
+      // A woken tab is no longer asleep, and a closed one neither.
       const keep = [...sleptRef.current].filter((id) => ids.has(id) && (!w.mounted.includes(id) || id === heldRef.current))
-      if (keep.length !== sleptRef.current.size) {
-        for (const id of sleptRef.current) if (!ids.has(id)) doorsRef.current.startView.delete(id)
-        setSlept(new Set(keep))
-      }
+      if (keep.length !== sleptRef.current.size) setSlept(new Set(keep))
       const after = w.setting === 'never' ? null : testSeconds !== null ? testSeconds * 1000 : AFTER_MS[w.setting]
       if (after === null) return
       const dragging = draggedTab()

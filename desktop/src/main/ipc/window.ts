@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, normalizeFilesZoom, rootOfPath, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type ScreenPoint, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
-import { isRecord } from '@shared/guards'
+import { isFiniteNumber, isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { normalizeRightPanel, normalizeTabs, readStoredTab, readTabRef, type Store } from '../store'
@@ -92,12 +92,10 @@ export function optionalPageView(v: unknown): PageView | undefined {
   const view: PageView = { scrollTop, zoomKey, folds: (folds as string[]).slice(0, MAX_FOLD_KEYS_PER_FILE), magnification }
   // The caret and a drawing's pan and zoom (YAZ-3737 D3, D13) travel when whole; a bad one is left out, never the view.
   const { selection, canvas } = v
-  if (isRecord(selection) && finite(selection.anchor) && finite(selection.head)) view.selection = { anchor: selection.anchor, head: selection.head }
-  if (isRecord(canvas) && finite(canvas.scrollX) && finite(canvas.scrollY) && finite(canvas.zoom)) view.canvas = { scrollX: canvas.scrollX, scrollY: canvas.scrollY, zoom: canvas.zoom }
+  if (isRecord(selection) && isFiniteNumber(selection.anchor) && isFiniteNumber(selection.head)) view.selection = { anchor: selection.anchor, head: selection.head }
+  if (isRecord(canvas) && isFiniteNumber(canvas.scrollX) && isFiniteNumber(canvas.scrollY) && isFiniteNumber(canvas.zoom)) view.canvas = { scrollX: canvas.scrollX, scrollY: canvas.scrollY, zoom: canvas.zoom }
   return view
 }
-
-const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n)
 
 /** A slot in a strip (YAZ-3637 D4): a whole number from 0; anything else is no slot, never an error. */
 function optionalSlot(v: unknown): number | undefined {

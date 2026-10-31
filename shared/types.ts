@@ -3039,7 +3039,7 @@ export interface MemoryWindowRow {
   grew: boolean
 }
 
-/** `memory.report()` (YAZ-3737 D1): the windows, biggest first, then App core and the code helpers. */
+/** `memory.report()` (YAZ-3737 D1): the windows in the order they opened (a row never moves under the pointer), then App core and the code helpers. */
 export interface MemoryReport {
   windows: MemoryWindowRow[]
   /** The main process, the GPU and utility processes, and any process no window owns (`other`, e.g. DevTools). `bytes` is their sum. */

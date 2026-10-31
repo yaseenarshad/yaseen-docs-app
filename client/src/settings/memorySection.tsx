@@ -6,9 +6,8 @@
  *   Research    1 note               ▓▓▓░░░░░░░   301.0 MB
  *   App core                         ▓▓▓▓░░░░░░   390.2 MB
  *   Code helpers                     ▓▓▓▓▓▓░░░░   610.7 MB      (only while a helper runs)
- *   Total 2.1 GB
  *
- * The biggest row fills its bar. ▲ = it grew more than 150 MB or 20 % in the last hour (main decides). Hover: a
+ * Windows in the order they opened (main's order), so a row never moves under the pointer. The biggest row fills its bar. ▲ = it grew more than 150 MB or 20 % in the last hour (main decides). Hover: a
  * window's JS heap and the rest, App core's parts, the helper count. A click on a window row brings that window
  * to the front; App core and Code helpers do nothing. The report comes from main (`memory.report`) while the page
  * shows (`useMemoryReport`).
@@ -74,24 +73,21 @@ function MemoryRows() {
   const rows = rowsOf(report)
   const max = Math.max(1, ...rows.map((r) => r.bytes))
   return (
-    <div className="memory">
-      <ul className="memory__rows">
-        {rows.map((row) => (
-          <li key={row.key} data-memory-row={row.key}>
-            {row.show !== undefined ? (
-              <button type="button" className="memory__row memory__row--window" title={row.hint} onClick={row.show}>
-                <Cells row={row} max={max} />
-              </button>
-            ) : (
-              <div className="memory__row" title={row.hint}>
-                <Cells row={row} max={max} />
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
-      <p className="storage__muted">Total {formatBytes(rows.reduce((sum, r) => sum + r.bytes, 0))}</p>
-    </div>
+    <ul className="memory__rows">
+      {rows.map((row) => (
+        <li key={row.key} data-memory-row={row.key}>
+          {row.show !== undefined ? (
+            <button type="button" className="memory__row memory__row--window" title={row.hint} onClick={row.show}>
+              <Cells row={row} max={max} />
+            </button>
+          ) : (
+            <div className="memory__row" title={row.hint}>
+              <Cells row={row} max={max} />
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
   )
 }
 

@@ -6672,6 +6672,44 @@ describe('App tab sleep (YAZ-3737 5A, S18; 5B D11, S7)', () => {
     // `a` shows but answers no view here, and `c` was never opened.
     expect(askViews()).toEqual([null, { path: '/v/b.md', view }, null])
   }, 15_000)
+
+  it('S18: Move to new window, Move to ▸ and a tear-off of a sleeping tab carry the view it slept with', async () => {
+    history.replaceState(null, '', '?sleepSeconds=1')
+    const win = (id: string, file: string, tabs: string[]): WindowEntry => ({ id, root: '/v', roots: ['/v'], file, tabs, rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    const W1 = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/c.md', '/v/d.md'] }
+    const { bridge, el } = await mount({ ...defaultAppState(), windows: [win('w1', W1.file, W1.tabs), win('w2', '/v/x.md', ['/v/x.md', '/v/y.md'])] }, W1)
+    const [a, b, c, d] = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((t) => t.dataset.tab!)
+    const views = new Map<string, PageView>()
+    const offs: Array<() => void> = []
+    for (const [i, id] of [b, c, d].entries()) {
+      act(() => tabEl(el, id).querySelector<HTMLButtonElement>('[role="tab"]')!.click())
+      const scroller = document.createElement('div')
+      scroller.className = 'editor-host'
+      layer(el, id)!.appendChild(scroller)
+      const view: PageView = { scrollTop: 100 * (i + 1), zoomKey: null, folds: [], magnification: 100 }
+      views.set(id, view)
+      offs.push(registerPageView(scroller, () => view))
+    }
+    act(() => tabEl(el, a).querySelector<HTMLButtonElement>('[role="tab"]')!.click())
+    await wait(3500)
+    offs.forEach((off) => off())
+    for (const id of [b, c, d]) expect(layer(el, id)).toBeNull()
+    const menuItem = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((item) => item.textContent === label)
+    // Move to new window.
+    rightClick(tabEl(el, b))
+    await act(async () => menuItem('Move to new window')!.click())
+    await vi.waitFor(() => expect(bridge.window.popOut).toHaveBeenCalledExactlyOnceWith('/v/b.md', expect.objectContaining({ view: views.get(b) })))
+    // Move to ▸ the other window.
+    rightClick(tabEl(el, c))
+    act(() => menuItem('Move to')!.click())
+    await act(async () => menuItem('x + 1 more tab')!.click())
+    await vi.waitFor(() => expect(bridge.window.moveTo).toHaveBeenCalledExactlyOnceWith('w2', '/v/c.md', expect.objectContaining({ view: views.get(c) })))
+    // A tear-off: let go off every window.
+    const drop = new MouseEvent('dragend', { bubbles: true, cancelable: true, screenX: 900, screenY: 300 })
+    Object.defineProperty(drop, 'dataTransfer', { value: { dropEffect: 'none', types: [] } })
+    await act(async () => void tabEl(el, d).dispatchEvent(drop))
+    await vi.waitFor(() => expect(bridge.window.tearOff).toHaveBeenCalledExactlyOnceWith('/v/d.md', expect.objectContaining({ view: views.get(d) }), { x: 900, y: 300 }, false))
+  }, 15_000)
 })
 
 describe('App after a memory reload (YAZ-3737 D4, D12)', () => {

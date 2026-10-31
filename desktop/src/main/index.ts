@@ -21,7 +21,6 @@ import { registerClipboardIpc } from './ipc/clipboard'
 import { registerUpdateIpc } from './ipc/update'
 import { askHeap, askViews, registerMemoryIpc } from './ipc/memory'
 import { createMemoryMeter, createReloadWatch, helperRss, type MemoryMeter, type ReloadWatch } from './memory'
-import { saveHeapSnapshot } from './heapSnapshot'
 import { claimDeepLinkScheme } from './deepLinkScheme'
 import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
@@ -334,10 +333,12 @@ app.whenReady().then(() => {
         },
         () => manager.linkNotice("Can't check for updates. Try again later"),
       ),
-    // Dev only (YAZ-3737 D9): into the temp folder, never the vault or the profile.
+    // Dev only (YAZ-3737 D9): into the temp folder, never the vault or the profile. Loaded on the first use, so the
+    // packaged app never parses it at start.
     saveHeapSnapshot: async (target, windowId) => {
       const wc = webContents.fromId(target.id)
       if (wc === undefined) return true
+      const { saveHeapSnapshot } = await import('./heapSnapshot')
       const file = await saveHeapSnapshot(wc.debugger, join(app.getPath('temp'), 'yaseen-docs-heap'), windowId, new Date())
       if (file !== null) shell.showItemInFolder(file)
       return file !== null

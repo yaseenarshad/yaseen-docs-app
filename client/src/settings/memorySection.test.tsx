@@ -63,7 +63,7 @@ const row = (key: string) => el.querySelector<HTMLElement>(`[data-memory-row="${
 const cells = (key: string) => [...row(key).children].map((c) => c.textContent)
 
 describe('Settings › Memory (YAZ-3737 D9)', () => {
-  it('rows from the report: windows, App core, Code helpers; ▲ only for the window that grew; the hover text; the total', async () => {
+  it('rows from the report: windows, App core, Code helpers; ▲ only for the window that grew; the hover text; no total line', async () => {
     await mountMemory()
     expect([...el.querySelectorAll<HTMLElement>('[data-memory-row]')].map((r) => r.dataset.memoryRow)).toEqual(['w1', 'w2', 'core', 'helpers'])
     expect(cells('w1')).toEqual(['Writing', '2 notes, 1 drawing', '', '800.0 MB', '▲'])
@@ -78,7 +78,7 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect(row('w2').title).toBe('')
     expect(row('core').title).toBe('Main 200.0 MB · GPU 60.0 MB · Utility 40.0 MB · Other 0 B')
     expect(row('helpers').title).toBe('2 helpers')
-    expect(el.querySelector('.memory')!.textContent).toContain('Total 2.0 GB')
+    expect(el.querySelector('.memory__rows')!.parentElement!.textContent).not.toContain('Total')
   })
 
   it('a click on a window row brings that window to the front; App core and Code helpers do nothing', async () => {

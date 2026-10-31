@@ -239,13 +239,13 @@ interface CardProps {
   actions: CardActions
 }
 
+const NONE_ASLEEP: ReadonlySet<string> = new Set()
+
 /**
  * One card of the canvas (YAZ-2648 D9, YAZ-3343 D11): a page's name and first lines — a display name with the
  * page's own name under it, a copy's "1 of 2", a drawing's picture. Memoised on what it shows, so the highlight
  * moving renders two cards, and a pan, a zoom or a drag renders none (D4).
  */
-const NONE_ASLEEP: ReadonlySet<string> = new Set()
-
 const Card = memo(function Card(p: CardProps) {
   const cls = ['taboverview__page']
   if (p.active) cls.push('taboverview__page--active')

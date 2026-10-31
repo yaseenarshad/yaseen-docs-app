@@ -71,7 +71,7 @@ import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import type { MoveTarget } from './tabs/TabMenu'
 import { setBoardHighlight } from './tabs/boardHighlight'
-import { useHiddenWindows, useMinimizedWindows } from './tabs/hiddenWindows'
+import { useWindowHidden, useWindowMinimized } from './tabs/hiddenWindows'
 import { spacePanel } from './tabs/cardPreview'
 import { tabOfRef, windowLabel } from './tabs/windowLabel'
 import { useUpdate } from './update/useUpdate'
@@ -2764,10 +2764,11 @@ export function App() {
   const reviewLayer = reviewed !== null && mounted.includes(reviewed.id) ? reviewed.id : (mounted.find((id) => pathOf.get(id) === reviewPath) ?? null)
   /** The tab whose layer shows: the active one, none under the blank tab, and the reviewed note's during a review. */
   const shown = session === null ? (pageOnShow === null ? null : activeTab) : reviewLayer
-  // Tab sleep (YAZ-3737 5A, S10): main's hidden and minimized windows; in one of them the active tab may sleep too.
-  const hiddenWindows = useHiddenWindows()
-  const minimizedWindows = useMinimizedWindows()
-  const away = hiddenWindows.has(storage.getWindowId()) || minimizedWindows.has(storage.getWindowId())
+  // Tab sleep (YAZ-3737 5A, S10): this window is hidden or minimized; then the active tab may sleep too. A boolean
+  // each, so a hide of another window renders no App here.
+  const hiddenHere = useWindowHidden(storage.getWindowId())
+  const minimizedHere = useWindowMinimized(storage.getWindowId())
+  const away = hiddenHere || minimizedHere
   const tabSleep = useTabSleep(
     { setting: settings.tabSleepAfter, tabs, mounted, active: activeTab, shown, boardOpen: overview.phase !== 'closed', review: session === null ? null : reviewLayer, away },
     { startView, sleep: sleepTabs, wake: wakeTab },

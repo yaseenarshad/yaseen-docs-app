@@ -12,14 +12,12 @@ export function useMemoryReport(): MemoryReport | null {
   useEffect(() => {
     let live = true
     const ask = () =>
-      void Promise.resolve()
-        .then(() => api.memory.report())
-        .then(
-          (next) => {
-            if (live) setReport(next)
-          },
-          () => undefined,
-        )
+      void api.memory.report().then(
+        (next) => {
+          if (live) setReport(next)
+        },
+        () => undefined,
+      )
     ask()
     const timer = setInterval(ask, MEMORY_SAMPLE_MS)
     return () => {

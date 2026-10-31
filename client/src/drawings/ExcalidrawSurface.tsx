@@ -67,7 +67,7 @@ import { requestKeySheet } from '../keys/keySheetRequest'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
-import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs } from '@shared/types'
+import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type PageView } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
 import { namingTab } from '../lib/focusHandoff'
@@ -120,14 +120,7 @@ export interface DrawingSurfaceApi {
    */
   replaceScene(scene: DrawingScene): number
   /** The pan and zoom now (YAZ-3737 D13): what a tab that goes to sleep, or is copied, starts on again. */
-  canvas(): DrawingCanvasView
-}
-
-/** A drawing's pan and zoom (YAZ-3737 D13), as `PageView.canvas` keeps it. */
-export interface DrawingCanvasView {
-  scrollX: number
-  scrollY: number
-  zoom: number
+  canvas(): NonNullable<PageView['canvas']>
 }
 
 export interface DrawingSurfaceProps {
@@ -137,7 +130,7 @@ export interface DrawingSurfaceProps {
    * The pan and zoom to open on (YAZ-3737 D13): a woken tab's, a copy's. Read once, at mount, in place of the
    * fit-on-open view. Omitted = fit the whole scene.
    */
-  startCanvas?: DrawingCanvasView
+  startCanvas?: PageView['canvas']
   /** The app's resolved appearance, handed to the engine as-is (a prop change re-themes live). */
   theme: 'light' | 'dark'
   /**
