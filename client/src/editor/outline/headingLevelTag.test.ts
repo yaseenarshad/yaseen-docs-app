@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { DecorationSet, EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
@@ -204,6 +205,20 @@ describe('the heading level tag (YAZ-2700 D12)', () => {
     expect(tagged(root)).toEqual([])
     view.dispatch(view.state.tr.setNodeMarkup(blockPos(), heading, { level: 1 }))
     expect(tagged(root)).toEqual(['H1 Two'])
+  })
+
+  it('a quote or a list put round the caret\'s heading, and ⌘Z of it, keep the one decoration (YAZ-3806)', async () => {
+    // `DecorationSet.map` threw "Position -1 outside of fragment" on the ⌘Z: the heading moved up a level.
+    const { root, view } = await mount('## Two\n')
+    const { blockquote, bullet_list, list_item } = view.state.schema.nodes
+    for (const wrappers of [[{ type: blockquote }], [{ type: bullet_list }, { type: list_item }]]) {
+      select(view, 'Two')
+      const $from = view.state.selection.$from
+      view.dispatch(view.state.tr.wrap($from.blockRange()!, wrappers))
+      expect(tagged(root)).toEqual(['H2 Two'])
+      undo(view.state, view.dispatch)
+      expect(tagged(root)).toEqual(['H2 Two'])
+    }
   })
 
   it('is view state only: the markdown that is saved has no tag, and no caret move reaches markdownUpdated', async () => {

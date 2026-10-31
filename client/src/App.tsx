@@ -50,6 +50,7 @@ import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
+import { toolbarPrefs } from './editor/toolbarPrefs'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
@@ -553,6 +554,10 @@ export function App() {
   }, [])
   // "Jump across files" (YAZ-3500): every code tab of this page follows the switch (`code/languageHelpers.ts`).
   useEffect(() => setLanguageHelpers(settings.codeLanguageHelpers === true), [settings.codeLanguageHelpers])
+  // The selection toolbar's order and hidden buttons (YAZ-3806 T6): every open note's toolbar follows at once.
+  useEffect(() => {
+    toolbarPrefs.value = settings.selectionToolbar
+  }, [settings.selectionToolbar])
 
   // A Files window's own sidebar zoom (YAZ-3389 D13): only this window writes it, so a local copy stays true.
   const [filesZoom, setFilesZoomState] = useState(() => (filesWindow ? storage.getFilesZoom() : 100))

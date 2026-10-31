@@ -1133,3 +1133,124 @@
     box-shadow: 0 0 0 0 transparent;
   }
 }
+
+/* Settings › Editor › Selection toolbar (YAZ-3806 T7): the sidebar Tab row panel's rows (app.css `.tab-row-panel`), one list per group. */
+.toolbar-arrange {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.toolbar-arrange__groups,
+.toolbar-arrange__list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar-arrange__groups {
+  gap: 6px;
+}
+
+.toolbar-arrange__group {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.toolbar-arrange__head,
+.toolbar-arrange__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--bg);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.toolbar-arrange__head {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.toolbar-arrange__row {
+  position: relative;
+}
+
+.toolbar-arrange__head:hover,
+.toolbar-arrange__row:hover {
+  background: var(--bg-hover);
+}
+
+.toolbar-arrange__grip {
+  display: inline-flex;
+  width: 14px;
+  color: var(--fg-muted);
+}
+
+.toolbar-arrange__icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  color: var(--fg);
+}
+
+.toolbar-arrange__icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.toolbar-arrange__check {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.toolbar-arrange__check[aria-checked='true'] {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.toolbar-arrange__row:has(.toolbar-arrange__check[aria-checked='false']) .toolbar-arrange__icon,
+.toolbar-arrange__row:has(.toolbar-arrange__check[aria-checked='false']) .toolbar-arrange__name {
+  opacity: 0.45;
+}
+
+.toolbar-arrange--lifted {
+  z-index: 2;
+  cursor: grabbing;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22), 0 0 0 1.5px var(--accent);
+}
+
+.toolbar-arrange--sorting {
+  cursor: grabbing;
+}
+
+.toolbar-arrange--sorting > :not(.toolbar-arrange--lifted) {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .toolbar-arrange--sorting > :not(.toolbar-arrange--lifted) {
+    transition: transform 0.16s cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+}
+
+.toolbar-arrange__reset {
+  align-self: flex-start;
+}
