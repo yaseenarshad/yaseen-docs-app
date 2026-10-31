@@ -7,7 +7,11 @@ import { CLIPBOARD_EMPTY_PARAGRAPH } from './clipboardCopyOut'
 import { externalNumberedHTML, literalNumberedHTML, parseLiteralNumberedPaste } from './clipboardNumbers'
 import { imageOptionsOf } from './image/imageOptions'
 import { imageFile, insertPastedImage } from './image/insertImage'
+import { normalizeEmptyItems } from './listItemRoundTrip'
 import { closePathChip, pastePathLinks, pasteUrlOverWords, pathPasteCtx } from './pathPaste'
+
+/** A bullet or numbered line anywhere in the text: only then does our parser take a plain-text paste over from Milkdown's. */
+const LIST_LINE_ANYWHERE = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]/m
 
 /** A root-level BR between paragraphs is one blank paragraph, not a paragraph with two visual lines. */
 function normalizeParagraphSeparators(html: string): string {
@@ -78,7 +82,9 @@ export const clipboardPaste = $prose((ctx) => {
         return true
       }
       if (!html) {
-        const doc = parseLiteralNumberedPaste(ctx, data?.getData('text/plain') ?? '')
+        // Paste runs the load rules (YAZ-3727 S1), so a pasted list nests as the same file would open.
+        const prepared = normalizeEmptyItems(text.replace(/\r\n?/g, '\n'))
+        const doc = parseLiteralNumberedPaste(ctx, prepared) ?? (LIST_LINE_ANYWHERE.test(prepared) ? ctx.get(parserCtx)(prepared) : null)
         if (doc) {
           let literal = Slice.maxOpen(doc.content)
           view.someProp('transformPasted', transform => { literal = transform(literal, view, false) })
@@ -120,7 +126,7 @@ export const clipboardPaste = $prose((ctx) => {
         } else {
           let slice: Slice
           if (mode === 'markdown') {
-            slice = Slice.maxOpen(ctx.get(parserCtx)(text).content)
+            slice = Slice.maxOpen(ctx.get(parserCtx)(normalizeEmptyItems(text)).content)
           } else {
             const inline: ProseNode[] = []
             text.split('\n').forEach((line, i) => {

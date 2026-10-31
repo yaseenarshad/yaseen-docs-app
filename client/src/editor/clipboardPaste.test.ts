@@ -304,6 +304,32 @@ describe('explicit paste modes through the native menu subscription', () => {
   })
 })
 
+/** S1: a paste runs the load rules (`normalizeEmptyItems`, with rule 8's list depth from indentation). */
+describe('paste runs the load rules (YAZ-3727 S1)', () => {
+  it('a plain-text paste of an AI-indented bullet list nests as the same file would open', async () => {
+    const { crepe, view } = await mount()
+    expect(pasteText(view, '* a\n      * b\n      * c\n* d\n\t- e')).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('* a\n  * b\n  * c\n* d\n  * e\n')
+  })
+  it('a CRLF plain-text paste nests the same way', async () => {
+    const { crepe, view } = await mount()
+    expect(pasteText(view, '* a\r\n      * b\r\n* c')).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('* a\n  * b\n* c\n')
+  })
+  it('a paste of a single word into a paragraph keeps the path it has today', async () => {
+    const { crepe, view } = await mount('Before middle after')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 8, 14)))
+    pasteText(view, 'word')
+    expect(textOf(view)).toBe('Before word after')
+    expect(getMarkdownForSave(crepe)).toBe('Before word after\n')
+  })
+  it('"Paste as Markdown" runs the same rules', async () => {
+    const { crepe } = await mount()
+    expect(pasteAs('markdown', '* a\n      * b\n* c')).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('* a\n  * b\n* c\n')
+  })
+})
+
 describe('automatic rich paste spacing', () => {
   it('represents a standalone paragraph separator as one empty paragraph, preserving rich marks', async () => {
     const { view, crepe } = await mount()

@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import { postProcessMarkdown } from './createCrepe'
 import {
+  alignNestedIndent,
   escapeSameLineOrderedMarkers,
   mapOutsideFences,
   normalizeEmptyItems,
@@ -97,6 +98,79 @@ describe('unifySiblingMarkers (GRO-2112)', () => {
     const once = unifySiblingMarkers('* a\n- b\n')
     expect(unifySiblingMarkers(once)).toBe(once)
     expect(normalizeEmptyItems('* a\n- b\n- [ ]\n')).toBe('* a\n* b\n* [ ] <br />\n')
+  })
+})
+
+/**
+ * Rule 8 (YAZ-3727 D1): the list depth comes from the indentation. The editor-level proof (what a
+ * save writes) lives in roundtrip.test.ts ('list depth from indentation').
+ */
+describe('alignNestedIndent (YAZ-3727 D1)', () => {
+  it('moves the children of 10 and up to the text column of their parent', () => {
+    // An AI indents every child by 3 spaces: right under `9. `, one short under `10. ` (4 wide).
+    expect(alignNestedIndent('9. nine\n   * a\n10. ten\n   * b\n   * c\n11. eleven\n   * d\n')).toBe(
+      '9. nine\n   * a\n10. ten\n    * b\n    * c\n11. eleven\n    * d\n',
+    )
+  })
+
+  it('nests a numbered child that starts at 8 under a bullet, with a blank line before it', () => {
+    expect(alignNestedIndent('* Keys\n  8. eight\n     * a\n  9. nine\n  10. ten\n     * b\n')).toBe(
+      '* Keys\n\n  8. eight\n     * a\n  9. nine\n  10. ten\n      * b\n',
+    )
+    // Only a number other than 1 needs it: `1.` may interrupt a paragraph, and a bullet may too.
+    expect(alignNestedIndent('* Keys\n  1. one\n  * b\n')).toBe('* Keys\n  1. one\n  * b\n')
+  })
+
+  it('reads Obsidian tabs and a too-deep indent as one level', () => {
+    expect(alignNestedIndent('- a\n\t1. one\n\t\t- deep\n\t2. two\n- b\n')).toBe('- a\n  1. one\n     - deep\n  2. two\n- b\n')
+    expect(alignNestedIndent('* a\n      * b\n      * c\n* d\n')).toBe('* a\n  * b\n  * c\n* d\n')
+  })
+
+  it('moves text with the item whose text column it reaches; a lazy line stays as written', () => {
+    expect(alignNestedIndent('10. ten\n   lazy text\n   * kid\n     kid text\n\n     kid para\n11. eleven\n')).toBe(
+      '10. ten\n   lazy text\n    * kid\n      kid text\n\n      kid para\n11. eleven\n',
+    )
+  })
+
+  it('a blank line and a paragraph end the list; a fence inside an item keeps its bytes', () => {
+    expect(alignNestedIndent('1. one\n   * kid\n\nPlain paragraph\n')).toBe('1. one\n   * kid\n\nPlain paragraph\n')
+    expect(alignNestedIndent('* a\n  ```\n  * code\n  ```\n* b\n')).toBe('* a\n  ```\n  * code\n  ```\n* b\n')
+  })
+
+  it('an empty parent gets no blank line before its numbered child: a blank line would end it', () => {
+    expect(alignNestedIndent('*\n  8. x\n  9. y\n')).toBe('*\n  8. x\n  9. y\n')
+    expect(alignNestedIndent('10.\n   8. x\n')).toBe('10.\n    8. x\n')
+  })
+
+  it('a heading, a quote, a thematic break or a fence closes the items right of it', () => {
+    // Without the close, `  * x` would move under `10.` (4 spaces), which after the closed list is code.
+    for (const closer of ['# H', '> quote', '---', '***']) {
+      expect(alignNestedIndent(`10. a\n${closer}\n  * x\n`), closer).toBe(`10. a\n${closer}\n  * x\n`)
+    }
+    expect(alignNestedIndent('10. a\n```\ncode\n```\n  * x\n')).toBe('10. a\n```\ncode\n```\n  * x\n')
+    // Inside the item (at its text column) a fence or a heading closes nothing.
+    expect(alignNestedIndent('10. a\n    ```\n    code\n    ```\n   * x\n')).toBe('10. a\n    ```\n    code\n    ```\n    * x\n')
+    expect(alignNestedIndent('10. a\n    # H\n   * x\n')).toBe('10. a\n    # H\n    * x\n')
+  })
+
+  it('keeps Markdown the app writes byte-identical, and is idempotent', () => {
+    const app = '* Keys\n  1. k1\n     * child1\n  10. k10\n      * child10\n  * bullet\n    text line\n\n    second para\n- [ ] task\n  * sub\n*\n  8. x\n\n1. a\n2.\n   1. c\n'
+    expect(alignNestedIndent(app)).toBe(app)
+    for (const md of ['9. a\n   * k\n10. b\n   * k\n', '* Keys\n  8. a\n', '- a\n\t\t- b\n', '10. a\n   text\n   * kid\n']) {
+      const once = alignNestedIndent(md)
+      expect(alignNestedIndent(once), md).toBe(once)
+    }
+  })
+
+  it('keeps CRLF line endings', () => {
+    expect(alignNestedIndent('9. a\r\n   * k\r\n10. b\r\n   * k2\r\n')).toBe('9. a\r\n   * k\r\n10. b\r\n    * k2\r\n')
+    expect(alignNestedIndent('* Keys\r\n  8. a\r\n  9. b\r\n')).toBe('* Keys\r\n\n  8. a\r\n  9. b\r\n')
+    expect(alignNestedIndent('*\r\n  8. a\r\n')).toBe('*\r\n  8. a\r\n')
+  })
+
+  it('runs inside normalizeEmptyItems before the marker rule, which reads the aligned indent', () => {
+    // c1 (3 spaces) and c2 (2 spaces) are both children of p: aligned first, they share one marker.
+    expect(normalizeEmptyItems('* p\n   - c1\n  * c2\n')).toBe('* p\n  - c1\n  - c2\n')
   })
 })
 
