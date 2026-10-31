@@ -183,7 +183,8 @@ describe('wikilink click: navigation-only view files (YAZ-1310)', () => {
       viewNode('/vault/deep/data.JSON', 'text'),
     )
     const { root, nav } = await mount(`x [[${target}]] y\n`, resolveKnown, () => '', views)
-    mousedown(linkSpan(root, target))
+    // A pathed link shows only its name (YAZ-3778 D3).
+    mousedown(linkSpan(root, target.slice(target.lastIndexOf('/') + 1)))
     expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(path)
     expect(createFile).not.toHaveBeenCalled()
     expect(createDir).not.toHaveBeenCalled()
@@ -312,8 +313,9 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     // The index echo: the note, titled Page, and the folder it was put in, titled Sub.
     const record = (path: string, title: string, folder: string): IndexRecord => ({ path, name: path.slice(path.lastIndexOf('/') + 1), basename: '', title, folder, ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] })
     source.update(linkResolver([record(born().path, 'Page', 'sub')], '/vault', ['/vault/sub'], [record('/vault/sub/.folder.md', 'Sub', 'sub')]))
-    expect(linkSpan(root, 'Sub/Page').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(false)
-    mousedown(linkSpan(root, 'Sub/Page'))
+    // Found, it shows only its name (YAZ-3778 D3); dead, it showed its whole text (S12).
+    expect(linkSpan(root, 'Page').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(false)
+    mousedown(linkSpan(root, 'Page'))
     await vi.advanceTimersByTimeAsync(0)
     expect(nav.openCurrent.mock.calls).toEqual([[born().path], [born().path]])
     expect(createFile).toHaveBeenCalledTimes(1)

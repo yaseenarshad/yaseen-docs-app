@@ -164,13 +164,23 @@ describe('a Markdown link into a vault of the window is a pill (YAZ-3609 D19)', 
     expect(pieces[0]!.classList.contains('link-pill--first') && pieces[2]!.classList.contains('link-pill--last')).toBe(true)
   })
 
-  it('D22 a pill into another vault names that vault on its last piece only; a pill of this vault names none', async () => {
+  it('D22 a pill into another vault names that vault as its last piece, inside the link (YAZ-3738 D4); a pill of this vault names none', async () => {
     const vaultTag = (path: string) => (path.startsWith('/v/other/') ? 'Other Vault' : null)
     const { crepe, root } = await mount('[Plan **bold** end](../other/plan.md) and [Here](../here.md)\n', { vaultPath, icon, vaultTag })
-    const tagged = Array.from(root.querySelectorAll<HTMLElement>('.link-pill[data-vault]'))
-    expect(tagged.map((el) => [el.textContent, el.dataset.vault, el.classList.contains('link-pill--last')])).toEqual([[' end', 'Other Vault', true]])
-    // The name is drawn by CSS: the saved note does not change.
+    // The vault's name is the pill's own last piece, inside the link and after its text (YAZ-3738 D4).
+    const tagged = Array.from(root.querySelectorAll<HTMLElement>('.link-pill__vault'))
+    expect(tagged.map((el) => [el.textContent, el.closest('a') !== null, el.previousElementSibling?.textContent])).toEqual([[' (Other Vault)', true, ' end']])
+    // A widget: the saved note does not change.
     expect(getMarkdownForSave(crepe)).toBe('[Plan **bold** end](../other/plan.md) and [Here](../here.md)\n')
+  })
+
+  it('YAZ-3738 D4: text typed at the link\'s end lands after the vault name, outside the pill', async () => {
+    const vaultTag = (path: string) => (path.startsWith('/v/other/') ? 'Other Vault' : null)
+    const { view, root } = await mount('[Plan](../other/plan.md) and\n', { vaultPath, icon, vaultTag })
+    // Plain text right after the link (1..5), as a keystroke there gives (YAZ-3655).
+    view.dispatch(view.state.tr.insert(5, view.state.schema.text('X')))
+    expect(view.dom.textContent).toContain('Plan (Other Vault)X and')
+    expect(root.querySelector('.link-pill__vault')?.closest('a')).not.toBeNull()
   })
 
   it('a click on the pill opens the link', async () => {

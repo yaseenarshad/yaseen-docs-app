@@ -612,7 +612,8 @@ describe('wikilink picker: frontmatter aliases (Links E2, GRO-2214)', () => {
     type(crepe, '[[cac')
     expect(rows()).toEqual(['CAC — Customer Acquisition Cost'])
     press(crepe, 'Enter')
-    expect(shown()).toEqual([]) // the caret is parked against the link: raw `[[id]]`, D8's rule
+    // The caret is parked against the link, and an ID link keeps its title there (YAZ-3744 D1).
+    expect(shown()).toEqual(['Customer Acquisition Cost'])
     caret(crepe, posOf(crepe, 'X'))
     expect(shown()).toEqual(['Customer Acquisition Cost'])
     expect(getMarkdownForSave(crepe)).toBe('X[[k3m9x2pq7abc]]\n')
