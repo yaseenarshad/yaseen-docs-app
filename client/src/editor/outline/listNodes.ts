@@ -28,6 +28,7 @@ export const itemLabelText = (item: ProseNode): string => {
 }
 
 export interface NestedList {
+  /** The nested list; from `findFoldedChildren`, a table too (YAZ-3696 D11). */
   list: ProseNode
   /** Offset of the list inside the item (`itemPos + 1 + offset` is its document position). */
   offset: number
@@ -41,6 +42,18 @@ export const findNestedLists = (item: ProseNode): NestedList[] => {
   const found: NestedList[] = []
   item.forEach((child, offset) => {
     if (LIST_NODE_NAMES.has(child.type.name)) found.push({ list: child, offset })
+  })
+  return found
+}
+
+/**
+ * Every block a bullet fold hides, in order: the nested lists and the tables the item owns (YAZ-3696
+ * D11). The item's other own blocks stay, so a fold never hides its label.
+ */
+export const findFoldedChildren = (item: ProseNode): NestedList[] => {
+  const found: NestedList[] = []
+  item.forEach((child, offset) => {
+    if (LIST_NODE_NAMES.has(child.type.name) || child.type.name === 'table') found.push({ list: child, offset })
   })
   return found
 }

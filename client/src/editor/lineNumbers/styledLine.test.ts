@@ -63,3 +63,14 @@ describe('line numbers with a styled line (S22)', () => {
     expect(words(root)).toEqual(['1:q', '3:LINE', '8:After'])
   })
 })
+
+describe('line numbers with a table that has settings (YAZ-3758, rule 41a)', () => {
+  it('the comment is part of the table: the table shows its range to the comment, and the next block keeps its own line', async () => {
+    const file = 'First\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n<!-- table: stripes -->\n\nAfter\n'
+    const { crepe, root } = await mount(file)
+    show(crepe, file)
+    const table = root.querySelector<HTMLElement>('.milkdown-table-block')!
+    expect([table.dataset.line, table.dataset.lineEnd]).toEqual(['3', '7'])
+    expect(words(root).at(-1)).toBe('9:After')
+  })
+})

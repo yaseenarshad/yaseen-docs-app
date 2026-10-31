@@ -10,7 +10,7 @@
  *     paragraph → bare marker (`*`, `1.`); other empty paragraphs keep `<br />`. Inside Milkdown
  *     an empty TASK item stays `* [ ] <br />` (remark drops the checkbox from `* [ ]`, and `[ ]`
  *     already stops the HTML-block reading) — see 4 for what reaches the disk.
- *  2. parse: a listItem whose nested list starts on a later line (`* ` + children — what
+ *  2. parse: a listItem whose nested list (or table, YAZ-3696 D12) starts on a later line (`* ` + children — what
  *     Obsidian writes for an empty parent) gets an empty leading paragraph, instead of
  *     becoming a list_item that starts with a bullet_list and serialising as `* * child`.
  *     A numeric marker immediately after a bullet is armored before parsing (see 6), so it is
@@ -67,10 +67,13 @@ const emptyParagraphFirstInListItem = paragraphSchema.extendSchema((prev) => (ct
   }
 })
 
-/** An item whose nested list starts on a LATER line (`* ` + children). */
+/**
+ * An item whose nested list starts on a LATER line (`* ` + children). A table there too: `/table` in
+ * a bullet keeps an empty label line above the table, written `*` + the indented table (YAZ-3696 D12).
+ */
 const isEmptyParent = (item: MdParent): boolean => {
   const first = item.children?.[0]
-  if (first?.type !== 'list') return false
+  if (first?.type !== 'list' && first?.type !== 'table') return false
   const itemLine = item.position?.start.line
   const listLine = first.position?.start.line
   return itemLine === undefined || listLine === undefined || listLine > itemLine

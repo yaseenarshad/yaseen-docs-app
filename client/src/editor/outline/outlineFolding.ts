@@ -14,6 +14,8 @@
  * YAZ-1140) — clears the pending fold undo (GRO-2091 B, see viewActions.ts). The one deliberate
  * exception is `document-fold`: foldAllHotkeys.ts updates bullets + headings atomically, so both
  * halves remain eligible and one ⌘Z restores both exact prior sets.
+ * A bullet that owns a table folds it as it folds a nested list, and a bullet with only a table is
+ * foldable too (YAZ-3696 D11, `findFoldedChildren`).
  * Image bullets (YAZ-1709): a list_item holding an `image` in its own blocks is foldable too, even
  * as a leaf. Its fold hides nested lists exactly as a parent's does and, on top, stamps every own
  * image with `data-outline-folded-image` so imageView.css shrinks it to a one-line chip; a click on
@@ -25,7 +27,7 @@ import { type Command, type EditorState, Plugin, PluginKey, type Transaction } f
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
-import { findNestedLists, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
+import { findFoldedChildren, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
 import { IMAGE_FOLD_CLASS } from '../image/imageView'
 import { outlineFoldKeyFromStem, outlineFoldKeyStem, outlineFoldLabel } from './outlineFoldKeys'
 import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
@@ -36,10 +38,10 @@ interface OutlineEntry {
   itemPos: number
   label: string
   /**
-   * Document ranges of every nested list (mixed markers parse as sibling lists; folding hides
-   * them all).
+   * Document ranges of every nested list and table the item owns (mixed markers parse as sibling
+   * lists; folding hides them all; tables since YAZ-3696 D11).
    */
-  nestedListRanges: readonly { from: number; to: number }[]
+  foldedRanges: readonly { from: number; to: number }[]
   /**
    * Document ranges of every image in the item's own blocks; folding shrinks them to a chip
    * (YAZ-1709).
@@ -55,7 +57,7 @@ type LastToggle =
 
 interface OutlineFoldingState {
   /**
-   * Every foldable list_item — one that owns a nested list or holds an image — in document order
+   * Every foldable list_item — one that owns a nested list or a table, or holds an image — in document order
    * (recomputed from the per-block cache only when the doc changes; its identity keys `decorationCache`).
    */
   entries: readonly OutlineEntry[]
@@ -120,7 +122,7 @@ export const isOutlineItemCollapsed = (state: EditorState, itemPos: number): boo
   pluginKey.getState(state)?.collapsedItemPositions.has(itemPos) ?? false
 
 /**
- * The collapsed items whose nested lists contain `pos` — everything hiding that position, from the
+ * The collapsed items whose nested lists or tables contain `pos` — everything hiding that position, from the
  * nearest parent up. CMD+F (YAZ-968) reveals exactly these to show a match, and puts them back.
  */
 export const collapsedItemsHiding = (state: EditorState, pos: number): number[] => {
@@ -128,8 +130,8 @@ export const collapsedItemsHiding = (state: EditorState, pos: number): number[] 
   if (!foldingState) return []
   return foldingState.entries
     .filter(
-      ({ itemPos, nestedListRanges }) =>
-        foldingState.collapsedItemPositions.has(itemPos) && nestedListRanges.some((range) => pos >= range.from && pos < range.to),
+      ({ itemPos, foldedRanges }) =>
+        foldingState.collapsedItemPositions.has(itemPos) && foldedRanges.some((range) => pos >= range.from && pos < range.to),
     )
     .map(({ itemPos }) => itemPos)
 }
@@ -279,7 +281,7 @@ interface BlockEntry {
   keyStem: string
   label: string
   itemPos: number
-  nestedListRanges: readonly { from: number; to: number }[]
+  foldedRanges: readonly { from: number; to: number }[]
   imageRanges: readonly { from: number; to: number }[]
 }
 
@@ -296,9 +298,9 @@ const entriesOfBlock = (block: ProseNode): readonly BlockEntry[] => {
   const entries: BlockEntry[] = []
   block.descendants((node, itemPos) => {
     if (node.type.name !== 'list_item') return true
-    const nestedLists = findNestedLists(node)
+    const foldedChildren = findFoldedChildren(node)
     const images = findOwnImages(node)
-    if (nestedLists.length === 0 && images.length === 0) return true
+    if (foldedChildren.length === 0 && images.length === 0) return true
 
     const label = itemLabelText(node)
     entries.push({
@@ -306,7 +308,7 @@ const entriesOfBlock = (block: ProseNode): readonly BlockEntry[] => {
       keyStem: outlineFoldKeyStem(label),
       label,
       itemPos,
-      nestedListRanges: nestedLists.map(({ list, offset }) => {
+      foldedRanges: foldedChildren.map(({ list, offset }) => {
         const from = itemPos + 1 + offset
         return { from, to: from + list.nodeSize }
       }),
@@ -334,7 +336,7 @@ const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
         foldKey: outlineFoldKeyFromStem(entry.keyStem, occurrence),
         itemPos: base + entry.itemPos,
         label: entry.label,
-        nestedListRanges: entry.nestedListRanges.map(shift),
+        foldedRanges: entry.foldedRanges.map(shift),
         imageRanges: entry.imageRanges.map(shift),
       })
     }
@@ -366,7 +368,7 @@ const carryDecorations = (previous: OutlineFoldingState, entries: readonly Outli
       folded === previous.collapsedItemPositions.has(before.itemPos) &&
       widgetLands(mapping, before.itemPos + 1, entry.itemPos + 1) &&
       nodeRangesLand(mapping, before.imageRanges, entry.imageRanges) &&
-      (!folded || nodeRangesLand(mapping, before.nestedListRanges, entry.nestedListRanges))
+      (!folded || nodeRangesLand(mapping, before.foldedRanges, entry.foldedRanges))
     )
   })
   if (unchanged) decorationCache.set(entries, { collapsedKey: collapsedKey(collapsed), set: cached.set.map(mapping, doc) })
@@ -553,7 +555,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                 decorations.push(Decoration.node(from, to, attrs))
               })
               if (collapsed) {
-                entry.nestedListRanges.forEach(({ from, to }) => {
+                entry.foldedRanges.forEach(({ from, to }) => {
                   decorations.push(Decoration.node(from, to, { [OUTLINE_FOLDED_ATTR]: 'true' }))
                 })
               }
