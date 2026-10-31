@@ -91,19 +91,29 @@ export function fetchTree(root: string): Promise<TreeResponse> {
   return (feed.queued = queued)
 }
 
-/** Every answer for `root`, whoever asked for it; returns the unsubscribe. */
+/**
+ * Every answer for `root`, whoever asked for it; returns the unsubscribe. The feed, and the tree it holds, goes
+ * when its last listener leaves (YAZ-3737): a vault that left the window keeps no tree here. Not at once: a
+ * listener that leaves and comes back in the same turn (an effect re-run) keeps the feed and its tree.
+ */
 export function onTree(root: string, listener: (outcome: Outcome) => void): () => void {
   const feed = feedOf(root)
   feed.listeners.add(listener)
-  return () => void feed.listeners.delete(listener)
+  return () => {
+    feed.listeners.delete(listener)
+    if (feed.listeners.size > 0) return
+    queueMicrotask(() => {
+      if (feed.listeners.size === 0 && feeds.get(root) === feed) feeds.delete(root)
+    })
+  }
 }
 
 /** The newest tree `onTree` has delivered for `root`; null before the first answer. */
 export function latestTree(root: string): TreeResponse | null {
-  return feedOf(root).latest
+  return feeds.get(root)?.latest ?? null // a read makes no feed: only a request or a listener does
 }
 
 /** Whether a request for `root` was sent in `turn` or later: its answer covers anything seen by then. */
 export function treeSentSince(root: string, turn: number): boolean {
-  return feedOf(root).sentTurn >= turn
+  return (feeds.get(root)?.sentTurn ?? 0) >= turn
 }

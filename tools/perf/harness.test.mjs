@@ -8,6 +8,7 @@ import { abba, loadSensitive, overCeilings, slope, summarizeRuns } from './lib/s
 import * as longDay from './scenarios/long-day.mjs'
 import { flowDiagram } from './scenarios/drawio.mjs'
 import { claimWorkDir, writeState } from './lib/work.mjs'
+import { parseFootprint } from './lib/app.mjs'
 import { RING, crosses, seedVaults } from './scenarios/multi-vault.mjs'
 import { NOTES } from './scenarios/typing.mjs'
 import { BIG_CODE_LINES, bigCodeText, writeBigCode } from './scenarios/bigCode.mjs'
@@ -54,12 +55,14 @@ describe('perf ceilings (YAZ-3044 A19)', () => {
     expect(summarizeRuns([{ r: 1.144 }, { r: 123.44 }]).r).toMatchObject({ min: 1.14, max: 123.4 })
   })
 
-  it('budget.json holds long-day\'s three ceilings at tolerance 0: ratio 1.1, slope 1 MB per cycle, renderer RSS (YAZ-3737 D7)', () => {
+  it('budget.json holds long-day\'s four ceilings at tolerance 0: ratio 1.1, slope 1 MB per cycle, renderer RSS and footprint (YAZ-3737 D7, YAZ-3862)', () => {
     const { perf } = JSON.parse(fs.readFileSync(new URL('./budget.json', import.meta.url), 'utf8'))
     expect(perf['long-day.heapEndOverStartRatio']).toMatchObject({ max: 1.1, tolerance: 0 })
     expect(perf['long-day.heapSlopeMbPerCycle']).toMatchObject({ max: 1, tolerance: 0 })
     expect(perf['long-day.rendererRssEndMb']).toMatchObject({ tolerance: 0 })
     expect(perf['long-day.rendererRssEndMb'].max).toBeGreaterThan(0)
+    expect(perf['long-day.rendererFootprintEndMb']).toMatchObject({ tolerance: 0 })
+    expect(perf['long-day.rendererFootprintEndMb'].max).toBeGreaterThan(0)
     // None is load-sensitive: the names end in neither Ms, Sec nor Pct.
     expect(Object.keys(perf).filter((k) => k.startsWith('long-day.') && loadSensitive(k))).toEqual([])
   })
@@ -169,11 +172,20 @@ describe('long-day (YAZ-3861, YAZ-3737 D7)', () => {
     expect([longDay.optIn, longDay.runs, longDay.warmup]).toEqual([true, 1, 0])
   })
 
-  it('the slope is the least-squares growth per cycle; the ratio is the last cycle over the first', () => {
+  it('the slope is the least-squares growth per cycle over every cycle; the ratio is the last cycle over cycle 3, after the warm cycles (YAZ-3862)', () => {
     expect(slope([100, 102, 104, 106])).toBe(2)
     expect(slope([300, 310, 310, 300])).toBe(0)
     expect(slope([42])).toBe(0)
-    expect(longDay.leakMetrics([200, 205, 210, 220])).toEqual({ heapStartMb: 200, heapEndMb: 220, heapEndOverStartRatio: 1.1, heapSlopeMbPerCycle: 6.5 })
+    expect(longDay.WARM_CYCLES).toBe(2)
+    expect(longDay.leakMetrics([180, 190, 200, 210, 220])).toEqual({ heapCycle1Mb: 180, heapStartMb: 200, heapEndMb: 220, heapEndOverStartRatio: 1.1, heapSlopeMbPerCycle: 10 })
+    // Fewer cycles than that: the last one is the start.
+    expect(longDay.leakMetrics([40, 42])).toMatchObject({ heapCycle1Mb: 40, heapStartMb: 42, heapEndOverStartRatio: 1 })
+  })
+
+  it('parseFootprint reads each process of `footprint -f bytes` as MB (YAZ-3862)', () => {
+    const text = '====\nElectron Helper (Renderer) [52742]: 64-bit    Footprint: 487587840 B (16384 bytes per page)\n====\n====\nElectron Helper (Renderer) [7]: 64-bit    Footprint: 1048576 B (16384 bytes per page)\n'
+    expect(parseFootprint(text)).toEqual(new Map([[52742, 465], [7, 1]]))
+    expect(parseFootprint('')).toEqual(new Map())
   })
 
   it('a cycle opens 20 files of every kind the issue names, once each', () => {

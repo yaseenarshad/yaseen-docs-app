@@ -24,11 +24,14 @@ export interface PreviewCache {
 /**
  * One cache per kind of preview; `fetchPreview` is the door that answers a key with a dataURL.
  * `limit` bounds how many settled pictures are kept, least recently seen out first (YAZ-1800: a
- * board's picture is ~1200 px and keyed per edit, so an unbounded map would only ever grow).
+ * board's picture is ~1200 px and keyed per edit, so an unbounded map would only ever grow). It is
+ * required (YAZ-3737): every cache is a long-lived module map. `maxBytes` also bounds their summed
+ * size, by the dataURL's length (S13): a few big pictures can cost more than many small ones.
  */
-export function createPreviewCache(fetchPreview: (key: string) => Promise<string>, { limit = Infinity }: { limit?: number } = {}): PreviewCache {
+export function createPreviewCache(fetchPreview: (key: string) => Promise<string>, { limit, maxBytes = Infinity }: { limit: number; maxBytes?: number }): PreviewCache {
   const settledByKey = new Map<string, string>()
   const inFlight = new Map<string, Promise<string | null>>()
+  let bytes = 0
 
   const load = (key: string): Promise<string | null> => {
     const settled = settledByKey.get(key)
@@ -42,8 +45,20 @@ export function createPreviewCache(fetchPreview: (key: string) => Promise<string
     if (existing !== undefined) return existing
     const request = fetchPreview(key)
       .then((dataURL) => {
-        if (settledByKey.size >= limit) settledByKey.delete(settledByKey.keys().next().value as string)
+        const old = settledByKey.get(key)
+        if (old !== undefined) {
+          settledByKey.delete(key)
+          bytes -= old.length
+        }
         settledByKey.set(key, dataURL)
+        bytes += dataURL.length
+        // The oldest go first, but never the picture just settled: one bigger than the budget still shows.
+        for (const [oldest, picture] of settledByKey) {
+          if (settledByKey.size <= limit && bytes <= maxBytes) break
+          if (oldest === key) break
+          settledByKey.delete(oldest)
+          bytes -= picture.length
+        }
         return dataURL
       })
       .catch(() => null)
@@ -57,6 +72,7 @@ export function createPreviewCache(fetchPreview: (key: string) => Promise<string
     clear: () => {
       settledByKey.clear()
       inFlight.clear()
+      bytes = 0
     },
     Preview: ({ cacheKey, placeholderClass }) => {
       // A key already settled paints on the first render, so a re-mount never flashes a placeholder.
