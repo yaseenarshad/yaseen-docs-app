@@ -8,6 +8,7 @@ import { createStore, type Store } from './store'
 import {
   BOUNDS_DEBOUNCE_MS,
   FLUSH_TIMEOUT_MS,
+  LINK_SETTLE_MS,
   TEAR_OFF_GRAB,
   WINDOW_CASCADE_PX,
   besideFilesBounds,
@@ -106,7 +107,7 @@ class FakeWindow {
     this.listeners.set(event, list)
     return this
   }
-  emit(event: 'move' | 'resize' | 'focus' | 'minimize' | 'restore'): void {
+  emit(event: 'move' | 'resize' | 'focus' | 'blur' | 'minimize' | 'restore'): void {
     for (const l of this.listeners.get(event) ?? []) l()
   }
   /** What Electron does on a user close: emit `close`; destroy only when nobody preventDefault-ed. */
@@ -369,6 +370,99 @@ describe('createWindowManager: reloadWindow (YAZ-3737 D2)', () => {
     manager.handleFlushed(w2.webContents, true)
     await vi.advanceTimersByTimeAsync(0)
     expect(w2.webContents.reload).not.toHaveBeenCalled()
+  })
+})
+
+describe('createWindowManager: the memory reload (YAZ-3737 D4, D6, S22)', () => {
+  const VIEWS = [null, { path: '/v/a.md', view: { scrollTop: 300, zoomKey: null, folds: [], magnification: 100 } }]
+
+  it('memoryReload keeps the views and size for the next page, ONE time, after a clean flush; a flush that is not clean drops them', async () => {
+    const { manager, w1 } = seedTwo()
+    const dirty = manager.memoryReload('w1', VIEWS, 1740)
+    manager.handleFlushed(w1.webContents, false)
+    await expect(dirty).resolves.toBe(false)
+    expect(w1.webContents.reload).not.toHaveBeenCalled()
+    expect(manager.takeReload('w1')).toBeUndefined()
+
+    const clean = manager.memoryReload('w1', VIEWS, 1740)
+    manager.handleFlushed(w1.webContents, true)
+    await expect(clean).resolves.toBe(true)
+    expect(w1.webContents.reload).toHaveBeenCalledOnce()
+    expect(manager.takeReload('w1')).toEqual({ views: VIEWS, mb: 1740 })
+    expect(manager.takeReload('w1')).toBeUndefined() // a ⌘R after it gets none (no second notice)
+
+    // A window that closes before its new page asks drops them.
+    const closing = manager.memoryReload('w1', VIEWS, 1740)
+    manager.handleFlushed(w1.webContents, true)
+    await closing
+    w1.destroy()
+    expect(manager.takeReload('w1')).toBeUndefined()
+  })
+
+  it('a reload holds the link pushes again until the new page says link:ready (S22)', async () => {
+    const { manager, w1 } = seedTwo()
+    manager.handleLinkReady(w1.webContents)
+    const reload = manager.reloadWindow('w1')
+    manager.handleFlushed(w1.webContents, true)
+    await reload
+    manager.vaultNotice('/v', 'Synced')
+    const told = () => w1.webContents.send.mock.calls.filter(([ch]) => ch === CONTRACT.link.onNotice.channel)
+    expect(told()).toEqual([])
+    manager.handleLinkReady(w1.webContents)
+    expect(told()).toEqual([[CONTRACT.link.onNotice.channel, 'Synced']])
+  })
+
+  it('blurredAt: since its last blur, or since it opened when never focused; null with the focus; lastFocused is the front of the focus list', async () => {
+    vi.setSystemTime(1_000_000)
+    const { manager, w1, w2 } = seedTwo()
+    expect(manager.blurredAt('w1')).toBe(1_000_000)
+    expect(manager.lastFocused()).toBeUndefined()
+    w1.emit('focus')
+    expect(manager.blurredAt('w1')).toBeNull()
+    expect(manager.lastFocused()).toBe('w1')
+    vi.setSystemTime(1_005_000)
+    w1.emit('blur') // the app lost the focus: w1 is still the window focused last
+    expect(manager.blurredAt('w1')).toBe(1_005_000)
+    expect(manager.lastFocused()).toBe('w1')
+    w2.emit('focus')
+    expect(manager.lastFocused()).toBe('w2')
+    w1.destroy()
+    expect(manager.blurredAt('w1')).toBeNull()
+    expect(manager.blurredAt('nope')).toBeNull()
+  })
+
+  it('busy (S22): a held link push, a push in the last 10 s, a pop-out that did not read its view, a close, a Files window with its board open', async () => {
+    const { manager, w1, w2 } = seedTwo()
+    expect(manager.busy('w1')).toBe(false)
+    // w1's page does not listen yet: the push waits for it.
+    manager.vaultNotice('/v', 'Synced')
+    expect(manager.busy('w1')).toBe(true)
+    manager.handleLinkReady(w1.webContents)
+    // Sent now; a tab move runs in its page after the push.
+    expect(manager.busy('w1')).toBe(true)
+    await vi.advanceTimersByTimeAsync(LINK_SETTLE_MS)
+    expect(manager.busy('w1')).toBe(false)
+    // A new pop-out window until its first identity read.
+    manager.popOut(store.get().windows.find((w) => w.id === 'w1')!, '/v/a.md', { view: VIEWS[1]!.view })
+    const popped = store.get().windows.at(-1)!.id
+    expect(manager.busy(popped)).toBe(true)
+    manager.takeStartView(popped)
+    expect(manager.busy(popped)).toBe(false)
+    // A close that runs.
+    w2.close()
+    expect(manager.busy('w2')).toBe(true)
+    expect(manager.busy('nope')).toBe(false)
+    // A Files window: busy only while its board makes it wide.
+    store.upsertWindow({ id: 'f', kind: 'files', root: '/v', roots: ['/v'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 280, height: 600 } })
+    const files = makeHost()
+    const other = createWindowManager(store, files.host)
+    other.restore('all')
+    for (const c of files.created) other.handleLinkReady(c.win.webContents)
+    expect(other.busy('f')).toBe(false)
+    other.filesWide('f', true)
+    expect(other.busy('f')).toBe(true)
+    other.filesWide('f', false)
+    expect(other.busy('f')).toBe(false)
   })
 })
 

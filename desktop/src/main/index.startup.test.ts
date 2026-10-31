@@ -46,6 +46,11 @@ const h = vi.hoisted(() => {
     linkNotice: vi.fn(),
     idFor: vi.fn(),
     flushAllForQuit: vi.fn(async (): Promise<void> => void s.order.push('flushAllForQuit')),
+    // The memory reload's watch (YAZ-3737 D6) asks these after each 30 s sample: none in these tests.
+    blurredAt: vi.fn(() => null),
+    lastFocused: vi.fn(() => undefined),
+    busy: vi.fn(() => false),
+    memoryReload: vi.fn(async () => false),
   }
   const store = {
     get: () => ({ settings: { theme: 'system', startupWindows: 'none' }, windows: s.stored, recents: [] }),

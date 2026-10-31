@@ -2895,6 +2895,13 @@ export interface WindowIdentity {
    * every folder closed, not with the vault's open folders. Given out by its FIRST `window:identity` only. Never stored.
    */
   startCollapsed?: true
+  /**
+   * The memory reload (YAZ-3737 D4): each tab's page view before main reloaded this window, by its place in the strip,
+   * with its path; `null` = that tab had none. Given out by the FIRST `window:identity` after that reload only. Never stored.
+   */
+  reloadViews?: (StartView | null)[]
+  /** The memory reload's size (YAZ-3737 D12), MB: the window shows its notice once. Given out with `reloadViews`. */
+  reloadedAtMb?: number
   /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */
   kind?: WindowKind
   /** A Files window's own sidebar zoom in percent (YAZ-3389 D13), as `WindowEntry.zoom`; absent on a full window. */

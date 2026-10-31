@@ -10,13 +10,15 @@
  * - Code helpers = the language helpers' PIDs, read with `ps` only for a report: they are `spawn` children, not
  *   in `getAppMetrics`. None runs: no row.
  * - JS heap: each window's preload, only for a report (`ipc/memory.ts`). Nothing polls it.
+ * - The memory reload (D4, D6): after each sample, `createReloadWatch` reloads a window that has stayed too big
+ *   while nobody used it (`mayReload`), with each tab's page view kept for its next page.
  *
  * Electron-free: `main/index.ts` injects the host, so this runs under vitest with fakes.
  */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileKind } from '@shared/fileKind'
-import type { FileKind, MemoryReport, MemoryWindowRow, WindowEntry } from '@shared/types'
+import type { FileKind, MemoryReport, MemoryWindowRow, StartView, WindowEntry } from '@shared/types'
 
 /** 240 samples per window: 2 h at `MEMORY_SAMPLE_MS` (D1). */
 export const HISTORY = 240
@@ -62,8 +64,8 @@ export interface MemorySample {
 }
 
 export interface MemoryMeter {
-  /** One sample of every window into its ring (the 30 s timer of `main/index.ts`). */
-  sample(): void
+  /** One sample of every window into its ring (the 30 s timer of `main/index.ts`). Answers the ids it sampled. */
+  sample(): string[]
   report(): Promise<MemoryReport>
   /** The window `id` closed: its history goes. */
   forget(id: string): void
@@ -164,12 +166,13 @@ export function createMemoryMeter<W extends MeterWindow>(host: MemoryHost<W>, no
   return {
     sample() {
       const t = now()
-      for (const { entry, bytes } of measure().wins) {
+      return measure().wins.map(({ entry, bytes }) => {
         const ring = rings.get(entry.id) ?? []
         ring.push({ t, bytes })
         if (ring.length > HISTORY) ring.shift()
         rings.set(entry.id, ring)
-      }
+        return entry.id
+      })
     },
     async report() {
       const t = now()
@@ -189,5 +192,100 @@ export function createMemoryMeter<W extends MeterWindow>(host: MemoryHost<W>, no
       rings.delete(id)
     },
     history: (id) => rings.get(id) ?? [],
+  }
+}
+
+// ---------- the memory reload (D4, D6) ----------
+
+/** A window reloads when each of its last `RELOAD_SAMPLES` samples (90 s) is over this many MB (D6). A constant: only the switch is a setting. */
+export const RELOAD_MB = 1536
+export const RELOAD_SAMPLES = 3
+/** A window reloads only when it lost the focus this long ago (D6). */
+export const RELOAD_QUIET_MS = 60_000
+/** At most one memory reload of a window in this time (D6). */
+export const RELOAD_COOLDOWN_MS = 30 * 60_000
+
+/** What `mayReload` looks at for one window. */
+export interface ReloadFacts {
+  /** `settings.memoryReload`. */
+  on: boolean
+  /** When it lost the focus (`WindowManager.blurredAt`); `null` = it has the focus. */
+  blurredAt: number | null
+  /** It is the window focused last (`focusOrder[0]`): the one the user comes back to. */
+  lastFocused: boolean
+  /** A tab move, pop-out, tear-off or held link push is in flight (S22, `WindowManager.busy`). */
+  busy: boolean
+  ring: readonly MemorySample[]
+  /** Its last memory reload; `undefined` = none. */
+  reloadedAt: number | undefined
+}
+
+/**
+ * D6: the switch is on; the window does not have the focus, is not the one focused last, and lost the focus
+ * `RELOAD_QUIET_MS` ago or more; nothing is in flight; no memory reload in `RELOAD_COOLDOWN_MS`; and its last
+ * `RELOAD_SAMPLES` samples are all over `RELOAD_MB`. A hidden or minimized window can reload.
+ */
+export function mayReload(f: ReloadFacts, now: number): boolean {
+  if (!f.on || f.blurredAt === null || f.lastFocused || f.busy || now - f.blurredAt < RELOAD_QUIET_MS) return false
+  if (f.reloadedAt !== undefined && now - f.reloadedAt < RELOAD_COOLDOWN_MS) return false
+  const last = f.ring.slice(-RELOAD_SAMPLES)
+  return last.length === RELOAD_SAMPLES && last.every((s) => s.bytes > RELOAD_MB * MB)
+}
+
+export interface ReloadHost {
+  /** `settings.memoryReload` now. */
+  on(): boolean
+  history(id: string): readonly MemorySample[]
+  blurredAt(id: string): number | null
+  lastFocused(): string | undefined
+  busy(id: string): boolean
+  /** Each tab's page view, in strip order (`askViews`); `null` = the page did not answer. */
+  views(id: string): Promise<(StartView | null)[] | null>
+  /** `WindowManager.memoryReload`: `true` = it reloaded. */
+  reload(id: string, views: (StartView | null)[], mb: number): Promise<boolean>
+}
+
+export interface ReloadWatch {
+  /** After a sample: reload each window of `ids` that `mayReload` allows. */
+  check(ids: readonly string[]): void
+  /** The window `id` closed: its last reload time goes, and a reload that runs keeps none. */
+  forget(id: string): void
+}
+
+/**
+ * The memory reload's watch (D4, D6): run after each sample. A window that may reload gives its tabs' page views first,
+ * then reloads (flush; reload only when clean). A page that does not answer, or a flush that is not clean, leaves it as
+ * it is, and the next sample tries again. Only a reload that ran starts the cooldown.
+ */
+export function createReloadWatch(host: ReloadHost, now: () => number = Date.now): ReloadWatch {
+  /** The last memory reload of each window, until it closes. */
+  const reloadedAt = new Map<string, number>()
+  /** The windows whose reload runs now: a sample in the meantime does not start a second one. */
+  const running = new Set<string>()
+  return {
+    check(ids) {
+      const t = now()
+      const last = host.lastFocused()
+      for (const id of ids) {
+        if (running.has(id)) continue
+        const ring = host.history(id)
+        if (!mayReload({ on: host.on(), blurredAt: host.blurredAt(id), lastFocused: id === last, busy: host.busy(id), ring, reloadedAt: reloadedAt.get(id) }, t)) continue
+        running.add(id)
+        const mb = Math.round(ring[ring.length - 1].bytes / MB)
+        void host
+          .views(id)
+          .then((views) => (views === null ? false : host.reload(id, views, mb)))
+          .then((reloaded) => {
+            // A window that closed meanwhile (`forget`) keeps nothing.
+            if (reloaded && running.has(id)) reloadedAt.set(id, now())
+          })
+          .catch(() => undefined)
+          .finally(() => running.delete(id))
+      }
+    },
+    forget(id) {
+      reloadedAt.delete(id)
+      running.delete(id)
+    },
   }
 }

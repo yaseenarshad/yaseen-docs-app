@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
-import type { ClipboardPasteRequest, CopyAsMode, CopyAsRich, PropertiesResponse, WatchEvent } from '@shared/types'
+import type { ClipboardPasteRequest, CopyAsMode, CopyAsRich, PropertiesResponse, StartView, WatchEvent } from '@shared/types'
 import { type Bridge, CONTRACT, type Envelope, isLeaf, SPECIAL, type YaseenDocsApi } from '@shared/ipc'
 
 /** invoke + unwrap: resolves the value or rejects with the plain `BridgeError` object. */
@@ -49,6 +49,15 @@ ipcRenderer.on(SPECIAL.appFlush, () => {
 // own `measureUserAgentSpecificMemory` needs cross-origin isolation, which the app does not have.
 ipcRenderer.on(SPECIAL.memoryHeap, (_e, token: unknown) => {
   ipcRenderer.send(SPECIAL.memoryHeapReply, { token, bytes: process.getHeapStatistics().usedHeapSize * 1024 })
+})
+
+// The memory reload (YAZ-3737 D4): main asks for every tab's page view just before it reloads the window. App answers
+// them in strip order; no listener (the Welcome window) answers `[]`. A listener that throws answers nothing, and main's
+// wait runs out: no reload this time.
+const viewsListeners = new Set<() => (StartView | null)[]>()
+ipcRenderer.on(SPECIAL.windowViews, (_e, token: unknown) => {
+  const [first] = viewsListeners
+  ipcRenderer.send(SPECIAL.windowViewsReply, { token, views: first?.() ?? [] })
 })
 
 // Each editor claims only its own focused surface. Ordinary inputs retain native insertion.
@@ -123,7 +132,7 @@ const api: YaseenDocsApi = {
     setFolds: (root, file, keys) => call(CONTRACT.state.setFolds.channel, root, file, [...keys]),
     setBaseGroups: (root, key, collapsed) => call(CONTRACT.state.setBaseGroups.channel, root, key, [...collapsed]),
   },
-  window: { ...generated.window, onFlush: (listener) => listen(flushListeners, listener) },
+  window: { ...generated.window, onFlush: (listener) => listen(flushListeners, listener), onViews: (listener) => listen(viewsListeners, listener) },
   // A dropped Finder file's path (YAZ-3253 D3): Electron removed `File.path`; no IPC, the preload reads it.
   file: { ...generated.file, pathFor: (file) => webUtils.getPathForFile(file) },
   menu: {

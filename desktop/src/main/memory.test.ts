@@ -1,7 +1,7 @@
 /** The memory meter (YAZ-3737 D1): what a window counts, its history, "grew" and the code helpers. */
 import { describe, expect, it, vi } from 'vitest'
-import { MEMORY_SAMPLE_MS } from '@shared/types'
-import { GREW_SPAN_MS, HISTORY, createMemoryMeter, grewSince, helperRss, openText, type MemoryHost, type MeterProcess } from './memory'
+import { MEMORY_SAMPLE_MS, type StartView } from '@shared/types'
+import { GREW_SPAN_MS, HISTORY, RELOAD_COOLDOWN_MS, RELOAD_MB, RELOAD_QUIET_MS, createMemoryMeter, createReloadWatch, grewSince, helperRss, mayReload, openText, type MemoryHost, type MemorySample, type MeterProcess, type ReloadFacts, type ReloadHost } from './memory'
 
 const MB = 1024 * 1024
 
@@ -104,5 +104,90 @@ describe('memory meter', () => {
   it('openText names what a window has open', () => {
     expect(openText(['/v/a.pdf', '/v/b.png', '/v/c.ts', '/v/d.ts', '/v/e.unknownext'])).toBe('1 PDF, 1 image, 2 text files, 1 other file')
     expect(openText([])).toBe('')
+  })
+})
+
+describe('the memory reload (YAZ-3737 D4, D6)', () => {
+  const NOW = 10 * 60 * 60_000
+  /** Three samples 30 s apart, the last at NOW, each `mb` big. */
+  const ring = (...mb: number[]): MemorySample[] => mb.map((m, i) => ({ t: NOW - (mb.length - 1 - i) * MEMORY_SAMPLE_MS, bytes: m * MB }))
+  const BIG = RELOAD_MB + 1
+  /** A window that may reload: every rule passes. */
+  const ok: ReloadFacts = { on: true, blurredAt: NOW - RELOAD_QUIET_MS, lastFocused: false, busy: false, ring: ring(BIG, BIG, BIG), reloadedAt: undefined }
+
+  it('mayReload: each rule of D6 alone stops it', () => {
+    expect(mayReload(ok, NOW)).toBe(true)
+    expect(mayReload({ ...ok, on: false }, NOW)).toBe(false) // the switch is off
+    expect(mayReload({ ...ok, blurredAt: null }, NOW)).toBe(false) // it has the focus
+    expect(mayReload({ ...ok, lastFocused: true }, NOW)).toBe(false) // the window focused last
+    expect(mayReload({ ...ok, blurredAt: NOW - RELOAD_QUIET_MS + 1 }, NOW)).toBe(false) // blurred under 60 s ago
+    expect(mayReload({ ...ok, busy: true }, NOW)).toBe(false) // a tab move, pop-out or held push in flight (S22)
+    // The last 3 samples, each over 1.5 GB: one at the limit, or fewer than 3, is not enough; older ones do not count.
+    expect(mayReload({ ...ok, ring: ring(BIG, RELOAD_MB, BIG) }, NOW)).toBe(false)
+    expect(mayReload({ ...ok, ring: ring(BIG, BIG) }, NOW)).toBe(false)
+    expect(mayReload({ ...ok, ring: ring(100, BIG, BIG, BIG) }, NOW)).toBe(true)
+    expect(mayReload({ ...ok, ring: ring(BIG, BIG, BIG, 100) }, NOW)).toBe(false)
+    // At most one memory reload in 30 min.
+    expect(mayReload({ ...ok, reloadedAt: NOW - RELOAD_COOLDOWN_MS + 1 }, NOW)).toBe(false)
+    expect(mayReload({ ...ok, reloadedAt: NOW - RELOAD_COOLDOWN_MS }, NOW)).toBe(true)
+  })
+
+  function watch(over: Partial<ReloadHost> = {}) {
+    let t = NOW
+    const views: (StartView | null)[] = [null, { path: '/v/a.md', view: { scrollTop: 40, zoomKey: null, folds: [], magnification: 100 } }]
+    const host = {
+      on: vi.fn(() => true),
+      history: vi.fn(() => ring(BIG, BIG, 1740)),
+      blurredAt: vi.fn((): number | null => NOW - RELOAD_QUIET_MS),
+      lastFocused: vi.fn((): string | undefined => 'w-front'),
+      busy: vi.fn(() => false),
+      views: vi.fn(async (): Promise<(StartView | null)[] | null> => views),
+      reload: vi.fn(async (_id: string, _views: (StartView | null)[], _mb: number) => true),
+      ...over,
+    }
+    return { host, views, w: createReloadWatch(host, () => t), at: (ms: number) => (t = ms) }
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 0))
+
+  it('reads the views first, then reloads with them and the last size in MB; the cooldown then holds it; the window focused last never reloads', async () => {
+    const { host, views, w, at } = watch()
+    w.check(['w-front', 'w1'])
+    await settle()
+    expect(host.views).toHaveBeenCalledExactlyOnceWith('w1')
+    expect(host.reload).toHaveBeenCalledExactlyOnceWith('w1', views, 1740)
+    at(NOW + RELOAD_COOLDOWN_MS - 1)
+    w.check(['w1'])
+    await settle()
+    expect(host.reload).toHaveBeenCalledOnce()
+    // A closed window's reload time goes with it.
+    w.forget('w1')
+    w.check(['w1'])
+    await settle()
+    expect(host.reload).toHaveBeenCalledTimes(2)
+  })
+
+  it('a page that does not answer, or a flush that is not clean, reloads nothing and starts no cooldown: the next sample tries again', async () => {
+    const silent = watch({ views: vi.fn(async () => null) })
+    silent.w.check(['w1'])
+    await settle()
+    expect(silent.host.reload).not.toHaveBeenCalled()
+
+    const dirty = watch({ reload: vi.fn(async () => false) })
+    dirty.w.check(['w1'])
+    await settle()
+    dirty.w.check(['w1'])
+    await settle()
+    expect(dirty.host.reload).toHaveBeenCalledTimes(2)
+  })
+
+  it('a sample while a reload runs starts no second one', async () => {
+    let finish!: (reloaded: boolean) => void
+    const { host, w } = watch({ reload: vi.fn(() => new Promise<boolean>((r) => (finish = r))) })
+    w.check(['w1'])
+    await settle()
+    w.check(['w1'])
+    await settle()
+    expect(host.reload).toHaveBeenCalledOnce()
+    finish(true)
   })
 })

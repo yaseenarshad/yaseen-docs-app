@@ -2,12 +2,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ipcMain } from 'electron'
 import { SPECIAL } from '@shared/ipc'
-import { HEAP_WAIT_MS, askHeap, registerMemoryIpc } from './memory'
+import { HEAP_WAIT_MS, VIEWS_WAIT_MS, askHeap, askViews, registerMemoryIpc } from './memory'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }))
 
 registerMemoryIpc({ report: vi.fn() })
 const reply = vi.mocked(ipcMain.on).mock.calls.find(([ch]) => ch === SPECIAL.memoryHeapReply)![1] as (e: unknown, msg: unknown) => void
+const viewsReply = vi.mocked(ipcMain.on).mock.calls.find(([ch]) => ch === SPECIAL.windowViewsReply)![1] as (e: unknown, msg: unknown) => void
 
 afterEach(() => vi.useRealTimers())
 
@@ -30,5 +31,27 @@ describe('askHeap', () => {
     expect(await silent).toBeNull()
     const gone = askHeap({ id: 10, send: () => { throw new Error('destroyed') } })
     expect(await gone).toBeNull()
+  })
+})
+
+describe('askViews (YAZ-3737 D4)', () => {
+  it('resolves the asked window\'s views in strip order, a bad entry as null; no answer in 1 s, or no list, is null', async () => {
+    vi.useFakeTimers()
+    const wc = { id: 7, send: vi.fn() }
+    const views = askViews(wc)
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(SPECIAL.windowViews, expect.any(String))
+    const token = wc.send.mock.calls[0][1] as string
+    const view = { scrollTop: 40, zoomKey: null, folds: ['f:0'], magnification: 100, selection: { anchor: 2, head: 2 } }
+    viewsReply({ sender: { id: 8 } }, { token, views: [] }) // not the window asked
+    viewsReply({ sender: { id: 7 } }, { token, views: [{ path: '/v/a.md', view }, null, { path: '/v/b.md', view: { scrollTop: 'x' } }, { view }] })
+    expect(await views).toEqual([{ path: '/v/a.md', view }, null, null, null])
+
+    const silent = askViews({ id: 9, send: vi.fn() })
+    vi.advanceTimersByTime(VIEWS_WAIT_MS)
+    expect(await silent).toBeNull()
+    const odd = { id: 10, send: vi.fn() }
+    const notList = askViews(odd)
+    viewsReply({ sender: { id: 10 } }, { token: odd.send.mock.calls[0][1], views: 'all' })
+    expect(await notList).toBeNull()
   })
 })

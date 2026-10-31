@@ -55,6 +55,11 @@ export const WINDOW_CASCADE_PX = 24
  * sidebar width right of the pointer.
  */
 export const TEAR_OFF_GRAB: ScreenPoint = { x: 190, y: 50 }
+/**
+ * A window main sent a link push in this time is busy (YAZ-3737 S22): a tab move (`link:take-tab`, `link:send-tab`,
+ * `link:pop-out-tab`) runs in the page after the push, and main hears no end of it. The memory reload waits.
+ */
+export const LINK_SETTLE_MS = 10_000
 
 const DEFAULT_BOUNDS: WindowBounds = { x: 100, y: 100, width: 1200, height: 800 }
 
@@ -79,7 +84,7 @@ export interface ManagedWindow {
   setBounds(bounds: WindowBounds, animate?: boolean): void
   /** Like Electron's: the page area's bounds on screen, the title bar left out (YAZ-3357 D9, the preview's row height). */
   getContentBounds(): WindowBounds
-  on(event: 'move' | 'resize' | 'closed' | 'focus' | 'minimize' | 'restore', listener: () => void): unknown
+  on(event: 'move' | 'resize' | 'closed' | 'focus' | 'blur' | 'minimize' | 'restore', listener: () => void): unknown
   on(event: 'close', listener: (e: { preventDefault(): void }) => void): unknown
 }
 
@@ -194,6 +199,11 @@ export interface WindowManager extends WindowLookup {
    * takes it, so a reload starts fresh (S17). A window that closes before it asks drops it (S20). Never stored.
    */
   takeStartView(id: string): StartView | undefined
+  /**
+   * The memory reload's hand-over (YAZ-3737 D4, D12), ONE time: the first `window:identity` after the reload takes each
+   * tab's page view (by its place in the strip) and the size it reloaded at. A ⌘R and a later reload get none. Memory only.
+   */
+  takeReload(id: string): { views: (StartView | null)[]; mb: number } | undefined
   /** A window `duplicateWindow` or `openBehind` opened (YAZ-3343 D22, D35): `true` ONCE, for its first `window:identity`, so it boots with no tab. */
   takeStartEmpty(id: string): boolean
   /** A NEW window (YAZ-3487, demo round 3): its tree starts with every folder closed. Once, as `takeStartEmpty`. */
@@ -254,6 +264,21 @@ export interface WindowManager extends WindowLookup {
    * window, or the app quits. The caller says why, if anyone should hear it.
    */
   reloadWindow(id: string): Promise<boolean>
+  /**
+   * The memory reload (YAZ-3737 D4): keep `views` and `mb` for the window `id`'s next page (`takeReload`), then
+   * `reloadWindow`. Not reloaded (the flush was not clean, or no live window): they go, and the answer is `false`.
+   */
+  memoryReload(id: string, views: (StartView | null)[], mb: number): Promise<boolean>
+  /** When the live window `id` lost the focus (YAZ-3737 D6): its last `blur`, else when it opened. `null` = it has the focus, or is not live. */
+  blurredAt(id: string): number | null
+  /** The window focused last (`focusOrder[0]`, YAZ-3737 D6), if any. */
+  lastFocused(): string | undefined
+  /**
+   * The live window `id` has something in flight that a reload would cut (YAZ-3737 S22): a held link push, a link push
+   * in the last `LINK_SETTLE_MS` (a tab move or pop-out runs in its page), a start view it did not read yet (it is a new
+   * pop-out or tear-off), its close, or its board open in a Files window (the reload would make it narrow).
+   */
+  busy(id: string): boolean
   /** `before-quit`: record the vault of the window in front (YAZ-2589 A1), then handshake every window at once (YAZ-2198); `windows[]` is kept, and the next launch brings back what it is asked for. */
   flushAllForQuit(): Promise<void>
   /**
@@ -309,7 +334,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -483,6 +508,12 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const live = new Map<string, ManagedWindow>()
   /** Page views for popped-out windows that have not read their identity yet (YAZ-2951 D2), by window id. Memory only. */
   const startViews = new Map<string, StartView>()
+  /** The memory reload's page views and size (YAZ-3737 D4, D12), by window id, until the new page's first identity read. Memory only. */
+  const reloads = new Map<string, { views: (StartView | null)[]; mb: number }>()
+  /** Each live window that does not have the focus: since when (YAZ-3737 D6). A window that was never focused counts from when it opened. */
+  const blurredSince = new Map<string, number>()
+  /** The last link push to each window, by `webContents.id` (YAZ-3737 S22). */
+  const pushedAt = new Map<number, number>()
   /** The windows `duplicateWindow` and `openBehind` opened, until their first identity read (YAZ-3343): they boot empty. */
   const emptyStarts = new Set<string>()
   /** The NEW windows (⌘⇧N, the board's "New window", a new Files window) until their first identity read: their tree starts closed (YAZ-3487). */
@@ -623,6 +654,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     const unregister = register(win, id)
     live.set(id, win)
     heldLinks.set(wcId, [])
+    blurredSince.set(id, Date.now())
 
     let boundsTimer: ReturnType<typeof setTimeout> | null = null
     const cancelBoundsTimer = (): void => {
@@ -640,7 +672,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     }
     win.on('move', scheduleBounds)
     win.on('resize', scheduleBounds)
-    win.on('focus', () => noteFocused(id))
+    win.on('focus', () => {
+      blurredSince.delete(id)
+      noteFocused(id)
+    })
+    win.on('blur', () => blurredSince.set(id, Date.now()))
     // Minimized in the Dock (YAZ-3343 D23): the board tags the frame until it is restored.
     win.on('minimize', () => {
       minimizedWins.add(id)
@@ -669,6 +705,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       closingWins.delete(id)
       // Closed before it asked (YAZ-2951 S20): what it would have read goes with it.
       startViews.delete(id)
+      reloads.delete(id)
+      blurredSince.delete(id)
+      pushedAt.delete(wcId)
       emptyStarts.delete(id)
       collapsedStarts.delete(id)
       heldLinks.delete(wcId)
@@ -775,6 +814,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   /** A link push to `win`: at once when its renderer listens, else held for `handleLinkReady` (YAZ-2589 A2). */
   const sendLink = (win: ManagedWindow, channel: string, payload: unknown): void => {
     const send = (): void => win.webContents.send(channel, payload)
+    pushedAt.set(win.webContents.id, Date.now())
     const held = heldLinks.get(win.webContents.id)
     if (held === undefined) send()
     else held.push(send)
@@ -878,6 +918,19 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     if (!raiseWindows((w) => sameVaults(w.roots, found)) && (from === undefined || !takeHere(from, found))) openWindow({ root: found[0], roots: found, file: startFile(found[0]) })
     store.touchVaultSet(id)
     return { opened: true, missing }
+  }
+
+  /** The safe reload (YAZ-3737 D2): see `WindowManager.reloadWindow`. */
+  const reloadWindow = async (id: string): Promise<boolean> => {
+    const win = liveWindow(id)
+    if (win === undefined || quitting || closingWins.has(id)) return false
+    const clean = await flushRenderer(win)
+    // A close or the quit can join this flush and take the window right after it.
+    if (!clean || quitting || closingWins.has(id) || win.isDestroyed()) return false
+    // The new page hears no push until its `link:ready`, as at the window's start (YAZ-2589 A2): hold them again (S22).
+    if (!heldLinks.has(win.webContents.id)) heldLinks.set(win.webContents.id, [])
+    win.webContents.reload()
+    return true
   }
 
   return {
@@ -1057,6 +1110,12 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       return start
     },
 
+    takeReload(id) {
+      const reload = reloads.get(id)
+      reloads.delete(id)
+      return reload
+    },
+
     takeStartEmpty(id) {
       return emptyStarts.delete(id)
     },
@@ -1128,14 +1187,24 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       pendingFlush.get(sender.id)?.settle(clean)
     },
 
-    async reloadWindow(id) {
+    reloadWindow,
+
+    async memoryReload(id, views, mb) {
+      reloads.set(id, { views, mb })
+      const reloaded = await reloadWindow(id)
+      if (!reloaded) reloads.delete(id)
+      return reloaded
+    },
+
+    blurredAt: (id) => (liveWindow(id) === undefined ? null : (blurredSince.get(id) ?? null)),
+
+    lastFocused: () => focusOrder[0],
+
+    busy(id) {
       const win = liveWindow(id)
-      if (win === undefined || quitting || closingWins.has(id)) return false
-      const clean = await flushRenderer(win)
-      // A close or the quit can join this flush and take the window right after it.
-      if (!clean || quitting || closingWins.has(id) || win.isDestroyed()) return false
-      win.webContents.reload()
-      return true
+      if (win === undefined) return false
+      const wcId = win.webContents.id
+      return (heldLinks.get(wcId)?.length ?? 0) > 0 || Date.now() - (pushedAt.get(wcId) ?? -Infinity) < LINK_SETTLE_MS || startViews.has(id) || closingWins.has(id) || wideFiles.has(id)
     },
 
     openFilesWindow(from, root) {

@@ -259,12 +259,19 @@ function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<
 
 /**
  * A new window's boot tab starts with the page view main gave it (YAZ-2951 D5), when that tab shows
- * the view's file: a link or a pasted URL that opened another page wins, and gets none.
+ * the view's file: a link or a pasted URL that opened another page wins, and gets none. After a memory
+ * reload (YAZ-3737 D4) each restored tab gets the view of its place in the strip, when it shows the same file.
  */
-function bootStartView(tab: string | null, file: string | null): Map<string, PageView> {
+function bootStartView(tabs: readonly { id: string; path: string }[], tab: string | null, file: string | null): Map<string, PageView> {
   const start = storage.getStartView()
-  return new Map(tab !== null && start !== undefined && start.path === file ? [[tab, start.view]] : [])
+  const reload = storage.getReloadViews() ?? []
+  const views = new Map(tabs.flatMap((t, i): [string, PageView][] => (reload[i]?.path === t.path ? [[t.id, reload[i].view]] : [])))
+  if (tab !== null && start !== undefined && start.path === file) views.set(tab, start.view)
+  return views
 }
+
+/** The notice of a memory reload (YAZ-3737 D12): `mb` is the window's size before it, said in GB. */
+const reloadedNotice = (mb: number): string => `This window reloaded to free memory (it was ${(mb / 1024).toFixed(1)} GB). Your tabs and typing are kept. Undo and Back start fresh.`
 
 
 /** The place of a tab for its keys (YAZ-3564 K11): a note, a drawing, a diagram or code; null for any other tab. */
@@ -1420,9 +1427,21 @@ export function App() {
    * handed to its editor once. Built once, at mount (a lazy start: `bootStartView` reads storage and makes a Map).
    * Changed in place: never a render trigger.
    */
-  const [startView] = useState(() => bootStartView(activeTab, file))
+  const [startView] = useState(() => bootStartView(tabs, activeTab, file))
   /** Tab `id`'s page view now: its editor's, or the one it went to sleep with (YAZ-3737 S18). */
   const pageViewOf = useCallback((id: string) => readPageView(id) ?? startView.get(id), [startView])
+  // The memory reload (YAZ-3737 D4): main reads every tab's view, in strip order, just before it reloads this window.
+  // `pageViewOf`, so a sleeping tab gives the view it slept with (S18), not its first view.
+  useEffect(() => api.window.onViews(() => now.current.tabs.map((t) => {
+    const view = pageViewOf(t.id)
+    return view === undefined ? null : { path: t.path, view }
+  })), [pageViewOf])
+  // The one notice after a memory reload (D12): main says the size in the first identity read of the new page only, so
+  // a ⌘R says nothing.
+  useEffect(() => {
+    const mb = storage.getReloadedAtMb()
+    if (mb !== undefined) notify(reloadedNotice(mb))
+  }, [notify])
   /**
    * A tab leaves for another window (YAZ-2933 D2, YAZ-3091 D1), from a page of the board or a tab of the strip.
    * The page saves first, so the other window reads what was typed; `send` gives main the page with its page

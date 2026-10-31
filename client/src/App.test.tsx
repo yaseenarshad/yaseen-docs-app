@@ -10,7 +10,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type RestoreSessionResult, type SidebarTab, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -203,6 +203,7 @@ type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCol
 
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
   const stateChanged = new Set<(next: AppState) => void>()
+  const windowViews = new Set<() => (StartView | null)[]>()
   const menuOpenRoot = new Set<(path: string) => void>()
   const menuOpenFolder = new Set<() => void>()
   const menuSearch = new Set<() => void>()
@@ -351,6 +352,11 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       saveSession: vi.fn(async (_name: string, _replaceId?: string): Promise<string | null> => 's-new'),
       restoreSession: vi.fn(async (_id: string): Promise<RestoreSessionResult> => ({ tabs: [], roots: [], missing: [] })),
       onFlush: vi.fn(() => () => undefined),
+      // The memory reload (YAZ-3737 D4): main asks the page for every tab's view, in strip order.
+      onViews: vi.fn((l: () => (StartView | null)[]) => {
+        windowViews.add(l)
+        return () => windowViews.delete(l)
+      }),
     },
     menu: {
       onOpenFolder: menuSub(menuOpenFolder),
@@ -533,6 +539,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitTabOverview: () => menuTabOverview.forEach((l) => l()),
     emitNewTab: () => menuNewTab.forEach((l) => l()),
     emitGlow: (on: boolean) => windowGlow.forEach((l) => l(on)),
+    /** main's views ask before a memory reload: what the page answers. */
+    askViews: () => [...windowViews][0]?.() ?? [],
     emitNewWindow: () => menuNewWindow.forEach((l) => l()),
     emitNewItem: () => menuNewItem.forEach((l) => l()),
     emitGoTo: () => menuGoTo.forEach((l) => l()),
@@ -6646,4 +6654,45 @@ describe('App tab sleep (YAZ-3737 5A, S18; 5B D11, S7)', () => {
     act(() => tabEl(el, b).querySelector<HTMLButtonElement>('[role="tab"]')!.click())
     expect(layer(el, b)?.classList.contains('tabstack__layer--hidden')).toBe(false)
   }, 15_000)
+
+  it('the memory reload (YAZ-3737 D4): main\'s views ask gets every tab in strip order, a sleeping tab with the view it slept with', async () => {
+    history.replaceState(null, '', '?sleepSeconds=1')
+    const { el, askViews } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/c.md'] })
+    const [a, b] = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((t) => t.dataset.tab!)
+    act(() => tabEl(el, b).querySelector<HTMLButtonElement>('[role="tab"]')!.click())
+    const scroller = document.createElement('div')
+    scroller.className = 'editor-host'
+    layer(el, b)!.appendChild(scroller)
+    const view: PageView = { scrollTop: 640, zoomKey: null, folds: [], magnification: 100, selection: { anchor: 9, head: 9 } }
+    const off = registerPageView(scroller, () => view)
+    act(() => tabEl(el, a).querySelector<HTMLButtonElement>('[role="tab"]')!.click())
+    await wait(3500)
+    off()
+    expect(tabEl(el, b).querySelector('.tabbar__asleep')).not.toBeNull()
+    // `a` shows but answers no view here, and `c` was never opened.
+    expect(askViews()).toEqual([null, { path: '/v/b.md', view }, null])
+  }, 15_000)
+})
+
+describe('App after a memory reload (YAZ-3737 D4, D12)', () => {
+  const view = (scrollTop: number): PageView => ({ scrollTop, zoomKey: null, folds: [], magnification: 100 })
+  const NOTICE = 'This window reloaded to free memory (it was 1.7 GB). Your tabs and typing are kept. Undo and Back start fresh.'
+  const click = (el: HTMLElement, i: number) => act(() => el.querySelectorAll<HTMLElement>('.tabbar__tab')[i].querySelector<HTMLButtonElement>('[role="tab"]')!.click())
+
+  it('each restored tab starts on the view of its place in the strip (copies too, a moved place gets none); the notice shows once', async () => {
+    const tabStrip = [{ path: '/v/a.md', active: true as const }, { path: '/v/b.md' }, { path: '/v/b.md' }, { path: '/v/c.md' }]
+    const reloadViews = [{ path: '/v/a.md', view: view(10) }, { path: '/v/b.md', view: view(20) }, { path: '/v/b.md', view: view(30) }, { path: '/v/d.md', view: view(40) }]
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], tabStrip, reloadViews, reloadedAtMb: 1740 })
+    for (const i of [1, 2, 3]) click(el, i)
+    const started = (path: string) => captured.editors.filter((e) => e.path === path && e.startView !== undefined).map((e) => e.startView!.scrollTop)
+    expect(started('/v/a.md')).toContain(10)
+    expect(new Set(started('/v/b.md'))).toEqual(new Set([20, 30]))
+    expect(started('/v/c.md')).toEqual([]) // its place held another file's view
+    expect(el.textContent!.split(NOTICE)).toHaveLength(2)
+  })
+
+  it('a reload with no size from main (⌘R, or any later identity) shows no notice', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    expect(el.textContent).not.toContain('This window reloaded')
+  })
 })

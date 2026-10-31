@@ -82,7 +82,7 @@ function optionalSidebarLens(raw: Record<string, unknown>): SidebarLens | undefi
  * MAX_FOLD_KEYS_PER_FILE; anything else is `undefined`, so the new window opens with no page view
  * rather than not at all.
  */
-function optionalPageView(v: unknown): PageView | undefined {
+export function optionalPageView(v: unknown): PageView | undefined {
   if (!isRecord(v)) return undefined
   const { scrollTop, zoomKey, folds, magnification } = v
   if (typeof scrollTop !== 'number' || !Number.isFinite(scrollTop)) return undefined
@@ -194,6 +194,8 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const { id, root, roots, file, tabs, tabStrip, name, rightPanel, sidebarCollapsed, sidebarLens, kind, zoom } = entryFor(e)
     // A new window's page view goes out with its FIRST identity only (YAZ-2951 S17): a reload starts fresh.
     const startView = windows.takeStartView(id)
+    // The page after a memory reload (YAZ-3737 D4, D12) gets each tab's view and the size it reloaded at, once.
+    const reload = windows.takeReload(id)
     // A window the tab board opened empty (YAZ-3343) says so once: it boots with no tab.
     const startEmpty = windows.takeStartEmpty(id)
     // A NEW window (YAZ-3487): its tree starts with every folder closed. Once, as `startEmpty`.
@@ -202,7 +204,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     // main ends a wide state left from the page before, so the window is narrow again and the next board grows it.
     if (kind === 'files') windows.filesWide(id, false)
     // The copies and display names (YAZ-3057) go out with EVERY identity read: a reload keeps them, as a restart does.
-    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(startCollapsed ? { startCollapsed: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}) }
+    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(reload !== undefined ? { reloadViews: reload.views, reloadedAtMb: reload.mb } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(startCollapsed ? { startCollapsed: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {

@@ -19,8 +19,8 @@ import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerUpdateIpc } from './ipc/update'
-import { askHeap, registerMemoryIpc } from './ipc/memory'
-import { createMemoryMeter, helperRss, type MemoryMeter } from './memory'
+import { askHeap, askViews, registerMemoryIpc } from './ipc/memory'
+import { createMemoryMeter, createReloadWatch, helperRss, type MemoryMeter, type ReloadWatch } from './memory'
 import { saveHeapSnapshot } from './heapSnapshot'
 import { claimDeepLinkScheme } from './deepLinkScheme'
 import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
@@ -156,6 +156,7 @@ const manager = createWindowManager(store, {
     })
     win.on('closed', () => {
       meter?.forget(entry.id)
+      reloadWatch?.forget(entry.id)
       const popup = previewByOwner.get(ownerId)
       previewByOwner.delete(ownerId)
       if (popup !== undefined && !popup.isDestroyed()) popup.destroy()
@@ -259,6 +260,8 @@ let gitSync: GitSyncManager | undefined
 
 /** The memory meter (YAZ-3737 D1), made on `ready`: a window that closes drops its history. */
 let meter: MemoryMeter | undefined
+/** The memory reload's watch (YAZ-3737 D6), made with the meter: a window that closes drops its last reload time. */
+let reloadWatch: ReloadWatch | undefined
 
 /** The menu's apply step, once `ready` made it: a focus change moves which window the board items ask about (YAZ-3037). */
 let rebuildMenuOnFocus: (() => void) | undefined
@@ -409,7 +412,21 @@ app.whenReady().then(() => {
     rss: helperRss,
   })
   registerMemoryIpc(meter)
-  setInterval(() => meter?.sample(), MEMORY_SAMPLE_MS).unref()
+  // The memory reload (YAZ-3737 D4, D6): after each sample, a window too big while nobody uses it reloads, its views kept.
+  const sampled = meter
+  reloadWatch = createReloadWatch({
+    on: () => store.get().settings.memoryReload,
+    history: (id) => sampled.history(id),
+    blurredAt: (id) => manager.blurredAt(id),
+    lastFocused: () => manager.lastFocused(),
+    busy: (id) => manager.busy(id),
+    views: async (id) => {
+      const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && manager.idFor(w.webContents) === id)
+      return win === undefined ? null : askViews(win.webContents)
+    },
+    reload: (id, views, mb) => manager.memoryReload(id, views, mb),
+  })
+  setInterval(() => reloadWatch?.check(meter?.sample() ?? []), MEMORY_SAMPLE_MS).unref()
   // YAZ-1081 D3: a lid that just opened is the other "the world moved on while you were away"
   // moment, and the machine that edited the vault meanwhile is usually the other one. Wired here
   // rather than at module scope because powerMonitor is only safe to touch after `ready`.

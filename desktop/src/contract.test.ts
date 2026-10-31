@@ -35,10 +35,10 @@ vi.mock('./main/storageWorker?modulePath', () => ({ default: '' }))
 const doors = leaves(CONTRACT).map(([, door]) => door)
 /** Renderer → main invokes: the table's, plus the two the preload's Copy as / Paste as fallback makes. */
 const INVOKES = [...doors.filter((d) => d.kind === 'invoke').map((d) => d.channel), SPECIAL.menuCopyText.channel, SPECIAL.menuPasteTextFallback.channel, SPECIAL.menuEdit.channel].sort()
-/** Main → renderer pushes: the table's, plus the watch events, the flush request, Copy as / Paste as and the heap ask. */
-const PUSHES = [...doors.filter((d) => d.kind === 'push').map((d) => d.channel), SPECIAL.watchEvent, SPECIAL.appFlush, SPECIAL.menuCopyAs, SPECIAL.menuPasteAs, SPECIAL.memoryHeap].sort()
-/** Renderer → main sends: watch (un)subscribe, the flush ack and the heap answer. */
-const SENDS = [SPECIAL.watchSubscribe, SPECIAL.watchUnsubscribe, SPECIAL.appFlushed, SPECIAL.memoryHeapReply].sort()
+/** Main → renderer pushes: the table's, plus the watch events, the flush request, Copy as / Paste as, the heap ask and the views ask. */
+const PUSHES = [...doors.filter((d) => d.kind === 'push').map((d) => d.channel), SPECIAL.watchEvent, SPECIAL.appFlush, SPECIAL.menuCopyAs, SPECIAL.menuPasteAs, SPECIAL.memoryHeap, SPECIAL.windowViews].sort()
+/** Renderer → main sends: watch (un)subscribe, the flush ack, the heap answer and the views answer. */
+const SENDS = [SPECIAL.watchSubscribe, SPECIAL.watchUnsubscribe, SPECIAL.appFlushed, SPECIAL.memoryHeapReply, SPECIAL.windowViewsReply].sort()
 
 const dir = await mkdtemp(path.join(tmpdir(), 'yd-contract-'))
 afterAll(() => rm(dir, { recursive: true, force: true }))
@@ -66,9 +66,9 @@ it('the preload reaches every channel through exactly one exposure, of the right
     record('send', vi.mocked(ipcRenderer.send).mock.calls)
     vi.clearAllMocks()
   }
-  /** The preload's own subscriptions (the flush handshake, paste, copy, the heap ask): made at load. */
+  /** The preload's own subscriptions (the flush handshake, paste, copy, the heap ask, the views ask): made at load. */
   const pushHandler = (ch: string) => vi.mocked(ipcRenderer.on).mock.calls.find(([c]) => c === ch)![1] as (...args: unknown[]) => void
-  const [onFlush, onPasteAs, onCopyAs, onHeap] = [SPECIAL.appFlush, SPECIAL.menuPasteAs, SPECIAL.menuCopyAs, SPECIAL.memoryHeap].map(pushHandler)
+  const [onFlush, onPasteAs, onCopyAs, onHeap, onViews] = [SPECIAL.appFlush, SPECIAL.menuPasteAs, SPECIAL.menuCopyAs, SPECIAL.memoryHeap, SPECIAL.windowViews].map(pushHandler)
   drain()
 
   // Every API method once: a listener for `on*`/`watch`, placeholder arguments for the rest.
@@ -87,10 +87,11 @@ it('the preload reaches every channel through exactly one exposure, of the right
   await walk(bridge)
   drain()
 
-  // The four channels the preload uses on its own: the paste fallback, copy, the flush ack and the heap answer.
+  // The five channels the preload uses on its own: the paste fallback, copy, the flush ack, the heap answer and the views answer.
   // Electron's preload has `process.getHeapStatistics`; Node does not.
   Object.assign(process, { getHeapStatistics: () => ({ usedHeapSize: 1 }) })
   onHeap(undefined, 'token')
+  onViews(undefined, 'token')
   onPasteAs(undefined, { mode: 'plain', text: 'x' })
   bridge.menu.onCopyAs(() => 'x')
   onCopyAs(undefined, 'plain')
