@@ -214,6 +214,26 @@ describe('the caret steps over an ID link (YAZ-3744 D1)', () => {
   })
 })
 
+describe('a drag across a link is smooth (YAZ-3747 demo)', () => {
+  it('while the button is down, a head inside a link goes to its nearer edge and never flips edge to edge', async () => {
+    // 'pad [[Named]] tail': the link spans 5..14, its middle 9.5.
+    const { view } = await mount('pad [[Named]] tail\n')
+    view.dom.querySelector('p')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail: 1 }))
+    select(view, 1, 14) // the drag holds the whole link
+    select(view, 1, 12) // the pointer goes back over its last letters: the arrow rule would jump to 5
+    expect(view.state.selection.head).toBe(14)
+    select(view, 1, 11)
+    expect(view.state.selection.head).toBe(14)
+    select(view, 1, 7) // past its middle: the link leaves the selection
+    expect(view.state.selection.head).toBe(5)
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }))
+    // The button is up: Shift+arrow steps over the link again, from one edge to the other.
+    select(view, 1, 14)
+    select(view, 1, 13)
+    expect(view.state.selection.head).toBe(5)
+  })
+})
+
 describe('a double-click on a word next to a link selects only that word (YAZ-3935 C2)', () => {
   /** A double-click at `pos` on text, then the word selection the browser makes (`from`..`to`), as ProseMirror reads it. */
   const doubleClick = (view: EditorView, pos: number, from: number, to: number) => {

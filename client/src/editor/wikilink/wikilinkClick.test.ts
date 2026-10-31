@@ -712,6 +712,32 @@ describe('a click on a link works like text (YAZ-3935, C1 and C2 of YAZ-3879)', 
     expect(view.state.selection.head).toBe(19)
   })
 
+  it('a drag that starts on a pill selects from the pill\'s edge to the pointer, until the button is up (YAZ-3747 demo)', async () => {
+    // 'pad [[Known]] tail': the link spans 5..14, "tail" ends at 19.
+    const { crepe, root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
+    const view = viewOf(crepe)
+    box(linkSpan(root, 'Known'), 100, 40)
+    view.posAtCoords = () => ({ pos: 19, inside: -1 })
+    expect(mousedown(linkSpan(root, 'Known'), { clientX: 105, clientY: 12 })).toBe(false)
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 106, clientY: 12 })) // a tremble: still the click
+    expect(view.state.selection.empty).toBe(true)
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 220, clientY: 12 }))
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([5, 19])
+    // Back over the pill's last letters: the head stays on its nearer edge, letter after letter (`idLinkCaret.ts`).
+    for (const [pos, x] of [[12, 130], [11, 128]] as const) {
+      view.posAtCoords = () => ({ pos, inside: -1 })
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: 12 }))
+      expect([view.state.selection.from, view.state.selection.to]).toEqual([5, 14])
+    }
+    view.posAtCoords = () => ({ pos: 19, inside: -1 })
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 220, clientY: 12 }))
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }))
+    view.posAtCoords = () => ({ pos: 2, inside: -1 })
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 12 })) // after the drag: nothing
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([5, 19])
+    expectNoNav(nav)
+  })
+
   it('a double-click selects exactly the link; the pill stays; a triple-click is the browser\'s', async () => {
     const { crepe, root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
     const view = viewOf(crepe)

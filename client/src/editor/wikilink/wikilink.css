@@ -99,12 +99,13 @@
   background: var(--find-match-active-bg);
 }
 /* A link inside a selection is one lit box, its icon and padding too (YAZ-3747 demo, `pillSelection.ts`). The
-   browser's own colour stays off its letters: it would draw a second, patchy box inside this one. */
+   browser's own colour never shows on a link's letters: inside a lit box it would draw a second, patchy box, and
+   during a drag it would colour part of a link the selection does not hold (a link is one unit). */
 .wikilink.wikilink--selected {
   background: Highlight;
 }
-.wikilink--selected::selection,
-.wikilink--selected *::selection {
+.milkdown .ProseMirror .wikilink::selection,
+.milkdown .ProseMirror .wikilink *::selection {
   background: transparent;
 }
 

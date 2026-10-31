@@ -5,6 +5,8 @@
  *  - A caret or a selection end that lands inside a closed link steps over it: from one edge (an arrow) to the other
  *    edge, from anywhere else (↑/↓, a drag) to the nearer edge. Shift moves the head the same way. A click on the pill
  *    itself is `wikilinkClick.ts`'s: it puts the caret at the edge the pointer is nearer, by the pill's middle.
+ *  - While the mouse button is down (a drag), a head inside a link always goes to the nearer edge (YAZ-3747 demo): the
+ *    arrow rule would flip it from edge to edge at each letter the pointer crosses, so the selection flickered.
  *  - Backspace right after it, and Delete right before it, remove the whole link, with ⌥ or as ⌃H / ⌃D too. ⌘Z puts it back.
  *  - A double-click on a word next to a link selects only that word (C2): the browser's word can run on into the pill's
  *    text, hidden or shown, so the selection is cut at the links on each side of the word clicked.
@@ -55,6 +57,8 @@ const WORD_MS = 500
 export const createIdLinkCaret = () => {
   /** Where the latest double-click on text (not on a pill) landed, and when, until its word selection arrives. */
   let word: { pos: number; at: number } | null = null
+  /** Whether the main button is down: a drag's head inside a link goes to the nearer edge. */
+  let pointer = false
   return $prose(
     () =>
       new Plugin({
@@ -83,12 +87,17 @@ export const createIdLinkCaret = () => {
           const link = linkAround(state, head)
           const was = before.selection.head
           if (link === null || (was > link.from && was < link.to)) return null
-          const edge = was === link.from ? link.to : was === link.to ? link.from : head - link.from <= link.to - head ? link.from : link.to
+          const nearer = head - link.from <= link.to - head ? link.from : link.to
+          const edge = pointer ? nearer : was === link.from ? link.to : was === link.to ? link.from : nearer
           return state.tr.setSelection(TextSelection.create(state.doc, empty ? edge : anchor, edge))
         },
         props: {
           handleDOMEvents: {
             mousedown: (view, event) => {
+              if (event.button === 0 && !pointer) {
+                pointer = true
+                view.dom.ownerDocument.addEventListener('mouseup', () => (pointer = false), { once: true, capture: true })
+              }
               // Only a double-click on text is noted; the click itself stays the browser's.
               const onPill = event.target instanceof Element && event.target.closest(`.${WIKILINK_CLASS}`) !== null
               word = null

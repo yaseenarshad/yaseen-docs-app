@@ -16,6 +16,7 @@
  * A CLICK AS ON TEXT (YAZ-3935, C1 and C2 of YAZ-3879): in an editable note a plain click on a pill puts the caret at
  * its nearer edge (the pointer against the pill's middle), and a double-click selects exactly the link; both on
  * mousedown with the default prevented, so the link never flashes its raw text. The link is one unit (`idLinkCaret.ts`).
+ * That takes the browser's own drag too, so a drag that starts on a pill is followed here (`followDrag`).
  *
  * An UNRESOLVED link is created first (`createFromLink` — bare targets under `nav.createFolder()`, the Files & Links
  * "default location for new notes" setting read at CLICK time; C2-, GRO-2240), then opened by the same gesture: a
@@ -181,6 +182,30 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
  * The edge of the link at `from`..`to` that a click at `x` is nearer, by the pill's middle (YAZ-3935 C1): the boxes of
  * the link's shown pieces on the clicked piece's line. Read on a click only.
  */
+/**
+ * A drag that starts on a pill selects as a drag on text does (YAZ-3747 demo): from the edge the press put the caret
+ * on, the head follows the pointer until the button is up. `idLinkCaret.ts` puts a head inside a link on its nearer
+ * edge. A move of less than 4px is still the click.
+ */
+function followDrag(view: EditorView, anchor: number, start: MouseEvent): void {
+  const doc = view.dom.ownerDocument
+  let last = anchor
+  const move = (event: MouseEvent) => {
+    if (Math.abs(event.clientX - start.clientX) + Math.abs(event.clientY - start.clientY) < 4) return
+    const head = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
+    if (head === undefined || head === last || view.isDestroyed) return
+    last = head
+    const { doc: node } = view.state
+    view.dispatch(view.state.tr.setSelection(TextSelection.between(node.resolve(anchor), node.resolve(head))))
+  }
+  const up = () => {
+    doc.removeEventListener('mousemove', move)
+    doc.removeEventListener('mouseup', up, true)
+  }
+  doc.addEventListener('mousemove', move)
+  doc.addEventListener('mouseup', up, true)
+}
+
 function nearerEdge(view: EditorView, span: Element, from: number, to: number, x: number): number {
   const line = span.getBoundingClientRect()
   let left = line.left
@@ -235,6 +260,7 @@ export function createWikilinkClick(follow: LinkFollow, hotkeys: () => HotkeyOve
               const selection = event.detail === 2 ? TextSelection.create(view.state.doc, match.from, match.to) : TextSelection.create(view.state.doc, nearerEdge(view, span, match.from, match.to, event.clientX))
               view.dispatch(view.state.tr.setSelection(selection))
               view.focus()
+              if (event.detail !== 2) followDrag(view, selection.head, event)
               return true
             },
           },
