@@ -1,7 +1,7 @@
 /**
  * THE READ-ONLY RENDER OF A NOTE (YAZ-1244), shared by the surfaces that hold a note up without
- * opening it: the hover card of Table and Board, and — through `ReadOnlyNote` — the preview panel of
- * the search (YAZ-2662 D5) and the sidebar's hover preview (YAZ-3075 D1).
+ * opening it: through `ReadOnlyNote`, the preview panel of the search (YAZ-2662 D5) and the sidebar's
+ * hover preview (YAZ-3075 D1), which the folder views also show (YAZ-3403, YAZ-3743).
  *
  * The instance is a real Crepe with BlockEdit and the Toolbar off and no find/drawing/link-click
  * options — the plugins that exist to EDIT are simply never registered — then `setReadonly(true)`.
