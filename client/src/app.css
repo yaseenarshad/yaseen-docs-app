@@ -711,6 +711,26 @@ button {
   font-weight: 700;
 }
 
+/* A group's label (YAZ-3886): "Workspaces", then "Folders" below a line. Only when a workspace is saved. */
+.welcome__label {
+  align-self: stretch;
+  margin-bottom: -14px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.welcome__label--rule {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Under "Folders", the empty note lines up with the label. */
+.welcome__label--rule + .welcome__empty {
+  align-self: stretch;
+  padding: 0 12px;
+}
+
 .welcome__empty {
   margin: 0;
   color: var(--fg-muted);

@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { defaultAppState, defaultFolderState, type RecentRoots } from '@shared/types'
+import { defaultAppState, defaultFolderState, type RecentRoots, type VaultSet } from '@shared/types'
 import { storage } from './lib/storage'
 import { relativeLastOpened, Welcome } from './Welcome'
 
@@ -25,7 +25,7 @@ function mount(over: Partial<WelcomeProps> = {}): { el: HTMLElement; props: Welc
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  const props: WelcomeProps = { recents: [], onOpenRecent: vi.fn(async () => true), onPickFolder: vi.fn(), picking: false, ...over }
+  const props: WelcomeProps = { recents: [], sets: [], onOpenRecent: vi.fn(async () => true), onOpenSet: vi.fn(async () => true), onPickFolder: vi.fn(), picking: false, ...over }
   act(() => root?.render(<Welcome {...props} />))
   return { el: container, props }
 }
@@ -110,6 +110,40 @@ describe('Welcome', () => {
     expect(rows(el).map((b) => b.querySelector('.welcome__recent-name')?.textContent)).toEqual(['🚀 Business Wiki', 'work'])
     expect(rows(el)[0]?.querySelector('.welcome__recent-path')?.textContent).toBe('/vaults/business-wiki-MASTER')
     delete (window as unknown as Record<string, unknown>).yaseenDocs
+  })
+
+  it('saved workspaces stand first under "Workspaces": name, last used, vault names; then a line and "Folders" (YAZ-3886 D2, D3)', () => {
+    const sets: VaultSet[] = [
+      { id: 's1', name: 'Work', roots: ['/vaults/notes', '/vaults/work'], lastUsed: Date.now() - 2 * HOUR },
+      { id: 's2', name: 'Never used', roots: ['/a', '/b', '/c'], lastUsed: 0 },
+    ]
+    const { el } = mount({ sets, recents: [{ path: '/vaults/notes', lastOpened: Date.now() - DAY }] })
+    expect([...el.querySelectorAll('.welcome__label')].map((l) => [l.textContent, l.classList.contains('welcome__label--rule')])).toEqual([['Workspaces', false], ['Folders', true]])
+    const r = rows(el)
+    expect(r.map((b) => b.querySelector('.welcome__recent-name')?.textContent)).toEqual(['Work', 'Never used', 'notes'])
+    expect(r.map((b) => b.querySelector('.welcome__recent-when')?.textContent)).toEqual(['2 hours ago', '', 'yesterday'])
+    expect(r.map((b) => b.querySelector('.welcome__recent-path')?.textContent)).toEqual(['notes + work', 'a + b + c', '/vaults/notes'])
+  })
+
+  it('with no saved workspace the page is as before: no label, no line (YAZ-3886 D4)', () => {
+    const { el } = mount({ recents: [{ path: '/vaults/notes', lastOpened: Date.now() }] })
+    expect(el.querySelector('.welcome__label')).toBeNull()
+    expect(rows(el)).toHaveLength(1)
+  })
+
+  it('a workspace with no recent folder keeps "Folders" above the empty note', () => {
+    const { el } = mount({ sets: [{ id: 's1', name: 'Work', roots: ['/a', '/b'], lastUsed: 0 }] })
+    expect(el.querySelector('.welcome__label--rule')?.nextElementSibling?.textContent).toBe('No recent folders yet.')
+  })
+
+  it('a click opens the workspace by its id; with no folder left the row greys with "Folders not found" (YAZ-3886 D1)', async () => {
+    const onOpenSet = vi.fn(async () => false)
+    const { el, props } = mount({ sets: [{ id: 's1', name: 'Work', roots: ['/a', '/b'], lastUsed: Date.now() }], onOpenSet })
+    await act(async () => rows(el)[0]?.click())
+    expect(onOpenSet).toHaveBeenCalledExactlyOnceWith('s1')
+    expect(props.onOpenRecent).not.toHaveBeenCalled()
+    expect(rows(el)[0]?.disabled).toBe(true)
+    expect(rows(el)[0]?.querySelector('.welcome__recent-when')?.textContent).toBe('Folders not found')
   })
 
   it('disables the Open folder… button while the dialog is open', () => {
