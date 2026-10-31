@@ -308,3 +308,61 @@ test('Mod-Alt-7 does not create a numbered list', async () => {
   expect(view.state.doc.firstChild?.type.name).toBe('paragraph')
   expect(getMarkdownForSave(crepe)).toBe('hello\n')
 })
+
+describe('right below a plain line with a written label, the marker stays text (YAZ-3727 D11)', () => {
+  it.each([
+    ['2\\. test', '3. '],
+    ['2\\. test', '7. '],
+    ['2\\) test', '3. '],
+    ['\\* test', '* '],
+    ['\\- test', '- '],
+    ['\\* test', '+ '],
+  ])('below %j, typed %j stays text', async (above, marker) => {
+    const { view } = await mount(`${above}\n`, above.replace(/\\/g, ''))
+    press(view, 'Enter')
+    type(view, marker)
+    expect(caretLine(view)).toBe('paragraph')
+    expect(view.state.selection.$from.parent.textContent).toBe(marker)
+  })
+
+  it('the demo flow: "1. " converts, ⌘Z, type on, Enter, "3. " stays text', async () => {
+    const { view } = await mount('para\n', 'para')
+    press(view, 'Enter')
+    type(view, '2. ')
+    press(view, 'z', true)
+    type(view, 'test')
+    press(view, 'Enter')
+    type(view, '3. ')
+    expect(caretLine(view)).toBe('paragraph')
+    expect(view.state.selection.$from.parent.textContent).toBe('3. ')
+  })
+
+  it('a marker of the other kind still converts: "* " below "2. test"', async () => {
+    const { view } = await mount('2\\. test\n', '2. test')
+    press(view, 'Enter')
+    type(view, '* ')
+    expect(caretLine(view)).toBe('bullet_list')
+  })
+
+  it('only the line right above counts: after an empty line, "3. " converts', async () => {
+    const { view } = await mount('2\\. test\n', '2. test')
+    press(view, 'Enter')
+    press(view, 'Enter')
+    type(view, '3. ')
+    expect(caretLine(view)).toBe('ordered_list from 3')
+  })
+
+  it('a number that is no marker above ("2.5 kg") does not count', async () => {
+    const { view } = await mount('2.5 kg\n', '2.5 kg')
+    press(view, 'Enter')
+    type(view, '3. ')
+    expect(caretLine(view)).toBe('ordered_list from 3')
+  })
+
+  it('in a quote too', async () => {
+    const { view } = await mount('> 2\\. test\n', '2. test')
+    press(view, 'Enter')
+    type(view, '3. ')
+    expect(caretLine(view)).toBe('paragraph')
+  })
+})

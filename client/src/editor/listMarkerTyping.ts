@@ -10,7 +10,9 @@
  *    line as its own undo step (`closeHistory`). A number starts its list at `n`; right after a numbered list it joins
  *    that list when it follows on (`childCount + order === n`), and a bullet joins a bullet list right above; right
  *    before a list of its kind it joins that one too (a number when the list starts at `n` or `n + 1`). Inside a
- *    list item the marker stays text (YAZ-1329: `* 6) text` is bullet text).
+ *    list item the marker stays text (YAZ-1329: `* 6) text` is bullet text). Right below a plain line that starts
+ *    with a written label of the same kind (`2. test`, `2) test`; `* test`), the marker stays text too: that column is
+ *    written by hand, for example after ⌘Z took a number away (D11).
  *  - `undoListMarker` ($shortcut, Backspace at priority 200, above the outliner's 100): right after a conversion it runs
  *    history `undo`, the same as ⌘Z: the line is plain `1. ` again, caret after the space. A second ⌘Z takes the typed
  *    text away.
@@ -27,6 +29,9 @@ import { $prose, $shortcut } from '@milkdown/kit/utils'
 
 /** The whole text before the caret: `n.` (a number of 1 to 9 digits, as CommonMark reads it) or `*` / `-` / `+` (a bullet). */
 const MARKER = /^(?:(\d{1,9})\.|[-*+])$/
+/** A plain line that starts with a written number (`2. `, `2) `) or bullet (`* `, `- `, `+ `) label (D11). */
+const WRITTEN_NUMBER = /^\d{1,9}[.)][ \t]/
+const WRITTEN_BULLET = /^[-*+][ \t]/
 
 const typingKey = new PluginKey<boolean>('YAZ_LIST_MARKER_TYPING')
 
@@ -53,6 +58,10 @@ export const listMarkerTyping = $prose((ctx) => {
         for (let depth = $from.depth - 1; depth > 0; depth--) if ($from.node(depth).type === itemType) return false
         const match = MARKER.exec($from.parent.textBetween(0, $from.parentOffset, undefined, '￼'))
         if (match === null) return false
+        // D11: the line right above, in the same parent, is plain text with a written label of this kind.
+        const index = $from.index($from.depth - 1)
+        const above = index > 0 ? $from.node($from.depth - 1).child(index - 1) : null
+        if (above?.type === $from.parent.type && (match[1] === undefined ? WRITTEN_BULLET : WRITTEN_NUMBER).test(above.textContent)) return false
         view.dispatch(view.state.tr.insertText(' ', from))
         const start = from - match[0].length
         const listType = match[1] === undefined ? bulletType : orderedType

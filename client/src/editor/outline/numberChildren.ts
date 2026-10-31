@@ -48,3 +48,30 @@ export function toggleNumberedChildren(state: EditorState, inside: number, ctx: 
   }
   return tr
 }
+
+/**
+ * "Bullets with written numbers" (YAZ-3727 D12): the numbered list that holds the item becomes a bullet list, and each
+ * of its lines gets its shown number written at the start of its text as `n) ` (`3. apples` → `* 3) apples`, literal
+ * bullet text under rule 8). Sublists are untouched. One transaction; null when the item is in no numbered list.
+ */
+export function writeNumbersAsText(state: EditorState, inside: number, ctx: Ctx): Transaction | null {
+  const item = nearestListItem(state.doc, inside)
+  if (!item) return null
+  const $item = state.doc.resolve(item.pos)
+  const list = $item.parent
+  if (list.type !== orderedListSchema.type(ctx)) return null
+  const listPos = $item.before()
+  const tr = state.tr
+  // Last line first, so each insert leaves the positions before it as they were.
+  for (let index = list.childCount - 1; index >= 0; index--) {
+    const line = list.child(index)
+    let at = listPos + 1
+    for (let i = 0; i < index; i++) at += list.child(i).nodeSize
+    const shown = Number.parseInt(String(line.attrs.label), 10)
+    const label = `${Number.isNaN(shown) ? (list.attrs.order as number) + index : shown}) `
+    if (line.firstChild?.isTextblock) tr.insertText(label, at + 2)
+    else tr.insert(at + 1, state.schema.nodes.paragraph.create(null, state.schema.text(label)))
+  }
+  tr.setNodeMarkup(listPos, bulletListSchema.type(ctx), { spread: list.attrs.spread })
+  return tr
+}
