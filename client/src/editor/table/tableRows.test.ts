@@ -106,7 +106,8 @@ describe('the menu on a table', () => {
   it('a table in a bullet shows its settings, not the bullet\'s rows: no line, no children (YAZ-3727 D13)', async () => {
     const { view } = await openOnTable(`* item\n\n  ${SMALL.trimEnd().split('\n').join('\n  ')}\n`)
     const rows = [...popupOf(view)!.querySelectorAll('.ctx-menu__item')].map((row) => row.textContent)
-    for (const bullet of ['Text', 'Checklist', 'Bullet list', 'Numbered list', 'Number children']) expect(rows).not.toContain(bullet)
+    expect(rows).not.toContain('Number children')
+    expect(popupOf(view)!.querySelector('.ctx-menu__strip')).toBeNull()
     expect(pickerNamed(view, 'Stripes')).toBeTruthy()
   })
 
@@ -145,7 +146,8 @@ describe('the menu on a table', () => {
 
     it('the bullet\'s own handle (the probe on its line) shows the bullet\'s rows only, no table settings (YAZ-3727 D13)', async () => {
       const { view } = await openWithHit(BULLET, (v) => v.dom.querySelector('li p')!)
-      expect(labels(view)).toEqual(['Text', 'Checklist', 'Bullet list', 'Numbered list'])
+      expect(labels(view)).toEqual([])
+      expect([...popupOf(view)!.querySelectorAll('.ctx-menu__strip button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Checklist', 'Bullet list', 'Numbered list', 'Text'])
     })
   })
 
