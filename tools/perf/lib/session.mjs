@@ -14,16 +14,17 @@ export const js = JSON.stringify
 
 /**
  * Launches `app` on `profile` seeded with `wins` (see writeState), waits for window w1 to paint note
- * `doc` (within `timeoutMs`), installs the page probes and hands `act` the running session.
+ * `doc` (within `timeoutMs`; no `doc`: a window with no tab, so no wait), installs the page probes and
+ * hands `act` the running session. `hidden`: see launch().
  * The app is quit whatever happens, so a scenario never leaves a process behind.
  */
-export async function session(app, { profile, wins, doc, timeoutMs = 30_000 }, act) {
+export async function session(app, { profile, wins, doc, timeoutMs = 30_000, hidden = false }, act) {
   writeState(profile, wins)
-  const proc = await launch({ ...app, profile })
+  const proc = await launch({ ...app, profile, hidden })
   try {
     const pages = await proc.windows(wins.length)
     const page = pages.find((p) => p.win === 'w1')
-    const docAt = await page.waitFor(painted(doc), timeoutMs)
+    const docAt = doc === undefined ? null : await page.waitFor(painted(doc), timeoutMs)
     await page.ev(PAGE_PROBES)
     return await act({ proc, page, pages, docAt })
   } finally {
