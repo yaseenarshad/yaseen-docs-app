@@ -382,9 +382,9 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
       const part = parts[i]
       if (i === 0 && title !== undefined) {
         // An id link: the id is syntax too, and the title stands where it was. Keyed by the
-        // title, so a rebuild that changes nothing redraws nothing.
+        // title, so a rebuild that changes nothing redraws nothing. `title` in the spec: what ⌘F reads (`pillLinks`).
         hide(out, at, at + part.length)
-        out.push(Decoration.widget(at, () => titleSpan(cls, title, icon?.attrs), { key: `${title}|${icon?.key ?? ''}` }))
+        out.push(Decoration.widget(at, () => titleSpan(cls, title, icon?.attrs), { key: `${title}|${icon?.key ?? ''}`, title }))
         segments++
       } else if (part.length > 0) {
         if (i === 0) {
@@ -426,8 +426,8 @@ function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Se
 
 /**
  * A link of a textblock that shows as a pill (YAZ-3744 S9): its range, the ranges it hides (`wikilink__syntax`: the
- * brackets, an ID, an alias's target, hidden folders and extensions, each `#`), and the title an ID link shows in place
- * of its ID (the widget at `from + 2`), else null.
+ * brackets, an ID, an alias's target, hidden folders and extensions, each `#`), and the text the widget at `from + 2`
+ * shows in place of its ID (an ID link's title, or "Missing note · YAS-466", S10), else null.
  */
 export interface PillLink {
   from: number
@@ -454,10 +454,8 @@ export function pillLinks(block: ProseNode, pos: number, sel: Selection, source:
       decorate(drawn, from, m[2], source, viewOnly)
       if (drawn.length === 0) continue
       const hidden = drawn.filter((d) => d.from < d.to && d.spec.syntax === true).map((d) => [d.from, d.to] as const)
-      const title = drawn.some((d) => d.from === d.to)
-        ? (idLinkTitle(linkPageName(m[2]), source.resolve, pathTitles(source.records, source.folders)) ?? null)
-        : null
-      pills.push({ from, to, hidden, title })
+      const title = drawn.find((d) => typeof d.spec.title === 'string')?.spec.title as string | undefined
+      pills.push({ from, to, hidden, title: title ?? null })
     }
   })
   return pills

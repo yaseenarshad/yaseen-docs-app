@@ -23,8 +23,8 @@
  * active match instead of the caret (`findThreadAnchor`); a caret move or an edit gives them back.
  *
  * Pills (YAZ-3744 S9): a `[[link]]` the note draws as a pill (`pillLinks`, the wikilink plugin's own drawing) hides
- * text. A match that touches its hidden text (an ID, `.drawio`, folders, the brackets), and each match in the title an
- * ID link shows, is ONE match that marks the whole pill: its shown text, and its title widget (a widget takes no
+ * text. The matches that touch its hidden text (an ID, `.drawio`, folders, the brackets) are together ONE match, and each
+ * match in the title an ID link shows is one. Each marks the whole pill: its shown text, and its title widget (a widget takes no
  * decoration, so the plugin view puts the classes on it). Such a match starts at the link's start, so `close()` lands
  * the caret on the link's edge, where an ID link keeps its title (D1, S17). A link the selection opens is plain text.
  */
@@ -121,20 +121,32 @@ const occurrences = (haystack: string, needle: string): number[] => {
   return found
 }
 
-/** One textblock's matches (S9): a match that touches a pill's hidden text marks the pill; a title's matches too. */
+/**
+ * One textblock's matches (S9): a match that touches a pill's hidden text marks the pill; a title's matches too. A pill
+ * counts once for its hidden text, however many matches that text holds, and not at all when its title counts it: the
+ * title of a missing note shows the ID it hides (S10). Each match in a title counts, as in any text.
+ */
 const blockMatches = (node: ProseNode, pos: number, needle: string, pills: readonly PillLink[]): Match[] => {
   const matches: Match[] = []
+  const counted = new Set<PillLink>()
   // A title stands where its ID was: its matches go first, and the stable sort below keeps them before the ID's.
   for (const pill of pills) {
     if (pill.title === null) continue
-    for (const _ of occurrences(pill.title.toLowerCase(), needle)) matches.push({ from: pill.from, to: pill.to, pill })
+    for (const _ of occurrences(pill.title.toLowerCase(), needle)) {
+      matches.push({ from: pill.from, to: pill.to, pill })
+      counted.add(pill)
+    }
   }
   for (const run of textRuns(node, pos)) {
     for (const i of occurrences(run.text.toLowerCase(), needle)) {
       const from = run.start + i
       const to = from + needle.length
       const pill = pills.find((link) => from < link.to && to > link.from && link.hidden.some(([a, b]) => from < b && to > a))
-      matches.push(pill === undefined ? { from, to } : { from: pill.from, to: pill.to, pill })
+      if (pill === undefined) matches.push({ from, to })
+      else if (!counted.has(pill)) {
+        counted.add(pill)
+        matches.push({ from: pill.from, to: pill.to, pill })
+      }
     }
   }
   return pills.length === 0 ? matches : matches.sort((a, b) => a.from - b.from)

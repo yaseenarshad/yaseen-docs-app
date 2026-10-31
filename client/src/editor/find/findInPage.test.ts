@@ -390,14 +390,15 @@ describe('escape and the save path', () => {
 })
 
 describe('pills (YAZ-3744 S9, S17)', () => {
-  const PATHS: Record<string, string> = { 'YAS-466': '/v/AR v2 plan.md', Named: '/v/Named.md' }
+  const PATHS: Record<string, string> = { 'YAS-466': '/v/AR v2 plan.md', Named: '/v/Named.md', 'docs/subs/Named': '/v/docs/subs/Named.md' }
   const LINE = 'pad [[YAS-466]] and [[LN Scenarios Diagram.drawio]] and [[Named]] tail\n'
   // 'pad [[YAS-466]] …': the ID link starts at 5 (paragraph content starts at 1).
   const ID_FROM = 5
 
   async function mountPills(markdown = LINE) {
     const wikilinks = createWikilinkResolveSource()
-    wikilinks.update((target) => PATHS[target] ?? null)
+    // A vault with IDs (`YAS`): an ID no note has is a missing note (S10).
+    wikilinks.update((target) => PATHS[target] ?? null, [], [], true, ['YAS'])
     const viewOnlyLinks = createViewOnlyLinkSource()
     viewOnlyLinks.update(buildViewOnlyCatalogFromEntries('/v', [
       { path: '/v/LN Scenarios Diagram.drawio', name: 'LN Scenarios Diagram.drawio', kind: 'diagram' },
@@ -431,6 +432,27 @@ describe('pills (YAZ-3744 S9, S17)', () => {
     expect(channel.getState().total).toBe(1)
     expect(matchEls(root)).toEqual([titleEl(root)])
     expect(root.querySelector(`.${WIKILINK_SYNTAX_CLASS}.${FIND_MATCH_CLASS}`)).toBeNull()
+  })
+
+  it('a pill counts once, however many matches its hidden text holds (YAZ-3910 A4)', async () => {
+    const { root, channel } = await mountPills('x [[docs/subs/Named]] y\n')
+    channel.open()
+    channel.setQuery('s') // three in the hidden `docs/subs/`, none in the name
+    expect(channel.getState()).toMatchObject({ total: 1, activeIndex: 0 })
+    expect(matchEls(root).map((el) => el.textContent).join('')).toBe('Named')
+  })
+
+  it('a missing note (S10): its ID marks the "Missing note" widget, one match (YAZ-3910 A1)', async () => {
+    const { root, channel } = await mountPills('pad [[YAS-999]] tail\n')
+    expect(titleEl(root).textContent).toBe('Missing note · YAS-999')
+    channel.open()
+    channel.setQuery('YAS-999') // in the widget's text and in the hidden ID: one pill, one match
+    expect(channel.getState()).toMatchObject({ total: 1, activeIndex: 0 })
+    expect(matchEls(root)).toEqual([titleEl(root)])
+    expect(activeEls(root)).toEqual([titleEl(root)])
+    channel.setQuery('missing')
+    expect(channel.getState().total).toBe(1)
+    expect(matchEls(root)).toEqual([titleEl(root)])
   })
 
   it('a match in a hidden extension marks the pill\'s shown name', async () => {
