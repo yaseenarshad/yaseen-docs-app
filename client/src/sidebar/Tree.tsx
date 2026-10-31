@@ -1,5 +1,7 @@
 import { memo, type CSSProperties } from 'react'
 import type { TabSort, TreeNode } from '@shared/types'
+import type { Needle } from '../links/completion'
+import { marked } from '../search/marked'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
 import type { EntryKind, MenuRow } from './createEntry'
@@ -103,19 +105,6 @@ export interface TreeReorder {
   start: (path: string) => void
 }
 
-/** `label` with the typed text marked where it first sits (🔒 D5, YAZ-2620); a label that does not hold it (an alias or an id matched) is drawn plain. */
-function marked(label: string, needle: string | undefined) {
-  const at = needle === undefined ? -1 : label.toLowerCase().indexOf(needle)
-  if (needle === undefined || at === -1) return label
-  return (
-    <>
-      {label.slice(0, at)}
-      <mark className="tree__mark">{label.slice(at, at + needle.length)}</mark>
-      {label.slice(at + needle.length)}
-    </>
-  )
-}
-
 /**
  * The arrows on a row of Files, Focus or Favorites (YAZ-2662 D11; VS Code's moves since YAZ-3440 D12):
  * - ↓ and ↑ move the keyboard focus to the next row on show and to the row before, and stop at both ends.
@@ -195,10 +184,10 @@ export interface TreeSelection {
   set: (path: string, top?: string) => void
 }
 
-/** What a search tree marks (🔒 D5, YAZ-2620): the paths the query matched, and the query as the matcher reads it — trimmed, lowercased. */
+/** What a search tree marks (🔒 D5, YAZ-2620): the paths the query matched, and the query as the matcher reads it (`readNeedle`, YAZ-3748). */
 export interface TreeMarks {
   hits: ReadonlySet<string>
-  needle: string
+  needle: Needle
   /** The rows found by their ID, each with its full ID (YAZ-2677 S70): shown in front of the title, which tells note 12 of two vaults apart. */
   ids?: ReadonlyMap<string, string>
 }
