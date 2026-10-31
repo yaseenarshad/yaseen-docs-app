@@ -30,7 +30,7 @@
 import { tableSchema } from '@milkdown/kit/preset/gfm'
 import type { Node as ProseNode, TagParseRule } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
-import { AttrStep } from '@milkdown/kit/prose/transform'
+import { AttrStep, ReplaceStep } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { NodeSchema } from '@milkdown/kit/transformer'
 import { $prose, $remark } from '@milkdown/kit/utils'
@@ -283,6 +283,17 @@ export function changedTables(tr: Transaction): Map<number, ProseNode> {
   return out
 }
 
+/**
+ * Typing: each step changes only the inline content of one textblock. Every node decoration maps,
+ * and no table changes its attributes or its shape (YAZ-3790; here and in `tableFreeze.ts`).
+ */
+export const typingOnly = (tr: Transaction): boolean =>
+  tr.steps.every((step, i) => {
+    if (!(step instanceof ReplaceStep) || step.slice.openStart > 0 || step.slice.openEnd > 0) return false
+    const $from = tr.docs[i]!.resolve(step.from)
+    return $from.parent.isTextblock && step.to <= $from.end()
+  })
+
 /** The node decoration of a table with settings, or `null`. */
 function tableDecoration(table: ProseNode, pos: number): Decoration | null {
   const attrs = tableDomAttrs(table.attrs)
@@ -292,9 +303,10 @@ function tableDecoration(table: ProseNode, pos: number): Decoration | null {
 const tableStyleKey = new PluginKey<DecorationSet>('mdapp-table-style')
 
 /**
- * The table block's data attributes: a transaction that changes no document does nothing; one that
- * does maps the set and builds again only the changed tables. A table's own decoration starts at
- * the table: `find` also gives the decoration of a table that only touches it, which stays.
+ * The table block's data attributes: a transaction that changes no document does nothing; typing
+ * only maps the set; any other maps it and builds again only the changed tables. A table's own
+ * decoration starts at the table: `find` also gives the decoration of a table that only touches it,
+ * which stays.
  */
 const tableStylePlugin = $prose(
   () =>
@@ -308,6 +320,8 @@ const tableStylePlugin = $prose(
         apply: (tr, set) => {
           if (!tr.docChanged) return set
           let next = set.map(tr.mapping, tr.doc)
+          // A key changes no table's attributes: the mapped set holds (no new decoration per key, YAZ-3792).
+          if (typingOnly(tr)) return next
           const tables = changedTables(tr)
           if (tables.size === 0) return next
           const stale = [...tables.keys()].flatMap((pos) => next.find(pos, pos).filter((deco) => deco.from === pos))

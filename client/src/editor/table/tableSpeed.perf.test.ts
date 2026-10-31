@@ -3,8 +3,8 @@
  * cell, paste 50 × 4 tab-separated cells; then the same table frozen and styled (`freeze 1 row 2 cols, stripes,
  * fill`), where each key must not build the frozen cells' decorations again. jsdom has no layout, so the numbers
  * are the editor's own work (parse, transactions, DOM updates), not paint. Runs in the `perf` project (YAZ-740),
- * each budget on the MEDIAN (`src/test-perf.ts`). The frozen, styled table is held as a ratio to the plain one,
- * so a slower machine moves both. The measured numbers print, with a plain note of the same text for scale.
+ * each budget on the MEDIAN (`src/test-perf.ts`). The frozen tables are held as a ratio to the plain one, their
+ * keys typed in turn with its keys, so a slower or a busy machine moves all of them alike. The measured numbers print, with a plain note of the same text for scale.
  */
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -76,39 +76,61 @@ function typeAt(view: EditorView, pos: number): { median: number; worst: number 
   return timeMedian(KEYS.length, (i) => view.dispatch(view.state.tr.insertText(KEYS[i]!)))
 }
 
+/**
+ * Each view's ms of each key, the keys typed in turn, one in each view (YAZ-3792): a busy moment of the
+ * machine slows each view alike, so their ratio holds. After a warm-up of three keys in each.
+ */
+function typeInTurn(views: EditorView[]): number[][] {
+  for (const view of views) {
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellText(view.state.doc, 250, 3))))
+    for (const ch of 'abc') view.dispatch(view.state.tr.insertText(ch))
+  }
+  const ms = views.map((): number[] => [])
+  for (const ch of KEYS) {
+    views.forEach((view, v) => {
+      const start = performance.now()
+      view.dispatch(view.state.tr.insertText(ch))
+      ms[v]!.push(performance.now() - start)
+    })
+  }
+  return ms
+}
+
 describe('S6: a 500 × 10 table stays fast', () => {
   it('perf smoke: opens, types, and pastes 50 × 4 in under 50 ms; frozen and styled, it types as fast', async () => {
     const opens: number[] = []
     const keys = { note: [] as number[], table: [] as number[], frozen: [] as number[], styled: [] as number[] }
     const pastes: number[] = []
-    // Three runs, each kind once per run, so a busy moment slows all kinds alike.
+    const kinds = ['table', 'frozen', 'styled'] as const
+    // Three runs. In each, the three tables are open at once and take their keys in turn.
     for (let run = 0; run < 3; run++) {
       const note = await mount(PLAIN)
       keys.note.push(typeAt(note.view, 300).median)
       await note.close()
-      for (const kind of ['table', 'frozen', 'styled'] as const) {
-        const { view, ms, close } = await mount({ table: BIG, frozen: FROZEN, styled: STYLED }[kind])
-        if (kind === 'table') opens.push(ms)
-        keys[kind].push(typeAt(view, cellText(view.state.doc, 250, 3)).median)
-        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellText(view.state.doc, 100, 2))))
-        const start = performance.now()
-        view.pasteText(TSV, clipboard(TSV))
-        if (kind === 'table') pastes.push(performance.now() - start)
-        await close()
-      }
+      const tables = []
+      for (const kind of kinds) tables.push(await mount({ table: BIG, frozen: FROZEN, styled: STYLED }[kind]))
+      opens.push(tables[0]!.ms)
+      typeInTurn(tables.map((t) => t.view)).forEach((ms, k) => keys[kinds[k]!].push(...ms))
+      const { view } = tables[0]!
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellText(view.state.doc, 100, 2))))
+      const start = performance.now()
+      view.pasteText(TSV, clipboard(TSV))
+      pastes.push(performance.now() - start)
+      for (const t of tables) await t.close()
     }
     const [note, table, frozen, styled, paste] = [median(keys.note), median(keys.table), median(keys.frozen), median(keys.styled), median(pastes)]
     console.log(
-      `S6: open ${median(opens).toFixed(0)} ms · type ms/key: note ${note.toFixed(2)}, table ${table.toFixed(2)}, frozen table ${frozen.toFixed(2)}, frozen styled table ${styled.toFixed(2)} · paste 50×4 ${paste.toFixed(1)} ms (medians of 3, jsdom)`,
+      `S6: open ${median(opens).toFixed(0)} ms · type ms/key: note ${note.toFixed(2)}, table ${table.toFixed(2)}, frozen table ${frozen.toFixed(2)}, frozen styled table ${styled.toFixed(2)} (medians of 48 keys, typed in turn) · paste 50×4 ${paste.toFixed(1)} ms (median of 3, jsdom)`,
     )
     // The note is for the log: Milkdown's own `keepTableAlignPlugin` walks every cell of the table on each key
     // (main has it too), so the table types ~9× slower than a note of the same text at idle (~7 ms against ~0.8).
     // 60 ms catches a rescan of our own on top of it.
     expect(table).toBeLessThan(60)
     // "No change in typing speed" (YAZ-3790): the freeze and the styles add no work per key, so the frozen table
-    // and the frozen, styled table type as fast as the plain one.
-    expect(frozen / table).toBeLessThan(1.15)
-    expect(styled / table).toBeLessThan(1.15)
+    // and the frozen, styled table type as fast as the plain one (0.91–1.10 measured at idle). 1.25 leaves room for
+    // a loaded machine (1.21 seen at load 26) and still catches work per key, which costs a multiple.
+    expect(frozen / table).toBeLessThan(1.25)
+    expect(styled / table).toBeLessThan(1.25)
     // The approved number (YAZ-3697): ~15 ms measured.
     expect(paste).toBeLessThan(50)
   }, 120_000)

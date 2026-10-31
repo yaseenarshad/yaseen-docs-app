@@ -27,20 +27,22 @@
  *   on a key, and set as `--table-frozen-x-<n>` on the block. The view runs only after a transaction
  *   that is not typing (YAZ-3790).
  * - Rows use the folder page's method (`lib/pinnedHeader.ts`): on a scroll of the note's vertical
- *   scroller (passive, one update per animation frame) and on a resize, the offset that keeps the
- *   frozen rows at the scroller's top, stopped at the table's end, goes in `--table-frozen-y`;
- *   CSS translates the rows by it. Whole device pixels, rounded up the page (YAZ-3788). Layout px:
- *   divided by the document zoom, as the folder page does.
- * An unfrozen or removed table drops its listeners and its custom properties.
+ *   scroller (passive, one update per animation frame), on a resize, and after a transaction that
+ *   is not typing (the editor may draw a frozen row again), the offset that keeps the frozen rows at
+ *   the scroller's top, stopped at the table's end, moves each frozen row: a Web Animation holds its
+ *   `translateY` (YAZ-3792). It writes no attribute, so ProseMirror sees no mutation, and it restyles
+ *   only that row; a custom property on the block restyled every cell of the table on each scroll.
+ *   Whole device pixels, rounded up the page (YAZ-3788). Layout px: divided by the document zoom, as
+ *   the folder page does.
+ * An unfrozen or removed table drops its listeners, its custom properties and its rows' animations.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
-import { ReplaceStep } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
 import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader'
-import { changedTables } from './tableStyle'
+import { changedTables, typingOnly } from './tableStyle'
 
 /** A table's freeze counts, inside the table. */
 function counts(table: ProseNode): { rows: number; cols: number } {
@@ -88,17 +90,6 @@ function frozenDecorations(table: ProseNode, pos: number): Decoration[] {
   return out
 }
 
-/**
- * Typing: each step changes only the inline content of one textblock. Every node decoration maps,
- * and no table changes its shape (YAZ-3790).
- */
-const typingOnly = (tr: Transaction): boolean =>
-  tr.steps.every((step, i) => {
-    if (!(step instanceof ReplaceStep) || step.slice.openStart > 0 || step.slice.openEnd > 0) return false
-    const $from = tr.docs[i]!.resolve(step.from)
-    return $from.parent.isTextblock && step.to <= $from.end()
-  })
-
 interface FreezeState {
   set: DecorationSet
   /** Tables whose counts are bigger than the table, by position: the appended transaction clamps them. */
@@ -109,7 +100,7 @@ interface FreezeState {
 
 const freezeKey = new PluginKey<FreezeState>('mdapp-table-freeze')
 
-/** One frozen table's listeners and custom properties, on its table block. */
+/** One frozen table's listeners and custom properties, on its table block, and its rows' animations. */
 class Freezer {
   node: ProseNode | null = null
   #rows = 0
@@ -119,6 +110,8 @@ class Freezer {
   #measure = false
   #scroller: HTMLElement | null = null
   #observer: ResizeObserver | null = null
+  /** Each moved row's animation (YAZ-3792). */
+  #moved = new Map<HTMLElement, Animation>()
 
   constructor(readonly block: HTMLElement) {}
 
@@ -150,6 +143,8 @@ class Freezer {
     this.#cols = cols
     // The column widths are the first row's (`colwidth`); a row's new height resizes the table (the observer).
     if (old === null || shapeOf(old) !== shapeOf(node) || old.firstChild !== node.firstChild) this.#relayout()
+    // The editor may have drawn a frozen row again (a sort, a paste): the new <tr> has no animation yet.
+    else if (rows > 0) this.#schedule()
   }
 
   #unlistenRows(): void {
@@ -158,7 +153,24 @@ class Freezer {
       this.#observer?.unobserve(this.#scroller)
     }
     this.#scroller = null
-    this.block.style.removeProperty('--table-frozen-y')
+    this.#move([], 0)
+  }
+
+  /** `frozen` moves down by `y` layout px; any other row this freezer moved goes back (its animation ends). */
+  #move(frozen: HTMLElement[], y: number): void {
+    for (const [row, animation] of this.#moved) {
+      if (frozen.includes(row)) continue
+      animation.cancel()
+      this.#moved.delete(row)
+    }
+    const keyframes = [{ transform: `translateY(${y}px)` }]
+    for (const row of frozen) {
+      // jsdom has no `animate`.
+      if (typeof row.animate !== 'function') continue
+      const animation = this.#moved.get(row)
+      if (animation === undefined) this.#moved.set(row, row.animate(keyframes, { duration: 0, fill: 'forwards' }))
+      else (animation.effect as KeyframeEffect).setKeyframes(keyframes)
+    }
   }
 
   /** A scroll: the rows' offset only. */
@@ -197,7 +209,7 @@ class Freezer {
     // and a 1px seam shows the rows under them. `floor` puts the part under the note's top edge, never a gap.
     const ratio = window.devicePixelRatio || 1
     const screen = Math.floor(pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, frozenHeight) * ratio) / ratio
-    this.block.style.setProperty('--table-frozen-y', `${screen / zoom}px`)
+    this.#move(Array.from({ length: this.#rows }, (_, r) => rows[r] as HTMLElement), screen / zoom)
   }
 
   destroy(): void {

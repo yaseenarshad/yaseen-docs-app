@@ -115,7 +115,7 @@
 
 /* Frozen rows and columns (YAZ-3769, S3, `tableFreeze.ts`). Columns stick inside the table block's
    sideways scroll, at the widths of the columns before them. Rows move down by the offset that keeps
-   them at the top of the note (the folder page's method). Both paint their tint over the page colour,
+   them at the top of the note (the folder page's method, by a Web Animation). Both paint their tint over the page colour,
    so the cells under them do not show through; a frozen row stands above the sticky columns. */
 
 /* A frozen table separates its borders (YAZ-3788). With `collapse` the table paints each border at the
@@ -143,21 +143,21 @@
   border-left-width: var(--table-border-width, 1px);
 }
 
+/* A frozen row's `translateY` is a Web Animation on the row (`tableFreeze.ts`, YAZ-3792), not a custom
+   property here: one on the block restyled every cell of the table on each scroll. */
 .milkdown .ProseMirror .milkdown-table-block .table-frozen-row {
   position: relative;
   z-index: 2;
-  transform: translateY(var(--table-frozen-y, 0px));
-}
-
-.milkdown .ProseMirror .milkdown-table-block :is(th, td).table-frozen-col {
-  z-index: 1;
 }
 
 /* Sticky only while the block scrolls sideways (`data-table-scrolls`, YAZ-3790): each sticky cell costs
-   the browser work on every layout, about 2 ms a key for 1,000 cells. A table that fits needs none. */
+   the browser work on every layout, about 2 ms a key for 1,000 cells. A table that fits needs none.
+   The same for `z-index`, which lifts a sticky cell over the cells that scroll under it: 1,000 stacked
+   cells cost 2–6 ms of paint work on each scroll frame (YAZ-3792). */
 .milkdown .ProseMirror .milkdown-table-block[data-table-scrolls] :is(th, td).table-frozen-col {
   position: sticky;
   left: var(--table-frozen-left, 0px);
+  z-index: 1;
 }
 
 .milkdown .ProseMirror .milkdown-table-block :is(.table-frozen-row > *, .table-frozen-col) {

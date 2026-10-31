@@ -3,7 +3,7 @@
  * frozen cells' decorations, the columns' sticky offsets, and the rows' offset on a scroll of the
  * note (the folder page's method, `lib/pinnedHeader.ts`): it follows the scroll, stops at the
  * table's end, keeps one value at each document zoom, and its listeners go when the table unfreezes.
- * jsdom has no layout, so the boxes are given by hand.
+ * jsdom has no layout, so the boxes are given by hand, and no Web Animations, so `animate` is stubbed.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -18,13 +18,27 @@ afterEach(async () => {
     m.scroller.remove()
   }
   vi.restoreAllMocks()
+  delete (HTMLElement.prototype as unknown as Record<string, unknown>).animate
+  moved.clear()
 })
+
+/** Web Animations, which jsdom lacks: the `translateY` that each row's animation holds now. */
+const moved = new Map<Element, string>()
+const keep = (el: Element, keyframes: Keyframe[]) => moved.set(el, /translateY\((.*)\)/.exec(String(keyframes[0]!.transform))![1]!)
+function animateStub(this: HTMLElement, keyframes: Keyframe[], options: KeyframeAnimationOptions) {
+  expect(options).toEqual({ duration: 0, fill: 'forwards' })
+  keep(this, keyframes)
+  return { effect: { setKeyframes: (next: Keyframe[]) => keep(this, next) }, cancel: () => moved.delete(this) }
+}
+/** Each row's offset, top to bottom; '' for a row that does not move. */
+const offsets = (view: EditorView) => rowsOf(view).map((row) => moved.get(row) ?? '')
 
 const TABLE = '| h1 | h2 | h3 |\n| -- | -- | -- |\n| a | b | c |\n| d | e | f |\n| g | h | i |\n'
 const box = (top: number, height: number) => new DOMRect(0, top, 300, height)
 
 /** A note in a vertical scroller; every frame is held until `flush`. Rows are 30 px, the table starts at `tableTop`. */
 async function mount(comment: string, { tableTop = -80, zoom = 1 } = {}) {
+  Object.assign(HTMLElement.prototype, { animate: animateStub })
   const frames: FrameRequestCallback[] = []
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
     frames.push(callback)
@@ -218,36 +232,39 @@ describe('two frozen tables and edits', () => {
 })
 
 describe('the frozen rows follow the scroll (the folder-page method)', () => {
-  it('moves the rows by the scrolled distance, one update per frame, on the table block', async () => {
+  it('moves only the frozen rows, by the scrolled distance, one update per frame; nothing on the block (YAZ-3792)', async () => {
     const { view, block, frames, scroll, flush } = await mount('<!-- table: freeze 2 rows -->')
     flush()
     scroll()
     scroll()
     expect(frames).toHaveLength(1)
     flush()
-    expect(block.style.getPropertyValue('--table-frozen-y')).toBe('80px')
-    expect(view.dom.querySelector<HTMLElement>('tbody[data-content-dom]')!.style.getPropertyValue('--table-frozen-y')).toBe('')
+    expect(offsets(view)).toEqual(['80px', '80px', '', ''])
+    // An inherited custom property on the block restyled every cell of the table on each scroll.
+    expect(block.style.getPropertyValue('--table-frozen-y')).toBe('')
   })
 
-  it('a scroll sets the rows\' offset only: the column offsets are not measured again (never on scroll)', async () => {
-    const { block, scroll, flush } = await mount('<!-- table: freeze 2 rows 2 cols -->')
+  it('a scroll writes no property: the column offsets are not measured again, the rows move by Web Animations', async () => {
+    const { view, block, scroll, flush, setTableTop } = await mount('<!-- table: freeze 2 rows 2 cols -->')
     flush()
     const set = vi.spyOn(block.style, 'setProperty')
+    setTableTop(-50)
     scroll()
     flush()
-    expect(set.mock.calls.map(([name]) => name)).toEqual(['--table-frozen-y'])
+    expect(set).not.toHaveBeenCalled()
+    expect(offsets(view)).toEqual(['50px', '50px', '', ''])
   })
 
   it('stays at the table start, and stops at the table end', async () => {
-    const { block, scroll, flush, setTableTop } = await mount('<!-- table: freeze 2 rows -->', { tableTop: 40 })
+    const { view, scroll, flush, setTableTop } = await mount('<!-- table: freeze 2 rows -->', { tableTop: 40 })
     scroll()
     flush()
-    expect(block.style.getPropertyValue('--table-frozen-y')).toBe('0px')
+    expect(offsets(view)[0]).toBe('0px')
     setTableTop(-400)
     scroll()
     flush()
     // The table is 150 px, the two frozen rows 60 px: they stop 90 px down.
-    expect(block.style.getPropertyValue('--table-frozen-y')).toBe('90px')
+    expect(offsets(view)[0]).toBe('90px')
   })
 
   it.each([
@@ -255,27 +272,41 @@ describe('the frozen rows follow the scroll (the folder-page method)', () => {
     [2, '80.5px'],
   ])('moves the rows by whole device pixels at %i× pixel ratio, rounded up the page (YAZ-3788)', async (ratio, offset) => {
     vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(ratio)
-    const { block, scroll, flush } = await mount('<!-- table: freeze 1 row -->', { tableTop: -80.75 })
+    const { view, scroll, flush } = await mount('<!-- table: freeze 1 row -->', { tableTop: -80.75 })
     scroll()
     flush()
-    expect(block.style.getPropertyValue('--table-frozen-y')).toBe(offset)
+    expect(offsets(view)[0]).toBe(offset)
   })
 
   it.each([0.5, 2])('keeps the same layout offset at %× document zoom', async (zoom) => {
-    const { block, scroll, flush } = await mount('<!-- table: freeze 1 row -->', { zoom })
+    const { view, scroll, flush } = await mount('<!-- table: freeze 1 row -->', { zoom })
     scroll()
     flush()
-    expect(block.style.getPropertyValue('--table-frozen-y')).toBe('80px')
+    expect(offsets(view)[0]).toBe('80px')
   })
 
-  it('unfreezing the rows drops the offset and the scroll listener', async () => {
-    const { view, block, frames, scroll, flush } = await mount('<!-- table: freeze 1 row -->')
+  it('a frozen row that the editor draws again gets its offset back, with no scroll', async () => {
+    const { view, scroll, flush } = await mount('<!-- table: freeze 2 rows -->')
     scroll()
     flush()
-    expect(block.style.getPropertyValue('--table-frozen-y')).toBe('80px')
+    // A new row node in place of the second frozen row (as a sort does): ProseMirror draws a new <tr>.
+    const start = tablePos(view)
+    const table = view.state.doc.nodeAt(start)!
+    const second = start + 1 + table.firstChild!.nodeSize
+    const row = table.child(1)
+    view.dispatch(view.state.tr.replaceWith(second, second + row.nodeSize, row.type.create(null, [...Array(row.childCount)].map(() => view.state.schema.nodes.table_cell.createAndFill()!))))
+    flush()
+    expect(offsets(view)).toEqual(['80px', '80px', '', ''])
+  })
+
+  it('unfreezing the rows drops their offset and the scroll listener', async () => {
+    const { view, frames, scroll, flush } = await mount('<!-- table: freeze 1 row -->')
+    scroll()
+    flush()
+    expect(offsets(view)[0]).toBe('80px')
     setFreeze(view, 0, 0)
     flush()
-    expect(block.style.getPropertyValue('--table-frozen-y')).toBe('')
+    expect(offsets(view)).toEqual(['', '', '', ''])
     scroll()
     expect(frames).toHaveLength(0)
   })

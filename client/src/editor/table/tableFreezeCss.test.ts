@@ -50,4 +50,9 @@ describe('a frozen column sticks only while its block scrolls sideways (YAZ-3790
     const sticky = rules(tableCss).filter(({ body }) => /position:\s*sticky/.test(body)).flatMap(({ selectors }) => selectors)
     expect(sticky).toEqual(['.milkdown .ProseMirror .milkdown-table-block[data-table-scrolls] :is(th, td).table-frozen-col'])
   })
+
+  it('a frozen column cell stacks (`z-index`) only while it sticks: 1,000 stacked cells cost ~4 ms of paint work a scroll (YAZ-3792)', () => {
+    const stacked = rules(tableCss).filter(({ selectors, body }) => /z-index/.test(body) && selectors.some((s) => s.includes('table-frozen-col'))).flatMap(({ selectors }) => selectors)
+    expect(stacked).toEqual(['.milkdown .ProseMirror .milkdown-table-block[data-table-scrolls] :is(th, td).table-frozen-col'])
+  })
 })
