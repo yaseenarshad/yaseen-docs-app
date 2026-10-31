@@ -55,7 +55,7 @@ import { Plugin, PluginKey, TextSelection, type Command } from '@milkdown/kit/pr
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { SlashProvider } from '@milkdown/kit/plugin/slash'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
-import { fileKind, isViewOnly } from '@shared/fileKind'
+import { boardBaseName, fileKind, isViewOnly } from '@shared/fileKind'
 import { basename } from '@shared/types'
 import { api } from '../../api'
 import { fileLabel } from '../../lib/pageLabel'
@@ -359,6 +359,15 @@ function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: Wikili
         for (const [name, value] of Object.entries(look.icon(row.path, fileKind(basename(row.path)) === null))) icon.setAttribute(name, value)
         icon.setAttribute('aria-hidden', 'true')
         item.prepend(icon)
+        // A drawing's or a diagram's extension, shown with File icons Off only, as the sidebar's `NameEnding` (app.css).
+        const name = basename(row.path)
+        const bare = boardBaseName(name)
+        if (bare !== name) {
+          const ending = document.createElement('span')
+          ending.className = 'name-ending'
+          ending.textContent = name.slice(bare.length)
+          item.append(ending)
+        }
       }
       item.addEventListener('mousedown', (e) => e.preventDefault())
       item.addEventListener('click', () => {

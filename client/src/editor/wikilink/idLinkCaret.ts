@@ -3,7 +3,7 @@
  * `showsTitle`). The raw `[[<id>]]` opens only from the link menu's "Edit link", and closes when the caret leaves it.
  *  - A caret or a selection end that lands inside a closed ID link steps over it: from one edge (an arrow) to the
  *    other edge, from anywhere else (a click, ↑/↓) to the nearer edge. Shift moves the head the same way.
- *  - Backspace right after it, and Delete right before it, remove the whole link. ⌘Z puts it back.
+ *  - Backspace right after it, and Delete right before it, remove the whole link, with ⌥ or as ⌃H / ⌃D too. ⌘Z puts it back.
  * An open link (the selection was strictly inside it before this change) keeps the caret where it goes.
  */
 import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
@@ -44,8 +44,10 @@ export const createIdLinkCaret = (source: WikilinkResolveSource) =>
         },
         props: {
           handleKeyDown: (view, event) => {
-            const back = event.key === 'Backspace'
-            if ((!back && event.key !== 'Delete') || event.metaKey || event.altKey || event.ctrlKey || event.isComposing || !view.state.selection.empty) return false
+            // ⌥⌫ and ⌃H delete back too, ⌥⌦ and ⌃D forward (macOS): left to the browser, they would cut the hidden text (YAZ-3747 checker).
+            const back = event.key === 'Backspace' || (event.ctrlKey && event.key === 'h')
+            const forward = event.key === 'Delete' || (event.ctrlKey && event.key === 'd')
+            if ((!back && !forward) || event.metaKey || event.isComposing || !view.state.selection.empty) return false
             const pos = view.state.selection.head
             // The link that ends right at the caret (Backspace), or starts right at it (Delete).
             const link = idLinkAround(view.state, back ? pos - 1 : pos + 1, source)

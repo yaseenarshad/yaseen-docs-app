@@ -13,7 +13,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import type { AnchorRect } from '../../sidebar/previewPlacement'
-import { wikilinkInnerAt } from './wikilinkClick'
+import { linkPosAtDOM, wikilinkInnerAt } from './wikilinkClick'
 import { WIKILINK_CLASS, WIKILINK_UNRESOLVED_CLASS, linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 
@@ -40,7 +40,7 @@ function linkPathOf(view: EditorView, target: EventTarget | null, source: Wikili
     const path = href === null ? null : (hover.markdownPath?.(href) ?? null)
     return path === null ? null : { span, path }
   }
-  const inner = wikilinkInnerAt(view.state.doc, view.posAtDOM(span, 0))
+  const inner = wikilinkInnerAt(view.state.doc, linkPosAtDOM(view, span))
   if (inner === null) return null
   const page = linkPageName(inner)
   if (page === '') return null

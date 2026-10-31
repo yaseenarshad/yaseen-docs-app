@@ -55,7 +55,7 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { $prose } from '@milkdown/kit/utils'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import { isNoteId, isNumberId, vaultNoteId } from '@shared/noteId'
-import { fileKind } from '@shared/fileKind'
+import { boardBaseName, fileKind } from '@shared/fileKind'
 import { basename, type IndexRecord } from '@shared/types'
 import { fileLabel, pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
@@ -298,9 +298,9 @@ export function eachPlainRun(block: ProseNode, base: number, cb: (text: string, 
 }
 
 /** Push a hidden-syntax decoration (empty ranges are skipped). */
-function hide(out: Decoration[], from: number, to: number): void {
+function hide(out: Decoration[], from: number, to: number, extra?: string): void {
   // `syntax` in the spec: what ⌘F reads as hidden (`pillLinks`, YAZ-3744 S9).
-  if (from < to) out.push(Decoration.inline(from, to, { class: WIKILINK_SYNTAX_CLASS }, { syntax: true }))
+  if (from < to) out.push(Decoration.inline(from, to, { class: extra === undefined ? WIKILINK_SYNTAX_CLASS : `${WIKILINK_SYNTAX_CLASS} ${extra}` }, { syntax: true }))
 }
 
 /** The DOM an id link's title widget draws: the classes its id text would have worn, and the file's icon (D13). */
@@ -399,7 +399,11 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
         // An id link: the id is syntax too, and the title stands where it was. Keyed by the
         // title, so a rebuild that changes nothing redraws nothing. `title` in the spec: what ⌘F reads (`pillLinks`).
         hide(out, at, at + part.length)
-        out.push(Decoration.widget(at, () => titleSpan(cls, title, icon?.attrs), { key: `${title}|${icon?.key ?? ''}`, title }))
+        // With nothing after it, the title is drawn at the link's END, before the caret there (YAZ-3916): a click past it,
+        // or ↓ onto its right half, reads as the link's end, an edge, and never as a point inside the link. With a
+        // heading after it (`[[id#h]]`) it stands where the id was, so it reads before the heading.
+        const lone = parts.length === 1
+        out.push(Decoration.widget(lone ? end : at, () => titleSpan(cls, title, icon?.attrs), { key: `${title}|${icon?.key ?? ''}`, title, side: lone ? -1 : 0 }))
         segments++
       } else if (part.length > 0) {
         if (i === 0) {
@@ -408,7 +412,9 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
           const [lead, trail] = resolved ? pageTrim(part) : [0, 0]
           hide(out, at, at + lead)
           shown(at + lead, at + part.length - trail)
-          hide(out, at + part.length - trail, at + part.length)
+          // A drawing's or a diagram's extension shows again with File icons Off, as the sidebar's (`name-ending`, app.css).
+          const name = part.slice(lead)
+          hide(out, at + part.length - trail, at + part.length, boardBaseName(name) !== name ? 'name-ending' : undefined)
           if (other !== null) out.push(Decoration.widget(at + part.length, () => vaultSpan(cls, other.vault ?? 'another vault'), { side: -1, key: `vault:${other.vault ?? ''}` }))
         } else if (segments === 0) shown(at, at + part.length)
         else out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}`, spellcheck: 'false' }))

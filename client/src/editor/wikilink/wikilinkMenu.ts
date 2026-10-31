@@ -22,7 +22,7 @@ import { pathTitles } from '../../lib/pageLabel'
 import { folderLabel, folderRecord } from '../../links/shortcuts'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkMenu } from '../linkMenu'
 import { OPEN_ID_LINK } from './idLinkCaret'
-import { wikilinkMatchAt, type WikilinkNav } from './wikilinkClick'
+import { linkPosAtDOM, wikilinkMatchAt, type WikilinkNav } from './wikilinkClick'
 import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './viewOnlyLinkSource'
 
@@ -33,7 +33,7 @@ function linkAt(view: EditorView, target: EventTarget | null): { from: number; t
   if (!(target instanceof Element)) return null
   const span = target.closest(`.${WIKILINK_CLASS}`)
   if (span === null || !view.dom.contains(span)) return null
-  return wikilinkMatchAt(view.state.doc, view.posAtDOM(span, 0))
+  return wikilinkMatchAt(view.state.doc, linkPosAtDOM(view, span))
 }
 
 /**

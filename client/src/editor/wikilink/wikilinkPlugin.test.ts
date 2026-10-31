@@ -362,7 +362,7 @@ describe("wikilink decorations: an id link shows the note's current title (YAZ-2
     for (const pos of [4, 5, 21, 22]) {
       caret(crepe, pos)
       expect(links(root), `caret at ${pos}`).toEqual(['Road Map'])
-      expect(view.dom.textContent).not.toContain(`[[${ID}]]`)
+      expect(syntax(root)).toBe(`[[${ID}]]`)
     }
     // "Edit link" selects the id with the one meta that may stay inside (idLinkCaret.ts).
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 7, 19)).setMeta(OPEN_ID_LINK, true))
@@ -608,6 +608,11 @@ describe('a link shows its page name (YAZ-3778 D2, D3, S12, S13)', () => {
     expect(linkDisplayText('a/b/LN.drawio#H', undefined, () => true)).toBe('LN > H')
     expect(linkDisplayText('.excalidraw', undefined, () => true)).toBe('.excalidraw')
     expect(linkDisplayText('folder/', undefined, () => true)).toBe('folder/')
+  })
+
+  it('with File icons Off a drawing\'s and a diagram\'s extension can show again (the sidebar\'s `name-ending`); a note\'s never', async () => {
+    const { root } = await mountNamed('a [[LN Scenarios Diagram.drawio]] b [[Plan.md]] c\n')
+    expect(Array.from(root.querySelectorAll('.name-ending')).map((el) => el.textContent)).toEqual(['.drawio'])
   })
 
   it('S13: a link\'s name gets no spellcheck underline', async () => {

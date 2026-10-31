@@ -814,7 +814,11 @@ describe('wikilink picker: a row reads as the sidebar names the page (YAZ-3778 S
     mounted.push({ crepe, root })
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[LN')
-    expect(rows()).toEqual(['LN Scenarios Diagram', 'LN Report.pdf'])
+    // The ending is in the row, and app.css shows it only with File icons Off, as the sidebar's `name-ending`.
+    expect(rows()).toEqual(['LN Scenarios Diagram.drawio', 'LN Report.pdf'])
+    const options = Array.from(document.querySelectorAll<HTMLElement>(`.${WIKILINK_PICKER_CLASS} [role="option"]`))
+    expect(options.map((option) => option.querySelector('.name-ending')?.textContent ?? null)).toEqual(['.drawio', null])
+    expect(options[0]!.firstChild?.nextSibling?.textContent).toBe('LN Scenarios Diagram')
     const icons = Array.from(document.querySelectorAll<HTMLElement>(`.${WIKILINK_PICKER_CLASS} [role="option"] > .probe-icon`))
     expect(icons.map((icon) => [icon.dataset.path, icon.dataset.folder, icon.getAttribute('aria-hidden'), icon.textContent])).toEqual([
       ['/vault/LN Scenarios Diagram.drawio', 'false', 'true', ''],

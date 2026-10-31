@@ -35,6 +35,7 @@
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { vaultNoteId } from '@shared/noteId'
 import { createFromLink } from './createFromLink'
@@ -75,6 +76,15 @@ const wikilinkClickKey = new PluginKey('mdapp-wikilink-click')
  */
 export function wikilinkInnerAt(doc: ProseNode, pos: number): string | null {
   return wikilinkMatchAt(doc, pos)?.inner ?? null
+}
+
+/**
+ * The document position a link's rendered span stands for, for `wikilinkMatchAt`. A widget reads as its own position,
+ * and an ID link's title is drawn at the link's END (YAZ-3916): one before it is inside the link, never in a next one.
+ */
+export function linkPosAtDOM(view: EditorView, span: Element): number {
+  const pos = view.posAtDOM(span, 0)
+  return span.classList.contains('ProseMirror-widget') ? pos - 1 : pos
 }
 
 /** The match at `pos` of `wikilinkInnerAt`, with its range: what the link menu edits and removes (YAZ-3609 D23). */
@@ -175,7 +185,7 @@ export function createWikilinkClick(follow: (inner: string, background: boolean)
               // A `.wikilink` span exists ONLY while the match is collapsed (the adjacency rule
               // drops every decoration of a revealed match) — raw text falls through to editing.
               if (span === null || !view.dom.contains(span)) return false
-              const inner = wikilinkInnerAt(view.state.doc, view.posAtDOM(span, 0))
+              const inner = wikilinkInnerAt(view.state.doc, linkPosAtDOM(view, span))
               if (inner === null) return false
               // From here the gesture is ours: no caret placement, no focus change, no reveal.
               event.preventDefault()

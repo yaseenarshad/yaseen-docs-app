@@ -143,4 +143,52 @@ describe('the caret steps over an ID link (YAZ-3744 D1)', () => {
     expect(view.state.doc.textContent).toBe(`Ask about [[${A}]]`)
     expect(links(root)).toEqual(['AR v2 plan'])
   })
+
+  it('YAZ-3916: a caret that the DOM puts right after the title widget (a click past the line end) lands after the pill', async () => {
+    const { view, root } = await mount(`pad [[${A}]]\n`)
+    select(view, 1)
+    const widget = view.dom.querySelector<HTMLElement>('.ProseMirror-widget.wikilink')!
+    const parent = widget.parentNode!
+    const pos = view.posAtDOM(parent, Array.prototype.indexOf.call(parent.childNodes, widget) + 1)
+    select(view, pos)
+    expect(view.state.selection.head).toBe(TO)
+    expect(links(root)).toEqual(['AR v2 plan'])
+  })
+
+  it('⌥⌫ and ⌃H right after it, ⌃D right before it, remove it whole', async () => {
+    const { view } = await mount(`pad [[${A}]] tail\n`)
+    const press = (init: KeyboardEventInit) => view.someProp('handleKeyDown', (f) => f(view, new KeyboardEvent('keydown', init)))
+    select(view, TO)
+    expect(press({ key: 'Backspace', altKey: true })).toBe(true)
+    expect(view.state.doc.textContent).toBe('pad  tail')
+    undo(view.state, view.dispatch)
+    select(view, TO)
+    expect(press({ key: 'h', ctrlKey: true })).toBe(true)
+    expect(view.state.doc.textContent).toBe('pad  tail')
+    undo(view.state, view.dispatch)
+    select(view, FROM)
+    expect(press({ key: 'd', ctrlKey: true })).toBe(true)
+    expect(view.state.doc.textContent).toBe('pad  tail')
+  })
+
+  it.each([
+    ['a heading', `# See [[${A}]] here\n`],
+    ['a highlight', `See ==[[${A}]]== here\n`],
+    ['a highlight across the link', `See ==mark [[${A}]]== here\n`],
+  ])('S20 (YAZ-3917): in %s the title shows, the caret steps over, Backspace removes it whole', async (_name, md) => {
+    const { root, view } = await mount(md)
+    const text = view.state.doc.textContent
+    let from = -1
+    view.state.doc.descendants((node, pos) => {
+      if (node.isText && from < 0 && node.text!.includes(`[[${A}]]`)) from = pos + node.text!.indexOf(`[[${A}]]`)
+    })
+    const to = from + `[[${A}]]`.length
+    select(view, to)
+    expect(root.querySelector('.ProseMirror-widget.wikilink')?.textContent).toBe('AR v2 plan')
+    select(view, to - 1)
+    expect(view.state.selection.head).toBe(from)
+    select(view, to)
+    expect(key(view, 'Backspace')).toBe(true)
+    expect(view.state.doc.textContent).toBe(text.replace(`[[${A}]]`, ''))
+  })
 })

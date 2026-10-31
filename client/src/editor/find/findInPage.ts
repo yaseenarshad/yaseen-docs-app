@@ -180,7 +180,7 @@ const shownRanges = ({ from, to, hidden }: PillLink): [number, number][] => {
   return ranges
 }
 
-/** The title widgets of the ID pills (`wikilinkPlugin.ts` `decorate` draws each at the link's `from + 2`), by position. */
+/** The title widgets of the ID pills, by position: `wikilinkPlugin.ts` `decorate` draws one at the link's end, or at `from + 2` before a heading. */
 const titleWidgets = (view: EditorView): Map<number, HTMLElement> => {
   const widgets = new Map<number, HTMLElement>()
   for (const widget of view.dom.querySelectorAll<HTMLElement>('.ProseMirror-widget.wikilink')) widgets.set(view.posAtDOM(widget, 0), widget)
@@ -395,7 +395,7 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
             matches.forEach((match, index) => {
               if (match.pill?.title == null) return
               widgets ??= titleWidgets(editorView)
-              const widget = widgets.get(match.pill.from + 2)
+              const widget = widgets.get(match.pill.to) ?? widgets.get(match.pill.from + 2)
               if (widget === undefined) return
               widget.classList.add(FIND_MATCH_CLASS)
               if (index === activeIndex) widget.classList.add(FIND_ACTIVE_CLASS)
