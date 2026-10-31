@@ -100,9 +100,10 @@
 }
 /* A link inside a selection is one lit box, its icon and padding too (YAZ-3747 demo, `pillSelection.ts`). The
    browser's own colour never shows on a link's letters: inside a lit box it would draw a second, patchy box, and
-   during a drag it would colour part of a link the selection does not hold (a link is one unit). */
+   during a drag it would colour part of a link the selection does not hold (a link is one unit). The box is the
+   editor's own selection colour (Crepe's reset.css). */
 .wikilink.wikilink--selected {
-  background: Highlight;
+  background: var(--crepe-color-selected);
 }
 .milkdown .ProseMirror .wikilink::selection,
 .milkdown .ProseMirror .wikilink *::selection {

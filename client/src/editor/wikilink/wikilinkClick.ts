@@ -183,26 +183,30 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
  * the link's shown pieces on the clicked piece's line. Read on a click only.
  */
 /**
- * A drag that starts on a pill selects as a drag on text does (YAZ-3747 demo): from the edge the press put the caret
- * on, the head follows the pointer until the button is up. `idLinkCaret.ts` puts a head inside a link on its nearer
- * edge. A move of less than 4px is still the click.
+ * A drag that starts on a pill selects as a drag on text does (YAZ-3747 demo), and always holds the pill: the head
+ * follows the pointer until the button is up, from the pill's far edge (its start for a drag to the right, its end for
+ * one to the left). While the pointer is on the pill the caret stays where the press put it. `idLinkCaret.ts` puts a
+ * head inside another link on its nearer edge. A move of less than 4px is still the click. The listeners capture, so
+ * no handler under the pointer can stop them.
  */
-function followDrag(view: EditorView, anchor: number, start: MouseEvent): void {
+function followDrag(view: EditorView, link: { from: number; to: number }, pressed: number, start: MouseEvent): void {
   const doc = view.dom.ownerDocument
-  let last = anchor
+  let last = -1
   const move = (event: MouseEvent) => {
     if (Math.abs(event.clientX - start.clientX) + Math.abs(event.clientY - start.clientY) < 4) return
     const head = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
     if (head === undefined || head === last || view.isDestroyed) return
     last = head
     const { doc: node } = view.state
-    view.dispatch(view.state.tr.setSelection(TextSelection.between(node.resolve(anchor), node.resolve(head))))
+    const inside = head > link.from && head < link.to
+    const anchor = inside ? pressed : head >= link.to ? link.from : link.to
+    view.dispatch(view.state.tr.setSelection(TextSelection.between(node.resolve(anchor), node.resolve(inside ? pressed : head))))
   }
   const up = () => {
-    doc.removeEventListener('mousemove', move)
+    doc.removeEventListener('mousemove', move, true)
     doc.removeEventListener('mouseup', up, true)
   }
-  doc.addEventListener('mousemove', move)
+  doc.addEventListener('mousemove', move, true)
   doc.addEventListener('mouseup', up, true)
 }
 
@@ -260,7 +264,7 @@ export function createWikilinkClick(follow: LinkFollow, hotkeys: () => HotkeyOve
               const selection = event.detail === 2 ? TextSelection.create(view.state.doc, match.from, match.to) : TextSelection.create(view.state.doc, nearerEdge(view, span, match.from, match.to, event.clientX))
               view.dispatch(view.state.tr.setSelection(selection))
               view.focus()
-              if (event.detail !== 2) followDrag(view, selection.head, event)
+              if (event.detail !== 2) followDrag(view, match, selection.head, event)
               return true
             },
           },

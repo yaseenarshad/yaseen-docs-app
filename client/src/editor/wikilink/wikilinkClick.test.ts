@@ -712,40 +712,55 @@ describe('a click on a link works like text (YAZ-3935, C1 and C2 of YAZ-3879)', 
     expect(view.state.selection.head).toBe(19)
   })
 
-  it('a drag that starts on a pill selects from the pill\'s edge to the pointer, until the button is up (YAZ-3747 demo)', async () => {
+  it('a drag that starts on a pill selects from the pill\'s far edge to the pointer, either way, until the button is up (YAZ-3747 demo)', async () => {
     // 'pad [[Known]] tail': the link spans 5..14, "tail" ends at 19.
     const { crepe, root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
     const view = viewOf(crepe)
-    box(linkSpan(root, 'Known'), 100, 40)
-    view.posAtCoords = () => ({ pos: 19, inside: -1 })
-    expect(mousedown(linkSpan(root, 'Known'), { clientX: 105, clientY: 12 })).toBe(false)
-    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 106, clientY: 12 })) // a tremble: still the click
-    expect(view.state.selection.empty).toBe(true)
-    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 220, clientY: 12 }))
-    expect([view.state.selection.from, view.state.selection.to]).toEqual([5, 19])
-    // Back over the pill's last letters: the head stays on its nearer edge, letter after letter (`idLinkCaret.ts`).
-    for (const [pos, x] of [[12, 130], [11, 128]] as const) {
+    const sel = () => [view.state.selection.from, view.state.selection.to]
+    const moveTo = (pos: number, x: number) => {
       view.posAtCoords = () => ({ pos, inside: -1 })
       document.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: 12 }))
-      expect([view.state.selection.from, view.state.selection.to]).toEqual([5, 14])
     }
-    view.posAtCoords = () => ({ pos: 19, inside: -1 })
-    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 220, clientY: 12 }))
+    box(linkSpan(root, 'Known'), 100, 40)
+    // Pressed on the left half: the caret is before the pill.
+    expect(mousedown(linkSpan(root, 'Known'), { clientX: 105, clientY: 12 })).toBe(false)
+    moveTo(19, 106) // a tremble: still the click
+    expect(view.state.selection.empty).toBe(true)
+    moveTo(19, 220) // to the right: the pill and "tail"
+    expect(sel()).toEqual([5, 19])
+    moveTo(12, 130) // back on the pill: the caret where the press put it
+    expect(sel()).toEqual([5, 5])
+    moveTo(2, 20) // to the left: "ad " and the pill, though the press was on its left half
+    expect(sel()).toEqual([2, 14])
     document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }))
-    view.posAtCoords = () => ({ pos: 2, inside: -1 })
-    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 12 })) // after the drag: nothing
-    expect([view.state.selection.from, view.state.selection.to]).toEqual([5, 19])
+    moveTo(19, 220) // after the drag: nothing
+    expect(sel()).toEqual([2, 14])
     expectNoNav(nav)
   })
 
-  it('a double-click selects exactly the link; the pill stays; a triple-click is the browser\'s', async () => {
+  it('a drag from a pill selects even when a handler under the pointer stops its mouse moves (YAZ-3747 demo)', async () => {
+    const { crepe, root } = await mount('pad [[Known]] tail\n', resolveKnown)
+    const view = viewOf(crepe)
+    box(linkSpan(root, 'Known'), 100, 40)
+    const stop = (event: Event) => event.stopPropagation()
+    view.dom.addEventListener('mousemove', stop)
+    mousedown(linkSpan(root, 'Known'), { clientX: 135, clientY: 12 })
+    view.posAtCoords = () => ({ pos: 2, inside: -1 })
+    view.dom.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 20, clientY: 12 }))
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([2, 14])
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }))
+    view.dom.removeEventListener('mousemove', stop)
+  })
+
+  it('a double-click selects exactly the link; the pill stays; a triple-click selects the line (YAZ-3747 demo)', async () => {
     const { crepe, root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
     const view = viewOf(crepe)
     mousedown(linkSpan(root, 'Known'), { detail: 1 })
     expect(mousedown(linkSpan(root, 'Known'), { detail: 2 })).toBe(false)
     expect([view.state.selection.from, view.state.selection.to]).toEqual([5, 14])
     expect(linkSpan(root, 'Known')).toBeDefined()
-    expect(mousedown(linkSpan(root, 'Known'), { detail: 3 })).toBe(true)
+    expect(mousedown(linkSpan(root, 'Known'), { detail: 3 })).toBe(false) // `idLinkCaret.ts` selects the line, not the browser
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([1, 19])
     expectNoNav(nav)
   })
 

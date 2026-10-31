@@ -43,6 +43,11 @@ afterEach(async () => {
 const links = (root: HTMLElement) => Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).map((el) => el.textContent ?? '')
 const select = (view: EditorView, anchor: number, head = anchor) => view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, anchor, head)))
 const key = (view: EditorView, name: string) => view.someProp('handleKeyDown', (f) => f(view, new KeyboardEvent('keydown', { key: name })))
+/** An arrow: the key, then the selection the browser makes for it. Only an arrow steps from one edge to the other. */
+const arrow = (view: EditorView, name: 'ArrowLeft' | 'ArrowRight', anchor: number, head = anchor) => {
+  key(view, name)
+  select(view, anchor, head)
+}
 
 // 'pad [[k3m9x2pq7abc]] tail': the link spans 5..21 (paragraph content starts at 1).
 const FROM = 5
@@ -52,9 +57,9 @@ describe('the caret steps over an ID link (YAZ-3744 D1)', () => {
   it('an arrow from either edge lands on the other edge; the title stays', async () => {
     const { root, view } = await mount(`pad [[${A}]] tail\n`)
     select(view, TO)
-    select(view, TO - 1) // what ArrowLeft asks for
+    arrow(view, 'ArrowLeft', TO - 1) // what ArrowLeft asks for
     expect(view.state.selection.head).toBe(FROM)
-    select(view, FROM + 1) // ArrowRight
+    arrow(view, 'ArrowRight', FROM + 1)
     expect(view.state.selection.head).toBe(TO)
     expect(links(root)).toEqual(['AR v2 plan'])
   })
@@ -72,7 +77,7 @@ describe('the caret steps over an ID link (YAZ-3744 D1)', () => {
   it('Shift moves the head over the whole link and keeps the anchor', async () => {
     const { view } = await mount(`pad [[${A}]] tail\n`)
     select(view, 2, TO)
-    select(view, 2, TO - 1)
+    arrow(view, 'ArrowLeft', 2, TO - 1) // Shift+ArrowLeft
     expect(view.state.selection.anchor).toBe(2)
     expect(view.state.selection.head).toBe(FROM)
   })
@@ -94,10 +99,10 @@ describe('the caret steps over an ID link (YAZ-3744 D1)', () => {
     // 'x [[A]][[B]]': A spans 3..19, B 19..35.
     const { view } = await mount(`x [[${A}]][[${B}]]\n`)
     select(view, 19)
-    select(view, 20)
+    arrow(view, 'ArrowRight', 20)
     expect(view.state.selection.head).toBe(35)
     select(view, 19)
-    select(view, 18)
+    arrow(view, 'ArrowLeft', 18)
     expect(view.state.selection.head).toBe(3)
     select(view, 35)
     key(view, 'Backspace')
@@ -126,9 +131,9 @@ describe('the caret steps over an ID link (YAZ-3744 D1)', () => {
     const { crepe, root, view } = await mount('pad [[Named]] tail\n')
     select(view, 14)
     expect(links(root)).toEqual(['Named'])
-    select(view, 13) // ArrowLeft
+    arrow(view, 'ArrowLeft', 13)
     expect(view.state.selection.head).toBe(5)
-    select(view, 6) // ArrowRight
+    arrow(view, 'ArrowRight', 6)
     expect(view.state.selection.head).toBe(14)
     expect(key(view, 'Backspace')).toBe(true)
     expect(getMarkdownForSave(crepe)).toBe('pad  tail\n')
@@ -153,10 +158,10 @@ describe('the caret steps over an ID link (YAZ-3744 D1)', () => {
     const end = view.state.doc.resolve(view.state.doc.content.size - 3).end() // the end of the bullet's text
     select(view, end) // a click at the end of the line
     expect(links(root)).toEqual(['AR v2 plan'])
-    select(view, end - 1) // ArrowLeft
+    arrow(view, 'ArrowLeft', end - 1)
     const from = view.state.selection.head
     expect(view.state.doc.textBetween(from, end)).toBe(`[[${A}]]`)
-    select(view, from + 1) // ArrowRight
+    arrow(view, 'ArrowRight', from + 1)
     expect(view.state.selection.head).toBe(end)
     key(view, 'Backspace')
     expect(view.state.doc.textContent).toBe('Ask about ')
@@ -206,7 +211,7 @@ describe('the caret steps over an ID link (YAZ-3744 D1)', () => {
     const to = from + `[[${A}]]`.length
     select(view, to)
     expect(root.querySelector('.ProseMirror-widget.wikilink')?.textContent).toBe('AR v2 plan')
-    select(view, to - 1)
+    arrow(view, 'ArrowLeft', to - 1)
     expect(view.state.selection.head).toBe(from)
     select(view, to)
     expect(key(view, 'Backspace')).toBe(true)
@@ -215,22 +220,48 @@ describe('the caret steps over an ID link (YAZ-3744 D1)', () => {
 })
 
 describe('a drag across a link is smooth (YAZ-3747 demo)', () => {
-  it('while the button is down, a head inside a link goes to its nearer edge and never flips edge to edge', async () => {
+  it('a head inside a link goes to its nearer edge and never flips edge to edge, unless an arrow moved it', async () => {
     // 'pad [[Named]] tail': the link spans 5..14, its middle 9.5.
     const { view } = await mount('pad [[Named]] tail\n')
-    view.dom.querySelector('p')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail: 1 }))
-    select(view, 1, 14) // the drag holds the whole link
-    select(view, 1, 12) // the pointer goes back over its last letters: the arrow rule would jump to 5
+    select(view, 1, 14) // a drag holds the whole link
+    select(view, 1, 12) // the pointer goes back over its last letters: an arrow's jump would go to 5
     expect(view.state.selection.head).toBe(14)
     select(view, 1, 11)
     expect(view.state.selection.head).toBe(14)
     select(view, 1, 7) // past its middle: the link leaves the selection
     expect(view.state.selection.head).toBe(5)
-    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }))
-    // The button is up: Shift+arrow steps over the link again, from one edge to the other.
+    // Shift+ArrowRight steps over the link from one edge to the other.
+    arrow(view, 'ArrowRight', 1, 6)
+    expect(view.state.selection.head).toBe(14)
+  })
+
+  it('at a line\'s end the browser\'s nudge back into the hidden `]]` keeps the link selected', async () => {
+    // 'pad [[Named]]': the link spans 5..14 and ends the line.
+    const { view } = await mount('pad [[Named]]\n')
     select(view, 1, 14)
-    select(view, 1, 13)
-    expect(view.state.selection.head).toBe(5)
+    select(view, 1, 12) // the browser puts the head after "Named", before the hidden `]]`
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([1, 14])
+  })
+})
+
+describe('a triple-click on a line with a link selects the whole line (YAZ-3747 demo)', () => {
+  const tripleClick = (el: Element) => el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail: 3 }))
+
+  it('on the words or on a pill: the line, and nothing for the browser', async () => {
+    // 'Edit [[Named]] here, and [[k3m9x2pq7abc]] there.': 47 characters, 1..48.
+    const { root, view } = await mount(`Edit [[Named]] here, and [[${A}]] there.\n`)
+    const line = [1, view.state.doc.firstChild!.content.size + 1]
+    expect(tripleClick(view.dom.querySelector('p')!)).toBe(false) // the default prevented
+    expect([view.state.selection.from, view.state.selection.to]).toEqual(line)
+    select(view, 1)
+    const pill = Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).find((el) => el.textContent === 'AR v2 plan')!
+    expect(tripleClick(pill)).toBe(false)
+    expect([view.state.selection.from, view.state.selection.to]).toEqual(line)
+  })
+
+  it('a line with no link is the editor\'s, as before', async () => {
+    const { view } = await mount('plain words\n')
+    expect(tripleClick(view.dom.querySelector('p')!)).toBe(true) // not prevented here
   })
 })
 

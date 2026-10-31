@@ -2,11 +2,14 @@
  * Every `[[link]]` is one unit (YAZ-3744 D1 for ID links; YAZ-3935, point 3 of YAZ-3879, for every link that shows as a
  * pill, `isLinkUnit`): it stays a pill wherever the caret is (`wikilinkPlugin.ts` `opens`). The raw `[[…]]` opens only
  * from the link menu's "Edit link", and closes when the caret leaves it.
- *  - A caret or a selection end that lands inside a closed link steps over it: from one edge (an arrow) to the other
- *    edge, from anywhere else (↑/↓, a drag) to the nearer edge. Shift moves the head the same way. A click on the pill
- *    itself is `wikilinkClick.ts`'s: it puts the caret at the edge the pointer is nearer, by the pill's middle.
- *  - While the mouse button is down (a drag), a head inside a link always goes to the nearer edge (YAZ-3747 demo): the
- *    arrow rule would flip it from edge to edge at each letter the pointer crosses, so the selection flickered.
+ *  - A caret or a selection end that lands inside a closed link steps over it: after ← or → (with Shift or ⌥ too) from
+ *    one edge to the other, after anything else (↑/↓, a drag, the browser's own nudge) to the nearer edge. A click on
+ *    the pill itself is `wikilinkClick.ts`'s: it puts the caret at the edge the pointer is nearer, by the pill's middle.
+ *    Only a real arrow jumps (YAZ-3747 demo): during a drag the jump flipped the head edge to edge at each letter the
+ *    pointer crossed, and at a line's end the browser nudges a head at the link's end back into its hidden `]]`, so a
+ *    jump dropped the link from the selection.
+ *  - A triple-click on a line with a link selects the whole line (YAZ-3747 demo): the browser's own stops at a pill's
+ *    title, which is not text it can edit.
  *  - Backspace right after it, and Delete right before it, remove the whole link, with ⌥ or as ⌃H / ⌃D too. ⌘Z puts it back.
  *  - A double-click on a word next to a link selects only that word (C2): the browser's word can run on into the pill's
  *    text, hidden or shown, so the selection is cut at the links on each side of the word clicked.
@@ -15,6 +18,7 @@
  * The check per caret move is one scan of the caret's textblock for the match under it; no index lookup.
  */
 import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { wikilinkMatchAt } from './wikilinkClick'
 import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, isLinkUnit } from './wikilinkPlugin'
@@ -51,14 +55,28 @@ function gapAround(state: EditorState, pos: number): { from: number; to: number 
   return { from, to }
 }
 
+/** The textblock under a triple-click, when it shows a link: its whole text. Else null, and the click is the editor's. */
+function lineWithLink(view: EditorView, target: EventTarget | null): { from: number; to: number } | null {
+  if (!(target instanceof Node) || !view.dom.contains(target) || target === view.dom) return null
+  let $pos
+  try {
+    $pos = view.state.doc.resolve(view.posAtDOM(target, 0))
+  } catch {
+    return null
+  }
+  if (!$pos.parent.isTextblock || $pos.depth === 0) return null
+  const dom = view.nodeDOM($pos.before())
+  return dom instanceof HTMLElement && dom.querySelector(`.${WIKILINK_CLASS}`) !== null ? { from: $pos.start(), to: $pos.end() } : null
+}
+
 /** How long after a double-click its word selection may arrive (the browser makes it at once; ProseMirror reads it a moment later). */
 const WORD_MS = 500
 
 export const createIdLinkCaret = () => {
   /** Where the latest double-click on text (not on a pill) landed, and when, until its word selection arrives. */
   let word: { pos: number; at: number } | null = null
-  /** Whether the main button is down: a drag's head inside a link goes to the nearer edge. */
-  let pointer = false
+  /** Whether the latest key was ← or →: only an arrow steps from one edge of a link to the other. */
+  let arrow = false
   return $prose(
     () =>
       new Plugin({
@@ -87,16 +105,24 @@ export const createIdLinkCaret = () => {
           const link = linkAround(state, head)
           const was = before.selection.head
           if (link === null || (was > link.from && was < link.to)) return null
+          const step = arrow
+          arrow = false
           const nearer = head - link.from <= link.to - head ? link.from : link.to
-          const edge = pointer ? nearer : was === link.from ? link.to : was === link.to ? link.from : nearer
+          const edge = step && was === link.from ? link.to : step && was === link.to ? link.from : nearer
           return state.tr.setSelection(TextSelection.create(state.doc, empty ? edge : anchor, edge))
         },
         props: {
           handleDOMEvents: {
             mousedown: (view, event) => {
-              if (event.button === 0 && !pointer) {
-                pointer = true
-                view.dom.ownerDocument.addEventListener('mouseup', () => (pointer = false), { once: true, capture: true })
+              arrow = false
+              if (event.detail === 3 && event.button === 0 && view.editable && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+                const line = lineWithLink(view, event.target)
+                if (line !== null) {
+                  event.preventDefault()
+                  view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, line.from, line.to)))
+                  view.focus()
+                  return true
+                }
               }
               // Only a double-click on text is noted; the click itself stays the browser's.
               const onPill = event.target instanceof Element && event.target.closest(`.${WIKILINK_CLASS}`) !== null
@@ -112,6 +138,7 @@ export const createIdLinkCaret = () => {
             },
           },
           handleKeyDown: (view, event) => {
+            arrow = event.key === 'ArrowLeft' || event.key === 'ArrowRight'
             // ⌥⌫ and ⌃H delete back too, ⌥⌦ and ⌃D forward (macOS): left to the browser, they would cut the hidden text (YAZ-3747 checker).
             const back = event.key === 'Backspace' || (event.ctrlKey && event.key === 'h')
             const forward = event.key === 'Delete' || (event.ctrlKey && event.key === 'd')
