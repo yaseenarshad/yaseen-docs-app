@@ -76,16 +76,18 @@ describe('the engine’s view mode (YAZ-3076 D2, YAZ-3120)', () => {
  * and present, but its inserts, its slide reorder and its slide rename change nothing.
  */
 describe('readOnlyHandle', () => {
-  const engineApi = () => ({ insertElements: vi.fn(), addFiles: vi.fn(), updateScene: vi.fn(), getSceneElements: vi.fn(() => []), setViewport: vi.fn() })
+  const engineApi = () => ({ insertElements: vi.fn(), addFiles: vi.fn(), pruneFiles: vi.fn(), updateScene: vi.fn(), getSceneElements: vi.fn(() => []), setViewport: vi.fn() })
 
   it('shuts every door that changes the scene, and leaves the views open', () => {
     const raw = engineApi()
     const api = readOnlyHandle(raw as never) as unknown as ReturnType<typeof engineApi>
     api.insertElements([] as never)
     api.addFiles([] as never)
+    api.pruneFiles()
     api.updateScene({ elements: [] } as never)
     expect(raw.insertElements).not.toHaveBeenCalled()
     expect(raw.addFiles).not.toHaveBeenCalled()
+    expect(raw.pruneFiles).not.toHaveBeenCalled()
     expect(raw.updateScene).not.toHaveBeenCalled()
     // A view, a tool or a dialog is not an edit of the file's elements.
     api.updateScene({ appState: { openDialog: { name: 'imageExport' } } } as never)
