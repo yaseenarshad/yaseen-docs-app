@@ -199,6 +199,34 @@ describe('the change list (D3, D4)', () => {
   })
 })
 
+describe('the Before hover (YAZ-3947)', () => {
+  const glowTitles = (root: HTMLElement): string[] => [...root.querySelectorAll<HTMLElement>(`.${OUTSIDE_CHANGE_CLASS}`)].map((el) => el.title)
+
+  it('a glowing change shows its line as it was before the outside edit; a new line says so', async () => {
+    const { crepe, root } = await mount('* Call the bank\n* Send the invoice to Sam\n* Book the room\n')
+    outsideEdit(crepe, (md) => md.replace('Send the invoice', 'Send the signed invoice').replace('* Book the room', '* Charge the camera\n* Book the room'))
+    expect(glowTexts(root)).toEqual(['signed ', 'Charge the camera'])
+    expect(glowTitles(root)).toEqual(['Before: Send the invoice to Sam', 'New line'])
+  })
+
+  it('a merge shows the line as it was on screen; a second outside edit of the line keeps the first Before', async () => {
+    const { crepe, root, view } = await mount(BASE)
+    typeBefore(view, 'Child', 'USER-')
+    expect(mergeExternalMarkdown(crepe, BASE, BASE.replace('Leaf tail', 'Leaf tail EXTERNAL'))).toBe('merged')
+    expect(glowTitles(root)).toEqual(['Before: Leaf tail'])
+    outsideEdit(crepe, (md) => md.replace('Leaf tail EXTERNAL', 'Leaf tail EXTERNAL AGAIN'))
+    expect(glowTexts(root)).toEqual([' EXTERNAL', ' AGAIN'])
+    expect(glowTitles(root)).toEqual(['Before: Leaf tail', 'Before: Leaf tail'])
+  })
+
+  it('a task tick and a heading level show what they were, and a long line is cut at 200 chars', async () => {
+    const long = 'y'.repeat(250)
+    const { crepe, root } = await mount(`## Section\n\n- [ ] task one\n- [ ] task two\n\n${long}\n`)
+    outsideEdit(crepe, (md) => md.replace('[ ] task one', '[x] task one').replace('## Section', '### Section').replace(long, `${long} z`))
+    expect(glowTitles(root)).toEqual(['Before: ## Section', 'Before: [ ] task one', `Before: ${'y'.repeat(200)}…`])
+  })
+})
+
 describe('checking off (D8)', () => {
   it('Checked on one change removes only that one, and keeps the caret; Mark all checked empties the list', async () => {
     const { crepe, root, view, channel } = await mount(BASE)

@@ -14,7 +14,8 @@
  * textblocks (bullets added) is one change for each. More than `MAX_CHANGES` empties the list into
  * whole-note mode, with no glow.
  *
- * Drawing: the changed words glow (inline `outside-change`); removed text is a thin red mark with the text
+ * Drawing: the changed words glow (inline `outside-change`), and their hover shows the line as it was before the
+ * first outside edit of it, or "New line" (YAZ-3947; kept with the change, in memory only); removed text is a thin red mark with the text
  * in its title (D7, a widget: not in the doc, never copied or saved); each changed textblock carries a node
  * class that shows its **Checked** button on hover (D8). The DecorationSet lives in the state and is built
  * again only when the list changes; a keystroke only maps it.
@@ -29,7 +30,7 @@
  * leaves the folds that hide the active change open: the landing. Outside the zoomed bullet, the page
  * zooms out first and the host tells the tab.
  */
-import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, Selection, type Transaction } from '@milkdown/kit/prose/state'
 import type { Mapping } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
@@ -51,7 +52,7 @@ export const OUTSIDE_CHECKED_CLASS = 'outside-checked'
 
 /** D3: above this many changes the list empties and the note is "changed as a whole". */
 export const MAX_CHANGES = 200
-/** D7: a removed text longer than this is cut in the mark's title, with "…". */
+/** D7: a removed text longer than this is cut in the mark's title, with "…"; so is a Before line (YAZ-3947). */
 const REMOVED_TITLE_CHARS = 200
 /** One change keeps at most this many removed marks, the newest (YAZ-3844): an agent that saves one line again and again adds no more. */
 export const MAX_REMOVED_PER_CHANGE = 5
@@ -67,6 +68,8 @@ interface OutsideChange {
   pos: number
   /** The changed words that glow; empty for a pure deletion. */
   glow: readonly Span[]
+  /** The line as it was before the first outside edit of it (with a task's box, a heading's #s); null = a new line. */
+  before: string | null
   /** The removed text, at the place it was: one mark for each place, the newest, at most `MAX_REMOVED_PER_CHANGE`. */
   removed: readonly { pos: number; text: string }[]
   /** When a timed glow checks itself off (ms since the epoch); null = until checked. */
@@ -131,8 +134,23 @@ const blocksOf = (doc: ProseNode, { from, to }: Span): { pos: number; glow: Span
   return pos === null ? [] : [{ pos, glow: null }]
 }
 
-/** New outside ranges into the list: a range in a block that has a change already joins it (D4). */
-const addRanges = (changes: readonly OutsideChange[], ranges: readonly OutsideRange[], doc: ProseNode, ends: number | null): OutsideChange[] => {
+/** The line a textblock was, as the Before hover says it: a task's box and a heading's #s first, as markdown writes them. */
+const lineOf = ($pos: ResolvedPos): string => {
+  const block = $pos.parent
+  const item = $pos.depth > 0 ? $pos.node($pos.depth - 1) : null
+  const box = item !== null && $pos.index($pos.depth - 1) === 0 && typeof item.attrs.checked === 'boolean' ? (item.attrs.checked ? '[x] ' : '[ ] ') : ''
+  const hashes = block.type.name === 'heading' ? `${'#'.repeat(Number(block.attrs.level))} ` : ''
+  return box + hashes + block.textBetween(0, block.content.size, ' ', ' ')
+}
+
+/** New outside ranges into the list: a range in a block that has a change already joins it (D4) and keeps its Before. */
+const addRanges = (
+  changes: readonly OutsideChange[],
+  ranges: readonly OutsideRange[],
+  doc: ProseNode,
+  ends: number | null,
+  beforeOf: (pos: number) => string | null,
+): OutsideChange[] => {
   const byPos = new Map(changes.map((change) => [change.pos, change]))
   for (const range of ranges) {
     blocksOf(doc, range).forEach(({ pos, glow }, index) => {
@@ -144,6 +162,7 @@ const addRanges = (changes: readonly OutsideChange[], ranges: readonly OutsideRa
       byPos.set(pos, {
         id: old?.id ?? nextId++,
         pos,
+        before: old === undefined ? beforeOf(pos) : old.before,
         glow: glow === null ? (old?.glow ?? []) : [...(old?.glow ?? []), glow],
         removed,
         // A new outside edit in the block starts its time again.
@@ -204,7 +223,9 @@ const touches = (change: OutsideChange, spans: readonly Span[], doc: ProseNode):
 
 const mapSet = (set: ReadonlySet<number>, mapping: Mapping): ReadonlySet<number> => (set.size === 0 ? set : new Set([...set].map((pos) => mapping.map(pos, 1))))
 
-const removedTitle = (text: string): string => `Removed: ${text.length > REMOVED_TITLE_CHARS ? `${text.slice(0, REMOVED_TITLE_CHARS)}…` : text}`
+const cut = (text: string): string => (text.length > REMOVED_TITLE_CHARS ? `${text.slice(0, REMOVED_TITLE_CHARS)}…` : text)
+const removedTitle = (text: string): string => `Removed: ${cut(text)}`
+const beforeTitle = (before: string | null): string => (before === null ? 'New line' : `Before: ${cut(before)}`)
 
 /** D7: the thin red mark. Between two blocks (a bullet removed) it is a line, not a bar. */
 const removedMark = (text: string, between: boolean, active: boolean) => (): HTMLElement => {
@@ -240,7 +261,9 @@ const buildDecorations = (doc: ProseNode, changes: readonly OutsideChange[], act
     // A change with nothing to glow and no mark (an empty bullet added) wears the ring on its block.
     const ringOnBlock = active && change.glow.length === 0 && change.removed.length === 0
     decorations.push(Decoration.node(change.pos, change.pos + block.nodeSize, { class: ringOnBlock ? `${OUTSIDE_BLOCK_CLASS} ${OUTSIDE_ACTIVE_CLASS}` : OUTSIDE_BLOCK_CLASS }))
-    for (const span of change.glow) decorations.push(Decoration.inline(span.from, span.to, { class: active ? `${OUTSIDE_CHANGE_CLASS} ${OUTSIDE_ACTIVE_CLASS}` : OUTSIDE_CHANGE_CLASS }))
+    const title = beforeTitle(change.before)
+    for (const span of change.glow)
+      decorations.push(Decoration.inline(span.from, span.to, { class: active ? `${OUTSIDE_CHANGE_CLASS} ${OUTSIDE_ACTIVE_CLASS}` : OUTSIDE_CHANGE_CLASS, title }))
     for (const mark of change.removed) {
       const between = !doc.resolve(mark.pos).parent.inlineContent
       // The key names the text: a newer removal at the same place must draw its own title, not reuse the old mark.
@@ -344,7 +367,7 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
         key: outsideKey,
         state: {
           init: () => ({ changes: [], activeId: null, wholeNote: false, wholeNoteEnds: null, glow: channel.getGlow(), revealed: NONE, revealedHeadings: NONE, decorations: DecorationSet.empty }),
-          apply: (transaction, previous, _oldState, newState) => {
+          apply: (transaction, previous, oldState, newState) => {
             const meta: OutsideMeta | undefined = transaction.getMeta(outsideKey)
             const ranges: OutsideRange[] | undefined = transaction.getMeta(OUTSIDE_RANGES_META)
             // The usual keystroke: nothing in the list, nothing to map.
@@ -364,7 +387,14 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
               state = { ...state, changes, revealed: mapSet(state.revealed, transaction.mapping), revealedHeadings: mapSet(state.revealedHeadings, transaction.mapping) }
             }
             if (ranges !== undefined && ranges.length > 0 && state.glow !== 'off' && !state.wholeNote) {
-              state = { ...state, changes: addRanges(state.changes, ranges, doc, endsAt(state.glow, Date.now())) }
+              // Before (YAZ-3947): the block's content start, back through this transaction; a start inside what it inserted is a new line.
+              const back = transaction.mapping.invert()
+              const beforeOf = (pos: number): string | null => {
+                const result = back.mapResult(pos + 1, -1)
+                const $old = oldState.doc.resolve(result.pos)
+                return result.deletedAcross || !$old.parent.isTextblock ? null : lineOf($old)
+              }
+              state = { ...state, changes: addRanges(state.changes, ranges, doc, endsAt(state.glow, Date.now()), beforeOf) }
               redraw = true
             }
             if (meta !== undefined) {
