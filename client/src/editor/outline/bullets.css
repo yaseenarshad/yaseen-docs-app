@@ -83,7 +83,13 @@
 }
 
 /* Numbers are first-class markers (YAZ-3727 D7): the bullets' colour, not Crepe's grey outline, so
-   threading's accent reaches them too. */
+   threading's accent reaches them too. `--list-marker-color` is a share of `currentColor`, read where
+   it is used: for a number's `color` that is its parent's colour, Crepe's grey `.label-wrapper`, so the
+   wrapper takes the text colour first (as `.label.bullet` does for its dot). */
+.editor-instance .milkdown .milkdown-list-item-block > li > .label-wrapper:has(> .label.ordered) {
+  color: var(--crepe-color-on-background);
+}
+
 .editor-instance .milkdown .milkdown-list-item-block > li > .label-wrapper > .label.ordered {
   color: var(--list-marker-color);
 }

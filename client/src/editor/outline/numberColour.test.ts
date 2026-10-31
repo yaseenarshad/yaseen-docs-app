@@ -3,6 +3,8 @@
  * `--list-marker-color`. CSS is not computed here (vitest ignores stylesheets), so the proof is the rule itself, read from
  * the stylesheet, with its selector matched against the live DOM of a numbered list. Threading sets the same variable on
  * the label wrapper (`bulletThreading.css`), the number's parent, so its accent reaches numbers through inheritance.
+ * The variable is a share of `currentColor`, read where it is used: for a number that is its wrapper's colour, which
+ * Crepe paints grey, so a second rule gives that wrapper the text colour (the demo found the numbers still grey).
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -13,9 +15,12 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import { createCrepe } from '../createCrepe'
 
 const css = readFileSync(resolve(__dirname, 'bullets.css'), 'utf8')
-const rule = css.match(/^(\.editor-instance[^{]*\.label\.ordered)\s*\{([^}]*)\}/m)
+const rule = css.match(/^(\.editor-instance[^{]*\.label-wrapper > \.label\.ordered)\s*\{([^}]*)\}/m)
 if (!rule) throw new Error('bullets.css has no ordered-label rule')
 const [, NUMBER_SELECTOR] = rule
+const base = css.match(/^(\.editor-instance[^{]*\.label-wrapper:has\(> \.label\.ordered\))\s*\{([^}]*)\}/m)
+if (!base) throw new Error('bullets.css has no rule for the wrapper that holds a number')
+const [, WRAPPER_SELECTOR, WRAPPER_BODY] = base
 
 const threading = readFileSync(resolve(__dirname, 'bulletThreading.css'), 'utf8')
 const accent = threading.match(/^([^{}]*> \.label-wrapper)\s*\{([^}]*--list-marker-color[^}]*)\}/m)
@@ -48,6 +53,15 @@ describe('numbers take the bullets\' marker colour (YAZ-3727 D7)', () => {
     await mount('1. Plan\n2. Build\n   * child\n     1. deep\n')
     const numbers = [...document.querySelectorAll(NUMBER_SELECTOR)].map((el) => el.textContent?.trim())
     expect(numbers).toEqual(['1.', '2.', '1.'])
+  })
+
+  it('the wrapper of each number takes the text colour, so the share of currentColor is not a share of grey', async () => {
+    await mount('1. Plan\n2. Build\n   * child\n     1. deep\n\n* bullet\n')
+    expect(WRAPPER_BODY).toMatch(/color:\s*var\(--crepe-color-on-background\)/)
+    const numbers = [...document.querySelectorAll(NUMBER_SELECTOR)]
+    expect(numbers.length).toBe(3)
+    expect(numbers.every((label) => label.parentElement?.matches(WRAPPER_SELECTOR))).toBe(true)
+    expect(document.querySelectorAll(WRAPPER_SELECTOR)).toHaveLength(3)
   })
 
   it('threading sets the variable on the label wrapper that holds the number', async () => {
