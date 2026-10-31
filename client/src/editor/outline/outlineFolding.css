@@ -52,6 +52,8 @@
   transform: rotate(-90deg);
 }
 
-[data-outline-folded='true'] {
+/* Prefixed (YAZ-3696 D11) to outrank Crepe's `.milkdown .milkdown-table-block` and
+   `.milkdown .milkdown-code-block { display: block }`, as zoom.css does; `foldCss.test.ts` holds the weight. */
+.editor-instance .milkdown [data-outline-folded='true'] {
   display: none;
 }

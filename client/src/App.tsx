@@ -21,6 +21,7 @@ import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename
 import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
+import { holdColResize } from './lib/colResize'
 import { transformFile } from './views/writeProperty'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
@@ -50,6 +51,7 @@ import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
+import { toolbarPrefs } from './editor/toolbarPrefs'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
@@ -506,6 +508,8 @@ export function App() {
   // sidebar collapses and the remembered width stays whatever it was before the drag.
   const startSidebarResize = useCallback(
     (e: ReactMouseEvent) => {
+      // The left button only (YAZ-3719 1B): a right press's release can go to the native menu and never come.
+      if (e.button !== 0) return
       e.preventDefault()
       const start = sidebarWidth
       const x0 = e.clientX
@@ -529,7 +533,7 @@ export function App() {
       const up = () => {
         window.removeEventListener('mousemove', move)
         window.removeEventListener('mouseup', up)
-        document.body.style.cursor = ''
+        holdColResize(false)
         setResizing(false)
         if (raw < SIDEBAR_MIN_W * 0.6) {
           setSidebarWidth(start)
@@ -541,7 +545,7 @@ export function App() {
       }
       window.addEventListener('mousemove', move)
       window.addEventListener('mouseup', up)
-      document.body.style.cursor = 'col-resize'
+      holdColResize(true)
       setResizing(true)
     },
     [sidebarWidth, toggleSidebar],
@@ -553,6 +557,10 @@ export function App() {
   }, [])
   // "Jump across files" (YAZ-3500): every code tab of this page follows the switch (`code/languageHelpers.ts`).
   useEffect(() => setLanguageHelpers(settings.codeLanguageHelpers === true), [settings.codeLanguageHelpers])
+  // The selection toolbar's order and hidden buttons (YAZ-3806 T6): every open note's toolbar follows at once.
+  useEffect(() => {
+    toolbarPrefs.value = settings.selectionToolbar
+  }, [settings.selectionToolbar])
 
   // A Files window's own sidebar zoom (YAZ-3389 D13): only this window writes it, so a local copy stays true.
   const [filesZoom, setFilesZoomState] = useState(() => (filesWindow ? storage.getFilesZoom() : 100))

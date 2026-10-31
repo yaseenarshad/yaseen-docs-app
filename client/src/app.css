@@ -655,6 +655,16 @@ button {
   overflow-x: auto;
 }
 
+/* Column resize (YAZ-3696 D2): the grip at a header cell's edge (YAZ-3800) takes the theme colour
+   (prosemirror-tables draws it light blue). The table block's drop line (it has no "+" button since
+   YAZ-3800) lets the mouse through to the cells. */
+.editor-instance .milkdown .milkdown-table-block .column-resize-handle {
+  background-color: var(--crepe-color-primary);
+}
+.editor-instance .milkdown .milkdown-table-block .line-handle {
+  pointer-events: none;
+}
+
 /* The block handle's plus is noise — Enter at line end does the same (GRO-2025).
    First .operation-item is the plus, last is the 6-dot drag handle (Crepe renders exactly two). */
 .editor-instance .milkdown .milkdown-block-handle .operation-item:first-child {
@@ -1240,6 +1250,12 @@ button {
 .sidebar-resize:hover,
 .sidebar-resize--active {
   background: var(--accent-soft);
+}
+
+/* While a drag is held (YAZ-3719 1A, 1B, `lib/colResize.ts`), no frame takes the mouse: over draw.io's frame the
+   window would get no move and no release, and the drag would go on with the button up. */
+body.drag-held iframe {
+  pointer-events: none;
 }
 
 .sidebar__header {

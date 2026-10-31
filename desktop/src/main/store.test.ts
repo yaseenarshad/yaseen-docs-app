@@ -3,9 +3,9 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
-import { createStore, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs } from './store'
+import { createStore, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs, sanitizeToolbarPrefs } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -401,6 +401,32 @@ describe('createStore: loading', () => {
     }
     // The boundary is strict where the loader repairs: a missing tab, Files hidden, a duplicate.
     for (const bad of [{ ...set, order: set.order.slice(1) }, { ...set, hidden: ['files'] }, { ...set, hiddenButtons: ['more', 'more'] }, { ...set, order: [...set.order, 'files'] }]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarTabs: bad })).toBe(false)
+  })
+
+  it('selectionToolbar (YAZ-3806 T5): a file without the key reads the default; a set toolbar survives a restart; the repair drops unknown names and duplicates, and a missing group or button goes at the end', async () => {
+    const { selectionToolbar: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.selectionToolbar).toEqual(DEFAULT_TOOLBAR)
+
+    const set = { groups: ['lists', 'lineType', 'insert', 'textStyle'], buttons: ['link', ...DEFAULT_TOOLBAR.buttons.filter((b) => b !== 'link')], hidden: ['bold', 'highlight-pink'] }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, selectionToolbar: set } }))
+    expect(createStore(file).get().settings.selectionToolbar).toEqual(set)
+    expect(isSettings({ ...DEFAULT_SETTINGS, selectionToolbar: set })).toBe(true)
+
+    // A file from a version without Underline: the button joins the end of its list, so the end of its group.
+    const noUnderline = DEFAULT_TOOLBAR.buttons.filter((b) => b !== 'underline')
+    const repaired: [unknown, unknown][] = [
+      [{ groups: ['insert', 'tables', 'insert'], buttons: noUnderline, hidden: ['bold', 'bold', 'sparkle'] }, { groups: ['insert', 'lineType', 'lists', 'textStyle'], buttons: [...noUnderline, 'underline'], hidden: ['bold'] }],
+      [{ groups: 'lists', hidden: null }, DEFAULT_TOOLBAR],
+      [{ hidden: ['link'] }, { ...DEFAULT_TOOLBAR, hidden: ['link'] }],
+      ['toolbar', DEFAULT_TOOLBAR],
+    ]
+    for (const [bad, fixed] of repaired) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, selectionToolbar: bad } }))
+      expect(createStore(file).get().settings.selectionToolbar).toEqual(fixed)
+      expect(sanitizeToolbarPrefs(bad)).toEqual(fixed)
+      expect(isSettings({ ...DEFAULT_SETTINGS, selectionToolbar: bad })).toBe(false) // the IPC boundary refuses it whole
+    }
   })
 
   it('section indent: a file from before YAZ-2709 sanitizes to 30px, always; every listed value survives; junk falls back', async () => {

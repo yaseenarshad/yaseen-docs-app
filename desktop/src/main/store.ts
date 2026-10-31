@@ -12,6 +12,7 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
   DEFAULT_SIDEBAR_TABS,
+  DEFAULT_TOOLBAR,
   HEADING_KEYS,
   HOVER_PLACES,
   MAX_COLLAPSED_GROUP_KEYS,
@@ -101,6 +102,9 @@ import {
   type SidebarStickyLevels,
   type SidebarSort,
   type SidebarTabsPrefs,
+  type ToolbarPrefs,
+  TOOLBAR_BUTTONS,
+  TOOLBAR_GROUPS,
   type StartupWindows,
   type VaultOpensOn,
   type StoredTab,
@@ -336,6 +340,30 @@ export function sanitizeSidebarTabs(raw: unknown): SidebarTabsPrefs {
   }
 }
 
+/** The selection toolbar (YAZ-3806 T5), strict — the IPC boundary's check: every group and button once, `hidden` a part of the buttons. */
+const isToolbarPrefs = (v: unknown): v is ToolbarPrefs =>
+  isRecord(v) &&
+  isNameSet(v.groups, TOOLBAR_GROUPS) &&
+  v.groups.length === TOOLBAR_GROUPS.length &&
+  isNameSet(v.buttons, TOOLBAR_BUTTONS) &&
+  v.buttons.length === TOOLBAR_BUTTONS.length &&
+  isNameSet(v.hidden, TOOLBAR_BUTTONS)
+/**
+ * The selection toolbar's repair on load (YAZ-3806 T5), as `sanitizeSidebarTabs`: unknown names and duplicates are
+ * dropped, and a group or button the lists are missing goes at the end — so a button a later version adds lands at
+ * the end of its group. A file without the key reads the default.
+ */
+export function sanitizeToolbarPrefs(raw: unknown): ToolbarPrefs {
+  if (!isRecord(raw)) return DEFAULT_TOOLBAR
+  const groups = knownNames(raw.groups, TOOLBAR_GROUPS)
+  const buttons = knownNames(raw.buttons, TOOLBAR_BUTTONS)
+  return {
+    groups: [...groups, ...TOOLBAR_GROUPS.filter((group) => !groups.includes(group))],
+    buttons: [...buttons, ...TOOLBAR_BUTTONS.filter((button) => !buttons.includes(button))],
+    hidden: knownNames(raw.hidden, TOOLBAR_BUTTONS),
+  }
+}
+
 /** Each place's hover switch (YAZ-3403), strict — the IPC boundary's check: every place, each a boolean. */
 const isHoverPreviewIn = (v: unknown): v is Record<HoverPlace, boolean> => isRecord(v) && HOVER_PLACES.every((place) => typeof v[place] === 'boolean')
 /** The sidebar's icon colours (YAZ-3440 D4), strict: each entry a known kind and a `#rrggbb`. */
@@ -474,6 +502,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   searchSort: (v): v is TabSort => isTabSort(v, false, true),
   rowDates: (v): v is RowDates => isRecord(v) && SORT_MENU_TABS.every((tab) => typeof v[tab] === 'boolean'),
   sidebarTabs: isSidebarTabs,
+  selectionToolbar: isToolbarPrefs,
   startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
   vaultOpensOn: (v): v is VaultOpensOn => typeof v === 'string' && (VAULT_OPENS_ON as readonly string[]).includes(v),
   sectionStep: (v): v is number => isFiniteNumber(v) && SECTION_STEPS.includes(v),
@@ -538,6 +567,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.canvas = sanitizeCanvasPrefs(src.canvas)
   out.canvasPanel = sanitizeCanvasPanel(src.canvasPanel)
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
+  out.selectionToolbar = sanitizeToolbarPrefs(src.selectionToolbar)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
   out.hotkeysAside = sanitizeHotkeyAside(src.hotkeysAside)

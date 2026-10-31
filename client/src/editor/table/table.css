@@ -1,0 +1,423 @@
+/*
+ * The table's settings on the page (YAZ-3758, YAZ-3696 D3 / D7 / D8; CONTRACTS rule 41a). A cell
+ * carries `data-fill` and `data-color` (its own `toDOM`); the table block carries `data-table-*`
+ * and the border custom properties (`tableStyle.ts`, a node decoration). Scoped under
+ * `.milkdown .ProseMirror` so it wins over Crepe's table.css, which loads after it.
+ *
+ * Order matters at equal weight: header, then stripes, then fills, so a filled cell keeps its fill.
+ * Each sets the cell's `--table-cell-tint`; one rule paints it (a frozen cell, over the page colour).
+ */
+
+/* The ten cell colours (YAZ-3817), each in light and dark. Fills are see-through washes, so the
+   text stays readable; in light, yellow, green, blue and pink are the highlight washes (YAZ-1480,
+   app.css `--mark-bg*`), as before. Text colours are darker shades in light and lighter in dark.
+   `clipboardCopyOut.ts` holds the light shades as they show over white (a copy to Docs).
+   `--table-fill-wash` is a custom fill's strength, in both themes: `colours.ts` `FILL_WASH` for a copy. */
+:root {
+  --table-fill-wash: 35%;
+  --table-fill-red: rgba(255, 90, 80, 0.35);
+  --table-fill-orange: rgba(255, 150, 50, 0.35);
+  --table-fill-yellow: var(--mark-bg);
+  --table-fill-green: var(--mark-bg-green);
+  --table-fill-teal: rgba(40, 190, 180, 0.35);
+  --table-fill-blue: var(--mark-bg-blue);
+  --table-fill-purple: rgba(160, 110, 255, 0.35);
+  --table-fill-pink: var(--mark-bg-pink);
+  --table-fill-grey: rgba(150, 150, 150, 0.35);
+  --table-fill-brown: rgba(170, 120, 70, 0.35);
+  --table-text-red: #c0392b;
+  --table-text-orange: #b45309;
+  --table-text-yellow: #a16207;
+  --table-text-green: #2e7d32;
+  --table-text-teal: #0f766e;
+  --table-text-blue: #1d5fbf;
+  --table-text-purple: #7b3fbf;
+  --table-text-pink: #c2185b;
+  --table-text-grey: #6b6b6b;
+  --table-text-brown: #8b5a2b;
+}
+
+/* The palette's fill swatches (YAZ-3803, decision 12): each colour at full strength, so a swatch
+   reads as its colour in light and dark. The cells keep the wash. */
+:root {
+  --table-fill-solid-red: rgb(255, 90, 80);
+  --table-fill-solid-orange: rgb(255, 150, 50);
+  --table-fill-solid-yellow: rgb(255, 213, 0);
+  --table-fill-solid-green: rgb(80, 200, 120);
+  --table-fill-solid-teal: rgb(40, 190, 180);
+  --table-fill-solid-blue: rgb(80, 160, 255);
+  --table-fill-solid-purple: rgb(160, 110, 255);
+  --table-fill-solid-pink: rgb(255, 120, 180);
+  --table-fill-solid-grey: rgb(150, 150, 150);
+  --table-fill-solid-brown: rgb(170, 120, 70);
+}
+
+[data-theme='dark'] {
+  --table-fill-red: rgba(255, 90, 80, 0.3);
+  --table-fill-orange: rgba(255, 150, 50, 0.3);
+  --table-fill-yellow: rgba(255, 213, 0, 0.3);
+  --table-fill-green: rgba(80, 200, 120, 0.3);
+  --table-fill-teal: rgba(40, 190, 180, 0.3);
+  --table-fill-blue: rgba(80, 160, 255, 0.3);
+  --table-fill-purple: rgba(160, 110, 255, 0.3);
+  --table-fill-pink: rgba(255, 120, 180, 0.3);
+  --table-fill-grey: rgba(150, 150, 150, 0.3);
+  --table-fill-brown: rgba(170, 120, 70, 0.3);
+  --table-text-red: #ff7b72;
+  --table-text-orange: #f0a35e;
+  --table-text-yellow: #e3c04a;
+  --table-text-green: #6fd47f;
+  --table-text-teal: #4fd1c5;
+  --table-text-blue: #79b8ff;
+  --table-text-purple: #c39bff;
+  --table-text-pink: #ff8fc0;
+  --table-text-grey: #a0a0a0;
+  --table-text-brown: #c99a6e;
+}
+
+/* Border: Crepe's look (1px, 20% of the outline colour) unless the table sets its own. */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td) {
+  border-width: var(--table-border-width, 1px);
+  border-color: color-mix(in srgb, var(--crepe-color-outline) var(--table-border-darkness, 20%), transparent);
+}
+
+/* Each cell's tint: the header shade, the stripes and the fills set `--table-cell-tint`, and this one
+   rule paints it. A frozen cell paints it over a solid page colour instead (below). */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td) {
+  background-color: var(--table-cell-tint, transparent);
+}
+
+/* Header row: shaded by default, plain on request. */
+.milkdown .ProseMirror .milkdown-table-block th {
+  --table-cell-tint: color-mix(in srgb, var(--crepe-color-on-background) 6%, transparent);
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-header='plain'] th {
+  --table-cell-tint: transparent;
+}
+
+/* Stripes: every second body row. Row 1 of the tbody is the header row. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-stripes] :where(tr:nth-child(2n + 3)) > td {
+  --table-cell-tint: color-mix(in srgb, var(--crepe-color-on-background) 4%, transparent);
+}
+
+/* Fills and text colours: a name, or a custom `#rrggbb` from the cell's own `--table-fill-custom` /
+   `--table-text-custom` (YAZ-3817). A custom fill draws at `--table-fill-wash`, a custom text colour as picked. */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='red'] { --table-cell-tint: var(--table-fill-red); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='orange'] { --table-cell-tint: var(--table-fill-orange); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='yellow'] { --table-cell-tint: var(--table-fill-yellow); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='green'] { --table-cell-tint: var(--table-fill-green); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='teal'] { --table-cell-tint: var(--table-fill-teal); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='blue'] { --table-cell-tint: var(--table-fill-blue); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='purple'] { --table-cell-tint: var(--table-fill-purple); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='pink'] { --table-cell-tint: var(--table-fill-pink); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='grey'] { --table-cell-tint: var(--table-fill-grey); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='brown'] { --table-cell-tint: var(--table-fill-brown); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill^='#'] { --table-cell-tint: color-mix(in srgb, var(--table-fill-custom) var(--table-fill-wash), transparent); }
+
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='red'] { color: var(--table-text-red); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='yellow'] { color: var(--table-text-yellow); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='green'] { color: var(--table-text-green); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='teal'] { color: var(--table-text-teal); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='blue'] { color: var(--table-text-blue); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='purple'] { color: var(--table-text-purple); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='pink'] { color: var(--table-text-pink); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='grey'] { color: var(--table-text-grey); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='brown'] { color: var(--table-text-brown); }
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color^='#'] { color: var(--table-text-custom); }
+
+/* A table on a bullet's marker line (YAZ-3805, `slashMenu.ts`): the item's first child, after the fold
+   arrow when there is one. No top margin, so the header row is level with the marker. */
+.milkdown .milkdown-list-item-block > li > .children > .content-dom > .milkdown-table-block:is(:first-child, .outline-toggle + *) {
+  margin-top: 0;
+}
+
+/* Row height: Crepe's cells are 4px top and bottom (normal). */
+.milkdown .ProseMirror .milkdown-table-block[data-table-height='compact'] :is(th, td) {
+  padding-block: 1px;
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-height='tall'] :is(th, td) {
+  padding-block: 10px;
+}
+
+/* No wrap: one line per cell paragraph, cut with an ellipsis. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td) > p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fill down (YAZ-3765, S4): the handle sits inside the corner of the bottom-right selected cell
+   (the table clips its edge), above the selected-cell wash. Hidden in a read-only view (R3). The
+   handle and the range line are the app's accent (app.css `--accent`, the active tab's colour). */
+.milkdown .ProseMirror .milkdown-table-block .table-fill-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border: 1px solid var(--crepe-color-background);
+  background-color: var(--accent);
+  cursor: crosshair;
+}
+
+.milkdown .ProseMirror[contenteditable='false'] .table-fill-handle {
+  display: none;
+}
+
+/* The fill range while the handle drags: a dashed line on its outer edges. */
+.milkdown .ProseMirror .milkdown-table-block [data-fill-target]::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: 3;
+  border: 0 dashed var(--accent);
+  pointer-events: none;
+}
+
+.milkdown .ProseMirror .milkdown-table-block [data-fill-target~='top']::before { border-top-width: 2px; }
+.milkdown .ProseMirror .milkdown-table-block [data-fill-target~='bottom']::before { border-bottom-width: 2px; }
+.milkdown .ProseMirror .milkdown-table-block [data-fill-target~='left']::before { border-left-width: 2px; }
+.milkdown .ProseMirror .milkdown-table-block [data-fill-target~='right']::before { border-right-width: 2px; }
+
+/* Frozen rows and columns (YAZ-3769, S3, `tableFreeze.ts`). Columns stick inside the table block's
+   sideways scroll, at the widths of the columns before them. Rows move down by the offset that keeps
+   them at the top of the note (the folder page's method, by a Web Animation). Both paint their tint over the page colour,
+   so the cells under them do not show through; a frozen row stands above the sticky columns. */
+
+/* A frozen table separates its borders (YAZ-3788). With `collapse` the table paints each border at the
+   rows' first place, and no moved cell paints the 1px band at its edge: the rows under it showed
+   through. Separated, each cell draws its bottom and right border over its own background (the first
+   row and the first column also the top and left), so the lines are still one border wide. `clip`, not
+   prosemirror-tables' `hidden`: `hidden` makes the table the sticky cells' scroll box, so the frozen
+   columns never stuck in the block's sideways scroll. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] table {
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: clip;
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] :is(th, td) {
+  border-top-width: 0;
+  border-left-width: 0;
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] tr:first-child > * {
+  border-top-width: var(--table-border-width, 1px);
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] tr > :first-child {
+  border-left-width: var(--table-border-width, 1px);
+}
+
+/* The freeze line (YAZ-3804): a thicker border after the last frozen row and the last frozen column, the
+   border colour 40% darker. The cells draw their own bottom and right borders (above), so the line moves
+   with the frozen rows and sticks with the frozen columns. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] .table-frozen-row-end > * {
+  border-bottom-width: 3px;
+  border-bottom-color: color-mix(in srgb, var(--crepe-color-outline) min(100%, calc(var(--table-border-darkness, 20%) + 40%)), transparent);
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] :is(th, td).table-frozen-col-end {
+  border-right-width: 3px;
+  border-right-color: color-mix(in srgb, var(--crepe-color-outline) min(100%, calc(var(--table-border-darkness, 20%) + 40%)), transparent);
+}
+
+/* A frozen row's `translateY` is a Web Animation on the row (`tableFreeze.ts`, YAZ-3792), not a custom
+   property here: one on the block restyled every cell of the table on each scroll. */
+.milkdown .ProseMirror .milkdown-table-block .table-frozen-row {
+  position: relative;
+  z-index: 2;
+}
+
+/* Sticky only while the block scrolls sideways (`data-table-scrolls`, YAZ-3790): each sticky cell costs
+   the browser work on every layout, about 2 ms a key for 1,000 cells. A table that fits needs none.
+   The same for `z-index`, which lifts a sticky cell over the cells that scroll under it: 1,000 stacked
+   cells cost 2–6 ms of paint work on each scroll frame (YAZ-3792). */
+.milkdown .ProseMirror .milkdown-table-block[data-table-scrolls] :is(th, td).table-frozen-col {
+  position: sticky;
+  left: var(--table-frozen-left, 0px);
+  z-index: 1;
+}
+
+.milkdown .ProseMirror .milkdown-table-block :is(.table-frozen-row > *, .table-frozen-col) {
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
+}
+
+/* The cell toolbar (YAZ-3768, D8, `cellToolbar.ts`): Crepe's selection toolbar look (toolbar.css),
+   on its own class, so Crepe's rules for its own toolbar do not reach it. Crepe's variables follow
+   light and dark. */
+.milkdown .cell-toolbar {
+  z-index: 10;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  background: var(--crepe-color-surface);
+  box-shadow: var(--crepe-shadow-1);
+  border-radius: 8px;
+}
+
+.milkdown .cell-toolbar[data-show='false'] {
+  display: none;
+}
+
+.milkdown .cell-toolbar .divider {
+  width: 1px;
+  height: 24px;
+  margin: 10px 4px;
+  background: color-mix(in srgb, var(--crepe-color-outline), transparent 80%);
+}
+
+.milkdown .cell-toolbar__label {
+  padding-left: 8px;
+  font-size: 12px;
+  color: var(--crepe-color-outline);
+  white-space: nowrap;
+}
+
+.milkdown .cell-toolbar .toolbar-item {
+  width: 32px;
+  height: 32px;
+  margin: 6px 2px;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--crepe-color-outline);
+}
+
+.milkdown .cell-toolbar .toolbar-item:hover {
+  background: var(--crepe-color-hover);
+}
+
+.milkdown .cell-toolbar .toolbar-item:active {
+  background: var(--crepe-color-selected);
+}
+
+.milkdown .cell-toolbar .toolbar-item svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* Fill and Text (YAZ-3817): a label, three quick swatches and a narrow ▾. */
+.milkdown .cell-toolbar__colours {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__quick {
+  width: 24px;
+  margin-inline: 1px;
+  padding: 4px 3px;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__quick svg {
+  width: 18px;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__arrow {
+  width: 16px;
+  margin-left: 0;
+  padding: 4px 0;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__arrow svg {
+  width: 16px;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__arrow[aria-expanded='true'] {
+  background: var(--crepe-color-selected);
+}
+
+/* The system colour picker's input (`colours.ts` `pickCustomColour`, on the page's body): hidden, but not
+   `display: none`, so its `click()` opens the picker. */
+.table-colour-input {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The palette: the app's menu look (`.ctx-menu`, app.css), hung under the split button. */
+.milkdown .cell-toolbar__palette {
+  position: absolute;
+  top: calc(100% - 4px);
+  left: 0;
+  z-index: 1;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.milkdown .cell-toolbar__palette[hidden] {
+  display: none;
+}
+
+/* The palette's text items: the clear item and "Custom colour…". */
+.milkdown .cell-toolbar :is(.cell-toolbar__clear, .cell-toolbar__custom) {
+  display: block;
+  width: 100%;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.milkdown .cell-toolbar :is(.cell-toolbar__clear, .cell-toolbar__custom):hover {
+  background: var(--bg-hover);
+}
+
+.milkdown .cell-toolbar__swatches {
+  display: grid;
+  grid-template-columns: repeat(5, auto);
+  gap: 4px;
+  padding: 4px 5px 3px;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__swatch-item {
+  display: block;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__swatch-item:hover {
+  background: var(--bg-hover);
+}
+
+/* A swatch before a colour in the table menu's Fill ▸ and Text colour ▸ (YAZ-3820, `tableMenu.ts`). */
+.table-menu-swatch {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 20%, transparent);
+}
+
+.milkdown .cell-toolbar__swatch {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 20%, transparent);
+}

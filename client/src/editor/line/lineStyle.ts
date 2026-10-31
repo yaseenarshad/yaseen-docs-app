@@ -15,8 +15,8 @@
  * LOAD: `lineStyleRemark` walks every container (the root, lists, list items, blockquotes) and
  * joins a `thematicBreak` with its NEXT sibling when that sibling is our comment — a bare `html`
  * node, or the paragraph that Milkdown's `remarkHtmlTransformer` wraps a block `html` in (it runs
- * first, as part of the preset). The style goes on `node.data.lineStyle` and the comment leaves the
- * tree. Any other comment — other words, another order, a value out of range, a block between it
+ * first, as part of the preset; the walk is `joinComment.ts`, shared with the table comment). The
+ * style goes on `node.data.lineStyle` and the comment leaves the tree. Any other comment — other words, another order, a value out of range, a block between it
  * and the line, a comment BEFORE a line, a style word other than `solid`, `dotted` or `dashed`
  * (S72) — is not ours and stays an `html` node, bytes untouched (S5–S7). A hand-written value equal
  * to the default (`darkness 50%`, `style solid`) is read and written as it is (YAZ-3208 D9, S93).
@@ -34,7 +34,8 @@
 import { hrAttr, hrSchema } from '@milkdown/kit/preset/commonmark'
 import { $remark } from '@milkdown/kit/utils'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import type { Nodes, Parent, RootContent } from 'mdast'
+import type { Nodes } from 'mdast'
+import { joinNextComment } from '../joinComment'
 import {
   LINE_PATTERNS,
   NUMBER_PARTS,
@@ -84,37 +85,14 @@ const readProperty = (style: string, name: string, unit: string): number | null 
   return match === null ? null : Number(match[1])
 }
 
-/** The comment a block holds, when the block is nothing but our comment: a bare `html`, or a paragraph wrapping only one. */
-const commentStyle = (node: RootContent | undefined): LineStyle | null => {
-  if (node === undefined) return null
-  if (node.type === 'html') return parseLineComment(node.value)
-  if (node.type !== 'paragraph' || node.children.length !== 1) return null
-  const only = node.children[0]
-  return only.type === 'html' ? parseLineComment(only.value) : null
-}
-
 interface LineData {
   lineStyle?: LineStyle
 }
 
-/** Every container, depth first: join each `thematicBreak` with the comment right after it. */
-const joinComments = (node: Nodes): void => {
-  if (!('children' in node)) return
-  const parent = node as Parent
-  for (let i = 0; i < parent.children.length; i++) {
-    const child = parent.children[i]
-    if (child.type === 'thematicBreak') {
-      const style = commentStyle(parent.children[i + 1])
-      if (style !== null) {
-        child.data = { ...child.data, lineStyle: style } as typeof child.data
-        parent.children.splice(i + 1, 1)
-      }
-    } else joinComments(child)
-  }
-}
-
 export const lineStyleRemark = $remark('mdapp-line-style', () => () => (tree) => {
-  joinComments(tree as Nodes)
+  joinNextComment(tree as Nodes, 'thematicBreak', parseLineComment, (node, style) => {
+    node.data = { ...node.data, lineStyle: style } as typeof node.data
+  })
 })
 
 export const lineSchema = hrSchema.extendSchema((prev) => (ctx) => ({
