@@ -458,16 +458,16 @@ describe("a bullet's own dot (YAZ-3646 D8, D9)", () => {
     return { view, dot }
   }
 
-  it('a right-click on the dot opens the bullet\'s menu: "Open in new tab" first, with its glyph and its ⇧-click hint, a line, then the next group', async () => {
+  it('a right-click on the dot opens the bullet\'s menu: "Open in new tab" first, with its ⇧-click hint and no glyph (YAZ-3727 D19), a line, then the next group', async () => {
     const open = vi.fn()
     const { view, dot } = await mountList(open)
     const e = contextmenu(dot('One'))
     expect(e.defaultPrevented).toBe(true)
     const popup = popupOf(view)!
     expect([...popup.children].map((el) => el.className)).toEqual(['ctx-menu__item', 'document-zoom__divider', 'ctx-menu__item'])
-    expect(popup.classList.contains('ctx-menu--glyphs')).toBe(true)
+    expect(popup.classList.contains('ctx-menu--glyphs')).toBe(false)
     const [first] = itemsOf(view)
-    expect([first.textContent, first.dataset.hint, first.querySelector('svg') !== null]).toEqual(['Open in new tab', '⇧-click', true])
+    expect([first.textContent, first.dataset.hint, first.querySelector('svg') !== null]).toEqual(['Open in new tab', '⇧-click', false])
     first.click()
     const key = zoomKeyAt(view.state.doc, view.state.doc.resolve(view.posAtDOM(dot('One'), 0)).before())
     expect(open).toHaveBeenCalledExactlyOnceWith(key, false, 'One')

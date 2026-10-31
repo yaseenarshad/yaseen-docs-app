@@ -280,6 +280,8 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
     const { crepe, view } = await open('* a\n  * kid\n* b\n', { onOpen: vi.fn() })
     rightClickOn(view, posOf(crepe, 'a'))
     expect(groups()).toEqual([['Open in new tab'], [STRIP('Bullet list')], ['Number children'], ...CLIPBOARD])
+    // D19: no glyph, so no row is pushed right to line up after one.
+    expect(document.querySelector('.ctx-menu')!.classList.contains('ctx-menu--glyphs')).toBe(false)
     // D17: no "⇧-click" hint here (on the text it only extends the selection), so the menu is no wider than the strip.
     expect([...document.querySelectorAll<HTMLElement>('.ctx-menu [role=menuitem]')].find((b) => b.textContent === 'Open in new tab')!.dataset.hint).toBeUndefined()
     // The strip's glyphs are the bullet menu's own SVGs.
