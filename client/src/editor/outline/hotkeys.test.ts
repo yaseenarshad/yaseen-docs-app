@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { undo } from '@milkdown/kit/prose/history'
-import { type Command, TextSelection } from '@milkdown/kit/prose/state'
+import { type Command, NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { setHeadingFoldAtSelection } from './headingFolding'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_FOLDED_IMAGE_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
@@ -195,6 +195,33 @@ describe('Mod-Enter on a line outside a bullet: strike the line (YAZ-3797)', () 
     caretIn(crepe, 'more', 1)
     expect(press(crepe, 'Mod-Enter')).toBe(false)
     expect(md(crepe)).toBe('* item\n\n  more\n')
+  })
+
+  it('a selected rule or code block: the lines next to it do not change (YAZ-3797, final check)', async () => {
+    for (const markdown of ['above\n\n---\n\nbelow\n', 'above\n\n```\ncode\n```\n\nbelow\n']) {
+      const { crepe } = await mount(markdown)
+      const before = md(crepe)
+      crepe.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx)
+        let at = -1
+        view.state.doc.forEach((node, offset) => {
+          if (node.type.name === 'hr' || node.type.name === 'code_block') at = offset
+        })
+        view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, at)))
+      })
+      press(crepe, 'Mod-Enter')
+      expect(md(crepe)).toBe(before)
+    }
+  })
+
+  it('an image-only line has no text: alone it is not a task, and in a group it gets no strike (YAZ-3797, final check)', async () => {
+    const { crepe } = await mount('![alt](a.png)\n\ntext\n')
+    caretIn(crepe, 'text', 0)
+    select(crepe, 1)
+    expect(press(crepe, 'Mod-Enter')).toBe(false)
+    select(crepe, 1, posOf(crepe, 'text', 2))
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toBe('![alt](a.png)\n\n~~text~~\n')
   })
 
   it('an empty line does not change', async () => {

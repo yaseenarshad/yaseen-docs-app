@@ -61,7 +61,8 @@ const selectedItemPositions = (itemType: NodeType, state: EditorState): number[]
 
 /** A paragraph or heading with text, outside any list item and table cell (YAZ-3797). */
 const isFreeLine = (state: EditorState, block: Node, pos: number): boolean => {
-  if (!['paragraph', 'heading'].includes(block.type.name) || block.content.size === 0) return false
+  // Text, not only content: an image-only line has nothing to strike (YAZ-3797, final check).
+  if (!['paragraph', 'heading'].includes(block.type.name) || !/\S/.test(block.textContent)) return false
   const $pos = state.doc.resolve(pos)
   for (let depth = $pos.depth; depth > 0; depth--) {
     const role = $pos.node(depth).type.spec.tableRole
@@ -70,12 +71,15 @@ const isFreeLine = (state: EditorState, block: Node, pos: number): boolean => {
   return true
 }
 
-/** Positions of the visible free lines the covered lines overlap (document order). */
+/**
+ * Positions of the visible free lines the covered lines overlap (document order). Strict overlap: a selected rule or
+ * code block only TOUCHES the lines next to it, and they must not change (YAZ-3797, final check).
+ */
 const selectedFreeLines = (state: EditorState): number[] => {
   const { from, to } = coveredLines(state)
   const positions: number[] = []
   eachVisibleTextblock(state, Math.max(0, from - 1), Math.min(state.doc.content.size, to + 1), (block, pos) => {
-    if (from <= pos + block.nodeSize && to >= pos && isFreeLine(state, block, pos)) positions.push(pos)
+    if (from < pos + block.nodeSize && to > pos && isFreeLine(state, block, pos)) positions.push(pos)
   })
   return positions
 }
