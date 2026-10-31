@@ -18,7 +18,6 @@
 import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { vaultNoteId } from '@shared/noteId'
 import { fileKind } from '@shared/fileKind'
 import { basename } from '@shared/types'
 import { copyNoteId } from '../../lib/copyNoteId'
@@ -27,7 +26,7 @@ import { folderLabel, folderRecord } from '../../links/shortcuts'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkMenu } from '../linkMenu'
 import { OPEN_ID_LINK } from './idLinkCaret'
 import { wikilinkMatchAt, type WikilinkNav } from './wikilinkClick'
-import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkPageName, linkPath, missingId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
+import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './viewOnlyLinkSource'
 
 const wikilinkMenuKey = new PluginKey('mdapp-wikilink-menu')
@@ -45,8 +44,8 @@ function linkAt(view: EditorView, target: EventTarget | null): { from: number; t
  * one; where it does, a link is one when its target is an ID of this vault (`letters`, YAZ-2677 R5):
  * `[[GPT-4]]` is a name there (R6). As the app writes it, whatever the link's case.
  */
-function idOf(inner: string, { ids, letters }: Pick<WikilinkResolveSource, 'ids' | 'letters'>): string | null {
-  return ids ? (vaultNoteId(linkPageName(inner), letters) ?? null) : null
+function idOf(inner: string, source: WikilinkResolveSource): string | null {
+  return linkNoteId(linkPageName(inner), source) ?? null
 }
 
 /** The one link menu of the `[[inner]]` at `from`..`to` (YAZ-3740, YAZ-3905). */
@@ -88,7 +87,7 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
     open: page === '' ? undefined : () => follow(inner, false),
     openNew: page === '' ? undefined : () => follow(inner, true),
     ...(id !== null && title !== undefined
-      ? { copyNameAndId: { hint: `${title} (${id})`, run: () => copyText(`${title} (${id})`, 'name and ID', nav.onNotice) } }
+      ? { copyNameAndId: { hint: nameAndId(title, id), run: () => copyText(nameAndId(title, id), 'name and ID', nav.onNotice) } }
       : shown !== '' && found ? { copyName: { hint: shown, run: () => copyText(shown, 'name', nav.onNotice) } } : {}),
     copyId: id === null ? undefined : copyIdRow(id),
     ...(path === null ? {} : placeRows(path, fileKind(basename(path)) !== null, nav, nav.onNotice)),

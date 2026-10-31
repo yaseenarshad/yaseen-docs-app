@@ -304,7 +304,7 @@ describe('copy-out carries readable text/plain AND rich text/html (YAZ-1443)', (
 describe('a plain-text copy names links as the note shows them (YAZ-3744 S8)', () => {
   async function mountLinks(markdown: string) {
     const wikilinks = createWikilinkResolveSource()
-    wikilinks.update((target) => ({ 'YAS-466': '/v/AR v2 plan.md', 'AR v2 plan': '/v/AR v2 plan.md' } as Record<string, string>)[target] ?? null)
+    wikilinks.update((target) => ({ 'YAS-466': '/v/AR v2 plan.md', 'yas-466': '/v/AR v2 plan.md', 'AR v2 plan': '/v/AR v2 plan.md' } as Record<string, string>)[target] ?? null, [], [], true, ['YAS'])
     const viewOnlyLinks = createViewOnlyLinkSource()
     viewOnlyLinks.update(buildViewOnlyCatalogFromEntries('/v', [
       { path: '/v/LN Scenarios Diagram.drawio', name: 'LN Scenarios Diagram.drawio', kind: 'diagram' },
@@ -328,6 +328,12 @@ describe('a plain-text copy names links as the note shows them (YAZ-3744 S8)', (
     expect(payload(view).text).toBe(plain)
     expect(copyAs('plain')).toBe(plain)
     expect(copyAs('markdown')).toContain('See [[YAS-466]], [[AR v2 plan]], [[LN Scenarios Diagram.drawio]]')
+  })
+
+  it('an ID typed in small letters copies as the app writes it, as "Copy name and ID" does (YAZ-3910 A3)', async () => {
+    const { view } = await mountLinks('See [[yas-466]] here\n')
+    selectAll(view)
+    expect(payload(view).text).toContain('See AR v2 plan (YAS-466) here')
   })
 
   it('the app\'s own HTML keeps the raw links: a paste into a note keeps [[YAS-466]]', async () => {

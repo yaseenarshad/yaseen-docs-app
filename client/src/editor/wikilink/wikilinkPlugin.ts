@@ -192,6 +192,17 @@ export function showsTitle(inner: string, source: WikilinkResolveSource): boolea
 }
 
 /**
+ * The ID of THIS vault that a link's page part is, as the app writes it (YAZ-2677 R2), or undefined: a vault with no IDs
+ * (YAZ-2523 🔒 V5), a name, and other `LETTERS-NUMBER` text (R6). `[[yas-466]]` is "YAS-466".
+ */
+export function linkNoteId(page: string, { ids, letters }: Pick<WikilinkResolveSource, 'ids' | 'letters'>): string | undefined {
+  return ids ? vaultNoteId(page, letters) : undefined
+}
+
+/** "AR v2 plan (YAS-466)" (YAZ-3744 S8): the one text of an ID link's name and ID, for a plain-text copy and "Copy name and ID". */
+export const nameAndId = (title: string, id: string): string => `${title} (${id})`
+
+/**
  * The ID of THIS vault a link names whose note is gone (YAZ-3905 S10), as the app writes it, or undefined: a found
  * link, a name, a vault that does not use IDs, and any link before the index loads (nothing is known yet).
  */
@@ -255,7 +266,8 @@ export function linksAsShown(text: string, source: WikilinkResolveSource, viewOn
   const titles = pathTitles(source.records, source.folders)
   const titleOf = (target: string) => {
     const title = idLinkTitle(target, source.resolve, titles)
-    return title === undefined || !withId ? title : `${title} (${target})`
+    const id = withId ? linkNoteId(target, source) : undefined
+    return title === undefined || id === undefined ? title : nameAndId(title, id)
   }
   return text.replace(WIKILINK_RE, (raw, bang: string, inner: string) =>
     bang === '!' ? raw : linkDisplayText(inner, titleOf, () => linkIsResolved(inner, source, viewOnly)) || raw)
