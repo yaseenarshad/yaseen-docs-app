@@ -15,10 +15,12 @@
  *
  * "Table" (YAZ-3696 D12) is the app's own row in Crepe's place (`advancedGroup: { table: null }` in
  * `createCrepe()`), with Crepe's label, icon and position (after Code). In a list item's label line it
- * removes only the `/query`, keeps the line (empty when the query was all of it) and puts a 3×3
- * table BELOW it, inside the item, the caret in the first header cell — one transaction, one undo
- * step. Crepe's row replaced the line, so the table sat on the marker line. Anywhere else the row
- * runs Crepe's own three commands, as before.
+ * removes only the `/query`. A line with text stays and a 3×3 table goes BELOW it, inside the item.
+ * An empty line (the query was all of it) becomes the table, so the table sits on the marker line,
+ * the item's first child, saved `* | … |` (YAZ-3805, demo round 1 decision 11) — except in a task
+ * item, which cannot hold a table on its marker line (`* [ ] | a |` reads as text): there the empty
+ * line stays and the table goes below. The caret goes in the first header cell — one transaction,
+ * one undo step. Anywhere else the row runs Crepe's own three commands, as before.
  *
  * "Current time" (YAZ-3511 D22) inserts `h:mmam - ` as plain text at the caret, read at the pick.
  * It opens the way every stock row does (`clearTextInCurrentBlockCommand` removes the `/query`),
@@ -131,7 +133,7 @@ const tableIcon = `
   </svg>
 `
 
-/** The "Table" row (D12): in a list item's label line, the table goes below the line; see the header. */
+/** The "Table" row (D12, YAZ-3805): in a list item's label line, the table goes below the line or takes an empty one; see the header. */
 export const tableRow: SlashRow = {
   label: 'Table',
   icon: tableIcon,
@@ -151,8 +153,12 @@ export const tableRow: SlashRow = {
     const slash = $from.parent.textBetween(0, $from.parentOffset, undefined, '\uFFFC').lastIndexOf('/')
     const tr = view.state.tr
     if (slash >= 0) tr.delete($from.start() + slash, $from.pos)
-    const at = tr.mapping.map($from.after())
-    tr.insert(at, createTable(ctx, 3, 3))
+    const line = tr.mapping.map($from.before())
+    const lineSize = tr.doc.nodeAt(line)!.nodeSize
+    // An empty line becomes the table (YAZ-3805); a task item keeps it, see the header.
+    const onMarker = lineSize === 2 && typeof $from.node($from.depth - 1).attrs.checked !== 'boolean'
+    const at = onMarker ? line : line + lineSize
+    tr.replaceWith(at, onMarker ? line + lineSize : at, createTable(ctx, 3, 3))
     view.dispatch(tr.setSelection(TextSelection.near(tr.doc.resolve(at + 1))).scrollIntoView())
   },
 }

@@ -17,6 +17,15 @@
   --table-text-grey: #6b6b6b;
 }
 
+/* The palette's fill swatches (YAZ-3803, decision 12): each highlight wash at full strength, so a
+   swatch reads as its colour in light and dark. The cells keep the wash (below). */
+:root {
+  --table-fill-solid-yellow: rgb(255, 213, 0);
+  --table-fill-solid-green: rgb(80, 200, 120);
+  --table-fill-solid-blue: rgb(80, 160, 255);
+  --table-fill-solid-pink: rgb(255, 120, 180);
+}
+
 [data-theme='dark'] {
   --table-text-red: #ff7b72;
   --table-text-orange: #f0a35e;
@@ -62,6 +71,12 @@
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='green'] { color: var(--table-text-green); }
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='blue'] { color: var(--table-text-blue); }
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='grey'] { color: var(--table-text-grey); }
+
+/* A table on a bullet's marker line (YAZ-3805, `slashMenu.ts`): the item's first child, after the fold
+   arrow when there is one. No top margin, so the header row is level with the marker. */
+.milkdown .milkdown-list-item-block > li > .children > .content-dom > .milkdown-table-block:is(:first-child, .outline-toggle + *) {
+  margin-top: 0;
+}
 
 /* Row height: Crepe's cells are 4px top and bottom (normal). */
 .milkdown .ProseMirror .milkdown-table-block[data-table-height='compact'] :is(th, td) {
@@ -189,7 +204,6 @@
   background: var(--crepe-color-surface);
   box-shadow: var(--crepe-shadow-1);
   border-radius: 8px;
-  overflow: hidden;
 }
 
 .milkdown .cell-toolbar[data-show='false'] {
@@ -231,4 +245,92 @@
 .milkdown .cell-toolbar .toolbar-item svg {
   width: 24px;
   height: 24px;
+}
+
+/* Fill and Text (YAZ-3803): the icon, with the last colour's bar under it, and a narrow ▾. */
+.milkdown .cell-toolbar__split {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.milkdown .cell-toolbar__split > .toolbar-item:first-child {
+  margin-right: 0;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__arrow {
+  width: 16px;
+  margin-left: 0;
+  padding: 4px 0;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__arrow svg {
+  width: 16px;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__arrow[aria-expanded='true'] {
+  background: var(--crepe-color-selected);
+}
+
+/* The palette: the app's menu look (`.ctx-menu`, app.css), hung under the split button. */
+.milkdown .cell-toolbar__palette {
+  position: absolute;
+  top: calc(100% - 4px);
+  left: 0;
+  z-index: 1;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.milkdown .cell-toolbar__palette[hidden] {
+  display: none;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__clear {
+  display: block;
+  width: 100%;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__clear:hover {
+  background: var(--bg-hover);
+}
+
+.milkdown .cell-toolbar__swatches {
+  display: flex;
+  gap: 4px;
+  padding: 4px 5px 3px;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__swatch-item {
+  display: block;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__swatch-item:hover {
+  background: var(--bg-hover);
+}
+
+.milkdown .cell-toolbar__swatch {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 20%, transparent);
 }
