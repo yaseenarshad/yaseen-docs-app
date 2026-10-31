@@ -3309,6 +3309,12 @@ body.drag-held iframe {
   background: var(--border);
 }
 
+/* The in-note menus' line between groups (the bullet's and the link's, `renderMenu`) spaces as the app menus'
+   (`.ctx-menu__group + .ctx-menu__group`): 4px above and below (YAZ-3727 D21). */
+.ctx-menu--editor > .document-zoom__divider {
+  margin: 4px 0;
+}
+
 .document-zoom__presets button,
 .page-settings__menu button {
   display: flex;
