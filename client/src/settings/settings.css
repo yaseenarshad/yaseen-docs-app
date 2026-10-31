@@ -943,7 +943,8 @@
 
 .memory__row {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 120px 5.5em 1em;
+  /* ▸ · name · open · bar · size · "Growing" (YAZ-3933, at 11 px) */
+  grid-template-columns: 1em minmax(0, 1.2fr) minmax(0, 1fr) 120px 5.5em 4.5em;
   align-items: center;
   column-gap: 10px;
   width: 100%;
@@ -974,8 +975,105 @@
 }
 
 .memory__open,
-.memory__grew {
+.memory__arrow {
   color: var(--fg-muted);
+}
+
+/* "Growing" (YAZ-3933): a small word in the app's orange, not a ▲ that reads as a dropdown. */
+.memory__grew {
+  font-size: 11px;
+  color: var(--warn);
+  text-align: right;
+}
+
+/* A window's tabs (YAZ-3934), under its row: indented to the name column, awake first, the sleeping ones dimmed. */
+.memory__tabs {
+  margin: 0 0 4px;
+  padding: 0 6px 0 calc(6px + 1em + 10px);
+  list-style: none;
+  font-size: 12px;
+}
+
+.memory__tab {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 1px 0;
+}
+
+.memory__tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory__tab--asleep {
+  color: var(--fg-muted);
+}
+
+.memory__asleep {
+  display: inline-flex;
+  flex: none;
+  margin-left: 4px;
+}
+
+/* The ⓘ after the page's title (YAZ-3932); the title keeps the close button's clearance for both. */
+.settings-section__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding-right: 36px;
+}
+
+.settings-section__head > .settings-section__title {
+  margin: 0;
+  padding-right: 0;
+}
+
+.memory__info {
+  position: relative;
+}
+
+.memory__info-btn {
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: default;
+}
+
+.memory__info-btn:hover,
+.memory__info-btn:focus-visible {
+  color: var(--fg);
+}
+
+.memory__tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(320px, 70vw);
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.memory__tip[hidden] {
+  display: none;
 }
 
 .memory__bar {

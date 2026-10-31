@@ -10,6 +10,8 @@
  * - Code helpers = the language helpers' PIDs, read with `ps` only for a report: they are `spawn` children, not
  *   in `getAppMetrics`. None runs: no row.
  * - JS heap: each window's preload, only for a report (`ipc/memory.ts`). Nothing polls it.
+ * - A window's tabs (YAZ-3934): its strip, each tab awake or asleep. The page tells main which sleep (`asleep` in a
+ *   `window:set-identity` patch, kept by `WindowManager`). No size for each tab: all the tabs of a window share its heap.
  * - The memory reload (D4, D6): after each sample, `createReloadWatch` reloads a window that has stayed too big
  *   while nobody used it (`mayReload`), with each tab's page view kept for its next page.
  *
@@ -18,12 +20,12 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileKind } from '@shared/fileKind'
-import type { FileKind, MemoryReport, MemoryWindowRow, StartView, WindowEntry } from '@shared/types'
+import type { FileKind, MemoryReport, MemoryWindowRow, StartView, StoredTab, WindowEntry } from '@shared/types'
 
 /** 240 samples per window: 2 h at `MEMORY_SAMPLE_MS` (D1). */
 export const HISTORY = 240
 const MB = 1024 * 1024
-/** ▲ (D9): more than 150 MB, or more than 20 %, over the sample about 1 h ago. */
+/** "Growing" (D9, YAZ-3933): more than 150 MB, or more than 20 %, over the sample about 1 h ago. */
 export const GREW_BYTES = 150 * MB
 export const GREW_SHARE = 0.2
 export const GREW_SPAN_MS = 60 * 60_000
@@ -42,14 +44,17 @@ export interface MeterWindow {
   webContents: { getOSProcessId(): number; mainFrame: { framesInSubtree: readonly { osProcessId: number }[] } }
 }
 
+/** What the meter reads of a window's entry, and the strip places of its tabs asleep now (`WindowManager.asleep`, YAZ-3934). */
+export type MeterEntry = Pick<WindowEntry, 'id' | 'tabs' | 'tabStrip' | 'name'> & { asleep?: readonly number[] }
+
 export interface MemoryHost<W extends MeterWindow> {
   metrics(): readonly MeterProcess[]
   /** Every `BrowserWindow`, preview popups too. */
   windows(): readonly W[]
   /** A Files window's preview popup (`previewPopups`). */
   isPreview(win: W): boolean
-  /** The window's stored entry; undefined = no window of the app's own. */
-  entryOf(win: W): Pick<WindowEntry, 'id' | 'tabs' | 'name'> | undefined
+  /** The window's stored entry, with its sleeping tabs; undefined = no window of the app's own. */
+  entryOf(win: W): MeterEntry | undefined
   /** The page's JS heap in use, in bytes; null = no answer. */
   jsHeap(win: W): Promise<number | null>
   /** The PIDs of the language helpers that run now (`LspPool.running()`). */
@@ -83,7 +88,7 @@ function pidsOf(win: MeterWindow): number[] {
   }
 }
 
-/** ▲: `bytes` at the time `at` against the newest sample at least `GREW_SPAN_MS` older. A ring that is not 1 h old yet never grew (a new window grows while it loads). */
+/** "Growing": `bytes` at the time `at` against the newest sample at least `GREW_SPAN_MS` older. A ring that is not 1 h old yet never grew (a new window grows while it loads). */
 export function grewSince(ring: readonly MemorySample[], bytes: number, at: number): boolean {
   let ref: MemorySample | undefined
   for (let i = ring.length - 1; i >= 0; i--) {
@@ -113,6 +118,12 @@ export function openText(tabs: readonly string[]): string {
     const n = kinds.filter((k) => k === kind).length
     return n === 0 ? [] : [`${n} ${n === 1 ? one : many}`]
   }).join(', ')
+}
+
+/** A window's tabs for its row (YAZ-3934): the strip (else `tabs`), each marked asleep when its place is in `asleep`. */
+function tabsOf(entry: MeterEntry): MemoryWindowRow['tabs'] {
+  const asleep = new Set(entry.asleep)
+  return (entry.tabStrip ?? entry.tabs.map((path): StoredTab => ({ path }))).map((t, i) => ({ path: t.path, ...(t.name === undefined ? {} : { name: t.name }), asleep: asleep.has(i) }))
 }
 
 const execFileP = promisify(execFile)
@@ -186,6 +197,7 @@ export function createMemoryMeter<W extends MeterWindow>(host: MemoryHost<W>, no
         bytes,
         jsHeapBytes: heaps[i],
         grew: grewSince(rings.get(entry.id) ?? [], bytes, t),
+        tabs: tabsOf(entry),
       }))
       return { windows: rows, core, helpers: helperRow }
     },

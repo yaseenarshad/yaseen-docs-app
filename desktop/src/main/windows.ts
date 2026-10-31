@@ -207,6 +207,13 @@ export interface WindowManager extends WindowLookup {
    * tab's page view (by its place in the strip) and the size it reloaded at. A ⌘R and a later reload get none. Memory only.
    */
   takeReload(id: string): { views: (StartView | null)[]; mb: number } | undefined
+  /**
+   * The tabs asleep in the window `id` now, by their place in its strip (YAZ-3934): the page's `asleep` patch
+   * (`window:set-identity`), places past the strip's end dropped. Settings › Memory reads it. Memory only: it goes when
+   * the window closes or main reloads its page.
+   */
+  setAsleep(id: string, places: readonly number[]): void
+  asleep(id: string): readonly number[]
   /** A window `duplicateWindow` or `openBehind` opened (YAZ-3343 D22, D35): `true` ONCE, for its first `window:identity`, so it boots with no tab. */
   takeStartEmpty(id: string): boolean
   /** A NEW window (YAZ-3487, demo round 3): its tree starts with every folder closed. Once, as `takeStartEmpty`. */
@@ -339,7 +346,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'setAsleep' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -515,6 +522,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const startViews = new Map<string, StartView>()
   /** The memory reload's page views and size (YAZ-3737 D4, D12), by window id, until the new page's first identity read. Memory only. */
   const reloads = new Map<string, { views: (StartView | null)[]; mb: number }>()
+  /** The strip places of each window's sleeping tabs (YAZ-3934), by window id; no key = none sleeps. Memory only. */
+  const asleepTabs = new Map<string, readonly number[]>()
   /** Each live window that does not have the focus: since when (YAZ-3737 D6). A window that was never focused counts from when it opened. */
   const blurredSince = new Map<string, number>()
   /** The last link push to each window, by `webContents.id` (YAZ-3737 S22). */
@@ -711,6 +720,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // Closed before it asked (YAZ-2951 S20): what it would have read goes with it.
       startViews.delete(id)
       reloads.delete(id)
+      asleepTabs.delete(id)
       blurredSince.delete(id)
       pushedAt.delete(wcId)
       emptyStarts.delete(id)
@@ -937,6 +947,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     if (!may(ack) || quitting || closingWins.has(id) || win.isDestroyed()) return false
     // The new page hears no push until its `link:ready`, as at the window's start (YAZ-2589 A2): hold them again (S22).
     if (!heldLinks.has(win.webContents.id)) heldLinks.set(win.webContents.id, [])
+    // The new page starts with every tab awake (YAZ-3934): it sends `asleep` only once a tab sleeps.
+    asleepTabs.delete(id)
     win.webContents.reload()
     return true
   }
@@ -1117,6 +1129,16 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       startViews.delete(id)
       return start
     },
+
+    setAsleep(id, places) {
+      const entry = entryOf(id)
+      const strip = entry?.tabStrip?.length ?? entry?.tabs.length ?? 0
+      const kept = [...new Set(places)].filter((i) => i < strip)
+      if (kept.length === 0) asleepTabs.delete(id)
+      else asleepTabs.set(id, kept)
+    },
+
+    asleep: (id) => asleepTabs.get(id) ?? [],
 
     takeReload(id) {
       const reload = reloads.get(id)

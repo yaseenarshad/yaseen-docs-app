@@ -59,6 +59,7 @@ let manager: {
   vaultNotice: ReturnType<typeof vi.fn>
   takeStartView: ReturnType<typeof vi.fn<(id: string) => StartView | undefined>>
   takeReload: ReturnType<typeof vi.fn<(id: string) => { views: (StartView | null)[]; mb: number } | undefined>>
+  setAsleep: ReturnType<typeof vi.fn<(id: string, places: readonly number[]) => void>>
   takeStartEmpty: ReturnType<typeof vi.fn<(id: string) => boolean>>
   takeStartCollapsed: ReturnType<typeof vi.fn<(id: string) => boolean>>
   openFilesWindow: ReturnType<typeof vi.fn<(from: string | undefined, root: string | null) => boolean>>
@@ -79,7 +80,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), tearOff: vi.fn((): TearOffResult => 'opened'), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeReload: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), tearOff: vi.fn((): TearOffResult => 'opened'), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeReload: vi.fn(() => undefined), setAsleep: vi.fn(), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -134,6 +135,22 @@ describe('registerWindowIpc', () => {
     // Unknown keys cannot touch id / bounds.
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { id: 'hijack', bounds: { x: 0, y: 0, width: 1, height: 1 } })).toEqual(ok(undefined))
     expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', roots: ['/other'], file: '/other/b.md', tabs: ['/other/b.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', bounds }])
+  })
+
+  it('window:set-identity carries the sleeping tabs to the manager (YAZ-3934): a patch of them alone writes no store; a bad list is BAD_REQUEST', async () => {
+    const set = registered(CONTRACT.window.setIdentity.channel)
+    const commits = vi.spyOn(store, 'upsertWindow')
+    expect(await set({ sender }, { asleep: [1, 2] })).toEqual(ok(undefined))
+    expect(manager.setAsleep).toHaveBeenCalledExactlyOnceWith('w1', [1, 2])
+    expect(commits).not.toHaveBeenCalled()
+    expect(await set({ sender }, { asleep: [-1] })).toEqual(bad('BAD_REQUEST'))
+    expect(await set({ sender }, { asleep: '1' })).toEqual(bad('BAD_REQUEST'))
+    expect(manager.setAsleep).toHaveBeenCalledTimes(1)
+    // It never reaches the entry, and identity does not give it out.
+    expect(await set({ sender }, { asleep: [0], file: '/v/b.md' })).toEqual(ok(undefined))
+    expect(commits).toHaveBeenCalledTimes(1)
+    expect(store.get().windows[0]).not.toHaveProperty('asleep')
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).not.toHaveProperty('value.asleep')
   })
 
   it('window:set-identity accepts a tabs patch: de-duplicated, and the active file is prepended when missing (GRO-2232)', async () => {

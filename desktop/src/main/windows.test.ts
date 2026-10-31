@@ -332,6 +332,25 @@ describe('createWindowManager: close', () => {
   })
 })
 
+describe('createWindowManager: the sleeping tabs (YAZ-3934)', () => {
+  it('keeps the strip places in memory, drops places past the strip, and forgets them at a reload and at the close', async () => {
+    const { manager, w1 } = seedTwo()
+    store.upsertWindow({ ...store.get().windows[0], tabs: ['/v/a.md', '/v/b.md'], tabStrip: [{ path: '/v/a.md', active: true }, { path: '/v/b.md' }, { path: '/v/b.md' }] })
+    manager.setAsleep('w1', [2, 1, 2, 7])
+    expect(manager.asleep('w1')).toEqual([2, 1])
+    expect(manager.asleep('w2')).toEqual([])
+    const reload = manager.reloadWindow('w1')
+    manager.handleFlushed(w1.webContents, true)
+    await expect(reload).resolves.toBe(true)
+    expect(manager.asleep('w1')).toEqual([]) // the new page starts with every tab awake
+    manager.setAsleep('w1', [1])
+    w1.close()
+    manager.handleFlushed(w1.webContents, true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(manager.asleep('w1')).toEqual([])
+  })
+})
+
 describe('createWindowManager: reloadWindow (YAZ-3737 D2)', () => {
   it('⌘R flushes first; a dirty ack leaves the page as it is; a clean ack or no ack in the 5 s cap reloads (a hung page, as before)', async () => {
     const { manager, w1 } = seedTwo()

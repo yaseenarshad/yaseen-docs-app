@@ -163,6 +163,8 @@ export interface SettingsSection {
   available?: (ctx: SettingsCtx) => boolean
   /** One line under the section title, for the section whose settings do not live where the rest do. */
   note?: string
+  /** Drawn right after the page's title (Settings › Memory's ⓘ, YAZ-3932); not under a search breadcrumb. */
+  info?: ReactNode
   /** The whole section is ONE vault's (YAZ-2602 R10): it names that vault where the window has two or more. */
   vault?: true
   /**

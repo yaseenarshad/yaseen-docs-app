@@ -136,7 +136,14 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   )
   const section = (s: SettingsSection) => (
     <section key={s.id} id={`settings-${s.id}`} data-section={s.id} className="settings-section">
-      <h2 className="settings-section__title">{s.title}</h2>
+      {s.info === undefined ? (
+        <h2 className="settings-section__title">{s.title}</h2>
+      ) : (
+        <div className="settings-section__head">
+          <h2 className="settings-section__title">{s.title}</h2>
+          {s.info}
+        </div>
+      )}
       {s.vault === true && vaultLine('settings-section__note')}
       {s.note !== undefined && <p className="settings-section__note">{s.note}</p>}
       {groupsOf(s, ctx).map((g, i) => group(g, g.items.filter((item) => isAvailable(item, ctx)), g.anchor ?? i))}

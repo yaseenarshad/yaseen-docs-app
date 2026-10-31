@@ -1,6 +1,6 @@
 /** The memory meter (YAZ-3737 D1): what a window counts, its history, "grew" and the code helpers. */
 import { describe, expect, it, vi } from 'vitest'
-import { MEMORY_SAMPLE_MS, type StartView } from '@shared/types'
+import { MEMORY_SAMPLE_MS, type StartView, type StoredTab } from '@shared/types'
 import { GREW_SPAN_MS, HISTORY, RELOAD_COOLDOWN_MS, RELOAD_MB, RELOAD_QUIET_MS, createMemoryMeter, createReloadWatch, grewSince, helperRss, mayReload, openText, reloadMbFromEnv, type MemoryHost, type MemorySample, type MeterProcess, type ReloadFacts, type ReloadHost } from './memory'
 
 const MB = 1024 * 1024
@@ -10,6 +10,8 @@ interface FakeWindow {
   pids: number[]
   popup?: true
   tabs?: string[]
+  tabStrip?: StoredTab[]
+  asleep?: number[]
   name?: string
   isDestroyed(): boolean
   getTitle(): string
@@ -33,7 +35,7 @@ function setup(windows: FakeWindow[], metrics: MeterProcess[], helpers: number[]
     metrics: () => metrics,
     windows: () => windows,
     isPreview: (w) => w.popup === true,
-    entryOf: (w) => ({ id: w.id, tabs: w.tabs ?? [], ...(w.name === undefined ? {} : { name: w.name }) }),
+    entryOf: (w) => ({ id: w.id, tabs: w.tabs ?? [], ...(w.tabStrip === undefined ? {} : { tabStrip: w.tabStrip }), ...(w.asleep === undefined ? {} : { asleep: w.asleep }), ...(w.name === undefined ? {} : { name: w.name }) }),
     jsHeap: async (w) => (w.id === 'a' ? 40 * MB : null),
     helperPids: () => helpers,
     rss: vi.fn(async (pids: readonly number[]) => pids.length * 300 * MB),
@@ -50,8 +52,8 @@ describe('memory meter', () => {
     const { meter } = setup([a, popup, b], [proc(1, 'Browser', 200), proc(2, 'GPU', 100), proc(3, 'Utility', 30), proc(10, 'Tab', 300), proc(11, 'Tab', 150), proc(20, 'Tab', 500), proc(30, 'Tab', 50)])
     const report = await meter.report()
     expect(report.windows).toEqual([
-      { id: 'a', title: 'Writing', open: '2 notes, 1 drawing, 1 diagram', bytes: 450 * MB, jsHeapBytes: 40 * MB, grew: false },
-      { id: 'b', title: 'title b', open: '', bytes: 500 * MB, jsHeapBytes: null, grew: false },
+      { id: 'a', title: 'Writing', open: '2 notes, 1 drawing, 1 diagram', bytes: 450 * MB, jsHeapBytes: 40 * MB, grew: false, tabs: a.tabs!.map((path) => ({ path, asleep: false })) },
+      { id: 'b', title: 'title b', open: '', bytes: 500 * MB, jsHeapBytes: null, grew: false, tabs: [] },
     ])
     expect(report.core).toEqual({ bytes: 380 * MB, main: 200 * MB, gpu: 100 * MB, utility: 30 * MB, other: 50 * MB })
     expect(report.helpers).toBeNull()
@@ -70,7 +72,26 @@ describe('memory meter', () => {
     expect(meter.history('a')).toEqual([])
   })
 
-  it('grew (▲): more than 150 MB or 20 % over the newest sample at least 1 h old; never in the first hour', async () => {
+  it('YAZ-3934: a row lists its tabs in strip order, copies and display names kept, each marked asleep by its strip place (the page\'s `asleep`); no strip = its `tabs`', async () => {
+    const a = win('a', [10], { tabs: ['/v/a.md', '/v/b.md'], tabStrip: [{ path: '/v/a.md', active: true }, { path: '/v/b.md', name: 'Plan' }, { path: '/v/a.md' }], asleep: [1, 2] })
+    const b = win('b', [20], { tabs: ['/v/c.md', '/v/d.md'] })
+    const { meter } = setup([a, b], [proc(10, 'Tab', 100), proc(20, 'Tab', 100)])
+    const [ra, rb] = (await meter.report()).windows
+    expect(ra.tabs).toEqual([
+      { path: '/v/a.md', asleep: false },
+      { path: '/v/b.md', name: 'Plan', asleep: true },
+      { path: '/v/a.md', asleep: true },
+    ])
+    expect(rb.tabs).toEqual([
+      { path: '/v/c.md', asleep: false },
+      { path: '/v/d.md', asleep: false },
+    ])
+    // The next report follows the page: the tab woke.
+    a.asleep = [2]
+    expect((await meter.report()).windows[0].tabs.map((t) => t.asleep)).toEqual([false, false, true])
+  })
+
+  it('grew ("Growing"): more than 150 MB or 20 % over the newest sample at least 1 h old; never in the first hour', async () => {
     const ring = [{ t: 0, bytes: 1000 * MB }]
     expect(grewSince(ring, 1151 * MB, GREW_SPAN_MS)).toBe(true) // +151 MB, +15 %
     expect(grewSince(ring, 1149 * MB, GREW_SPAN_MS)).toBe(false)

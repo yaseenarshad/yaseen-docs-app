@@ -2902,6 +2902,12 @@ export interface WindowIdentity {
   reloadViews?: (StartView | null)[]
   /** The memory reload's size (YAZ-3737 D12), MB: the window shows its notice once. Given out with `reloadViews`. */
   reloadedAtMb?: number
+  /**
+   * The tabs asleep now (YAZ-3737 5A), by their place in `tabStrip`: Settings › Memory lists them (YAZ-3934). Sent in a
+   * `window:set-identity` patch of its own, when the list changes; main keeps it in memory for the report. Never stored,
+   * never given out by `window:identity`.
+   */
+  asleep?: number[]
   /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */
   kind?: WindowKind
   /** A Files window's own sidebar zoom in percent (YAZ-3389 D13), as `WindowEntry.zoom`; absent on a full window. */
@@ -3025,7 +3031,7 @@ export const MEMORY_SAMPLE_MS = 30_000
 
 /** One window's row of Settings › Memory (YAZ-3737 D1, D9). Every size is bytes, resident (RSS). */
 export interface MemoryWindowRow {
-  /** The window's id: a click on the row calls `window.showWindow(id)`. */
+  /** The window's id. */
   id: string
   /** `WindowEntry.name`, else the window's title. */
   title: string
@@ -3035,8 +3041,10 @@ export interface MemoryWindowRow {
   bytes: number
   /** The page's JS heap in use, from its preload, read only for this report; null = the window did not answer. */
   jsHeapBytes: number | null
-  /** ▲: it grew more than 150 MB or 20 % since the sample about 1 h ago. Never in its first hour. */
+  /** "Growing": it grew more than 150 MB or 20 % since the sample about 1 h ago. Never in its first hour. */
   grew: boolean
+  /** Its tabs in strip order, copies included (YAZ-3934): the path, the display name, and whether it sleeps now. No size: the tabs share one heap. */
+  tabs: { path: string; name?: string; asleep: boolean }[]
 }
 
 /** `memory.report()` (YAZ-3737 D1): the windows in the order they opened (a row never moves under the pointer), then App core and the code helpers. */

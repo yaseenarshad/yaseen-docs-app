@@ -54,10 +54,10 @@ export const ASLEEP_TITLE = 'Asleep to save memory. Click to wake it.'
 
 /**
  * A sleeping tab's mark (YAZ-3737 D11): three small z's after the tab's name, muted by its `className`'s colour.
- * For hover and screen readers it says so.
+ * For hover and screen readers it says so. Settings › Memory gives its own `title`: a click there wakes nothing (YAZ-3934).
  */
-export const AsleepIcon = ({ className }: { className: string }) => (
-  <span className={className} role="img" aria-label="asleep" title={ASLEEP_TITLE}>
+export const AsleepIcon = ({ className, title = ASLEEP_TITLE }: { className: string; title?: string }) => (
+  <span className={className} role="img" aria-label="asleep" title={title}>
     <svg {...svg} width={11} height={11}>
       <path d="M1.5 9.5h4l-4 4h4M7.5 5.5h3l-3 3h3M12 2h2.5L12 4.5h2.5" />
     </svg>

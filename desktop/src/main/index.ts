@@ -406,7 +406,8 @@ app.whenReady().then(() => {
     isPreview: (win) => previewPopups.has(win),
     entryOf: (win) => {
       const id = manager.idFor(win.webContents)
-      return id === undefined ? undefined : store.get().windows.find((w) => w.id === id)
+      const entry = id === undefined ? undefined : store.get().windows.find((w) => w.id === id)
+      return entry === undefined ? undefined : { ...entry, asleep: manager.asleep(entry.id) }
     },
     jsHeap: (win) => askHeap(win.webContents),
     helperPids: () => lsp.running().map((h) => h.pid),
