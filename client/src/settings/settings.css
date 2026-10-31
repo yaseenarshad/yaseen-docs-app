@@ -934,29 +934,46 @@
   font-size: 14px;
 }
 
-/* Settings › Memory (YAZ-3737 D9): one grid row per window, App core, Code helpers; the bar is Storage's. */
-.memory__rows {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.memory__row {
-  display: grid;
-  /* ▸ · name · open · bar · size · "Growing" (YAZ-3933, at 11 px) */
-  grid-template-columns: 1em minmax(0, 1.2fr) minmax(0, 1fr) 120px 5.5em 4.5em;
-  align-items: center;
-  column-gap: 10px;
+/*
+ * Settings › Memory (YAZ-3737 D9; YAZ-3945): a table read like a spreadsheet. Fixed columns in shares of the page, so
+ * it never scrolls sideways; a cell too narrow for its text cuts it with "…". The bar is Storage's.
+ */
+.memory__table {
   width: 100%;
-  padding: 4px 6px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: inherit;
-  font: inherit;
+  table-layout: fixed;
+  border-collapse: collapse;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+}
+
+.memory__col-state {
+  width: 25%;
+}
+
+.memory__col-time {
+  width: 13%;
+}
+
+.memory__col-memory {
+  width: 21%;
+}
+
+.memory__table th,
+.memory__table td {
+  padding: 4px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: left;
+}
+
+/* The header row: muted, small, one line under it. */
+.memory__table th {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .memory__row--window {
@@ -967,44 +984,80 @@
   background: var(--bg-hover-row);
 }
 
-.memory__name,
-.memory__open {
+/* A row's name cell spans Tab to Changed. It does not clip, so its ⓘ line can show below it; the name cuts itself. */
+.memory__table .memory__head {
+  position: relative;
+  overflow: visible;
+}
+
+.memory__head-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.memory__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: inherit;
+}
+
+.memory__arrow {
+  flex: none;
+  width: 1em;
+  color: var(--fg-muted);
+}
+
+.memory__name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.memory__open,
-.memory__arrow {
-  color: var(--fg-muted);
 }
 
 /* "Growing" (YAZ-3933): a small word in the app's orange, not a ▲ that reads as a dropdown. */
 .memory__grew {
+  flex: none;
   font-size: 11px;
   color: var(--warn);
+}
+
+/* The Memory cell: the bar, then the size. */
+.memory__memory {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.memory__bar {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.memory__size {
+  flex: none;
+  min-width: 5.5em;
   text-align: right;
 }
 
-/* A window's tabs (YAZ-3934), under its row: indented to the name column, awake first, the sleeping ones dimmed. */
-.memory__tabs {
-  margin: 0 0 4px;
-  padding: 0 6px 0 calc(6px + 1em + 10px);
-  list-style: none;
+/* A window's tab rows (YAZ-3934, YAZ-3946), under its row: indented past the arrow, smaller; the sleeping ones dimmed. */
+.memory__tab td {
+  padding-top: 2px;
+  padding-bottom: 2px;
   font-size: 12px;
 }
 
-.memory__tab {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  padding: 1px 0;
-}
-
-.memory__tab-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.memory__table .memory__tab-name {
+  padding-left: calc(6px + 1em + 6px);
 }
 
 .memory__tab--asleep {
@@ -1013,26 +1066,13 @@
 
 .memory__asleep {
   display: inline-flex;
-  flex: none;
   margin-left: 4px;
+  vertical-align: middle;
 }
 
-/* The ⓘ after the page's title (YAZ-3932); the title keeps the close button's clearance for both. */
-.settings-section__head {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin: 0 0 14px;
-  padding-right: 36px;
-}
-
-.settings-section__head > .settings-section__title {
-  margin: 0;
-  padding-right: 0;
-}
-
+/* A row's ⓘ (YAZ-3932): its line shows under the name cell, from the table's left edge, so it never runs off the page. */
 .memory__info {
-  position: relative;
+  flex: none;
 }
 
 .memory__info-btn {
@@ -1042,7 +1082,7 @@
   background: none;
   color: var(--fg-muted);
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
   cursor: default;
 }
@@ -1054,13 +1094,10 @@
 
 .memory__tip {
   position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
+  top: calc(100% + 2px);
+  left: 6px;
   z-index: 5;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: min(320px, 70vw);
+  width: min(320px, calc(100% - 12px));
   padding: 8px 10px;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -1070,18 +1107,11 @@
   font-size: 12px;
   font-weight: 400;
   line-height: 1.4;
+  white-space: normal;
 }
 
 .memory__tip[hidden] {
   display: none;
-}
-
-.memory__bar {
-  width: 100%;
-}
-
-.memory__size {
-  text-align: right;
 }
 
 /*

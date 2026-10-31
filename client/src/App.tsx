@@ -2774,12 +2774,13 @@ export function App() {
     { startView, sleep: sleepTabs, wake: wakeTab },
   )
   const held = tabSleep.held
-  // Main learns which tabs sleep, by their place in the strip, for Settings › Memory (YAZ-3934): on the identity path,
-  // sent only when the list changes (`storage.setAsleep`).
-  const asleep = tabSleep.asleep
-  useEffect(() => {
-    storage.setAsleep(tabs.flatMap((t, i) => (asleep.has(t.id) ? [i] : [])))
-  }, [tabs, asleep])
+  // Settings › Memory's tab rows (YAZ-3946): main asks each window for its tabs' facts only when it builds a report.
+  // The title is the tab bar's: the display name, else the page's title.
+  const sleepFacts = tabSleep.facts
+  useEffect(() => api.window.onTabs(() => {
+    const names = new Map(now.current.tabs.map((t) => [t.id, t.name]))
+    return sleepFacts().map(({ id, path, ...facts }) => ({ path, title: names.get(id) ?? nameOf(path), ...facts }))
+  }), [sleepFacts, nameOf])
   // The `Editor` keeps its start in a ref when it mounts, so the entry goes once its layer is there — not while the
   // layer is a held tab's, with no editor (S10).
   useEffect(() => {

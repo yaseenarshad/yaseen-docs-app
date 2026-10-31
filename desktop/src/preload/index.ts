@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
-import type { ClipboardPasteRequest, CopyAsMode, CopyAsRich, PropertiesResponse, StartView, WatchEvent } from '@shared/types'
+import type { ClipboardPasteRequest, CopyAsMode, CopyAsRich, MemoryTabFacts, PropertiesResponse, StartView, WatchEvent } from '@shared/types'
 import { type Bridge, CONTRACT, type Envelope, isLeaf, SPECIAL, type YaseenDocsApi } from '@shared/ipc'
 
 /** invoke + unwrap: resolves the value or rejects with the plain `BridgeError` object. */
@@ -58,6 +58,14 @@ const viewsListeners = new Set<() => (StartView | null)[]>()
 ipcRenderer.on(SPECIAL.windowViews, (_e, token: unknown) => {
   const [first] = viewsListeners
   ipcRenderer.send(SPECIAL.windowViewsReply, { token, views: first?.() ?? [] })
+})
+
+// Settings › Memory's tab rows (YAZ-3946): main asks for each tab's facts only when it builds a report. App answers
+// them in strip order; no listener (the Welcome window) answers `null`, and main shows the stored tabs with no facts.
+const tabsListeners = new Set<() => MemoryTabFacts[]>()
+ipcRenderer.on(SPECIAL.windowTabs, (_e, token: unknown) => {
+  const [first] = tabsListeners
+  ipcRenderer.send(SPECIAL.windowTabsReply, { token, tabs: first?.() ?? null })
 })
 
 // Each editor claims only its own focused surface. Ordinary inputs retain native insertion.
@@ -132,7 +140,7 @@ const api: YaseenDocsApi = {
     setFolds: (root, file, keys) => call(CONTRACT.state.setFolds.channel, root, file, [...keys]),
     setBaseGroups: (root, key, collapsed) => call(CONTRACT.state.setBaseGroups.channel, root, key, [...collapsed]),
   },
-  window: { ...generated.window, onFlush: (listener) => listen(flushListeners, listener), onViews: (listener) => listen(viewsListeners, listener) },
+  window: { ...generated.window, onFlush: (listener) => listen(flushListeners, listener), onViews: (listener) => listen(viewsListeners, listener), onTabs: (listener) => listen(tabsListeners, listener) },
   // A dropped Finder file's path (YAZ-3253 D3): Electron removed `File.path`; no IPC, the preload reads it.
   file: { ...generated.file, pathFor: (file) => webUtils.getPathForFile(file) },
   menu: {

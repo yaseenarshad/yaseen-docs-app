@@ -19,9 +19,14 @@
  * SAVE FIRST (D2). A round saves each tab first (`flushRenamedPath`) and puts it to sleep only when its file is then
  * clean (`dirtyPaths`): a tab with a save conflict keeps its typing in its editor and tries again next round. All the
  * tabs of one round sleep in ONE change.
+ *
+ * SETTINGS › MEMORY (YAZ-3946). `facts` gives each tab's state, when it was last seen and when it sleeps, read off the
+ * refs when main asks for a report: no render. "Last seen" has its own stamp, `seen`, set when `lastShown` is set as a
+ * tab leaves the front or its window goes away, but not moved by the Mac's wake or a hover wake, which only restart the
+ * clock.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { PageView, TabSleepAfter } from '@shared/types'
+import type { MemoryTabState, PageView, TabSleepAfter } from '@shared/types'
 import { readPageView } from '../lib/pageView'
 import { dirtyPaths, flushRenamedPath } from '../lib/renameContinuity'
 
@@ -79,9 +84,20 @@ export interface SleepDoors {
   wake: (id: string) => void
 }
 
+/** One tab's facts for Settings › Memory (YAZ-3946): `MemoryTabFacts` with the tab's id, less the title. */
+export interface TabSleepFacts {
+  id: string
+  path: string
+  state: MemoryTabState
+  lastSeen: number | null
+  sleepsAt: number | null
+}
+
 export interface TabSleep {
   /** The tabs asleep now: the zzz mark (D11). */
   asleep: ReadonlySet<string>
+  /** Each tab's facts now, in strip order (YAZ-3946): read when main asks, never a render. Stable. */
+  facts: () => TabSleepFacts[]
   /** The active tab of a hidden window, asleep (S10): App renders its layer with no editor. */
   held: string | null
   /** A hover on a sleeping tab (S7): it mounts behind the page on show, and its clock starts again. */
@@ -96,6 +112,8 @@ export function useTabSleep(world: SleepWorld, doors: SleepDoors): TabSleep {
   const doorsRef = useRef(doors)
   doorsRef.current = doors
   const lastShown = useRef(new Map<string, number>())
+  /** When each tab last left the front, for "Last seen" (YAZ-3946): `lastShown` less the restarts of the clock. */
+  const seen = useRef(new Map<string, number>())
   const [held, setHeld] = useState<string | null>(null)
   const heldRef = useRef(held)
   heldRef.current = held
@@ -107,11 +125,19 @@ export function useTabSleep(world: SleepWorld, doors: SleepDoors): TabSleep {
   // The stamp: a tab's clock starts when it leaves the front, and the front tab's when its window goes away (S10).
   const was = useRef(world.shown)
   useEffect(() => {
-    if (was.current !== null && was.current !== world.shown) lastShown.current.set(was.current, Date.now())
+    if (was.current !== null && was.current !== world.shown) {
+      const t = Date.now()
+      lastShown.current.set(was.current, t)
+      seen.current.set(was.current, t)
+    }
     was.current = world.shown
   }, [world.shown])
   useEffect(() => {
-    if (world.away && world.active !== null) lastShown.current.set(world.active, Date.now())
+    if (world.away && world.active !== null) {
+      const t = Date.now()
+      lastShown.current.set(world.active, t)
+      seen.current.set(world.active, t)
+    }
   }, [world.away, world.active])
 
   // The held tab wakes when its window comes back. Another tab made active while away: it sleeps as any other tab
@@ -145,6 +171,7 @@ export function useTabSleep(world: SleepWorld, doors: SleepDoors): TabSleep {
       const w = live.current
       const ids = new Set(w.tabs.map((tab) => tab.id))
       for (const id of [...stamps.keys()]) if (!ids.has(id)) stamps.delete(id)
+      for (const id of [...seen.current.keys()]) if (!ids.has(id)) seen.current.delete(id)
       // A kept view of a tab that is gone goes: a slept tab closed, or a tab a memory reload gave a view to (D4) that
       // closed before it mounted. Only at the second round that misses its tab: a view set by an IPC push (a moved tab)
       // comes just before its tab's render, and a round can run in between.
@@ -154,7 +181,7 @@ export function useTabSleep(world: SleepWorld, doors: SleepDoors): TabSleep {
       // A woken tab is no longer asleep, and a closed one neither.
       const keep = [...sleptRef.current].filter((id) => ids.has(id) && (!w.mounted.includes(id) || id === heldRef.current))
       if (keep.length !== sleptRef.current.size) setSlept(new Set(keep))
-      const after = w.setting === 'never' ? null : testSeconds !== null ? testSeconds * 1000 : AFTER_MS[w.setting]
+      const after = afterMs(w.setting, testSeconds)
       if (after === null) return
       const dragging = draggedTab()
       const due: string[] = []
@@ -211,6 +238,29 @@ export function useTabSleep(world: SleepWorld, doors: SleepDoors): TabSleep {
     const ids = new Set(tabs.map((tab) => tab.id))
     return new Set([...slept].filter((id) => ids.has(id) && (!mounted.includes(id) || id === held)))
   }, [slept, mounted, tabs, held])
+  const asleepRef = useRef(asleep)
+  asleepRef.current = asleep
 
-  return { asleep, held, wake }
+  const facts = useCallback((): TabSleepFacts[] => {
+    const w = live.current
+    const after = afterMs(w.setting, testSeconds)
+    const dirty = new Set(dirtyPaths())
+    return w.tabs.map(({ id, path }) => {
+      const lastSeen = seen.current.get(id) ?? null
+      if (asleepRef.current.has(id)) return { id, path, state: 'asleep', lastSeen, sleepsAt: null }
+      if (!w.away && id === w.shown) return { id, path, state: 'shown', lastSeen: null, sleepsAt: null }
+      if (after !== null && dirty.has(path)) return { id, path, state: 'unsaved', lastSeen, sleepsAt: null }
+      // The timer runs for a mounted tab with a stamp that a round may put to sleep (the rounds' own test).
+      const at = lastShown.current.get(id)
+      const runs = after !== null && at !== undefined && w.mounted.includes(id) && maySleep(id, w, null)
+      return { id, path, state: 'awake', lastSeen, sleepsAt: runs ? at + after : null }
+    })
+  }, [testSeconds])
+
+  return { asleep, facts, held, wake }
+}
+
+/** The sleep time in ms of `setting`, or the perf harness's seconds; null = Never. */
+function afterMs(setting: TabSleepAfter, testSeconds: number | null): number | null {
+  return setting === 'never' ? null : testSeconds !== null ? testSeconds * 1000 : AFTER_MS[setting]
 }

@@ -1,29 +1,38 @@
 /**
  * SETTINGS › MEMORY (YAZ-3737 D9, D10): which window is big, and what it has open, in one look. A reference page
- * like Storage, just above it in the nav. Quiet: no badge; the only buttons are the rows, the ⓘ and the two settings.
+ * like Storage, just above it in the nav. Quiet: no badge; the only buttons are the window rows, the ⓘ marks and the
+ * two settings.
  *
- *   Memory ⓘ
- *   ▾ Writing     2 notes, 1 drawing   ▓▓▓▓▓▓▓▓░░   812.4 MB  Growing
- *       Plan
- *       Ideas  zzz                                           (dimmed: asleep)
- *   ▸ Research    1 note               ▓▓▓░░░░░░░   301.0 MB
- *     App core                         ▓▓▓▓░░░░░░   390.2 MB
- *     Code helpers                     ▓▓▓▓▓▓░░░░   610.7 MB           (only while a helper runs)
+ * A table, read like a spreadsheet (YAZ-3945): headers Tab · State · Last seen · Changed · Memory.
  *
- * Windows in the order they opened (main's order), so a row never moves under the pointer. The biggest row fills its
- * bar. "Growing" (YAZ-3933, the app's orange) = it grew more than 150 MB or 20 % in the last hour (main decides). The ⓘ
- * (YAZ-3932) says what the rows mean, on hover and on keyboard focus. Hover on a row: a window's JS heap and the rest,
- * App core's parts, the helper count.
+ *   Tab                          State                    Last seen   Changed     Memory
+ *   ▾ Writing ⓘ  Growing                                                         ▓▓▓▓▓▓░  812.4 MB
+ *       00 START HERE            On show                              5 min ago
+ *       Plan                     Awake · sleeps in 12 min 18 min ago  Yesterday
+ *       Draft                    Awake · not saved yet    2 min ago   now
+ *       Ideas                    Asleep zzz               2 h ago     Oct 20         (dimmed: asleep)
+ *   ▸ Research ⓘ                                                                  ▓▓░░░░░  301.0 MB
+ *     App core ⓘ                                                                  ▓▓▓░░░░  390.2 MB
+ *     Code helpers ⓘ                                                              ▓▓▓▓░░░  610.7 MB  (only while a helper runs)
  *
- * A click on a window row opens (▾) or closes (▸) the list of its tabs (YAZ-3934): awake tabs first, then the sleeping
- * ones, dimmed with the tab bar's zzz, strip order kept in each group. No size for each tab: all the tabs of a window
- * share one heap, so a number would be a guess. A window with no tab, App core and Code helpers do not open. The report
- * comes from main (`memory.report`) while the page shows (`useMemoryReport`), and an open list follows it.
+ * Windows in the order they opened (main's order), so a row never moves under the pointer. A window's full name runs
+ * across the first four columns, cut only when it is wider than the page; the page never scrolls sideways. The
+ * biggest row fills its bar. "Growing" (YAZ-3933, the app's orange) = it grew more than 150 MB or 20 % in the last
+ * hour (main decides). Each kind of row has its own ⓘ (YAZ-3932, round 2), on hover and on keyboard focus. Hover on a
+ * name: what a window has open; on a size: a window's JS heap and the rest, App core's parts, the helper count.
  *
- * The two settings below the rows belong to tab sleep (5A) and the window reload (6); this page owns their place.
+ * A click on a window row opens (▾) or closes (▸) its tab rows (YAZ-3934): awake tabs first, then the sleeping ones,
+ * dimmed with the tab bar's zzz, strip order kept in each group. Each tab row (YAZ-3946) shows its title as the tab bar
+ * shows it, its state ("On show", "Awake · sleeps in N min", "Awake · not saved yet", "Awake", "Asleep"), when it was
+ * last seen and when its file last changed. Its Memory cell is empty: all the tabs of a window share one heap, so a
+ * number would be a guess. A window that did not answer main's tabs ask shows its stored tabs with empty facts. A
+ * window with no tab, App core and Code helpers do not open. The report comes from main (`memory.report`) while the
+ * page shows (`useMemoryReport`), and the open rows and the countdown follow it.
+ *
+ * The two settings below the table belong to tab sleep (5A) and the window reload (6); this page owns their place.
  */
 import { useId, useState } from 'react'
-import type { MemoryReport, MemoryWindowRow } from '@shared/types'
+import type { MemoryReport, MemoryTabRow } from '@shared/types'
 import { formatBytes } from '../lib/format'
 import { pageLabel } from '../lib/pageLabel'
 import { AsleepIcon } from '../views/view/icons'
@@ -32,28 +41,25 @@ import { ON_OFF_OPTIONS, TAB_SLEEP_AFTER_OPTIONS } from './options'
 import type { SettingsSection } from './registry'
 import { useMemoryReport } from './useMemoryReport'
 
-/** The ⓘ's lines (YAZ-3932), as Yasin approved them. */
-const INFO = [
-  'Each row is one open window. The bar shows the memory it uses now.',
-  'App core: the parts of the app that all windows share.',
-  'Code helpers: they run only while code files are open.',
-  'Growing: the window grew more than 150 MB or 20 % in the last hour.',
-  'A sleeping tab (zzz) uses almost no memory. The app cannot measure one note: all the tabs of a window share its memory.',
-]
+/** The ⓘ of each kind of row (YAZ-3932, round 2), as Yasin approved them. */
+const INFO = {
+  window: 'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory.',
+  core: 'The parts of the app that all windows share. Closing tabs does not make this smaller.',
+  helpers: 'These run only while code files are open. They stop 2 minutes after you close the last one.',
+} as const
 
-/** The ⓘ next to the title (YAZ-3932): its lines show while the pointer is on it or it has the focus. */
-function MemoryInfo() {
+/** A row's ⓘ (YAZ-3932): its line shows while the pointer is on it or it has the focus. */
+function Info({ text }: { text: string }) {
   const [shown, setShown] = useState(false)
   const tip = useId()
   return (
     <span className="memory__info" onMouseEnter={() => setShown(true)} onMouseLeave={() => setShown(false)}>
-      <button type="button" className="memory__info-btn" aria-label="What the rows mean" aria-describedby={tip} onFocus={() => setShown(true)} onBlur={() => setShown(false)}>
+      {/* A click on the ⓘ does not open or close its row. */}
+      <button type="button" className="memory__info-btn" aria-label="What this row means" aria-describedby={tip} onClick={(e) => e.stopPropagation()} onFocus={() => setShown(true)} onBlur={() => setShown(false)}>
         ⓘ
       </button>
       <span id={tip} role="tooltip" className="memory__tip" hidden={!shown}>
-        {INFO.map((line) => (
-          <span key={line}>{line}</span>
-        ))}
+        {text}
       </span>
     </span>
   )
@@ -62,12 +68,14 @@ function MemoryInfo() {
 interface Row {
   key: string
   name: string
-  open: string
+  /** A window's "2 notes, 1 drawing": the name's hover. */
+  open?: string
   bytes: number
   hint?: string
   grew?: boolean
-  /** A window row's tabs: the click opens their list (YAZ-3934). */
-  tabs?: MemoryWindowRow['tabs']
+  info: string
+  /** A window row's tabs: the click opens their rows (YAZ-3934). */
+  tabs?: MemoryTabRow[]
 }
 
 function rowsOf(report: MemoryReport): Row[] {
@@ -80,49 +88,68 @@ function rowsOf(report: MemoryReport): Row[] {
       bytes: w.bytes,
       ...(w.jsHeapBytes === null ? {} : { hint: `JS heap ${formatBytes(w.jsHeapBytes)} · Other ${formatBytes(Math.max(0, w.bytes - w.jsHeapBytes))}` }),
       grew: w.grew,
+      info: INFO.window,
       tabs: w.tabs,
     })),
-    { key: 'core', name: 'App core', open: '', bytes: core.bytes, hint: `Main ${formatBytes(core.main)} · GPU ${formatBytes(core.gpu)} · Utility ${formatBytes(core.utility)} · Other ${formatBytes(core.other)}` },
-    ...(helpers === null ? [] : [{ key: 'helpers', name: 'Code helpers', open: '', bytes: helpers.bytes, hint: `${helpers.count} ${helpers.count === 1 ? 'helper' : 'helpers'}` }]),
+    { key: 'core', name: 'App core', bytes: core.bytes, hint: `Main ${formatBytes(core.main)} · GPU ${formatBytes(core.gpu)} · Utility ${formatBytes(core.utility)} · Other ${formatBytes(core.other)}`, info: INFO.core },
+    ...(helpers === null ? [] : [{ key: 'helpers', name: 'Code helpers', bytes: helpers.bytes, hint: `${helpers.count} ${helpers.count === 1 ? 'helper' : 'helpers'}`, info: INFO.helpers }]),
   ]
 }
 
-/** One row's cells: ▸/▾ · name · what it has open · bar · size · "Growing". */
-function Cells({ row, max, expanded }: { row: Row; max: number; expanded?: boolean }) {
-  return (
-    <>
-      <span className="memory__arrow" aria-hidden="true">
-        {expanded === undefined ? '' : expanded ? '▾' : '▸'}
-      </span>
-      <span className="memory__name">{row.name}</span>
-      <span className="memory__open">{row.open}</span>
-      <span className="storage__bar memory__bar" aria-hidden="true">
-        <span className="storage__fill" style={{ width: `${Math.max(1, (row.bytes / max) * 100)}%` }} />
-      </span>
-      <span className="memory__size">{formatBytes(row.bytes)}</span>
-      <span className="memory__grew" title={row.grew === true ? 'Grew more than 150 MB or 20 % in the last hour.' : undefined}>
-        {row.grew === true ? 'Growing' : ''}
-      </span>
-    </>
-  )
+const MINUTE = 60_000
+const HOUR = 60 * MINUTE
+
+/** A time as Settings › Memory says it (YAZ-3946): "now", "6 min ago", "2 h ago" (under 24 h), "Yesterday", then the date ("Oct 20"; the year only when it is not this year). */
+export function agoText(then: number, now: number): string {
+  const diff = now - then
+  if (diff < MINUTE) return 'now'
+  if (diff < HOUR) return `${Math.floor(diff / MINUTE)} min ago`
+  if (diff < 24 * HOUR) return `${Math.floor(diff / HOUR)} h ago`
+  const day = new Date(then)
+  const today = new Date(now)
+  if (day.toDateString() === new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1).toDateString()) return 'Yesterday'
+  return day.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: day.getFullYear() === today.getFullYear() ? undefined : 'numeric' })
 }
 
-/** No titles here: Settings has no index, so a tab shows its display name, else its file name. */
+/** A tab's State cell (YAZ-3946); '' when its window did not answer. */
+function stateText(tab: MemoryTabRow, now: number): string {
+  switch (tab.state) {
+    case 'shown':
+      return 'On show'
+    case 'unsaved':
+      return 'Awake · not saved yet'
+    case 'asleep':
+      return 'Asleep'
+    case 'awake':
+      // The rounds run once a minute, so a tab due now sleeps within the minute.
+      return tab.sleepsAt === null ? 'Awake' : `Awake · sleeps in ${Math.max(1, Math.ceil((tab.sleepsAt - now) / MINUTE))} min`
+    default:
+      return ''
+  }
+}
+
+/** No titles here: Settings has no index, so a tab whose window did not answer shows its file name. */
 const NO_TITLES = new Map<string, string>()
 
-/** A window's tabs (YAZ-3934): awake first, then asleep, each group in strip order. */
-function TabList({ tabs }: { tabs: MemoryWindowRow['tabs'] }) {
-  const ordered = [...tabs.filter((t) => !t.asleep), ...tabs.filter((t) => t.asleep)]
-  return (
-    <ul className="memory__tabs">
-      {ordered.map((t, i) => (
-        <li key={i} className={t.asleep ? 'memory__tab memory__tab--asleep' : 'memory__tab'}>
-          <span className="memory__tab-name">{t.name ?? pageLabel(t.path, false, NO_TITLES)}</span>
-          {t.asleep && <AsleepIcon className="memory__asleep" title="Asleep: it uses almost no memory." />}
-        </li>
-      ))}
-    </ul>
-  )
+/** A window's tab rows (YAZ-3934, YAZ-3946): awake first, then asleep, each group in strip order. */
+function TabRows({ tabs }: { tabs: MemoryTabRow[] }) {
+  const now = Date.now()
+  const ordered = [...tabs.filter((t) => t.state !== 'asleep'), ...tabs.filter((t) => t.state === 'asleep')]
+  return ordered.map((t, i) => {
+    const state = stateText(t, now)
+    return (
+      <tr key={i} className={t.state === 'asleep' ? 'memory__tab memory__tab--asleep' : 'memory__tab'}>
+        <td className="memory__tab-name">{t.title ?? pageLabel(t.path, false, NO_TITLES)}</td>
+        <td title={state}>
+          {state}
+          {t.state === 'asleep' && <AsleepIcon className="memory__asleep" title="Asleep: it uses almost no memory." />}
+        </td>
+        <td>{t.lastSeen === null ? '' : agoText(t.lastSeen, now)}</td>
+        <td>{t.changed === null ? '' : agoText(t.changed, now)}</td>
+        <td />
+      </tr>
+    )
+  })
 }
 
 function MemoryRows() {
@@ -139,34 +166,77 @@ function MemoryRows() {
       return next
     })
   return (
-    <ul className="memory__rows">
+    <table className="memory__table">
+      <colgroup>
+        <col />
+        <col className="memory__col-state" />
+        <col className="memory__col-time" />
+        <col className="memory__col-time" />
+        <col className="memory__col-memory" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Tab</th>
+          <th scope="col">State</th>
+          <th scope="col">Last seen</th>
+          <th scope="col">Changed</th>
+          <th scope="col">Memory</th>
+        </tr>
+      </thead>
       {rows.map((row) => {
-        const expanded = opened.has(row.key)
+        const opens = row.tabs !== undefined && row.tabs.length > 0
+        const expanded = opens && opened.has(row.key)
+        const name = (
+          <>
+            <span className="memory__arrow" aria-hidden="true">
+              {opens ? (expanded ? '▾' : '▸') : ''}
+            </span>
+            <span className="memory__name" title={row.open === undefined || row.open === '' ? undefined : row.open}>
+              {row.name}
+            </span>
+          </>
+        )
         return (
-          <li key={row.key} data-memory-row={row.key}>
-            {row.tabs !== undefined && row.tabs.length > 0 ? (
-              <>
-                <button type="button" className="memory__row memory__row--window" title={row.hint} aria-expanded={expanded} onClick={() => toggle(row.key)}>
-                  <Cells row={row} max={max} expanded={expanded} />
-                </button>
-                {expanded && <TabList tabs={row.tabs} />}
-              </>
-            ) : (
-              <div className="memory__row" title={row.hint}>
-                <Cells row={row} max={max} />
-              </div>
-            )}
-          </li>
+          <tbody key={row.key} data-memory-row={row.key}>
+            <tr className={opens ? 'memory__row memory__row--window' : 'memory__row'} onClick={opens ? () => toggle(row.key) : undefined}>
+              <td colSpan={4} className="memory__head">
+                <span className="memory__head-line">
+                  {opens ? (
+                    // The row's click opens it; this button is its keyboard door (Enter and Space click it).
+                    <button type="button" className="memory__toggle" aria-expanded={expanded}>
+                      {name}
+                    </button>
+                  ) : (
+                    <span className="memory__toggle">{name}</span>
+                  )}
+                  <Info text={row.info} />
+                  {row.grew === true && (
+                    <span className="memory__grew" title="Grew more than 150 MB or 20 % in the last hour.">
+                      Growing
+                    </span>
+                  )}
+                </span>
+              </td>
+              <td title={row.hint}>
+                <span className="memory__memory">
+                  <span className="storage__bar memory__bar" aria-hidden="true">
+                    <span className="storage__fill" style={{ width: `${Math.max(1, (row.bytes / max) * 100)}%` }} />
+                  </span>
+                  <span className="memory__size">{formatBytes(row.bytes)}</span>
+                </span>
+              </td>
+            </tr>
+            {expanded && <TabRows tabs={row.tabs!} />}
+          </tbody>
         )
       })}
-    </ul>
+    </table>
   )
 }
 
 export const MEMORY_SECTION: SettingsSection = {
   id: 'memory',
   title: 'Memory',
-  info: <MemoryInfo />,
   standalone: true,
   groups: [
     {

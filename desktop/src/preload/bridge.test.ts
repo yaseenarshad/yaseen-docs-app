@@ -1,6 +1,6 @@
 /**
  * The preload's hand-written specials (YAZ-2200): Paste as's claim and fallback, watch's
- * multiplexing, the close/quit flush handshake, and the memory reload's views ask (YAZ-3737 D4). Every table-built door is pinned by
+ * multiplexing, the close/quit flush handshake, the memory reload's views ask (YAZ-3737 D4) and Settings › Memory's tabs ask (YAZ-3946). Every table-built door is pinned by
  * surface.test.ts, and contract.test.ts pins that each channel is wired once.
  */
 import { describe, expect, it, vi } from 'vitest'
@@ -27,6 +27,22 @@ describe('preload bridge specials', () => {
     expect(vi.mocked(ipcRenderer.send).mock.calls).toEqual([
       [SPECIAL.windowViewsReply, { token: 't1', views }],
       [SPECIAL.windowViewsReply, { token: 't2', views: [] }],
+    ])
+  })
+
+  it('the tabs ask (YAZ-3946): the first listener answers main with the token; with none, the answer is null', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const ask = vi.mocked(ipcRenderer.on).mock.calls.find(([channel]) => channel === SPECIAL.windowTabs)?.[1] as unknown as (event: unknown, token: string) => void
+    const tabs = [{ path: '/v/a.md', title: 'Start here', state: 'shown' as const, lastSeen: null, sleepsAt: null }]
+    const off = bridge.window.onTabs(() => tabs)
+    vi.mocked(ipcRenderer.send).mockClear()
+    ask(undefined, 't1')
+    off()
+    ask(undefined, 't2')
+    expect(vi.mocked(ipcRenderer.send).mock.calls).toEqual([
+      [SPECIAL.windowTabsReply, { token: 't1', tabs }],
+      [SPECIAL.windowTabsReply, { token: 't2', tabs: null }],
     ])
   })
 

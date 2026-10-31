@@ -2902,12 +2902,6 @@ export interface WindowIdentity {
   reloadViews?: (StartView | null)[]
   /** The memory reload's size (YAZ-3737 D12), MB: the window shows its notice once. Given out with `reloadViews`. */
   reloadedAtMb?: number
-  /**
-   * The tabs asleep now (YAZ-3737 5A), by their place in `tabStrip`: Settings › Memory lists them (YAZ-3934). Sent in a
-   * `window:set-identity` patch of its own, when the list changes; main keeps it in memory for the report. Never stored,
-   * never given out by `window:identity`.
-   */
-  asleep?: number[]
   /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */
   kind?: WindowKind
   /** A Files window's own sidebar zoom in percent (YAZ-3389 D13), as `WindowEntry.zoom`; absent on a full window. */
@@ -3043,8 +3037,40 @@ export interface MemoryWindowRow {
   jsHeapBytes: number | null
   /** "Growing": it grew more than 150 MB or 20 % since the sample about 1 h ago. Never in its first hour. */
   grew: boolean
-  /** Its tabs in strip order, copies included (YAZ-3934): the path, the display name, and whether it sleeps now. No size: the tabs share one heap. */
-  tabs: { path: string; name?: string; asleep: boolean }[]
+  /** Its tabs in strip order, copies included (YAZ-3934, YAZ-3945). No size: the tabs share one heap. */
+  tabs: MemoryTabRow[]
+}
+
+/**
+ * A tab's sleep state as its window says it (YAZ-3946): `shown` = the tab on show (it never sleeps); `unsaved` = its
+ * file is not saved yet (it does not sleep); `awake` with `sleepsAt` = its sleep timer runs, without = it does not.
+ */
+export type MemoryTabState = 'shown' | 'awake' | 'unsaved' | 'asleep'
+
+/** What a window answers main's tabs ask (`window.onTabs`, YAZ-3946) for one tab, in strip order. Times are epoch ms. */
+export interface MemoryTabFacts {
+  path: string
+  /** As its tab bar shows it: the display name, else the page's title, else the file name. */
+  title: string
+  state: MemoryTabState
+  /** When it last left the front; null for the tab on show and a tab not shown since the window started. */
+  lastSeen: number | null
+  /** When its sleep timer puts it to sleep; null unless `state` is `awake` and the timer runs. */
+  sleepsAt: number | null
+}
+
+/**
+ * One tab's row of Settings › Memory (YAZ-3945, YAZ-3946): its window's answer to the tabs ask, and the file's mtime.
+ * A window that did not answer gives its stored strip: `title` = the display name or null, the facts null.
+ */
+export interface MemoryTabRow {
+  path: string
+  title: string | null
+  state: MemoryTabState | null
+  lastSeen: number | null
+  sleepsAt: number | null
+  /** The file's mtime on disk (`fs.stat`), epoch ms; null = the stat failed. */
+  changed: number | null
 }
 
 /** `memory.report()` (YAZ-3737 D1): the windows in the order they opened (a row never moves under the pointer), then App core and the code helpers. */

@@ -57,7 +57,7 @@ const bridge = wrap(CONTRACT, []) as Bridge<typeof CONTRACT>
 export const api: YaseenDocsApi = {
   ...bridge,
   watch: (root, listener) => window.yaseenDocs.watch(root, listener),
-  window: { ...bridge.window, onFlush: (listener) => window.yaseenDocs.window.onFlush(listener), onViews: (listener) => window.yaseenDocs.window.onViews(listener) },
+  window: { ...bridge.window, onFlush: (listener) => window.yaseenDocs.window.onFlush(listener), onViews: (listener) => window.yaseenDocs.window.onViews(listener), onTabs: (listener) => window.yaseenDocs.window.onTabs(listener) },
   file: { ...bridge.file, pathFor: (file) => window.yaseenDocs.file.pathFor(file) },
   menu: {
     ...bridge.menu,

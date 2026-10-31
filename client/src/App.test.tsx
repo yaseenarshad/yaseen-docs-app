@@ -10,7 +10,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IDS_FILE } from '@shared/noteId'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type IndexRecord, type IndexResponse, type MovedTab, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -204,6 +204,7 @@ type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCol
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
   const stateChanged = new Set<(next: AppState) => void>()
   const windowViews = new Set<() => (StartView | null)[]>()
+  const windowTabs = new Set<() => MemoryTabFacts[]>()
   const menuOpenRoot = new Set<(path: string) => void>()
   const menuOpenFolder = new Set<() => void>()
   const menuSearch = new Set<() => void>()
@@ -356,6 +357,11 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onViews: vi.fn((l: () => (StartView | null)[]) => {
         windowViews.add(l)
         return () => windowViews.delete(l)
+      }),
+      // Settings › Memory (YAZ-3946): main asks the page for every tab's facts, in strip order.
+      onTabs: vi.fn((l: () => MemoryTabFacts[]) => {
+        windowTabs.add(l)
+        return () => windowTabs.delete(l)
       }),
     },
     menu: {
@@ -541,6 +547,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitGlow: (on: boolean) => windowGlow.forEach((l) => l(on)),
     /** main's views ask before a memory reload: what the page answers. */
     askViews: () => [...windowViews][0]?.() ?? [],
+    /** main's tabs ask for Settings › Memory: what the page answers. */
+    askTabs: () => [...windowTabs][0]?.() ?? null,
     emitNewWindow: () => menuNewWindow.forEach((l) => l()),
     emitNewItem: () => menuNewItem.forEach((l) => l()),
     emitGoTo: () => menuGoTo.forEach((l) => l()),
@@ -6622,7 +6630,7 @@ describe('App tab sleep (YAZ-3737 5A, S18; 5B D11, S7)', () => {
   it('a tab unseen for the sleep time loses its editor and wears the zzz mark; Duplicate gives the view it slept with (S18); a hover wakes it behind on that view, and a click shows it', async () => {
     // The perf harness's clock (1 s), so the test waits seconds, not minutes.
     history.replaceState(null, '', '?sleepSeconds=1')
-    const { el, bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     const [a, b] = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((t) => t.dataset.tab!)
     act(() => tabEl(el, b).querySelector<HTMLButtonElement>('[role="tab"]')!.click())
     const scroller = document.createElement('div')
@@ -6636,8 +6644,6 @@ describe('App tab sleep (YAZ-3737 5A, S18; 5B D11, S7)', () => {
     expect(layer(el, b)).toBeNull()
     expect(tabEl(el, b).querySelector('.tabbar__asleep')).not.toBeNull()
     expect(tabEl(el, a).querySelector('.tabbar__asleep')).toBeNull()
-    // YAZ-3934: main hears which tabs sleep, by strip place, on the identity path, in a patch of its own; none went before.
-    expect((bridge.window.setIdentity.mock.calls as unknown[][]).filter(([patch]) => 'asleep' in (patch as object))).toEqual([[{ asleep: [1] }]])
     // S18: a copy of the sleeping tab starts where it slept.
     captured.editors = []
     rightClick(tabEl(el, b))
@@ -6652,15 +6658,17 @@ describe('App tab sleep (YAZ-3737 5A, S18; 5B D11, S7)', () => {
     expect(captured.editors.find((e) => e.startView !== undefined)).toMatchObject({ path: '/v/b.md', startView: view })
     expect(el.querySelector<HTMLElement>('.tabbar__tab:has([aria-selected="true"])')!.dataset.tab).toBe(copy)
     expect(tabEl(el, b).querySelector('.tabbar__asleep')).toBeNull()
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ asleep: [] }) // it woke
     // The click shows the editor that is there already.
     act(() => tabEl(el, b).querySelector<HTMLButtonElement>('[role="tab"]')!.click())
     expect(layer(el, b)?.classList.contains('tabstack__layer--hidden')).toBe(false)
   }, 15_000)
 
-  it('the memory reload (YAZ-3737 D4): main\'s views ask gets every tab in strip order, a sleeping tab with the view it slept with', async () => {
+  it('the memory reload (YAZ-3737 D4): main\'s views ask gets every tab in strip order, a sleeping tab with the view it slept with; the tabs ask (YAZ-3946) gets each one\'s title and state', async () => {
     history.replaceState(null, '', '?sleepSeconds=1')
-    const { el, askViews } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/c.md'] })
+    const title = { path: '/v/a.md', name: 'a.md', basename: 'a', title: 'Start here', folder: '', ext: 'md', size: 7, ctime: 1, mtime: 100, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+    const { el, askViews, askTabs } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md', '/v/c.md'] }, {}, (b) => {
+      b.bridge.index.mockResolvedValue({ root: '/v', records: [title], folders: [], generatedAt: 1, ids: true })
+    })
     const [a, b] = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((t) => t.dataset.tab!)
     act(() => tabEl(el, b).querySelector<HTMLButtonElement>('[role="tab"]')!.click())
     const scroller = document.createElement('div')
@@ -6674,6 +6682,14 @@ describe('App tab sleep (YAZ-3737 5A, S18; 5B D11, S7)', () => {
     expect(tabEl(el, b).querySelector('.tabbar__asleep')).not.toBeNull()
     // `a` shows but answers no view here, and `c` was never opened.
     expect(askViews()).toEqual([null, { path: '/v/b.md', view }, null])
+    // The tab bar's titles, not file names; `b` was last seen when `a` came back to the front; `c` holds no stamp.
+    expect(el.querySelector('.tabbar__tab')!.textContent).toContain('Start here')
+    expect(askTabs()!.map(({ path, title, state, sleepsAt }) => [path, title, state, sleepsAt])).toEqual([
+      ['/v/a.md', 'Start here', 'shown', null],
+      ['/v/b.md', 'b', 'asleep', null],
+      ['/v/c.md', 'c', 'awake', null],
+    ])
+    expect(askTabs()!.map((t) => typeof t.lastSeen)).toEqual(['object', 'number', 'object'])
   }, 15_000)
 
   it('S18: Move to new window, Move to ▸ and a tear-off of a sleeping tab carry the view it slept with', async () => {

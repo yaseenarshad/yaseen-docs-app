@@ -50,8 +50,6 @@ import { basename } from './paths'
 let state: AppState = defaultAppState()
 let identity: WindowIdentity = { id: '', root: null, roots: [], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS }
 let unsubscribe: (() => void) | null = null
-/** The sleeping tabs' strip places last sent to main (YAZ-3934), joined; '' = none, as main has at a page's start. */
-let sentAsleep = ''
 const listeners = new Set<() => void>()
 /** The other windows as `getOtherWindows` last answered them, and what they were read off. */
 let others: { windows: readonly WindowEntry[]; id: string; list: readonly WindowEntry[] } = { windows: [], id: '', list: [] }
@@ -108,7 +106,6 @@ export const storage = {
     const [s, id] = await Promise.all([api.state.get(), api.window.identity()])
     state = s
     identity = id
-    sentAsleep = ''
     unsubscribe?.()
     unsubscribe = api.state.onChange((next) => {
       // Each broadcast is a new copy. The Favorites order and the focus order each keep their identity
@@ -364,17 +361,6 @@ export const storage = {
       file,
       rightPanel: { ...nextRight, items: [...nextRight.items] },
     }))
-  },
-
-  /**
-   * The tabs asleep now, by their place in the strip (YAZ-3934): main keeps them for Settings › Memory, never stored.
-   * Sent only when the list changes, so a page where no tab sleeps sends none.
-   */
-  setAsleep(places: readonly number[]): void {
-    const key = places.join(',')
-    if (key === sentAsleep) return
-    sentAsleep = key
-    send('window.setIdentity', () => api.window.setIdentity({ asleep: [...places] }))
   },
 
   /** Already validated field-by-field by the main process on load (`desktop/src/main/store.ts`). */

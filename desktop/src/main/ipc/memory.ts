@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { ipcMain } from 'electron'
 import { isFiniteNumber, isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
-import type { StartView } from '@shared/types'
+import type { MemoryTabFacts, MemoryTabState, StartView } from '@shared/types'
 import type { MemoryMeter } from '../memory'
 import { handle } from './envelope'
 import { optionalPageView } from './window'
@@ -11,6 +11,8 @@ import { optionalPageView } from './window'
 export const HEAP_WAIT_MS = 1000
 /** A window that does not answer the views ask in this time is hung: the memory reload waits for the next sample (YAZ-3737 D4). */
 export const VIEWS_WAIT_MS = 1000
+/** A window that does not answer the tabs ask in this time shows its stored tabs with no facts (YAZ-3946). */
+export const TABS_WAIT_MS = 1000
 
 type Page = { id: number; send(channel: string, ...args: unknown[]): void }
 
@@ -64,9 +66,26 @@ export async function askViews(wc: Page): Promise<(StartView | null)[] | null> {
   })
 }
 
-/** `memory.report` and the preloads' answers (YAZ-3737 D1, D4). */
+const TAB_STATES: readonly MemoryTabState[] = ['shown', 'awake', 'unsaved', 'asleep']
+const stampOf = (v: unknown): number | null => (isFiniteNumber(v) ? v : null)
+
+/**
+ * Each tab's facts of the window `wc`, in strip order (YAZ-3946): main sends `window:tabs`, App answers through the
+ * preload (`window.onTabs`). Asked only for a report. A bad entry is dropped; `null` = no answer, or not a list.
+ */
+export async function askTabs(wc: Page): Promise<MemoryTabFacts[] | null> {
+  const tabs = await ask(wc, SPECIAL.windowTabs, TABS_WAIT_MS)
+  if (!Array.isArray(tabs)) return null
+  return tabs.flatMap((t): MemoryTabFacts[] => {
+    if (!isRecord(t) || typeof t.path !== 'string' || typeof t.title !== 'string' || !TAB_STATES.includes(t.state as MemoryTabState)) return []
+    return [{ path: t.path, title: t.title, state: t.state as MemoryTabState, lastSeen: stampOf(t.lastSeen), sleepsAt: stampOf(t.sleepsAt) }]
+  })
+}
+
+/** `memory.report` and the preloads' answers (YAZ-3737 D1, D4; YAZ-3946). */
 export function registerMemoryIpc(meter: Pick<MemoryMeter, 'report'>): void {
   handle(CONTRACT.memory.report, () => meter.report())
   ipcMain.on(SPECIAL.memoryHeapReply, (e, msg: unknown) => answer(e, (msg as { token?: unknown } | undefined)?.token, (msg as { bytes?: unknown } | undefined)?.bytes))
   ipcMain.on(SPECIAL.windowViewsReply, (e, msg: unknown) => answer(e, (msg as { token?: unknown } | undefined)?.token, (msg as { views?: unknown } | undefined)?.views))
+  ipcMain.on(SPECIAL.windowTabsReply, (e, msg: unknown) => answer(e, (msg as { token?: unknown } | undefined)?.token, (msg as { tabs?: unknown } | undefined)?.tabs))
 }

@@ -1,6 +1,7 @@
 import { rendererUrlFor } from './rendererUrl'
 import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -19,7 +20,7 @@ import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerUpdateIpc } from './ipc/update'
-import { askHeap, askViews, registerMemoryIpc } from './ipc/memory'
+import { askHeap, askTabs, askViews, registerMemoryIpc } from './ipc/memory'
 import { createMemoryMeter, createReloadWatch, helperRss, type MemoryMeter, type ReloadWatch } from './memory'
 import { claimDeepLinkScheme } from './deepLinkScheme'
 import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
@@ -406,10 +407,11 @@ app.whenReady().then(() => {
     isPreview: (win) => previewPopups.has(win),
     entryOf: (win) => {
       const id = manager.idFor(win.webContents)
-      const entry = id === undefined ? undefined : store.get().windows.find((w) => w.id === id)
-      return entry === undefined ? undefined : { ...entry, asleep: manager.asleep(entry.id) }
+      return id === undefined ? undefined : store.get().windows.find((w) => w.id === id)
     },
     jsHeap: (win) => askHeap(win.webContents),
+    tabs: (win) => askTabs(win.webContents),
+    mtime: (path) => stat(path).then((s) => s.mtimeMs, () => null),
     helperPids: () => lsp.running().map((h) => h.pid),
     rss: helperRss,
   })

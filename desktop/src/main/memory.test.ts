@@ -1,6 +1,6 @@
 /** The memory meter (YAZ-3737 D1): what a window counts, its history, "grew" and the code helpers. */
 import { describe, expect, it, vi } from 'vitest'
-import { MEMORY_SAMPLE_MS, type StartView, type StoredTab } from '@shared/types'
+import { MEMORY_SAMPLE_MS, type MemoryTabFacts, type StartView, type StoredTab } from '@shared/types'
 import { GREW_SPAN_MS, HISTORY, RELOAD_COOLDOWN_MS, RELOAD_MB, RELOAD_QUIET_MS, createMemoryMeter, createReloadWatch, grewSince, helperRss, mayReload, openText, reloadMbFromEnv, type MemoryHost, type MemorySample, type MeterProcess, type ReloadFacts, type ReloadHost } from './memory'
 
 const MB = 1024 * 1024
@@ -11,7 +11,8 @@ interface FakeWindow {
   popup?: true
   tabs?: string[]
   tabStrip?: StoredTab[]
-  asleep?: number[]
+  /** The page's answer to the tabs ask (YAZ-3946); absent = no answer. */
+  facts?: MemoryTabFacts[]
   name?: string
   isDestroyed(): boolean
   getTitle(): string
@@ -29,14 +30,16 @@ const win = (id: string, pids: number[], more: Partial<FakeWindow> = {}): FakeWi
 })
 const proc = (pid: number, type: string, mb: number): MeterProcess => ({ pid, type, memory: { workingSetSize: mb * 1024 } })
 
-function setup(windows: FakeWindow[], metrics: MeterProcess[], helpers: number[] = []) {
+function setup(windows: FakeWindow[], metrics: MeterProcess[], helpers: number[] = [], mtimes: Record<string, number> = {}) {
   let t = 0
   const host: MemoryHost<FakeWindow> = {
     metrics: () => metrics,
     windows: () => windows,
     isPreview: (w) => w.popup === true,
-    entryOf: (w) => ({ id: w.id, tabs: w.tabs ?? [], ...(w.tabStrip === undefined ? {} : { tabStrip: w.tabStrip }), ...(w.asleep === undefined ? {} : { asleep: w.asleep }), ...(w.name === undefined ? {} : { name: w.name }) }),
+    entryOf: (w) => ({ id: w.id, tabs: w.tabs ?? [], ...(w.tabStrip === undefined ? {} : { tabStrip: w.tabStrip }), ...(w.name === undefined ? {} : { name: w.name }) }),
     jsHeap: async (w) => (w.id === 'a' ? 40 * MB : null),
+    tabs: async (w) => w.facts ?? null,
+    mtime: vi.fn(async (path: string) => mtimes[path] ?? null),
     helperPids: () => helpers,
     rss: vi.fn(async (pids: readonly number[]) => pids.length * 300 * MB),
   }
@@ -52,7 +55,7 @@ describe('memory meter', () => {
     const { meter } = setup([a, popup, b], [proc(1, 'Browser', 200), proc(2, 'GPU', 100), proc(3, 'Utility', 30), proc(10, 'Tab', 300), proc(11, 'Tab', 150), proc(20, 'Tab', 500), proc(30, 'Tab', 50)])
     const report = await meter.report()
     expect(report.windows).toEqual([
-      { id: 'a', title: 'Writing', open: '2 notes, 1 drawing, 1 diagram', bytes: 450 * MB, jsHeapBytes: 40 * MB, grew: false, tabs: a.tabs!.map((path) => ({ path, asleep: false })) },
+      { id: 'a', title: 'Writing', open: '2 notes, 1 drawing, 1 diagram', bytes: 450 * MB, jsHeapBytes: 40 * MB, grew: false, tabs: a.tabs!.map((path) => ({ path, title: null, state: null, lastSeen: null, sleepsAt: null, changed: null })) },
       { id: 'b', title: 'title b', open: '', bytes: 500 * MB, jsHeapBytes: null, grew: false, tabs: [] },
     ])
     expect(report.core).toEqual({ bytes: 380 * MB, main: 200 * MB, gpu: 100 * MB, utility: 30 * MB, other: 50 * MB })
@@ -72,23 +75,28 @@ describe('memory meter', () => {
     expect(meter.history('a')).toEqual([])
   })
 
-  it('YAZ-3934: a row lists its tabs in strip order, copies and display names kept, each marked asleep by its strip place (the page\'s `asleep`); no strip = its `tabs`', async () => {
-    const a = win('a', [10], { tabs: ['/v/a.md', '/v/b.md'], tabStrip: [{ path: '/v/a.md', active: true }, { path: '/v/b.md', name: 'Plan' }, { path: '/v/a.md' }], asleep: [1, 2] })
-    const b = win('b', [20], { tabs: ['/v/c.md', '/v/d.md'] })
-    const { meter } = setup([a, b], [proc(10, 'Tab', 100), proc(20, 'Tab', 100)])
-    const [ra, rb] = (await meter.report()).windows
-    expect(ra.tabs).toEqual([
-      { path: '/v/a.md', asleep: false },
-      { path: '/v/b.md', name: 'Plan', asleep: true },
-      { path: '/v/a.md', asleep: true },
-    ])
+  it('YAZ-3946: a row\'s tabs are its page\'s answer with each file\'s mtime (one stat per file); a window that does not answer gives its stored strip, display names kept, no facts; a failed stat is null', async () => {
+    const facts: MemoryTabFacts[] = [
+      { path: '/v/a.md', title: 'Start here', state: 'shown', lastSeen: null, sleepsAt: null },
+      { path: '/v/b.md', title: 'Plan', state: 'awake', lastSeen: 1_000, sleepsAt: 901_000 },
+      { path: '/v/a.md', title: 'Start here', state: 'asleep', lastSeen: 500, sleepsAt: null },
+    ]
+    // The store is behind the page: its strip still lacks the copy. The page's answer wins.
+    const a = win('a', [10], { tabs: ['/v/a.md', '/v/b.md'], tabStrip: [{ path: '/v/a.md', active: true }, { path: '/v/b.md' }], facts })
+    const b = win('b', [20], { tabs: ['/v/c.md', '/v/a.md'], tabStrip: [{ path: '/v/c.md', name: 'Draft' }, { path: '/v/a.md' }] })
+    const c = win('c', [30], { tabs: ['/v/gone.md'] })
+    const { meter, host } = setup([a, b, c], [proc(10, 'Tab', 100), proc(20, 'Tab', 100), proc(30, 'Tab', 100)], [], { '/v/a.md': 7_000, '/v/b.md': 8_000, '/v/c.md': 9_000 })
+    const [ra, rb, rc] = (await meter.report()).windows
+    expect(ra.tabs).toEqual(facts.map((f) => ({ ...f, changed: f.path === '/v/a.md' ? 7_000 : 8_000 })))
     expect(rb.tabs).toEqual([
-      { path: '/v/c.md', asleep: false },
-      { path: '/v/d.md', asleep: false },
+      { path: '/v/c.md', title: 'Draft', state: null, lastSeen: null, sleepsAt: null, changed: 9_000 },
+      { path: '/v/a.md', title: null, state: null, lastSeen: null, sleepsAt: null, changed: 7_000 },
     ])
-    // The next report follows the page: the tab woke.
-    a.asleep = [2]
-    expect((await meter.report()).windows[0].tabs.map((t) => t.asleep)).toEqual([false, false, true])
+    expect(rc.tabs).toEqual([{ path: '/v/gone.md', title: null, state: null, lastSeen: null, sleepsAt: null, changed: null }])
+    expect(vi.mocked(host.mtime).mock.calls.map(([path]) => path)).toEqual(['/v/a.md', '/v/b.md', '/v/c.md', '/v/gone.md'])
+    // The next report asks again: the page's state now.
+    a.facts = facts.map((f) => ({ ...f, state: 'awake' }))
+    expect((await meter.report()).windows[0].tabs.map((t) => t.state)).toEqual(['awake', 'awake', 'awake'])
   })
 
   it('grew ("Growing"): more than 150 MB or 20 % over the newest sample at least 1 h old; never in the first hour', async () => {

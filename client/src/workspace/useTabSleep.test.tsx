@@ -1,7 +1,8 @@
 /**
  * Tab sleep's clock and rules (YAZ-3737 5A; D2, D5, S9, S10, S20, S21): which tabs sleep, that each saves first and
  * a dirty one (a save conflict) stays awake, that the view each sleeps with goes to `startView`, that the Mac's own
- * sleep does not count, and that a hidden window's front tab sleeps as a held layer. The workspace doors are spies:
+ * sleep does not count, that a hidden window's front tab sleeps as a held layer, and the facts Settings › Memory
+ * shows (YAZ-3946). The workspace doors are spies:
  * the reducer's side is `useWorkspace.test.tsx`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -229,6 +230,48 @@ describe('the zzz mark and the hover wake (D11, S7)', () => {
     change({ tabs: [...TABS.filter((t) => t.id === 'a'), { id: 'n', path: '/v/n.md' }] })
     await pass(2 * SLEEP_TICK_MS)
     expect(startView.has('n')).toBe(true)
+  })
+})
+
+describe('Settings › Memory\'s facts (YAZ-3946)', () => {
+  it('each tab\'s state, last seen and sleep time, in strip order; a clock restart moves no "last seen"; "Never" says only Awake', async () => {
+    editor('/v/d.md', () => true) // d's file is not saved yet
+    render(world({ mounted: ['a', 'b', 'c', 'd'] })) // e: not shown since the window started
+    const t0 = Date.now()
+    change({ shown: 'b', active: 'b' })
+    change({ shown: 'a', active: 'a' })
+    const facts = () => latest.facts().map(({ id, state, lastSeen, sleepsAt }) => [id, state, lastSeen, sleepsAt])
+    expect(latest.facts().map((f) => f.path)).toEqual(TABS.map((t) => t.path))
+    expect(facts()).toEqual([
+      ['a', 'shown', null, null],
+      ['b', 'awake', t0, t0 + 15 * MIN],
+      ['c', 'awake', null, null], // mounted at boot: no stamp before the first round
+      ['d', 'unsaved', null, null],
+      ['e', 'awake', null, null],
+    ])
+    // The first round starts c's clock, but nobody saw c.
+    await pass(MIN)
+    expect(facts()[2]).toEqual(['c', 'awake', null, t0 + 16 * MIN])
+    await pass(14 * MIN)
+    expect(facts()[1]).toEqual(['b', 'asleep', t0, null])
+    // The Mac slept (S9): every clock starts again, "last seen" stays.
+    await act(async () => {
+      vi.setSystemTime(Date.now() + RESUME_GAP_TICKS * SLEEP_TICK_MS)
+      await vi.advanceTimersByTimeAsync(SLEEP_TICK_MS)
+    })
+    expect(facts()[1]).toEqual(['b', 'asleep', t0, null])
+    expect(facts()[2]).toEqual(['c', 'awake', null, Date.now() + 15 * MIN])
+    // Away, the front tab is no longer on show: its clock runs (S10).
+    change({ away: true })
+    expect(facts()[0]).toEqual(['a', 'awake', Date.now(), Date.now() + 15 * MIN])
+    change({ away: false, setting: 'never' })
+    expect(facts().map(([id, state, , sleepsAt]) => [id, state, sleepsAt])).toEqual([
+      ['a', 'shown', null],
+      ['b', 'asleep', null],
+      ['c', 'awake', null],
+      ['d', 'awake', null],
+      ['e', 'awake', null],
+    ])
   })
 })
 

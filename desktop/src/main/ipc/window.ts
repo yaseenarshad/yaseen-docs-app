@@ -77,14 +77,6 @@ function optionalSidebarLens(raw: Record<string, unknown>): SidebarLens | undefi
   return v
 }
 
-/** `asleep` in the patch (YAZ-3934): absent, or strip places, each a whole number from 0 — one bad element rejects the whole call. */
-function optionalAsleep(raw: Record<string, unknown>): number[] | undefined {
-  const v = raw.asleep
-  if (v === undefined) return undefined
-  if (!Array.isArray(v) || !v.every((i) => Number.isInteger(i) && i >= 0)) throw new BridgeFailure('BAD_REQUEST', "'asleep' must be an array of strip places")
-  return v as number[]
-}
-
 /**
  * A page view from the renderer (YAZ-2951 D5, S19): a copy of a good one, folds cut at
  * MAX_FOLD_KEYS_PER_FILE; anything else is `undefined`, so the new window opens with no page view
@@ -224,15 +216,8 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const rightPanel = optionalRightPanel(patch)
     const sidebarCollapsed = optionalSidebarCollapsed(patch)
     const sidebarLens = optionalSidebarLens(patch)
-    const asleep = optionalAsleep(patch)
     // A `name` in the patch is an unknown key and is ignored: a window is named through `window:set-name` alone (YAZ-3343 D14).
     const entry = entryFor(e)
-    // The sleeping tabs (YAZ-3934) are main's memory only: a patch of them alone writes no store, so a sleep round
-    // makes no `state:changed` broadcast.
-    if (asleep !== undefined) {
-      windows.setAsleep(entry.id, asleep)
-      if (Object.keys(patch).length === 1) return
-    }
     // The tabs invariant holds on the entry AS WRITTEN (GRO-2232): the loader's repair rule,
     // applied to whichever of `file` / `tabs` the patch left untouched.
     const nextFile = file !== undefined ? file : entry.file

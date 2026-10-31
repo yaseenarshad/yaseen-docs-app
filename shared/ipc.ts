@@ -11,7 +11,7 @@
  * docs/CONTRACTS.md › Bridge API.
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MemoryReport, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, StartView, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult } from './types'
-import type { CopyAsMode, CopyAsRich, NoteMenuAction } from './types'
+import type { CopyAsMode, CopyAsRich, MemoryTabFacts, NoteMenuAction } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { SystemHotkey } from './macosHotkeys'
@@ -671,6 +671,9 @@ export const SPECIAL = {
   /** The memory reload (YAZ-3737 D4): main sends `window:views` with a token, the preload answers `window:views-reply` `{ token, views }` from `window.onViews`. */
   windowViews: 'window:views',
   windowViewsReply: 'window:views-reply',
+  /** Settings › Memory's tab rows (YAZ-3946): `memory.report()` sends `window:tabs` with a token, the preload answers `window:tabs-reply` `{ token, tabs }` from `window.onTabs`. */
+  windowTabs: 'window:tabs',
+  windowTabsReply: 'window:tabs-reply',
   /** Edit › Copy as / Paste as: the focused editor claims the gesture, else the preload's native fallback answers through the two invokes. */
   menuCopyAs: 'menu:copy-as',
   menuPasteAs: 'menu:paste-as',
@@ -704,6 +707,11 @@ export type YaseenDocsApi = Bridge<typeof CONTRACT> & {
      * window. The first listener answers; none (the Welcome window) answers `[]`.
      */
     onViews(listener: () => (StartView | null)[]): () => void
+    /**
+     * Settings › Memory (YAZ-3946): main asks for each tab's facts, in strip order, when it builds a report. The first
+     * listener answers; none (the Welcome window) answers `null`, and main shows the stored tabs with no facts.
+     */
+    onTabs(listener: () => MemoryTabFacts[]): () => void
   }
   file: {
     /** The path on disk of a `File` dropped from Finder (YAZ-3253 D3): `webUtils.getPathForFile`, since Electron removed `File.path`. Empty for a `File` made in JS. */
