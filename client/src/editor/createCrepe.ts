@@ -152,6 +152,10 @@
  *    `setNodeMarkup` on mouseup. The block handle menu of a line (`line/lineRows.ts`) adds "Line
  *    darkness", "Line thickness" and "Line style", one row each, whose value opens the presets (the
  *    zoom menu's shape) on a click.
+ *  - The table's settings (YAZ-3758, `table/tableStyle.ts`): the `table` node gains border,
+ *    header, stripes, height, wrap and freeze attributes, and each cell `fill` and `color`
+ *    — the SECOND exception to the images rule. A plain table stays the GFM table; one with
+ *    settings is the table then the next block `<!-- table: … -->`, joined on load as the line's.
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
  *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
@@ -170,6 +174,18 @@
  *    (measured: 23.6 ms per key at 2,500 blocks against 0.19 ms), and its `forChild` answers
  *    "nothing inside a block" without ProseMirror's scan of every root decoration (16.5 ms per
  *    key). A click on a line folds the sections beside it (meta-only, through heading folding).
+ *  - Column resize (YAZ-3696 D2, `table/tableColumnResize.ts`): `prosemirror-tables`' `columnResizing` as
+ *    installed, put just before `tableEditing` so a grip drag selects no cells, with the drag measured
+ *    in layout px under document zoom. The vendored table block draws the `<colgroup>` from `colwidth`.
+ *  - Paste into cells (YAZ-3696 D4 / S2, `table/tablePaste.ts`, called from `clipboardPaste.ts`): cells
+ *    and tab-separated text fill from the caret cell and grow the table; one value fills selected
+ *    cells; tab-separated text outside a table makes one. One `replaceWith`, one undo step.
+ *  - Fill down (YAZ-3696 S4, `table/tableFill.ts` + `fillSeries.ts`): a widget handle in the corner of
+ *    the selected cells; a drag down or right fills series up to the table's edge, on mouseup.
+ *  - Table menus (YAZ-3766): the table's settings on its six-dot handle (`table/tableRows.ts`), the
+ *    cell toolbar over two or more selected cells (`table/cellToolbar.ts`; its custom colour pick,
+ *    `table/colours.ts`), and frozen rows and columns (`table/tableFreeze.ts`; the right-click
+ *    Table part is `noteMenu.tsx`'s).
  */
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
@@ -220,12 +236,19 @@ import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from '.
 import { arrangeToolbar, toolbarPrefs } from './toolbarPrefs'
 import { inlineBreaks } from './inlineBreaks'
 import { lineStyle } from './line/lineStyle'
+import { tableStyle } from './table/tableStyle'
+import { tableFill } from './table/tableFill'
+import { tableRows } from './table/tableRows'
+import { cellToolbar } from './table/cellToolbar'
+import { customColourPick } from './table/colours'
+import { tableFreeze } from './table/tableFreeze'
 import { lineView } from './line/lineView'
 import { lineRows } from './line/lineRows'
 import { liftHeadlessItems, lineKeymap, visibleRangeHasMark, visibleTypeOver } from './lineSelection'
 import { visibleFormatting } from './visibleFormatting'
 import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
+import { tableColumnResize } from './table/tableColumnResize'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
@@ -450,9 +473,11 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // Crepe feature customisation #1 (YAZ-1329/YAZ-877): Number children is the only editor
       // command that creates ordered children, so the stock Ordered List row is absent. Drawing
       // still composes into this same BlockEdit config when the host supplies a creator, after
-      // Current time and before the list rule (YAZ-3550, `slashMenu.ts`).
+      // Current time and before the list rule (YAZ-3550, `slashMenu.ts`). The stock Table row is
+      // replaced by the app's own, which keeps a bullet's line above the table (YAZ-3696 D12).
       [CrepeFeature.BlockEdit]: {
         listGroup: { orderedList: null },
+        advancedGroup: { table: null },
         buildMenu: slashMenu.buildMenu,
       },
       // #2 (YAZ-923): the selection toolbar SAYS the block's level — a Heading group whose
@@ -481,6 +506,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(highlight)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
+  // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment.
+  crepe.editor.use(tableStyle)
   // YAZ-3209: over hidden lines, Bold, Italic, Strikethrough, code and H1-H3 / T change the visible
   // ones only, and the toolbar lights for visible lines only. After the presets, by `EditorViewReady`.
   crepe.editor.use(visibleFormatting)
@@ -505,6 +532,16 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(bulletThreading)
   crepe.editor.use(sectionIndent)
   crepe.editor.use(lineNumbers)
+  // Column resize (YAZ-3696 D2): `columnResizing`, before `tableEditing`, zoom-aware; the table block draws the `<colgroup>`.
+  crepe.editor.use(tableColumnResize)
+  // Fill down (YAZ-3696 S4): the corner handle of the selected cells.
+  crepe.editor.use(tableFill)
+  // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.
+  crepe.editor.use(cellToolbar)
+  // A custom colour pick's target cells (YAZ-3817), kept through edits while the system picker is open.
+  crepe.editor.use(customColourPick)
+  // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.
+  crepe.editor.use(tableFreeze)
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   // ONE resolve source instance feeds both the decorations and the click plugin's routing.
@@ -558,8 +595,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // conversion paths are all absent.
   void crepe.editor.remove([wrapInOrderedListInputRule, ...orderedListKeymap])
   // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its children (Number children),
-  // then a line's pickers (YAZ-3164 D3). A new row joins its group.
-  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...numberChildrenRow(view, target, ctx), ...lineRows(view, target, ctx)]))
+  // then a line's pickers (YAZ-3164 D3), or a table's settings (YAZ-3767 D7). A new row joins its group.
+  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...numberChildrenRow(view, target, ctx), ...lineRows(view, target, ctx), ...tableRows(view, target, ctx)]))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.

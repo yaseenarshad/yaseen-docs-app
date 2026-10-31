@@ -14,6 +14,15 @@
  * the item; Task List makes the item a task) — except Text, which runs T's command (YAZ-3806 T4):
  * the item becomes a plain line, out of every list level, as T and ⌘⌥0 make it.
  *
+ * "Table" (YAZ-3696 D12) is the app's own row in Crepe's place (`advancedGroup: { table: null }` in
+ * `createCrepe()`), with Crepe's label, icon and position (after Code). In a list item's label line it
+ * removes only the `/query`. A line with text stays and a 3×3 table goes BELOW it, inside the item.
+ * An empty line (the query was all of it) becomes the table, so the table sits on the marker line,
+ * the item's first child, saved `* | … |` (YAZ-3805, demo round 1 decision 11) — except in a task
+ * item, which cannot hold a table on its marker line (`* [ ] | a |` reads as text): there the empty
+ * line stays and the table goes below. The caret goes in the first header cell — one transaction,
+ * one undo step. Anywhere else the row runs Crepe's own three commands, as before.
+ *
  * "Current time" (YAZ-3511 D22) inserts `h:mmam - ` as plain text at the caret, read at the pick.
  * It opens the way every stock row does (`clearTextInCurrentBlockCommand` removes the `/query`),
  * then `tr.insertText` — no schema, no mark. Its `keywords` (the patch's second change: the filter
@@ -28,10 +37,17 @@
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
-import { clearTextInCurrentBlockCommand, turnIntoTextCommand } from '@milkdown/kit/preset/commonmark'
-import { Plugin, type Selection } from '@milkdown/kit/prose/state'
+import {
+  addBlockTypeCommand,
+  clearTextInCurrentBlockCommand,
+  selectTextNearPosCommand,
+  turnIntoTextCommand,
+} from '@milkdown/kit/preset/commonmark'
+import { createTable } from '@milkdown/kit/preset/gfm'
+import { Plugin, type Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { shallowRef } from 'vue'
+import { isListItem } from './outline/listNodes'
 
 /** One slash row as Crepe's builder takes it (`keywords` is the YAZ-3550 patch's field). */
 export interface SlashRow {
@@ -105,10 +121,61 @@ const textRowRun = (ctx: Ctx): void => {
   commands.call(turnIntoTextCommand.key)
 }
 
+/** Crepe's own table icon (`src/icons/table.ts`; the package does not export it). */
+const tableIcon = `
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+  >
+    <g clip-path="url(#clip0_977_8078)">
+      <path
+        d="M20 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H20C21.1 21 22 20.1 22 19V5C22 3.9 21.1 3 20 3ZM20 5V8H5V5H20ZM15 19H10V10H15V19ZM5 10H8V19H5V10ZM17 19V10H20V19H17Z"
+      />
+    </g>
+    <defs>
+      <clipPath id="clip0_977_8078">
+        <rect width="24" height="24" />
+      </clipPath>
+    </defs>
+  </svg>
+`
+
+/** The "Table" row (D12, YAZ-3805): in a list item's label line, the table goes below the line or takes an empty one; see the header. */
+export const tableRow: SlashRow = {
+  label: 'Table',
+  icon: tableIcon,
+  onRun: (ctx) => {
+    const view = ctx.get(editorViewCtx)
+    const { $from } = view.state.selection
+    if (!isListItem($from.node($from.depth - 1)) || $from.index($from.depth - 1) !== 0) {
+      // Crepe's own row (`menu/config.ts`), unchanged.
+      const commands = ctx.get(commandsCtx)
+      commands.call(clearTextInCurrentBlockCommand.key)
+      const { from } = view.state.selection
+      commands.call(addBlockTypeCommand.key, { nodeType: createTable(ctx, 3, 3) })
+      commands.call(selectTextNearPosCommand.key, { pos: from })
+      return
+    }
+    // The query runs from its `/` to the caret; a leaf counts as one character, as in a position.
+    const slash = $from.parent.textBetween(0, $from.parentOffset, undefined, '\uFFFC').lastIndexOf('/')
+    const tr = view.state.tr
+    if (slash >= 0) tr.delete($from.start() + slash, $from.pos)
+    const line = tr.mapping.map($from.before())
+    const lineSize = tr.doc.nodeAt(line)!.nodeSize
+    // An empty line becomes the table (YAZ-3805); a task item keeps it, see the header.
+    const onMarker = lineSize === 2 && typeof $from.node($from.depth - 1).attrs.checked !== 'boolean'
+    const at = onMarker ? line : line + lineSize
+    tr.replaceWith(at, onMarker ? line + lineSize : at, createTable(ctx, 3, 3))
+    view.dispatch(tr.setSelection(TextSelection.near(tr.doc.resolve(at + 1))).scrollIntoView())
+  },
+}
+
 /**
  * One editor's slash extension: the `buildMenu` for `featureConfigs[CrepeFeature.BlockEdit]`
- * (Current time at the end of the Text group, the list rule, then `extend` — the Drawing row
- * when the host gives a creator) and the plugin that keeps the "in a list" flag current.
+ * (Current time at the end of the Text group, Table after Code, then `extend` — the Drawing row
+ * when the host gives a creator — then the list rule) and the plugin that keeps the "in a list" flag current.
  */
 export function createSlashMenu(extend?: (builder: SlashMenuGroups) => void): {
   buildMenu: (builder: SlashMenuGroups) => void
@@ -119,6 +186,7 @@ export function createSlashMenu(extend?: (builder: SlashMenuGroups) => void): {
     builder.getGroup('text').addItem('current-time', currentTimeRow)
     const text = builder.build().find((group) => group.key === 'text')?.items.find((item) => item.key === 'text')
     if (text !== undefined) text.onRun = textRowRun
+    builder.getGroup('advanced').addItem('table', tableRow)
     extend?.(builder)
     if (!inList.value) return
     for (const group of builder.build()) {

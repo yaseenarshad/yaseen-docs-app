@@ -2,7 +2,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import ts from 'typescript'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cellPos, dragColumnEdge, mountTable, unmountAll } from './table/tableTestKit'
 
 const runtime = readFileSync(resolve(__dirname, '../../../node_modules/@milkdown/components/lib/table-block/index.js'), 'utf8')
 const parsed = ts.createSourceFile('table-block.js', runtime, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
@@ -52,7 +53,7 @@ function fixture(zoom: number) {
     dragPreviewRef: { value: preview }, tableWrapperRef: { value: wrapper }, contentWrapperRef: { value: content },
     yLineHandleRef: { value: yHandle }, xLineHandleRef: { value: xHandle },
     colHandleRef: { value: document.createElement('div') }, rowHandleRef: { value: document.createElement('div') },
-    hoverIndex: { value: [1, 0] }, lineHoverIndex: { value: [-1, -1] },
+    hoverIndex: { value: [1, 0] },
     dragInfo: { value: { type: 'col', startCoords: [300 + 50 * zoom, 200 + 45 * zoom], startIndex: 0, endIndex: 0 } },
   }
   computePosition.mockClear(); offset.mockClear()
@@ -100,16 +101,28 @@ describe.each([0.5, 1, 1.25, 2])('shipped Milkdown table geometry at zoom %s', z
     expect(refs.dragInfo.value.endIndex).toBe(0)
     expect(offset).toHaveBeenLastCalledWith(-4)
   })
-  it('sizes insertion lines and offsets in layout pixels', async () => {
+  // YAZ-3800 (2D): the "+" insert lines are gone; a pointer at a cell edge shows no line.
+  it('shows no insertion line at a cell edge', async () => {
     const { refs, yHandle, xHandle } = fixture(zoom)
     const pointer = geometry.createPointerMoveHandler(refs, { editable: true })
     pointer({ clientX: 300 + zoom, clientY: 200 + 45 * zoom })
-    await Promise.resolve()
-    expect(yHandle.style.height).toBe('90px')
-    expect(offset).toHaveBeenLastCalledWith(-4)
     pointer({ clientX: 300 + 75 * zoom, clientY: 200 + 31 * zoom })
     await Promise.resolve()
-    expect(xHandle.style.width).toBe('300px')
-    expect(offset).toHaveBeenLastCalledWith(-4)
+    for (const line of [yHandle, xHandle]) {
+      expect(line.dataset.show).toBe('false')
+      expect(line.style.height + line.style.width + line.style.left + line.style.top).toBe('')
+    }
+  })
+})
+
+// Column resize (YAZ-3696 D2, R2): `prosemirror-tables` measures the drag in screen px and the width in layout px,
+// so under document zoom the edge ran ahead of (zoom > 1) or behind (zoom < 1) the cursor. It must follow it.
+describe.each([0.5, 1, 1.25, 2])('column resize grip at document zoom %s', zoom => {
+  afterEach(unmountAll)
+  it('a drag of 50 layout px (50 × zoom on screen) widens the column by 50 px', async () => {
+    const view = await mountTable(undefined, zoom)
+    dragColumnEdge(view, 0, 50 * zoom, zoom)
+    expect(view.state.doc.nodeAt(cellPos(view, 0, 0))!.attrs.colwidth).toEqual([150])
+    expect((view.dom.querySelector('col') as HTMLElement).style.width).toBe('150px')
   })
 })

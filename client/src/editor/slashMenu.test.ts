@@ -13,8 +13,10 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe } from './createCrepe'
-import { createSlashMenu, formatCurrentTime, type SlashMenuGroups, type SlashRow } from './slashMenu'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { createCrepe, getMarkdownForSave } from './createCrepe'
+import { createSlashMenu, formatCurrentTime, tableRow, type SlashMenuGroups, type SlashRow } from './slashMenu'
+import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -29,7 +31,7 @@ afterEach(async () => {
   }
 })
 
-async function mount(markdown: string): Promise<{ root: HTMLElement; view: EditorView }> {
+async function mountWithCrepe(markdown: string): Promise<{ crepe: Crepe; root: HTMLElement; view: EditorView }> {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const crepe = createCrepe({ root, defaultValue: markdown })
@@ -37,8 +39,10 @@ async function mount(markdown: string): Promise<{ root: HTMLElement; view: Edito
   mounted.push({ crepe, root })
   const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
   view.hasFocus = () => true
-  return { root, view }
+  return { crepe, root, view }
 }
+
+const mount = mountWithCrepe
 
 const menuOf = (root: HTMLElement) => root.querySelector<HTMLElement>('.milkdown-slash-menu')
 const isShown = (root: HTMLElement) => menuOf(root)?.dataset.show === 'true'
@@ -122,7 +126,8 @@ describe('buildMenu (YAZ-3550)', () => {
     expect(order).toEqual(['current-time'])
     expect(groups[0].items[0]).toMatchObject({ key: 'current-time', label: 'Current time', keywords: ['current', 'now', 'clock', 'time'] })
     expect(groups[0].items[0].icon).toContain('<svg')
-    expect(groups[2].items.map((item) => item.key)).toEqual(['drawing'])
+    // Table (YAZ-3696 D12) takes Crepe's place after Code, before the host's Drawing.
+    expect(groups[2].items.map((item) => item.key)).toEqual(['table', 'drawing'])
   })
 })
 
@@ -208,5 +213,92 @@ describe('Current time (D22, edge cases 70–72, 77, 78)', () => {
     await vi.waitFor(() => expect(isShown(root)).toBe(false))
     // The empty line where "x" was, then Crepe's trailing line.
     expect(view.state.doc.toString()).toBe('doc(bullet_list(list_item(paragraph("a"))), paragraph, paragraph)')
+  })
+})
+
+describe('Table in a bullet (YAZ-3696 D12, option B)', () => {
+  /** The first header cell holds the caret: its paragraph is the caret's parent. */
+  const caretInFirstHeaderCell = (view: EditorView) => {
+    const { $from } = view.state.selection
+    const cell = $from.node($from.depth - 1)
+    const table = $from.node($from.depth - 3)
+    expect(cell.type.name).toBe('table_header')
+    expect(table.firstChild?.firstChild).toBe(cell)
+  }
+
+  it.each([
+    ['an empty bullet', '* x\n', 'bullet_list(list_item(table('],
+    ['an empty nested bullet', '* a\n  * x\n', 'bullet_list(list_item(paragraph("a"), bullet_list(list_item(table('],
+    ['an empty numbered item', '1. x\n', 'ordered_list(list_item(table('],
+    ['an empty bullet with a child', '* x\n  * Child\n', 'bullet_list(list_item(table('],
+    // A task item cannot hold a table on its marker line (`* [ ] | a |` reads as text): the D12 placement.
+    ['an empty task item', '* [ ] x\n', 'bullet_list(list_item(paragraph, table('],
+  ])('"/table" + Enter in %s: a 3×3 table on the marker line, the item\'s first child (YAZ-3805), a task item\'s below its line', async (_name, markdown, expected) => {
+    const { root, view } = await mount(markdown)
+    await openMenu(view, root, 'x', '/table')
+    press('Enter')
+    await vi.waitFor(() => expect(isShown(root)).toBe(false))
+    expect(view.state.doc.toString()).toContain(expected)
+    expect(view.state.doc.textContent).not.toContain('/table')
+    let table: ProseNode | undefined
+    view.state.doc.descendants((node) => {
+      if (node.type.name === 'table') table = node
+    })
+    expect(table?.childCount).toBe(3)
+    expect(table?.firstChild?.childCount).toBe(3)
+    caretInFirstHeaderCell(view)
+  })
+
+  it('"/table" + Enter on a plain line works as today: the table takes the line, the caret in its first header cell', async () => {
+    const { root, view } = await mount('x\n')
+    await openMenu(view, root, 'x', '/table')
+    press('Enter')
+    await vi.waitFor(() => expect(isShown(root)).toBe(false))
+    expect(view.state.doc.firstChild?.type.name).toBe('table')
+    expect(view.state.doc.textContent).toBe('')
+    caretInFirstHeaderCell(view)
+  })
+
+  it('text before the query stays on the label line (option A, reached by a direct run)', async () => {
+    const { crepe, view } = await mountWithCrepe('* Hello /table\n')
+    const end = view.state.doc.resolve(3).end()
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, end)))
+    crepe.editor.action((ctx) => tableRow.onRun?.(ctx))
+    expect(view.state.doc.toString()).toContain('bullet_list(list_item(paragraph("Hello "), table(')
+    caretInFirstHeaderCell(view)
+  })
+
+  it('the new table in an empty bullet round trips on the marker line: the saved markdown loads back to the same document', async () => {
+    const { crepe, root, view } = await mountWithCrepe('* x\n')
+    await openMenu(view, root, 'x', '/table')
+    press('Enter')
+    await vi.waitFor(() => expect(isShown(root)).toBe(false))
+    const saved = getMarkdownForSave(crepe)
+    const again = await mountWithCrepe(saved)
+    // The bullet, label line and table, read back as they were (the live doc also holds Crepe's trailing paragraph).
+    expect(saved).toBe('* |    |    |    |\n  | :- | :- | :- |\n  |    |    |    |\n  |    |    |    |\n')
+    expect(again.view.state.doc.firstChild?.toString()).toBe(view.state.doc.firstChild?.toString())
+    expect(getMarkdownForSave(again.crepe)).toBe(saved)
+  })
+
+  it('the bullet fold works with the table as the item\'s first child: the arrow stays, the fold hides the table and the child', async () => {
+    const { crepe, root, view } = await mountWithCrepe('* x\n  * Child\n')
+    await openMenu(view, root, 'x', '/table')
+    press('Enter')
+    await vi.waitFor(() => expect(isShown(root)).toBe(false))
+    const before = getMarkdownForSave(crepe)
+    const toggle = () => root.querySelector<HTMLButtonElement>(`.${OUTLINE_TOGGLE_CLASS}`)
+    const folded = () => [...root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`)]
+    expect(toggle()?.getAttribute('aria-expanded')).toBe('true')
+    // The arrow is the item's, before the table, so the fold never hides it.
+    expect(toggle()?.closest('table')).toBeNull()
+    // table.css's "no top margin" rule reaches this table (jsdom has no layout to measure).
+    expect(root.querySelector('.milkdown-list-item-block > li > .children > .content-dom > .milkdown-table-block:is(:first-child, .outline-toggle + *)')).not.toBeNull()
+    toggle()!.click()
+    expect(folded().map((el) => (el.querySelector('table') !== null ? 'table' : el.textContent?.trim()))).toEqual(['table', 'Child'])
+    expect(toggle()?.getAttribute('aria-expanded')).toBe('false')
+    expect(getMarkdownForSave(crepe)).toBe(before)
+    toggle()!.click()
+    expect(folded()).toHaveLength(0)
   })
 })

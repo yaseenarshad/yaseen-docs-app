@@ -9,6 +9,8 @@ import { clipboardPlainText } from './clipboardPlainText'
 import { eachVisibleTextblock } from './lineSelection'
 import { rowShortcuts } from './noteKeys'
 import { getZoomedItemPos } from './outline/zoom'
+import { FILL_WASH } from './table/colours'
+import { cellColor, type TableColor } from './table/tableComment'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 
 export const CLIPBOARD_EMPTY_PARAGRAPH = 'data-mdapp-empty-paragraph'
@@ -122,6 +124,60 @@ const copyVisible: Command = (state, dispatch) => {
 
 export const copyVisibleHotkey = $shortcut((ctx) => rowShortcuts(ctx, 'note.copyVisible', 'CopyWithoutFoldedLines', { onRun: () => copyVisible }))
 
+/**
+ * A copied cell's colours in the light theme (YAZ-3802, YAZ-3817): the text colours of table.css `:root`,
+ * and each fill's see-through wash (`--table-fill-*`) as it shows over white, because Docs needs a solid
+ * colour. A custom colour copies as picked; a custom fill as its wash over white, as the page draws it.
+ */
+const COPY_FILL: Record<TableColor, string> = {
+  red: '#ffc5c2', orange: '#ffdab7', yellow: '#ffee99', green: '#c2ecd0', teal: '#b4e8e5',
+  blue: '#c2deff', purple: '#deccff', pink: '#ffd0e5', grey: '#dadada', brown: '#e1d0be',
+}
+const COPY_TEXT: Record<TableColor, string> = {
+  red: '#c0392b', orange: '#b45309', yellow: '#a16207', green: '#2e7d32', teal: '#0f766e',
+  blue: '#1d5fbf', purple: '#7b3fbf', pink: '#c2185b', grey: '#6b6b6b', brown: '#8b5a2b',
+}
+/** `#rrggbb` at its wash (`FILL_WASH`, table.css `--table-fill-wash`) over white. */
+const washOverWhite = (hex: string): string =>
+  `#${[1, 3, 5].map((i) => Math.round(255 - (255 - parseInt(hex.slice(i, i + 2), 16)) * FILL_WASH).toString(16).padStart(2, '0')).join('')}`
+const copyFill = (fill: string | null) => (fill === null ? undefined : fill.startsWith('#') ? washOverWhite(fill) : COPY_FILL[fill as TableColor])
+const copyText = (color: string | null) => (color === null ? undefined : color.startsWith('#') ? color : COPY_TEXT[color as TableColor])
+
+/**
+ * Inline styles on copied tables (YAZ-3802, demo round 1 decision 13): Google Docs and Sheets read
+ * only these, so the lines, fills, text colours and the bold header show there. A paste into this
+ * app reads the cells' `data-fill` / `data-color` and ignores the styles.
+ */
+function styleTables(dom: DocumentFragment): void {
+  for (const table of dom.querySelectorAll('table')) table.style.borderCollapse = 'collapse'
+  for (const cell of dom.querySelectorAll<HTMLElement>('th, td')) {
+    cell.style.border = '1px solid #999'
+    cell.style.padding = '4px 8px'
+    if (cell.tagName === 'TH') cell.style.fontWeight = 'bold'
+    const fill = copyFill(cellColor(cell.dataset.fill))
+    if (fill !== undefined) cell.style.backgroundColor = fill
+    const color = copyText(cellColor(cell.dataset.color))
+    if (color !== undefined) cell.style.color = color
+  }
+}
+
+/**
+ * Copied CELLS are rows: ProseMirror wraps them in a `<table>` of its own after the serializer (its
+ * `wrapMap`), made by the detached document it hands the serializer for this one copy. So that
+ * document's tables are made collapsed too. Never the page's own document.
+ */
+const collapsing = new WeakSet<Document>()
+function collapseTablesOf(doc: Document | undefined): void {
+  if (doc === undefined || doc === document || collapsing.has(doc)) return
+  collapsing.add(doc)
+  const create = doc.createElement.bind(doc)
+  doc.createElement = ((tag: string, options?: ElementCreationOptions) => {
+    const el = create(tag, options)
+    if (tag === 'table') el.style.borderCollapse = 'collapse'
+    return el
+  }) as Document['createElement']
+}
+
 /** Copy-only formats: readable text, rich HTML and explicitly requested Markdown; saves stay unchanged. */
 export const clipboardCopyOut = $prose((ctx) => {
   let copyMarkdown: ((slice: Slice, view: EditorView) => string) | undefined
@@ -150,6 +206,8 @@ export const clipboardCopyOut = $prose((ctx) => {
     clipboardSerializer.serializeFragment = (fragment, options, target) => {
       const dom = serializeFragment(fragment, options, target)
       dom.firstElementChild?.setAttribute(APP_CLIPBOARD, 'true')
+      if (dom instanceof DocumentFragment) styleTables(dom)
+      collapseTablesOf(options?.document)
       return dom
     }
     return {

@@ -14,7 +14,7 @@ import { canJoin, canSplit } from '@milkdown/kit/prose/transform'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from '../createCrepe'
 import { random } from '../testRandom'
-import { findNestedLists, findOwnImages, itemLabelText } from './listNodes'
+import { findFoldedChildren, findOwnImages, itemLabelText } from './listNodes'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { HEADING_TOGGLE_CLASS } from './headingFolding'
 import { OUTLINE_TOGGLE_CLASS } from './outlineFolding'
@@ -73,9 +73,9 @@ function fullScan(doc: ProseNode) {
   const labelOccurrences = new Map<string, number>()
   doc.descendants((node, itemPos) => {
     if (node.type.name !== 'list_item') return true
-    const nestedLists = findNestedLists(node)
+    const foldedChildren = findFoldedChildren(node) // lists and tables (YAZ-3696 D11)
     const images = findOwnImages(node)
-    if (nestedLists.length === 0 && images.length === 0) return true
+    if (foldedChildren.length === 0 && images.length === 0) return true
     const label = itemLabelText(node)
     const keyLabel = outlineFoldLabel(label)
     const occurrence = labelOccurrences.get(keyLabel) ?? 0
@@ -84,7 +84,7 @@ function fullScan(doc: ProseNode) {
       foldKey: getOutlineFoldKey(label, occurrence),
       itemPos,
       label,
-      nestedListRanges: nestedLists.map(({ list, offset }) => ({ from: itemPos + 1 + offset, to: itemPos + 1 + offset + list.nodeSize })),
+      foldedRanges: foldedChildren.map(({ list, offset }) => ({ from: itemPos + 1 + offset, to: itemPos + 1 + offset + list.nodeSize })),
       imageRanges: images.map(({ node: image, offset }) => ({ from: itemPos + 1 + offset, to: itemPos + 1 + offset + image.nodeSize })),
     })
     return true

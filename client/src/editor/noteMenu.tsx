@@ -5,7 +5,7 @@
  * image menu (Copy Image, Reveal in Finder). Each clipboard row first gives the focus back to what
  * held it (the note, or a code block in it), then asks main to run the row on this window
  * (`menu.edit`), as the native menu's roles do. A suggestion replaces the word in the note itself,
- * so ⌘Z undoes it like typing. A right-click a link's own menu took (the one link menu, YAZ-3609 D23) opens
+ * so ⌘Z undoes it like typing. A right-click in a table cell adds the Table part after the paste rows (YAZ-3769, `table/tableMenu.ts`). A right-click a link's own menu took (the one link menu, YAZ-3609 D23) opens
  * only that menu. With words selected, "Add link…" opens the link box on them (YAZ-3609 D17). Copy as › Without folded lines with the selection inside one line
  * copies the bullet under the pointer: its line and the lines you see under it.
  */
@@ -15,6 +15,7 @@ import type { NoteMenuAction } from '@shared/types'
 import { api } from '../api'
 import { bulletToCopy, copyVisibleNext, forgetCopyVisible } from './clipboardCopyOut'
 import { addLinkOn } from './markdownLink'
+import { TABLE_HANDLE_MENU, tableMenuSections } from './table/tableMenu'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuSection } from '../sidebar/menuSections'
 
@@ -127,6 +128,8 @@ export function noteMenuSections(view: EditorView, misspelling: Misspelling | nu
         ],
       },
     ],
+    // The Table part (YAZ-3769 D5): a right-click in a cell of an editable note.
+    ...tableMenuSections(view, pointer),
     // Selected words can become a link (YAZ-3609 D17): a web address or a path. Only where the note can change.
     // After the menu closes and gives the note its focus back, so the link box keeps the focus it takes.
     empty || !editable ? [] : [{ id: 'add-link', label: 'Add link…', onSelect: () => void window.setTimeout(() => addLinkOn(view, words)) }],
@@ -144,7 +147,9 @@ interface OpenMenu {
   focused: HTMLElement | null
 }
 
-/** The menu for `view`'s note: a right-click in the note opens it; nothing renders while it is shut. */
+export { TABLE_HANDLE_MENU }
+
+/** The menu for `view`'s note: a right-click in the note, or a table handle, opens it; nothing renders while it is shut. */
 export function NoteMenu({ view }: { view: EditorView | null }) {
   const [menu, setMenu] = useState<OpenMenu | null>(null)
   useEffect(() => {
@@ -163,8 +168,19 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
         focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null,
       })
     }
+    // A table's row or column handle (YAZ-3820): it selected its cells, and asks for this menu as a
+    // right-click in `pos`, a cell of its row or column (the vendored table block, `operation.ts`).
+    const onHandleMenu = (event: Event) => {
+      const { x, y, pos } = (event as CustomEvent<{ x: number; y: number; pos: number }>).detail
+      const active = document.activeElement
+      setMenu({ x, y, misspelling: null, pointer: pos + 1, doc: view.state.doc, focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null })
+    }
     view.dom.addEventListener('contextmenu', onContextMenu)
-    return () => view.dom.removeEventListener('contextmenu', onContextMenu)
+    view.dom.addEventListener(TABLE_HANDLE_MENU, onHandleMenu)
+    return () => {
+      view.dom.removeEventListener('contextmenu', onContextMenu)
+      view.dom.removeEventListener(TABLE_HANDLE_MENU, onHandleMenu)
+    }
   }, [view])
   if (view === null || menu === null) return null
   const refocus = () => (menu.focused ?? view.dom).focus()

@@ -655,6 +655,16 @@ button {
   overflow-x: auto;
 }
 
+/* Column resize (YAZ-3696 D2): the grip at a header cell's edge (YAZ-3800) takes the theme colour
+   (prosemirror-tables draws it light blue). The table block's drop line (it has no "+" button since
+   YAZ-3800) lets the mouse through to the cells. */
+.editor-instance .milkdown .milkdown-table-block .column-resize-handle {
+  background-color: var(--crepe-color-primary);
+}
+.editor-instance .milkdown .milkdown-table-block .line-handle {
+  pointer-events: none;
+}
+
 /* The block handle's plus is noise — Enter at line end does the same (GRO-2025).
    First .operation-item is the plus, last is the 6-dot drag handle (Crepe renders exactly two). */
 .editor-instance .milkdown .milkdown-block-handle .operation-item:first-child {
