@@ -39,6 +39,9 @@
  *    line end, or on a line of its own, is ONE break with the line ending beside it.
  *  - Marks on line breaks (YAZ-2280, `breakMarks.ts`): replaces Milkdown's `hardbreakClearMarkPlugin`;
  *    a mark runs through a soft break, never starts or ends on one, and never sits on a hard break.
+ *  - Text that ends in whitespace (YAZ-3727 B5, `textStringify.ts`): replaces Milkdown's `text` stringify handler, which
+ *    wrote such text raw, so a line that is only `1. ` or `# ` reloaded as a list or a heading. Ours escapes the text and
+ *    keeps the trailing whitespace raw (never `&#x20;`), as Milkdown did.
  *  - List markers (YAZ-3727 D2, `outline/listMarkers.ts`): replaces Milkdown's `syncListOrderPlugin`; each item's
  *    marker follows its list, and a change visits only the lists it touched.
  *  - Zoom into a bullet (GRO-2029, `outline/zoom.ts`): view-state-only decorations + breadcrumbs;
@@ -84,9 +87,11 @@
  *    capture-suppresses Crepe's right-button mousedown/mouseup so the selection/focus don't jump.
  *    First row: Number children ↔ Bullet children (YAZ-729, `outline/numberChildrenRow.ts`),
  *    disabled when the item has no direct child list.
- *  - Numbers are manual-only (YAZ-793/YAZ-1329): right-click Number children is the only editor
- *    conversion command. The `1. ` input rule, `Mod-Alt-7` keymap and slash-menu Ordered List row
- *    are removed; real ordered Markdown still parses, and `* 6) text` stays literal bullet text.
+ *  - Typing a list marker (YAZ-3727 D8, D9, `listMarkerTyping.ts`): replaces Milkdown's `1. ` and `* ` input rules. A
+ *    typed space after `n.` or `*` / `-` / `+` at the start of a PLAIN line goes in as text, then the line becomes a list
+ *    line as its own undo step; ⌘Z or Backspace right after gives back the plain text. Never on Enter; inside a list
+ *    item the marker stays text (`* 6) text` stays literal bullet text, YAZ-1329). Right-click Number children is the
+ *    one command that numbers children; the `Mod-Alt-7` keymap and the slash-menu Ordered List row stay removed.
  *  - Drawing slash item (YAZ-877, `drawingMenu.ts`): rides Crepe's OWN BlockEdit menu via
  *    `featureConfigs[BlockEdit].buildMenu` — never a parallel slash plugin. Registered only when
  *    `opts.drawing` supplies the creator; the shared config always omits Ordered List.
@@ -127,8 +132,9 @@
  *    the clipboard plugin's — and it declines whenever the HTML payload has real list markup.
  *  - Paste modes (YAZ-1394, `clipboardPaste.ts`): native Plain text/Markdown requests target the
  *    focused editor; external standalone paragraph separators keep one blank paragraph each.
- *    Normal external paste keeps number labels literal (YAZ-1429); explicit Markdown and
- *    app-identified rich clipboard slices retain intentional ordered lists.
+ *    Normal external paste keeps a plain `1.`, `2.`, … list (a plain decimal `<ol>`) as real numbers (YAZ-3727 D6);
+ *    any other label (`3)`, `09.`, gaps, repeats, `a.`) stays literal text (YAZ-1429), and so does every label in the
+ *    folder outline. Explicit Markdown and app-identified rich clipboard slices retain intentional ordered lists.
  *  - Copy-out (`clipboardCopyOut.ts`): normal Copy provides readable text and rich HTML with
  *    explicit empty lines. Copy as chooses plain text or Markdown; saves stay intact (YAZ-1443).
  *  - Images (YAZ-1656, `image/imageView.ts`): the FIRST node view in the codebase, on the commonmark
@@ -187,6 +193,7 @@ import {
   remarkPreserveEmptyLinePlugin,
   syncListOrderPlugin,
   turnIntoTextCommand,
+  wrapInBulletListInputRule,
   wrapInHeadingCommand,
   wrapInOrderedListInputRule,
 } from '@milkdown/kit/preset/commonmark'
@@ -218,6 +225,7 @@ import {
 import { underline } from './marks/underline'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
 import { inlineBreaks } from './inlineBreaks'
+import { textStringify } from './textStringify'
 import { lineStyle } from './line/lineStyle'
 import { lineView } from './line/lineView'
 import { lineRows } from './line/lineRows'
@@ -241,6 +249,7 @@ import { obsidianHotkeys } from './outline/hotkeys'
 import { caretReveal, foldHistory } from './outline/foldReveal'
 import { enterTracker, outlinerKeymap } from './outline/listCommands'
 import { listMarkers } from './outline/listMarkers'
+import { listMarkerTyping, undoListMarker } from './listMarkerTyping'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
 import { openBulletRow } from './outline/openBulletRow'
@@ -468,6 +477,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // Milkdown's break plugin turns soft breaks hard under any new mark (YAZ-2280); ours replaces it.
   void crepe.editor.remove(hardbreakClearMarkPlugin)
   crepe.editor.use(breakMarks)
+  // Milkdown's text handler saves a line that is only `1. ` or `# ` raw, so it reloads as a list or a heading (YAZ-3727 B5); ours escapes it.
+  crepe.editor.config(textStringify)
   // Milkdown's list-number plugin walks the whole note on each change and fixes numbered lists only (YAZ-3727 D2); ours replaces it.
   void crepe.editor.remove(syncListOrderPlugin)
   crepe.editor.use(listMarkers)
@@ -530,9 +541,10 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(clipboardCopyOut)
   crepe.editor.use(copyVisibleHotkey)
   crepe.editor.use(blockHandleGate)
-  // Numbers are manual-only (YAZ-793/YAZ-1329): only the explicit block-handle command creates
-  // ordered children. Typing, slash-menu and keyboard conversion paths are all absent.
-  void crepe.editor.remove([wrapInOrderedListInputRule, ...orderedListKeymap])
+  // YAZ-3727 D8, D9: Milkdown's list typing rules fire inside bullets and on Enter, and undo badly; ours
+  // replace them (plain lines, a typed space, a clean undo). Mod-Alt-7 and the slash-menu row stay absent.
+  void crepe.editor.remove([wrapInOrderedListInputRule, wrapInBulletListInputRule, ...orderedListKeymap])
+  crepe.editor.use(listMarkerTyping).use(undoListMarker)
   // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its children (Number children),
   // then a line's pickers (YAZ-3164 D3). A new row joins its group.
   crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...numberChildrenRow(view, target, ctx), ...lineRows(view, target, ctx)]))

@@ -2,7 +2,7 @@
    `.obsidian/snippets/google-docs-bullets.css`: ● solid circle / ○ ring / ■ square, repeating
    every three levels; 2.15em indent per level; marker colour 78% of the text colour.
    Visual only — markdown untouched. Crepe's DOM: `div.milkdown-list-item-block > li.list-item >
-   .label-wrapper > span.label.bullet > svg` (bullet) / `span.label.ordered` (ordered, untouched).
+   .label-wrapper > span.label.bullet > svg` (bullet) / `span.label.ordered` (ordered: the bullets' marker colour, YAZ-3727 D7).
    Depth = nesting of `.milkdown-list-item-block` (ordered levels count too, as in Obsidian).
    Colours derive from `currentColor` / Crepe tokens, so any Crepe theme (light/dark) works.
    Selectors are prefixed with `.editor-instance` to outrank Crepe's theme regardless of CSS order. */
@@ -80,6 +80,12 @@
 
 .editor-instance .milkdown .milkdown-list-item-block > li > .label-wrapper > .label.bullet > svg {
   display: none;
+}
+
+/* Numbers are first-class markers (YAZ-3727 D7): the bullets' colour, not Crepe's grey outline, so
+   threading's accent reaches them too. */
+.editor-instance .milkdown .milkdown-list-item-block > li > .label-wrapper > .label.ordered {
+  color: var(--list-marker-color);
 }
 
 /* Levels 1 and 4 (and the default): solid circle. */

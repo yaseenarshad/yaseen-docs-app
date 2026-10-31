@@ -4,7 +4,7 @@ import { Fragment, Slice, type Node as ProseNode } from '@milkdown/kit/prose/mod
 import { Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { CLIPBOARD_EMPTY_PARAGRAPH } from './clipboardCopyOut'
-import { externalNumberedHTML, literalNumberedHTML, parseLiteralNumberedPaste } from './clipboardNumbers'
+import { externalNumberedHTML, holdsNumbers, literalNumberedHTML, parseLiteralNumberedPaste } from './clipboardNumbers'
 import { imageOptionsOf } from './image/imageOptions'
 import { imageFile, insertPastedImage } from './image/insertImage'
 import { normalizeEmptyItems } from './listItemRoundTrip'
@@ -46,7 +46,7 @@ function normalizeParagraphSeparators(html: string): string {
 export const clipboardPaste = $prose((ctx) => {
   ctx.update(editorViewOptionsCtx, prev => ({
     ...prev,
-    transformPastedHTML: (html, view) => literalNumberedHTML(normalizeParagraphSeparators(prev.transformPastedHTML?.(html, view) ?? html)),
+    transformPastedHTML: (html, view) => literalNumberedHTML(normalizeParagraphSeparators(prev.transformPastedHTML?.(html, view) ?? html), holdsNumbers(view.state.schema)),
     handlePaste: (view, event, slice) => {
       if (!view.editable) return true
       // Image BYTES win over markup (YAZ-1656 / YAZ-1662, D6): a screenshot on the clipboard is
