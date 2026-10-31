@@ -425,6 +425,15 @@ function touches(sel: Selection, from: number, to: number): boolean {
   return sel.from <= to && sel.to >= from
 }
 
+/**
+ * Does the selection open the `[[inner]]` at `from`..`to` (raw, editable syntax)? A link the caret is inside or next to
+ * opens; an ID link that shows its title opens only with the selection strictly inside it: "Edit link" (YAZ-3744 D1).
+ * `showsTitle` (a resolve and a title lookup) runs only for a link the selection touches: most links do not.
+ */
+function opens(sel: Selection, from: number, to: number, inner: string, source: WikilinkResolveSource): boolean {
+  return touches(sel, from, to) && (!showsTitle(inner, source) || (sel.from > from && sel.to < to))
+}
+
 /** One textblock's link decorations: the unit of both the full build and the incremental update. */
 function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Selection, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook, vaultsOf?: VaultsOfLetters): void {
   eachPlainRun(block, pos + 1, (text, runPos) => {
@@ -432,8 +441,7 @@ function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Se
       if (m[1] === '!') continue // embeds are someone else's (or nobody's) business
       const from = runPos + m.index
       const to = from + m[0].length
-      // An ID link that shows its title opens only with the selection strictly inside it: "Edit link" (YAZ-3744 D1).
-      if (showsTitle(m[2], source) ? sel.from > from && sel.to < to : touches(sel, from, to)) continue // caret inside/adjacent → raw, editable syntax
+      if (opens(sel, from, to, m[2], source)) continue // caret inside/adjacent → raw, editable syntax
       decorate(out, from, m[2], source, viewOnly, look, vaultsOf)
     }
   })
@@ -464,7 +472,7 @@ export function pillLinks(block: ProseNode, pos: number, sel: Selection, source:
       if (m[1] === '!') continue
       const from = runPos + m.index
       const to = from + m[0].length
-      if (showsTitle(m[2], source) ? sel.from > from && sel.to < to : touches(sel, from, to)) continue
+      if (opens(sel, from, to, m[2], source)) continue
       const drawn: Decoration[] = []
       decorate(drawn, from, m[2], source, viewOnly)
       if (drawn.length === 0) continue
