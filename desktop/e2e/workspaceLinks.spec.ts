@@ -139,9 +139,10 @@ test('step 1e — a rest on a pill into the other vault previews its note, as a 
 })
 
 test('step 1f — a pill into the other vault names it (D22); a pill and a [[link]] give the same right-click menu (D23)', async () => {
-  const last = editorOf(win).locator('.link-pill--last', { hasText: 'the gym plan' })
-  await expect(last).toHaveAttribute('data-vault', PERSONAL)
-  expect(await last.evaluate((el) => getComputedStyle(el, '::after').content)).not.toBe('none')
+  // The vault's name is a piece of the pill (YAZ-3738 D4): the `link-pill__vault` widget inside the link, not a `::after`.
+  const vault = editorOf(win).locator('a', { hasText: 'the gym plan' }).locator('.link-pill__vault')
+  await expect(vault).toHaveCount(1)
+  expect(await vault.textContent()).toBe(` (${PERSONAL})`)
   expect(await editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).evaluate((el) => getComputedStyle(el, '::after').content)).toBe('none')
   const rows = () => win.locator('.ctx-menu--editor .ctx-menu__item').allTextContents()
   // The one link menu of a page that is there (YAZ-3740): no "Copy link"; "Open in" is the parent of its flyout.
