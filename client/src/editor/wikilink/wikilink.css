@@ -104,6 +104,11 @@
    editor's own selection colour (Crepe's reset.css). */
 .wikilink.wikilink--selected {
   background: var(--crepe-color-selected);
+  /* As tall as the browser's selection, which fills the line (1lh); a pill's own box is only its letters (the system
+     font's ascent and descent, 1.19em). Vertical padding on an inline box moves no text. Square, as text's selection is:
+     round corners left notches against the selected words on each side. */
+  padding-block: calc((1lh - 1.19em) / 2);
+  border-radius: 0;
 }
 .milkdown .ProseMirror .wikilink::selection,
 .milkdown .ProseMirror .wikilink *::selection {
