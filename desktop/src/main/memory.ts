@@ -197,8 +197,17 @@ export function createMemoryMeter<W extends MeterWindow>(host: MemoryHost<W>, no
 
 // ---------- the memory reload (D4, D6) ----------
 
-/** A window reloads when each of its last `RELOAD_SAMPLES` samples (90 s) is over this many MB (D6). A constant: only the switch is a setting. */
-export const RELOAD_MB = 1536
+/**
+ * A window reloads when each of its last `RELOAD_SAMPLES` samples (90 s) is over this many MB (D6). A constant: only
+ * the switch is a setting. The demo and the perf harness may set it lower with `YASEEN_DOCS_RELOAD_MB`, read only under
+ * `YASEEN_DOCS_E2E=1`, as `YASEEN_DOCS_TAB_SLEEP_SECONDS` is.
+ */
+export const RELOAD_MB = reloadMbFromEnv(process.env) ?? 1536
+
+export function reloadMbFromEnv(env: NodeJS.ProcessEnv): number | undefined {
+  const mb = Number(env.YASEEN_DOCS_RELOAD_MB)
+  return env.YASEEN_DOCS_E2E === '1' && mb > 0 ? mb : undefined
+}
 export const RELOAD_SAMPLES = 3
 /** A window reloads only when it lost the focus this long ago (D6). */
 export const RELOAD_QUIET_MS = 60_000

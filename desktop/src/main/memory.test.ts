@@ -1,7 +1,7 @@
 /** The memory meter (YAZ-3737 D1): what a window counts, its history, "grew" and the code helpers. */
 import { describe, expect, it, vi } from 'vitest'
 import { MEMORY_SAMPLE_MS, type StartView } from '@shared/types'
-import { GREW_SPAN_MS, HISTORY, RELOAD_COOLDOWN_MS, RELOAD_MB, RELOAD_QUIET_MS, createMemoryMeter, createReloadWatch, grewSince, helperRss, mayReload, openText, type MemoryHost, type MemorySample, type MeterProcess, type ReloadFacts, type ReloadHost } from './memory'
+import { GREW_SPAN_MS, HISTORY, RELOAD_COOLDOWN_MS, RELOAD_MB, RELOAD_QUIET_MS, createMemoryMeter, createReloadWatch, grewSince, helperRss, mayReload, openText, reloadMbFromEnv, type MemoryHost, type MemorySample, type MeterProcess, type ReloadFacts, type ReloadHost } from './memory'
 
 const MB = 1024 * 1024
 
@@ -114,6 +114,12 @@ describe('the memory reload (YAZ-3737 D4, D6)', () => {
   const BIG = RELOAD_MB + 1
   /** A window that may reload: every rule passes. */
   const ok: ReloadFacts = { on: true, blurredAt: NOW - RELOAD_QUIET_MS, lastFocused: false, busy: false, ring: ring(BIG, BIG, BIG), reloadedAt: undefined }
+
+  it('the demo budget: YASEEN_DOCS_RELOAD_MB counts only under YASEEN_DOCS_E2E=1', () => {
+    expect(reloadMbFromEnv({ YASEEN_DOCS_E2E: '1', YASEEN_DOCS_RELOAD_MB: '150' })).toBe(150)
+    expect(reloadMbFromEnv({ YASEEN_DOCS_RELOAD_MB: '150' })).toBeUndefined()
+    expect(reloadMbFromEnv({ YASEEN_DOCS_E2E: '1', YASEEN_DOCS_RELOAD_MB: 'x' })).toBeUndefined()
+  })
 
   it('mayReload: each rule of D6 alone stops it', () => {
     expect(mayReload(ok, NOW)).toBe(true)
