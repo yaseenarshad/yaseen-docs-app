@@ -83,6 +83,23 @@ describe('mergeExternalMarkdown (YAZ-3704 D1)', () => {
     expect(mergeExternalMarkdown(crepe, base, getMarkdownForSave(crepe))).toBe('unchanged')
   })
 
+  it('a task the outside edit ticks is a conflict when you type in it, and merges when you type in another (D2, checker 4D)', async () => {
+    const base = '- [ ] task one\n- [ ] task two\n'
+    const { crepe } = await mount(base)
+    typeBefore(crepe, 'task one', 'USER-')
+    expect(mergeExternalMarkdown(crepe, base, base.replace('[ ] task one', '[x] task one'))).toBe('conflict')
+    expect(mergeExternalMarkdown(crepe, base, base.replace('[ ] task two', '[x] task two'))).toBe('merged')
+    expect(getMarkdownForSave(crepe)).toContain('USER-task one')
+    expect(getMarkdownForSave(crepe)).toContain('[x] task two')
+  })
+
+  it('a heading level the outside edit changes is a conflict when you type in that heading (D2, checker 4D)', async () => {
+    const base = '## Plan\n\nBody\n'
+    const { crepe } = await mount(base)
+    typeBefore(crepe, 'Plan', 'USER-')
+    expect(mergeExternalMarkdown(crepe, base, base.replace('## Plan', '### Plan'))).toBe('conflict')
+  })
+
   it('merges an outside edit of another line: both edits stay', async () => {
     const { crepe } = await mount()
     typeBefore(crepe, 'Child', 'USER-')

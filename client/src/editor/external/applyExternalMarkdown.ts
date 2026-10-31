@@ -87,7 +87,7 @@ export const replaceTracked = (tr: Transform, ranges: readonly ReplaceRange[], o
 }
 
 /** The content of the node at `pos` when it is a textblock, else of its first textblock (an item's first line). */
-const firstLineOf = (doc: ProseNode, pos: number): { from: number; to: number } | null => {
+export const firstLineOf = (doc: ProseNode, pos: number): { from: number; to: number } | null => {
   const node = doc.nodeAt(pos)
   if (node === null) return null
   if (node.isTextblock) return { from: pos + 1, to: pos + 1 + node.content.size }

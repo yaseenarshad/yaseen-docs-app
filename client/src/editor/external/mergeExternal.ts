@@ -11,8 +11,9 @@
  *  - a rewrite: one outside range covers `REWRITE_SHARE` of the note — the rule `applyExternalMarkdown`
  *    rebuilds on, so a rewrite never lands as one huge glow with every fold mapped onto one point;
  *  - D2: a range of yours and a range of theirs touch the same block (line, bullet, heading, cell)
- *    — "the AI rewrote the line you are typing in" must never merge silently. An attr change alone (a
- *    heading's id, a number, a task ticked) touches no block: the order check below still guards it;
+ *    — "the AI rewrote the line you are typing in" must never merge silently. An attr change that you
+ *    can see (a task ticked, a heading's level) is in its node's first line, as its glow is; one of only
+ *    derived attrs (a number, a heading's id) touches no line: the order check below still guards it;
  *  - the two orders disagree: yours mapped over theirs, applied on THEIRS, must give the same doc as
  *    theirs mapped over yours, applied on YOURS. A merge that depends on its order is a guess.
  *
@@ -24,11 +25,15 @@ import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Transform } from '@milkdown/kit/prose/transform'
 import { normalizeEmptyItems } from '../listItemRoundTrip'
-import { EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, replaceTracked, REWRITE_SHARE, withTrailingParagraphOf } from './applyExternalMarkdown'
+import { EXTERNAL_EDIT_META, firstLineOf, OUTSIDE_RANGES_META, replaceTracked, REWRITE_SHARE, withTrailingParagraphOf } from './applyExternalMarkdown'
 import { diffDocs, onlyDerived, type ReplaceRange } from './diffDocs'
 
-/** The span of the textblock a range touches; a range between blocks (a bullet added or removed) stays as it is. */
-const blockSpan = (doc: ProseNode, { from, to }: ReplaceRange): { from: number; to: number } => {
+/**
+ * The span of the textblock a range touches; a range between blocks (a bullet added or removed) stays as it is.
+ * An attr range is its node's first line (a ticked task's text, a heading's text).
+ */
+const blockSpan = (doc: ProseNode, { from, to, attrs }: ReplaceRange): { from: number; to: number } => {
+  if (attrs !== undefined) return firstLineOf(doc, from) ?? { from, to }
   const $from = doc.resolve(from)
   const $to = doc.resolve(to)
   return { from: $from.parent.isTextblock ? $from.start() : from, to: $to.parent.isTextblock ? $to.end() : to }
@@ -36,9 +41,9 @@ const blockSpan = (doc: ProseNode, { from, to }: ReplaceRange): { from: number; 
 
 /** D2: a range of yours and a range of theirs in ONE block, or touching, is a conflict. */
 const touchSameBlock = (base: ProseNode, mine: readonly ReplaceRange[], theirs: readonly ReplaceRange[]): boolean => {
-  const theirSpans = theirs.filter((range) => range.attrs === undefined).map((range) => blockSpan(base, range))
+  const theirSpans = theirs.filter((range) => !onlyDerived(range)).map((range) => blockSpan(base, range))
   return mine.some((range) => {
-    if (range.attrs !== undefined) return false
+    if (onlyDerived(range)) return false
     const a = blockSpan(base, range)
     return theirSpans.some((b) => a.from <= b.to && b.from <= a.to)
   })
