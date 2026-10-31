@@ -34,7 +34,7 @@ export const NOTE_KEYS: readonly KeyRow[] = [
   note('quote', 'Quote', []),
   note('codeBlock', 'Code block', ['CmdOrCtrl+Alt+C']),
   note('bulletList', 'Bullet list', ['CmdOrCtrl+Alt+8']),
-  note('cycleTask', 'Cycle bullet → task → done', ['CmdOrCtrl+Enter'], { hint: 'In a table: leave the table' }),
+  note('cycleTask', 'Cycle bullet → task → done', ['CmdOrCtrl+Enter'], { hint: 'On text or a heading outside a bullet: strikes the line through. In a table: leave the table' }),
   // The outline.
   note('indent', 'Indent bullet', ['CmdOrCtrl+]'], { hint: 'In a table: the next cell' }),
   note('outdent', 'Outdent bullet', ['CmdOrCtrl+['], { hint: 'In a table: the cell before' }),
@@ -57,7 +57,7 @@ export const NOTE_KEYS: readonly KeyRow[] = [
   note('enter', 'New line, or a new bullet', ['Enter'], { hint: 'In a pop-up: pick the row', builtIn: true }),
   note('lineBreak', 'Line break inside the block', ['Shift+Enter'], { builtIn: true }),
   note('tab', 'Indent / outdent bullet', ['Tab', 'Shift+Tab'], { hint: 'In a table: the next / previous cell', builtIn: true }),
-  note('delete', 'Delete backward / forward', ['Backspace', 'Delete', 'Shift+Backspace', 'Control+H', 'Control+D'], { hint: 'At the start of a heading: a level down', builtIn: true }),
+  note('delete', 'Delete backward / forward', ['Backspace', 'Delete', 'Shift+Backspace', 'Control+H', 'Control+D'], { hint: "Backspace at a line's start or Delete at its end: joins two lines (the upper format wins)", builtIn: true }),
   note('deleteMore', 'Delete backward / forward, then join the blocks', ['CmdOrCtrl+Backspace', 'Alt+Backspace', 'CmdOrCtrl+Delete', 'Alt+Delete', 'Control+Alt+Backspace', 'Alt+D'], { builtIn: true }),
   note('lineStartEnd', 'Select to the start / end of the block', ['Control+A', 'Control+E'], { builtIn: true }),
   note('selectLines', 'Select to the start / end of this line, then one whole line per press', ['Shift+Up', 'Shift+Down'], { builtIn: true }),
