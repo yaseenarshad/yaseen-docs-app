@@ -383,8 +383,9 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
         view: (editorView) => {
           const unbind = channel.bind(createController(editorView))
           /**
-           * The title widgets this search marked (S9). Marked again after each update: a redraw can keep a widget (same
-           * title) or make a new one. ProseMirror ignores a widget's class changes (no DOM read, no transaction).
+           * The title widgets this search marked (S9). Marked again when the find state or the doc changed, or when a redraw
+           * took a marked widget away (a new one has no classes); not on each caret move (YAZ-3910 A12). ProseMirror ignores
+           * a widget's class changes (no DOM read, no transaction).
            */
           let marked: HTMLElement[] = []
           const markTitles = (matches: readonly Match[], activeIndex: number) => {
@@ -402,9 +403,10 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
             })
           }
           // An edit under an open find changes the count without anyone asking; the bar hears it here.
-          const sync = () => {
-            const { matches, activeIndex } = findKey.getState(editorView.state) ?? EMPTY
-            markTitles(matches, activeIndex)
+          const sync = (_view: EditorView, prevState: EditorState) => {
+            const find = findKey.getState(editorView.state) ?? EMPTY
+            const { matches, activeIndex } = find
+            if (find !== findKey.getState(prevState) || editorView.state.doc !== prevState.doc || marked.some((el) => !el.isConnected)) markTitles(matches, activeIndex)
             channel.sync({ total: matches.length, activeIndex })
           }
           return { update: sync, destroy: unbind }
