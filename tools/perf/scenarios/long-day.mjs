@@ -34,6 +34,11 @@ const OPEN_TIMEOUT_MS = 90_000
 const MB = 1024 * 1024
 const mb = (bytes) => Math.round((bytes / MB) * 10) / 10
 const LAYER = '.tabstack__layer:not(.tabstack__layer--hidden)'
+/**
+ * Every long-day profile turns the memory reload off (YAZ-3915): a window over 1.5 GB that is not in front would
+ * reload in the middle of the run (YAZ-3866 D6), and the numbers would measure the reload, not the day.
+ */
+export const SETTINGS = { memoryReload: false }
 
 /**
  * The 20 files a cycle opens, in open order: 1k and 5k bullet notes, a 5k prose note, twelve 200-line notes, a
@@ -282,9 +287,9 @@ export async function run(app, fx) {
   const { vault, emptyVault, home, files, cycles, snapshots, dir } = fx
   const homeRow = js(row(home))
   // S11 on an empty vault: one window, no tab.
-  const bare = await session(app, { profile: path.join(dir, 'profile-empty'), wins: [{ id: 'w1', root: emptyVault, tabs: [] }], hidden: true }, (s) => baseCost(s, `document.querySelector('.tabbar') !== null`))
+  const bare = await session(app, { profile: path.join(dir, 'profile-empty'), wins: [{ id: 'w1', root: emptyVault, tabs: [] }], hidden: true, settings: SETTINGS }, (s) => baseCost(s, `document.querySelector('.tabbar') !== null`))
   // S11 on the vault: a window with one tab (w1) and a window with none (w2).
-  const base = await session(app, { profile: path.join(dir, 'profile-base'), wins: [{ id: 'w1', root: vault, tabs: [home] }, { id: 'w2', root: vault, tabs: [] }], doc: 'Home', hidden: true, timeoutMs: 60_000 }, (s) =>
+  const base = await session(app, { profile: path.join(dir, 'profile-base'), wins: [{ id: 'w1', root: vault, tabs: [home] }, { id: 'w2', root: vault, tabs: [] }], doc: 'Home', hidden: true, settings: SETTINGS, timeoutMs: 60_000 }, (s) =>
     baseCost(s, `document.querySelector(${homeRow}) !== null`),
   )
   const s11 = {
@@ -301,7 +306,7 @@ export async function run(app, fx) {
   }
   console.error(`long-day S11: ${JSON.stringify(s11)}`)
 
-  return session(app, { profile: path.join(dir, 'profile'), wins: [{ id: 'w1', root: vault, tabs: [home] }], doc: 'Home', hidden: true, timeoutMs: 60_000 }, async ({ proc, page }) => {
+  return session(app, { profile: path.join(dir, 'profile'), wins: [{ id: 'w1', root: vault, tabs: [home] }], doc: 'Home', hidden: true, settings: SETTINGS, timeoutMs: 60_000 }, async ({ proc, page }) => {
     await page.waitFor(`document.querySelector(${homeRow}) !== null`, 30_000)
     // draw.io's first `load` message after each open marks the diagram on screen (as the drawio scenario does).
     await page.ev(`window.addEventListener('message', (e) => { if (typeof e.data === 'string' && e.data.includes('"event":"load"')) window.__drawioLoad ??= performance.now() })`)

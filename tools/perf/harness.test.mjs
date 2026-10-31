@@ -55,7 +55,7 @@ describe('perf ceilings (YAZ-3044 A19)', () => {
     expect(summarizeRuns([{ r: 1.144 }, { r: 123.44 }]).r).toMatchObject({ min: 1.14, max: 123.4 })
   })
 
-  it('budget.json holds long-day\'s four ceilings at tolerance 0: ratio 1.1, slope 1 MB per cycle, renderer RSS and footprint (YAZ-3737 D7, YAZ-3862)', () => {
+  it('budget.json holds long-day\'s four ceilings and long-day-open\'s one at tolerance 0: ratio 1.1, slope 1 MB per cycle, renderer RSS and footprint, heap after a wake (YAZ-3737 D7, YAZ-3862, YAZ-3915)', () => {
     const { perf } = JSON.parse(fs.readFileSync(new URL('./budget.json', import.meta.url), 'utf8'))
     expect(perf['long-day.heapEndOverStartRatio']).toMatchObject({ max: 1.1, tolerance: 0 })
     expect(perf['long-day.heapSlopeMbPerCycle']).toMatchObject({ max: 1, tolerance: 0 })
@@ -63,8 +63,10 @@ describe('perf ceilings (YAZ-3044 A19)', () => {
     expect(perf['long-day.rendererRssEndMb'].max).toBeGreaterThan(0)
     expect(perf['long-day.rendererFootprintEndMb']).toMatchObject({ tolerance: 0 })
     expect(perf['long-day.rendererFootprintEndMb'].max).toBeGreaterThan(0)
+    // long-day-open's one row (YAZ-3915): the JS heap with the tabs asleep and one woken; RSS swings with memory pressure.
+    expect(perf['long-day-open.heapAfterWakeMb']).toMatchObject({ max: 55, tolerance: 0 })
     // None is load-sensitive: the names end in neither Ms, Sec nor Pct.
-    expect(Object.keys(perf).filter((k) => k.startsWith('long-day.') && loadSensitive(k))).toEqual([])
+    expect(Object.keys(perf).filter((k) => k.startsWith('long-day') && loadSensitive(k))).toEqual([])
   })
 
   it('budget.json keeps Draw\'s draw.io open ceiling (YAZ-3028 D5)', () => {
@@ -118,6 +120,14 @@ describe('fixtures', () => {
     const s = JSON.parse(fs.readFileSync(path.join(profile, 'yaseendocs.json'), 'utf8'))
     expect(s.windows.map((w) => [w.id, w.file, w.sidebarLens])).toEqual([['w1', '/v/a.md', 'files'], ['w2', null, 'files']])
     expect(s.recents).toHaveLength(1)
+    expect(s.settings).toEqual({})
+  })
+
+  it('long-day and long-day-open seed the memory reload off, so no reload lands in the run (YAZ-3915)', () => {
+    const profile = tmp()
+    expect(longDay.SETTINGS).toEqual({ memoryReload: false })
+    writeState(profile, [{ id: 'w1', root: '/v', tabs: [] }], longDay.SETTINGS)
+    expect(JSON.parse(fs.readFileSync(path.join(profile, 'yaseendocs.json'), 'utf8')).settings).toEqual({ memoryReload: false })
   })
 
   it('multi-vault seeds ONE window on two vaults: `roots` holds both, `root` is the first, and the tabs are of both (YAZ-2602)', () => {

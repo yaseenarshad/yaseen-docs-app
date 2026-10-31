@@ -40,13 +40,13 @@ export function claimWorkDir(dir) {
 /**
  * Writes `<profile>/yaseendocs.json` the way desktop/e2e/helpers.ts `seededState` does: one entry per
  * window (a `windows[]` entry skips the native folder dialog), each on the Files lens.
- * `wins`: `[{ id, root, tabs }]`; the active file is the first tab.
+ * `wins`: `[{ id, root, tabs }]`; the active file is the first tab. `settings`: stored settings over the defaults.
  */
-export function writeState(profile, wins) {
+export function writeState(profile, wins, settings = {}) {
   fs.mkdirSync(profile, { recursive: true })
   const state = {
     version: 1,
-    settings: {},
+    settings,
     sidebarWidth: 280,
     recents: [...new Set(wins.map((w) => w.root))].map((p) => ({ path: p, lastOpened: Date.now() })),
     windows: wins.map((w, i) => ({

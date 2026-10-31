@@ -10,8 +10,11 @@
  * point; and how long the sleep took after the last tab left the front.
  *
  * Opt-in (not in `all`), 1 run, no warm-up. The app runs HIDDEN (`YASEEN_DOCS_E2E_HIDDEN=1`) and is driven with in-page
- * events only, never `Input.dispatch*`, so it never takes the screen, mouse or keyboard. Ceilings: none in budget.json
- * yet (the lead adds `perf["long-day-open.*"]` from the first runs).
+ * events only, never `Input.dispatch*`, so it never takes the screen, mouse or keyboard. The memory reload is off in its
+ * profile (long-day's `SETTINGS`, YAZ-3915). Ceiling: `perf["long-day-open.heapAfterWakeMb"]` in budget.json (tolerance 0).
+ * Not `heapAsleepMb`: React can keep the last slept editor's hook state until its next render, so that number reads
+ * 41.9 or 66.7 MB on the same build (the 5 MB code model, YAZ-3915). The wake is a render, and after it the heap reads
+ * the same every run.
  * `npm run build && npm run perf -- long-day-open --app desktop/out/main/index.js`
  */
 import path from 'node:path'
@@ -19,7 +22,7 @@ import { helpers, sleep, usage } from '../lib/app.mjs'
 import { js, painted, row, session, tab } from '../lib/session.mjs'
 import { sentinel } from '../genVault.mjs'
 import { CODE_SHOWN } from './bigCode.mjs'
-import { setup as longDaySetup } from './long-day.mjs'
+import { SETTINGS, setup as longDaySetup } from './long-day.mjs'
 
 export const optIn = true
 export const runs = 1
@@ -71,7 +74,7 @@ export async function run(app, fx) {
   const was = process.env.YASEEN_DOCS_TAB_SLEEP_SECONDS
   process.env.YASEEN_DOCS_TAB_SLEEP_SECONDS = String(SLEEP_SECONDS)
   try {
-    return await session(app, { profile: path.join(dir, 'profile-open'), wins: [{ id: 'w1', root: vault, tabs: [home] }], doc: 'Home', hidden: true, timeoutMs: 60_000 }, async ({ proc, page }) => {
+    return await session(app, { profile: path.join(dir, 'profile-open'), wins: [{ id: 'w1', root: vault, tabs: [home] }], doc: 'Home', hidden: true, settings: SETTINGS, timeoutMs: 60_000 }, async ({ proc, page }) => {
       await page.waitFor(`document.querySelector(${js(row(home))}) !== null`, 30_000)
       if (!(await page.ev(`location.search.includes('sleepSeconds=${SLEEP_SECONDS}')`))) throw new Error('long-day-open: the build does not take YASEEN_DOCS_TAB_SLEEP_SECONDS (YAZ-3737 5A)')
       // draw.io's first `load` message after each open marks the diagram on screen (as long-day does).
