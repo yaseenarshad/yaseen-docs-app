@@ -102,26 +102,15 @@
 .editor-instance .milkdown > .ProseMirror > [data-sd='6'] { --sd: 6; }
 
 /* The lines cross the gap above a block: the outset is that block's own margin. A heading's is
-   app.css's `--edit-block-gap` × 7/6/5/4/4 for h2…h6 (an h1 is never inside a section); Crepe gives
-   a code block, a table and a quote `4px 0`. A paragraph, a list and a rule have none.
-   Those three reach 4px DOWN too, their own bottom margin, which no block after them covers. One
+   app.css's `--edit-block-gap` × 3 above and × 1 below for h2…h6 (YAZ-3794; an h1 is never inside a
+   section); Crepe gives a code block, a table and a quote `4px 0`. A paragraph, a list and a rule
+   have none. Headings and those three reach DOWN too, across their own bottom margin, which no
+   block after them covers. One
    overlap is left as it is (YAZ-2727, declined in YAZ-2736): when the caret's block is one of the
    three and a heading or another of them follows, the next block's 1px grey lies on the path's
    wider line for those 4px. A cure needs a rule that reads the block before. */
-.editor-instance .milkdown > .ProseMirror > h2[data-sd] {
-  border-image-outset: calc(var(--edit-block-gap, 4px) * 7) 0 0;
-}
-
-.editor-instance .milkdown > .ProseMirror > h3[data-sd] {
-  border-image-outset: calc(var(--edit-block-gap, 4px) * 6) 0 0;
-}
-
-.editor-instance .milkdown > .ProseMirror > h4[data-sd] {
-  border-image-outset: calc(var(--edit-block-gap, 4px) * 5) 0 0;
-}
-
-.editor-instance .milkdown > .ProseMirror > :is(h5, h6)[data-sd] {
-  border-image-outset: calc(var(--edit-block-gap, 4px) * 4) 0 0;
+.editor-instance .milkdown > .ProseMirror > :is(h2, h3, h4, h5, h6)[data-sd] {
+  border-image-outset: calc(var(--edit-block-gap, 4px) * 3) 0 var(--edit-block-gap, 4px);
 }
 
 .editor-instance .milkdown > .ProseMirror > :is(.milkdown-code-block, .milkdown-table-block, blockquote)[data-sd] {
