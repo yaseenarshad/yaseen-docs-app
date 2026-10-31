@@ -36,7 +36,7 @@
  * image is never shipped twice in one session.
  */
 import { useCallback, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse } from '@shared/types'
+import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse, PageView } from '@shared/types'
 import { unpersistedFiles } from '@shared/drawingAssets'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
@@ -45,6 +45,7 @@ import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, exportWithNotice, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
 import type { NoticeKind } from '../lib/notice'
 import { basename } from '../lib/paths'
+import { registerPageView } from '../lib/pageView'
 import { useAppliedTheme } from '../lib/theme'
 import { exportFileName } from './exportDrawing'
 import { parseSceneText, type DrawingScene } from './drawingScene'
@@ -76,6 +77,8 @@ export interface DrawingEditorProps extends DocumentHostProps {
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
+  /** The page view a woken tab or a copy starts with (YAZ-3737 D13): only its `canvas`, the pan and zoom, counts here. */
+  startView?: PageView
 }
 
 /** A loaded document: the scene the canvas opens on, and the mtime the first save guards with. */
@@ -119,7 +122,7 @@ interface DrawingHostProps extends DrawingEditorProps {
 const FORGET_PANEL = (): void => undefined
 
 /** Mounts exactly one canvas for `loaded`; its board document owns everything that writes. */
-function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, hotkeysAside, onFailed }: DrawingHostProps) {
+function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, hotkeysAside, onFailed, startView }: DrawingHostProps) {
   const theme = useAppliedTheme()
   /** The latest snapshot; read only when a save fires (see the module doc). */
   const snapshot = useRef<DrawingSnapshot | null>(null)
@@ -231,6 +234,14 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     surface.current = a
   }, [])
 
+  // This tab's page view (YAZ-3737 D13): its pan and zoom, read only when a copy or a sleep asks. A drawing has no
+  // scroll spot, folds or text size of its own.
+  useEffect(() => {
+    const host = board.hostRef.current
+    if (host === null) return
+    return registerPageView(host, () => ({ scrollTop: 0, zoomKey: null, folds: [], magnification: 100, ...(surface.current !== null && { canvas: surface.current.canvas() }) }))
+  }, [board.hostRef])
+
   /**
    * File › Export Drawing… (🔒 YAZ-1775 D3, YAZ-1821). The canvas assembles a STANDALONE scene — the whole
    * live files map, minus what only deleted elements name, embedded — and main's save sheet writes
@@ -259,6 +270,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       <div className="drawing-editor__canvas">
         <ExcalidrawSurface
           scene={loaded.scene}
+          startCanvas={startView?.canvas}
           theme={theme}
           canvasPrefs={canvasPrefs}
           onCanvasPrefsChange={onCanvasPrefsChange}

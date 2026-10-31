@@ -119,11 +119,25 @@ export interface DrawingSurfaceApi {
    * RESTORED elements handed in, never read back (a read-back races the engine's own commit).
    */
   replaceScene(scene: DrawingScene): number
+  /** The pan and zoom now (YAZ-3737 D13): what a tab that goes to sleep, or is copied, starts on again. */
+  canvas(): DrawingCanvasView
+}
+
+/** A drawing's pan and zoom (YAZ-3737 D13), as `PageView.canvas` keeps it. */
+export interface DrawingCanvasView {
+  scrollX: number
+  scrollY: number
+  zoom: number
 }
 
 export interface DrawingSurfaceProps {
   /** The scene as it came off disk; the canvas opens on it and never re-reads it. */
   scene: DrawingScene
+  /**
+   * The pan and zoom to open on (YAZ-3737 D13): a woken tab's, a copy's. Read once, at mount, in place of the
+   * fit-on-open view. Omitted = fit the whole scene.
+   */
+  startCanvas?: DrawingCanvasView
   /** The app's resolved appearance, handed to the engine as-is (a prop change re-themes live). */
   theme: 'light' | 'dark'
   /**
@@ -221,6 +235,7 @@ function engineScene(scene: DrawingScene, canvasAppState: Record<string, unknown
 
 export function ExcalidrawSurface({
   scene,
+  startCanvas,
   theme,
   canvasPrefs = DEFAULT_CANVAS_PREFS,
   onCanvasPrefsChange,
@@ -474,8 +489,10 @@ export function ExcalidrawSurface({
   // and a fresh identity on every settings write would re-render the memoized `<Excalidraw>` for
   // nothing (the #185 rule). The saved scene may sit far from the origin, so open on ALL of it
   // (Draw's 🔒 YAZ-1855 D1, fit-on-open) — `initialState.viewport`, resolved once the canvas is measured.
-  const [initialData] = useState(() => engineScene(scene, prefsToAppState(canvasPrefs)))
-  const [initialState] = useState(() => openViewport(scene) as ExcalidrawProps['initialState'])
+  // A woken tab or a copy opens where it was (YAZ-3737 D13): its pan and zoom over the file's, and no fit. Pan and
+  // zoom are never written into the file, so they are no edit (`boardAppState.ts`).
+  const [initialData] = useState(() => engineScene(scene, { ...prefsToAppState(canvasPrefs), ...(startCanvas !== undefined && { scrollX: startCanvas.scrollX, scrollY: startCanvas.scrollY, zoom: { value: startCanvas.zoom } }) }))
+  const [initialState] = useState(() => (startCanvas === undefined ? openViewport(scene) : undefined) as ExcalidrawProps['initialState'])
 
   const onChange = useCallback(
     (elements: ChangeArgs[0], appState: EngineAppState, files: ChangeArgs[2]) => {
@@ -545,6 +562,10 @@ export function ExcalidrawSurface({
         // The engine's files only grew: drop what neither the new scene nor undo can show (YAZ-3737 D14).
         api.pruneFiles()
         return version
+      },
+      canvas: () => {
+        const { scrollX, scrollY, zoom } = api.getAppState()
+        return { scrollX, scrollY, zoom: zoom.value }
       },
     })
   }, [withPanel, rail])

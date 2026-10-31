@@ -6600,3 +6600,50 @@ describe('App Files window (YAZ-3357)', () => {
     expect(bridge.window.restoreSession).toHaveBeenCalledWith('s1')
   })
 })
+
+describe('App tab sleep (YAZ-3737 5A, S18; 5B D11, S7)', () => {
+  const rightClick = (target: Element | undefined) =>
+    act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+  const tabEl = (el: HTMLElement, id: string) => el.querySelector<HTMLElement>(`.tabbar__tab[data-tab="${id}"]`)!
+  const layer = (el: HTMLElement, id: string) => el.querySelector<HTMLElement>(`.tabstack__layer[data-tab="${id}"]`)
+  const wait = (ms: number) => act(async () => {
+    await new Promise((r) => setTimeout(r, ms))
+  })
+  afterEach(() => history.replaceState(null, '', location.pathname))
+
+  it('a tab unseen for the sleep time loses its editor and wears the zzz mark; Duplicate gives the view it slept with (S18); a hover wakes it behind on that view, and a click shows it', async () => {
+    // The perf harness's clock (1 s), so the test waits seconds, not minutes.
+    history.replaceState(null, '', '?sleepSeconds=1')
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const [a, b] = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((t) => t.dataset.tab!)
+    act(() => tabEl(el, b).querySelector<HTMLButtonElement>('[role="tab"]')!.click())
+    const scroller = document.createElement('div')
+    scroller.className = 'editor-host'
+    layer(el, b)!.appendChild(scroller)
+    const view: PageView = { scrollTop: 640, zoomKey: null, folds: ['f:0'], magnification: 110, selection: { anchor: 5, head: 5 } }
+    const off = registerPageView(scroller, () => view)
+    act(() => tabEl(el, a).querySelector<HTMLButtonElement>('[role="tab"]')!.click())
+    await wait(3500)
+    off()
+    expect(layer(el, b)).toBeNull()
+    expect(tabEl(el, b).querySelector('.tabbar__asleep')).not.toBeNull()
+    expect(tabEl(el, a).querySelector('.tabbar__asleep')).toBeNull()
+    // S18: a copy of the sleeping tab starts where it slept.
+    captured.editors = []
+    rightClick(tabEl(el, b))
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((item) => item.textContent === 'Duplicate tab')!.click())
+    expect(captured.editors.find((e) => e.startView !== undefined)).toMatchObject({ path: '/v/b.md', startView: view })
+    const copy = el.querySelector<HTMLElement>('.tabbar__tab:has([aria-selected="true"])')!.dataset.tab!
+    // S7: a hover wakes it behind the copy on show, on the same view; the copy stays in front.
+    captured.editors = []
+    act(() => void tabEl(el, b).dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+    await wait(250)
+    expect(layer(el, b)?.classList.contains('tabstack__layer--hidden')).toBe(true)
+    expect(captured.editors.find((e) => e.startView !== undefined)).toMatchObject({ path: '/v/b.md', startView: view })
+    expect(el.querySelector<HTMLElement>('.tabbar__tab:has([aria-selected="true"])')!.dataset.tab).toBe(copy)
+    expect(tabEl(el, b).querySelector('.tabbar__asleep')).toBeNull()
+    // The click shows the editor that is there already.
+    act(() => tabEl(el, b).querySelector<HTMLButtonElement>('[role="tab"]')!.click())
+    expect(layer(el, b)?.classList.contains('tabstack__layer--hidden')).toBe(false)
+  }, 15_000)
+})

@@ -187,6 +187,8 @@ const manager = createWindowManager(store, {
     const files = entry.kind === 'files'
     const url = rendererUrlFor(process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html', files)
     url.searchParams.set('win', entry.id)
+    // The perf harness's short sleep clock (YAZ-3737 5A, long-day-open), in seconds: e2e runs only, never a real one.
+    if (process.env.YASEEN_DOCS_E2E === '1' && process.env.YASEEN_DOCS_TAB_SLEEP_SECONDS) url.searchParams.set('sleepSeconds', process.env.YASEEN_DOCS_TAB_SLEEP_SECONDS)
     void win.loadURL(url.toString())
     return win
   },

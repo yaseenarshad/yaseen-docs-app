@@ -5,7 +5,7 @@ import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, insertionSlot } from '../lib/dragSlot'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
-import { GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
+import { AsleepIcon, GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
 import { foreignDrag, readPageDrag, windowTabOf, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import type { Tab } from '../workspace/useWorkspace'
 import type { ListState } from '../lists/useVaultListsHere'
@@ -129,7 +129,15 @@ export interface TabBarProps {
   diagramDarkColors?: DiagramDarkColors
   /** `settings.hotkeys` (YAZ-3397 D2): the "+" and the grid button name their keys as they are now (YAZ-3410). Absent = the defaults. */
   hotkeys?: HotkeyOverrides
+  /** The tabs asleep to save memory (YAZ-3737 D11): each wears the zzz mark after its name. */
+  asleep?: ReadonlySet<string>
+  /** A sleeping tab hovered `WAKE_HOVER_MS` (YAZ-3737 S7): App mounts its editor behind the page on show, so the click feels instant. */
+  onWake?: (id: string) => void
 }
+
+/** How long a sleeping tab is hovered before it wakes (YAZ-3737 S7): a pointer that only crosses it wakes nothing. */
+export const WAKE_HOVER_MS = 150
+const NONE_ASLEEP: ReadonlySet<string> = new Set()
 
 /** How long a tab slides open or shut, in ms (YAZ-2656 D12). The row hands it to the stylesheet as `--tab-slide-ms`, so the slide and the ghost's timer take the same time. */
 const SLIDE_MS = 150
@@ -183,7 +191,7 @@ export interface NavStep {
 /** How long a press on ‹ or › is held before its menu opens instead of a step (YAZ-3647 E3), as in Chrome. */
 export const NAV_HOLD_MS = 500
 
-export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, zoomLabels, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: TabBarProps) {
+export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, zoomLabels, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -257,6 +265,21 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     const { id } = tabStore.getState()
     if (id !== null && !tabs.some((t) => t.id === id)) closeTabPreview()
   }, [tabs, tabStore, closeTabPreview])
+  // The hover wake (YAZ-3737 S7): one timer, for the tab under the pointer; leaving it, or the strip going, stops it.
+  const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const stopWake = (): void => {
+    if (wakeTimer.current !== null) clearTimeout(wakeTimer.current)
+    wakeTimer.current = null
+  }
+  useEffect(() => stopWake, [])
+  const hoverWake = (id: string): void => {
+    stopWake()
+    if (onWake === undefined || !asleep.has(id)) return
+    wakeTimer.current = setTimeout(() => {
+      wakeTimer.current = null
+      onWake(id)
+    }, WAKE_HOVER_MS)
+  }
   const previewTab = (id: string): { root: string | null; name: string } | null => {
     const tab = tabs.find((t) => t.id === id)
     return tab === undefined ? null : { root: rootOfPath(roots, tab.path), name: tab.name ?? labelOf(tab.path) }
@@ -486,8 +509,18 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
               className={cls.join(' ')}
               // A tab whose name is a field does not drag (YAZ-2949 S9): a press in the field places the caret.
               draggable={id !== renaming}
-              onMouseEnter={isActive || id === renaming ? undefined : () => tabPreview.hoverCard(id, path)}
-              onMouseLeave={() => tabPreview.leaveCard(id)}
+              onMouseEnter={
+                isActive || id === renaming
+                  ? undefined
+                  : () => {
+                      tabPreview.hoverCard(id, path)
+                      hoverWake(id)
+                    }
+              }
+              onMouseLeave={() => {
+                tabPreview.leaveCard(id)
+                stopWake()
+              }}
               onDragStart={(e) => {
                 if (e.dataTransfer) {
                   // Which copy of the page this tab is (YAZ-3637 D1): the ref another window sends back for it, and the
@@ -560,6 +593,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                   {label}
                   {/* A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4). */}
                   {name === undefined && !isFolder(path) && <NameEnding path={path} />}
+                  {/* Asleep to save memory (YAZ-3737 D11): quiet, after the name. */}
+                  {asleep.has(id) && <AsleepIcon className="tabbar__asleep" />}
                 </span>
               </button>
               )}

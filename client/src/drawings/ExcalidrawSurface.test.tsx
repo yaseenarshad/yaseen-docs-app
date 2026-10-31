@@ -71,6 +71,42 @@ describe('the engine’s view mode (YAZ-3076 D2, YAZ-3120)', () => {
   })
 })
 
+describe('a woken drawing keeps its pan and zoom (YAZ-3737 D13)', () => {
+  const BOX = { elements: [{ id: 'a', type: 'rectangle', x: 0, y: 0, width: 10, height: 10 }], appState: { viewBackgroundColor: '#fff' }, files: {} }
+  const mount = async (startCanvas?: { scrollX: number; scrollY: number; zoom: number }, onApi?: (api: { canvas(): unknown }) => void): Promise<void> => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={BOX} startCanvas={startCanvas} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onApi={onApi} />)
+    })
+  }
+
+  it('a start view opens on its pan and zoom, over the file`s view and with no fit; none fits the whole scene', async () => {
+    await mount({ scrollX: -300, scrollY: 75, zoom: 2.5 })
+    const seeded = last().initialData as { appState: Record<string, unknown> }
+    expect(seeded.appState).toMatchObject({ viewBackgroundColor: '#fff', scrollX: -300, scrollY: 75, zoom: { value: 2.5 } })
+    expect(last().initialState).toBeUndefined()
+    act(() => root?.unmount())
+    root = null
+    container?.remove()
+    container = null
+    await mount()
+    expect((last().initialData as { appState: Record<string, unknown> }).appState).not.toHaveProperty('scrollX')
+    expect(last().initialState).toEqual({ viewport: { target: BOX.elements, fit: 'scale-down' } })
+  })
+
+  it('the handle reads the engine`s pan and zoom now', async () => {
+    let handle: { canvas(): unknown } | null = null
+    await mount(undefined, (api) => {
+      handle = api
+    })
+    const onExcalidrawAPI = last().onExcalidrawAPI as (api: unknown) => void
+    act(() => onExcalidrawAPI({ getAppState: () => ({ scrollX: 12, scrollY: -8, zoom: { value: 0.5 } }), updateScene: () => undefined, updateFrameRendering: () => undefined }))
+    expect(handle!.canvas()).toEqual({ scrollX: 12, scrollY: -8, zoom: 0.5 })
+  })
+})
+
 /**
  * The canvas panel's handle on a read-only drawing (YAZ-3076 D2, S26): the panel can still look
  * and present, but its inserts, its slide reorder and its slide rename change nothing.

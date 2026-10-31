@@ -84,6 +84,21 @@ export class FakeModel {
     return this.lines[lineNumber - 1] ?? ''
   }
 
+  /** Monaco's text offset of a position (YAZ-3737 D3): each line break counts as the model's own. */
+  getOffsetAt(p: { lineNumber: number; column: number }): number {
+    return this.lines.slice(0, p.lineNumber - 1).reduce((n, line) => n + line.length + this.eol.length, 0) + p.column - 1
+  }
+
+  /** The position of a text offset, cut to the text, as Monaco's. */
+  getPositionAt(offset: number): { lineNumber: number; column: number } {
+    let left = Math.max(0, offset)
+    for (let i = 0; i < this.lines.length; i++) {
+      if (left <= this.lines[i].length || i === this.lines.length - 1) return { lineNumber: i + 1, column: Math.min(left, this.lines[i].length) + 1 }
+      left -= this.lines[i].length + this.eol.length
+    }
+    return { lineNumber: 1, column: 1 }
+  }
+
   /** The first column that is not a space or a tab; 0 for a blank line (Monaco's rule). */
   getLineFirstNonWhitespaceColumn(lineNumber: number): number {
     const at = this.getLineContent(lineNumber).search(/[^ \t]/)
@@ -162,6 +177,14 @@ export class FakeModel {
   }
 }
 
+/** Monaco's `ISelection`: where it started, and where the caret is. */
+export interface FakeSelection {
+  selectionStartLineNumber: number
+  selectionStartColumn: number
+  positionLineNumber: number
+  positionColumn: number
+}
+
 export class FakeEditor {
   /** Monaco's own key handling, at its input: what reached it. */
   readonly keysSeen: string[] = []
@@ -216,9 +239,23 @@ export class FakeEditor {
     return this.position ?? this.viewState.cursor
   }
 
-  setSelection(range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }): void {
-    this.selections.push({ ...range })
-    this.setPosition({ lineNumber: range.startLineNumber, column: range.startColumn })
+  /** A range (a jump), or a selection with a direction (a woken tab's caret, YAZ-3737 D3), as Monaco takes both. */
+  setSelection(at: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number } | FakeSelection): void {
+    if ('selectionStartLineNumber' in at) {
+      this.selection = { ...at }
+      this.setPosition({ lineNumber: at.positionLineNumber, column: at.positionColumn })
+      return
+    }
+    this.selections.push({ ...at })
+    this.selection = { selectionStartLineNumber: at.startLineNumber, selectionStartColumn: at.startColumn, positionLineNumber: at.endLineNumber, positionColumn: at.endColumn }
+    this.setPosition({ lineNumber: at.startLineNumber, column: at.startColumn })
+  }
+
+  /** The caret with its direction; at the cursor when nothing was selected. */
+  selection: FakeSelection | null = null
+  getSelection(): FakeSelection {
+    const at = this.getPosition() ?? { lineNumber: 1, column: 1 }
+    return this.selection ?? { selectionStartLineNumber: at.lineNumber, selectionStartColumn: at.column, positionLineNumber: at.lineNumber, positionColumn: at.column }
   }
 
   onDidChangeCursorPosition(listener: () => void): { dispose: () => void } {

@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { NAV_HOLD_MS, TabBar as IdTabBar, type TabBarProps as IdTabBarProps } from './TabBar'
+import { NAV_HOLD_MS, TabBar as IdTabBar, WAKE_HOVER_MS, type TabBarProps as IdTabBarProps } from './TabBar'
 import tabsCss from './tabs.css?inline'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 import { setBoardHighlight } from './boardHighlight'
@@ -1161,5 +1161,45 @@ describe('TabBar display name (YAZ-2949 D4, D5)', () => {
     act(() => void tabs(el)[1].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === 'Reset to page name')?.click())
     expect(onSetName).toHaveBeenLastCalledWith('t2', null)
+  })
+})
+
+describe('tab sleep on the strip (YAZ-3737 D11, S7)', () => {
+  const noop = { onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn() }
+  const tabOf = (el: HTMLElement, path: string) => el.querySelector<HTMLElement>(`.tabbar__tab[data-tab="${path}"]`)!
+  const enter = (node: Element) => act(() => void node.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+  const leave = (node: Element) => act(() => void node.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('the zzz mark stands after the name of a sleeping tab only, and says what it is on hover and to a screen reader', () => {
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], active: '/v/a.md', asleep: new Set(['/v/b.md']), ...noop, ...noNav })
+    expect([...el.querySelectorAll('.tabbar__asleep')].map((m) => m.closest<HTMLElement>('.tabbar__tab')!.dataset.tab)).toEqual(['/v/b.md'])
+    const mark = tabOf(el, '/v/b.md').querySelector('.tabbar__label .tabbar__asleep')!
+    expect(mark.getAttribute('role')).toBe('img')
+    expect(mark.getAttribute('aria-label')).toBe('asleep')
+    expect(mark.getAttribute('title')).toBe('Asleep to save memory. Click to wake it.')
+    // The name reads as before.
+    expect(tabOf(el, '/v/b.md').querySelector('[role="tab"]')!.textContent).toBe('b')
+  })
+
+  it(`a hover of ${WAKE_HOVER_MS} ms on a sleeping tab wakes it, once; a hover that leaves sooner, or on an awake tab, wakes nothing`, () => {
+    const onWake = vi.fn()
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], active: '/v/a.md', asleep: new Set(['/v/b.md']), onWake, ...noop, ...noNav })
+    enter(tabOf(el, '/v/b.md'))
+    act(() => void vi.advanceTimersByTime(WAKE_HOVER_MS - 10))
+    leave(tabOf(el, '/v/b.md'))
+    act(() => void vi.advanceTimersByTime(1000))
+    expect(onWake).not.toHaveBeenCalled()
+    enter(tabOf(el, '/v/c.md'))
+    act(() => void vi.advanceTimersByTime(1000))
+    expect(onWake).not.toHaveBeenCalled()
+    enter(tabOf(el, '/v/b.md'))
+    act(() => void vi.advanceTimersByTime(WAKE_HOVER_MS - 1))
+    expect(onWake).not.toHaveBeenCalled()
+    act(() => void vi.advanceTimersByTime(1))
+    expect(onWake.mock.calls).toEqual([['/v/b.md']])
+    act(() => void vi.advanceTimersByTime(1000))
+    expect(onWake).toHaveBeenCalledTimes(1)
   })
 })

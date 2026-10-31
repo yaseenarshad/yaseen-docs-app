@@ -238,6 +238,25 @@
   mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
 }
 
+/* A tab asleep to save memory (YAZ-3737 D11): three small z's after its name, in the muted text colour, so they read
+   as a state, not a button. Yasin judges it in the demo; a dimmed name is the fallback. The board's card wears it too. */
+.tabbar__asleep,
+.taboverview__asleep {
+  display: inline-flex;
+  margin-left: 4px;
+  color: var(--fg-muted);
+  vertical-align: middle;
+}
+
+.taboverview__asleep {
+  margin-left: 6px;
+}
+
+.taboverview__asleep svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* Shown on hover and on the active tab. */
 .tabbar__close {
   /* Over the end of the tab, not beside the name (YAZ-2689 D4). It takes no width, so a tab is
@@ -295,8 +314,8 @@
 
 .tabstack__layer--hidden {
   visibility: hidden;
-  /* YAZ-2195 (🔒 D5: every visited tab stays mounted): a hidden layer also skips style, layout and
-     paint, so tab switches, resizes and theme changes stop paying for every mounted tab. Unlike
+  /* YAZ-2195 (🔒 D5: every visited tab stays mounted, until it sleeps — YAZ-3737 5A): a hidden layer also skips
+     style, layout and paint, so tab switches, resizes and theme changes stop paying for every mounted tab. Unlike
      display:none it keeps each scroller's offset, so rule 6 still holds. */
   content-visibility: hidden;
 }
@@ -344,7 +363,7 @@
 /* ---------- tab board (YAZ-2648 D5–D8, the canvas of YAZ-3343) ---------- */
 
 /* Every open tab as a card on a canvas, over the stack while it shows: the layers under it are
-   hidden, never unmounted, so each page keeps its scroll, caret and undo. The top row stays put;
+   hidden, never unmounted while it shows (no tab sleeps then, YAZ-3737 5A), so each page keeps its scroll, caret and undo. The top row stays put;
    the camera moves the world under it. Every length of the board is a custom property
    TabOverview.tsx sets from `board.ts`, where the layout reads the same numbers. */
 .taboverview {

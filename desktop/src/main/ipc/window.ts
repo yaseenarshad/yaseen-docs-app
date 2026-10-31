@@ -89,8 +89,15 @@ function optionalPageView(v: unknown): PageView | undefined {
   if (zoomKey !== null && typeof zoomKey !== 'string') return undefined
   if (!Array.isArray(folds) || !folds.every((k) => typeof k === 'string')) return undefined
   if (typeof magnification !== 'number' || !Number.isFinite(magnification)) return undefined
-  return { scrollTop, zoomKey, folds: (folds as string[]).slice(0, MAX_FOLD_KEYS_PER_FILE), magnification }
+  const view: PageView = { scrollTop, zoomKey, folds: (folds as string[]).slice(0, MAX_FOLD_KEYS_PER_FILE), magnification }
+  // The caret and a drawing's pan and zoom (YAZ-3737 D3, D13) travel when whole; a bad one is left out, never the view.
+  const { selection, canvas } = v
+  if (isRecord(selection) && finite(selection.anchor) && finite(selection.head)) view.selection = { anchor: selection.anchor, head: selection.head }
+  if (isRecord(canvas) && finite(canvas.scrollX) && finite(canvas.scrollY) && finite(canvas.zoom)) view.canvas = { scrollX: canvas.scrollX, scrollY: canvas.scrollY, zoom: canvas.zoom }
+  return view
 }
+
+const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n)
 
 /** A slot in a strip (YAZ-3637 D4): a whole number from 0; anything else is no slot, never an error. */
 function optionalSlot(v: unknown): number | undefined {

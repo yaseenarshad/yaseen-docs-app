@@ -29,7 +29,8 @@ export interface TabsState {
   /**
    * Tab ids visited since boot, in first-activation order: exactly the editors kept mounted.
    * A background tab's editor lazy-mounts on first activation — which is also why opening
-   * one never steals focus (`focusEditor` only fires when an editor mounts).
+   * one never steals focus (`focusEditor` only fires when an editor mounts). A tab unseen for
+   * `tabSleepAfter` leaves it (`sleep`, YAZ-3737 5A) and comes back when it shows again, or on a hover (`wake`, S7).
    */
   mounted: string[]
   /**
@@ -202,6 +203,8 @@ export type TabsAction =
   | { type: 'delete'; path: string } // in-app delete (GRO-2272): every tab of the file goes, each closing as `close` does (S18)
   | { type: 'delete-dir'; path: string } // in-app FOLDER delete (GRO-2272): the folder's own tab and every tab under it go
   | { type: 'zoom'; id: string; zoom: string | null; quiet?: true; from?: ZoomFrom } // a drill-in in a tab's page (YAZ-3647 D2): a step, unless the page is at that level already; `from`: the key a quiet report replaces (YAZ-3662 F6b)
+  | { type: 'sleep'; ids: readonly string[] } // tab sleep (YAZ-3737 5A): these tabs' editors unmount; never the active tab's, so `active ∈ mounted` holds
+  | { type: 'wake'; id: string } // a hover on a sleeping tab (YAZ-3737 S7): its editor mounts behind the page on show; `active` stays
 
 /** The page and key a quiet zoom report replaces (YAZ-3662 F6b): the key the page last reported or was set to, on that page. */
 export interface ZoomFrom {
@@ -449,6 +452,14 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       const heir = s.tabs[i + 1] ?? s.tabs[i - 1] ?? null
       return heir === null ? { ...rest, active: null } : { ...withActive({ ...rest, active: null }, heir.id), blank: s.blank }
     }
+    case 'sleep': {
+      // Only `mounted` changes (YAZ-3737 5A): the tab, its place, its name and its Back steps stay. A click on it is
+      // its wake — `withActive` adds it back. The active tab never sleeps, whatever the caller asked.
+      const mounted = s.mounted.filter((id) => id === s.active || !a.ids.includes(id))
+      return mounted.length === s.mounted.length ? s : { ...s, mounted }
+    }
+    case 'wake':
+      return s.mounted.includes(a.id) || tabById(s, a.id) === null ? s : { ...s, mounted: [...s.mounted, a.id] }
     case 'close-many':
       // One fold over `close`, as `delete-dir` does: the heir is whatever is left when all of them are gone.
       return a.ids.reduce((acc, id) => tabsReducer(acc, { type: 'close', id }), s)
@@ -674,7 +685,7 @@ function repairRightPaths(
  * Back and Forward walk the list and add none. A background tab adds its step when it shows.
  */
 function withStep(before: WorkspaceState, a: WorkspaceAction, after: WorkspaceState): WorkspaceState {
-  if (after === before || after.blank || a.type === 'back' || a.type === 'forward' || a.type === 'go') return after
+  if (after === before || after.blank || a.type === 'back' || a.type === 'forward' || a.type === 'go' || a.type === 'sleep' || a.type === 'wake') return after
   const tab = tabById(after, after.active)
   const { steps, index } = after.history
   const now = steps[index]
@@ -874,8 +885,12 @@ export interface UseWorkspace extends WorkspaceState {
   closeBlank: () => void
   /** Rule 5: append at the end without activating (and so without stealing focus). Its Back step comes when it shows (YAZ-3647 D4). */
   openBackground: (path: string) => void
-  /** A tab, by id (YAZ-2940 D1). */
+  /** A tab, by id (YAZ-2940 D1). A sleeping tab wakes: its editor mounts again (YAZ-3737 5A). */
   activate: (id: string) => void
+  /** Tab sleep (YAZ-3737 5A): these tabs' editors unmount, in ONE change; the active tab never does. Never mirrored: nothing stored changes. */
+  sleep: (ids: readonly string[]) => void
+  /** A hover on a sleeping tab (YAZ-3737 S7): its editor mounts behind the page on show. Never mirrored. */
+  wake: (id: string) => void
   /** That tab only: a copy closes alone (S11). Its note goes to "Recently closed" (YAZ-3487 D10) — not when `moved`: it lives on in another window. */
   close: (id: string, moved?: boolean) => void
   /** The tab board's closes of several tabs (YAZ-2648 D9, D15), by id: each as `close`, and ONE identity write for all of them. */
@@ -998,6 +1013,9 @@ export function useWorkspace(root: string | null): UseWorkspace {
   }, [dispatch])
   const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path }), [dispatch])
   const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
+  // `mounted` is renderer-only (rule above): sleep and wake write nothing.
+  const sleep = useCallback((ids: readonly string[]) => dispatch({ type: 'sleep', ids }, { mirror: false }), [dispatch])
+  const wake = useCallback((id: string) => dispatch({ type: 'wake', id }, { mirror: false }), [dispatch])
   /** YAZ-3487 D10: the notes of the tabs that close go to "Recently closed". A tab that MOVES to another window is no close: its caller says so. */
   const noteClosed = useCallback((ids: readonly string[]): void => {
     const paths = stateRef.current.tabs.filter((t) => ids.includes(t.id)).map((t) => t.path)
@@ -1069,7 +1087,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   return {
     ...state,
     file: activePath(state),
-    openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, activate, close, closeMany, openStored, move, closeActive, next, prev, back, forward, go, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
+    openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, activate, sleep, wake, close, closeMany, openStored, move, closeActive, next, prev, back, forward, go, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,
     navigateRight: navigateRightCallback,

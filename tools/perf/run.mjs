@@ -42,8 +42,9 @@ import * as idle from './scenarios/idle.mjs'
 import * as quit from './scenarios/quit.mjs'
 import * as drawio from './scenarios/drawio.mjs'
 import * as longDay from './scenarios/long-day.mjs'
+import * as longDayOpen from './scenarios/long-day-open.mjs'
 
-const SCENARIOS = { launch, 'open-big': openBig, typing, 'open-big-code': openBigCode, 'typing-code': typingCode, 'sidebar-resize': sidebarResize, 'tab-switch': tabSwitch, 'multi-vault': multiVault, storm, watcher, idle, quit, drawio, 'long-day': longDay }
+const SCENARIOS = { launch, 'open-big': openBig, typing, 'open-big-code': openBigCode, 'typing-code': typingCode, 'sidebar-resize': sidebarResize, 'tab-switch': tabSwitch, 'multi-vault': multiVault, storm, watcher, idle, quit, drawio, 'long-day': longDay, 'long-day-open': longDayOpen }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 /** The timing ceilings (YAZ-3044 A19): budget.json's `perf` rows, checked against each scenario's medians. */

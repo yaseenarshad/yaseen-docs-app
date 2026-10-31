@@ -188,7 +188,7 @@ import {
   wrapInOrderedListInputRule,
 } from '@milkdown/kit/preset/commonmark'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
-import { Selection } from '@milkdown/kit/prose/state'
+import { Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $shortcut, replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
 import { readOnlyKeys } from './readOnlyKeys'
@@ -619,6 +619,25 @@ export function moveCaretIntoZoom(crepe: Crepe): boolean {
     const view = ctx.get(editorViewCtx)
     return caretIntoZoom(view.state, view.dispatch)
   })
+}
+
+/**
+ * The caret a page view kept (YAZ-3737 D3): a woken tab, a copy. Cut to the document, which may have changed on disk
+ * meanwhile (S24), and moved to the nearest places text can go. Run once the editor is made, before the caret grab.
+ */
+export function placeCaret(crepe: Crepe, at: { anchor: number; head: number }): void {
+  crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx)
+    const { doc } = view.state
+    const pos = (n: number) => doc.resolve(Math.max(0, Math.min(n, doc.content.size)))
+    view.dispatch(view.state.tr.setSelection(TextSelection.between(pos(at.anchor), pos(at.head))))
+  })
+}
+
+/** The note's caret, for its page view (YAZ-3737 D3). */
+export function getCaretOf(crepe: Crepe): { anchor: number; head: number } {
+  const { anchor, head } = editorViewOf(crepe).state.selection
+  return { anchor, head }
 }
 
 /** The drilled-in bullet's zoom key, or null (YAZ-2951 D4): the page view reader asks once, on a copy action. */

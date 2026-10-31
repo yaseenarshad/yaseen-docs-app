@@ -88,6 +88,9 @@ vi.mock('./createCrepe', () => {
     getZoomLabelOf: vi.fn((): string | null => null),
     moveCaretIntoZoom: vi.fn(() => false),
     zoomPageTo: vi.fn(() => false),
+    // The fake has no ProseMirror: a page view test says where the caret is (YAZ-3737 D3).
+    getCaretOf: vi.fn(() => ({ anchor: 0, head: 0 })),
+    placeCaret: vi.fn(),
   }
 })
 
@@ -121,7 +124,7 @@ vi.mock('./external/applyExternalMarkdown', () => ({
 import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
-import { createCrepe, focusEditor, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
+import { createCrepe, focusEditor, getCaretOf, getPlainText, getZoomKeyOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
 import { _resetRenameContinuity, carryEditorAcrossRename, registerRenameContinuity } from '../lib/renameContinuity'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import type { BlockLines } from './lineNumbers/blockLines'
@@ -170,11 +173,13 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
+  // A tab layer that is not on show (YAZ-3737 S7: a tab woken by a hover).
+  if (extra.behind === true) container.className = 'tabstack__layer tabstack__layer--hidden'
   document.body.appendChild(container)
   root = createRoot(container)
   act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} />))
@@ -933,6 +938,49 @@ describe('a page starts from a page view, and tells its own (YAZ-2951)', () => {
     expect(order).toEqual(['caret', 'focus'])
   })
 
+  it('YAZ-3737 D3: a woken tab (or a copy) gets its caret back after the drill-in and before the caret grab; a view with none sets no caret', async () => {
+    const order: string[] = []
+    vi.mocked(moveCaretIntoZoom).mockImplementation(() => {
+      order.push('zoom')
+      return true
+    })
+    vi.mocked(placeCaret).mockImplementation((_crepe, at) => {
+      order.push(`caret ${at.anchor}-${at.head}`)
+    })
+    vi.mocked(focusEditor).mockImplementation(() => {
+      order.push('focus')
+    })
+    await mount(FM + BODY, 1, { startView: { ...VIEW, selection: { anchor: 30, head: 9 } } })
+    expect(order).toEqual(['zoom', 'caret 30-9', 'focus'])
+    vi.mocked(placeCaret).mockClear()
+    act(() => root?.unmount())
+    root = null
+    await mount(FM + BODY, 1, { startView: VIEW })
+    expect(placeCaret).not.toHaveBeenCalled()
+    vi.mocked(placeCaret).mockReset()
+  })
+
+  it('YAZ-3737 S7: a tab that mounts behind the page on show (a hover wake) takes no caret grab; its caret and scroll still come back', async () => {
+    const el = await mount(FM + BODY, 1, { startView: { ...VIEW, selection: { anchor: 3, head: 3 } }, behind: true })
+    expect(focusEditor).not.toHaveBeenCalled()
+    expect(placeCaret).toHaveBeenCalledWith(expect.anything(), { anchor: 3, head: 3 })
+    expect(el.querySelector<HTMLElement>('.editor-host')!.scrollTop).toBe(420)
+    vi.mocked(placeCaret).mockReset()
+  })
+
+  it('YAZ-3737 S24: a file that changed on disk while its tab slept wakes with the new text and no conflict bar; the kept view still applies', async () => {
+    const el = await mount(FM + BODY, 1)
+    expect(createCrepeMock.mock.calls.at(-1)![0].defaultValue).toBe(BODY)
+    // Asleep: the clean editor unmounts. An agent rewrites the file meanwhile.
+    act(() => root?.unmount())
+    root = null
+    el.remove()
+    const woken = await mount(`${FM}# Hello\n\nnew text from disk\n`, 9, { startView: VIEW })
+    expect(createCrepeMock.mock.calls.at(-1)![0].defaultValue).toBe('# Hello\n\nnew text from disk\n')
+    expect(woken.querySelector('.conflict-bar')).toBeNull()
+    expect(woken.querySelector<HTMLElement>('.editor-host')!.scrollTop).toBe(420)
+  })
+
   it('a page view that is not drilled in does not ask to move the caret', async () => {
     await mount(FM + BODY, 1, { startView: { ...VIEW, zoomKey: null } })
     expect(focusEditor).toHaveBeenCalled()
@@ -954,7 +1002,8 @@ describe('a page starts from a page view, and tells its own (YAZ-2951)', () => {
     vi.mocked(getZoomKeyOf).mockReturnValue('l1 a:0')
     el.querySelector<HTMLElement>('.editor-host')!.scrollTop = 77
     act(() => { el.querySelector('.editor-mount')!.dispatchEvent(new CustomEvent(ZOOM_EVENT, { detail: 1, bubbles: true, cancelable: true })) })
-    expect(readPageView('t1')).toEqual({ scrollTop: 77, zoomKey: 'l1 a:0', folds: ['b:0', 'h:c:0'], magnification: 125 })
+    vi.mocked(getCaretOf).mockReturnValueOnce({ anchor: 40, head: 12 })
+    expect(readPageView('t1')).toEqual({ scrollTop: 77, zoomKey: 'l1 a:0', folds: ['b:0', 'h:c:0'], magnification: 125, selection: { anchor: 40, head: 12 } })
     // Unmounted: the tab has no editor to ask.
     act(() => root?.unmount())
     root = null

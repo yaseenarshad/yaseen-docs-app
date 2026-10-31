@@ -678,7 +678,36 @@ describe('text size, scroll and Duplicate tab (YAZ-3451)', () => {
     expect(setFolds).not.toHaveBeenCalled()
     // And it answers for itself the same way, live, for the next copy.
     act(() => editor().setScrollTop(300))
-    expect(readPageView('copy')).toEqual({ scrollTop: 300, zoomKey: null, folds: ['function b() {'], magnification: 150 })
+    expect(readPageView('copy')).toEqual({ scrollTop: 300, zoomKey: null, folds: ['function b() {'], magnification: 150, selection: { anchor: 0, head: 0 } })
+  })
+
+  it('YAZ-3737 5A: a tab that sleeps and wakes is back on its caret, scroll spot, folds and text size, not its Back place', async () => {
+    readFile.mockResolvedValueOnce(disk(FILE))
+    act(() => root?.render(<div data-tab="t1"><CodeEditor root={ROOT} path={PATH} watch={watch} viewKey="step-1" /></div>))
+    await settle()
+    // The reader picks the caret from "b(" back to the start of line 3, with its direction (D3).
+    act(() => {
+      editor().toggleFold(2)
+      editor().setSelection({ selectionStartLineNumber: 2, selectionStartColumn: 11, positionLineNumber: 3, positionColumn: 3 })
+      editor().setScrollTop(120)
+      zoomStep(1)
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(1000)
+    })
+    const slept = readPageView('t1')
+    expect(slept).toEqual({ scrollTop: 120, zoomKey: null, folds: ['function b() {'], magnification: 125, selection: { anchor: 12, head: 19 } })
+    // Asleep: the editor is gone. Its Back place is kept too, and the wake does not use it.
+    act(() => root?.render(<div data-tab="t1" />))
+    expect(readPageView('t1')).toBeUndefined()
+    readFile.mockResolvedValueOnce(disk(FILE))
+    act(() => root?.render(<div data-tab="t1"><CodeEditor root={ROOT} path={PATH} watch={watch} viewKey="step-1" startView={slept} /></div>))
+    await settle()
+    expect(editor().getSelection()).toEqual({ selectionStartLineNumber: 2, selectionStartColumn: 11, positionLineNumber: 3, positionColumn: 3 })
+    expect(editor().getScrollTop()).toBe(120)
+    expect([...editor().folded]).toEqual([2])
+    expect(editor().options.fontSize).toBe(13 * 1.25)
+    expect(editor().restored).toEqual([])
   })
 })
 

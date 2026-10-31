@@ -864,6 +864,12 @@ describe('registerWindowIpc', () => {
       expect(manager.popOut.mock.lastCall?.[2]).toEqual({ view: { ...VIEW, folds: many.slice(0, MAX_FOLD_KEYS_PER_FILE) } })
       // The options themselves must be an object.
       expect(await popOut({ sender }, '/v/a.md', 'view')).toEqual(bad('BAD_REQUEST'))
+      // The caret and a drawing's pan and zoom travel when whole (YAZ-3737 D3, D13); a bad one goes, the view stays.
+      const whole = { ...VIEW, selection: { anchor: 3, head: 9 }, canvas: { scrollX: -40, scrollY: 12.5, zoom: 1.5 } }
+      await popOut({ sender }, '/v/a.md', { view: whole })
+      expect(manager.popOut.mock.lastCall?.[2]).toEqual({ view: whole })
+      await popOut({ sender }, '/v/a.md', { view: { ...VIEW, selection: { anchor: 'x', head: 1 }, canvas: { scrollX: 0, scrollY: 0 } } })
+      expect(manager.popOut.mock.lastCall?.[2]).toEqual({ view: VIEW })
     })
 
     it('window:identity gives the start view out one time (S17)', async () => {

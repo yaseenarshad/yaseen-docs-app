@@ -36,6 +36,8 @@ const surface = {
   commands: [] as BoardCommand[],
   /** What `exportScene()` answers — the standalone bytes the save sheet is offered (🔒 YAZ-1775 D3). */
   exportedScene: '{"type":"excalidraw","elements":[],"files":{}}\n',
+  /** The pan and zoom the engine is on (YAZ-3737 D13). */
+  canvas: { scrollX: 0, scrollY: 0, zoom: 1 },
 }
 
 vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
@@ -64,6 +66,7 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
         surface.commands.push({ kind: 'export-drawing' })
         return surface.exportedScene
       },
+      canvas: () => surface.canvas,
     } satisfies DrawingSurfaceApi)
     // The real engine renders this into its own top-right row; the stub just puts it on screen,
     // because WHERE the chips go is the surface's business and WHAT they say is the host's.
@@ -72,6 +75,7 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
 }))
 
 import { api } from '../api'
+import { readPageView } from '../lib/pageView'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { BROKEN_DRAWING_DOCUMENT, DrawingEditor } from './DrawingEditor'
 import { ENGINE_LOAD_FAILED } from './ExcalidrawSurface'
@@ -414,6 +418,25 @@ describe('chips and the canvas frame', () => {
 })
 
 /** The tab and the embed's modal share ONE surface (YAZ-3028, rule 28): only the tab takes the keyboard at mount. */
+describe('the pan and zoom a woken tab keeps (YAZ-3737 D13)', () => {
+  it('the tab answers its page view with the canvas`s pan and zoom, and a start view`s canvas reaches the surface once', async () => {
+    container.setAttribute('data-tab', 't1')
+    surface.canvas = { scrollX: -120, scrollY: 48, zoom: 1.75 }
+    render()
+    await flush()
+    expect(surface.props?.startCanvas).toBeUndefined()
+    expect(readPageView('t1')).toEqual({ scrollTop: 0, zoomKey: null, folds: [], magnification: 100, canvas: { scrollX: -120, scrollY: 48, zoom: 1.75 } })
+    // Asleep, then woken: the editor mounts again with the view it slept with.
+    const slept = readPageView('t1')
+    act(() => root?.unmount())
+    root = createRoot(container)
+    expect(readPageView('t1')).toBeUndefined()
+    render({ startView: slept })
+    await flush()
+    expect(surface.props?.startCanvas).toEqual({ scrollX: -120, scrollY: 48, zoom: 1.75 })
+  })
+})
+
 describe('the one engine seam', () => {
   it('mounts the shared surface with autoFocus, the modal`s does not', async () => {
     render()

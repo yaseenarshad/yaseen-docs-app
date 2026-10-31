@@ -1739,3 +1739,12 @@ describe('TabOverview display name (YAZ-2949 D4, D5)', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('tab sleep on the board (YAZ-3737 D11)', () => {
+  it('a sleeping tab of this window wears the zzz mark after its card\'s title; the title reads as before', async () => {
+    const { el } = await mount({ asleep: new Set(['/v/Projects/plan.md']) })
+    expect([...el.querySelectorAll('.taboverview__asleep')].map((m) => m.closest<HTMLElement>('[data-tab]')!.dataset.tab)).toEqual(['/v/Projects/plan.md'])
+    expect(page(el, '/v/Projects/plan.md')!.querySelector('.taboverview__title .taboverview__asleep')!.getAttribute('title')).toBe('Asleep to save memory. Click to wake it.')
+    expect(page(el, '/v/Projects/plan.md')!.querySelector('.taboverview__title')!.textContent).toBe('plan')
+  })
+})

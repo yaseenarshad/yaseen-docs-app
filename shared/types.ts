@@ -2914,6 +2914,13 @@ export interface PageView {
   folds: string[]
   /** The text size (⌘+ / ⌘−), percent; 100 = normal. */
   magnification: number
+  /**
+   * The caret (YAZ-3737 D3): a note's ProseMirror positions, a code tab's text offsets. Absent where the tab has none
+   * (a drawing) or the view is a new start (a bullet's new tab).
+   */
+  selection?: { anchor: number; head: number }
+  /** A drawing's pan and zoom (YAZ-3737 D13): the engine's `scrollX`, `scrollY` and `zoom.value`. Only a drawing has it. */
+  canvas?: { scrollX: number; scrollY: number; zoom: number }
 }
 
 /** A page view for one file: what a popped-out window starts its active tab with (YAZ-2951 D2). Never stored. */
