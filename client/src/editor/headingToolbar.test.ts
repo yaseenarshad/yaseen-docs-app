@@ -19,6 +19,8 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
+import { toolbarPrefs } from './toolbarPrefs'
+import { DEFAULT_TOOLBAR } from '@shared/types'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -43,6 +45,7 @@ afterEach(async () => {
     m.root.remove()
   }
   document.querySelectorAll('.milkdown-toolbar').forEach((el) => el.remove())
+  toolbarPrefs.value = DEFAULT_TOOLBAR
 })
 
 /** Let the toolbar's own update tick land (it renders off the view update, not synchronously). */
@@ -88,7 +91,7 @@ function actives(): HeadingItem[] {
 const SWATCHES = ['highlight', 'highlight-green', 'highlight-blue', 'highlight-pink'] as const
 
 /** Crepe's toolbar buttons act on pointerdown — a plain `.click()` is a no-op here. */
-async function press(key: HeadingItem | (typeof SWATCHES)[number]): Promise<void> {
+async function press(key: string): Promise<void> {
   must(key).dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
   await settle()
 }
@@ -122,10 +125,16 @@ describe('Heading toolbar group (YAZ-923)', () => {
     expect(order.slice(0, 4)).toEqual(['h1', 'h2', 'h3', 'text'])
     expect(order.indexOf('text')).toBeLessThan(order.indexOf('bold'))
 
-    // The WHOLE strip (D13), dividers too: the Heading group, Crepe's Formatting group with the
-    // four swatches, then its code and link — one divider between two groups, none at an end.
+    // The WHOLE strip (D13, YAZ-3806 T1, T8), dividers too: the Heading group, the Lists group,
+    // Crepe's Formatting group with Underline and the four swatches, then its code and link — one
+    // divider between two groups, none at an end.
     const strip = [...document.querySelector('.milkdown-toolbar')!.children].map((el) => (el as HTMLElement).dataset.toolbarItem ?? (el.classList.contains('divider') ? '|' : el.tagName))
-    expect(strip).toEqual(['h1', 'h2', 'h3', 'text', '|', 'bold', 'italic', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', '|', 'code', 'link'])
+    expect(strip).toEqual([
+      'h1', 'h2', 'h3', 'text', '|',
+      'checklist', 'bulletList', 'numberedList', '|',
+      'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', '|',
+      'code', 'link',
+    ])
     // The tab order is that order: every item is a button where it stands, and none jumps the queue or leaves it.
     const items = [...document.querySelectorAll<HTMLElement>('.milkdown-toolbar [data-toolbar-item]')]
     expect(items.every((button) => button.tagName === 'BUTTON' && button.tabIndex === 0)).toBe(true)
@@ -288,5 +297,109 @@ describe('highlight swatches (YAZ-1480)', () => {
     await press('highlight')
     expect(litDots()).toEqual(['highlight'])
     expect(getMarkdownForSave(crepe)).toBe('green and ==plain==\n')
+  })
+})
+
+/**
+ * The Lists group and Underline (YAZ-3806 T1, T3, T4, T8). The rule itself is `listButtons.test.ts`'s table; here the
+ * buttons are pressed on the real strip.
+ */
+describe('list buttons and Underline (YAZ-3806)', () => {
+  const LISTS = ['checklist', 'bulletList', 'numberedList'] as const
+  const litLists = () => LISTS.filter((key) => must(key).classList.contains('active'))
+
+  it('the three list buttons are labelled; a press makes the line a bullet and lights Bullet, a second press makes it text', async () => {
+    const { crepe, view } = await mount('plain\n')
+    await select(view, 'plain')
+    expect(LISTS.map((key) => must(key).getAttribute('aria-label'))).toEqual(['Checklist', 'Bullet list', 'Numbered list'])
+    expect(litLists()).toEqual([])
+
+    await press('bulletList')
+    expect(getMarkdownForSave(crepe)).toBe('* plain\n')
+    expect(litLists()).toEqual(['bulletList'])
+    // T lights only for plain text outside a list (T4).
+    expect(actives()).toEqual([])
+
+    await press('bulletList')
+    expect(getMarkdownForSave(crepe)).toBe('plain\n')
+    expect(actives()).toEqual(['text'])
+  })
+
+  it('T on a bullet: plain text (T4)', async () => {
+    const { crepe, view } = await mount('* one\n')
+    await select(view, 'one')
+    await press('text')
+    expect(getMarkdownForSave(crepe)).toBe('one\n')
+  })
+
+  it('Numbered and Checklist press the same rule', async () => {
+    const { crepe, view } = await mount('one\n')
+    await select(view, 'one')
+    await press('numberedList')
+    expect(getMarkdownForSave(crepe)).toBe('1. one\n')
+    expect(litLists()).toEqual(['numberedList'])
+    await press('checklist')
+    expect(getMarkdownForSave(crepe)).toBe('* [ ] one\n')
+    expect(litLists()).toEqual(['checklist'])
+  })
+
+  it('U sits after Italic, names ⌘U, lights for underlined text, and its press takes the underline off', async () => {
+    const { crepe, view } = await mount('a <u>word</u> b\n')
+    await select(view, 'word')
+    const keys = order()
+    expect(keys.slice(keys.indexOf('italic'), keys.indexOf('italic') + 3)).toEqual(['italic', 'underline', 'strikethrough'])
+    expect(must('underline').title).toBe('Underline (⌘U)')
+    expect(must('underline').classList.contains('active')).toBe(true)
+    await press('underline')
+    expect(getMarkdownForSave(crepe)).toBe('a word b\n')
+    expect(must('underline').classList.contains('active')).toBe(false)
+    await press('underline')
+    expect(getMarkdownForSave(crepe)).toBe('a <u>word</u> b\n')
+  })
+})
+
+/**
+ * The user's order (YAZ-3806 T5, T6): Settings sets `toolbarPrefs`, and the strip of an editor that is ALREADY open
+ * follows at once — Crepe builds its strip in a Vue `computed` that reads the ref.
+ */
+describe('the toolbar setting (YAZ-3806 T5, T6)', () => {
+  const strip = () => [...document.querySelector('.milkdown-toolbar')!.children].map((el) => (el as HTMLElement).dataset.toolbarItem ?? '|')
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  it('a change reaches the open strip: a hidden button leaves, a hidden group takes its divider with it, a moved group moves, and the default comes back', async () => {
+    const { view } = await mount('plain\n')
+    await select(view, 'plain')
+
+    toolbarPrefs.value = { ...DEFAULT_TOOLBAR, hidden: ['bold'] }
+    await tick()
+    expect(item('bold')).toBeNull()
+    expect(item('italic')).not.toBeNull()
+
+    toolbarPrefs.value = { ...DEFAULT_TOOLBAR, hidden: ['checklist', 'bulletList', 'numberedList'] }
+    await tick()
+    expect(strip()).toEqual(['h1', 'h2', 'h3', 'text', '|', 'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', '|', 'code', 'link'])
+
+    toolbarPrefs.value = { ...DEFAULT_TOOLBAR, groups: ['lists', 'lineType', 'textStyle', 'insert'], buttons: ['link', ...DEFAULT_TOOLBAR.buttons.filter((b) => b !== 'link')] }
+    await tick()
+    expect(strip().slice(0, 5)).toEqual(['checklist', 'bulletList', 'numberedList', '|', 'h1'])
+    expect(strip().slice(-2)).toEqual(['link', 'code'])
+
+    toolbarPrefs.value = DEFAULT_TOOLBAR
+    await tick()
+    expect(strip()).toEqual([
+      'h1', 'h2', 'h3', 'text', '|',
+      'checklist', 'bulletList', 'numberedList', '|',
+      'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', '|',
+      'code', 'link',
+    ])
+  })
+
+  it('a hidden button keeps its key: ⌘B still bolds with Bold off the strip', async () => {
+    toolbarPrefs.value = { ...DEFAULT_TOOLBAR, hidden: ['bold'] }
+    const { crepe, view } = await mount('plain\n')
+    await select(view, 'plain')
+    expect(item('bold')).toBeNull()
+    view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true }))
+    expect(getMarkdownForSave(crepe)).toBe('**plain**\n')
   })
 })

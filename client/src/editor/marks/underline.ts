@@ -17,7 +17,8 @@
  *     `parseMarkdown` from / `toMarkdown` to the `underline` mdast node.
  *  3. `underlineKeymap` ($shortcut): `Mod-u` = `toggleMark`, through `onVisibleLines` so a
  *     selection over folded lines underlines the visible ones only (YAZ-3209). Not a Crepe
- *     feature — the feature allowlist is untouched and the toolbar does not get a button.
+ *     feature — the feature allowlist is untouched; the toolbar's U button runs the same command
+ *     (YAZ-3806 T8).
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { toggleMark } from '@milkdown/kit/prose/commands'
@@ -104,7 +105,7 @@ export const underlineSchema = $markSchema('underline', () => ({
 /** Priority above Crepe's keymaps (default 50), like the outliner keymaps. */
 const PRIORITY = 100
 
-const toggleUnderline = (ctx: Ctx): Command => onVisibleLines(toggleMark(underlineSchema.type(ctx)))
+export const toggleUnderline = (ctx: Ctx): Command => onVisibleLines(toggleMark(underlineSchema.type(ctx)))
 
 /** The key is the row's (`note.underline`, ⌘U by default; YAZ-3564 K4). */
 export const underlineKeymap = $shortcut((ctx: Ctx) => rowShortcuts(ctx, 'note.underline', 'ToggleUnderline', { priority: PRIORITY, onRun: () => toggleUnderline(ctx) }))

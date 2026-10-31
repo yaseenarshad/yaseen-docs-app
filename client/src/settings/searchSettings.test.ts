@@ -62,6 +62,7 @@ describe('settingCandidates', () => {
       'threadColor',
       'sectionStep',
       'sectionLines',
+      'selectionToolbar',
       'tocOnByDefault',
       'tableOfContents',
       'tocLines',
@@ -261,8 +262,9 @@ describe('searchSettings', () => {
     // ⌥⌘W (the code tab's Match whole word) holds the text "⌘W" too; Close tab comes first.
     expect(ids(searchSettings(settingCandidates(ctx()), '⌘W'))).toEqual(['hotkey-closeTab', 'hotkey-code-findWholeWord'])
     // "underline" is also a word of Appearance › Text formatting (YAZ-3068); a note and a draw.io diagram both
-    // underline with ⌘U (YAZ-3037): both rows answer, the note's first (its label is the word).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-note-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting'])
+    // underline with ⌘U (YAZ-3037): both rows answer, the note's first (its label is the word). The Selection toolbar
+    // row has the word among its keywords (YAZ-3806 T7).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-note-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting', 'selectionToolbar'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkey-app-menuExportExcalidrawDrawing', 'hotkey-drawing-saveAs'])
     // A changed key is searched by the key it has NOW.
     const moved = { ...ctx(), settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K' } } }

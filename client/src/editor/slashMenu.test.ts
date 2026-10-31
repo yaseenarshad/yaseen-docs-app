@@ -206,6 +206,14 @@ describe('Current time (D22, edge cases 70–72, 77, 78)', () => {
       expect(JSON.stringify(checkedBefore)).toContain('"checked":false')
     }
   })
+  it('"/text" + Enter in a bullet: a plain line, out of the list — the Text row is T (YAZ-3806 T4)', async () => {
+    const { root, view } = await mount('* a\n* x\n')
+    await openMenu(view, root, 'x', '/text')
+    press('Enter')
+    await vi.waitFor(() => expect(isShown(root)).toBe(false))
+    // The empty line where "x" was, then Crepe's trailing line.
+    expect(view.state.doc.toString()).toBe('doc(bullet_list(list_item(paragraph("a"))), paragraph, paragraph)')
+  })
 })
 
 describe('Table in a bullet (YAZ-3696 D12, option B)', () => {

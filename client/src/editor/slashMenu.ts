@@ -11,7 +11,8 @@
  *  - Bullet List: it cannot make a list inside one — it only clears the `/` (and drops a task's
  *    checkbox).
  * Every other row does there what Crepe's command does (a heading, a quote, code or a table inside
- * the item; Task List makes the item a task).
+ * the item; Task List makes the item a task) — except Text, which runs T's command (YAZ-3806 T4):
+ * the item becomes a plain line, out of every list level, as T and ⌘⌥0 make it.
  *
  * "Table" (YAZ-3696 D12) is the app's own row in Crepe's place (`advancedGroup: { table: null }` in
  * `createCrepe()`), with Crepe's label, icon and position (after Code). In a list item's label line it
@@ -40,6 +41,7 @@ import {
   addBlockTypeCommand,
   clearTextInCurrentBlockCommand,
   selectTextNearPosCommand,
+  turnIntoTextCommand,
 } from '@milkdown/kit/preset/commonmark'
 import { createTable } from '@milkdown/kit/preset/gfm'
 import { Plugin, type Selection, TextSelection } from '@milkdown/kit/prose/state'
@@ -64,7 +66,7 @@ export interface SlashRow {
  */
 export interface SlashMenuGroups {
   getGroup: (key: string) => { addItem: (key: string, item: SlashRow) => unknown }
-  build: () => { key: string; items: { key: string }[] }[]
+  build: () => { key: string; items: { key: string; onRun?: (ctx: Ctx) => void }[] }[]
 }
 
 /** The stock rows hidden in a list item (keys from Crepe's `menu/config.ts`); see the header. */
@@ -110,6 +112,13 @@ export const currentTimeRow: SlashRow = {
     const view = ctx.get(editorViewCtx)
     view.dispatch(view.state.tr.insertText(formatCurrentTime(new Date())))
   },
+}
+
+/** The Text row (YAZ-3806 T4): the stock clear of the `/query`, then T's command — Crepe's own row sets a paragraph, which a bullet already is. */
+const textRowRun = (ctx: Ctx): void => {
+  const commands = ctx.get(commandsCtx)
+  commands.call(clearTextInCurrentBlockCommand.key)
+  commands.call(turnIntoTextCommand.key)
 }
 
 /** Crepe's own table icon (`src/icons/table.ts`; the package does not export it). */
@@ -175,6 +184,8 @@ export function createSlashMenu(extend?: (builder: SlashMenuGroups) => void): {
   const inList = shallowRef(false)
   const buildMenu = (builder: SlashMenuGroups) => {
     builder.getGroup('text').addItem('current-time', currentTimeRow)
+    const text = builder.build().find((group) => group.key === 'text')?.items.find((item) => item.key === 'text')
+    if (text !== undefined) text.onRun = textRowRun
     builder.getGroup('advanced').addItem('table', tableRow)
     extend?.(builder)
     if (!inList.value) return
