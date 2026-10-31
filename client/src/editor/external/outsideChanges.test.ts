@@ -17,7 +17,7 @@ import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { getZoomedItemPos } from '../outline/zoom'
 import { applyExternalMarkdown, EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, type OutsideRange } from './applyExternalMarkdown'
-import { MAX_CHANGES, OUTSIDE_ACTIVE_CLASS, OUTSIDE_CHANGE_CLASS, OUTSIDE_CHECKED_CLASS, OUTSIDE_REMOVED_CLASS } from './outsideChanges'
+import { MAX_CHANGES, OUTSIDE_ACTIVE_CLASS, OUTSIDE_CHANGE_CLASS, OUTSIDE_CHECKED_CLASS, OUTSIDE_REMOVED_CLASS, OUTSIDE_TIP_ATTR } from './outsideChanges'
 import { mergeExternalMarkdown } from './mergeExternal'
 import { createOutsideChangesChannel } from './outsideChangesChannel'
 
@@ -130,7 +130,7 @@ describe('the change list (D3, D4)', () => {
     const { crepe, root, view, channel } = await mount('The cat sat on the mat by the big red door.\n\nOther line.\n')
     for (const [from, to] of [['cat', 'dog'], ['dog', 'cow'], ['cow', 'pig'], ['pig', 'hen']]) outsideEdit(crepe, (md) => md.replace(from, to))
     expect(channel.getState().count).toBe(1)
-    expect(removedMarks(root).map((mark) => mark.title)).toEqual(['Removed: pig'])
+    expect(removedMarks(root).map((mark) => mark.getAttribute(OUTSIDE_TIP_ATTR))).toEqual(['Removed: pig'])
     // Six removals at six places in one line: the newest five marks stay.
     const words = ['The', 'sat', 'mat', 'big', 'red', 'door']
     const ranges: OutsideRange[] = words.map((word) => {
@@ -139,7 +139,7 @@ describe('the change list (D3, D4)', () => {
     })
     for (const range of ranges) view.dispatch(view.state.tr.setMeta(EXTERNAL_EDIT_META, true).setMeta(OUTSIDE_RANGES_META, [range]))
     expect(channel.getState().count).toBe(1)
-    expect(removedMarks(root).map((mark) => mark.title)).toEqual(['Removed: sat!', 'Removed: mat!', 'Removed: big!', 'Removed: red!', 'Removed: door!'])
+    expect(removedMarks(root).map((mark) => mark.getAttribute(OUTSIDE_TIP_ATTR))).toEqual(['Removed: sat!', 'Removed: mat!', 'Removed: big!', 'Removed: red!', 'Removed: door!'])
   })
 
   it('inserted bullets: one change for each inserted textblock', async () => {
@@ -149,14 +149,14 @@ describe('the change list (D3, D4)', () => {
     expect(glowTexts(root)).toEqual(['New one', 'New two'])
   })
 
-  it('removed text is one thin red mark titled "Removed: …", never part of the saved note', async () => {
+  it('removed text is one thin red mark with the tip "Removed: …", never part of the saved note', async () => {
     const { crepe, root, channel } = await mount('The cat sat on the mat.\n\nOther line.\n')
     outsideEdit(crepe, (md) => md.replace('cat ', ''))
     expect(channel.getState().count).toBe(1)
     expect(glowTexts(root)).toEqual([])
     const marks = removedMarks(root)
     expect(marks).toHaveLength(1)
-    expect(marks[0].title).toMatch(/^Removed: .*cat/)
+    expect(marks[0].getAttribute(OUTSIDE_TIP_ATTR)).toMatch(/^Removed: .*cat/)
     expect(marks[0].contentEditable).toBe('false')
     expect(getMarkdownForSave(crepe)).toBe('The sat on the mat.\n\nOther line.\n')
   })
@@ -168,7 +168,7 @@ describe('the change list (D3, D4)', () => {
     outsideEdit(crepe, (md) => md.replace(`* ${long}\n`, ''))
     const [mark] = removedMarks(root)
     expect(mark.className).toContain(`${OUTSIDE_REMOVED_CLASS}--between`)
-    expect(mark.title).toBe(`Removed: ${'x'.repeat(200)}…`)
+    expect(mark.getAttribute(OUTSIDE_TIP_ATTR)).toBe(`Removed: ${'x'.repeat(200)}…`)
     expect(getMarkdownForSave(crepe)).not.toContain('x')
   })
 
@@ -200,13 +200,15 @@ describe('the change list (D3, D4)', () => {
 })
 
 describe('the Before hover (YAZ-3947)', () => {
-  const glowTitles = (root: HTMLElement): string[] => [...root.querySelectorAll<HTMLElement>(`.${OUTSIDE_CHANGE_CLASS}`)].map((el) => el.title)
+  const glowTitles = (root: HTMLElement): string[] => [...root.querySelectorAll<HTMLElement>(`.${OUTSIDE_CHANGE_CLASS}`)].map((el) => el.getAttribute(OUTSIDE_TIP_ATTR) ?? '')
 
   it('a glowing change shows its line as it was before the outside edit; a new line says so', async () => {
     const { crepe, root } = await mount('* Call the bank\n* Send the invoice to Sam\n* Book the room\n')
     outsideEdit(crepe, (md) => md.replace('Send the invoice', 'Send the signed invoice').replace('* Book the room', '* Charge the camera\n* Book the room'))
     expect(glowTexts(root)).toEqual(['signed ', 'Charge the camera'])
     expect(glowTitles(root)).toEqual(['Before: Send the invoice to Sam', 'New line'])
+    // Shown at once by CSS on :hover, never as a native title (that waits about a second, and two would show).
+    expect(root.querySelector(`.${OUTSIDE_CHANGE_CLASS}`)?.getAttribute('title')).toBeNull()
   })
 
   it('a merge shows the line as it was on screen; a second outside edit of the line keeps the first Before', async () => {

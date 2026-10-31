@@ -14,9 +14,10 @@
  * textblocks (bullets added) is one change for each. More than `MAX_CHANGES` empties the list into
  * whole-note mode, with no glow.
  *
- * Drawing: the changed words glow (inline `outside-change`), and their hover shows the line as it was before the
- * first outside edit of it, or "New line" (YAZ-3947; kept with the change, in memory only); removed text is a thin red mark with the text
- * in its title (D7, a widget: not in the doc, never copied or saved); each changed textblock carries a node
+ * Drawing: the changed words glow (inline `outside-change`), and the mouse on them shows at once the line as it was
+ * before the first outside edit of it, or "New line" (YAZ-3947; kept with the change, in memory only); removed text is
+ * a thin red mark that shows its text the same way (D7, a widget: not in the doc, never copied or saved). The text is
+ * the `OUTSIDE_TIP_ATTR` attribute, drawn by CSS on :hover: no delay, as a native title has; each changed textblock carries a node
  * class that shows its **Checked** button on hover (D8). The DecorationSet lives in the state and is built
  * again only when the list changes; a keystroke only maps it.
  *
@@ -49,10 +50,12 @@ export const OUTSIDE_REMOVED_CLASS = 'outside-removed'
 /** On each changed textblock: its hover shows the Checked button (outsideChanges.css). */
 export const OUTSIDE_BLOCK_CLASS = 'outside-change-block'
 export const OUTSIDE_CHECKED_CLASS = 'outside-checked'
+/** The text a glow or a removed mark shows while the mouse is on it (outsideChanges.css draws it). */
+export const OUTSIDE_TIP_ATTR = 'data-outside-tip'
 
 /** D3: above this many changes the list empties and the note is "changed as a whole". */
 export const MAX_CHANGES = 200
-/** D7: a removed text longer than this is cut in the mark's title, with "…"; so is a Before line (YAZ-3947). */
+/** D7: a removed text longer than this is cut in the mark's tip, with "…"; so is a Before line (YAZ-3947). */
 const REMOVED_TITLE_CHARS = 200
 /** One change keeps at most this many removed marks, the newest (YAZ-3844): an agent that saves one line again and again adds no more. */
 export const MAX_REMOVED_PER_CHANGE = 5
@@ -234,7 +237,7 @@ const removedMark = (text: string, between: boolean, active: boolean) => (): HTM
   const mark = document.createElement('span')
   mark.className = [OUTSIDE_REMOVED_CLASS, between ? `${OUTSIDE_REMOVED_CLASS}--between` : '', active ? OUTSIDE_ACTIVE_CLASS : ''].filter(Boolean).join(' ')
   mark.contentEditable = 'false'
-  mark.title = removedTitle(text)
+  mark.setAttribute(OUTSIDE_TIP_ATTR, removedTitle(text))
   return mark
 }
 
@@ -265,10 +268,10 @@ const buildDecorations = (doc: ProseNode, changes: readonly OutsideChange[], act
     decorations.push(Decoration.node(change.pos, change.pos + block.nodeSize, { class: ringOnBlock ? `${OUTSIDE_BLOCK_CLASS} ${OUTSIDE_ACTIVE_CLASS}` : OUTSIDE_BLOCK_CLASS }))
     const title = beforeTitle(change.before)
     for (const span of change.glow)
-      decorations.push(Decoration.inline(span.from, span.to, { class: active ? `${OUTSIDE_CHANGE_CLASS} ${OUTSIDE_ACTIVE_CLASS}` : OUTSIDE_CHANGE_CLASS, title }))
+      decorations.push(Decoration.inline(span.from, span.to, { class: active ? `${OUTSIDE_CHANGE_CLASS} ${OUTSIDE_ACTIVE_CLASS}` : OUTSIDE_CHANGE_CLASS, [OUTSIDE_TIP_ATTR]: title }))
     for (const mark of change.removed) {
       const between = !doc.resolve(mark.pos).parent.inlineContent
-      // The key names the text: a newer removal at the same place must draw its own title, not reuse the old mark.
+      // The key names the text: a newer removal at the same place must draw its own tip, not reuse the old mark.
       const key = `outside-removed-${change.id}-${active ? 1 : 0}${between ? 1 : 0}-${mark.text.length}-${mark.text.slice(0, REMOVED_TITLE_CHARS)}`
       decorations.push(Decoration.widget(mark.pos, removedMark(mark.text, between, active), { side: -1, ignoreSelection: true, key }))
     }
