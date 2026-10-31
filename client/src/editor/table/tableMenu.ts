@@ -197,6 +197,12 @@ function customColour(view: EditorView, pointer: number, attr: 'fill' | 'color')
   if (cell !== null) pickCustomColour(view, targetSelection(view.state, cell), attr)
 }
 
+/**
+ * The vendored table block's ask for the table menu (YAZ-3820): `{ x, y, pos }` in `detail`. The
+ * package sends its own copy of this name (`operation.ts`); `noteMenu.test.tsx` clicks a real handle.
+ */
+export const TABLE_HANDLE_MENU = 'milkdown-table-handle-menu'
+
 /** A colour's swatch before its label, as the cell toolbar's palette draws it. */
 const swatch = (background: string) => createElement('span', { className: 'table-menu-swatch', style: { background } })
 

@@ -27,6 +27,8 @@
  *
  * Hidden on a single caret or one cell, in a read-only note (R3), when the editor has no focus,
  * and while a mouse drag is selecting: a mousedown in the editor hides it, the mouseup shows it.
+ * Also while the table menu is open (a right-click, or a handle's `TABLE_HANDLE_MENU`), so the two
+ * never overlap; the next click in the editor shows it again.
  */
 import { TooltipProvider } from '@milkdown/kit/plugin/tooltip'
 import { closeHistory } from '@milkdown/kit/prose/history'
@@ -37,6 +39,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { setCellsAlign, setCellsAttr } from './cells'
 import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
+import { TABLE_HANDLE_MENU } from './tableMenu'
 import { CELL_ALIGNS, TABLE_COLORS, type CellAlign, type TableColor } from './tableStyle'
 
 const SVG = (body: string) => `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${body}</svg>`
@@ -236,6 +239,7 @@ class CellToolbarView {
   #provider: TooltipProvider
   #strip: HTMLElement
   #dragging = false
+  #menu = false
 
   constructor(readonly view: EditorView) {
     const strip = renderStrip(view, { toggle: this.#togglePalette, close: this.#closePalettes })
@@ -246,11 +250,13 @@ class CellToolbarView {
       offset: 10,
       shouldShow: (v) => {
         const focused = v.hasFocus() || strip.contains(v.root.activeElement)
-        return !this.#dragging && v.editable && focused && manyCells(v.state)
+        return !this.#dragging && !this.#menu && v.editable && focused && manyCells(v.state)
       },
     })
     this.#provider.onHide = this.#closePalettes
     view.dom.addEventListener('mousedown', this.#down)
+    view.dom.addEventListener('contextmenu', this.#menuOpens)
+    view.dom.addEventListener(TABLE_HANDLE_MENU, this.#menuOpens)
     view.dom.ownerDocument.addEventListener('mouseup', this.#up)
     this.update(view)
   }
@@ -284,8 +290,15 @@ class CellToolbarView {
     this.#closePalettes()
   }
 
+  #menuOpens = () => {
+    this.#menu = true
+    this.#closePalettes()
+    this.#provider.hide()
+  }
+
   #down = (e: MouseEvent) => {
     this.#closePalettes()
+    this.#menu = false
     if (e.button !== 0) return
     this.#dragging = true
     this.#provider.hide()
@@ -305,6 +318,8 @@ class CellToolbarView {
 
   destroy() {
     this.view.dom.removeEventListener('mousedown', this.#down)
+    this.view.dom.removeEventListener('contextmenu', this.#menuOpens)
+    this.view.dom.removeEventListener(TABLE_HANDLE_MENU, this.#menuOpens)
     this.view.dom.ownerDocument.removeEventListener('mouseup', this.#up)
     this.#provider.destroy()
     this.#strip.remove()

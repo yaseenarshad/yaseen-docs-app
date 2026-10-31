@@ -10,6 +10,7 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { getMarkdownForSave } from '../createCrepe'
+import { TABLE_HANDLE_MENU } from './tableMenu'
 import { cellPos, mountNote as mount, unmountAll } from './tableTestKit'
 
 afterEach(unmountAll)
@@ -83,6 +84,22 @@ describe('when the toolbar shows', () => {
     document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }))
     await settle()
     expect(shown(view)).toBe(true)
+  })
+
+  it('hides while the table menu is open (a right-click or a handle), and shows on the next click', async () => {
+    const { view } = await mount(TABLE)
+    await select(view, [1, 0], [2, 1])
+    expect(shown(view)).toBe(true)
+    view.dom.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, button: 2 }))
+    await settle()
+    expect(shown(view)).toBe(false)
+    view.dom.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }))
+    await settle()
+    expect(shown(view)).toBe(true)
+    view.dom.dispatchEvent(new CustomEvent(TABLE_HANDLE_MENU, { bubbles: true, detail: { x: 0, y: 0, pos: cellPos(view, 1, 0) } }))
+    await settle()
+    expect(shown(view)).toBe(false)
   })
 })
 
