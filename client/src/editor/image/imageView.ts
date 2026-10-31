@@ -65,6 +65,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { NodeSelection } from '@milkdown/kit/prose/state'
 import type { EditorView, NodeView, ViewMutationRecord } from '@milkdown/kit/prose/view'
 import { $view } from '@milkdown/kit/utils'
+import { holdFrames } from '../../lib/colResize'
 import type { GalleryImage, ImageOptions } from './imageOptions'
 import { formatAlt, imageSrc, noteDirRel, parseAlt } from './imageSrc'
 import './imageView.css'
@@ -224,6 +225,7 @@ class ImageNodeView implements NodeView {
       document.removeEventListener('mouseup', onUp)
       document.removeEventListener('keydown', onKey, true)
       window.removeEventListener('blur', onUp)
+      holdFrames(false)
       this.dom.classList.remove(`${IMAGE_VIEW_CLASS}--resizing`)
     }
     const onMove = (e: MouseEvent): void => {
@@ -253,6 +255,7 @@ class ImageNodeView implements NodeView {
     document.addEventListener('mouseup', onUp)
     document.addEventListener('keydown', onKey, true)
     window.addEventListener('blur', onUp)
+    holdFrames(true)
   }
 
   /** ONE document change per gesture: the new width into the alt, everything else untouched. */

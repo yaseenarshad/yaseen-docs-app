@@ -15,6 +15,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type RefObject } from 'react'
 import { TOC_MIN_W } from '@shared/types'
+import { holdColResize } from '../../lib/colResize'
 import { storage } from '../../lib/storage'
 import { isNoteKey } from '../noteKeys'
 
@@ -114,7 +115,7 @@ export function beginTocResize(event: ReactMouseEvent<HTMLElement>, section: HTM
   const end = (): void => {
     window.removeEventListener('mousemove', move)
     window.removeEventListener('mouseup', up)
-    document.body.style.cursor = ''
+    holdColResize(false)
     edge.toggleAttribute('data-active', false)
     endResize.current = null
   }
@@ -124,7 +125,7 @@ export function beginTocResize(event: ReactMouseEvent<HTMLElement>, section: HTM
   }
   window.addEventListener('mousemove', move)
   window.addEventListener('mouseup', up)
-  document.body.style.cursor = 'col-resize'
+  holdColResize(true)
   edge.toggleAttribute('data-active', true)
   endResize.current = end
 }
