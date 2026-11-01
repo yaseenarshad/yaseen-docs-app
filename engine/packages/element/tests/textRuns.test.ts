@@ -9,6 +9,8 @@ import {
   setTextRunFlag,
   setTextRunHighlight,
 } from "../src/textRuns";
+import { mutateElement, newElementWith } from "../src/mutateElement";
+import { newTextElement } from "../src/newElement";
 
 describe("YAZ-3718 D1: normalizeTextRuns", () => {
   it("drops malformed and empty runs and keeps only known styles", () => {
@@ -342,5 +344,32 @@ describe("YAZ-4102 3E: highlight runs", () => {
     expect(getTextRangeHighlight(runs, 4, 7)).toBeUndefined();
     expect(getTextRangeHighlight(runs, 6, 8)).toBe("blue");
     expect(getTextRangeHighlight(runs, 5, 6)).toBeUndefined();
+  });
+});
+
+describe("YAZ-4101: the last run removed is a change", () => {
+  const styled = () => ({
+    ...newTextElement({ x: 0, y: 0, text: "ab" }),
+    textRuns: [{ start: 0, end: 2, bold: true as const }],
+  });
+
+  it("newElementWith gives a new version with no runs", () => {
+    const element = styled();
+    const next = newElementWith(element, { textRuns: undefined });
+    expect(next).not.toBe(element);
+    expect(next.textRuns).toBeUndefined();
+    expect(next.version).toBe(element.version + 1);
+    // no runs before and after: no change
+    expect(newElementWith(next, { textRuns: undefined })).toBe(next);
+  });
+
+  it("mutateElement takes the runs off", () => {
+    const element = styled();
+    const version = element.version;
+    mutateElement(element, new Map(), { textRuns: undefined });
+    expect(element.textRuns).toBeUndefined();
+    expect(element.version).toBe(version + 1);
+    mutateElement(element, new Map(), { textRuns: undefined });
+    expect(element.version).toBe(version + 1);
   });
 });

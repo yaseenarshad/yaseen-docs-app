@@ -120,6 +120,10 @@ export const mutateElement = <TElement extends Mutable<ExcalidrawElement>>(
 
       (element as any)[key] = value;
       didChange = true;
+    } else if (key === "textRuns" && (element as any).textRuns !== undefined) {
+      // YAZ-4101: no run left is a change: the last style of the letters went
+      (element as any).textRuns = undefined;
+      didChange = true;
     }
   }
 
@@ -161,6 +165,9 @@ export const newElementWith = <TElement extends ExcalidrawElement>(
       ) {
         continue;
       }
+      didChange = true;
+    } else if (key === "textRuns" && (element as any).textRuns !== undefined) {
+      // YAZ-4101: no run left is a change: the last style of the letters went
       didChange = true;
     }
   }

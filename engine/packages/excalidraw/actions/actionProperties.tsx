@@ -2363,20 +2363,15 @@ const changeTextHighlight = (
     appState,
     (element) =>
       isTextElement(element) && element.id === editing.id
-        ? newElementWith(
-            element,
-            {
-              textRuns: setTextRunHighlight(
-                element.textRuns,
-                editable.value.length,
-                start,
-                end,
-                highlight,
-              ),
-            },
-            // the last highlight gone leaves `textRuns` undefined
-            true,
-          )
+        ? newElementWith(element, {
+            textRuns: setTextRunHighlight(
+              element.textRuns,
+              editable.value.length,
+              start,
+              end,
+              highlight,
+            ),
+          })
         : element,
     true,
   );

@@ -1394,6 +1394,34 @@ describe("textWysiwyg", () => {
         );
       });
 
+      it("YAZ-4101: removing the last run color leaves no runs, and the word takes the box color", () => {
+        type("Hello world");
+        const boxColor = (h.elements[0] as ExcalidrawTextElement).strokeColor;
+        textarea.setSelectionRange(6, 11);
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: "#e03131",
+          });
+        });
+        expect(runs()).toEqual([{ start: 6, end: 11, color: "#e03131" }]);
+        const version = h.elements[0].version;
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: boxColor,
+          });
+        });
+        expect(h.elements[0].version).toBeGreaterThan(version);
+        expect(h.elements[0]).not.toHaveProperty("textRuns", expect.anything());
+        expect((h.elements[0] as ExcalidrawTextElement).strokeColor).toBe(
+          boxColor,
+        );
+        // typed letters after it are plain again, and so is a removed highlight
+        textarea.setSelectionRange(0, 5);
+        press(CODES.H, "H", { shiftKey: true });
+        press(CODES.H, "H", { shiftKey: true });
+        expect(runs()).toBeUndefined();
+      });
+
       it("YAZ-4101 3D: a caret move in a box with no runs draws the toolbar again never", () => {
         type("Hello world");
         const renders = vi.spyOn(h.app, "refreshTextEditorToolbar");
