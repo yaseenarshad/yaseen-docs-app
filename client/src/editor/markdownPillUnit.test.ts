@@ -12,6 +12,7 @@ import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from './createCrepe'
+import { noPreviewOnPills } from './markdownLink'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -231,5 +232,26 @@ describe('a Markdown link pill is one unit (YAZ-4021)', () => {
     moveTo(3, 20) // left: "ad the " and the pill
     expect([view.state.selection.from, view.state.selection.to]).toEqual([3, TO])
     document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }))
+  })
+
+  it('a hover over a pill closes Crepe\'s link preview; a hover over a web link keeps it (YAZ-3747 demo)', async () => {
+    const { root, view } = await mount(DOC)
+    const move = vi.fn()
+    const mouseleave = vi.fn()
+    let spec = { props: { handleDOMEvents: { mousemove: move, mouseleave } } }
+    noPreviewOnPills({ isInjected: () => true, update: (_key: unknown, f: (s: typeof spec) => typeof spec) => (spec = f(spec)) } as never)
+    const hover = (el: Element) => {
+      const event = new MouseEvent('mousemove', { bubbles: true })
+      Object.defineProperty(event, 'target', { value: el })
+      spec.props.handleDOMEvents.mousemove.call(null as never, view as never, event as never)
+    }
+    hover(root.querySelector('.link-pill')!)
+    expect(mouseleave).toHaveBeenCalledTimes(1)
+    expect(move).not.toHaveBeenCalled()
+    hover(root.querySelector('a[href="https://example.com"]') ?? root.querySelectorAll('p')[1]!)
+    expect(move).toHaveBeenCalledTimes(1)
+    // The real editor's preview has the wrapped handler, not Crepe's own.
+    const preview = view.state.plugins.find((p) => (p as unknown as { key: string }).key.startsWith('LINK_PREVIEW_TOOLTIP'))!
+    expect(preview.props.handleDOMEvents?.mousemove?.name).toBe('bound mousemove') // Crepe's own is 'bound debounced'
   })
 })

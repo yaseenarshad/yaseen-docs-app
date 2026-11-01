@@ -303,7 +303,7 @@ import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPick
 import { createWikilink, createWikilinkResolveSource, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
 import { createPillSelection } from './wikilink/pillSelection'
-import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
+import { createMarkdownLink, noPreviewOnPills, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import { claimPage } from '../lib/readOnlyCaret'
 import { toDisplay, type HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -601,7 +601,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.())).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
-  if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
+  if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav)).config(noPreviewOnPills)
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav, opts.linkLook))
   if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))
   // Images (YAZ-1656): the node view takes the options directly; the ctx slice carries the SAME

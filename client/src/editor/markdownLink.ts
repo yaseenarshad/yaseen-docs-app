@@ -14,7 +14,7 @@
  * (YAZ-3609 D8, D14) and draws as a pill (D19); every other href goes to the host, and its
  * validation stays at the main process boundary.
  */
-import { linkTooltipAPI } from '@milkdown/kit/component/link-tooltip'
+import { linkPreviewTooltip, linkTooltipAPI } from '@milkdown/kit/component/link-tooltip'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Mark, MarkType, Node as ProseNode } from '@milkdown/kit/prose/model'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
@@ -216,6 +216,22 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
     edit: view.editable ? () => ctx.get(linkTooltipAPI.key).editLink(hit.mark, hit.from, hit.to) : undefined,
     remove: view.editable ? () => ctx.get(linkTooltipAPI.key).removeLink(hit.from, hit.to) : undefined,
   }
+}
+
+/** Crepe's link preview (the path, edit and remove) opens on a hover over any link. A pill has the link menu, as a
+ * `[[link]]` has, so a hover over a pill closes the preview instead (YAZ-3747 demo). A web link keeps it. */
+export const noPreviewOnPills = (ctx: Ctx) => {
+  if (!ctx.isInjected(linkPreviewTooltip.key)) return
+  ctx.update(linkPreviewTooltip.key, (spec) => {
+    const events = spec.props?.handleDOMEvents
+    const move = events?.mousemove
+    if (move === undefined) return spec
+    const leave = events?.mouseleave
+    function mousemove(this: Plugin, view: EditorView, event: MouseEvent) {
+      return event.target instanceof Element && event.target.closest('.link-pill') !== null ? leave?.call(this, view, event) : move!.call(this, view, event)
+    }
+    return { ...spec, props: { ...spec.props, handleDOMEvents: { ...events, mousemove } } }
+  })
 }
 
 export const createMarkdownLink = (nav: MarkdownLinkNav) =>
