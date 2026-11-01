@@ -58,13 +58,21 @@
  * on show, so a folded row is current while the reader is in its section, and nothing opens by
  * itself (D5). The folded rows are saved for each note (`folders[root].tocFolds`, D1) by their fold
  * key (`tocFoldKeys`): a fold stays on its row through edits elsewhere, and a renamed row opens again.
+ *
+ * ZOOM (YAZ-3939 D7–D10): the names have their own zoom, `settings.tocZoom`, one for every note. The
+ * sidebar's "− 100% +" (`ZoomStepper`) sets it from the header, beside the fold-all button; where the
+ * header has no room for it (the card, a narrow column) a zoom icon opens it in a small box.
+ * ⌘+ / ⌘− / ⌘0 with the mouse over the table of contents, or the focus in it, zoom the names and never
+ * the note: a DOCUMENT CAPTURE listener claims the step before the note's own listener sees it.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from 'react'
-import { TOC_DEFAULT_W, TOC_MAX_W, type ContentWidth, type TableOfContents as TableOfContentsMode } from '@shared/types'
+import { stepSidebarZoom, TOC_DEFAULT_W, TOC_MAX_W, type ContentWidth, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
 import { ENOUGH_ROWS, type TocChannel, type TocRow } from './tocChannel'
 import { CollapseAllIcon, ExpandAllIcon } from '../../views/view/icons'
 import { outlineFoldKeyStem } from '../outline/outlineFoldKeys'
 import { beginTocResize, ChevronIcon, CLICK_GUARD_MS, EDGE_PX, PinIcon, RAIL_PADDING_PX, shown, useTocBox, useTocCard, useTocLinger, useTocShortcut, useTocWidthVar } from './tocFrame'
+import { ZoomStepper } from '../../sidebar/ZoomStepper'
+import { ZOOM_EVENT } from '../zoomRequest'
 import './toc.css'
 
 /**
@@ -210,9 +218,13 @@ export interface TableOfContentsProps {
   folds: readonly string[]
   /** A fold, an unfold and the fold-all button write the note's folded rows through this. */
   onChangeFolds: (keys: string[]) => void
+  /** The zoom of the names in percent (the setting, YAZ-3939 D9). */
+  zoom: number
+  /** Its − and +, and ⌘+ / ⌘− / ⌘0 over the table of contents, write the SETTING through this. */
+  onChangeZoom: (percent: number) => void
 }
 
-export function TableOfContents({ channel, mode, contentWidth, onChangeMode, width, onChangeWidth, hostRef, onReturnFocus, folds, onChangeFolds }: TableOfContentsProps) {
+export function TableOfContents({ channel, mode, contentWidth, onChangeMode, width, onChangeWidth, hostRef, onReturnFocus, folds, onChangeFolds, zoom, onChangeZoom }: TableOfContentsProps) {
   const { rows: all, hidden } = useSyncExternalStore(channel.subscribe, channel.getState)
   const listed = useMemo(() => shownRows(all), [all])
   const keys = useMemo(() => tocFoldKeys(all), [all])
@@ -249,6 +261,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   const endResize = useRef<(() => void) | null>(null)
   /** The wheel effect's `turn`, for a wheel over the table of contents that moves the note (`onWheelOverToc`). */
   const wheelTurn = useRef<(() => void) | null>(null)
+  /** The next new current row or list came from the reader's hand IN the list (a pick, a fold): the list holds still (`Names`). */
+  const hold = useRef(false)
 
   const focusCurrent = (): void => {
     const nav = navRef.current
@@ -268,6 +282,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     onReturnFocus()
   }
   const jump = (row: number): void => {
+    // A new row only: the same one renders nothing, and the hold would wait for the next move of the note.
+    if (row !== at) hold.current = true
     lock.current = row
     currentRef.current = row
     setCurrent(row)
@@ -289,6 +305,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     for (let i = 0; i < after.length && after[i].index <= reading; i++) to = i
     currentRef.current = to
     setCurrent(to)
+    hold.current = true
     setFolded(next)
     onChangeFolds(keys.filter((key) => next.has(key)))
   }
@@ -307,9 +324,12 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   const anyOpen = useMemo(() => [...parents].some((index) => !folded.has(keys[index])), [parents, folded, keys])
   const foldAll = (): void => saveFolds(anyOpen ? new Set([...parents].map((index) => keys[index])) : new Set())
 
+  /** One step of the names' zoom (YAZ-3939 D8); 0 is 100%. */
+  const zoomBy = (step: ZoomStep): void => onChangeZoom(step === 0 ? 100 : stepSidebarZoom(zoom, step))
+
   // Mirror for the listeners below, which are registered once per shown table of contents.
-  const live = useRef({ enter, leave })
-  live.current = { enter, leave }
+  const live = useRef({ enter, leave, zoomBy })
+  live.current = { enter, leave, zoomBy }
 
   // The width of the names column, `--toc-width` on the section (`tocFrame.tsx`).
   useTocWidthVar(names, shownWidth, sectionOf, hostRef, endResize)
@@ -407,6 +427,21 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   // 🔒 ⌘J, the claim rule in the header (`tocFrame.tsx`). A second ⌘J from inside the table of contents is Esc.
   useTocShortcut(shows, hostRef, navRef, live)
 
+  // ⌘+ / ⌘− / ⌘0 over the table of contents (YAZ-3939 D8): the mouse over it or the focus in it. A click on
+  // a name hands the focus to the note, so the mouse alone must be enough. Capture, so the note never sees it.
+  useEffect(() => {
+    if (!shows) return
+    const onZoom = (event: Event): void => {
+      const nav = navRef.current
+      if (nav === null || !(nav.matches(':hover') || nav.contains(document.activeElement))) return
+      event.preventDefault()
+      event.stopPropagation()
+      live.current.zoomBy((event as CustomEvent<ZoomStep>).detail)
+    }
+    document.addEventListener(ZOOM_EVENT, onZoom, true)
+    return () => document.removeEventListener(ZOOM_EVENT, onZoom, true)
+  }, [shows])
+
   // A card that lost its reason to be open (names took over, the note zoomed, the setting went
   // off) must not come back open when the lines do.
   useEffect(() => {
@@ -498,7 +533,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
    */
   const startResize = (event: ReactMouseEvent<HTMLElement>): void => beginTocResize(event, sectionOf(), shownWidth, room, onChangeWidth, endResize)
 
-  const nameList = <Names rows={rows} at={at} onPick={jump} parents={parents} isFolded={(row) => folded.has(keys[row.index])} onFold={toggleFold} />
+  const nameList = <Names rows={rows} at={at} onPick={jump} parents={parents} isFolded={(row) => folded.has(keys[row.index])} onFold={toggleFold} hold={hold} />
   // The words and the icon of every fold-all button (YAZ-3938 D8, D9): chevrons up for "Collapse all",
   // down for "Expand all". With no row that can fold it stays, dimmed, so it never jumps in and out.
   const foldLabel = parents.size === 0 ? 'Nothing to fold' : anyOpen ? 'Collapse all' : 'Expand all'
@@ -507,6 +542,16 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
       {anyOpen || parents.size === 0 ? <CollapseAllIcon /> : <ExpandAllIcon />}
     </button>
   )
+  // "Unpin" is offered only where it does something: where there is room for the names anyway, an unpin would change nothing the reader can see.
+  const unpins = mode === 'pinned' && !namesShow('auto', box.width, columnMax)
+  // The zoom and the fold-all button, at the header's end (YAZ-3939 D7). The card, and a column too
+  // narrow for "Unpin" beside them, have no room for "− 100% +": there it is an icon that opens it.
+  const ends = (
+    <div className="toc__ends">
+      <TocZoom value={zoom} onChange={onChangeZoom} compact={!names || (unpins && shownWidth < ZOOM_INLINE_W)} />
+      {foldAllButton}
+    </div>
+  )
 
   return (
     <nav
@@ -514,7 +559,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
       className="toc"
       data-names={names ? '' : undefined}
       aria-label="Table of contents"
-      style={{ top: box.top, '--toc-height': `${box.height}px`, '--toc-gutter': `${box.gutter}px` } as CSSProperties}
+      style={{ top: box.top, '--toc-height': `${box.height}px`, '--toc-gutter': `${box.gutter}px`, '--toc-zoom': zoom / 100 } as CSSProperties}
       onKeyDown={onKeyDown}
       // The names column lies over the scroller's own padding: a wheel there still moves the note.
       onWheel={names ? onWheelOverToc : undefined}
@@ -527,14 +572,13 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
           {/* Mouse only: the arrow keys walk the names, so the edge never takes the focus. */}
           <div className="toc__resize" aria-hidden onMouseDown={startResize} />
           <div className="toc__tools">
-            {/* Offered only where it does something: where there is room for the names anyway, an unpin would change nothing the reader can see. */}
-            {mode === 'pinned' && !namesShow('auto', box.width, columnMax) && (
+            {unpins && (
               <button type="button" className="toc__pin toc__pin--off" title="Unpin: go back to the small lines" onClick={() => onChangeMode('auto')}>
                 <PinIcon off />
                 <span>Unpin</span>
               </button>
             )}
-            {foldAllButton}
+            {ends}
           </div>
           {nameList}
         </>
@@ -553,7 +597,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
             <div className="toc__card" data-leaving={open ? undefined : ''}>
               <div className="toc__header">
                 <span className="toc__title">Table of contents</span>
-                {foldAllButton}
+                {ends}
                 {/* Offered only where it does something: names need `NAMES_FLOOR` of width even when pinned. */}
                 {mode === 'auto' && box.width >= NAMES_FLOOR && (
                   <button type="button" className="toc__pin" title="Pin: keep the table of contents open beside the note" onClick={() => onChangeMode('pinned')}>
@@ -591,13 +635,70 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   )
 }
 
+/** The names column is at least this wide, px, before "− 100% +" fits in its header beside "Unpin" and fold-all. Without "Unpin" it fits at `TOC_MIN_W`. */
+const ZOOM_INLINE_W = 190
+
+/** A magnifier for the zoom icon (YAZ-3939 D7): the stroke of the pin beside it. */
+const ZoomIcon = () => (
+  <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <circle cx="7" cy="7" r="4.5" />
+    <path d="M10.5 10.5L14 14M5 7h4M7 5v4" />
+  </svg>
+)
+
+/**
+ * The zoom of the names (YAZ-3939 D7): the sidebar's "− 100% +", or — `compact` — an icon that opens it in a small
+ * box under it. A click outside and Esc close the box; Esc there never reaches the table of contents' own Esc.
+ */
+function TocZoom({ value, onChange, compact }: { value: number; onChange: (percent: number) => void; compact: boolean }) {
+  const [open, setOpen] = useState(false)
+  const boxRef = useRef<HTMLDivElement>(null)
+  const shows = compact && open
+  useEffect(() => {
+    if (!shows) return
+    const onDown = (event: PointerEvent): void => {
+      if (!boxRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [shows])
+  if (!compact) {
+    return (
+      <div className="toc__zoom">
+        <ZoomStepper kind="toc" value={value} onChange={onChange} />
+      </div>
+    )
+  }
+  const label = `Table of contents zoom: ${Math.round(value)}%`
+  return (
+    <div ref={boxRef} className="toc__zoom" data-open={shows ? '' : undefined}>
+      <button type="button" className="toc__pin toc__pin--zoom" title={label} aria-label={label} aria-expanded={shows} onClick={() => setOpen(!shows)}>
+        <ZoomIcon />
+      </button>
+      {shows && (
+        <div
+          className="toc__zoom-box"
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape') return
+            event.preventDefault()
+            event.stopPropagation()
+            setOpen(false)
+          }}
+        >
+          <ZoomStepper kind="toc" value={value} onChange={onChange} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 /**
  * The names themselves: the column's list and the card's. A thin accent MARKER slides to the
  * current name (one `offsetTop` read when the index changes, never per scroll event), and the
  * list fades at an edge that has more behind it — its own scrollbar is hidden, so the fade is
  * what says "there is more".
  */
-function Names({ rows, at, onPick, parents, isFolded, onFold }: {
+function Names({ rows, at, onPick, parents, isFolded, onFold, hold }: {
   rows: readonly ShownRow[]
   at: number
   onPick: (row: number) => void
@@ -605,6 +706,8 @@ function Names({ rows, at, onPick, parents, isFolded, onFold }: {
   parents: ReadonlySet<number>
   isFolded: (row: ShownRow) => boolean
   onFold: (row: ShownRow) => void
+  /** Set by a pick or a fold in the list: this placement moves the marker only, never the list. */
+  hold: { current: boolean }
 }) {
   const listRef = useRef<HTMLDivElement>(null)
   const markerRef = useRef<HTMLSpanElement>(null)
@@ -626,14 +729,18 @@ function Names({ rows, at, onPick, parents, isFolded, onFold }: {
     if (!list || !marker || !name) return
     marker.style.transform = `translateY(${name.offsetTop}px)`
     marker.style.height = `${name.offsetHeight}px`
+    const held = hold.current
+    hold.current = false
     // A list longer than its box moves WITH the note, like a scrollbar's thumb: the current name
     // stands as far down the box as it is down the list — at the top on the first row, at the
     // bottom on the last, and in step in between. So the marker only ever travels one way while the
     // reader does, and the eye can find it without reading. The first placement does not glide,
     // and under "Reduce Motion" none does: toc.css stops the marker's slide the same way.
+    // A click or a fold in the list is not reading (YAZ-3939, demo): the list stays under the mouse,
+    // and the next move of the note brings it back in step.
     const range = list.scrollHeight - list.clientHeight
     const span = list.scrollHeight - name.offsetHeight
-    if (range > 0 && span > 0) {
+    if (range > 0 && span > 0 && !held) {
       const top = (name.offsetTop / span) * range
       const glides = placed.current && typeof list.scrollTo === 'function' && !(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
       if (glides) list.scrollTo({ top, behavior: 'smooth' })

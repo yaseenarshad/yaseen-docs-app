@@ -16,6 +16,7 @@ import { COLUMN_MAX, foldable, MAX_ROWS, namesRoom, namesShow, NAMES_FLOOR, path
 import tocCss from './toc.css?inline'
 import { createTocChannel, type TocChannel, type TocLevel, type TocRow } from './tocChannel'
 import { outlineFoldKeyStem } from '../outline/outlineFoldKeys'
+import { ZOOM_EVENT } from '../zoomRequest'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -221,7 +222,7 @@ describe('pathLines: the level lines from the current row up to its parents (YAZ
       // A parent row never carries its own line, and no level 1 row is ever on a path.
       NOTE.forEach((row, i) => {
         if (row.level === 1) expect(path[i]).toBe('')
-        // A line passes only rows that are further in than it: line 1 at 12px, line 2 at 24px.
+        // A line passes only rows that are further in than it: line 1 at 20px, line 2 at 36px.
         if (path[i] !== '') expect(Number(path[i][0])).toBeLessThan(row.level)
         // The path arrives (`t`) only at the name ONE level in from the line.
         if (path[i].endsWith('t')) expect(row.level).toBe(Number(path[i][0]) + 1)
@@ -269,6 +270,7 @@ interface Mounted {
   onChangeWidth: ReturnType<typeof vi.fn>
   onReturnFocus: ReturnType<typeof vi.fn>
   onChangeFolds: ReturnType<typeof vi.fn>
+  onChangeZoom: ReturnType<typeof vi.fn>
   /** How many times React has committed the table of contents: a render that drew nothing new does not count, and neither does a write to the DOM by hand. */
   commits: () => number
   /** `saved` is the width setting; it stays what it was when left out. */
@@ -281,7 +283,7 @@ const mounts: Mounted[] = []
  * CrepeHost's DOM: `section.editor` > `.editor-host` > `.editor-mount`, the table of contents beside
  * the scroller. `width` is the section's; `saved` is the width setting of the names column.
  */
-function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS, width = 0, saved = TOC_DEFAULT_W, folds: readonly string[] = []): Mounted {
+function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS, width = 0, saved = TOC_DEFAULT_W, folds: readonly string[] = [], zoom = 100): Mounted {
   const section = document.createElement('section')
   section.className = 'editor'
   const scroller = document.createElement('div')
@@ -304,6 +306,7 @@ function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS
   const onChangeWidth = vi.fn()
   const onReturnFocus = vi.fn()
   const onChangeFolds = vi.fn()
+  const onChangeZoom = vi.fn()
   const root = createRoot(slot)
   // One ref for the life of the mount, as CrepeHost's is: a new one per render would run every effect that reads it again.
   const hostRef = { current: mountEl }
@@ -314,13 +317,13 @@ function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS
     act(() => {
       root.render(
         <Profiler id="toc" onRender={() => void (commits += 1)}>
-          <TableOfContents channel={channel} mode={next} contentWidth={contentWidth} onChangeMode={onChangeMode} width={nextSaved} onChangeWidth={onChangeWidth} hostRef={hostRef} onReturnFocus={onReturnFocus} folds={folds} onChangeFolds={onChangeFolds} />
+          <TableOfContents channel={channel} mode={next} contentWidth={contentWidth} onChangeMode={onChangeMode} width={nextSaved} onChangeWidth={onChangeWidth} hostRef={hostRef} onReturnFocus={onReturnFocus} folds={folds} onChangeFolds={onChangeFolds} zoom={zoom} onChangeZoom={onChangeZoom} />
         </Profiler>,
       )
     })
   }
   render(mode)
-  const mounted = { root, section, scroller, mountEl, channel, jump, current, onChangeMode, onChangeWidth, onReturnFocus, onChangeFolds, commits: () => commits, render }
+  const mounted = { root, section, scroller, mountEl, channel, jump, current, onChangeMode, onChangeWidth, onReturnFocus, onChangeFolds, onChangeZoom, commits: () => commits, render }
   mounts.push(mounted)
   return mounted
 }
@@ -1255,6 +1258,47 @@ describe('where the reader is: the marker, and a long list in step with the note
     }
   })
 
+  it('a click on a name, or a fold, moves only the marker: the list holds still until the note moves again (YAZ-3939, demo 5C)', async () => {
+    // Ten names of 24px in a box of 120px, three of them parents.
+    const undo = layOutNames(120)
+    const scrollTo = vi.fn()
+    Object.assign(HTMLElement.prototype, { scrollTo })
+    try {
+      const NESTED: TocRow[] = ['A', 'a1', 'a2', 'B', 'b1', 'b2', 'C', 'c1', 'c2', 'D'].map((text) => ({ level: text.length === 1 ? 1 : 2, text }))
+      const m = mount('pinned', NESTED, 900)
+      // The row the reader is in, in the full list: the spy answers the last shown row at or above it.
+      let reading = 4
+      m.current.mockImplementation((indices: number[]) => indices.filter((i) => i <= reading).length - 1)
+      await scrollFrame(m)
+      expect(scrollTo).toHaveBeenCalledTimes(1)
+      // A click on "c2": the marker goes there, the list stays.
+      click(names(m)[8])
+      reading = 8
+      expect(marker(m).style.transform).toBe('translateY(192px)')
+      expect(scrollTo).toHaveBeenCalledTimes(1)
+      // A fold of "C" makes the list shorter: "C" is current, and the list stays.
+      click(names(m)[6].querySelector<HTMLElement>('.toc__fold')!)
+      expect(names(m).map((name) => name.textContent)).toEqual(['A', 'a1', 'a2', 'B', 'b1', 'b2', 'C', 'D'])
+      expect(names(m)[6].getAttribute('aria-current')).toBe('true')
+      expect(scrollTo).toHaveBeenCalledTimes(1)
+      // The reader moves the note: the list follows again.
+      reading = 1
+      await scrollFrame(m)
+      expect(scrollTo).toHaveBeenCalledTimes(2)
+      // A click on the current name renders nothing and holds nothing: the next move of the note still follows.
+      click(names(m)[1])
+      act(() => {
+        m.scroller.dispatchEvent(new Event('pointerdown'))
+      })
+      reading = 5
+      await scrollFrame(m)
+      expect(scrollTo).toHaveBeenCalledTimes(3)
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollTo
+      undo()
+    }
+  })
+
   it('under "Reduce Motion" the long list is placed in step, never glided, and toc.css stops every transition of the table of contents', async () => {
     const undo = layOutNames(120)
     const scrollTo = vi.fn()
@@ -1269,10 +1313,10 @@ describe('where the reader is: the marker, and a long list in step with the note
       expect(scrollTo).not.toHaveBeenCalled()
       const reduced = tocCss.match(/@media \(prefers-reduced-motion: reduce\)\s*\{(.*)\}\s*$/s)?.[1] ?? ''
       expect(reduced).toMatch(/\.toc\[data-names\],\s*\.toc__card\s*\{\s*animation:\s*none;/)
-      expect(reduced).toMatch(/\.toc__card,\s*\.toc__line,\s*\.toc__name,\s*\.toc__names,\s*\.toc__pin,\s*\.toc__fold,\s*\.toc__fold > svg,\s*\.toc__marker\[data-placed\]\s*\{\s*transition:\s*none;/)
+      expect(reduced).toMatch(/\.toc__card,\s*\.toc__line,\s*\.toc__name,\s*\.toc__names,\s*\.toc__pin,\s*\.toc__fold,\s*\.toc__fold > svg,\s*\.toc__zoom,\s*\.toc__marker\[data-placed\]\s*\{\s*transition:\s*none;/)
       // Every rule of the sheet that eases is one of those nine.
       const eased = [...tocCss.replace(/@media.*$/s, '').matchAll(/([^{}]+)\{[^{}]*transition:/g)].map(([, selector]) => selector.replace(/\/\*.*?\*\//gs, '').trim())
-      expect(eased).toEqual(['.toc__names', '.toc__name', '.toc__fold', '.toc__fold > svg', '.toc__marker[data-placed]', '.toc__pin', '.toc__line', '.toc__card'])
+      expect(eased).toEqual(['.toc__names', '.toc__name', '.toc__fold', '.toc__fold > svg', '.toc__marker[data-placed]', '.toc__pin', '.toc__zoom', '.toc__line', '.toc__card'])
     } finally {
       delete (window as unknown as Record<string, unknown>).matchMedia
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollTo
@@ -1391,21 +1435,21 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
       expect(place('.toc__name:hover')).toBeGreaterThan(place(".toc__name[data-level='5']"))
     })
 
-    it('the level lines are backgrounds of the row: 1px at 12, 24, 36 and 48px, the 9px level piece at mid-row, the path over the piece and the piece over the grey lines — and clear until a level asks for them (D2, D7; YAZ-3051 D8)', () => {
+    it('the level lines are backgrounds of the row: 1px at 20, 36, 52 and 68px, the 13px level piece at mid-row, the path over the piece and the piece over the grey lines — and clear until a level asks for them (D2, D7; YAZ-3051 D8)', () => {
       const row = of('.toc__name')
       // The layers in paint order, the first on top: [the colour it reads, where and how big].
       const layers = [...row.background.matchAll(/linear-gradient\(var\((--toc-[\w-]+)\), var\(\1\)\) (.*?) no-repeat/g)].map(([, colour, box]) => [colour, box])
       // The level piece is BELOW the path: the line of a path that only passes a level 2 name crosses the grey piece whole.
       expect(layers).toEqual([
-        ['--toc-p1', '12px 0 / 1px var(--toc-p1-h)'],
-        ['--toc-p2', '24px 0 / 1px 100%'],
-        ['--toc-p3', '36px 0 / 1px 100%'],
-        ['--toc-p4', '48px 0 / 1px 100%'],
-        ['--toc-piece', '12px 50% / 9px 1px'],
-        ['--toc-l1', '12px 0 / 1px 100%'],
-        ['--toc-l2', '24px 0 / 1px 100%'],
-        ['--toc-l3', '36px 0 / 1px 100%'],
-        ['--toc-l4', '48px 0 / 1px 100%'],
+        ['--toc-p1', '20px 0 / 1px var(--toc-p1-h)'],
+        ['--toc-p2', '36px 0 / 1px 100%'],
+        ['--toc-p3', '52px 0 / 1px 100%'],
+        ['--toc-p4', '68px 0 / 1px 100%'],
+        ['--toc-piece', '20px 50% / 13px 1px'],
+        ['--toc-l1', '20px 0 / 1px 100%'],
+        ['--toc-l2', '36px 0 / 1px 100%'],
+        ['--toc-l3', '52px 0 / 1px 100%'],
+        ['--toc-l4', '68px 0 / 1px 100%'],
       ])
       // Nine gradients and nothing else in the shorthand: no colour, so the wash under the mouse can be one.
       expect(row.background.split('no-repeat')).toHaveLength(layers.length + 1)
@@ -1419,9 +1463,9 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
       expect(lines(3)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-l2': 'var(--toc-rest)' })
       expect(lines(4)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-l2': 'var(--toc-rest)', '--toc-l3': 'var(--toc-rest)' })
       expect(lines(5)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-l2': 'var(--toc-rest)', '--toc-l3': 'var(--toc-rest)', '--toc-l4': 'var(--toc-rest)' })
-      // A line stands below the left edge of its parent level: the 12px of indent for each level, the left padding of the row (YAZ-3939 D3).
+      // A line stands below the left edge of its parent level: 20px for the first, then 16px for each level, the left padding of the row (YAZ-3939 D3, demo 5A).
       expect(row.padding).toBe('4px 8px 4px var(--toc-indent)')
-      expect([1, 2, 3, 4, 5].map((level) => (level === 1 ? row : of(`.toc__name[data-level='${level}']`))['--toc-indent'])).toEqual(['12px', '24px', '36px', '48px', '60px'])
+      expect([1, 2, 3, 4, 5].map((level) => (level === 1 ? row : of(`.toc__name[data-level='${level}']`))['--toc-indent'])).toEqual(['20px', '36px', '52px', '68px', '84px'])
       // The wash under the mouse is a COLOUR behind the lines: the shorthand would take them away. No rule of a name but the first sets it.
       expect(of('.toc__name:hover')).toEqual({ color: 'var(--fg)', 'background-color': 'var(--accent-soft)' })
       expect(rules().filter(([selector, body]) => /\.toc__name(?![\w-])/.test(selector) && 'background' in declared(body)).map(([selector]) => selector)).toEqual(['.toc__name'])
@@ -1785,10 +1829,10 @@ describe('folds (YAZ-3939)', () => {
     expect(m.jump).not.toHaveBeenCalled()
   })
 
-  it('D4: in a pinned column too narrow for auto, "Unpin" and the fold-all button share the top row, "Unpin" first', () => {
+  it('D4: in a pinned column too narrow for auto, "Unpin", the zoom and the fold-all button share the top row, "Unpin" first', () => {
     const m = mount('pinned', TREE, 1040 + TOC_WIDTH - 1)
     const tools = m.section.querySelector('.toc__tools')
-    expect([...(tools?.children ?? [])].map((el) => el.getAttribute('aria-label') ?? el.textContent)).toEqual(['Unpin', 'Collapse all'])
+    expect([...(tools?.querySelectorAll('button') ?? [])].map((el) => el.getAttribute('aria-label') ?? el.textContent)).toEqual(['Unpin', 'Zoom the table of contents out', '100%', 'Zoom the table of contents in', 'Collapse all'])
   })
 
   it('D4: with no row that can fold, the button stays, dimmed, and says "Nothing to fold"; the card has the button too', () => {
@@ -1814,8 +1858,9 @@ describe('the stylesheet of the folds (YAZ-3939 D3, D4)', () => {
     expect(body('.toc__fold')).toMatch(/opacity:\s*0;/)
     expect(body('.toc__names:hover .toc__fold, .toc__names:focus-within .toc__fold, .toc__name[data-fold=\'closed\'] .toc__fold')).toMatch(/opacity:\s*1;/)
     expect(body('.toc__name[data-fold=\'closed\'] .toc__fold > svg')).toMatch(/transform:\s*rotate\(-90deg\);/)
-    // In the last 12px of the indent: the name never moves.
-    expect(body('.toc__fold')).toMatch(/left:\s*calc\(var\(--toc-indent\) - 12px\);/)
+    // In the last 16px of the indent, between the level line and the name (demo 5A): the name never moves.
+    expect(body('.toc__fold')).toMatch(/left:\s*calc\(var\(--toc-indent\) - 16px\);/)
+    expect(body('.toc__fold')).toMatch(/width:\s*16px;/)
   })
 
   it('where the arrow shows, the level piece goes: the rule stands after the `1t` rule, which has the same weight', () => {
@@ -1826,6 +1871,99 @@ describe('the stylesheet of the folds (YAZ-3939 D3, D4)', () => {
 
   it('the fold-all button dims with no hover when there is nothing to fold', () => {
     expect(body('.toc__pin--all:disabled, .toc__pin--all:disabled:hover')).toMatch(/opacity:\s*0\.35;[\s\S]*background:\s*none;/)
+  })
+})
+
+describe('the zoom of the names (YAZ-3939 D7–D10, demo 5B)', () => {
+  const PARENTS: TocRow[] = [
+    { level: 1, text: 'Overview' },
+    { level: 2, text: 'Goals' },
+    { level: 1, text: 'Rollout' },
+  ]
+  const zoomButton = (m: Mounted, label: string): HTMLButtonElement => {
+    const el = m.section.querySelector<HTMLButtonElement>(`.toc__zoom button[aria-label^="${label}"]`)
+    if (!el) throw new Error(`no zoom button "${label}"`)
+    return el
+  }
+  const zoomEvent = (target: Element, step: -1 | 0 | 1): CustomEvent => {
+    const event = new CustomEvent(ZOOM_EVENT, { detail: step, bubbles: true, cancelable: true })
+    act(() => {
+      target.dispatchEvent(event)
+    })
+    return event
+  }
+
+  it('D10: the zoom is a variable on the nav that only the names read', () => {
+    const m = mount('pinned', PARENTS, 900, TOC_DEFAULT_W, [], 150)
+    expect(nav(m)?.style.getPropertyValue('--toc-zoom')).toBe('1.5')
+    const names = tocCss.match(/\.toc__names\s*\{([^}]*)\}/s)?.[1] ?? ''
+    expect(names).toMatch(/zoom:\s*var\(--toc-zoom, 1\);/)
+    // No other rule zooms: the header, the rail and the card keep their size.
+    expect([...tocCss.matchAll(/(^|[;{\s])zoom:/g)]).toHaveLength(1)
+  })
+
+  it('D7: the header has the sidebar\'s "− 100% +" before the fold-all button; − and + walk the steps, the percent goes back to 100%', () => {
+    const m = mount('pinned', PARENTS, 900, TOC_DEFAULT_W, [], 125)
+    const ends = m.section.querySelector('.toc__tools .toc__ends')
+    expect([...(ends?.querySelectorAll('button') ?? [])].map((el) => el.getAttribute('aria-label') ?? el.textContent)).toEqual(['Zoom the table of contents out', '125%', 'Zoom the table of contents in', 'Collapse all'])
+    click(zoomButton(m, 'Zoom the table of contents in'))
+    expect(m.onChangeZoom).toHaveBeenLastCalledWith(150)
+    click(zoomButton(m, 'Zoom the table of contents out'))
+    expect(m.onChangeZoom).toHaveBeenLastCalledWith(100)
+    click(buttonNamed(m, '125%')!)
+    expect(m.onChangeZoom).toHaveBeenLastCalledWith(100)
+  })
+
+  it('D7: with "Unpin" in a narrow column, and in the card, the zoom is an icon that opens a box; Esc and a click outside close it, and Esc there leaves the table of contents open', () => {
+    const narrow = mount('pinned', PARENTS, 1040 + TOC_WIDTH - 1, TOC_MIN_W)
+    expect(narrow.section.querySelector('.toc__zoom .zoom-stepper')).toBeNull()
+    const icon = zoomButton(narrow, 'Table of contents zoom')
+    expect(icon.getAttribute('aria-label')).toBe('Table of contents zoom: 100%')
+    expect(icon.getAttribute('aria-expanded')).toBe('false')
+    click(icon)
+    expect(icon.getAttribute('aria-expanded')).toBe('true')
+    const box = narrow.section.querySelector<HTMLElement>('.toc__zoom-box')!
+    click(zoomButton(narrow, 'Zoom the table of contents in'))
+    expect(narrow.onChangeZoom).toHaveBeenLastCalledWith(125)
+    keyOn(box.querySelector('button')!, 'Escape')
+    expect(narrow.section.querySelector('.toc__zoom-box')).toBeNull()
+    expect(narrow.onReturnFocus).not.toHaveBeenCalled()
+    click(icon)
+    act(() => {
+      narrow.mountEl.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    })
+    expect(narrow.section.querySelector('.toc__zoom-box')).toBeNull()
+    // Without "Unpin" the same width has room for "− 100% +".
+    const roomy = mount('pinned', PARENTS, 1040 + TOC_WIDTH + 200, TOC_MIN_W)
+    expect(roomy.section.querySelector('.toc__zoom .zoom-stepper')).not.toBeNull()
+    // The card is narrow: the icon, in its header.
+    const lined = mount('auto', PARENTS, NAMES_FLOOR)
+    click(rail(lined))
+    expect(zoomButton(lined, 'Table of contents zoom').closest('.toc__header')).not.toBeNull()
+  })
+
+  it('D8: ⌘+ / ⌘− / ⌘0 with the focus in the table of contents zoom the names and never reach the note; with the focus in the note they are not claimed', () => {
+    const m = mount('pinned', PARENTS, 900, TOC_DEFAULT_W, [], 100)
+    const noteListener = vi.fn()
+    m.section.addEventListener(ZOOM_EVENT, noteListener)
+    names(m)[0].focus()
+    expect(zoomEvent(names(m)[0], 1).defaultPrevented).toBe(true)
+    expect(m.onChangeZoom).toHaveBeenLastCalledWith(125)
+    zoomEvent(names(m)[0], -1)
+    expect(m.onChangeZoom).toHaveBeenLastCalledWith(90)
+    zoomEvent(names(m)[0], 0)
+    expect(m.onChangeZoom).toHaveBeenLastCalledWith(100)
+    expect(noteListener).not.toHaveBeenCalled()
+    m.mountEl.focus()
+    expect(zoomEvent(m.mountEl, 1).defaultPrevented).toBe(false)
+    expect(noteListener).toHaveBeenCalledTimes(1)
+    expect(m.onChangeZoom).toHaveBeenCalledTimes(3)
+  })
+
+  it('D7: the zoom shows while the mouse or the focus is in the table of contents, and while its box is open', () => {
+    const body = (selector: string): string => [...tocCss.replace(/\/\*.*?\*\//gs, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].find(([, sel]) => sel.trim().replace(/\s+/g, ' ') === selector)?.[2] ?? ''
+    expect(body('.toc__zoom')).toMatch(/opacity:\s*0;/)
+    expect(body('.toc:hover .toc__zoom, .toc:focus-within .toc__zoom, .toc__zoom[data-open]')).toMatch(/opacity:\s*1;/)
   })
 })
 

@@ -574,6 +574,27 @@ describe('createStore: loading', () => {
     for (const zoom of [49, 201, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarZoom: zoom })).toBe(false)
   })
 
+  it('tocZoom (YAZ-3939 D9): the sidebar zoom\'s rule: an older file without the key loads at 100; junk loads at 100; a number inside 50–200 is kept, one outside is clamped; the channel takes 50–200 only', async () => {
+    expect(DEFAULT_SETTINGS.tocZoom).toBe(100)
+    const { tocZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
+    const loaded = async (tocZoom: unknown): Promise<number> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', tocZoom } }))
+      const { settings } = createStore(file).get()
+      expect(settings.theme).toBe('dark') // one bad field costs that field only
+      return settings.tocZoom
+    }
+    for (const zoom of [50, 90, 150, 200, 110]) expect(await loaded(zoom)).toBe(zoom)
+    for (const zoom of ['150', null, true, {}]) expect(await loaded(zoom)).toBe(100)
+    expect(await loaded(10)).toBe(50)
+    expect(await loaded(500)).toBe(200)
+    for (const zoom of [NaN, Infinity]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tocZoom: zoom }).tocZoom).toBe(100)
+
+    for (const zoom of [50, 125, 200]) expect(isSettings({ ...DEFAULT_SETTINGS, tocZoom: zoom })).toBe(true)
+    for (const zoom of [49, 201, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, tocZoom: zoom })).toBe(false)
+  })
+
   it('appZoom (YAZ-3432): an older file without the key loads at 100; only 90 · 100 · 110 · 125 · 150 · 175 · 200 are kept (200 since YAZ-3487), anything else loads at 100; the channel takes those only', async () => {
     expect(DEFAULT_SETTINGS.appZoom).toBe(100)
     expect([...APP_ZOOM_STEPS]).toEqual([90, 100, 110, 125, 150, 175, 200])

@@ -615,6 +615,14 @@ export function App() {
   const changeTableOfContents = useCallback((mode: TableOfContents) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContents: mode }), [changeSettings])
   // A drag of the names column's edge (YAZ-2752), on its release: the same stable door.
   const changeTableOfContentsWidth = useCallback((width: number) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContentsWidth: width }), [changeSettings])
+  // The table of contents' zoom (YAZ-3939 D9): the same value writes nothing, as for the sidebar zoom.
+  const changeTocZoom = useCallback(
+    (tocZoom: number) => {
+      const now = newNoteFolderInputs.current.settings
+      if (tocZoom !== now.tocZoom) changeSettings({ ...now, tocZoom })
+    },
+    [changeSettings],
+  )
   // A drawing's engine moved a canvas pref (YAZ-3028, Draw's 🔒 YAZ-1775 D9): the same stable door.
   const changeCanvasPrefs = useCallback((canvas: CanvasPrefs) => changeSettings({ ...newNoteFolderInputs.current.settings, canvas }), [changeSettings])
   // A code tab's cog row (YAZ-3449): Settings › Code, for every code file, through the same stable door.
@@ -2732,6 +2740,9 @@ export function App() {
       // YAZ-2752: the width of its names column is a SETTING as well.
       tableOfContentsWidth: settings.tableOfContentsWidth,
       onChangeTableOfContentsWidth: changeTableOfContentsWidth,
+      // YAZ-3939 D9: and its zoom, one for every note.
+      tocZoom: settings.tocZoom,
+      onChangeTocZoom: changeTocZoom,
       // YAZ-3028: every drawing tab shares the canvas prefs, a SETTING too.
       canvasPrefs: settings.canvas,
       onChangeCanvasPrefs: changeCanvasPrefs,

@@ -1645,6 +1645,12 @@ export interface SettingsState {
    */
   sidebarZoom: number
   /**
+   * The zoom of a note's table of contents in percent (YAZ-3939 D7–D11): its names and their fold arrows, never its
+   * header or the rail. One value for every note and window; the code Outline keeps 100%. The steps are the sidebar's
+   * (`SIDEBAR_ZOOM_STEPS`); a stored value is kept within 50–200.
+   */
+  tocZoom: number
+  /**
    * The App size in percent (YAZ-3432): the Chromium page zoom of EVERY window, a Files window too, set by main
    * (`webContents.setZoomFactor`). Only `APP_ZOOM_STEPS`; anything else is stored as 100. Mouse only: the footer's
    * zoom menu writes it, never ⌘+ / ⌘− / ⌘0. The sidebar zoom and a note's zoom stack on it.
@@ -1916,6 +1922,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   hotkeys: {},
   hotkeysAside: {},
   sidebarZoom: 100,
+  tocZoom: 100,
   appZoom: 100,
   codeReadOnly: false,
   codeWrap: true,

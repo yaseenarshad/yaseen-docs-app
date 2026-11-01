@@ -105,6 +105,8 @@
   scrollbar-width: none;
   mask-image: linear-gradient(to bottom, transparent 0, #000 var(--toc-fade-top), #000 calc(100% - var(--toc-fade-bottom)), transparent 100%);
   transition: --toc-rest 160ms ease, --toc-path 160ms ease;
+  /* The names' own zoom (YAZ-3939 D10), set on a note's `.toc`; the code Outline has none. */
+  zoom: var(--toc-zoom, 1);
 }
 
 /* When the level lines show — the grey ones and the path together — is the setting "Level lines"
@@ -133,9 +135,9 @@
 
 /* Each name carries a piece of ONE hairline down the list's left edge; the marker rides on it.
    It also carries a piece of each LEVEL LINE that passes it (YAZ-2762): a 1px line below the
-   left edge of each parent level: at 12, 24, 36 and 48px for parent levels 1 to 4 (YAZ-3051
-   added the lines at 36 and 48px for the H4 and H5 rows). A line is a background, so it adds no
-   element. */
+   left edge of each parent level: at 20, 36, 52 and 68px for parent levels 1 to 4 (YAZ-3051
+   added the lines for the H4 and H5 rows; YAZ-3939 widened the grid to give the fold arrow room).
+   A line is a background, so it adds no element. */
 .toc__name {
   /* The grey line of each level, then the path over it (YAZ-2762). */
   --toc-l1: transparent;
@@ -151,8 +153,8 @@
      own line stops there, at the middle of the row. */
   --toc-piece: transparent;
   --toc-p1-h: 100%;
-  /* The left padding of the name: the fold arrow (YAZ-3939 D3) sits in its last 12px. */
-  --toc-indent: 12px;
+  /* The left padding of the name: the fold arrow (YAZ-3939 D3) sits in its last 16px. */
+  --toc-indent: 20px;
   position: relative;
   display: block;
   flex: none;
@@ -168,21 +170,21 @@
   /* The first layer is on top. The level piece is BELOW the path: a path that only passes a level
      2 name keeps its line whole across the grey piece of that row. */
   background:
-    linear-gradient(var(--toc-p1), var(--toc-p1)) 12px 0 / 1px var(--toc-p1-h) no-repeat,
-    linear-gradient(var(--toc-p2), var(--toc-p2)) 24px 0 / 1px 100% no-repeat,
-    linear-gradient(var(--toc-p3), var(--toc-p3)) 36px 0 / 1px 100% no-repeat,
-    linear-gradient(var(--toc-p4), var(--toc-p4)) 48px 0 / 1px 100% no-repeat,
-    linear-gradient(var(--toc-piece), var(--toc-piece)) 12px 50% / 9px 1px no-repeat,
-    linear-gradient(var(--toc-l1), var(--toc-l1)) 12px 0 / 1px 100% no-repeat,
-    linear-gradient(var(--toc-l2), var(--toc-l2)) 24px 0 / 1px 100% no-repeat,
-    linear-gradient(var(--toc-l3), var(--toc-l3)) 36px 0 / 1px 100% no-repeat,
-    linear-gradient(var(--toc-l4), var(--toc-l4)) 48px 0 / 1px 100% no-repeat;
+    linear-gradient(var(--toc-p1), var(--toc-p1)) 20px 0 / 1px var(--toc-p1-h) no-repeat,
+    linear-gradient(var(--toc-p2), var(--toc-p2)) 36px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--toc-p3), var(--toc-p3)) 52px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--toc-p4), var(--toc-p4)) 68px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--toc-piece), var(--toc-piece)) 20px 50% / 13px 1px no-repeat,
+    linear-gradient(var(--toc-l1), var(--toc-l1)) 20px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--toc-l2), var(--toc-l2)) 36px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--toc-l3), var(--toc-l3)) 52px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--toc-l4), var(--toc-l4)) 68px 0 / 1px 100% no-repeat;
   border-left: 1px solid var(--border);
   border-radius: 0 5px 5px 0;
   transition: color 80ms ease, background-color 80ms ease;
 }
 
-/* The level reads from the indent, the weight and the tone, never from a size: 12px per level
+/* The level reads from the indent, the weight and the tone, never from a size: 16px per level
    below the first, and each level is one step quieter than the one above it (YAZ-2762), down to
    level 3. Levels 3, 4 and 5 share the muted tone of `.toc__name` (YAZ-3051 D8). */
 .toc__name[data-level='1'] {
@@ -193,21 +195,21 @@
 .toc__name[data-level='2'] {
   --toc-l1: var(--toc-rest);
   --toc-piece: var(--toc-rest);
-  --toc-indent: 24px;
+  --toc-indent: 36px;
   color: color-mix(in srgb, var(--fg) 55%, var(--fg-muted));
 }
 
 .toc__name[data-level='3'] {
   --toc-l1: var(--toc-rest);
   --toc-l2: var(--toc-rest);
-  --toc-indent: 36px;
+  --toc-indent: 52px;
 }
 
 .toc__name[data-level='4'] {
   --toc-l1: var(--toc-rest);
   --toc-l2: var(--toc-rest);
   --toc-l3: var(--toc-rest);
-  --toc-indent: 48px;
+  --toc-indent: 68px;
 }
 
 .toc__name[data-level='5'] {
@@ -215,7 +217,7 @@
   --toc-l2: var(--toc-rest);
   --toc-l3: var(--toc-rest);
   --toc-l4: var(--toc-rest);
-  --toc-indent: 60px;
+  --toc-indent: 84px;
 }
 
 /* The path (YAZ-2762): the level lines from the current name up to its parents are the accent,
@@ -255,18 +257,18 @@
   background-color: var(--accent-soft);
 }
 
-/* THE FOLD ARROW (YAZ-3939 D3): in the last 12px of the name's indent, on the grid of the level
-   lines, so the name never moves. The look of the note's heading arrow and the code Outline's:
+/* THE FOLD ARROW (YAZ-3939 D3): in the last 16px of the name's indent, between the level line (or
+   the hairline) and the name, with room on both sides; the name never moves. The look of the note's heading arrow and the code Outline's:
    open points down, folded points right; it shows while the mouse or the keyboard is in the list,
    and always on a folded row. */
 .toc__fold {
   position: absolute;
   top: 50%;
-  left: calc(var(--toc-indent) - 12px);
+  left: calc(var(--toc-indent) - 16px);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 12px;
+  width: 16px;
   height: 16px;
   color: var(--fg-muted);
   border-radius: 3px;
@@ -367,12 +369,67 @@
 /* THE FOLD-ALL BUTTON (YAZ-3939 D4), in the column and in the card's header: an icon, as every
    fold-all button in the app (YAZ-3938), in the quiet look of "Pin". */
 .toc__pin--all {
-  margin-left: auto;
   padding: 2px 4px;
 }
 
-.toc__tools > .toc__pin--all {
+/* The header's end: the zoom, then the fold-all button (YAZ-3939 D7). */
+.toc__ends {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.toc__tools > .toc__ends {
   margin-bottom: 8px;
+}
+
+/* THE ZOOM OF THE NAMES (YAZ-3939 D7): the sidebar's "− 100% +", at the size of "Pin", or its icon. It
+   shows while the mouse or the keyboard is in the table of contents, as the fold arrows, and while
+   its box is open. */
+.toc__zoom {
+  position: relative;
+  display: flex;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.toc:hover .toc__zoom,
+.toc:focus-within .toc__zoom,
+.toc__zoom[data-open] {
+  opacity: 1;
+}
+
+.toc__zoom .zoom-stepper__step,
+.toc__zoom .zoom-stepper__value {
+  height: 20px;
+  font-size: 11px;
+}
+
+.toc__zoom .zoom-stepper__step {
+  width: 20px;
+}
+
+.toc__zoom .zoom-stepper__value {
+  min-width: 34px;
+}
+
+.toc__pin--zoom {
+  padding: 2px 4px;
+}
+
+/* The box of a narrow header: under its icon, on the card's surface, over the names. */
+.toc__zoom-box {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 3;
+  padding: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 /* Nothing to fold: dimmed with no hover, as the sidebar's and the code Outline's. */
@@ -517,6 +574,7 @@
   .toc__pin,
   .toc__fold,
   .toc__fold > svg,
+  .toc__zoom,
   .toc__marker[data-placed] {
     transition: none;
   }
