@@ -712,7 +712,8 @@ button {
   gap: 20px;
   width: min(440px, 90%);
   margin: auto;
-  padding: 24px 0 8vh;
+  /* No extra bottom room: 10 folders and no workspace fit a 700 px window with no scroll bar (YAZ-3886 round 2). */
+  padding: 24px 0;
 }
 
 .welcome__title {

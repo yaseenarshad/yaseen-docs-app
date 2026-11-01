@@ -267,7 +267,7 @@ describe('Welcome', () => {
     })
   })
 
-  it('YAZ-3978: a workspace that another window removes leaves the page, and a rename there shows here; the order stays the mount\'s', async () => {
+  it('YAZ-3979: a workspace that another window removes leaves the page, and a rename there shows here; the order stays the mount\'s', async () => {
     const a: VaultSet = { id: 'a', name: 'A', roots: ['/a1', '/a2'], lastUsed: 2 }
     const b: VaultSet = { id: 'b', name: 'B', roots: ['/b1', '/b2'], lastUsed: 1 }
     let emit: (state: ReturnType<typeof defaultAppState>) => void = () => undefined
