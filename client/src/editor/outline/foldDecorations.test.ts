@@ -1,7 +1,8 @@
 /**
  * The fold plugins carry their decoration set through doc edits (YAZ-2131 5C): when an edit leaves
  * every foldable bullet and heading where the mapping puts it, with the same key, label and fold,
- * the old set is mapped instead of rebuilt. These tests pin that the carried set is exactly what a
+ * the old set is mapped instead of rebuilt. A heading whose key or label changed is carried too, with
+ * only its chevron made again (YAZ-3816). These tests pin that the carried set is exactly what a
  * from-scratch build produces, after every step of a long randomized session.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -12,7 +13,7 @@ import { canSplit } from '@milkdown/kit/prose/transform'
 import type { Decoration, DecorationSet, EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from '../createCrepe'
 import { random } from '../testRandom'
-import { addHeadingFoldAllMeta, HEADING_TOGGLE_CLASS, undoLastHeadingFold } from './headingFolding'
+import { addHeadingFoldAllMeta, getHeadingFoldKey, HEADING_FOLDED_ATTR, HEADING_TOGGLE_CLASS, undoLastHeadingFold } from './headingFolding'
 import { foldAllOutline, OUTLINE_TOGGLE_CLASS, undoLastFold, unfoldAllOutline } from './outlineFolding'
 
 const DOC = `# Part one
@@ -112,7 +113,7 @@ describe('fold decorations are carried through doc edits (YAZ-2131 5C)', () => {
     headingAfter.forEach((d, i) => expect(typeOf(d)).toBe(typeOf(headingBefore[i])))
   })
 
-  it('a label change the fold key ignores (an enumeration prefix) is still rebuilt, so a re-rendered chevron reads the new label', async () => {
+  it('a label change the fold key ignores (an enumeration prefix) still re-renders the chevron, so it reads the new label', async () => {
     const { view, outline, heading } = await mount()
     const fresh = () => EditorState.create({ doc: view.state.doc, selection: view.state.selection, plugins: [outline, heading] })
     const textStart = (text: string) => {
@@ -128,6 +129,27 @@ describe('fold decorations are carried through doc edits (YAZ-2131 5C)', () => {
     expect(normalise(decorationsOf(heading, view.state), view)).toEqual(normalise(decorationsOf(heading, fresh()), view))
     expect(normalise(decorationsOf(outline, view.state), view).join()).toContain('Collapse 1. Parent')
     expect(normalise(decorationsOf(heading, view.state), view).join()).toContain('Collapse 12. Numbered')
+  })
+
+  it('typing in a folded heading keeps its hide markers and fold, and only its chevron takes the new label and key (YAZ-3816)', async () => {
+    const { root, view, outline, heading } = await mount()
+    root.querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[aria-label="Collapse Section"]`)!.click()
+    const markers = (set: DecorationSet) => set.find().filter((d) => d.from !== d.to)
+    const before = markers(decorationsOf(heading, view.state))
+    let sectionEnd = -1
+    view.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === 'Section') sectionEnd = pos + node.nodeSize
+    })
+    view.dispatch(view.state.tr.insertText('!', sectionEnd))
+    const after = markers(decorationsOf(heading, view.state))
+    expect(after).toHaveLength(before.length)
+    after.forEach((d, i) => expect(typeOf(d)).toBe(typeOf(before[i]))) // carried, not rebuilt
+    const chevron = root.querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[aria-label="Expand Section!"]`)
+    expect(chevron?.dataset.headingFoldKey).toBe(getHeadingFoldKey('Section!', 0))
+    expect(root.querySelector(`.${HEADING_TOGGLE_CLASS}[aria-label="Expand Section"]`)).toBeNull()
+    expect([...root.querySelectorAll(`[${HEADING_FOLDED_ATTR}]`)].map((el) => el.textContent)).toEqual(['Body text.', 'Deep', 'Deep body.'])
+    const fresh = EditorState.create({ doc: view.state.doc, selection: view.state.selection, plugins: [outline, heading] })
+    expect(normalise(decorationsOf(heading, view.state), view)).toEqual(normalise(decorationsOf(heading, fresh), view))
   })
 
   it('a second image in a bullet (same key and label) is still rebuilt, so both images get the foldable mark', async () => {

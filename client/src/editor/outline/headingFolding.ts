@@ -310,27 +310,78 @@ const getCollapsedKeys = ({ entries, collapsedHeadingPositions }: HeadingFolding
     .map(({ foldKey }) => foldKey)
     .sort()
 
+/** A heading's chevron widget. Both the full build and the carry (a heading whose text changed) make it here, so they match. */
+const headingToggle = (entry: HeadingEntry, collapsed: boolean): Decoration =>
+  Decoration.widget(
+    entry.headingPos + 1,
+    (view, getPos) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = HEADING_TOGGLE_CLASS
+      button.dataset.headingFoldKey = entry.foldKey
+      button.setAttribute('aria-expanded', String(!collapsed))
+      button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${entry.label}`)
+      button.replaceChildren(chevronSvg())
+      // The LIVE position, not `entry.headingPos`: ProseMirror keeps this DOM (same key) while edits above
+      // shift the heading, and a stale position folded nothing.
+      const toggle = () => {
+        const widgetPos = getPos()
+        if (widgetPos !== undefined) view.dispatch(foldTransaction(view.state, widgetPos - 1))
+      }
+      // Keep the caret where it is: the toggle must not steal focus or move the selection.
+      button.addEventListener('mousedown', (event) => event.preventDefault())
+      button.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        toggle()
+      })
+      // The widget sits inside the contenteditable, so ProseMirror's keymap would swallow
+      // Enter/Space before the button's native activation; handle them here and keep focus
+      // on the (re-rendered) toggle so keyboard users can fold/unfold repeatedly.
+      button.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        event.stopPropagation()
+        toggle()
+        view.dom
+          .querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[data-heading-fold-key="${entry.foldKey}"]`)
+          ?.focus()
+      })
+      return button
+    },
+    { key: `heading-toggle:${entry.foldKey}:${collapsed ? 'collapsed' : 'expanded'}` },
+  )
+
 /**
- * An edit that leaves every foldable heading where the mapping puts it, with the same key, label and
- * fold, needs no new decorations: the previous set, mapped, is exactly what `decorations` builds
- * (YAZ-2131 5C, pinned by foldDecorations.test.ts). Typing inside a section is that case, so a keystroke skips
- * the rebuild. A carried chevron reads its live position at click time, so it acts like a new one.
+ * An edit that leaves every foldable heading where the mapping puts it, with the same fold, needs no new
+ * hide markers: the previous set, mapped, is exactly what `decorations` builds (YAZ-2131 5C, pinned by
+ * foldDecorations.test.ts). Typing inside a section is that case, so a keystroke skips the rebuild. A carried
+ * chevron reads its live position at click time, so it acts like a new one. A heading whose key or label
+ * changed (typing in the heading itself) gets only a new chevron: a folded section has one marker per block,
+ * so a rebuild grows with the section (YAZ-3816).
  */
 const carryDecorations = (previous: HeadingFoldingState, entries: readonly HeadingEntry[], collapsed: ReadonlySet<number>, mapping: Mapping, doc: ProseNode): void => {
   const cached = decorationCache.get(previous.entries)
   if (cached === undefined || cached.collapsedKey !== collapsedKey(previous.collapsedHeadingPositions) || entries.length !== previous.entries.length) return
+  const renamed: HeadingEntry[] = []
   const unchanged = entries.every((entry, i) => {
     const before = previous.entries[i]
     const folded = collapsed.has(entry.headingPos)
+    if (entry.foldKey !== before.foldKey || entry.label !== before.label) renamed.push(entry)
     return (
-      entry.foldKey === before.foldKey &&
-      entry.label === before.label &&
       folded === previous.collapsedHeadingPositions.has(before.headingPos) &&
       widgetLands(mapping, before.headingPos + 1, entry.headingPos + 1) &&
       (!folded || nodeRangesLand(mapping, before.sectionBlockRanges, entry.sectionBlockRanges))
     )
   })
-  if (unchanged) decorationCache.set(entries, { collapsedKey: collapsedKey(collapsed), set: cached.set.map(mapping, doc) })
+  if (!unchanged) return
+  let set = cached.set.map(mapping, doc)
+  for (const entry of renamed) {
+    const at = entry.headingPos + 1
+    const old = set.find(at, at, (spec) => String(spec.key).startsWith('heading-toggle:'))
+    set = set.remove(old).add(doc, [headingToggle(entry, collapsed.has(entry.headingPos))])
+  }
+  decorationCache.set(entries, { collapsedKey: collapsedKey(collapsed), set })
 }
 
 export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCollapsedKeysChange }: HeadingFoldingOptions = {}) =>
@@ -433,47 +484,7 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             const decorations: Decoration[] = []
             foldingState.entries.forEach((entry) => {
               const collapsed = foldingState.collapsedHeadingPositions.has(entry.headingPos)
-              decorations.push(
-                Decoration.widget(
-                  entry.headingPos + 1,
-                  (view, getPos) => {
-                    const button = document.createElement('button')
-                    button.type = 'button'
-                    button.className = HEADING_TOGGLE_CLASS
-                    button.dataset.headingFoldKey = entry.foldKey
-                    button.setAttribute('aria-expanded', String(!collapsed))
-                    button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${entry.label}`)
-                    button.replaceChildren(chevronSvg())
-                    // The LIVE position, not `entry.headingPos`: ProseMirror keeps this DOM (same key) while edits above
-                    // shift the heading, and a stale position folded nothing.
-                    const toggle = () => {
-                      const widgetPos = getPos()
-                      if (widgetPos !== undefined) view.dispatch(foldTransaction(view.state, widgetPos - 1))
-                    }
-                    // Keep the caret where it is: the toggle must not steal focus or move the selection.
-                    button.addEventListener('mousedown', (event) => event.preventDefault())
-                    button.addEventListener('click', (event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      toggle()
-                    })
-                    // The widget sits inside the contenteditable, so ProseMirror's keymap would swallow
-                    // Enter/Space before the button's native activation; handle them here and keep focus
-                    // on the (re-rendered) toggle so keyboard users can fold/unfold repeatedly.
-                    button.addEventListener('keydown', (event) => {
-                      if (event.key !== 'Enter' && event.key !== ' ') return
-                      event.preventDefault()
-                      event.stopPropagation()
-                      toggle()
-                      view.dom
-                        .querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[data-heading-fold-key="${entry.foldKey}"]`)
-                        ?.focus()
-                    })
-                    return button
-                  },
-                  { key: `heading-toggle:${entry.foldKey}:${collapsed ? 'collapsed' : 'expanded'}` },
-                ),
-              )
+              decorations.push(headingToggle(entry, collapsed))
               if (collapsed) {
                 entry.sectionBlockRanges.forEach(({ from, to }) => {
                   decorations.push(Decoration.node(from, to, { [HEADING_FOLDED_ATTR]: 'true' }))

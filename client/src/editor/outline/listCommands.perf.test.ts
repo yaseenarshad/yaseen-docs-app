@@ -6,9 +6,10 @@
  *
  * The budget is the JOIN'S OWN WORK: the keymap, the walk to the next visible line and the transaction, with the view's
  * dispatch caught. Stepping over 2,000 hidden lines one by one cost ~14 ms here alone. The whole press (the dispatch
- * too) is logged, not gated: next to a folded heading it is the heading fold's decoration rebuild when the heading's
- * text changes, which plain typing in that heading pays as well (~60 ms here; on `main` too). Each press is undone,
- * untimed, before the next one.
+ * too) is logged, not gated: next to a folded heading it is ProseMirror's work for the section's one node decoration
+ * per hidden block, which every doc change pays while the section is folded (~50 ms here). YAZ-3816 carries the set
+ * through the heading's new text, but mapping it and the view's diff of 2,000 doc-level decorations remain. Each press
+ * is undone, untimed, before the next one.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { undo } from '@milkdown/kit/prose/history'
