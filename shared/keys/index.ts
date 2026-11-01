@@ -13,6 +13,7 @@ import { ASIDE_PLACES, type AsidePlace, type KeyRow, type KeyScope } from './typ
 import { VIEW_KEYS } from './views'
 
 export * from './types'
+export * from './gestures'
 
 export const ALL_KEYS: readonly KeyRow[] = [...APP_KEYS, ...NOTE_KEYS, ...DRAWING_KEYS, ...DIAGRAM_KEYS, ...CODE_KEYS, ...VIEW_KEYS]
 

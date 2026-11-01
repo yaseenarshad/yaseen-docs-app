@@ -65,7 +65,7 @@ export function pathTitles(records: readonly IndexRecord[], folders: readonly In
 export const pageLabel = (path: string, folder: boolean, titles: PathTitles): string => titles.get(path) ?? (folder ? basename(path) : fileLabel(basename(path)))
 
 /** A file name with one app extension hidden at most: `Flow.md.excalidraw` → `Flow.md`, `Flow.excalidraw.md` → `Flow.excalidraw` (YAZ-3536). */
-const fileLabel = (name: string): string => {
+export const fileLabel = (name: string): string => {
   // `boardBaseName` is the board test too (its name whole = no board): one look at the extension, not `fileKind`'s six lists, on every row.
   const bare = boardBaseName(name)
   return bare !== name ? bare : stripExt(name)

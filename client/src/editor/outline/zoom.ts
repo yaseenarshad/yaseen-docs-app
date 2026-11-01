@@ -33,8 +33,9 @@
  * The host then moves the caret into that bullet (`caretIntoZoom`), once the editor is made: never
  * from the plugin view, which ProseMirror builds inside the EditorView constructor.
  *
- * Triggers: click on the bullet glyph (`.label-wrapper`; task checkboxes keep toggling instead; ⌘- and
- * ⇧-click open the bullet in a new tab instead, YAZ-3646 D10),
+ * Triggers: click on the bullet glyph (`.label-wrapper`; task checkboxes keep toggling instead), by the gestures of
+ * Settings › Hotkeys › "Bullet dots" (YAZ-3936, read at the click): by default a click zooms in ("Open in this tab"),
+ * ⇧-click opens the bullet in a new tab and ⌘-click in a background tab (YAZ-3646 D10); a crumb follows them too,
  * `Mod-.` = zoom into the item at the caret, `Mod-Shift-.` = zoom out one level. While zoomed,
  * `Shift-Tab` / `Mod-[` on the zoomed item or one of its direct children is a no-op (lifting would
  * move the item out of the visible subtree).
@@ -44,6 +45,8 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import { gestureAction } from '@shared/keys'
 import { rowShortcuts } from '../noteKeys'
 import { ancestorItemPositions, innermostItemPos, isListItem, itemLabelText } from './listNodes'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
@@ -52,6 +55,8 @@ import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 export interface ZoomOptions {
   /** The page's title (YAZ-2420 🔒 D14), read as the breadcrumb is drawn: the first crumb; clicking it zooms out fully. */
   title: () => string
+  /** A bullet's text as its labels show it (YAZ-3744 D6): each `[[link]]` as the note shows it. Absent: as written. */
+  linkText?: (text: string) => string
   /** The zoom key to start drilled into (YAZ-2951 D1): a copied page view's `zoomKey`. Absent, null or not found = zoomed out. */
   startKey?: string | null
   /**
@@ -62,10 +67,13 @@ export interface ZoomOptions {
    */
   onZoom?: (zoom: string | null, quiet: boolean, label: string | null, from?: string | null) => void
   /**
-   * ⌘-click (behind) and ⇧-click (in front) on a dot or a crumb, and "Open in new tab" (YAZ-3646 D8, D10, YAZ-3647 E2):
-   * that level in a new tab; null is the whole page (the title crumb). Absent: no tab to copy.
+   * "Open in a new tab" (in front) and "Open in a background tab" (behind) on a dot or a crumb, and the menu's "Open in
+   * new tab" (YAZ-3646 D8, D10, YAZ-3647 E2): that level in a new tab; null is the whole page (the title crumb). Absent:
+   * no tab to copy.
    */
   onOpen?: (zoom: string | null, background: boolean, label: string | null) => void
+  /** The user's changes of Settings › Hotkeys (`settings.hotkeys`), read at each click: the "Bullet dots" gestures (YAZ-3936). Absent → the defaults. */
+  hotkeys?: () => HotkeyOverrides | undefined
 }
 
 interface ZoomState {
@@ -73,8 +81,12 @@ interface ZoomState {
   itemPos: number | null
   /** Where a zoom change goes (`ZoomOptions.onZoom`): the ONE source of it, for the commands, the crumbs and the plugin view. */
   onZoom?: ZoomOptions['onZoom']
-  /** Where a dot's or a crumb's ⌘- or ⇧-click goes (`ZoomOptions.onOpen`, YAZ-3646 D10, YAZ-3647 E2): the one source of it too. */
+  /** Where a dot's or a crumb's new-tab gestures go (`ZoomOptions.onOpen`, YAZ-3646 D10, YAZ-3647 E2): the one source of it too. */
   onOpen?: ZoomOptions['onOpen']
+  /** `ZoomOptions.hotkeys`: the gestures a dot and a crumb read. */
+  hotkeys?: ZoomOptions['hotkeys']
+  /** `ZoomOptions.linkText`: every label of a bullet reads it, the crumbs, the tab's tooltip and its Back list. */
+  linkText?: ZoomOptions['linkText']
   /**
    * ⌘Z target: the level before the latest zoom change, kept while that change is still the latest
    * view action. `undefined` = nothing to revert; `null` = revert to zoomed-out.
@@ -155,21 +167,21 @@ export const getZoomKey = (state: EditorState): string | null => {
 }
 
 /** Breadcrumb label: the item's first-block text, truncated. */
-const itemLabel = (item: ProseNode): string => {
-  const text = itemLabelText(item)
+const itemLabel = (item: ProseNode, linkText: (text: string) => string = (text) => text): string => {
+  const text = linkText(itemLabelText(item))
   return text.length > LABEL_MAX_CHARS ? `${text.slice(0, LABEL_MAX_CHARS - 1).trimEnd()}…` : text
 }
 
 /** The crumb text of the list_item at `itemPos` (YAZ-3647 E3, E4): what the Back list's menu and the tab's tooltip show. */
-export const zoomLabelAt = (doc: ProseNode, itemPos: number): string | null => {
-  const item = doc.nodeAt(itemPos)
-  return isListItem(item) ? itemLabel(item) : null
+export const zoomLabelAt = (state: EditorState, itemPos: number): string | null => {
+  const item = state.doc.nodeAt(itemPos)
+  return isListItem(item) ? itemLabel(item, pluginKey.getState(state)?.linkText) : null
 }
 
 /** The zoomed bullet's crumb text, or null when not zoomed (YAZ-3647 E3). */
 export const getZoomLabel = (state: EditorState): string | null => {
   const itemPos = getZoomedItemPos(state)
-  return itemPos === null ? null : zoomLabelAt(state.doc, itemPos)
+  return itemPos === null ? null : zoomLabelAt(state, itemPos)
 }
 
 /** Position of the innermost list_item containing the selection head, or null outside lists. */
@@ -197,7 +209,7 @@ const zoomTo = (itemPos: ZoomLevel, { quiet = false, isUndo = false } = {}): Com
     if (itemPos !== null && !selectionInItem(state, itemPos)) tr.setSelection(Selection.near(tr.doc.resolve(itemPos + 1), 1))
     dispatch(tr.scrollIntoView())
     // A step in the window's Back list (YAZ-3647 D2). Back and Forward themselves tell no one.
-    if (!quiet) zoom.onZoom?.(itemPos === null ? null : zoomKeyAt(state.doc, itemPos), false, itemPos === null ? null : zoomLabelAt(state.doc, itemPos))
+    if (!quiet) zoom.onZoom?.(itemPos === null ? null : zoomKeyAt(state.doc, itemPos), false, itemPos === null ? null : zoomLabelAt(state, itemPos))
   }
   return true
 }
@@ -269,18 +281,20 @@ const crumbButton = (view: EditorView, label: string, target: ZoomLevel, current
   button.addEventListener('click', (event) => {
     event.preventDefault()
     event.stopPropagation()
-    // ⌘-click: that level in a new tab behind; ⇧-click: in front, as on a dot (YAZ-3647 E2). The title crumb opens the whole page.
-    const open = pluginKey.getState(view.state)?.onOpen
-    if (open !== undefined && (event.metaKey || event.shiftKey)) {
+    // The new-tab gestures open that level in a new tab, as on a dot (YAZ-3647 E2, YAZ-3936); any other click zooms. The title crumb opens the whole page.
+    const plugin = pluginKey.getState(view.state)
+    const where = gestureAction('bullets', event, plugin?.hotkeys?.())
+    const open = plugin?.onOpen
+    if (open !== undefined && (where === 'newTab' || where === 'backgroundTab')) {
       const key = target === null ? null : zoomKeyAt(view.state.doc, target)
-      if (target === null || key !== null) return open(key, event.metaKey, target === null ? null : zoomLabelAt(view.state.doc, target))
+      if (target === null || key !== null) return open(key, where === 'backgroundTab', target === null ? null : zoomLabelAt(view.state, target))
     }
     zoomTo(target)(view.state, view.dispatch)
   })
   return button
 }
 
-const buildDecorations = (state: EditorState, itemPos: number, title: string): Decoration[] => {
+const buildDecorations = (state: EditorState, itemPos: number, title: string, linkText?: (text: string) => string): Decoration[] => {
   const $item = state.doc.resolve(itemPos)
   const zoomed = $item.nodeAfter
   const decorations: Decoration[] = []
@@ -293,7 +307,7 @@ const buildDecorations = (state: EditorState, itemPos: number, title: string): D
     if (isListItem(container)) {
       const pos = $item.before(depth)
       decorations.push(Decoration.node(pos, pos + container.nodeSize, { class: ZOOM_ANCESTOR_CLASS }))
-      crumbs.push({ label: itemLabel(container), target: pos })
+      crumbs.push({ label: itemLabel(container, linkText), target: pos })
     }
     const pathIndex = $item.index(depth)
     container.forEach((child, _offset, index) => {
@@ -302,7 +316,7 @@ const buildDecorations = (state: EditorState, itemPos: number, title: string): D
       decorations.push(Decoration.node(pos, pos + child.nodeSize, { class: ZOOM_HIDDEN_CLASS }))
     })
   }
-  crumbs.push({ label: itemLabel(zoomed), target: itemPos })
+  crumbs.push({ label: itemLabel(zoomed, linkText), target: itemPos })
 
   decorations.push(
     Decoration.widget(
@@ -342,7 +356,7 @@ const itemPosFromGlyphClick = (view: EditorView, event: MouseEvent): number | nu
   return isListItem($pos.parent) ? $pos.before() : null
 }
 
-export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen }: ZoomOptions) => {
+export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, linkText, hotkeys }: ZoomOptions) => {
   // Used by the FIRST state only: a rebuilt state (`setMarkdown` → `replaceAll(md, true)`) starts zoomed out, as before.
   let pendingStartKey = startKey
   return $prose(
@@ -354,7 +368,7 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen }: Zo
           init: (_config, state) => {
             const key = pendingStartKey
             pendingStartKey = null
-            return { itemPos: key === null ? null : itemPosForZoomKey(state.doc, key), onZoom, onOpen, undoLevel: undefined, changes: 0 }
+            return { itemPos: key === null ? null : itemPosForZoomKey(state.doc, key), onZoom, onOpen, hotkeys, linkText, undoLevel: undefined, changes: 0 }
           },
           apply: (transaction, previous, _oldState, newState) => {
             const meta: ZoomLevel | undefined = transaction.getMeta(pluginKey)
@@ -433,17 +447,21 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen }: Zo
           decorations: (state) => {
             const itemPos = getZoomedItemPos(state)
             if (itemPos === null) return DecorationSet.empty
-            return DecorationSet.create(state.doc, buildDecorations(state, itemPos, title()))
+            return DecorationSet.create(state.doc, buildDecorations(state, itemPos, title(), linkText))
           },
           handleDOMEvents: {
             click: (view, event) => {
               const itemPos = itemPosFromGlyphClick(view, event)
               if (itemPos === null) return false
+              // The "Bullet dots" gestures (YAZ-3936; by default click, ⇧-click, ⌘-click: YAZ-3646 D10). A click no row
+              // has is the editor's. A page with no tab zooms in place.
+              const plugin = pluginKey.getState(view.state)
+              const where = gestureAction('bullets', event, plugin?.hotkeys?.())
+              if (where === null) return false
               event.preventDefault()
-              // ⌘-click: the bullet in a new tab behind; ⇧-click: in front (YAZ-3646 D10). A page with no tab zooms in place.
-              const open = pluginKey.getState(view.state)?.onOpen
-              const key = open !== undefined && (event.metaKey || event.shiftKey) ? zoomKeyAt(view.state.doc, itemPos) : null
-              if (key !== null) open?.(key, event.metaKey, zoomLabelAt(view.state.doc, itemPos))
+              const open = plugin?.onOpen
+              const key = open !== undefined && where !== 'thisTab' ? zoomKeyAt(view.state.doc, itemPos) : null
+              if (key !== null) open?.(key, where === 'backgroundTab', zoomLabelAt(view.state, itemPos))
               else zoomTo(itemPos)(view.state, view.dispatch)
               return true
             },

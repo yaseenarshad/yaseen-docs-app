@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, clickMenuItem, confirmSheet, editorOf, extraWindow, fileRow, idOf, launchApp, lensTab, linkPicker, menuItem, only, openFromBlankTab, quitApp, searchBar, seededState, shoot, showSearchTab } from './helpers'
+import { activeTab, appWindow, clickMenuItem, confirmSheet, editorOf, extraWindow, fileRow, idOf, launchApp, lensTab, linkPicker, menuItem, only, openFromBlankTab, quitApp, searchBar, seededState, shoot, showSearchTab, LINK_HERE, openLinksHere } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -110,7 +110,7 @@ let guideId = ''
 let freshId = ''
 
 test('step 1 — a vault with no answer on IDs opens with no box, and nothing is written', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, null) })
+  app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, null)) })
   win = await appWindow(app, 'w1')
   await expect(fileRow(win, 'Hub')).toBeVisible()
   await expect(fileRow(win, 'Plan')).toBeVisible()
@@ -204,7 +204,7 @@ test('step 4 — a file from outside gets the next number at once, and a link ty
 
   await fileRow(win, 'Typed').click()
   await expect(linkIn(win, 'Guide')).toBeVisible() // the app shows the title, not the ID
-  await linkIn(win, 'Guide').click()
+  await linkIn(win, 'Guide').click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Guide')
 })
 
@@ -297,7 +297,7 @@ test('step 7 — "Change letters": each ID, link and file name follows, and a li
   await expect(fileRow(win, 'Late')).toBeVisible()
   await fileRow(win, 'Late').click()
   await expect(linkIn(win, 'Fresh idea')).toBeVisible()
-  await linkIn(win, 'Fresh idea').click()
+  await linkIn(win, 'Fresh idea').click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Fresh idea')
   expect(await read(path.join(vault, 'Late.md'))).toContain(`[[${freshId}]]`) // the old link is still on disk
   await shoot(win, 'ids-07b-old-link-opens')
@@ -305,7 +305,7 @@ test('step 7 — "Change letters": each ID, link and file name follows, and a li
 })
 
 test('step 8 — "Change letters" in one window: a second window on the vault opens a link of the old letters at once (YAZ-3102)', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Hub.md')) })
+  app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, path.join(vault, 'Hub.md'))) })
   win = await appWindow(app, 'w1')
   await expect(linkIn(win, 'Fresh idea')).toBeVisible()
   // ⌘⇧N: a second window on the same vault, on the blank tab (YAZ-3343 D35); the search there opens the same note.
@@ -330,7 +330,7 @@ test('step 8 — "Change letters" in one window: a second window on the vault op
   await expect(fileRow(other, 'Later')).toBeVisible()
   await fileRow(other, 'Later').click()
   await expect(linkIn(other, 'Fresh idea')).toBeVisible()
-  await linkIn(other, 'Fresh idea').click()
+  await linkIn(other, 'Fresh idea').click({ modifiers: LINK_HERE })
   await expect(activeTab(other)).toHaveText('Fresh idea')
   await shoot(other, 'ids-08-other-window-old-link-opens')
   await quitApp(app)

@@ -19,7 +19,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, copyVault, dirRow, editorOf, fileRow, launchApp, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, copyVault, dirRow, editorOf, fileRow, launchApp, quitApp, seededState, shoot, tabsOf, LINK_HERE, openLinksHere } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -72,7 +72,7 @@ test.afterAll(async () => {
 // ---------------------------------------------------------------- D1: deleting a note
 
 test('step 1 — the menu offers Delete, and it opens the confirm sheet without deleting', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Doomed.md')) })
+  app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, path.join(vault, 'Doomed.md'))) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(DOOMED_BODY)
 
@@ -133,7 +133,7 @@ test('step 6 — the links now render UNRESOLVED, and clicking one recreates the
   await expect(link).toBeVisible()
   await expect(link).toHaveClass(/wikilink--unresolved/)
   await shoot(win, 'delete-06-unresolved-link')
-  await link.click()
+  await link.click({ modifiers: LINK_HERE }) // an open gesture (YAZ-3936): a plain click puts the caret
   // Create-on-click makes the page again, named as the link spells it (a plain vault, YAZ-2523
   // 🔒 V3) — an accidental delete is recoverable here.
   await expect.poll(() => readFile(path.join(vault, 'Doomed.md'), 'utf8').catch(() => null)).toBe('')

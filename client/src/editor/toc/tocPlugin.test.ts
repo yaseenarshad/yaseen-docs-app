@@ -37,6 +37,7 @@ import { isHeadingCollapsed, setHeadingFoldSet } from '../outline/headingFolding
 import { isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos } from '../outline/zoom'
 import { createTocChannel, type TocChannel } from './tocChannel'
+import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { SCAN_DELAY_MS, scanAllHeadings, scanBullets, scanHeadings, scanNote } from './tocPlugin'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
@@ -1203,5 +1204,20 @@ describe('the scroll spy', () => {
       layOut(view, [-50, 300])
       expect(channel.current([0, 1], scrollerAt(700))).toBe(0)
     })
+  })
+})
+
+describe('a row names its links as the note shows them (YAZ-3744 D6)', () => {
+  const ID = 'k3m9x2pq7abc'
+
+  it('an ID link reads as its title, a name link without brackets; an index change renames the row', async () => {
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update((target) => (target === ID ? '/v/AR v2 plan.md' : target === 'Named' ? '/v/Named.md' : null))
+    const { channel } = await mountToc(`* Ask about [[${ID}]]\n* See [[Named]]\n* Third\n`, { wikilinks })
+    expect(channel.getState().rows.map((row) => row.text)).toEqual(['Ask about AR v2 plan', 'See Named', 'Third'])
+    vi.useFakeTimers()
+    wikilinks.update((target) => (target === ID ? '/v/AR v3 plan.md' : target === 'Named' ? '/v/Named.md' : null))
+    vi.advanceTimersByTime(SCAN_DELAY_MS * 2)
+    expect(channel.getState().rows.map((row) => row.text)).toEqual(['Ask about AR v3 plan', 'See Named', 'Third'])
   })
 })

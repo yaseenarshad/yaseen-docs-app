@@ -15,6 +15,7 @@ import { canSplit } from '@milkdown/kit/prose/transform'
 import type { Decoration, DecorationSet, EditorView } from '@milkdown/kit/prose/view'
 import type { IndexRecord } from '@shared/types'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { OPEN_ID_LINK } from './idLinkCaret'
 import { random } from '../testRandom'
 import {
   WIKILINK_CLASS,
@@ -22,15 +23,19 @@ import {
   WIKILINK_SYNTAX_CLASS,
   WIKILINK_UNRESOLVED_CLASS,
   createWikilinkResolveSource,
+  linkDisplayText,
   type MutableWikilinkResolveSource,
+  type VaultsOfLetters,
 } from './wikilinkPlugin'
+import { createViewOnlyLinkSource } from './viewOnlyLinkSource'
+import { buildViewOnlyCatalogFromEntries, type ViewOnlyEntry } from '../../links/viewOnlyCatalog'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-async function mount(markdown: string, wikilinks?: MutableWikilinkResolveSource) {
+async function mount(markdown: string, wikilinks?: MutableWikilinkResolveSource, vaultsOfLetters?: VaultsOfLetters) {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, wikilinks })
+  const crepe = createCrepe({ root, defaultValue: markdown, wikilinks, vaultsOfLetters })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, root }
@@ -45,9 +50,9 @@ function caret(crepe: Crepe, pos: number): void {
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)))
 }
 
-/** Visible link segments, in document order (never merged: syntax spans separate them). */
+/** Visible link segments, in document order (never merged: syntax spans separate them). A drawing's ending shows only with File icons Off (YAZ-3924). */
 function links(root: HTMLElement): string[] {
-  return Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).map((el) => el.textContent ?? '')
+  return Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}:not(.name-ending)`)).map((el) => el.textContent ?? '')
 }
 
 /** All hidden syntax text joined — PM may merge adjacent same-class segments, the text cannot change. */
@@ -184,51 +189,62 @@ describe('wikilink decorations: resolved vs unresolved', () => {
   })
 })
 
-describe('wikilink decorations: caret adjacency reveals the raw syntax', () => {
+describe('wikilink decorations: every link is one unit (YAZ-3935, point 3 of YAZ-3879: D1 extended to name links)', () => {
   // 'pad [[abc]] tail' — the match spans positions 5..12 (paragraph content starts at 1).
   const MD = 'pad [[abc]] tail\n'
   const FROM = 5
   const TO = 12
+  /** "Edit link"'s selection (`wikilinkMenu.ts`): the one way into a link. */
+  const editLink = (crepe: Crepe, from: number, to = from) => {
+    const view = viewOf(crepe)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)).setMeta(OPEN_ID_LINK, true))
+  }
 
-  it('caret inside the match drops its decorations (raw [[abc]] fully visible)', async () => {
+  it('a caret that lands inside steps to the nearer edge and the pill stays; only "Edit link" shows the raw [[abc]]', async () => {
     const { crepe, root } = await mount(MD)
     caret(crepe, FROM + 3)
+    expect(viewOf(crepe).state.selection.head).toBe(FROM)
+    expect(links(root)).toEqual(['abc'])
+    editLink(crepe, FROM + 3)
     expect(links(root)).toEqual([])
     expect(syntax(root)).toBe('')
     expect(viewOf(crepe).dom.textContent).toContain('[[abc]]')
   })
 
-  it('boundaries are inclusive: caret exactly at the edges reveals, one further out collapses', async () => {
+  it('a caret at either edge, or one further out, keeps the pill (the old reveal rule is gone for name links)', async () => {
     const { crepe, root } = await mount(MD)
-    caret(crepe, FROM)
-    expect(links(root)).toEqual([])
-    caret(crepe, TO)
-    expect(links(root)).toEqual([])
-    caret(crepe, FROM - 1)
-    expect(links(root)).toEqual(['abc'])
-    caret(crepe, TO + 1)
-    expect(links(root)).toEqual(['abc'])
+    for (const pos of [FROM, TO, FROM - 1, TO + 1]) {
+      caret(crepe, pos)
+      expect(links(root), String(pos)).toEqual(['abc'])
+    }
   })
 
-  it('a selection range overlapping the match reveals it', async () => {
+  it('a selection range overlapping the match keeps the pill; one strictly inside it ("Edit link") opens it', async () => {
     const { crepe, root } = await mount(MD)
     const view = viewOf(crepe)
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2, FROM + 1)))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2, FROM)))
+    expect(links(root)).toEqual(['abc'])
+    editLink(crepe, FROM + 2, FROM + 5)
     expect(links(root)).toEqual([])
   })
 
-  it('only the match under the caret reveals; other links stay collapsed', async () => {
+  it('only the link "Edit link" opened shows raw; other links stay collapsed', async () => {
     const { crepe, root } = await mount('[[a]] x [[b]]\n')
-    caret(crepe, 3) // inside [[a]]
+    editLink(crepe, 3) // inside [[a]]
     expect(links(root)).toEqual(['b'])
     expect(syntax(root)).toBe('[[]]')
   })
 
-  it('the initial caret at doc start reveals a link that starts the document (arrow-in expands)', async () => {
-    // This is the adjacency rule doing the work for arrow traversal: the caret can never be
-    // trapped against hidden text — at the boundary the whole match is already raw.
+  it('the initial caret at doc start keeps a link that starts the document a pill', async () => {
     const { root } = await mount('[[abc]] tail\n')
+    expect(links(root)).toEqual(['abc'])
+  })
+
+  it('a link with nothing to show ([[Note|]], [[#]]) is no unit: it stays raw text, and a caret walks into it', async () => {
+    const { crepe, root } = await mount('pad [[Note|]] tail\n')
     expect(links(root)).toEqual([])
+    caret(crepe, 8)
+    expect(viewOf(crepe).state.selection.head).toBe(8)
   })
 
   it('typing elsewhere keeps the link collapsed and correct', async () => {
@@ -350,19 +366,21 @@ describe("wikilink decorations: an id link shows the note's current title (YAZ-2
     expect(segments[1].classList.contains(WIKILINK_SUB_CLASS)).toBe(true)
   })
 
-  it('the reveal rule drops the title with the rest: a caret touching the match shows the raw [[id]]', async () => {
+  it('YAZ-3744 D1: a caret at either edge keeps the title; only a selection strictly inside ("Edit link") shows the raw [[id]]', async () => {
     // 'pad [[k3m9x2pq7abc]] tail' — the match spans positions 5..21.
     const { crepe, root } = await mount(`pad [[${ID}]] tail\n`, sourceOf(resolveId))
     const view = viewOf(crepe)
-    for (const pos of [5, 7, 13, 21]) {
+    for (const pos of [4, 5, 21, 22]) {
       caret(crepe, pos)
-      expect(links(root), `caret at ${pos}`).toEqual([])
-      expect(syntax(root)).toBe('')
-      expect(view.dom.textContent).toContain(`[[${ID}]]`)
-      expect(view.dom.textContent).not.toContain('Road Map')
+      expect(links(root), `caret at ${pos}`).toEqual(['Road Map'])
+      expect(syntax(root)).toBe(`[[${ID}]]`)
     }
-    caret(crepe, 4)
-    expect(links(root)).toEqual(['Road Map'])
+    // "Edit link" selects the id with the one meta that may stay inside (idLinkCaret.ts).
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 7, 19)).setMeta(OPEN_ID_LINK, true))
+    expect(links(root)).toEqual([])
+    expect(view.dom.textContent).toContain(`[[${ID}]]`)
+    expect(view.dom.textContent).not.toContain('Road Map')
+    // The caret leaves: the link closes.
     caret(crepe, 22)
     expect(links(root)).toEqual(['Road Map'])
   })
@@ -546,9 +564,116 @@ describe('a resolved link is a pill with its file icon (YAZ-3609 D13)', () => {
     expect(getMarkdownForSave(crepe)).toBe('See [[Roadmap]] now\n')
   })
 
-  it('I5 with the caret beside the link, the raw text shows and no icon', async () => {
+  it('I5 with the caret beside the link the pill and its icon stay (YAZ-3935); "Edit link" shows the raw text and no icon', async () => {
     const { crepe, root } = await mountLook('See [[Roadmap]]\n')
     caret(crepe, 'See [[Roadmap]]'.length + 1)
+    expect(root.querySelector('.wikilink__icon')?.textContent).toBe('Roadmap')
+    const view = viewOf(crepe)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 'See [[Road'.length + 1)).setMeta(OPEN_ID_LINK, true))
     expect(root.querySelector('.wikilink__icon')).toBeNull()
+  })
+})
+
+describe('a link shows its page name (YAZ-3778 D2, D3, S12, S13)', () => {
+  const FOUND: Record<string, string> = {
+    'Plan.md': '/v/Plan.md',
+    'yaseen/evals/1-business-context/fernhill': '/v/yaseen/evals/1-business-context/fernhill',
+    'Notes/Report.pdf': '/v/Notes/Report.pdf',
+  }
+
+  async function mountNamed(markdown: string) {
+    const source = createWikilinkResolveSource()
+    source.update((target) => FOUND[target] ?? null)
+    const viewOnly = createViewOnlyLinkSource()
+    viewOnly.update(buildViewOnlyCatalogFromEntries('/v', [
+      { path: '/v/LN Scenarios Diagram.drawio', name: 'LN Scenarios Diagram.drawio', kind: 'diagram' },
+      { path: '/v/Our Eval System.excalidraw', name: 'Our Eval System.excalidraw', kind: 'drawing' },
+      { path: '/v/Report.pdf', name: 'Report.pdf', kind: 'pdf' },
+    ] as ViewOnlyEntry[]))
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: markdown, wikilinks: source, viewOnlyLinks: viewOnly })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    return { crepe, root, source, viewOnly }
+  }
+
+  it('hides a diagram\'s, a drawing\'s and a note\'s extension; a PDF keeps its own; the file keeps every byte', async () => {
+    const md = 'a [[LN Scenarios Diagram.drawio]] b [[Our Eval System.excalidraw]] c [[Plan.md]] d [[Report.pdf]] e\n'
+    const { crepe, root } = await mountNamed(md)
+    expect(links(root)).toEqual(['LN Scenarios Diagram', 'Our Eval System', 'Plan', 'Report.pdf'])
+    expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+
+  it('a pathed link shows only its name, with its heading part; an alias is left as written', async () => {
+    const { root } = await mountNamed('a [[yaseen/evals/1-business-context/fernhill]] b [[yaseen/evals/1-business-context/fernhill#Intro]] c [[Plan.md|the plan.md]] d\n')
+    expect(links(root)).toEqual(['fernhill', 'fernhill', 'Intro', 'the plan.md'])
+  })
+
+  it('S12: a dead link keeps its whole text, so it shows what is missing', async () => {
+    const { root } = await mountNamed('a [[old/Gone Diagram.drawio]] b [[gone/Note.md]] c\n')
+    expect(links(root)).toEqual(['old/Gone Diagram.drawio', 'gone/Note.md'])
+    expect(root.querySelectorAll(`.${WIKILINK_UNRESOLVED_CLASS}`)).toHaveLength(2)
+  })
+
+  it('the shared display text agrees: linkDisplayText trims only a page that is found', () => {
+    expect(linkDisplayText('a/b/LN.drawio', undefined, () => true)).toBe('LN')
+    expect(linkDisplayText('a/b/LN.drawio', undefined, () => false)).toBe('a/b/LN.drawio')
+    expect(linkDisplayText('a/b/LN.drawio#H', undefined, () => true)).toBe('LN > H')
+    expect(linkDisplayText('.excalidraw', undefined, () => true)).toBe('.excalidraw')
+    expect(linkDisplayText('folder/', undefined, () => true)).toBe('folder/')
+  })
+
+  it('YAZ-3924: with File icons Off a drawing\'s or a diagram\'s extension is a piece of the pill, with no spellcheck; a note\'s never shows', async () => {
+    const { root } = await mountNamed('a [[LN Scenarios Diagram.drawio]] b [[Our Eval System.excalidraw]] c [[Plan.md]] d\n')
+    const endings = Array.from(root.querySelectorAll<HTMLElement>('.name-ending'))
+    expect(endings.map((el) => el.textContent)).toEqual(['.drawio', '.excalidraw'])
+    for (const el of endings) {
+      expect(el.classList.contains(WIKILINK_CLASS)).toBe(true)
+      expect(el.getAttribute('spellcheck')).toBe('false')
+    }
+  })
+
+  it('S13: a link\'s name gets no spellcheck underline', async () => {
+    const { root } = await mountNamed('a [[Plan.md]] b\n')
+    expect(root.querySelector(`.${WIKILINK_CLASS}`)?.getAttribute('spellcheck')).toBe('false')
+  })
+})
+
+describe('a missing note and an ID of another vault (YAZ-3905 S10, S23)', () => {
+  /** The window's other vaults: one uses `INL`, two use `TWO`. */
+  const vaultsOf: VaultsOfLetters = (letters) => (letters === 'INL' ? ['In-harness-lab'] : letters === 'TWO' ? ['Alpha', 'Beta'] : [])
+  const pills = (root: HTMLElement) => Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).map((el) => [el.textContent, el.classList.contains(WIKILINK_UNRESOLVED_CLASS)])
+  /** A note of a vault that uses IDs (`YAS`) where no link finds a note. */
+  async function mountIds(markdown: string, letters: VaultsOfLetters = vaultsOf) {
+    const source = createWikilinkResolveSource()
+    source.update(() => null, [], [], true, ['YAS'])
+    return mount(markdown, source, letters)
+  }
+
+  it('S10: an ID of this vault whose note is gone reads "Missing note · YAS-999", dimmed; the note keeps every byte', async () => {
+    const md = 'pad [[YAS-999]] tail\n'
+    const { crepe, root } = await mountIds(md)
+    expect(pills(root)).toEqual([['Missing note · YAS-999', true]])
+    expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+
+  it('S23: an ID with another open vault\'s letters names that vault, dimmed; the note keeps every byte', async () => {
+    const md = 'pad [[INL-4]] tail\n'
+    const { crepe, root } = await mountIds(md)
+    expect(pills(root)).toEqual([['INL-4', true], [' (In-harness-lab)', true]])
+    expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+
+  it('S23: letters that two open vaults share name no vault: "another vault"', async () => {
+    const { root } = await mountIds('pad [[TWO-3]] tail\n')
+    expect(pills(root)).toEqual([['TWO-3', true], [' (another vault)', true]])
+  })
+
+  it('S23: this vault\'s letters win, and letters no open vault has stay a name link', async () => {
+    const { root } = await mountIds('a [[YAS-999]] b [[GPT-4]] c\n', (letters) => (letters === 'YAS' || letters === 'GPT' ? ['Elsewhere'] : []))
+    expect(pills(root)).toEqual([['Missing note · YAS-999', true], ['GPT-4', true], [' (Elsewhere)', true]])
+    const plain = await mountIds('pad [[GPT-4]] tail\n')
+    expect(pills(plain.root)).toEqual([['GPT-4', true]])
   })
 })
