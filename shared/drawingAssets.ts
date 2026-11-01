@@ -288,6 +288,26 @@ export function createdOf(scene: Record<string, unknown>, id: string): number | 
   return isRecord(entry) && isFiniteNumber(entry.created) ? entry.created : null
 }
 
+/**
+ * The cog's size row (YAZ-3943 D5): how many pictures a live element uses, and their own size in bytes
+ * (the base64 of each `dataURL`, decoded by its length, never by decoding it). An id with no entry,
+ * or an entry with no `dataURL`, does not count.
+ */
+export function picturesSize(elements: readonly unknown[], files: Readonly<Record<string, unknown>>): { bytes: number; count: number } {
+  let bytes = 0
+  let count = 0
+  for (const id of referencedFileIds(elements)) {
+    const entry = files[id]
+    const dataURL = isRecord(entry) ? entry.dataURL : undefined
+    if (typeof dataURL !== 'string') continue
+    const base64 = dataURL.length - dataURL.indexOf(',') - 1
+    const padding = dataURL.endsWith('==') ? 2 : dataURL.endsWith('=') ? 1 : 0
+    bytes += Math.max(0, Math.floor((base64 * 3) / 4) - padding)
+    count += 1
+  }
+  return { bytes, count }
+}
+
 // ---------- A new drawing (YAZ-877, moved here for `fs:create-board` by YAZ-3028 D9) ----------
 
 /**

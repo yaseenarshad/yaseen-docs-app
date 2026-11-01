@@ -14,7 +14,7 @@
  * partial render: a half-parsed scene would be a lie about what the file holds.
  */
 import type { DrawingFileEntry } from '@shared/types'
-import { referencedFileIds } from '@shared/drawingAssets'
+import { BOARD_META_KEY, picturesOut, referencedFileIds } from '@shared/drawingAssets'
 import { isRecord } from '@shared/guards'
 import { isDrawingReadOnly } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
@@ -29,10 +29,15 @@ export interface DrawingScene {
   readonly files: Record<string, unknown> | null
   /** The file's read-only switch (YAZ-3076 D1, `isDrawingReadOnly`), read in the same parse; absent = editable. */
   readonly readOnly?: boolean
+  /** `"pictures": "assets"` in the block (YAZ-3943 D5), read in the same parse; absent = the pictures are inside. */
+  readonly picturesOut?: boolean
 }
 
-/** The scene's read-only switch, present only when it is on: an editable scene keeps the shape it always had. */
-const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true } => (isDrawingReadOnly(scene) ? { readOnly: true } : {})
+/** The scene's two switches, each present only when it is on: a plain scene keeps the shape it always had. */
+const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true; picturesOut?: true } => ({
+  ...(isDrawingReadOnly(scene) ? { readOnly: true } : {}),
+  ...(picturesOut(scene[BOARD_META_KEY]) ? { picturesOut: true } : {}),
+})
 
 /** Embed targets that get a preview — everything else renders exactly as it always has. */
 export const DRAWING_EMBED_SUFFIX = '.excalidraw'

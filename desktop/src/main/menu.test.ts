@@ -348,7 +348,7 @@ describe('buildMenuTemplate', () => {
 
   // ---------- The board items (YAZ-3037, YAZ-3028 D10; ported from Draw's menu.test.ts) ----------
 
-  it('File: Export Image… ⌘⇧E, Export Excalidraw Drawing… ⌘⇧S and Share Link ⌘⇧L, in their own group after Search Vault and Show in Sidebar, each calling its handler', () => {
+  it('File: Export Image or PDF… ⌘⇧E, Export Excalidraw Drawing… ⌘⇧S and Share Link ⌘⇧L, in their own group after Search Vault and Show in Sidebar, each calling its handler', () => {
     const handlers = noopHandlers()
     const file = menuOf(onTab('drawing', handlers), 'File')
     const at = (id: string) => file.findIndex((i) => i.id === id)
@@ -357,7 +357,7 @@ describe('buildMenuTemplate', () => {
     expect([at('menu.file.export-drawing'), at('menu.file.share-link'), at('menu.file.close-tab')]).toEqual([at('menu.file.export-image') + 1, at('menu.file.export-image') + 2, at('menu.file.export-image') + 4])
     expect(file[at('menu.file.share-link') + 1].type).toBe('separator')
     expect(['menu.file.export-image', 'menu.file.export-drawing', 'menu.file.share-link'].map((id) => [file[at(id)].label, file[at(id)].accelerator, file[at(id)].enabled])).toEqual([
-      ['Export Image…', 'CmdOrCtrl+Shift+E', true],
+      ['Export Image or PDF…', 'CmdOrCtrl+Shift+E', true],
       ['Export Excalidraw Drawing…', 'CmdOrCtrl+Shift+S', true],
       ['Share Link', 'CmdOrCtrl+Shift+L', true],
     ])
@@ -380,6 +380,9 @@ describe('buildMenuTemplate', () => {
     const enabled = (kind: FileKind | null) =>
       [item(onTab(kind), 'File', 'menu.file.export-image'), item(onTab(kind), 'File', 'menu.file.export-drawing'), item(onTab(kind), 'File', 'menu.file.share-link'), item(onTab(kind), 'View', 'menu.view.canvas-background')].map((i) => i?.enabled)
     expect(enabled('drawing')).toEqual([true, true, true, true])
+    // YAZ-3943 D13: a drawing's export box makes a PDF too, so its item says so; a diagram keeps the old name, both on ⌘⇧E.
+    expect([item(onTab('drawing'), 'File', 'menu.file.export-image')?.label, item(onTab('diagram'), 'File', 'menu.file.export-image')?.label]).toEqual(['Export Image or PDF…', 'Export Image…'])
+    expect(item(onTab('diagram'), 'File', 'menu.file.export-image')?.accelerator).toBe('CmdOrCtrl+Shift+E')
     expect(enabled('diagram')).toEqual([true, false, true, false])
     for (const kind of ['markdown', 'pdf', 'image', 'text', null] as const) expect(enabled(kind), String(kind)).toEqual([false, false, false, false])
   })

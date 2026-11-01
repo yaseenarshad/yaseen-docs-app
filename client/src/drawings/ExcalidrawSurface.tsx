@@ -67,7 +67,7 @@
  */
 import { requestKeySheet } from '../keys/keySheetRequest'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import { referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
+import { picturesSize, referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
 import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -115,6 +115,8 @@ export interface DrawingSurfaceApi {
   setCanvasBackground(color: string): void
   /** File › Export Drawing… (Draw's YAZ-1821): the canvas as a STANDALONE `.excalidraw`, the whole live files map embedded. */
   exportScene(): string
+  /** The cog's size row (YAZ-3943 D5): the pictures the canvas uses now, counted when asked (`picturesSize`). */
+  pictures(): { bytes: number; count: number }
   /**
    * Replace what the canvas shows (the file changed on disk under a clean tab). Returns the
    * version the engine will report for it — the host's new clean baseline — computed from the
@@ -560,6 +562,7 @@ export function ExcalidrawSurface({
           appState: api.getAppState() as unknown as Record<string, unknown>,
           files: api.getFiles() as unknown as Record<string, unknown>,
         }),
+      pictures: () => picturesSize(api.getSceneElements() as readonly unknown[], api.getFiles() as unknown as Record<string, unknown>),
       replaceScene: (next) => {
         const restored = mod.restoreElements(next.elements as ChangeArgs[0], null)
         // A new scene, a new count: computed BEFORE the engine reports it, so its first `onChange` agrees.

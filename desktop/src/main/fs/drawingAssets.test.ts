@@ -10,6 +10,7 @@ import {
   mimeForAssetExt,
   parseDataUrl,
   parseBoardMetaBlock,
+  picturesSize,
   referencedFileIds,
   serializeBoard,
   stampBoardMeta,
@@ -237,5 +238,21 @@ describe('parseBoardMetaBlock (🔒 YAZ-1834 D6/D7)', () => {
       array: '[{"yaseendraw":{}}]',
     }
     for (const [name, text] of Object.entries(cases)) expect(parseBoardMetaBlock(text), name).toBeNull()
+  })
+})
+
+describe('picturesSize (YAZ-3943 D5, the cog size row)', () => {
+  it('counts each picture a live element uses once, by its decoded size; a deleted element or a missing entry does not count', () => {
+    const b64 = (text: string) => `data:image/png;base64,${Buffer.from(text).toString('base64')}`
+    const elements = [
+      { type: 'image', fileId: 'a' },
+      { type: 'image', fileId: 'a' },
+      { type: 'image', fileId: 'b' },
+      { type: 'image', fileId: 'gone' },
+      { type: 'image', fileId: 'old', isDeleted: true },
+    ]
+    const files = { a: { dataURL: b64('hello') }, b: { dataURL: b64('hi there!') }, old: { dataURL: b64('xxxxxxxx') } }
+    expect(picturesSize(elements, files)).toEqual({ bytes: 5 + 9, count: 2 })
+    expect(picturesSize([], files)).toEqual({ bytes: 0, count: 0 })
   })
 })

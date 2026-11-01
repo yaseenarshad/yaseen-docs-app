@@ -37,17 +37,19 @@
  * grows, so the same image is never shipped twice in one session. A save that moved the pictures
  * out by the 50 MB rule (`movedOut`) shows the one notice.
  */
-import { useCallback, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse } from '@shared/types'
 import { unpersistedFiles } from '@shared/drawingAssets'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
-import { api } from '../api'
+import { api, BridgeRequestError } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, exportWithNotice, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
 import type { NoticeKind } from '../lib/notice'
 import { basename } from '../lib/paths'
+import { formatBytes } from '../lib/format'
 import { useAppliedTheme } from '../lib/theme'
+import type { PageSwitch } from '../editor/PageSettings'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { exportFileName } from './exportDrawing'
 import { parseSceneText, type DrawingScene } from './drawingScene'
@@ -61,6 +63,32 @@ export const BROKEN_DRAWING_DOCUMENT = "This Excalidraw drawing can't be opened:
 
 /** YAZ-3943 D5, the 50 MB rule: a save moved the board's pictures out. */
 export const PICTURES_MOVED_OUT = "This board's pictures moved to the assets folder, because the file passed 50 MB."
+
+/** YAZ-3943 D5: the size row turns amber from here, well before the 50 MB rule moves the pictures out. */
+export const PICTURES_WARN_BYTES = 20 * 1024 * 1024
+
+/**
+ * The drawing's cog rows after "Read only" (YAZ-3943 D5, D13): the pictures' size and count, the button
+ * that moves them out or back in, then the two exports. No picture: no size row and no button. The
+ * button writes the file, so Read only greys it out; the exports write elsewhere and stay.
+ */
+export function drawingCogRows({ pictures, out, readOnly, onMovePictures, onExportImage, onExportDrawing }: {
+  pictures: { bytes: number; count: number }
+  out: boolean
+  readOnly: boolean
+  onMovePictures: () => void
+  onExportImage: () => void
+  onExportDrawing: () => void
+}): PageSwitch[] {
+  const rows: PageSwitch[] = []
+  if (pictures.count > 0) {
+    const where = out ? 'Pictures in the assets folder' : 'Pictures in this file'
+    rows.push({ label: `${where}: ${formatBytes(pictures.bytes)} (${pictures.count})`, warn: !out && pictures.bytes >= PICTURES_WARN_BYTES, divider: true })
+    rows.push({ label: out ? 'Keep pictures inside' : 'Move pictures out', onToggle: onMovePictures, disabled: readOnly })
+  }
+  rows.push({ label: 'Export Image or PDF…', onToggle: onExportImage, divider: true }, { label: 'Export Excalidraw Drawing…', onToggle: onExportDrawing })
+  return rows
+}
 
 /** What File › Export Drawing… says when the save sheet or the write refused (🔒 YAZ-1775 D3, YAZ-1821). */
 const EXPORT_FAILED = "The Excalidraw drawing couldn't be exported."
@@ -136,6 +164,8 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
   const reloadedTo = useRef<number | null>(null)
   /** Ids the store holds: load's `stored`, grown by every save's `persisted` (🔒 YAZ-1775 D3). */
   const persisted = useRef(new Set(loaded.stored))
+  /** `"pictures": "assets"` as the file last said it (YAZ-3943 D5): the load, each reload, the 50 MB rule, the cog's button. */
+  const [picturesOut, setPicturesOut] = useState(loaded.scene.picturesOut === true)
 
   // Fresh closures every render are fine: the hook reads them through its `engine` ref, never stale.
   const board = useDocumentHost({
@@ -153,7 +183,10 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       const newFiles = unpersistedFiles(files, referenced, persisted.current)
       const res = await api.drawing.save({ root, path, json, expectedMtime, newFiles })
       for (const id of res.persisted) persisted.current.add(id)
-      if (res.movedOut === true) onNotice?.(PICTURES_MOVED_OUT)
+      if (res.movedOut === true) {
+        setPicturesOut(true)
+        onNotice?.(PICTURES_MOVED_OUT)
+      }
       return res
     },
     reload: async (a) => {
@@ -163,6 +196,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
         const doc = toDocument(await api.drawing.load({ root, path }))
         reloadedTo.current = doc.mtime
         persisted.current = new Set(doc.stored)
+        setPicturesOut(doc.scene.picturesOut === true)
         a.reset(s.replaceScene(doc.scene), doc.mtime)
         return doc.scene.readOnly === true
       } catch (err) {
@@ -253,6 +287,48 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     if (s === null || board.retired.current) return
     await exportWithNotice(() => api.dialog.saveDrawing({ defaultName: exportFileName(basename(path)), content: s.exportScene() }), EXPORT_FAILED, onNotice)
   }
+
+  /**
+   * The cog's "Move pictures out" / "Keep pictures inside" (YAZ-3943 D5): `board:set-pictures`, beside the
+   * autosave as the Read only switch is (`writeBeside`: pending edits save first, then the one write, and
+   * its mtime is adopted, so the watcher's echo reloads nothing). A file changed on disk first is refused.
+   */
+  const movePictures = async (out: boolean): Promise<void> => {
+    const a = autosave.current
+    if (a === null || board.retired.current) return
+    try {
+      await a.writeBeside((expectedMtime) => api.setBoardPictures({ root, path, out, expectedMtime }))
+      setPicturesOut(out)
+    } catch (err) {
+      if (err instanceof BridgeRequestError && err.code === 'CONFLICT') {
+        onNotice?.('The file changed on disk. Try again.', 'error')
+        if (!a.dirty) void reload()
+        return
+      }
+      onNotice?.(err instanceof BridgeRequestError && err.message !== '' ? err.message : "The pictures couldn't move.", 'error')
+    }
+  }
+
+  // The cog's rows (YAZ-3943 D5, D13), set from here because `renderTopRight` is made once. The rows are
+  // made while the cog is open, never on a keystroke; the clicks read this render's handlers through a ref.
+  const cogActions = useRef({ movePictures, exportDrawing })
+  cogActions.current = { movePictures, exportDrawing }
+  useLayoutEffect(
+    () =>
+      chips.set({
+        pageRows: () =>
+          drawingCogRows({
+            pictures: surface.current?.pictures() ?? { bytes: 0, count: 0 },
+            out: picturesOut,
+            readOnly,
+            onMovePictures: () => void cogActions.current.movePictures(!picturesOut),
+            // The same handlers as ⌘⇧E and ⌘⇧S (`onCommand`).
+            onExportImage: () => surface.current?.openImageExport(),
+            onExportDrawing: () => void cogActions.current.exportDrawing(),
+          }),
+      }),
+    [chips, picturesOut, readOnly],
+  )
 
   /** ⌘S (or the user's key for it, YAZ-3564) flushes now — caught before the engine's own keymap, and never on `window`. */
   const onKeyDownCapture = (e: ReactKeyboardEvent): void => {

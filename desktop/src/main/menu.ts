@@ -209,7 +209,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
         // the active tab is a board they work for. Export Image… and Share Link work on any board, Export
         // Excalidraw Drawing… only on a drawing. ⌘⇧E and ⌘⇧L clash with no in-page key of Docs.
         // A greyed-out item holds no key (YAZ-3564 K13): on macOS a disabled item still takes its key from the page.
-        { id: 'menu.file.export-image', label: 'Export Image…', ...(onBoard ? { accelerator: 'CmdOrCtrl+Shift+E' } : {}), enabled: onBoard, click: () => handlers.exportImage() },
+        // On a drawing its box also makes a PDF (YAZ-3943 D13), so it says so; a diagram's stays "Export Image…". The key does not change.
+        { id: 'menu.file.export-image', label: onDrawing ? 'Export Image or PDF…' : 'Export Image…', ...(onBoard ? { accelerator: 'CmdOrCtrl+Shift+E' } : {}), enabled: onBoard, click: () => handlers.exportImage() },
         // ⌘⇧S is also the review's Skip (YAZ-2322), and the note keeps its key (D10): a registered
         // accelerator never reaches the page on macOS, so the item carries the key ONLY while it is
         // enabled. On a note tab nothing in the menu owns ⌘⇧S; a review over a drawing tab is App's to route.

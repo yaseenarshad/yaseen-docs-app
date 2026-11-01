@@ -3670,6 +3670,19 @@ body.drag-held iframe {
   color: var(--fg-muted);
 }
 
+/* A drawing's picture size past 20 MB (YAZ-3943 D5): amber, before the 50 MB rule moves them out. */
+.page-settings__menu p.page-settings__warn {
+  color: var(--warn);
+}
+
+/* An action the file cannot take now ("Move pictures out" in Read only): greyed out, no hover. */
+.page-settings__menu button:disabled {
+  color: var(--fg-muted);
+  background: transparent;
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* "TOC made from" (YAZ-2700 D14): a small label over three choices in one frame, so they read as
    one control and not as three more switches. The buttons take the menu's own hover and pressed
    colours above; only their shape is theirs. */

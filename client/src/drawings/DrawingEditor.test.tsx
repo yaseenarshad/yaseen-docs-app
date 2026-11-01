@@ -20,7 +20,7 @@ import { fakeWatch, withRevealObserver } from '../documents/boardTestKit'
 
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
-  return { ...actual, api: { ...actual.api, drawing: { load: vi.fn(), save: vi.fn() }, dialog: { saveDrawing: vi.fn() } } }
+  return { ...actual, api: { ...actual.api, drawing: { load: vi.fn(), save: vi.fn() }, dialog: { saveDrawing: vi.fn() }, setBoardPictures: vi.fn() } }
 })
 
 /** The engine stub: records what it was given and hands the host the two callbacks it owns. */
@@ -36,6 +36,8 @@ const surface = {
   commands: [] as BoardCommand[],
   /** What `exportScene()` answers — the standalone bytes the save sheet is offered (🔒 YAZ-1775 D3). */
   exportedScene: '{"type":"excalidraw","elements":[],"files":{}}\n',
+  /** What `pictures()` answers: the cog's size row (YAZ-3943 D5). */
+  pictures: { bytes: 0, count: 0 },
 }
 
 vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
@@ -64,6 +66,7 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
         surface.commands.push({ kind: 'export-drawing' })
         return surface.exportedScene
       },
+      pictures: () => surface.pictures,
     } satisfies DrawingSurfaceApi)
     // The real engine renders this into its own top-right row; the stub just puts it on screen,
     // because WHERE the chips go is the surface's business and WHAT they say is the host's.
@@ -81,6 +84,7 @@ import { ENGINE_LOAD_FAILED } from './ExcalidrawSurface'
 const load = vi.mocked(api.drawing.load)
 const save = vi.mocked(api.drawing.save)
 const saveDrawing = vi.mocked(api.dialog.saveDrawing)
+const setBoardPictures = vi.mocked(api.setBoardPictures)
 
 const ROOT = '/vault'
 const PATH = '/vault/Board.excalidraw'
@@ -125,6 +129,7 @@ beforeEach(() => {
   surface.refreshes = 0
   surface.nextReplaceVersion = 0
   surface.commands = []
+  surface.pictures = { bytes: 0, count: 0 }
   Object.defineProperty(window, 'yaseenDocs', {
     configurable: true,
     writable: true,
@@ -569,5 +574,83 @@ describe('page links (YAZ-4039)', () => {
     render({ wikilinks: linkSource(), wikilinkCandidates: candidates, onOpenLink: vi.fn(), onOpenLinkBackground: vi.fn() })
     await flush()
     expect(surface.props!.links!.hostLinks.pasteLink?.('/vault/Known.md')).toBe('[[YAS-7]]')
+  })
+})
+
+describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5, D13)', () => {
+  const cog = () => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!
+  const rows = () => [...container.querySelectorAll<HTMLElement>('.page-settings__menu > button, .page-settings__menu > p')]
+  const row = (label: string) => rows().find((r) => r.textContent === label) as HTMLButtonElement | undefined
+  const MB = 1024 * 1024
+
+  async function openCog(over: Partial<DrawingLoadResponse> = {}): Promise<void> {
+    load.mockResolvedValue(loaded(over))
+    render()
+    await flush()
+    emit(1)
+    act(() => cog().click())
+  }
+
+  it('in this order: Read only, the size and count of the pictures, the button, then the two exports', async () => {
+    surface.pictures = { bytes: 3.3 * MB, count: 6 }
+    await openCog()
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Pictures in this file: 3.3 MB (6)', 'Move pictures out', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(container.querySelectorAll('.page-settings__menu > .page-settings__divider')).toHaveLength(2)
+    expect(row('Pictures in this file: 3.3 MB (6)')!.className).not.toContain('warn')
+  })
+
+  it('no picture: no size row and no button; from 20 MB the size is amber; a "pictures out" board says where they are', async () => {
+    await openCog()
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    act(() => cog().click())
+    surface.pictures = { bytes: 20 * MB, count: 2 }
+    act(() => cog().click())
+    expect(row('Pictures in this file: 20.0 MB (2)')!.className).toContain('page-settings__warn')
+  })
+
+  it('"Move pictures out" writes beside the autosave, and the row turns into "Keep pictures inside"', async () => {
+    surface.pictures = { bytes: 1000, count: 1 }
+    setBoardPictures.mockResolvedValue({ path: PATH, mtime: 300, size: 10 })
+    await openCog()
+    await act(async () => row('Move pictures out')!.click())
+    await flush()
+    expect(setBoardPictures).toHaveBeenCalledWith({ root: ROOT, path: PATH, out: true, expectedMtime: 100 })
+    act(() => cog().click())
+    expect(rows().map((r) => r.textContent)).toContain('Pictures in the assets folder: 1000 B (1)')
+    await act(async () => row('Keep pictures inside')!.click())
+    await flush()
+    expect(setBoardPictures).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, out: false, expectedMtime: 300 })
+  })
+
+  it('a "pictures out" board opens with "Keep pictures inside"', async () => {
+    surface.pictures = { bytes: 1000, count: 1 }
+    await openCog({ json: `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, pictures: 'assets' }, elements: [], appState: {}, files: {} })}\n` })
+    expect(row('Keep pictures inside')).toBeDefined()
+  })
+
+  it('Read only greys the button out (it writes the file); the exports still work', async () => {
+    surface.pictures = { bytes: 1000, count: 1 }
+    await openCog({ json: `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, elements: [], appState: {}, files: {} })}\n` })
+    expect(row('Move pictures out')!.disabled).toBe(true)
+    expect(row('Export Image or PDF…')!.disabled).toBe(false)
+    act(() => row('Move pictures out')!.click())
+    expect(setBoardPictures).not.toHaveBeenCalled()
+  })
+
+  it('each export row calls the same handler as its key (⌘⇧E, ⌘⇧S), and closes the menu', async () => {
+    container.className = 'tabstack__layer'
+    await openCog()
+    act(() => row('Export Image or PDF…')!.click())
+    expect(container.querySelector('.page-settings__menu')).toBeNull()
+    act(() => void requestBoardCommand({ kind: 'export-image' }, document.body))
+    // Each one reached the engine's own export box the same way.
+    expect(surface.commands).toEqual([{ kind: 'export-image' }, { kind: 'export-image' }])
+
+    act(() => cog().click())
+    await act(async () => row('Export Excalidraw Drawing…')!.click())
+    await flush()
+    await act(async () => void requestBoardCommand({ kind: 'export-drawing' }, document.body))
+    await flush()
+    expect(saveDrawing.mock.calls).toEqual([[{ defaultName: 'Board.excalidraw', content: surface.exportedScene }], [{ defaultName: 'Board.excalidraw', content: surface.exportedScene }]])
   })
 })
