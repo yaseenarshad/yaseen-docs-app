@@ -1809,4 +1809,40 @@ describe('TabBar: the live gap (YAZ-3808 6A)', () => {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth
     }
   })
+
+  it('6A10 (YAZ-4086): at the end of a short strip the gap holds through Chromium\'s own order — on a change of element a dragenter on the new one and a dragleave on the old one, with no dragover — and each element takes the drop', () => {
+    const onRaise = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow: vi.fn(), onRaise, ...props })
+    const tail = el.querySelector<HTMLElement>('.tabbar-tail')!
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    const at = (type: string, relatedTarget?: Element) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 430, clientY: 20, relatedTarget })
+      Object.defineProperty(event, 'dataTransfer', { value: stripTab(130) })
+      return event
+    }
+    act(() => void tail.dispatchEvent(at('dragover')))
+    expect(el.querySelector('.tabbar__room')).not.toBeNull()
+    for (let i = 0; i < 3; i++) {
+      // The gap widened the strip under the pointer: the strip is entered, the tail left, in one update.
+      let enter = at('dragenter', tail)
+      act(() => {
+        strip.dispatchEvent(enter)
+        tail.dispatchEvent(at('dragleave', strip))
+      })
+      expect(enter.defaultPrevented).toBe(true) // the strip takes the drop
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+      act(() => void strip.dispatchEvent(at('dragover')))
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+      enter = at('dragenter', strip)
+      act(() => {
+        tail.dispatchEvent(enter)
+        strip.dispatchEvent(at('dragleave', tail))
+      })
+      expect(enter.defaultPrevented).toBe(true)
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+      act(() => void tail.dispatchEvent(at('dragover')))
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+    }
+    expect(onRaise).toHaveBeenCalledTimes(1)
+  })
 })

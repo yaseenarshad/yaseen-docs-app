@@ -578,8 +578,13 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // (its padding, the live gap) is the slot at the pointer (6A). The "+" and ‹ › too (YAZ-3808 D5, YAZ-3984): the
   // strip scrolls while a drag rests on them, so a drop there lands at the end, or at the first tab on show, never off
   // every surface (a tear-off).
-  const slotZone = (slotOf: (e: DragEvent<HTMLElement>) => number, direct: boolean) => ({
-    onDragOver: (e: DragEvent<HTMLElement>) => {
+  // A place that takes a drag takes it on `dragenter` as on `dragover` (6A10): when the element under the pointer
+  // changes, Chromium sends `dragenter` to the new one and `dragleave` to the old one, and no `dragover` until the next
+  // update. A place that did not cancel its `dragenter` refuses the drop. No place shuts the gap when it is left: the
+  // next place sets its own slot, a drag that leaves the row shuts it there, and one over a part of the row that takes
+  // no drag shuts it in the row's `dragover`. The slot is set each time, never from what the last render read (6A7).
+  const slotZone = (slotOf: (e: DragEvent<HTMLElement>) => number, direct: boolean) => {
+    const over = (e: DragEvent<HTMLElement>) => {
       if (direct && e.target !== e.currentTarget) return
       const at = slotOf(e)
       if (drag !== null) {
@@ -590,21 +595,34 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       if (externalPage(e) === null && !foreignTab(e)) return
       e.preventDefault()
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-      // Set each time, never from what the last render read (6A7): Chromium sends one place's `dragleave` and the next
-      // one's `dragover` with no render between, and a gap at the end widens the strip under the pointer.
       setExternalOver(at)
-    },
-    onDrop: (e: DragEvent<HTMLElement>) => {
-      if (direct && e.target !== e.currentTarget) return
-      if (drag !== null) {
-        e.preventDefault()
-        drop(slotOf(e))
-      } else dropExternal(e, slotOf(e))
-    },
-    onDragLeave: (e: DragEvent<HTMLElement>) => {
-      if ((!direct || e.target === e.currentTarget) && !e.currentTarget.contains(e.relatedTarget as Node | null)) setExternalOver(null)
-    },
-  })
+    }
+    return {
+      onDragEnter: over,
+      onDragOver: over,
+      onDrop: (e: DragEvent<HTMLElement>) => {
+        if (direct && e.target !== e.currentTarget) return
+        if (drag !== null) {
+          e.preventDefault()
+          drop(slotOf(e))
+        } else dropExternal(e, slotOf(e))
+      },
+    }
+  }
+  /** A drag over a tab: its half says the slot (6A). On `dragenter` too, as for each place above (6A10). */
+  const overTab = (e: DragEvent<HTMLElement>) => {
+    const over = pointSlot(e.clientX)
+    if (drag !== null) {
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+      if (drag.over !== over) setDrag({ ...drag, over })
+      return
+    }
+    if (externalPage(e) === null && !foreignTab(e)) return
+    e.preventDefault()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+    setExternalOver(over)
+  }
   const endSlot = slotZone(() => tabs.length, true)
   // The tablist's own room is the gap's too (6A): the empty place between the parted tabs is the strip's, not its end.
   const stripSlot = slotZone((e) => pointSlot(e.clientX), true)
@@ -693,6 +711,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         const strip = stripRef.current
         if (width === null || strip === null) externalRoom.current = null
         else if (externalRoom.current?.width !== width) externalRoom.current = { width, room: width + (parseFloat(getComputedStyle(strip).columnGap) || 0) }
+        // A part of the row that takes no drag (the blank tab, the row's own room): no slot, so no gap (6A10).
+        if (drag === null && !e.isDefaultPrevented()) setExternalOver(null)
       }}
       onDropCapture={() => {
         raised.current = false
@@ -810,19 +830,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                 setDrag(null)
                 setExternalOver(null)
               }}
-              onDragOver={(e) => {
-                const over = pointSlot(e.clientX)
-                if (drag !== null) {
-                  e.preventDefault()
-                  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-                  if (drag.over !== over) setDrag({ ...drag, over })
-                  return
-                }
-                if (externalPage(e) === null && !foreignTab(e)) return
-                e.preventDefault()
-                if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-                setExternalOver(over)
-              }}
+              onDragEnter={overTab}
+              onDragOver={overTab}
               onDrop={(e) => {
                 const at = pointSlot(e.clientX)
                 if (drag !== null) {
