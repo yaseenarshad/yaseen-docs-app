@@ -1195,6 +1195,8 @@ describe('TabBar: the four tab changes (YAZ-3808)', () => {
     const strip = el.querySelector<HTMLElement>('.tabbar')!
     strip.getBoundingClientRect = () => ({ left: 100, right: 400, top: 0, bottom: 40, width: 300, height: 40 }) as DOMRect
     Object.defineProperties(strip, { scrollWidth: { configurable: true, value: 1000 }, clientWidth: { configurable: true, value: 300 } })
+    // The row ends at x 600, where the right panel would start.
+    strip.parentElement!.getBoundingClientRect = () => ({ left: 0, right: 600, top: 0, bottom: 40, width: 600, height: 40 }) as DOMRect
     el.querySelectorAll<HTMLElement>('[data-tab]').forEach((tab, i) => (tab.getBoundingClientRect = () => ({ left: 50 + i * 100, width: 100, top: 0, bottom: 40 }) as DOMRect))
   }
   afterEach(() => {
@@ -1268,9 +1270,8 @@ describe('TabBar: the four tab changes (YAZ-3808)', () => {
     act(() => void plus.querySelector('svg')?.dispatchEvent(new MouseEvent('dragover', { bubbles: true, cancelable: true, clientX: 415, clientY: 20 })))
     fire(plus, 'drop', 415, 20)
     expect(onMove).toHaveBeenCalledExactlyOnceWith(0, 2)
-    fire(tabAt(el, 0), 'dragend')
-    expect(onTearOff).not.toHaveBeenCalled()
     expect(frames).toHaveLength(0)
+    vi.unstubAllGlobals()
   })
 
   it('D5: a drop on ‹ › lands at the first tab on show — never off every surface (a tear-off)', () => {

@@ -22,13 +22,15 @@ const LEFT_SLACK = 160
 
 /**
  * The slot under a client point of a strip (YAZ-3808 D1, D5), by each tab's midpoint; null off the strip. The strip's tabs
- * carry `data-tab`. Anywhere past the strip's right end (the "+" and the row's tail) is the end slot, as for a tab drag;
+ * carry `data-tab`. Past the strip's right end, up to the end of its row (the "+" and the tail), is the end slot, as for a tab drag;
  * past its left end (‹ ›) is the first slot on show, since the strip may be scrolled.
  */
 export function slotUnder(strip: HTMLElement | null, x: number, y: number): number | null {
   if (strip === null) return null
   const r = strip.getBoundingClientRect()
-  if (y < r.top || y > r.bottom || x < r.left - LEFT_SLACK) return null
+  // The row ends where the right panel starts: a point over the panel is off the strip.
+  const rowEnd = strip.parentElement?.getBoundingClientRect().right ?? r.right
+  if (y < r.top || y > r.bottom || x < r.left - LEFT_SLACK || x > Math.max(r.right, rowEnd)) return null
   const tabs = strip.querySelectorAll<HTMLElement>('[data-tab]')
   if (x > r.right) return tabs.length
   const at = Math.max(x, r.left + 1)
