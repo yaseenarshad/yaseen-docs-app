@@ -30,6 +30,7 @@ vi.mock('../api', async (importOriginal) => ({
 // The sidebar's preview panels (D18: one preview look): stand-ins that say which file they show.
 vi.mock('../sidebar/NotePreview', () => ({ default: ({ name }: { name: string }) => <div className="note-preview" aria-label={`Preview of ${name}`} /> }))
 vi.mock('../sidebar/BoardPreview', () => ({ default: ({ node }: { node: { path: string } }) => <div className="board-preview" aria-label={`Preview of ${node.path}`} /> }))
+import { setStripHandle, setStripSlot, stripSlot } from './stripDrop'
 import { api } from '../api'
 const readHeads = vi.mocked(api.readHeads)
 
@@ -80,7 +81,7 @@ const HEADS: Record<string, string> = {
 }
 
 async function mount(over: Partial<TabOverviewProps> = {}) {
-  const props: TabOverviewProps = { roots: ['/v', '/w'], vaultNames: ['Notes', 'Work'], tabs: TABS, active: '/v/a.md', preview: '/w/x.md', titles: new Map(), windowId: 'me', onOpen: vi.fn(), onCloseTabs: vi.fn(), onDismiss: vi.fn(), onMoveToRight: vi.fn(), onShowInSidebar: vi.fn(), onDropToWindow: vi.fn(), onMoveTab: vi.fn(), onMoveToNewWindowQuietly: vi.fn(), ...over }
+  const props: TabOverviewProps = { roots: ['/v', '/w'], vaultNames: ['Notes', 'Work'], tabs: TABS, active: '/v/a.md', preview: '/w/x.md', titles: new Map(), windowId: 'me', onOpen: vi.fn(), onCloseTabs: vi.fn(), onDismiss: vi.fn(), onMoveToRight: vi.fn(), onShowInSidebar: vi.fn(), onDropToWindow: vi.fn(), onMoveTab: vi.fn(), onMoveToSlot: vi.fn(), onTakeAt: vi.fn(), onMoveToNewWindowQuietly: vi.fn(), ...over }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -763,7 +764,7 @@ describe('TabOverview', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/v/b.md' }, { id: 't3', path: '/v/a.md' }]
-    await act(async () => root?.render(<IdTabOverview roots={['/v']} vaultNames={['Notes']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={vi.fn()} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
+    await act(async () => root?.render(<IdTabOverview roots={['/v']} vaultNames={['Notes']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={vi.fn()} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToSlot={vi.fn()} onTakeAt={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
     const el = container
     const face = (id: string) => [page(el, id)?.querySelector('.taboverview__title')?.textContent, page(el, id)?.querySelector('.taboverview__pagename')?.textContent ?? null, page(el, id)?.querySelector('.taboverview__copy')?.textContent ?? null]
     expect(face('t1')).toEqual(['Outline', 'Page: Plan', '1 of 2'])
@@ -1692,7 +1693,7 @@ describe('TabOverview display name (YAZ-2949 D4, D5)', () => {
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/w/x.md' }]
     const onOpen = vi.fn()
-    await act(async () => root?.render(<IdTabOverview roots={['/v', '/w']} vaultNames={['Notes', 'Work']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={onOpen} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onSetName={onSetName} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
+    await act(async () => root?.render(<IdTabOverview roots={['/v', '/w']} vaultNames={['Notes', 'Work']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={onOpen} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onSetName={onSetName} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToSlot={vi.fn()} onTakeAt={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
     const el = container
     const card = page(el, 't1')!
     expect(card.querySelector('.taboverview__title')?.textContent).toBe('Outline')
@@ -1738,5 +1739,59 @@ describe('TabOverview display name (YAZ-2949 D4, D5)', () => {
     expect(document.activeElement).toBe(filter(el))
     key(el, 'Escape')
     expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('YAZ-3808 D1: a card let go on the tab strip moves its tab there', () => {
+  /** A stand-in for the window's strip: above the board (y < 0) is on it, slot 1 at x < 100, else the end slot 6. */
+  const strip = { slotAt: vi.fn((x: number, y: number) => (y >= 0 ? null : x < 100 ? 1 : 6)), edge: vi.fn(), stop: vi.fn() }
+  beforeEach(() => setStripHandle(strip))
+  afterEach(() => {
+    setStripHandle(null)
+    setStripSlot(null)
+  })
+
+  it('this window\'s card: the strip shows the slot while it is held there, the tab moves to it, and the card keeps its place on the board', async () => {
+    const onMoveToSlot = vi.fn()
+    const { el } = await mount({ onMoveToSlot })
+    const card = page(el, '/v/a.md')!
+    const at = placeOf(card)
+    pointer(card, 'pointerdown', 0, 0)
+    pointer(window, 'pointermove', 10, 10)
+    expect(stripSlot()).toBeNull()
+    expect(strip.stop).toHaveBeenCalled() // off the strip, no edge scroll
+    pointer(window, 'pointermove', 50, -20)
+    expect(stripSlot()).toBe(1)
+    expect(strip.edge).toHaveBeenLastCalledWith(50)
+    pointer(window, 'pointerup', 50, -20)
+    expect(onMoveToSlot).toHaveBeenCalledExactlyOnceWith('/v/a.md', 1)
+    expect(stripSlot()).toBeNull()
+    expect(storage.setTabCanvas).not.toHaveBeenCalled()
+    expect(placeOf(card)).toEqual(at)
+    expect(card.dataset.sliding).toBe('') // it slides back to its place
+  })
+
+  it('another window\'s card: its tab joins this window at the slot, as a drop from that window\'s strip does, and leaves its frame', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
+    others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
+    const onTakeAt = vi.fn()
+    const onMoveTab = vi.fn()
+    const { el } = await mount({ onTakeAt, onMoveTab })
+    pointer(page(el, 'w2\n/w/y.md\n0'), 'pointerdown', 0, 0)
+    pointer(window, 'pointermove', 10, 10)
+    pointer(window, 'pointermove', 300, -20)
+    pointer(window, 'pointerup', 300, -20)
+    expect(onTakeAt).toHaveBeenCalledExactlyOnceWith('w2', { path: '/w/y.md', copy: 0 }, 6)
+    expect(onMoveTab).not.toHaveBeenCalled()
+  })
+
+  it('a cancelled drag puts the strip\'s line out', async () => {
+    const { el } = await mount()
+    pointer(page(el, '/v/a.md'), 'pointerdown', 0, 0)
+    pointer(window, 'pointermove', 10, 10)
+    pointer(window, 'pointermove', 50, -20)
+    expect(stripSlot()).toBe(1)
+    pointer(window, 'pointercancel', 50, -20)
+    expect(stripSlot()).toBeNull()
   })
 })

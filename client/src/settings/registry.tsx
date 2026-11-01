@@ -61,6 +61,12 @@ const LINK_OPEN_OPTIONS: readonly { label: string; value: SettingsState['linkOpe
   { label: 'A new background tab', value: 'background-tab' },
 ]
 
+/** Files & Links › Open new tabs (YAZ-3808 D2). */
+const NEW_TAB_PLACE_OPTIONS: readonly { label: string; value: SettingsState['newTabPlace'] }[] = [
+  { label: 'Next to the current tab', value: 'next' },
+  { label: 'At the end', value: 'end' },
+]
+
 export interface SettingsCtx {
   settings: SettingsState
   onChange: (next: SettingsState) => void
@@ -822,6 +828,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['link', 'wikilink', 'tab', 'click'],
             render: ({ settings, onChange }) => (
               <Segmented options={LINK_OPEN_OPTIONS} value={settings.linkOpen} onChange={(linkOpen) => onChange({ ...settings, linkOpen })} ariaLabel="Open a link in" />
+            ),
+          },
+          {
+            // YAZ-3808 D2, D3: "Open in new tab", a ⌘-click and a new preview tab. ⌘T and a moved tab still go to the end.
+            id: 'newTabPlace',
+            label: 'Open new tabs',
+            hint: '⌘T and a tab from another window still go to the end.',
+            keywords: ['tab', 'new tab', 'order', 'position', 'next', 'end'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={NEW_TAB_PLACE_OPTIONS} value={settings.newTabPlace} onChange={(newTabPlace) => onChange({ ...settings, newTabPlace })} ariaLabel="Open new tabs" />
             ),
           },
           {

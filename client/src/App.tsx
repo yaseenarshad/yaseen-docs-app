@@ -22,6 +22,7 @@ import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type 
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
+import { dropIndex } from './lib/dragSlot'
 import { transformFile } from './views/writeProperty'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
@@ -1648,6 +1649,11 @@ export function App() {
   const moveBoardTab = useCallback((from: string, to: string, ref: TabRef) => {
     api.window.moveTab(from, to, ref).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
   }, [notify])
+  /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
+  const moveBoardCardToSlot = useCallback((id: string, slot: number) => {
+    const from = now.current.tabs.findIndex((t) => t.id === id)
+    if (from !== -1) moveTab(from, dropIndex(from, slot))
+  }, [moveTab])
   /** What the board's preview panel needs of a page's vault (D18): the scope that holds it, or the first one. */
   const boardPreviewScope = useCallback((path: string) => {
     const scope = scopeOf(path)
@@ -2821,6 +2827,9 @@ export function App() {
       onDismiss={leaveOverviewForOpenPage}
       onKillAll={askKillAll}
       onMoveTab={moveBoardTab}
+      // A card let go on the strip (YAZ-3808 D1): this window's tab moves to the slot; another window's joins at it.
+      onMoveToSlot={moveBoardCardToSlot}
+      onTakeAt={takeFromWindow}
       onCloseWindow={closeBoardWindow}
       onNewWindow={openWindowBehind}
       onOpenTabHere={openBackground}

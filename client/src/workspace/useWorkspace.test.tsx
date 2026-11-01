@@ -1536,3 +1536,108 @@ describe('display name in the hook (YAZ-3057 D1): stored with the window', () =>
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('where a new tab opens (YAZ-3808 D2, D3, D4)', () => {
+  /** a (active) · b · c, kept tabs. */
+  const three = (): TabsState => state(['/v/a.md', '/v/b.md', '/v/c.md'], '/v/a.md')
+  const open = (s: TabsState, path: string) => tabsReducer(s, { type: 'open-background', path, next: true })
+
+  it('D2: with `next` "Open in new tab" lands right after the current tab and comes to the front; without it, at the end', () => {
+    expect(tabsReducer(three(), { type: 'open-new', path: '/v/x.md', next: true })).toMatchObject({ tabs: ['/v/a.md', '/v/x.md', '/v/b.md', '/v/c.md'], active: '/v/x.md' })
+    expect(tabsReducer(three(), { type: 'open-new', path: '/v/x.md' })).toMatchObject({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md', '/v/x.md'], active: '/v/x.md' })
+    // A page that is open already is gone to, wherever its tab stands.
+    expect(tabsReducer(three(), { type: 'open-new', path: '/v/c.md', next: true })).toMatchObject({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], active: '/v/c.md' })
+  })
+
+  it('D4: tabs opened behind keep the order they were opened in, after the current tab, which stays in front (the Chrome chain)', () => {
+    const s = open(open(open(three(), '/v/x1.md'), '/v/x2.md'), '/v/x3.md')
+    expect(s).toMatchObject({ tabs: ['/v/a.md', '/v/x1.md', '/v/x2.md', '/v/x3.md', '/v/b.md', '/v/c.md'], active: '/v/a.md' })
+    // Without `next` each one goes to the end, and no chain starts.
+    const end = tabsReducer(tabsReducer(three(), { type: 'open-background', path: '/v/x1.md' }), { type: 'open-background', path: '/v/x2.md' })
+    expect(end.tabs).toEqual(['/v/a.md', '/v/b.md', '/v/c.md', '/v/x1.md', '/v/x2.md'])
+  })
+
+  it('D4: the chain ends on a trip to another tab, and on a close: the next one opens right after the current tab again', () => {
+    const chained = open(three(), '/v/x1.md')
+    const away = open(tabsReducer(chained, { type: 'activate', path: '/v/b.md' }), '/v/y.md')
+    expect(away.tabs).toEqual(['/v/a.md', '/v/x1.md', '/v/b.md', '/v/y.md', '/v/c.md'])
+    const back = open(tabsReducer(away, { type: 'activate', path: '/v/a.md' }), '/v/z.md')
+    expect(back.tabs).toEqual(['/v/a.md', '/v/z.md', '/v/x1.md', '/v/b.md', '/v/y.md', '/v/c.md'])
+    const closed = open(tabsReducer(chained, { type: 'close', path: '/v/c.md' }), '/v/w.md')
+    expect(closed.tabs).toEqual(['/v/a.md', '/v/w.md', '/v/x1.md', '/v/b.md'])
+    // A tab opened in FRONT goes after the chain too, as in Chrome; it is the current tab then, so its own chain starts.
+    const front = tabsReducer(chained, { type: 'open-new', path: '/v/f.md', next: true })
+    expect(front).toMatchObject({ tabs: ['/v/a.md', '/v/x1.md', '/v/f.md', '/v/b.md', '/v/c.md'], active: '/v/f.md' })
+    expect(open(front, '/v/g.md').tabs).toEqual(['/v/a.md', '/v/x1.md', '/v/f.md', '/v/g.md', '/v/b.md', '/v/c.md'])
+  })
+
+  it('D3: a sidebar click with no preview tab opens one next to the current tab; one with a preview tab reuses it where it stands', () => {
+    const made = tabsReducer(three(), { type: 'open-current', path: '/v/p.md', next: true })
+    expect(made).toMatchObject({ tabs: ['/v/a.md', '/v/p.md', '/v/b.md', '/v/c.md'], active: '/v/p.md', preview: '/v/p.md' })
+    const previewLast: TabsState = { ...state(['/v/a.md', '/v/b.md', '/v/c.md', '/v/p.md'], '/v/a.md'), preview: '/v/p.md' }
+    expect(tabsReducer(previewLast, { type: 'open-current', path: '/v/q.md', next: true })).toMatchObject({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md', '/v/q.md'], preview: '/v/q.md' })
+  })
+
+  it('D3: the blank tab, a moved tab and "Restore session" still go to the end', () => {
+    const blank = tabsReducer(three(), { type: 'new-tab' })
+    expect(tabsReducer(blank, { type: 'open-new', path: '/v/x.md', next: true }).tabs).toEqual(['/v/a.md', '/v/b.md', '/v/c.md', '/v/x.md'])
+    expect(tabsReducer(blank, { type: 'open-current', path: '/v/x.md', next: true }).tabs).toEqual(['/v/a.md', '/v/b.md', '/v/c.md', '/v/x.md'])
+    expect(tabsReducer(three(), { type: 'take', path: '/v/x.md' }).tabs).toEqual(['/v/a.md', '/v/b.md', '/v/c.md', '/v/x.md'])
+    expect(tabsReducer(three(), { type: 'open-stored', tabs: plain('/v/x.md', '/v/y.md') }).tabs).toEqual(['/v/a.md', '/v/b.md', '/v/c.md', '/v/x.md', '/v/y.md'])
+  })
+
+  it('the chain is never stored: the window\'s strip names pages, copies and names only', () => {
+    const s = reduceTabs({ tabs: [{ id: 't1', path: '/v/a.md' }], active: 't1', mounted: ['t1'], history: NO_STEPS, preview: null, blank: false }, { type: 'open-background', path: '/v/x.md', next: true })
+    expect(s.chain).toBe(s.tabs[1].id)
+    expect(tabStripOf(s)).toEqual([{ path: '/v/a.md', active: true }, { path: '/v/x.md' }])
+  })
+})
+
+describe('the setting in the hook (YAZ-3808 D2): the user flow', () => {
+  let reactRoot: Root | null = null
+  let latest: UseWorkspace
+
+  function Probe() {
+    latest = useWorkspace('/v')
+    return null
+  }
+
+  const boot = async (newTabPlace: 'next' | 'end') => {
+    const app = defaultAppState()
+    installBridge({ ...app, settings: { ...app.settings, newTabPlace } }, { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    reactRoot = createRoot(document.createElement('div'))
+    act(() => reactRoot?.render(<Probe />))
+  }
+  const paths = () => latest.tabs.map((t) => t.path)
+
+  afterEach(() => {
+    act(() => reactRoot?.unmount())
+    reactRoot = null
+  })
+
+  it('"Next to the current tab": three ⌘-clicks keep their order after the current tab, and "Open in new tab" then lands after them, as in Chrome', async () => {
+    await boot('next')
+    act(() => latest.openKept('/v/a.md'))
+    act(() => latest.openKept('/v/b.md'))
+    act(() => latest.activate(latest.tabs[0].id))
+    for (const p of ['/v/l1.md', '/v/l2.md', '/v/l3.md']) act(() => latest.openBackground(p))
+    expect(paths()).toEqual(['/v/a.md', '/v/l1.md', '/v/l2.md', '/v/l3.md', '/v/b.md'])
+    expect(latest.active).toBe(latest.tabs[0].id)
+    act(() => latest.openKept('/v/n.md'))
+    expect(paths()).toEqual(['/v/a.md', '/v/l1.md', '/v/l2.md', '/v/l3.md', '/v/n.md', '/v/b.md'])
+    // In front now, n is the current tab: the next ⌘-click goes right after it.
+    act(() => latest.openBackground('/v/m.md'))
+    expect(paths()).toEqual(['/v/a.md', '/v/l1.md', '/v/l2.md', '/v/l3.md', '/v/n.md', '/v/m.md', '/v/b.md'])
+  })
+
+  it('"At the end": every new tab joins the end, as before', async () => {
+    await boot('end')
+    act(() => latest.openKept('/v/a.md'))
+    act(() => latest.openKept('/v/b.md'))
+    act(() => latest.activate(latest.tabs[0].id))
+    act(() => latest.openBackground('/v/l1.md'))
+    act(() => latest.openKept('/v/n.md'))
+    expect(paths()).toEqual(['/v/a.md', '/v/b.md', '/v/l1.md', '/v/n.md'])
+  })
+})

@@ -865,6 +865,16 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings.linkOpen).toBe('this-tab')
   })
 
+  it('newTabPlace (YAZ-3808 D2): a file without it reads "Next to the current tab"; each choice survives; junk falls back', async () => {
+    const { newTabPlace: _place, ...before } = DEFAULT_SETTINGS
+    await seed(valid({ settings: before }))
+    expect(createStore(file).get().settings.newTabPlace).toBe('next')
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, newTabPlace: 'end' } }))
+    expect(createStore(file).get().settings.newTabPlace).toBe('end')
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, newTabPlace: 'left' } }))
+    expect(createStore(file).get().settings.newTabPlace).toBe('next')
+  })
+
   it('newNoteLocation/newNoteFolder: a pre-C2 file without the keys sanitizes to the defaults (current + "", YAZ-1643); junk falls back (GRO-2240)', async () => {
     // A pre-C2 yaseendocs.json: every field but the Files & Links pair — missing fields just gain their defaults.
     const { newNoteLocation: _loc, newNoteFolder: _folder, ...preC2Settings } = DEFAULT_SETTINGS

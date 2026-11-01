@@ -1538,6 +1538,8 @@ export interface SettingsState {
   confirmRename: boolean
   /** Files & Links (YAZ-3609 D11): where a click on a link in a note opens its page. ⌘-click always opens a background tab. */
   linkOpen: LinkOpen
+  /** Files & Links (YAZ-3808 D2, D3): where a page opened in a new tab opens — next to the current tab, or at the end of the strip. ⌘T and a tab from another window always go to the end. */
+  newTabPlace: NewTabPlace
   /** Rest the pointer on a note, drawing or diagram row to see it (Draw's YAZ-1800 D2; YAZ-3044 A20; notes since YAZ-3075 D5). Text, PDF and image rows never preview. */
   hoverPreview: boolean
   /** Each place's own say on the hover preview (YAZ-3403), under the `hoverPreview` master switch: a place shows it only while both are on (`hoverOn`). A place missing from a stored state reads on. */
@@ -1803,6 +1805,10 @@ export const NEW_NOTE_LOCATIONS: readonly NewNoteLocation[] = ['root', 'current'
 export type LinkOpen = 'this-tab' | 'new-tab' | 'background-tab'
 export const LINK_OPENS: readonly LinkOpen[] = ['this-tab', 'new-tab', 'background-tab']
 
+/** Where a new tab opens (YAZ-3808 D2): right after the current tab, or at the end of the strip. */
+export type NewTabPlace = 'next' | 'end'
+export const NEW_TAB_PLACES: readonly NewTabPlace[] = ['next', 'end']
+
 /** Comment stream order (YAZ-1515): oldest-first (the model's order) or newest-first by the ROOT's `at`. */
 export type CommentsOrder = 'oldest' | 'newest'
 export const COMMENTS_ORDERS: readonly CommentsOrder[] = ['oldest', 'newest']
@@ -1876,6 +1882,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   newNoteFolder: '',
   confirmDelete: true,
   linkOpen: 'this-tab',
+  newTabPlace: 'next',
   confirmRename: true,
   hoverPreview: true,
   hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, links: true },

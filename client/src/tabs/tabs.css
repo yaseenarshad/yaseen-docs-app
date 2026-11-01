@@ -92,6 +92,12 @@
   cursor: default;
 }
 
+/* During a drag (YAZ-3808 D5) a greyed ‹ or › lets the drag through to the row, which scrolls the strip and takes the
+   drop: a disabled button hears no drag events of its own. */
+.tabbar-row--drag .tabbar-nav__btn:disabled {
+  pointer-events: none;
+}
+
 /* Overflow (I3, YAZ-2689 D2): the tabs that are not the active one shrink to their floor first, then the strip scrolls; TabBar scrolls the
    ACTIVE tab into view. The scrolling itself — no scrollbar, an edge fade — is `.scroll-strip`
    (app.css). The tablist is as wide as its tabs, so the "+" stands right after the last one and

@@ -12,6 +12,7 @@ import { NAV_HOLD_MS, TabBar as IdTabBar, type TabBarProps as IdTabBarProps } fr
 import tabsCss from './tabs.css?inline'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 import { setBoardHighlight } from './boardHighlight'
+import { setStripSlot, stripHandle } from './stripDrop'
 import { IconsContext } from '../sidebar/FileIcon'
 import { buildRowIcons, rowIcon } from '../sidebar/rowIcons'
 
@@ -1161,5 +1162,109 @@ describe('TabBar display name (YAZ-2949 D4, D5)', () => {
     act(() => void tabs(el)[1].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === 'Reset to page name')?.click())
     expect(onSetName).toHaveBeenLastCalledWith('t2', null)
+  })
+})
+
+describe('TabBar: the four tab changes (YAZ-3808)', () => {
+  /** jsdom's own `offsetLeft` (always 0), put back after the glide test lays tabs out. */
+  const OFFSET_LEFT = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetLeft')!
+  const TABS = ['/v/a.md', '/v/b.md', '/v/c.md']
+  const props = { onActivate: vi.fn(), onClose: vi.fn(), ...noNav }
+  const tabAt = (el: HTMLElement, i: number) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab')][i]
+  const gaps = (el: HTMLElement) => [...el.querySelectorAll('.tabbar__tab--gap-before, .tabbar__tab--gap-after')].map((tab) => `${tab.textContent?.replace('✕', '')}:${tab.classList.contains('tabbar__tab--gap-before') ? 'before' : 'after'}`)
+  const fire = (target: Element, type: string, clientX = 0, clientY = 0) =>
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY })))
+  /** A strip from x 100 to 400, scrolled so the first tab is half hidden: tab i stands at 50 + 100·i, 100 px wide. */
+  const layOut = (el: HTMLElement) => {
+    el.querySelector<HTMLElement>('.tabbar')!.getBoundingClientRect = () => ({ left: 100, right: 400, top: 0, bottom: 40, width: 300, height: 40 }) as DOMRect
+    el.querySelectorAll<HTMLElement>('[data-tab]').forEach((tab, i) => (tab.getBoundingClientRect = () => ({ left: 50 + i * 100, width: 100, top: 0, bottom: 40 }) as DOMRect))
+  }
+  afterEach(() => {
+    act(() => setStripSlot(null))
+    vi.unstubAllGlobals()
+    delete (window as unknown as Record<string, unknown>).matchMedia
+    Object.defineProperty(HTMLElement.prototype, 'offsetLeft', OFFSET_LEFT)
+    delete (HTMLElement.prototype as unknown as Record<string, unknown>).animate
+  })
+
+  it('D1: the strip registers its handle for the tab board, and a card\'s slot draws the same line as a drag; unmounted, the handle goes', () => {
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+    layOut(el)
+    expect(stripHandle()?.slotAt(210, 20)).toBe(2) // right half of b
+    expect(stripHandle()?.slotAt(250, 99)).toBeNull() // below the strip
+    act(() => setStripSlot(1))
+    expect(gaps(el)).toEqual(['b:before'])
+    act(() => setStripSlot(3))
+    expect(gaps(el)).toEqual(['c:after'])
+    act(() => setStripSlot(null))
+    expect(gaps(el)).toEqual([])
+    act(() => root?.unmount())
+    root = null
+    expect(stripHandle()).toBeNull()
+  })
+
+  it('D5: a drag held at the strip\'s right end scrolls it frame by frame; the drop stops it', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => frames.push(f))
+    vi.stubGlobal('cancelAnimationFrame', () => void frames.splice(0))
+    const onMove = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove, ...props })
+    layOut(el)
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    fire(tabAt(el, 0), 'dragstart')
+    fire(tabAt(el, 2), 'dragover', 395)
+    expect(frames).toHaveLength(1)
+    act(() => frames.splice(0).forEach((f) => f(0)))
+    expect(strip.scrollLeft).toBeGreaterThan(0)
+    fire(tabAt(el, 2), 'drop', 395)
+    expect(frames).toHaveLength(0)
+    expect(onMove).toHaveBeenCalledWith(0, 2)
+  })
+
+  it('D5: a drop on ‹ › lands at the first tab on show — never off every surface (a tear-off)', () => {
+    const onMove = vi.fn()
+    const onTearOff = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove, onTearOff, ...props })
+    layOut(el)
+    const nav = el.querySelector<HTMLElement>('.tabbar-nav')!
+    fire(tabAt(el, 2), 'dragstart')
+    fire(nav, 'dragover', 60, 20)
+    expect(gaps(el)).toEqual(['b:before']) // a is half hidden: b is the first tab on show
+    fire(nav, 'drop', 60, 20)
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(2, 1)
+    expect(onTearOff).not.toHaveBeenCalled()
+  })
+
+  it('D6: a reorder glides each tab that changed place from where it stood; a tab that opens, and "Reduce motion", glide nothing', () => {
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false }) })
+    Object.defineProperty(HTMLElement.prototype, 'offsetLeft', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.tab === undefined ? 0 : [...this.parentElement!.querySelectorAll('[data-tab]')].indexOf(this) * 100
+      },
+    })
+    const glides: Array<[string, string]> = []
+    // jsdom has no Web Animations API.
+    Object.defineProperty(HTMLElement.prototype, 'animate', {
+      configurable: true,
+      value(this: HTMLElement, keyframes: Keyframe[]) {
+        glides.push([this.dataset.tab ?? '', String(keyframes[0].transform)])
+        return {} as Animation
+      },
+    })
+    const render = (tabs: string[]) => act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={tabs} active="/v/a.md" onMove={vi.fn()} {...props} />))
+    mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+    render(['/v/c.md', '/v/a.md', '/v/b.md'])
+    expect(glides).toEqual([
+      ['/v/c.md', 'translateX(200px)'],
+      ['/v/a.md', 'translateX(-100px)'],
+      ['/v/b.md', 'translateX(-100px)'],
+    ])
+    glides.length = 0
+    render(['/v/c.md', '/v/a.md', '/v/d.md', '/v/b.md'])
+    expect(glides).toEqual([])
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true }) })
+    render(['/v/a.md', '/v/c.md', '/v/d.md', '/v/b.md'])
+    expect(glides).toEqual([])
   })
 })
