@@ -330,6 +330,13 @@ describe('a plain-text copy names links as the note shows them (YAZ-3744 S8)', (
     expect(copyAs('markdown')).toContain('See [[YAS-466]], [[AR v2 plan]], [[LN Scenarios Diagram.drawio]]')
   })
 
+  it('Copy as Markdown writes a link as a save does, never escaped (YAZ-3747)', async () => {
+    const { view } = await mountLinks('See [[AR v2 plan]] here, ![[pic.png]] too\n\nA [[YAS-466]] then **bold** end\n')
+    view.focus()
+    selectAll(view)
+    expect(copyAs('markdown')).toBe('See [[AR v2 plan]] here, ![[pic.png]] too\n\nA [[YAS-466]] then **bold** end\n')
+  })
+
   it('an ID typed in small letters copies as the app writes it, as "Copy name and ID" does (YAZ-3910 A3)', async () => {
     const { view } = await mountLinks('See [[yas-466]] here\n')
     selectAll(view)

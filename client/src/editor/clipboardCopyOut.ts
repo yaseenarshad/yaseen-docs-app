@@ -113,6 +113,12 @@ export const copyNoticeCtx = createSlice<((text: string) => void) | null, 'copyN
  */
 export const copyLinkTextCtx = createSlice<((text: string) => string) | null, 'copyLinkText'>(null, 'copyLinkText')
 
+/**
+ * Copy as Markdown writes what a save writes (YAZ-3747): createCrepe gives its save step, `postProcessMarkdown`, which
+ * takes remark's escapes off each `[[link]]`. None (a bare mount) copies the serializer's text as it is.
+ */
+export const copyMarkdownCtx = createSlice<((markdown: string) => string) | null, 'copyMarkdown'>(null, 'copyMarkdown')
+
 /** What the toast says: the lines a copy left out, so a copy that dropped them reads as meant. */
 const copiedText = (left: number): string =>
   left === 0 ? 'Copied. Nothing in it was folded' : `Copied, ${left} folded line${left === 1 ? '' : 's'} left out`
@@ -193,7 +199,10 @@ export const clipboardCopyOut = $prose((ctx) => {
     const stock = ctx.get(prosePluginsCtx).find((plugin) => plugin.props.clipboardTextSerializer)
     const serialize = prev.clipboardTextSerializer ?? stock?.props.clipboardTextSerializer?.bind(stock)
     if (!serialize) return prev
-    copyMarkdown = serialize
+    copyMarkdown = (slice, view) => {
+      const markdown = serialize(slice, view)
+      return (ctx.isInjected(copyMarkdownCtx) ? ctx.get(copyMarkdownCtx) : null)?.(markdown) ?? markdown
+    }
     const html = prev.clipboardSerializer ?? DOMSerializer.fromSchema(ctx.get(schemaCtx))
     const clipboardSerializer = new DOMSerializer({
       ...html.nodes,

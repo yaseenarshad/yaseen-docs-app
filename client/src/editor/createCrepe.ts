@@ -260,7 +260,7 @@ import { lineNumbers } from './lineNumbers/lineNumbers'
 import { tableColumnResize } from './table/tableColumnResize'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
-import { clipboardCopyOut, copyLinkTextCtx, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
+import { clipboardCopyOut, copyLinkTextCtx, copyMarkdownCtx, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
 import { clipboardPaste } from './clipboardPaste'
 import { pathPasteCtx, relativeLinks, type PathPasteOptions } from './pathPaste'
 import { guideLines } from './outline/guideLines'
@@ -588,6 +588,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     ctx.inject(copyNoticeCtx, opts.onCopyNotice ?? null)
     // A plain-text copy names each link as the note shows it, an ID link with its ID (YAZ-3744 S8).
     ctx.inject(copyLinkTextCtx, (text) => linksAsShown(text, wikilinks, viewOnlyLinks, true))
+    // Copy as Markdown writes each `[[link]]` as a save does, never `\[\[link]]` (YAZ-3747).
+    ctx.inject(copyMarkdownCtx, postProcessMarkdown)
   })
   // The note keys (YAZ-3564 K4): the user's changes for the app's keymaps, and Milkdown's keymap slices set from them,
   // before any keymap is read.
