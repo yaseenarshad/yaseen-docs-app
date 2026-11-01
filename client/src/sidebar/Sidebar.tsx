@@ -1544,6 +1544,7 @@ export function Sidebar({
         foldShows
         foldDisabled={foldDisabled}
         foldLabel={allLabel}
+        foldOpen={foldOpen}
         onFold={foldAll}
       />
       {/* The search bar (YAZ-739 A-, chrome v2 row 2), on the Search tab only (YAZ-2638 D2): the

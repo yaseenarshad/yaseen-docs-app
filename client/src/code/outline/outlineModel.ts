@@ -443,6 +443,22 @@ export function kindsIn(tree: OutlineTree): number[] {
   return out
 }
 
+/**
+ * The keys of the rows that can collapse on screen while `hidden` kinds are off: a shown row with a shown child, so
+ * it has a chevron (the fold-all button's "Nothing to fold" and "Expand all", YAZ-3938 D6; YAZ-4010). Document
+ * order, as `visibleRows`: a parent is decided before its children.
+ */
+export function foldableKeys(tree: OutlineTree, hidden: RowOptions['hidden']): Set<string> {
+  const dropped = new Uint8Array(tree.size)
+  const keys = new Set<string>()
+  for (let i = 0; i < tree.size; i++) {
+    const p = tree.parent[i]
+    dropped[i] = hidden[tree.kind[i]] === true || (p !== -1 && dropped[p] === 1) ? 1 : 0
+    if (dropped[i] === 0 && p !== -1) keys.add(tree.key[p])
+  }
+  return keys
+}
+
 /** Every key of a row that can collapse: "Collapse all" (S2). */
 export function allKeys(tree: OutlineTree): Set<string> {
   const keys = new Set<string>()

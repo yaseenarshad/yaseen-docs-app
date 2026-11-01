@@ -4,8 +4,8 @@
  * the feature does nothing, and nothing throws. No runtime import: the folds and the jumps are tested with
  * a fake editor.
  *
- *  1. The folding controller's model (`foldingModelOf`): the fold restore (`codeFolds.ts`) and the table
- *     of contents' jump (`outline/codeJump.ts`). Monaco has no public "fold the region on line n".
+ *  1. The folding controller's model (`foldingModelOf`): the fold restore (`codeFolds.ts`), the table
+ *     of contents' jump (`outline/codeJump.ts`) and the fold-all chip's label (`readFold`, `CodeEditor.tsx`). Monaco has no public "fold the region on line n".
  *  2. The editor's command service (`documentSymbolsOf`): the table of contents' symbols for JSON, CSS,
  *     HTML (`outline/symbolSource.ts`). Monaco has no public "the document symbols of this model".
  *  3. In the TS worker, `_getModel` and `getLanguageService` (`tsWorker.ts`): that file is the worker's own

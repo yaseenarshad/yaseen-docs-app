@@ -294,6 +294,28 @@ describe('S4 and S5: the "…" menu, remembered app-wide', () => {
     click(menuItem('Expand all'))
     expect(rowNames().slice(0, 3)).toEqual(['Pipeline', 'step1', 'value1'])
   })
+
+  it('YAZ-3938 D6: the button is one toggle, as every fold-all button: Collapse all while a row is open, then Expand all', () => {
+    mount()
+    const fold = (): HTMLButtonElement => document.querySelector<HTMLButtonElement>('.outline__tool')!
+    expect(fold().getAttribute('aria-label')).toBe('Collapse all')
+    click(fold())
+    expect(rowNames()).toEqual(['Pipeline'])
+    expect(fold().getAttribute('aria-label')).toBe('Expand all')
+    click(fold())
+    expect(rowNames().slice(0, 3)).toEqual(['Pipeline', 'step1', 'value1'])
+    // One row opened again after Collapse all: something is open, so the next click collapses.
+    click(fold())
+    click(row('Pipeline').querySelector('.outline__twisty')!)
+    expect(fold().getAttribute('aria-label')).toBe('Collapse all')
+  })
+
+  it('YAZ-3938 D6: with no row that can collapse, the button is dimmed and says "Nothing to fold"', () => {
+    mount({ symbols: [{ name: 'only', kind: 13, range: range(1, 1), selectionRange: range(1, 1, 14, 18) }], text: 'export const only = 1' })
+    const fold = document.querySelector<HTMLButtonElement>('.outline__tool')!
+    expect(fold.getAttribute('aria-label')).toBe('Nothing to fold')
+    expect(fold.disabled).toBe(true)
+  })
 })
 
 describe('YAZ-3507: names inside functions', () => {
@@ -491,5 +513,28 @@ describe('S12: a big file', () => {
     console.log(`[YAZ-3486 S12] Outline of 260k symbols: first render ${mountMs.toFixed(0)} ms (tree built before it), cursor move ${moveMs.toFixed(1)} ms, ${rowEls().length} rows drawn`)
     // jsdom under a full parallel run is slow: about 12 ms alone; the ceiling only catches a walk over every row.
     expect(moveMs).toBeLessThan(500)
+  })
+})
+
+// YAZ-4010 (4B1A1): a row whose children are all of a hidden kind has no chevron, so it cannot collapse.
+describe('YAZ-3938 D6 with hidden kinds (YAZ-4010)', () => {
+  it('D6: every child kind hidden (Show menu): no row can collapse, so the button says "Nothing to fold"', () => {
+    const m = mount()
+    m.render({ hidden: ['method'] })
+    const fold = (): HTMLButtonElement => document.querySelector<HTMLButtonElement>('.outline__tool')!
+    expect(document.querySelectorAll('.outline__twisty:not([data-leaf])').length).toBe(0)
+    expect(fold().getAttribute('aria-label')).toBe('Nothing to fold')
+    expect(fold().disabled).toBe(true)
+  })
+
+  it('D6: the only row that can collapse is collapsed; the button says "Expand all", not "Collapse all"', () => {
+    const m = mount()
+    m.render({ hidden: ['variable'] })
+    const fold = (): HTMLButtonElement => document.querySelector<HTMLButtonElement>('.outline__tool')!
+    click(row('Pipeline').querySelector('.outline__twisty')!)
+    expect(rowNames()).toEqual(['Pipeline'])
+    expect(fold().getAttribute('aria-label')).toBe('Expand all')
+    click(fold())
+    expect(rowNames().slice(0, 2)).toEqual(['Pipeline', 'step1'])
   })
 })

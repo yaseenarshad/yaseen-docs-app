@@ -239,6 +239,9 @@ export const addOutlineFoldSetMeta = (transaction: Transaction, set: readonly nu
   if (set.length > 0) transaction.setMeta(pluginKey, { set, collapsed, silent: true } satisfies FoldSetMeta)
 }
 
+/** Whether `transaction` changes the bullet folds: every fold change carries this plugin's meta, a silent one too (YAZ-4009). */
+export const hasOutlineFoldMeta = (transaction: Transaction): boolean => transaction.getMeta(pluginKey) !== undefined
+
 /** Add this plugin's half of a combined fold undo without dispatching it. Declines when stale. */
 export const addOutlineFoldUndoMeta = (state: EditorState, transaction: Transaction): boolean => {
   if (!pluginKey.getState(state)?.lastToggle) return false
