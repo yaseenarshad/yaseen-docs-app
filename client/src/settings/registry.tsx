@@ -161,7 +161,7 @@ export interface SettingsSection {
   title: string
   /** A section that only exists in some contexts (sync needs the engine); absent = always. */
   available?: (ctx: SettingsCtx) => boolean
-  /** One line under the section title, for the section whose settings do not live where the rest do. */
+  /** One line under the section title: for the section whose settings do not live where the rest do, or one that says what the page is for (Memory, YAZ-3977). */
   note?: string
   /** The whole section is ONE vault's (YAZ-2602 R10): it names that vault where the window has two or more. */
   vault?: true

@@ -3,7 +3,8 @@
  * like Storage, just above it in the nav. Quiet: no badge; the only buttons are the window rows, the ⓘ marks and the
  * two settings.
  *
- * A table, read like a spreadsheet (YAZ-3945): headers Tab · State · Last seen · Changed · Memory.
+ * A table, read like a spreadsheet (YAZ-3945): headers Tab · State · Last seen · Changed · RAM (YAZ-3977: each size is
+ * RAM). The line under the title says the app frees memory by itself (YAZ-3977).
  *
  *   Tab                          State                    Last seen   Changed     Memory
  *   ▾ Writing ⓘ  Growing                                                         ▓▓▓▓▓▓░  812.4 MB
@@ -45,7 +46,7 @@ import { useMemoryReport } from './useMemoryReport'
 /** The ⓘ of each kind of row (YAZ-3932, round 2), as Yasin approved them. */
 const INFO = {
   window: 'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory.',
-  core: 'The parts of the app that all windows share. Closing tabs does not make this smaller.',
+  core: 'The parts of the app that all windows share: Main (it controls the app), GPU (it draws the screen) and Utility (small helpers). Closing tabs does not make this smaller.',
   helpers: 'These run only while code files are open. They stop 2 minutes after you close the last one.',
 } as const
 
@@ -198,7 +199,7 @@ function MemoryRows() {
           </th>
           <th scope="col">Last seen</th>
           <th scope="col">Changed</th>
-          <th scope="col">Memory</th>
+          <th scope="col">RAM</th>
         </tr>
       </thead>
       {rows.map((row) => {
@@ -256,6 +257,8 @@ function MemoryRows() {
 export const MEMORY_SECTION: SettingsSection = {
   id: 'memory',
   title: 'Memory',
+  // The work is the core's, not this page's (YAZ-3977): it says so, and that each size is RAM (the RAM column).
+  note: 'The app frees memory by itself. A tab that you do not use goes to sleep. A window that gets too big reloads. You do not need to do anything here.',
   standalone: true,
   groups: [
     {

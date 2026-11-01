@@ -87,7 +87,9 @@ const tabRows = (key: string) => [...el.querySelectorAll<HTMLTableRowElement>(`[
 describe('Settings › Memory (YAZ-3737 D9)', () => {
   it('YAZ-3945: a table with headers; a row for each window with its full name, then App core and Code helpers; "Growing" only for the window that grew; the hover text; no ⓘ by the title', async () => {
     await mountMemory()
-    expect([...el.querySelectorAll('.memory__table thead th')].map((th) => th.firstChild!.textContent!.trim())).toEqual(['Tab', 'State', 'Last seen', 'Changed', 'Memory'])
+    expect([...el.querySelectorAll('.memory__table thead th')].map((th) => th.firstChild!.textContent!.trim())).toEqual(['Tab', 'State', 'Last seen', 'Changed', 'RAM'])
+    // YAZ-3977: the line under the title says the work is automatic.
+    expect(el.querySelector('.settings-section__note')!.textContent).toBe('The app frees memory by itself. A tab that you do not use goes to sleep. A window that gets too big reloads. You do not need to do anything here.')
     expect([...el.querySelectorAll<HTMLElement>('[data-memory-row]')].map((r) => r.dataset.memoryRow)).toEqual(['w1', 'w2', 'w3', 'core', 'helpers'])
     // The name runs across Tab to Last seen (YAZ-3958); Changed is empty; the size and the bar sit under Memory.
     expect([...row('w1').cells].map((c) => c.colSpan)).toEqual([3, 1, 1])
@@ -121,7 +123,7 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
       'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory.',
       'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory.',
       'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory.',
-      'The parts of the app that all windows share. Closing tabs does not make this smaller.',
+      'The parts of the app that all windows share: Main (it controls the app), GPU (it draws the screen) and Utility (small helpers). Closing tabs does not make this smaller.',
       'These run only while code files are open. They stop 2 minutes after you close the last one.',
     ])
     const { info, tip } = tipOf('core')
