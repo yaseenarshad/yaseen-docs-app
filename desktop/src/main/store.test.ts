@@ -458,6 +458,26 @@ describe('createStore: loading', () => {
     }
   })
 
+  it('Outline (YAZ-4094): a file from before it reads guide lines on, always, 15% and folding on; each listed value survives; junk falls back field by field', async () => {
+    const { guideLinesOnByDefault: _a, guideLinesShow: _b, guideLineDarkness: _c, foldingOnByDefault: _d, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ guideLinesOnByDefault: true, guideLinesShow: 'always', guideLineDarkness: 15, foldingOnByDefault: true })
+
+    const listed = { guideLinesOnByDefault: [true, false], guideLinesShow: ['always', 'near'], guideLineDarkness: [5, 15, 40, 100], foldingOnByDefault: [true, false] }
+    for (const [field, values] of Object.entries(listed)) {
+      for (const value of values) {
+        await seed(valid({ settings: { ...DEFAULT_SETTINGS, [field]: value } }))
+        expect(createStore(file).get().settings).toMatchObject({ [field]: value })
+      }
+    }
+
+    // Off the grid of 5, outside 5–100, or not the type: each field falls back alone.
+    for (const junk of [{ guideLineDarkness: 12 }, { guideLineDarkness: 0 }, { guideLineDarkness: 105 }, { guideLinesShow: 'hover' }, { guideLinesOnByDefault: 'off' }, { foldingOnByDefault: 0 }]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, threadWidth: 3, ...junk } }))
+      expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, threadWidth: 3 })
+    }
+  })
+
   it('section indent: a file from before YAZ-2709 sanitizes to 30px, always; every listed value survives; junk falls back', async () => {
     const { sectionStep: _step, sectionLines: _lines, ...legacySettings } = DEFAULT_SETTINGS
     const defaults = { sectionStep: 30, sectionLines: 'always' }

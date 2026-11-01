@@ -1518,6 +1518,14 @@ export interface SettingsState {
   threadWidth: number
   /** Custom thread colour as `#rrggbb`, or null = the app accent (GRO-2109). */
   threadColor: string | null
+  /** Settings › Outline › "Guide lines default" (YAZ-4094 D2): the thin grey lines of nested bullets, on or off, for each page with no choice in its cog (`guide-lines`) and in every editor with no cog. A page's choice wins. */
+  guideLinesOnByDefault: boolean
+  /** Settings › Outline › "Guide lines show" (YAZ-4094 G2): always, or only while the mouse is over the note (Section indent's rule). */
+  guideLinesShow: GuideLinesShow
+  /** Settings › Outline › "Guide line darkness" (YAZ-4094 G3): a percent of the text colour, `GUIDE_LINE_DARKNESS_MIN`–`MAX` in steps of 5, the grid of Text formatting's line darkness (YAZ-3208). */
+  guideLineDarkness: number
+  /** Settings › Outline › "Folding default" (YAZ-4094 F1): bullets and headings fold, or not, on each page with no choice in its cog (`folding`) and in every editor with no cog. A page's choice wins. */
+  foldingOnByDefault: boolean
   /** Appearance (Desktop K, GRO-2218): explicit values win; `system` tracks the OS live. */
   theme: Theme
   /** Global reading surface width (YAZ-1176): 1040px, 1440px, or fluid within the workspace. */
@@ -1751,6 +1759,14 @@ export const SECTION_STEPS: readonly number[] = [24, 30, 36]
 export type SectionLines = 'always' | 'hover'
 export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
 
+/** Guide lines (YAZ-4094 G2): when they show — `near` is while the mouse is over the note. */
+export type GuideLinesShow = 'always' | 'near'
+export const GUIDE_LINES_SHOW: readonly GuideLinesShow[] = ['always', 'near']
+/** Guide line darkness (YAZ-4094 G3): the range and the grid of Text formatting's line darkness (`@shared/line`). */
+export const GUIDE_LINE_DARKNESS_MIN = 5
+export const GUIDE_LINE_DARKNESS_MAX = 100
+export const GUIDE_LINE_DARKNESS_STEP = 5
+
 /** The table of contents (YAZ-2762): when its level lines show. */
 export type TocLines = 'hover' | 'always' | 'off'
 export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
@@ -1895,6 +1911,10 @@ export const DEFAULT_SETTINGS: SettingsState = {
   bulletThreading: true,
   threadWidth: 2,
   threadColor: null,
+  guideLinesOnByDefault: true,
+  guideLinesShow: 'always',
+  guideLineDarkness: 15,
+  foldingOnByDefault: true,
   theme: 'system',
   contentWidth: 'narrow',
   newNoteLocation: 'current',

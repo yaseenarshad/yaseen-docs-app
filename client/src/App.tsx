@@ -672,7 +672,8 @@ export function App() {
   }, [theme])
 
   // Editor spacing settings land as CSS custom properties; app.css consumes them (GRO-2024).
-  // Bullet threading and content width are CSS gates too — no editor remount. So are section
+  // Bullet threading and content width are CSS gates too — no editor remount. So are the guide lines'
+  // default and their show and darkness (YAZ-4094, `data-guide-lines`, `data-guide-lines-show`), and section
   // indent's grey lines (YAZ-2709, `data-section-lines`), and the sidebar tree's icons (YAZ-3440 D4,
   // `data-sidebar-file-icons`, `data-sidebar-folder-icons`) and its arrows' turn (D6, `data-sidebar-arrow`): a change
   // restyles the rows and renders no tree level.
@@ -680,6 +681,9 @@ export function App() {
     '--edit-line-height': settings.lineSpacing,
     '--edit-block-gap': `${settings.blockGap}px`,
     '--thread-width': `${settings.threadWidth}px`,
+    // Guide lines (YAZ-4094 G3): a percent of the text colour, and 20 points more on hover; guideLines.css draws with them.
+    '--guide-line-darkness': `${settings.guideLineDarkness}%`,
+    '--guide-line-darkness-hover': `${Math.min(100, settings.guideLineDarkness + 20)}%`,
     // Section indent (YAZ-2709): a plain number, sectionIndent.css needs it as one (`border-image-slice`).
     '--section-step-setting': settings.sectionStep,
     // Absent → bulletThreading.css falls back to the app accent.
@@ -2818,6 +2822,9 @@ export function App() {
       // YAZ-2700: the table of contents is a SETTING too, and whether its names fit depends on the content width.
       tableOfContents: settings.tableOfContents,
       tocOnByDefault: settings.tocOnByDefault,
+      // YAZ-4094: the defaults of the page cog's "Guide lines" and "Folding" — a page with no choice follows them.
+      guideLinesOnByDefault: settings.guideLinesOnByDefault,
+      foldingOnByDefault: settings.foldingOnByDefault,
       contentWidth: settings.contentWidth,
       onChangeTableOfContents: changeTableOfContents,
       // YAZ-2752: the width of its names column is a SETTING as well.
@@ -3016,7 +3023,7 @@ export function App() {
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
     <VaultLinksContext.Provider value={vaultLinks}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-guide-lines={settings.guideLinesOnByDefault ? 'on' : 'off'} data-guide-lines-show={settings.guideLinesShow} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands

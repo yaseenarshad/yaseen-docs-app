@@ -134,11 +134,11 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned']
+const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
-/** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
-const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents', 'Outside changes']
+/** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
+const EDITOR_GROUPS = ['Outline', 'Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents', 'Outside changes']
 /** Settings › Excalidraw canvas (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
 const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
@@ -157,7 +157,8 @@ const DEFAULT_CTX = { settings: DEFAULT_SETTINGS, onChange: () => undefined } as
 const HOTKEY_ROWS = groupsOf(HOTKEYS_SECTION, DEFAULT_CTX)
   .flatMap((g) => g.items.filter((i) => i.available?.(DEFAULT_CTX) ?? true).map((i) => i.id))
   .filter((id) => !id.startsWith('hotkey-macos-') && id !== 'hotkeys-reset-all')
-const THREADING_HINT = 'Guide lines that connect nested bullets.'
+const THREADING_HINT = 'The coloured path from each list down to the bullet at the caret.'
+const OUTLINE_HINT = 'Lines and folding for bullets. A page can change each one in its cog.'
 const TEXT_FORMATTING_HINT = 'How text looks in every note of this vault.'
 const TOC_HINT = 'The headings or the bullets of a note, at its right edge.'
 const OUTSIDE_CHANGES_HINT = 'Text that an AI or another app changed in an open note.'
@@ -355,7 +356,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
 
     clickNav(el, 'Editor')
     expect(groupTitles(el)).toEqual(EDITOR_GROUPS)
-    expect(hints()).toEqual([THREADING_HINT, SECTION_INDENT_HINT, 'The buttons over a selection, as the preview shows them. Drag a square to move it, or a group by its handle; click a square to hide or show it. Hotkeys keep working.', TOC_HINT, OUTSIDE_CHANGES_HINT])
+    expect(hints()).toEqual([OUTLINE_HINT, THREADING_HINT, SECTION_INDENT_HINT, 'The buttons over a selection, as the preview shows them. Drag a square to move it, or a group by its handle; click a square to hide or show it. Hotkeys keep working.', TOC_HINT, OUTSIDE_CHANGES_HINT])
     // The threading rows carry the shortened labels; the group names the feature.
     expect(['bulletThreading', 'threadWidth', 'threadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Show', 'Line width', 'Line colour'])
     for (const id of ['bulletThreading', 'threadWidth', 'threadColor']) expect(row(el, id)?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Bullet threading')
@@ -653,6 +654,47 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       { ...DEFAULT_SETTINGS, sectionStep: 36 },
       { ...DEFAULT_SETTINGS, sectionLines: 'hover' },
     ])
+  })
+
+  it('Outline: the first group of the Editor page, four rows; each writes the whole object with only its field changed; the darkness presets set the stepper, the stepper steps by 5 inside 5–100, and Reset shows only off the default (YAZ-4094 D2, F1, G2, G3)', () => {
+    const { el, onChange } = mountOn('Editor')
+    const rows = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault']
+    const groupOf = (id: string) => row(el, id)?.closest('.settings-group')
+    expect([...(groupOf('guideLinesOnByDefault')?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual(rows)
+    expect(groupOf('guideLinesOnByDefault')?.querySelector('.settings-group__title')?.textContent).toBe('Outline')
+    expect(groupOf('guideLinesOnByDefault')?.querySelector('.settings-group__hint')?.textContent).toBe(OUTLINE_HINT)
+    expect(rows.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Guide lines default', 'Guide lines show', 'Guide line darkness', 'Folding default'])
+    expect(rowButtons(el, 'guideLinesShow').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Always show', 'true'], ['Only near the mouse', 'false']])
+    // Light is 15, the default: it is selected, and there is no Reset.
+    expect(rowButtons(el, 'guideLineDarkness').map((b) => b.textContent)).toEqual(['Light', 'Medium', 'Strong', '−', '+'])
+    expect(rowButtons(el, 'guideLineDarkness')[0].getAttribute('aria-pressed')).toBe('true')
+    expect(row(el, 'guideLineDarkness')?.querySelector('.heading-styles__size')?.textContent).toBe('15%')
+    act(() => rowButtons(el, 'guideLinesOnByDefault')[1].click())
+    act(() => rowButtons(el, 'guideLinesShow')[1].click())
+    act(() => rowButtons(el, 'guideLineDarkness')[2].click())
+    act(() => rowButtons(el, 'guideLineDarkness')[4].click())
+    act(() => rowButtons(el, 'foldingOnByDefault')[1].click())
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([
+      { ...DEFAULT_SETTINGS, guideLinesOnByDefault: false },
+      { ...DEFAULT_SETTINGS, guideLinesShow: 'near' },
+      { ...DEFAULT_SETTINGS, guideLineDarkness: 35 },
+      { ...DEFAULT_SETTINGS, guideLineDarkness: 20 },
+      { ...DEFAULT_SETTINGS, foldingOnByDefault: false },
+    ])
+  })
+
+  it('Guide line darkness off a preset: no preset is selected, the stepper stops at the ends, and Reset writes the default (YAZ-4094 G3)', () => {
+    for (const [value, minusOff, plusOff] of [[40, false, false], [5, true, false], [100, false, true]] as const) {
+      const { el, onChange } = mountOn('Editor', { ...DEFAULT_SETTINGS, guideLineDarkness: value })
+      const buttons = rowButtons(el, 'guideLineDarkness')
+      expect(buttons.slice(0, 3).map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'false'])
+      expect([buttons[3].disabled, buttons[4].disabled]).toEqual([minusOff, plusOff])
+      expect(buttons[5]?.textContent).toBe('Reset')
+      act(() => buttons[5].click())
+      expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, guideLineDarkness: 15 })
+      act(() => root?.unmount())
+      el.remove()
+    }
   })
 
   it('"Glow" under "Outside changes", the last group of the Editor page: four choices, Until I check it by default; a pick writes the whole object with only its field changed (YAZ-3704 D5)', () => {
@@ -1191,8 +1233,9 @@ describe('SettingsDialog search (D6)', () => {
     const { el, onChange } = mount({ ...DEFAULT_SETTINGS }, status())
     type(searchInput(el), 'dark')
     // On Hotkeys each hit is under its key's card (YAZ-3564): draw.io's ⌘⇧6, and the canvas's no-key row.
-    expect(headings(el)).toEqual(['Appearance', 'Appearance › draw.io diagrams', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
-    expect(rowIds(el)).toEqual(['theme', 'diagramDarkColors', 'hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme'])
+    // And the guide lines' darkness (YAZ-4094 G3), on the Editor page.
+    expect(headings(el)).toEqual(['Appearance', 'Appearance › draw.io diagrams', 'Editor › Outline', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
+    expect(rowIds(el)).toEqual(['theme', 'diagramDarkColors', 'guideLineDarkness', 'hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme'])
     expect(sections(el)).toEqual([]) // the page is gone while the query stands
     act(() => rowButtons(el, 'theme')[2].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, theme: 'dark' })
@@ -1207,12 +1250,12 @@ describe('SettingsDialog search (D6)', () => {
     expect(groupTitles(el)).toEqual([])
     expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([THREADING_HINT, SECTION_INDENT_HINT])
     expect(rowIds(el)).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines'])
-    // "guide lines" is the first group's hint alone: its three rows, under the one breadcrumb.
+    // "guide lines" finds the three guide line rows of Outline (YAZ-4094), under the one breadcrumb.
     type(searchInput(el), 'guide lines')
-    expect(headings(el)).toEqual(['Editor › Bullet threading'])
+    expect(headings(el)).toEqual(['Editor › Outline'])
     expect(groupTitles(el)).toEqual([])
-    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([THREADING_HINT])
-    expect(rowIds(el)).toEqual(['bulletThreading', 'threadWidth', 'threadColor'])
+    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([OUTLINE_HINT])
+    expect(rowIds(el)).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness'])
   })
 
   it('hits from several groups stack under their own breadcrumbs, in registry order', () => {
@@ -1222,16 +1265,16 @@ describe('SettingsDialog search (D6)', () => {
     // Bullet threading) and, on the Hotkeys page, the two tables whose labels name a bullet — five
     // breadcrumbs, registry order, never rank.
     // The sidebar's line style (YAZ-3309 D7) names bullet threading: it leads, on Appearance.
-    // The Selection toolbar row has "bullet" among its words (YAZ-3806 T7).
+    // The Selection toolbar row has "bullet" among its words (YAZ-3806 T7). Outline's hint names bullets (YAZ-4094): its four rows.
     type(searchInput(el), 'bullet')
-    const settingsHits = ['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Selection toolbar', 'Editor › Table of contents']
-    expect(headings(el).slice(0, 5)).toEqual(settingsHits)
+    const settingsHits = ['Sidebar › Level lines', 'Editor › Outline', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Selection toolbar', 'Editor › Table of contents']
+    expect(headings(el).slice(0, 6)).toEqual(settingsHits)
     // On Hotkeys a hit is the ONE row that names a bullet, not its whole table (YAZ-3397 D5), under its key's card (YAZ-3564).
     // The clicks follow the keys (YAZ-3936): the three "Bullet dots" rows, and the built-in clicks of bullet lines and fold arrows.
     expect(headings(el).slice(-3)).toEqual(['Hotkeys › Click', 'Hotkeys › ⌘-click', 'Hotkeys › ⇧-click'])
-    expect(headings(el).slice(5).every((h) => h?.startsWith('Hotkeys › '))).toBe(true)
-    expect(rowIds(el).slice(0, 10)).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines'])
-    expect(new Set(rowIds(el).slice(10))).toEqual(
+    expect(headings(el).slice(6).every((h) => h?.startsWith('Hotkeys › '))).toBe(true)
+    expect(rowIds(el).slice(0, 14)).toEqual(['sidebarLineStyle', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines'])
+    expect(new Set(rowIds(el).slice(14))).toEqual(
       new Set([
         ...['bulletList', 'cycleTask', 'indent', 'outdent', 'foldHere', 'unfoldHere', 'foldAll', 'unfoldAll', 'zoomIn', 'copyVisible', 'enter', 'tab'].map((r) => `hotkey-note-${r}`),
         ...['thisTab', 'newTab', 'backgroundTab'].map((r) => `hotkey-bullets-${r}`),

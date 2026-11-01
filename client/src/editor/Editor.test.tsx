@@ -189,7 +189,7 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
@@ -198,7 +198,7 @@ async function mount(content: string, mtime = 1, extra: { path?: string; wikilin
   if (extra.behind === true) container.className = 'tabstack__layer tabstack__layer--hidden'
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} guideLinesOnByDefault={extra.guideLinesOnByDefault} foldingOnByDefault={extra.foldingOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} />))
   await settle()
   await settle()
   return container
@@ -710,7 +710,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(pressCmdJ().defaultPrevented).toBe(true)
     const stores = watchStores()
     clickCog(el)
-    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
+    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Heading levels:false', 'Table of contents✓:true'])
     diskHas(BODY, 1)
     await clickRow(el, 'Table of contents')
     expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
@@ -733,6 +733,25 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(row(again, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
   })
 
+  it('"Guide lines" follows Settings › "Guide lines default" until THIS page chooses: the row writes `guide-lines: false` IN the note, and the host carries only the page’s own choice — the app default is `.app`’s (YAZ-4094 D2)', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 2, size: body.content.length }))
+    const host = (el: HTMLElement) => el.querySelector<HTMLElement>('.editor-host')!
+    const off = await mount(BODY, 1, { guideLinesOnByDefault: false })
+    clickCog(off)
+    expect(row(off, 'Guide lines').getAttribute('aria-pressed')).toBe('false')
+    expect(host(off).hasAttribute('data-guide-lines')).toBe(false)
+    act(() => root?.unmount())
+    off.remove()
+    const el = await mount(BODY)
+    clickCog(el)
+    expect(row(el, 'Guide lines').getAttribute('aria-pressed')).toBe('true')
+    diskHas(BODY, 1)
+    await clickRow(el, 'Guide lines')
+    expect(written()).toEqual(['---\nguide-lines: false\n---\n' + BODY])
+    expect(row(el, 'Guide lines').getAttribute('aria-pressed')).toBe('false')
+    expect(host(el).dataset.guideLines).toBe('off')
+  })
+
   it('a toggle in another tab, another window or an agent lands as an outside change of the note, and this editor follows at once (YAZ-4094 G1)', async () => {
     const el = await mount(BODY, 1, { tableOfContents: 'auto' })
     act(() => tocOf().publish(TWO))
@@ -752,7 +771,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(el.querySelector('nav.toc')).toBeNull()
     expect(pressCmdJ().defaultPrevented).toBe(false)
     clickCog(el)
-    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents:false'])
+    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Heading levels:false', 'Table of contents:false'])
     expect(el.querySelector('.page-settings__choices')).toBeNull()
     diskHas(BODY, 1)
     await clickRow(el, 'Table of contents')

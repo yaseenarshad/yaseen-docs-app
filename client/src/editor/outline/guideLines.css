@@ -6,7 +6,8 @@
    MUST equal the gap for the centring to hold — and wide enough to click/hover; the visible line
    is a centred 1px background gradient. `position: absolute` → zero layout shift on fold/unfold,
    and a folded list (`display: none`) takes its line with it. Colours from `currentColor`, so
-   Crepe light + dark both work. Hover highlighting is driven by guideLines.ts
+   Crepe light + dark both work; its share is Settings › Outline › "Guide line darkness" (YAZ-4094 G3,
+   `--guide-line-darkness` and `-hover` from App.tsx, 15% and 35% when absent). Hover highlighting is driven by guideLines.ts
    (`outline-guide-hover` only when the pointer is over the strip itself, not the list content).
    `.editor-instance` prefix outranks Crepe's theme regardless of CSS order (like bullets.css). */
 .editor-instance .milkdown .milkdown-list-item-block li.list-item > .children > .content-dom > :is(ul, ol) {
@@ -21,8 +22,8 @@
   left: calc(-1 * (var(--list-indent) / 2 + var(--list-label-gap)));
   width: var(--list-label-gap);
   background: linear-gradient(
-      color-mix(in srgb, currentColor 14%, transparent),
-      color-mix(in srgb, currentColor 14%, transparent)
+      color-mix(in srgb, currentColor var(--guide-line-darkness, 15%), transparent),
+      color-mix(in srgb, currentColor var(--guide-line-darkness, 15%), transparent)
     )
     no-repeat center / 1px 100%;
   cursor: pointer;
@@ -30,7 +31,23 @@
 
 .editor-instance .milkdown .milkdown-list-item-block li.list-item > .children > .content-dom > :is(ul, ol).outline-guide-hover::before {
   background-image: linear-gradient(
-    color-mix(in srgb, currentColor 35%, transparent),
-    color-mix(in srgb, currentColor 35%, transparent)
+    color-mix(in srgb, currentColor var(--guide-line-darkness-hover, 35%), transparent),
+    color-mix(in srgb, currentColor var(--guide-line-darkness-hover, 35%), transparent)
   );
+}
+
+/* Off (YAZ-4094 D2, D3): no strip, so no line, no hover and no click on the line; the chevrons and the
+   fold keys still fold. The page's own choice (`data-guide-lines` on its host, Editor.tsx) wins; with
+   none, the app default on `.app` reaches every editor — a note, the right panel, a folder view's
+   outline, a preview. With no pseudo, the list's hit box ends at its border again: `stripHit` and the
+   block-handle gate find nothing, with no JS change. */
+.editor-host[data-guide-lines='off'] .editor-instance .milkdown .milkdown-list-item-block li.list-item > .children > .content-dom > :is(ul, ol)::before,
+.app[data-guide-lines='off'] .editor-instance:not(.editor-host[data-guide-lines='on'] .editor-instance) .milkdown .milkdown-list-item-block li.list-item > .children > .content-dom > :is(ul, ol)::before {
+  content: none;
+}
+
+/* "Only near the mouse" (YAZ-4094 G2): Section indent's rule (sectionIndent.css) — the lines show while
+   the mouse is over the note. The strip stays, so a shown line still takes its click. */
+.app[data-guide-lines-show='near'] .editor-instance .milkdown > .ProseMirror:not(:hover) .milkdown-list-item-block li.list-item > .children > .content-dom > :is(ul, ol)::before {
+  background-image: none;
 }
