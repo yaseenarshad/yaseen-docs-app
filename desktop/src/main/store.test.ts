@@ -1486,28 +1486,19 @@ describe('createStore: mutations', () => {
     expect(createStore(file).get().folders['/v'].sectionIndents).toEqual({ '/v/a.md': true, '/v/b.md': false })
   })
 
-  it('setSectionIndent is keyed by root then file; on AND off are stored, and off never removes the entry; the same value again is no commit; both come back from the file (YAZ-2709 D2)', async () => {
+  it('dropPageSwitch removes one moved entry and nothing else; an entry that is not there is no commit (YAZ-4094 G4)', async () => {
+    await seed(valid({ folders: { '/v': { sectionIndents: { '/v/a.md': true, '/v/b.md': false }, tocSwitches: { '/v/a.md': false, '/v/code.ts': false } } } }))
     const store = createStore(file)
     const seen = vi.fn()
     store.onChange(seen)
-    store.setSectionIndent('/r1', '/r1/a.md', true)
-    store.setSectionIndent('/r1', '/r1/b.md', true)
-    store.setSectionIndent('/r2', '/r2/a.md', true)
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: { '/r1/a.md': true, '/r1/b.md': true }, tocSwitches: {}, name: null, key: null })
-    store.setSectionIndent('/r1', '/r1/a.md', false) // off is a value of its own: the entry stays, unlike Auto in `tocSources`
-    expect(store.get().folders['/r1'].sectionIndents).toEqual({ '/r1/a.md': false, '/r1/b.md': true })
-    expect(seen).toHaveBeenCalledTimes(4)
-    store.setSectionIndent('/r1', '/r1/a.md', false)
-    store.setSectionIndent('/r1', '/r1/b.md', true)
-    expect(seen).toHaveBeenCalledTimes(4)
-    // Off on a note that was never touched is a choice too: it is written.
-    store.setSectionIndent('/r1', '/r1/c.md', false)
-    expect(seen).toHaveBeenCalledTimes(5)
-    await store.flush()
-    expect((await onDisk()).folders['/r1'].sectionIndents).toEqual({ '/r1/a.md': false, '/r1/b.md': true, '/r1/c.md': false })
-    const again = createStore(file).get().folders
-    expect(again['/r1'].sectionIndents).toEqual({ '/r1/a.md': false, '/r1/b.md': true, '/r1/c.md': false })
-    expect(again['/r2'].sectionIndents).toEqual({ '/r2/a.md': true })
+    store.dropPageSwitch('/v', '/v/a.md', 'sectionIndents')
+    store.dropPageSwitch('/v', '/v/a.md', 'tocSwitches')
+    expect(store.get().folders['/v'].sectionIndents).toEqual({ '/v/b.md': false })
+    expect(store.get().folders['/v'].tocSwitches).toEqual({ '/v/code.ts': false })
+    expect(seen).toHaveBeenCalledTimes(2)
+    store.dropPageSwitch('/v', '/v/a.md', 'sectionIndents')
+    store.dropPageSwitch('/nowhere', '/nowhere/a.md', 'tocSwitches')
+    expect(seen).toHaveBeenCalledTimes(2)
   })
 
   it('folders: `tocSwitches` loads as `{}` from a file written before it; `true` and `false` both load; a wrong entry drops alone (YAZ-2950)', async () => {
@@ -1699,13 +1690,6 @@ describe('createStore: mutations', () => {
       expect(store.get().folders['/v'].tocFolds).toEqual({ [NEW]: ['2:Design#0'], '/v/x.md': ['1:Intro#0'] })
     })
 
-    it('the section indent switch follows its renamed note, on or off, and no other note\'s moves (YAZ-2709 D2)', () => {
-      const store = createStore(file)
-      store.setSectionIndent('/v', OLD, true)
-      store.setSectionIndent('/v', '/v/x.md', false)
-      store.renamePath(OLD, NEW)
-      expect(store.get().folders['/v'].sectionIndents).toEqual({ [NEW]: true, '/v/x.md': false })
-    })
 
     it('the table of contents switch follows its renamed note, on or off, and no other note\'s moves (YAZ-2950)', () => {
       const store = createStore(file)
@@ -1831,8 +1815,6 @@ describe('createStore: mutations', () => {
       store.setBaseGroups('/v', '/v/K.md::Table', ['g2'])
       store.setTocSource('/v', GONE, 'bullets')
       store.setTocSource('/v', '/v/x.md', 'headings')
-      store.setSectionIndent('/v', GONE, true)
-      store.setSectionIndent('/v', '/v/x.md', false)
       store.setTocSwitch('/v', GONE, false)
       store.setTocSwitch('/v', '/v/x.md', false)
       store.setTocFolds('/v', GONE, ['2:Design#0'])
@@ -1845,7 +1827,6 @@ describe('createStore: mutations', () => {
       // The source goes with its note (YAZ-2700 D14); another note's stays.
       expect(store.get().folders['/v'].tocSources).toEqual({ '/v/x.md': 'headings' })
       // And so does the section indent switch (YAZ-2709 D2): a deleted note leaves no entry, another note's stays, off as it was.
-      expect(store.get().folders['/v'].sectionIndents).toEqual({ '/v/x.md': false })
       // And the table of contents switch (YAZ-2950), on the same terms.
       expect(store.get().folders['/v'].tocSwitches).toEqual({ '/v/x.md': false })
       store.removePath('/v/Old')
@@ -1947,8 +1928,6 @@ describe('createStore: mutations', () => {
       store.setBaseGroups('/v', `${OLD}/T.md::Table`, ['g1'])
       store.setTocSource('/v', `${OLD}/a.md`, 'headings')
       store.setTocSource('/v', '/v/x.md', 'bullets')
-      store.setSectionIndent('/v', `${OLD}/a.md`, true)
-      store.setSectionIndent('/v', '/v/x.md', false)
       store.setTocSwitch('/v', `${OLD}/a.md`, false)
       store.setTocSwitch('/v', '/v/x.md', true)
       store.setTocFolds('/v', `${OLD}/a.md`, ['2:Design#0'])
@@ -1964,7 +1943,7 @@ describe('createStore: mutations', () => {
         closed: {},
         tocSources: { [`${NEW}/a.md`]: 'headings', '/v/x.md': 'bullets' },
         tocFolds: { [`${NEW}/a.md`]: ['2:Design#0'] },
-        sectionIndents: { [`${NEW}/a.md`]: true, '/v/x.md': false },
+        sectionIndents: {},
         tocSwitches: { [`${NEW}/a.md`]: false, '/v/x.md': true },
         name: null,
         key: null,

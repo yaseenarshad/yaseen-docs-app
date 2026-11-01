@@ -2189,9 +2189,9 @@ export interface FolderState {
   tocSources: Record<string, TocSource>
   /** file → the folded rows of its table of contents (YAZ-3939 D1): `tocFoldKeys` keys, max MAX_FOLD_KEYS_PER_FILE. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   tocFolds: Record<string, string[]>
-  /** file → the note's "Section indent" switch (YAZ-2709 D2), for the notes where the reader used it. A note with NO entry is off. `true` and `false` are both kept: a note the reader turned off stays apart from a note never touched, so a default for all notes can come later with no repair of this data. Keyed by page, as `tocSources` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
+  /** Legacy (YAZ-2709 D2, until YAZ-4094 G4): file → a note's "Section indent" switch. The switch is now IN the note (`section-indent`, `shared/pageSwitches.ts`); `movePageSwitches.ts` moves each entry there once and nothing writes this list again. Additive: a file without it loads as `{}`. */
   sectionIndents: Record<string, boolean>
-  /** file → the note's "Table of contents" switch (YAZ-2950), for the notes where the reader used it. A note with NO entry is on. `true` and `false` are both kept, as in `sectionIndents`. Keyed by page. Never written to the markdown. Additive: a file without it loads as `{}`. */
+  /** file → a CODE file's "Table of contents" switch (YAZ-2950, YAZ-3506), for the files where the reader used it. A file with NO entry follows Settings › "Table of contents default". `true` and `false` are both kept. Keyed by page. A note's switch is IN the note since YAZ-4094 G4 (`toc`); `movePageSwitches.ts` moves the old note entries there once. Additive: a file without it loads as `{}`. */
   tocSwitches: Record<string, boolean>
   /** The vault's display name (YAZ-1974 D3) when this bucket's root is a vault; null = its folder name. Persisted, per machine. */
   name: string | null

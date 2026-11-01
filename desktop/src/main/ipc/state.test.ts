@@ -56,7 +56,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setSectionIndent.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel, CONTRACT.hotkeys.drawingInFront.channel].sort(),
+      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel, CONTRACT.hotkeys.drawingInFront.channel].sort(),
     )
   })
 
@@ -236,19 +236,6 @@ describe('registerStateIpc', () => {
     // null is Auto: the entry goes.
     expect(await setTocSource({ sender }, '/v', '/v/a.md', null)).toEqual(ok(undefined))
     expect(store.get().folders['/v'].tocSources).toEqual({})
-  })
-
-  it('state:set-section-indent checks root, file and on: `true` or `false`, each stored, and nothing else — `null` is no way to remove the entry (YAZ-2709 D2)', async () => {
-    const setSectionIndent = registered(CONTRACT.state.setSectionIndent.channel)
-    expect(await setSectionIndent({ sender }, '/v', '/v/a.md', true)).toEqual(ok(undefined))
-    expect(store.get().folders['/v'].sectionIndents).toEqual({ '/v/a.md': true })
-    expect(await setSectionIndent({ sender }, 'v', '/v/a.md', true)).toEqual(bad('NOT_ABSOLUTE'))
-    expect(await setSectionIndent({ sender }, '/v', 'a.md', true)).toEqual(bad('NOT_ABSOLUTE'))
-    for (const junk of [null, undefined, 1, 0, 'true', '', [true]]) expect(await setSectionIndent({ sender }, '/v', '/v/a.md', junk)).toEqual(bad('BAD_REQUEST'))
-    expect(store.get().folders['/v'].sectionIndents).toEqual({ '/v/a.md': true })
-    // Off is stored as `false`: the entry stays.
-    expect(await setSectionIndent({ sender }, '/v', '/v/a.md', false)).toEqual(ok(undefined))
-    expect(store.get().folders['/v'].sectionIndents).toEqual({ '/v/a.md': false })
   })
 
   it('state:set-toc-switch checks root, file and on: `true` or `false`, each stored, and nothing else (YAZ-2950)', async () => {

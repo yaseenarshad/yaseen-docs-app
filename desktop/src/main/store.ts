@@ -186,10 +186,10 @@ export interface Store {
   setTocFolds(root: string, file: string, keys: readonly string[]): void
   /** What one note's table of contents is built from (YAZ-2700 D14). `null` is Auto: the entry goes, and Auto is never stored. */
   setTocSource(root: string, file: string, source: TocSource | null): void
-  /** One note's "Section indent" switch (YAZ-2709 D2). `true` and `false` are both stored; nothing here removes an entry. */
-  setSectionIndent(root: string, file: string, on: boolean): void
-  /** One note's "Table of contents" switch (YAZ-2950). The same terms as `setSectionIndent`. */
+  /** One code file's "Table of contents" switch (YAZ-2950, YAZ-3506). `true` and `false` are both stored; nothing here removes an entry. A note's switch is in its frontmatter (YAZ-4094 G4). */
   setTocSwitch(root: string, file: string, on: boolean): void
+  /** The one-time move of a note's switch into its frontmatter (`movePageSwitches.ts`, YAZ-4094 G4) is done: the entry goes. */
+  dropPageSwitch(root: string, file: string, list: 'sectionIndents' | 'tocSwitches'): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   /**
    * `roots` may be left out: the entry then keeps `root` alone. Either way the vault-list invariant is applied (`normalizeRoots`).
@@ -1188,17 +1188,18 @@ export function createStore(filePath: string): Store {
       commit({ ...state, folders: { ...state.folders, [root]: { ...cur, tocSources } } })
     },
 
-    setSectionIndent(root, file, on) {
-      const cur = folderOf(root)
-      // The same value again: nothing to write, nothing to tell the windows. Off is a value of its own, so it is stored (D2).
-      if (cur.sectionIndents[file] === on) return
-      commit({ ...state, folders: { ...state.folders, [root]: { ...cur, sectionIndents: { ...cur.sectionIndents, [file]: on } } } })
-    },
-
     setTocSwitch(root, file, on) {
       const cur = folderOf(root)
+      // The same value again: nothing to write, nothing to tell the windows. Off is a value of its own, so it is stored.
       if (cur.tocSwitches[file] === on) return
       commit({ ...state, folders: { ...state.folders, [root]: { ...cur, tocSwitches: { ...cur.tocSwitches, [file]: on } } } })
+    },
+
+    dropPageSwitch(root, file, list) {
+      const cur = state.folders[root]
+      if (cur === undefined || !(file in cur[list])) return
+      const { [file]: _moved, ...rest } = cur[list]
+      commit({ ...state, folders: { ...state.folders, [root]: { ...cur, [list]: rest } } })
     },
 
     setBaseGroups(root, key, collapsed) {

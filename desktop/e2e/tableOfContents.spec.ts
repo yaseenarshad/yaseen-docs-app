@@ -21,8 +21,9 @@
  *    `folders[root].tocSources`: it is there after the note is closed and after a restart.
  *  - THE PAGE SWITCHES (D12, D15): "Table of contents" hides it on this page, and "Heading
  *    levels" shows each heading's level tag. "Heading levels" is not stored. "Table of contents"
- *    is, since YAZ-2950 (decisions D1–D3 on YAZ-2953): `folders[root].tocSwitches`, so a page
- *    that is off stays off after a reopen, in a new window (⌘⇧N) and after a restart.
+ *    is, since YAZ-2950 (decisions D1–D3 on YAZ-2953), and IN the note since YAZ-4094 G4 (`toc: false`
+ *    in its frontmatter), so a page that is off stays off after a reopen, in a new window (⌘⇧N) and
+ *    after a restart.
  *  - THE DEFAULT (YAZ-3558, decisions D1–D3 and S1–S26 on YAZ-3559): Settings › "Table of contents
  *    default" Off hides it on each page with no choice, and the cog's row still turns one page on.
  *    "Pin" in the card writes "Pin default" and leaves the default Off.
@@ -42,6 +43,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { notePageSwitches, setNotePageSwitch } from '../../shared/pageSwitches'
 import { SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W } from '../../shared/types'
 import { activeTab, appWindow, clickMenuItem, closeWindow, editorOf, extraWindow, fileRow, launchApp, layer, openFromBlankTab, quitApp, readState, seededState, shoot, winParam } from './helpers'
 
@@ -566,7 +568,7 @@ test('step 6 — a note of bullets lists its bullets, three levels deep, and a c
   await card(win).locator('.toc__name', { hasText: 'Build' }).click()
   await expectLanded(win, 'li', 'Build')
   await expect(card(win)).toHaveCount(0)
-  expect(await readFile(bulletsPath, 'utf8')).toBe(BULLETS)
+  expect(await readFile(bulletsPath, 'utf8')).toBe(setNotePageSwitch(BULLETS, 'toc', true))
 })
 
 test('step 7 — "TOC made from:" selects the source of one note, and the choice is there after a reopen and a restart', async () => {
@@ -633,8 +635,8 @@ test('step 8 — the page switches: "Table of contents" hides it on this page an
   await expect(menu(win).locator('.page-settings__label')).toHaveCount(0)
   await win.keyboard.press('Escape')
   await shoot(win, 'toc-08-off-for-this-page')
-  // Saved for this note in the state file (YAZ-2950 D1), and never in the note.
-  await expect.poll(async () => (await readState(userData)).folders[vault]?.tocSwitches[chaptersPath], { timeout: 10_000 }).toBe(false)
+  // Saved IN the note (YAZ-4094 G4): `toc: false` in its frontmatter.
+  await expect.poll(async () => notePageSwitches(await readFile(chaptersPath, 'utf8')).toc, { timeout: 10_000 }).toBe(false)
   // ⌘J does nothing on this page.
   await editorOf(win).locator('h1').click()
   await win.keyboard.press('Meta+j')
@@ -646,7 +648,7 @@ test('step 8 — the page switches: "Table of contents" hides it on this page an
   await expect(lines(win)).toHaveCount(CHAPTER_BULLETS.length)
   await expect(sourceChoice(win, 'Bullets')).toHaveAttribute('aria-pressed', 'true')
   // On is stored too: `true`, not the removal of the entry.
-  await expect.poll(async () => (await readState(userData)).folders[vault]?.tocSwitches[chaptersPath], { timeout: 10_000 }).toBe(true)
+  await expect.poll(async () => notePageSwitches(await readFile(chaptersPath, 'utf8')).toc, { timeout: 10_000 }).toBe(true)
 
   // "Heading levels": a heading that has neither the caret nor the mouse shows its tag only with the switch on.
   await expect(pageSwitch(win, 'Heading levels')).toHaveAttribute('aria-pressed', 'false')
@@ -662,7 +664,8 @@ test('step 8 — the page switches: "Table of contents" hides it on this page an
   const state = await readState(userData)
   expect(state.settings.tableOfContents).toBe('auto')
   expect(JSON.stringify(state).replaceAll(vault, '')).not.toMatch(/heading.?levels|page.?settings/i)
-  expect(await readFile(chaptersPath, 'utf8')).toBe(CHAPTERS)
+  // The note holds the TOC switch and nothing else of the cog.
+  expect(await readFile(chaptersPath, 'utf8')).toBe(setNotePageSwitch(CHAPTERS, 'toc', true))
 })
 
 test('step 8b — a page turned off stays off: after a reopen, in a new window (⌘⇧N) and after a restart (YAZ-2950)', async () => {
@@ -671,7 +674,7 @@ test('step 8b — a page turned off stays off: after a reopen, in a new window (
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
   await win.keyboard.press('Escape')
   await expect(toc(win)).toHaveCount(0)
-  await expect.poll(async () => (await readState(userData)).folders[vault]?.tocSwitches[chaptersPath], { timeout: 10_000 }).toBe(false)
+  await expect.poll(async () => notePageSwitches(await readFile(chaptersPath, 'utf8')).toc, { timeout: 10_000 }).toBe(false)
 
   // The note closed and opened again: still off. Another note, with no entry, is on. Chapters is
   // the one tab since step 7 opened it in the preview tab (YAZ-2648 D1), so Bullets opens by its row.
@@ -698,7 +701,7 @@ test('step 8b — a page turned off stays off: after a reopen, in a new window (
   await expect(toc(dup)).toHaveCount(0)
   await closeWindow(app, winParam(dup)!)
 
-  // The app quit and started again: still off. The note itself was never written.
+  // The app quit and started again: still off, from the note.
   await quitApp(app)
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
@@ -708,8 +711,7 @@ test('step 8b — a page turned off stays off: after a reopen, in a new window (
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
   await win.keyboard.press('Escape')
   await expect(toc(win)).toHaveCount(0)
-  expect((await readState(userData)).folders[vault]?.tocSwitches[chaptersPath]).toBe(false)
-  expect(await readFile(chaptersPath, 'utf8')).toBe(CHAPTERS)
+  expect(await readFile(chaptersPath, 'utf8')).toBe(setNotePageSwitch(CHAPTERS, 'toc', false))
 
   // On again, so that the suite ends with the page as it started.
   await cog(win).click()
@@ -765,7 +767,7 @@ test('step 8c — "Table of contents default" Off: a page with no choice shows n
   await expect(menu(win).locator('.page-settings__choices')).toHaveCount(1)
   await win.keyboard.press('Escape')
   await expect(toc(win)).toHaveCount(1)
-  await expect.poll(async () => (await readState(userData)).folders[vault]?.tocSwitches[bulletsPath], { timeout: 10_000 }).toBe(true)
+  await expect.poll(async () => notePageSwitches(await readFile(bulletsPath, 'utf8')).toc, { timeout: 10_000 }).toBe(true)
   await shoot(win, 'toc-08c-default-off-page-on')
 
   // S11: "Pin" in the card writes "Pin default" for all pages, and the default stays Off.
@@ -784,7 +786,7 @@ test('step 8c — "Table of contents default" Off: a page with no choice shows n
   await expect(toc(win)).toHaveAttribute('data-names', '')
   const state = await readState(userData)
   expect(state.settings).toMatchObject({ tocOnByDefault: false, tableOfContents: 'pinned' })
-  expect(await readFile(bulletsPath, 'utf8')).toBe(BULLETS)
+  expect(await readFile(bulletsPath, 'utf8')).toBe(setNotePageSwitch(BULLETS, 'toc', true))
   // And a page with no choice is still off (S2 after a restart).
   await fileRow(win, 'Recipes').click()
   await expect(activeTab(win)).toContainText('Recipes')
@@ -793,7 +795,7 @@ test('step 8c — "Table of contents default" Off: a page with no choice shows n
   await cog(win).click()
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
   await win.keyboard.press('Escape')
-  expect(state.folders[vault]?.tocSwitches[recipesPath]).toBeUndefined()
+  expect(notePageSwitches(await readFile(recipesPath, 'utf8')).toc).toBeUndefined()
 
   // The suite ends as it started: the default On, "Pin default" Off.
   await choose('tableOfContents', 'Off')

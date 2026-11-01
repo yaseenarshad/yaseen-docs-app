@@ -44,6 +44,7 @@ import './outline/bulletThreading.css'
 import './outline/sectionIndent.css'
 import './softBreaks.css'
 import { splitFrontmatter } from '@shared/frontmatter'
+import { notePageSwitches, setNotePageSwitch, type PageSwitchKey } from '@shared/pageSwitches'
 import { isNoteReadOnly, setNoteReadOnly } from '@shared/readOnly'
 import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
@@ -57,7 +58,6 @@ import { ZOOM_EVENT } from './zoomRequest'
 import { fileLines } from './lineNumbers/fileLines'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
-import { usePageSwitch } from './usePageSwitch'
 import type { ZoomStep } from '@shared/types'
 import type { ZoomFrom } from '../workspace/useWorkspace'
 import type { CodeSettingsPatch } from '../code/codeSettings'
@@ -450,15 +450,10 @@ function CrepeHost({
   documentZoomRef.current = documentZoom
   // Per page and never stored (YAZ-2643): it lives as long as this tab's editor does.
   const [lineNumbersOn, setLineNumbersOn] = useState(false)
-  // Per page and saved with the note in the app state, on and off (YAZ-2709 D2): the page cog's "Section indent".
-  const [sectionIndentOn, toggleSectionIndent] = usePageSwitch(root, file.path, storage.getSectionIndent, storage.setSectionIndent)
   // The same kind of switch (YAZ-2700): every heading of THIS page says its level. Per page, never stored.
   const [headingLevelsOn, setHeadingLevelsOn] = useState(false)
-  // The table of contents follows Settings › "Table of contents default" until this page makes its own choice, which
-  // wins, also over Off (YAZ-3558 D1). Saved with the note, as "Section indent" is (YAZ-2950, which replaces YAZ-2700 D15).
-  const [tableOfContentsOn, toggleTableOfContents] = usePageSwitch(root, file.path, storage.getTocSwitch, storage.setTocSwitch, tocOnByDefault)
-  // What this page's table of contents is built from (YAZ-2700 D14). Stored, as "Section indent"
-  // above is: with the note in the app state, as its folds are, and `null` (Auto) is no entry.
+  // What this page's table of contents is built from (YAZ-2700 D14). Stored with the note in the
+  // app state, as its folds are, and `null` (Auto) is no entry.
   const [tocSource, setTocSource] = useState<TocSource | null>(() => storage.getTocSource(root, file.path))
   // The folded rows of the table of contents (YAZ-3939 D1), as saved for this note when it mounted.
   const [tocFolds] = useState(() => storage.getTocFolds(root, file.path))
@@ -623,6 +618,15 @@ function CrepeHost({
    * Parsed once per `disk`, never per keystroke or per save.
    */
   const readOnly = useMemo(() => isNoteReadOnly(disk), [disk])
+  /**
+   * The page cog's on/off rows (YAZ-4094 G4, G1): IN the note's frontmatter too, read off `disk` the same
+   * way, so a toggle in another tab or window, or an agent's edit, shows here at once. A key that is absent
+   * follows the app default; the page's own choice wins, also over Off (YAZ-3558 D1). Section indent's
+   * default is off (YAZ-2709 D2).
+   */
+  const pageSwitches = useMemo(() => notePageSwitches(disk), [disk])
+  const sectionIndentOn = pageSwitches['section-indent'] ?? false
+  const tableOfContentsOn = pageSwitches.toc ?? tocOnByDefault
   /** The chip's "Allow edits?" box is open (YAZ-3076 D4): this tab's own, and gone once read only is. */
   const [askingUnlock, setAskingUnlock] = useState(false)
   useEffect(() => {
@@ -966,27 +970,32 @@ function CrepeHost({
   }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, drawingFeed, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom])
 
   /**
-   * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1): pending typing saves first
-   * (the pre-rewrite flush every editor on this path takes, S12), then `transformFile` writes the one
-   * key against the fresh bytes. The bytes that landed are adopted at once — the chip shows without
-   * waiting for the watcher, and the watcher's echo then carries this editor's mtime and is skipped:
-   * one read and one write for each click (S17). A refusal is one passive notice; nothing changes.
+   * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1), and the cog's on/off rows
+   * (YAZ-4094 G4): pending typing saves first (the pre-rewrite flush every editor on this path takes,
+   * S12), then `transformFile` writes the one key against the fresh bytes. The bytes that landed are
+   * adopted at once — the chip or the row shows without waiting for the watcher, and the watcher's echo
+   * then carries this editor's mtime and is skipped: one read and one write for each click (S17). A
+   * refusal is one passive notice; nothing changes.
    */
-  const setReadOnly = useCallback(
-    async (on: boolean): Promise<void> => {
+  const writeOwnKey = useCallback(
+    async (transform: (content: string) => string, row: string): Promise<void> => {
       try {
         await flushRenamedPath(file.path)
-        const landed = await transformFile(file.path, (content) => setNoteReadOnly(content, on))
+        const landed = await transformFile(file.path, transform)
         if (absorbFrontmatterOnly(landed.content, landed.mtime)) {
           setDisk(landed.content)
           diskLanded()
         }
       } catch (err) {
-        onNotice?.(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`, 'error')
+        onNotice?.(`${row} could not change: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
     [file.path, absorbFrontmatterOnly, onNotice],
   )
+  const setReadOnly = useCallback((on: boolean) => writeOwnKey((content) => setNoteReadOnly(content, on), 'Read only'), [writeOwnKey])
+  const setPageSwitch = useCallback((key: PageSwitchKey, row: string, on: boolean) => writeOwnKey((content) => setNotePageSwitch(content, key, on), row), [writeOwnKey])
+  const toggleSectionIndent = () => void setPageSwitch('section-indent', 'Section indent', !sectionIndentOn)
+  const toggleTableOfContents = () => void setPageSwitch('toc', 'Table of contents', !tableOfContentsOn)
 
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.

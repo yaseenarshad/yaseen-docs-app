@@ -136,13 +136,6 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
     if (source !== null && !isTocSource(source)) throw new BridgeFailure('BAD_REQUEST', "'source' must be 'headings', 'bullets' or null")
     store.setTocSource(r, f, source)
   })
-  handle(CONTRACT.state.setSectionIndent, async (root: unknown, file: unknown, on: unknown) => {
-    const r = requireAbsPath(root, 'root')
-    const f = requireAbsPath(file, 'file')
-    // Off is `false`, a value that is stored. There is no `null` here: nothing un-sets a note's switch.
-    if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
-    store.setSectionIndent(r, f, on)
-  })
   handle(CONTRACT.state.setTocSwitch, async (root: unknown, file: unknown, on: unknown) => {
     const r = requireAbsPath(root, 'root')
     const f = requireAbsPath(file, 'file')

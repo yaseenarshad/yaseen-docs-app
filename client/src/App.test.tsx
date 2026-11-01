@@ -292,7 +292,6 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       setFolder: vi.fn(async () => undefined),
       setFolds: vi.fn(async () => undefined),
       setTocSource: vi.fn(async () => undefined),
-      setSectionIndent: vi.fn(async () => undefined),
       setTocSwitch: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
       // The tab board's canvas (YAZ-3343 D1): the switch and the moved cards.

@@ -606,10 +606,22 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
     expect(pressed(el)).toEqual(['Auto:false', 'Headings:true', 'Bullets:false'])
     const row = [...el.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((button) => button.textContent?.includes('Table of contents'))
     if (row === undefined) throw new Error('no "Table of contents" row')
-    act(() => row.click())
+    // The row writes the note (YAZ-4094 G4): its echo lands as `disk`, and the control follows it.
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 2, size: body.content.length }))
+    diskHas(BODY, 1)
+    await act(async () => {
+      row.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
     expect(el.querySelector('.page-settings__choices')).toBeNull()
     // Back on: the choice is still the saved one — hiding the control changed nothing.
-    act(() => row.click())
+    diskHas('---\ntoc: false\n---\n' + BODY, 2)
+    await act(async () => {
+      row.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
     expect(pressed(el)).toEqual(['Auto:false', 'Headings:true', 'Bullets:false'])
     expect(storage.setTocSource).not.toHaveBeenCalled()
   })
@@ -618,8 +630,8 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
 /**
  * The two page switches of YAZ-2700 in the cog: "Heading levels" (D12) and "Table of contents"
  * (D15). "Heading levels" is "Line numbers" again — this page's, kept by CrepeHost for as long as
- * its editor lives, and stored nowhere. "Table of contents" is saved with the note since YAZ-2950,
- * as "Section indent" is.
+ * its editor lives, and stored nowhere. "Table of contents" is saved since YAZ-2950, IN the note since
+ * YAZ-4094 G4 (`toc: true | false` in its frontmatter), as "Section indent" is.
  */
 describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-2700 D12, YAZ-2950)', () => {
   const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')]
@@ -677,116 +689,113 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(el.querySelector('.editor-host')!.hasAttribute('data-heading-levels')).toBe(false)
   })
 
-  it('"Table of contents" is on for a page until the reader turns THIS page’s off: then no lines, no names and no ⌘J; the switch is saved with the note, on and off, and the next editor of the page starts with it (YAZ-2950 D1, D2)', async () => {
-    const saved: Record<string, boolean> = {}
-    const read = vi.spyOn(storage, 'getTocSwitch').mockImplementation((_root, file) => saved[file])
-    const write = vi.spyOn(storage, 'setTocSwitch').mockImplementation((_root, file, on) => void (saved[file] = on))
-    try {
-      const el = await mount(BODY, 1, { tableOfContents: 'auto' })
-      expect(read).toHaveBeenCalledWith('/vault', PATH)
-      act(() => tocOf().publish(TWO))
-      expect(el.querySelector('nav.toc')).not.toBeNull()
-      expect(pressCmdJ().defaultPrevented).toBe(true)
-      // A mount writes nothing; the one door a click may use is the switch's own.
-      const stores = watchStores(['setTocSwitch'])
-      clickCog(el)
-      expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
-      act(() => row(el, 'Table of contents').click())
-      expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
-      expect(el.querySelector('nav.toc')).toBeNull()
-      expect(pressCmdJ().defaultPrevented).toBe(false)
-      // On again: the same list, from the same channel — the editor was never told.
-      act(() => row(el, 'Table of contents').click())
-      expect(el.querySelectorAll('.toc__line')).toHaveLength(2)
-      act(() => row(el, 'Table of contents').click())
-      expect(el.querySelector('nav.toc')).toBeNull()
-      // D1: on AND off are stored for THIS page; a turn back on writes `true`, it does not drop the entry.
-      expect(write.mock.calls).toEqual([['/vault', PATH, false], ['/vault', PATH, true], ['/vault', PATH, false]])
-      write.mockClear()
-      stores.untouched()
-      stores.restore()
-      await pastDebounce()
-      expect(writeFile).not.toHaveBeenCalled()
-      // A new editor on the same page — a duplicated tab, a new window, the app after a restart — starts off.
-      act(() => root?.unmount())
-      el.remove()
-      const again = await mount(BODY, 1, { tableOfContents: 'auto' })
-      act(() => tocOf().publish(TWO))
-      expect(again.querySelector('nav.toc')).toBeNull()
-      clickCog(again)
-      expect(row(again, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
-      // A page with no entry is on, and reading wrote nothing.
-      await reopen({ tableOfContents: 'auto' })
-      act(() => tocOf().publish(TWO))
-      expect(again.querySelector('nav.toc')).not.toBeNull()
-      expect(write).not.toHaveBeenCalled()
-    } finally {
-      read.mockRestore()
-      write.mockRestore()
-    }
+  /** The note's own switch rows write IN the note (YAZ-4094 G4): each click is one read and one write of the file. */
+  const clickRow = async (el: HTMLElement, name: string): Promise<void> => {
+    await act(async () => {
+      row(el, name).click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
+  }
+  const written = (): string[] => writeFile.mock.calls.map(([body]) => body.content)
+  const TOC_OFF = '---\ntoc: false\n---\n'
+  const TOC_ON = '---\ntoc: true\n---\n'
+
+  it('"Table of contents" is on for a page until the reader turns THIS page’s off: then no lines, no names and no ⌘J; the switch is written IN the note, `toc: false` and `toc: true`, never in the app state, and the next editor of the page starts with it (YAZ-2950 D1, YAZ-4094 G4)', async () => {
+    let mtime = 10
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: ++mtime, size: body.content.length }))
+    const el = await mount(BODY, 1, { tableOfContents: 'auto' })
+    act(() => tocOf().publish(TWO))
+    expect(el.querySelector('nav.toc')).not.toBeNull()
+    expect(pressCmdJ().defaultPrevented).toBe(true)
+    const stores = watchStores()
+    clickCog(el)
+    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents✓:true'])
+    diskHas(BODY, 1)
+    await clickRow(el, 'Table of contents')
+    expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
+    expect(el.querySelector('nav.toc')).toBeNull()
+    expect(pressCmdJ().defaultPrevented).toBe(false)
+    // On again writes `true` — a choice of its own, not the removal of the key.
+    diskHas(TOC_OFF + BODY, 11)
+    await clickRow(el, 'Table of contents')
+    expect(el.querySelectorAll('.toc__line')).toHaveLength(2)
+    expect(written()).toEqual([TOC_OFF + BODY, TOC_ON + BODY])
+    stores.untouched()
+    stores.restore()
+    // A new editor on the same page — a duplicated tab, a new window, the app after a restart — reads the note.
+    act(() => root?.unmount())
+    el.remove()
+    const again = await mount(TOC_OFF + BODY, 1, { tableOfContents: 'auto' })
+    act(() => tocOf().publish(TWO))
+    expect(again.querySelector('nav.toc')).toBeNull()
+    clickCog(again)
+    expect(row(again, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
   })
 
-  it('with "Table of contents default" Off the cog still has the row, unchecked: a click turns THIS page on, in the look of "Pin default", with "TOC made from:" and ⌘J; the page stores `true` and another page stays off (YAZ-3558 D1, S2, S3, S10, S13)', async () => {
-    const saved: Record<string, boolean> = {}
-    const read = vi.spyOn(storage, 'getTocSwitch').mockImplementation((_root, file) => saved[file])
-    const write = vi.spyOn(storage, 'setTocSwitch').mockImplementation((_root, file, on) => void (saved[file] = on))
-    try {
-      const el = await mount(BODY, 1, { tableOfContents: 'auto', tocOnByDefault: false })
-      act(() => tocOf().publish(TWO))
-      expect(el.querySelector('nav.toc')).toBeNull()
-      expect(pressCmdJ().defaultPrevented).toBe(false)
-      clickCog(el)
-      expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents:false'])
-      expect(el.querySelector('.page-settings__choices')).toBeNull()
-      act(() => row(el, 'Table of contents').click())
-      expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('true')
-      expect(el.querySelector('.page-settings__choices')).not.toBeNull()
-      expect(el.querySelectorAll('.toc__line')).toHaveLength(2)
-      expect(pressCmdJ().defaultPrevented).toBe(true)
-      expect(write.mock.calls).toEqual([['/vault', PATH, true]])
-      // Another page with no choice follows the default: off.
-      await reopen({ tableOfContents: 'auto', tocOnByDefault: false })
-      act(() => tocOf().publish(TWO))
-      expect(el.querySelector('nav.toc')).toBeNull()
-    } finally {
-      read.mockRestore()
-      write.mockRestore()
-    }
+  it('a toggle in another tab, another window or an agent lands as an outside change of the note, and this editor follows at once (YAZ-4094 G1)', async () => {
+    const el = await mount(BODY, 1, { tableOfContents: 'auto' })
+    act(() => tocOf().publish(TWO))
+    expect(el.querySelector('nav.toc')).not.toBeNull()
+    diskHas(TOC_OFF + BODY, 2)
+    diskHas(TOC_OFF + BODY, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    await settle()
+    expect(el.querySelector('nav.toc')).toBeNull()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('with "Table of contents default" Off the cog still has the row, unchecked: a click turns THIS page on, in the look of "Pin default", with "TOC made from:" and ⌘J; the page writes `toc: true` and another page stays off (YAZ-3558 D1, S2, S3, S10, S13)', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 2, size: body.content.length }))
+    const el = await mount(BODY, 1, { tableOfContents: 'auto', tocOnByDefault: false })
+    act(() => tocOf().publish(TWO))
+    expect(el.querySelector('nav.toc')).toBeNull()
+    expect(pressCmdJ().defaultPrevented).toBe(false)
+    clickCog(el)
+    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Heading levels:false', 'Table of contents:false'])
+    expect(el.querySelector('.page-settings__choices')).toBeNull()
+    diskHas(BODY, 1)
+    await clickRow(el, 'Table of contents')
+    expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('true')
+    expect(el.querySelector('.page-settings__choices')).not.toBeNull()
+    expect(el.querySelectorAll('.toc__line')).toHaveLength(2)
+    expect(pressCmdJ().defaultPrevented).toBe(true)
+    expect(written()).toEqual([TOC_ON + BODY])
+    // Another page with no choice follows the default: off.
+    await reopen({ tableOfContents: 'auto', tocOnByDefault: false })
+    act(() => tocOf().publish(TWO))
+    expect(el.querySelector('nav.toc')).toBeNull()
   })
 
   it('a page with no choice follows "Table of contents default" at once, in the same editor; a page with a choice keeps it through Off and On (YAZ-3558 S4–S7)', async () => {
-    const saved: Record<string, boolean> = {}
-    const read = vi.spyOn(storage, 'getTocSwitch').mockImplementation((_root, file) => saved[file])
-    const write = vi.spyOn(storage, 'setTocSwitch').mockImplementation((_root, file, on) => void (saved[file] = on))
     const render = (tocOnByDefault: boolean) => act(() => root!.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} tableOfContents="auto" tocOnByDefault={tocOnByDefault} />))
-    try {
-      const el = await mount(BODY, 1, { tableOfContents: 'auto' })
-      act(() => tocOf().publish(TWO))
-      expect(el.querySelector('nav.toc')).not.toBeNull()
-      // S6: Settings changes (this or another window), the open page with no choice follows, and nothing is written.
-      render(false)
+    let mtime = 1
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: ++mtime, size: body.content.length }))
+    const el = await mount(BODY, 1, { tableOfContents: 'auto' })
+    act(() => tocOf().publish(TWO))
+    expect(el.querySelector('nav.toc')).not.toBeNull()
+    // S6: Settings changes (this or another window), the open page with no choice follows, and nothing is written.
+    render(false)
+    expect(el.querySelector('nav.toc')).toBeNull()
+    render(true)
+    expect(el.querySelector('nav.toc')).not.toBeNull()
+    expect(writeFile).not.toHaveBeenCalled()
+    // S4: the page turns its own off; the default goes Off and On again, and the page stays off.
+    clickCog(el)
+    diskHas(BODY, 1)
+    await clickRow(el, 'Table of contents')
+    for (const value of [false, true]) {
+      render(value)
       expect(el.querySelector('nav.toc')).toBeNull()
-      render(true)
-      expect(el.querySelector('nav.toc')).not.toBeNull()
-      expect(write).not.toHaveBeenCalled()
-      // S4: the page turns its own off; the default goes Off and On again, and the page stays off.
-      clickCog(el)
-      act(() => row(el, 'Table of contents').click())
-      for (const value of [false, true]) {
-        render(value)
-        expect(el.querySelector('nav.toc')).toBeNull()
-      }
-      // S5, S7: the page turns its own on; the default goes Off and On again, and the page stays on.
-      act(() => row(el, 'Table of contents').click())
-      for (const value of [false, true]) {
-        render(value)
-        expect(el.querySelector('nav.toc')).not.toBeNull()
-      }
-      expect(write.mock.calls).toEqual([['/vault', PATH, false], ['/vault', PATH, true]])
-    } finally {
-      read.mockRestore()
-      write.mockRestore()
     }
+    // S5, S7: the page turns its own on; the default goes Off and On again, and the page stays on.
+    diskHas(TOC_OFF + BODY, 2)
+    await clickRow(el, 'Table of contents')
+    for (const value of [false, true]) {
+      render(value)
+      expect(el.querySelector('nav.toc')).not.toBeNull()
+    }
+    expect(written()).toEqual([TOC_OFF + BODY, TOC_ON + BODY])
   })
 })
 
@@ -2255,88 +2264,71 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
 })
 
 /**
- * "Section indent" (YAZ-2709 D2): the page's own switch, saved with the note in the app state as
- * its table of contents source is. `storage` is spied, as in the "TOC made from" tests above: the
- * record below is what the app state holds for the vault, page → switch.
+ * "Section indent" (YAZ-2709 D2): the page's own switch, IN the note's frontmatter since YAZ-4094 G4
+ * (`section-indent: true | false`). A note with no key is off.
  */
 describe('section indent is the page’s own switch (YAZ-2709)', () => {
   const showSectionIndentMock = vi.mocked(showSectionIndent)
-  let saved: Record<string, boolean>
-  /** The switch, by its name, through the real menu. */
-  function switchSectionIndent(host: ParentNode): void {
+  const INDENT_ON = '---\nsection-indent: true\n---\n'
+  const INDENT_OFF = '---\nsection-indent: false\n---\n'
+  /** The switch, by its name, through the real menu: one read and one write of the note. */
+  async function switchSectionIndent(host: HTMLElement, onDisk: string, mtime: number): Promise<void> {
     clickCog(host)
-    act(() => [...host.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button[aria-pressed]')].find((button) => button.textContent?.startsWith('Section indent'))!.click())
+    diskHas(onDisk, mtime)
+    await act(async () => {
+      menuSwitch(host, 'Section indent').click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
     clickCog(host)
   }
   const indented = (host: ParentNode): boolean => host.querySelector('.editor-host')!.hasAttribute('data-section-indent')
 
   beforeEach(() => {
-    saved = {}
-    vi.spyOn(storage, 'getSectionIndent').mockImplementation((_root, file) => saved[file] === true)
-    vi.spyOn(storage, 'setSectionIndent').mockImplementation((_root, file, on) => void (saved[file] = on))
+    let mtime = 10
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: ++mtime, size: body.content.length }))
   })
 
-  afterEach(() => {
-    vi.mocked(storage.getSectionIndent).mockRestore()
-    vi.mocked(storage.setSectionIndent).mockRestore()
-  })
-
-  it('is off on a page with no entry: the editor is told nothing, and a mount writes nothing', async () => {
+  it('is off on a page with no key: the editor is told nothing, and a mount writes nothing', async () => {
     const el = await mount(BODY)
-    expect(storage.getSectionIndent).toHaveBeenCalledWith('/vault', PATH)
     expect(indented(el)).toBe(false)
     expect(showSectionIndentMock).not.toHaveBeenCalled()
-    expect(storage.setSectionIndent).not.toHaveBeenCalled()
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
   })
 
-  it('on tells the editor once and saves `true`; off tells it off and saves `false`, an entry of its own; the note and the browser store are never written', async () => {
+  it('on tells the editor once and writes `section-indent: true`; off tells it off and writes `false`, a choice of its own; the app state and the browser store are never written', async () => {
     const browserStore = vi.spyOn(Storage.prototype, 'setItem')
     const el = await mount(BODY)
-    switchSectionIndent(el)
+    await switchSectionIndent(el, BODY, 1)
     expect(indented(el)).toBe(true)
     expect(showSectionIndentMock).toHaveBeenCalledExactlyOnceWith(crepe(), true)
-    expect(storage.setSectionIndent).toHaveBeenCalledExactlyOnceWith('/vault', PATH, true)
-    switchSectionIndent(el)
+    await switchSectionIndent(el, INDENT_ON + BODY, 11)
     expect(indented(el)).toBe(false)
     expect(showSectionIndentMock).toHaveBeenCalledTimes(2)
     expect(showSectionIndentMock).toHaveBeenLastCalledWith(crepe(), false)
-    // D2: off is `false` for THIS page, never the removal of its entry.
-    expect(vi.mocked(storage.setSectionIndent).mock.calls).toEqual([['/vault', PATH, true], ['/vault', PATH, false]])
-    await pastDebounce()
-    expect(writeFile).not.toHaveBeenCalled()
+    expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual([INDENT_ON + BODY, INDENT_OFF + BODY])
     expect(browserStore).not.toHaveBeenCalled()
     browserStore.mockRestore()
   })
 
-  it('seeds from the app state: the next editor of the page starts on and tells its editor, a page saved as off and a page with no entry start off', async () => {
-    const first = await mount(BODY)
-    switchSectionIndent(first)
-    act(() => root?.unmount())
-    first.remove()
-    showSectionIndentMock.mockClear()
-    // A new editor on the same page: a second tab, the right panel, or the app after a restart.
-    const again = await mount(BODY)
-    expect(indented(again)).toBe(true)
+  it('reads the note: a page with `section-indent: true` starts on and tells its editor; `false` and no key start off; reading writes nothing', async () => {
+    const on = await mount(INDENT_ON + BODY)
+    expect(indented(on)).toBe(true)
     expect(showSectionIndentMock).toHaveBeenCalledExactlyOnceWith(crepe(), true)
     act(() => root?.unmount())
-    again.remove()
-    saved['/vault/off.md'] = false
-    const off = await mount(BODY, 1, { path: '/vault/off.md' })
+    on.remove()
+    const off = await mount(INDENT_OFF + BODY, 1, { path: '/vault/off.md' })
     expect(indented(off)).toBe(false)
-    act(() => root?.unmount())
-    off.remove()
-    const other = await mount(BODY, 1, { path: '/vault/other.md' })
-    expect(indented(other)).toBe(false)
-    // Reading wrote nothing: the one write is the click on the first page.
-    expect(storage.setSectionIndent).toHaveBeenCalledTimes(1)
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
   })
 
   it('an outside change that lands tells the editor again: a rebuilt editor state starts off', async () => {
-    const el = await mount(FM + BODY)
-    switchSectionIndent(el)
+    const el = await mount(INDENT_ON + BODY)
     expect(showSectionIndentMock).toHaveBeenCalledTimes(1)
-    diskHas(FM + '# Hello\n\nchanged outside\n', 2)
-    diskHas(FM + '# Hello\n\nchanged outside\n', 2)
+    diskHas(INDENT_ON + '# Hello\n\nchanged outside\n', 2)
+    diskHas(INDENT_ON + '# Hello\n\nchanged outside\n', 2)
     await emit({ type: 'change', path: PATH, mtime: 2 })
     await settle()
     expect(applyExternalMock).toHaveBeenCalledTimes(1)
