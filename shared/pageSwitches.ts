@@ -22,7 +22,7 @@ export type PageSwitchKey = (typeof PAGE_SWITCH_KEYS)[number]
 export type PageSwitches = Partial<Record<PageSwitchKey, boolean>>
 
 /** The same rule on properties already parsed. */
-export function pageSwitchesOf(properties: Readonly<Record<string, unknown>>): PageSwitches {
+function pageSwitchesOf(properties: Readonly<Record<string, unknown>>): PageSwitches {
   const out: PageSwitches = {}
   for (const key of PAGE_SWITCH_KEYS) {
     const value = properties[key]
