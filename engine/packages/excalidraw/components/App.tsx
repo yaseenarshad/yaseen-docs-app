@@ -277,6 +277,7 @@ import {
   hasHostLinks,
   refreshHostLinks,
   registerHostLinkResolver,
+  remapTextRunsForTextEdit,
 } from "@excalidraw/element";
 
 import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
@@ -8046,6 +8047,55 @@ class App extends React.Component<AppProps, AppState> {
     };
   };
 
+  /**
+   * YAZ-4039 D15: puts `text` in place of a link's raw `[[inner]]` in a text
+   * box (Edit link, Remove link), as one undo step. The editor of that box can
+   * have saved since the right-click, so the link is found again by its text.
+   */
+  public replaceHostLinkText = (
+    elementId: ExcalidrawElement["id"],
+    start: number,
+    end: number,
+    raw: string,
+    text: string,
+  ) => {
+    const element = this.scene.getElement(elementId);
+    if (!element || element.isDeleted || !isTextElement(element)) {
+      return;
+    }
+    const at =
+      element.originalText.slice(start, end) === raw
+        ? start
+        : element.originalText.indexOf(raw);
+    if (at < 0) {
+      return;
+    }
+    const originalText =
+      element.originalText.slice(0, at) +
+      text +
+      element.originalText.slice(at + raw.length);
+    const next = newElementWith(element, {
+      originalText,
+      textRuns: remapTextRunsForTextEdit(
+        element.originalText,
+        originalText,
+        element.textRuns,
+        { caret: at + text.length },
+      ),
+    });
+    redrawTextBoundingBox(
+      next,
+      this.scene.getContainerElement(element),
+      this.scene,
+    );
+    this.updateScene({
+      elements: this.scene
+        .getElementsIncludingDeleted()
+        .map((candidate) => (candidate.id === elementId ? next : candidate)),
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+  };
+
   /** Reports the hovered pill to the host, only when it changed. */
   private setHostLinkHover = (hit: HostLinkHit | null) => {
     const last = this.hostLinkHover;
@@ -14240,7 +14290,26 @@ class App extends React.Component<AppProps, AppState> {
         { x, y },
         this.getElementAtPosition(x, y, { includeLockedElements: true }),
       );
-      if (hit && this.props.hostLinks.onContextMenu(hit, event.nativeEvent)) {
+      const raw = hit && `[[${hit.inner}]]`;
+      if (
+        hit &&
+        this.props.hostLinks.onContextMenu(
+          {
+            ...hit,
+            replace: this.state.viewModeEnabled
+              ? undefined
+              : (text) =>
+                  this.replaceHostLinkText(
+                    hit.elementId,
+                    hit.start,
+                    hit.end,
+                    raw!,
+                    text,
+                  ),
+          },
+          event.nativeEvent,
+        )
+      ) {
         this.setHostLinkHover(null);
         return;
       }

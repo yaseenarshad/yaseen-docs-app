@@ -8,7 +8,9 @@
  *    click is the board's (it selects the box); a read-only board keeps "a click opens", as a read-only note does,
  *  - opening: the editor's one follower (`wikilinkFollower`), which also makes a missing page,
  *  - hover: the page the pill opens, for the host's card (`useCardPreview`),
- *  - right-click: the host opens the one link menu (`linkMenuOf`).
+ *  - right-click: the host opens the one link menu (`linkMenuOf`), with Edit link and Remove link (D15),
+ *  - making one (D12): the `[[` picker in the text editor (`drawingLinkPicker.ts`), and a pasted page path or
+ *    `yaseendocs://` link as the link the picker writes (`drawingPasteLink`, the note's `pathPaste.ts`).
  *
  * A shape's own `link` (the engine's link icon) opens through the same follower when it is a `[[link]]` or a path of
  * this vault (`openShapeLink`).
@@ -17,13 +19,15 @@ import { fileKind } from '@shared/fileKind'
 import { gestureAction, type MouseMods } from '@shared/keys'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { basename } from '@shared/types'
-import { pastedPath } from '../editor/pathPaste'
+import { linkFor, pastedPath } from '../editor/pathPaste'
+import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { linkClickAction } from '../editor/linkGesture'
 import type { LinkFollow, WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import { idLinkTitle, linkDisplayText, linkIsResolved, linkPageName, linkPath, missingId, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { pathTitles } from '../lib/pageLabel'
 import type { AnchorRect } from '../sidebar/previewPlacement'
+import type { PickerEditor } from './drawingLinkPicker'
 
 /** What a pill shows: the engine's `HostLink`. */
 export interface DrawingLink {
@@ -39,6 +43,8 @@ export interface DrawingLinkHit {
   start: number
   end: number
   rect: AnchorRect
+  /** Puts text in place of the raw `[[inner]]` (Edit link, Remove link); absent on a read-only board. */
+  replace?: (text: string) => void
 }
 
 /**
@@ -84,6 +90,10 @@ export interface DrawingLinkDeps {
   hover: (at: { path: string; rect: AnchorRect } | null) => void
   /** Right-click on a pill: the host opens the link menu at the pointer. */
   menu: (hit: DrawingLinkHit, event: MouseEvent) => void
+  /** The `[[` picker of the text editor (`createDrawingLinkPicker`). */
+  picker?: { change: (editor: PickerEditor | null) => void; keyDown: (event: KeyboardEvent) => boolean }
+  /** A pasted text as a link, or null (`drawingPasteLink`). */
+  pasteLink?: (text: string) => string | null
 }
 
 /**
@@ -118,7 +128,22 @@ export function drawingHostLinks(deps: () => DrawingLinkDeps) {
       deps().menu(hit, event)
       return true
     },
+    pasteLink: (text: string) => deps().pasteLink?.(text) ?? null,
+    onEditorChange: (editor: PickerEditor | null) => deps().picker?.change(editor),
+    onEditorKeyDown: (event: KeyboardEvent) => deps().picker?.keyDown(event) ?? false,
   }
+}
+
+/**
+ * A pasted page path or `yaseendocs://` link as the link the `[[` picker writes for that page (YAZ-4039 D12; the note's
+ * `pastedPath` and `linkFor`): `[[ID]]`, or its name where it has none. Null for anything else, which pastes as text: a
+ * copied `[[link]]` is text that is already a pill, and a file no tab shows has no pill.
+ */
+export function drawingPasteLink(text: string, root: string, boardPath: string, candidates: WikilinkCandidateSource): string | null {
+  if (text.includes('\n')) return null
+  const path = pastedPath(text)
+  const link = path === null ? null : linkFor(path, { root, notePath: boardPath, candidates })
+  return link?.startsWith('[[') === true ? link : null
 }
 
 const WHOLE_LINK = /^\[\[([^[\]]+)\]\]$/

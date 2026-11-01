@@ -110,7 +110,7 @@ export function createWikilinkCandidateSource(): MutableWikilinkCandidateSource 
  * (E2, GRO-2214). `create` rows show as Create "…" (no row has the typed name, B1) and make the
  * page — `insert` is then its typed NAME, and the link goes in by the new page's id (`insertRow`).
  */
-interface PickerRow {
+export interface PickerRow {
   label: string
   insert: string
   create: boolean
@@ -175,7 +175,7 @@ function findContext(state: EditorState): { from: number; to: number; fragment: 
  * this name": `q4 meeting notes` finds `Meeting notes Q4` and still offers to create its own page. An exact name ranks
  * first (tier 0), so it is among the matches whenever one exists.
  */
-function rowsFor(fragment: string, candidates: readonly LinkCandidate[]): PickerRow[] {
+export function rowsFor(fragment: string, candidates: readonly LinkCandidate[]): PickerRow[] {
   const matches = matchLinkCandidates(candidates, fragment)
   // A view-only file reads as the sidebar names it (YAZ-3778 S14): `LN Scenarios Diagram.drawio` → `LN Scenarios Diagram`.
   const rows = matches.map(({ label, insert, path }): PickerRow => ({ label: isViewOnly(insert) ? fileLabel(label) : label, insert, create: false, path }))

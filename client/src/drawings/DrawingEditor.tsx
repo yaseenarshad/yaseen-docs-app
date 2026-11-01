@@ -49,6 +49,7 @@ import { wikilinkFollower, type WikilinkNav } from '../editor/wikilink/wikilinkC
 import { linkMenuOf } from '../editor/wikilink/wikilinkMenu'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
+import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { NoticeKind } from '../lib/notice'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
@@ -56,7 +57,9 @@ import { useAppliedTheme } from '../lib/theme'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import { exportFileName } from './exportDrawing'
-import { drawingHostLinks, openShapeLink, type DrawingLinkDeps } from './drawingLinks'
+import { createDrawingLinkPicker } from './drawingLinkPicker'
+import { drawingHostLinks, drawingPasteLink, openShapeLink, type DrawingLinkDeps } from './drawingLinks'
+import { openEditLinkBox } from './editLinkBox'
 import { parseSceneText, type DrawingScene } from './drawingScene'
 import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi, type DrawingSurfaceLinks } from './ExcalidrawSurface'
 import { pressed } from './drawingKeys'
@@ -92,6 +95,8 @@ export interface DrawingEditorProps extends DocumentHostProps {
    */
   wikilinks?: WikilinkResolveSource
   viewOnlyLinks?: ViewOnlyLinkSource
+  /** The `[[` picker's rows (YAZ-4039 D12), the note's: also what a pasted path becomes. */
+  wikilinkCandidates?: WikilinkCandidateSource
   /** An open gesture on a pill: this tab or a new tab in front (YAZ-3936). */
   onOpenLink?: (path: string, where?: GestureAction) => void
   /** ⌘-click on a pill: a background tab. */
@@ -309,7 +314,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
   )
 }
 
-type LinkProps = Pick<DrawingEditorProps, 'wikilinks' | 'viewOnlyLinks' | 'onOpenLink' | 'onOpenLinkBackground' | 'linkActions' | 'newNoteFolderFor' | 'hoverLinks' | 'previewScope' | 'diagramDarkColors'>
+type LinkProps = Pick<DrawingEditorProps, 'wikilinks' | 'viewOnlyLinks' | 'wikilinkCandidates' | 'onOpenLink' | 'onOpenLinkBackground' | 'linkActions' | 'newNoteFolderFor' | 'hoverLinks' | 'previewScope' | 'diagramDarkColors'>
 
 /**
  * The board's page links (YAZ-4039 D7, D11; `drawingLinks.ts`): the pills' follower, the hover card beside a pill and
@@ -322,7 +327,14 @@ function useDrawingLinks(root: string, path: string, readOnly: boolean, hotkeys:
   const linkAt = useRef<{ path: string; rect: AnchorRect } | null>(null)
   const linkPreview = useCardPreview(props.hoverLinks ?? false, (page) => (linkAt.current?.path === page ? linkAt.current.rect : null))
   const closeMenu = useRef<() => void>(() => undefined)
-  useEffect(() => () => closeMenu.current(), [])
+  const [picker] = useState(() => createDrawingLinkPicker(() => hostRef.current, () => live.current.props.wikilinkCandidates?.candidates ?? []))
+  useEffect(
+    () => () => {
+      closeMenu.current()
+      picker.close()
+    },
+    [picker],
+  )
   const [links] = useState<DrawingSurfaceLinks | undefined>(() => {
     const { wikilinks, viewOnlyLinks, onOpenLinkBackground } = props
     if (wikilinks === undefined || onOpenLinkBackground === undefined) return undefined
@@ -352,12 +364,20 @@ function useDrawingLinks(root: string, path: string, readOnly: boolean, hotkeys:
         linkAt.current = at
         linkPreview.hoverCard(at.path, at.path)
       },
-      // The one link menu (YAZ-3740), at the pointer. Edit link and Remove link are YAZ-4068's.
+      // The one link menu (YAZ-3740), at the pointer. Edit link opens a box with the link's text, Remove link leaves the
+      // name the pill shows (D15); a read-only board has neither.
       menu: (hit, event) => {
         closeMenu.current()
         const parent = hostRef.current
+        const replace = live.current.readOnly ? undefined : hit.replace
         if (parent === null) return
-        closeMenu.current = openMenuAt(parent, event.clientX, event.clientY, linkMenuRows(linkMenuOf(hit.inner, wikilinks, nav, follow, viewOnlyLinks, undefined, undefined, undefined)))
+        const edit = replace === undefined ? undefined : () => (closeMenu.current = openEditLinkBox(parent, event.clientX, event.clientY, hit.inner, (next) => replace(`[[${next}]]`)))
+        closeMenu.current = openMenuAt(parent, event.clientX, event.clientY, linkMenuRows(linkMenuOf(hit.inner, wikilinks, nav, follow, viewOnlyLinks, undefined, edit, replace)))
+      },
+      picker,
+      pasteLink: (text) => {
+        const candidates = live.current.props.wikilinkCandidates
+        return candidates === undefined ? null : drawingPasteLink(text, root, path, candidates)
       },
     })
     return { hostLinks: drawingHostLinks(deps), openShapeLink: (link, event) => openShapeLink(link, event, deps()) }

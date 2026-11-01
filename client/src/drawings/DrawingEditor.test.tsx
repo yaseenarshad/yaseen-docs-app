@@ -74,6 +74,7 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
 import { api } from '../api'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { BROKEN_DRAWING_DOCUMENT, DrawingEditor } from './DrawingEditor'
 import { ENGINE_LOAD_FAILED } from './ExcalidrawSurface'
 
@@ -517,5 +518,43 @@ describe('page links (YAZ-4039)', () => {
     expect(rows).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path'])
     expect(links.hostLinks.onPointerDown?.(hit, new PointerEvent('pointerdown', { metaKey: true }))).toBe(true)
     expect(onOpenLinkBackground).toHaveBeenCalledWith('/vault/Known.md')
+  })
+
+  it('Edit link and Remove link change the link through the engine (YAZ-4068)', async () => {
+    render({ wikilinks: linkSource(), onOpenLink: vi.fn(), onOpenLinkBackground: vi.fn() })
+    await flush()
+    const links = surface.props!.links!
+    const replace = vi.fn()
+    const menuRow = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('.ctx-menu--editor .ctx-menu__item')].find((row) => row.textContent === label)
+    const rightClick = () => act(() => void links.hostLinks.onContextMenu?.({ ...hit, replace }, new MouseEvent('contextmenu', { clientX: 40, clientY: 20 })))
+    rightClick()
+    act(() => menuRow('Remove link')!.click())
+    expect(replace).toHaveBeenLastCalledWith('Known')
+    rightClick()
+    act(() => menuRow('Edit link')!.click())
+    const input = container.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    expect(input.value).toBe('Known')
+    input.value = 'Other'
+    act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })))
+    expect(replace).toHaveBeenLastCalledWith('[[Other]]')
+  })
+
+  it('a read-only board gives no Edit link or Remove link', async () => {
+    const readOnly = `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, type: 'excalidraw', version: 2, elements: [], appState: {}, files: {} })}\n`
+    load.mockResolvedValue(loaded({ json: readOnly }))
+    render({ wikilinks: linkSource(), onOpenLink: vi.fn(), onOpenLinkBackground: vi.fn() })
+    await flush()
+    act(() => void surface.props!.links!.hostLinks.onContextMenu?.({ ...hit, replace: vi.fn() }, new MouseEvent('contextmenu')))
+    const rows = [...container.querySelectorAll('.ctx-menu--editor .ctx-menu__item')].map((row) => row.textContent)
+    expect(rows).not.toContain('Edit link')
+    expect(rows).not.toContain('Remove link')
+  })
+
+  it('a pasted page path becomes its [[ID]] link', async () => {
+    const candidates = createWikilinkCandidateSource()
+    candidates.update([{ name: 'Known', insert: 'YAS-7', label: 'Known', path: '/vault/Known.md' }])
+    render({ wikilinks: linkSource(), wikilinkCandidates: candidates, onOpenLink: vi.fn(), onOpenLinkBackground: vi.fn() })
+    await flush()
+    expect(surface.props!.links!.hostLinks.pasteLink?.('/vault/Known.md')).toBe('[[YAS-7]]')
   })
 })

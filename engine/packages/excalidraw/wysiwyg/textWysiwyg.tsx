@@ -44,6 +44,7 @@ import {
   getStyledVisualSelectionGeometry,
   getLogicalLineIndexAtOffset,
   getTextElementStyledLines,
+  getTextLinkRanges,
   hasHostLinks,
   remapTextRunsForTextEdit,
 } from "@excalidraw/element";
@@ -97,7 +98,12 @@ import {
 } from "../textList";
 
 import { getPendingTextStyle, takePendingTextStyle } from "./pendingTextStyle";
-import { createLinkPillOverlay } from "./linkPill";
+import {
+  createLinkPillOverlay,
+  getLinkToDelete,
+  isInsideLink,
+  keepLinksWhole,
+} from "./linkPill";
 
 import type { ParsedDataTranferList } from "../clipboard";
 import type App from "../components/App";
@@ -770,7 +776,8 @@ export const textWysiwyg = ({
 
   updateWysiwygStyle();
 
-  const getCaretIndexFromSceneCoords = (sceneCoords: {
+  /** The visual line under a scene point, and the point's x from its start. */
+  const getLinePointFromSceneCoords = (sceneCoords: {
     x: number;
     y: number;
   }) => {
@@ -796,13 +803,24 @@ export const textWysiwyg = ({
       Math.min(lines.length - 1, Math.floor(localY / layout.lineHeightPx)),
     );
     const line = lines[lineIndex];
-    const direction = getLineDirection(editable.value, line.start);
     const lineStartX = getStyledVisualLineStart(
       line,
       layout.width,
       layout.textAlign,
     );
-    const relativeX = localX - lineStartX;
+    return { layout, line, relativeX: localX - lineStartX };
+  };
+
+  const getCaretIndexFromSceneCoords = (sceneCoords: {
+    x: number;
+    y: number;
+  }) => {
+    const point = getLinePointFromSceneCoords(sceneCoords);
+    if (!point) {
+      return null;
+    }
+    const { layout, line, relativeX } = point;
+    const direction = getLineDirection(editable.value, line.start);
 
     if (!line.text) {
       return line.start;
@@ -810,9 +828,14 @@ export const textWysiwyg = ({
 
     if (line.segments) {
       // YAZ-3718 D1: the letter edge nearest to the click, from segment widths
+      // (YAZ-4039 D15: never inside a pill)
+      const links = line.segments.filter((segment) => segment.link);
       let closest = line.start;
       let closestDistance = Infinity;
       for (const offset of getCaretBoundaryOffsets(line.text)) {
+        if (isInsideLink(links, line.start + offset)) {
+          continue;
+        }
         const distance = Math.abs(
           getStyledVisualLineOffsetX(line, line.start + offset) - relativeX,
         );
@@ -859,11 +882,137 @@ export const textWysiwyg = ({
   let visualSelectionAnchor: number | null = null;
   let visualSelectionPointerId: number | null = null;
 
+  /** YAZ-4039 D15: a caret moved into a pill goes to its edge. */
+  let lastSelection = {
+    start: editable.selectionStart,
+    end: editable.selectionEnd,
+  };
+  const keepCaretOutOfLinks = () => {
+    const links = getTextLinkRanges(editable.value);
+    if (links.length) {
+      const next = keepLinksWhole(
+        links,
+        { start: editable.selectionStart, end: editable.selectionEnd },
+        lastSelection,
+      );
+      if (
+        next.start !== editable.selectionStart ||
+        next.end !== editable.selectionEnd
+      ) {
+        editable.setSelectionRange(
+          next.start,
+          next.end,
+          editable.selectionDirection,
+        );
+      }
+    }
+    lastSelection = {
+      start: editable.selectionStart,
+      end: editable.selectionEnd,
+    };
+  };
+
+  /** The caret's box on screen, for the host's `[[` picker. */
+  const getCaretClientRect = () => {
+    const box = editable.getBoundingClientRect();
+    const zoom = app.state.zoom.value;
+    const layout = currentTextLayout;
+    const caret = layout
+      ? getStyledVisualSelectionGeometry({
+          lines: layout.visualLines,
+          containerWidth: layout.width,
+          textAlign: layout.textAlign,
+          lineHeightPx: layout.lineHeightPx,
+          selectionStart: editable.selectionEnd,
+          selectionEnd: editable.selectionEnd,
+        }).caret
+      : null;
+    const left = box.left + (caret?.left ?? 0) * zoom;
+    const top = box.top + (caret?.top ?? 0) * zoom;
+    return {
+      left,
+      top,
+      right: left,
+      bottom: top + (caret?.height ?? layout?.lineHeightPx ?? 0) * zoom,
+    };
+  };
+
+  const replaceEditorText = (start: number, end: number, text: string) => {
+    editable.focus();
+    editable.setRangeText(text, start, end, "end");
+    editable.dispatchEvent(new Event("input"));
+  };
+
+  /** YAZ-4039 D12: the host's `[[` picker follows the text and the caret. */
+  const reportEditor = (typed: boolean) => {
+    app.props.hostLinks?.onEditorChange?.({
+      text: editable.value,
+      caret: editable.selectionEnd,
+      typed,
+      caretRect: getCaretClientRect,
+      replace: replaceEditorText,
+    });
+  };
+
+  const handleSelectionMoved = () => {
+    keepCaretOutOfLinks();
+    renderVisualSelection();
+  };
+
   const handleDocumentSelectionChange = () => {
     if (document.activeElement === editable) {
+      keepCaretOutOfLinks();
       // YAZ-3718 D10: a moved caret drops the style for the next letters
       getPendingTextStyle(editable);
       renderVisualSelection();
+      reportEditor(false);
+    }
+  };
+
+  /** YAZ-4039 D15: right-click on a pill in the editor gives the link menu. */
+  const handleEditableContextMenu = (event: MouseEvent) => {
+    const onContextMenu = app.props.hostLinks?.onContextMenu;
+    const point = onContextMenu
+      ? getLinePointFromSceneCoords(
+          viewportCoordsToSceneCoords(event, app.state),
+        )
+      : null;
+    const segment = point?.line.segments?.find(
+      (segment) =>
+        segment.link &&
+        point.relativeX >= segment.x &&
+        point.relativeX <= segment.x + segment.width,
+    );
+    if (!onContextMenu || !segment?.link) {
+      return;
+    }
+    const { inner } = segment.link;
+    const shown = onContextMenu(
+      {
+        elementId: element.id,
+        inner,
+        start: segment.start,
+        end: segment.end,
+        rect: {
+          left: event.clientX,
+          top: event.clientY,
+          right: event.clientX,
+          bottom: event.clientY,
+        },
+        // the menu's click closes this editor first, so the edit goes to the box
+        replace: (text) =>
+          app.replaceHostLinkText(
+            element.id,
+            segment.start,
+            segment.end,
+            `[[${inner}]]`,
+            text,
+          ),
+      },
+      event,
+    );
+    if (shown) {
+      event.preventDefault();
     }
   };
 
@@ -996,6 +1145,20 @@ export const textWysiwyg = ({
       // we need to synchronously get the MIME types so we can preventDefault()
       // in the same tick (FF requires that)
       const mimeTypes = parseDataTransferEventMimeTypes(event);
+
+      // YAZ-4039 D12: a pasted page path or `yaseendocs://` link is a link
+      const pastedLink = app.props.hostLinks?.pasteLink?.(
+        event.clipboardData?.getData(MIME_TYPES.text).trim() ?? "",
+      );
+      if (pastedLink) {
+        event.preventDefault();
+        replaceEditorText(
+          editable.selectionStart,
+          editable.selectionEnd,
+          pastedLink,
+        );
+        return;
+      }
 
       const pasteSelectionStart = editable.selectionStart;
       const pasteSelectionEnd = editable.selectionEnd;
@@ -1180,6 +1343,11 @@ export const textWysiwyg = ({
         nextFontStyle: currentElement?.fontStyle,
         nextTextRuns,
       });
+      lastSelection = {
+        start: editable.selectionStart,
+        end: editable.selectionEnd,
+      };
+      reportEditor(true);
     };
   }
 
@@ -1206,6 +1374,27 @@ export const textWysiwyg = ({
   };
 
   editable.onkeydown = (event) => {
+    // YAZ-4039 D12: the host's open `[[` picker takes ↑, ↓, Enter and Esc
+    if (app.props.hostLinks?.onEditorKeyDown?.(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    // YAZ-4039 D15: Backspace after a pill, or Delete before it, selects the
+    // whole pill, so the key deletes it as one unit
+    if (
+      (event.key === KEYS.BACKSPACE || event.key === KEYS.DELETE) &&
+      editable.selectionStart === editable.selectionEnd
+    ) {
+      const link = getLinkToDelete(
+        getTextLinkRanges(editable.value),
+        editable.selectionStart,
+        event.key,
+      );
+      if (link) {
+        editable.setSelectionRange(link.start, link.end);
+      }
+    }
     if (!event.shiftKey && actionZoomIn.keyTest(event)) {
       event.preventDefault();
       app.actionManager.executeAction(actionZoomIn);
@@ -1500,9 +1689,11 @@ export const textWysiwyg = ({
     editable.oninput = null;
     editable.onkeydown = null;
     editable.removeEventListener("select", renderVisualSelection);
-    editable.removeEventListener("keyup", renderVisualSelection);
+    editable.removeEventListener("keyup", handleSelectionMoved);
     editable.removeEventListener("pointerdown", handleEditablePointerDown);
     editable.removeEventListener("click", handleEditableClick);
+    editable.removeEventListener("contextmenu", handleEditableContextMenu);
+    app.props.hostLinks?.onEditorChange?.(null);
     document.removeEventListener(
       "selectionchange",
       handleDocumentSelectionChange,
@@ -1684,9 +1875,10 @@ export const textWysiwyg = ({
   // combinations do not emit it consistently for native textarea keyboard
   // navigation. Repaint on keyup as a harmless fallback so the custom caret
   // used by styled text cannot appear frozen.
-  editable.addEventListener("keyup", renderVisualSelection);
+  editable.addEventListener("keyup", handleSelectionMoved);
   editable.addEventListener("pointerdown", handleEditablePointerDown);
   editable.addEventListener("click", handleEditableClick);
+  editable.addEventListener("contextmenu", handleEditableContextMenu);
   document.addEventListener("selectionchange", handleDocumentSelectionChange);
 
   // rAF (+ capture to by doubly sure) so we don't catch te pointerdown that

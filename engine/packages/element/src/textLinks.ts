@@ -96,6 +96,26 @@ export const getTextLinks = (line: string): TextLinkMatch[] => {
   return links;
 };
 
+/** The link pills of a whole text, with offsets from the text start. */
+export const getTextLinkRanges = (text: string): TextLinkMatch[] => {
+  if (!hasHostLinks(text)) {
+    return [];
+  }
+  const links: TextLinkMatch[] = [];
+  let lineStart = 0;
+  for (const line of text.split("\n")) {
+    for (const link of getTextLinks(line)) {
+      links.push({
+        ...link,
+        start: lineStart + link.start,
+        end: lineStart + link.end,
+      });
+    }
+    lineStart += line.length + 1;
+  }
+  return links;
+};
+
 const getFontSize = (font: FontString) =>
   Number(font.match(/([\d.]+)px/)?.[1] ?? 20);
 

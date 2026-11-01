@@ -798,6 +798,25 @@ export type HostLinkHit = {
   end: number;
   /** The pill's box on screen, in client px. */
   rect: { left: number; top: number; right: number; bottom: number };
+  /**
+   * YAZ-4039 D15: puts `text` in place of the raw `[[inner]]`, as one undo
+   * step (Edit link, Remove link). Only on a right-click of an editable board.
+   */
+  replace?: (text: string) => void;
+};
+
+/**
+ * Yaseen Docs (YAZ-4039 D12): the text editor, for the host's `[[` picker.
+ * `typed`: the change is typing, not a caret move.
+ */
+export type HostTextEditor = {
+  text: string;
+  caret: number;
+  typed: boolean;
+  /** The caret's box on screen, in client px. It reads the layout: ask it only to place a popup. */
+  caretRect: () => { left: number; top: number; right: number; bottom: number };
+  /** Puts `text` in place of `start`..`end` and the caret after it. */
+  replace: (start: number, end: number, text: string) => void;
 };
 
 /**
@@ -815,6 +834,15 @@ export type HostLinks = {
   onPointerDown?: (hit: HostLinkHit, event: PointerEvent) => boolean;
   /** A right-click on a pill: true when the host showed its menu. */
   onContextMenu?: (hit: HostLinkHit, event: MouseEvent) => boolean;
+  /**
+   * YAZ-4039 D12: a pasted text (a page path, a `yaseendocs://` link) as the
+   * link it names, `[[ID]]`, or null: it pastes as text. The ⌘K link box too.
+   */
+  pasteLink?: (text: string) => string | null;
+  /** The text editor's text or caret changed; null: the editor closed. */
+  onEditorChange?: (editor: HostTextEditor | null) => void;
+  /** A key in the text editor: true when the host took it (its open picker). */
+  onEditorKeyDown?: (event: KeyboardEvent) => boolean;
 };
 
 export interface ExcalidrawProps {

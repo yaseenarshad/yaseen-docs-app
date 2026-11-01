@@ -250,3 +250,15 @@
 .editor--drawing .excalidraw.theme--dark {
   --color-primary-contrast-offset: #726dff;
 }
+
+/* Right-click › Edit link on a pill (YAZ-4039 D15): the link's text, in the link menu's popup. */
+.drawing-link-edit input {
+  width: 240px;
+  padding: 4px 6px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+}
