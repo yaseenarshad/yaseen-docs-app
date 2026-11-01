@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { flushSync } from 'react-dom'
 import { NAV_HOLD_MS, TabBar as IdTabBar, type TabBarProps as IdTabBarProps } from './TabBar'
 import tabsCss from './tabs.css?inline'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
@@ -1569,6 +1570,32 @@ describe('TabBar: the live gap (YAZ-3808 6A)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('6A3 (YAZ-4036): a strip tab of another window lands in the slot its gap showed — the window\'s own drop listener does not close the gap before the strip reads the drop', () => {
+    // The layout as a full strip has it: with the room for the tab, tabs stand 100 px apart; without it they widen to
+    // 120 px. A browser runs its pending work between two listeners of one event; `flushSync` does it here.
+    Object.defineProperty(HTMLElement.prototype, 'offsetLeft', { configurable: true, get: function (this: HTMLElement) { const i = tabIndex(this); return i === -1 ? 0 : i * (this.parentElement?.querySelector('.tabbar__room') ? 100 : 120) } })
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: function (this: HTMLElement) { return tabIndex(this) === -1 ? 0 : this.parentElement?.querySelector('.tabbar__room') ? 100 : 120 } })
+    const data = { types: [WORKSPACE_PAGE_MIME, 'application/x-yaseen-from-w2.0'], effectAllowed: 'move', dropEffect: 'none', getData: () => JSON.stringify({ path: '/v/e.md', owner: 'main', from: 'w2', copy: 0 }), setData: vi.fn() }
+    const onDropFromWindow = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow, ...props })
+    const at = (type: string) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 160, clientY: 20 })
+      Object.defineProperty(event, 'dataTransfer', { value: data })
+      return event
+    }
+    act(() => void tabAt(el, 1).dispatchEvent(at('dragover')))
+    act(() => void tabAt(el, 1).dispatchEvent(at('dragover'))) // x 160 in the room's layout: after b
+    expect(shifts(el)).toEqual(['a', 'b', 'c translateX(124px)', 'd translateX(124px)'])
+    const between = () => flushSync(() => undefined)
+    window.addEventListener('drop', between, true)
+    try {
+      act(() => void tabAt(el, 1).dispatchEvent(at('drop')))
+    } finally {
+      window.removeEventListener('drop', between, true)
+    }
+    expect(onDropFromWindow).toHaveBeenCalledExactlyOnceWith('w2', { path: '/v/e.md', copy: 0 }, 2)
   })
 
   it('6A1 (YAZ-4026): a strip tab of another window dropped here keeps its gap open until it lands', () => {

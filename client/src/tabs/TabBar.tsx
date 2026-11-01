@@ -444,13 +444,17 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       if (event.key === 'Escape') clear()
     }
     // The drop on the way down: App stops another window's tab dropped off the strip before it bubbles (YAZ-3637 D4),
-    // and that drag's `dragend` fires in ITS window, not here.
+    // and that drag's `dragend` fires in ITS window, not here. A drop on the row is the row's (6A3): cleared here, the
+    // gap closed before the strip read the drop's slot, and in a full strip the tabs widened under it.
+    const dropped = (event: Event) => {
+      if (!(event.target instanceof Node && stripRef.current?.parentElement?.contains(event.target) === true)) clear()
+    }
     window.addEventListener('dragend', clear)
-    window.addEventListener('drop', clear, true)
+    window.addEventListener('drop', dropped, true)
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('dragend', clear)
-      window.removeEventListener('drop', clear, true)
+      window.removeEventListener('drop', dropped, true)
       window.removeEventListener('keydown', onKey)
     }
   }, [externalOver, scroller])
