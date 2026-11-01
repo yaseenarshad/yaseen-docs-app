@@ -43,7 +43,7 @@
  * (`outline/outlineFeed.ts`) is made with the editor and goes with it. The cog's "Table of contents" row
  * turns it off for this file only, saved with the file as a note's is (`tocSwitches`, `usePageSwitch`).
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CodeOutlineSort, type CodeSymbolKind, type PageView, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
 import { HOTKEY_COMMANDS, appKeyId, keyFor, sameKey, type HotkeyId, type HotkeyOverrides, type KeyPress } from '@shared/hotkeyBindings'
 import { keyRow, stepsAside, type HotkeyAside } from '@shared/keys'
@@ -238,6 +238,16 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
     for (let i = 0; i < folding.regions.length; i++) if (!folding.regions.isCollapsed(i)) return 'collapse'
     return 'expand'
   }
+  /**
+   * The chip's chevrons (YAZ-3938 D9): it reads again when the hidden lines change, which is a fold or an unfold
+   * (a chevron, a key, the chip), never a plain keystroke. `outline` is set once the editor exists.
+   */
+  const subscribeFolds = useCallback((changed: () => void) => {
+    const editor = editorRef.current
+    if (outline === null || editor === null) return () => {}
+    const listener = editor.onDidChangeHiddenAreas(changed)
+    return () => listener.dispose()
+  }, [outline])
 
   /** The bytes to write: the model's value with its BOM, or the text it held when the tab closed. */
   const textNow = (): string => {
@@ -484,6 +494,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
             onCancel={() => setAskingUnlock(false)}
             fold={{
               read: readFold,
+              subscribe: subscribeFolds,
               run: (collapse) => {
                 runFold(collapse ? 'editor.foldAll' : 'editor.unfoldAll')
                 editorRef.current?.focus()

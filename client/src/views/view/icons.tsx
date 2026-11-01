@@ -93,8 +93,18 @@ export const SearchIcon = () => (
   </svg>
 )
 
-/** Stacked chevrons, for the toolbar's collapse / expand all groups toggle (YAZ-744). */
-export const ChevronsIcon = () => (
+/**
+ * Stacked chevrons that point up: what a fold-all button does now is "Collapse all" (YAZ-3938 D9, Yaseen: "up
+ * means that it will collapse all"). Its pair is `ExpandAllIcon`.
+ */
+export const CollapseAllIcon = () => (
+  <svg {...svg}>
+    <path d="M4.5 7 8 4l3.5 3M4.5 12 8 9l3.5 3" />
+  </svg>
+)
+
+/** Stacked chevrons that point down: "Expand all" (YAZ-3938 D9; the toolbar's groups toggle drew them first, YAZ-744). */
+export const ExpandAllIcon = () => (
   <svg {...svg}>
     <path d="M4.5 4 8 7l3.5-3M4.5 9 8 12l3.5-3" />
   </svg>

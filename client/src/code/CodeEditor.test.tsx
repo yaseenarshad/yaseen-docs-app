@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { renderToStaticMarkup } from 'react-dom/server'
 import type { FileResponse, FileWriteRequest, FileWriteResponse } from '@shared/types'
 
 vi.mock('./monaco', () => import('./monacoTestKit'))
@@ -17,6 +18,7 @@ import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { readPageView } from '../lib/pageView'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
+import { ExpandAllIcon } from '../views/view/icons'
 import { BROKEN_CODE_DOCUMENT, CodeEditor, appCommandOf, findersFor, stickyModelFor } from './CodeEditor'
 import { LARGE_CODE_CHARS } from './outline/symbolSource'
 import { keepBackView, MAX_BACK_VIEWS, openCodeAt, takeBackView } from './codeOpener'
@@ -966,6 +968,19 @@ describe('collapse all and expand all (YAZ-3478)', () => {
     await act(async () => button.click())
     expect(editor().triggered).toEqual(['editor.foldAll', 'editor.unfoldAll'])
     expect([...editor().folded]).toEqual([])
+    expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+  })
+
+  it('YAZ-3938 D9: the chevrons point up for "Collapse all" and down for "Expand all", and follow a fold arrow or key with no look at the button', async () => {
+    await focused()
+    const button = container.querySelector<HTMLButtonElement>('.status-chips > .fold-all__trigger')!
+    const pointsDown = (): boolean => button.innerHTML === renderToStaticMarkup(<ExpandAllIcon />)
+    expect(pointsDown()).toBe(false)
+    await act(async () => editor().trigger('keyboard', 'editor.foldAll'))
+    expect(pointsDown()).toBe(true)
+    expect(button.getAttribute('aria-label')).toBe('Expand all (⌘⇧I)')
+    await act(async () => editor().toggleFold(2))
+    expect(pointsDown()).toBe(false)
     expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
   })
 })

@@ -30,8 +30,8 @@ export interface CodeChipsProps {
   onAsk: () => void
   onAllow: () => void
   onCancel: () => void
-  /** The fold-all button (YAZ-3938 D4): what a click does now, and the fold itself. */
-  fold: { read: () => Promise<FoldNext>; run: (collapse: boolean) => void }
+  /** The fold-all button (YAZ-3938 D4, D9): what a click does now, the fold itself, and the fold changes to read again after. */
+  fold: { read: () => Promise<FoldNext>; run: (collapse: boolean) => void; subscribe: (changed: () => void) => () => void }
 }
 
 export function CodeChips({ settings, onChangeSettings, tableOfContents, zoom, onZoom, locked, asking, onAsk, onAllow, onCancel, fold }: CodeChipsProps) {
@@ -40,7 +40,7 @@ export function CodeChips({ settings, onChangeSettings, tableOfContents, zoom, o
   const switches = onChangeSettings === undefined ? null : [row('Read only', 'codeReadOnly'), row('Wrap long lines', 'codeWrap'), row('Minimap', 'codeMinimap')]
   return (
     <>
-      <FoldAllButton read={fold.read} run={fold.run} keys={{ collapse: 'code.foldEveryBlock', expand: 'code.unfoldEveryBlock' }} />
+      <FoldAllButton read={fold.read} run={fold.run} subscribe={fold.subscribe} keys={{ collapse: 'code.foldEveryBlock', expand: 'code.unfoldEveryBlock' }} />
       {switches !== null && <PageSettings switches={switches} switchesHeading="All code files" tableOfContents={tableOfContents?.on} onToggleTableOfContents={tableOfContents?.onToggle} />}
       <DocumentZoom value={zoom} onChange={onZoom} />
       {locked && <ReadOnlyChip asking={asking} onAsk={onAsk} onAllow={onAllow} onCancel={onCancel} />}

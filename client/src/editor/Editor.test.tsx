@@ -56,6 +56,8 @@ vi.mock('../api', async (importOriginal) => {
 // A code file opens Monaco (YAZ-3448), which does not run in jsdom: the code tab's own fake.
 vi.mock('../code/monaco', () => import('../code/monacoTestKit'))
 
+/** A view with nothing in it: the fold-all button reads it as it mounts, and subscribes on its `dom` (YAZ-3938 D9). */
+const emptyView = vi.hoisted(() => () => ({ state: null, dispatch: () => {}, dom: document.createElement('div') }))
 vi.mock('./createCrepe', () => {
   interface FakeCrepe {
     md: string
@@ -80,7 +82,7 @@ vi.mock('./createCrepe', () => {
       crepe.md = md
     }),
     focusEditor: vi.fn(),
-    editorViewOf: vi.fn(() => null),
+    editorViewOf: vi.fn(emptyView),
     // The fake's "plain text" is its markdown: enough to see WHICH editor the page settings menu counts.
     getPlainText: vi.fn((crepe: FakeCrepe) => crepe.md),
     // The fake has no zoom plugin: a page view test says which bullet it is drilled into.
@@ -105,7 +107,7 @@ vi.mock('./outline/sectionIndent', () => ({ showSectionIndent: vi.fn() }))
 // The fold-all button (YAZ-3938): the fake Crepe has no fold plugins. The real command is covered by
 // FoldAllButton.test.tsx; what the host WIRES to the button is the thing under test here.
 const foldAll = vi.hoisted(() => ({ next: 'collapse' as 'collapse' | 'expand' | 'none', command: vi.fn(() => true) }))
-vi.mock('./outline/foldAllHotkeys', () => ({ nextDocumentFold: vi.fn(() => foldAll.next), setAllDocumentFolds: vi.fn(() => foldAll.command) }))
+vi.mock('./outline/foldAllHotkeys', () => ({ FOLDS_CHANGED_EVENT: 'yaseendocs:folds-changed', nextDocumentFold: vi.fn(() => foldAll.next), setAllDocumentFolds: vi.fn(() => foldAll.command) }))
 /** The drawing tab's host (YAZ-3028): a stand-in that records what Editor hands it. */
 const drawingTab = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }))
 vi.mock('../drawings/DrawingEditor', () => ({
@@ -1630,7 +1632,7 @@ describe('the page settings cog (YAZ-2643)', () => {
       expect(foldAll.command).not.toHaveBeenCalled()
       expect(button.getAttribute('aria-label')).toBe('Nothing to fold')
     } finally {
-      vi.mocked(editorViewOf).mockReturnValue(null as never)
+      vi.mocked(editorViewOf).mockImplementation(emptyView as never)
     }
   })
 

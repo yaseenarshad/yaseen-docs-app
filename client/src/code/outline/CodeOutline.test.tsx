@@ -294,6 +294,28 @@ describe('S4 and S5: the "…" menu, remembered app-wide', () => {
     click(menuItem('Expand all'))
     expect(rowNames().slice(0, 3)).toEqual(['Pipeline', 'step1', 'value1'])
   })
+
+  it('YAZ-3938 D6: the button is one toggle, as every fold-all button: Collapse all while a row is open, then Expand all', () => {
+    mount()
+    const fold = (): HTMLButtonElement => document.querySelector<HTMLButtonElement>('.outline__tool')!
+    expect(fold().getAttribute('aria-label')).toBe('Collapse all')
+    click(fold())
+    expect(rowNames()).toEqual(['Pipeline'])
+    expect(fold().getAttribute('aria-label')).toBe('Expand all')
+    click(fold())
+    expect(rowNames().slice(0, 3)).toEqual(['Pipeline', 'step1', 'value1'])
+    // One row opened again after Collapse all: something is open, so the next click collapses.
+    click(fold())
+    click(row('Pipeline').querySelector('.outline__twisty')!)
+    expect(fold().getAttribute('aria-label')).toBe('Collapse all')
+  })
+
+  it('YAZ-3938 D6: with no row that can collapse, the button is dimmed and says "Nothing to fold"', () => {
+    mount({ symbols: [{ name: 'only', kind: 13, range: range(1, 1), selectionRange: range(1, 1, 14, 18) }], text: 'export const only = 1' })
+    const fold = document.querySelector<HTMLButtonElement>('.outline__tool')!
+    expect(fold.getAttribute('aria-label')).toBe('Nothing to fold')
+    expect(fold.disabled).toBe(true)
+  })
 })
 
 describe('YAZ-3507: names inside functions', () => {

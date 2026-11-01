@@ -260,7 +260,7 @@ import { createHeadingFolding, type HeadingFoldingOptions } from './outline/head
 import { headingHotkeys } from './outline/headingHotkeys'
 import { headingLevelTag } from './outline/headingLevelTag'
 import { headingText } from './outline/headingText'
-import { foldAllHotkeys } from './outline/foldAllHotkeys'
+import { foldAllHotkeys, foldsChanged } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { caretReveal, foldHistory } from './outline/foldReveal'
 import { enterTracker, outlinerKeymap } from './outline/listCommands'
@@ -617,6 +617,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // state through viewActions.ts. Mod-ArrowUp/Down remains order-independent: the bullet handler
   // consumes only inside list items, and the heading handler declines there.
   crepe.editor.use(foldAllHotkeys)
+  crepe.editor.use(foldsChanged)
   crepe.editor.use(headingHotkeys)
   crepe.editor.use(obsidianHotkeys)
   crepe.editor.use(escapeToSidebar)

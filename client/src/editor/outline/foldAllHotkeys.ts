@@ -3,10 +3,10 @@
  * Cmd+Shift+U / Cmd+Shift+I are one user gesture: one metadata-only transaction updates both and
  * one Cmd+Z restores both exact prior sets. Individual chevrons and caret-local folds stay owned by
  * their existing keymaps. The note's fold-all button (YAZ-3938, `FoldAllButton.tsx`) runs the same
- * command, so one Cmd+Z undoes a click too.
+ * command, so one Cmd+Z undoes a click too, and `foldsChanged` tells the button when to read again.
  */
-import type { Command, EditorState } from '@milkdown/kit/prose/state'
-import { $shortcut } from '@milkdown/kit/utils'
+import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { $prose, $shortcut } from '@milkdown/kit/utils'
 import type { FoldNext } from '../FoldAllButton'
 import { rowShortcuts } from '../noteKeys'
 import { addHeadingFoldAllMeta, addHeadingFoldUndoMeta } from './headingFolding'
@@ -32,6 +32,30 @@ export const setAllDocumentFolds =
 /** What the fold-all button does now (YAZ-3938 D2): with no dispatch, each command only says if it would change a fold. */
 export const nextDocumentFold = (state: EditorState): FoldNext =>
   setAllDocumentFolds(true)(state) ? 'collapse' : setAllDocumentFolds(false)(state) ? 'expand' : 'none'
+
+/** The DOM event on the editor's `view.dom` after a transaction that changed a fold (YAZ-3938 D9): the fold-all button reads again. */
+export const FOLDS_CHANGED_EVENT = 'yaseendocs:folds-changed'
+
+const FOLD_ACTIONS: readonly unknown[] = ['fold', 'heading-fold', 'document-fold'] satisfies ViewAction[]
+const foldsChangedKey = new PluginKey<number>('yaseenFoldsChanged')
+
+/**
+ * Counts the transactions that carry a fold's view-action stamp, and sends `FOLDS_CHANGED_EVENT` when the count
+ * moves. A keystroke costs one meta lookup and one compare (D2). Find's fold-reveal is silent (no stamp), so the
+ * button reads its folds at the next look.
+ */
+export const foldsChanged = $prose(
+  () =>
+    new Plugin<number>({
+      key: foldsChangedKey,
+      state: { init: () => 0, apply: (transaction, count) => (FOLD_ACTIONS.includes(transaction.getMeta(VIEW_ACTION_META)) ? count + 1 : count) },
+      view: () => ({
+        update: (view, before) => {
+          if (foldsChangedKey.getState(view.state) !== foldsChangedKey.getState(before)) view.dom.dispatchEvent(new Event(FOLDS_CHANGED_EVENT))
+        },
+      }),
+    }),
+)
 
 /** Only consumes Cmd+Z when both plugins have a pending undo — the signature of one combined fold. */
 const undoCombinedDocumentFold: Command = (state, dispatch) => {

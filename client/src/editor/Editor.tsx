@@ -41,7 +41,7 @@ import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
 import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
 import { FoldAllButton } from './FoldAllButton'
-import { nextDocumentFold, setAllDocumentFolds } from './outline/foldAllHotkeys'
+import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from './outline/foldAllHotkeys'
 import { PageSettings } from './PageSettings'
 import { ReadOnlyChip } from './ReadOnlyChip'
 import { NoteMenu } from './noteMenu'
@@ -926,6 +926,13 @@ function CrepeHost({
     zoomPageTo(readyCrepe, zoomKey)
     tellRealZoom(readyCrepe, zoomKey)
   }, [readyCrepe, zoomKey, tellRealZoom])
+  // The fold-all button's chevrons (YAZ-3938 D9): it reads again after each fold change in this editor.
+  const subscribeFolds = useCallback((changed: () => void) => {
+    if (readyCrepe === null) return () => {}
+    const dom = editorViewOf(readyCrepe).dom
+    dom.addEventListener(FOLDS_CHANGED_EVENT, changed)
+    return () => dom.removeEventListener(FOLDS_CHANGED_EVENT, changed)
+  }, [readyCrepe])
   useEffect(() => {
     const crepe = readyCrepe
     if (!lineNumbersOn || crepe === null) return
@@ -976,6 +983,7 @@ function CrepeHost({
             setAllDocumentFolds(collapse)(view.state, view.dispatch)
             focusEditor(readyCrepe)
           }}
+          subscribe={subscribeFolds}
           keys={{ collapse: 'note.foldAll', expand: 'note.unfoldAll' }}
         />
         <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContentsOn ? changeTocSource : undefined} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />

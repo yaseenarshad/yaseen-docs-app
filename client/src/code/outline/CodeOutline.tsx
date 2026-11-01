@@ -37,6 +37,7 @@ import { CODE_SYMBOL_KINDS, type CodeOutlineSort, type CodeSymbolKind, type Tabl
 import { NAMES_FLOOR, namesRoom, namesShow, railPitch } from '../../editor/toc/TableOfContents'
 import { beginTocResize, CLICK_GUARD_MS, EDGE_PX, PinIcon, RAIL_PADDING_PX, useTocBox, useTocCard, useTocLinger, useTocShortcut, useTocWidthVar } from '../../editor/toc/tocFrame'
 import { ContextMenu } from '../../sidebar/ContextMenu'
+import { CollapseAllIcon, ExpandAllIcon } from '../../views/view/icons'
 import type { MenuAction } from '../../sidebar/menuSections'
 import { jumpTo, type JumpEditorLike } from './codeJump'
 import { kindId, kindLabel, kindName, OutlineIcon } from './OutlineIcon'
@@ -127,6 +128,9 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
   }, [hidden])
   const order = useMemo(() => (tree === null ? null : displayOrder(tree, sort)), [tree, sort])
   const rows = useMemo(() => (tree === null || order === null ? null : visibleRows(tree, order, { collapsed, hidden: hiddenKinds, filter })), [tree, order, collapsed, hiddenKinds, filter])
+  // One toggle, as every fold-all button (YAZ-3938 D6): while a row that can collapse is open, it collapses all; once all are collapsed, it expands all.
+  const foldable = useMemo(() => (tree === null ? null : allKeys(tree)), [tree])
+  const anyOpen = foldable !== null && [...foldable].some((key) => !collapsed.has(key))
   const marks = useMemo(() => (tree === null ? null : markSymbols(tree, markers)), [tree, markers])
   const at = useMemo(() => {
     if (tree === null || rows === null) return -1
@@ -287,6 +291,7 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
   if (!shows || tree === null || rows === null || marks === null) return null
 
   const active = pick ?? (at >= 0 ? at : null)
+  const foldLabel = foldable?.size === 0 ? 'Nothing to fold' : anyOpen ? 'Collapse all' : 'Expand all'
   const onFilterKey = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
     const count = rows.rows.length
     if (event.key === 'Escape') {
@@ -347,8 +352,8 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
         onChange={(event) => setFilter(event.currentTarget.value)}
         onKeyDown={onFilterKey}
       />
-      <button type="button" className="outline__tool" title="Collapse all" aria-label="Collapse all" onClick={collapseAll}>
-        <CollapseAllIcon />
+      <button type="button" className="outline__tool" title={foldLabel} aria-label={foldLabel} disabled={foldable?.size === 0} onClick={anyOpen ? collapseAll : expandAll}>
+        {anyOpen || foldable?.size === 0 ? <CollapseAllIcon /> : <ExpandAllIcon />}
       </button>
       <button type="button" className="outline__tool" title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded={menu !== null} onClick={(event) => openMenu(event.currentTarget)}>
         <MoreIcon />
@@ -615,13 +620,6 @@ const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeL
 const ChevronIcon = () => (
   <svg width={10} height={10} viewBox="0 0 16 16" {...stroke} aria-hidden>
     <path d="M4 6l4 4 4-4" />
-  </svg>
-)
-
-/** VS Code's "Collapse All": two stacked boxes and a minus, in the app's stroke. */
-const CollapseAllIcon = () => (
-  <svg width={14} height={14} viewBox="0 0 16 16" {...stroke} aria-hidden>
-    <path d="M5 2.5h8.5V11M2.5 5h8.5v8.5H2.5zM4.75 9.25h4" />
   </svg>
 )
 
