@@ -767,6 +767,21 @@ export function App() {
     setRoots(storage.getRoots())
     return true
   }, [notify])
+  /**
+   * A workspace row on the Welcome screen (YAZ-3886): main's `openSet` door, as the ⌘O panel's row. It raises the
+   * window that shows the workspace, else THIS empty window takes its vaults (`link:set-roots`). `false` = no folder is left.
+   */
+  const openSetFromWelcome = useCallback(async (id: string): Promise<boolean> => {
+    try {
+      const { opened, missing } = await api.window.openSet(id)
+      if (opened && missing.length > 0) notify(`Not found: ${missing.map(storage.vaultName).join(', ')}`)
+      return opened
+    } catch (err) {
+      // A failed door is no gone folder: the row stays live, as the ⌘O panel's does.
+      console.error('[welcome] openSet failed:', err)
+      return true
+    }
+  }, [notify])
 
   const { pick, picking } = usePickFolder({ onPicked: openVault })
 
@@ -1605,13 +1620,23 @@ export function App() {
   }, [movePageToWindowQuietly, movePageToWindowAt])
   // Below `startView`: a moved tab's page view goes there (YAZ-3091 D5).
   /**
-   * A tab board's vault chip picked this window's vaults (YAZ-3343 D22): only while it has NO tab — main
-   * checked, and a tab that came since keeps the window as it is. A Welcome window opens the vault as File › Open does.
+   * A tab board's vault chip (YAZ-3343 D22), or main's workspace door (YAZ-3886), picked this window's vaults: only while
+   * it has NO tab — main checked, and a tab that came since keeps the window as it is. A Welcome window opens the first
+   * vault as File › Open does (`openRoot`), then takes the others — unless another open came first meanwhile.
    */
   const setRootsHere = useCallback((next: string[]) => {
     // Empty as main counts it (YAZ-3487 D1): no tab, and nothing in the right panel.
     if (now.current.tabs.length > 0 || now.current.right > 0 || next.length === 0) return
-    if (live.current.roots.length === 0) return void openRoot(next[0])
+    // A window with no vault (Welcome) opens the first in place, then takes the others: a workspace (YAZ-3886).
+    if (live.current.roots.length === 0) {
+      void openRoot(next[0]).then((opened) => {
+        if (!opened || next.length === 1 || storage.getRoot() !== next[0]) return
+        storage.setRoots(next)
+        for (const root of next.slice(1)) storage.pushRecentRoot(root)
+        setRoots(storage.getRoots())
+      })
+      return
+    }
     storage.setRoots(next)
     for (const root of next) storage.pushRecentRoot(root)
     setRoots(storage.getRoots())
@@ -3062,7 +3087,7 @@ export function App() {
       ) : root === null ? (
         <section className="editor">
           {/* No dialog opens by itself (C2, GRO-2164): the Welcome screen offers recents + Open folder…. */}
-          <Welcome recents={storage.getRecentRoots()} onOpenRecent={openRoot} onPickFolder={pick} picking={picking} />
+          <Welcome recents={storage.getRecentRoots()} sets={storage.getVaultSets()} onOpenRecent={openRoot} onOpenSet={openSetFromWelcome} onPickFolder={pick} picking={picking} onNotice={notify} />
         </section>
       ) : (
         <div className="workspace">

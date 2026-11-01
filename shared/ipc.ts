@@ -608,6 +608,8 @@ export const CONTRACT = {
      * with the fake clipboard, or when "Play user interface sound effects" is off. Never fails.
      */
     sound: invoke<[kind: GestureSound], void>('app:sound', 1),
+    /** This user's home folder (YAZ-3886 P2): the Welcome screen shows it as "~" in a folder's path. Never fails. */
+    home: invoke<[], string>('app:home', 0),
   },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {
