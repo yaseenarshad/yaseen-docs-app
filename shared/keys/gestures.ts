@@ -38,11 +38,15 @@ export const GESTURE_PLACE_TITLES: Record<GesturePlace, string> = { links: 'Link
 const LINK_HINT = 'A [[link]] or a Markdown link. A link to a page that does not exist makes the page first.'
 const BULLET_HINT = 'Zoomed into the bullet. The names in the zoom path too.'
 
-/** The rows, in the order the page lists them. Defaults: C4 of YAZ-3879 (a first proposal; Yaseen picks his own in the demo). */
+/**
+ * The rows, in the order the page lists them. Defaults (YAZ-3747 demo, Yaseen: "Browser style"): on a link, as in a
+ * browser, ⌘-click opens a background tab and ⌘⇧-click a new tab in front; "Open in this tab" has no click (right-click ›
+ * Open), and Click is the text's. Bullet dots as before: Click zooms in, ⇧-click a new tab in front, ⌘-click behind.
+ */
 export const GESTURE_ROWS: readonly GestureRow[] = [
-  { id: 'links.thisTab', place: 'links', action: 'thisTab', label: 'Open in this tab', hint: LINK_HINT, gesture: 'CmdOrCtrl+Click' },
-  { id: 'links.newTab', place: 'links', action: 'newTab', label: 'Open in a new tab', hint: LINK_HINT, gesture: null },
-  { id: 'links.backgroundTab', place: 'links', action: 'backgroundTab', label: 'Open in a background tab', hint: LINK_HINT, gesture: 'CmdOrCtrl+Shift+Click' },
+  { id: 'links.thisTab', place: 'links', action: 'thisTab', label: 'Open in this tab', hint: LINK_HINT, gesture: null },
+  { id: 'links.newTab', place: 'links', action: 'newTab', label: 'Open in a new tab', hint: LINK_HINT, gesture: 'CmdOrCtrl+Shift+Click' },
+  { id: 'links.backgroundTab', place: 'links', action: 'backgroundTab', label: 'Open in a background tab', hint: LINK_HINT, gesture: 'CmdOrCtrl+Click' },
   { id: 'bullets.thisTab', place: 'bullets', action: 'thisTab', label: 'Open in this tab (zoom in)', hint: BULLET_HINT, gesture: 'Click' },
   { id: 'bullets.newTab', place: 'bullets', action: 'newTab', label: 'Open in a new tab', hint: BULLET_HINT, gesture: 'Shift+Click' },
   { id: 'bullets.backgroundTab', place: 'bullets', action: 'backgroundTab', label: 'Open in a background tab', hint: BULLET_HINT, gesture: 'CmdOrCtrl+Click' },

@@ -67,7 +67,7 @@ const resolveKnown = (target: string) => (target === 'Known' ? '/vault/Known.md'
 async function mount(markdown: string, resolve?: (target: string) => string | null, createFolder: () => string = () => '', viewOnly?: MutableViewOnlyLinkSource, ids = true, letters: readonly string[] = [], vaultsOfLetters?: (letters: string) => string[]) {
   const source = createWikilinkResolveSource()
   if (resolve !== undefined) source.update(resolve, undefined, undefined, ids, letters)
-  const nav: NavMocks = { root: '/vault', createFolder, openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
+  const nav: NavMocks = { root: '/vault', createFolder, openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn(), hotkeys: () => SUITE_KEYS }
   const root = document.createElement('div')
   document.body.appendChild(root)
   const crepe = createCrepe({ root, defaultValue: markdown, wikilinks: source, viewOnlyLinks: viewOnly, wikilinkNav: nav, vaultsOfLetters })
@@ -98,9 +98,14 @@ function linkSpan(root: HTMLElement, text: string): Element {
 function mousedown(el: Element, init: MouseEventInit = {}): boolean {
   return el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, ...init }))
 }
-/** The default "Links in a note" gestures (YAZ-3936): ⌘-click opens in this tab, ⌘⇧-click in a background tab. */
-const OPEN: MouseEventInit = { metaKey: true }
-const BEHIND: MouseEventInit = { metaKey: true, shiftKey: true }
+/**
+ * The "Links in a note" gestures (YAZ-3936). Browser style by default (YAZ-3747 demo): ⌘-click opens a background tab,
+ * ⌘⇧-click a new tab in front, and "Open in this tab" has no click. The suite binds ⌘⌥-click to it (`SUITE_KEYS`), so its
+ * tests of what an open does read as before; a test that sets `nav.hotkeys` has the defaults and its own changes.
+ */
+const SUITE_KEYS: HotkeyOverrides = { 'links.thisTab': 'CmdOrCtrl+Alt+Click' }
+const OPEN: MouseEventInit = { metaKey: true, altKey: true }
+const BEHIND: MouseEventInit = { metaKey: true }
 const open = (el: Element): boolean => mousedown(el, OPEN)
 const openBehind = (el: Element): boolean => mousedown(el, BEHIND)
 
@@ -131,7 +136,7 @@ afterEach(async () => {
 })
 
 describe('wikilink click: resolved links (GRO-2192)', () => {
-  it('⌘-mousedown (Links › Open in this tab) opens in the CURRENT tab and prevents the default — no caret, no raw-text reveal', async () => {
+  it('the Open-in-this-tab gesture (⌘⌥ in this suite) opens in the CURRENT tab and prevents the default — no caret, no raw-text reveal', async () => {
     const { root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
     const prevented = !open(linkSpan(root, 'Known'))
     expect(prevented).toBe(true)
@@ -143,7 +148,7 @@ describe('wikilink click: resolved links (GRO-2192)', () => {
     expect(createFile).not.toHaveBeenCalled()
   })
 
-  it('⌘⇧-mousedown (Links › Open in a background tab) opens a BACKGROUND tab instead; default still prevented (focus untouched)', async () => {
+  it('⌘-mousedown (Links › Open in a background tab, the default) opens a BACKGROUND tab instead; default still prevented (focus untouched)', async () => {
     const { root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
     const prevented = !openBehind(linkSpan(root, 'Known'))
     expect(prevented).toBe(true)
@@ -260,7 +265,7 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     expect(nav.onNotice).not.toHaveBeenCalled()
   })
 
-  it('⌘⇧-click on an unresolved link creates it and opens it in a BACKGROUND tab (same gesture after create)', async () => {
+  it('⌘-click on an unresolved link creates it and opens it in a BACKGROUND tab (same gesture after create)', async () => {
     const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
     openBehind(linkSpan(root, 'Missing'))
     await vi.waitFor(() => expect(nav.openBackground).toHaveBeenCalled())
@@ -554,7 +559,7 @@ describe('wikilink click: a link to a FOLDER (YAZ-2290 D10)', () => {
   /** THE resolver the bridge feeds: no note at all, one folder, and its settings file's id. */
   const resolveFolder = linkResolver([], '/vault', ['/vault/Projects'], [settings])
 
-  it('is styled as a RESOLVED link; ⌘-click opens the directory path in the current tab, ⌘⇧-click in a background tab', async () => {
+  it('is styled as a RESOLVED link; an open gesture opens the directory path in the current tab, ⌘-click in a background tab', async () => {
     const { root, nav } = await mount('pad [[Projects]] and [[Missing]] tail\n', resolveFolder)
     expect(linkSpan(root, 'Projects').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(false)
     expect(linkSpan(root, 'Missing').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(true)
@@ -640,7 +645,7 @@ describe('wikilink click: what does NOT navigate (GRO-2192)', () => {
 })
 
 describe('wikilink click: the gestures of Settings › Hotkeys, read at the click (YAZ-3936)', () => {
-  it('"the old way" (#11): Links › Open in this tab on Click makes a plain click open, and ⌘-click then opens nothing', async () => {
+  it('"the old way" (#11): Links › Open in this tab on Click makes a plain click open, and ⌘⌥-click then opens nothing', async () => {
     const { root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
     let hotkeys: HotkeyOverrides = {}
     nav.hotkeys = () => hotkeys
@@ -653,7 +658,7 @@ describe('wikilink click: the gestures of Settings › Hotkeys, read at the clic
     expect(nav.openCurrent).toHaveBeenCalledTimes(1)
   })
 
-  it('Open in a new tab goes to `openNewTab` (no gesture by default); "No gesture" on the background row makes ⌘⇧-click the editor\'s', async () => {
+  it('Open in a new tab goes to `openNewTab`; "No gesture" on the background row makes ⌘-click the editor\'s', async () => {
     const { root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
     nav.openNewTab = vi.fn()
     nav.hotkeys = () => ({ 'links.newTab': 'Alt+Click', 'links.backgroundTab': null })
@@ -781,7 +786,7 @@ describe('a click on a link works like text (YAZ-3935, C1 and C2 of YAZ-3879)', 
     expect(dom.hasAttribute('data-link-hand')).toBe(false)
     press('keydown', 'Meta', { metaKey: true })
     expect(dom.hasAttribute('data-link-hand')).toBe(true)
-    press('keydown', 'Shift', { metaKey: true, shiftKey: true }) // ⌘⇧: Open in a background tab
+    press('keydown', 'Shift', { metaKey: true, shiftKey: true }) // ⌘⇧: Open in a new tab
     expect(dom.hasAttribute('data-link-hand')).toBe(true)
     press('keydown', 'Alt', { metaKey: true, shiftKey: true, altKey: true })
     expect(dom.hasAttribute('data-link-hand')).toBe(false)
@@ -796,7 +801,7 @@ describe('a click on a link works like text (YAZ-3935, C1 and C2 of YAZ-3879)', 
     expect(dom.hasAttribute('data-link-hand')).toBe(true)
   })
 
-  it('the flow: click into the text after a pill, type, click the pill, Backspace removes it whole, ⌘Z puts it back, ⌘-click opens', async () => {
+  it('the flow: click into the text after a pill, type, click the pill, Backspace removes it whole, ⌘Z puts it back, an open gesture opens', async () => {
     const { crepe, root, nav } = await mount('see [[Known]] now\n', resolveKnown)
     const view = viewOf(crepe)
     box(linkSpan(root, 'Known'), 100, 40)

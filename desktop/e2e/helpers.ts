@@ -340,6 +340,16 @@ export function seededState(vault: string, file: string | null): AppState {
 }
 
 /**
+ * Links follow the browser by default (YAZ-3747 demo): ⌘-click opens a background tab, ⌘⇧-click a new tab in front, and
+ * "Open in this tab" has no click. A spec that follows a link in place binds ⌘⌥-click to it, and clicks with `LINK_HERE`.
+ */
+export const LINK_HERE: Array<'Meta' | 'Alt'> = ['Meta', 'Alt']
+export function openLinksHere(state: AppState): AppState {
+  state.settings = { ...state.settings, hotkeys: { 'links.thisTab': 'CmdOrCtrl+Alt+Click', ...state.settings.hotkeys } }
+  return state
+}
+
+/**
  * The search by Name (YAZ-3511): for the specs that pin the cut, the folds and the keys of a search, not its sort — the
  * order before Best match became the Search default (YAZ-3511 D12). searchSort.spec.ts covers the default itself.
  */

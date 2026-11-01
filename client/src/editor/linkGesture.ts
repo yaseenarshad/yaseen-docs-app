@@ -28,12 +28,13 @@ export function linkClickAction(view: EditorView, event: MouseMods, hotkeys: Hot
 const OPEN_WORDS: Record<GestureAction, string> = { thisTab: 'to open', newTab: 'to open in a new tab', backgroundTab: 'to open in a background tab' }
 
 /**
- * The hover card's one quiet line (YAZ-3879 point 9): how to open the link now, from the bound gestures. "⌘-click to
- * open" (Open in this tab), else the first action that has a gesture; none bound, no line. A read-only note: "Click to open".
+ * The hover card's one quiet line (YAZ-3879 point 9): how to open the link now, from the bound gestures: Open in this
+ * tab's ("⌘-click to open") if it has one, else a background tab's (by default "⌘-click to open in a background tab"),
+ * else a new tab's; none bound, no line. A read-only note: "Click to open".
  */
 export function linkOpenHint(hotkeys: HotkeyOverrides | undefined, editable: boolean): string | undefined {
   if (!editable) return 'Click to open'
-  for (const action of ['thisTab', 'newTab', 'backgroundTab'] as const) {
+  for (const action of ['thisTab', 'backgroundTab', 'newTab'] as const) {
     const gesture = gestureFor('links', action, hotkeys)
     if (gesture !== null) return `${gestureDisplay(gesture)} ${OPEN_WORDS[action]}`
   }

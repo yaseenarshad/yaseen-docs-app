@@ -3,6 +3,7 @@
  * host-owned side effect; edit/remove use Crepe's own link-tooltip API so there is one link
  * editor and one serializer. Right-click menus belong to the exact retained editor instance.
  */
+import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -20,6 +21,7 @@ async function mount(markdown = '[Example](https://example.com)\n', overrides: P
     open: vi.fn().mockResolvedValue(undefined),
     copy: vi.fn().mockResolvedValue(undefined),
     onNotice: vi.fn(),
+    hotkeys: () => SUITE_KEYS,
     ...overrides,
   }
   const crepe = createCrepe({ root, defaultValue: markdown, markdownLinkNav: nav })
@@ -40,9 +42,13 @@ const popupOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTML
 const rowsOf = (view: EditorView) => Array.from(popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
 const rowNamed = (view: EditorView, label: string) => rowsOf(view).find((row) => row.textContent === label)!
 
-/** The default "Links in a note" gestures (YAZ-3936): ⌘-click opens in this tab, ⌘⇧-click in a background tab. */
-const OPEN: MouseEventInit = { button: 0, metaKey: true }
-const BEHIND: MouseEventInit = { button: 0, metaKey: true, shiftKey: true }
+/**
+ * The "Links in a note" gestures (YAZ-3936). Browser style by default (YAZ-3747 demo): ⌘-click opens a background tab,
+ * and "Open in this tab" has no click; the suite binds ⌘⌥-click to it (`SUITE_KEYS`) unless a test gives its own.
+ */
+const SUITE_KEYS: HotkeyOverrides = { 'links.thisTab': 'CmdOrCtrl+Alt+Click' }
+const OPEN: MouseEventInit = { button: 0, metaKey: true, altKey: true }
+const BEHIND: MouseEventInit = { button: 0, metaKey: true }
 
 function mouse(target: Element, type: 'mousedown' | 'contextmenu', init: MouseEventInit = {}): MouseEvent {
   const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 10, clientY: 10, ...init })
@@ -109,7 +115,7 @@ describe('the gestures of Settings › Hotkeys, read at the click (YAZ-3936)', (
     hotkeys = { 'links.thisTab': 'Click', 'links.newTab': 'Alt+Click' }
     expect(mouse(anchorOf(root), 'mousedown', { button: 0 }).defaultPrevented).toBe(true)
     mouse(anchorOf(root), 'mousedown', { button: 0, altKey: true })
-    expect(mouse(anchorOf(root), 'mousedown', OPEN).defaultPrevented).toBe(false) // ⌘-click has no action now
+    expect(mouse(anchorOf(root), 'mousedown', OPEN).defaultPrevented).toBe(false) // ⌘⌥-click has no action now
     expect(openPath.mock.calls).toEqual([['/v/note.md', 'thisTab'], ['/v/note.md', 'newTab']])
   })
 
@@ -123,7 +129,7 @@ describe('the gestures of Settings › Hotkeys, read at the click (YAZ-3936)', (
 })
 
 describe('a link into a vault this window does not show (YAZ-3609 D21)', () => {
-  it('asks the host to add the vault, and never sends the link to the OS; ⌘⇧ asks for a background tab', async () => {
+  it('asks the host to add the vault, and never sends the link to the OS; ⌘ asks for a background tab', async () => {
     const elsewhere = vi.fn(() => true)
     const { nav, root } = await mount('[Old](../Archive/old.md)\n', { inApp: () => null, elsewhere })
     mouse(anchorOf(root), 'mousedown', OPEN)
@@ -143,8 +149,9 @@ describe('a link to this vault opens in a tab (YAZ-3609 D8, D9)', () => {
   const inApp = (href: string) => (href === '../note.md' ? '/v/note.md' : null)
 
   it.each([
-    ['L1 a ⌘-click opens the current tab', OPEN, 'thisTab'],
-    ['L1 a ⌘⇧-click opens a background tab', BEHIND, 'backgroundTab'],
+    ['L1 the Open-in-this-tab gesture opens the current tab', OPEN, 'thisTab'],
+    ['L1 a ⌘-click opens a background tab', BEHIND, 'backgroundTab'],
+    ['L1 a ⌘⇧-click opens a new tab in front', { button: 0, metaKey: true, shiftKey: true }, 'newTab'],
   ])('%s, and never asks the OS', async (_name, init, where) => {
     const openPath = vi.fn()
     const { crepe, nav, root } = await mount('[Note](../note.md)\n', { inApp, openPath })
@@ -156,8 +163,8 @@ describe('a link to this vault opens in a tab (YAZ-3609 D8, D9)', () => {
   })
 
   it.each([
-    ['L9 a ⌘-click on a web link', OPEN],
-    ['D9 a ⌘⇧-click on a web link', BEHIND],
+    ['L9 an open gesture on a web link', OPEN],
+    ['D9 a ⌘-click on a web link', BEHIND],
   ])('%s goes to the OS, as before', async (_name, init) => {
     const openPath = vi.fn()
     const { nav, root } = await mount('[Example](https://example.com)\n', { inApp, openPath })

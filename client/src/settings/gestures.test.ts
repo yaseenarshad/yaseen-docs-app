@@ -10,11 +10,11 @@ const row = (id: string) => {
 }
 
 describe('the gesture rows (C4)', () => {
-  it('has two places with three actions each, and the defaults of the decision', () => {
+  it('has two places with three actions each, and the defaults of the decision (links browser style, YAZ-3747 demo)', () => {
     expect(GESTURE_ROWS.map((r) => [r.id, gestureDisplay(r.gesture)])).toEqual([
-      ['links.thisTab', '⌘-click'],
-      ['links.newTab', ''],
-      ['links.backgroundTab', '⌘⇧-click'],
+      ['links.thisTab', ''],
+      ['links.newTab', '⌘⇧-click'],
+      ['links.backgroundTab', '⌘-click'],
       ['bullets.thisTab', 'Click'],
       ['bullets.newTab', '⇧-click'],
       ['bullets.backgroundTab', '⌘-click'],
@@ -33,9 +33,9 @@ describe('the gesture rows (C4)', () => {
 })
 
 describe('a click reads its binding (C4)', () => {
-  it('the defaults: ⌘-click opens a link here, ⌘⇧-click behind; a plain click opens none; a dot zooms, ⇧ in front, ⌘ behind', () => {
-    expect(gestureAction('links', mods('⌘'), {})).toBe('thisTab')
-    expect(gestureAction('links', mods('⌘⇧'), {})).toBe('backgroundTab')
+  it('the defaults: ⌘-click opens a link behind, ⌘⇧-click in a new tab in front; a plain click opens none; a dot zooms, ⇧ in front, ⌘ behind', () => {
+    expect(gestureAction('links', mods('⌘'), {})).toBe('backgroundTab')
+    expect(gestureAction('links', mods('⌘⇧'), {})).toBe('newTab')
     expect(gestureAction('links', mods(''), {})).toBeNull()
     expect(gestureAction('links', mods('⇧'), {})).toBeNull()
     expect(gestureAction('bullets', mods(''), undefined)).toBe('thisTab')
@@ -48,29 +48,29 @@ describe('a click reads its binding (C4)', () => {
     const old = withGesture({}, row('links.thisTab'), 'Click')
     expect(old).toEqual({ 'links.thisTab': 'Click' })
     expect(gestureAction('links', mods(''), old)).toBe('thisTab')
-    expect(gestureAction('links', mods('⌘'), old)).toBeNull()
+    expect(gestureAction('links', mods('⌘'), old)).toBe('backgroundTab')
     const none = withGesture({}, row('links.backgroundTab'), null)
-    expect(gestureAction('links', mods('⌘⇧'), none)).toBeNull()
+    expect(gestureAction('links', mods('⌘'), none)).toBeNull()
     expect(gestureFor('links', 'backgroundTab', none)).toBeNull()
   })
 
   it('only a change is stored: the default deletes the entry, so `{}` is every default', () => {
-    const changed = withGesture({ 'app.search': 'CmdOrCtrl+J' }, row('links.newTab'), 'Alt+Click')
-    expect(changed).toEqual({ 'app.search': 'CmdOrCtrl+J', 'links.newTab': 'Alt+Click' })
-    expect(withGesture(changed, row('links.newTab'), null)).toEqual({ 'app.search': 'CmdOrCtrl+J' })
-    expect(withGesture({ 'links.thisTab': 'Click' }, row('links.thisTab'), 'Command+Click')).toEqual({})
-    expect(gestureOf(row('links.newTab'), changed)).toBe('Alt+Click')
-    expect(isDefaultGesture('links.thisTab', 'CmdOrCtrl+Click')).toBe(true)
+    const changed = withGesture({ 'app.search': 'CmdOrCtrl+J' }, row('links.thisTab'), 'Alt+Click')
+    expect(changed).toEqual({ 'app.search': 'CmdOrCtrl+J', 'links.thisTab': 'Alt+Click' })
+    expect(withGesture(changed, row('links.thisTab'), null)).toEqual({ 'app.search': 'CmdOrCtrl+J' })
+    expect(withGesture({ 'links.backgroundTab': 'Click' }, row('links.backgroundTab'), 'Command+Click')).toEqual({})
+    expect(gestureOf(row('links.thisTab'), changed)).toBe('Alt+Click')
+    expect(isDefaultGesture('links.backgroundTab', 'CmdOrCtrl+Click')).toBe(true)
     expect(isGestureEntry('links.thisTab', 'Shift+Click')).toBe(true)
     expect(isGestureEntry('links.thisTab', 'CmdOrCtrl+K')).toBe(false)
     expect(isGestureEntry('links.window', 'Click')).toBe(false)
   })
 
   it('a clash is two rows of ONE place on one gesture: ⌘-click on a link and on a dot is no clash', () => {
-    expect(gestureClashes(row('links.newTab'), 'CmdOrCtrl+Click', {}).map((r) => r.id)).toEqual(['links.thisTab'])
+    expect(gestureClashes(row('links.thisTab'), 'CmdOrCtrl+Click', {}).map((r) => r.id)).toEqual(['links.backgroundTab'])
     expect(gestureClashes(row('bullets.thisTab'), 'CmdOrCtrl+Click', {}).map((r) => r.id)).toEqual(['bullets.backgroundTab'])
-    expect(gestureClashes(row('links.newTab'), 'Click', {}).map((r) => r.id)).toEqual([])
+    expect(gestureClashes(row('links.thisTab'), 'Click', {}).map((r) => r.id)).toEqual([])
     // A stored clash (no page writes one) is read in the rows' order: the first row wins.
-    expect(gestureAction('links', mods('⌘'), { 'links.newTab': 'CmdOrCtrl+Click' })).toBe('thisTab')
+    expect(gestureAction('links', mods('⌘'), { 'links.thisTab': 'CmdOrCtrl+Click' })).toBe('thisTab')
   })
 })

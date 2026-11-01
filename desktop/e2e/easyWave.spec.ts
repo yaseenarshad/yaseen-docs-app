@@ -36,7 +36,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SIDEBAR_DEFAULT_W } from '../../shared/types'
-import { activeTab, appWindow, contents, copyVault, editorOf, expandDirs, fileRow, launchApp, openFolder, quitApp, readState, seededState, shoot, tabsOf, viewTabs } from './helpers'
+import { activeTab, appWindow, contents, copyVault, editorOf, expandDirs, fileRow, launchApp, openFolder, quitApp, readState, seededState, shoot, tabsOf, viewTabs, LINK_HERE, openLinksHere } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -116,7 +116,7 @@ async function startAt(w: Page, label: string, body: string): Promise<void> {
 
 /** ⌘-clicks the body wiki link `text` (Links › Open in this tab, YAZ-3936) and waits for the SAME tab to land on `label`. */
 async function followLink(w: Page, text: string, label: string, body: string): Promise<void> {
-  await linkIn(w, text).click({ modifiers: ['Meta'] })
+  await linkIn(w, text).click({ modifiers: LINK_HERE })
   await expect(activeTab(w)).toHaveText(label)
   await expect(editorOf(w)).toContainText(body)
 }
@@ -145,7 +145,7 @@ test.afterAll(async () => {
 // ---------------------------------------------------------------- YAZ-738: sidebar resize
 
 test('step 1 — the sidebar edge drags 260 → 380', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, null) })
+  app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, null)) })
   win = await appWindow(app, 'w1')
   await openFolder(win, path.join(vault, FOLDER))
 
@@ -258,7 +258,7 @@ test('step 7 — (c) a link to an already-open file activates ITS tab, and Back 
 
   // The body link now points at a file that is ALREADY open: de-dup by path wins — the CAC tab
   // activates and no third tab appears. The page that came to the front is a step (D4).
-  await linkIn(win, 'CAC').click({ modifiers: ['Meta'] })
+  await linkIn(win, 'CAC').click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('CAC')
   await expect(tabsOf(win)).toHaveCount(2)
   await expect(backBtn(win)).toBeEnabled() // one list for the window: CAC's tab can go back to Lead Gen

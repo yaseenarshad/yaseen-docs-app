@@ -67,8 +67,8 @@ describe('cutAtLineEnd (C17)', () => {
 describe('NotePreview', () => {
   it('a link\'s card says how to open it, in one quiet line under the header (YAZ-3935, point 9); a card with no hint has no line', async () => {
     readFile.mockImplementation(file('the body\n'))
-    const panel = await show('/v/notes/Plan.md', {}, '⌘-click to open')
-    expect(panel.querySelector('.board-preview__hint')?.textContent).toBe('⌘-click to open')
+    const panel = await show('/v/notes/Plan.md', {}, '⌘-click to open in a background tab')
+    expect(panel.querySelector('.board-preview__hint')?.textContent).toBe('⌘-click to open in a background tab')
     act(() => root?.unmount())
     root = null
     document.body.replaceChildren()

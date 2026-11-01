@@ -556,8 +556,8 @@ describe('createStore: loading', () => {
     const stored = { 'links.thisTab': 'Click', 'links.newTab': 'CmdOrCtrl+Click', 'bullets.backgroundTab': null, 'app.search': 'CmdOrCtrl+Shift+K' }
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: stored }).hotkeys).toEqual(stored)
     expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: stored })).toBe(true)
-    // The default (⌘-click is Links › Open in this tab's) is no change; a key is no gesture; a gesture is no key; an id no row has goes.
-    const junk = { 'links.thisTab': 'Command+Click', 'links.newTab': 'CmdOrCtrl+K', 'note.bold': 'CmdOrCtrl+Click', 'links.window': 'Click', 'bullets.newTab': 'Alt+Click' }
+    // The default (⌘-click is Links › Open in a background tab's) is no change; a key is no gesture; a gesture is no key; an id no row has goes.
+    const junk = { 'links.backgroundTab': 'Command+Click', 'links.newTab': 'CmdOrCtrl+K', 'note.bold': 'CmdOrCtrl+Click', 'links.window': 'Click', 'bullets.newTab': 'Alt+Click' }
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: junk }).hotkeys).toEqual({ 'bullets.newTab': 'Alt+Click' })
     for (const bad of [{ 'links.newTab': 'CmdOrCtrl+K' }, { 'note.bold': 'CmdOrCtrl+Click' }, { 'links.window': 'Click' }, { 'links.newTab': 3 }]) expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: bad }), JSON.stringify(bad)).toBe(false)
   })

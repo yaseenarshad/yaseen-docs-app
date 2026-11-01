@@ -9,7 +9,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, editorOf, launchApp, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, editorOf, launchApp, quitApp, seededState, shoot, tabsOf, LINK_HERE, openLinksHere } from './helpers'
 import type { AppState } from '../../shared/types'
 
 test.describe.configure({ mode: 'serial' })
@@ -39,7 +39,7 @@ function workspaceState(hotkeys: AppState['settings']['hotkeys'] = {}): AppState
   state.recents = [...state.recents, { path: personal, lastOpened: Date.now() - 1 }, { path: archive, lastOpened: Date.now() - 2 }]
   state.folders = { ...state.folders, [personal]: { ...state.folders[work]!, lastFile: null } }
   state.settings = { ...state.settings, hotkeys }
-  return state
+  return openLinksHere(state)
 }
 
 /** A paste of `text` into the visible editor through a synthetic event. */
@@ -177,7 +177,7 @@ test('step 1f — a pill into the other vault names it (D22); a pill and a [[lin
 })
 
 test('step 2 — a Markdown link into the other vault opens in this tab on ⌘-click, and Back returns (D14; YAZ-3647 D4; YAZ-3936)', async () => {
-  await editorOf(win).locator('a', { hasText: 'the gym plan' }).click({ modifiers: ['Meta'] })
+  await editorOf(win).locator('a', { hasText: 'the gym plan' }).click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Plan')
   await expect(editorOf(win)).toContainText(PLAN_BODY)
   await win.getByRole('button', { name: 'Back' }).click()
@@ -211,7 +211,7 @@ test('step 5 — Links › "Open in a new tab" on ⌥-click (Settings › Hotkey
 test('step 4 — Links › "Open in a background tab" (⌘⇧-click by default, YAZ-3936) keeps this note in front; Back in the new tab returns (YAZ-3647 D4)', async () => {
   app = await launchApp({ userData, seedState: workspaceState() })
   win = await appWindow(app, 'w1')
-  await editorOf(win).locator('a', { hasText: 'the gym plan' }).click({ modifiers: ['Meta', 'Shift'] })
+  await editorOf(win).locator('a', { hasText: 'the gym plan' }).click({ modifiers: ['Meta'] })
   await expect(tabsOf(win).filter({ hasText: 'Plan' })).toHaveCount(1)
   await expect(activeTab(win)).toHaveText('Today')
   await shoot(win, 'workspace-links-04-background')
@@ -231,14 +231,14 @@ test('step 6 — a link into a vault the app knows but this window does not show
   const sheet = win.locator('.confirm[role="dialog"]')
   const link = editorOf(win).locator('a', { hasText: 'the old note' })
   // V3: Cancel changes nothing.
-  await link.click({ modifiers: ['Meta'] })
+  await link.click({ modifiers: LINK_HERE })
   await expect(sheet).toContainText(`This file (Old) is not in this vault. It is in another vault (${ARCHIVE}), which is not open in this window.`)
   await shoot(win, 'workspace-links-06-ask')
   await sheet.getByRole('button', { name: 'Cancel' }).click()
   await expect(sheet).toHaveCount(0)
   await expect(activeTab(win)).toHaveText('Today')
   // V1: Add — the vault joins the window, the page opens in a tab, and Back returns.
-  await link.click({ modifiers: ['Meta'] })
+  await link.click({ modifiers: LINK_HERE })
   await sheet.getByRole('button', { name: 'Add vault to this window' }).click()
   await expect(activeTab(win)).toHaveText('Old')
   await expect(editorOf(win)).toContainText(OLD_BODY)
@@ -255,7 +255,7 @@ test('step 7 — a link into a vault that joins the window turns into a pill at 
   win = await appWindow(app, 'w1')
   const link = editorOf(win).locator('a', { hasText: 'the old note' })
   await expect(link.locator('.link-pill')).toHaveCount(0) // Archive is not in the window: a plain link
-  await link.click({ modifiers: ['Meta', 'Shift'] }) // a background tab: Today stays on screen, as Yaseen's note did
+  await link.click({ modifiers: ['Meta'] }) // a background tab: Today stays on screen, as Yaseen's note did
   await win.locator('.confirm[role="dialog"]').getByRole('button', { name: 'Add vault to this window' }).click()
   await expect(tabsOf(win).filter({ hasText: 'Old' })).toHaveCount(1)
   await expect(activeTab(win)).toHaveText('Today')

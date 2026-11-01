@@ -29,6 +29,8 @@ import {
   shoot,
   tabsOf,
   windowCount,
+  LINK_HERE,
+  openLinksHere,
 } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -87,7 +89,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — the hub renders collapsed links; the index dims only the unresolved one', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, HUB_FILE)) })
+  app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, path.join(vault, HUB_FILE))) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(HUB_BODY)
   // The unresolved dimming appears only once the vault index has fed the resolve source —
@@ -98,21 +100,21 @@ test('step 1 — the hub renders collapsed links; the index dims only the unreso
 })
 
 test('step 2 — ⌘⇧-click a resolved link (Links › Open in a background tab, YAZ-3936): background tab appended, activation and editor stay put', async () => {
-  await linkIn(win, 'Ideas').click({ modifiers: ['Meta', 'Shift'] })
+  await linkIn(win, 'Ideas').click({ modifiers: ['Meta'] })
   await expect(tabsOf(win)).toHaveText(['Links hub', 'Ideas'])
   await expect(activeTab(win)).toHaveText('Links hub')
   await expect(editorOf(win)).toContainText(HUB_BODY) // still the hub — focus never moved
   expect(await windowCount(app)).toBe(1)
 
   // ⌘⇧-click a link to an ALREADY-OPEN file: the tabs dedupe — count and activation unchanged.
-  await linkIn(win, 'Ideas').click({ modifiers: ['Meta', 'Shift'] })
+  await linkIn(win, 'Ideas').click({ modifiers: ['Meta'] })
   await expect(tabsOf(win)).toHaveText(['Links hub', 'Ideas'])
   await expect(activeTab(win)).toHaveText('Links hub')
   await shoot(win, 'links-02-background-tab')
 })
 
 test('step 3 — ⌘-click (Links › Open in this tab) a link whose file is already open: its tab activates, no duplicate', async () => {
-  await linkIn(win, 'Ideas').click({ modifiers: ['Meta'] })
+  await linkIn(win, 'Ideas').click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Ideas')
   await expect(editorOf(win)).toContainText(IDEAS_BODY)
   await expect(tabsOf(win)).toHaveText(['Links hub', 'Ideas']) // activated, never duplicated
@@ -122,7 +124,7 @@ test('step 3 — ⌘-click (Links › Open in this tab) a link whose file is alr
 test('step 4 — ⌘-click a resolved link: the target replaces the CURRENT tab (count unchanged)', async () => {
   await tabsOf(win).filter({ hasText: 'Links hub' }).click() // back on the hub
   await expect(editorOf(win)).toContainText(HUB_BODY)
-  await linkIn(win, 'Roadmap').click({ modifiers: ['Meta'] })
+  await linkIn(win, 'Roadmap').click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Roadmap')
   await expect(editorOf(win)).toContainText(ROADMAP_BODY)
   await expect(tabsOf(win)).toHaveText(['Roadmap', 'Ideas']) // the hub's slot, not a new tab
@@ -136,7 +138,7 @@ test('step 5 — click an UNRESOLVED link: the note is created beside the hub (a
   await expect(editorOf(win)).toContainText(HUB_BODY)
   await expect(win.locator('.wikilink--unresolved')).toHaveText(FRESH)
 
-  await linkIn(win, FRESH).click({ modifiers: ['Meta'] })
+  await linkIn(win, FRESH).click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText(FRESH) // opened in the CURRENT tab, the hub's…
   await expect(tabsOf(win)).toHaveText(['Roadmap', 'Ideas', FRESH]) // …so the link added no tab: the hub's own was the third
   // …and the file exists ON DISK at the vault root, empty: the default location is the SOURCE page's
@@ -153,7 +155,7 @@ test('step 6 — an ALIAS-form link renders resolved and opens the aliased page 
   await expect(linkIn(win, FRESH)).not.toHaveClass(/wikilink--unresolved/)
   await expect(win.locator('.wikilink--unresolved')).toHaveCount(0)
   await expect(linkIn(win, ALIAS)).not.toHaveClass(/wikilink--unresolved/) // `[[CAC]]` found Metrics.md
-  await linkIn(win, ALIAS).click({ modifiers: ['Meta'] })
+  await linkIn(win, ALIAS).click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Metrics')
   await expect(editorOf(win)).toContainText(METRICS_BODY)
   await shoot(win, 'links-06-alias-resolved')
@@ -203,7 +205,7 @@ test('step 8b — ⌘Z gives the path back; a pasted link opens its note, and Ba
   await pasteText(win, ideas)
   await win.keyboard.press('Escape') // the chip closes; the caret stays
   await editorOf(win).getByText(HUB_BODY).click() // the caret leaves the new link (a pill already: every link is one unit, YAZ-3935)
-  await linkIn(win, 'Ideas').click({ modifiers: ['Meta'] })
+  await linkIn(win, 'Ideas').click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Ideas') // Ideas is open since step 2: its tab comes to the front
   // The tab that came to the front is a step of the window's one Back list (YAZ-3647 D4): Back returns to the hub's tab.
   await win.locator('.tabbar-nav [aria-label="Back"]').click()
@@ -216,10 +218,10 @@ test('step 8b — ⌘Z gives the path back; a pasted link opens its note, and Ba
 
 test('step 9 — a Markdown link to a vault note opens in this tab on ⌘-click, in a background tab on ⌘⇧-click (YAZ-3609 D8, YAZ-3936)', async () => {
   const mdLink = editorOf(win).locator('a', { hasText: MD_LINK })
-  await mdLink.click({ modifiers: ['Meta', 'Shift'] })
+  await mdLink.click({ modifiers: ['Meta'] })
   await expect(tabsOf(win).filter({ hasText: 'Roadmap' })).toHaveCount(1)
   await expect(activeTab(win)).toHaveText('Links hub') // a background tab: the hub stays in front
-  await mdLink.click({ modifiers: ['Meta'] })
+  await mdLink.click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Roadmap')
   await expect(editorOf(win)).toContainText(ROADMAP_BODY)
   await shoot(win, 'links-09-markdown-link')

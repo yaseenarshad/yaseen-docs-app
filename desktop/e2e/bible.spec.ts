@@ -54,6 +54,8 @@ import {
   titleOf,
   topLabels,
   viewTabs,
+  LINK_HERE,
+  openLinksHere,
 } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -224,7 +226,7 @@ test('step 1 — the encyclopedia is sound, and every folder holds exactly the n
   expect(await withPageType(vault)).toEqual([])
   expect(await brokenLinks(vault)).toEqual([])
 
-  app = await launchApp({ userData, seedState: seededState(vault, null) })
+  app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, null)) })
   win = await appWindow(app, 'w1')
 
   // The map of an encyclopedia that maintains no list: six folders, and nothing else at the root.
@@ -245,14 +247,14 @@ test('step 3 — navigating the encyclopedia: click → current tab, ⌘-click �
   await expect(editorOf(win)).toContainText('Open pipeline through to closed-won')
   await expect(tabsOf(win)).toHaveCount(1)
 
-  await linkIn(win, 'CRM Hygiene').click({ modifiers: ['Meta'] }) // Links › Open in this tab (YAZ-3936)
+  await linkIn(win, 'CRM Hygiene').click({ modifiers: LINK_HERE }) // Links › Open in this tab (bound by the spec, YAZ-3747)
   await expect(activeTab(win)).toHaveText('CRM Hygiene')
   await expect(editorOf(win)).toContainText('The parent SKU')
   await expect(tabsOf(win)).toHaveCount(1) // the funnel page's slot, not a new tab
 
   await fileRow(win, 'Sales-Conversion').click()
   await expect(editorOf(win)).toContainText('Open pipeline through to closed-won')
-  await linkIn(win, 'Win Rate').click({ modifiers: ['Meta', 'Shift'] }) // Links › Open in a background tab (YAZ-3936)
+  await linkIn(win, 'Win Rate').click({ modifiers: ['Meta'] }) // Links › Open in a background tab (YAZ-3936)
   await expect(tabsOf(win)).toHaveText(['Sales-Conversion', 'Win Rate'])
   await expect(activeTab(win)).toHaveText('Sales-Conversion') // background: activation never moves
   await shoot(win, 'bible-03-wikilink-navigation')
@@ -328,7 +330,7 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
 })
 
 test('step 6 — renaming a FOLDER: the links to it INSIDE folder_settings follow (YAZ-864)', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, null) })
+  app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, null)) })
   win = await appWindow(app, 'w1')
   await expect(dirRow(win, ROLES)).toBeVisible()
 
