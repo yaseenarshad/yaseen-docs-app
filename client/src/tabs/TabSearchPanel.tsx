@@ -69,6 +69,7 @@ export function TabSearchPanel({ roots, label, at, watchOf, onPick, onClose }: T
           autoFocus
           placeholder="Search to open a tab"
           aria-label="Search to open a tab"
+          spellCheck={false} // names, not prose (YAZ-3748 B2)
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
@@ -77,7 +78,7 @@ export function TabSearchPanel({ roots, label, at, watchOf, onPick, onClose }: T
           onKeyDown={onKeyDown}
         />
       </div>
-      {query.trim() === '' ? null : results.length > 0 ? <SearchResults results={results} selected={sel} onSelect={setSelected} onActivate={pick} onRowContextMenu={(_hit, e) => e.preventDefault()} /> : <p className="sidebar__msg">No matches</p>}
+      {query.trim() === '' ? null : results.length > 0 ? <SearchResults results={results} query={query} selected={sel} onSelect={setSelected} onActivate={pick} onRowContextMenu={(_hit, e) => e.preventDefault()} /> : <p className="sidebar__msg">No matches</p>}
     </div>
   )
 }

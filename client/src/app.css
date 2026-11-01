@@ -655,6 +655,16 @@ button {
   overflow-x: auto;
 }
 
+/* Column resize (YAZ-3696 D2): the grip at a header cell's edge (YAZ-3800) takes the theme colour
+   (prosemirror-tables draws it light blue). The table block's drop line (it has no "+" button since
+   YAZ-3800) lets the mouse through to the cells. */
+.editor-instance .milkdown .milkdown-table-block .column-resize-handle {
+  background-color: var(--crepe-color-primary);
+}
+.editor-instance .milkdown .milkdown-table-block .line-handle {
+  pointer-events: none;
+}
+
 /* The block handle's plus is noise — Enter at line end does the same (GRO-2025).
    First .operation-item is the plus, last is the 6-dot drag handle (Crepe renders exactly two). */
 .editor-instance .milkdown .milkdown-block-handle .operation-item:first-child {
@@ -1240,6 +1250,12 @@ button {
 .sidebar-resize:hover,
 .sidebar-resize--active {
   background: var(--accent-soft);
+}
+
+/* While a drag is held (YAZ-3719 1A, 1B, `lib/colResize.ts`), no frame takes the mouse: over draw.io's frame the
+   window would get no move and no release, and the drag would go on with the button up. */
+body.drag-held iframe {
+  pointer-events: none;
 }
 
 .sidebar__header {
@@ -3039,7 +3055,7 @@ button {
   display: inline;
 }
 
-/* Search (YAZ-2620 🔒 D5): the typed text, where it sits in a match — the `==highlight==` wash
+/* Search (YAZ-2620 🔒 D5): each part of a row that matched (YAZ-3748 D3), in the tree and in the flat lists — the `==highlight==` wash
    (`--mark-bg`) and weight. Weight alone was too faint at this size (Yasin's walk). The wash is
    translucent and the text keeps its colour, so it holds on the open and the highlighted row, in both themes. */
 .tree__mark {
@@ -3293,6 +3309,12 @@ button {
   background: var(--border);
 }
 
+/* The in-note menus' line between groups (the bullet's and the link's, `renderMenu`) spaces as the app menus'
+   (`.ctx-menu__group + .ctx-menu__group`): 4px above and below (YAZ-3727 D21). */
+.ctx-menu--editor > .document-zoom__divider {
+  margin: 4px 0;
+}
+
 .document-zoom__presets button,
 .page-settings__menu button {
   display: flex;
@@ -3327,6 +3349,57 @@ button {
   color: var(--danger);
   font-size: 11px;
   line-height: 1.3;
+}
+
+/* The block handle menu's strip (YAZ-3727 D14): the selection toolbar's list buttons and T in one menu row, drawn
+   as the toolbar draws them (Crepe's `toolbar.css`): 32px boxes, 24px glyphs in the outline colour, the toolbar's
+   hover. The lit one sits in a soft accent box in the accent colour (D16): the toolbar's dark-on-grey was too faint. Scoped under `.ctx-menu--editor` so Crepe's `.milkdown button` reset does not win;
+   a note's right-click menu (D15) draws it in a `.ctx-menu__group`. */
+/* A note's right-click menu (D15) is drawn outside the editor, where Crepe's theme sets no `--crepe-color-*`:
+   the app's tokens stand in, so the buttons look as on the bullet's menu. */
+.ctx-menu__group > .ctx-menu__strip {
+  --crepe-color-outline: var(--fg-muted);
+  --crepe-color-hover: var(--bg-hover);
+  --crepe-color-selected: var(--bg-hover-row);
+}
+
+:is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip {
+  display: flex;
+  gap: 2px;
+  padding: 2px 6px;
+}
+
+:is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip > .ctx-menu__strip-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--crepe-color-outline);
+  cursor: pointer;
+}
+
+:is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip > .ctx-menu__strip-button:hover {
+  background: var(--crepe-color-hover);
+}
+
+:is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip > .ctx-menu__strip-button:active {
+  background: var(--crepe-color-selected);
+}
+
+:is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip > .ctx-menu__strip-button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+:is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip > .ctx-menu__strip-button > svg {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
 }
 
 /* A picker in the block handle menu (YAZ-3164 D3, condensed in the guided test): one row, the name

@@ -21,6 +21,7 @@ import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename
 import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type ClearedValues, type LeftBehind, type Move } from './links/shortcuts'
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
+import { holdColResize } from './lib/colResize'
 import { transformFile } from './views/writeProperty'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
@@ -50,6 +51,7 @@ import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
+import { toolbarPrefs } from './editor/toolbarPrefs'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
@@ -515,6 +517,8 @@ export function App() {
   // sidebar collapses and the remembered width stays whatever it was before the drag.
   const startSidebarResize = useCallback(
     (e: ReactMouseEvent) => {
+      // The left button only (YAZ-3719 1B): a right press's release can go to the native menu and never come.
+      if (e.button !== 0) return
       e.preventDefault()
       const start = sidebarWidth
       const x0 = e.clientX
@@ -538,7 +542,7 @@ export function App() {
       const up = () => {
         window.removeEventListener('mousemove', move)
         window.removeEventListener('mouseup', up)
-        document.body.style.cursor = ''
+        holdColResize(false)
         setResizing(false)
         if (raw < SIDEBAR_MIN_W * 0.6) {
           setSidebarWidth(start)
@@ -550,7 +554,7 @@ export function App() {
       }
       window.addEventListener('mousemove', move)
       window.addEventListener('mouseup', up)
-      document.body.style.cursor = 'col-resize'
+      holdColResize(true)
       setResizing(true)
     },
     [sidebarWidth, toggleSidebar],
@@ -562,6 +566,10 @@ export function App() {
   }, [])
   // "Jump across files" (YAZ-3500): every code tab of this page follows the switch (`code/languageHelpers.ts`).
   useEffect(() => setLanguageHelpers(settings.codeLanguageHelpers === true), [settings.codeLanguageHelpers])
+  // The selection toolbar's order and hidden buttons (YAZ-3806 T6): every open note's toolbar follows at once.
+  useEffect(() => {
+    toolbarPrefs.value = settings.selectionToolbar
+  }, [settings.selectionToolbar])
 
   // A Files window's own sidebar zoom (YAZ-3389 D13): only this window writes it, so a local copy stays true.
   const [filesZoom, setFilesZoomState] = useState(() => (filesWindow ? storage.getFilesZoom() : 100))
@@ -918,6 +926,8 @@ export function App() {
   const treeOf = useCallback(async (vault: string) => latestTree(vault)?.tree ?? (await fetchTree(vault)).tree, [])
   /** What a sidebar click does with a file (D9): this window's tabs, or a Files window's doors. Set below, where they are. */
   const openAsSidebar = useRef<(path: string) => void>(() => undefined)
+  /** What a sidebar ⌘-click does with a file (YAZ-3776): a background tab here, or a Files window's door. Set below, beside it. */
+  const openBehindSidebar = useRef<(path: string) => void>(() => undefined)
   // ⌘N (YAZ-3556 D3, D5): the New… box, on "Default location for new notes" read against the page on show. The Welcome
   // window has no vault: the key does nothing there. A second ⌘N while it shows leaves it as it is.
   const openNewItem = useCallback(() => {
@@ -940,9 +950,11 @@ export function App() {
     setSidebarCreateRequest((request) => request?.id === id ? null : request)
   }, [])
   // Today's daily note (YAZ-3607 D5): the footer button, File › Open Today's Daily Note, and ⌘D on "Today's daily note".
-  // It opens as a sidebar click opens a file, and its row shows. When the vault has none yet it is made first. A second
-  // press while one is made waits for that one, so a fast double press makes one note: `dailyMaking` holds the one
-  // made (one entry; the next day, folder or style replaces it, a failure clears it, and its file deleted makes it again).
+  // It opens as a sidebar click opens a file, and its row shows; a ⌘-click on the button (`background`, YAZ-3776 D1, D2)
+  // opens it as a ⌘-click on a row does: a background tab, and the sidebar stays as it is. When the vault has none yet it
+  // is made first. A second press while one is made waits for that one, so a fast double press makes one note:
+  // `dailyMaking` holds the one made (one entry; the next day, folder or style replaces it, a failure clears it, and its
+  // file deleted makes it again).
   const dailyMaking = useRef<{ key: string; note: Promise<string>; path?: string } | null>(null)
   /**
    * The vault of the daily notes folder and its tree (D15): the first of the window's vaults, the one in front first, that
@@ -956,7 +968,7 @@ export function App() {
     if (vault === null) throw new Error(`no vault of this window has the folder "${folder}". Make it, or change the daily notes folder in Settings › Files & Links`)
     return { vault, tree: trees.find((t) => t.root === vault)!.tree }
   }, [])
-  const openDailyNote = useCallback(() => {
+  const openDailyNote = useCallback((background = false) => {
     const { vaults, settings: now } = placeInputs.current
     if (vaults.length === 0) return
     const title = dailyNoteName(now.dailyNoteFormat, new Date()).trim()
@@ -988,6 +1000,7 @@ export function App() {
       })
       .then(
         (path) => {
+          if (background) return openBehindSidebar.current(path)
           if (sidebarCollapsedRef.current) toggleSidebar()
           openAsSidebar.current(path)
           revealInFiles(path, false)
@@ -1812,7 +1825,7 @@ export function App() {
     onNewItem: openNewItem,
     onGoTo: goToPlace,
     // YAZ-3607 D11: the File menu item exists only while Daily notes is on.
-    onDailyNote: openDailyNote,
+    onDailyNote: () => openDailyNote(),
     onZoom: zoom,
     onWhatsNew: openWhatsNew,
     onKeySheet: openKeySheet,
@@ -2808,6 +2821,7 @@ export function App() {
     }
   }, [filesWindow, notify])
   openAsSidebar.current = filesDoors?.open ?? openPage
+  openBehindSidebar.current = filesDoors?.background ?? openBackground
   /**
    * Tabs Mission Control in a Files window (YAZ-3357 D3, D8): it stands right of the sidebar, and main makes the window wide
    * for it. The board shows only once the window IS wide, and stays until it is narrow again (D10): it never lays out

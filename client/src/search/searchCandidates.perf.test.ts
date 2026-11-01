@@ -1,5 +1,6 @@
 /** The title-search perf smoke (YAZ-802) — keeps the 1,000+ file acceptance honest. Runs in the `perf` project (YAZ-740). */
 import { describe, expect, it } from 'vitest'
+import { noteFileName } from '@shared/noteName'
 import type { IndexRecord, TreeNode } from '@shared/types'
 import { allDirs, atOrBelow, otherFiles, pinnedRoots, withoutPaths } from '../lib/treeState'
 import { fileCandidates, folderCandidates, searchCandidates, searchRows, type SearchCandidate } from './searchCandidates'
@@ -43,8 +44,13 @@ const tree: TreeNode[] = Array.from({ length: 50 }, (_, f) => ({
 }))
 /** A change of the text leaves no folder that shows all (YAZ-2662 S53): a keystroke cuts with none. */
 const NO_FULL: ReadonlySet<string> = new Set()
-// Every note has an id, so each keystroke also looks for all 2,000 in the query (YAZ-2420 D32).
-const records = Array.from({ length: 2000 }, (_, i) => ({ ...rec(`/vault/folder${i % 50}/Note ${i}.md`, [`N${i}`]), id: `k3m9x2pq${String(i).padStart(4, '0')}` }))
+// Every note has an id, so each keystroke also looks for all 2,000 in the query (YAZ-2420 D32). Its file name is the one
+// the app gives it (`note-12-k3m9x2pq0012`), which adds no file-name row; one note in ten was named by hand (`2026-10`)
+// and adds one (YAZ-3748 B4). The derive reads each name, so it pays for both.
+const records = Array.from({ length: 2000 }, (_, i) => {
+  const id = `k3m9x2pq${String(i).padStart(4, '0')}`
+  return { ...rec(`/vault/folder${i % 50}/Note ${i}.md`, [`N${i}`]), id, basename: i % 10 === 0 ? `2026-${i}` : noteFileName(`Note ${i}`, id).slice(0, -'.md'.length) }
+})
 
 /** One warm-up run (the first run of a file pays the JIT), then the median of 5 (`timeMedian`). */
 const warmMedian = <T>(run: () => T): { ms: number; result: T } => {
@@ -62,8 +68,10 @@ describe('searchCandidates', () => {
       for (let i = 0; i < 10; i++) rows = searchTree(tree, new Set(searchRows(candidates, `Note 49`).map((c) => c.path)), NO_FULL).order.length
       return { candidates, rows }
     })
-    expect(candidates).toHaveLength(4750) // 500 folder rows + one basename row + one alias row per record + 250 other files
-    expect(rows).toBe(11) // `Note 49` and `Note 490`…`Note 499`: the cut found every kept row in the tree
+    expect(candidates).toHaveLength(4950) // 500 folder rows + one title row + one alias row per record + 200 file-name rows (B4) + 250 other files
+    // `Note 49` and `Note 490`…`Note 499` by their text, and `Note tool 49-0.py`…`Note tool 49-4.py` by their words
+    // (YAZ-3748 D2): the cut found every kept row in the tree.
+    expect(rows).toBe(16)
     // The measured ms in the run's output, like every other perf smoke (YAZ-861): a budget that
     // only ever prints on failure hides the drift that walks up to it.
     console.log(`search perf: 2000 records + 500 folders + 250 other files in ${elapsed.toFixed(1)} ms (${candidates.length} candidates, 10 searches, each cut to a tree)`)
@@ -86,11 +94,15 @@ describe('searchCandidates', () => {
     const number = time('4912')
     const id = time('yaz 4912')
     const was = time('old-4912')
+    // No match (YAZ-3748 D2): the costliest text, as each row runs every tier. `note` starts a word of each row, so
+    // the word match reads every row up to `xyzzy`, and then the joined match looks for `notexyzzy` in each.
+    const none = time('note xyzzy')
     expect(title.first).toBe('Note 49')
     for (const run of [number, id, was]) expect(run.first).toBe('YAZ-4912 — Note 4911')
-    console.log(`search perf: 10000 notes with a number ID (20000 candidates), one search: by title ${title.ms.toFixed(2)} ms, by bare number ${number.ms.toFixed(2)} ms, by ID ${id.ms.toFixed(2)} ms, by letters of before ${was.ms.toFixed(2)} ms`)
+    expect(none.first).toBeUndefined()
+    console.log(`search perf: 10000 notes with a number ID (20000 candidates), one search: by title ${title.ms.toFixed(2)} ms, by bare number ${number.ms.toFixed(2)} ms, by ID ${id.ms.toFixed(2)} ms, by letters of before ${was.ms.toFixed(2)} ms, no match ${none.ms.toFixed(2)} ms`)
     // A search that holds an ID does the title scan too, so it may cost about two of them: never a parse for each note.
-    for (const run of [title, number, id, was]) expect(run.ms).toBeLessThan(25)
+    for (const run of [title, number, id, was, none]) expect(run.ms).toBeLessThan(25)
   })
 
   // The two groups (YAZ-2662 D2, D4, R2): the same vault with pinned items. What a keystroke pays

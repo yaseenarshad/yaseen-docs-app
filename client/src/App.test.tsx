@@ -8,6 +8,7 @@ import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { dailyNoteName } from '@shared/dailyNote'
 import { IDS_FILE } from '@shared/noteId'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
 import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
@@ -129,6 +130,8 @@ interface SidebarStubProps {
   onUpdateSession: (id: string) => void
   sessionNameRequest: string | null
   onSessionNameConsumed: () => void
+  /** The footer's calendar button (YAZ-3607 D7): a background tab on ⌘-click (YAZ-3776). */
+  onOpenDailyNote?: (background: boolean) => void
 }
 
 const captured = vi.hoisted(() => ({
@@ -1407,6 +1410,24 @@ describe('App sidebar resize (YAZ-738)', () => {
     expect(bridge.state.setSidebarWidth.mock.calls.at(-1)).toEqual([1240])
   })
 
+  it('YAZ-3719 1A: while the edge is held, no frame takes the mouse, so a release over a diagram still ends the drag', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => void el.querySelector('.sidebar-resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 0 })))
+    expect(document.body.classList.contains('drag-held')).toBe(true)
+    act(() => void window.dispatchEvent(new MouseEvent('mouseup', { clientX: 0 })))
+    expect(document.body.classList.contains('drag-held')).toBe(false)
+  })
+
+  it('YAZ-3719 1B: a right press on the edge starts no drag: its release can go to the native menu and never come', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => void el.querySelector('.sidebar-resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 2, clientX: 0 })))
+    expect(document.body.classList.contains('drag-held')).toBe(false)
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: 120 })))
+    act(() => void window.dispatchEvent(new MouseEvent('mouseup', { clientX: 120 })))
+    expect(sideW()).toBe(260)
+    expect(bridge.state.setSidebarWidth).not.toHaveBeenCalled()
+  })
+
   it('the width goes to the sidebar alone, never to the whole window as an inherited variable (YAZ-2194)', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => drag(el, 120))
@@ -2277,6 +2298,58 @@ describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
     await settle()
     expect(el.querySelector('.link-notice__text')?.textContent).toMatch(/Can't go to "Gone": no such folder in/)
     expect(el.querySelector('[data-sidebar]')).toBeNull()
+  })
+})
+
+describe('App ⌘-click on the daily note button (YAZ-3776)', () => {
+  let n = 0
+  const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  /** Today's name at the press, as App reads it: a run across midnight still agrees. */
+  const today = () => dailyNoteName(DEFAULT_SETTINGS.dailyNoteFormat, new Date()).trim()
+  /** A vault without IDs: plan.md and garden.md in two tabs, plan.md in front, the sidebar on Recents, and a Daily folder that holds what was made. */
+  const mountDaily = async () => {
+    const v = `/daily-${++n}`
+    const files: Record<string, { content: string; mtime: number }> = {}
+    const m = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyNotes: true, dailyNoteFolder: 'Daily' } }, { id: 'w1', root: v, file: `${v}/Projects/plan.md`, tabs: [`${v}/Projects/plan.md`, `${v}/Projects/garden.md`], sidebarLens: 'recents' }, files, (b) => {
+      b.bridge.index.mockImplementation(async (root: string) => ({ root, records: [], folders: [], generatedAt: 1, ids: false }))
+      b.bridge.tree.mockImplementation(async (root: string) => ({
+        root,
+        tree: [
+          { type: 'dir', name: 'Daily', path: `${v}/Daily`, children: Object.keys(files).filter((path) => path.startsWith(`${v}/Daily/`)).map(note) },
+          { type: 'dir', name: 'Projects', path: `${v}/Projects`, children: [note(`${v}/Projects/garden.md`), note(`${v}/Projects/plan.md`)] },
+        ],
+        generatedAt: 1,
+      }))
+    })
+    return { ...m, v, files }
+  }
+  const press = async (background: boolean) => {
+    act(() => captured.sidebar?.onOpenDailyNote?.(background))
+    await act(async () => {})
+    await act(async () => {})
+  }
+  const tabs = (el: HTMLElement) => [...el.querySelectorAll('[role="tab"]')].map((tab) => `${tab.textContent}${tab.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
+
+  it('makes today\'s note and opens it in a background tab at the end: the tab in front and the sidebar stay; a second ⌘-click adds nothing (D1, D2)', async () => {
+    const { el, v, files, bridge } = await mountDaily()
+    expect(tabs(el)).toEqual(['plan*', 'garden'])
+    await press(true)
+    expect(Object.keys(files)).toEqual([`${v}/Daily/${today()}.md`])
+    expect(tabs(el)).toEqual(['plan*', 'garden', today()])
+    expect(captured.sidebar?.lens).toBe('recents')
+    expect(captured.sidebar?.revealRequest ?? null).toBeNull()
+    await press(true)
+    expect(bridge.createFile).toHaveBeenCalledTimes(1)
+    expect(tabs(el)).toEqual(['plan*', 'garden', today()])
+  })
+
+  it('a plain click still opens the note in front and shows its row in Files', async () => {
+    const { el, v } = await mountDaily()
+    await press(false)
+    // The open tabs are kept ones, so the note comes in a tab of its own, in front.
+    expect(tabs(el)).toEqual(['plan', 'garden', `${today()}*`])
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: `${v}/Daily/${today()}.md`, focus: false })
   })
 })
 
@@ -6544,6 +6617,26 @@ describe('App Files window (YAZ-3357)', () => {
     // Nothing opened here: the Files window stores no tab.
     expect(tabNames(el)).toEqual([])
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ tabs: expect.arrayContaining(['/v/a.md']) }))
+  })
+
+  it('YAZ-3776: the daily note button in a Files window asks main too: ⌘-click for a background tab, a click as a row click', async () => {
+    noPopup()
+    const daily = dailyNoteName(DEFAULT_SETTINGS.dailyNoteFormat, new Date()).trim()
+    const state = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyNotes: true, dailyNoteFolder: 'Daily' }, windows: [entry({ ...FILES }), entry({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })] }
+    const { bridge } = await mount(state, FILES, { [`/v/Daily/${daily}.md`]: { content: '', mtime: 1 } }, (b) => {
+      b.bridge.index.mockImplementation(async (root: string) => ({ root, records: [], folders: [], generatedAt: 1, ids: false }))
+      b.bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [{ type: 'dir', name: 'Daily', path: '/v/Daily', children: [{ type: 'file', name: `${daily}.md`, path: `/v/Daily/${daily}.md`, size: 1, mtime: 1, kind: 'markdown' }] }], generatedAt: 1 }))
+    })
+    const sidebar = await filesSidebar()
+    // The note is on disk but not in the (empty) index, so it is made: the create finds it, and it opens (a vault without IDs).
+    act(() => sidebar.onOpenDailyNote?.(true))
+    await vi.waitFor(() => expect(bridge.window.openFromFiles).toHaveBeenCalledTimes(1), { timeout: SLOW_RUNNER_MS })
+    act(() => sidebar.onOpenDailyNote?.(false))
+    await vi.waitFor(() => expect(bridge.window.openFromFiles).toHaveBeenCalledTimes(2), { timeout: SLOW_RUNNER_MS })
+    expect(bridge.window.openFromFiles.mock.calls.map(([action]) => action)).toEqual([
+      { kind: 'open', path: `/v/Daily/${daily}.md`, how: 'background' },
+      { kind: 'open', path: `/v/Daily/${daily}.md`, how: 'preview' },
+    ])
   })
 
   it('D13: a Files window hands its sidebar "Make full window", which asks main; a full window hands none', async () => {

@@ -39,6 +39,11 @@
  *    line end, or on a line of its own, is ONE break with the line ending beside it.
  *  - Marks on line breaks (YAZ-2280, `breakMarks.ts`): replaces Milkdown's `hardbreakClearMarkPlugin`;
  *    a mark runs through a soft break, never starts or ends on one, and never sits on a hard break.
+ *  - Text that ends in whitespace (YAZ-3727 B5, `textStringify.ts`): replaces Milkdown's `text` stringify handler, which
+ *    wrote such text raw, so a line that is only `1. ` or `# ` reloaded as a list or a heading. Ours escapes the text and
+ *    keeps the trailing whitespace raw (never `&#x20;`), as Milkdown did.
+ *  - List markers (YAZ-3727 D2, `outline/listMarkers.ts`): replaces Milkdown's `syncListOrderPlugin`; each item's
+ *    marker follows its list, and a change visits only the lists it touched.
  *  - Zoom into a bullet (GRO-2029, `outline/zoom.ts`): view-state-only decorations + breadcrumbs;
  *    glyph click / Mod-. / Mod-Shift-. ; never a document change.
  *  - List guide lines (GRO-2030, `outline/guideLines.ts` + `.css`): CSS vertical lines on nested
@@ -80,11 +85,18 @@
  *  - Block handle menu (YAZ-726, `blockHandleMenu.ts`): right-click on the 6-dot handle opens a
  *    `.ctx-menu` popup; rows (or picker rows, YAZ-3164) are data from a provider;
  *    capture-suppresses Crepe's right-button mousedown/mouseup so the selection/focus don't jump.
- *    First row: Number children ↔ Bullet children (YAZ-729, `outline/numberChildrenRow.ts`),
- *    disabled when the item has no direct child list.
- *  - Numbers are manual-only (YAZ-793/YAZ-1329): right-click Number children is the only editor
- *    conversion command. The `1. ` input rule, `Mod-Alt-7` keymap and slash-menu Ordered List row
- *    are removed; real ordered Markdown still parses, and `* 6) text` stays literal bullet text.
+ *    Rows: the line's kind, one strip of the toolbar's buttons (Bullet list, Numbered list, Checklist, T; D18), for the
+ *    whole list the line is in, or the highlighted lines (YAZ-3727 D13, D14, `outline/turnIntoRows.ts`, also on a
+ *    plain line or a heading); then Number children
+ *    ↔ Bullet children (YAZ-729, `outline/numberChildrenRow.ts`), only when the item has a direct child list. On a numbered line, "Bullets with written numbers" turns its list
+ *    into bullets with each number written as `n) ` text (YAZ-3727 D12, `writtenNumbersRow`).
+ *    On a line that folds, Collapse all and Expand all follow (YAZ-3727 D23, `outline/foldAllRows.ts`).
+ *  - Typing a list marker (YAZ-3727 D8, D9, `listMarkerTyping.ts`): replaces Milkdown's `1. ` and `* ` input rules. A
+ *    typed space after `n.` or `*` / `-` / `+` at the start of a PLAIN line goes in as text, then the line becomes a list
+ *    line as its own undo step; ⌘Z or Backspace right after gives back the plain text. Never on Enter; inside a list
+ *    item the marker stays text (`* 6) text` stays literal bullet text, YAZ-1329). Right-click Number children and the
+ *    toolbar's Numbered button (YAZ-3806 T2) are the click paths; the `Mod-Alt-7` keymap and the slash-menu Ordered List
+ *    row stay removed.
  *  - Drawing slash item (YAZ-877, `drawingMenu.ts`): rides Crepe's OWN BlockEdit menu via
  *    `featureConfigs[BlockEdit].buildMenu` — never a parallel slash plugin. Registered only when
  *    `opts.drawing` supplies the creator; the shared config always omits Ordered List.
@@ -125,8 +137,9 @@
  *    the clipboard plugin's — and it declines whenever the HTML payload has real list markup.
  *  - Paste modes (YAZ-1394, `clipboardPaste.ts`): native Plain text/Markdown requests target the
  *    focused editor; external standalone paragraph separators keep one blank paragraph each.
- *    Normal external paste keeps number labels literal (YAZ-1429); explicit Markdown and
- *    app-identified rich clipboard slices retain intentional ordered lists.
+ *    Normal external paste keeps a plain `1.`, `2.`, … list (a plain decimal `<ol>`) as real numbers (YAZ-3727 D6);
+ *    any other label (`3)`, `09.`, gaps, repeats, `a.`) stays literal text (YAZ-1429), and so does every label in the
+ *    folder outline. Explicit Markdown and app-identified rich clipboard slices retain intentional ordered lists.
  *  - Copy-out (`clipboardCopyOut.ts`): normal Copy provides readable text and rich HTML with
  *    explicit empty lines. Copy as chooses plain text or Markdown; saves stay intact (YAZ-1443).
  *  - Images (YAZ-1656, `image/imageView.ts`): the FIRST node view in the codebase, on the commonmark
@@ -151,6 +164,10 @@
  *    `setNodeMarkup` on mouseup. The block handle menu of a line (`line/lineRows.ts`) adds "Line
  *    darkness", "Line thickness" and "Line style", one row each, whose value opens the presets (the
  *    zoom menu's shape) on a click.
+ *  - The table's settings (YAZ-3758, `table/tableStyle.ts`): the `table` node gains border,
+ *    header, stripes, height, wrap and freeze attributes, and each cell `fill` and `color`
+ *    — the SECOND exception to the images rule. A plain table stays the GFM table; one with
+ *    settings is the table then the next block `<!-- table: … -->`, joined on load as the line's.
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
  *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
@@ -169,6 +186,18 @@
  *    (measured: 23.6 ms per key at 2,500 blocks against 0.19 ms), and its `forChild` answers
  *    "nothing inside a block" without ProseMirror's scan of every root decoration (16.5 ms per
  *    key). A click on a line folds the sections beside it (meta-only, through heading folding).
+ *  - Column resize (YAZ-3696 D2, `table/tableColumnResize.ts`): `prosemirror-tables`' `columnResizing` as
+ *    installed, put just before `tableEditing` so a grip drag selects no cells, with the drag measured
+ *    in layout px under document zoom. The vendored table block draws the `<colgroup>` from `colwidth`.
+ *  - Paste into cells (YAZ-3696 D4 / S2, `table/tablePaste.ts`, called from `clipboardPaste.ts`): cells
+ *    and tab-separated text fill from the caret cell and grow the table; one value fills selected
+ *    cells; tab-separated text outside a table makes one. One `replaceWith`, one undo step.
+ *  - Fill down (YAZ-3696 S4, `table/tableFill.ts` + `fillSeries.ts`): a widget handle in the corner of
+ *    the selected cells; a drag down or right fills series up to the table's edge, on mouseup.
+ *  - Table menus (YAZ-3766): the table's settings on its six-dot handle (`table/tableRows.ts`), the
+ *    cell toolbar over two or more selected cells (`table/cellToolbar.ts`; its custom colour pick,
+ *    `table/colours.ts`), and frozen rows and columns (`table/tableFreeze.ts`; the right-click
+ *    Table part is `noteMenu.tsx`'s).
  */
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
@@ -183,12 +212,14 @@ import {
   listItemKeymap,
   orderedListKeymap,
   remarkPreserveEmptyLinePlugin,
+  syncListOrderPlugin,
   turnIntoTextCommand,
+  wrapInBulletListInputRule,
   wrapInHeadingCommand,
   wrapInOrderedListInputRule,
 } from '@milkdown/kit/preset/commonmark'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
-import { Selection, TextSelection } from '@milkdown/kit/prose/state'
+import { type Command, Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $shortcut, replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
 import { readOnlyKeys } from './readOnlyKeys'
@@ -212,23 +243,35 @@ import {
   normalizeEmptyItems,
   restoreItemLine,
 } from './listItemRoundTrip'
-import { underline } from './marks/underline'
+import { toggleUnderline, underline, underlineSchema } from './marks/underline'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
+import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
+import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
+import { arrangeToolbar, toolbarPrefs } from './toolbarPrefs'
 import { inlineBreaks } from './inlineBreaks'
+import { textStringify } from './textStringify'
 import { lineStyle } from './line/lineStyle'
+import { tableStyle } from './table/tableStyle'
+import { tableFill } from './table/tableFill'
+import { tableRows } from './table/tableRows'
+import { cellToolbar } from './table/cellToolbar'
+import { customColourPick } from './table/colours'
+import { tableFreeze } from './table/tableFreeze'
 import { lineView } from './line/lineView'
 import { lineRows } from './line/lineRows'
-import { liftHeadlessItems, lineKeymap, visibleTypeOver } from './lineSelection'
+import { liftHeadlessItems, lineKeymap, visibleRangeHasMark, visibleTypeOver } from './lineSelection'
 import { visibleFormatting } from './visibleFormatting'
 import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
+import { tableColumnResize } from './table/tableColumnResize'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
 import { clipboardPaste } from './clipboardPaste'
 import { pathPasteCtx, relativeLinks, type PathPasteOptions } from './pathPaste'
 import { guideLines } from './outline/guideLines'
-import { numberChildrenRow } from './outline/numberChildrenRow'
+import { numberChildrenRow, writtenNumbersRow } from './outline/numberChildrenRow'
+import { turnIntoRows } from './outline/turnIntoRows'
 import { createHeadingFolding, type HeadingFoldingOptions } from './outline/headingFolding'
 import { headingHotkeys } from './outline/headingHotkeys'
 import { headingLevelTag } from './outline/headingLevelTag'
@@ -237,8 +280,11 @@ import { foldAllHotkeys } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { caretReveal, foldHistory } from './outline/foldReveal'
 import { enterTracker, outlinerKeymap } from './outline/listCommands'
+import { listMarkers } from './outline/listMarkers'
+import { listMarkerTyping, undoListMarker } from './listMarkerTyping'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
+import { foldAllRows } from './outline/foldAllRows'
 import { openBulletRow } from './outline/openBulletRow'
 import { focusSidebar } from '../lib/focusHandoff'
 import { createWikilinkClick, wikilinkFollower, type WikilinkNav } from './wikilink/wikilinkClick'
@@ -249,7 +295,8 @@ import { createWikilink, createWikilinkResolveSource, type LinkLook, type Wikili
 import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import { claimPage } from '../lib/readOnlyCaret'
-import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import { toDisplay, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { keyRow, keysOf } from '@shared/keys'
 import { applyNoteKeys, noteHotkeysCtx } from './noteKeys'
 
 export interface CreateCrepeOptions {
@@ -309,10 +356,6 @@ export interface CreateCrepeOptions {
   onCopyNotice?: (text: string) => void
 }
 
-/** An `Hn` / `T` glyph for the toolbar, drawn as text — the label IS the icon. */
-const headingIcon = (label: string): string =>
-  `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><text x="12" y="16.5" text-anchor="middle" font-size="12" font-weight="700" font-family="inherit" fill="currentColor">${label}</text></svg>`
-
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
 interface ToolbarGroup {
   addItem: (key: string, item: ToolbarItem & { onRun: (ctx: Ctx) => void }) => unknown
@@ -321,19 +364,23 @@ interface ToolbarBuilder {
   addGroup: (key: string, label: string) => ToolbarGroup
   getGroup: (key: string) => ToolbarGroup
   /** The builder's OWN list of groups, in strip order (Crepe's `GroupBuilder.build` hands back the array itself, not a copy). */
-  build: () => unknown[]
+  build: () => Array<{ key: string; label: string; items: Array<{ key: string; icon?: string }> }>
 }
 
-/** A colour dot for the toolbar; the fill IS the wash token, so the button previews the real colour. */
-const swatchIcon = (color: HighlightColor): string =>
-  `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="7" fill="var(${color ? `--mark-bg-${color}` : '--mark-bg'})" stroke="currentColor" stroke-opacity="0.35" stroke-width="1"/></svg>`
+const viewState = (ctx: Ctx) => ctx.get(editorViewCtx).state
+/** Run a ProseMirror command on the editor's view, as Crepe's own buttons do through their commands. */
+const runOnView = (ctx: Ctx, command: Command): void => {
+  const view = ctx.get(editorViewCtx)
+  command(view.state, view.dispatch, view)
+}
 
 /**
- * The selection toolbar (YAZ-923 + YAZ-1480 + YAZ-2700 D13).
+ * The selection toolbar (YAZ-923 + YAZ-1480 + YAZ-2700 D13 + YAZ-3806).
  *
- * THE STRIP, left to right: the Heading group (H1, H2, H3, T), then Crepe's own Formatting group
- * (Bold, Italic, Strikethrough, the four swatches), then Crepe's code and link. The tab order is
- * that same order.
+ * THE STRIP, by default, left to right (YAZ-3806): the Heading group (H1, H2, H3, T), the Lists
+ * group (Checklist, Bullet list, Numbered list), Crepe's own Formatting group (Bold, Italic,
+ * Underline, Strikethrough, the four swatches), then Crepe's code and link. The user reorders and
+ * hides groups and buttons in Settings (`toolbarPrefs.ts`); the tab order is the strip's order.
  *
  * The four highlight swatches (YAZ-1480 — yellow, green, blue, pink) join Crepe's OWN Formatting
  * group right after Strikethrough: `getGroup('formatting')` reaches it because `buildToolbar`
@@ -346,34 +393,51 @@ const swatchIcon = (color: HighlightColor): string =>
  * The Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what block is
  * this?" — the invisible `##` made visible — and whose click switches it, through the same
  * commands the typed markdown runs. `T` is the way back to plain text without backspacing hashes
- * you cannot see. It is ADDED last, the only place `addGroup` can put it, and then moved to the
- * FRONT of the builder's list (YAZ-2700 D13, the last lines below).
+ * you cannot see, and out of a list too (YAZ-3806 T4): it lights only for plain text outside a list.
  *
- * 🔒 That move counts on `builder.build()` handing back the builder's OWN array and not a copy.
- * It does in the Crepe this app installs (`@milkdown/crepe` 7.22.1, from the registry — the
- * tarballs in `client/vendor` patch `@milkdown/components` and `@milkdown/plugin-tooltip`, not
- * Crepe): `utils/group-builder.ts` is `build = () => this.#groups`, and the toolbar reads its
- * groups through that same call right after this function returns. A Crepe whose `build()`
- * copied would leave the Heading group last and raise nothing; `headingToolbar.test.ts` reads
- * the strip of a real editor and fails on it.
+ * The Lists group (YAZ-3806 T1, T3): one rule for the three buttons, in `listButtons.ts`. Numbers
+ * stay a deliberate act (T2): the Numbered button is a click, like the block handle's command.
+ * Underline (T8) runs ⌘U's own command and lights like Bold.
+ *
+ * `addGroup` can only append, so the groups are added in any order and then put in the user's
+ * order (`arrangeToolbar`, the last line below). Crepe builds the strip in a Vue `computed` that
+ * calls this function, and `toolbarPrefs` is a Vue ref: a change in Settings rebuilds the strip of
+ * every open editor at once (T6).
+ *
+ * 🔒 The order counts on `builder.build()` handing back the builder's OWN array and not a copy.
+ * It does in the Crepe this app installs (`@milkdown/crepe` 7.22.1, from
+ * `client/vendor/milkdown-crepe-7.22.1-yaz3550.tgz`, whose patch does not touch the toolbar):
+ * `utils/group-builder.ts` is `build = () => this.#groups`, and the toolbar reads its groups
+ * through that same call right after this function returns. A Crepe whose `build()` copied
+ * would keep Crepe's order and raise nothing; `headingToolbar.test.ts` reads the strip of a real
+ * editor and fails on it.
  */
-function buildToolbar(builder: ToolbarBuilder): void {
+function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined): void {
   const formatting = builder.getGroup('formatting')
   for (const color of [null, ...HIGHLIGHT_COLORS] as HighlightColor[]) {
-    formatting.addItem(color === null ? 'highlight' : `highlight-${color}`, {
-      icon: swatchIcon(color),
-      label: color === null ? 'Highlight' : `Highlight ${color}`,
+    const id = color === null ? 'highlight' : (`highlight-${color}` as const)
+    formatting.addItem(id, {
+      icon: ownIcon(id),
+      label: TOOLBAR_LABELS[id],
       ...(color === null ? { keymap: keymapRef(highlightKeymap.key, 'ToggleHighlight') } : {}),
       active: (ctx) => rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), color),
       onRun: (ctx) => ctx.get(commandsCtx).call(setHighlightCommand.key, color),
     })
   }
-  const blockAt = (ctx: Ctx) => ctx.get(editorViewCtx).state.selection.$from.parent
-  const group = builder.addGroup('heading', 'Heading')
+  formatting.addItem('underline', {
+    icon: ownIcon('underline'),
+    label: TOOLBAR_LABELS.underline,
+    // Underline's key is the app's own keymap, not a Milkdown slice `keymapRef` can name: its row, as the note opened.
+    shortcut: toDisplay(keysOf(keyRow('note.underline')!, hotkeys)[0] ?? null) || undefined,
+    active: (ctx) => visibleRangeHasMark(viewState(ctx), underlineSchema.type(ctx)),
+    onRun: (ctx) => runOnView(ctx, toggleUnderline(ctx)),
+  })
+  const blockAt = (ctx: Ctx) => viewState(ctx).selection.$from.parent
+  const group = builder.addGroup('lineType', TOOLBAR_GROUP_LABELS.lineType)
   for (const level of [1, 2, 3] as const) {
     group.addItem(`h${level}`, {
-      icon: headingIcon(`H${level}`),
-      label: `Heading ${level}`,
+      icon: ownIcon(`h${level}`),
+      label: TOOLBAR_LABELS[`h${level}`],
       active: (ctx) => {
         const block = blockAt(ctx)
         return block.type.name === 'heading' && block.attrs.level === level
@@ -382,19 +446,25 @@ function buildToolbar(builder: ToolbarBuilder): void {
     })
   }
   group.addItem('text', {
-    icon: headingIcon('T'),
-    label: 'Text',
-    active: (ctx) => blockAt(ctx).type.name === 'paragraph',
+    icon: ownIcon('text'),
+    label: TOOLBAR_LABELS.text,
+    active: (ctx) => allLinesAre(viewState(ctx), 'text'),
     onRun: (ctx) => ctx.get(commandsCtx).call(turnIntoTextCommand.key),
   })
-  // The Heading group LEADS the strip (YAZ-2700): the toolbar opens over the start of the
-  // selection, so its first buttons are the ones under the hand after a double click — and
-  // H1/H2/H3/T are pressed far more than Bold. `addGroup` can only append and the builder has no
-  // way to reorder, so the group just added is moved to the front of the builder's own list;
-  // the strip, its dividers and the tab order all follow from that one order.
+  const lists = builder.addGroup('lists', TOOLBAR_GROUP_LABELS.lists)
+  for (const kind of LIST_KINDS) {
+    lists.addItem(kind, {
+      icon: ownIcon(kind),
+      label: TOOLBAR_LABELS[kind],
+      active: (ctx) => allLinesAre(viewState(ctx), kind),
+      onRun: (ctx) => runOnView(ctx, toggleListKind(kind)),
+    })
+  }
+  // The default order leads with the Heading group (YAZ-2700): the toolbar opens over the start of
+  // the selection, so its first buttons are the ones under the hand after a double click.
   const groups = builder.build()
-  const heading = groups.pop()
-  if (heading !== undefined) groups.unshift(heading)
+  noteCrepeIcons(groups)
+  arrangeToolbar(groups, toolbarPrefs.value)
 }
 
 /**
@@ -422,16 +492,18 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // Crepe feature customisation #1 (YAZ-1329/YAZ-877): Number children is the only editor
       // command that creates ordered children, so the stock Ordered List row is absent. Drawing
       // still composes into this same BlockEdit config when the host supplies a creator, after
-      // Current time and before the list rule (YAZ-3550, `slashMenu.ts`).
+      // Current time and before the list rule (YAZ-3550, `slashMenu.ts`). The stock Table row is
+      // replaced by the app's own, which keeps a bullet's line above the table (YAZ-3696 D12).
       [CrepeFeature.BlockEdit]: {
         listGroup: { orderedList: null },
+        advancedGroup: { table: null },
         buildMenu: slashMenu.buildMenu,
       },
       // #2 (YAZ-923): the selection toolbar SAYS the block's level — a Heading group whose
       // active button is the answer to "what is this?", and whose click is the switch. The
       // markdown stays the source of truth; these call the same commands typing `##` does.
       // YAZ-1480 adds Highlight into Crepe's own Formatting group from the same builder.
-      [CrepeFeature.Toolbar]: { buildToolbar },
+      [CrepeFeature.Toolbar]: { buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys) },
       // Native text carets track document zoom without a second painted overlay.
       [CrepeFeature.Cursor]: { virtual: false },
       // YAZ-2270: long lines wrap like prose instead of scrolling sideways, and colours come from
@@ -453,9 +525,13 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(highlight)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
+  // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment.
+  crepe.editor.use(tableStyle)
   // YAZ-3209: over hidden lines, Bold, Italic, Strikethrough, code and H1-H3 / T change the visible
   // ones only, and the toolbar lights for visible lines only. After the presets, by `EditorViewReady`.
   crepe.editor.use(visibleFormatting)
+  // T / ⌘⌥0 out of every list level, ⌘⌥8 = the Bullet button (YAZ-3806 T3, T4). After visibleFormatting: it replaces T.
+  crepe.editor.use(listButtons)
   // Milkdown's empty-line plugin deletes every inline <br> on parse (YAZ-1452). Ours must run
   // first; re-registering Milkdown's AFTER keeps its id resolvable so empty paragraphs still
   // serialise as `<br />`.
@@ -464,6 +540,11 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // Milkdown's break plugin turns soft breaks hard under any new mark (YAZ-2280); ours replaces it.
   void crepe.editor.remove(hardbreakClearMarkPlugin)
   crepe.editor.use(breakMarks)
+  // Milkdown's text handler saves a line that is only `1. ` or `# ` raw, so it reloads as a list or a heading (YAZ-3727 B5); ours escapes it.
+  crepe.editor.config(textStringify)
+  // Milkdown's list-number plugin walks the whole note on each change and fixes numbered lists only (YAZ-3727 D2); ours replaces it.
+  void crepe.editor.remove(syncListOrderPlugin)
+  crepe.editor.use(listMarkers)
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createHeadingFolding(opts.headingFolding))
   crepe.editor.use(headingLevelTag)
@@ -475,6 +556,16 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(bulletThreading)
   crepe.editor.use(sectionIndent)
   crepe.editor.use(lineNumbers)
+  // Column resize (YAZ-3696 D2): `columnResizing`, before `tableEditing`, zoom-aware; the table block draws the `<colgroup>`.
+  crepe.editor.use(tableColumnResize)
+  // Fill down (YAZ-3696 S4): the corner handle of the selected cells.
+  crepe.editor.use(tableFill)
+  // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.
+  crepe.editor.use(cellToolbar)
+  // A custom colour pick's target cells (YAZ-3817), kept through edits while the system picker is open.
+  crepe.editor.use(customColourPick)
+  // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.
+  crepe.editor.use(tableFreeze)
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   // ONE resolve source instance feeds both the decorations and the click plugin's routing.
@@ -523,12 +614,16 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(clipboardCopyOut)
   crepe.editor.use(copyVisibleHotkey)
   crepe.editor.use(blockHandleGate)
-  // Numbers are manual-only (YAZ-793/YAZ-1329): only the explicit block-handle command creates
-  // ordered children. Typing, slash-menu and keyboard conversion paths are all absent.
-  void crepe.editor.remove([wrapInOrderedListInputRule, ...orderedListKeymap])
-  // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its children (Number children),
-  // then a line's pickers (YAZ-3164 D3). A new row joins its group.
-  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...numberChildrenRow(view, target, ctx), ...lineRows(view, target, ctx)]))
+  // YAZ-3727 D8, D9: Milkdown's list typing rules fire inside bullets and on Enter, and undo badly; ours
+  // replace them (plain lines, a typed space, a clean undo). The toolbar's Numbered button (YAZ-3806 T2) is the click
+  // path; Mod-Alt-7 and the slash-menu row stay absent.
+  void crepe.editor.remove([wrapInOrderedListInputRule, wrapInBulletListInputRule, ...orderedListKeymap])
+  crepe.editor.use(listMarkerTyping).use(undoListMarker)
+  // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its kind (the toolbar's list
+  // buttons and T in one strip, YAZ-3727 D13, D14), its children (Number children, when it has any), its
+  // own numbered list as bullets with written numbers (YAZ-3727 D12),
+  // then a line's pickers (YAZ-3164 D3), or a table's settings (YAZ-3767 D7). A new row joins its group.
+  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...turnIntoRows(view, target, ctx), ...numberChildrenRow(view, target, ctx), ...writtenNumbersRow(view, target, ctx), ...foldAllRows(view, target, ctx), ...lineRows(view, target, ctx), ...tableRows(view, target, ctx)]))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.

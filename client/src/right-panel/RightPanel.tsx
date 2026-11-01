@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { RIGHT_PANEL_MAX_W, RIGHT_PANEL_MIN_W } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
+import { holdColResize } from '../lib/colResize'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { NameEnding } from '../sidebar/FileIcon'
 import { foreignDrag, readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
@@ -71,6 +72,8 @@ export function RightPanel({ roots, titles, windowId, items, expanded, width, ov
   }, [dropAt])
 
   const startResize = (event: ReactMouseEvent): void => {
+    // The left button only (YAZ-3719 1B): a right press's release can go to the native menu and never come.
+    if (event.button !== 0) return
     event.preventDefault()
     resizeCleanup.current?.()
     const x0 = event.clientX
@@ -84,7 +87,7 @@ export function RightPanel({ roots, titles, windowId, items, expanded, width, ov
     const cleanup = () => {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
-      document.body.style.cursor = ''
+      holdColResize(false)
       resizeCleanup.current = null
     }
     const up = () => {
@@ -95,7 +98,7 @@ export function RightPanel({ roots, titles, windowId, items, expanded, width, ov
     }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
-    document.body.style.cursor = 'col-resize'
+    holdColResize(true)
     resizeCleanup.current = cleanup
   }
 

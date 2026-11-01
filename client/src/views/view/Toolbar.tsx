@@ -4,7 +4,7 @@ import { type ViewSet, type ViewDef, type Mutate, groupByLevels } from '../viewS
 import type { EngineError } from '../engine'
 import type { FolderHost } from '../ViewsPane'
 import { countRules } from './filterRows'
-import { ChevronsIcon, EyeIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
+import { ChevronsIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
 import { FilterMenu } from './FilterMenu'
 import { Popover } from './Popover'
 import { PropertiesMenu } from './PropertiesMenu'
@@ -50,7 +50,7 @@ export interface ToolbarProps {
 export const countLabel = (shown: number, total: number): string =>
   shown === total ? `${total} item${total === 1 ? '' : 's'}` : `${shown} / ${total} items`
 
-/** Shared view actions: Sort, Properties, Filter, group collapse, Preview, New, Search, count. */
+/** Shared view actions: Sort, Properties, Filter, group collapse, New, Search, count. */
 export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, properties = null, documentView = false, folder }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
@@ -113,19 +113,6 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
             onClick={() => onSetAllGroups(allCollapsed ? [] : allGroupKeys)}
           >
             <ChevronsIcon />
-          </button>
-        )}
-        {(view.type === 'table' || view.type === 'board') && !documentView && (
-          <button
-            type="button"
-            className={`view-toolbar__btn${view.preview === true ? ' view-toolbar__btn--on' : ''}`}
-            aria-label="Preview on hover"
-            title="Preview on hover"
-            aria-pressed={view.preview === true}
-            // Off CLEANS the key — absent is off, and the YAML carries no dead `preview: false`.
-            onClick={() => onUpdate((d) => (view.preview === true ? delete d.views[viewIndex].preview : (d.views[viewIndex].preview = true)))}
-          >
-            <EyeIcon />
           </button>
         )}
         <button type="button" className="view-toolbar__btn view-toolbar__new" aria-label="New note" title="New note" onClick={onNew}>

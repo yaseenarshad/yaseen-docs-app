@@ -1074,6 +1074,31 @@ export interface SidebarTabsPrefs {
 }
 /** The `SIDEBAR_TABS` order, nothing hidden: the row before YAZ-3273. */
 export const DEFAULT_SIDEBAR_TABS: SidebarTabsPrefs = { order: [...SIDEBAR_TABS], hidden: [], hiddenButtons: [] }
+/**
+ * The selection toolbar's groups, each with its buttons in the default order (YAZ-3806 T5). Which group a button is
+ * in never changes: the user changes only the order and which buttons show.
+ */
+export const TOOLBAR_LAYOUT = {
+  lineType: ['h1', 'h2', 'h3', 'text'],
+  lists: ['checklist', 'bulletList', 'numberedList'],
+  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink'],
+  insert: ['code', 'link'],
+} as const
+export type ToolbarGroupId = keyof typeof TOOLBAR_LAYOUT
+export type ToolbarButtonId = (typeof TOOLBAR_LAYOUT)[ToolbarGroupId][number]
+export const TOOLBAR_GROUPS = Object.keys(TOOLBAR_LAYOUT) as ToolbarGroupId[]
+export const TOOLBAR_BUTTONS: readonly ToolbarButtonId[] = Object.values(TOOLBAR_LAYOUT).flat()
+/**
+ * The selection toolbar as the user set it (YAZ-3806 T5): `groups` and `buttons` have each name once — a group's
+ * buttons go in their `buttons` order — and `hidden` the buttons that do not show. Travels with the settings; the
+ * loader repairs it (`sanitizeToolbarPrefs`, `store.ts`).
+ */
+export interface ToolbarPrefs {
+  groups: ToolbarGroupId[]
+  buttons: ToolbarButtonId[]
+  hidden: ToolbarButtonId[]
+}
+export const DEFAULT_TOOLBAR: ToolbarPrefs = { groups: [...TOOLBAR_GROUPS], buttons: [...TOOLBAR_BUTTONS], hidden: [] }
 /** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites; Files has none. `best` is Search's alone (YAZ-3511 D12). */
 export type SortBy = 'manual' | 'name' | 'updated' | 'best'
 /** One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first. */
@@ -1527,6 +1552,8 @@ export interface SettingsState {
   rowDates: RowDates
   /** The tab row's order, its hidden tabs and its hidden buttons (YAZ-3273 D8): global to this Mac, never part of a vault. */
   sidebarTabs: SidebarTabsPrefs
+  /** The selection toolbar's group order, button order and hidden buttons (YAZ-3806 T5). Travels with the settings. */
+  selectionToolbar: ToolbarPrefs
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
   /** What a vault opens on (YAZ-3487 D15): every vault open reads it — main's new windows, `openRoot`, `bootTabs`, the empty-window door. */
@@ -1868,6 +1895,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   searchSort: DEFAULT_SEARCH_SORT,
   rowDates: DEFAULT_ROW_DATES,
   sidebarTabs: DEFAULT_SIDEBAR_TABS,
+  selectionToolbar: DEFAULT_TOOLBAR,
   startupWindows: 'last',
   vaultOpensOn: 'blank',
   sectionStep: 30,
@@ -2993,7 +3021,10 @@ export type CopyAsMode = 'plain' | 'markdown' | 'visible'
 export interface CopyAsRich { text: string; html: string }
 
 /** A row of a note's right-click menu (YAZ-3653): main runs it on the window that sent it. */
-export type NoteMenuAction = 'cut' | 'copy' | 'paste' | `copy-${CopyAsMode}` | `paste-${ClipboardPasteRequest['mode']}` | 'add-word'
+export type NoteMenuAction = 'cut' | 'copy' | 'paste' | `copy-${CopyAsMode}` | `paste-${ClipboardPasteRequest['mode']}` | 'add-word' | 'copy-image' | 'reveal-image'
+
+/** What a note menu row sends with its action: the word (`add-word`), the image's `src` (`reveal-image`), or the point right-clicked in page px (`copy-image`, YAZ-3727 D22). */
+export type NoteMenuArg = string | { x: number; y: number }
 
 /** One ⌘+ / ⌘− / ⌘0 press: up, down, or back to the default (YAZ-1710). */
 export type ZoomStep = -1 | 0 | 1

@@ -17,8 +17,8 @@ import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 
 export interface ListViewProps {
-  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): absent while the setting is off, or while this view's own Preview is on. */
-  hover?: ViewHover
+  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): `ViewsPane` always passes it; Settings › Preview on hover › Folder views starts or stops the dwell (YAZ-3743). */
+  hover: ViewHover
   def: ViewSet
   view: ViewDef
   records: readonly IndexRecord[]
@@ -136,7 +136,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
       {shown.map((row, i) => {
         const inline = indent ? '' : rest.map((k) => render(row.values[k], resolve)).filter((s) => s !== '').join(separator)
         return (
-          <li key={row.record.path} className="view-list__item" onContextMenu={(event) => openMenu(event, row)} {...hover?.itemProps(row.record.path)}>
+          <li key={row.record.path} className="view-list__item" onContextMenu={(event) => openMenu(event, row)} {...hover.itemProps(row.record.path)}>
             {marker !== 'none' && (
               <span className="view-list__marker" aria-hidden>
                 {marker === 'number' ? `${i + 1}.` : '•'}

@@ -148,10 +148,10 @@ const api: YaseenDocsApi = {
     onCopyAs: (listener) => listen(copyListeners, listener),
     onPasteAs: (listener) => listen(pasteListeners, listener),
     // A note menu row or key (YAZ-3653): only during a user gesture, so page code cannot cut, copy or paste on its own.
-    edit: (action, word) =>
+    edit: (action, arg) =>
       navigator.userActivation?.isActive === false
         ? Promise.reject({ code: 'BAD_REQUEST', message: 'menu.edit runs only from a click or a key' })
-        : call<void>(SPECIAL.menuEdit.channel, ...(word === undefined ? [action] : [action, word])),
+        : call<void>(SPECIAL.menuEdit.channel, ...(arg === undefined ? [action] : [action, arg])),
   },
   // The note menu's spelling rows (YAZ-3653): the same spellchecker the native menu asks, in this renderer.
   spell: { suggestions: (word) => (webFrame.isWordMisspelled(word) ? webFrame.getWordSuggestions(word) : null) },

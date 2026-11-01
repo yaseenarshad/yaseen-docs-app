@@ -165,13 +165,13 @@ describe('Tab (indent)', () => {
     expect(md(crepe)).toBe(OUTLINE)
   })
 
-  it('indents ordered and task items too', async () => {
+  it('indents ordered and task items too (a new sublist under a number is bullets, YAZ-3727 D10)', async () => {
     const { crepe } = await mount('1. one\n2. two\n\n* [ ] task a\n* [x] task b\n')
     caretIn(crepe, 'two')
     press(crepe, 'Tab')
     caretIn(crepe, 'task b')
     press(crepe, 'Tab')
-    expect(md(crepe)).toBe('1. one\n   1. two\n\n* [ ] task a\n  * [x] task b\n')
+    expect(md(crepe)).toBe('1. one\n   * two\n\n* [ ] task a\n  * [x] task b\n')
   })
 })
 
@@ -1118,5 +1118,231 @@ describe('YAZ-3695 the day note, one flow', () => {
     press(crepe, 'Backspace')
     expect(md(crepe)).toBe('* 653am Eng Notes\n  * ok plan\n  * where\n\nbody\n')
     expect(isFolded(root, '653am Eng Notes')).toBe(true)
+  })
+})
+
+/**
+ * YAZ-3727's note: a numbered list right after a bullet, inside `Anatomy`. Two lists of different kinds are siblings
+ * in Markdown; at the top level the save puts an empty line between them.
+ */
+const ANATOMY = '* Anatomy\n  * Keys\n  1. id\n     * child of id\n  2. version\n  3. status\n'
+
+describe('YAZ-3727 3- Tab, Shift-Tab and joins across bullets and numbers (D3, D4, D5)', () => {
+  it('D3. Tab on the first number under a bullet moves it into the bullet; Tab on the next one joins it', async () => {
+    const { crepe } = await mount(ANATOMY)
+    caretIn(crepe, 'id')
+    expect(press(crepe, 'Tab')).toBe(true)
+    expect(md(crepe)).toBe('* Anatomy\n  * Keys\n    1. id\n       * child of id\n  1. version\n  2. status\n')
+    expect(caretPos(crepe)).toBe(posOf(crepe, 'id') + 2)
+    caretIn(crepe, 'version')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* Anatomy\n  * Keys\n    1. id\n       * child of id\n    2. version\n  1. status\n')
+  })
+
+  it('D3. a selection over three numbers moves them together', async () => {
+    const { crepe } = await mount(ANATOMY)
+    select(crepe, posOf(crepe, 'id', 1), posOf(crepe, 'status', 2))
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* Anatomy\n  * Keys\n    1. id\n       * child of id\n    2. version\n    3. status\n')
+  })
+
+  it('D3, D4. into a bullet that has bullet children: the number joins them as a bullet', async () => {
+    const { crepe } = await mount('* Keys\n  * old child\n\n1. id\n2. version\n')
+    caretIn(crepe, 'id')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* Keys\n  * old child\n  * id\n\n1. version\n')
+  })
+
+  it('D3, D4. a bullet after a numbered list moves into the last number and keeps its kind', async () => {
+    const { crepe } = await mount('1. one\n2. two\n\n* bullet\n')
+    caretIn(crepe, 'bullet')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. one\n2. two\n   * bullet\n')
+  })
+
+  it('D3, YAZ-3695 11. Tab into a folded bullet: the fold opens, so the caret is not hidden', async () => {
+    const { crepe, root } = await mount('* Keys\n  * old child\n\n1. id\n')
+    fold(root, 'Keys')
+    caretIn(crepe, 'id')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* Keys\n  * old child\n  * id\n')
+    expect(isOpen(root, 'Keys')).toBe(true)
+  })
+
+  it('D3. in a zoom: a first number moves into the bullet above it; on the zoomed line, as Tab on a bullet, the zoom stays', async () => {
+    let { crepe } = await mount('* p\n  * c1\n  1. n1\n')
+    zoomInto(crepe, 'p')
+    caretIn(crepe, 'n1')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* p\n  * c1\n    1. n1\n')
+    expect(getZoomLabel(viewOf(crepe).state)).toBe('p')
+    ;({ crepe } = await mount('* top\n\n1. z\n   * zk\n'))
+    zoomInto(crepe, 'z')
+    caretIn(crepe, 'z', 1)
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* top\n  1. z\n     * zk\n')
+    expect(getZoomLabel(viewOf(crepe).state)).toBe('z')
+  })
+
+  it('D4. Shift-Tab of a number into a bullet level saves it as a bullet', async () => {
+    const { crepe } = await mount('* Keys\n  1. id\n  2. version\n')
+    caretIn(crepe, 'version')
+    press(crepe, 'Shift-Tab')
+    expect(md(crepe)).toBe('* Keys\n  1. id\n* version\n')
+  })
+
+  it('D5. Backspace at the start of a numbered parent under a bullet: its children stay under the joined line', async () => {
+    const { crepe } = await mount('* a\n\n1. b\n   * kid\n')
+    caretIn(crepe, 'b', 0)
+    expect(press(crepe, 'Backspace')).toBe(true)
+    expect(md(crepe)).toBe('* a b\n  * kid\n')
+    expect(caretPos(crepe)).toBe(posOf(crepe, 'a b', 2))
+  })
+
+  it('D5. Delete at the end of the bullet above: the mirror', async () => {
+    const { crepe } = await mount('* a\n\n1. b\n   * kid\n')
+    caretIn(crepe, 'a')
+    expect(press(crepe, 'Delete')).toBe(true)
+    expect(md(crepe)).toBe('* a b\n  * kid\n')
+    expect(caretPos(crepe)).toBe(posOf(crepe, 'a b', 2))
+  })
+
+  it('D5. the numbers after the joined line stay a numbered list', async () => {
+    const { crepe } = await mount('* a\n\n1. b\n   * kid\n2. c\n')
+    caretIn(crepe, 'b', 0)
+    press(crepe, 'Backspace')
+    expect(md(crepe)).toBe('* a b\n  * kid\n\n1. c\n')
+  })
+
+  it('D5, D4. a bullet parent under a number: its children join the number\'s child list and take its kind', async () => {
+    const { crepe } = await mount('1. a\n   1. ak\n\n* b\n  * kid\n')
+    caretIn(crepe, 'b', 0)
+    press(crepe, 'Backspace')
+    expect(md(crepe)).toBe('1. a\n   1. ak b\n   2. kid\n')
+  })
+
+  it('D5. the bullet above is folded: its children would hide the moved ones, so the fold opens', async () => {
+    const { crepe, root } = await mount('* a\n  * ak\n\n1. b\n   * kid\n')
+    fold(root, 'a')
+    caretIn(crepe, 'b', 0)
+    press(crepe, 'Backspace')
+    expect(md(crepe)).toBe('* a b\n  * ak\n  * kid\n')
+    expect(isOpen(root, 'a b')).toBe(true)
+  })
+
+  it('D5. at the top of a zoom whose list follows a bullet outside it: nothing happens', async () => {
+    const { crepe } = await mount('* a\n\n1. b\n   * kid\n')
+    zoomInto(crepe, 'b')
+    caretIn(crepe, 'b', 0)
+    expect(press(crepe, 'Backspace')).toBe(true)
+    expect(md(crepe)).toBe('* a\n\n1. b\n   * kid\n')
+  })
+
+  it.each<[string, string, string | null, (c: Crepe) => unknown]>([
+    ['Tab on the first number under a bullet', ANATOMY, null, (c) => (caretIn(c, 'id'), press(c, 'Tab'))],
+    ['Tab on a selection of numbers', ANATOMY, null, (c) => (select(c, posOf(c, 'id', 1), posOf(c, 'status', 2)), press(c, 'Tab'))],
+    ['Tab into a bullet with bullet children', '* Keys\n  * old child\n\n1. id\n2. version\n', null, (c) => (caretIn(c, 'id'), press(c, 'Tab'))],
+    ['Tab on a bullet after a numbered list', '1. one\n2. two\n\n* bullet\n', null, (c) => (caretIn(c, 'bullet'), press(c, 'Tab'))],
+    ['Tab into a folded bullet', '* Keys\n  * old child\n\n1. id\n', 'Keys', (c) => (caretIn(c, 'id'), press(c, 'Tab'))],
+    ['Shift-Tab of a number into a bullet level', '* Keys\n  1. id\n  2. version\n', null, (c) => (caretIn(c, 'version'), press(c, 'Shift-Tab'))],
+    ['Backspace on a numbered parent under a bullet', '* a\n\n1. b\n   * kid\n2. c\n', null, (c) => (caretIn(c, 'b', 0), press(c, 'Backspace'))],
+    ['Delete at the end of the bullet above', '* a\n\n1. b\n   * kid\n', null, (c) => (caretIn(c, 'a'), press(c, 'Delete'))],
+    ['Backspace under a folded bullet', '* a\n  * ak\n\n1. b\n   * kid\n', 'a', (c) => (caretIn(c, 'b', 0), press(c, 'Backspace'))],
+  ])('one ⌘Z undoes it: %s', async (_name, markdown, folded, act) => {
+    const { crepe, root } = await mount(markdown)
+    if (folded !== null) fold(root, folded)
+    act(crepe)
+    expect(md(crepe)).not.toBe(markdown)
+    press(crepe, 'Mod-z')
+    expect(md(crepe)).toBe(markdown)
+    if (folded !== null) expect(isFolded(root, folded)).toBe(true)
+  })
+})
+
+describe('YAZ-3727 6B. Tab makes a sublist in its siblings\' kind, else bullets (D10)', () => {
+  it('under a number with no sibling sublist: the new sublist is bullets', async () => {
+    const { crepe } = await mount('1. one\n2. two\n')
+    caretIn(crepe, 'two')
+    expect(press(crepe, 'Tab')).toBe(true)
+    expect(md(crepe)).toBe('1. one\n   * two\n')
+  })
+
+  it('under a bullet with no sibling sublist: still bullets', async () => {
+    const { crepe } = await mount('* one\n* two\n')
+    caretIn(crepe, 'two')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* one\n  * two\n')
+  })
+
+  it('the sibling above has a bullet sublist: the new one is bullets (the demo case)', async () => {
+    const { crepe } = await mount('1. this is just\n   * a child\n2. test\n3. next\n')
+    caretIn(crepe, 'next')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. this is just\n   * a child\n2. test\n   * next\n')
+  })
+
+  it('the sibling above has a numbered sublist: the new one is numbers, under a number or a bullet', async () => {
+    let { crepe } = await mount('1. a\n   1. ak\n2. b\n3. c\n')
+    caretIn(crepe, 'c')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   1. ak\n2. b\n   1. c\n')
+    ;({ crepe } = await mount('* a\n  1. ak\n* b\n* c\n'))
+    caretIn(crepe, 'c')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* a\n  1. ak\n* b\n  1. c\n')
+  })
+
+  it('the nearest sibling above wins over one further up', async () => {
+    const { crepe } = await mount('1. a\n   * ak\n2. b\n   1. bk\n3. c\n4. d\n')
+    caretIn(crepe, 'd')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   * ak\n2. b\n   1. bk\n3. c\n   1. d\n')
+  })
+
+  it('no sibling above has a sublist: the nearest one below gives the kind', async () => {
+    const { crepe } = await mount('1. a\n2. b\n3. c\n   1. ck\n')
+    caretIn(crepe, 'b')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   1. b\n2. c\n   1. ck\n')
+  })
+
+  it('the item above has a sublist of the other kind: the line joins it and takes its kind', async () => {
+    let { crepe } = await mount('1. a\n   * ak\n2. b\n')
+    caretIn(crepe, 'b')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   * ak\n   * b\n')
+    ;({ crepe } = await mount('* a\n  1. ak\n* b\n'))
+    caretIn(crepe, 'b')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* a\n  1. ak\n  2. b\n')
+  })
+
+  it('a selection over two lines: both go into one bullet sublist', async () => {
+    const { crepe } = await mount('1. a\n2. b\n3. c\n')
+    select(crepe, posOf(crepe, 'b', 0), posOf(crepe, 'c', 1))
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   * b\n   * c\n')
+  })
+
+  it('the moved line keeps its own children', async () => {
+    const { crepe } = await mount('1. a\n2. b\n   1. bk\n')
+    caretIn(crepe, 'b')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   * b\n     1. bk\n')
+  })
+
+  it('⌘Z undoes the Tab and the kind in one step', async () => {
+    const { crepe } = await mount('1. one\n2. two\n')
+    caretIn(crepe, 'two')
+    press(crepe, 'Tab')
+    expect(press(crepe, 'Mod-z')).toBe(true)
+    expect(md(crepe)).toBe('1. one\n2. two\n')
+  })
+
+  it('Tab of a numbered run into the bullet above (D3) keeps the numbers: D10 is for Tab inside one list', async () => {
+    const { crepe } = await mount('* Keys\n\n1. id\n2. version\n')
+    caretIn(crepe, 'id')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('* Keys\n  1. id\n\n1. version\n')
   })
 })

@@ -13,9 +13,10 @@ import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, rowTitle, summaryKindOf } from './GroupHeader'
 import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, groupTakesNew, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
-import { usePreview } from './PreviewCard'
-import type { ResolveLink, WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
+import type { ResolveLink } from '../../editor/wikilink/wikilinkPlugin'
 import { cssZoom } from '../../lib/cssZoom'
+import { holdColResize } from '../../lib/colResize'
+import { pinnedHeaderOffset, verticalScrollParent } from '../../lib/pinnedHeader'
 import { openByGesture } from '../../lib/openGesture'
 import { frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
@@ -30,8 +31,8 @@ import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 
 export interface TableViewProps {
-  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): absent while the setting is off, or while this view's own Preview is on. */
-  hover?: ViewHover
+  /** The folder's hover panel (YAZ-3403, `viewHover.ts`): `ViewsPane` always passes it; Settings › Preview on hover › Folder views starts or stops the dwell (YAZ-3743). */
+  hover: ViewHover
   def: ViewSet
   view: ViewDef
   viewIndex: number
@@ -71,10 +72,6 @@ export interface TableViewProps {
   resolve: Resolver
   /** The window's link resolver, by which a link column's target names its folder. */
   resolveLink: ResolveLink
-  /** Preview mode (`view.preview`, YAZ-1244): resting on a data row pops its page read-only. */
-  preview?: boolean
-  /** The window's link source, for the preview: an id link in it reads as its note's title (YAZ-2293). */
-  wikilinks?: WikilinkResolveSource
   /** `FolderHost.setColumns` (YAZ-1513): the header menu's "Add column to the right…" declares through it. */
   declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
   /** `FolderHost.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. Absent → the menu has no such item. */
@@ -124,20 +121,6 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
   event.currentTarget.focus()
 }
 
-/** The first ancestor above the horizontal Table wrapper that owns vertical scrolling. */
-function verticalScrollParent(node: HTMLElement): HTMLElement | null {
-  for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
-    const overflow = getComputedStyle(parent).overflowY
-    if (overflow === 'auto' || overflow === 'scroll') return parent
-  }
-  return null
-}
-
-/** Native-sticky boundaries expressed as a counter-scroll offset for the existing `<thead>`. */
-function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: number, headerHeight: number): number {
-  return Math.max(0, Math.min(scrollerTop - tableTop, Math.max(0, tableHeight - headerHeight)))
-}
-
 /**
  * Table view (GRO-2136): sticky header with drag-to-resize columns (`view.columnSize`, written on
  * mouseup), typed cells, the `file.name` cell showing the note's title as plain text (YAZ-2420
@@ -153,9 +136,8 @@ function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: 
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, preview = false, wikilinks, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, declareColumn, deleteColumn, valueCount, onWriteValue, onRetitle, readOnly = NO_READ_ONLY, hover }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
-  const { rowProps, card, close } = usePreview(preview, wikilinks)
   /** A modified click on the Name cell and Enter on it share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
   /** The data row (`rowKey`) whose title is being edited in its Name cell (YAZ-2420 🔒 D26). */
@@ -301,6 +283,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const firstDataRow = visible.find((l): l is Extract<Line, { row: Row }> => 'row' in l)?.r
 
   const startResize = (key: string) => (e: ReactMouseEvent) => {
+    // The left button only (YAZ-3719 1B): a right press's release can go to the native menu and never come.
+    if (e.button !== 0) return
     e.preventDefault()
     const start = widthOf(key)
     const x0 = e.clientX
@@ -313,6 +297,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const up = () => {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
+      holdColResize(false)
       setDrag(null)
       if (width !== start)
         onUpdate((d) => {
@@ -321,6 +306,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
+    holdColResize(true)
   }
 
   const setSummary = (key: string, kind: string | null) =>
@@ -340,7 +326,6 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
     if (cell === null) return
     event.preventDefault()
-    close()
     cell.focus()
     setRowMenu({ x: event.clientX, y: event.clientY, path, title })
   }
@@ -370,7 +355,6 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         e.preventDefault()
         return
       }
-      close()
       // The groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none.
       e.dataTransfer?.setData(COLUMN_MIME, keys[index])
       if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
@@ -404,7 +388,6 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** A header right-click (YAZ-1513): rename / hide / add-right on a column, hide on the `#` gutter. */
   const openHeaderMenu = (key: string | null) => (event: ReactMouseEvent<HTMLTableCellElement>): void => {
     event.preventDefault()
-    close()
     setRowMenu(null)
     setHeaderMenu({ x: event.clientX, y: event.clientY, key })
   }
@@ -500,11 +483,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   key={rowKey(line)}
                   className={line.gk !== null && dnd.over === line.gk ? 'view-table__row--drop' : undefined}
                   {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)), ...dnd.target(line.g, line.at) })}
-                  {...rowProps(line.row.record)}
-                  {...hover?.itemProps(line.row.record.path)}
-                  // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart
-                  // rather than replacing it (YAZ-1244): a card must never hang over a drag.
-                  onDragStartCapture={close}
+                  {...hover.itemProps(line.row.record.path)}
                   onContextMenu={openRowMenu(line.row.record)}
                 >
                   {/* No `data-cell` and no tabIndex: the gutter is outside the arrow-key grid (YAZ-1513). */}
@@ -669,8 +648,6 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           />
         )}
       </div>
-      {/* Outside the scroller on purpose (YAZ-1244): the card is placed against the viewport. */}
-      {card}
     </>
   )
 }

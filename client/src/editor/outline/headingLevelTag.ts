@@ -23,6 +23,7 @@
 import type { EditorState } from '@milkdown/kit/prose/state'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
+import { ReplaceAroundStep } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 
 export const HEADING_CARET_ATTR = 'data-heading-caret'
@@ -60,8 +61,11 @@ export const headingLevelTag = $prose(
           if (!transaction.docChanged) return pos === previous.pos ? previous : tagAt(newState, pos)
           // The same heading, still the node it was: the one decoration rides the mapping, and nothing
           // is rebuilt. Milkdown's id step replaces the node, the mapped set comes back empty, and
-          // the line below builds the one decoration again (the header has the cost).
-          if (pos !== null && previous.pos !== null && transaction.mapping.map(previous.pos, 1) === pos) {
+          // the line below builds the one decoration again (the header has the cost). A wrap or a lift
+          // (a ReplaceAroundStep: a list or quote put round the heading, or taken off it, ⌘Z of one
+          // too) builds it again as well: ProseMirror's `DecorationSet.map` throws on a node decoration
+          // whose node moves down or up a level (YAZ-3806).
+          if (pos !== null && previous.pos !== null && transaction.mapping.map(previous.pos, 1) === pos && !transaction.steps.some((step) => step instanceof ReplaceAroundStep)) {
             const set = previous.set.map(transaction.mapping, newState.doc)
             if (set.find(pos, pos + 1).length > 0) return { pos, set }
           }

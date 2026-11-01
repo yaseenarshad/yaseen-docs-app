@@ -88,7 +88,7 @@ async function openOnLine(markdown: string) {
 }
 
 describe('which blocks get the pickers', () => {
-  it('S40: a line gets "Number children" (disabled), then one row each for "Line darkness", "Line thickness" and "Line style"', async () => {
+  it('S40: a line gets one row each for "Line darkness", "Line thickness" and "Line style" (no "Number children" off a bullet, YAZ-3696 B3)', async () => {
     const { view } = await openOnLine('a\n\n***\n\nb\n')
     const parts = [...popupOf(view)!.children].map((el) => {
       if (el.classList.contains('ctx-menu__item')) return `row:${el.textContent}${(el as HTMLButtonElement).disabled ? ':disabled' : ''}`
@@ -96,8 +96,6 @@ describe('which blocks get the pickers', () => {
       return el.className
     })
     expect(parts).toEqual([
-      'row:Number children:disabled',
-      'document-zoom__divider',
       'picker:Line darkness:Default (50%) ▾',
       'picker:Line thickness:Default (3px) ▾',
       'picker:Line style:Default (Solid) ▾',
@@ -108,13 +106,14 @@ describe('which blocks get the pickers', () => {
     expect(labels(2)).toEqual(['Default (Solid)', 'Solid', 'Dotted', 'Dashed'])
   })
 
-  it('S41: a paragraph, a heading and a bullet get the menu of today', async () => {
+  it('S41: a paragraph, a heading and a bullet get no pickers, only the "turn into" strip (YAZ-3727 D13, D14); the heading folds, so Collapse all and Expand all too (D23)', async () => {
     const { view, item } = await mount('# H\n\ntext\n\n* bullet\n')
     for (const type of ['heading', 'paragraph', 'list_item']) {
       aim(view, nth(view, type))
       rightClick(item)
-      expect(popupOf(view)!.querySelectorAll('.ctx-menu__item')).toHaveLength(1)
-      expect(popupOf(view)!.querySelector('.block-menu-picker')).toBeNull()
+      expect([...(popupOf(view)?.querySelectorAll('.ctx-menu__item') ?? [])].map((b) => b.textContent)).toEqual(type === 'heading' ? ['Collapse all', 'Expand all'] : [])
+      expect(popupOf(view)?.querySelectorAll('.ctx-menu__strip button').length ?? 0).toBe(4)
+      expect(popupOf(view)?.querySelector('.block-menu-picker') ?? null).toBeNull()
     }
   })
 
@@ -142,7 +141,9 @@ describe('which blocks get the pickers', () => {
     const { crepe, view, item } = await mount('- ***\n\n  text after\n')
     aim(view, nth(view, 'paragraph'))
     rightClick(item)
-    expect(popupOf(view)!.querySelectorAll('.ctx-menu__item')).toHaveLength(1)
+    // Its own line: the "turn into" strip (YAZ-3727 D13, D14); the bullet has no children, so no "Number children".
+    expect(popupOf(view)!.querySelectorAll('.ctx-menu__item')).toHaveLength(0)
+    expect(popupOf(view)!.querySelectorAll('.ctx-menu__strip button')).toHaveLength(4)
     expect(popupOf(view)!.querySelector('.block-menu-picker')).toBeNull()
     expect(getMarkdownForSave(crepe)).toBe('- ***\n\n  text after\n')
   })

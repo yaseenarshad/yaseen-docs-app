@@ -63,7 +63,7 @@ export const api: YaseenDocsApi = {
     ...bridge.menu,
     onCopyAs: (listener) => window.yaseenDocs.menu.onCopyAs(listener),
     onPasteAs: (listener) => window.yaseenDocs.menu.onPasteAs(listener),
-    edit: (action, word) => window.yaseenDocs.menu.edit(action, word),
+    edit: (action, arg) => window.yaseenDocs.menu.edit(action, arg),
   },
   spell: { suggestions: (word) => window.yaseenDocs.spell.suggestions(word) },
 }

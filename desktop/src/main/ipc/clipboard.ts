@@ -7,6 +7,11 @@ import { handleWithEvent } from './envelope'
 
 // Bound renderer-supplied strings while allowing large document selections (UTF-16 code units).
 export const MAX_COPY_TEXT_LENGTH = 16 * 1024 * 1024
+/** A vault image's `src` (`app://vault/<root>/<ref>?from=…`) is a path, never this long. */
+const MAX_IMAGE_SRC_LENGTH = 8192
+
+const isPoint = (v: unknown): v is { x: number; y: number } =>
+  typeof v === 'object' && v !== null && Number.isFinite((v as { x?: unknown }).x) && Number.isFinite((v as { y?: unknown }).y)
 
 export interface ClipboardHost {
   target(): Pick<WebContents, 'id'> | undefined
@@ -16,6 +21,8 @@ export interface ClipboardHost {
   write(data: { text: string; html: string }): void
   /** The clipboard's text, for the note menu's Paste as (YAZ-3653). */
   readText(): string
+  /** The note menu's Reveal in Finder for an image (YAZ-3727 D22): the native menu's row (`revealVaultImage`). */
+  revealImage(src: string): Promise<void>
   rendererUrl: string
 }
 
@@ -43,7 +50,7 @@ export function registerClipboardIpc(windows: Pick<WindowManagerIpc, 'idFor'>, h
   })
   // A note's own right-click menu (YAZ-3653): each row does what the native menu's row does, on the
   // window that sent it. Only that window's own selection and clipboard commands; never other text.
-  handleWithEvent(SPECIAL.menuEdit, async (event, action: unknown, word?: unknown) => {
+  handleWithEvent(SPECIAL.menuEdit, async (event, action: unknown, arg?: unknown) => {
     const { sender, senderFrame } = event
     if (sender.isDestroyed()
       || windows.idFor(sender) === undefined
@@ -64,9 +71,17 @@ export function registerClipboardIpc(windows: Pick<WindowManagerIpc, 'idFor'>, h
       case 'paste-plain':
       case 'paste-markdown':
         return sender.send(SPECIAL.menuPasteAs, { mode: action.slice('paste-'.length), text: host.readText() })
+      // An image's rows (YAZ-3727 D22), as the native image menu's: Chromium copies the decoded pixels at the point
+      // right-clicked, in the window's px (the page's px times the App size); Reveal takes only a vault image's `src`.
+      case 'copy-image':
+        if (isPoint(arg)) return sender.copyImageAt(Math.round(arg.x * sender.getZoomFactor()), Math.round(arg.y * sender.getZoomFactor()))
+        break
+      case 'reveal-image':
+        if (typeof arg === 'string' && arg.startsWith('app://vault/') && arg.length <= MAX_IMAGE_SRC_LENGTH) return host.revealImage(arg)
+        break
       case 'add-word':
-        if (typeof word === 'string' && /^\S{1,64}$/.test(word)) {
-          sender.session.addWordToSpellCheckerDictionary(word)
+        if (typeof arg === 'string' && /^\S{1,64}$/.test(arg)) {
+          sender.session.addWordToSpellCheckerDictionary(arg)
           return
         }
     }
