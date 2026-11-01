@@ -1572,7 +1572,7 @@ export interface SettingsState {
   sectionLines: SectionLines
   /** The table of contents at a note's right edge (YAZ-2700): how you READ, global, never part of a note. Settings › "Pin default"; the card's "Pin" and "Unpin" write it too. */
   tableOfContents: TableOfContents
-  /** Settings › "Table of contents default" (YAZ-3558 D2): on or off for each page that made no choice in its cog (`tocSwitches`). A page's choice wins. */
+  /** Settings › "Table of contents default" (YAZ-3558 D2): on or off for each page that made no choice in its cog: a note's choice is its `toc` key (YAZ-4094 G4), a code file's is in `tocSwitches`. A page's choice wins. */
   tocOnByDefault: boolean
   /** The width of the table of contents' names column (YAZ-2752): whole px, `TOC_MIN_W` to `TOC_MAX_W`. The reader drags the column's edge; one width for every note and window. */
   tableOfContentsWidth: number

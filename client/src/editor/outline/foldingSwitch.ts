@@ -4,12 +4,14 @@
  * Off: the bullet and heading fold plugins (`outlineFolding.ts`, `headingFolding.ts`) draw no chevron, hide
  * nothing and take no fold request, and their queries (`collapsedItemsHiding`, `isHeadingCollapsed`, …) report
  * an open page — so CMD+F, outside changes, the TOC, the caret guard and "Copy without folded lines" all see
- * what the reader sees. The plugins KEEP their collapsed set and do not report a change, so the page's saved
- * folds (`folders[root].folds`) stay and come back when the switch is on again (F3). The caret guard opens only
- * the saved folds that would hide the caret then (`foldReveal.ts`).
+ * what the reader sees. The plugins KEEP their collapsed set and map it through edits, so the page's saved
+ * folds (`folders[root].folds`) stay and come back when the switch is on again (F3). The saved keys change only
+ * when an edit renames or deletes a folded row: the plugin then reports the kept set under its new keys. The
+ * caret guard opens only the saved folds that would hide the caret then (`foldReveal.ts`).
  *
  * The host turns it with `setFoldingOn` (a meta-only transaction, no remount). A fold key on a page with
- * folding off calls `onBlocked` (the host's "Folding is off on this page" message) through `foldingBlocked`.
+ * folding off calls `onBlocked` (the host's "Folding is off on this page" message) through `foldingBlocked`, only
+ * when the command runs: a dry run (no `dispatch`) shows nothing.
  */
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
