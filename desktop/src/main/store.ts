@@ -178,6 +178,8 @@ export interface Store {
   removeRecent(path: string): void
   setFolder(root: string, patch: FolderPatch): void
   setFolds(root: string, file: string, keys: readonly string[]): void
+  /** The folded rows of one note's table of contents (YAZ-3939 D1); an empty list removes the entry. */
+  setTocFolds(root: string, file: string, keys: readonly string[]): void
   /** What one note's table of contents is built from (YAZ-2700 D14). `null` is Auto: the entry goes, and Auto is never stored. */
   setTocSource(root: string, file: string, source: TocSource | null): void
   /** One note's "Section indent" switch (YAZ-2709 D2). `true` and `false` are both stored; nothing here removes an entry. */
@@ -736,7 +738,7 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
   return out
 }
 
-/** Shared by `folds` and `baseGroups`: key → non-empty string list, junk dropped, each list capped. */
+/** Shared by `folds`, `tocFolds` and `baseGroups`: key → non-empty string list, junk dropped, each list capped. */
 function sanitizeKeyLists(raw: unknown, cap: number): Record<string, string[]> {
   if (!isRecord(raw)) return {}
   const out: Record<string, string[]> = {}
@@ -800,6 +802,7 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     // The same shape as the save log, cut at its own limit (YAZ-3487 D9).
     closed: addClosed(sanitizeEdits(raw.closed), [], 0),
     tocSources: sanitizeTocSources(raw.tocSources),
+    tocFolds: sanitizeKeyLists(raw.tocFolds, MAX_FOLD_KEYS_PER_FILE),
     sectionIndents: sanitizeSwitches(raw.sectionIndents),
     tocSwitches: sanitizeSwitches(raw.tocSwitches),
     name: cleanVaultName(raw.name),
@@ -1151,6 +1154,14 @@ export function createStore(filePath: string): Store {
       commit({ ...state, folders: { ...state.folders, [root]: { ...cur, folds } } })
     },
 
+    setTocFolds(root, file, keys) {
+      const cur = folderOf(root)
+      const tocFolds = { ...cur.tocFolds }
+      if (keys.length === 0) delete tocFolds[file]
+      else tocFolds[file] = keys.slice(0, MAX_FOLD_KEYS_PER_FILE)
+      commit({ ...state, folders: { ...state.folders, [root]: { ...cur, tocFolds } } })
+    },
+
     setTocSource(root, file, source) {
       const cur = folderOf(root)
       // Auto on a note that is on Auto already: nothing to write, nothing to tell the windows.
@@ -1320,6 +1331,8 @@ export function createStore(filePath: string): Store {
             closed: remapKeys(folder.closed, remap),
             // And the table of contents source (YAZ-2700 D14), keyed the same way: the choice follows its note.
             tocSources: remapKeys(folder.tocSources, remap),
+            // And the folded rows of the table of contents (YAZ-3939 D1): they follow their note.
+            tocFolds: remapKeys(folder.tocFolds, remap),
             // And the "Section indent" switch (YAZ-2709 D2), on the same terms.
             sectionIndents: remapKeys(folder.sectionIndents, remap),
             // And the "Table of contents" switch (YAZ-2950).
@@ -1418,6 +1431,7 @@ export function createStore(filePath: string): Store {
               edits: dropKeys(folder.edits, gone),
               closed: dropKeys(folder.closed, gone),
               tocSources: dropKeys(folder.tocSources, gone),
+              tocFolds: dropKeys(folder.tocFolds, gone),
               sectionIndents: dropKeys(folder.sectionIndents, gone),
               tocSwitches: dropKeys(folder.tocSwitches, gone),
             },
