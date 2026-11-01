@@ -10,6 +10,7 @@
  * bound plugin, and while unbound the commands are no-ops.
  */
 import type { OutsideChangeGlow } from '@shared/types'
+import type { SavedOutsideChanges } from './outsideChangesMemory'
 
 export interface OutsideChangesSnapshot {
   /** Changes in the list, one per changed textblock (D4). */
@@ -63,17 +64,34 @@ export interface OutsideChangesChannel {
   sync(snapshot: OutsideChangesSnapshot, version?: number): void
   /** Engine side: Next zoomed the page out (D9), so the host tells the tab. */
   zoomedOut(): void
+  /** Engine side: the list of this tab's page, kept while the tab shows another page (`outsideChangesMemory.ts`); null: none. */
+  save(list: SavedOutsideChanges | null): void
+  /** Engine side: the list this tab kept for the page; null when there is none. */
+  readSaved(): SavedOutsideChanges | null
+}
+
+/** Where a list waits while its tab shows another page; none for an editor outside a tab. */
+export interface OutsideChangesMemory {
+  save(list: SavedOutsideChanges | null): void
+  read(): SavedOutsideChanges | null
 }
 
 const EMPTY: OutsideChangesSnapshot = { count: 0, wholeNote: false }
 
-export function createOutsideChangesChannel(onZoomOut: () => void = () => undefined): OutsideChangesChannel {
+export function createOutsideChangesChannel(onZoomOut: () => void = () => undefined, memory: OutsideChangesMemory | null = null): OutsideChangesChannel {
   let controller: OutsideChangesController | null = null
   let snapshot = EMPTY
   let glow: OutsideChangeGlow = 'until-checked'
   const listeners = new Set<() => void>()
+  /** The list's own count: it only goes up. Each editor's plugin counts from 0 again, so the list must not read the plugin's. */
   let version = 0
+  /** The bound plugin's count as last synced: a change of it moves `version`. */
+  let seen = 0
   const rowListeners = new Set<() => void>()
+  const rowsChanged = (): void => {
+    version += 1
+    rowListeners.forEach((listener) => listener())
+  }
 
   return {
     next: () => controller?.next(),
@@ -103,19 +121,24 @@ export function createOutsideChangesChannel(onZoomOut: () => void = () => undefi
     },
     bind(next) {
       controller = next
+      // A new editor: its rows, whatever its plugin's count.
+      seen = 0
+      rowsChanged()
       return () => {
         if (controller === next) controller = null
       }
     },
-    sync(next, nextVersion = version) {
-      if (nextVersion !== version) {
-        version = nextVersion
-        rowListeners.forEach((listener) => listener())
+    sync(next, nextVersion = seen) {
+      if (nextVersion !== seen) {
+        seen = nextVersion
+        rowsChanged()
       }
       if (next.count === snapshot.count && next.wholeNote === snapshot.wholeNote) return
       snapshot = next
       listeners.forEach((listener) => listener())
     },
     zoomedOut: () => onZoomOut(),
+    save: (list) => memory?.save(list),
+    readSaved: () => memory?.read() ?? null,
   }
 }

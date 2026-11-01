@@ -134,7 +134,7 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow']
+const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
@@ -670,6 +670,18 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       { ...DEFAULT_SETTINGS, outsideChangeGlow: '60s' },
       { ...DEFAULT_SETTINGS, outsideChangeGlow: 'off' },
     ])
+  })
+
+  it('"Pin default" after "Glow" (YAZ-3704 demo, 4J): Off by default, as the table of contents\' pin; On writes only its own field; Glow says Off turns off the whole feature', () => {
+    const { el, onChange } = mountOn('Editor')
+    expect(row(el, 'outsideChangeGlow')?.textContent).toContain('Off turns off this whole feature: no glow, no list, no bar.')
+    expect(row(el, 'outsideListPinned')?.querySelector('.setting__label')?.textContent).toBe('Pin default')
+    expect(rowButtons(el, 'outsideListPinned').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['On', 'false'],
+      ['Off', 'true'],
+    ])
+    act(() => rowButtons(el, 'outsideListPinned')[0].click())
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([{ ...DEFAULT_SETTINGS, outsideListPinned: true }])
   })
 
   it('"Table of contents default" (On · Off, with its hint) then "Pin default" (On · Off) under "Table of contents" on the Editor page, after Section indent; each writes the whole object with only its own field flipped (YAZ-2700; YAZ-3558 D2, D2a, D2b, D3, S15–S17)', () => {

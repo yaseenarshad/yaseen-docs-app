@@ -27,7 +27,8 @@ function mount() {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<OutsideChangesBar channel={channel} />))
+  // Pinned: the count is plain text. Unpinned, it opens the dropdown (OutsideChangesList.test.tsx).
+  act(() => root?.render(<OutsideChangesBar channel={channel} pinned />))
   const el = container
   const bar = () => el.querySelector('.outside-changes-bar')
   const button = (name: string) => [...el.querySelectorAll('button')].find((b) => b.textContent === name)

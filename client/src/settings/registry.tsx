@@ -782,9 +782,19 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'outsideChangeGlow',
             label: 'Glow',
+            hint: 'Off turns off this whole feature: no glow, no list, no bar.',
             keywords: ['ai', 'agent', 'highlight', 'changed', 'glow'],
             render: ({ settings, onChange }) => (
               <Segmented options={OUTSIDE_CHANGE_GLOW_OPTIONS} value={settings.outsideChangeGlow} onChange={(outsideChangeGlow) => onChange({ ...settings, outsideChangeGlow })} ariaLabel="Glow" />
+            ),
+          },
+          {
+            id: 'outsideListPinned',
+            label: 'Pin default',
+            hint: 'On: the numbered list of changes sits left of the note. Off: it opens from the count. Its Pin button sets this too.',
+            keywords: ['ai', 'agent', 'changed', 'list', 'numbered', 'sidebar', 'pin'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.outsideListPinned} onChange={(outsideListPinned) => onChange({ ...settings, outsideListPinned })} ariaLabel="Pin default" />
             ),
           },
         ],

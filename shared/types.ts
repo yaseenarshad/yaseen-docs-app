@@ -1570,6 +1570,8 @@ export interface SettingsState {
   tocLines: TocLines
   /** Settings › Editor › Outside changes (YAZ-3704 D5): how long the words that an AI or another app changed in an open note glow. `off`: no glow and no one-line note; the merge still runs. */
   outsideChangeGlow: OutsideChangeGlow
+  /** Settings › Editor › Outside changes › Pin default (YAZ-3704 demo): the numbered list of the changes sits left of the note; off, it opens from the bar's count. The list's own Pin and Unpin write it. */
+  outsideListPinned: boolean
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
   sidebarLines: TocLines
   /** The sidebar tree (YAZ-3309 D7, D8): how its level lines look — `plain` grey lines (the default), or `thread`: the bullet-threading path to the row under the mouse. It travels with the settings folder. */
@@ -1893,6 +1895,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
   outsideChangeGlow: 'until-checked',
+  outsideListPinned: false,
   sidebarLines: 'hover',
   sidebarLineStyle: 'plain',
   sidebarThreadColor: null,

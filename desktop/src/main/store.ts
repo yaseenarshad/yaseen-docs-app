@@ -512,6 +512,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
   outsideChangeGlow: (v): v is OutsideChangeGlow => typeof v === 'string' && (OUTSIDE_CHANGE_GLOWS as readonly string[]).includes(v),
+  outsideListPinned: (v): v is boolean => typeof v === 'boolean',
   sidebarLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
   sidebarLineStyle: (v): v is SidebarLineStyle => typeof v === 'string' && (SIDEBAR_LINE_STYLES as readonly string[]).includes(v),
   sidebarThreadColor: (v): v is string | null => v === null || isHexColour(v),

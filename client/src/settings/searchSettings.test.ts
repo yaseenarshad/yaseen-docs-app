@@ -68,6 +68,7 @@ describe('settingCandidates', () => {
       'tocLines',
       // Settings › Editor › Outside changes (YAZ-3704 D5).
       'outsideChangeGlow',
+      'outsideListPinned',
       // Settings › Code (YAZ-3449).
       'codeReadOnly',
       'codeWrap',

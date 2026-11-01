@@ -20,6 +20,7 @@ import { applyExternalMarkdown, EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, type Ou
 import { MAX_CHANGES, OUTSIDE_ACTIVE_CLASS, OUTSIDE_CHANGE_CLASS, OUTSIDE_CHECKED_CLASS, OUTSIDE_REMOVED_CLASS, OUTSIDE_TIP_ATTR, OUTSIDE_TIP_CLASS } from './outsideChanges'
 import { mergeExternalMarkdown } from './mergeExternal'
 import { createOutsideChangesChannel } from './outsideChangesChannel'
+import { keepOutsideChangesOfTabs, readOutsideChanges, saveOutsideChanges } from './outsideChangesMemory'
 
 const BASE = `* Parent
   * Child
@@ -30,9 +31,10 @@ const BASE = `* Parent
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-async function mount(defaultValue: string, opts: Omit<CreateCrepeOptions, 'root' | 'outsideChanges' | 'defaultValue'> & { glow?: OutsideChangeGlow } = {}) {
+async function mount(defaultValue: string, opts: Omit<CreateCrepeOptions, 'root' | 'outsideChanges' | 'defaultValue'> & { glow?: OutsideChangeGlow; tab?: string } = {}) {
   const zoomedOut = vi.fn()
-  const channel = createOutsideChangesChannel(zoomedOut)
+  const { tab } = opts
+  const channel = createOutsideChangesChannel(zoomedOut, tab === undefined ? null : { save: (list) => saveOutsideChanges(tab, 'a.md', list), read: () => readOutsideChanges(tab, 'a.md') })
   if (opts.glow !== undefined) channel.setGlow(opts.glow)
   const root = document.createElement('div')
   document.body.appendChild(root)
@@ -357,6 +359,21 @@ describe('the numbered list (YAZ-3998)', () => {
     expect(channel.rows().map((row) => row.number)).toEqual([1])
   })
 
+  it("a click on a row flashes the change's line as a table of contents jump does", async () => {
+    const { crepe, channel } = await mount('* One\n* Two\n')
+    outsideEdit(crepe, (md) => md.replace('Two', 'Two B'))
+    const animate = vi.fn()
+    HTMLElement.prototype.animate = animate as unknown as HTMLElement['animate']
+    try {
+      channel.go(channel.rows()[0].id)
+    } finally {
+      delete (HTMLElement.prototype as Partial<HTMLElement>).animate
+    }
+    expect(animate).toHaveBeenCalledTimes(1)
+    expect((animate.mock.contexts[0] as HTMLElement).textContent).toContain('Two B')
+    expect(JSON.stringify(animate.mock.calls[0][0])).toContain('color-mix')
+  })
+
   it('a row says a new line with its text, a removed bullet, and a link made of a word', async () => {
     const { crepe, channel } = await mount('* Book the room\n* Ask about parking\n* Send the agenda\n\nOther\n')
     outsideEdit(crepe, (md) => md.replace('* Book the room', '* Charge the camera\n* Book the room'))
@@ -377,6 +394,56 @@ describe('the numbered list (YAZ-3998)', () => {
     expect(listener).not.toHaveBeenCalled()
     channel.next()
     expect(listener).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a tab keeps the list of a page it left (demo feedback)', () => {
+  const leave = async (): Promise<void> => {
+    const m = mounted.pop()!
+    await m.crepe.destroy()
+    m.root.remove()
+  }
+
+  it('Back to the page brings its list back, numbers and all; a closed tab, or a changed note, brings nothing', async () => {
+    keepOutsideChangesOfTabs(['t1', 't2'])
+    const doc = '* One\n* Two\n'
+    const first = await mount(doc, { tab: 't1' })
+    outsideEdit(first.crepe, (md) => md.replace('Two', 'Two B'))
+    outsideEdit(first.crepe, (md) => md.replace('One', 'One A'))
+    const markdown = getMarkdownForSave(first.crepe)
+    await leave()
+    // React may start the page's editor twice and stop the first: the one that stays finds the list too.
+    const twin = await mount(markdown, { tab: 't1' })
+    const back = await mount(markdown, { tab: 't1' })
+    await Promise.resolve()
+    await twin.crepe.destroy()
+    expect(back.channel.rows().map((row) => row.number)).toEqual([1, 2])
+    expect(glowTexts(back.root)).toEqual([' A', ' B'])
+    // Checked off, then left: nothing waits for the page.
+    back.channel.clear()
+    await leave()
+    expect(readOutsideChanges('t1', 'a.md')).toBeNull()
+    const again = await mount(markdown, { tab: 't1' })
+    outsideEdit(again.crepe, (md) => md.replace('Two B', 'Two B2'))
+    await leave()
+    // The tab closed: nothing waits for it.
+    keepOutsideChangesOfTabs(['t2'])
+    const closed = await mount(markdown, { tab: 't1' })
+    await Promise.resolve()
+    expect(closed.channel.rows()).toEqual([])
+    await leave()
+    // The note changed while the tab was away: the kept list comes back on it, and what changed meanwhile glows after it.
+    const other = await mount(markdown, { tab: 't2' })
+    outsideEdit(other.crepe, (md) => md.replace('Two B', 'Two B C'))
+    const away = getMarkdownForSave(other.crepe)
+    await leave()
+    const changed = await mount(away.replace('One A', 'One AA').replace('Two B C', 'Two B C D'), { tab: 't2' })
+    await Promise.resolve()
+    expect(changed.channel.rows().map((row) => `${row.number} ${row.parts.map((part) => (part.kind === 'del' ? `-[${part.text}]` : part.kind === 'ins' ? `+[${part.text}]` : part.text)).join('')}`)).toEqual([
+      '1 Two B+[ C D]',
+      '2 One -[A]+[AA]',
+    ])
+    expect(glowTexts(changed.root)).toEqual(['A', ' C', ' D'])
   })
 })
 

@@ -22,6 +22,7 @@ import { mergeExternalMarkdown } from './external/mergeExternal'
 import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
 import { createOutsideChangesChannel } from './external/outsideChangesChannel'
+import { readOutsideChanges, saveOutsideChanges } from './external/outsideChangesMemory'
 import { OutsideChangesBar } from './external/OutsideChangesBar'
 import { OutsideChangesList } from './external/OutsideChangesList'
 import { TableOfContents } from './toc/TableOfContents'
@@ -246,9 +247,13 @@ interface EditorProps {
   hotkeysAside?: HotkeyAside
   /** Settings › Editor › Outside changes › Glow (YAZ-3704 D5): `settings.outsideChangeGlow`. Absent → until checked. */
   outsideChangeGlow?: SettingsState['outsideChangeGlow']
+  /** Settings › Editor › Outside changes › Pin default: `settings.outsideListPinned`. Absent → not pinned (the dropdown), as the table of contents. */
+  outsideListPinned?: boolean
+  /** The list's Pin and Unpin write the setting through this. */
+  onChangeOutsideListPinned?: (pinned: boolean) => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope, hotkeys, hotkeysAside, outsideChangeGlow }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -314,11 +319,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
 }
 
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, diagramDarkColors = 'adapt', hoverLinks = false, hoverBacklinks = false, previewScope, hotkeys, hotkeysAside, outsideChangeGlow }: EditorProps) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, reviewSettings, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, diagramDarkColors = 'adapt', hoverLinks = false, hoverBacklinks = false, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
   const state = useFile(path)
   const titles = usePathTitles(wikilinks)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
@@ -327,7 +332,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} />
+        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
       )}
     </section>
   )
@@ -379,6 +384,8 @@ function CrepeHost({
   hotkeys,
   hotkeysAside,
   outsideChangeGlow = DEFAULT_SETTINGS.outsideChangeGlow,
+  outsideListPinned = DEFAULT_SETTINGS.outsideListPinned,
+  onChangeOutsideListPinned,
 }: {
   root: string
   file: FileResponse
@@ -423,6 +430,10 @@ function CrepeHost({
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
   outsideChangeGlow?: SettingsState['outsideChangeGlow']
+  /** Settings › Editor › Outside changes › Pin default: `settings.outsideListPinned`. Absent → not pinned (the dropdown), as the table of contents. */
+  outsideListPinned?: boolean
+  /** The list's Pin and Unpin write the setting through this. */
+  onChangeOutsideListPinned?: (pinned: boolean) => void
 }) {
   // A copied page starts at its source's text size (YAZ-2951 S5); after that it changes on its own.
   const [documentZoom, setDocumentZoom] = useState(startView?.magnification ?? 100)
@@ -629,7 +640,15 @@ function CrepeHost({
    * as after any move the page made by itself.
    */
   const zoomedOutRef = useRef<() => void>(() => {})
-  const outsideChanges = useMemo(() => createOutsideChangesChannel(() => zoomedOutRef.current()), [])
+  // A tab keeps the list of a page it leaves until it shows the page again (YAZ-3704 demo feedback); an editor outside a tab keeps none.
+  const outsideChanges = useMemo(
+    () =>
+      createOutsideChangesChannel(
+        () => zoomedOutRef.current(),
+        tabId === undefined ? null : { save: (list) => saveOutsideChanges(tabId, file.path, list), read: () => readOutsideChanges(tabId, file.path) },
+      ),
+    [], // eslint-disable-line react-hooks/exhaustive-deps -- once per mount: the editor is keyed by its page
+  )
   // The Glow setting goes through the channel, never the Crepe effect's deps: a change rebuilds no editor (D5).
   // Declared before that effect, so the first state already has it.
   useEffect(() => outsideChanges.setGlow(outsideChangeGlow), [outsideChanges, outsideChangeGlow])
@@ -1075,7 +1094,7 @@ function CrepeHost({
           </button>
         </div>
       ) : (
-        <OutsideChangesBar channel={outsideChanges} />
+        <OutsideChangesBar channel={outsideChanges} pinned={outsideListPinned} onPin={onChangeOutsideListPinned} />
       )}
       {/* The scroller holds SIX stacked blocks, in this order. Block ZERO is the page title
           (⚡ YAZ-888) — the file's own name, React-side and never a ProseMirror node; block ONE is
@@ -1124,7 +1143,7 @@ function CrepeHost({
           with fewer than two rows (its headings or its bullets), while this page shows none (its
           choice, else "Table of contents default", YAZ-3558), and while a bullet is zoomed. */}
       {/* The numbered list of outside changes (YAZ-3998) floats in the room LEFT of the note the same way. */}
-      <OutsideChangesList channel={outsideChanges} hostRef={hostRef} />
+      {outsideListPinned && <OutsideChangesList channel={outsideChanges} hostRef={hostRef} onPin={onChangeOutsideListPinned} />}
       <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={contentWidth} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusNote} />
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the

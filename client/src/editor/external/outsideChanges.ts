@@ -8,8 +8,9 @@
  * the user's own typing) carries none, so it never glows. A rebuild makes a new state, so the list starts
  * empty; the host then says `markWholeNote`.
  *
- * The list (D3) lives in plugin state, memory only, for this editor: gone when the editor is destroyed,
- * nothing saved. Every position is mapped through every transaction, as find and the fold plugin map
+ * The list (D3) lives in plugin state, memory only, for this editor, nothing saved to disk. When the editor is
+ * destroyed, its tab keeps the list for this page (`outsideChangesMemory.ts`), and an editor of the same tab and page
+ * gets it back (`keptBack`). Every position is mapped through every transaction, as find and the fold plugin map
  * theirs. One change is one TEXTBLOCK (D4): ranges in one line are one change, and a range across several
  * textblocks (bullets added) is one change for each. More than `MAX_CHANGES` empties the list into
  * whole-note mode, with no glow.
@@ -38,14 +39,17 @@
  */
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, Selection, type Transaction } from '@milkdown/kit/prose/state'
-import type { Mapping } from '@milkdown/kit/prose/transform'
+import { Transform, type Mapping } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import type { OutsideChangeGlow } from '@shared/types'
 import { collapsedHeadingsHiding, setHeadingFoldSet } from '../outline/headingFolding'
 import { collapsedItemsHiding, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos, zoomToKey } from '../outline/zoom'
-import { EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, type OutsideRange } from './applyExternalMarkdown'
+import { FLASH_FRAMES, FLASH_MS, reducedMotion } from '../toc/tocMotion'
+import { EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, REWRITE_SHARE, replaceTracked, withTrailingParagraphOf, type OutsideRange } from './applyExternalMarkdown'
+import { diffDocs } from './diffDocs'
+import type { SavedOutsideChanges } from './outsideChangesMemory'
 import type { OutsideChangeRow, OutsideChangesChannel, OutsideChangesController, OutsideChangesSnapshot } from './outsideChangesChannel'
 
 export const OUTSIDE_CHANGE_CLASS = 'outside-change'
@@ -115,6 +119,7 @@ type OutsideMeta =
   | { type: 'glow'; glow: OutsideChangeGlow; now: number }
   | { type: 'expire'; now: number }
   | { type: 'active'; id: number; revealed: ReadonlySet<number>; revealedHeadings: ReadonlySet<number> }
+  | { type: 'restore'; changes: readonly OutsideChange[]; lastNumber: number }
 
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const outsideKey = new PluginKey<OutsideState>('mdapp-outside-changes')
@@ -157,6 +162,20 @@ const lineOf = ($pos: ResolvedPos): string => {
   const box = item !== null && $pos.index($pos.depth - 1) === 0 && typeof item.attrs.checked === 'boolean' ? (item.attrs.checked ? '[x] ' : '[ ] ') : ''
   const hashes = block.type.name === 'heading' ? `${'#'.repeat(Number(block.attrs.level))} ` : ''
   return box + hashes + block.textBetween(0, block.content.size, ' ', ' ')
+}
+
+/**
+ * A doc's shape, to know a kept list still fits it: its nodes' types and its text, in order. Attrs are left out (the heading ids
+ * are set again after a load), and so is an empty last paragraph (the editor adds one after its first transaction).
+ */
+const shapeOf = (doc: ProseNode): string => {
+  const parts: string[] = []
+  const last = doc.lastChild
+  const end = last !== null && last.type.name === 'paragraph' && last.content.size === 0 ? doc.content.size - last.nodeSize : doc.content.size
+  doc.nodesBetween(0, end, (node) => {
+    parts.push(node.isText ? (node.text ?? '') : `<${node.type.name}>`)
+  })
+  return parts.join('')
 }
 
 /** New outside ranges into the list: a range in a block that has a change already joins it (D4) and keeps its Before. */
@@ -490,7 +509,42 @@ const applyMeta = (meta: OutsideMeta, state: Omit<OutsideState, 'decorations'>):
     }
     case 'active':
       return { next: { ...state, activeId: meta.id, revealed: meta.revealed, revealedHeadings: meta.revealedHeadings }, redraw: true }
+    case 'restore':
+      return state.glow === 'off' ? { next: state, redraw: false } : { next: { ...state, changes: meta.changes, lastNumber: meta.lastNumber }, redraw: true }
   }
+}
+
+/** Where a position of `doc` was before the transform: the Before of a change (YAZ-3947); a start inside what it inserted is a new line. */
+const beforeThrough = (mapping: Mapping, doc: ProseNode) => (pos: number): string | null => {
+  const result = mapping.invert().mapResult(pos + 1, -1)
+  const $old = doc.resolve(result.pos)
+  return result.deletedAcross || !$old.parent.isTextblock ? null : lineOf($old)
+}
+
+/**
+ * A kept list back on the note its tab shows again (YAZ-3704 demo feedback): as it was, when the note is the same; when
+ * the note changed while the tab was away, the kept list goes through the diff from the doc it was drawn on to the note
+ * now, and what changed glows as one outside save would, numbered after it. Never the doc itself: folds, caret and
+ * history stay. Null: nothing fits (a rewrite, or a diff that does not give the note now).
+ */
+const keptBack = (kept: SavedOutsideChanges, doc: ProseNode, glow: OutsideChangeGlow): OutsideMeta | null => {
+  if (shapeOf(doc) === kept.shape) return { type: 'restore', changes: kept.changes as OutsideChange[], lastNumber: kept.lastNumber }
+  let old: ProseNode
+  try {
+    old = doc.type.schema.nodeFromJSON(kept.doc)
+  } catch {
+    return null
+  }
+  const target = withTrailingParagraphOf(old, doc)
+  const ranges = diffDocs(old, target)
+  if (ranges.some(({ from, to }) => to - from >= old.content.size * REWRITE_SHARE)) return { type: 'whole', now: Date.now() }
+  const away = new Transform(old)
+  const landed = replaceTracked(away, ranges, old)
+  if (!away.doc.eq(target)) return null
+  let last = kept.lastNumber
+  const mapped = mapChanges(kept.changes as OutsideChange[], away.mapping, away.doc)
+  const changes = addRanges(mapped, landed, away.doc, endsAt(glow, Date.now()), beforeThrough(away.mapping, old), () => ++last)
+  return { type: 'restore', changes, lastNumber: last }
 }
 
 /** The engine behind the channel's commands. Every transaction it sends is metadata-only. */
@@ -524,6 +578,10 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
     const { node } = view.domAtPos(inside)
     const element = view.dom.querySelector(`.${OUTSIDE_ACTIVE_CLASS}`) ?? (node instanceof Element ? node : node.parentElement)
     element?.scrollIntoView?.({ block: 'center' })
+    // The table of contents' landing flash on the change's line (YAZ-3704 demo, 4H), so a row lands as a TOC click does. jsdom has no `animate`.
+    const line = view.nodeDOM(target.pos)
+    if (line instanceof HTMLElement && typeof line.animate === 'function' && !reducedMotion())
+      line.animate(FLASH_FRAMES, { duration: FLASH_MS, easing: 'ease-out' })
   }
   const byNumber = (): OutsideChange[] => [...(current()?.changes ?? [])].sort((a, b) => a.number - b.number)
   return {
@@ -588,13 +646,8 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
               state = { ...state, changes, revealed: mapSet(state.revealed, transaction.mapping), revealedHeadings: mapSet(state.revealedHeadings, transaction.mapping) }
             }
             if (ranges !== undefined && ranges.length > 0 && state.glow !== 'off' && !state.wholeNote) {
-              // Before (YAZ-3947): the block's content start, back through this transaction; a start inside what it inserted is a new line.
-              const back = transaction.mapping.invert()
-              const beforeOf = (pos: number): string | null => {
-                const result = back.mapResult(pos + 1, -1)
-                const $old = oldState.doc.resolve(result.pos)
-                return result.deletedAcross || !$old.parent.isTextblock ? null : lineOf($old)
-              }
+              // Before (YAZ-3947): the block's content start, back through this transaction.
+              const beforeOf = beforeThrough(transaction.mapping, oldState.doc)
               // YAZ-3998: numbers in the order the changes came; an empty list starts at 1 again.
               let last = state.changes.length === 0 ? 0 : state.lastNumber
               state = { ...state, changes: addRanges(state.changes, ranges, doc, endsAt(state.glow, Date.now()), beforeOf, () => ++last) }
@@ -642,6 +695,15 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
           }
           sync()
           const tip = createTip(editorView)
+          // The list this tab kept for the page while it showed another (a link, then Back), with what changed meanwhile.
+          const kept = channel.readSaved()
+          let destroyed = false
+          if (kept !== null)
+            queueMicrotask(() => {
+              const state = outsideKey.getState(editorView.state)
+              const meta = destroyed || state === undefined ? null : keptBack(kept, editorView.state.doc, state.glow)
+              if (meta !== null) editorView.dispatch(editorView.state.tr.setMeta(outsideKey, meta))
+            })
           return {
             update: (_view, previous) => {
               // A change checked off, mapped or redrawn: what the box showed may be gone.
@@ -649,9 +711,16 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
               sync()
             },
             destroy: () => {
+              destroyed = true
               clearTimeout(timer)
               tip.destroy()
               unbind()
+              const state = outsideKey.getState(editorView.state)
+              channel.save(
+                state === undefined || state.changes.length === 0
+                  ? null
+                  : { shape: shapeOf(editorView.state.doc), doc: editorView.state.doc.toJSON(), changes: state.changes, lastNumber: state.lastNumber },
+              )
             },
           }
         },

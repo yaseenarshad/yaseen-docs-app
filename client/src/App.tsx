@@ -6,6 +6,7 @@ import { BETWEEN_VAULTS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MA
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
+import { keepOutsideChangesOfTabs } from './editor/external/outsideChangesMemory'
 import { newNoteBase } from './editor/wikilink/createFromLink'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useLinkEvents } from './hooks/useLinkEvents'
@@ -316,6 +317,8 @@ export function App() {
   const pageOnShow = blank ? null : file
   /** The notes this window's tabs show: "Recently closed" leaves them out (YAZ-3487 D10). One array while the tabs stay the same. */
   const tabPaths = useMemo(() => tabs.map((t) => t.path), [tabs])
+  // The outside-change lists a tab keeps for the pages it left go when the tab closes (YAZ-3704).
+  useEffect(() => keepOutsideChangesOfTabs(tabs.map((t) => t.id)), [tabs])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const sidebarCollapsedRef = useRef(sidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
@@ -622,6 +625,8 @@ export function App() {
   // The table of contents' "Pin" / "Unpin" (YAZ-2700): the same stable door.
   const changeTableOfContents = useCallback((mode: TableOfContents) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContents: mode }), [changeSettings])
   // A drag of the names column's edge (YAZ-2752), on its release: the same stable door.
+  // The outside changes list's Pin and Unpin (YAZ-3704 demo): the same stable door.
+  const changeOutsideListPinned = useCallback((pinned: boolean) => changeSettings({ ...newNoteFolderInputs.current.settings, outsideListPinned: pinned }), [changeSettings])
   const changeTableOfContentsWidth = useCallback((width: number) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContentsWidth: width }), [changeSettings])
   // A drawing's engine moved a canvas pref (YAZ-3028, Draw's 🔒 YAZ-1775 D9): the same stable door.
   const changeCanvasPrefs = useCallback((canvas: CanvasPrefs) => changeSettings({ ...newNoteFolderInputs.current.settings, canvas }), [changeSettings])
@@ -2790,6 +2795,8 @@ export function App() {
       hotkeysAside: settings.hotkeysAside,
       // YAZ-3704 D5: how long the words an outside save changed glow, a SETTING; it reaches the editor through a channel, never a rebuild.
       outsideChangeGlow: settings.outsideChangeGlow,
+      outsideListPinned: settings.outsideListPinned,
+      onChangeOutsideListPinned: changeOutsideListPinned,
       // Upkeep off (🔒 D7): no settings, so no Reviews section.
       reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
     }
