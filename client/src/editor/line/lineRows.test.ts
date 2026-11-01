@@ -106,12 +106,12 @@ describe('which blocks get the pickers', () => {
     expect(labels(2)).toEqual(['Default (Solid)', 'Solid', 'Dotted', 'Dashed'])
   })
 
-  it('S41: a paragraph, a heading and a bullet get no pickers, only the "turn into" strip (YAZ-3727 D13, D14)', async () => {
+  it('S41: a paragraph, a heading and a bullet get no pickers, only the "turn into" strip (YAZ-3727 D13, D14); the heading folds, so Collapse all and Expand all too (D23)', async () => {
     const { view, item } = await mount('# H\n\ntext\n\n* bullet\n')
     for (const type of ['heading', 'paragraph', 'list_item']) {
       aim(view, nth(view, type))
       rightClick(item)
-      expect(popupOf(view)?.querySelectorAll('.ctx-menu__item').length ?? 0).toBe(0)
+      expect([...(popupOf(view)?.querySelectorAll('.ctx-menu__item') ?? [])].map((b) => b.textContent)).toEqual(type === 'heading' ? ['Collapse all', 'Expand all'] : [])
       expect(popupOf(view)?.querySelectorAll('.ctx-menu__strip button').length ?? 0).toBe(4)
       expect(popupOf(view)?.querySelector('.block-menu-picker') ?? null).toBeNull()
     }

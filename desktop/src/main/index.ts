@@ -306,6 +306,7 @@ app.whenReady().then(() => {
     writeText: (text) => clipboard.writeText(text),
     write: (data) => clipboard.write(data),
     readText: () => clipboard.readText(),
+    revealImage: (src) => revealVaultImage(src, (file) => revealItem({ path: file })),
     rendererUrl: process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html',
   })
   const handlers = createMenuHandlers(manager, {

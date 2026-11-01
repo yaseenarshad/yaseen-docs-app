@@ -10,7 +10,7 @@ import { undo } from '@milkdown/kit/prose/history'
 import type { MenuAction, MenuItem, MenuSection } from '../sidebar/menuSections'
 import type { CopyAsMode } from '@shared/types'
 import { caretIn, endOf, md, mount, posOf, runCommand, select, unmountAll } from './marks/markTestKit'
-import { toggleOutlineFold } from './outline/outlineFolding'
+import { isOutlineItemCollapsed, toggleOutlineFold } from './outline/outlineFolding'
 import { lineSections, misspellingAt, NoteMenu, noteMenuSections, TABLE_HANDLE_MENU } from './noteMenu'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import { cellDOM, cellPos, mountNote as mountTable, mouseAt, unmountAll as unmountTables } from './table/tableTestKit'
@@ -236,12 +236,25 @@ describe('the right-click (YAZ-3653)', () => {
     expect((view.state.selection as CellSelection).isColSelection()).toBe(true)
   })
 
-  it('on an image: the native image menu stays', async () => {
+  it('on an image: the image\'s rows in the app menu (YAZ-3727 D22); Reveal only for a vault image', async () => {
+    const edit = vi.fn(async (_action: string, _arg?: unknown) => undefined)
+    window.yaseenDocs = { ...window.yaseenDocs, menu: { ...window.yaseenDocs?.menu, edit } } as typeof window.yaseenDocs
     const { view } = await open('* one\n')
-    const image = document.createElement('img')
-    view.dom.querySelector('p')!.append(image)
-    expect(rightClick(image).defaultPrevented).toBe(false)
-    expect(document.querySelector('.ctx-menu')).toBeNull()
+    // A bare <img> put in the note's DOM: ProseMirror may redraw the line over it, so each right-click gets a new one.
+    const imageAt = (src: string) => {
+      const image = document.createElement('img')
+      image.src = src
+      view.dom.querySelector('p')!.append(image)
+      return image
+    }
+    const row = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role=menuitem]')].find((b) => b.textContent === label)!
+    expect(rightClick(imageAt('https://example.com/a.png')).defaultPrevented).toBe(true)
+    expect([...document.querySelectorAll('.ctx-menu [role=menuitem]')].map((b) => `${b.textContent}${(b as HTMLButtonElement).disabled ? '*' : ''}`)).toEqual(['Copy image', 'Reveal in Finder*'])
+    await act(async () => row('Copy image').click())
+    expect(edit).toHaveBeenLastCalledWith('copy-image', { x: 40, y: 50 })
+    rightClick(imageAt('app://vault/root/a.png?from='))
+    await act(async () => row('Reveal in Finder').click())
+    expect(edit).toHaveBeenLastCalledWith('reveal-image', 'app://vault/root/a.png?from=')
   })
 })
 
@@ -279,7 +292,7 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
   it('on a bullet with children: Open in new tab, the strip, the children rows, then the clipboard rows, in groups', async () => {
     const { crepe, view } = await open('* a\n  * kid\n* b\n', { onOpen: vi.fn() })
     rightClickOn(view, posOf(crepe, 'a'))
-    expect(groups()).toEqual([['Open in new tab'], [STRIP('Bullet list')], ['Number children'], ...CLIPBOARD])
+    expect(groups()).toEqual([['Open in new tab'], [STRIP('Bullet list')], ['Number children', 'Collapse all⌘⇧U', 'Expand all⌘⇧I'].map((label) => label.replace(/⌘.*/, '')), ...CLIPBOARD])
     // D19: no glyph, so no row is pushed right to line up after one.
     expect(document.querySelector('.ctx-menu')!.classList.contains('ctx-menu--glyphs')).toBe(false)
     // D17: no "⇧-click" hint here (on the text it only extends the selection), so the menu is no wider than the strip.
@@ -327,6 +340,38 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
     expect(md(crepe)).toBe('p1\n\n* p2\n')
     undo(view.state, view.dispatch)
     expect(md(crepe)).toBe('p1\n\np2\n')
+  })
+
+  it('a right-click beside the text, in the gap after a checkbox: the bullet\'s rows (D22)', async () => {
+    const { crepe, view } = await open('* [ ] a\n* [ ] b\n')
+    // Inside the list item, before its line: where the gap between the box and the text resolves.
+    expect(lineSections(view, posOf(crepe, 'a') - 1, view.state.selection).flat().filter((item) => item.kind === 'strip')).toHaveLength(1)
+    rightClickOn(view, posOf(crepe, 'a') - 1)
+    expect(groups()[0]).toEqual([STRIP('Checklist')])
+  })
+
+  it('on a fold chevron: the line\'s menu, as on its text, Collapse all and Expand all with the children rows; one ⌘Z (D23)', async () => {
+    const { crepe, view } = await open('* a\n  * kid\n* b\n  * kid2\n')
+    const chevron = document.createElement('span')
+    chevron.className = 'outline-toggle'
+    view.dom.querySelector('p')!.prepend(chevron)
+    pointAt(view, posOf(crepe, 'a'))
+    act(() => void chevron.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
+    expect(groups().slice(0, 2)).toEqual([[STRIP('Bullet list')], ['Number children', 'Collapse all', 'Expand all']])
+    const items = () => {
+      const found: number[] = []
+      view.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'list_item' && node.childCount > 1) found.push(pos)
+      })
+      return found.map((pos) => isOutlineItemCollapsed(view.state, pos))
+    }
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role=menuitem]')].find((b) => b.textContent === 'Collapse all')!.click())
+    expect(items()).toEqual([true, true])
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    // ⌘Z through the editor's keymaps: the fold-all's own undo (`foldAllHotkeys.ts`), not the text history.
+    const cmdZ = new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', keyCode: 90, metaKey: true, bubbles: true, cancelable: true })
+    view.someProp('handleKeyDown', (handler) => handler(view, cmdZ))
+    expect(items()).toEqual([false, false])
   })
 
   it('in a code block or a table cell: no line rows', async () => {

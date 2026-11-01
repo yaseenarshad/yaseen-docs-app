@@ -144,7 +144,7 @@ describe('writtenNumbersRow: a numbered list becomes bullets with its numbers wr
     let { view, item } = await mount('1. a\n   * kid\n2. b\n')
     aimAt(view, 'a')
     rightClick(item)
-    expect(labels(view).slice(-2)).toEqual(['Number children', ROW])
+    expect(labels(view).slice(-4)).toEqual(['Number children', ROW, 'Collapse all', 'Expand all'])
     ;({ view, item } = await mount('* a\n* b\n'))
     aimAt(view, 'a')
     rightClick(item)

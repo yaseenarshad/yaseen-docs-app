@@ -101,7 +101,7 @@ describe('the block menu\'s strip turns a list into a checklist, bullets, number
     const { view, item } = await mount('1. a\n   * kid\n2. b\n')
     aimAt(view, 'a')
     rightClick(item)
-    expect(menu(view)).toEqual([STRIP('Numbered list'), '|', 'Number children', 'Bullets with written numbers'])
+    expect(menu(view)).toEqual([STRIP('Numbered list'), '|', 'Number children', 'Bullets with written numbers', 'Collapse all', 'Expand all'])
   })
 
   it.each([

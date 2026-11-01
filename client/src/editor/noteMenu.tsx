@@ -1,8 +1,9 @@
 /**
  * A note's own right-click menu (YAZ-3653): the rows of the native text menu — the spelling
  * suggestions, Cut, Copy, Copy as ▸, Paste, Paste as ▸ — drawn by the app's `ContextMenu`, so a
- * note's menu has the look of the tab and sidebar menus. A right-click on an image keeps the native
- * image menu (Copy Image, Reveal in Finder). Each clipboard row first gives the focus back to what
+ * note's menu has the look of the tab and sidebar menus. A right-click on an image shows the image's
+ * rows instead, the native image menu's (Copy image, Reveal in Finder; YAZ-3727 D22). A fold chevron's is the line's menu, as
+ * on its text (D23: Collapse all and Expand all are line rows, `outline/foldAllRows.ts`). Each clipboard row first gives the focus back to what
  * held it (the note, or a code block in it), then asks main to run the row on this window
  * (`menu.edit`), as the native menu's roles do. A suggestion replaces the word in the note itself,
  * so ⌘Z undoes it like typing. A right-click in a table cell adds the Table part after the paste rows (YAZ-3769, `table/tableMenu.ts`). A right-click a link's own menu took (the one link menu, YAZ-3609 D23) opens
@@ -14,7 +15,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import type { NoteMenuAction } from '@shared/types'
+import type { NoteMenuAction, NoteMenuArg } from '@shared/types'
 import { api } from '../api'
 import { blockMenuItems } from './blockHandleMenu'
 import { textLineTarget } from './blockHandleTarget'
@@ -65,9 +66,8 @@ function glyphOf(make: () => SVGElement): ReactNode {
  * The line part (YAZ-3727 D15): the bullet menu's rows for the line right-clicked at `pointer`, one section
  * per group as on the dot. `selection` is the note's selection from before the right-click, which may
  * have selected the word under the pointer: the strip reads a highlight from it. None off a line's text
- * (code, a table cell). A row does nothing once the note has changed under the open menu. No hints (D17): the
- * bullet menu's name a click on the dot ("⇧-click"), which on the text only extends the selection, and the
- * hint alone made the menu wider.
+ * (code, a table cell). A row does nothing once the note has changed under the open menu. Hints are keys
+ * (Collapse all's ⌘⇧U); no row names a click on the dot (D17, D20).
  */
 export function lineSections(view: EditorView, pointer: number | null, selection: Selection): MenuEntry[][] {
   const target = pointer === null ? null : textLineTarget(view.state.doc, pointer, selection)
@@ -85,7 +85,7 @@ export function lineSections(view: EditorView, pointer: number | null, selection
     sections[sections.length - 1].push(
       item.kind === 'strip'
         ? { kind: 'strip', id, label: item.label, buttons: item.buttons.map((b) => ({ label: b.label, icon: glyphOf(b.icon), active: b.active, onSelect: guarded(b.run) })) }
-        : { id, label: item.label, danger: item.danger, disabled: item.disabled, icon: item.icon && glyphOf(item.icon), onSelect: guarded(item.run) },
+        : { id, label: item.label, hint: item.hint, danger: item.danger, disabled: item.disabled, icon: item.icon && glyphOf(item.icon), onSelect: guarded(item.run) },
     )
   })
   return sections
@@ -178,9 +178,25 @@ export function noteMenuSections(view: EditorView, misspelling: Misspelling | nu
   ]
 }
 
+/**
+ * An image's rows (YAZ-3727 D22), as the native image menu had them: main copies the image at the point
+ * right-clicked (`x`, `y`, page px), and reveals a vault image's file; any other image has no file, so its
+ * Reveal is inert.
+ */
+export function imageMenuSections(image: { src: string; x: number; y: number }, run: (action: NoteMenuAction, arg?: NoteMenuArg) => void): MenuSection[] {
+  return [
+    [
+      { id: 'copy-image', label: 'Copy image', onSelect: () => run('copy-image', { x: image.x, y: image.y }) },
+      { id: 'reveal-image', label: 'Reveal in Finder', disabled: !image.src.startsWith('app://vault/'), onSelect: () => run('reveal-image', image.src) },
+    ],
+  ]
+}
+
 interface OpenMenu {
   x: number
   y: number
+  /** The image right-clicked, by its `src` as loaded: then the menu is its rows only (D22). */
+  image: string | null
   misspelling: Misspelling | null
   /** The document position right-clicked, and the document it is in: a bullet there is Without folded lines' copy. */
   pointer: number | null
@@ -206,13 +222,15 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
     const onContextMenu = (event: MouseEvent) => {
       const before = pressed !== null && pressed.doc === view.state.doc ? pressed.selection : view.state.selection
       pressed = null
-      // A link's own menu (`markdownLink.ts`, `wikilinkMenu.ts`) has claimed it first; an image keeps the native menu.
-      if (event.defaultPrevented || !(event.target instanceof Element) || event.target.closest('img') !== null) return
+      // A link's own menu (`markdownLink.ts`, `wikilinkMenu.ts`) has claimed it first.
+      if (event.defaultPrevented || !(event.target instanceof Element)) return
       event.preventDefault()
       const active = document.activeElement
+      const image = event.target.closest('img')
       setMenu({
         x: event.clientX,
         y: event.clientY,
+        image: image === null ? null : image.currentSrc || image.src,
         misspelling: misspellingAt(view, event.clientX, event.clientY, (word) => api.spell.suggestions(word)),
         pointer: view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null,
         doc: view.state.doc,
@@ -225,7 +243,7 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
     const onHandleMenu = (event: Event) => {
       const { x, y, pos } = (event as CustomEvent<{ x: number; y: number; pos: number }>).detail
       const active = document.activeElement
-      setMenu({ x, y, misspelling: null, pointer: pos + 1, doc: view.state.doc, selection: view.state.selection, focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null })
+      setMenu({ x, y, image: null, misspelling: null, pointer: pos + 1, doc: view.state.doc, selection: view.state.selection, focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null })
     }
     view.dom.addEventListener('mousedown', onMouseDown, true)
     view.dom.addEventListener('contextmenu', onContextMenu)
@@ -239,12 +257,12 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
   if (view === null || menu === null) return null
   const pointer = menu.doc === view.state.doc ? menu.pointer : null
   const refocus = () => (menu.focused ?? view.dom).focus()
-  const run = (action: NoteMenuAction, word?: string) => {
+  const run = (action: NoteMenuAction, arg?: NoteMenuArg) => {
     refocus()
     // After the focus is back, so the bullet is checked against the selection the copy will see.
     const bullet = action === 'copy-visible' && menu.pointer !== null && menu.doc === view.state.doc ? bulletToCopy(view.state, menu.pointer) : null
     if (bullet !== null) copyVisibleNext(view, bullet)
-    api.menu.edit(action, word).catch((error: unknown) => {
+    api.menu.edit(action, arg).catch((error: unknown) => {
       if (bullet !== null) forgetCopyVisible(view)
       console.error('Menu action failed', error)
     })
@@ -254,7 +272,7 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
     <ContextMenu
       x={menu.x}
       y={menu.y}
-      sections={[spelling, ...lineSections(view, pointer, menu.selection), ...rest]}
+      sections={menu.image !== null ? imageMenuSections({ src: menu.image, x: menu.x, y: menu.y }, run) : [spelling, ...lineSections(view, pointer, menu.selection), ...rest]}
       onClose={() => {
         setMenu(null)
         refocus()

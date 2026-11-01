@@ -90,6 +90,7 @@
  *    plain line or a heading); then Number children
  *    ↔ Bullet children (YAZ-729, `outline/numberChildrenRow.ts`), only when the item has a direct child list. On a numbered line, "Bullets with written numbers" turns its list
  *    into bullets with each number written as `n) ` text (YAZ-3727 D12, `writtenNumbersRow`).
+ *    On a line that folds, Collapse all and Expand all follow (YAZ-3727 D23, `outline/foldAllRows.ts`).
  *  - Typing a list marker (YAZ-3727 D8, D9, `listMarkerTyping.ts`): replaces Milkdown's `1. ` and `* ` input rules. A
  *    typed space after `n.` or `*` / `-` / `+` at the start of a PLAIN line goes in as text, then the line becomes a list
  *    line as its own undo step; ⌘Z or Backspace right after gives back the plain text. Never on Enter; inside a list
@@ -283,6 +284,7 @@ import { listMarkers } from './outline/listMarkers'
 import { listMarkerTyping, undoListMarker } from './listMarkerTyping'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
+import { foldAllRows } from './outline/foldAllRows'
 import { openBulletRow } from './outline/openBulletRow'
 import { focusSidebar } from '../lib/focusHandoff'
 import { createWikilinkClick, wikilinkFollower, type WikilinkNav } from './wikilink/wikilinkClick'
@@ -621,7 +623,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // buttons and T in one strip, YAZ-3727 D13, D14), its children (Number children, when it has any), its
   // own numbered list as bullets with written numbers (YAZ-3727 D12),
   // then a line's pickers (YAZ-3164 D3), or a table's settings (YAZ-3767 D7). A new row joins its group.
-  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...turnIntoRows(view, target, ctx), ...numberChildrenRow(view, target, ctx), ...writtenNumbersRow(view, target, ctx), ...lineRows(view, target, ctx), ...tableRows(view, target, ctx)]))
+  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...turnIntoRows(view, target, ctx), ...numberChildrenRow(view, target, ctx), ...writtenNumbersRow(view, target, ctx), ...foldAllRows(view, target, ctx), ...lineRows(view, target, ctx), ...tableRows(view, target, ctx)]))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.
