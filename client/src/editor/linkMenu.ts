@@ -75,7 +75,7 @@ export interface ListRow {
 }
 
 export interface LinkMenu {
-  /** What the one grey label row says (demo M3): the page's name, then its ID, joined by " · ". */
+  /** What the one grey top line says (demo M3), joined by " · ": only what the pill hides, an ID link's "ID: <id>", a missing note, an ID of another vault (YAZ-3747 demo). */
   labels: string[]
   open?: () => void
   openNew?: () => void

@@ -138,7 +138,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     const { root, view } = await mount('pad [[YAS-466]] tail\n')
     const menu = menuOf(root, view, 'AR v2 plan')
     expect(shape(menu)).toEqual([
-      '(AR v2 plan · YAS-466)', '──',
+      '(ID: YAS-466)', '──', // only what the pill hides (YAZ-3747 demo)
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name and ID', 'Copy ID', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
@@ -147,11 +147,10 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
   })
 
-  it('a name link: no ID label, "Copy name" with the name the pill shows (YAZ-3778 D3), no Copy ID', async () => {
+  it('a name link: no top line (it would repeat the pill, YAZ-3747 demo), "Copy name" with the name the pill shows (YAZ-3778 D3), no Copy ID', async () => {
     const { root, view } = await mount('pad [[Plans/Road Map]] tail\n')
     const menu = menuOf(root, view, 'Road Map')
     expect(shape(menu)).toEqual([
-      '(Road Map)', '──', // the pill's name, not the typed path (YAZ-3747 demo)
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
@@ -160,11 +159,10 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
   })
 
-  it('a folder link: "<name> (folder)", and Open in ▸ has no New window, as in the sidebar', async () => {
+  it('a folder link: no top line, and Open in ▸ has no New window, as in the sidebar', async () => {
     const { root, view } = await mount('pad [[Projects]] tail\n')
     const menu = menuOf(root, view, 'Projects')
     expect(shape(menu)).toEqual([
-      '(Projects (folder))', '──',
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
@@ -173,12 +171,11 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(flyoutOf(menu))).toEqual(['VS Code', 'Default app', '──', 'Reveal in Finder'])
   })
 
-  it('a Markdown link into another vault of the window: "<name> (<vault>)", Copy name, and the place rows of its page', async () => {
+  it('a Markdown link into another vault of the window: no top line (the pill shows its vault), Copy name, and the place rows of its page', async () => {
     const { root, view } = await mountMarkdown('[the plan](../Other/Plan.md)\n')
     rightClick(root.querySelector('a')!)
     const menu = popupOf(view)
     expect(shape(menu)).toEqual([
-      '(Plan (Other Vault))', '──',
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
@@ -196,7 +193,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
   it('with no doors from App the place rows that need one are left out; Copy path stays', async () => {
     const { root, view } = await mount('pad [[YAS-466]] tail\n', false)
     expect(shape(menuOf(root, view, 'AR v2 plan'))).toEqual([
-      '(AR v2 plan · YAS-466)', '──',
+      '(ID: YAS-466)', '──', // only what the pill hides (YAZ-3747 demo)
       'Open', 'Open in new tab', '──',
       'Copy name and ID', 'Copy ID', 'Copy path', '──',
       'Edit link', 'Remove link',
@@ -380,6 +377,6 @@ describe('the menus of a missing note and an ID of another vault (YAZ-3905; thei
 
   it('S23: letters no open vault has stay a name link, with a name link\'s menu', async () => {
     const plain = await mount('pad [[GPT-4]] tail\n')
-    expect(shape(menuOf(plain.root, plain.view, 'GPT-4'))).toEqual(['(GPT-4)', '──', 'Open', 'Open in new tab', '──', 'Copy name', '──', 'Edit link', 'Remove link'])
+    expect(shape(menuOf(plain.root, plain.view, 'GPT-4'))).toEqual(['Open', 'Open in new tab', '──', 'Copy name', '──', 'Edit link', 'Remove link'])
   })
 })

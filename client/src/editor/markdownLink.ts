@@ -166,7 +166,7 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
 
 /**
  * The one link menu's rows for a Markdown link (YAZ-3609 D23, YAZ-3740, `linkMenu.ts`). A link into a vault of the
- * window names its page (and its vault, D22), opens in a new tab too, and copies its name; one whose page is there
+ * window opens in a new tab too, and copies its name; one whose page is there
  * has the place rows (Show in sidebar, Copy path, Focus, Favorites, "Open in ▸"). Any other link opens only through
  * the OS, and "Copy address" copies its href.
  */
@@ -174,12 +174,12 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
   const path = nav.vaultPath?.(hit.href) ?? null
   // The page's name as the sidebar shows it (YAZ-3778 D2): no `.md`, no drawing's or diagram's extension.
   const name = path === null ? null : fileLabel(path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1))
-  const vault = path === null ? null : (nav.vaultTag?.(path) ?? null)
   const local = hit.href.startsWith('#')
   // Only a file or folder that is there, found as a click finds it.
   const found = path === null ? null : (nav.inApp?.(hit.href) ?? null)
   return {
-    labels: name === null || name === '' ? [] : [vault === null ? name : `${name} (${vault})`],
+    // No top line (YAZ-3747 demo): the pill already shows the name and its vault.
+    labels: [],
     open: local ? undefined : () => follow(hit.href, 'thisTab'),
     openNew: path === null ? undefined : () => follow(hit.href, 'backgroundTab'),
     copyName: name === null || name === '' ? undefined : () => copyText(name, 'name', nav.onNotice, nav.copy, true),

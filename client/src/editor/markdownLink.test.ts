@@ -318,7 +318,7 @@ describe('right-click menu', () => {
     expect(nav.open).toHaveBeenCalledExactlyOnceWith('https://example.com')
   })
 
-  it('D23 a link into a vault of the window: its name and vault, Open (this tab) and Open in new tab (behind)', async () => {
+  it('D23 a link into a vault of the window: no top line (the pill shows its name and vault, YAZ-3747 demo), Open (this tab) and Open in new tab (behind)', async () => {
     const openPath = vi.fn()
     const { root, view } = await mount('[the plan](../Other/Plan.md)\n', {
       inApp: () => '/Other/Plan.md',
@@ -329,8 +329,8 @@ describe('right-click menu', () => {
     })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
     // No App doors here: of the place rows only Copy path (YAZ-3740; with the doors: `linkMenu.test.ts`).
-    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Plan (Other Vault)', 'Open', 'Open in new tab', 'Copy name', 'Copy path', 'Edit link', 'Remove link'])
-    expect(rowsOf(view)[0]!.disabled).toBe(true)
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Edit link', 'Remove link'])
+    expect(rowsOf(view).some((row) => row.disabled)).toBe(false)
     rowNamed(view, 'Open in new tab').click()
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
     rowNamed(view, 'Open').click()

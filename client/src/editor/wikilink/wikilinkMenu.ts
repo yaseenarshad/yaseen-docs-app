@@ -1,12 +1,12 @@
 /**
  * Right-click on a `[[link]]`: the one link menu (YAZ-3609 D23, YAZ-3740, `linkMenu.ts`). An id link
  * (YAZ-2293) shows a title and hides the id, so this menu is where the id can be SEEN and copied —
- * the note's name, its id, "Copy name and ID", "Copy ID". A link to a folder names it `<name> (folder)`.
+ * its top line "ID: <id>", "Copy name and ID", "Copy ID". No other link has a top line: it would repeat the pill (YAZ-3747 demo).
  * A name link and a view-only link get the same menu with no ID rows: "Copy name" copies the name the pill
  * shows (YAZ-3778 D2, D3). A link that is found has the place rows too: Show in sidebar, Copy path,
  * Focus, Favorites, "Open in ▸". An id no note has (YAZ-3905 S10) reads (Missing note) (its id), and an
  * ID of another vault of the window (S23) (its id) (ID from the … vault): both offer only Copy ID, Edit
- * and Remove. Any id before the index loads has no name row; its id and Copy ID are still offered.
+ * and Remove. Any id before the index loads still shows its id and Copy ID.
  * Raw text keeps Electron's native menu.
  *
  * RIGHT-BUTTON MOUSEDOWN (and a Ctrl-click's) is swallowed on a collapsed link, for
@@ -19,7 +19,6 @@ import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pathTitles } from '../../lib/pageLabel'
-import { folderLabel, folderRecord } from '../../links/shortcuts'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkMenu } from '../linkMenu'
 import { OPEN_ID_LINK } from './idLinkCaret'
 import { linkPosAtDOM, wikilinkMatchAt, type LinkFollow, type WikilinkNav } from './wikilinkClick'
@@ -69,19 +68,14 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
   if (other !== null) return { labels: [other.id, other.vault === null ? 'ID from another vault' : `ID from the ${other.vault} vault`], copyId: copyIdRow(other.id), edit, remove }
   const id = idOf(inner, source)
   const title = id === null ? page : titleOf(id)
-  // A folder's name row says so: an id is its settings file's, and resolves to its directory.
-  const dir = page === '' ? null : source.resolve?.(page)
-  const isFolder = dir != null && (id === null ? folderRecord(source.folders, dir) !== undefined : folderRecord(source.folders, dir)?.id === id)
   // The page's name as the pill shows it (D2, D3): its title for an ID link, else its name without folders or a hidden extension.
   const shown = page === '' ? '' : linkDisplayText(page, titleOf, named)
-  // The top line names the page as the pill does (YAZ-3747 demo): never a name link's typed path, which made the menu wide.
-  const label = id === null ? shown : title
-  const name = label === undefined || label === '' ? undefined : isFolder ? folderLabel(label) : label
   const found = id === null || title !== undefined
   // The place rows (YAZ-3740): only for a file or a folder that is there.
   const path = page === '' ? null : linkPath(inner, source, viewOnly)
   return {
-    labels: [...(name === undefined ? [] : [name]), ...(id === null ? [] : [id])],
+    // Only what the pill hides (YAZ-3747 demo): an ID link's ID. The pill already shows the name, a folder's icon, a vault.
+    labels: id === null ? [] : [`ID: ${id}`],
     // `[[#heading]]` of this note: the heading jump is GRO-2239, so nothing to open.
     open: page === '' ? undefined : () => follow(inner, 'thisTab'),
     openNew: page === '' ? undefined : () => follow(inner, 'backgroundTab'),
