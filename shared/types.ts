@@ -469,7 +469,11 @@ export interface DrawingLoadResponse {
   size: number
   /** Every image the scene still references and whose bytes were found, keyed by `fileId`. An id with no bytes is absent: the engine draws its placeholder. */
   files: Record<string, DrawingFileEntry>
-  /** The subset of `files` that came from the `assets/` store; the renderer never ships these back. */
+  /**
+   * The ids of `files` the renderer never ships back: all of them for a board with its pictures
+   * inside (YAZ-3943 D5: the save finds them itself), only the ones from the `assets/` store for a
+   * "pictures out" board.
+   */
   stored: string[]
 }
 
@@ -496,6 +500,8 @@ export interface DrawingSaveResponse {
   size: number
   /** The ids now on disk — the renderer adds them to its persisted set so it never ships them twice. */
   persisted: string[]
+  /** YAZ-3943 D5, the 50 MB rule: this save moved the board's pictures out to `assets/` (the block now says so). */
+  movedOut?: true
 }
 
 export interface DiagramLoadRequest {
@@ -547,6 +553,21 @@ export interface BoardReadOnlyResponse {
   mtime: number
   size: number
 }
+
+/**
+ * `board:set-pictures` (YAZ-3943 D5): the cog's "Move pictures out" (`out: true`) and "Keep pictures
+ * inside" (`out: false`) on a drawing. One read, one atomic write; nothing is deleted from `assets/`.
+ */
+export interface BoardPicturesRequest {
+  root: string
+  path: string
+  out: boolean
+  /** Required: the mtime the tab last read or wrote. A differing disk mtime rejects `CONFLICT` and writes NOTHING. */
+  expectedMtime: number
+}
+
+/** The file after the write — or as it was, when it already was that way (nothing written, the mtime unmoved). */
+export type BoardPicturesResponse = BoardReadOnlyResponse
 
 /**
  * `fs:create-board` (YAZ-3028 D9): a NEW drawing or diagram, born with its empty content. Main picks

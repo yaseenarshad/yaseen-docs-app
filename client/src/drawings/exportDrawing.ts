@@ -3,11 +3,12 @@
  * embedded in the file — so it opens in upstream Excalidraw, on excalidraw.com, or on anyone
  * else's machine with its pictures intact.
  *
- * 🔒 YAZ-1775 D3 SAYS THE VAULT FILE NEVER EMBEDS, AND THAT EXPORT IS THE ONE PLACE THAT DOES: a
- * file being sent to someone else has no `assets/` folder to point at. It is a SEPARATE document —
- * `drawing:save` is untouched and the vault file is not read, written or renamed by an export.
+ * Since YAZ-3943 D5 the vault file keeps its pictures inside too (🔒 YAZ-1775 D3, "the vault file never
+ * embeds", is reversed), but a "pictures out" board does not, and a file being sent to someone else
+ * has no `assets/` folder to point at. So the export still embeds, by itself. It is a SEPARATE
+ * document — `drawing:save` is untouched and the vault file is not read, written or renamed by an export.
  *
- * THE FILES MAP IS THE WHOLE CANVAS'S (everything hydrated out of `assets/` at load, plus anything
+ * THE FILES MAP IS THE WHOLE CANVAS'S (everything hydrated at load, plus anything
  * pasted or inserted since), because the engine's live map is the only place all of it is in one
  * piece. DELETED ELEMENTS' FILES ARE NOT SENT: an undo can leave an image's bytes in that map long
  * after the element is gone, and shipping them would put a picture the user deleted inside a file

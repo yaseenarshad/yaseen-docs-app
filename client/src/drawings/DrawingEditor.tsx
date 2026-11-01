@@ -28,12 +28,14 @@
  * THE CHIPS ARE THE ENGINE'S TOP-RIGHT ROW, not a strip above the canvas: the canvas starts
  * directly under the tab bar, and the chips sit where the web app's cloud status does.
  *
- * 🔒 YAZ-1775 D3 ON SAVE. `unpersistedFiles` picks the canvas files the store lacks — referenced by a
- * live image element, and not among what `drawing:load` found in `assets/` plus what earlier
- * saves reported back — and ships them as `newFiles`; main writes them BEFORE the scene. A
- * legacy embedded board comes back from load as not-stored, so its first save is the shrink:
- * bytes into `assets/`, JSON down to `files: {}`. The persisted set only ever grows, so the same
- * image is never shipped twice in one session.
+ * ON SAVE (🔒 YAZ-1775 D3, changed by YAZ-3943 D5). `unpersistedFiles` picks the canvas files main
+ * does not have yet — referenced by a live image element, and not among what `drawing:load` called
+ * `stored` plus what earlier saves reported back — and ships them as `newFiles`, beside the lean
+ * scene. MAIN decides where the pictures go: inside the file (the default; every picture of the
+ * board is `stored` at load), or out to `assets/` for a "pictures out" board, whose embedded bytes
+ * come back from load as not-stored, so its next save is the shrink. The persisted set only ever
+ * grows, so the same image is never shipped twice in one session. A save that moved the pictures
+ * out by the 50 MB rule (`movedOut`) shows the one notice.
  */
 import { useCallback, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse } from '@shared/types'
@@ -56,6 +58,9 @@ import './drawingEditor.css'
 
 /** What a document that will not open says — one message for its three causes (missing, corrupt, empty). */
 export const BROKEN_DRAWING_DOCUMENT = "This Excalidraw drawing can't be opened: its file is missing or is not a scene."
+
+/** YAZ-3943 D5, the 50 MB rule: a save moved the board's pictures out. */
+export const PICTURES_MOVED_OUT = "This board's pictures moved to the assets folder, because the file passed 50 MB."
 
 /** What File › Export Drawing… says when the save sheet or the write refused (🔒 YAZ-1775 D3, YAZ-1821). */
 const EXPORT_FAILED = "The Excalidraw drawing couldn't be exported."
@@ -148,6 +153,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       const newFiles = unpersistedFiles(files, referenced, persisted.current)
       const res = await api.drawing.save({ root, path, json, expectedMtime, newFiles })
       for (const id of res.persisted) persisted.current.add(id)
+      if (res.movedOut === true) onNotice?.(PICTURES_MOVED_OUT)
       return res
     },
     reload: async (a) => {

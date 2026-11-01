@@ -1,7 +1,7 @@
 /**
  * The board documents' IPC (YAZ-3028 D2, Draw's 🔒 YAZ-1810 / YAZ-1802 D6): `fs/drawing.ts`,
- * `fs/diagram.ts`, `fs/createBoard.ts` and the read-only switch (`fs/boardReadOnly.ts`, YAZ-3076 D1)
- * behind the standard envelope, and nothing else.
+ * `fs/diagram.ts`, `fs/createBoard.ts`, the read-only switch (`fs/boardReadOnly.ts`, YAZ-3076 D1) and
+ * the pictures switch (`fs/boardPictures.ts`, YAZ-3943 D5) behind the standard envelope, and nothing else.
  *
  * NO STORE REPAIR AND NO PUSH: repair and the pushes exist for paths that MOVE or GO, and a
  * save does neither — it changes bytes at a path every window already knows. A save only goes in
@@ -14,6 +14,7 @@ import path from 'node:path'
 import { CONTRACT } from '@shared/ipc'
 import { createThumbs, THUMBS_DIR, type Thumbs } from '../drawings/thumbs'
 import { boardHead } from '../fs/boardHead'
+import { setBoardPictures } from '../fs/boardPictures'
 import { setBoardReadOnly } from '../fs/boardReadOnly'
 import { createBoard } from '../fs/createBoard'
 import { loadDiagram, saveDiagram } from '../fs/diagram'
@@ -39,4 +40,5 @@ export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit'>, windows:
   handle(CONTRACT.diagram.load, loadDiagram)
   handleWithEvent(CONTRACT.diagram.save, loggedSave(store, windows, saveDiagram))
   handle(CONTRACT.setBoardReadOnly, setBoardReadOnly)
+  handle(CONTRACT.setBoardPictures, setBoardPictures)
 }

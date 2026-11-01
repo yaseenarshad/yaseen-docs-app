@@ -332,6 +332,19 @@ describe('🔒 YAZ-1775 D3 — which image bytes a save ships', () => {
     expect(save.mock.calls[0][0].newFiles).toEqual([{ fileId: 'emb', ...png('ZQ==') }])
   })
 
+  it('a save that moved the pictures out by the 50 MB rule shows the one notice (YAZ-3943 D5)', async () => {
+    const onNotice = vi.fn()
+    render({ onNotice })
+    await flush()
+    emit(1)
+    save.mockResolvedValue({ path: PATH, mtime: 200, size: 50, persisted: ['big'], movedOut: true })
+    emit(2, scene([{ type: 'image', fileId: 'big' }]), { big: png('Yg==') }, new Set(['big']))
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(onNotice).toHaveBeenCalledWith("This board's pictures moved to the assets folder, because the file passed 50 MB.")
+  })
+
   it('a reload resets the persisted set to what the disk now holds', async () => {
     render()
     await flush()

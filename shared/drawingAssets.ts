@@ -1,10 +1,16 @@
-import type { BoardMeta } from './types'
+import { GITHUB_FILE_WARN_BYTES, type BoardMeta } from './types'
 import { isFiniteNumber, isRecord } from './guards'
 
 /**
  * THE IMAGE STORE'S PURE RULES (Draw's 🔒 YAZ-1775 D3, built in YAZ-1811; ported by YAZ-3028 D2).
  *
- * A `.excalidraw` that a TAB saves carries `files: {}` — image ELEMENTS keep only their `fileId`,
+ * YAZ-3943 D5 REVERSES 🔒 YAZ-1775 D3 ("the vault file never embeds"): a board keeps every picture
+ * it uses INSIDE its own `files` map by default, as normal Excalidraw does, so a copied board keeps
+ * its pictures. Only a board whose `yaseendraw` block says `"pictures": "assets"` ("pictures out",
+ * the cog's button, the 50 MB rule, Settings › Storage) keeps the old shape below. The rules for
+ * "inside" are at the end of this file; main applies them on the save (`fs/drawing.ts`).
+ *
+ * A "pictures out" `.excalidraw` carries `files: {}` — image ELEMENTS keep only their `fileId`,
  * and the bytes live at `<vault>/assets/<fileId>.<ext>`. The id is Excalidraw's own (the SHA-1 of
  * the bytes), so the store is content-addressed for free and its files are IMMUTABLE: a second
  * paste of one image writes nothing and two boards share one file. Note images stay in
@@ -235,6 +241,51 @@ export function unpersistedFiles(files: Record<string, DrawingFileData>, referen
     .filter((id) => referenced.has(id) && !persisted.has(id))
     .sort()
     .map((fileId) => ({ fileId, mimeType: files[fileId].mimeType, dataURL: files[fileId].dataURL }))
+}
+
+// ---------- Pictures inside the board (YAZ-3943 D5) ----------
+
+/** The `yaseendraw` block key for "pictures out": `"pictures": "assets"`. No key means inside. */
+export const PICTURES_KEY = 'pictures'
+export const PICTURES_OUT = 'assets'
+
+/**
+ * YAZ-3943 D5, the 50 MB rule: a save that would make an "inside" board this big or bigger moves its
+ * pictures out instead. The same 50 MiB line as GitHub's warning and Settings › Storage's.
+ */
+export const PICTURES_INSIDE_MAX_BYTES = GITHUB_FILE_WARN_BYTES
+
+/** Whether a `yaseendraw` block says "pictures out". */
+export function picturesOut(block: unknown): boolean {
+  return isRecord(block) && block[PICTURES_KEY] === PICTURES_OUT
+}
+
+/**
+ * The scene with "pictures out" on or off; the SAME object when it already is. The rule of
+ * `withDrawingReadOnly` (`shared/readOnly.ts`): the block comes back FIRST, a block with no dates gets
+ * `bornAt` for both, off of a block that is then empty removes it, and every other key stays.
+ */
+export function withPicturesOut(scene: Record<string, unknown>, out: boolean, bornAt: number): Record<string, unknown> {
+  const { [BOARD_META_KEY]: own, ...rest } = scene
+  if (out === picturesOut(own) && (out || !(isRecord(own) && PICTURES_KEY in own))) return scene
+  const { [PICTURES_KEY]: _old, ...block } = isRecord(own) ? own : {}
+  if (!out) return Object.keys(block).length === 0 ? rest : { [BOARD_META_KEY]: block, ...rest }
+  const { createdAt, updatedAt, ...extras } = block
+  const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }
+  return { [BOARD_META_KEY]: { ...dates, ...extras, [PICTURES_KEY]: PICTURES_OUT }, ...rest }
+}
+
+/** One picture inside a board: the shape the engine's `addFiles` reads (it keys on `id`). */
+export interface EmbeddedFile extends DrawingFileData {
+  id: string
+  created: number
+}
+
+/** `created` of a scene's own `files[id]`, when it has a usable one: an untouched save keeps it, so the bytes stay the same. */
+export function createdOf(scene: Record<string, unknown>, id: string): number | null {
+  const files = scene.files
+  const entry = isRecord(files) ? files[id] : undefined
+  return isRecord(entry) && isFiniteNumber(entry.created) ? entry.created : null
 }
 
 // ---------- A new drawing (YAZ-877, moved here for `fs:create-board` by YAZ-3028 D9) ----------

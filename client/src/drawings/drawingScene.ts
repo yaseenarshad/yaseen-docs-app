@@ -17,7 +17,7 @@ import type { DrawingFileEntry } from '@shared/types'
 import { referencedFileIds } from '@shared/drawingAssets'
 import { isRecord } from '@shared/guards'
 import { isDrawingReadOnly } from '@shared/readOnly'
-import { api } from '../api'
+import { api, BridgeRequestError } from '../api'
 
 /** The scene shape a preview needs; deliberately loose — the file is user data, not our type. */
 export interface DrawingScene {
@@ -74,16 +74,34 @@ export interface LoadedDrawing {
 /**
  * Reads `target` under `root` and parses it, keeping the identity a save needs.
  *
- * A scene a drawing TAB saved is lean (YAZ-3028: `files: {}`, its pictures in `<vault>/assets/`), so
+ * A scene a drawing TAB saved with its pictures out (YAZ-3943 D5: `"pictures": "assets"`) is lean (`files: {}`, its pictures in `<vault>/assets/`), so
  * a picture the scene names but does not carry is filled in from the store through `drawing:load`
  * at the resolved path — one extra read, and only for such a scene: an embed's own sidecar carries
  * its pictures and never pays it. An id found nowhere stays out (the engine's placeholder), and a
  * store read that fails leaves the scene as the sidecar said: a picture must never cost the drawing.
  */
 export async function openDrawing(root: string, target: string): Promise<LoadedDrawing> {
-  const asset = await api.readAsset(root, target)
+  let asset
+  try {
+    asset = await api.readAsset(root, target)
+  } catch (err) {
+    // YAZ-3943 D5: a board keeps its pictures inside, so it can pass the asset pipe's 10 MiB cap. The
+    // board's own loader reads it (to 200 MiB), at the path the pipe resolved and named in its refusal.
+    if (err instanceof BridgeRequestError && err.code === 'TOO_LARGE' && err.path !== undefined && isDrawingTarget(err.path)) return openLargeDrawing(root, err.path)
+    throw err
+  }
   const scene = parseScene(asset.data)
   return { scene: await withStoredFiles(root, asset.path, scene), path: asset.path, mtime: asset.mtime }
+}
+
+/** A board past the asset pipe's cap, through `drawing:load`: its scene, its pictures engine-shaped, and the mtime a save guards with. */
+async function openLargeDrawing(root: string, path: string): Promise<LoadedDrawing> {
+  const res = await api.drawing.load({ root, path })
+  const scene = parseSceneText(res.json)
+  const files: Record<string, unknown> = {}
+  const created = Date.now()
+  for (const [id, entry] of Object.entries(res.files)) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+  return { scene: { ...scene, files }, path: res.path, mtime: res.mtime }
 }
 
 /** `scene` with every referenced picture it lacks taken from the store (see `openDrawing`). */

@@ -54,9 +54,11 @@ const png = (fill: string) => ({ mimeType: 'image/png', dataURL: `data:image/png
 // What freezes a parse is many small objects, not one long string: ~20 MB of freedraw strokes
 // takes V8 a few hundred ms, while 40 MB of base64 in one string takes ~20.
 const stroke = (i: number) => ({ id: `e${i}`, type: 'freedraw', x: i, y: i, points: Array.from({ length: 20 }, (_, k) => [k, 2 * k]) })
+// Dated boards: shrink sets "pictures out" in the block (YAZ-3943 D5), and a block-less board would take its two copies' own mtimes.
+const BLOCK = { createdAt: 1, updatedAt: 1 }
 const heavy = (strokes: number) =>
-  JSON.stringify({ type: 'excalidraw', elements: [{ id: 'img', type: 'image', fileId: 'a' }, ...Array.from({ length: strokes }, (_, i) => stroke(i))], files: { a: png('A') } })
-const legacy = () => JSON.stringify({ type: 'excalidraw', elements: [{ id: 'img', type: 'image', fileId: 'b' }], files: { b: png('B') } })
+  JSON.stringify({ yaseendraw: BLOCK, type: 'excalidraw', elements: [{ id: 'img', type: 'image', fileId: 'a' }, ...Array.from({ length: strokes }, (_, i) => stroke(i))], files: { a: png('A') } })
+const legacy = () => JSON.stringify({ yaseendraw: BLOCK, type: 'excalidraw', elements: [{ id: 'img', type: 'image', fileId: 'b' }], files: { b: png('B') } })
 
 /**
  * A vault heavy enough to freeze the loop in-thread: one board of strokes, a nested legacy board, a

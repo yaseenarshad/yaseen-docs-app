@@ -34,9 +34,11 @@
  *
  * TWO SHAPES ON DISK, ONE WRITER: `serializeAsJSON(…, 'local')` is the library's own writer either
  * way, with `source` pinned (`engine.ts`) and a trailing newline.
- *  - `serialize()` is a TAB's save (Draw's 🔒 YAZ-1775 D3): the scene with an EMPTY files map, plus
- *    the engine's live images and the ids the scene still references, so the host can ship what
- *    the `assets/` store lacks (`unpersistedFiles`) without ever seeing an engine type.
+ *  - `serialize()` is a TAB's save: the scene with an EMPTY files map, plus the engine's live images
+ *    and the ids the scene still references, so the host can ship what main lacks
+ *    (`unpersistedFiles`) without ever seeing an engine type. Main puts the pictures back inside
+ *    the file (YAZ-3943 D5), or in `assets/` for a "pictures out" board: the renderer never
+ *    serializes them per save, so typing does not pay for them.
  *  - `standalone()` is the scene with every image it uses INSIDE it: the note embed's own sidecar
  *    shape (rule 28, unchanged) and File › Export Drawing…'s file (`exportDrawing.ts`).
  *
@@ -679,8 +681,8 @@ function snapshotOf(
         if (typeof entry?.dataURL === 'string' && typeof entry.mimeType === 'string') live[id] = { mimeType: entry.mimeType, dataURL: entry.dataURL }
       }
       return {
-        // Draw's 🔒 YAZ-1775 D3: an EMPTY files map on purpose — the scene names its images and never
-        // carries them. A text file in a git vault ends with a newline, as a new drawing is written.
+        // An EMPTY files map on purpose: main embeds the pictures (YAZ-3943 D5) or keeps them in
+        // `assets/`, so a save never stringifies them here. A text file in a git vault ends with a newline.
         json: `${engine.serializeAsJSON(elements, appState, {}, 'local')}\n`,
         files: live,
         referenced: referencedFileIds(elements),

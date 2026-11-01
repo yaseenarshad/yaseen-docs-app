@@ -20,16 +20,27 @@
  * Requests cross IPC from a sandboxed renderer, so their shape is checked like a request body,
  * never trusted from the type.
  *
- * 🔒 YAZ-1775 D3 ON DISK: the scene carries `files: {}`; image elements keep only their `fileId`; the
+ * PICTURES INSIDE BY DEFAULT (YAZ-3943 D5, which reverses 🔒 YAZ-1775 D3 "the vault file never
+ * embeds"). A board keeps every picture a live element uses in its own `files` map, engine-shaped
+ * (`{ mimeType, id, dataURL, created }`), so a board copied alone keeps its pictures. The renderer still
+ * sends the small scene (`files: {}`) and only the pictures it has not sent before (`newFiles`), so
+ * typing and drawing pay nothing for it: MAIN does the embed. A save reads the current file ONCE,
+ * takes the pictures from it (an old board: from `assets/`), adds the new ones, drops the ones no
+ * live element uses, and writes the whole file. The `assets/` copies stay; nothing deletes from it.
+ * The 50 MB rule: a save that would make the file `PICTURES_INSIDE_MAX_BYTES` or bigger moves the
+ * pictures out instead and says so (`movedOut`), so the renderer can show its notice.
+ *
+ * "PICTURES OUT" (`"pictures": "assets"` in the block; the cog's button, `fs/boardPictures.ts`) keeps
+ * the old shape: the scene carries `files: {}`; image elements keep only their `fileId`; the
  * bytes sit at `<root>/assets/<fileId>.<ext>` (the engine's own SHA-1 id, the mime's extension).
  * An asset is IMMUTABLE — the same bytes always get the same name — so a save never rewrites one
  * (tmp + fsync + `link`, which never replaces; EEXIST means it is already exactly these bytes). A
- * LEGACY export that still embeds `files` opens — its entries come back in `files`, and its `json`
+ * scene that still embeds `files` opens — its entries come back in `files`, and its `json`
  * without them, so the bytes cross the bridge once (🔒 YAZ-2073 D7); opening it writes nothing — and
- * SHRINKS on its first save:
+ * a "pictures out" board SHRINKS on its next save:
  * `liftEmbedded` takes the referenced bytes out of the scene and `landAssets` writes them into the
- * store, then the scene is written lean. A note embed's sidecar (YAZ-852) is such a scene: the
- * modal writes its pictures inside it, so a tab that saves it moves them out.
+ * store, then the scene is written lean. A note embed's sidecar (YAZ-852) keeps its pictures inside
+ * as it always has.
  *
  * ASSETS FIRST, THEN THE SCENE. A scene on disk must never name bytes that are not there, so
  * every asset lands before the file that references it. The reverse order would leave a crash
@@ -52,10 +63,11 @@
  */
 import { link, mkdir, readdir, readFile, rename, unlink } from 'node:fs/promises'
 import path from 'node:path'
-import type { DrawingFileEntry, DrawingLoadResponse, DrawingSaveResponse } from '@shared/types'
+import type { DrawingFileEntry, DrawingLoadResponse, DrawingNewFile, DrawingSaveResponse } from '@shared/types'
 import { isRecord } from '@shared/guards'
-import { ASSETS_DIR, assetFileName, extForMime, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseDataUrl, referencedFileIds, serializeBoard, stampBoardMetaScene, stripEmbeddedScene } from '@shared/drawingAssets'
+import { ASSETS_DIR, assetFileName, BOARD_META_HEAD_BYTES, createdOf, extForMime, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseBoardMetaBlock, parseDataUrl, PICTURES_INSIDE_MAX_BYTES, PICTURES_KEY, PICTURES_OUT, picturesOut, referencedFileIds, serializeBoard, stampBoardMetaScene, stripEmbeddedScene, type BoardMetaBlock, type EmbeddedFile } from '@shared/drawingAssets'
 import { BOARDS, boardTarget, guardedStamp } from './boardDocument'
+import type { BoardHead } from './boardHead'
 import { readBoundedRegularFile } from './boundedRead'
 import { atomicWrite, BridgeFailure, fsCall, requireDir, tmpSibling, writeDurable } from './fsUtils'
 
@@ -112,7 +124,15 @@ export async function loadDrawing(req: unknown, fit?: (files: Record<string, Dra
   // the scene's own map with them anyway. Every other board's text is sent exactly as it sits on disk.
   const json = Object.keys(embedded).length === 0 ? text : serializeBoard(lean)
   const pictures = imageMaxPx === undefined || fit === undefined ? files : await fit(files, elements, imageMaxPx)
-  return { path: file, json, mtime: snapshot.mtime, size: snapshot.size, files: pictures, stored }
+  // YAZ-3943 D5: an "inside" board's save finds every picture in the file or the store by itself,
+  // so the renderer never ships one of them back; a "pictures out" board's are the store's only.
+  const kept = picturesOut(headBlock(snapshot.data)) ? stored : Object.keys(files).sort()
+  return { path: file, json, mtime: snapshot.mtime, size: snapshot.size, files: pictures, stored: kept }
+}
+
+/** The `yaseendraw` block off a board's bytes, by the head rule `readBoardHead` reads it with (🔒 YAZ-1834 D7). */
+function headBlock(data: Buffer): BoardMetaBlock | null {
+  return parseBoardMetaBlock(data.subarray(0, BOARD_META_HEAD_BYTES).toString('utf8'))
 }
 
 /**
@@ -121,25 +141,51 @@ export async function loadDrawing(req: unknown, fit?: (files: Record<string, Dra
  * (Draw's YAZ-1897 D4; `git/history.ts`), so an old version draws its pictures the way the open board does.
  */
 export async function resolveFiles(dir: string, embedded: Record<string, DrawingFileEntry>, elements: readonly unknown[]): Promise<{ files: Record<string, DrawingFileEntry>; stored: string[] }> {
-  const store = await listStore(dir)
+  const ids = [...referencedFileIds(elements)].sort()
+  const found = await fromStore(dir, ids)
   const files: Record<string, DrawingFileEntry> = {}
   const stored: string[] = []
-  for (const id of [...referencedFileIds(elements)].sort()) {
-    const name = store.get(id)
-    if (name !== undefined) {
-      const mimeType = mimeForAssetExt(name.slice(name.lastIndexOf('.') + 1))
-      const bytes = await readFile(path.join(dir, ASSETS_DIR, name)).catch(() => null)
-      // Unreadable bytes are the same as absent bytes: the placeholder, not a failed open.
-      if (bytes !== null && mimeType !== null) {
-        files[id] = { mimeType, dataURL: `data:${mimeType};base64,${bytes.toString('base64')}` }
-        stored.push(id)
-        continue
-      }
-    }
-    const legacy = embedded[id]
-    if (legacy !== undefined) files[id] = legacy
+  for (const id of ids) {
+    if (found[id] !== undefined) {
+      files[id] = found[id]
+      stored.push(id)
+    } else if (embedded[id] !== undefined) files[id] = embedded[id]
   }
   return { files, stored }
+}
+
+/** The bytes `assets/` holds for `ids`; an id with no readable bytes there is absent (the placeholder, not a failed open). */
+async function fromStore(dir: string, ids: readonly string[]): Promise<Record<string, DrawingFileEntry>> {
+  const found: Record<string, DrawingFileEntry> = {}
+  if (ids.length === 0) return found
+  const store = await listStore(dir)
+  for (const id of ids) {
+    const name = store.get(id)
+    if (name === undefined) continue
+    const mimeType = mimeForAssetExt(name.slice(name.lastIndexOf('.') + 1))
+    const bytes = await readFile(path.join(dir, ASSETS_DIR, name)).catch(() => null)
+    if (bytes !== null && mimeType !== null) found[id] = { mimeType, dataURL: `data:${mimeType};base64,${bytes.toString('base64')}` }
+  }
+  return found
+}
+
+/**
+ * The pictures an "inside" board carries (YAZ-3943 D5): each one a live element uses, from the
+ * first of `sources` that has it, else from `assets/` (an old board takes its pictures inside this
+ * way), engine-shaped and sorted by id. `created` stays as `prior` (the file as it is) has it, so an
+ * untouched save writes the same bytes. An id found nowhere stays out, as on a load.
+ */
+export async function embedPictures(dir: string, elements: readonly unknown[], sources: readonly Record<string, DrawingFileEntry>[], prior: Record<string, unknown> | null): Promise<Record<string, EmbeddedFile>> {
+  const ids = [...referencedFileIds(elements)].sort()
+  const found = (id: string): DrawingFileEntry | undefined => sources.find((s) => s[id] !== undefined)?.[id]
+  const stored = await fromStore(dir, ids.filter((id) => found(id) === undefined))
+  const now = Date.now()
+  const files: Record<string, EmbeddedFile> = {}
+  for (const id of ids) {
+    const entry = found(id) ?? stored[id]
+    if (entry !== undefined) files[id] = { mimeType: entry.mimeType, id, dataURL: entry.dataURL, created: (prior === null ? null : createdOf(prior, id)) ?? now }
+  }
+  return files
 }
 
 /** One asset to land: validated shape, resolved name, decoded bytes. */
@@ -224,6 +270,20 @@ function checkAsset(entry: unknown, file: string): PendingAsset {
   return { fileId, name, bytes: Buffer.from(data.base64, 'base64') }
 }
 
+/**
+ * The board as it is now, read ONCE (YAZ-3943 D5): its head for the stamp and the conflict guard,
+ * its bytes for an "inside" save's pictures. A file that is gone is null, as `readBoardHead` answers.
+ */
+async function readCurrent(file: string): Promise<{ head: BoardHead; data: Buffer } | null> {
+  try {
+    const snap = await readBoundedRegularFile(file, BOARDS.drawing.max, BOARDS.drawing.tooLarge)
+    return { head: { block: headBlock(snap.data), mtime: snap.mtime, size: snap.size }, data: snap.data }
+  } catch (err) {
+    if (err instanceof BridgeFailure && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_FILE')) return null
+    throw err
+  }
+}
+
 export async function saveDrawing(req: unknown): Promise<DrawingSaveResponse> {
   const { dir, file, body } = boardTarget(req, 'drawing')
   const { json, expectedMtime, newFiles } = body
@@ -234,14 +294,53 @@ export async function saveDrawing(req: unknown): Promise<DrawingSaveResponse> {
   // The ONE parse of the scene; it is stripped and stamped as an object and serialized once (YAZ-2073 5G).
   const { scene, elements } = parseScene(json, file, 'BAD_REQUEST')
   const pending = newFiles.map((entry) => checkAsset(entry, file))
-  // A legacy scene's still-embedded bytes shrink into the store on THIS save (see `liftEmbedded`).
-  const { lean, lifted } = liftEmbedded(scene, elements, new Set(pending.map((p) => p.fileId)))
-  pending.push(...lifted)
   await requireDir(dir)
-  const stamped = await guardedStamp(file, 'drawing', expectedMtime, (at, prior) => serializeBoard(stampBoardMetaScene(lean, at, prior)))
-  // Assets first (see the module doc), and only once the conflict guard has passed — a refused
-  // save must leave the vault exactly as it found it.
-  const persisted = await landAssets(dir, pending)
+  const current = await readCurrent(file)
+  const known = current?.head ?? null
+
+  if (picturesOut(known?.block)) {
+    // "Pictures out": a scene's still-embedded bytes shrink into the store on THIS save (see `liftEmbedded`).
+    const { lean, lifted } = liftEmbedded(scene, elements, new Set(pending.map((p) => p.fileId)))
+    pending.push(...lifted)
+    const stamped = await guardedStamp(file, 'drawing', expectedMtime, (at, prior) => serializeBoard(stampBoardMetaScene(lean, at, prior)), known)
+    // Assets first (see the module doc), and only once the conflict guard has passed — a refused
+    // save must leave the vault exactly as it found it.
+    const persisted = await landAssets(dir, pending)
+    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
+    return { path: file, mtime, size, persisted }
+  }
+
+  // Inside (YAZ-3943 D5): the new pictures, any the scene sent inside itself, the file's own, then the store.
+  const fresh: Record<string, DrawingFileEntry> = {}
+  for (const { fileId, mimeType, dataURL } of newFiles as DrawingNewFile[]) fresh[fileId] = { mimeType, dataURL }
+  const { lean, embedded: sent } = stripEmbeddedScene(scene)
+  let prior: Record<string, unknown> | null = null
+  try {
+    if (current !== null) prior = parseScene(current.data.toString('utf8'), file, 'IO_ERROR').scene
+  } catch {
+    // A file that is not a scene has no pictures to keep; the save writes over it, as it always has.
+  }
+  const pictures = await embedPictures(dir, elements, [fresh, sent, prior === null ? {} : stripEmbeddedScene(prior).embedded], prior)
+  const inside = { ...lean, files: pictures }
+  let movedOut = false
+  const stamped = await guardedStamp(
+    file,
+    'drawing',
+    expectedMtime,
+    (at, block) => {
+      const full = serializeBoard(stampBoardMetaScene(inside, at, block))
+      if (Buffer.byteLength(full, 'utf8') < PICTURES_INSIDE_MAX_BYTES) return full
+      // The 50 MB rule (D5): the pictures go out, and the block says so from now on.
+      movedOut = true
+      return serializeBoard(stampBoardMetaScene(lean, at, { ...block, [PICTURES_KEY]: PICTURES_OUT } as BoardMetaBlock))
+    },
+    known,
+  )
+  if (!movedOut) {
+    const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
+    return { path: file, mtime, size, persisted: Object.keys(pictures) }
+  }
+  const persisted = await landAssets(dir, liftEmbedded(inside, elements).lifted)
   const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
-  return { path: file, mtime, size, persisted }
+  return { path: file, mtime, size, persisted, movedOut: true }
 }

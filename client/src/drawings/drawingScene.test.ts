@@ -123,6 +123,23 @@ describe('a lean scene gets its pictures from the store (YAZ-3028)', () => {
     drawingLoad.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk went away'))
     await expect(loadDrawingScene('/v', 'x.excalidraw')).resolves.toMatchObject({ files: {} })
   })
+
+  it('a board over the asset pipe\'s 10 MiB cap loads through `drawing:load` at the path the refusal names (YAZ-3943 D5)', async () => {
+    readAsset.mockRejectedValue(new BridgeRequestError('TOO_LARGE', 'file exceeds 10485760 bytes', undefined, '/v/Boards/Big.excalidraw'))
+    drawingLoad.mockResolvedValue({ path: '/v/Boards/Big.excalidraw', json: JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, elements: [image('a')], files: {} }), mtime: 77, size: 12_000_000, files: { a: png }, stored: ['a'] })
+    const drawing = await openDrawing('/v', 'Big.excalidraw')
+    expect(drawingLoad).toHaveBeenCalledWith({ root: '/v', path: '/v/Boards/Big.excalidraw' })
+    expect(drawing.path).toBe('/v/Boards/Big.excalidraw')
+    expect(drawing.mtime).toBe(77)
+    expect(drawing.scene.readOnly).toBe(true)
+    expect(drawing.scene.files?.a).toMatchObject({ id: 'a', ...png })
+  })
+
+  it('any other refusal of the asset pipe still rejects (the broken state)', async () => {
+    readAsset.mockRejectedValue(new BridgeRequestError('TOO_LARGE', 'too large', undefined, '/v/big.png'))
+    await expect(openDrawing('/v', 'big.png')).rejects.toThrow('too large')
+    expect(drawingLoad).not.toHaveBeenCalled()
+  })
 })
 
 /** A drawing TAB's scene text (Draw's YAZ-1810): every throw is a file a user can really hand it. */
