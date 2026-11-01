@@ -1941,6 +1941,38 @@ describe('folds (YAZ-3939)', () => {
     }
   })
 
+  it('a card opened again while it fades out keeps its top too: the old shift goes on the new open (YAZ-4075)', () => {
+    fakeClock()
+    const undo = layOutCard()
+    try {
+      const FIFTEEN: TocRow[] = ['A', 'B', 'C', 'D', 'E'].flatMap((p) => [{ level: 1 as TocLevel, text: p }, { level: 2 as TocLevel, text: `${p}1` }, { level: 2 as TocLevel, text: `${p}2` }])
+      const m = mount('auto', FIFTEEN, NAMES_FLOOR)
+      click(rail(m))
+      // Collapse all: 5 names, 160px; the card is held at its first top, 200px.
+      click(foldAll(m))
+      const el = (): HTMLElement => m.section.querySelector<HTMLElement>('.toc__card')!
+      const top = (): number => el().offsetTop + (parseFloat(el().style.getPropertyValue('--toc-card-shift')) || 0)
+      expect(top()).toBe(200)
+      // Close the card. It fades out for 140 ms. Open it again before the fade ends: the same element.
+      act(() => {
+        vi.advanceTimersByTime(400)
+      })
+      click(rail(m))
+      expect(m.section.querySelector('.toc__card[data-leaving]')).not.toBeNull()
+      act(() => {
+        vi.advanceTimersByTime(50)
+      })
+      click(rail(m))
+      expect(m.section.querySelector('.toc__card[data-leaving]')).toBeNull()
+      const opened = top()
+      // Open "A": the card grows. Its top stays where it opened.
+      click(names(m)[0].querySelector<HTMLElement>('.toc__fold')!)
+      expect(top()).toBe(opened)
+    } finally {
+      undo()
+    }
+  })
+
   it('D4: with no row that can fold, the button stays, dimmed, and says "Nothing to fold"; the card has the button too', () => {
     const flat = mount('pinned', [{ level: 2, text: 'A' }, { level: 2, text: 'B' }], 900)
     expect(foldAll(flat).getAttribute('aria-label')).toBe('Nothing to fold')

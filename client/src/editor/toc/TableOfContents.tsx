@@ -470,7 +470,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     // Layout numbers (the nav is the card's offset parent): no transform counts, not the open's scale and not the shift.
     const natural = el.offsetTop
     if (cardTop.current === null) {
-      cardTop.current = natural
+      // A card opened again during its fade is the same element, still shifted (YAZ-4075): its first top is where it stands.
+      cardTop.current = natural + (parseFloat(el.style.getPropertyValue('--toc-card-shift')) || 0)
       return
     }
     const top = Math.max(EDGE_PX, Math.min(cardTop.current, nav.clientHeight - EDGE_PX - el.offsetHeight))
