@@ -3,9 +3,10 @@
  * decorations (`wikilinkPlugin.ts`), wired through `createCrepe({ wikilinkNav })`.
  *
  * GESTURES (YAZ-3936, demo round 1 C4 of YAZ-3879): a click opens a link only with a gesture bound in Settings ›
- * Hotkeys › "Links in a note" (`shared/keys/gestures.ts`, read at the click): by default ⌘-click opens it in this
- * tab (`nav.openCurrent`, an already-open path goes to its tab), ⌘⇧-click in a background tab (`nav.openBackground`:
- * appended, never activated, never focused), and "Open in a new tab" has no gesture (`nav.openNewTab`). A read-only
+ * Hotkeys › "Links in a note" (`shared/keys/gestures.ts`, read at the click). The defaults are browser style (G6 of
+ * YAZ-3966): ⌘-click opens it in a background tab (`nav.openBackground`: appended, never activated, never focused),
+ * ⌘⇧-click in a new tab in front (`nav.openNewTab`), and "Open in this tab" has no gesture (`nav.openCurrent`, an
+ * already-open path goes to its tab). A read-only
  * note keeps "a click opens" (point 6): a plain click there opens in this tab. Any other click is the editor's
  * (`linkClickAction`, `linkGesture.ts`).
  *
@@ -179,20 +180,18 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
 }
 
 /**
- * The edge of the link at `from`..`to` that a click at `x` is nearer, by the pill's middle (YAZ-3935 C1): the boxes of
- * the link's shown pieces on the clicked piece's line. Read on a click only.
- */
-/**
  * A drag that starts on a pill selects as a drag on text does (YAZ-3747 demo), and always holds the pill: the head
  * follows the pointer until the button is up, from the pill's far edge (its start for a drag to the right, its end for
  * one to the left). While the pointer is on the pill the caret stays where the press put it. `idLinkCaret.ts` puts a
  * head inside another link on its nearer edge. A move of less than 4px is still the click. The listeners capture, so
- * no handler under the pointer can stop them.
+ * no handler under the pointer can stop them. A move with no button held ends the drag, as ProseMirror's own does: the
+ * mouseup can be lost (the button let go outside the window).
  */
 function followDrag(view: EditorView, link: { from: number; to: number }, pressed: number, start: MouseEvent): void {
   const doc = view.dom.ownerDocument
   let last = -1
   const move = (event: MouseEvent) => {
+    if ((event.buttons & 1) === 0) return up()
     if (Math.abs(event.clientX - start.clientX) + Math.abs(event.clientY - start.clientY) < 4) return
     const head = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
     if (head === undefined || head === last || view.isDestroyed) return
@@ -210,6 +209,10 @@ function followDrag(view: EditorView, link: { from: number; to: number }, presse
   doc.addEventListener('mouseup', up, true)
 }
 
+/**
+ * The edge of the link at `from`..`to` that a click at `x` is nearer, by the pill's middle (YAZ-3935 C1): the boxes of
+ * the link's shown pieces on the clicked piece's line. Read on a click only.
+ */
 function nearerEdge(view: EditorView, span: Element, from: number, to: number, x: number): number {
   const line = span.getBoundingClientRect()
   let left = line.left

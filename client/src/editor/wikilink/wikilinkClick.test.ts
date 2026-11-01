@@ -724,7 +724,7 @@ describe('a click on a link works like text (YAZ-3935, C1 and C2 of YAZ-3879)', 
     const sel = () => [view.state.selection.from, view.state.selection.to]
     const moveTo = (pos: number, x: number) => {
       view.posAtCoords = () => ({ pos, inside: -1 })
-      document.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: 12 }))
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: 12, buttons: 1 }))
     }
     box(linkSpan(root, 'Known'), 100, 40)
     // Pressed on the left half: the caret is before the pill.
@@ -751,10 +751,22 @@ describe('a click on a link works like text (YAZ-3935, C1 and C2 of YAZ-3879)', 
     view.dom.addEventListener('mousemove', stop)
     mousedown(linkSpan(root, 'Known'), { clientX: 135, clientY: 12 })
     view.posAtCoords = () => ({ pos: 2, inside: -1 })
-    view.dom.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 20, clientY: 12 }))
+    view.dom.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 20, clientY: 12, buttons: 1 }))
     expect([view.state.selection.from, view.state.selection.to]).toEqual([2, 14])
     document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }))
     view.dom.removeEventListener('mousemove', stop)
+  })
+
+  it('a drag from a pill ends at a move with no button held, as ProseMirror\'s own drag does, if the mouseup was lost (PR #230 checker)', async () => {
+    const { crepe, root } = await mount('pad [[Known]] tail\n', resolveKnown)
+    const view = viewOf(crepe)
+    box(linkSpan(root, 'Known'), 100, 40)
+    mousedown(linkSpan(root, 'Known'), { clientX: 105, clientY: 12 })
+    view.posAtCoords = () => ({ pos: 19, inside: -1 })
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 220, clientY: 12, buttons: 0 })) // the button went up out of sight
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([5, 5])
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 220, clientY: 12, buttons: 1 })) // a later move: the drag is over
+    expect([view.state.selection.from, view.state.selection.to]).toEqual([5, 5])
   })
 
   it('a double-click selects exactly the link; the pill stays; a triple-click selects the line (YAZ-3747 demo)', async () => {

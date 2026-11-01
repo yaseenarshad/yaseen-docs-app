@@ -67,7 +67,7 @@
  *  - Wikilink clicks (GRO-2192, YAZ-3935, YAZ-3936, `wikilink/wikilinkClick.ts`): MOUSEDOWN on a
  *    collapsed `.wikilink` span. In an editable note a plain click puts the caret at the pill's
  *    nearer edge and a double-click selects the link; the gestures of Settings › Hotkeys ›
- *    "Links in a note" open it (⌘ → this tab, ⌘⇧ → background tab by default; unresolved →
+ *    "Links in a note" open it (⌘ → background tab, ⌘⇧ → new tab in front by default; unresolved →
  *    create-then-open via `createFromLink`); a read-only note opens on a plain click. Both
  *    preventDefault, so the link never flashes its raw text; revealed raw text stays editable.
  *    Registered only when `opts.wikilinkNav` provides the handlers.

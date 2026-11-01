@@ -2,7 +2,8 @@
  * One right-click menu for every link (YAZ-3609 D23): a `[[link]]` of any kind and a Markdown link
  * show the same rows in the same order (YAZ-3740). A row a link cannot do is left out.
  *
- *   AR v2 plan · YAS-466       one grey label: the page's name (and its vault, D22), then its ID (demo M3)
+ *   ID: YAS-466                one grey top line, only what the pill hides: an ID link's ID, a missing note, an ID
+ *                              of another vault; none on a name, folder or Markdown link (demo M3, YAZ-4001)
  *   ───────────
  *   Open                       as a click does
  *   Open in new tab            as a ⌘-click does: a background tab
