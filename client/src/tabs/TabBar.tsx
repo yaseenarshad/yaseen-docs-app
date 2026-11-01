@@ -590,9 +590,12 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                 {/* The file's icon, as its tree row has it (YAZ-3440 D11): a folder page's is the folder's, and a display name keeps the file's. */}
                 <span className="tabbar__label">
                   <FileIcon path={path} folder={isFolder(path)} />
-                  {label}
-                  {/* A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4). */}
-                  {name === undefined && !isFolder(path) && <NameEnding path={path} />}
+                  {/* Asleep, the name gives way with "…" so a long one never hides the zzz (YAZ-4003). */}
+                  <span className={asleep.has(id) ? 'tabbar__name tabbar__name--asleep' : 'tabbar__name'}>
+                    {label}
+                    {/* A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4). */}
+                    {name === undefined && !isFolder(path) && <NameEnding path={path} />}
+                  </span>
                   {/* Asleep to save memory (YAZ-3737 D11): quiet, after the name. */}
                   {asleep.has(id) && <AsleepIcon className="tabbar__asleep" />}
                 </span>

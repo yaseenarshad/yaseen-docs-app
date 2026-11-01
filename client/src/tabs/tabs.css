@@ -229,6 +229,8 @@
 
 /* A long name fades out at its end. The label is as wide as its room, so a short name is clear of the fade. */
 .tabbar__label {
+  display: flex;
+  align-items: center;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -236,6 +238,17 @@
   /* Room after the name for the fade and for the ✕, which stands over it (YAZ-2689 D4). A short name is clear of both. */
   padding-right: 18px;
   mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+}
+
+/* The name between the file icon and the zzz (YAZ-4003). Awake, it runs on under the label's end and fades there, as
+   before. Asleep, it gives way with "…", so a long name never hides the zzz, also at 72px with many tabs. */
+.tabbar__name {
+  min-width: 0;
+}
+
+.tabbar__name--asleep {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* A tab asleep to save memory (YAZ-3737 D11): three small z's after its name, in the muted text colour, so they read
@@ -246,6 +259,10 @@
   margin-left: 4px;
   color: var(--fg-muted);
   vertical-align: middle;
+}
+
+.tabbar__asleep {
+  flex: none;
 }
 
 .taboverview__asleep {
