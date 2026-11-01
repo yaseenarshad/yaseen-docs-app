@@ -242,7 +242,7 @@ import { createDrawingPreview, type DrawingPreviewOptions } from './drawing/draw
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
 import { createSlashMenu } from './slashMenu'
 import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
-import { createImageView } from './image/imageView'
+import { createImageView, imageParseDefaults } from './image/imageView'
 import type { FindChannel } from './find/findChannel'
 import { createFindInPage } from './find/findInPage'
 import type { OutsideChangesChannel } from './external/outsideChangesChannel'
@@ -540,6 +540,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     extendListItemSchemaForTask.extendSchema((prev) => (ctx) => ({ ...prev(ctx), content: 'block+' })),
   )
   crepe.editor.use(listItemRoundTrip)
+  // An image read with no title gets '' as a made one does (YAZ-3704 4I2).
+  crepe.editor.use(imageParseDefaults)
   // The slash menu's "in a list" flag (YAZ-3550): which stock rows a list item hides.
   crepe.editor.use(slashMenu.inListWatch)
   crepe.editor.use(underline)

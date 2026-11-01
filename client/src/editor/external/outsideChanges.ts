@@ -164,11 +164,14 @@ const lineOf = ($pos: ResolvedPos): string => {
   return box + hashes + block.textBetween(0, block.content.size, ' ', ' ')
 }
 
-/** Attrs or marks as the file says them: the derived ones (a heading's id, set again after a load) left out. */
-const ownAttrs = (attrs: Readonly<Record<string, unknown>>): string =>
+/**
+ * Attrs or marks as the file says them: the derived ones (a heading's id, set again after a load) left out. A `label`
+ * is derived only on a list item (its number); on a footnote it is the number the file says (4I3).
+ */
+const ownAttrs = (attrs: Readonly<Record<string, unknown>>, typeName: string): string =>
   JSON.stringify(
     Object.keys(attrs)
-      .filter((key) => !isDerivedAttr(key))
+      .filter((key) => (key === 'label' ? typeName !== 'list_item' : !isDerivedAttr(key)))
       .sort()
       .map((key) => [key, attrs[key]]),
   )
@@ -183,7 +186,7 @@ const shapeOf = (doc: ProseNode): string => {
   const last = doc.lastChild
   const end = last !== null && last.type.name === 'paragraph' && last.content.size === 0 ? doc.content.size - last.nodeSize : doc.content.size
   doc.nodesBetween(0, end, (node) => {
-    parts.push(node.isText ? `${node.marks.map((mark) => `{${mark.type.name}${ownAttrs(mark.attrs)}}`).join('')}${node.text ?? ''}` : `<${node.type.name}${ownAttrs(node.attrs)}>`)
+    parts.push(node.isText ? `${node.marks.map((mark) => `{${mark.type.name}${ownAttrs(mark.attrs, mark.type.name)}}`).join('')}${node.text ?? ''}` : `<${node.type.name}${ownAttrs(node.attrs, node.type.name)}>`)
   })
   return parts.join('')
 }

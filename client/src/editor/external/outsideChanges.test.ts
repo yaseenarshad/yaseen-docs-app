@@ -461,6 +461,38 @@ describe('a tab keeps the list of a page it left (demo feedback)', () => {
     }
   })
 
+  it('4I2: an image you paste does not glow as an outside change, live or after Back', async () => {
+    keepOutsideChangesOfTabs(['t6'])
+    const first = await mount('Para word\n\nOther\n\nEnd\n', { tab: 't6' })
+    // The node that insertPastedImage (image/insertImage.ts) makes: no title given.
+    const at = posOf(first.view.state.doc, 'word')
+    first.view.dispatch(first.view.state.tr.insert(at, first.view.state.schema.nodes.image.create({ src: 'assets/images/a.png', alt: 'a' })))
+    outsideEdit(first.crepe, (md) => md.replace('End', 'End X'))
+    expect(first.channel.getState().count).toBe(1)
+    const markdown = getMarkdownForSave(first.crepe)
+    await leave()
+    const back = await mount(markdown, { tab: 't6' })
+    await Promise.resolve()
+    expect(back.channel.getState().count).toBe(1)
+    expect(glowTexts(back.root)).toEqual([' X'])
+    back.channel.clear()
+    await leave()
+  })
+
+  it('4I3: a footnote number changed while the tab was away glows on return', async () => {
+    keepOutsideChangesOfTabs(['t7'])
+    const first = await mount('Para[^1]\n\nOther\n\nEnd\n\n[^1]: note\n', { tab: 't7' })
+    outsideEdit(first.crepe, (md) => md.replace('End', 'End X'))
+    const markdown = getMarkdownForSave(first.crepe)
+    await leave()
+    const back = await mount(markdown.replace(/\[\^1\]/g, '[^2]'), { tab: 't7' })
+    await Promise.resolve()
+    // Live, the same edit counts 1 and glows the reference "2".
+    expect(back.channel.getState().count).toBe(2)
+    back.channel.clear()
+    await leave()
+  })
+
   it('a tab keeps the lists of its last MAX_KEPT_PAGES pages; an older one goes, and another tab keeps its own', () => {
     keepOutsideChangesOfTabs(['t4', 't5'])
     const list = { shape: '', doc: null, changes: [1], lastNumber: 1 }
