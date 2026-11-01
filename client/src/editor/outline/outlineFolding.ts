@@ -433,6 +433,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             }
 
             // Folding off (YAZ-4094 F1): ignore every fold request. The saved set still maps through edits and waits for the switch.
+            // No set is drawn then, so none is carried through an edit either: the first draw after "on" builds it once.
             const meta: FoldMeta | undefined = isFoldingOn(newState) ? transaction.getMeta(pluginKey) : undefined
             if (meta === 'fold-all')
               return {
@@ -468,7 +469,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
               }
               // A silent set is not a user fold action: ⌘Z keeps whatever it was already pointing at.
               if (meta.silent !== true) lastToggle = { kind: 'set', previousCollapsed }
-            } else if (transaction.docChanged) carryDecorations(previousState, entries, collapsedItemPositions, transaction.mapping, newState.doc)
+            } else if (transaction.docChanged && isFoldingOn(newState)) carryDecorations(previousState, entries, collapsedItemPositions, transaction.mapping, newState.doc)
             return { entries, collapsedItemPositions, lastToggle }
           },
         },

@@ -10,11 +10,15 @@
  * per hidden block, which every doc change pays while the section is folded (~50 ms here). YAZ-3816 carries the set
  * through the heading's new text, but mapping it and the view's diff of 2,000 doc-level decorations remain. Each press
  * is undone, untimed, before the next one.
+ *
+ * With the page's Folding off (YAZ-4094 F1) the saved heading fold stays, but no set is drawn and none is carried
+ * (YAZ-4119 fix 6): a letter typed after it is logged with folding on and off, not gated.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { undo } from '@milkdown/kit/prose/history'
 import type { Transaction } from '@milkdown/kit/prose/state'
 import { median } from '../../test-perf'
+import { setFoldingOn } from './foldingSwitch'
 import { endOf, mount, posOf, pressKey, select, unmountAll } from '../marks/markTestKit'
 
 afterEach(unmountAll)
@@ -60,5 +64,31 @@ describe('outliner joins next to a fold', () => {
     const [own, whole] = await timeJoin(markdown, key)
     console.log(`outliner join perf: ${kind} fold, ${HIDDEN} hidden lines, ${key}: join ${own.toFixed(2)} ms, whole press ${whole.toFixed(2)} ms (medians of 10)`)
     expect(own).toBeLessThan(5)
+  })
+})
+
+/** Fold the heading `fold`, set the page's Folding, then type a letter after "after" 10 times: the whole press median in ms. */
+async function timeTyping(folding: boolean): Promise<number> {
+  const { crepe, root, view } = await mount(HEADING)
+  root.querySelector<HTMLButtonElement>('[aria-label="Collapse fold"]')!.click()
+  view.dispatch(setFoldingOn(view.state.tr, folding))
+  const whole: number[] = []
+  for (let i = 0; i < 10; i++) {
+    select(crepe, endOf(crepe, 'after'))
+    const start = performance.now()
+    view.dispatch(view.state.tr.insertText('x'))
+    whole.push(performance.now() - start)
+    expect(view.state.doc.textContent).toContain('afterx')
+    undo(view.state, view.dispatch)
+  }
+  return median(whole)
+}
+
+describe('typing next to a saved heading fold (YAZ-4119 fix 6)', () => {
+  it('perf log: a letter after a heading fold hiding 2,000 lines, with Folding on and off (logged, not gated)', async () => {
+    const on = await timeTyping(true)
+    const off = await timeTyping(false)
+    console.log(`heading fold typing perf: ${HIDDEN} hidden lines, one letter: folding on ${on.toFixed(2)} ms, folding off ${off.toFixed(2)} ms (medians of 10)`)
+    expect(Number.isFinite(on) && Number.isFinite(off)).toBe(true)
   })
 })

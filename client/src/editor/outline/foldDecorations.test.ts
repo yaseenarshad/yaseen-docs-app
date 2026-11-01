@@ -15,6 +15,7 @@ import { createCrepe } from '../createCrepe'
 import { random } from '../testRandom'
 import { addHeadingFoldAllMeta, getHeadingFoldKey, HEADING_FOLDED_ATTR, HEADING_TOGGLE_CLASS, undoLastHeadingFold } from './headingFolding'
 import { foldAllOutline, OUTLINE_TOGGLE_CLASS, undoLastFold, unfoldAllOutline } from './outlineFolding'
+import { setFoldingOn } from './foldingSwitch'
 
 const DOC = `# Part one
 
@@ -111,6 +112,32 @@ describe('fold decorations are carried through doc edits (YAZ-2131 5C)', () => {
     expect(headingAfter).toHaveLength(headingBefore.length)
     outlineAfter.forEach((d, i) => expect(typeOf(d)).toBe(typeOf(outlineBefore[i])))
     headingAfter.forEach((d, i) => expect(typeOf(d)).toBe(typeOf(headingBefore[i])))
+  })
+
+  it('folding off: an edit carries no set, so the cache is not refreshed; on again builds each set once, equal to a full rebuild (YAZ-4119 fix 6)', async () => {
+    const { root, view, outline, heading } = await mount()
+    root.querySelector<HTMLButtonElement>(`.${OUTLINE_TOGGLE_CLASS}[aria-label="Collapse Parent"]`)!.click()
+    root.querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[aria-label="Collapse Section"]`)!.click()
+    const outlineBefore = decorationsOf(outline, view.state).find()
+    const headingBefore = decorationsOf(heading, view.state).find()
+    view.dispatch(setFoldingOn(view.state.tr, false))
+    let leafEnd = -1
+    view.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === 'Leaf') leafEnd = pos + node.nodeSize
+    })
+    view.dispatch(view.state.tr.insertText('!', leafEnd))
+    expect(decorationsOf(outline, view.state).find()).toEqual([])
+    view.dispatch(setFoldingOn(view.state.tr, true))
+    const outlineAfter = decorationsOf(outline, view.state).find()
+    const headingAfter = decorationsOf(heading, view.state).find()
+    expect(outlineAfter).toHaveLength(outlineBefore.length)
+    expect(headingAfter).toHaveLength(headingBefore.length)
+    // Built anew, not carried: no decoration keeps its old type object (a carried set keeps each one, see the first test).
+    outlineAfter.forEach((d, i) => expect(typeOf(d)).not.toBe(typeOf(outlineBefore[i])))
+    headingAfter.forEach((d, i) => expect(typeOf(d)).not.toBe(typeOf(headingBefore[i])))
+    const fresh = EditorState.create({ doc: view.state.doc, selection: view.state.selection, plugins: [outline, heading] })
+    expect(normalise(decorationsOf(outline, view.state), view)).toEqual(normalise(decorationsOf(outline, fresh), view))
+    expect(normalise(decorationsOf(heading, view.state), view)).toEqual(normalise(decorationsOf(heading, fresh), view))
   })
 
   it('a label change the fold key ignores (an enumeration prefix) still re-renders the chevron, so it reads the new label', async () => {
