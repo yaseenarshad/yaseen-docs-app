@@ -107,6 +107,18 @@ const visibleSlice = (state: EditorState, range: CopyRange | null): { slice: Sli
 /** Without folded lines' toast (YAZ-3653): the host's notice, or none (a preview, a test). */
 export const copyNoticeCtx = createSlice<((text: string) => void) | null, 'copyNotice'>(null, 'copyNotice')
 
+/**
+ * How a plain-text copy names a text's `[[links]]` (YAZ-3744 S8): as the note shows them, an ID link with its ID.
+ * createCrepe gives the editor's link sources; none (a bare mount) copies links as written.
+ */
+export const copyLinkTextCtx = createSlice<((text: string) => string) | null, 'copyLinkText'>(null, 'copyLinkText')
+
+/**
+ * Copy as Markdown writes what a save writes (YAZ-3747): createCrepe gives its save step, `postProcessMarkdown`, which
+ * takes remark's escapes off each `[[link]]`. None (a bare mount) copies the serializer's text as it is.
+ */
+export const copyMarkdownCtx = createSlice<((markdown: string) => string) | null, 'copyMarkdown'>(null, 'copyMarkdown')
+
 /** What the toast says: the lines a copy left out, so a copy that dropped them reads as meant. */
 const copiedText = (left: number): string =>
   left === 0 ? 'Copied. Nothing in it was folded' : `Copied, ${left} folded line${left === 1 ? '' : 's'} left out`
@@ -180,12 +192,17 @@ function collapseTablesOf(doc: Document | undefined): void {
 
 /** Copy-only formats: readable text, rich HTML and explicitly requested Markdown; saves stay unchanged. */
 export const clipboardCopyOut = $prose((ctx) => {
+  // Read at each copy: the app's own HTML flavour keeps the raw links, so a paste into a note keeps them (S8).
+  const plainText = (slice: Slice) => clipboardPlainText(slice, (ctx.isInjected(copyLinkTextCtx) ? ctx.get(copyLinkTextCtx) : null) ?? undefined)
   let copyMarkdown: ((slice: Slice, view: EditorView) => string) | undefined
   ctx.update(editorViewOptionsCtx, (prev) => {
     const stock = ctx.get(prosePluginsCtx).find((plugin) => plugin.props.clipboardTextSerializer)
     const serialize = prev.clipboardTextSerializer ?? stock?.props.clipboardTextSerializer?.bind(stock)
     if (!serialize) return prev
-    copyMarkdown = serialize
+    copyMarkdown = (slice, view) => {
+      const markdown = serialize(slice, view)
+      return (ctx.isInjected(copyMarkdownCtx) ? ctx.get(copyMarkdownCtx) : null)?.(markdown) ?? markdown
+    }
     const html = prev.clipboardSerializer ?? DOMSerializer.fromSchema(ctx.get(schemaCtx))
     const clipboardSerializer = new DOMSerializer({
       ...html.nodes,
@@ -213,7 +230,7 @@ export const clipboardCopyOut = $prose((ctx) => {
     return {
       ...prev,
       clipboardSerializer,
-      clipboardTextSerializer: clipboardPlainText,
+      clipboardTextSerializer: plainText,
     }
   })
   return new Plugin({
@@ -239,7 +256,7 @@ export const clipboardCopyOut = $prose((ctx) => {
         }
         if (view.state.selection.empty) return ''
         const slice = view.state.selection.content()
-        return mode === 'plain' ? clipboardPlainText(slice) : copyMarkdown?.(slice, view) ?? ''
+        return mode === 'plain' ? plainText(slice) : copyMarkdown?.(slice, view) ?? ''
       })
       return { destroy: () => unsubscribe?.() }
     },

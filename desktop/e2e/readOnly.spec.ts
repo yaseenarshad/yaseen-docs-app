@@ -23,7 +23,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setFrontmatterProperty } from '../../shared/frontmatter'
-import { appWindow, buildFixtureVault, contents, copyVault, editorOf, fileRow, launchApp, layer, openFolder, quitApp, seededState, shoot, viewTabs } from './helpers'
+import { appWindow, buildFixtureVault, contents, copyVault, editorOf, fileRow, launchApp, layer, openFolder, quitApp, seededState, shoot, viewTabs, LINK_HERE, openLinksHere } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -104,7 +104,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — the note opens editable: no chip, and "Read only" is the cog’s first row, off', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, notePath)) })
   win = await appWindow(app, 'w1')
   await expect(line(win)).toBeVisible()
   await expect(chip(win)).toHaveCount(0)
@@ -199,7 +199,7 @@ test('step 3c — D8: a read-only outline keeps every view action, with the mous
   expect(await win.evaluate(() => document.getSelection()?.toString())).toContain('child-e2e')
   await win.waitForTimeout(700)
   expect(await readFile(outlinePath, 'utf8')).toBe(OUTLINE_BODY)
-  // A link still opens: the wiki link goes to its note.
+  // A link still opens with a plain click in a read-only note (YAZ-3879 point 6): the wiki link goes to its note.
   await editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).first().click()
   await expect(layer(win).locator('.page-title__text')).toHaveText('Ideas')
   expect(await readFile(outlinePath, 'utf8')).toBe(OUTLINE_BODY)
@@ -342,7 +342,7 @@ test('step 3f — YAZ-3140: after a click or a drag on a read-only TITLE the pag
   await pageHoldsTheKeys()
   // A wikilink open: the app reveals the note in the sidebar and focuses its row, as on main — the row holds the keys.
   await fileRow(win, 'Ideas').click()
-  await editorOf(win).locator('.wikilink', { hasText: 'Locked outline' }).first().click()
+  await editorOf(win).locator('.wikilink', { hasText: 'Locked outline' }).first().click({ modifiers: LINK_HERE }) // Ideas is editable: an open gesture (YAZ-3936)
   await expect(shown('parent-e2e')).toBeVisible()
   expect(await win.evaluate(() => document.activeElement?.closest('.tree__row') != null)).toBe(true)
   // A route with no click in the page claims the page it focuses (YAZ-3145; first launch and a tab open
@@ -456,7 +456,7 @@ const frameBox = (w: Page) => layer(w).frameLocator('iframe.drawio-editor__frame
 const hostFocus = (w: Page): Promise<string> => w.evaluate(() => `${document.activeElement?.tagName}.${document.activeElement?.className}`)
 
 test('step 6 — a diagram opens editable in draw.io, with the cog first in its strip', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, diagramPath) })
+  app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, diagramPath)) })
   win = await appWindow(app, 'w1')
   await expect(frameBox(win)).toBeVisible({ timeout: 30_000 })
   await expect(layer(win).locator('.drawio-editor__chips > :first-child')).toHaveClass(/page-settings/)
@@ -522,7 +522,7 @@ test('step 10 — YAZ-3122, YAZ-3126: in a folder\u2019s table, a read-only note
   const longName = 'Customer Lifetime Value Over A Very Long Horizon For Enterprise Accounts'
   const longPath = path.join(bible, 'KPIs', `${longName}.md`)
   await writeFile(longPath, '---\nreadonly: true\nkpi_category: lagging\nunit: currency\n---\n\n# Long\n')
-  app = await launchApp({ userData, seedState: seededState(bible, null) })
+  app = await launchApp({ userData, seedState: openLinksHere(seededState(bible, null)) })
   win = await appWindow(app, 'w1')
   await openFolder(win, path.join(bible, 'KPIs'))
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()

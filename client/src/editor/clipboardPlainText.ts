@@ -4,19 +4,43 @@
  * rides in the same attribute (`parseAlt`, imageSrc.ts) — with the src as the fallback for an
  * empty alt. That is the one stand-in for an image everywhere it needs a text identity: the fold
  * key, the zoom breadcrumb (`itemLabelText`, listNodes.ts) and this copy agree (YAZ-1709).
+ * A `[[link]]` copies as the note shows it, through `links` (YAZ-3744 S8: `linksAsShown`, an ID link with its ID).
+ * Code, inline or a block, copies as written, as the note draws it raw.
  */
 import type { Fragment, Node, Slice } from '@milkdown/kit/prose/model'
 import { parseAlt } from './image/imageSrc'
 
 const isList = (node: Node) => node.type.name === 'bullet_list' || node.type.name === 'ordered_list'
 
-function children(content: Fragment, separator: string, depth: number): string {
+/** A text's `[[links]]` as the note shows them; the text as it is when no editor gave one. */
+type LinkText = (text: string) => string
+const asWritten: LinkText = (text) => text
+
+function children(content: Fragment, separator: string, depth: number, links: LinkText): string {
   const parts: string[] = []
-  content.forEach(node => { parts.push(readable(node, depth)) })
+  content.forEach(node => { parts.push(readable(node, depth, links)) })
   return parts.join(separator)
 }
 
-function readable(node: Node, depth: number): string {
+/**
+ * A textblock's inline content: each run of text outside inline code goes through `links` whole, so a link that
+ * crosses a mark (`[[AR **v2** plan]]`) is still one link, as the wikilink plugin's `eachPlainRun` reads it.
+ */
+function inline(block: Node, depth: number, links: LinkText): string {
+  let out = ''
+  let run = ''
+  block.forEach((child) => {
+    if (child.isText && !child.marks.some((mark) => mark.type.name === 'inlineCode')) {
+      run += child.text ?? ''
+      return
+    }
+    out += links(run) + readable(child, depth, links)
+    run = ''
+  })
+  return out + links(run)
+}
+
+function readable(node: Node, depth: number, links: LinkText): string {
   if (node.isText) return node.text ?? ''
   if (node.type.name === 'hardbreak') return '\n'
   if (node.type.name === 'image') return parseAlt(node.attrs.alt).text || node.attrs.src
@@ -35,9 +59,9 @@ function readable(node: Node, depth: number): string {
       item.forEach((block, _pos, blockIndex) => {
         if (isList(block)) {
           if (blockIndex === 0) blocks.push(indent + label.trimEnd())
-          blocks.push(readable(block, depth + 1))
+          blocks.push(readable(block, depth + 1, links))
         } else {
-          const text = readable(block, depth)
+          const text = readable(block, depth, links)
           blocks.push((blockIndex === 0 ? indent + label : continuation) + text.replace(/\n/g, '\n' + continuation))
         }
       })
@@ -45,14 +69,14 @@ function readable(node: Node, depth: number): string {
     })
     return items.join('\n')
   }
-  if (node.type.name === 'table_row' || node.type.name === 'table_header_row') return children(node.content, '\t', depth)
-  if (node.isTextblock) return children(node.content, '', depth)
+  if (node.type.name === 'table_row' || node.type.name === 'table_header_row') return children(node.content, '\t', depth, links)
+  if (node.isTextblock) return node.type.spec.code === true ? children(node.content, '', depth, links) : inline(node, depth, links)
   if (node.isLeaf) return node.type.spec.leafText?.(node) ?? ''
-  return children(node.content, '\n', depth)
+  return children(node.content, '\n', depth, links)
 }
 
 /** Selected document rows, not Markdown separators: an empty row contributes one blank line. */
-export function clipboardPlainText(slice: Slice): string {
+export function clipboardPlainText(slice: Slice, links: LinkText = asWritten): string {
   let content = slice.content
   let lastList = content
   let open = Math.min(slice.openStart, slice.openEnd)
@@ -64,7 +88,7 @@ export function clipboardPlainText(slice: Slice): string {
   }
   // A selected parent plus children needs its list; a sibling-only selection does not need ancestors.
   if (content.childCount === 1 && content.firstChild!.type.name === 'list_item') content = lastList
-  const text = children(content, '\n', 0)
+  const text = children(content, '\n', 0, links)
   // Selecting an actual empty paragraph still copies a line, rather than old clipboard data.
   return text || (content.size > 0 ? '\n' : '')
 }

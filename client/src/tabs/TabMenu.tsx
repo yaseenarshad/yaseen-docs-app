@@ -1,4 +1,4 @@
-import { api, BridgeRequestError } from '../api'
+import { osVerbs } from '../lib/osVerbs'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
 import type { MenuAction, MenuSection } from '../sidebar/menuSections'
@@ -73,17 +73,8 @@ export interface TabMenuProps {
  * `ContextMenu` (YAZ-2949 D6), so its groups have the same lines as every other menu of the app.
  */
 export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onSetReview, onToggleFocus, onToggleFavorite, onNotice, leading = [], trailing = [] }: TabMenuProps) {
-  /**
-   * The menu's OS actions (YAZ-963), the sidebar's `reveal` idiom on a tab: read-only, so there is
-   * nothing to confirm or repair — but a STALE tab (deleted or moved externally) rejects `NOT_FOUND`,
-   * and without the notice the item would just look broken. Both messages are the caller's, because
-   * "reveal" and "open … in VS Code" name the gesture differently in each half.
-   */
-  const osAction = (call: Promise<unknown>, stale: string, failed: string): void => {
-    call.catch((err: unknown) => {
-      onNotice?.(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? stale : `${failed}: ${err instanceof Error ? err.message : String(err)}`)
-    })
-  }
+  /** The menu's OS actions (YAZ-963): the sidebar's verbs and notices (`lib/osVerbs.ts`), a stale tab named by its label. */
+  const os = osVerbs((message) => onNotice?.(message), () => label)
   // "Move to ▸" (YAZ-3091 D3): the other windows, a line, then "Right panel". An empty group is left out, and with no group there is no item.
   const moveTo: MenuAction[][] = [
     onMoveToWindow === undefined ? [] : moveTargets.map((t) => ({ id: `move-window:${t.id}`, label: t.label, onSelect: () => onMoveToWindow(t.id, menu.path, menu.id), onPreview: (on: boolean) => onHighlightWindow?.(on ? t.id : null) })),
@@ -116,8 +107,8 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     ],
     [
       ...(lists === null || onToggleFavorite === undefined ? [] : [{ id: 'toggle-favorite', label: lists.favorite ? 'Remove from favorites' : 'Add to favorites', icon: <HeartIcon />, onSelect: () => onToggleFavorite([menu.path], lists.favorite) }]),
-      { id: 'reveal', label: 'Reveal in Finder', onSelect: () => osAction(api.shell.reveal({ path: menu.path }), `Can't reveal "${label}" — it is no longer there`, "Can't reveal") },
-      { id: 'open-vscode', label: 'Open in VS Code', onSelect: () => osAction(api.shell.openVsCode({ path: menu.path }), `Can't open "${label}" in VS Code — it is no longer there`, "Can't open in VS Code") },
+      { id: 'reveal', label: 'Reveal in Finder', onSelect: () => os.reveal(menu.path) },
+      { id: 'open-vscode', label: 'Open in VS Code', onSelect: () => os.openVsCode(menu.path) },
     ],
   ]
   return <ContextMenu x={menu.x} y={menu.y} sections={[...sections, trailing]} onClose={onClose} />

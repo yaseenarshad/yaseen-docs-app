@@ -2,7 +2,8 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
-import { api, BridgeRequestError } from '../api'
+import { api } from '../api'
+import { osVerbs } from '../lib/osVerbs'
 import { CalendarIcon, GridIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
@@ -1295,12 +1296,14 @@ export function Sidebar({
     [onOpenFileBackground],
   )
 
-  /** Context menu "Open in new window" (D2, GRO-2168): a fresh window on {root, file} — the vault that holds the file, alone (YAZ-2602 S33); this one untouched. (⌘-click opens a background tab instead since I3.) */
-  const openFileNewWindow = useCallback(
-    (path: string) => {
-      api.window.open({ root: rootOf(path), file: path }).catch((err: unknown) => console.error('[sidebar] window.open failed:', err))
-    },
-    [rootOf],
+  /**
+   * Context menu "Open in new window" (D2, GRO-2168), Reveal in Finder (GRO-2274), Open in VS Code (YAZ-963) and Open in
+   * default app (YAZ-1577; the click on a row with no viewer too): the shared OS verbs and their notices (`lib/osVerbs.ts`).
+   * (⌘-click opens a background tab instead of a window since I3.)
+   */
+  const { openNewWindow: openFileNewWindow, reveal, openVsCode, openDefault } = useMemo(
+    () => osVerbs((message) => onNotice(message, 'error'), nameOf, rootOf),
+    [onNotice, nameOf, rootOf],
   )
 
   /**
@@ -1328,49 +1331,6 @@ export function Sidebar({
     onCreateConsumed?.(createRequest.id)
     startCreateAt(createRequest.kind, '', { targetDir: createRequest.dir, lens: 'files', top: null })
   }, [createRequest, lens, forest, trees, rootOf, onCreateConsumed, startCreateAt])
-
-  /**
-   * Reveal in Finder (GRO-2274). Read-only, so there is no confirm and nothing to repair —
-   * but a STALE row (deleted or moved externally) rejects `NOT_FOUND`, and that has to be
-   * visible: `showItemInFolder` is silent on a missing path, so without a notice the menu
-   * item would just look broken.
-   */
-  const reveal = useCallback(
-    (path: string) => {
-      api.shell.reveal({ path }).catch((err: unknown) => {
-        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't reveal "${nameOf(path)}" — it is no longer there` : `Can't reveal: ${err instanceof Error ? err.message : String(err)}`, 'error')
-      })
-    },
-    [onNotice, nameOf],
-  )
-
-  /**
-   * Open in VS Code (YAZ-963): `reveal`'s twin, notice included. A dead `vscode://` URL opens
-   * an empty editor rather than reporting anything, so the stale-row `NOT_FOUND` is exactly as
-   * load-bearing here as it is above.
-   */
-  const openVsCode = useCallback(
-    (path: string) => {
-      api.shell.openVsCode({ path }).catch((err: unknown) => {
-        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${nameOf(path)}" in VS Code — it is no longer there` : `Can't open in VS Code: ${err instanceof Error ? err.message : String(err)}`, 'error')
-      })
-    },
-    [onNotice, nameOf],
-  )
-
-  /**
-   * Open in default app (YAZ-1577): the third twin. Both the click on a row with no viewer and
-   * the menu item land here; the OS' own refusal (`IO_ERROR`, e.g. no app registered for the
-   * type) is the one extra message worth showing verbatim.
-   */
-  const openDefault = useCallback(
-    (path: string) => {
-      api.shell.openDefault({ path }).catch((err: unknown) => {
-        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${nameOf(path)}" — it is no longer there` : `Can't open "${nameOf(path)}": ${err instanceof Error ? err.message : String(err)}`, 'error')
-      })
-    },
-    [onNotice, nameOf],
-  )
 
   // The row goes when the index says so, as it came; only a refusal is said.
   const removeShortcutRow = (path: string, dir: string): void =>

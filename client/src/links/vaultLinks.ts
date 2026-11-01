@@ -20,6 +20,13 @@ export interface VaultLinks {
   names: string
   /** The name of the window's vault that holds `path`, or null outside them (D22): a link into another vault says which one. */
   vaultOf: (path: string) => string | null
+  /**
+   * The names of the window's vaults that use the ID letters `letters` (capitals), now or before, read live off each
+   * vault's index (YAZ-3905 S23): an unresolved `[[INL-4]]` names its vault. Absent: none.
+   */
+  vaultsOfLetters?: (letters: string) => string[]
+  /** Each vault's ID letters, one vault per line: a change (an index that lands) draws the `[[links]]` again (S23). */
+  letters?: string
 }
 
 export const VaultLinksContext = createContext<VaultLinks | null>(null)

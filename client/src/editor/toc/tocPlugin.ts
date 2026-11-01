@@ -226,7 +226,13 @@ const landingTop = (scroller: HTMLElement, element: HTMLElement): number =>
 
 /** jsdom has no `matchMedia`, and the contract runs there. */
 
-export const createTableOfContents = (channel: TocChannel) =>
+/** How the rows name a line's links (YAZ-3744 D6): the text as the note shows it, and the index's change to scan again on. */
+export interface TocLinks {
+  linkText: (text: string) => string
+  subscribe: (listener: () => void) => () => void
+}
+
+export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
   $prose(
     () =>
       new Plugin({
@@ -244,7 +250,8 @@ export const createTableOfContents = (channel: TocChannel) =>
             const note = scanNote(view.state.doc, channel.getSource())
             positions = note.rows.map(({ pos }) => pos)
             bullets = note.bullets
-            channel.publish(note.rows.map(({ level, text }) => ({ level, text })))
+            // A row names its links as the note shows them (YAZ-3744 D6).
+            channel.publish(note.rows.map(({ level, text }) => ({ level, text: links === undefined ? text : links.linkText(text) })))
             return note
           }
 
@@ -393,6 +400,11 @@ export const createTableOfContents = (channel: TocChannel) =>
           const unbind = channel.bind(controller)
           channel.setHidden(getZoomedItemPos(view.state) !== null)
           scan()
+          // A title that changes in the index renames the rows that link to it: one scan, as after an edit.
+          const unsubscribeLinks = links?.subscribe(() => {
+            if (timer !== null) clearTimeout(timer)
+            timer = setTimeout(scan, SCAN_DELAY_MS)
+          })
           return {
             update: (_view, previous) => {
               channel.setHidden(getZoomedItemPos(view.state) !== null)
@@ -405,6 +417,7 @@ export const createTableOfContents = (channel: TocChannel) =>
               if (timer !== null) clearTimeout(timer)
               timer = null
               unbind()
+              unsubscribeLinks?.()
             },
           }
         },

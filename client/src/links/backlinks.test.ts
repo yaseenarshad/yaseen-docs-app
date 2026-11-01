@@ -224,6 +224,14 @@ describe('mentionSnippets (Links D, GRO-2193; display text + line grouping FN9/F
     expect(snippets.map(marked)).toEqual([['B'], ['the other']])
   })
 
+  it('a found page reads by its name (YAZ-3778 D2, D3); a dead link keeps its text (S12)', () => {
+    const resolveSub = resolverOver([...records, rec('/vault/sub/Plan.md')])
+    const [snippet] = mentionSnippets('See [[sub/Plan]], [[B.md]], [[Map.drawio]] and [[sub/Gone.md]] here\n', B, resolveSub, NO_TITLES)
+    // A view-only file counts as found here, with no view-only resolver (A16): `Map`, not `Map.drawio`.
+    expect(snippet.text).toBe('See Plan, B, Map and sub/Gone.md here')
+    expect(marked(snippet)).toEqual(['B'])
+  })
+
   it('a piped mention shows its ALIAS — exactly the editor display, never the raw brackets (FN9)', () => {
     const [snippet] = mentionSnippets('see [[B|Bee alias]] here\n', B, resolve, NO_TITLES)
     expect(snippet.text).toBe('see Bee alias here')

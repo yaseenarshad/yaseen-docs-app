@@ -1,6 +1,7 @@
 /**
  * Hover on wiki links (YAZ-3403): resting the pointer on a resolved `[[link]]` in a note says which page it opens,
- * so the editor's host can show the sidebar's hover panel beside it. Wired through `createCrepe({ wikilinkHover })`,
+ * so the editor's host can show the sidebar's hover panel beside it, with one line on how to open it (YAZ-3935:
+ * "⌘-click to open", from the bound gesture; the host reads `editable` for a read-only note's "Click to open"). Wired through `createCrepe({ wikilinkHover })`,
  * and only by the note editor: the read-only previews never pass it.
  *
  * On the view's own DOM events (`handleDOMEvents`), never a document listener: many editors are mounted at once.
@@ -13,14 +14,14 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import type { AnchorRect } from '../../sidebar/previewPlacement'
-import { wikilinkInnerAt } from './wikilinkClick'
+import { linkPosAtDOM, wikilinkInnerAt } from './wikilinkClick'
 import { WIKILINK_CLASS, WIKILINK_UNRESOLVED_CLASS, linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 
 /** Where a link hover goes: the editor's host. */
 export interface WikilinkHover {
-  /** The pointer came onto a resolved link: the page it opens, and the link's box on screen. */
-  onHover: (path: string, rect: AnchorRect) => void
+  /** The pointer came onto a resolved link: the page it opens, the link's box on screen, and whether the note is editable (the card's open line, YAZ-3935). */
+  onHover: (path: string, rect: AnchorRect, editable: boolean) => void
   /** The pointer left the link. */
   onLeave: () => void
   /** A Markdown link pill's address as the page it opens (YAZ-3609 D20), as a click resolves it; null when it opens none. */
@@ -40,7 +41,7 @@ function linkPathOf(view: EditorView, target: EventTarget | null, source: Wikili
     const path = href === null ? null : (hover.markdownPath?.(href) ?? null)
     return path === null ? null : { span, path }
   }
-  const inner = wikilinkInnerAt(view.state.doc, view.posAtDOM(span, 0))
+  const inner = wikilinkInnerAt(view.state.doc, linkPosAtDOM(view, span))
   if (inner === null) return null
   const page = linkPageName(inner)
   if (page === '') return null
@@ -75,7 +76,7 @@ export function createWikilinkHover(source: WikilinkResolveSource, hover: Wikili
               // On a pill the page preview stands in for the editor's own address bar (D20): it says where the link goes.
               pillHover(view, link.span.classList.contains('link-pill'))
               const box = link.span.getBoundingClientRect()
-              hover.onHover(link.path, { left: box.left, top: box.top, right: box.right, bottom: box.bottom })
+              hover.onHover(link.path, { left: box.left, top: box.top, right: box.right, bottom: box.bottom }, view.editable)
               return false
             },
             mouseout: (view, event) => {

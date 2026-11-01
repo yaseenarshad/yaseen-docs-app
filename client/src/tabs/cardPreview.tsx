@@ -150,7 +150,7 @@ export interface PreviewScope {
 }
 
 /** The panel's half: it alone reads the store. `side` puts the panel under the card (a tab of the strip) or at the window's right edge (a linked mention), not beside it. */
-export function CardPreviewHost({ store, cardOf, scopeOf, diagramDarkColors, side }: { store: Store<CardPreviewState>; cardOf: (id: string, path: string) => { root: string | null; name: string } | null; scopeOf?: (path: string) => PreviewScope; diagramDarkColors: DiagramDarkColors; side?: PreviewSide }) {
+export function CardPreviewHost({ store, cardOf, scopeOf, diagramDarkColors, side }: { store: Store<CardPreviewState>; cardOf: (id: string, path: string) => { root: string | null; name: string; hint?: string } | null; scopeOf?: (path: string) => PreviewScope; diagramDarkColors: DiagramDarkColors; side?: PreviewSide }) {
   const { id, path, shown, rect } = useSyncExternalStore(store.subscribe, store.getState)
   if (!shown || id === null || path === null || rect === null || scopeOf === undefined) return null
   const card = cardOf(id, path)
@@ -159,5 +159,5 @@ export function CardPreviewHost({ store, cardOf, scopeOf, diagramDarkColors, sid
   // A card of another window may be of a vault this window does not show: its own window's vault names it.
   const root = card.root ?? scope.root
   if (root === null) return null
-  return <PreviewPanel key={`${id}\n${path}`} path={path} root={root} name={card.name} wikilinks={scope.wikilinks} textVars={scope.textVars} watch={scope.watch} diagramDarkColors={diagramDarkColors} anchor={{ rect, side }} />
+  return <PreviewPanel key={`${id}\n${path}`} path={path} root={root} name={card.name} hint={card.hint} wikilinks={scope.wikilinks} textVars={scope.textVars} watch={scope.watch} diagramDarkColors={diagramDarkColors} anchor={{ rect, side }} />
 }
