@@ -65,7 +65,9 @@ import { link, mkdir, readdir, readFile, rename, unlink } from 'node:fs/promises
 import path from 'node:path'
 import type { DrawingFileEntry, DrawingLoadResponse, DrawingNewFile, DrawingSaveResponse } from '@shared/types'
 import { isRecord } from '@shared/guards'
-import { ASSETS_DIR, assetFileName, BOARD_META_HEAD_BYTES, createdOf, extForMime, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseBoardMetaBlock, parseDataUrl, PICTURES_INSIDE_MAX_BYTES, PICTURES_KEY, PICTURES_OUT, picturesOut, referencedFileIds, serializeBoard, stampBoardMetaScene, stripEmbeddedScene, type BoardMetaBlock, type EmbeddedFile } from '@shared/drawingAssets'
+import { ASSETS_DIR, assetFileName, BOARD_META_HEAD_BYTES, createdOf, extForMime, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseBoardMetaBlock, parseDataUrl, PICTURES_INSIDE_MAX_BYTES, PICTURES_KEY, PICTURES_OUT, picturesOut, referencedFileIds, serializeBoard, stampBoardMetaScene, BOARD_ID_KEY, boardIdOf, stripEmbeddedScene, type BoardMetaBlock, type EmbeddedFile } from '@shared/drawingAssets'
+import { vaultNoteId } from '@shared/noteId'
+import { mintIds, vaultIds } from '../vaultIndex/mint'
 import { BOARDS, boardTarget, guardedStamp } from './boardDocument'
 import type { BoardHead } from './boardHead'
 import { readBoundedRegularFile } from './boundedRead'
@@ -284,6 +286,17 @@ async function readCurrent(file: string): Promise<{ head: BoardHead; data: Buffe
   }
 }
 
+/**
+ * The ID a save gives the board (YAZ-3943 4C), or undefined: the vault does not give IDs, or the block holds an ID of
+ * this vault already. An ID of another vault, or another tool's, is none, as a note's is (YAZ-2420 D30): the vault's
+ * door gives a new one. The door is the note's (`mintIds`), so a board and a note never share a number.
+ */
+async function boardIdToGive(root: string, block: BoardMetaBlock | null | undefined): Promise<string | undefined> {
+  const { answer, letters } = await vaultIds(root)
+  if (answer !== true || vaultNoteId(boardIdOf(block), letters) !== undefined) return undefined
+  return (await mintIds(root, 1))?.[0]
+}
+
 export async function saveDrawing(req: unknown): Promise<DrawingSaveResponse> {
   const { dir, file, body } = boardTarget(req, 'drawing')
   const { json, expectedMtime, newFiles } = body
@@ -297,17 +310,22 @@ export async function saveDrawing(req: unknown): Promise<DrawingSaveResponse> {
   await requireDir(dir)
   const current = await readCurrent(file)
   const known = current?.head ?? null
+  // A board's ID (YAZ-3943 4C): given on its first save in a vault that gives IDs, never on a save the guard refuses.
+  const conflict = expectedMtime !== undefined && known !== null && known.mtime !== expectedMtime
+  const id = conflict ? undefined : await boardIdToGive(dir, known?.block)
+  const withId = (block: BoardMetaBlock | null): BoardMetaBlock | null => (id === undefined ? block : ({ ...block, [BOARD_ID_KEY]: id } as BoardMetaBlock))
+  const given = id === undefined ? {} : { id }
 
   if (picturesOut(known?.block)) {
     // "Pictures out": a scene's still-embedded bytes shrink into the store on THIS save (see `liftEmbedded`).
     const { lean, lifted } = liftEmbedded(scene, elements, new Set(pending.map((p) => p.fileId)))
     pending.push(...lifted)
-    const stamped = await guardedStamp(file, 'drawing', expectedMtime, (at, prior) => serializeBoard(stampBoardMetaScene(lean, at, prior)), known)
+    const stamped = await guardedStamp(file, 'drawing', expectedMtime, (at, prior) => serializeBoard(stampBoardMetaScene(lean, at, withId(prior))), known)
     // Assets first (see the module doc), and only once the conflict guard has passed — a refused
     // save must leave the vault exactly as it found it.
     const persisted = await landAssets(dir, pending)
     const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
-    return { path: file, mtime, size, persisted }
+    return { path: file, mtime, size, persisted, ...given }
   }
 
   // Inside (YAZ-3943 D5): the new pictures, any the scene sent inside itself, the file's own, then the store.
@@ -327,7 +345,8 @@ export async function saveDrawing(req: unknown): Promise<DrawingSaveResponse> {
     file,
     'drawing',
     expectedMtime,
-    (at, block) => {
+    (at, held) => {
+      const block = withId(held)
       const full = serializeBoard(stampBoardMetaScene(inside, at, block))
       if (Buffer.byteLength(full, 'utf8') < PICTURES_INSIDE_MAX_BYTES) return full
       // The 50 MB rule (D5): the pictures go out, and the block says so from now on.
@@ -338,9 +357,9 @@ export async function saveDrawing(req: unknown): Promise<DrawingSaveResponse> {
   )
   if (!movedOut) {
     const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
-    return { path: file, mtime, size, persisted: Object.keys(pictures) }
+    return { path: file, mtime, size, persisted: Object.keys(pictures), ...given }
   }
   const persisted = await landAssets(dir, liftEmbedded(inside, elements).lifted)
   const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
-  return { path: file, mtime, size, persisted, movedOut: true }
+  return { path: file, mtime, size, persisted, movedOut: true, ...given }
 }

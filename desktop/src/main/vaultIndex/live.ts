@@ -1,6 +1,9 @@
 import path from 'node:path'
 import { IDS_FILE, NOTE_ID_KEY, idsAnswer, isIdLetters, vaultNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, isFolderSettingsPath, type IdsState, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
+import { boardIdOf } from '@shared/drawingAssets'
+import { isDrawing } from '@shared/fileKind'
+import { readBoardHead } from '../fs/boardHead'
 import { BridgeFailure, fsCall, isMarkdown, requireAbsPath } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
 import { writeConfig } from '../vaultConfig'
@@ -31,6 +34,8 @@ interface Entry {
   wait?: NodeJS.Timeout
   /** Each ID two Macs gave that two notes still hold, and the path of the note that keeps it (YAZ-2677 S46): the index hands the ID out for that note only. */
   kept: Map<string, string>
+  /** Each board's ID as its head holds it (YAZ-3943 4C), by path; a board with no ID is not here. Never cached: the build reads the heads again. */
+  boards: Map<string, string>
 }
 
 const DEFAULT_IDLE_MS = 10 * 60 * 1000
@@ -45,6 +50,11 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
   switch (ev.type) {
     case 'add':
     case 'change': {
+      if (isDrawing(ev.path)) {
+        const read = readBoard(root, entry, ev.path).finally(() => entry.inFlight.delete(read))
+        entry.inFlight.add(read)
+        return
+      }
       if (!isMarkdown(ev.path)) return
       const held = entry.records.get(ev.path)?.id
       const scan = scanFile(root, ev.path)
@@ -71,6 +81,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       void sweep(root, entry, [], (p) => entry.records.get(p)?.id, [ev.path])
       return
     case 'unlink': {
+      if (entry.boards.delete(ev.path)) boardsChanged?.(root)
       const id = isFolderSettingsPath(ev.path) ? entry.records.get(ev.path)?.id : undefined
       entry.records.delete(ev.path)
       entry.waits.delete(ev.path)
@@ -82,12 +93,46 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       const prefix = ev.path + path.sep
       for (const p of entry.records.keys()) if (p.startsWith(prefix)) entry.records.delete(p)
       for (const p of entry.waits.keys()) if (p.startsWith(prefix)) entry.waits.delete(p)
+      // The windows read the index again for a folder that went (`useIndex`): its boards go with it, with no word.
+      for (const p of entry.boards.keys()) if (p.startsWith(prefix)) entry.boards.delete(p)
       entry.dirs = entry.dirs.filter((dir) => dir !== ev.path && !dir.startsWith(prefix))
       schedulePersist(root, entry.records)
       return
     }
     default:
       return
+  }
+}
+
+/** A board's ID off its head (YAZ-3943 4C): only the first 1 KB is read. Undefined for none, and for a file that is gone. */
+const boardIdAt = (file: string): Promise<string | undefined> => readBoardHead(file).then((head) => boardIdOf(head?.block), () => undefined)
+
+/** The board at `file` as its head says now; the windows hear of a change of its ID (`onBoardIds`). */
+async function readBoard(root: string, entry: Entry, file: string): Promise<void> {
+  const id = await boardIdAt(file)
+  if (entry.boards.get(file) === id) return
+  if (id === undefined) entry.boards.delete(file)
+  else entry.boards.set(file, id)
+  boardsChanged?.(root)
+}
+
+/**
+ * Hears that the boards with an ID changed in the vault at `root` (YAZ-3943 4C): a board took one, or one with an ID came,
+ * went or moved. A board is no note, so the windows do not read the index again for its events: the bridge tells them.
+ */
+let boardsChanged: ((root: string) => void) | undefined
+
+/** One listener, set by the bridge at startup. */
+export function onBoardIds(listener: ((root: string) => void) | undefined): void {
+  boardsChanged = listener
+}
+
+/** The ID a save just gave the board at `file` (YAZ-3943 4C), taken by each live index AT ONCE: the watcher's echo comes later. */
+export function indexBoard(file: string, id: string): void {
+  for (const [root, entry] of entries) {
+    if (!inside(root, file) || entry.boards.get(file) === id) continue
+    entry.boards.set(file, id)
+    boardsChanged?.(root)
   }
 }
 
@@ -163,13 +208,14 @@ function wouldWrite(records: ReadonlyMap<string, IndexRecord>, dirs: readonly st
 
 async function build(root: string): Promise<Entry> {
   const dirs: string[] = []
-  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), kept: new Map() }
+  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), kept: new Map(), boards: new Map() }
   const files: string[] = []
+  const boards: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
   // lives in userData, never the vault, so the watcher ordering below does not apply to it, and
   // reading it early keeps the multi-MB read ahead of the watcher's initial walk that floods the
   // fs threadpool on subscribe.
-  const [cached] = await Promise.all([loadIndexCache(root), fsCall(root, () => walk(root, files, dirs))])
+  const [cached] = await Promise.all([loadIndexCache(root), fsCall(root, () => walk(root, files, dirs, boards))])
   // A corrupt cache is an anomaly worth one line (vaultConfig idiom); `miss` and
   // `version-mismatch` are expected states (first open / semantics bump) and stay silent.
   if (cached.status === 'corrupt') console.warn(`[index-cache] cache for ${root} is corrupt; ignoring it and rescanning`)
@@ -178,7 +224,8 @@ async function build(root: string): Promise<Entry> {
   try {
     // Reuse records the D2 stat sweep validates, rescan the rest. Any cache failure comes back
     // as a non-hit load and reconcile degrades to today's full scan.
-    const { records, diff } = await reconcile(root, files, cached)
+    const [{ records, diff }, ids] = await Promise.all([reconcile(root, files, cached), Promise.all(boards.map(boardIdAt))])
+    boards.forEach((file, i) => ids[i] !== undefined && entry.boards.set(file, ids[i]!))
     entry.records = records
     entry.coldDiff = diff
     const { letters, ...held } = await vaultIds(root)
@@ -255,7 +302,14 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   // `ask` goes out while the answer is not yes (YAZ-2677 🔒 D2): the box in Settings shows the counts for a vault that said no too,
   // and asks for the letters the vault's file already holds (S9).
   if (!ids) return { root, records, folders, generatedAt: Date.now(), ids, ask: { ...wouldWrite(entry.records, entry.dirs, letters), ...(saved && { letters: letters[0] }) } }
-  return { root, records, folders, generatedAt: Date.now(), ids, letters, ...((await planLeft(root)) && { unfinished: true as const }) }
+  // A board's ID goes out as a note's does (R5): with the current letters, and not at all when it is another vault's.
+  const boards = [...entry.boards]
+    .flatMap(([p, held]) => {
+      const id = vaultNoteId(held, letters)
+      return id === undefined ? [] : [{ path: p, id }]
+    })
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  return { root, records, folders, generatedAt: Date.now(), ids, letters, boards, ...((await planLeft(root)) && { unfinished: true as const }) }
 }
 
 /** `p` is under `root` (a vault is never its own record). */
@@ -277,14 +331,25 @@ export async function indexMoved(oldPath: string, newPath: string, kind: 'file' 
   // A scan the watcher started lands first, so it cannot put back a path this takes away.
   await Promise.all(live.map(([, entry]) => Promise.all([...entry.inFlight])))
   const moved = new Map<string, IndexRecord>()
+  // A board keeps its ID in a move (YAZ-3943 4C): the bytes are the same. One from outside every live index is read by the echo.
+  const boards = new Map<string, string>()
   for (const [, entry] of live) {
     for (const [p, r] of entry.records) {
       if (p !== oldPath && !p.startsWith(oldPath + path.sep)) continue
       moved.set(p, r)
       entry.records.delete(p)
     }
+    for (const [p, id] of entry.boards) {
+      if (p !== oldPath && !p.startsWith(oldPath + path.sep)) continue
+      boards.set(p, id)
+      entry.boards.delete(p)
+    }
   }
   for (const [root, entry] of live) {
+    if (boards.size > 0) {
+      if (inside(root, newPath)) for (const [p, id] of boards) entry.boards.set(newPath + p.slice(oldPath.length), id)
+      boardsChanged?.(root)
+    }
     if (inside(root, newPath)) {
       const scan = (p: string): Promise<void> => scanFile(root, p).then((r) => void entry.records.set(p, r), () => undefined)
       if (kind === 'file') {

@@ -264,6 +264,11 @@ export interface IndexResponse {
   ask?: { notes: number; folders: number; foreign: number; /** The ID letters the vault's `ids.json` already holds (YAZ-2677 S9): the box asks for these. None: the user chooses them (S5). */ letters?: string }
   /** Only when `ids`: a run of "Give old IDs numbers" stopped with files left, and its plan is in the vault (YAZ-2677 🔒 D6, S90): a second run finishes it. */
   unfinished?: true
+  /**
+   * Only when `ids`: each board (`.excalidraw`) whose `yaseendraw` block holds an ID of this vault (YAZ-3943 4C), sorted
+   * by path, the ID with the current letters. Read off each board's head; a board is no record, so it is never in `records`.
+   */
+  boards?: { path: string; id: string }[]
 }
 
 // ---------- coldDiff(root) (Links E1c, GRO-2242) ----------
@@ -502,6 +507,8 @@ export interface DrawingSaveResponse {
   persisted: string[]
   /** YAZ-3943 D5, the 50 MB rule: this save moved the board's pictures out to `assets/` (the block now says so). */
   movedOut?: true
+  /** YAZ-3943 4C: the ID this save gave the board (its first save in a vault that gives IDs). Absent when it had one. */
+  id?: string
 }
 
 export interface DiagramLoadRequest {

@@ -1,6 +1,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { COMMENTS_KEY } from '@shared/comments'
+import { isDrawing } from '@shared/fileKind'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, canonicalNoteId, isNoteId } from '@shared/noteId'
@@ -12,8 +13,9 @@ import { fsCall, isMarkdown, isSkipped } from '../fs/fsUtils'
 /**
  * Markdown files under `dir`, skipping dot-entries / node_modules; unreadable subdirs are skipped like `buildTree`.
  * A folder's settings file is the one dot-entry it keeps (YAZ-2290 D8). `dirs` takes every folder walked into: the ones the tree shows.
+ * `boards` takes every `.excalidraw`: the index reads each one's ID off its head (YAZ-3943 4C).
  */
-export async function walk(dir: string, out: string[], dirs?: string[]): Promise<void> {
+export async function walk(dir: string, out: string[], dirs?: string[], boards?: string[]): Promise<void> {
   const dirents = await readdir(dir, { withFileTypes: true })
   await Promise.all(
     dirents.map(async (e) => {
@@ -21,8 +23,9 @@ export async function walk(dir: string, out: string[], dirs?: string[]): Promise
       const full = path.join(dir, e.name)
       if (e.isDirectory()) {
         dirs?.push(full)
-        await walk(full, out, dirs).catch(() => undefined)
+        await walk(full, out, dirs, boards).catch(() => undefined)
       } else if (e.isFile() && isMarkdown(e.name)) out.push(full)
+      else if (boards !== undefined && e.isFile() && isDrawing(e.name)) boards.push(full)
     }),
   )
 }

@@ -6,5 +6,5 @@
 export { flushIndexCache, initIndexCache } from './cache'
 export type { ColdStartDiff } from './reconcile'
 export { flushDiaries } from './diary'
-export { _evict, _evictAll, _setIdleMs, changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onIdFixes, saveIdsAnswer } from './live'
+export { _evict, _evictAll, _setIdleMs, changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexBoard, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from './live'
 export { extractAliases, extractEmbeds, extractLinks, extractTags, scanFile } from './scan'

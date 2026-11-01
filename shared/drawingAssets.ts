@@ -211,6 +211,21 @@ export function parseBoardMetaBlock(head: string): BoardMetaBlock | null {
   return block as BoardMetaBlock
 }
 
+// ---------- A board's ID (YAZ-3943 4C) ----------
+
+/**
+ * The block key of a board's ID, as a note's is `id:` in its frontmatter (`NOTE_ID_KEY`): `"id": "YAZ-12"`. The vault's
+ * door gives it on the board's first save in a vault that gives IDs (`fs/drawing.ts`); opening never writes it. The
+ * index reads it off the head (`vaultIndex/live.ts`), so `[[YAZ-12]]` opens the board after any rename.
+ */
+export const BOARD_ID_KEY = 'id'
+
+/** The ID a block holds, as written, or undefined. Whether it is an ID of THIS vault is `vaultNoteId`'s to say. */
+export function boardIdOf(block: unknown): string | undefined {
+  const id = isRecord(block) ? block[BOARD_ID_KEY] : undefined
+  return typeof id === 'string' ? id : undefined
+}
+
 /**
  * Index of the `}` that closes the `{` at `start`, or null when the text ends first. String-aware,
  * because an importer's extra value may legitimately contain a brace (`"note": "a }"`).

@@ -19,6 +19,7 @@ import { setBoardReadOnly } from '../fs/boardReadOnly'
 import { createBoard } from '../fs/createBoard'
 import { loadDiagram, saveDiagram } from '../fs/diagram'
 import { loadDrawing, saveDrawing } from '../fs/drawing'
+import { indexBoard } from '../vaultIndex'
 import type { Store } from '../store'
 import type { WindowManager } from '../windows'
 import { loggedSave } from './broadcast'
@@ -36,7 +37,13 @@ export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit'>, windows:
   // Only a request with `imageMaxPx` — a picture of the scene, never an editor — reaches the cache.
   handle(CONTRACT.drawing.load, (req: unknown) => loadDrawing(req, thumbs === null ? undefined : (files, elements, px) => thumbs.fit(files, elements, px)))
   // A drawing's and a diagram's save go in the save log, as a note's does (YAZ-3235 D1, S10).
-  handleWithEvent(CONTRACT.drawing.save, loggedSave(store, windows, saveDrawing))
+  // A save that gave the board its ID (YAZ-3943 4C) tells the index at once: a `[[` pick right after it writes the ID.
+  const save = async (req: unknown) => {
+    const res = await saveDrawing(req)
+    if (res.id !== undefined) indexBoard(res.path, res.id)
+    return res
+  }
+  handleWithEvent(CONTRACT.drawing.save, loggedSave(store, windows, save))
   handle(CONTRACT.diagram.load, loadDiagram)
   handleWithEvent(CONTRACT.diagram.save, loggedSave(store, windows, saveDiagram))
   handle(CONTRACT.setBoardReadOnly, setBoardReadOnly)

@@ -30,7 +30,7 @@ import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import { requireRequest, requireStringArray } from '../fs/validate'
 import type { Store } from '../store'
-import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onIdFixes, saveIdsAnswer } from '../vaultIndex'
+import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
 import type { WindowManager } from '../windows'
@@ -194,6 +194,9 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     for (const fix of fixes) if (fix.renamedFrom !== undefined) void afterRename({ oldPath: fix.renamedFrom, newPath: fix.path, kind: 'file' }).catch(() => undefined)
     if (notice !== null) windows.vaultNotice(root, notice)
   })
+  // A board took an ID, or one with an ID came, went or moved (YAZ-3943 4C): each window of the vault reads its index at
+  // once, as after "Change letters". A board's own events never make a window read it (`useIndex`).
+  onBoardIds((root) => broadcastAll(CONTRACT.ids.onChanged.channel, { root }))
   // In-app delete (GRO-2272). Deliberately the SAME shape as the rename handler above —
   // fs work, then `store.removePath` repair, then one broadcast to every window — with two
   // differences that are the point of the feature:
