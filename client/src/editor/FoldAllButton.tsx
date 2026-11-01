@@ -25,7 +25,7 @@ export function FoldAllButton({ read, run, subscribe, keys }: {
   read: () => FoldNext | Promise<FoldNext>
   run: (collapse: boolean) => void
   /** Calls `changed` after each fold change and returns the unsubscribe. A new function subscribes again, and reads once. */
-  subscribe?: (changed: () => void) => () => void
+  subscribe: (changed: () => void) => () => void
   /** The key rows the label names: the user's key, as Settings › Hotkeys has it. */
   keys: { collapse: string; expand: string }
 }) {
@@ -43,7 +43,6 @@ export function FoldAllButton({ read, run, subscribe, keys }: {
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh
   useEffect(() => {
-    if (subscribe === undefined) return
     refreshRef.current()
     return subscribe(() => refreshRef.current())
   }, [subscribe])

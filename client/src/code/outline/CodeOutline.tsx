@@ -129,8 +129,13 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
   const order = useMemo(() => (tree === null ? null : displayOrder(tree, sort)), [tree, sort])
   const rows = useMemo(() => (tree === null || order === null ? null : visibleRows(tree, order, { collapsed, hidden: hiddenKinds, filter })), [tree, order, collapsed, hiddenKinds, filter])
   // One toggle, as every fold-all button (YAZ-3938 D6): while a row that can collapse is open, it collapses all; once all are collapsed, it expands all.
+  // Memoised: a cursor move draws the outline again, and a big file has tens of thousands of keys (S12).
   const foldable = useMemo(() => (tree === null ? null : allKeys(tree)), [tree])
-  const anyOpen = foldable !== null && [...foldable].some((key) => !collapsed.has(key))
+  const anyOpen = useMemo(() => {
+    if (foldable !== null) for (const key of foldable) if (!collapsed.has(key)) return true
+    return false
+  }, [foldable, collapsed])
+  const nothingToFold = foldable?.size === 0
   const marks = useMemo(() => (tree === null ? null : markSymbols(tree, markers)), [tree, markers])
   const at = useMemo(() => {
     if (tree === null || rows === null) return -1
@@ -291,7 +296,7 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
   if (!shows || tree === null || rows === null || marks === null) return null
 
   const active = pick ?? (at >= 0 ? at : null)
-  const foldLabel = foldable?.size === 0 ? 'Nothing to fold' : anyOpen ? 'Collapse all' : 'Expand all'
+  const foldLabel = nothingToFold ? 'Nothing to fold' : anyOpen ? 'Collapse all' : 'Expand all'
   const onFilterKey = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
     const count = rows.rows.length
     if (event.key === 'Escape') {
@@ -352,8 +357,8 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
         onChange={(event) => setFilter(event.currentTarget.value)}
         onKeyDown={onFilterKey}
       />
-      <button type="button" className="outline__tool" title={foldLabel} aria-label={foldLabel} disabled={foldable?.size === 0} onClick={anyOpen ? collapseAll : expandAll}>
-        {anyOpen || foldable?.size === 0 ? <CollapseAllIcon /> : <ExpandAllIcon />}
+      <button type="button" className="outline__tool" title={foldLabel} aria-label={foldLabel} disabled={nothingToFold} onClick={anyOpen ? collapseAll : expandAll}>
+        {anyOpen || nothingToFold ? <CollapseAllIcon /> : <ExpandAllIcon />}
       </button>
       <button type="button" className="outline__tool" title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded={menu !== null} onClick={(event) => openMenu(event.currentTarget)}>
         <MoreIcon />
