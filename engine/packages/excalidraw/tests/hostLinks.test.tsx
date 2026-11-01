@@ -3,6 +3,7 @@ import { vi } from "vitest";
 
 import { registerHostLinkResolver } from "@excalidraw/element";
 
+import { createPasteEvent } from "../clipboard";
 import { exportToSvg } from "../scene/export";
 import { Excalidraw } from "../index";
 
@@ -19,6 +20,7 @@ import { getTextEditor, updateTextEditor } from "./queries/dom";
 import {
   act,
   fireEvent,
+  GlobalTestState,
   render,
   unmountComponent,
   waitFor,
@@ -423,5 +425,200 @@ describe("the link box (⌘K)", () => {
     fireEvent.change(input, { target: { value: "/vault/Growth plan.md" } });
     fireEvent.keyDown(input, { key: KEYS.ENTER });
     expect(h.elements[0].link).toBe("[[YAS-1]]");
+  });
+});
+
+/** YAZ-4110 5B (demo round 1): the box fits its pill, the pill's file icon, and a page pasted on the canvas. */
+describe("YAZ-4110 5B: a box fits its pill", () => {
+  beforeEach(async () => {
+    labels = { "YAS-1": "Growth plan" };
+    mouse.reset();
+    await render(
+      <Excalidraw handleKeyboardGlobally={true} hostLinks={hostLinks} />,
+    );
+    // the pills are measured once the scene's fonts are loaded
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  });
+
+  const textOf = (id: string) =>
+    h.elements.find((element) => element.id === id) as ExcalidrawTextElement;
+
+  it("a new label fits the box, outside the undo steps; the same label changes nothing", () => {
+    const text = addText();
+    const steps = h.history.undoStack.length;
+    labels = { "YAS-1": "Plan" };
+    act(() => notify());
+    // "see " 40 + the pill "Plan" 69 + " now" 40
+    expect(textOf(text.id).width).toBe(149);
+    expect(h.history.undoStack.length).toBe(steps);
+    const fitted = textOf(text.id);
+    act(() => notify());
+    expect(textOf(text.id)).toBe(fitted);
+  });
+
+  it("a fixed-width box narrower than its pill grows to hold it", () => {
+    const text = {
+      ...API.createElement({
+        type: "text",
+        text: "[[YAS-1]]",
+        width: 50,
+        height: 25,
+        fontSize: 20,
+        textAlign: "left",
+      }),
+      autoResize: false,
+    };
+    API.setElements([text]);
+    act(() => notify());
+    expect(textOf(text.id).width).toBe(139);
+    expect(textOf(text.id).autoResize).toBe(false);
+  });
+
+  it("skips the box open in the text editor: the editor fits it", async () => {
+    const text = addText();
+    API.setSelectedElements([text]);
+    Keyboard.keyPress(KEYS.ENTER);
+    await getTextEditor();
+    const before = textOf(text.id);
+    labels = { "YAS-1": "Plan" };
+    act(() => notify());
+    expect(textOf(text.id).width).toBe(before.width);
+  });
+});
+
+describe("YAZ-4110 5B: the pill's file icon", () => {
+  const icon = {
+    image: document.createElement("canvas"),
+    url: "data:image/png;base64,ICON",
+  };
+
+  const svgOf = async (
+    resolve: Parameters<typeof registerHostLinkResolver>[0],
+  ) => {
+    const unregister = registerHostLinkResolver(resolve);
+    try {
+      const text = API.createElement({
+        type: "text",
+        text: "[[YAS-1]]",
+        fontSize: 20,
+        textAlign: "left",
+      });
+      return await exportToSvg(
+        [text],
+        { exportBackground: false, viewBackgroundColor: "#ffffff" },
+        null,
+      );
+    } finally {
+      unregister();
+    }
+  };
+
+  it("draws the page's icon in an SVG in place of the outline; with icons off, no icon and a narrower pill", async () => {
+    const withIcon = await svgOf(() => ({ label: "Growth plan", icon }));
+    const image = withIcon.querySelector("g image");
+    expect(image?.getAttribute("href")).toBe(icon.url);
+    expect(image?.getAttribute("width")).toBe("15");
+    expect(withIcon.querySelectorAll("g path[fill='none']")).toHaveLength(0);
+    const label = (svg: SVGSVGElement) =>
+      Number(svg.querySelector("tspan")!.getAttribute("x"));
+
+    const none = await svgOf(() => ({ label: "Growth plan", icon: null }));
+    expect(none.querySelector("g image")).toBeNull();
+    expect(none.querySelectorAll("g path[fill='none']")).toHaveLength(0);
+    // the label starts where the icon was: 15 + 4 to the left
+    expect(label(withIcon) - label(none)).toBe(19);
+
+    // not drawn yet: the outline, as before
+    const outline = await svgOf(() => ({ label: "Growth plan" }));
+    expect(outline.querySelector("g image")).toBeNull();
+    expect(outline.querySelectorAll("g path[fill='none']")).toHaveLength(1);
+  });
+
+  it("measures the pill without its icon when icons are off, and shows the icon in the editor", async () => {
+    let look: { icon?: typeof icon | null } = { icon: null };
+    await render(
+      <Excalidraw
+        handleKeyboardGlobally={true}
+        hostLinks={{
+          ...hostLinks,
+          resolve: (inner: string) => ({ label: "Growth plan", ...look }),
+        }}
+      />,
+    );
+    const text = API.createElement({
+      type: "text",
+      text: "[[YAS-1]]",
+      fontSize: 20,
+    });
+    API.setElements([text]);
+    act(() => notify());
+    // 5 + 110 + 5: no room for an icon
+    expect((h.elements[0] as ExcalidrawTextElement).width).toBe(120);
+
+    look = { icon };
+    act(() => notify());
+    API.setSelectedElements([text]);
+    Keyboard.keyPress(KEYS.ENTER);
+    await getTextEditor();
+    const pill = document.querySelector(".excalidraw-wysiwyg-link-pill");
+    expect(pill?.querySelector("img")?.getAttribute("src")).toBe(icon.url);
+    expect(pill?.querySelector("svg")).toBeNull();
+  });
+});
+
+describe("YAZ-4110 5B: a page pasted on the canvas is one pill box", () => {
+  beforeEach(async () => {
+    labels = { "YAS-1": "Growth plan" };
+    mouse.reset();
+    await render(
+      <Excalidraw
+        autoFocus={true}
+        handleKeyboardGlobally={true}
+        hostLinks={hostLinks}
+      />,
+    );
+    Object.assign(document, {
+      elementFromPoint: () => GlobalTestState.canvas,
+    });
+  });
+
+  const paste = async (text: string, plain = false) => {
+    const count = h.elements.length;
+    Keyboard.withModifierKeys({ ctrl: true, shift: plain }, () => {
+      Keyboard.keyPress(KEYS.V);
+      document.dispatchEvent(
+        createPasteEvent({ types: { "text/plain": text } }),
+      );
+    });
+    await waitFor(() => expect(h.elements.length).toBeGreaterThan(count));
+    return h.elements.at(-1) as ExcalidrawTextElement;
+  };
+
+  it("a vault path becomes its link, in a box the size of the pill", async () => {
+    const text = await paste(" /vault/Growth plan.md ");
+    expect(text.originalText).toBe("[[YAS-1]]");
+    expect(text.autoResize).toBe(true);
+    expect(text.width).toBe(139);
+  });
+
+  it("a copied [[link]] is one pill too", async () => {
+    const text = await paste("[[YAS-1]]");
+    expect(text.originalText).toBe("[[YAS-1]]");
+    expect(text.width).toBe(139);
+  });
+
+  it("other text, several lines and ⌘⇧V paste as before", async () => {
+    expect((await paste("see the plan")).originalText).toBe("see the plan");
+    // several lines: a box for each line, as before
+    const count = h.elements.length;
+    await paste("/vault/Growth plan.md\nmore");
+    expect(
+      h.elements
+        .slice(count)
+        .map((element) => (element as ExcalidrawTextElement).originalText),
+    ).toEqual(["/vault/Growth plan.md", "more"]);
+    expect((await paste("/vault/Growth plan.md", true)).originalText).toBe(
+      "/vault/Growth plan.md",
+    );
   });
 });

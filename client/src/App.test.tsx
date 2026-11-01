@@ -2642,22 +2642,24 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(document.title).toBe(title)
   })
 
-  it('routes text/PDF through current and background tabs without adding duplicate paths', async () => {
+  it('routes text/PDF through current and background tabs: a plain click adds no duplicate path, a second ⌘-click a copy (YAZ-3943 5B)', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/data.json', tabs: ['/v/data.json'] })
     act(() => captured.sidebar?.onOpenFileBackground('/v/report.PDF'))
-    act(() => captured.sidebar?.onOpenFileBackground('/v/report.PDF'))
     expect(stripLabels(el)).toEqual(['data.json', 'report.PDF'])
+    act(() => captured.sidebar?.onOpenFileBackground('/v/report.PDF'))
+    expect(stripLabels(el)).toEqual(['data.json', 'report.PDF', 'report.PDF'])
     expect(activeLabel(el)).toBe('data.json')
     expect(layers(el)).toEqual([['/v/data.json', false]])
 
     act(() => captured.sidebar?.onOpenFile('/v/report.PDF'))
-    expect(stripLabels(el)).toEqual(['data.json', 'report.PDF'])
+    expect(stripLabels(el)).toEqual(['data.json', 'report.PDF', 'report.PDF'])
     expect(activeLabel(el)).toBe('report.PDF')
     expect(layers(el)).toEqual([
       ['/v/data.json', true],
       ['/v/report.PDF', false],
     ])
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/data.json', '/v/report.PDF'], '/v/report.PDF'))
+    // The strip names each copy; the window's file list each page once.
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabs: ['/v/data.json', '/v/report.PDF'], file: '/v/report.PDF' }))
     expect(document.title).toBe('v — report.PDF')
   })
 
@@ -3339,17 +3341,23 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(activeLabel(el)).toBe('c')
   })
 
-  it('a link opens where its gesture\'s action says (YAZ-3936): this tab, a new tab in front, a background tab; a page another tab shows goes to that tab', async () => {
+  it('a link opens where its gesture\'s action says (YAZ-3936): this tab, a new tab in front, a background tab; a new tab is a copy when another tab shows the page (YAZ-3943 5B)', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     const openLink = (path: string, where: 'thisTab' | 'newTab' | 'backgroundTab') => act(() => captured.linkOpeners.filter((o) => o.path === '/v/a.md').at(-1)?.open?.(path, where))
     openLink('/v/c.md', 'backgroundTab') // next to the current tab: Open new tabs' default (YAZ-3808 D2)
     expect(stripLabels(el)).toEqual(['a', 'c', 'b'])
     expect(activeLabel(el)).toBe('a')
-    openLink('/v/b.md', 'newTab') // b has a tab: it comes to the front, no copy
-    expect(stripLabels(el)).toEqual(['a', 'c', 'b'])
+    openLink('/v/b.md', 'backgroundTab') // b has a tab: a copy behind, after c (the chain)
+    expect(stripLabels(el)).toEqual(['a', 'c', 'b', 'b'])
+    expect(activeLabel(el)).toBe('a')
+    openLink('/v/b.md', 'newTab') // a copy in front, as browsers do
+    expect(stripLabels(el)).toEqual(['a', 'c', 'b', 'b', 'b'])
     expect(activeLabel(el)).toBe('b')
-    act(() => captured.linkOpeners.filter((o) => o.path === '/v/b.md').at(-1)?.open?.('/v/d.md', 'newTab'))
-    expect(stripLabels(el)).toHaveLength(4)
+    openLink('/v/a.md', 'thisTab') // a plain click still goes to the open tab
+    expect(stripLabels(el)).toEqual(['a', 'c', 'b', 'b', 'b'])
+    expect(activeLabel(el)).toBe('a')
+    act(() => captured.linkOpeners.filter((o) => o.path === '/v/a.md').at(-1)?.open?.('/v/d.md', 'newTab'))
+    expect(stripLabels(el)).toHaveLength(6)
     expect(activeLabel(el)).toBe('d')
     const four = stripLabels(el)
     act(() => captured.linkOpeners.filter((o) => o.path === '/v/d.md').at(-1)?.open?.('/v/e.md', 'thisTab'))
@@ -5201,6 +5209,18 @@ describe('App upkeep review (YAZ-2322)', () => {
     expect(el.querySelector('.review-bar')).not.toBeNull()
     act(() => button(el, 'Close review')?.click())
     expect(stripLabels(el)).toEqual(['a', 'b', 'c'])
+    expect(activeLabel(el)).toBe('b')
+  })
+
+  it('YAZ-3943 5B: a plain link click during a review to a page a tab shows makes no copy: the strip is as it was', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
+    openInbox()
+    const open = (path: string) => act(() => captured.editorOpeners.filter((o) => o.path === '/v/x.md').at(-1)!.open(path))
+    open('/v/a.md')
+    open('/v/b.md')
+    expect(el.querySelector('.review-bar')).not.toBeNull()
+    act(() => button(el, 'Close review')?.click())
+    expect(stripLabels(el)).toEqual(['a', 'b'])
     expect(activeLabel(el)).toBe('b')
   })
 

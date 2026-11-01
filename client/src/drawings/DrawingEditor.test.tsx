@@ -615,12 +615,12 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     act(() => cog().click())
   }
 
-  it('in this order: Read only, the size and count of the pictures, the button, then the two exports', async () => {
+  it('in this order: Read only, the count and size of the pictures in words (YAZ-4110 5B), the button, then the two exports', async () => {
     surface.pictures = { bytes: 3.3 * MB, count: 6 }
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Pictures in this file: 3.3 MB (6)', 'Move pictures out', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', '6 pictures in this file (3.3 MB)', 'Move pictures out', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     expect(container.querySelectorAll('.page-settings__menu > .page-settings__divider')).toHaveLength(2)
-    expect(row('Pictures in this file: 3.3 MB (6)')!.className).not.toContain('warn')
+    expect(row('6 pictures in this file (3.3 MB)')!.className).not.toContain('warn')
   })
 
   it('no picture: no size row and no button; from 20 MB the size is amber; a "pictures out" board says where they are', async () => {
@@ -629,7 +629,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     act(() => cog().click())
     surface.pictures = { bytes: 20 * MB, count: 2 }
     act(() => cog().click())
-    expect(row('Pictures in this file: 20.0 MB (2)')!.className).toContain('page-settings__warn')
+    expect(row('2 pictures in this file (20.0 MB)')!.className).toContain('page-settings__warn')
   })
 
   it('"Move pictures out" writes beside the autosave, and the row turns into "Keep pictures inside"', async () => {
@@ -640,7 +640,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     await flush()
     expect(setBoardPictures).toHaveBeenCalledWith({ root: ROOT, path: PATH, out: true, expectedMtime: 100 })
     act(() => cog().click())
-    expect(rows().map((r) => r.textContent)).toContain('Pictures in the assets folder: 1000 B (1)')
+    expect(rows().map((r) => r.textContent)).toContain('1 picture in the assets folder (1000 B)')
     await act(async () => row('Keep pictures inside')!.click())
     await flush()
     expect(setBoardPictures).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, out: false, expectedMtime: 300 })

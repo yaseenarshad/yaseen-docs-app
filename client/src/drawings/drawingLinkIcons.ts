@@ -91,13 +91,15 @@ export function drawingLinkIcon(path: string, folder: boolean, onReady: () => vo
   }
   if (icons.size >= MAX_ICONS) icons.delete(icons.keys().next().value!)
   icons.set(key, 'loading')
+  // A look dropped while it loaded (the 64 limit) stays dropped: the limit holds.
   void draw(icon).then(
     (drawn) => {
+      if (icons.get(key) !== 'loading') return
       icons.set(key, drawn)
       onReady()
     },
     // An icon that does not load keeps the outline.
-    () => icons.set(key, 'failed'),
+    () => icons.get(key) === 'loading' && icons.set(key, 'failed'),
   )
   return undefined
 }

@@ -12,7 +12,7 @@ import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker
 import type { LinkCandidate } from '../links/completion'
 import { api } from '../api'
 import { createFromLink } from '../editor/wikilink/createFromLink'
-import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { createWikilinkResolveSource, type LinkLook } from '../editor/wikilink/wikilinkPlugin'
 import { createDrawingLinkPicker, createLinkedPage, type PickerEditor } from './drawingLinkPicker'
 import { drawingPasteLink } from './drawingLinks'
 import { openEditLinkBox } from './editLinkBox'
@@ -22,10 +22,10 @@ const rows: LinkCandidate[] = [
   { name: 'Groceries', insert: 'YAS-2', label: 'Groceries', path: '/vault/Groceries.md' },
 ]
 
-function setup(create?: (editor: PickerEditor, name: string) => void) {
+function setup(create?: (editor: PickerEditor, name: string) => void, look?: LinkLook, list: readonly LinkCandidate[] = rows) {
   const parent = document.createElement('div')
   document.body.appendChild(parent)
-  const picker = createDrawingLinkPicker(() => parent, () => rows, create)
+  const picker = createDrawingLinkPicker(() => parent, () => list, create, look)
   const replace = vi.fn()
   const replaceLink = vi.fn(() => true)
   const editor = (text: string, typed = true, caret = text.length): PickerEditor => ({ text, caret, typed, caretRect: () => ({ left: 10, top: 20, right: 10, bottom: 40 }), replace, replaceLink })
@@ -90,6 +90,24 @@ describe('the [[ picker', () => {
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ text: '[[Nothing like it' }), 'Nothing like it')
   })
 
+  it('YAZ-4110 5B: shows each row\'s file icon, as the note\'s picker does; a Create row has none', () => {
+    const icon = vi.fn((path: string, folder: boolean) => ({ class: 'file-icon', 'data-kind': folder ? 'folder' : 'file', 'data-path': path }))
+    const list = [...rows, { name: 'Gro board', insert: 'YAS-3', label: 'Gro board', path: '/vault/Gro board.excalidraw' }]
+    const { picker, editor, parent } = setup(vi.fn(), { icon }, list)
+    picker.change(editor('[[Gro'))
+    const items = [...parent.querySelectorAll('.wikilink-picker__item')]
+    expect(items.map((item) => item.querySelector('.file-icon')?.getAttribute('data-path') ?? null)).toEqual(['/vault/Growth plan.md', '/vault/Groceries.md', '/vault/Gro board.excalidraw', null])
+    expect(items[0].querySelector('.file-icon')!.getAttribute('aria-hidden')).toBe('true')
+    expect(icon).toHaveBeenCalledWith('/vault/Growth plan.md', false)
+    // A drawing's extension, for File icons Off, as the sidebar's name ending
+    expect(items[2].querySelector('.name-ending')?.textContent).toBe('.excalidraw')
+    expect(items[0].querySelector('.name-ending')).toBeNull()
+    // Without a look: no icon, as before
+    const plain = setup()
+    plain.picker.change(plain.editor('[[Gro'))
+    expect(plain.parent.querySelector('.file-icon')).toBeNull()
+  })
+
   it('offers no Create row with no vault to make the page in', () => {
     const { picker, editor, items } = setup()
     picker.change(editor('[[Nothing like it'))
@@ -146,6 +164,16 @@ describe('a pasted link', () => {
   it('turns a page path and a yaseendocs link of the vault into [[ID]]', () => {
     expect(drawingPasteLink('/vault/Growth plan.md', '/vault', '/vault/Board.excalidraw', candidates)).toBe('[[YAS-1]]')
     expect(drawingPasteLink(fileLink('/vault/Groceries.md'), '/vault', '/vault/Board.excalidraw', candidates)).toBe('[[YAS-2]]')
+  })
+
+  it('YAZ-4110 5B: a page of another vault of the window gets that vault\'s link; a path in no vault stays text', () => {
+    const other = createWikilinkCandidateSource()
+    other.update([{ name: 'Recipes', insert: 'WRK-4', label: 'Recipes', path: '/work/Recipes.md' }])
+    const vaultLinks = { roots: ['/vault', '/work'], candidatesOf: (path: string) => (path.startsWith('/work/') ? other : null) }
+    expect(drawingPasteLink('/work/Recipes.md', '/vault', '/vault/Board.excalidraw', candidates, vaultLinks)).toBe('[[WRK-4]]')
+    // the board's own vault still uses its own candidates
+    expect(drawingPasteLink('/vault/Growth plan.md', '/vault', '/vault/Board.excalidraw', candidates, vaultLinks)).toBe('[[YAS-1]]')
+    expect(drawingPasteLink('/elsewhere/a.md', '/vault', '/vault/Board.excalidraw', candidates, vaultLinks)).toBeNull()
   })
 
   it('leaves other text to paste as text: a copied [[link]] is a pill as it is', () => {

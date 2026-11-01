@@ -5,6 +5,8 @@ import {
   stubGifDecoding,
 } from "@excalidraw/excalidraw/tests/helpers/gif";
 
+import { decodeGif } from "@excalidraw/excalidraw/gif/gifShrink";
+
 import type { BinaryFileData, DataURL } from "@excalidraw/excalidraw/types";
 
 import {
@@ -246,5 +248,89 @@ describe("YAZ-3944 D2: the GIF player", () => {
 
     expect(FakeImageDecoder.made.map((d) => d.closed)).toEqual([true, false]);
     expect(player.size).toBe(1);
+  });
+});
+
+/**
+ * YAZ-4110 5B, change 7: in Electron, `decoder.completed` can resolve before
+ * the track is known, so `tracks.selectedTrack` is null until `tracks.ready`.
+ * The player and the shrink wait for `tracks.ready` first.
+ */
+describe("YAZ-4110 5B: a GIF whose track is known only after `completed`", () => {
+  class LateTrackDecoder extends FakeImageDecoder {
+    constructor(init: { data: ArrayBuffer }) {
+      super(init);
+      const { selectedTrack } = this.tracks;
+      (this.tracks as { selectedTrack: unknown }).selectedTrack = null;
+      // `completed` is resolved already; the track comes a tick later
+      this.tracks.ready = new Promise((resolve) =>
+        setTimeout(() => {
+          this.tracks.selectedTrack = selectedTrack;
+          resolve();
+        }, 5),
+      );
+    }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "performance"],
+    });
+    stubGifDecoding();
+    vi.stubGlobal("ImageDecoder", LateTrackDecoder);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("the player still plays all 37 frames", async () => {
+    const files = { a: file("a", MIME_TYPES.gif, 37) };
+    const player = new GifPlayer((id) => files[id as "a"]);
+    player.repaint = () => player.frameToken(image("a"));
+    try {
+      player.frameToken(image("a"));
+      await vi.advanceTimersByTimeAsync(5);
+      expect(player.frameFor(image("a"))).toBeInstanceOf(HTMLCanvasElement);
+      await vi.advanceTimersByTimeAsync(37 * 50);
+      const { decoded } = FakeImageDecoder.made[0];
+      expect(new Set(decoded).size).toBe(37);
+      expect(decoded.slice(0, 38)).toEqual([...Array(37).keys(), 0]);
+    } finally {
+      player.dispose();
+    }
+  });
+
+  it("the shrink still reads all 37 frames", async () => {
+    // jsdom has no OffscreenCanvas: a page canvas of the same size stands in
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        constructor(width: number, height: number) {
+          return Object.assign(document.createElement("canvas"), {
+            width,
+            height,
+          });
+        }
+      },
+    );
+    const source = decodeGif(new Uint8Array([37]).buffer);
+    await vi.advanceTimersByTimeAsync(5);
+    const gif = await source;
+    try {
+      expect(gif.frameCount).toBe(37);
+      for (let index = 0; index < gif.frameCount; index++) {
+        const { rgba } = await gif.frame(index, 4, 3);
+        expect(rgba).toHaveLength(4 * 3 * 4);
+      }
+      // frame 0 for the size, then every frame
+      expect(FakeImageDecoder.made[0].decoded).toEqual([
+        0,
+        ...Array(37).keys(),
+      ]);
+    } finally {
+      gif.close();
+    }
   });
 });

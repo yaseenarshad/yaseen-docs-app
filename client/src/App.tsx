@@ -1176,18 +1176,24 @@ export function App() {
   const reviewing = useRef(false)
   reviewing.current = reviewer !== null
   const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : navigate)(path), [openBackground, navigate])
-  /** The open tabs' pages, read at click time: a link to one of them goes to its tab, whatever the setting says. */
+  /**
+   * A ⌘-click's background tab (YAZ-3943 5B): always a new tab, a copy when the page is open, as browsers do. The doors: a
+   * link in a note or a drawing, the sidebar's row, a Files window's. A plain click, a review's open, the daily note
+   * button and a page made from a link keep `openBackground`: an open page stays as it is.
+   */
+  const openBackgroundCopy = useCallback((path: string) => openBackground(path, true), [openBackground])
   /**
    * A link opened from a note: where its gesture's action says (YAZ-3936, Settings › Hotkeys › "Links in a note"), this
    * tab when none says. A folder view's row, a backlink and a code jump use `openFromPage`.
    */
   const openLink = useCallback((path: string, where: GestureAction = 'thisTab') => {
     // Back returns to the page with the link wherever the page opens: the window's one Back list (YAZ-3647 D4). A review's open is no link click.
-    if (reviewing.current || where === 'backgroundTab') openBackground(path)
-    // "New tab" is always a new tab, a copy when another tab shows the page (YAZ-3943 demo, as browsers do; it was D10's "go to that tab").
+    if (where === 'backgroundTab') openBackgroundCopy(path)
+    else if (reviewing.current) openBackground(path)
+    // "New tab" is always a new tab, a copy when another tab shows the page (YAZ-3943 5B, as browsers do; it was D10's "go to that tab").
     else if (where === 'newTab') openKept(path, true)
     else navigate(path)
-  }, [openBackground, navigate, openKept])
+  }, [openBackground, openBackgroundCopy, navigate, openKept])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
   // A trip to another copy of the same file (YAZ-2940) moves `activeTab` and not `file`, so both are watched.
   const closeReview = useCallback(() => live.current.vaults.forEach((vault) => vault.review.close()), [])
@@ -2013,7 +2019,7 @@ export function App() {
   fromFiles.current = (action: FilesAction): void => {
     switch (action.kind) {
       case 'open':
-        return (action.how === 'keep' ? openKeptPage : action.how === 'background' ? openBackground : openPage)(action.path)
+        return (action.how === 'keep' ? openKeptPage : action.how === 'background' ? openBackgroundCopy : openPage)(action.path)
       case 'history':
         return openHistory(action.path)
       case 'share':
@@ -3114,7 +3120,7 @@ export function App() {
           // A Files window's rows open in a full window (YAZ-3357 D2): its own doors, never this window's tabs.
           onOpenFile={filesDoors?.open ?? openPage}
           onKeepFile={filesDoors?.keep ?? openKeptPage}
-          onOpenFileBackground={filesDoors?.background ?? openBackground}
+          onOpenFileBackground={filesDoors?.background ?? openBackgroundCopy}
           onRevealInFiles={revealInFiles}
           previewPath={previewShown}
           onPreview={setPreviewPath}
@@ -3315,7 +3321,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  {id !== held && <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} />}
+                  {id !== held && <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackgroundCopy} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} />}
                 </div>
               )
             })}
@@ -3329,7 +3335,7 @@ export function App() {
               ) : (
                 reviewLayer === null && (
                   <div key={session.path} className="tabstack__layer" style={textVarsFor(session.path)}>
-                    <RetainedEditor {...editorPropsFor(session.path)} path={session.path} onOpenFile={openBackground} onOpenFileBackground={openBackground} />
+                    <RetainedEditor {...editorPropsFor(session.path)} path={session.path} onOpenFile={openBackground} onOpenFileBackground={openBackground} onOpenLinkBackground={openBackgroundCopy} />
                   </div>
                 )
               ))}

@@ -252,6 +252,23 @@ describe('tabsReducer', () => {
       expect(tabsReducer(s, { type: 'open-background', path: '/v/b.md' })).toBe(s)
     })
 
+    it('open-background with `copy` (a ⌘-click, YAZ-3943 5B) on an already-open path opens a copy behind, as browsers do — it never yanks activation', () => {
+      const s: IdTabsState = { tabs: [{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/b.md' }], active: 't1', mounted: ['t1'], history: NO_STEPS, preview: null, blank: false }
+      const next = reduceTabs(s, { type: 'open-background', path: '/v/b.md', copy: true })
+      expect(next.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md', '/v/b.md'])
+      expect(next.tabs[2].id).not.toBe('t2')
+      expect(next).toMatchObject({ active: 't1', mounted: ['t1'], history: NO_STEPS, preview: null })
+    })
+
+    it('open-new with `copy` (a link\'s "new tab", YAZ-3943 5B) opens a copy in front even when the page is open; without it, it goes to the open tab', () => {
+      const s: IdTabsState = { tabs: [{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/b.md' }], active: 't1', mounted: ['t1'], history: NO_STEPS, preview: null, blank: false }
+      const copy = reduceTabs(s, { type: 'open-new', path: '/v/b.md', copy: true })
+      expect(copy.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md', '/v/b.md'])
+      expect(copy.active).toBe(copy.tabs[2].id)
+      expect(copy.mounted).toEqual(['t1', copy.tabs[2].id])
+      expect(reduceTabs(s, { type: 'open-new', path: '/v/b.md' })).toMatchObject({ tabs: s.tabs, active: 't2' })
+    })
+
     it('open-background as the FIRST tab activates: non-empty tabs require a non-null file', () => {
       expect(tabsReducer(state([], null), { type: 'open-background', path: '/v/a.md' })).toEqual(state(['/v/a.md'], '/v/a.md'))
     })
@@ -594,6 +611,10 @@ describe('useWorkspace legacy main-tab mirror', () => {
     act(() => latest.prev()) // one tab: nothing to cycle
     act(() => latest.close(idOf('/v/zzz.md'))) // unknown
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
+    // A ⌘-click's background open of an open page is no no-op (YAZ-3943 5B): a copy opens, with one write.
+    act(() => latest.openBackground('/v/a.md', true))
+    expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/a.md'])
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(2)
   })
 
   it('a cross-pane action sends one complete workspace identity write', () => {
@@ -1042,7 +1063,7 @@ describe('copies: two tabs of one file (YAZ-2940)', () => {
     expect(source.active).toBe('t3')
   })
 
-  it('S7: an open of a file that has copies goes to the active copy, else to the first from the left — and never opens a new tab', () => {
+  it('S7: an open of a file that has copies goes to the active copy, else to the first from the left — and never opens a new tab; a ⌘-click always opens one (YAZ-3943 5B)', () => {
     const s = copies()
     for (const type of ['open-current', 'navigate', 'open-new'] as const) {
       expect(reduceTabs(s, { type, path: A })).toBe(s)
@@ -1051,6 +1072,13 @@ describe('copies: two tabs of one file (YAZ-2940)', () => {
       expect(fromB.active).toBe('t1')
     }
     expect(reduceTabs(s, { type: 'open-background', path: A })).toBe(s)
+    // ⌘-click and ⌘⇧-click (YAZ-3943 5B): a third tab of A, behind or in front, as browsers do.
+    const behind = reduceTabs(s, { type: 'open-background', path: A, copy: true })
+    expect(paths(behind)).toEqual([A, B, A, A])
+    expect(behind.active).toBe('t3')
+    const front = reduceTabs(s, { type: 'open-new', path: A, copy: true })
+    expect(paths(front)).toEqual([A, B, A, A])
+    expect(front.active).toBe(front.tabs[3].id)
     // The blank tab goes to the copy that was active under it.
     expect(reduceTabs({ ...s, blank: true }, { type: 'open-current', path: A })).toMatchObject({ active: 't3', blank: false })
   })
@@ -1661,6 +1689,32 @@ describe('the setting in the hook (YAZ-3808 D2): the user flow', () => {
     expect(latest.active).toBe(latest.tabs[0].id)
     act(() => latest.openBackground('/v/y.md'))
     expect(paths()).toEqual(['/v/a.md', '/v/y.md', '/v/b.md', '/v/x1.md'])
+  })
+
+  it('YAZ-3943 5B: a copy of an open page lands where a new tab lands — next to the current tab, in the chain', async () => {
+    await boot('next')
+    act(() => latest.openKept('/v/a.md'))
+    act(() => latest.openKept('/v/b.md'))
+    act(() => latest.activate(latest.tabs[0].id))
+    act(() => latest.openBackground('/v/b.md', true))
+    act(() => latest.openBackground('/v/a.md', true))
+    expect(paths()).toEqual(['/v/a.md', '/v/b.md', '/v/a.md', '/v/b.md'])
+    expect(latest.active).toBe(latest.tabs[0].id)
+    // ⌘⇧-click: a copy in front, after the chain
+    act(() => latest.openKept('/v/b.md', true))
+    expect(paths()).toEqual(['/v/a.md', '/v/b.md', '/v/a.md', '/v/b.md', '/v/b.md'])
+    expect(latest.active).toBe(latest.tabs[3].id)
+  })
+
+  it('YAZ-3943 5B: with "At the end", a copy joins the end', async () => {
+    await boot('end')
+    act(() => latest.openKept('/v/a.md'))
+    act(() => latest.openKept('/v/b.md'))
+    act(() => latest.activate(latest.tabs[0].id))
+    act(() => latest.openBackground('/v/a.md', true))
+    act(() => latest.openKept('/v/a.md', true))
+    expect(paths()).toEqual(['/v/a.md', '/v/b.md', '/v/a.md', '/v/a.md'])
+    expect(latest.active).toBe(latest.tabs[3].id)
   })
 
   it('"At the end": every new tab joins the end, as before', async () => {
