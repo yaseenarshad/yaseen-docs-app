@@ -2314,24 +2314,24 @@ describe('App ⌘-click on the daily note button (YAZ-3776)', () => {
   }
   const tabs = (el: HTMLElement) => [...el.querySelectorAll('[role="tab"]')].map((tab) => `${tab.textContent}${tab.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
 
-  it('makes today\'s note and opens it in a background tab at the end: the tab in front and the sidebar stay; a second ⌘-click adds nothing (D1, D2)', async () => {
+  it('makes today\'s note and opens it in a background tab next to the current one (YAZ-3808 D3): the tab in front and the sidebar stay; a second ⌘-click adds nothing (D1, D2)', async () => {
     const { el, v, files, bridge } = await mountDaily()
     expect(tabs(el)).toEqual(['plan*', 'garden'])
     await press(true)
     expect(Object.keys(files)).toEqual([`${v}/Daily/${today()}.md`])
-    expect(tabs(el)).toEqual(['plan*', 'garden', today()])
+    expect(tabs(el)).toEqual(['plan*', today(), 'garden'])
     expect(captured.sidebar?.lens).toBe('recents')
     expect(captured.sidebar?.revealRequest ?? null).toBeNull()
     await press(true)
     expect(bridge.createFile).toHaveBeenCalledTimes(1)
-    expect(tabs(el)).toEqual(['plan*', 'garden', today()])
+    expect(tabs(el)).toEqual(['plan*', today(), 'garden'])
   })
 
   it('a plain click still opens the note in front and shows its row in Files', async () => {
     const { el, v } = await mountDaily()
     await press(false)
     // The open tabs are kept ones, so the note comes in a tab of its own, in front.
-    expect(tabs(el)).toEqual(['plan', 'garden', `${today()}*`])
+    expect(tabs(el)).toEqual(['plan', `${today()}*`, 'garden'])
     expect(captured.sidebar?.lens).toBe('files')
     expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: `${v}/Daily/${today()}.md`, focus: false })
   })
@@ -2607,11 +2607,11 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/b.md', '/v/a.md'], '/v/a.md'))
   })
 
-  it('a sidebar click opens in the PREVIEW tab (YAZ-2648 D1): a new tab at the end, no kept tab replaced; the next click reuses it; a double click or the first edit keeps it (D2)', async () => {
+  it('a sidebar click opens in the PREVIEW tab (YAZ-2648 D1): a new tab next to the current one (YAZ-3808 D3), no kept tab replaced; the next click reuses it; a double click or the first edit keeps it (D2)', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/x.md'] })
     const previewLabels = () => [...el.querySelectorAll('.tabbar__tab--preview [role="tab"]')].map((t) => t.textContent)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
-    expect(stripLabels(el)).toEqual(['a', 'x', 'b'])
+    expect(stripLabels(el)).toEqual(['a', 'b', 'x'])
     expect(previewLabels()).toEqual(['b'])
     // a was not replaced: its editor stays mounted, hidden.
     expect(layers(el)).toEqual([
@@ -2619,12 +2619,12 @@ describe('App tabs (I2, GRO-2234)', () => {
       ['/v/b.md', false],
     ])
     // ONE explicit identity write carries BOTH halves — never the legacy {file}-only patch.
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/x.md', '/v/b.md'], '/v/b.md'))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/b.md', '/v/x.md'], '/v/b.md'))
     expect(bridge.state.setFolder).toHaveBeenLastCalledWith('/v', { lastFile: '/v/b.md' })
 
     // The next click takes the preview tab's slot: b's editor is GONE (→ autosave flush on unmount).
     act(() => captured.sidebar?.onOpenFile('/v/c.md'))
-    expect(stripLabels(el)).toEqual(['a', 'x', 'c'])
+    expect(stripLabels(el)).toEqual(['a', 'c', 'x'])
     expect(previewLabels()).toEqual(['c'])
     expect(layers(el)).toEqual([
       ['/v/a.md', true],
@@ -2635,13 +2635,13 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => captured.sidebar?.onKeepFile('/v/c.md'))
     expect(previewLabels()).toEqual([])
     act(() => captured.sidebar?.onOpenFile('/v/d.md'))
-    expect(stripLabels(el)).toEqual(['a', 'x', 'c', 'd'])
+    expect(stripLabels(el)).toEqual(['a', 'c', 'd', 'x'])
     expect(previewLabels()).toEqual(['d'])
 
     // The first edit of the page keeps it too; an edit in a kept tab changes nothing.
     act(() => captured.editors.filter((editor) => editor.path === '/v/d.md').at(-1)?.onUserEdit?.('/v/d.md'))
     expect(previewLabels()).toEqual([])
-    expect(stripLabels(el)).toEqual(['a', 'x', 'c', 'd'])
+    expect(stripLabels(el)).toEqual(['a', 'c', 'd', 'x'])
   })
 
   it('the blank tab (YAZ-2655): ⌘T and "+" show "New tab" last and active over an empty page, with the caret asked into the search bar; the next page fills it as a KEPT tab (S70, S71, S74, S81)', async () => {

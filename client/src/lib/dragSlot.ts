@@ -17,24 +17,25 @@ export function dropIndex(from: number, slot: number): number {
   return slot > from ? slot - 1 : slot
 }
 
-/** How far past a strip's ends a point still counts as on it (YAZ-3808 D1): over ‹ › and the "+". */
-const STRIP_SLACK = 40
+/** How far past a strip's ends a point still counts as on it (YAZ-3808 D1): over ‹ › (and the sidebar button) and the "+". */
+const LEFT_SLACK = 160
+const RIGHT_SLACK = 40
 
 /**
  * The slot under a client point of a strip (YAZ-3808 D1, D5), by each tab's midpoint; null off the strip. The strip's tabs
  * carry `data-tab`. Past the strip's right end (the "+") is the end slot, as the tail is; past its left end (‹ ›) is the
  * first slot on show, since the strip may be scrolled.
  */
-export function slotUnder(strip: HTMLElement | null, x: number, y: number, count: number): number | null {
+export function slotUnder(strip: HTMLElement | null, x: number, y: number): number | null {
   if (strip === null) return null
   const r = strip.getBoundingClientRect()
-  if (y < r.top || y > r.bottom || x < r.left - STRIP_SLACK || x > r.right + STRIP_SLACK) return null
-  if (x > r.right) return count
-  const at = Math.max(x, r.left + 1)
+  if (y < r.top || y > r.bottom || x < r.left - LEFT_SLACK || x > r.right + RIGHT_SLACK) return null
   const tabs = strip.querySelectorAll<HTMLElement>('[data-tab]')
+  if (x > r.right) return tabs.length
+  const at = Math.max(x, r.left + 1)
   for (let i = 0; i < tabs.length; i++) {
     const t = tabs[i].getBoundingClientRect()
     if (at < t.left + t.width / 2) return i
   }
-  return count
+  return tabs.length
 }

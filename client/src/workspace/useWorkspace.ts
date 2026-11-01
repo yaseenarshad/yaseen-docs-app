@@ -53,9 +53,8 @@ export interface TabsState {
   blank: boolean
   /**
    * The last tab opened BEHIND next to the active one (YAZ-3808 D4), so the next one goes after it and several keep the
-   * order they were opened in, as in Chrome. Renderer- and session-only, never stored. `withActive`, `appendActive` and
-   * `close` set it undefined — never leave it out, since the workspace merges a tab state over the old one — so a trip
-   * to another tab ends the chain, and so does a close.
+   * order they were opened in, as in Chrome. Renderer- and session-only, never stored. A trip to another tab ends it
+   * (`endChain`, at the exit of both reducers), and so does a close.
    */
   chain?: string
 }
@@ -220,23 +219,35 @@ const EMPTY: TabsState = { tabs: [], active: null, mounted: [], history: NO_STEP
 
 /** Go to the tab `active` (an id). A trip to a tab drops an unused blank tab (YAZ-2655 S73). */
 function withActive(s: TabsState, active: string): TabsState {
-  return { tabs: s.tabs, active, mounted: s.mounted.includes(active) ? s.mounted : [...s.mounted, active], history: s.history, preview: s.preview, blank: false, chain: undefined }
+  return { tabs: s.tabs, active, mounted: s.mounted.includes(active) ? s.mounted : [...s.mounted, active], history: s.history, preview: s.preview, blank: false }
 }
 
 /** A new KEPT tab for `path` at the end of the strip — or at the slot `at` (YAZ-3637 D4) — active. */
 function appendActive(s: TabsState, path: string, preview: boolean, at?: number): TabsState {
   const tab = newTab(path)
-  return { tabs: at === undefined ? [...s.tabs, tab] : insertAt(s.tabs, tab, at), active: tab.id, mounted: [...s.mounted, tab.id], history: s.history, preview: preview ? tab.id : s.preview, blank: false, chain: undefined }
+  return { tabs: at === undefined ? [...s.tabs, tab] : insertAt(s.tabs, tab, at), active: tab.id, mounted: [...s.mounted, tab.id], history: s.history, preview: preview ? tab.id : s.preview, blank: false }
 }
 
 /**
  * Where a new tab opens with "Next to the current tab" (YAZ-3808 D2, D4): right after the active tab, or after the last
- * tab opened behind it (`chain`). Undefined, the end: no `next`, or no active tab in the strip.
+ * tab opened behind it (`chain`), when that tab is still open. Undefined, the end: no `next`, no active tab in the strip,
+ * or the blank tab on show — it stands last, so the end is next to it.
  */
 function nextSlot(s: TabsState, next: boolean | undefined): number | undefined {
-  if (next !== true) return undefined
-  const i = s.tabs.findIndex((t) => t.id === (s.chain ?? s.active))
+  if (next !== true || s.blank) return undefined
+  const chained = s.chain === undefined ? -1 : s.tabs.findIndex((t) => t.id === s.chain)
+  const i = chained !== -1 ? chained : s.tabs.findIndex((t) => t.id === s.active)
   return i === -1 ? undefined : i + 1
+}
+
+/**
+ * The chain ends on a trip to another tab (YAZ-3808 D4): whatever brought it — a click, Back, a page moved in from the
+ * right panel, a reset. One rule at the exit of both reducers, since the workspace merges a tab state over the old one
+ * and a state that leaves `chain` out would keep it. The same object when nothing changes.
+ */
+function endChain<S extends TabsState>(was: TabsState, next: S): S {
+  if (next === was || (was.chain === undefined && next.chain === undefined)) return next
+  return next.active !== was.active || next.blank !== was.blank ? { ...next, chain: undefined } : next
 }
 
 /**
@@ -351,6 +362,10 @@ const atOrUnder = (path: string, dir: string): boolean => path === dir || path.s
 
 /** Pure; returns the SAME state object for a no-op so callers can skip the identity mirror. */
 export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
+  return endChain(s, tabsStep(s, a))
+}
+
+function tabsStep(s: TabsState, a: TabsAction): TabsState {
   switch (a.type) {
     case 'open-current': {
       if (s.blank) return fillBlank(s, a.path)
@@ -707,7 +722,7 @@ function withStep(before: WorkspaceState, a: WorkspaceAction, after: WorkspaceSt
 
 /** One pure owner for main tabs, right headers, the Back lists, and all lifecycle repair. */
 export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): WorkspaceState {
-  return withStep(s, a, reduceWorkspace(s, a))
+  return endChain(s, withStep(s, a, reduceWorkspace(s, a)))
 }
 
 function reduceWorkspace(s: WorkspaceState, a: WorkspaceAction): WorkspaceState {

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { titleWithKey, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { rootOfPath, type DiagramDarkColors, type ScreenPoint, type TabRef } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -14,7 +14,7 @@ import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
 import { TabNameField } from './TabNameField'
 import { useBoardHighlight } from './boardHighlight'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from './cardPreview'
-import { setStripHandle, setStripSlot, stripSlot, useStripSlot } from './stripDrop'
+import { setStripTarget } from './stripDrop'
 import './tabs.css'
 
 export interface TabBarProps {
@@ -137,7 +137,7 @@ export interface TabBarProps {
 const SLIDE_MS = 150
 const SLIDE = { '--tab-slide-ms': `${SLIDE_MS}ms` } as CSSProperties
 /** How long a tab glides to its new place after a reorder, in ms (YAZ-3808 D6; tuned in the demo). */
-export const GLIDE_MS = 200
+const GLIDE_MS = 200
 
 /** A tab that closed, for as long as it slides shut: its label, and the id of the tab it stood before (null: the end). */
 interface Ghost {
@@ -253,40 +253,39 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // wheel and a scroll close it in the hook (each drag and menu starts with a press). Here: a new tab on show, a rename
   // (one that a command starts has no press), and the hovered tab gone (another window closed it: no `mouseleave`).
   const stripRef = useRef<HTMLDivElement | null>(null)
-  // A tab board card over the strip (YAZ-3808 D1): the board asks the handle where it would land, and the slot it writes
-  // draws the same line as a drag. The strip scrolls at its ends while any drag is held there (D5); a board card's slot
-  // is read again as the strip moves under a pointer that stays still (an HTML5 drag's `dragover` repeats by itself).
-  const boardOver = useStripSlot()
-  const tabCount = useRef(tabs.length)
-  tabCount.current = tabs.length
+  // A tab board card over the strip (YAZ-3808 D1): the board holds it here on each pointer move, and the strip draws the
+  // same line as a drag. The strip scrolls at its ends while any drag is held there (D5); a held card's slot is read
+  // again as the strip moves under a pointer that stays still (an HTML5 drag's `dragover` repeats by itself).
+  const [boardOver, setBoardOver] = useState<number | null>(null)
   const boardPoint = useRef<{ x: number; y: number } | null>(null)
-  const scroller = useMemo(
-    () =>
-      edgeScroller(
-        () => stripRef.current,
-        () => {
-          const p = boardPoint.current
-          if (p !== null && stripSlot() !== null) setStripSlot(slotUnder(stripRef.current, p.x, p.y, tabCount.current))
-        },
-      ),
-    [],
+  const [scroller] = useState(() =>
+    edgeScroller(
+      () => stripRef.current,
+      () => {
+        const p = boardPoint.current
+        if (p !== null) setBoardOver(slotUnder(stripRef.current, p.x, p.y))
+      },
+    ),
   )
   useEffect(() => {
-    setStripHandle({
-      slotAt: (x, y) => {
-        boardPoint.current = { x, y }
-        return slotUnder(stripRef.current, x, y, tabCount.current)
+    setStripTarget({
+      hold: (x, y) => {
+        const slot = slotUnder(stripRef.current, x, y)
+        boardPoint.current = slot === null ? null : { x, y }
+        setBoardOver(slot)
+        if (slot === null) scroller.stop()
+        else scroller.at(x)
       },
-      edge: scroller.at,
-      stop: () => {
+      release: (x, y) => {
         boardPoint.current = null
         scroller.stop()
+        setBoardOver(null)
+        return x === undefined || y === undefined ? null : slotUnder(stripRef.current, x, y)
       },
     })
     return () => {
       scroller.stop()
-      setStripHandle(null)
-      setStripSlot(null)
+      setStripTarget(null)
     }
   }, [scroller])
   const tabPreview = useCardPreview(hoverPreview, (id) => stripRef.current?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(id)}"]`) ?? null)
@@ -352,18 +351,23 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     return () => pending.forEach(clearTimeout)
   }, [])
   // THE GLIDE (YAZ-3808 D6). A reorder — the same tabs in a new order: a drag, a tab board card, a move from anywhere —
-  // slides each tab that changed place from where it stood to where it stands now, so the eye can follow it. A tab
-  // that joins or leaves the strip slides as above, and nothing glides then. One `offsetLeft` read per tab after each
-  // change of `tabs`, never on a keystroke; the animation is the compositor's. No motion asked for: no glide.
-  const places = useRef(new Map<string, number>())
+  // slides each tab that changed place from where it stood to where it stands now, so the eye can follow it. Only a
+  // new ORDER glides: a tab that joins or leaves slides as above, and a new name or zoom moves nothing. The places
+  // before are read in the render that brings the new order, while the strip still shows the old one; the places
+  // after, as it commits. No reads on any other render, never on a keystroke; the animation is the compositor's.
+  const order = useRef<readonly string[]>([])
+  const glideFrom = useRef<Map<string, number> | null>(null)
+  const ids = tabs.map((t) => t.id)
+  if (ids.length === order.current.length && ids.some((id, i) => id !== order.current[i]) && ids.every((id) => order.current.includes(id))) {
+    glideFrom.current = new Map([...(stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? [])].map((el) => [el.dataset.tab!, el.offsetLeft]))
+  }
   useLayoutEffect(() => {
-    const els = [...(stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? [])]
-    const was = places.current
-    places.current = new Map(els.map((el) => [el.dataset.tab!, el.offsetLeft]))
-    if (was.size !== els.length || !els.every((el) => was.has(el.dataset.tab!))) return
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== false) return
-    for (const el of els) {
-      const dx = was.get(el.dataset.tab!)! - places.current.get(el.dataset.tab!)!
+    order.current = tabs.map((t) => t.id)
+    const from = glideFrom.current
+    glideFrom.current = null
+    if (from === null || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== false) return
+    for (const el of stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? []) {
+      const dx = (from.get(el.dataset.tab!) ?? el.offsetLeft) - el.offsetLeft
       if (dx !== 0) el.animate?.([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: GLIDE_MS, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' })
     }
   }, [tabs])
@@ -467,7 +471,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   const endSlot = slotZone(() => tabs.length, true)
   const firstShownSlot = slotZone(() => {
     const r = stripRef.current?.getBoundingClientRect()
-    return r === undefined ? 0 : (slotUnder(stripRef.current, r.left, r.top + r.height / 2, tabs.length) ?? 0)
+    return r === undefined ? 0 : (slotUnder(stripRef.current, r.left, r.top + r.height / 2) ?? 0)
   }, false)
   // Where the tabs part (YAZ-2656 S89): the slot a drop would land in — and none where a drop
   // would leave the grabbed tab in its place, on either side of it.

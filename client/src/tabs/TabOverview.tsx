@@ -8,7 +8,7 @@ import type { Tab } from '../workspace/useWorkspace'
 import type { ListState } from '../lists/useVaultListsHere'
 import { arrivalIn, BOARD, buildBoard, cellKey, copiesOf, departureFrom, dropOutcome, fieldOf, frameDrop, layoutCanvas, nearest, placeCard, refsOf, storedAt, tidyFrame, tidyGroup, withoutTitle, type BoardPage, type BoardTab, type CanvasPlan, type Field, type FrameInput, type Island, type Rect, type Way } from './board'
 import { setBoardHighlight } from './boardHighlight'
-import { setStripSlot, stripHandle } from './stripDrop'
+import { holdOverStrip, releaseOverStrip } from './stripDrop'
 import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
 import { TabNameField } from './TabNameField'
 import { useTabHeads } from './useTabHeads'
@@ -563,13 +563,13 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (card === undefined || from === undefined || placed === undefined) return
     // Let go on the tab strip (YAZ-3808 D1): the tab takes the slot under the pointer. This window's card slides back to
     // its place on the board; another window's tab moves here at that slot, as a drop from that window's strip does.
-    const strip = stripHandle()
-    const slot = strip?.slotAt(clientX, clientY) ?? null
-    strip?.stop()
-    setStripSlot(null)
-    if (slot !== null && card.mine) {
+    // A page of a vault this window does not show only asks to add it (YAZ-3609 D21): the card slides back meanwhile,
+    // and the board stores nothing that a Cancel would leave wrong.
+    const slot = releaseOverStrip(clientX, clientY)
+    if (slot !== null && (card.mine || rootOfPath(roots, card.page.path) === null)) {
       slideBack(g.el)
-      onMoveToSlot(card.page.id, slot)
+      if (card.mine) onMoveToSlot(card.page.id, slot)
+      else onTakeAt(card.win, card.ref, slot)
       return
     }
     const outcome = slot !== null ? ({ kind: 'move', to: windowId } as const) : dropOutcome({ from: card.win, path: card.page.path, at: toWorld(clientX, clientY), frames: now.frames, framed, rootsOf: (win) => wins.get(win)?.roots })
@@ -658,11 +658,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     g.dy = dy
     g.el.style.transform = `translate(${dx / cam.current.zoom}px, ${dy / cam.current.zoom}px)`
     // Over the tab strip (YAZ-3808 D1): the strip draws its line, and scrolls at its ends (D5).
-    const strip = stripHandle()
-    const slot = strip?.slotAt(e.clientX, e.clientY) ?? null
-    setStripSlot(slot)
-    if (slot !== null) strip?.edge(e.clientX)
-    else strip?.stop()
+    holdOverStrip(e.clientX, e.clientY)
   }
   const onUp = (e: PointerEvent): void => {
     const g = gesture.current
@@ -720,11 +716,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     const g = gesture.current
     if (g === null || e.pointerId !== g.pointer) return
     endGesture()
-    if (g.kind === 'card') {
-      settleCard(g.el)
-      stripHandle()?.stop()
-      setStripSlot(null)
-    }
+    if (g.kind === 'card') settleCard(g.el)
     if (g.kind === 'group') for (const el of g.els) settleCard(el)
   }
   const handlers = useRef({ onMove, onUp, onCancel })
@@ -745,6 +737,9 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     window.addEventListener('pointercancel', listeners.current.cancel)
   }
   const endGesture = (): void => {
+    // A card held over the tab strip (YAZ-3808 D1): its line goes out and the strip stops scrolling, however the hold
+    // ends — a drop, a cancel, or the board closing under it.
+    if (gesture.current?.kind === 'card') releaseOverStrip()
     gesture.current = null
     window.removeEventListener('pointermove', listeners.current.move)
     window.removeEventListener('pointerup', listeners.current.up)

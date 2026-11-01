@@ -30,7 +30,7 @@ vi.mock('../api', async (importOriginal) => ({
 // The sidebar's preview panels (D18: one preview look): stand-ins that say which file they show.
 vi.mock('../sidebar/NotePreview', () => ({ default: ({ name }: { name: string }) => <div className="note-preview" aria-label={`Preview of ${name}`} /> }))
 vi.mock('../sidebar/BoardPreview', () => ({ default: ({ node }: { node: { path: string } }) => <div className="board-preview" aria-label={`Preview of ${node.path}`} /> }))
-import { setStripHandle, setStripSlot, stripSlot } from './stripDrop'
+import { setStripTarget } from './stripDrop'
 import { api } from '../api'
 const readHeads = vi.mocked(api.readHeads)
 
@@ -1744,36 +1744,29 @@ describe('TabOverview display name (YAZ-2949 D4, D5)', () => {
 
 describe('YAZ-3808 D1: a card let go on the tab strip moves its tab there', () => {
   /** A stand-in for the window's strip: above the board (y < 0) is on it, slot 1 at x < 100, else the end slot 6. */
-  const strip = { slotAt: vi.fn((x: number, y: number) => (y >= 0 ? null : x < 100 ? 1 : 6)), edge: vi.fn(), stop: vi.fn() }
-  beforeEach(() => setStripHandle(strip))
-  afterEach(() => {
-    setStripHandle(null)
-    setStripSlot(null)
-  })
+  const slotAt = (x?: number, y?: number) => (x === undefined || y === undefined || y >= 0 ? null : x < 100 ? 1 : 6)
+  const strip = { hold: vi.fn(), release: vi.fn(slotAt) }
+  beforeEach(() => setStripTarget(strip))
+  afterEach(() => setStripTarget(null))
 
-  it('this window\'s card: the strip shows the slot while it is held there, the tab moves to it, and the card keeps its place on the board', async () => {
+  it('this window\'s card: the board holds it over the strip on each move, the tab moves to the slot, and the board stores no place for it', async () => {
     const onMoveToSlot = vi.fn()
     const { el } = await mount({ onMoveToSlot })
     const card = page(el, '/v/a.md')!
-    const at = placeOf(card)
     pointer(card, 'pointerdown', 0, 0)
     pointer(window, 'pointermove', 10, 10)
-    expect(stripSlot()).toBeNull()
-    expect(strip.stop).toHaveBeenCalled() // off the strip, no edge scroll
     pointer(window, 'pointermove', 50, -20)
-    expect(stripSlot()).toBe(1)
-    expect(strip.edge).toHaveBeenLastCalledWith(50)
+    expect(strip.hold).toHaveBeenLastCalledWith(50, -20)
     pointer(window, 'pointerup', 50, -20)
+    expect(strip.release).toHaveBeenLastCalledWith(50, -20)
     expect(onMoveToSlot).toHaveBeenCalledExactlyOnceWith('/v/a.md', 1)
-    expect(stripSlot()).toBeNull()
     expect(storage.setTabCanvas).not.toHaveBeenCalled()
-    expect(placeOf(card)).toEqual(at)
     expect(card.dataset.sliding).toBe('') // it slides back to its place
   })
 
-  it('another window\'s card: its tab joins this window at the slot, as a drop from that window\'s strip does, and leaves its frame', async () => {
+  it('another window\'s card: its tab joins this window at the slot, as a drop from that window\'s strip does, and leaves its frame in the same write', async () => {
     canvas = { allWindows: true, snap: false, cards: [], frames: [] }
-    others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
+    others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
     const onTakeAt = vi.fn()
     const onMoveTab = vi.fn()
     const { el } = await mount({ onTakeAt, onMoveTab })
@@ -1783,15 +1776,40 @@ describe('YAZ-3808 D1: a card let go on the tab strip moves its tab there', () =
     pointer(window, 'pointerup', 300, -20)
     expect(onTakeAt).toHaveBeenCalledExactlyOnceWith('w2', { path: '/w/y.md', copy: 0 }, 6)
     expect(onMoveTab).not.toHaveBeenCalled()
+    // ONE write: w2's other card keeps its place, and the tab arrives in this window's frame.
+    expect(storage.setTabCanvas).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(storage.setTabCanvas).mock.calls[0][0].set?.at(-1)).toMatchObject({ win: 'me', path: '/w/y.md', by: 'window' })
   })
 
-  it('a cancelled drag puts the strip\'s line out', async () => {
+  it('another window\'s card of a vault this window does not show: it only asks (the add-vault question), slides back, and the board stores nothing', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
+    others = [other('w3', ['/z'], [{ path: '/z/far.md', active: true }])]
+    const onTakeAt = vi.fn()
+    const { el } = await mount({ onTakeAt })
+    const card = page(el, 'w3\n/z/far.md\n0')!
+    pointer(card, 'pointerdown', 0, 0)
+    pointer(window, 'pointermove', 10, 10)
+    pointer(window, 'pointermove', 300, -20)
+    pointer(window, 'pointerup', 300, -20)
+    expect(onTakeAt).toHaveBeenCalledExactlyOnceWith('w3', { path: '/z/far.md', copy: 0 }, 6)
+    expect(storage.setTabCanvas).not.toHaveBeenCalled()
+    expect(card.dataset.sliding).toBe('')
+  })
+
+  it('a hold that ends any other way puts the strip\'s line out: a cancel, and the board closing under the card', async () => {
     const { el } = await mount()
     pointer(page(el, '/v/a.md'), 'pointerdown', 0, 0)
     pointer(window, 'pointermove', 10, 10)
     pointer(window, 'pointermove', 50, -20)
-    expect(stripSlot()).toBe(1)
+    strip.release.mockClear()
     pointer(window, 'pointercancel', 50, -20)
-    expect(stripSlot()).toBeNull()
+    expect(strip.release).toHaveBeenCalledWith(undefined, undefined)
+    pointer(page(el, '/v/a.md'), 'pointerdown', 0, 0)
+    pointer(window, 'pointermove', 10, 10)
+    pointer(window, 'pointermove', 50, -20)
+    strip.release.mockClear()
+    act(() => root?.unmount())
+    root = null
+    expect(strip.release).toHaveBeenCalledWith(undefined, undefined)
   })
 })

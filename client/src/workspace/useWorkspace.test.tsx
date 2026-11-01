@@ -1586,6 +1586,22 @@ describe('where a new tab opens (YAZ-3808 D2, D3, D4)', () => {
     expect(tabsReducer(three(), { type: 'open-stored', tabs: plain('/v/x.md', '/v/y.md') }).tabs).toEqual(['/v/a.md', '/v/b.md', '/v/c.md', '/v/x.md', '/v/y.md'])
   })
 
+  it('D4: a chain tab that closed is no anchor: the next one opens right after the current tab; under the blank tab it goes to the end, next to it', () => {
+    const chained = open(open(three(), '/v/x1.md'), '/v/x2.md')
+    // x2 leaves by a path that keeps the chain field (another window took it), not by `close`.
+    const gone = { ...chained, tabs: chained.tabs.filter((t) => t !== '/v/x2.md') }
+    expect(open(gone, '/v/y.md').tabs).toEqual(['/v/a.md', '/v/y.md', '/v/x1.md', '/v/b.md', '/v/c.md'])
+    const blank = tabsReducer(three(), { type: 'new-tab' })
+    expect(open(blank, '/v/y.md').tabs).toEqual(['/v/a.md', '/v/b.md', '/v/c.md', '/v/y.md'])
+  })
+
+  it('D4: every trip to another tab ends the chain in the workspace too: a page moved in from the right panel', () => {
+    const base: WorkspaceState = { ...open(three(), '/v/x1.md'), rightPanel: { open: true, width: 440, items: ['/v/r.md'], expanded: '/v/r.md' }, rightMounted: ['/v/r.md'], rightHistory: {} }
+    const moved = workspaceReducer(base, { type: 'transfer-right-to-main', path: '/v/r.md', at: 3 })
+    expect(moved.chain).toBeUndefined()
+    expect(workspaceReducer(moved, { type: 'open-background', path: '/v/y.md', next: true }).tabs).toEqual(['/v/a.md', '/v/x1.md', '/v/b.md', '/v/r.md', '/v/y.md', '/v/c.md'])
+  })
+
   it('the chain is never stored: the window\'s strip names pages, copies and names only', () => {
     const s = reduceTabs({ tabs: [{ id: 't1', path: '/v/a.md' }], active: 't1', mounted: ['t1'], history: NO_STEPS, preview: null, blank: false }, { type: 'open-background', path: '/v/x.md', next: true })
     expect(s.chain).toBe(s.tabs[1].id)
@@ -1629,6 +1645,18 @@ describe('the setting in the hook (YAZ-3808 D2): the user flow', () => {
     // In front now, n is the current tab: the next ⌘-click goes right after it.
     act(() => latest.openBackground('/v/m.md'))
     expect(paths()).toEqual(['/v/a.md', '/v/l1.md', '/v/l2.md', '/v/l3.md', '/v/n.md', '/v/m.md', '/v/b.md'])
+  })
+
+  it('Back to another tab ends the chain: the next ⌘-click goes right after the tab Back went to', async () => {
+    await boot('next')
+    act(() => latest.openKept('/v/a.md'))
+    act(() => latest.openKept('/v/b.md'))
+    act(() => latest.openBackground('/v/x1.md'))
+    expect(paths()).toEqual(['/v/a.md', '/v/b.md', '/v/x1.md'])
+    act(() => latest.back())
+    expect(latest.active).toBe(latest.tabs[0].id)
+    act(() => latest.openBackground('/v/y.md'))
+    expect(paths()).toEqual(['/v/a.md', '/v/y.md', '/v/b.md', '/v/x1.md'])
   })
 
   it('"At the end": every new tab joins the end, as before', async () => {

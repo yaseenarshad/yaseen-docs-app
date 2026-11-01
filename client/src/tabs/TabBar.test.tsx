@@ -12,7 +12,7 @@ import { NAV_HOLD_MS, TabBar as IdTabBar, type TabBarProps as IdTabBarProps } fr
 import tabsCss from './tabs.css?inline'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 import { setBoardHighlight } from './boardHighlight'
-import { setStripSlot, stripHandle } from './stripDrop'
+import { holdOverStrip, releaseOverStrip } from './stripDrop'
 import { IconsContext } from '../sidebar/FileIcon'
 import { buildRowIcons, rowIcon } from '../sidebar/rowIcons'
 
@@ -1176,31 +1176,36 @@ describe('TabBar: the four tab changes (YAZ-3808)', () => {
     act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY })))
   /** A strip from x 100 to 400, scrolled so the first tab is half hidden: tab i stands at 50 + 100·i, 100 px wide. */
   const layOut = (el: HTMLElement) => {
-    el.querySelector<HTMLElement>('.tabbar')!.getBoundingClientRect = () => ({ left: 100, right: 400, top: 0, bottom: 40, width: 300, height: 40 }) as DOMRect
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    strip.getBoundingClientRect = () => ({ left: 100, right: 400, top: 0, bottom: 40, width: 300, height: 40 }) as DOMRect
+    Object.defineProperties(strip, { scrollWidth: { configurable: true, value: 1000 }, clientWidth: { configurable: true, value: 300 } })
     el.querySelectorAll<HTMLElement>('[data-tab]').forEach((tab, i) => (tab.getBoundingClientRect = () => ({ left: 50 + i * 100, width: 100, top: 0, bottom: 40 }) as DOMRect))
   }
   afterEach(() => {
-    act(() => setStripSlot(null))
+    act(() => void releaseOverStrip())
     vi.unstubAllGlobals()
     delete (window as unknown as Record<string, unknown>).matchMedia
     Object.defineProperty(HTMLElement.prototype, 'offsetLeft', OFFSET_LEFT)
     delete (HTMLElement.prototype as unknown as Record<string, unknown>).animate
   })
 
-  it('D1: the strip registers its handle for the tab board, and a card\'s slot draws the same line as a drag; unmounted, the handle goes', () => {
+  it('D1: a tab board card held over the strip draws the same line as a drag; the release answers its slot and puts the line out; unmounted, the strip takes no card', () => {
     const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
     layOut(el)
-    expect(stripHandle()?.slotAt(210, 20)).toBe(2) // right half of b
-    expect(stripHandle()?.slotAt(250, 99)).toBeNull() // below the strip
-    act(() => setStripSlot(1))
+    act(() => holdOverStrip(140, 20)) // right half of b (b stands at 150 to 250; the strip starts at 100)
     expect(gaps(el)).toEqual(['b:before'])
-    act(() => setStripSlot(3))
+    act(() => holdOverStrip(420, 20)) // past the strip's end, over the "+"
     expect(gaps(el)).toEqual(['c:after'])
-    act(() => setStripSlot(null))
+    act(() => holdOverStrip(250, 99)) // below the strip
+    expect(gaps(el)).toEqual([])
+    act(() => holdOverStrip(210, 20))
+    let slot: number | null = null
+    act(() => void (slot = releaseOverStrip(210, 20)))
+    expect(slot).toBe(2)
     expect(gaps(el)).toEqual([])
     act(() => root?.unmount())
     root = null
-    expect(stripHandle()).toBeNull()
+    expect(releaseOverStrip(210, 20)).toBeNull()
   })
 
   it('D5: a drag held at the strip\'s right end scrolls it frame by frame; the drop stops it', () => {
@@ -1260,7 +1265,10 @@ describe('TabBar: the four tab changes (YAZ-3808)', () => {
       ['/v/a.md', 'translateX(-100px)'],
       ['/v/b.md', 'translateX(-100px)'],
     ])
+    // A new name moves tabs, but the order is the same: no glide.
     glides.length = 0
+    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} windowId="w1" tabs={[{ id: '/v/c.md', path: '/v/c.md', name: 'A much longer name' }, { id: '/v/a.md', path: '/v/a.md' }, { id: '/v/b.md', path: '/v/b.md' }]} active="/v/a.md" onMove={vi.fn()} {...props} />))
+    expect(glides).toEqual([])
     render(['/v/c.md', '/v/a.md', '/v/d.md', '/v/b.md'])
     expect(glides).toEqual([])
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true }) })
