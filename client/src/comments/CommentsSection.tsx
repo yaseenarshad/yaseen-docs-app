@@ -36,6 +36,7 @@ import type { CommentsOrder, FileResponse } from '@shared/types'
 import { api } from '../api'
 import { relativeTime } from '../lib/relativeTime'
 import { transformFile } from '../views/writeProperty'
+import { CollapseAllIcon, ExpandAllIcon } from '../views/view/icons'
 import { ConfirmDeleteComment } from './ConfirmDeleteComment'
 import { commentHtml, commentInlineHtml, commentSplit } from './markdown'
 import './comments.css'
@@ -237,9 +238,8 @@ export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionP
             )}
             {(everyId.length > 0 || everyThreaded.length > 0) && (
               <button type="button" className="comments__tool" onClick={foldAll}>
-                <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  {allFolded ? <path d="m5 5.5 3-3 3 3M5 10.5l3 3 3-3" /> : <path d="m5 3 3 3 3-3M5 13l3-3 3 3" />}
-                </svg>
+                {/* Every fold-all button's chevrons (YAZ-3938 D9): down expands, up collapses. */}
+                {allFolded ? <ExpandAllIcon /> : <CollapseAllIcon />}
                 {allFolded ? 'Expand all' : 'Collapse all'}
               </button>
             )}
