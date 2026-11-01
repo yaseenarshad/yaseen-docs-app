@@ -171,6 +171,8 @@ export const CONTRACT = {
     setFolds: invoke<[root: string, file: string, keys: readonly string[]], void>('state:set-folds', 3),
     /** What one note's table of contents is built from (YAZ-2700 D14): `headings`, `bullets`, or `null` for Auto, which removes the entry. */
     setTocSource: invoke<[root: string, file: string, source: TocSource | null], void>('state:set-toc-source', 3),
+    /** Replace the folded rows of one note's table of contents (YAZ-3939 D1); an empty list removes the entry. The preload sends a copy of `keys`. */
+    setTocFolds: invoke<[root: string, file: string, keys: readonly string[]], void>('state:set-toc-folds', 3),
     /** One note's "Section indent" switch (YAZ-2709 D2): `true` or `false`, and each is stored. No call removes the entry: only the delete of the note does. */
     setSectionIndent: invoke<[root: string, file: string, on: boolean], void>('state:set-section-indent', 3),
     /** One note's "Table of contents" switch (YAZ-2950): `true` or `false`, and each is stored. Only the delete of the note removes the entry. */
