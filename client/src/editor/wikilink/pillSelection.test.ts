@@ -12,6 +12,7 @@ import { createCrepe } from '../createCrepe'
 import type { MarkdownLinkNav } from '../markdownLink'
 import { PILL_SELECTED_CLASS } from './pillSelection'
 import { WIKILINK_CLASS, createWikilinkResolveSource } from './wikilinkPlugin'
+import css from './wikilink.css?raw'
 
 const A = 'k3m9x2pq7abc'
 const PATHS: Record<string, string> = { [A]: '/v/AR v2 plan.md', Named: '/v/Named.md' }
@@ -110,5 +111,50 @@ describe('the lit box is as tall as the line (YAZ-3747 demo)', () => {
     expect(rect.mock.calls.length).toBe(reads) // once per editor
     rect.mockRestore()
     style.mockRestore()
+  })
+})
+
+// jsdom draws no `::selection`: the rules are read from the CSS, and each selector is matched against a piece.
+
+/** Each selector of a rule that takes the browser's selection colour away, without its `::selection`. */
+function hiddenSelectionSelectors(): string[] {
+  const out: string[] = []
+  for (const rule of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    if (!/background:\s*transparent/.test(rule[2]!)) continue
+    for (const selector of rule[1]!.split(',').map((s) => s.trim())) if (selector.includes('::selection')) out.push(selector.replace(/::selection/g, ''))
+  }
+  return out
+}
+
+describe('a selection with no lit link costs no search of the note (YAZ-4005)', () => {
+  it('in a note with no link, or a selection beside one, nothing searches the note for a lit pill', async () => {
+    const { view } = await mount(`plain words here\n\nmore plain words [[Named]] end\n`)
+    const search = vi.spyOn(view.dom, 'querySelector')
+    select(view, 1, 6)
+    select(view, 1, 12)
+    select(view, 19, 24) // "more ": beside the link, not over it
+    expect(search).not.toHaveBeenCalled()
+    search.mockRestore()
+  })
+})
+
+describe('the browser\'s selection colour (YAZ-4004)', () => {
+  function pieceIn(classes: string): HTMLElement {
+    const host = document.createElement('div')
+    host.className = 'milkdown'
+    host.innerHTML = `<div class="ProseMirror"><span class="${classes}">AR v2 plan</span></div>`
+    return host.querySelector('span')!
+  }
+  const hides = (el: HTMLElement) => hiddenSelectionSelectors().some((selector) => el.matches(selector))
+
+  it('a Markdown link pill keeps it on a part selection, and loses it only while its whole box is lit', () => {
+    expect(hiddenSelectionSelectors().length).toBeGreaterThan(0)
+    expect(hides(pieceIn('wikilink link-pill link-pill--first link-pill--last'))).toBe(false)
+    expect(hides(pieceIn(`wikilink link-pill ${PILL_SELECTED_CLASS}`))).toBe(true)
+  })
+
+  it('a [[link]] (one unit) never shows it: only the lit box does', () => {
+    expect(hides(pieceIn('wikilink'))).toBe(true)
+    expect(hides(pieceIn(`wikilink ${PILL_SELECTED_CLASS}`))).toBe(true)
   })
 })

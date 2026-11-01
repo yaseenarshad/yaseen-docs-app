@@ -73,25 +73,31 @@ function measureLetters(view: EditorView): boolean {
 }
 
 export const createPillSelection = () =>
-  $prose(
-    () =>
-      new Plugin({
-        key: new PluginKey('mdapp-pill-selection'),
-        props: { decorations: pieceDecorations },
-        view: (view) => {
-          let lit = new Set<Element>()
-          let measured = false
-          return {
-            update: () => {
-              if (lit.size === 0 && view.state.selection.empty) return
-              const next = selectedWidgets(view)
-              for (const el of lit) if (!next.has(el)) el.classList.remove(PILL_SELECTED_CLASS)
-              for (const el of next) if (!el.classList.contains(PILL_SELECTED_CLASS)) el.classList.add(PILL_SELECTED_CLASS)
-              lit = next
-              // After the widgets are lit: a line of ID links has no other lit piece to measure.
-              if (!measured) measured = measureLetters(view)
-            },
-          }
-        },
-      }),
-  )
+  $prose(() => {
+    // The lit pieces of the latest state: ProseMirror asks for them, and the view update reads them back (YAZ-4005).
+    let pieces: { state: EditorState | null; set: DecorationSet } = { state: null, set: DecorationSet.empty }
+    const piecesOf = (state: EditorState): DecorationSet => {
+      if (pieces.state !== state) pieces = { state, set: pieceDecorations(state) }
+      return pieces.set
+    }
+    return new Plugin({
+      key: new PluginKey('mdapp-pill-selection'),
+      props: { decorations: piecesOf },
+      view: (view) => {
+        let lit = new Set<Element>()
+        let measured = false
+        return {
+          update: () => {
+            if (lit.size === 0 && view.state.selection.empty) return
+            const next = selectedWidgets(view)
+            for (const el of lit) if (!next.has(el)) el.classList.remove(PILL_SELECTED_CLASS)
+            for (const el of next) if (!el.classList.contains(PILL_SELECTED_CLASS)) el.classList.add(PILL_SELECTED_CLASS)
+            lit = next
+            // After the widgets are lit: a line of ID links has no other lit piece to measure. Only when a piece is lit:
+            // else the search for one would run on each selection change (YAZ-4005).
+            if (!measured && (next.size > 0 || piecesOf(view.state) !== DecorationSet.empty)) measured = measureLetters(view)
+          },
+        }
+      },
+    })
+  })
