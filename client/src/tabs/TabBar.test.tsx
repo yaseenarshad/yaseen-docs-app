@@ -582,6 +582,21 @@ describe('TabBar slide and room (YAZ-2656 D12)', () => {
     expect([tabOf('d') === d, tabOf('e') === e]).toEqual([true, true])
   })
 
+  it('YAZ-3808 6C: the slide-open class goes when the slide ends, so a tab that moves later does not play it again (a flash)', () => {
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', ...props })
+    render({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], active: '/v/c.md' })
+    expect(sliding(el, 'in')).toEqual(['c'])
+    const c = [...el.querySelectorAll('[data-tab]')].find((tab) => tab.textContent?.startsWith('c'))!
+    // jsdom has no AnimationEvent, so React listens for the prefixed name there. An animation inside the tab is not its slide.
+    act(() => void c.querySelector('.tabbar__close')!.dispatchEvent(new Event('webkitAnimationEnd', { bubbles: true })))
+    expect(sliding(el, 'in')).toEqual(['c'])
+    act(() => void c.dispatchEvent(new Event('webkitAnimationEnd', { bubbles: true })))
+    expect(sliding(el, 'in')).toEqual([])
+    // It moves to the front: put back in the strip, it has no slide to play.
+    render({ tabs: ['/v/c.md', '/v/a.md', '/v/b.md'], active: '/v/c.md' })
+    expect(sliding(el, 'in')).toEqual([])
+  })
+
   it('S88: a closed tab slides shut where it stood — a ghost that is no tab, gone after the slide; with no motion asked for there is none', () => {
     vi.useFakeTimers()
     const el = mount({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], active: '/v/a.md', ...props })

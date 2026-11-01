@@ -329,8 +329,9 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // THE SLIDE (YAZ-2656 D12, S88). A tab that JOINS the strip slides open: the count grew, and the
   // tab is not the page that filled the blank tab, which stood there already. A page that takes a
   // tab's place — the preview tab's next page, a rename — keeps that tab's id and its room, and
-  // does not slide. The class stays on the tab for as long as it stands, so no render in the
-  // middle of the slide cuts it; CSS runs it once. A tab that LEAVES is gone from `tabs` at once,
+  // does not slide. The class stays on the tab until the slide ends, so no render in the middle
+  // of the slide cuts it; then it goes, since a tab that moves is put back in the strip, and a
+  // class still on it would run the slide again: a flash (YAZ-3808 6C). A tab that LEAVES is gone from `tabs` at once,
   // so a ghost of it — a label, nothing to act on — slides shut where it stood and is dropped
   // after. All of it is this component's own: no editor renders for a slide.
   const last = useRef({ tabs, blank })
@@ -616,6 +617,10 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
               style={shiftOf(i) === 0 ? undefined : { transform: `translateX(${shiftOf(i)}px)` }}
               // A tab whose name is a field does not drag (YAZ-2949 S9): a press in the field places the caret.
               draggable={id !== renaming}
+              onAnimationEnd={(e) => {
+                if (e.target !== e.currentTarget || !slidIn.current.delete(id)) return
+                e.currentTarget.classList.remove('tabbar__tab--in')
+              }}
               onMouseEnter={isActive || id === renaming ? undefined : () => tabPreview.hoverCard(id, path)}
               onMouseLeave={() => tabPreview.leaveCard(id)}
               onDragStart={(e) => {
