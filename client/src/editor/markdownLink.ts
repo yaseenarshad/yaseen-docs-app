@@ -24,6 +24,7 @@ import { $prose } from '@milkdown/kit/utils'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction } from '@shared/keys'
+import { EXTERNAL_EDIT_META } from './external/applyExternalMarkdown'
 import { linkClickAction } from './linkGesture'
 import { fileLabel } from '../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkActions, type LinkMenu } from './linkMenu'
@@ -220,7 +221,8 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
 export const createMarkdownLink = (nav: MarkdownLinkNav) =>
   $prose((ctx) => {
     let close = () => {}
-    /** A paste event came, and its change has not yet: Milkdown's own paste dispatches with no `paste` meta. */
+    /** A paste event is running: Milkdown's own paste dispatches with no `paste` meta. Only the paste's own change may
+     * count, so the flag ends with the event, and at the first change of any kind (YAZ-4038). */
     let pasting = false
 
     /** Opens `href` as an open gesture does: a page or file of a vault in the window in a tab, `where` it says (D8, D14, YAZ-3936), anything else through the OS. */
@@ -234,12 +236,13 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
     return new Plugin<DecorationSet>({
       key: markdownLinkKey,
       // Text pasted at a pill's edge is not part of the link either (YAZ-4034): only that pill's mark comes off it, so a
-      // pasted link keeps its own. Only a paste pays the lookup.
+      // pasted link keeps its own. Only a paste pays the lookup. An outside edit, an undo or a redo is never the paste
+      // (YAZ-4038), as in `pathPaste.ts`.
       appendTransaction: (trs, before, state) => {
-        if (!trs.some((tr) => tr.docChanged)) return null
         const pasted = pasting || trs.some((tr) => tr.getMeta('paste') === true)
         pasting = false
-        if (!pasted || !before.selection.empty) return null
+        if (!pasted || !before.selection.empty || !trs.some((tr) => tr.docChanged)) return null
+        if (trs.some((tr) => tr.getMeta(EXTERNAL_EDIT_META) !== undefined || tr.getMeta('history$') !== undefined)) return null
         const at = before.selection.from
         const mark = type.isInSet(before.doc.resolve(at).marks())
         if (mark === undefined || !markdownPillsAround(before, at).some((p) => p.to === at || p.from === at)) return null
@@ -290,6 +293,7 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
         handleDOMEvents: {
           paste: () => {
             pasting = true
+            queueMicrotask(() => (pasting = false))
             return false
           },
           mousedown: (view, event) => {

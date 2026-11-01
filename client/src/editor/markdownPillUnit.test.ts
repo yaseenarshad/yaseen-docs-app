@@ -25,7 +25,7 @@ async function mount(markdown: string) {
   await crepe.create()
   mounted.push({ crepe, root })
   const view: EditorView = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
-  return { root, view, nav }
+  return { root, view, nav, crepe }
 }
 
 afterEach(async () => {
@@ -54,6 +54,20 @@ const paste = (view: EditorView, text: string) => {
   Object.defineProperty(event, 'clipboardData', { value: { getData: (t: string) => (t === 'text/plain' ? text : ''), types: ['text/plain'], files: [] } })
   view.dom.dispatchEvent(event)
 }
+/** The words of the first line that carry a link. */
+const linkedWords = (view: EditorView) => {
+  const link = view.state.schema.marks.link!
+  let words = ''
+  view.state.doc.firstChild!.descendants((node) => {
+    if (node.isText && link.isInSet(node.marks)) words += node.text
+  })
+  return words
+}
+/** A change from outside (an agent writes the file), as `applyExternalMarkdown` dispatches it. */
+const outsideEdit = (view: EditorView, text: string) =>
+  view.dispatch(view.state.tr.insertText(text, 1).setMeta('addToHistory', false).setMeta('external-edit', true))
+/** A paste with no text: ProseMirror reads it from a hidden box 50 ms later. */
+const settle = () => new Promise((done) => setTimeout(done, 60))
 const sel = (view: EditorView) => [view.state.selection.anchor, view.state.selection.head]
 const box = (el: Element, left: number, width: number) =>
   vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({ left, right: left + width, width, top: 10, bottom: 26, height: 16, x: left, y: 10, toJSON: () => ({}) } as DOMRect)
@@ -163,7 +177,35 @@ describe('a Markdown link pill is one unit (YAZ-4021)', () => {
     paste(view, 'ZZ')
     expect(view.state.doc.firstChild!.textContent).toBe('Read the AR v2 planZZ before')
     expect(view.state.doc.rangeHasMark(TO, TO + 2, link)).toBe(false)
-    expect(view.state.doc.rangeHasMark(FROM, TO, link)).toBe(true)
+    expect(linkedWords(view)).toBe('AR v2 plan')
+  })
+
+  it('a paste that adds nothing leaves a pill alone at the next outside edit (YAZ-4038)', async () => {
+    ;(globalThis as { ClipboardEvent?: unknown }).ClipboardEvent ??= class extends Event {}
+    const { view } = await mount(DOC)
+    select(view, TO)
+    paste(view, '')
+    outsideEdit(view, 'Hello ')
+    expect(linkedWords(view)).toBe('AR v2 plan')
+    await settle()
+  })
+
+  it('a paste in a read-only note leaves a pill alone at the next outside edit (YAZ-4038)', async () => {
+    const { view, crepe } = await mount(DOC)
+    select(view, TO)
+    crepe.setReadonly(true)
+    paste(view, 'ZZ')
+    outsideEdit(view, 'Hello ')
+    expect(linkedWords(view)).toBe('AR v2 plan')
+  })
+
+  it('a paste that adds nothing does not count for a later change (YAZ-4038)', async () => {
+    const { view } = await mount(DOC)
+    select(view, TO)
+    paste(view, '')
+    await settle()
+    view.dispatch(view.state.tr.insertText('Hello ', 1))
+    expect(linkedWords(view)).toBe('AR v2 plan')
   })
 
   it('a letter typed while an input method composes is the browser\'s (YAZ-4035)', async () => {
