@@ -20,6 +20,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { api, BridgeRequestError } from '../api'
 import { placeOverTab } from '../keys/keySheetRequest'
 import { createDrawingFeed } from './drawingFeed'
+import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
+import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BROKEN_DRAWING_MESSAGE, DISCARD_PROMPT, DrawingModal } from './DrawingModal'
 import type { DrawingSurfaceProps } from './ExcalidrawSurface'
 
@@ -101,7 +103,7 @@ interface Mounted {
 }
 
 /** Mounts the modal over a resolved (or rejected) read and flushes the load. */
-async function open(read: 'ok' | 'broken' = 'ok', mtime = 100): Promise<Mounted> {
+async function open(read: 'ok' | 'broken' = 'ok', mtime = 100, linkProps: Partial<Parameters<typeof DrawingModal>[0]> = {}): Promise<Mounted> {
   if (read === 'ok') readAsset.mockResolvedValue(asset(mtime))
   else readAsset.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no such asset'))
   const onClose = vi.fn()
@@ -114,7 +116,7 @@ async function open(read: 'ok' | 'broken' = 'ok', mtime = 100): Promise<Mounted>
   document.body.appendChild(outside)
   root = createRoot(container)
   await act(async () => {
-    root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" feed={feed} onClose={onClose} />)
+    root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" feed={feed} onClose={onClose} {...linkProps} />)
   })
   const overlay = container.querySelector<HTMLElement>('.drawing-modal-overlay')
   if (overlay === null) throw new Error('missing .drawing-modal-overlay')
@@ -664,5 +666,38 @@ describe('the engine seam (🔒 one file, YAZ-868 swaps it)', () => {
   it('the modal has no canvas panel (YAZ-3038): it never passes the prop that turns it on', () => {
     expect(source('./DrawingModal.tsx')).not.toMatch(/onCanvasPanelChange|canvasPanel/)
     expect(source('./ExcalidrawSurface.tsx')).toMatch(/useState\(\(\) => onCanvasPanelChange !== undefined\)/)
+  })
+})
+
+/** YAZ-4039: the note embed's popup has the page links a drawing tab has (pills, hover, clicks, menu, picker, paste). */
+describe('page links in the popup', () => {
+  const linkSource = () => {
+    const source = createWikilinkResolveSource()
+    source.update((target) => (target === 'Known' ? '/v/Known.md' : null))
+    return source
+  }
+  const hit = { elementId: 't', inner: 'Known', start: 0, end: 9, rect: { left: 10, top: 10, right: 60, bottom: 30 } }
+
+  it('has no links with no resolve source: the pills stay text', async () => {
+    await open()
+    expect(seam.props?.links).toBeUndefined()
+  })
+
+  it('draws, opens and shows the menu of a pill, inside the sheet', async () => {
+    const onOpenLinkBackground = vi.fn()
+    const candidates = createWikilinkCandidateSource()
+    candidates.update([{ name: 'Known', insert: 'V-7', label: 'Known', path: '/v/Known.md' }])
+    const { overlay, onClose } = await open('ok', 100, { wikilinks: linkSource(), wikilinkCandidates: candidates, onOpenLink: vi.fn(), onOpenLinkBackground })
+    const links = seam.props!.links!
+    expect(links.hostLinks.resolve('Known')).toEqual({ label: 'Known' })
+    expect(links.hostLinks.onPointerDown?.(hit, new PointerEvent('pointerdown', { metaKey: true }))).toBe(true)
+    expect(onOpenLinkBackground).toHaveBeenCalledWith('/v/Known.md')
+    expect(links.hostLinks.pasteLink?.('/v/Known.md')).toBe('[[V-7]]')
+    act(() => void links.hostLinks.onContextMenu?.({ ...hit, replace: vi.fn() }, new MouseEvent('contextmenu', { clientX: 40, clientY: 20 })))
+    const menu = overlay.querySelector('.drawing-modal .ctx-menu--editor')
+    expect([...menu!.querySelectorAll('.ctx-menu__item')].map((row) => row.textContent)).toContain('Remove link')
+    // a click on the menu is inside the sheet: not a click-away
+    act(() => void menu!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

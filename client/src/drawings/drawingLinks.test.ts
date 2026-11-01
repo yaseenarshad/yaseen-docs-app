@@ -2,22 +2,30 @@
  * Page links in a drawing (YAZ-4039 D7, D11): what a pill shows, and what each gesture on it does, through the note's
  * own pieces. The engine side (layout, hit test, hover, clicks, menu) is `engine/.../tests/hostLinks.test.tsx`.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { linkMenuRows, type LinkMenu } from '../editor/linkMenu'
 import { wikilinkFollower } from '../editor/wikilink/wikilinkClick'
 import { linkMenuOf } from '../editor/wikilink/wikilinkMenu'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { drawingHostLinks, drawingLinkLook, drawingLinkResolver, openShapeLink, type DrawingLinkDeps, type DrawingLinkHit } from './drawingLinks'
+import { drawingHostLinks, drawingLinkLook, linkVault, mountDrawingVault, openShapeLink, windowFollow, windowLinkLook, type DrawingLinkDeps, type DrawingLinkHit } from './drawingLinks'
 
 const ID = 'k3m9x2pq7abc'
 const GONE = 'zzzzzzzzzzz9'
 const paths: Record<string, string> = { [ID]: '/vault/Projects/Road Map.md', Known: '/vault/Known.md', Projects: '/vault/Projects' }
 const records = [{ path: '/vault/Projects/Road Map.md', title: 'Road Map' }] as unknown as IndexRecord[]
 
+/** The boards mounted by a test: each test leaves the window with no vault. */
+let unmounts: Array<() => void> = []
+afterEach(() => {
+  unmounts.forEach((unmount) => unmount())
+  unmounts = []
+})
+
 function setup(readOnly = false) {
   const source = createWikilinkResolveSource()
   source.update((target) => paths[target] ?? null, records, [], true)
+  unmounts.push(mountDrawingVault('/vault', source))
   const nav = { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openNewTab: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn(), hotkeys: () => undefined }
   const follow = vi.fn()
   const hover = vi.fn()
@@ -49,9 +57,8 @@ describe('what a pill shows', () => {
     expect(drawingLinkLook('Known|', source)).toBeNull()
   })
 
-  it('gives one resolver for each vault: the boards of a vault share it', () => {
-    const { source } = setup()
-    expect(drawingLinkResolver(source)).toBe(drawingLinkResolver(source))
+  it('gives every board of the window one resolver', () => {
+    expect(setup().links.resolve).toBe(setup().links.resolve)
   })
 })
 
@@ -131,5 +138,62 @@ describe("a shape's link", () => {
     expect(openShapeLink('/etc/hosts', press(), { source, follow, nav })).toBe(true)
     expect(nav.openCurrent).not.toHaveBeenCalled()
     expect(nav.onNotice).toHaveBeenCalled()
+  })
+})
+
+/** YAZ-4067 4A1: a window can show several vaults, and every board draws with the one window resolver. */
+describe('two vaults in one window', () => {
+  const vault = (root: string, letters: string, pages: Record<string, string>, titles: Record<string, string>) => {
+    const source = createWikilinkResolveSource()
+    const records = Object.entries(titles).map(([path, title]) => ({ path, title })) as unknown as IndexRecord[]
+    source.update((target) => pages[target] ?? null, records, [], true, [letters])
+    return source
+  }
+  const a = vault('/a', 'AAA', { 'AAA-1': '/a/Plan.md', Shared: '/a/Shared.md' }, { '/a/Plan.md': 'Plan' })
+  const b = vault('/b', 'BBB', { 'BBB-1': '/b/Budget.md', Shared: '/b/Shared.md' }, { '/b/Budget.md': 'Budget' })
+
+  it('resolves an ID of each vault, and a name in root order, while boards of both are mounted', () => {
+    unmounts.push(mountDrawingVault('/b', b), mountDrawingVault('/a', a))
+    expect(windowLinkLook('AAA-1')).toEqual({ label: 'Plan' })
+    expect(windowLinkLook('BBB-1')).toEqual({ label: 'Budget' })
+    expect(windowLinkLook('Shared')).toEqual({ label: 'Shared' })
+    expect(linkVault('Shared')?.root).toBe('/a')
+    expect(windowLinkLook('AAA-9')).toEqual({ label: 'Missing note · AAA-9', missing: true })
+    expect(windowLinkLook('BBB-9')).toEqual({ label: 'Missing note · BBB-9', missing: true })
+  })
+
+  it('keeps a vault while any board of it is mounted, and drops it with the last one', () => {
+    const boardA1 = mountDrawingVault('/a', a)
+    const boardA2 = mountDrawingVault('/a', a)
+    const boardB = mountDrawingVault('/b', b)
+    unmounts.push(boardB)
+    boardA1()
+    expect(windowLinkLook('AAA-1')).toEqual({ label: 'Plan' })
+    boardA2()
+    expect(windowLinkLook('AAA-1')?.missing).toBe(true)
+    expect(windowLinkLook('BBB-1')).toEqual({ label: 'Budget' })
+  })
+
+  it('tells every board when a vault comes or its index changes', () => {
+    const { links } = setup()
+    const listener = vi.fn()
+    unmounts.push(links.subscribe(listener))
+    unmounts.push(mountDrawingVault('/b', b))
+    expect(listener).toHaveBeenCalledTimes(1)
+    b.update(b.resolve, b.records, [], true, ['BBB'])
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it("a board of one vault opens a page of the other as it is, never making one in its own vault", () => {
+    unmounts.push(mountDrawingVault('/a', a), mountDrawingVault('/b', b))
+    const nav = { root: '/b', createFolder: () => '', openCurrent: vi.fn(), openNewTab: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn(), hotkeys: () => undefined }
+    const own = vi.fn()
+    const follow = windowFollow(b, nav, own)
+    follow('AAA-1', 'backgroundTab')
+    expect(nav.openBackground).toHaveBeenCalledWith('/a/Plan.md')
+    follow('BBB-1', 'thisTab')
+    expect(own).toHaveBeenCalledWith('BBB-1', 'thisTab')
+    follow('Nowhere', 'thisTab')
+    expect(own).toHaveBeenLastCalledWith('Nowhere', 'thisTab')
   })
 })

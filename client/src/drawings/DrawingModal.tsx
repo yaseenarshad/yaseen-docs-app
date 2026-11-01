@@ -55,6 +55,8 @@ import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
 import type { DrawingSnapshot } from './ExcalidrawSurface'
 import { saveDrawing, saveErrorMessage } from './saveDrawing'
+import { CardPreviewHost } from '../tabs/cardPreview'
+import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
 import './drawingModal.css'
 
 /**
@@ -70,7 +72,8 @@ export const BROKEN_DRAWING_MESSAGE = "This drawing can't be opened: its file is
 /** The inline confirm's copy (an in-modal strip, not a sheet), asked only when a save failed or a conflict blocks it. */
 export const DISCARD_PROMPT = 'Changes are not saved. Discard them?'
 
-interface DrawingModalProps {
+/** Page links in the drawing's text (YAZ-4039): the props the note's own `[[links]]` get, as a drawing tab has them. */
+interface DrawingModalProps extends DrawingLinkProps {
   /** Vault root; with the target it is all `openDrawing` needs. */
   root: string
   /** The embed's raw target, exactly as the note spells it — the resolution rule is the pipe's. */
@@ -85,10 +88,14 @@ interface DrawingModalProps {
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
+  /** The note's passive notice: what a link's open or a new page says. */
+  onNotice?: (message: string) => void
 }
 
-export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside }: DrawingModalProps) {
+export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside, onNotice, ...linkProps }: DrawingModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
+  /** The sheet: the link menu, the Edit link box and the `[[` picker go in it, so a click on them is not a click-away. */
+  const sheetRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState<LoadedDrawing | null>(null)
   const loadedRef = useRef<LoadedDrawing | null>(null)
   loadedRef.current = loaded
@@ -167,6 +174,8 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
 
   /** The drawing's own file says read only (YAZ-3076 D2, S28): the engine's view mode, and nothing to save. */
   const readOnly = loaded?.scene.readOnly === true
+  // The drawing's page links (YAZ-4039), as in a drawing tab: pills, hover, the open gestures, the menu, the picker, paste.
+  const { links, linkPreview, linkCard } = useDrawingLinks({ root, path: loaded?.path ?? root, readOnly, hotkeys, onNotice, hostRef: sheetRef, props: linkProps })
 
   /** One guarded write of the live scene; `Autosave` calls it once per save, never once per change. */
   const write = useCallback(
@@ -293,7 +302,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
 
   return (
     <div ref={overlayRef} className="drawing-modal-overlay" tabIndex={-1} onMouseDown={() => void requestClose()} onKeyDown={onKeyDown}>
-      <div className="drawing-modal" role="dialog" aria-modal="true" aria-label={`Drawing ${target}`} onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={sheetRef} className="drawing-modal" role="dialog" aria-modal="true" aria-label={`Drawing ${target}`} onMouseDown={(e) => e.stopPropagation()}>
         <header className="drawing-modal__bar">
           <span className="drawing-modal__title" title={target}>
             {target}
@@ -323,10 +332,11 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
         <div className="drawing-modal__canvas">
           {loaded !== null && (
             <Suspense fallback={null}>
-              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} />
             </Suspense>
           )}
         </div>
+        <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={linkProps.diagramDarkColors ?? 'adapt'} />
       </div>
     </div>
   )

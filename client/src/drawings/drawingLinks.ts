@@ -13,17 +13,17 @@
  *    `yaseendocs://` link as the link the picker writes (`drawingPasteLink`, the note's `pathPaste.ts`).
  *
  * A shape's own `link` (the engine's link icon) opens through the same follower when it is a `[[link]]` or a path of
- * this vault (`openShapeLink`).
+ * this vault (`openShapeLink`). Every board of the window draws with one resolver over the window's vaults
+ * (`windowLinkLook`).
  */
 import { fileKind } from '@shared/fileKind'
 import { gestureAction, type MouseMods } from '@shared/keys'
-import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { basename } from '@shared/types'
 import { linkFor, pastedPath } from '../editor/pathPaste'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { linkClickAction } from '../editor/linkGesture'
 import type { LinkFollow, WikilinkNav } from '../editor/wikilink/wikilinkClick'
-import { idLinkTitle, linkDisplayText, linkIsResolved, linkPageName, linkPath, missingId, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, missingId, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { pathTitles } from '../lib/pageLabel'
 import type { AnchorRect } from '../sidebar/previewPlacement'
@@ -66,22 +66,85 @@ export function drawingLinkLook(inner: string, source: WikilinkResolveSource, vi
   return path !== null && fileKind(basename(path)) === null ? { label, folder: true } : { label }
 }
 
-const resolvers = new WeakMap<WikilinkResolveSource, (inner: string) => DrawingLink | null>()
+/**
+ * THE WINDOW'S VAULTS (YAZ-4039 D7). The engine lays out text in places that know no board (`refreshTextDimensions`,
+ * the SVG export), so it draws every board of the window with ONE resolver, `windowLinkLook`. That resolver knows every
+ * vault with a mounted board: a window can show several vaults (`tabs/board.ts`). Each mounted board adds its vault
+ * (`mountDrawingVault`); a vault leaves with the last board of it.
+ *
+ * A link is the page of the first vault that finds it, in the order of the vaults' roots: an ID is unique, so only its
+ * own vault finds it; a name found in two vaults is the first one's. A link no vault finds is dim, said as its ID's
+ * vault says it ("Missing note · YAS-466"), else as the first vault says it.
+ */
+export interface DrawingVault {
+  root: string
+  source: WikilinkResolveSource
+  viewOnly?: ViewOnlyLinkSource
+}
 
-/** ONE resolver for each vault: the engine draws with the last mounted board's, and the boards of a vault share it. */
-export function drawingLinkResolver(source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): (inner: string) => DrawingLink | null {
-  let resolve = resolvers.get(source)
-  if (resolve === undefined) {
-    resolve = (inner) => drawingLinkLook(inner, source, viewOnly)
-    resolvers.set(source, resolve)
+const vaults: Array<DrawingVault & { boards: number; off: () => void }> = []
+const windowListeners = new Set<() => void>()
+const windowChanged = () => windowListeners.forEach((listener) => listener())
+
+/** A board of `root` is mounted: its vault joins the window's links. Returns the unmount. */
+export function mountDrawingVault(root: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): () => void {
+  let vault = vaults.find((held) => held.source === source)
+  if (vault === undefined) {
+    const off = source.subscribe(windowChanged)
+    const offViewOnly = viewOnly?.subscribe(windowChanged)
+    vault = { root, source, viewOnly, boards: 0, off: () => (off(), offViewOnly?.()) }
+    vaults.push(vault)
+    vaults.sort((a, b) => (a.root < b.root ? -1 : a.root > b.root ? 1 : 0))
+    windowChanged()
   }
-  return resolve
+  const held = vault
+  held.boards++
+  let mounted = true
+  return () => {
+    if (!mounted) return
+    mounted = false
+    if (--held.boards > 0) return
+    held.off()
+    vaults.splice(vaults.indexOf(held), 1)
+    windowChanged()
+  }
+}
+
+/** The vault of the window that holds `path`, or undefined. */
+export function drawingVaultOf(path: string): DrawingVault | undefined {
+  return vaults.find((vault) => path.startsWith(`${vault.root.replace(/\/+$/, '')}/`))
+}
+
+/** The vault of the window that finds the page `[[inner]]` opens, or undefined. */
+export function linkVault(inner: string): DrawingVault | undefined {
+  return vaults.find((vault) => linkPath(inner, vault.source, vault.viewOnly) !== null)
+}
+
+/** The engine's one resolver for the window: what the pill of `[[inner]]` shows. */
+export function windowLinkLook(inner: string): DrawingLink | null {
+  const page = linkPageName(inner)
+  const vault = linkVault(inner) ?? vaults.find((held) => linkNoteId(page, held.source) !== undefined) ?? vaults[0]
+  return vault === undefined ? null : drawingLinkLook(inner, vault.source, vault.viewOnly)
+}
+
+/**
+ * A board's open of `[[inner]]`: a page of another vault of the window opens as it is, and anything else goes to the
+ * board's own follower, which makes a missing page in the board's vault, as in a note.
+ */
+export function windowFollow(source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow): LinkFollow {
+  return (inner, where) => {
+    const vault = linkVault(inner)
+    const path = vault === undefined || vault.source === source ? null : linkPath(inner, vault.source, vault.viewOnly)
+    if (path === null) return follow(inner, where)
+    const open = where === 'backgroundTab' ? nav.openBackground : where === 'newTab' ? (nav.openNewTab ?? nav.openCurrent) : nav.openCurrent
+    open(path)
+  }
 }
 
 export interface DrawingLinkDeps {
   source: WikilinkResolveSource
   viewOnly?: ViewOnlyLinkSource
-  /** The board's one follower (`wikilinkFollower`), shared with its link menu. */
+  /** The board's open of a link (`windowFollow` over the board's `wikilinkFollower`), shared with its link menu. */
   follow: LinkFollow
   nav: WikilinkNav
   /** The board is read only: a plain click opens, as in a read-only note. */
@@ -96,26 +159,20 @@ export interface DrawingLinkDeps {
   pasteLink?: (text: string) => string | null
 }
 
-/**
- * The engine's `hostLinks` for one board. `deps` is read at each event, so the host can keep it in a ref; the resolver
- * and the subscription are of the first `source`, which a board keeps for its life.
- */
+/** The engine's `hostLinks` for one board. `deps` is read at each event, so the host can keep it in a ref. */
 export function drawingHostLinks(deps: () => DrawingLinkDeps) {
-  const { source, viewOnly } = deps()
   return {
-    resolve: drawingLinkResolver(source, viewOnly),
+    resolve: windowLinkLook,
     subscribe: (listener: () => void) => {
-      const off = source.subscribe(listener)
-      const offViewOnly = viewOnly?.subscribe(listener)
+      windowListeners.add(listener)
       return () => {
-        off()
-        offViewOnly?.()
+        windowListeners.delete(listener)
       }
     },
     onHover: (hit: DrawingLinkHit | null) => {
-      const now = deps()
-      const path = hit === null || !linkIsResolved(hit.inner, now.source, now.viewOnly) || linkPageName(hit.inner) === '' ? null : linkPath(hit.inner, now.source, now.viewOnly)
-      now.hover(hit === null || path === null ? null : { path, rect: hit.rect })
+      const vault = hit === null ? undefined : linkVault(hit.inner)
+      const path = hit === null || vault === undefined ? null : linkPath(hit.inner, vault.source, vault.viewOnly)
+      deps().hover(hit === null || path === null ? null : { path, rect: hit.rect })
     },
     onPointerDown: (hit: DrawingLinkHit, event: PointerEvent) => {
       const now = deps()
