@@ -2209,7 +2209,7 @@ export interface FolderState {
   tocSources: Record<string, TocSource>
   /** file → the folded rows of its table of contents (YAZ-3939 D1): `tocFoldKeys` keys, max MAX_FOLD_KEYS_PER_FILE. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   tocFolds: Record<string, string[]>
-  /** Legacy (YAZ-2709 D2, until YAZ-4094 G4): file → a note's "Section indent" switch. The switch is now IN the note (`section-indent`, `shared/pageSwitches.ts`); `movePageSwitches.ts` moves each entry there once and nothing writes this list again. Additive: a file without it loads as `{}`. */
+  /** Legacy (YAZ-2709 D2, until YAZ-4094 G4): file → a note's "Section indent" switch. The switch is now IN the note (`section-indent`, `shared/pageSwitches.ts`); `movePageSwitches.ts` moves each entry there once and nothing writes this list again. Only the move reads it: no rename or delete in the store follows it. A later release removes the field, once every Mac has run the move (YAZ-4111). Additive: a file without it loads as `{}`. */
   sectionIndents: Record<string, boolean>
   /** file → a CODE file's "Table of contents" switch (YAZ-2950, YAZ-3506), for the files where the reader used it. A file with NO entry follows Settings › "Table of contents default". `true` and `false` are both kept. Keyed by page. A note's switch is IN the note since YAZ-4094 G4 (`toc`); `movePageSwitches.ts` moves the old note entries there once. Additive: a file without it loads as `{}`. */
   tocSwitches: Record<string, boolean>

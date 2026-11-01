@@ -1521,6 +1521,14 @@ describe('createStore: mutations', () => {
     expect(seen).toHaveBeenCalledTimes(2)
   })
 
+  it('the legacy `sectionIndents` list is read by the one-time move only: a rename or a delete in the app does not touch it (YAZ-4119 fix 11)', async () => {
+    await seed(valid({ folders: { '/v': { sectionIndents: { '/v/a.md': true, '/v/b.md': false } } } }))
+    const store = createStore(file)
+    store.renamePath('/v/a.md', '/v/c.md')
+    store.removePath('/v/b.md')
+    expect(store.get().folders['/v'].sectionIndents).toEqual({ '/v/a.md': true, '/v/b.md': false })
+  })
+
   it('folders: `tocSwitches` loads as `{}` from a file written before it; `true` and `false` both load; a wrong entry drops alone (YAZ-2950)', async () => {
     await seed(valid({ folders: { '/v': { lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, sectionIndents: {}, name: null, key: null } } })) // a file of YAZ-2709: no key at all
     expect(createStore(file).get().folders['/v'].tocSwitches).toEqual({})

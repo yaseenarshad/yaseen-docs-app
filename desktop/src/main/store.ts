@@ -1359,8 +1359,6 @@ export function createStore(filePath: string): Store {
             tocSources: remapKeys(folder.tocSources, remap),
             // And the folded rows of the table of contents (YAZ-3939 D1): they follow their note.
             tocFolds: remapKeys(folder.tocFolds, remap),
-            // And the "Section indent" switch (YAZ-2709 D2), on the same terms.
-            sectionIndents: remapKeys(folder.sectionIndents, remap),
             // And the "Table of contents" switch (YAZ-2950).
             tocSwitches: remapKeys(folder.tocSwitches, remap),
           },
@@ -1458,7 +1456,6 @@ export function createStore(filePath: string): Store {
               closed: dropKeys(folder.closed, gone),
               tocSources: dropKeys(folder.tocSources, gone),
               tocFolds: dropKeys(folder.tocFolds, gone),
-              sectionIndents: dropKeys(folder.sectionIndents, gone),
               tocSwitches: dropKeys(folder.tocSwitches, gone),
             },
           ]),
