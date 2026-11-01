@@ -789,9 +789,20 @@
   cursor: grabbing;
 }
 
-/* Held over the tab strip (YAZ-3808 6D), the card fades: its tab in the strip's gap is where it will land. */
-.taboverview__page[data-over-strip] {
-  opacity: 0.35;
+/* The card a pointer carries (YAZ-3808 6E): a copy in a layer above the whole window, so the board's own clip, under
+   its filter and the tab strip, never cuts it. TabOverview places it and moves it; it hears no pointer. On the strip
+   it goes, and only its tab in the gap shows (6D), on Yaseen's ask in the demo. */
+.taboverview__page.taboverview__carry {
+  position: fixed;
+  z-index: 1000;
+  margin: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.taboverview__page.taboverview__carry[data-over-strip] {
+  opacity: 0;
 }
 
 /* A drop another window refused (D13): the card slides back to its place. */

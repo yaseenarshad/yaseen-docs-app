@@ -1783,13 +1783,24 @@ describe('YAZ-3808 D1: a card let go on the tab strip moves its tab there', () =
     const card = page(el, '/v/a.md')!
     pointer(card, 'pointerdown', 0, 0)
     pointer(window, 'pointermove', 10, 10)
-    expect(card.hasAttribute('data-over-strip')).toBe(false)
+    // The pointer carries a copy of the card in a layer above the whole window (6E): the board's clip never cuts it.
+    // The card goes on under it, hidden.
+    const carry = () => document.body.querySelector<HTMLElement>(':scope > .taboverview__carry')
+    expect(carry()?.textContent).toBe(card.textContent)
+    expect(carry()?.hasAttribute('data-tab')).toBe(false)
+    expect(card.style.visibility).toBe('hidden')
     pointer(window, 'pointermove', 50, -20)
-    // Its own tab: no gap either side of it. Its name, for its tab in the gap (6D); over the strip the card fades.
+    expect(carry()?.style.transform).toBe('translate(50px, -20px) scale(1)')
+    // Its own tab: no gap either side of it. Its name, for its tab in the gap (6D); over the strip only that tab shows,
+    // and the carried card goes.
     expect(strip.hold).toHaveBeenLastCalledWith(50, -20, '/v/a.md', 'a')
-    expect(card.hasAttribute('data-over-strip')).toBe(true)
+    expect(carry()?.hasAttribute('data-over-strip')).toBe(true)
+    pointer(window, 'pointermove', 50, 20)
+    expect(carry()?.hasAttribute('data-over-strip')).toBe(false)
+    pointer(window, 'pointermove', 50, -20)
     pointer(window, 'pointerup', 50, -20)
-    expect(card.hasAttribute('data-over-strip')).toBe(false)
+    expect(carry()).toBeNull()
+    expect(card.style.visibility).toBe('')
     expect(strip.release).toHaveBeenLastCalledWith(50, -20)
     expect(onMoveToSlot).toHaveBeenCalledExactlyOnceWith('/v/a.md', 1)
     expect(storage.setTabCanvas).not.toHaveBeenCalled()

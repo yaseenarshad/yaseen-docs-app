@@ -323,7 +323,7 @@ const Card = memo(function Card(p: CardProps) {
 /** A pan, or a card held by the pointer (D7, D12). Refs only: neither renders anything while it moves. */
 type Gesture =
   | { kind: 'pan'; pointer: number; startX: number; startY: number; camX: number; camY: number }
-  | { kind: 'card'; pointer: number; id: string; el: HTMLElement; startX: number; startY: number; dragging: boolean; dx: number; dy: number }
+  | { kind: 'card'; pointer: number; id: string; el: HTMLElement; startX: number; startY: number; dragging: boolean; dx: number; dy: number; carry?: HTMLElement }
   /** A folder group, or with "Show all windows" a whole window frame, held as one (D16): `els` are the boxes that move, `cards` every card they carry. */
   | { kind: 'group'; pointer: number; win: string; cards: string[]; els: HTMLElement[]; startX: number; startY: number; dragging: boolean; dx: number; dy: number; lead?: string }
 
@@ -621,7 +621,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   /** The card slides back to its place (tabs.css: `data-sliding`): a refused drop, or a drop on the tab strip (YAZ-3808 D1). */
   const slideBack = (el: HTMLElement): void => {
     delete el.dataset.lifted
-    delete el.dataset.overStrip
     el.dataset.sliding = ''
     el.style.transform = ''
     window.setTimeout(() => delete el.dataset.sliding, 240)
@@ -631,7 +630,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     el.style.transform = ''
     void el.offsetWidth
     delete el.dataset.lifted
-    delete el.dataset.overStrip
   }
 
   // The window's pointer while a gesture runs: a pan moves the camera, a held card follows the pointer (D7, D12).
@@ -672,15 +670,38 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       } catch {
         // A pointer the browser does not know (a synthetic one): the window still hears it.
       }
+      g.carry = carryOf(g.el)
       g.el.dataset.lifted = ''
+      g.carry.dataset.lifted = ''
     }
     g.dx = dx
     g.dy = dy
     g.el.style.transform = `translate(${dx / cam.current.zoom}px, ${dy / cam.current.zoom}px)`
+    if (g.carry !== undefined) g.carry.style.transform = `translate(${dx}px, ${dy}px) scale(${cam.current.zoom})`
     // Over the tab strip (YAZ-3808 D1): the strip opens its gap with the card's tab in it (6A, 6D), and scrolls at its
-    // ends (D5); the card fades meanwhile.
+    // ends (D5); the carried card goes meanwhile (6E).
     const info = live.current.info.get(g.id)
-    g.el.toggleAttribute('data-over-strip', holdOverStrip(e.clientX, e.clientY, info?.mine === true ? g.id : undefined, info?.page.label))
+    g.carry?.toggleAttribute('data-over-strip', holdOverStrip(e.clientX, e.clientY, info?.mine === true ? g.id : undefined, info?.page.label))
+  }
+  /**
+   * The card a pointer carries (YAZ-3808 6E): a copy of it in a layer above the whole window. The board clips its
+   * canvas at its own top, under the filter and the tab strip, and a card on its way to the strip must show all the
+   * way up. The card itself goes on under it, hidden, so its drop and its slide back are as before; `endGesture`
+   * takes the copy away. A canvas in the card is copied by hand: a cloned one is blank.
+   */
+  const carryOf = (el: HTMLElement): HTMLElement => {
+    const r = el.getBoundingClientRect()
+    const copy = el.cloneNode(true) as HTMLElement
+    const canvases = el.querySelectorAll('canvas')
+    copy.querySelectorAll('canvas').forEach((canvas, i) => canvas.getContext('2d')?.drawImage(canvases[i], 0, 0))
+    delete copy.dataset.tab
+    copy.classList.add('taboverview__carry')
+    copy.setAttribute('aria-hidden', 'true')
+    const { font, color } = getComputedStyle(el)
+    Object.assign(copy.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${el.offsetWidth}px`, height: `${el.offsetHeight}px`, transform: `scale(${cam.current.zoom})`, font, color })
+    document.body.appendChild(copy)
+    el.style.visibility = 'hidden'
+    return copy
   }
   const onUp = (e: PointerEvent): void => {
     const g = gesture.current
@@ -760,8 +781,14 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   }
   const endGesture = (): void => {
     // A card held over the tab strip (YAZ-3808 D1): its gap closes and the strip stops scrolling, however the hold
-    // ends — a drop, a cancel, or the board closing under it.
-    if (gesture.current?.kind === 'card') releaseOverStrip()
+    // ends — a drop, a cancel, or the board closing under it. The copy it was carried as goes, and the card shows
+    // again where it was let go (6E).
+    const g = gesture.current
+    if (g?.kind === 'card') {
+      releaseOverStrip()
+      g.carry?.remove()
+      g.el.style.visibility = ''
+    }
     gesture.current = null
     window.removeEventListener('pointermove', listeners.current.move)
     window.removeEventListener('pointerup', listeners.current.up)
