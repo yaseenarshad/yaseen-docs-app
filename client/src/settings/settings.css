@@ -950,32 +950,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Wide enough for "Awake · sleeps in 15 min" (YAZ-4031). */
 .memory__col-state {
-  width: 24%;
+  width: 13.5em;
 }
 
-/* "30 min ago" in full (YAZ-4022); a date cuts with "…" and its hover gives it whole. */
+/* "59 min ago" and the header with its ⓘ, in full (YAZ-4022, YAZ-4031); a date cuts with "…" and its hover gives it
+   whole. */
 .memory__col-time {
-  width: 6em;
+  width: 7em;
 }
 
 .memory__col-memory {
-  width: 21%;
-}
-
-/* A narrow table (YAZ-4022): the bars go, so the RAM column holds just the size, in full. */
-@container memory (max-width: 480px) {
-  .memory__col-memory {
-    width: 5.5em;
-  }
-
-  .memory__bar {
-    display: none;
-  }
-
-  .memory__size {
-    min-width: 0;
-  }
+  width: 20%;
 }
 
 .memory__table th,
@@ -1073,6 +1060,29 @@
   flex: none;
   min-width: 5.5em;
   text-align: right;
+}
+
+/* A narrower table (YAZ-4022, YAZ-4029): the bars go, so the RAM column holds just the size, in full ("1023.9 MB").
+   Under 520 px the State and time columns take shares, so the Tab column keeps a part of each name; a cut cell has a
+   hover. These come after the base rules, so they win (YAZ-4030). */
+@container memory (max-width: 599px) {
+  .memory__col-memory {
+    width: 6.5em;
+  }
+
+  .memory__bar {
+    display: none;
+  }
+}
+
+@container memory (max-width: 519px) {
+  .memory__col-state {
+    width: 22%;
+  }
+
+  .memory__col-time {
+    width: 13%;
+  }
 }
 
 /* A window's tab rows (YAZ-3934, YAZ-3946), under its row: indented past the arrow, smaller; the sleeping ones dimmed. */

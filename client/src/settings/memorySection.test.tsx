@@ -289,6 +289,33 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect(rule('.memory__info-head .memory__tip')).toMatch(/width:\s*min\(260px, calc\(100% - 12px\)\);/)
     expect(rule('.memory__th-text')).toMatch(/overflow:\s*hidden;[\s\S]*text-overflow:\s*ellipsis;/)
     expect(rule('.memory__wrap')).toMatch(/container:\s*memory \/ inline-size;/)
-    expect(css).toMatch(/@container memory \(max-width: 480px\)\s*\{[\s\S]*\.memory__bar\s*\{\s*display:\s*none;/)
+    expect(css).toMatch(/@container memory \(max-width: 599px\)\s*\{[\s\S]*\.memory__bar\s*\{\s*display:\s*none;/)
+  })
+
+  it('YAZ-4029, YAZ-4030, YAZ-4031: at each width the checker measured, the headers, states and sizes fit, and the Tab column keeps 6 letters of a name', () => {
+    const css = settingsCss.replace(/\/\*[\s\S]*?\*\//g, '')
+    const rule = (text: string, selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(text)?.[1] ?? ''
+    const bands = [...css.matchAll(/@container memory \(max-width: (\d+)px\)\s*\{((?:[^{}]*\{[^}]*\})*)\s*\}/g)]
+    const base = bands.reduce((text, band) => text.replace(band[0], ''), css)
+    // A column's width in px in a table this wide: its base rule, then each band that holds the table, in file order.
+    const px = (col: string, table: number) => {
+      let width = /width:\s*([\d.]+)(em|%)/.exec(rule(base, `.memory__col-${col}`))
+      for (const band of bands) if (table <= Number(band[1])) width = /width:\s*([\d.]+)(em|%)/.exec(rule(band[2], `.memory__col-${col}`)) ?? width
+      return width === null ? 0 : width[2] === 'em' ? Number(width[1]) * 13 : (Number(width[1]) * table) / 100
+    }
+    // The tables of a 1280, 900, 800, 700 and 420 px window. Measured needs: "Last seen ⓘ" 84.4 px, "Awake · sleeps in
+    // 15 min" 168 px, "1023.9 MB" 81 px, and 6 letters of a name after the tab row's indent 72 px.
+    for (const table of [616, 536, 435, 335, 320]) {
+      const tab = table - px('state', table) - 2 * px('time', table) - px('memory', table)
+      expect(tab, `Tab at ${table}`).toBeGreaterThanOrEqual(72)
+      expect(px('memory', table), `RAM at ${table}`).toBeGreaterThanOrEqual(81)
+      if (table >= 520) {
+        expect(px('time', table), `Last seen at ${table}`).toBeGreaterThanOrEqual(85)
+        expect(px('state', table), `State at ${table}`).toBeGreaterThanOrEqual(168)
+      }
+    }
+    // The bands come after the base rules they change, so they win (YAZ-4030).
+    expect(css.indexOf('@container memory')).toBeGreaterThan(css.search(/\}\s*\.memory__size\s*\{/))
+    expect(css.indexOf('@container memory')).toBeGreaterThan(css.search(/\}\s*\.memory__bar\s*\{/))
   })
 })
