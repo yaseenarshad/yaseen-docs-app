@@ -51,11 +51,19 @@
  *
  * THE FRAME — the measure, the width and its drag, ⌘J, the card's open and close — is
  * `tocFrame.tsx` since YAZ-3486: the code tab's Outline uses the same one.
+ *
+ * FOLDS (YAZ-3939): a row with rows under it folds and opens, as in an outline — by its arrow, by
+ * ← and →, or all at once by the fold-all button. A fold hides rows of the TABLE OF CONTENTS only:
+ * the note never folds (D2). The list, the rail and the scroll spy read only the rows a fold leaves
+ * on show, so a folded row is current while the reader is in its section, and nothing opens by
+ * itself (D5). The folded rows are saved for each note (`folders[root].tocFolds`, D1) by their fold
+ * key (`tocFoldKeys`): a fold stays on its row through edits elsewhere, and a renamed row opens again.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from 'react'
 import { TOC_DEFAULT_W, TOC_MAX_W, type ContentWidth, type TableOfContents as TableOfContentsMode } from '@shared/types'
 import { ENOUGH_ROWS, type TocChannel, type TocRow } from './tocChannel'
-import { beginTocResize, CLICK_GUARD_MS, EDGE_PX, PinIcon, RAIL_PADDING_PX, shown, useTocBox, useTocCard, useTocLinger, useTocShortcut, useTocWidthVar } from './tocFrame'
+import { CollapseAllIcon, ExpandAllIcon } from '../../views/view/icons'
+import { beginTocResize, ChevronIcon, CLICK_GUARD_MS, EDGE_PX, PinIcon, RAIL_PADDING_PX, shown, useTocBox, useTocCard, useTocLinger, useTocShortcut, useTocWidthVar } from './tocFrame'
 import './toc.css'
 
 /**
@@ -113,6 +121,40 @@ export const shownRows = (all: readonly TocRow[]): ShownRow[] => {
 }
 
 /**
+ * A FOLD KEY for each row (YAZ-3939 D1): its level, its text, and which row of that level and text
+ * it is — the rule of the note's own heading folds (`getHeadingFoldKey`). A fold stays on its row
+ * through edits elsewhere; a renamed row opens again.
+ */
+export const tocFoldKeys = (rows: readonly TocRow[]): string[] => {
+  const seen = new Map<string, number>()
+  return rows.map(({ level, text }) => {
+    const key = `${level}:${text}`
+    const n = seen.get(key) ?? 0
+    seen.set(key, n + 1)
+    return `${key}#${n}`
+  })
+}
+
+/** The rows that have a child among `rows` (the next row is deeper), by `index`: only they fold. */
+export const foldable = (rows: readonly ShownRow[]): ReadonlySet<number> =>
+  new Set(rows.filter((row, i) => i + 1 < rows.length && rows[i + 1].level > row.level).map(({ index }) => index))
+
+/**
+ * The rows a fold does not hide (YAZ-3939 D2). A folded row shows; each deeper row below it is
+ * hidden, down to the next row of its level or higher. `keys` are `tocFoldKeys` of the full list.
+ */
+export const unfoldedRows = (rows: readonly ShownRow[], keys: readonly string[], folded: ReadonlySet<string>): ShownRow[] => {
+  const out: ShownRow[] = []
+  let under = 0
+  for (const row of rows) {
+    if (under !== 0 && row.level > under) continue
+    under = folded.has(keys[row.index]) ? row.level : 0
+    out.push(row)
+  }
+  return out
+}
+
+/**
  * THE PATH (YAZ-2762): for each row, the level whose line is on the way from the current row up
  * to its parents: '' for none, else '1' to '4' (`data-path`), with a 't' after it on a row the
  * path ARRIVES at: a name on the path that is one level in from that line ('1t' is a level 2
@@ -162,12 +204,22 @@ export interface TableOfContentsProps {
   hostRef: RefObject<HTMLElement | null>
   /** Esc and a second ⌘J hand the caret back to the note. */
   onReturnFocus: () => void
+  /** The folded rows (`tocFoldKeys`), as saved for this note when it mounted (YAZ-3939 D1). */
+  folds: readonly string[]
+  /** A fold, an unfold and the fold-all button write the note's folded rows through this. */
+  onChangeFolds: (keys: string[]) => void
 }
 
-export function TableOfContents({ channel, mode, contentWidth, onChangeMode, width, onChangeWidth, hostRef, onReturnFocus }: TableOfContentsProps) {
+export function TableOfContents({ channel, mode, contentWidth, onChangeMode, width, onChangeWidth, hostRef, onReturnFocus, folds, onChangeFolds }: TableOfContentsProps) {
   const { rows: all, hidden } = useSyncExternalStore(channel.subscribe, channel.getState)
-  const rows = useMemo(() => shownRows(all), [all])
-  const shows = mode !== 'off' && !hidden && rows.length >= ENOUGH_ROWS
+  const listed = useMemo(() => shownRows(all), [all])
+  const keys = useMemo(() => tocFoldKeys(all), [all])
+  const parents = useMemo(() => foldable(listed), [listed])
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set(folds))
+  // THE ROWS ON SHOW (YAZ-3939 D5): the list, the rail and the scroll spy all read these. A fold
+  // never hides the table of contents itself: `shows` counts every listed row.
+  const rows = useMemo(() => unfoldedRows(listed, keys, folded), [listed, keys, folded])
+  const shows = mode !== 'off' && !hidden && listed.length >= ENOUGH_ROWS
 
   const scrollerOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('.editor-host') ?? null
   const sectionOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('section.editor') ?? null
@@ -222,6 +274,36 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     setOpen(false)
     channel.jump(rows[row].index)
   }
+  /**
+   * Every fold and unfold (YAZ-3939 D2): no `channel` call, so the note never folds. The current
+   * row moves at once to the row the reader is in, or to the folded row over it (D5): the spy reads
+   * again only after the render, and the marker must not light another row first. Only the keys
+   * that a row of the note still has are saved: the fold of a renamed or deleted row goes.
+   */
+  const saveFolds = (next: ReadonlySet<string>): void => {
+    const reading = rows[at]?.index ?? -1
+    const after = unfoldedRows(listed, keys, next)
+    let to = 0
+    for (let i = 0; i < after.length && after[i].index <= reading; i++) to = i
+    currentRef.current = to
+    setCurrent(to)
+    setFolded(next)
+    onChangeFolds(keys.filter((key) => next.has(key)))
+  }
+  /** Folds or opens `row`; with `open`, only toward it. */
+  const toggleFold = (row: ShownRow, open?: boolean): void => {
+    const key = keys[row.index]
+    const isOpen = !folded.has(key)
+    if (open === isOpen) return
+    const next = new Set(folded)
+    if (isOpen) next.add(key)
+    else next.delete(key)
+    saveFolds(next)
+  }
+  // One toggle, as every fold-all button (YAZ-3938 D6): while a row that can fold is open, it
+  // collapses all, so only the top rows show; once all are folded, it expands all (YAZ-3939 D4).
+  const anyOpen = [...parents].some((index) => !folded.has(keys[index]))
+  const foldAll = (): void => saveFolds(anyOpen ? new Set([...parents].map((index) => keys[index])) : new Set())
 
   // Mirror for the listeners below, which are registered once per shown table of contents.
   const live = useRef({ enter, leave })
@@ -358,12 +440,28 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
       leave()
       return
     }
+    const items = [...event.currentTarget.querySelectorAll<HTMLElement>('.toc__name')]
+    const from = items.indexOf(document.activeElement as HTMLElement)
+    // ← and → on a name (YAZ-3939 D6), the tree rule and the code Outline's: → opens it, ← folds it,
+    // and ← on a folded name or one with no rows under it goes to its parent.
+    if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && from !== -1) {
+      event.preventDefault()
+      const row = rows[from]
+      const kids = parents.has(row.index)
+      if (event.key === 'ArrowRight') {
+        if (kids) toggleFold(row, true)
+      } else if (kids && !folded.has(keys[row.index])) toggleFold(row, false)
+      else {
+        let up = from - 1
+        while (up >= 0 && rows[up].level >= row.level) up--
+        if (up >= 0) items[up].focus()
+      }
+      return
+    }
     const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
     if (step === 0 && event.key !== 'Home' && event.key !== 'End') return
-    const items = [...event.currentTarget.querySelectorAll<HTMLElement>('.toc__name')]
     if (items.length === 0) return
     event.preventDefault()
-    const from = items.indexOf(document.activeElement as HTMLElement)
     // From a button that is not a name (the rail, "Pin"), an arrow starts at the current one.
     const to = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : from === -1 ? at : Math.min(items.length - 1, Math.max(0, from + step))
     items[to]?.focus()
@@ -396,7 +494,15 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
    */
   const startResize = (event: ReactMouseEvent<HTMLElement>): void => beginTocResize(event, sectionOf(), shownWidth, room, onChangeWidth, endResize)
 
-  const nameList = <Names rows={rows} at={at} onPick={jump} />
+  const nameList = <Names rows={rows} at={at} onPick={jump} parents={parents} folded={(row) => folded.has(keys[row.index])} onFold={toggleFold} />
+  // The words and the icon of every fold-all button (YAZ-3938 D8, D9): chevrons up for "Collapse all",
+  // down for "Expand all". With no row that can fold it stays, dimmed, so it never jumps in and out.
+  const foldLabel = parents.size === 0 ? 'Nothing to fold' : anyOpen ? 'Collapse all' : 'Expand all'
+  const foldAllButton = (
+    <button type="button" className="toc__fold-all" title={foldLabel} aria-label={foldLabel} disabled={parents.size === 0} onClick={foldAll}>
+      {anyOpen || parents.size === 0 ? <CollapseAllIcon /> : <ExpandAllIcon />}
+    </button>
+  )
 
   return (
     <nav
@@ -416,13 +522,16 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
         <>
           {/* Mouse only: the arrow keys walk the names, so the edge never takes the focus. */}
           <div className="toc__resize" aria-hidden onMouseDown={startResize} />
-          {/* Offered only where it does something: where there is room for the names anyway, an unpin would change nothing the reader can see. */}
-          {mode === 'pinned' && !namesShow('auto', box.width, columnMax) && (
-            <button type="button" className="toc__pin toc__pin--off" title="Unpin: go back to the small lines" onClick={() => onChangeMode('auto')}>
-              <PinIcon off />
-              <span>Unpin</span>
-            </button>
-          )}
+          <div className="toc__tools">
+            {/* Offered only where it does something: where there is room for the names anyway, an unpin would change nothing the reader can see. */}
+            {mode === 'pinned' && !namesShow('auto', box.width, columnMax) && (
+              <button type="button" className="toc__pin toc__pin--off" title="Unpin: go back to the small lines" onClick={() => onChangeMode('auto')}>
+                <PinIcon off />
+                <span>Unpin</span>
+              </button>
+            )}
+            {foldAllButton}
+          </div>
           {nameList}
         </>
       ) : (
@@ -440,6 +549,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
             <div className="toc__card" data-leaving={open ? undefined : ''}>
               <div className="toc__header">
                 <span className="toc__title">Table of contents</span>
+                {foldAllButton}
                 {/* Offered only where it does something: names need `NAMES_FLOOR` of width even when pinned. */}
                 {mode === 'auto' && box.width >= NAMES_FLOOR && (
                   <button type="button" className="toc__pin" title="Pin: keep the table of contents open beside the note" onClick={() => onChangeMode('pinned')}>
@@ -483,7 +593,15 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
  * list fades at an edge that has more behind it — its own scrollbar is hidden, so the fade is
  * what says "there is more".
  */
-function Names({ rows, at, onPick }: { rows: readonly ShownRow[]; at: number; onPick: (row: number) => void }) {
+function Names({ rows, at, onPick, parents, folded, onFold }: {
+  rows: readonly ShownRow[]
+  at: number
+  onPick: (row: number) => void
+  /** The rows that fold, by `index` (`foldable`). */
+  parents: ReadonlySet<number>
+  folded: (row: ShownRow) => boolean
+  onFold: (row: ShownRow) => void
+}) {
   const listRef = useRef<HTMLDivElement>(null)
   const markerRef = useRef<HTMLSpanElement>(null)
   const placed = useRef(false)
@@ -529,26 +647,45 @@ function Names({ rows, at, onPick }: { rows: readonly ShownRow[]; at: number; on
   return (
     <div ref={listRef} className="toc__names" onScroll={edges}>
       <span ref={markerRef} className="toc__marker" aria-hidden="true" />
-      {rows.map((row, i) => (
-        // One tab stop for the list, on the current name; the arrows walk the rest.
-        <button
-          key={row.index}
-          type="button"
-          className="toc__name"
-          data-level={row.level}
-          data-path={path[i] || undefined}
-          aria-current={i === at ? 'true' : undefined}
-          tabIndex={i === at ? 0 : -1}
-          // The full name as a tooltip only where the column cut it.
-          onMouseEnter={(event) => {
-            const el = event.currentTarget
-            el.title = el.scrollWidth > el.clientWidth ? row.text : ''
-          }}
-          onClick={() => onPick(i)}
-        >
-          {row.text}
-        </button>
-      ))}
+      {rows.map((row, i) => {
+        const kids = parents.has(row.index)
+        const closed = kids && folded(row)
+        return (
+          // One tab stop for the list, on the current name; the arrows walk the rest.
+          <button
+            key={row.index}
+            type="button"
+            className="toc__name"
+            data-level={row.level}
+            data-path={path[i] || undefined}
+            data-fold={kids ? (closed ? 'closed' : 'open') : undefined}
+            aria-expanded={kids ? !closed : undefined}
+            aria-current={i === at ? 'true' : undefined}
+            tabIndex={i === at ? 0 : -1}
+            // The full name as a tooltip only where the column cut it.
+            onMouseEnter={(event) => {
+              const el = event.currentTarget
+              el.title = el.scrollWidth > el.clientWidth ? row.text : ''
+            }}
+            onClick={() => onPick(i)}
+          >
+            {/* The fold arrow (YAZ-3939 D3), mouse only: ← and → fold from the keyboard. A click on it folds and never jumps. */}
+            {kids && (
+              <span
+                className="toc__fold"
+                aria-hidden="true"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onFold(row)
+                }}
+              >
+                <ChevronIcon />
+              </span>
+            )}
+            {row.text}
+          </button>
+        )
+      })}
     </div>
   )
 }

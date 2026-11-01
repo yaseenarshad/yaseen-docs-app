@@ -421,6 +421,10 @@ function CrepeHost({
   // What this page's table of contents is built from (YAZ-2700 D14). Stored, as "Section indent"
   // above is: with the note in the app state, as its folds are, and `null` (Auto) is no entry.
   const [tocSource, setTocSource] = useState<TocSource | null>(() => storage.getTocSource(root, file.path))
+  /** The folded rows of the table of contents (YAZ-3939 D1), as saved for this note when it mounted. */
+  const [tocFolds] = useState(() => storage.getTocFolds(root, file.path))
+  /** Stable: the table of contents is memoised. */
+  const changeTocFolds = useCallback((keys: string[]) => storage.setTocFolds(root, file.path, keys), [root, file.path])
   const hostRef = useRef<HTMLDivElement>(null)
   // A copied page's start (YAZ-2940 D7, YAZ-2951 D1): a ref, so the create effect does not depend on it, and used once.
   const startViewRef = useRef(startView)
@@ -1050,7 +1054,7 @@ function CrepeHost({
           section's right edge, from the scroller's top to its bottom. It draws nothing for a note
           with fewer than two rows (its headings or its bullets), while this page shows none (its
           choice, else "Table of contents default", YAZ-3558), and while a bullet is zoomed. */}
-      <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={contentWidth} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusNote} />
+      <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={contentWidth} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusNote} folds={tocFolds} onChangeFolds={changeTocFolds} />
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the
           appearance is App's already-resolved one, read once (`appliedTheme`). */}

@@ -12,7 +12,7 @@ import { act, Profiler } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W, type ContentWidth, type TableOfContents as TableOfContentsMode } from '@shared/types'
 import appCss from '../../app.css?inline'
-import { COLUMN_MAX, MAX_ROWS, namesRoom, namesShow, NAMES_FLOOR, pathLines, railPitch, shownRows, TableOfContents, TEXT_FLOOR, TOC_WIDTH } from './TableOfContents'
+import { COLUMN_MAX, foldable, MAX_ROWS, namesRoom, namesShow, NAMES_FLOOR, pathLines, railPitch, shownRows, TableOfContents, TEXT_FLOOR, tocFoldKeys, TOC_WIDTH, unfoldedRows } from './TableOfContents'
 import tocCss from './toc.css?inline'
 import { createTocChannel, type TocChannel, type TocLevel, type TocRow } from './tocChannel'
 
@@ -267,6 +267,7 @@ interface Mounted {
   onChangeMode: ReturnType<typeof vi.fn>
   onChangeWidth: ReturnType<typeof vi.fn>
   onReturnFocus: ReturnType<typeof vi.fn>
+  onChangeFolds: ReturnType<typeof vi.fn>
   /** How many times React has committed the table of contents: a render that drew nothing new does not count, and neither does a write to the DOM by hand. */
   commits: () => number
   /** `saved` is the width setting; it stays what it was when left out. */
@@ -279,7 +280,7 @@ const mounts: Mounted[] = []
  * CrepeHost's DOM: `section.editor` > `.editor-host` > `.editor-mount`, the table of contents beside
  * the scroller. `width` is the section's; `saved` is the width setting of the names column.
  */
-function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS, width = 0, saved = TOC_DEFAULT_W): Mounted {
+function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS, width = 0, saved = TOC_DEFAULT_W, folds: readonly string[] = []): Mounted {
   const section = document.createElement('section')
   section.className = 'editor'
   const scroller = document.createElement('div')
@@ -301,6 +302,7 @@ function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS
   const onChangeMode = vi.fn()
   const onChangeWidth = vi.fn()
   const onReturnFocus = vi.fn()
+  const onChangeFolds = vi.fn()
   const root = createRoot(slot)
   // One ref for the life of the mount, as CrepeHost's is: a new one per render would run every effect that reads it again.
   const hostRef = { current: mountEl }
@@ -311,13 +313,13 @@ function mount(mode: TableOfContentsMode, headings: readonly TocRow[] = HEADINGS
     act(() => {
       root.render(
         <Profiler id="toc" onRender={() => void (commits += 1)}>
-          <TableOfContents channel={channel} mode={next} contentWidth={contentWidth} onChangeMode={onChangeMode} width={nextSaved} onChangeWidth={onChangeWidth} hostRef={hostRef} onReturnFocus={onReturnFocus} />
+          <TableOfContents channel={channel} mode={next} contentWidth={contentWidth} onChangeMode={onChangeMode} width={nextSaved} onChangeWidth={onChangeWidth} hostRef={hostRef} onReturnFocus={onReturnFocus} folds={folds} onChangeFolds={onChangeFolds} />
         </Profiler>,
       )
     })
   }
   render(mode)
-  const mounted = { root, section, scroller, mountEl, channel, jump, current, onChangeMode, onChangeWidth, onReturnFocus, commits: () => commits, render }
+  const mounted = { root, section, scroller, mountEl, channel, jump, current, onChangeMode, onChangeWidth, onReturnFocus, onChangeFolds, commits: () => commits, render }
   mounts.push(mounted)
   return mounted
 }
@@ -1266,10 +1268,10 @@ describe('where the reader is: the marker, and a long list in step with the note
       expect(scrollTo).not.toHaveBeenCalled()
       const reduced = tocCss.match(/@media \(prefers-reduced-motion: reduce\)\s*\{(.*)\}\s*$/s)?.[1] ?? ''
       expect(reduced).toMatch(/\.toc\[data-names\],\s*\.toc__card\s*\{\s*animation:\s*none;/)
-      expect(reduced).toMatch(/\.toc__card,\s*\.toc__line,\s*\.toc__name,\s*\.toc__names,\s*\.toc__pin,\s*\.toc__marker\[data-placed\]\s*\{\s*transition:\s*none;/)
-      // Every rule of the sheet that eases is one of those six.
+      expect(reduced).toMatch(/\.toc__card,\s*\.toc__line,\s*\.toc__name,\s*\.toc__names,\s*\.toc__pin,\s*\.toc__fold-all,\s*\.toc__fold,\s*\.toc__fold > svg,\s*\.toc__marker\[data-placed\]\s*\{\s*transition:\s*none;/)
+      // Every rule of the sheet that eases is one of those nine.
       const eased = [...tocCss.replace(/@media.*$/s, '').matchAll(/([^{}]+)\{[^{}]*transition:/g)].map(([, selector]) => selector.replace(/\/\*.*?\*\//gs, '').trim())
-      expect(eased).toEqual(['.toc__names', '.toc__name', '.toc__marker[data-placed]', '.toc__pin', '.toc__line', '.toc__card'])
+      expect(eased).toEqual(['.toc__names', '.toc__name', '.toc__fold', '.toc__fold > svg', '.toc__marker[data-placed]', '.toc__pin', '.toc__fold-all', '.toc__line', '.toc__card'])
     } finally {
       delete (window as unknown as Record<string, unknown>).matchMedia
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollTo
@@ -1410,14 +1412,15 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
       const read = [...row.background.matchAll(/var\((--toc-[\w-]+)\)/g)].map(([, property]) => property)
       for (const property of read) expect([property, row[property]]).toEqual([property, property === '--toc-p1-h' ? '100%' : 'transparent'])
       // Level 1: no line. Level 2: the first line and the level piece. Level 3 and deeper: a line for each level above it, and no level piece.
-      const lines = (level: number): Record<string, string> => Object.fromEntries(Object.entries(of(`.toc__name[data-level='${level}']`)).filter(([property]) => property.startsWith('--toc-')))
+      const lines = (level: number): Record<string, string> => Object.fromEntries(Object.entries(of(`.toc__name[data-level='${level}']`)).filter(([property]) => property.startsWith('--toc-') && property !== '--toc-indent'))
       expect(lines(1)).toEqual({})
       expect(lines(2)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-piece': 'var(--toc-rest)' })
       expect(lines(3)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-l2': 'var(--toc-rest)' })
       expect(lines(4)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-l2': 'var(--toc-rest)', '--toc-l3': 'var(--toc-rest)' })
       expect(lines(5)).toEqual({ '--toc-l1': 'var(--toc-rest)', '--toc-l2': 'var(--toc-rest)', '--toc-l3': 'var(--toc-rest)', '--toc-l4': 'var(--toc-rest)' })
-      // A line stands below the left edge of its parent level: the 12px of indent for each level.
-      expect([2, 3, 4, 5].map((level) => of(`.toc__name[data-level='${level}']`)['padding-left'])).toEqual(['24px', '36px', '48px', '60px'])
+      // A line stands below the left edge of its parent level: the 12px of indent for each level, the left padding of the row (YAZ-3939 D3).
+      expect(row.padding).toBe('4px 8px 4px var(--toc-indent)')
+      expect([1, 2, 3, 4, 5].map((level) => (level === 1 ? row : of(`.toc__name[data-level='${level}']`))['--toc-indent'])).toEqual(['12px', '24px', '36px', '48px', '60px'])
       // The wash under the mouse is a COLOUR behind the lines: the shorthand would take them away. No rule of a name but the first sets it.
       expect(of('.toc__name:hover')).toEqual({ color: 'var(--fg)', 'background-color': 'var(--accent-soft)' })
       expect(rules().filter(([selector, body]) => /\.toc__name(?![\w-])/.test(selector) && 'background' in declared(body)).map(([selector]) => selector)).toEqual(['.toc__name'])
@@ -1635,6 +1638,158 @@ describe('⌘J', () => {
     expect(shifted.defaultPrevented).toBe(false)
     expect(plain.defaultPrevented).toBe(false)
     expect(card(m)).toBeNull()
+  })
+})
+
+describe('folds (YAZ-3939)', () => {
+  // Overview › Goals; Design › Data model › Keys, Design › Limits; Rollout.
+  const TREE: TocRow[] = [
+    { level: 1, text: 'Overview' },
+    { level: 2, text: 'Goals' },
+    { level: 1, text: 'Design' },
+    { level: 2, text: 'Data model' },
+    { level: 3, text: 'Keys' },
+    { level: 2, text: 'Limits' },
+    { level: 1, text: 'Rollout' },
+  ]
+  const keys = tocFoldKeys(TREE)
+  const texts = (rows: readonly TocRow[]): string[] => rows.map(({ text }) => text)
+  const shownTexts = (m: Mounted): string[] => names(m).map((name) => name.textContent ?? '')
+  const arrow = (m: Mounted, text: string): HTMLElement => {
+    const el = names(m).find((name) => name.textContent === text)?.querySelector<HTMLElement>('.toc__fold')
+    if (!el) throw new Error(`no arrow on ${text}`)
+    return el
+  }
+  const foldAll = (m: Mounted): HTMLButtonElement => {
+    const el = m.section.querySelector<HTMLButtonElement>('.toc__fold-all')
+    if (!el) throw new Error('no fold-all button')
+    return el
+  }
+
+  it('D1: a fold key is the level, the text and which row of the two it is: the note\'s heading fold rule', () => {
+    expect(tocFoldKeys([{ level: 1, text: 'Notes' }, { level: 2, text: 'Notes' }, { level: 1, text: 'Notes' }])).toEqual(['1:Notes#0', '2:Notes#0', '1:Notes#1'])
+  })
+
+  it('D2: only a row with a deeper row next folds, and a fold hides each deeper row down to the next of its level or higher', () => {
+    const rows = shownRows(TREE)
+    expect([...foldable(rows)]).toEqual([0, 2, 3])
+    expect(texts(unfoldedRows(rows, keys, new Set()))).toEqual(texts(TREE))
+    expect(texts(unfoldedRows(rows, keys, new Set([keys[2]])))).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])
+    expect(texts(unfoldedRows(rows, keys, new Set([keys[3]])))).toEqual(['Overview', 'Goals', 'Design', 'Data model', 'Limits', 'Rollout'])
+    // A fold inside a fold: opening the outer one shows the inner one still folded.
+    expect(texts(unfoldedRows(rows, keys, new Set([keys[2], keys[3]])))).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])
+    // A row with nothing under it hides nothing, even with a saved fold.
+    expect(texts(unfoldedRows(rows, keys, new Set([keys[6]])))).toEqual(texts(TREE))
+  })
+
+  it('D3: an arrow on each row with rows under it only; a click on it folds and never jumps; a click on the name jumps', () => {
+    const m = mount('pinned', TREE, 900)
+    expect(names(m).filter((name) => name.querySelector('.toc__fold') !== null).map((name) => name.textContent)).toEqual(['Overview', 'Design', 'Data model'])
+    expect(names(m).map((name) => name.getAttribute('aria-expanded'))).toEqual(['true', null, 'true', 'true', null, null, null])
+    click(arrow(m, 'Design'))
+    expect(shownTexts(m)).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])
+    expect(names(m)[2].dataset.fold).toBe('closed')
+    expect(names(m)[2].getAttribute('aria-expanded')).toBe('false')
+    expect(m.jump).not.toHaveBeenCalled()
+    // D2: the note never folds; the fold is saved for this note.
+    expect(m.onChangeFolds).toHaveBeenLastCalledWith(['1:Design#0'])
+    click(arrow(m, 'Design'))
+    expect(shownTexts(m)).toEqual(texts(TREE))
+    expect(m.onChangeFolds).toHaveBeenLastCalledWith([])
+    click(names(m)[6])
+    expect(m.jump).toHaveBeenCalledWith(6)
+  })
+
+  it('D5: a folded row is current while the reader is in its section, at once and from the spy; the rail shows the same rows', async () => {
+    const m = mount('pinned', TREE, 900)
+    // The engine's rule: the last of the rows asked about that starts above the reader, who is in "Keys".
+    m.current.mockImplementation((indices: readonly number[]) => indices.filter((index) => index <= 4).length - 1)
+    await scrollFrame(m)
+    expect(names(m)[4].getAttribute('aria-current')).toBe('true')
+    click(arrow(m, 'Design'))
+    expect(names(m)[2].getAttribute('aria-current')).toBe('true')
+    // The spy is asked about the rows on show only.
+    await scrollFrame(m)
+    expect(m.current).toHaveBeenLastCalledWith([0, 1, 2, 6], m.scroller)
+    expect(names(m)[2].getAttribute('aria-current')).toBe('true')
+    // The lines look follows the list.
+    m.render('auto')
+    expect(lines(m)).toHaveLength(4)
+  })
+
+  it('D5: a fold never hides the table of contents itself, even when one row is left', () => {
+    const m = mount('pinned', [{ level: 1, text: 'All' }, { level: 2, text: 'One' }, { level: 2, text: 'Two' }], 900)
+    click(arrow(m, 'All'))
+    expect(nav(m)).not.toBeNull()
+    expect(shownTexts(m)).toEqual(['All'])
+  })
+
+  it('D6: → opens the focused name, ← folds it, and ← on a folded name or one with nothing under it goes to its parent', () => {
+    const m = mount('pinned', TREE, 900)
+    const press = (i: number, key: string): KeyboardEvent => {
+      act(() => names(m)[i].focus())
+      return keyOn(names(m)[i], key)
+    }
+    expect(press(4, 'ArrowLeft').defaultPrevented).toBe(true) // "Keys": nothing under it
+    expect(document.activeElement?.textContent).toBe('Data model')
+    press(3, 'ArrowLeft')
+    expect(shownTexts(m)).toEqual(['Overview', 'Goals', 'Design', 'Data model', 'Limits', 'Rollout'])
+    expect(document.activeElement?.textContent).toBe('Data model')
+    press(3, 'ArrowLeft') // folded: up to its parent
+    expect(document.activeElement?.textContent).toBe('Design')
+    press(2, 'ArrowLeft')
+    expect(shownTexts(m)).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])
+    press(2, 'ArrowRight')
+    expect(shownTexts(m)).toEqual(['Overview', 'Goals', 'Design', 'Data model', 'Limits', 'Rollout'])
+    press(3, 'ArrowRight')
+    expect(shownTexts(m)).toEqual(texts(TREE))
+    // → on a row with nothing under it, and ← on a top row with nothing under it, do nothing.
+    press(6, 'ArrowRight')
+    press(6, 'ArrowLeft')
+    expect(shownTexts(m)).toEqual(texts(TREE))
+    expect(document.activeElement?.textContent).toBe('Rollout')
+    expect(m.jump).not.toHaveBeenCalled()
+  })
+
+  it('D1: the saved folds come back on the next mount, and a saved key whose row is gone is not written again', () => {
+    const m = mount('pinned', TREE, 900, TOC_DEFAULT_W, ['1:Design#0', '2:Renamed#0'])
+    expect(shownTexts(m)).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])
+    click(arrow(m, 'Overview'))
+    expect(m.onChangeFolds).toHaveBeenLastCalledWith(['1:Overview#0', '1:Design#0'])
+  })
+
+  it('D4: one toggle with the icon and the words of every fold-all button: Collapse all, then Expand all', () => {
+    const m = mount('pinned', TREE, 900)
+    const button = foldAll(m)
+    expect(button.closest('.toc__tools')).not.toBeNull()
+    expect(button.getAttribute('aria-label')).toBe('Collapse all')
+    expect(button.title).toBe('Collapse all')
+    const collapseIcon = button.innerHTML
+    click(button)
+    expect(shownTexts(m)).toEqual(['Overview', 'Design', 'Rollout'])
+    expect(m.onChangeFolds).toHaveBeenLastCalledWith(['1:Overview#0', '1:Design#0', '2:Data model#0'])
+    expect(foldAll(m).getAttribute('aria-label')).toBe('Expand all')
+    expect(foldAll(m).innerHTML).not.toBe(collapseIcon)
+    click(foldAll(m))
+    expect(shownTexts(m)).toEqual(texts(TREE))
+    // One row opened again after Collapse all: something is open, so the next click collapses.
+    click(foldAll(m))
+    click(arrow(m, 'Design'))
+    expect(foldAll(m).getAttribute('aria-label')).toBe('Collapse all')
+    expect(m.jump).not.toHaveBeenCalled()
+  })
+
+  it('D4: with no row that can fold, the button stays, dimmed, and says "Nothing to fold"; the card has the button too', () => {
+    const flat = mount('pinned', [{ level: 2, text: 'A' }, { level: 2, text: 'B' }], 900)
+    expect(foldAll(flat).getAttribute('aria-label')).toBe('Nothing to fold')
+    expect(foldAll(flat).disabled).toBe(true)
+    const lined = mount('auto', TREE, NAMES_FLOOR)
+    expect(lined.section.querySelector('.toc__fold-all')).toBeNull() // the rail has none
+    click(rail(lined))
+    const inCard = foldAll(lined)
+    expect(inCard.closest('.toc__header')).not.toBeNull()
+    click(inCard)
+    expect(shownTexts(lined)).toEqual(['Overview', 'Design', 'Rollout'])
   })
 })
 
