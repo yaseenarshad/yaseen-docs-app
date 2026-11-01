@@ -48,6 +48,9 @@ interface Line {
   readonly kind: LineKind
 }
 
+/** The lines a button acts on: the selection's (the toolbar), or a list's item lines (the block menu, YAZ-3727 D14). */
+export type LinePick = (state: EditorState) => readonly Line[]
+
 /** The containers whose blocks are lines outside a list: the page, a quote, and an item after its first block. */
 const CONTAINERS: ReadonlySet<string> = new Set(['doc', 'blockquote', 'list_item'])
 
@@ -56,7 +59,7 @@ const kindOfItem = (item: ProseNode, list: ProseNode): ListKind =>
 
 /** The lines of a state, cached: the toolbar asks once per button on each update. */
 const linesByState = new WeakMap<EditorState, readonly Line[]>()
-const selectedLines = (state: EditorState): readonly Line[] => {
+const selectedLines: LinePick = (state) => {
   const cached = linesByState.get(state)
   if (cached !== undefined) return cached
   const { from, to } = coveredLines(state)
@@ -78,9 +81,22 @@ const selectedLines = (state: EditorState): readonly Line[] => {
   return lines
 }
 
-/** Lit: EVERY line of the selection is `kind` (T asks for `text`). */
-export const allLinesAre = (state: EditorState, kind: ListKind | 'text'): boolean => {
-  const lines = selectedLines(state)
+/**
+ * The first lines of the items of the list at `listPos`, one level (YAZ-3727 D14): the block menu's whole list. The
+ * menu offers it for a line that is visible, so its siblings are too (the zoomed bullet's own line asks for itself).
+ */
+export const listLines = (listPos: number): LinePick => (state) => {
+  const list = state.doc.nodeAt(listPos)!
+  const lines: Line[] = []
+  list.forEach((item, offset) => {
+    if (item.firstChild?.isTextblock) lines.push({ pos: listPos + 2 + offset, kind: kindOfItem(item, list) })
+  })
+  return lines
+}
+
+/** Lit: EVERY line `pick` gives (the selection's) is `kind` (T asks for `text`). */
+export const allLinesAre = (state: EditorState, kind: ListKind | 'text', pick: LinePick = selectedLines): boolean => {
+  const lines = pick(state)
   return lines.length > 0 && lines.every((line) => line.kind === kind)
 }
 
@@ -274,9 +290,9 @@ const liftOut = (tr: Transaction, types: Types, pos: number, zoomed: number | nu
  * before it (that mapping made a click over 1,000 lines quadratic). Declines with no line.
  */
 const onLines =
-  (change: (tr: Transaction, types: Types, lines: readonly Line[], zoomed: number | null, state: EditorState) => void): Command =>
+  (change: (tr: Transaction, types: Types, lines: readonly Line[], zoomed: number | null, state: EditorState) => void, pick: LinePick = selectedLines): Command =>
   (state, dispatch) => {
-    const lines = selectedLines(state)
+    const lines = pick(state)
     if (lines.length === 0) return false
     if (dispatch === undefined) return true
     const tr = state.tr
@@ -294,20 +310,23 @@ const liftEach = (tr: Transaction, types: Types, lines: readonly Line[], zoomed:
 }
 
 /** A list button (T3): lit → every line leaves its lists; not lit → every line becomes an item of `kind`. */
-export const toggleListKind = (kind: ListKind): Command => (state, dispatch, view) =>
+export const toggleListKind = (kind: ListKind, pick: LinePick = selectedLines): Command => (state, dispatch, view) =>
   onLines((tr, types, lines, zoomed) => {
-    if (allLinesAre(state, kind)) return liftEach(tr, types, lines, zoomed)
+    if (allLinesAre(state, kind, pick)) return liftEach(tr, types, lines, zoomed)
     const runs = runsOf(state, types, lines)
     for (let i = runs.length - 1; i >= 0; i--) setKind(tr, types, runs[i], kind, zoomed)
-  })(state, dispatch, view)
+  }, pick)(state, dispatch, view)
 
-/** T and ⌘⌥0 (T4): every line out of every list level, then a paragraph. */
-export const turnIntoText: Command = onLines((tr, types, lines, zoomed) =>
-  liftEach(tr, types, lines, zoomed, (at) => {
-    const block = tr.doc.nodeAt(at)!
-    if (block.type !== types.paragraph) tr.setBlockType(at, at + block.nodeSize, types.paragraph)
-  }),
-)
+/** T on the lines `pick` gives: every line out of every list level, then a paragraph. */
+export const turnLinesIntoText = (pick: LinePick = selectedLines): Command =>
+  onLines((tr, types, lines, zoomed) =>
+    liftEach(tr, types, lines, zoomed, (at) => {
+      const block = tr.doc.nodeAt(at)!
+      if (block.type !== types.paragraph) tr.setBlockType(at, at + block.nodeSize, types.paragraph)
+    }), pick)
+
+/** T and ⌘⌥0 (T4): every line of the selection out of every list level, then a paragraph. */
+export const turnIntoText: Command = turnLinesIntoText()
 
 /** Register with `editor.use(listButtons)`, after `visibleFormatting`. */
 export const listButtons: MilkdownPlugin = (ctx) => async () => {

@@ -5,7 +5,7 @@
  * as the start of an HTML block that runs to the next blank line, so the item's nested
  * children became literal text. Obsidian writes an empty bullet as a bare marker.
  *
- * Seven pieces, all schema/remark/text-level (no Milkdown fork):
+ * Eight pieces, all schema/remark/text-level (no Milkdown fork):
  *  1. serialise: an empty paragraph that STARTS a list item is emitted as an empty mdast
  *     paragraph → bare marker (`*`, `1.`); other empty paragraphs keep `<br />`. Inside Milkdown
  *     an empty TASK item stays `* [ ] <br />` (remark drops the checkbox from `* [ ]`, and `[ ]`
@@ -30,8 +30,11 @@
  *  7. load (YAZ-1357): `separateEmptyNestedItems()` puts a blank line between a text item and a
  *     deeper bare marker on the next line — an EMPTY item cannot interrupt a paragraph in
  *     CommonMark, so without it rule 1's spelling reads back as text (or a setext heading).
+ *  8. load (YAZ-3727 D1): `alignNestedIndent()` reads the list depth from the indentation: a list
+ *     line indented past its parent's marker moves to the parent's text column, so 3 spaces under
+ *     `10.` or a tab under `-` nests; after a blank line, a text line too (see its docblock). It runs before 5, which reads the indent.
  *
- * 🔒 ONE WALK: every text rule (3 to 7), on load and on save, reads the text through
+ * 🔒 ONE WALK: every text rule (3 to 8), on load and on save, reads the text through
  * `mapOutsideFences()`, and so does the save rule for wikilinks: `postProcessMarkdown()`
  * (createCrepe.ts) is that walk on save. The walk skips fenced code. It knows the fence character,
  * the fence length, and that a closing fence has no text after it, so a line of 3 backticks inside
@@ -143,16 +146,19 @@ export const restoreItemLine = (line: string): string =>
   line.replace(EMPTY_TASK_ITEM_BREAK, '$1').replace(ESCAPED_SAME_LINE_ORDERED_MARKER, '$1$2')
 
 /** Before parsing: `* <br />` → bare marker; empty task `* [ ]` → `* [ ] <br />` (keeps the checkbox);
- * then markers unified; then (LAST, since the blank line resets the marker memory) an empty bullet
- * nested directly under text gets its blank line (rule 7). */
+ * then each list line moves to the depth its indentation gives (rule 8; before the marker rule,
+ * which reads the indent); then markers unified; then (LAST, since the blank line resets the marker
+ * memory) an empty bullet nested directly under text gets its blank line (rule 7). */
 export const normalizeEmptyItems = (markdown: string): string =>
   separateEmptyNestedItems(
     unifySiblingMarkers(
-      mapOutsideFences(escapeSameLineOrderedMarkers(markdown), (line) => line.replace(LEGACY_EMPTY_ITEM, '$1').replace(EMPTY_TASK_ITEM, '$1 <br />')),
+      alignNestedIndent(
+        mapOutsideFences(escapeSameLineOrderedMarkers(markdown), (line) => line.replace(LEGACY_EMPTY_ITEM, '$1').replace(EMPTY_TASK_ITEM, '$1 <br />')),
+      ),
     ),
   )
 
-/** A bullet line, including a bare empty marker (`*` / `-` alone, what rule 8 writes). */
+/** A bullet line, including a bare empty marker (`*` / `-` alone, what rule 1 writes). */
 const BULLET_LINE = /^(\s*)([-*+])(?:\s|$)/
 /** `- - -` / `* * *` / `***`: a thematic break, which would otherwise pass as a bullet. */
 const THEMATIC_BREAK = /^\s*([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/
@@ -185,6 +191,116 @@ export const unifySiblingMarkers = (markdown: string): string => {
     const marker = markerAtIndent.get(indent) ?? match[2]
     markerAtIndent.set(indent, marker)
     return marker === match[2] ? line : `${match[1]}${marker}${line.slice(match[1].length + 1)}`
+  })
+}
+
+/** A bullet or numbered line: its indent, its marker (with the number), and the spaces before its text. */
+const LIST_LINE = /^([ \t]*)([-*+]|(\d+)[.)])([ \t]+|(?=\r?$))/
+/** A heading or a quote: like a thematic break or a fence, it closes the items right of it, blank line or not. */
+const CLOSES_ITEMS = /^[ \t]*(?:#{1,6}(?:[ \t]|\r?$)|>)/
+
+/** One open item: its marker and text columns as written (`from`, `fromText`) and as aligned (`to`, `text`). */
+interface Level {
+  from: number
+  fromText: number
+  to: number
+  text: number
+}
+
+/**
+ * Before parsing (YAZ-3727 D1, rule 8): the list depth comes from the indentation, as in an
+ * outliner. CommonMark nests a line only at its parent's TEXT column, and that column moves with
+ * the marker: `9. ` is 3 wide, `10. ` is 4. An AI that indents every child by 3 spaces so puts the
+ * children of 10 and up out of the list, and the next save writes that flat shape to disk.
+ *  - A list line indented past the marker of an open item is that item's child, however wide the
+ *    indent (Obsidian's tabs, 3 spaces under `10.`, 6 spaces under `*`). It moves to the parent's
+ *    text column. A line at or left of a marker closes that item.
+ *  - A text line moves with the deepest item whose text column it reaches. After a blank line it
+ *    takes the list line's rule (YAZ-3855): past an item's marker, it moves to that item's text
+ *    column, so `10. ten`, a blank line, then 3 spaces + `Para` keeps Para in item 10. A lazy line
+ *    (no blank line above it) stays as written: CommonMark keeps it in the paragraph above. Only the
+ *    next lines of a text line let in that way go with it, at its indent (a table's rows).
+ *  - After a blank line, a line 4 or more columns past its item's text column (column 0 at the top
+ *    level) is indented code, list marker or not: it moves with its item, opens no level, and the
+ *    code goes on while that indent holds. Without a blank line, a too-deep list line still nests.
+ *  - A numbered child that does not start at 1, right under its parent's text, gets a blank line
+ *    first: CommonMark lets a numbered list interrupt a paragraph only when it starts at 1. A blank
+ *    line is also what Milkdown writes there, so the file converges on it. An empty parent (a bare
+ *    marker) has no paragraph, and a blank line would end it, so its child gets none.
+ *  - With no blank line above it, a heading, a quote, a thematic break or a fence left of an item's
+ *    text closes that item, as in CommonMark: a line below it is not moved into the closed item
+ *    (where 4 spaces read as code). A fence closes it after a blank line too (the walk cannot move it).
+ *    The walk never shows a fence to a rule, so the rule sees it as the `next` line.
+ * Markdown the app writes is already aligned, so it passes through byte-identical. Fenced code is
+ * skipped by the walk, so a fence inside a moved item keeps its indent (a known limit).
+ */
+export const alignNestedIndent = (markdown: string): string => {
+  const levels: Level[] = []
+  /** What the line above leaves open: an item's paragraph, a paragraph outside lists (`null`), or nothing (`'blank'`). */
+  let previous: Level | 'blank' | null = null
+  /** The indent of a fence right under the line before, which closed the items right of it. */
+  let fenceAt: number | null = null
+  /** The line above is a blank line or indented code (or there is none): indented code may start or go on here. */
+  let afterBlank = true
+  /** A text line that a blank line let into its item (left of the item's text column), and its indent as written. */
+  let pulled: { level: Level; width: number } | null = null
+  const closeRightOf = (column: number): void => {
+    while (levels.length > 0 && levels[levels.length - 1].fromText > column) levels.pop()
+  }
+  return mapOutsideFences(markdown, (line, next) => {
+    if (fenceAt !== null) {
+      closeRightOf(fenceAt)
+      previous = 'blank'
+      afterBlank = true
+    }
+    const fence = next === undefined ? null : FENCE_BOUNDARY.exec(next)
+    fenceAt = fence === null ? null : indentWidth(fence[0].slice(0, -fence[1].length))
+    if (line.trim() === '') {
+      previous = 'blank'
+      afterBlank = true
+      return line
+    }
+    const indent = /^[ \t]*/.exec(line)![0]
+    const width = indentWidth(indent)
+    const breaks = THEMATIC_BREAK.test(line)
+    const item = breaks ? null : LIST_LINE.exec(line)
+    const top = levels[levels.length - 1]
+    // A lazy line keeps the paragraph above going. It stays as written, unless that paragraph was let in at this indent (a table's rows).
+    if (item === null && top !== undefined && top.fromText > width && previous !== 'blank' && !breaks && !CLOSES_ITEMS.test(line)) {
+      return pulled?.level === top && width >= pulled.width ? ' '.repeat(top.text + width - pulled.width) + line.slice(indent.length) : line
+    }
+    pulled = null
+    const loose = afterBlank
+    afterBlank = false
+    // After a blank line a text line, like a list line, belongs to the deepest item whose marker it is past.
+    if (item !== null || loose) while (levels.length > 0 && levels[levels.length - 1].from >= width) levels.pop()
+    else closeRightOf(width)
+    const parent = levels[levels.length - 1]
+    /** A text line at its item's text column, or as far past it as it is past the column as written. */
+    const moved = (): string => {
+      const column = parent === undefined ? width : parent.text + Math.max(0, width - parent.fromText)
+      return column === width ? line : ' '.repeat(column) + line.slice(indent.length)
+    }
+    // After a blank line, 4 columns past the item's text column is indented code: it moves with its item, opens no level.
+    if (loose && width - (parent === undefined ? 0 : parent.fromText) >= 4) {
+      previous = 'blank'
+      afterBlank = true
+      return moved()
+    }
+    if (item === null) {
+      previous = parent ?? null
+      if (parent !== undefined && width < parent.fromText) pulled = { level: parent, width }
+      return moved()
+    }
+    const to = parent === undefined ? width : parent.text
+    const gap = item[4].length === 0 || item[4].length > 4 ? 1 : indentWidth(item[4])
+    const level: Level = { from: width, fromText: width + item[2].length + gap, to, text: to + item[2].length + gap }
+    // CommonMark lets a numbered list interrupt a paragraph only when it starts at 1.
+    const interrupts = parent !== undefined && previous === parent && item[3] !== undefined && item[3] !== '1'
+    levels.push(level)
+    previous = line.slice(item[0].length).trim() === '' ? 'blank' : level
+    const aligned = to === width ? line : ' '.repeat(to) + line.slice(indent.length)
+    return interrupts ? `\n${aligned}` : aligned
   })
 }
 
