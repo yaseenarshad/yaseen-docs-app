@@ -9,7 +9,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { activeTab, appWindow, buildFixtureVault, editorOf, launchApp, quitApp, seededState, shoot, tabsOf } from './helpers'
+import { activeTab, appWindow, buildFixtureVault, editorOf, launchApp, quitApp, seededState, shoot, tabsOf, LINK_HERE, openLinksHere } from './helpers'
 import type { AppState } from '../../shared/types'
 
 test.describe.configure({ mode: 'serial' })
@@ -32,14 +32,14 @@ let archive: string
 let app: ElectronApplication
 let win: Page
 
-/** Both vaults in one window, on Work's Today note; `linkOpen` as the step needs it. */
-function workspaceState(linkOpen: AppState['settings']['linkOpen'] = 'this-tab'): AppState {
+/** Both vaults in one window, on Work's Today note; the key and click changes (`hotkeys`, YAZ-3936) as the step needs them. */
+function workspaceState(hotkeys: AppState['settings']['hotkeys'] = {}): AppState {
   const state = seededState(work, path.join(work, TODAY))
   state.windows[0]!.roots = [work, personal]
   state.recents = [...state.recents, { path: personal, lastOpened: Date.now() - 1 }, { path: archive, lastOpened: Date.now() - 2 }]
   state.folders = { ...state.folders, [personal]: { ...state.folders[work]!, lastFile: null } }
-  state.settings = { ...state.settings, linkOpen }
-  return state
+  state.settings = { ...state.settings, hotkeys }
+  return openLinksHere(state)
 }
 
 /** A paste of `text` into the visible editor through a synthetic event. */
@@ -139,12 +139,14 @@ test('step 1e — a rest on a pill into the other vault previews its note, as a 
 })
 
 test('step 1f — a pill into the other vault names it (D22); a pill and a [[link]] give the same right-click menu (D23)', async () => {
-  const last = editorOf(win).locator('.link-pill--last', { hasText: 'the gym plan' })
-  await expect(last).toHaveAttribute('data-vault', PERSONAL)
-  expect(await last.evaluate((el) => getComputedStyle(el, '::after').content)).not.toBe('none')
+  // The vault's name is a piece of the pill (YAZ-3738 D4): the `link-pill__vault` widget inside the link, not a `::after`.
+  const vault = editorOf(win).locator('a', { hasText: 'the gym plan' }).locator('.link-pill__vault')
+  await expect(vault).toHaveCount(1)
+  expect(await vault.textContent()).toBe(` (${PERSONAL})`)
   expect(await editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).evaluate((el) => getComputedStyle(el, '::after').content)).toBe('none')
   const rows = () => win.locator('.ctx-menu--editor .ctx-menu__item').allTextContents()
-  const LINK_ROWS = ['Open', 'Open in new tab', 'Copy link', 'Edit link', 'Remove link']
+  // The one link menu of a page that is there (YAZ-3740): no "Copy link"; "Open in" is the parent of its flyout.
+  const LINK_ROWS = ['Open', 'Open in new tab', 'Show in sidebar', 'Copy name', 'Copy path', 'Add to favorites', 'Add to focus', 'Open in', 'Edit link', 'Remove link']
   await editorOf(win).locator('.link-pill--first', { hasText: 'the gym plan' }).click({ button: 'right' })
   await expect.poll(rows).toEqual([`Plan (${PERSONAL})`, ...LINK_ROWS])
   await shoot(win, 'workspace-links-01f-menu')
@@ -174,8 +176,8 @@ test('step 1f — a pill into the other vault names it (D22); a pill and a [[lin
   await win.keyboard.press('Escape')
 })
 
-test('step 2 — a Markdown link into the other vault opens in this tab, and Back returns (D14; YAZ-3647 D4)', async () => {
-  await editorOf(win).locator('a', { hasText: 'the gym plan' }).click()
+test('step 2 — a Markdown link into the other vault opens in this tab on ⌘-click, and Back returns (D14; YAZ-3647 D4; YAZ-3936)', async () => {
+  await editorOf(win).locator('a', { hasText: 'the gym plan' }).click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Plan')
   await expect(editorOf(win)).toContainText(PLAN_BODY)
   await win.getByRole('button', { name: 'Back' }).click()
@@ -193,10 +195,10 @@ test('step 3 — a pasted path of the other vault is a relative link named after
   await quitApp(app)
 })
 
-test('step 5 — "Open a link in: A new tab": a click opens a new tab in front, and Back returns (D11, YAZ-3651)', async () => {
-  app = await launchApp({ userData, seedState: workspaceState('new-tab') })
+test('step 5 — Links › "Open in a new tab" on ⌥-click (Settings › Hotkeys, YAZ-3936): it opens a new tab in front, and Back returns (YAZ-3651)', async () => {
+  app = await launchApp({ userData, seedState: workspaceState({ 'links.newTab': 'Alt+Click' }) })
   win = await appWindow(app, 'w1')
-  await editorOf(win).locator('a', { hasText: 'the gym plan' }).click()
+  await editorOf(win).locator('a', { hasText: 'the gym plan' }).click({ modifiers: ['Alt'] })
   await expect(activeTab(win)).toHaveText('Plan')
   await expect(tabsOf(win)).toHaveCount(2) // Today stays in its own tab
   // The new tab in front is a step of the window's one list (YAZ-3647 D4): Back goes to Today's tab, and no tab closes.
@@ -206,10 +208,10 @@ test('step 5 — "Open a link in: A new tab": a click opens a new tab in front, 
   await quitApp(app)
 })
 
-test('step 4 — "Open a link in: A new background tab": a click keeps this note in front (D11); Back in the new tab returns (YAZ-3647 D4)', async () => {
-  app = await launchApp({ userData, seedState: workspaceState('background-tab') })
+test('step 4 — Links › "Open in a background tab" (⌘⇧-click by default, YAZ-3936) keeps this note in front; Back in the new tab returns (YAZ-3647 D4)', async () => {
+  app = await launchApp({ userData, seedState: workspaceState() })
   win = await appWindow(app, 'w1')
-  await editorOf(win).locator('a', { hasText: 'the gym plan' }).click()
+  await editorOf(win).locator('a', { hasText: 'the gym plan' }).click({ modifiers: ['Meta'] })
   await expect(tabsOf(win).filter({ hasText: 'Plan' })).toHaveCount(1)
   await expect(activeTab(win)).toHaveText('Today')
   await shoot(win, 'workspace-links-04-background')
@@ -229,14 +231,14 @@ test('step 6 — a link into a vault the app knows but this window does not show
   const sheet = win.locator('.confirm[role="dialog"]')
   const link = editorOf(win).locator('a', { hasText: 'the old note' })
   // V3: Cancel changes nothing.
-  await link.click()
+  await link.click({ modifiers: LINK_HERE })
   await expect(sheet).toContainText(`This file (Old) is not in this vault. It is in another vault (${ARCHIVE}), which is not open in this window.`)
   await shoot(win, 'workspace-links-06-ask')
   await sheet.getByRole('button', { name: 'Cancel' }).click()
   await expect(sheet).toHaveCount(0)
   await expect(activeTab(win)).toHaveText('Today')
   // V1: Add — the vault joins the window, the page opens in a tab, and Back returns.
-  await link.click()
+  await link.click({ modifiers: LINK_HERE })
   await sheet.getByRole('button', { name: 'Add vault to this window' }).click()
   await expect(activeTab(win)).toHaveText('Old')
   await expect(editorOf(win)).toContainText(OLD_BODY)

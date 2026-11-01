@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
-import type { KeyScope } from '@shared/keys'
+import type { GestureAction, KeyScope } from '@shared/keys'
 import type { TextFormatting } from '@shared/textFormatting'
 import { BETWEEN_VAULTS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import { api, BridgeRequestError } from './api'
@@ -28,6 +28,7 @@ import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './link
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument } from './lib/focusHandoff'
+import { osVerbs } from './lib/osVerbs'
 import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, shows, unlessFailed, type DragOutAsk, type NamedItem, type Notice, type NoticeKind, type NoticeType } from './lib/notice'
 import { treeHasPath } from './lib/treeState'
 import { NoticeToast } from './components/NoticeToast'
@@ -69,6 +70,7 @@ import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
 import { VaultLinksContext } from './links/vaultLinks'
+import type { LinkActions } from './editor/linkMenu'
 import { useVaultIcons } from './sidebar/useVaultIcons'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
@@ -436,7 +438,13 @@ export function App() {
     return home === null ? null : (now.vaults[now.roots.indexOf(home)]?.name ?? storage.vaultName(home))
   }, [])
   const vaultNames = roots.map((vault, i) => vaults[i]?.name ?? storage.vaultName(vault)).join('\n')
-  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, names: vaultNames, vaultOf }), [candidatesOf, askToAdd, roots, vaultNames, vaultOf])
+  /** The window's vaults that use the ID letters `letters`, now or before, by name (YAZ-3905 S23): an unresolved `[[INL-4]]` says whose ID it is. */
+  const vaultsOfLetters = useCallback((letters: string) => {
+    const now = live.current
+    return now.roots.flatMap((vault, i) => (now.vaults[i]?.wikilinks.letters.includes(letters) === true ? [now.vaults[i]?.name ?? storage.vaultName(vault)] : []))
+  }, [])
+  const idLetters = vaults.map((scope) => scope?.wikilinks.letters.join(' ') ?? '').join('\n')
+  const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, names: vaultNames, vaultOf, vaultsOfLetters, letters: idLetters }), [candidatesOf, askToAdd, roots, vaultNames, vaultOf, vaultsOfLetters, idLetters])
   /** The scope of the ACTIVE tab's vault (R3, R4, R10); with no tab open, the first vault's. */
   const active = file === null ? first : scopeOf(file)
   /**
@@ -869,6 +877,29 @@ export function App() {
     setSidebarRevealRequest({ id: ++sidebarRevealId.current, path })
   }, [sidebarCollapsed, sidebarLens, toggleSidebar, changeLens])
 
+  /**
+   * What a link's menu does with the page it opens (YAZ-3740): Show in sidebar, Focus and Favorites (the tab menu's
+   * lists), and "Open in ▸" (the sidebar's verbs: the same bridge calls, the same notices). One identity for the
+   * window's life, reading the newest doors at click time, so no editor renders again (`RetainedEditor` is memo).
+   */
+  const linkDoors = useRef({ showInSidebar, lists, scopeOf, nameOf, notify })
+  linkDoors.current = { showInSidebar, lists, scopeOf, nameOf, notify }
+  const linkActions = useMemo<LinkActions>(() => {
+    const door = () => linkDoors.current
+    // The sidebar's verbs and notices (`lib/osVerbs.ts`); "New window" opens the vault that holds the file, alone (YAZ-2602 S33).
+    const os = osVerbs((message) => door().notify(message, 'error'), (path) => door().nameOf(path), (path) => door().scopeOf(path).root)
+    return {
+      showInSidebar: (path) => door().showInSidebar(path),
+      listState: (path) => door().lists.stateOf(path),
+      toggleFavorite: (paths, isOn) => door().lists.toggleFavorite(paths, isOn),
+      toggleFocus: (paths, isOn) => void door().lists.toggleFocus(paths, isOn),
+      openNewWindow: os.openNewWindow,
+      openVsCode: os.openVsCode,
+      openDefault: os.openDefault,
+      reveal: os.reveal,
+    }
+  }, [])
+
   // A search row's menu item that draws into the tree (🔒 D2, YAZ-2050), and "Show in sidebar" on a
   // row of Search, Focus or Favorites (YAZ-2638 D1, D3): always the FILES lens, whichever tab was
   // showing. The sidebar is necessarily open (the row was clicked in it), so no un-collapse step here.
@@ -1122,20 +1153,19 @@ export function App() {
   // Ref-backed, because a new `onOpenFile` identity would rebuild every mounted editor.
   const reviewing = useRef(false)
   reviewing.current = reviewer !== null
-  // A link click opens where Settings › Files & Links › Open a link in says (YAZ-3609 D11), read through a ref too.
-  const linkOpen = useRef(settings.linkOpen)
-  linkOpen.current = settings.linkOpen
   const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : navigate)(path), [openBackground, navigate])
   /** The open tabs' pages, read at click time: a link to one of them goes to its tab, whatever the setting says. */
   const openPaths = useRef(tabs)
   openPaths.current = tabs
-  /** A click on a link in a note (YAZ-3609 D11): where the setting says. A folder view's row, a backlink and a code jump use `openFromPage`. */
-  const openLink = useCallback((path: string) => {
+  /**
+   * A link opened from a note: where its gesture's action says (YAZ-3936, Settings › Hotkeys › "Links in a note"), this
+   * tab when none says. A folder view's row, a backlink and a code jump use `openFromPage`.
+   */
+  const openLink = useCallback((path: string, where: GestureAction = 'thisTab') => {
     // Back returns to the page with the link wherever the page opens: the window's one Back list (YAZ-3647 D4). A review's open is no link click.
-    if (reviewing.current) openBackground(path)
-    // A page another tab shows: go to that tab (D10), as "This tab" does. A background open would do nothing.
-    else if (linkOpen.current === 'this-tab' || openPaths.current.some((tab) => tab.path === path)) navigate(path)
-    else if (linkOpen.current === 'background-tab') openBackground(path)
+    if (reviewing.current || where === 'backgroundTab') openBackground(path)
+    // A page another tab shows: go to that tab (D10), as "This tab" does.
+    else if (where === 'thisTab' || openPaths.current.some((tab) => tab.path === path)) navigate(path)
     else openKept(path)
   }, [openBackground, navigate, openKept])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
@@ -2729,6 +2759,8 @@ export function App() {
       root: scope.root ?? '',
       watch: scope.watch,
       onNotice: notify,
+      // The one link menu's place rows in every editor: the main tab, the right panel, a review (YAZ-3740, YAZ-3910 A13). One stable object.
+      linkActions,
       newNoteFolderFor,
       wikilinks: scope.wikilinks,
       wikilinkCandidates: scope.wikilinkCandidates,

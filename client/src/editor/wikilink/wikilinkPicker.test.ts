@@ -16,6 +16,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { IndexRecord } from '@shared/types'
 import { isNoteId } from '@shared/noteId'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { OPEN_ID_LINK } from './idLinkCaret'
 import { api, BridgeRequestError } from '../../api'
 
 vi.mock('../../api', async (importOriginal) => ({
@@ -76,6 +77,12 @@ function posOf(crepe: Crepe, text: string, offset = 0): number {
 function caret(crepe: Crepe, pos: number): void {
   const view = viewOf(crepe)
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)))
+}
+
+/** The caret inside a closed link, as "Edit link" puts it there: the one way in, since every link is one unit (YAZ-3935). */
+function editLinkAt(crepe: Crepe, pos: number): void {
+  const view = viewOf(crepe)
+  view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)).setMeta(OPEN_ID_LINK, true))
 }
 
 /** Insert at the caret (the selection maps to the end, like real typing). */
@@ -454,7 +461,7 @@ describe('wikilink picker: create-new row', () => {
     const main = door()
     createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
     const { crepe, n } = await picked('Plan')
-    caret(crepe, posOf(crepe, 'Plan', 4))
+    editLinkAt(crepe, posOf(crepe, 'Plan', 4))
     type(crepe, 's')
     await main.give('YAZ-43')
     expect(getMarkdownForSave(crepe)).toBe('X[[Plans]]\n')
@@ -464,7 +471,7 @@ describe('wikilink picker: create-new row', () => {
     createFile.mockReset()
     createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk full'))
     const other = await picked('Draft')
-    caret(other.crepe, posOf(other.crepe, 'Draft'))
+    editLinkAt(other.crepe, posOf(other.crepe, 'Draft'))
     type(other.crepe, 'My ')
     await main.give('YAZ-44')
     expect(getMarkdownForSave(other.crepe)).toBe('X[[My Draft]]\n')
@@ -634,7 +641,8 @@ describe('wikilink picker: frontmatter aliases (Links E2, GRO-2214)', () => {
     type(crepe, '[[cac')
     expect(rows()).toEqual(['CAC — Customer Acquisition Cost'])
     press(crepe, 'Enter')
-    expect(shown()).toEqual([]) // the caret is parked against the link: raw `[[id]]`, D8's rule
+    // The caret is parked against the link, and an ID link keeps its title there (YAZ-3744 D1).
+    expect(shown()).toEqual(['Customer Acquisition Cost'])
     caret(crepe, posOf(crepe, 'X'))
     expect(shown()).toEqual(['Customer Acquisition Cost'])
     expect(getMarkdownForSave(crepe)).toBe('X[[k3m9x2pq7abc]]\n')
@@ -801,9 +809,9 @@ describe('wikilink picker: walking never opens (YAZ-908)', () => {
     expect(popup()?.dataset.show ?? 'false').toBe('false')
   })
 
-  it('typing inside a closed [[Alpha]] still opens suggestions (editing the tag — the Obsidian/Roam default)', async () => {
+  it('typing inside a link "Edit link" opened still opens suggestions (editing the tag — the Obsidian/Roam default)', async () => {
     const { crepe } = await mount('see [[Alpha]] here\n', source('Alpha'))
-    caret(crepe, posOf(crepe, '[[Alpha]]', 4)) // [[Al|pha]]
+    editLinkAt(crepe, posOf(crepe, '[[Alpha]]', 4)) // [[Al|pha]], the one way in (YAZ-3935)
     type(crepe, 'p') // doc changed: [[Alp|pha]] — fragment "Alp" prefix-matches Alpha
     expect(rows()).toEqual(['Alpha', 'Create "Alp"'])
   })
@@ -816,5 +824,37 @@ describe('wikilink picker: walking never opens (YAZ-908)', () => {
     await tick()
     expect(rows()).toEqual([])
     expect(popup()?.dataset.show ?? 'false').toBe('false')
+  })
+})
+
+describe('wikilink picker: a row reads as the sidebar names the page (YAZ-3778 S14)', () => {
+  it('a drawing or a diagram reads without its extension, a PDF keeps its own; each row has its file\'s icon; the insert does not change', async () => {
+    const candidates = createWikilinkCandidateSource()
+    candidates.update([
+      { ...nameCandidate('LN Scenarios Diagram.drawio'), path: '/vault/LN Scenarios Diagram.drawio' },
+      { ...nameCandidate('LN Report.pdf'), path: '/vault/LN Report.pdf' },
+    ])
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    // The pills' look (YAZ-3609 D13): the attributes that draw the file's icon, as `fileIconDecoration` gives them.
+    const linkLook = { icon: (path: string, folder: boolean) => ({ class: 'file-icon probe-icon', 'data-path': path, 'data-folder': String(folder) }) }
+    const crepe = createCrepe({ root, defaultValue: 'X\n', wikilinkCandidates: candidates, linkLook })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[LN')
+    // The ending is in the row, and app.css shows it only with File icons Off, as the sidebar's `name-ending`.
+    // No row is named "LN", so Create comes last (YAZ-3748 B1).
+    expect(rows()).toEqual(['LN Scenarios Diagram.drawio', 'LN Report.pdf', 'Create "LN"'])
+    const options = Array.from(document.querySelectorAll<HTMLElement>(`.${WIKILINK_PICKER_CLASS} [role="option"]`)).slice(0, 2)
+    expect(options.map((option) => option.querySelector('.name-ending')?.textContent ?? null)).toEqual(['.drawio', null])
+    expect(options[0]!.firstChild?.nextSibling?.textContent).toBe('LN Scenarios Diagram')
+    const icons = Array.from(document.querySelectorAll<HTMLElement>(`.${WIKILINK_PICKER_CLASS} [role="option"] > .probe-icon`))
+    expect(icons.map((icon) => [icon.dataset.path, icon.dataset.folder, icon.getAttribute('aria-hidden'), icon.textContent])).toEqual([
+      ['/vault/LN Scenarios Diagram.drawio', 'false', 'true', ''],
+      ['/vault/LN Report.pdf', 'false', 'true', ''],
+    ])
+    press(crepe, 'Enter')
+    expect(getMarkdownForSave(crepe)).toBe('X[[LN Scenarios Diagram.drawio]]\n')
   })
 })

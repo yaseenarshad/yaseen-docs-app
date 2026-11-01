@@ -25,9 +25,7 @@ import {
   MAX_SESSION_TABS,
   MAX_VAULT_SETS,
   NEW_NOTE_LOCATIONS,
-  LINK_OPENS,
   NEW_TAB_PLACES,
-  type LinkOpen,
   type NewTabPlace,
   RIGHT_PANEL_DEFAULT_W,
   RIGHT_PANEL_MAX_W,
@@ -138,7 +136,7 @@ import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
 import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId, keyFor, sameKey, scopedId, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
-import { ASIDE_PLACES, asideId, isUsableFor, keyRow, withAside, type HotkeyAside } from '@shared/keys'
+import { ASIDE_PLACES, asideId, gestureRow, isDefaultGesture, isGestureEntry, isUsableFor, keyRow, withAside, type HotkeyAside } from '@shared/keys'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { travellingChanged, travels } from '@shared/settingsSync'
 import { atomicWrite } from './fs/fsUtils'
@@ -386,6 +384,8 @@ export function sanitizeHoverPreviewIn(raw: unknown): Record<HoverPlace, boolean
  * `A` would take every typed "a" in every window.
  */
 const isHotkeyEntry = ([id, key]: [string, unknown]): boolean => {
+  // A click's gesture (YAZ-3936): 'links.thisTab' → 'CmdOrCtrl+Click', or null for "No gesture".
+  if (gestureRow(id) !== undefined) return isGestureEntry(id, key)
   // Any place's key since YAZ-3564 (K2): a scoped id of a changeable row ('note.bold'), or an old unscoped App id.
   const row = keyRow(id)
   if (row === undefined || !row.changeable) return false
@@ -422,6 +422,7 @@ export function sanitizeHotkeys(raw: unknown): HotkeyOverrides {
   // default now goes (⌘⇧B for Toggle sidebar, D10), so the page does not show it as changed.
   const scoped: HotkeyOverrides = {}
   const isDefault = (id: string, key: string | null): boolean => {
+    if (gestureRow(id) !== undefined) return isDefaultGesture(id, key)
     const defaults = keyRow(id)?.keys ?? []
     return key === null ? defaults.length === 0 : defaults.length === 1 && sameKey(key, defaults[0])
   }
@@ -493,7 +494,6 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   newNoteLocation: (v): v is NewNoteLocation => typeof v === 'string' && (NEW_NOTE_LOCATIONS as readonly string[]).includes(v),
   newNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
   confirmDelete: (v): v is boolean => typeof v === 'boolean',
-  linkOpen: (v): v is LinkOpen => typeof v === 'string' && (LINK_OPENS as readonly string[]).includes(v),
   newTabPlace: (v): v is NewTabPlace => typeof v === 'string' && (NEW_TAB_PLACES as readonly string[]).includes(v),
   confirmRename: (v): v is boolean => typeof v === 'boolean',
   hoverPreview: (v): v is boolean => typeof v === 'boolean',
@@ -555,7 +555,10 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
-/** Stored settings merged field-by-field over defaults, so partial/stale shapes stay usable. */
+/**
+ * Stored settings merged field-by-field over defaults, so partial/stale shapes stay usable. A field this build no
+ * longer has is dropped: `linkOpen` (YAZ-3609 D11) went with YAZ-3936, as the gestures of Settings › Hotkeys took its place.
+ */
 export function sanitizeSettings(raw: unknown): SettingsState {
   const src = isRecord(raw) ? raw : {}
   const out = { ...DEFAULT_SETTINGS }

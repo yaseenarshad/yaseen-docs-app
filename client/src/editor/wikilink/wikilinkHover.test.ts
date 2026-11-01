@@ -47,7 +47,7 @@ describe('wikilink hover (YAZ-3403 D8)', () => {
     const { root } = await mount('pad [[Known]] and [[Missing]] tail\n', hover)
     const known = span(root, 'Known')
     over(known)
-    expect(hover.onHover).toHaveBeenCalledExactlyOnceWith('/vault/Known.md', expect.objectContaining({ left: expect.any(Number), bottom: expect.any(Number) }))
+    expect(hover.onHover).toHaveBeenCalledExactlyOnceWith('/vault/Known.md', expect.objectContaining({ left: expect.any(Number), bottom: expect.any(Number) }), true) // an editable note (the card's open line, YAZ-3935)
     over(known) // a move inside the same link is no new hover
     expect(hover.onHover).toHaveBeenCalledTimes(1)
     out(known, root)

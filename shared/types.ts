@@ -1536,8 +1536,6 @@ export interface SettingsState {
   confirmDelete: boolean
   /** Show the rename sheet, with its count of links to update, before a note or folder is renamed (YAZ-2420 3C1). Off renames at once; the links still follow. */
   confirmRename: boolean
-  /** Files & Links (YAZ-3609 D11): where a click on a link in a note opens its page. ⌘-click always opens a background tab. */
-  linkOpen: LinkOpen
   /** Files & Links (YAZ-3808 D2, D3): where a page opened in a new tab opens — next to the current tab, or at the end of the strip. ⌘T, the "+", Move to ▸ and Restore session always go to the end; a tab dropped on the strip goes where it is dropped. */
   newTabPlace: NewTabPlace
   /** Rest the pointer on a note, drawing or diagram row to see it (Draw's YAZ-1800 D2; YAZ-3044 A20; notes since YAZ-3075 D5). Text, PDF and image rows never preview. */
@@ -1801,10 +1799,6 @@ export const THEMES: readonly Theme[] = ['system', 'light', 'dark']
 export type NewNoteLocation = 'root' | 'current' | 'folder'
 export const NEW_NOTE_LOCATIONS: readonly NewNoteLocation[] = ['root', 'current', 'folder']
 
-/** Where a click on a link opens its page (YAZ-3609 D11): in the tab of the note, in a new tab in front, or in a new tab behind (as ⌘-click). */
-export type LinkOpen = 'this-tab' | 'new-tab' | 'background-tab'
-export const LINK_OPENS: readonly LinkOpen[] = ['this-tab', 'new-tab', 'background-tab']
-
 /** Where a new tab opens (YAZ-3808 D2): right after the current tab, or at the end of the strip. */
 export type NewTabPlace = 'next' | 'end'
 export const NEW_TAB_PLACES: readonly NewTabPlace[] = ['next', 'end']
@@ -1881,7 +1875,6 @@ export const DEFAULT_SETTINGS: SettingsState = {
   newNoteLocation: 'current',
   newNoteFolder: '',
   confirmDelete: true,
-  linkOpen: 'this-tab',
   newTabPlace: 'next',
   confirmRename: true,
   hoverPreview: true,

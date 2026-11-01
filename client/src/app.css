@@ -2423,9 +2423,20 @@ body.drag-held iframe {
    slot (10 px padding + 15 px glyph + 8 px gap), so every label lines up. The flyout is its own menu. */
 .ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__item:not(:has(> .ctx-menu__label)),
 .ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__parent > .ctx-menu__item,
-/* A bullet's menu (YAZ-3646 D8) draws its rows flat, a line between two groups: the same empty slot. */
-.ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__item:not(:has(> .ctx-menu__label)) {
+/* A bullet's menu (YAZ-3646 D8) draws its rows flat, a line between two groups: the same empty slot. Its
+   parent rows too, the link menu's "Open in ▸" (YAZ-3747 demo). */
+.ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__item:not(:has(> .ctx-menu__label)),
+.ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__parent > .ctx-menu__item {
   padding-left: 33px;
+}
+
+/* The link menu's top line, the page's name (YAZ-3747 demo): a long one ends in "…" and never widens the menu. */
+.ctx-menu--editor > .ctx-menu__item:disabled:first-child {
+  display: block;
+  max-width: 280px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* Delete (GRO-2272): destructive, so it reads as such in BOTH themes — --danger is
