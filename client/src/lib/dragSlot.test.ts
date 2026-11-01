@@ -26,8 +26,9 @@ describe('slotUnder (YAZ-3808 D1)', () => {
     expect([150, 170, 255, 265, 470].map((x) => slotUnder(strip(), x, 20))).toEqual([0, 1, 1, 2, 3])
   })
 
-  it('past the right end (the "+") is the end slot; past the left end (‹ ›) is the first slot on show; off the strip is none', () => {
+  it('anywhere past the right end (the "+", the tail) is the end slot; past the left end (‹ ›) is the first slot on show; off the strip is none', () => {
     expect(slotUnder(strip(), 530, 20)).toBe(3)
+    expect(slotUnder(strip(), 900, 20)).toBe(3) // the row's tail, far past the "+"
     expect(slotUnder(strip(), 70, 20)).toBe(0)
     expect(slotUnder(strip(), 300, 80)).toBeNull()
     expect(slotUnder(strip(), -80, 20)).toBeNull()

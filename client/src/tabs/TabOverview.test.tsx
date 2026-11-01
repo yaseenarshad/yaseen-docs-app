@@ -1756,7 +1756,7 @@ describe('YAZ-3808 D1: a card let go on the tab strip moves its tab there', () =
     pointer(card, 'pointerdown', 0, 0)
     pointer(window, 'pointermove', 10, 10)
     pointer(window, 'pointermove', 50, -20)
-    expect(strip.hold).toHaveBeenLastCalledWith(50, -20)
+    expect(strip.hold).toHaveBeenLastCalledWith(50, -20, '/v/a.md') // its own tab: no line either side of it
     pointer(window, 'pointerup', 50, -20)
     expect(strip.release).toHaveBeenLastCalledWith(50, -20)
     expect(onMoveToSlot).toHaveBeenCalledExactlyOnceWith('/v/a.md', 1)

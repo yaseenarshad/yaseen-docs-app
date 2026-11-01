@@ -658,7 +658,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     g.dy = dy
     g.el.style.transform = `translate(${dx / cam.current.zoom}px, ${dy / cam.current.zoom}px)`
     // Over the tab strip (YAZ-3808 D1): the strip draws its line, and scrolls at its ends (D5).
-    holdOverStrip(e.clientX, e.clientY)
+    holdOverStrip(e.clientX, e.clientY, live.current.info.get(g.id)?.mine === true ? g.id : undefined)
   }
   const onUp = (e: PointerEvent): void => {
     const g = gesture.current

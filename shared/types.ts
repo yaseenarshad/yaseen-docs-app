@@ -1538,7 +1538,7 @@ export interface SettingsState {
   confirmRename: boolean
   /** Files & Links (YAZ-3609 D11): where a click on a link in a note opens its page. ⌘-click always opens a background tab. */
   linkOpen: LinkOpen
-  /** Files & Links (YAZ-3808 D2, D3): where a page opened in a new tab opens — next to the current tab, or at the end of the strip. ⌘T and a tab from another window always go to the end. */
+  /** Files & Links (YAZ-3808 D2, D3): where a page opened in a new tab opens — next to the current tab, or at the end of the strip. ⌘T, the "+", Move to ▸ and Restore session always go to the end; a tab dropped on the strip goes where it is dropped. */
   newTabPlace: NewTabPlace
   /** Rest the pointer on a note, drawing or diagram row to see it (Draw's YAZ-1800 D2; YAZ-3044 A20; notes since YAZ-3075 D5). Text, PDF and image rows never preview. */
   hoverPreview: boolean

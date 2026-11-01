@@ -456,6 +456,22 @@ describe('TabBar: a tab of ANOTHER window (YAZ-3637 D1, D4, D6)', () => {
     expect(onDropFromWindow).toHaveBeenLastCalledWith('w2', { path: '/w/x.md', copy: 1 }, 3)
   })
 
+  it('YAZ-3808 D5: another window\'s drag held at the strip\'s end scrolls it; Esc stops the scroll and puts the line out', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => frames.push(f))
+    vi.stubGlobal('cancelAnimationFrame', () => void frames.splice(0))
+    const el = mount({ ...base, takesDrag: () => true, onDropFromWindow: vi.fn() })
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    strip.getBoundingClientRect = () => ({ left: 100, right: 400, top: 0, bottom: 40, width: 300, height: 40 }) as DOMRect
+    fireData(tabAt(el, 2), 'dragover', foreign(false), 395)
+    expect(frames).toHaveLength(1)
+    expect(el.querySelector('.tabbar__tab--gap-after, .tabbar__tab--gap-before')).not.toBeNull()
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(frames).toHaveLength(0)
+    expect(el.querySelector('.tabbar__tab--gap-after, .tabbar__tab--gap-before')).toBeNull()
+    vi.unstubAllGlobals()
+  })
+
   it('D4: the line goes out when another window\'s drag leaves the row, and on a drop elsewhere that never bubbles', () => {
     const el = mount({ ...base, takesDrag: () => true, onDropFromWindow: vi.fn() })
     const row = el.querySelector<HTMLElement>('.tabbar-row')!
@@ -1198,6 +1214,13 @@ describe('TabBar: the four tab changes (YAZ-3808)', () => {
     expect(gaps(el)).toEqual(['c:after'])
     act(() => holdOverStrip(250, 99)) // below the strip
     expect(gaps(el)).toEqual([])
+    // This window's own card: either side of its own tab moves nothing, so no line shows there (as for a tab drag).
+    act(() => holdOverStrip(140, 20, '/v/b.md'))
+    expect(gaps(el)).toEqual([])
+    act(() => holdOverStrip(210, 20, '/v/b.md'))
+    expect(gaps(el)).toEqual([])
+    act(() => holdOverStrip(210, 20, '/v/a.md'))
+    expect(gaps(el)).toEqual(['c:before'])
     act(() => holdOverStrip(210, 20))
     let slot: number | null = null
     act(() => void (slot = releaseOverStrip(210, 20)))
@@ -1224,6 +1247,30 @@ describe('TabBar: the four tab changes (YAZ-3808)', () => {
     fire(tabAt(el, 2), 'drop', 395)
     expect(frames).toHaveLength(0)
     expect(onMove).toHaveBeenCalledWith(0, 2)
+  })
+
+  it('D5: a drag held over the "+" scrolls the strip, and a drop there lands at the end, never a tear-off (YAZ-3984)', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => frames.push(f))
+    vi.stubGlobal('cancelAnimationFrame', () => void frames.splice(0))
+    const onMove = vi.fn()
+    const onTearOff = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove, onTearOff, onNewTab: vi.fn(), ...props })
+    layOut(el)
+    const plus = el.querySelector<HTMLElement>('.tabbar__new')!
+    fire(tabAt(el, 0), 'dragstart')
+    const over = new MouseEvent('dragover', { bubbles: true, cancelable: true, clientX: 415, clientY: 20 })
+    act(() => void plus.dispatchEvent(over))
+    expect(over.defaultPrevented).toBe(true) // the "+" takes the drop
+    expect(frames).toHaveLength(1) // and the strip scrolls
+    expect(gaps(el)).toEqual(['c:after'])
+    // On its icon too: the drag's target is the svg inside the button.
+    act(() => void plus.querySelector('svg')?.dispatchEvent(new MouseEvent('dragover', { bubbles: true, cancelable: true, clientX: 415, clientY: 20 })))
+    fire(plus, 'drop', 415, 20)
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(0, 2)
+    fire(tabAt(el, 0), 'dragend')
+    expect(onTearOff).not.toHaveBeenCalled()
+    expect(frames).toHaveLength(0)
   })
 
   it('D5: a drop on ‹ › lands at the first tab on show — never off every surface (a tear-off)', () => {
@@ -1271,6 +1318,9 @@ describe('TabBar: the four tab changes (YAZ-3808)', () => {
     expect(glides).toEqual([])
     render(['/v/c.md', '/v/a.md', '/v/d.md', '/v/b.md'])
     expect(glides).toEqual([])
+    render(['/v/c.md', '/v/d.md', '/v/b.md']) // a close slides the ghost shut; nothing glides
+    expect(glides).toEqual([])
+    render(['/v/c.md', '/v/a.md', '/v/d.md', '/v/b.md'])
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true }) })
     render(['/v/a.md', '/v/c.md', '/v/d.md', '/v/b.md'])
     expect(glides).toEqual([])

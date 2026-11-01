@@ -258,6 +258,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // again as the strip moves under a pointer that stays still (an HTML5 drag's `dragover` repeats by itself).
   const [boardOver, setBoardOver] = useState<number | null>(null)
   const boardPoint = useRef<{ x: number; y: number } | null>(null)
+  /** The held card's own tab (this window's card), by id: a slot either side of it moves nothing, so no line shows there. */
+  const [boardOwn, setBoardOwn] = useState<string | null>(null)
   const [scroller] = useState(() =>
     edgeScroller(
       () => stripRef.current,
@@ -269,8 +271,9 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   )
   useEffect(() => {
     setStripTarget({
-      hold: (x, y) => {
+      hold: (x, y, own) => {
         const slot = slotUnder(stripRef.current, x, y)
+        setBoardOwn(own ?? null)
         boardPoint.current = slot === null ? null : { x, y }
         setBoardOver(slot)
         if (slot === null) scroller.stop()
@@ -439,10 +442,10 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     onDropPage?.(page, insertion)
   }
 
-  // A slot that is no tab's half, for room around the tabs. The END slot, twice: the tablist's own padding, and the row's
-  // tail after the "+" — the room a drag reaches when it goes past the last tab. Direct hits only: a tab marks its own
-  // hover. And ‹ › (YAZ-3808 D5): the strip scrolls left while a drag rests there, so a drop there lands at the first
-  // tab on show, never off every surface (a tear-off).
+  // A slot that is no tab's half, for room around the tabs. The END slot: the tablist's own padding and the row's tail
+  // after the "+" — the room a drag reaches when it goes past the last tab; direct hits only, since a tab marks its own
+  // hover. The "+" and ‹ › too (YAZ-3808 D5, YAZ-3984): the strip scrolls while a drag rests on them, so a drop there
+  // lands at the end, or at the first tab on show, never off every surface (a tear-off).
   const slotZone = (slotOf: () => number, direct: boolean) => ({
     onDragOver: (e: DragEvent<HTMLElement>) => {
       if (direct && e.target !== e.currentTarget) return
@@ -469,6 +472,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     },
   })
   const endSlot = slotZone(() => tabs.length, true)
+  const plusSlot = slotZone(() => tabs.length, false)
   const firstShownSlot = slotZone(() => {
     const r = stripRef.current?.getBoundingClientRect()
     return r === undefined ? 0 : (slotUnder(stripRef.current, r.left, r.top + r.height / 2) ?? 0)
@@ -477,7 +481,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // would leave the grabbed tab in its place, on either side of it.
   // A tab board card over the strip (YAZ-3808 D1) marks its slot with the same line.
   const over = drag?.over ?? externalOver ?? boardOver
-  const gap = over === null || (drag !== null && (over === drag.from || over === drag.from + 1)) ? null : over
+  const from = drag?.from ?? (boardOver === null || boardOwn === null ? -1 : tabs.findIndex((t) => t.id === boardOwn))
+  const gap = over === null || (from !== -1 && (over === from || over === from + 1)) ? null : over
 
   return (
     <div
@@ -672,7 +677,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         )}
       </div>
       {onNewTab && (
-        <button type="button" className="tabbar__new" aria-label="New tab" title={titleWithKey('New tab', 'newTab', hotkeys)} onClick={onNewTab}>
+        <button type="button" className="tabbar__new" aria-label="New tab" title={titleWithKey('New tab', 'newTab', hotkeys)} onClick={onNewTab} {...plusSlot}>
           <PlusIcon />
         </button>
       )}
