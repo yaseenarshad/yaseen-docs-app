@@ -219,19 +219,19 @@ describe('settleFileWrites (YAZ-2174)', () => {
     readFile.mockResolvedValue(file('b', 150))
     const first = transformFile(PATH, () => 'x').catch(() => 'rejected')
     let settled = false
-    const settle = settleFileWrites().then(() => (settled = true))
+    const settle = settleFileWrites().then((landed) => ((settled = true), landed))
     const second = transformFile(PATH, () => 'y') // a write the first one's caller starts mid-flush
 
     await new Promise((r) => setTimeout(r, 0))
     expect(settled).toBe(false)
     releaseRead()
-    await settle
+    expect(await settle).toBe(false) // it answers that a write it waited for failed (YAZ-3737 D2)
     expect(await first).toBe('rejected')
     await expect(second).resolves.toEqual({ mtime: 300, content: 'y' })
     expect(writeFile).toHaveBeenCalledTimes(2)
   })
 
   it('resolves at once when nothing is in flight', async () => {
-    await expect(settleFileWrites()).resolves.toBeUndefined()
+    await expect(settleFileWrites()).resolves.toBe(true)
   })
 })

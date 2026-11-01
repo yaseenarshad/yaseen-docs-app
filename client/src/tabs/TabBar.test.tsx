@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { flushSync } from 'react-dom'
-import { NAV_HOLD_MS, TabBar as IdTabBar, type TabBarProps as IdTabBarProps } from './TabBar'
+import { NAV_HOLD_MS, TabBar as IdTabBar, WAKE_HOVER_MS, type TabBarProps as IdTabBarProps } from './TabBar'
 import tabsCss from './tabs.css?inline'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 import { setBoardHighlight } from './boardHighlight'
@@ -1844,5 +1844,60 @@ describe('TabBar: the live gap (YAZ-3808 6A)', () => {
       expect(el.querySelector('.tabbar__room')).not.toBeNull()
     }
     expect(onRaise).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('tab sleep on the strip (YAZ-3737 D11, S7)', () => {
+  const noop = { onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn() }
+  const tabOf = (el: HTMLElement, path: string) => el.querySelector<HTMLElement>(`.tabbar__tab[data-tab="${path}"]`)!
+  const enter = (node: Element) => act(() => void node.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+  const leave = (node: Element) => act(() => void node.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('the zzz mark stands before the name of a sleeping tab only, and says what it is on hover and to a screen reader', () => {
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], active: '/v/a.md', asleep: new Set(['/v/b.md']), ...noop, ...noNav })
+    expect([...el.querySelectorAll('.tabbar__asleep')].map((m) => m.closest<HTMLElement>('.tabbar__tab')!.dataset.tab)).toEqual(['/v/b.md'])
+    const mark = tabOf(el, '/v/b.md').querySelector('.tabbar__label .tabbar__asleep')!
+    expect(mark.getAttribute('role')).toBe('img')
+    expect(mark.getAttribute('aria-label')).toBe('asleep')
+    expect(mark.getAttribute('title')).toBe('Asleep to save memory. Click to wake it.')
+    // The name reads as before.
+    expect(tabOf(el, '/v/b.md').querySelector('[role="tab"]')!.textContent).toBe('b')
+  })
+
+  it('YAZ-4003, D18: no name hides the zzz: it stands after the file icon, before the name, and does not shrink; the name fades as an awake one does', () => {
+    const el = mount({ tabs: ['/v/a.md', '/v/Living room moodboard.excalidraw'], active: '/v/a.md', asleep: new Set(['/v/Living room moodboard.excalidraw']), ...noop, ...noNav })
+    const label = tabOf(el, '/v/Living room moodboard.excalidraw').querySelector('.tabbar__label')!
+    expect([...label.children].map((c) => c.getAttribute('class'))).toEqual(['file-icon file-icon--file', 'tabbar__asleep', 'tabbar__name'])
+    expect(label.textContent).toBe('Living room moodboard.excalidraw')
+    // An awake tab has no mark, and the same name box.
+    expect([...tabOf(el, '/v/a.md').querySelector('.tabbar__label')!.children].map((c) => c.getAttribute('class'))).toEqual(['file-icon file-icon--file', 'tabbar__name'])
+    // jsdom lays nothing out: the rules are read as written.
+    const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(tabsCss.replace(/\/\*[\s\S]*?\*\//g, ''))?.[1] ?? ''
+    expect(rule('.tabbar__label')).toMatch(/display:\s*flex;/)
+    expect(rule('.tabbar__asleep')).toMatch(/flex:\s*none;/)
+    expect(rule('.tabbar__name')).toMatch(/min-width:\s*0;/)
+    expect(rule('.tabbar__name')).not.toMatch(/overflow/)
+  })
+
+  it(`a hover of ${WAKE_HOVER_MS} ms on a sleeping tab wakes it, once; a hover that leaves sooner, or on an awake tab, wakes nothing`, () => {
+    const onWake = vi.fn()
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], active: '/v/a.md', asleep: new Set(['/v/b.md']), onWake, ...noop, ...noNav })
+    enter(tabOf(el, '/v/b.md'))
+    act(() => void vi.advanceTimersByTime(WAKE_HOVER_MS - 10))
+    leave(tabOf(el, '/v/b.md'))
+    act(() => void vi.advanceTimersByTime(1000))
+    expect(onWake).not.toHaveBeenCalled()
+    enter(tabOf(el, '/v/c.md'))
+    act(() => void vi.advanceTimersByTime(1000))
+    expect(onWake).not.toHaveBeenCalled()
+    enter(tabOf(el, '/v/b.md'))
+    act(() => void vi.advanceTimersByTime(WAKE_HOVER_MS - 1))
+    expect(onWake).not.toHaveBeenCalled()
+    act(() => void vi.advanceTimersByTime(1))
+    expect(onWake.mock.calls).toEqual([['/v/b.md']])
+    act(() => void vi.advanceTimersByTime(1000))
+    expect(onWake).toHaveBeenCalledTimes(1)
   })
 })

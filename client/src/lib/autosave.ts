@@ -58,6 +58,15 @@ export class Autosave<C = string> {
   }
 
   /**
+   * Every edit is on disk (YAZ-3737 D2): nothing pending, no save in flight, no conflict blocking. A failed write
+   * keeps its content pending, so it is not clean. The flush handshake answers this after `flush()`, so a reload
+   * never drops what a save could not write.
+   */
+  isClean(): boolean {
+    return this.pending === null && this.inflight === null && !this.blocked
+  }
+
+  /**
    * Resolves once no save is in flight. Watcher events for our own write can arrive
    * before the `writeFile` response (slow rename on network filesystems), so callers
    * must wait for the in-flight save to settle before comparing mtimes for echo suppression.

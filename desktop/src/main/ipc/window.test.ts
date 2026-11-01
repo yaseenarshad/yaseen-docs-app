@@ -60,6 +60,7 @@ let manager: {
   handleLinkReady: ReturnType<typeof vi.fn>
   vaultNotice: ReturnType<typeof vi.fn>
   takeStartView: ReturnType<typeof vi.fn<(id: string) => StartView | undefined>>
+  takeReload: ReturnType<typeof vi.fn<(id: string) => { views: (StartView | null)[]; mb: number } | undefined>>
   takeStartEmpty: ReturnType<typeof vi.fn<(id: string) => boolean>>
   takeStartCollapsed: ReturnType<typeof vi.fn<(id: string) => boolean>>
   openFilesWindow: ReturnType<typeof vi.fn<(from: string | undefined, root: string | null) => boolean>>
@@ -80,7 +81,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), tearOff: vi.fn((): TearOffResult => 'opened'), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), addVaultAndTake: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), raise: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), tearOff: vi.fn((): TearOffResult => 'opened'), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), addVaultAndTake: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), raise: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeReload: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -882,6 +883,12 @@ describe('registerWindowIpc', () => {
       expect(manager.popOut.mock.lastCall?.[2]).toEqual({ view: { ...VIEW, folds: many.slice(0, MAX_FOLD_KEYS_PER_FILE) } })
       // The options themselves must be an object.
       expect(await popOut({ sender }, '/v/a.md', 'view')).toEqual(bad('BAD_REQUEST'))
+      // The caret and a drawing's pan and zoom travel when whole (YAZ-3737 D3, D13); a bad one goes, the view stays.
+      const whole = { ...VIEW, selection: { anchor: 3, head: 9 }, canvas: { scrollX: -40, scrollY: 12.5, zoom: 1.5 } }
+      await popOut({ sender }, '/v/a.md', { view: whole })
+      expect(manager.popOut.mock.lastCall?.[2]).toEqual({ view: whole })
+      await popOut({ sender }, '/v/a.md', { view: { ...VIEW, selection: { anchor: 'x', head: 1 }, canvas: { scrollX: 0, scrollY: 0 } } })
+      expect(manager.popOut.mock.lastCall?.[2]).toEqual({ view: VIEW })
     })
 
     it('window:identity gives the start view out one time (S17)', async () => {
@@ -893,14 +900,30 @@ describe('registerWindowIpc', () => {
       const again = (await identity({ sender })) as { value: WindowIdentity }
       expect(again.value).not.toHaveProperty('startView')
     })
+
+    it('window:identity gives a memory reload\'s views and size out one time (YAZ-3737 D4, D12)', async () => {
+      const views = [null, { path: '/v/a.md', view: VIEW }]
+      manager.takeReload.mockReturnValueOnce({ views, mb: 1740 })
+      const identity = registered(CONTRACT.window.identity.channel)
+      expect(((await identity({ sender })) as { value: WindowIdentity }).value).toMatchObject({ reloadViews: views, reloadedAtMb: 1740 })
+      expect(manager.takeReload).toHaveBeenCalledWith('w1')
+      const again = ((await identity({ sender })) as { value: WindowIdentity }).value
+      expect(again).not.toHaveProperty('reloadViews')
+      expect(again).not.toHaveProperty('reloadedAtMb')
+    })
   })
 
-  it('app:flushed routes the renderer ack to the manager by sender', () => {
+  it('app:flushed routes the renderer ack to the manager by sender; only `{ clean: true }` is clean (YAZ-3737 D2)', () => {
     const call = vi.mocked(ipcMain.on).mock.calls.find(([ch]) => ch === SPECIAL.appFlushed)
     expect(call).toBeDefined()
-    const handler = call?.[1] as unknown as (e: { sender: { id: number } }) => void
-    handler({ sender })
-    expect(manager.handleFlushed).toHaveBeenCalledWith(sender)
+    const handler = call?.[1] as unknown as (e: { sender: { id: number } }, ack?: unknown) => void
+    for (const ack of [{ clean: true }, { clean: false }, undefined, { clean: 'yes' }]) handler({ sender }, ack)
+    expect(manager.handleFlushed.mock.calls).toEqual([
+      [sender, true],
+      [sender, false],
+      [sender, false],
+      [sender, false],
+    ])
   })
 
   it('link:ready tells the manager which renderer now listens for link pushes (YAZ-2589 A2)', async () => {

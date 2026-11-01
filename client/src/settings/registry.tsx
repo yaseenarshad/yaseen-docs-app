@@ -46,6 +46,7 @@ import { DailyNoteFolderControl, DailyNoteFormatControl } from './DailyNoteContr
 import { dailyNoteName } from '@shared/dailyNote'
 import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
+import { MEMORY_SECTION } from './memorySection'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
 import { SettingsFolderControl } from './SettingsFolderControl'
@@ -138,7 +139,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'code' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'code' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -160,7 +161,7 @@ export interface SettingsSection {
   title: string
   /** A section that only exists in some contexts (sync needs the engine); absent = always. */
   available?: (ctx: SettingsCtx) => boolean
-  /** One line under the section title, for the section whose settings do not live where the rest do. */
+  /** One line under the section title: for the section whose settings do not live where the rest do, or one that says what the page is for (Memory, YAZ-3977). */
   note?: string
   /** The whole section is ONE vault's (YAZ-2602 R10): it names that vault where the window has two or more. */
   vault?: true
@@ -1007,6 +1008,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
     ],
   },
+  // YAZ-3737 D9: each window's memory and the two settings that save it, a report page just above Storage.
+  MEMORY_SECTION,
   // YAZ-1801 (YAZ-3039): a per-vault report, its own page in the nav's reference list.
   STORAGE_SECTION,
   // YAZ-3040: share links on the user's own Cloudflare — a setup flow and a write-up, its own page too.

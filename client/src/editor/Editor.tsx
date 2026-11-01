@@ -16,7 +16,7 @@ import { hrefPath, hrefTarget, vaultHref } from './pathPaste'
 import type { LinkActions } from './linkMenu'
 import { redrawLinkPills } from './markdownLink'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { createCrepe, editorViewOf, focusEditor, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, setMarkdown, zoomPageTo } from './createCrepe'
+import { createCrepe, editorViewOf, focusEditor, getCaretOf, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
@@ -292,7 +292,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     // commands are dispatched on), so nothing wraps it here.
     return (
       <Suspense fallback={<section className="editor" />}>
-        <DrawingEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onChangeCanvasPrefs} canvasPanel={canvasPanel} onCanvasPanelChange={onChangeCanvasPanel} onNotice={onNotice} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
+        <DrawingEditor key={path} root={root} path={path} watch={watch} sync={sync} onSyncNow={onSyncNow} startView={startViewRef.current} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onChangeCanvasPrefs} canvasPanel={canvasPanel} onCanvasPanelChange={onChangeCanvasPanel} onNotice={onNotice} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
       </Suspense>
     )
   }
@@ -822,8 +822,12 @@ function CrepeHost({
       // while focus stands on a tree row is a PREVIEW — stealing the caret would strand the
       // arrows mid-walk. It yields to a tab's name field too (YAZ-3059). Every other door (tabs,
       // wikilinks, boot) still lands in the text.
+      // The caret it had (YAZ-3737 D3): a woken tab's, a copy's. Before the grab, which keeps it.
+      if (start?.selection !== undefined) placeCaret(crepe, start.selection)
       const active = document.activeElement
-      if (!(active instanceof HTMLElement && active.closest('.tree') !== null) && !namingTab(active)) focusEditor(crepe)
+      // A tab woken behind the page on show (YAZ-3737 S7) takes no caret and no keys: its layer is hidden.
+      const behind = hostRef.current?.closest('.tabstack__layer--hidden') != null
+      if (!(active instanceof HTMLElement && active.closest('.tree') !== null) && !namingTab(active) && !behind) focusEditor(crepe)
       // A copy starts where its source stood (YAZ-2940 D7) — after the caret grab, which may scroll,
       // and after the start drill-in, which the editor state already holds (YAZ-2951 S6).
       const scroller = hostRef.current?.closest('.editor-host')
@@ -836,6 +840,7 @@ function CrepeHost({
           zoomKey: getZoomKeyOf(crepe),
           folds: [...bulletFoldKeys, ...headingFoldKeys],
           magnification: documentZoomRef.current,
+          selection: getCaretOf(crepe),
         }))
       }
     })

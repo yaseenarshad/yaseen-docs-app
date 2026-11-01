@@ -64,13 +64,14 @@ const shapeItem = (shape: ShapeCatalogItem): StudioItem => ({
  * The tile pictures. Keyed `provider:id` — the same key main's 24 h disk cache uses, so the two
  * can never disagree about what a tile is showing. Exported so a test starts with an empty one.
  * Bounded (YAZ-2073 5J): a long browse must not keep every tile it ever showed, and an evicted
- * tile refills from main's disk cache in milliseconds.
+ * tile refills from main's disk cache in milliseconds. 32 MB of dataURLs at most, too (YAZ-3737 S13): a few
+ * big photos would cost more than many small icons.
  */
 const previews = createPreviewCache(async (key) => {
   const [provider, ...rest] = key.split(':')
   const { dataURL } = await api.media.preview({ provider: provider as MediaBytesProvider, id: rest.join(':') })
   return dataURL
-}, { limit: 300 })
+}, { limit: 300, maxBytes: 32 * 1024 * 1024 })
 export const clearPreviewMemo = previews.clear
 
 /** A shape tile's picture: one of six stock outlines, or the engine's own generated path. */

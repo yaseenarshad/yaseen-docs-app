@@ -3,6 +3,9 @@
 exports[`window.yaseenDocs is exactly this surface (YAZ-2200) 1`] = `
 "expose yaseenDocs
 on app:flush
+on memory:heap
+on window:views
+on window:tabs
 on menu:paste-as
 on menu:copy-as
 app.home/0: invoke app:home []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -98,6 +101,7 @@ media.onChanged/1: on media:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","ro
 media.preview/1: invoke media:preview ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.recent/1: invoke media:recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.search/1: invoke media:search ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+memory.report/0: invoke memory:report []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 menu.edit/2: invoke menu:edit ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 menu.onBack/1: on menu:back -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:back
 menu.onCanvasBackground/1: on menu:canvas-background -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:canvas-background
@@ -212,6 +216,8 @@ window.onFlush/1: (no IPC)
 window.onGlow/1: on window:glow -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off window:glow
 window.onHiddenWindows/1: on window:hidden-windows -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off window:hidden-windows
 window.onMinimizedWindows/1: on window:minimized-windows -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off window:minimized-windows
+window.onTabs/1: (no IPC)
+window.onViews/1: (no IPC)
 window.open/1: invoke window:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openAlone/1: invoke window:open-alone ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openBehind/0: invoke window:open-behind []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

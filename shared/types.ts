@@ -1698,6 +1698,13 @@ export interface SettingsState {
   dailyNoteFormat: string
   /** Make a folder for each day (D9): today's note goes in a folder of the same name. */
   dailyNoteDayFolder: boolean
+  /**
+   * Settings › Memory (YAZ-3737 D10): how long a tab stays unseen before it sleeps (tab sleep, 5A). Travels with the
+   * other settings. Its row is in place before 5A reads it.
+   */
+  tabSleepAfter: TabSleepAfter
+  /** Settings › Memory (YAZ-3737 D6, D10): a window that holds too much memory reloads by itself (6). On by default; travels. */
+  memoryReload: boolean
 }
 
 /** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, a folder or a file by its path inside the vault ('' = the vault root), or today's daily note (YAZ-3607 D1). */
@@ -1722,6 +1729,10 @@ export function hoverOn(settings: Pick<SettingsState, 'hoverPreview' | 'hoverPre
 
 export type DiagramDarkColors = 'adapt' | 'keep'
 export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
+
+/** How long a tab stays unseen before it sleeps (YAZ-3737 D10): 30 min is the default. */
+export type TabSleepAfter = '15m' | '30m' | '1h' | '2h' | 'never'
+export const TAB_SLEEP_AFTER: readonly TabSleepAfter[] = ['15m', '30m', '1h', '2h', 'never']
 
 /** How long a toast stays (YAZ-3303 D5): 4 s (the length before 3303), 8 s, 15 s, or until closed. */
 export type NoticeLength = '4s' | '8s' | '15s' | 'closed'
@@ -1936,6 +1947,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   dailyNoteFolder: '',
   dailyNoteFormat: DEFAULT_DAILY_NOTE_FORMAT,
   dailyNoteDayFolder: false,
+  tabSleepAfter: '30m',
+  memoryReload: true,
 }
 
 export interface WindowBounds {
@@ -2919,6 +2932,13 @@ export interface WindowIdentity {
    * every folder closed, not with the vault's open folders. Given out by its FIRST `window:identity` only. Never stored.
    */
   startCollapsed?: true
+  /**
+   * The memory reload (YAZ-3737 D4): each tab's page view before main reloaded this window, by its place in the strip,
+   * with its path; `null` = that tab had none. Given out by the FIRST `window:identity` after that reload only. Never stored.
+   */
+  reloadViews?: (StartView | null)[]
+  /** The memory reload's size (YAZ-3737 D12), MB: the window shows its notice once. Given out with `reloadViews`. */
+  reloadedAtMb?: number
   /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */
   kind?: WindowKind
   /** A Files window's own sidebar zoom in percent (YAZ-3389 D13), as `WindowEntry.zoom`; absent on a full window. */
@@ -2938,6 +2958,13 @@ export interface PageView {
   folds: string[]
   /** The text size (⌘+ / ⌘−), percent; 100 = normal. */
   magnification: number
+  /**
+   * The caret (YAZ-3737 D3): a note's ProseMirror positions, a code tab's text offsets. Absent where the tab has none
+   * (a drawing) or the view is a new start (a bullet's new tab).
+   */
+  selection?: { anchor: number; head: number }
+  /** A drawing's pan and zoom (YAZ-3737 D13): the engine's `scrollX`, `scrollY` and `zoom.value`. Only a drawing has it. */
+  canvas?: { scrollX: number; scrollY: number; zoom: number }
 }
 
 /** A page view for one file: what a popped-out window starts its active tab with (YAZ-2951 D2). Never stored. */
@@ -3031,6 +3058,69 @@ export function stepZoom(steps: readonly number[], percent: number, direction: 1
 /** One sidebar zoom step (YAZ-3389) along `SIDEBAR_ZOOM_STEPS`: 50% down and 200% up are the walls. */
 export function stepSidebarZoom(percent: number, direction: 1 | -1): number {
   return stepZoom(SIDEBAR_ZOOM_STEPS, percent, direction)
+}
+
+/** The memory meter samples every window this often (YAZ-3737 D1); Settings › Memory asks for its report at the same rate. */
+export const MEMORY_SAMPLE_MS = 30_000
+
+/** One window's row of Settings › Memory (YAZ-3737 D1, D9). Every size is bytes, resident (RSS). */
+export interface MemoryWindowRow {
+  /** The window's id. */
+  id: string
+  /** `WindowEntry.name`, else the window's title. */
+  title: string
+  /** What it has open, as "2 notes, 2 drawings"; '' with no tab. */
+  open: string
+  /** Its renderer plus every frame process in it (draw.io, PDF). */
+  bytes: number
+  /** The page's JS heap in use, from its preload, read only for this report; null = the window did not answer. */
+  jsHeapBytes: number | null
+  /** "Growing": it grew more than 150 MB or 20 % since the sample about 1 h ago. Never in its first hour. */
+  grew: boolean
+  /** Its tabs in strip order, copies included (YAZ-3934, YAZ-3945). No size: the tabs share one heap. */
+  tabs: MemoryTabRow[]
+}
+
+/**
+ * A tab's sleep state as its window says it (YAZ-3946): `shown` = the tab on show (it never sleeps); `unsaved` = its
+ * file is not saved yet (it does not sleep); `unloaded` = not opened since the window started, so no editor (YAZ-3958);
+ * `awake` with `sleepsAt` = its sleep timer runs, without = it does not (Sleep is Never).
+ */
+export type MemoryTabState = 'shown' | 'awake' | 'unsaved' | 'unloaded' | 'asleep'
+
+/** What a window answers main's tabs ask (`window.onTabs`, YAZ-3946) for one tab, in strip order. Times are epoch ms. */
+export interface MemoryTabFacts {
+  path: string
+  /** As its tab bar shows it: the display name, else the page's title, else the file name. */
+  title: string
+  state: MemoryTabState
+  /** When it last left the front; null for the tab on show and a tab not shown since the window started. */
+  lastSeen: number | null
+  /** When its sleep timer puts it to sleep; null unless `state` is `awake` and the timer runs. */
+  sleepsAt: number | null
+}
+
+/**
+ * One tab's row of Settings › Memory (YAZ-3945, YAZ-3946): its window's answer to the tabs ask, and the file's mtime.
+ * A window that did not answer gives its stored strip: `title` = the display name or null, the facts null.
+ */
+export interface MemoryTabRow {
+  path: string
+  title: string | null
+  state: MemoryTabState | null
+  lastSeen: number | null
+  sleepsAt: number | null
+  /** The file's mtime on disk (`fs.stat`), epoch ms; null = the stat failed. */
+  changed: number | null
+}
+
+/** `memory.report()` (YAZ-3737 D1): the windows in the order they opened (a row never moves under the pointer), then App core and the code helpers. */
+export interface MemoryReport {
+  windows: MemoryWindowRow[]
+  /** The main process, the GPU and utility processes, and any process no window owns (`other`, e.g. DevTools). `bytes` is their sum. */
+  core: { bytes: number; main: number; gpu: number; utility: number; other: number }
+  /** The language helpers of the code tab (`ps` RSS); null while none runs. */
+  helpers: { bytes: number; count: number } | null
 }
 
 /**

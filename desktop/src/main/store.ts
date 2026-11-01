@@ -84,6 +84,7 @@ import {
   type HoverPlace,
   type NewNoteLocation,
   type NoticeLength,
+  type TabSleepAfter,
   type OpenStat,
   type RecentRoots,
   type RightPanelIdentity,
@@ -118,6 +119,7 @@ import {
   type WindowEntry,
   DIAGRAM_DARK_COLORS,
   NOTICE_LENGTHS,
+  TAB_SLEEP_AFTER,
   type DiagramDarkColors,
   DEFAULT_CANVAS_PANEL,
   isCanvasPanelTab,
@@ -555,6 +557,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   dailyNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
   dailyNoteFormat: (v): v is string => typeof v === 'string' && isValidDailyNoteFormat(v),
   dailyNoteDayFolder: (v): v is boolean => typeof v === 'boolean',
+  tabSleepAfter: (v): v is TabSleepAfter => typeof v === 'string' && (TAB_SLEEP_AFTER as readonly string[]).includes(v),
+  memoryReload: (v): v is boolean => typeof v === 'boolean',
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 

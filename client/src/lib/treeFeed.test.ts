@@ -80,6 +80,24 @@ describe('the tree feed (YAZ-2191)', () => {
     expect(latestTree(root)).toEqual(response(1))
   })
 
+  it('the feed and its tree go when the last listener leaves (YAZ-3737), but not when one leaves and comes back in the same turn', async () => {
+    const offA = onTree(root, () => undefined)
+    const offB = onTree(root, () => undefined)
+    const first = fetchTree(root)
+    held[0].answer(response(1))
+    await first
+    offA()
+    await nextTurn()
+    expect(latestTree(root)).toEqual(response(1)) // B still listens
+    offB()
+    const offAgain = onTree(root, () => undefined) // an effect re-run: cleanup, then setup, in one turn
+    await nextTurn()
+    expect(latestTree(root)).toEqual(response(1))
+    offAgain()
+    await nextTurn()
+    expect(latestTree(root)).toBeNull() // the vault left the window: no tree kept
+  })
+
   it('treeSentSince: a request sent in the turn of an event, before or after it was seen, covers it', async () => {
     const seenAt = currentTurn()
     expect(treeSentSince(root, seenAt)).toBe(false)

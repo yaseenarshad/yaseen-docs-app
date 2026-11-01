@@ -33,7 +33,7 @@ const focus = vi.fn()
 
 const { watch, watcherSaw } = fakeWatch()
 
-let flushListener: (() => Promise<void> | void) | null = null
+let flushListener: (() => Promise<boolean | void> | boolean | void) | null = null
 let board: ReturnType<typeof useDocumentHost>
 let root: Root | null = null
 let container: HTMLElement
@@ -90,7 +90,7 @@ beforeEach(() => {
     value: {
       setBoardReadOnly,
       window: {
-        onFlush: (listener: () => Promise<void> | void) => {
+        onFlush: (listener: () => Promise<boolean | void> | boolean | void) => {
           flushListener = listener
           return () => {
             flushListener = null
@@ -266,8 +266,11 @@ describe('changes on disk', () => {
     await after(2000)
     await act(async () => board.flush())
     expect(write).toHaveBeenCalledTimes(1)
+    // The window's flush says not clean while the conflict holds the edit (YAZ-3737 D2): a reload must wait.
+    expect(await act(async () => flushListener?.())).toBe(false)
     await act(async () => button('Keep mine').click())
     expect(write).toHaveBeenLastCalledWith(900)
+    expect(await act(async () => flushListener?.())).toBe(true)
   })
 })
 

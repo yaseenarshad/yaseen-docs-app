@@ -416,6 +416,10 @@ export const storage = {
    * a window that ⌘⇧N or "Move to new window" opened has one. Memory only: it is never sent back.
    */
   getStartView: (): StartView | undefined => identity.startView,
+  /** After a memory reload (YAZ-3737 D4): each tab's page view from before it, by its place in the strip. Memory only. */
+  getReloadViews: (): (StartView | null)[] | undefined => identity.reloadViews,
+  /** After a memory reload (YAZ-3737 D12): the size it reloaded at, in MB, for the window's one notice. */
+  getReloadedAtMb: (): number | undefined => identity.reloadedAtMb,
   setSidebarLens(lens: SidebarLens): void {
     identity = { ...identity, sidebarLens: lens }
     send('window.setIdentity', () => api.window.setIdentity({ sidebarLens: lens }))

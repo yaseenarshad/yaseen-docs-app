@@ -845,6 +845,7 @@ class App extends React.Component<AppProps, AppState> {
       mutateElement: this.mutateElement,
       updateLibrary: this.library.updateLibrary,
       addFiles: this.addFiles,
+      pruneFiles: this.pruneFiles,
       insertImages: this.insertImages,
       insertElements: this.insertElements,
       resetScene: this.resetScene,
@@ -5450,6 +5451,64 @@ class App extends React.Component<AppProps, AppState> {
     this.files = nextFiles;
 
     return { addedFiles };
+  };
+
+  /**
+   * Drops every file that nothing can show again (YAZ-3737 D14); `files` only ever grew before.
+   * A file stays while one of these uses it:
+   * - the scene, deleted elements included;
+   * - an undo or redo step;
+   * - the store snapshot: the base of the next undo step (a scene replaced with `EVENTUALLY` is
+   *   still in it) and what undo falls back to for an element the scene lacks. It keeps every
+   *   element it ever saw as a deleted one, so a deleted one counts only when a step changes it.
+   */
+  public pruneFiles = () => {
+    const used = new Set<string>();
+    const keep = (element: object) => {
+      if ("fileId" in element && typeof element.fileId === "string") {
+        used.add(element.fileId);
+      }
+    };
+    const stepped = new Set<string>();
+    for (const step of [...this.history.undoStack, ...this.history.redoStack]) {
+      const { added, removed, updated } = step.elements;
+      for (const [id, delta] of [
+        ...Object.entries(added),
+        ...Object.entries(removed),
+        ...Object.entries(updated),
+      ]) {
+        stepped.add(id);
+        keep(delta.deleted);
+        keep(delta.inserted);
+      }
+    }
+    this.scene.getElementsIncludingDeleted().forEach(keep);
+    for (const element of this.store.snapshot.elements.values()) {
+      if (!element.isDeleted || stepped.has(element.id)) {
+        keep(element);
+      }
+    }
+
+    const nextFiles: BinaryFiles = {};
+    let dropped = false;
+    for (const [id, fileData] of Object.entries(this.files)) {
+      if (used.has(id)) {
+        nextFiles[id] = fileData;
+      } else {
+        dropped = true;
+      }
+    }
+    for (const id of this.imageCache.keys()) {
+      if (!used.has(id)) {
+        this.imageCache.delete(id);
+        dropped = true;
+      }
+    }
+    if (dropped) {
+      this.files = nextFiles;
+      // the next `onChange` hands the host the smaller map, so the old one is free
+      this.scene.triggerUpdate();
+    }
   };
 
   public updateScene = withBatchedUpdates(

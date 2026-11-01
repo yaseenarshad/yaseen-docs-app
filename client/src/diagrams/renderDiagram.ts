@@ -13,6 +13,9 @@
  *
  * The frame is laid out off-screen rather than `display: none`: draw.io measures its labels in
  * its own document, and a document with no layout would measure every label as zero.
+ *
+ * The frame closes after `IDLE_CLOSE_MS` with no picture asked (YAZ-3737 S14): it holds a whole
+ * draw.io page, maybe its own process. The next picture opens a fresh one.
  */
 import { DRAWIO_ORIGIN } from '@shared/drawio'
 import type { DiagramDarkColors } from '@shared/types'
@@ -24,6 +27,8 @@ const RENDER_URL = `${DRAWIO_ORIGIN}/yaseen-render.html`
 const RENDER_TIMEOUT_MS = 15_000
 /** An exported image's margin: Excalidraw's own export default (`DEFAULT_EXPORT_PADDING`). */
 const EXPORT_PADDING = 10
+/** How long the frame stays open after its last picture (S14). */
+export const IDLE_CLOSE_MS = 5 * 60_000
 
 interface RenderRequest {
   xml: string
@@ -46,6 +51,15 @@ let frame: HTMLIFrameElement | null = null
 let ready: Promise<HTMLIFrameElement> | null = null
 const pending = new Map<string, Pending>()
 let serial = 0
+let idle: ReturnType<typeof setTimeout> | undefined
+
+/** Removes the frame; the next `renderFrame` makes a new one. */
+function closeFrame(): void {
+  window.removeEventListener('message', onAnswer)
+  frame?.remove()
+  frame = null
+  ready = null
+}
 
 /**
  * The shared frame, created on first use; resolves once its page says `ready`. A frame that never
@@ -75,10 +89,7 @@ function renderFrame(): Promise<HTMLIFrameElement> {
     }
     const giveUp = setTimeout(() => {
       window.removeEventListener('message', onReady)
-      window.removeEventListener('message', onAnswer)
-      f.remove()
-      frame = null
-      ready = null
+      closeFrame()
       reject(new Error('diagram preview renderer did not start'))
     }, RENDER_TIMEOUT_MS)
     window.addEventListener('message', onReady)
@@ -107,16 +118,25 @@ function onAnswer(ev: MessageEvent): void {
 }
 
 async function render(req: RenderRequest): Promise<string> {
-  const f = await renderFrame()
-  const id = `r${++serial}`
-  return new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pending.delete(id)
-      reject(new Error('diagram picture timed out'))
-    }, RENDER_TIMEOUT_MS)
-    pending.set(id, { resolve, reject, timer })
-    f.contentWindow?.postMessage(JSON.stringify({ id, ...req }), DRAWIO_ORIGIN)
-  })
+  clearTimeout(idle)
+  try {
+    const f = await renderFrame()
+    const id = `r${++serial}`
+    return await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id)
+        reject(new Error('diagram picture timed out'))
+      }, RENDER_TIMEOUT_MS)
+      pending.set(id, { resolve, reject, timer })
+      f.contentWindow?.postMessage(JSON.stringify({ id, ...req }), DRAWIO_ORIGIN)
+    })
+  } finally {
+    // The last picture out starts the idle clock; a picture asked meanwhile stops it again.
+    if (pending.size === 0) {
+      clearTimeout(idle)
+      idle = setTimeout(closeFrame, IDLE_CLOSE_MS)
+    }
+  }
 }
 
 /**

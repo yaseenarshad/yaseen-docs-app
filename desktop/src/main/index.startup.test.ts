@@ -33,6 +33,8 @@ const h = vi.hoisted(() => {
     getPath: vi.fn(() => '/profile'),
     getAppPath: vi.fn(() => '/Applications/Yaseen Docs.app/Contents/Resources/app.asar'),
     getVersion: vi.fn(() => '1.0.12'),
+    // The memory meter (YAZ-3737 D1): one read each 30 s, none in these tests.
+    getAppMetrics: vi.fn(() => []),
     quit: vi.fn(),
     exit: vi.fn(log('exit')),
   }
@@ -44,6 +46,11 @@ const h = vi.hoisted(() => {
     linkNotice: vi.fn(),
     idFor: vi.fn(),
     flushAllForQuit: vi.fn(async (): Promise<void> => void s.order.push('flushAllForQuit')),
+    // The memory reload's watch (YAZ-3737 D6) asks these after each 30 s sample: none in these tests.
+    blurredAt: vi.fn(() => null),
+    lastFocused: vi.fn(() => undefined),
+    busy: vi.fn(() => false),
+    memoryReload: vi.fn(async () => false),
   }
   const store = {
     get: () => ({ settings: { theme: 'system', startupWindows: 'none' }, windows: s.stored, recents: [] }),
@@ -75,7 +82,8 @@ const h = vi.hoisted(() => {
     flushIndexCache: vi.fn(async () => void s.order.push('flushIndexCache')),
     // The settings folder (YAZ-3276 D4) with no folder chosen: its first read is done at once, and quit has nothing to write.
     settingsFolder: { ready: Promise.resolve(), missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined, flush: vi.fn(async () => undefined), close: async () => undefined },
-    registerIpc: vi.fn(() => (s.order.push('registerIpc'), { sync: gitSync, secrets: {} })),
+    // The language helpers' pool (YAZ-3737 D1): the memory meter reads its PIDs, only for a report.
+    registerIpc: vi.fn(() => (s.order.push('registerIpc'), { sync: gitSync, secrets: {}, lsp: { running: () => [] } })),
     registerClipboardIpc: vi.fn(log('registerClipboardIpc')),
     /** The Draw import's wiring (YAZ-3028 D6); `drawImport.test.ts` tests the import itself. */
     startDrawImport: vi.fn((_deps: Record<string, unknown>) => void s.order.push('startDrawImport')),
@@ -87,7 +95,8 @@ Object.defineProperty(process, 'resourcesPath', { value: '/Applications/Yaseen D
 
 vi.mock('electron', () => ({
   app: h.app,
-  ipcMain: { handle: vi.fn((channel: string, fn: (...args: unknown[]) => Promise<unknown>) => h.handles.set(channel, fn)) },
+  // `on`: the memory meter's heap answers (YAZ-3737 D1).
+  ipcMain: { handle: vi.fn((channel: string, fn: (...args: unknown[]) => Promise<unknown>) => h.handles.set(channel, fn)), on: vi.fn() },
   protocol: h.protocol,
   net: { fetch: vi.fn() },
   BrowserWindow: { getAllWindows: () => h.s.windows, getFocusedWindow: () => null },
@@ -96,7 +105,9 @@ vi.mock('electron', () => ({
   nativeTheme: { shouldUseDarkColors: false },
   powerMonitor: { on: vi.fn() },
   screen: { getPrimaryDisplay: vi.fn(), getAllDisplays: vi.fn(() => []) },
-  shell: { openExternal: vi.fn() },
+  shell: { openExternal: vi.fn(), showItemInFolder: vi.fn() },
+  // Save Heap Snapshot (YAZ-3737 D9) finds the window's debugger by id; no test clicks it.
+  webContents: { fromId: vi.fn() },
 }))
 vi.mock('./store', () => ({ createStore: () => h.store }))
 vi.mock('./windows', () => ({ createWindowManager: () => h.manager }))
@@ -338,11 +349,11 @@ describe('the updater in index.ts (YAZ-2976)', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith('update:state-changed', { kind: 'ready', version: '1.0.13' })
   })
 
-  it('on ready registers the three update doors before the windows restore, then starts the timer (D7)', async () => {
+  it('on ready registers the three update doors (and the memory meter\'s, YAZ-3737 D1) before the windows restore, then starts the timer (D7)', async () => {
     expect([...h.handles.keys()]).toEqual([])
     h.s.ready()
     await settle()
-    expect([...h.handles.keys()].sort()).toEqual(['update:notes', 'update:restart', 'update:state'])
+    expect([...h.handles.keys()].sort()).toEqual(['memory:report', 'update:notes', 'update:restart', 'update:state'])
     expect(h.s.order.indexOf('updater.start')).toBeLessThan(h.s.order.indexOf('restore:none'))
     h.updater.kind = 'manual'
     await expect(invoke('update:state')).resolves.toEqual({ ok: true, value: { kind: 'manual' } })
