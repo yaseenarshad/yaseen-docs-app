@@ -37,9 +37,10 @@ function linkAround(state: EditorState, pos: number): { from: number; to: number
 
 /** The unit that ends right at `pos` (`back`, for Backspace) or starts right at it (for Delete), or null. */
 function linkBeside(state: EditorState, pos: number, back: boolean): { from: number; to: number } | null {
-  const link = linkAround(state, back ? pos - 1 : pos + 1)
-  if (link !== null) return (back ? link.to : link.from) === pos ? link : null
-  // A one-letter Markdown pill has no position strictly inside it.
+  const at = back ? pos - 1 : pos + 1
+  const match = wikilinkMatchAt(state.doc, at)
+  if (match !== null && at > match.from && isLinkUnit(match.inner)) return (back ? match.to : match.from) === pos ? match : null
+  // One search of the pills: a one-letter pill has no position strictly inside it, so its edge is matched, not `at`.
   return markdownPillsAround(state, pos).find((pill) => (back ? pill.to : pill.from) === pos) ?? null
 }
 

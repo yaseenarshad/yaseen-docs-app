@@ -154,7 +154,8 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
     let run: { mark: Mark; pieces: Array<[number, number]> } | null = null
     const close = () => {
       const href = run?.mark.attrs.href
-      const path = typeof href === 'string' ? nav.vaultPath?.(href) ?? null : null
+      // A `#heading` link stays text (YAZ-4033): the host resolves its empty path to the note's folder.
+      const path = typeof href === 'string' && !href.startsWith('#') ? nav.vaultPath?.(href) ?? null : null
       if (run !== null && path !== null && nav.icon !== undefined) {
         const name = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
         const icon = nav.icon(path, fileKind(name) === null && !name.includes('.'))
@@ -219,6 +220,8 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
 export const createMarkdownLink = (nav: MarkdownLinkNav) =>
   $prose((ctx) => {
     let close = () => {}
+    /** A paste event came, and its change has not yet: Milkdown's own paste dispatches with no `paste` meta. */
+    let pasting = false
 
     /** Opens `href` as an open gesture does: a page or file of a vault in the window in a tab, `where` it says (D8, D14, YAZ-3936), anything else through the OS. */
     const type = linkSchema.type(ctx)
@@ -230,6 +233,18 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
 
     return new Plugin<DecorationSet>({
       key: markdownLinkKey,
+      // Text pasted at a pill's edge is not part of the link either (YAZ-4034): only that pill's mark comes off it, so a
+      // pasted link keeps its own. Only a paste pays the lookup.
+      appendTransaction: (trs, before, state) => {
+        if (!trs.some((tr) => tr.docChanged)) return null
+        const pasted = pasting || trs.some((tr) => tr.getMeta('paste') === true)
+        pasting = false
+        if (!pasted || !before.selection.empty) return null
+        const at = before.selection.from
+        const mark = type.isInSet(before.doc.resolve(at).marks())
+        if (mark === undefined || !markdownPillsAround(before, at).some((p) => p.to === at || p.from === at)) return null
+        return state.selection.from > at ? state.tr.removeMark(at, state.selection.from, mark) : null
+      },
       // A link into a vault of this window looks like a [[link]] (YAZ-3609 D19): its own text is tinted, and the
       // first piece draws the file's icon on its `::before`. Decorations only, so the text stays real text: find and
       // typing next to it (YAZ-3655) work as on any text, and the caret stays out of it (YAZ-4021). The look follows the
@@ -262,16 +277,21 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
       },
       props: {
         decorations: (state) => markdownLinkKey.getState(state),
-        // A letter typed right after a pill is not part of the link (YAZ-4021): the link mark would take it in. Only a
-        // caret in a link pays the lookup; a composition (an accent, a Japanese word) is the browser's.
+        // A letter typed at a pill's edge is not part of the link (YAZ-4021): the link mark would take it in, at its end,
+        // or at its start when it starts a line (YAZ-4032). Only a caret in a link pays the lookup. A composition (an
+        // accent, a Japanese word) is the browser's (YAZ-4035).
         handleTextInput: (view, from, to, text) => {
-          if (from !== to) return false
-          const $from = view.state.doc.resolve(from)
-          if (type.isInSet($from.marks()) === undefined || !markdownPillsAround(view.state, from).some((p) => p.to === from)) return false
-          view.dispatch(view.state.tr.insertText(text, from, to).removeMark(from, from + text.length, type).scrollIntoView())
+          if (from !== to || view.composing) return false
+          const mark = type.isInSet(view.state.doc.resolve(from).marks())
+          if (mark === undefined || !markdownPillsAround(view.state, from).some((p) => p.to === from || p.from === from)) return false
+          view.dispatch(view.state.tr.insertText(text, from, to).removeMark(from, from + text.length, mark).scrollIntoView())
           return true
         },
         handleDOMEvents: {
+          paste: () => {
+            pasting = true
+            return false
+          },
           mousedown: (view, event) => {
             if (event.button !== 0) return false
             const hit = linkHit(view, ctx, event.target)
