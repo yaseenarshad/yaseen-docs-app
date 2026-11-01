@@ -315,6 +315,7 @@ export const SelectedShapeActions = ({
         {predicates.strokeColor &&
           !isImageSelection &&
           renderAction("changeStrokeColor")}
+        {renderAction("changeTextHighlight")}
       </div>
       {predicates.backgroundColor && (
         <div>{renderAction("changeBackgroundColor")}</div>
@@ -483,6 +484,7 @@ export const ContextualPropertiesToolbar = ({
             Text color
           </span>
           {renderAction("changeStrokeColor", { contextToolbar: true })}
+          {renderAction("changeTextHighlight", { contextToolbar: true })}
           <ContextualToolbarDivider />
           <div className="contextual-properties-toolbar__font">
             <span>{fontFamilyName}</span>
@@ -1247,6 +1249,7 @@ export const CompactShapeActions = ({
       {predicates.strokeColor && (
         <div className={clsx("compact-action-item")}>
           {renderAction("changeStrokeColor")}
+          {renderAction("changeTextHighlight")}
         </div>
       )}
 
@@ -1414,6 +1417,7 @@ export const MobileShapeActions = ({
         {predicates.strokeColor && (
           <div className={clsx("compact-action-item")}>
             {renderAction("changeStrokeColor")}
+            {renderAction("changeTextHighlight")}
           </div>
         )}
         {predicates.backgroundColor && (

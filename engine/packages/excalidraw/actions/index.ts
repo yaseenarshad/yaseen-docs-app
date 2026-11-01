@@ -26,6 +26,8 @@ export {
   actionToggleTextBold,
   actionToggleTextItalic,
   actionToggleTextStrikethrough,
+  actionToggleTextHighlight,
+  actionChangeTextHighlight,
   actionToggleTextUnderline,
   actionChangeFontFamily,
   actionChangeTextAlign,

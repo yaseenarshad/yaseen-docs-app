@@ -12,7 +12,11 @@ import {
   MIME_TYPES,
 } from "@excalidraw/common";
 import { normalizeLink, toValidURL } from "@excalidraw/common";
-import { hashString, isGifPaused } from "@excalidraw/element";
+import {
+  hashString,
+  isGifPaused,
+  TEXT_HIGHLIGHT_FILLS,
+} from "@excalidraw/element";
 import { getUncroppedWidthAndHeight } from "@excalidraw/element";
 import {
   createPlaceholderEmbeddableLabel,
@@ -826,6 +830,22 @@ const renderElementToSvg = (
                 SVG_NS,
                 "tspan",
               );
+              if (segment.highlight) {
+                // YAZ-4102 3E: the fill behind the letters, before the line's text
+                const fill = svgRoot.ownerDocument.createElementNS(
+                  SVG_NS,
+                  "rect",
+                );
+                fill.setAttribute("x", `${lineStart + segment.x}`);
+                fill.setAttribute("y", `${i * lineHeightPx}`);
+                fill.setAttribute("width", `${segment.width}`);
+                fill.setAttribute("height", `${lineHeightPx}`);
+                fill.setAttribute(
+                  "fill",
+                  TEXT_HIGHLIGHT_FILLS[segment.highlight],
+                );
+                node.appendChild(fill);
+              }
               if (segment.link) {
                 // YAZ-4039 D7: the pill and its icon, then the page's name
                 const pill = getLinkPillMetrics(segment.font);

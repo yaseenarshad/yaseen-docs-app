@@ -44,6 +44,8 @@ export type StyledTextSegment = {
   strikethrough: boolean;
   /** Missing: the color of the whole box. */
   color: string | undefined;
+  /** YAZ-4102 3E: the fill behind the letters (`TEXT_HIGHLIGHT_FILLS`). */
+  highlight?: string;
   /**
    * YAZ-4039 D7: a link run. `text` is the raw `[[inner]]`, and `width` is the
    * drawn pill with the page's name.
@@ -221,6 +223,7 @@ type ResolvedTextStyle = {
   underlined: boolean;
   strikethrough: boolean;
   color: string | undefined;
+  highlight?: string;
 };
 
 export const getStyledVisualLines = (args: {
@@ -404,6 +407,7 @@ const getRunPieces = (
       underlined: whole.underlined || run.underline === true,
       strikethrough: whole.strikethrough || run.strikethrough === true,
       color: run.color,
+      ...(run.highlight ? { highlight: run.highlight } : {}),
     });
     cursor = end;
   }
@@ -488,6 +492,7 @@ const getLineSegments = (
       underlined: piece.underlined,
       strikethrough: piece.strikethrough,
       color: piece.color,
+      ...(piece.highlight ? { highlight: piece.highlight } : {}),
       ...(piece.link ? { link: piece.link } : {}),
     });
     x += width;

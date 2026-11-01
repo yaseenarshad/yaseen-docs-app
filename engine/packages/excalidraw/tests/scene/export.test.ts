@@ -209,6 +209,49 @@ describe("exportToSvg", () => {
     expect(tspans[1][0].getAttribute("text-decoration")).toBe("underline");
   });
 
+  it("YAZ-4102 3E: draws a highlight's fill behind its letters, before the line's text", async () => {
+    const highlighted = {
+      ...API.createElement({
+        type: "text",
+        text: "ab cd\nef",
+        width: 100,
+        height: 50,
+        textAlign: "left",
+      }),
+      textRuns: [
+        { start: 3, end: 5, highlight: "yellow" },
+        { start: 6, end: 8, highlight: "pink", bold: true },
+      ],
+    } as NonDeleted<ExcalidrawTextElement>;
+    const { lines } = getTextElementStyledLayout(highlighted, Infinity);
+
+    const svg = await exportUtils.exportToSvg(
+      [highlighted],
+      DEFAULT_OPTIONS,
+      null,
+    );
+    const fills = Array.from(svg.querySelectorAll("rect")).filter((rect) =>
+      rect.getAttribute("fill")?.startsWith("rgba"),
+    );
+    expect(fills.map((rect) => rect.getAttribute("fill"))).toEqual([
+      "rgba(255, 213, 0, 0.4)",
+      "rgba(255, 120, 180, 0.35)",
+    ]);
+    const cd = lines[0].segments!.find((segment) => segment.text === "cd")!;
+    expect(Number(fills[0].getAttribute("x"))).toBe(cd.x);
+    expect(Number(fills[0].getAttribute("width"))).toBe(cd.width);
+    expect(Number(fills[1].getAttribute("y"))).toBeGreaterThan(0);
+    // each fill comes before its line's text
+    const children = Array.from(fills[0].parentNode!.childNodes);
+    const textOf = (fill: Element) =>
+      children.findIndex(
+        (node, index) =>
+          index > children.indexOf(fill) && node.nodeName === "text",
+      );
+    expect(textOf(fills[0])).toBe(children.indexOf(fills[0]) + 1);
+    expect(textOf(fills[1])).toBe(children.indexOf(fills[1]) + 1);
+  });
+
   it("exports one tspan for each styled part of a line (YAZ-3718 D1)", async () => {
     const styledText = {
       ...API.createElement({
@@ -664,6 +707,40 @@ describe("exportToCanvas", () => {
     );
 
     expect(underlineRules).toHaveLength(3);
+  });
+
+  it("YAZ-4102 3E: draws a highlight's fill on the canvas before the letters of its line", async () => {
+    const highlighted = {
+      ...API.createElement({
+        type: "text",
+        text: "ab cd",
+        width: 100,
+        height: 25,
+        textAlign: "left",
+      }),
+      textRuns: [{ start: 3, end: 5, highlight: "yellow" }],
+    } as NonDeleted<ExcalidrawTextElement>;
+
+    const canvas = await exportToCanvas({
+      elements: [highlighted],
+      files: null,
+      appState: { exportBackground: false },
+    });
+    const events = (canvas.getContext("2d") as any).__getEvents();
+    const fill = events.findIndex(
+      (event: any, index: number) =>
+        event.type === "fillRect" &&
+        events
+          .slice(0, index)
+          .reverse()
+          .find((before: any) => before.type === "fillStyle")?.props.value ===
+          "rgba(255, 213, 0, 0.4)",
+    );
+    const letters = events.findIndex(
+      (event: any) => event.type === "fillText" && event.props.text === "ab ",
+    );
+    expect(fill).toBeGreaterThan(-1);
+    expect(letters).toBeGreaterThan(fill);
   });
 
   it("draws canvas list continuations at their shared layout positions", async () => {

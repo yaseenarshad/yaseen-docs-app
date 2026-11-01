@@ -16,11 +16,29 @@ const TEXT_RUN_FLAGS: readonly TextRunFlag[] = [
   "strikethrough",
 ];
 
+/**
+ * YAZ-4102 3E: the highlight colors of notes, by name, with the notes' fills
+ * (`client/src/editor/marks/highlight.ts`, `--mark-bg*` in `app.css`). Yellow
+ * is the default (`==x==` in a note).
+ */
+export const TEXT_HIGHLIGHT_FILLS: Readonly<Record<string, string>> = {
+  yellow: "rgba(255, 213, 0, 0.4)",
+  green: "rgba(80, 200, 120, 0.35)",
+  blue: "rgba(80, 160, 255, 0.35)",
+  pink: "rgba(255, 120, 180, 0.35)",
+};
+
+export const DEFAULT_TEXT_HIGHLIGHT = "yellow";
+
 const hasStyle = (style: TextRunStyle) =>
-  TEXT_RUN_FLAGS.some((flag) => style[flag]) || style.color !== undefined;
+  TEXT_RUN_FLAGS.some((flag) => style[flag]) ||
+  style.color !== undefined ||
+  style.highlight !== undefined;
 
 export const isSameTextRunStyle = (a: TextRunStyle, b: TextRunStyle) =>
-  TEXT_RUN_FLAGS.every((flag) => a[flag] === b[flag]) && a.color === b.color;
+  TEXT_RUN_FLAGS.every((flag) => a[flag] === b[flag]) &&
+  a.color === b.color &&
+  a.highlight === b.highlight;
 
 const toStyle = (value: Record<string, unknown>): TextRunStyle => ({
   ...(value.bold === true ? { bold: true as const } : {}),
@@ -29,6 +47,10 @@ const toStyle = (value: Record<string, unknown>): TextRunStyle => ({
   ...(value.strikethrough === true ? { strikethrough: true as const } : {}),
   ...(typeof value.color === "string" && value.color
     ? { color: value.color }
+    : {}),
+  ...(typeof value.highlight === "string" &&
+  Object.hasOwn(TEXT_HIGHLIGHT_FILLS, value.highlight)
+    ? { highlight: value.highlight }
     : {}),
 });
 
@@ -165,11 +187,53 @@ export const setTextRunColor = (
     color === undefined ? rest : { ...rest, color },
   );
 
-/** Removes one flag, or the color, from every run (the whole box changes). */
+/** YAZ-4102 3E: sets (`highlight`, a name) or removes the letters' highlight. */
+export const setTextRunHighlight = (
+  runs: readonly ExcalidrawTextRun[] | undefined,
+  textLength: number,
+  start: number,
+  end: number,
+  highlight: string | undefined,
+) =>
+  updateTextRunStyle(
+    runs,
+    textLength,
+    start,
+    end,
+    ({ highlight: _, ...rest }) =>
+      highlight === undefined ? rest : { ...rest, highlight },
+  );
+
+/** YAZ-4102 3E: the one highlight of the letters `start` to `end`, else undefined. */
+export const getTextRangeHighlight = (
+  runs: readonly ExcalidrawTextRun[] | undefined,
+  start: number,
+  end: number,
+): string | undefined => {
+  let covered = start;
+  let highlight: string | undefined;
+  for (const run of runs ?? []) {
+    if (run.end <= covered || run.start >= end) {
+      continue;
+    }
+    if (
+      run.start > covered ||
+      !run.highlight ||
+      (highlight !== undefined && run.highlight !== highlight)
+    ) {
+      return undefined;
+    }
+    highlight = run.highlight;
+    covered = run.end;
+  }
+  return covered >= end ? highlight : undefined;
+};
+
+/** Removes one flag, the color or the highlight from every run (the whole box changes). */
 export const clearTextRunStyle = (
   runs: readonly ExcalidrawTextRun[] | undefined,
   textLength: number,
-  field: TextRunFlag | "color",
+  field: TextRunFlag | "color" | "highlight",
 ) =>
   runs?.some((run) => run[field] !== undefined)
     ? updateTextRunStyle(runs, textLength, 0, textLength, (style) => {

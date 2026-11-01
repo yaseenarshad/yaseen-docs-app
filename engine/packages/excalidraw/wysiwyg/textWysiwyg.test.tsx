@@ -1405,6 +1405,89 @@ describe("textWysiwyg", () => {
         renders.mockRestore();
       });
 
+      describe("YAZ-4102 3E: highlight letters", () => {
+        const highlightKey = () => press(CODES.H, "H", { shiftKey: true });
+        const overlayOf = (text: string) =>
+          [
+            ...document.querySelectorAll<HTMLElement>(
+              ".excalidraw-wysiwyg-styled-line",
+            ),
+          ].find((segment) => segment.textContent === text);
+
+        it("⌘⇧H highlights the selected word yellow, and again takes it off", () => {
+          type("Hello world");
+          textarea.setSelectionRange(6, 11);
+          highlightKey();
+          expect(runs()).toEqual([{ start: 6, end: 11, highlight: "yellow" }]);
+          expect(overlayOf("world")!.style.background).toBe(
+            "rgba(255, 213, 0, 0.4)",
+          );
+          expect(overlayOf("Hello ")!.style.background).toBe("");
+          // the selection stays for the next key
+          expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([
+            6, 11,
+          ]);
+
+          highlightKey();
+          expect(runs()).toBeUndefined();
+        });
+
+        it("the toolbar has the four note colors; a pick colors the selection, and the pressed one takes it off", () => {
+          type("Hello world");
+          textarea.setSelectionRange(0, 5);
+          const pick = (name: string) =>
+            document.querySelector<HTMLButtonElement>(
+              `[aria-label="Highlight ${name}"]`,
+            )!;
+          expect(
+            [
+              ...document.querySelectorAll<HTMLButtonElement>(
+                ".text-highlight-pick",
+              ),
+            ].map((button) => button.getAttribute("aria-label")),
+          ).toEqual([
+            "Highlight yellow",
+            "Highlight green",
+            "Highlight blue",
+            "Highlight pink",
+          ]);
+          for (const name of ["green", "blue", "pink", "yellow"]) {
+            act(() => pick(name).click());
+            expect(runs()).toEqual([{ start: 0, end: 5, highlight: name }]);
+          }
+          expect(pick("yellow").getAttribute("aria-pressed")).toBe("true");
+          act(() => pick("yellow").click());
+          expect(runs()).toBeUndefined();
+        });
+
+        it("with only a caret, the next typed letters are highlighted", () => {
+          type("ab");
+          highlightKey();
+          expect(runs()).toBeUndefined();
+          type("abcd");
+          expect(runs()).toEqual([{ start: 2, end: 4, highlight: "yellow" }]);
+        });
+
+        it("keeps the highlight with other styles", () => {
+          type("Hello world");
+          textarea.setSelectionRange(6, 11);
+          press(CODES.B, "b");
+          highlightKey();
+          expect(runs()).toEqual([
+            { start: 6, end: 11, bold: true, highlight: "yellow" },
+          ]);
+        });
+
+        it("a box selected (not in the editor) has no highlight picks: its background works as before", () => {
+          type("Hello world");
+          Keyboard.exitTextEditor(textarea);
+          API.setSelectedElements([
+            h.elements[0] as NonDeletedExcalidrawElement,
+          ]);
+          expect(document.querySelector(".text-highlight-pick")).toBeNull();
+        });
+      });
+
       it("styles and colors the whole text of a selected box, and clear formatting removes every run", () => {
         type("Hello world");
         textarea.setSelectionRange(0, 5);

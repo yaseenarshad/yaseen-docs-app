@@ -1,13 +1,15 @@
 import type { TextRunFlag, TextRunStyle } from "@excalidraw/element";
 
 /**
- * YAZ-3718 D10: B, I, U, S or a text color with only a caret in the editor
+ * YAZ-3718 D10: B, I, U, S, a text color or a highlight with only a caret in the editor
  * styles the next typed letters, like a note's stored marks. `false` and
  * `null` turn a style off for them. The style belongs to one caret position:
  * moving the caret drops it.
  */
 export type PendingTextStyle = Partial<Record<TextRunFlag, boolean>> & {
   color?: string | null;
+  /** YAZ-4102 3E: a highlight name, or null for none. */
+  highlight?: string | null;
 };
 
 const pendingStyles = new WeakMap<

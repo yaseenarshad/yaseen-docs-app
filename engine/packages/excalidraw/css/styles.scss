@@ -487,6 +487,27 @@ body.excalidraw-cursor-resize * {
     }
   }
 
+  // YAZ-4102 3E: the highlight colors next to Text color, in the text editor
+  .text-highlight-picks {
+    display: inline-flex;
+    gap: 0.25rem;
+    margin-inline-start: 0.25rem;
+  }
+
+  .text-highlight-pick {
+    border: 1px solid var(--default-border-color);
+    border-radius: 0.25rem;
+    cursor: pointer;
+    height: 1.25rem;
+    padding: 0;
+    width: 1.25rem;
+
+    &[aria-pressed="true"] {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 1px;
+    }
+  }
+
   .contextual-properties-toolbar {
     --button-bg: var(--color-surface-mid);
     --button-border: transparent;

@@ -1,11 +1,13 @@
 import {
   convertLineStylesToTextRuns,
   getTextRangeColor,
+  getTextRangeHighlight,
   isTextRangeStyled,
   normalizeTextRuns,
   remapTextRunsForTextEdit,
   setTextRunColor,
   setTextRunFlag,
+  setTextRunHighlight,
 } from "../src/textRuns";
 
 describe("YAZ-3718 D1: normalizeTextRuns", () => {
@@ -298,5 +300,47 @@ describe("YAZ-4101 3D: getTextRangeColor", () => {
   it("gives a caret the color the next typed letter gets", () => {
     expect(getTextRangeColor(runs, text, 9, 9)).toBe("#e03131");
     expect(getTextRangeColor(runs, text, 6, 6)).toBeUndefined();
+  });
+});
+
+describe("YAZ-4102 3E: highlight runs", () => {
+  it("highlights a word, changes its color, and takes it off", () => {
+    const yellow = setTextRunHighlight(undefined, 11, 6, 11, "yellow");
+    expect(yellow).toEqual([{ start: 6, end: 11, highlight: "yellow" }]);
+    expect(setTextRunHighlight(yellow, 11, 6, 11, "pink")).toEqual([
+      { start: 6, end: 11, highlight: "pink" },
+    ]);
+    expect(setTextRunHighlight(yellow, 11, 6, 11, undefined)).toBeUndefined();
+    // a part of it, and the other styles stay
+    const bold = setTextRunFlag(yellow, 11, 6, 11, "bold", true);
+    expect(setTextRunHighlight(bold, 11, 8, 11, undefined)).toEqual([
+      { start: 6, end: 8, bold: true, highlight: "yellow" },
+      { start: 8, end: 11, bold: true },
+    ]);
+  });
+
+  it("keeps only the four note colors from a file", () => {
+    expect(
+      normalizeTextRuns(
+        [
+          { start: 0, end: 2, highlight: "green" },
+          { start: 2, end: 4, highlight: "#ff0000" },
+          { start: 4, end: 6, highlight: "toString" },
+        ],
+        6,
+      ),
+    ).toEqual([{ start: 0, end: 2, highlight: "green" }]);
+  });
+
+  it("tells the one highlight of a range, else undefined", () => {
+    const runs = [
+      { start: 0, end: 3, highlight: "yellow" },
+      { start: 3, end: 5, highlight: "yellow", bold: true as const },
+      { start: 6, end: 8, highlight: "blue" },
+    ];
+    expect(getTextRangeHighlight(runs, 0, 5)).toBe("yellow");
+    expect(getTextRangeHighlight(runs, 4, 7)).toBeUndefined();
+    expect(getTextRangeHighlight(runs, 6, 8)).toBe("blue");
+    expect(getTextRangeHighlight(runs, 5, 6)).toBeUndefined();
   });
 });

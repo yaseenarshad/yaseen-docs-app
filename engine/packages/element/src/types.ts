@@ -244,6 +244,8 @@ export type ExcalidrawTextRun = Readonly<{
   underline?: true;
   strikethrough?: true;
   color?: string;
+  /** YAZ-4102 3E: a note highlight color by name (`TEXT_HIGHLIGHT_FILLS`). */
+  highlight?: string;
 }>;
 
 export type ExcalidrawTextElement = _ExcalidrawElementBase &

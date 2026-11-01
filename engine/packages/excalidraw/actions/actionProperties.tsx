@@ -44,12 +44,16 @@ import {
   canBecomePolygon,
   clearTextRunStyle,
   getNonDeletedElements,
+  DEFAULT_TEXT_HIGHLIGHT,
   getTextRangeColor,
+  getTextRangeHighlight,
   getTextRunInsertStyle,
   isNonDeletedElement,
   isTextRangeStyled,
   setTextRunColor,
   setTextRunFlag,
+  setTextRunHighlight,
+  TEXT_HIGHLIGHT_FILLS,
 } from "@excalidraw/element";
 
 import {
@@ -2327,6 +2331,149 @@ export const actionToggleTextStrikethrough = register({
     toggleTextStyle(elements, appState, "strikethrough", app),
   keyTest: (event, appState, elements, app) =>
     textStyleShortcutTest(event, appState, elements, app, CODES.X),
+});
+
+/**
+ * YAZ-4102 3E: highlight the letters selected in the text editor, as notes do
+ * (the same four colors). With only a caret, the next typed letters get it.
+ * `highlight` undefined removes it. A selected box keeps its whole-box
+ * background: highlight is for letters, in the editor only.
+ */
+const changeTextHighlight = (
+  elements: readonly ExcalidrawElement[],
+  appState: AppState,
+  highlight: string | undefined,
+  app: AppClassProperties,
+) => {
+  const editing = appState.editingTextElement;
+  const editable = editing
+    ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
+    : null;
+  if (!editing || !editable) {
+    return false;
+  }
+  const start = editable.selectionStart;
+  const end = editable.selectionEnd;
+  if (start === end) {
+    setPendingTextStyle(editable, { highlight: highlight ?? null });
+    return { appState, captureUpdate: CaptureUpdateAction.EVENTUALLY };
+  }
+  const updatedElements = changeProperty(
+    elements,
+    appState,
+    (element) =>
+      isTextElement(element) && element.id === editing.id
+        ? newElementWith(
+            element,
+            {
+              textRuns: setTextRunHighlight(
+                element.textRuns,
+                editable.value.length,
+                start,
+                end,
+                highlight,
+              ),
+            },
+            // the last highlight gone leaves `textRuns` undefined
+            true,
+          )
+        : element,
+    true,
+  );
+  editable.setSelectionRange(start, end);
+  editable.focus();
+  restoreCaretPosition({ start, end });
+  return {
+    elements: updatedElements,
+    appState,
+    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+  };
+};
+
+/** YAZ-4102 3E: the highlight of the editor's selected letters, or of its caret. */
+const getEditorTextHighlight = (app: AppClassProperties) => {
+  const editing = app.state.editingTextElement;
+  const editable = editing
+    ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
+    : null;
+  const element = editing ? app.scene.getElement(editing.id) : null;
+  if (!editable || !element || !isTextElement(element)) {
+    return undefined;
+  }
+  if (editable.selectionStart !== editable.selectionEnd) {
+    return getTextRangeHighlight(
+      element.textRuns,
+      editable.selectionStart,
+      editable.selectionEnd,
+    );
+  }
+  const pending = getPendingTextStyle(editable)?.highlight;
+  return pending !== undefined
+    ? pending ?? undefined
+    : getTextRunInsertStyle(
+        element.textRuns,
+        editable.value,
+        editable.selectionStart,
+      ).highlight;
+};
+
+/** YAZ-4102 3E: ⌘⇧H toggles the default highlight (yellow), as in notes. */
+export const actionToggleTextHighlight = register({
+  name: "toggleTextHighlight",
+  label: "Highlight",
+  trackEvent: false,
+  perform: (elements, appState, _, app) =>
+    changeTextHighlight(
+      elements,
+      appState,
+      getEditorTextHighlight(app) === DEFAULT_TEXT_HIGHLIGHT
+        ? undefined
+        : DEFAULT_TEXT_HIGHLIGHT,
+      app,
+    ),
+  keyTest: (event, appState) =>
+    !!appState.editingTextElement &&
+    event[KEYS.CTRL_OR_CMD] &&
+    event.shiftKey &&
+    !event.altKey &&
+    event.code === CODES.H,
+});
+
+/** YAZ-4102 3E: the highlight colors next to Text color, in the text editor. */
+export const actionChangeTextHighlight = register<string | null>({
+  name: "changeTextHighlight",
+  label: "Highlight",
+  trackEvent: false,
+  perform: (elements, appState, value, app) =>
+    changeTextHighlight(elements, appState, value ?? undefined, app),
+  PanelComponent: ({ appState, updateData, app }) => {
+    if (!appState.editingTextElement) {
+      return null;
+    }
+    const current = getEditorTextHighlight(app);
+    return (
+      <div className="text-highlight-picks" role="group" aria-label="Highlight">
+        {Object.entries(TEXT_HIGHLIGHT_FILLS).map(([name, fill]) => (
+          <button
+            key={name}
+            type="button"
+            className="text-highlight-pick"
+            aria-label={`Highlight ${name}`}
+            title={
+              name === DEFAULT_TEXT_HIGHLIGHT
+                ? `Highlight ${name} — ${getShortcutKey("CtrlOrCmd+Shift+H")}`
+                : `Highlight ${name}`
+            }
+            aria-pressed={current === name}
+            style={{ background: fill }}
+            // the text editor keeps its selection
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => updateData(current === name ? null : name)}
+          />
+        ))}
+      </div>
+    );
+  },
 });
 
 type ChangeLineHeightData = {

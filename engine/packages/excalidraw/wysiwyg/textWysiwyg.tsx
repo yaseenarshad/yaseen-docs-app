@@ -47,6 +47,7 @@ import {
   getTextLinkRanges,
   getTextRangeColor,
   hasHostLinks,
+  TEXT_HIGHLIGHT_FILLS,
   remapTextRunsForTextEdit,
 } from "@excalidraw/element";
 
@@ -79,6 +80,7 @@ import {
   actionDecreaseFontSize,
   actionIncreaseFontSize,
   actionToggleTextBold,
+  actionToggleTextHighlight,
   actionToggleTextItalic,
   actionToggleTextStrikethrough,
   actionToggleTextUnderline,
@@ -598,6 +600,10 @@ export const textWysiwyg = ({
                     appState.theme === THEME.DARK,
                   )
                 : color,
+              // YAZ-4102 3E: the fill behind the letters, as on the canvas
+              background: segment.highlight
+                ? TEXT_HIGHLIGHT_FILLS[segment.highlight]
+                : "",
               font: segment.font,
               lineHeight: `${lineHeightPx}px`,
               textAlign: "left",
@@ -1508,6 +1514,11 @@ export const textWysiwyg = ({
     ) {
       event.preventDefault();
       app.actionManager.executeAction(actionToggleTextUnderline, "keyboard");
+      updateWysiwygStyle();
+    } else if (actionToggleTextHighlight.keyTest(event, app.state)) {
+      // YAZ-4102 3E: ⌘⇧H, as in notes
+      event.preventDefault();
+      app.actionManager.executeAction(actionToggleTextHighlight, "keyboard");
       updateWysiwygStyle();
     } else if (event.key === KEYS.ESCAPE) {
       event.preventDefault();

@@ -92,6 +92,8 @@ import type {
   NonDeletedSceneElementsMap,
   ElementsMap,
 } from "./types";
+import { TEXT_HIGHLIGHT_FILLS } from "./textRuns";
+
 import type { StyledTextSegment } from "./textLineUnderlines";
 
 import type { RoughCanvas } from "roughjs/bin/canvas";
@@ -614,6 +616,18 @@ const drawElementOnCanvas = (
           );
           const segments = lines[index].segments;
           if (segments) {
+            // YAZ-4102 3E: the highlights first, behind every letter of the line
+            for (const segment of segments) {
+              if (segment.highlight) {
+                context.fillStyle = TEXT_HIGHLIGHT_FILLS[segment.highlight];
+                context.fillRect(
+                  lineStart + segment.x,
+                  index * lineHeightPx,
+                  segment.width,
+                  lineHeightPx,
+                );
+              }
+            }
             // YAZ-3718 D1: each segment with its own font, color and lines
             context.textAlign = "left";
             for (const segment of segments) {

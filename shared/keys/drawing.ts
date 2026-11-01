@@ -110,6 +110,8 @@ export const DRAWING_KEYS: readonly KeyRow[] = [
   fixed('fonts', 'Open the fonts', ['Shift+F'], 'With the text tool, or a text selected'),
   fixed('eyedropper', 'Pick a colour off the canvas', ['I', 'Shift+G', 'Shift+S'], 'I or ⇧G for the background, ⇧S for the stroke'),
   fixed('textEditing', 'While you type a text: indent, outdent, finish', [], 'Tab / ⇧Tab or ⌘] / ⌘[ indent and outdent a list; ⌘⏎ or Esc ends the text'),
+  // YAZ-4102 3E: highlight letters, as in a note (the note's ⌘⇧H); only while you type, so it is built in.
+  fixed('textHighlight', 'Highlight the selected letters', ['CmdOrCtrl+Shift+H'], 'While you type a text, as in a note; the toolbar has the other colours'),
   // The presentation player (`presentation/PresentationPlayer.tsx`): its arrows, Space and Esc are the canvas's keys too.
   fixed('presentSteps', 'In a presentation: next and previous slide', [], '→, Page Down or Space: next; ←, Page Up: previous; Esc: back to the deck'),
   fixed('presentEnds', 'In a presentation: first / last slide', ['Home', 'End']),
@@ -174,4 +176,5 @@ export const DRAWING_ACTIONS: Readonly<Record<string, string | readonly string[]
   'drawing.redo': 'redo',
   'drawing.selectAll': 'selectAll',
   'drawing.help': 'toggleShortcuts',
+  'drawing.textHighlight': ['toggleTextHighlight', 'changeTextHighlight'],
 }
