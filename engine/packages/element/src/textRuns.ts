@@ -320,6 +320,30 @@ export const getTextRangeColor = (
   return colors.size > 1 ? null : [...colors][0];
 };
 
+/**
+ * YAZ-4101 3D: what the toolbar shows for the letters `start` to `end`, as
+ * one key: B, I, U and S on when every letter has it, the color and the
+ * highlight. A caret gives the style of the next typed letter.
+ */
+export const getTextRangeToolbarKey = (
+  runs: readonly ExcalidrawTextRun[] | undefined,
+  text: string,
+  start: number,
+  end: number,
+) => {
+  const caret = start === end ? getTextRunInsertStyle(runs, text, start) : null;
+  const color = getTextRangeColor(runs, text, start, end);
+  return JSON.stringify([
+    // JSON writes `undefined` as `null`: the box color and mixed apart
+    color === null ? "mixed" : color ?? "box",
+    (caret ? caret.highlight : getTextRangeHighlight(runs, start, end)) ??
+      "none",
+    ...TEXT_RUN_FLAGS.map((flag) =>
+      caret ? caret[flag] === true : isTextRangeStyled(runs, start, end, flag),
+    ),
+  ]);
+};
+
 /** Converts the old per-line flags (one run over each flagged line). */
 export const convertLineStylesToTextRuns = (
   text: string,

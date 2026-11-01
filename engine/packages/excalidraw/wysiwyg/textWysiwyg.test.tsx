@@ -1422,6 +1422,34 @@ describe("textWysiwyg", () => {
         expect(runs()).toBeUndefined();
       });
 
+      it("YAZ-4101 3D: B, I, U and S follow the selection: the toolbar draws again when they change, and only then", () => {
+        type("Hello world");
+        textarea.setSelectionRange(0, 5);
+        press(CODES.B, "b");
+        press(CODES.U, "u");
+        const renders = vi.spyOn(h.app, "refreshTextEditorToolbar");
+        const select = (start: number, end: number) =>
+          act(() => {
+            textarea.setSelectionRange(start, end);
+            fireEvent(document, new Event("selectionchange"));
+          });
+
+        // the same color everywhere: only the bold and underline state moves
+        select(6, 11);
+        expect(renders).toHaveBeenCalledTimes(1);
+        select(7, 10);
+        select(8, 8);
+        expect(renders).toHaveBeenCalledTimes(1);
+        select(1, 4);
+        expect(renders).toHaveBeenCalledTimes(2);
+        select(0, 5);
+        expect(renders).toHaveBeenCalledTimes(2);
+        // partly bold: off, as for other mixed values
+        select(3, 8);
+        expect(renders).toHaveBeenCalledTimes(3);
+        renders.mockRestore();
+      });
+
       it("YAZ-4101 3D: a caret move in a box with no runs draws the toolbar again never", () => {
         type("Hello world");
         const renders = vi.spyOn(h.app, "refreshTextEditorToolbar");

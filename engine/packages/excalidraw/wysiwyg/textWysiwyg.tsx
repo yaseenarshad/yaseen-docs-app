@@ -45,7 +45,7 @@ import {
   getLogicalLineIndexAtOffset,
   getTextElementStyledLines,
   getTextLinkRanges,
-  getTextRangeColor,
+  getTextRangeToolbarKey,
   hasHostLinks,
   TEXT_HIGHLIGHT_FILLS,
   remapTextRunsForTextEdit,
@@ -1000,24 +1000,24 @@ export const textWysiwyg = ({
     });
   };
 
-  // YAZ-4101 3D: the toolbar's Text color shows the selected letters' color,
-  // so it draws again when that color changes. A box with no runs has one
-  // color: it never asks.
-  let toolbarColor: string | undefined | null;
-  const refreshToolbarColor = () => {
+  // YAZ-4101 3D: the toolbar shows the selected letters' style (B, I, U, S,
+  // the color, the highlight), so it draws again when that style changes. A
+  // box with no runs has one style: it never asks.
+  let toolbarStyle = "";
+  const refreshToolbarStyle = () => {
     const runs = (
       app.scene.getElement(element.id) as ExcalidrawTextElement | null
     )?.textRuns;
-    const color = runs?.length
-      ? getTextRangeColor(
+    const style = runs?.length
+      ? getTextRangeToolbarKey(
           runs,
           editable.value,
           editable.selectionStart,
           editable.selectionEnd,
         )
-      : undefined;
-    if (color !== toolbarColor) {
-      toolbarColor = color;
+      : "";
+    if (style !== toolbarStyle) {
+      toolbarStyle = style;
       app.refreshTextEditorToolbar();
     }
   };
@@ -1025,7 +1025,7 @@ export const textWysiwyg = ({
   const handleSelectionMoved = () => {
     keepCaretOutOfLinks();
     renderVisualSelection();
-    refreshToolbarColor();
+    refreshToolbarStyle();
   };
 
   const handleDocumentSelectionChange = () => {
@@ -1035,7 +1035,7 @@ export const textWysiwyg = ({
       getPendingTextStyle(editable);
       renderVisualSelection();
       reportEditor(false);
-      refreshToolbarColor();
+      refreshToolbarStyle();
     }
   };
 

@@ -2,6 +2,7 @@ import {
   convertLineStylesToTextRuns,
   getTextRangeColor,
   getTextRangeHighlight,
+  getTextRangeToolbarKey,
   isTextRangeStyled,
   normalizeTextRuns,
   remapTextRunsForTextEdit,
@@ -371,5 +372,35 @@ describe("YAZ-4101: the last run removed is a change", () => {
     expect(element.version).toBe(version + 1);
     mutateElement(element, new Map(), { textRuns: undefined });
     expect(element.version).toBe(version + 1);
+  });
+});
+
+describe("YAZ-4101 3D: the toolbar's key for a selection", () => {
+  const text = "Hello red world";
+  const runs = [
+    { start: 0, end: 5, bold: true as const },
+    { start: 6, end: 9, color: "#e03131" },
+  ];
+  const key = (start: number, end: number) =>
+    getTextRangeToolbarKey(runs, text, start, end);
+
+  it("is the same for letters, and a caret, that show the same toolbar", () => {
+    expect(key(1, 4)).toBe(key(0, 5));
+    expect(key(2, 2)).toBe(key(0, 5));
+    expect(key(10, 15)).toBe(key(11, 11));
+  });
+
+  it("differs for another flag, color or highlight, and tells the box color from mixed", () => {
+    expect(key(0, 5)).not.toBe(key(10, 15));
+    expect(key(6, 9)).not.toBe(key(10, 15));
+    expect(key(4, 8)).not.toBe(key(10, 15));
+    expect(
+      getTextRangeToolbarKey(
+        [{ start: 0, end: 5, highlight: "yellow" }],
+        text,
+        0,
+        5,
+      ),
+    ).not.toBe(getTextRangeToolbarKey(undefined, text, 0, 5));
   });
 });
