@@ -26,6 +26,8 @@ interface NotePreviewProps {
   node: { path: string }
   /** The note as the tree names it, by its title (`pageName`): the header says it the same way (YAZ-3075 checker round 1). */
   name: string
+  /** One quiet line under the header: how to open the note (a link's card, YAZ-3935). Absent → none. */
+  hint?: string
   /** The link source of the note's vault: a `[[<id>]]` link shows its title (C21). */
   wikilinks: WikilinkResolveSource
   /** The text formatting of the note's vault (YAZ-3067 D12, C20): `--text-size` and the `--hN-*` variables. */
@@ -34,7 +36,7 @@ interface NotePreviewProps {
   anchor: PreviewAnchor
 }
 
-export default function NotePreview({ root, node, name, wikilinks, textVars, anchor }: NotePreviewProps) {
+export default function NotePreview({ root, node, name, hint, wikilinks, textVars, anchor }: NotePreviewProps) {
   const placement = usePlacement(anchor, 'note')
   if (placement === null) return null
   return createPortal(
@@ -44,6 +46,7 @@ export default function NotePreview({ root, node, name, wikilinks, textVars, anc
         <span className="board-preview__name">{name}</span>
         <span className="board-preview__folder">{boardFolder(root, node.path)}</span>
       </div>
+      {hint !== undefined && <div className="board-preview__hint">{hint}</div>}
       <ReadOnlyNote className="note-preview__body" path={node.path} wikilinks={wikilinks} maxChars={NOTE_PREVIEW_CHARS} unreadable="Preview unavailable" />
     </div>,
     // The page's body, or a Files window's floating popup (YAZ-3357 D9).

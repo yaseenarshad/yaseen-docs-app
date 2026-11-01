@@ -46,6 +46,8 @@ import {
   seededState,
   shoot,
   tabsOf,
+  LINK_HERE,
+  openLinksHere,
 } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -176,7 +178,7 @@ test.afterAll(async () => {
 const readWhenReady = (p: string) => readFile(p, 'utf8').catch(() => '')
 
 test('step 1 — rename B via the context menu: disk file renamed, tab and title follow, summary notice shows', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'B.md')) })
+  app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, path.join(vault, 'B.md'))) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(B_BODY)
   await expect(tabsOf(win)).toHaveText(['B'])
@@ -218,7 +220,7 @@ test('step 3 — clicking the rewritten link in A navigates to the renamed B2', 
   const link = editorOf(win).locator('.wikilink', { hasText: 'B2' }).first()
   await expect(link).toBeVisible()
   await expect(link).not.toHaveClass(/wikilink--unresolved/)
-  await link.click()
+  await link.click({ modifiers: LINK_HERE }) // an open gesture (YAZ-3936): a plain click puts the caret
   await expect(activeTab(win)).toHaveText('B2')
   await expect(editorOf(win)).toContainText(B_BODY)
   await shoot(win, 'rename-03-link-navigates')
@@ -276,7 +278,7 @@ test('step 4 — renaming onto an existing name is refused in a plain vault: a n
 // ---------- E1b (GRO-2241): folder rename + drag-move, fresh launch on the same vault ----------
 
 test('step 5 — folder rename via its context menu: disk moves, PATHED link rewritten, bare link BYTE-IDENTICAL, open tab follows', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Docs', 'N.md')) })
+  app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, path.join(vault, 'Docs', 'N.md'))) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(N_BODY)
   await expect(tabsOf(win)).toHaveText(['N'])

@@ -14,6 +14,9 @@ import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 import { EditorSelection, EditorState, StateEffect } from '@codemirror/state'
 import type { CopyAsMode, CopyAsRich } from '@shared/types'
+import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
+import { buildViewOnlyCatalogFromEntries, type ViewOnlyEntry } from '../links/viewOnlyCatalog'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 const copyListeners = new Set<(mode: CopyAsMode) => string | CopyAsRich | undefined>()
@@ -295,5 +298,59 @@ describe('copy-out carries readable text/plain AND rich text/html (YAZ-1443)', (
     expect(copyAs('plain')).toBe('rst\nseco')
     code.dispatch({ selection: EditorSelection.cursor(0) })
     expect(copyAs('plain')).toBe('')
+  })
+})
+
+describe('a plain-text copy names links as the note shows them (YAZ-3744 S8)', () => {
+  async function mountLinks(markdown: string) {
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update((target) => ({ 'YAS-466': '/v/AR v2 plan.md', 'yas-466': '/v/AR v2 plan.md', 'AR v2 plan': '/v/AR v2 plan.md' } as Record<string, string>)[target] ?? null, [], [], true, ['YAS'])
+    const viewOnlyLinks = createViewOnlyLinkSource()
+    viewOnlyLinks.update(buildViewOnlyCatalogFromEntries('/v', [
+      { path: '/v/LN Scenarios Diagram.drawio', name: 'LN Scenarios Diagram.drawio', kind: 'diagram' },
+    ] as ViewOnlyEntry[]))
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: markdown, wikilinks, viewOnlyLinks })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    view.dispatch(view.state.tr)
+    return { view, crepe }
+  }
+  const LINE = 'See [[YAS-466]], [[AR v2 plan]], [[LN Scenarios Diagram.drawio]], ![[pic.png]] and `[[YAS-466]]` here\n\n```\n[[YAS-466]]\n```\n'
+
+  it('text/plain shows each link by name, an ID link with its ID; embeds and code stay as written', async () => {
+    const { view } = await mountLinks(LINE)
+    view.focus()
+    selectAll(view)
+    const plain = 'See AR v2 plan (YAS-466), AR v2 plan, LN Scenarios Diagram, ![[pic.png]] and [[YAS-466]] here\n[[YAS-466]]\n' // the last line: Crepe's trailing paragraph
+    expect(payload(view).text).toBe(plain)
+    expect(copyAs('plain')).toBe(plain)
+    expect(copyAs('markdown')).toContain('See [[YAS-466]], [[AR v2 plan]], [[LN Scenarios Diagram.drawio]]')
+  })
+
+  it('Copy as Markdown writes a link as a save does, never escaped (YAZ-3747)', async () => {
+    const { view } = await mountLinks('See [[AR v2 plan]] here, ![[pic.png]] too\n\nA [[YAS-466]] then **bold** end\n')
+    view.focus()
+    selectAll(view)
+    expect(copyAs('markdown')).toBe('See [[AR v2 plan]] here, ![[pic.png]] too\n\nA [[YAS-466]] then **bold** end\n')
+  })
+
+  it('an ID typed in small letters copies as the app writes it, as "Copy name and ID" does (YAZ-3910 A3)', async () => {
+    const { view } = await mountLinks('See [[yas-466]] here\n')
+    selectAll(view)
+    expect(payload(view).text).toContain('See AR v2 plan (YAS-466) here')
+  })
+
+  it('the app\'s own HTML keeps the raw links: a paste into a note keeps [[YAS-466]]', async () => {
+    const { view } = await mountLinks('See [[YAS-466]] and [[LN Scenarios Diagram.drawio]] here\n')
+    selectAll(view)
+    const { text, html } = payload(view)
+    expect(html).toContain('[[YAS-466]]')
+    const target = await mountLinks('\n')
+    target.view.dispatch(target.view.state.tr.setSelection(TextSelection.atStart(target.view.state.doc)))
+    target.view.pasteHTML(html, { clipboardData: { getData: (type: string) => (type === 'text/html' ? html : type === 'text/plain' ? text : '') }, preventDefault() {} } as unknown as ClipboardEvent)
+    expect(getMarkdownForSave(target.crepe)).toContain('See [[YAS-466]] and [[LN Scenarios Diagram.drawio]] here')
   })
 })

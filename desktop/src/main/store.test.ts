@@ -552,6 +552,16 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: moved })).toBe(true)
   })
 
+  it('hotkeys holds the clicks too (YAZ-3936): a gesture change by its row id, null for "No gesture"; a default, a bad gesture or an unknown id costs that entry only', () => {
+    const stored = { 'links.thisTab': 'Click', 'links.newTab': 'CmdOrCtrl+Click', 'bullets.backgroundTab': null, 'app.search': 'CmdOrCtrl+Shift+K' }
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: stored }).hotkeys).toEqual(stored)
+    expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: stored })).toBe(true)
+    // The default (⌘-click is Links › Open in a background tab's) is no change; a key is no gesture; a gesture is no key; an id no row has goes.
+    const junk = { 'links.backgroundTab': 'Command+Click', 'links.newTab': 'CmdOrCtrl+K', 'note.bold': 'CmdOrCtrl+Click', 'links.window': 'Click', 'bullets.newTab': 'Alt+Click' }
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hotkeys: junk }).hotkeys).toEqual({ 'bullets.newTab': 'Alt+Click' })
+    for (const bad of [{ 'links.newTab': 'CmdOrCtrl+K' }, { 'note.bold': 'CmdOrCtrl+Click' }, { 'links.window': 'Click' }, { 'links.newTab': 3 }]) expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: bad }), JSON.stringify(bad)).toBe(false)
+  })
+
   it('sidebarZoom (YAZ-3389): an older file without the key loads at 100; junk loads at 100; an off-step number inside 50–200 is kept (D7), one outside is clamped; the channel takes 50–200 only', async () => {
     expect(DEFAULT_SETTINGS.sidebarZoom).toBe(100)
     const { sidebarZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
@@ -874,16 +884,13 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ hoverPreview: true })
   })
 
-  it('linkOpen (YAZ-3609 D11, S4): a file without it reads This tab; each choice survives; junk falls back', async () => {
-    const { linkOpen: _open, ...before } = DEFAULT_SETTINGS
-    await seed(valid({ settings: before }))
-    expect(createStore(file).get().settings.linkOpen).toBe('this-tab')
-    for (const linkOpen of ['new-tab', 'background-tab'] as const) {
-      await seed(valid({ settings: { ...DEFAULT_SETTINGS, linkOpen } }))
-      expect(createStore(file).get().settings.linkOpen).toBe(linkOpen)
+  it('linkOpen is dropped on load (YAZ-3936): the gestures of Settings › Hotkeys took its place; the rest of the file loads as stored', async () => {
+    for (const linkOpen of ['this-tab', 'new-tab', 'background-tab', 'window']) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', linkOpen } }))
+      const settings = createStore(file).get().settings
+      expect(settings).toEqual({ ...DEFAULT_SETTINGS, theme: 'dark' })
+      expect('linkOpen' in settings).toBe(false)
     }
-    await seed(valid({ settings: { ...DEFAULT_SETTINGS, linkOpen: 'window' } }))
-    expect(createStore(file).get().settings.linkOpen).toBe('this-tab')
   })
 
   it('newNoteLocation/newNoteFolder: a pre-C2 file without the keys sanitizes to the defaults (current + "", YAZ-1643); junk falls back (GRO-2240)', async () => {

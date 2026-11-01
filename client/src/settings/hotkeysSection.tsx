@@ -6,7 +6,7 @@
  *   key (every tab), green a tab's own; a shared key (both) has a pick per tab where an App command and a tab's
  *   action meet (drawings, diagrams, code; K9, `hotkeysAside` per tab), and a pick asks "Take it" first. A row an
  *   App key takes in its tab says what the key does there now, with a link to that key's card. Then the actions
- *   with no key, the mouse, and "Used by macOS" (D3, D8): this Mac's own keys, which main reads off its plist
+ *   with no key, the clicks and drags, and "Used by macOS" (D3, D8): this Mac's own keys, which main reads off its plist
  *   (`state:system-hotkeys`) when the page or a search shows. A changeable key is a button; a built-in or macOS
  *   key is muted text. Chips and two switches filter the page (K7, K10).
  * - Each row is its own setting (`bare`), so the dialog's search filters the page down to single rows (D5): a
@@ -19,6 +19,12 @@
  * - A changed key is in the accent colour with a Reset link, which asks in the same pop-up first (D7);
  *   "Reset all hotkeys" at the end of the page asks in a sheet that lists every change. With no change
  *   neither is there.
+ * - ONE CARD PER CLICK OR DRAG (YAZ-3936, demo round 1 C4 of YAZ-3879), hotkey first like the keys: "Click", "⌘-click",
+ *   "⇧-click", "Drag"… Two places are the user's to change (`shared/keys/gestures.ts`): "Links in a note" and "Bullet
+ *   dots", each with Open in this tab / a new tab / a background tab. Their box is a click recorder: click it, then hold
+ *   the keys and click it again (⌫ or "No gesture" removes it); the same pop-up, Reset and "Move it here" as a key, and
+ *   the change is a `settings.hotkeys` entry by row id. The other clicks are built in (`hotkeys.ts`), in the same boxes.
+ *   A row's search text is its action, its gesture and its place ("links in a note").
  * - The page's own search bar (D5, `KeySearch`): "Search hotkeys…" filters the page to the rows that match
  *   ("file window" → New Files window), and "Press keys to search" records one key, puts it in that box and
  *   says who owns it.
@@ -29,13 +35,13 @@
  */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { appKeyId, hotkeyCommand, isHotkeyId, isUsableKey, normalizeKey, sameKey, toDisplay, withKey, fromKeyEvent, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
-import { ALL_KEYS, ASIDE_PLACES, asideChanged, asideId, blockersOf, clashesOf, isUsableFor, keysOf, stepsAside, withAside, withoutAside, type AsidePlace, type HotkeyAside, type KeyRow, type KeyScope } from '@shared/keys'
+import { ALL_KEYS, ASIDE_PLACES, GESTURE_PLACE_TITLES, GESTURE_ROWS, asideChanged, asideId, blockersOf, clashesOf, gestureClashes, gestureDisplay, gestureOf, gestureOfEvent, isUsableFor, keysOf, parseGesture, sameGesture, stepsAside, withAside, withGesture, withoutAside, type AsidePlace, type GestureRow, type HotkeyAside, type KeyRow, type KeyScope } from '@shared/keys'
 import { MACOS_HOTKEYS, type SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { Select } from './controls'
-import { MOUSE_TIPS, shortLabel } from './hotkeys'
+import { MOUSE_TIPS, shortLabel, type MouseTip } from './hotkeys'
 import type { SettingDef, SettingsCtx, SettingsGroup, SettingsSection } from './registry'
 
 /** What "keyboard shortcuts" finds: every row, as the tables did before (YAZ-1679). */
@@ -345,8 +351,9 @@ const changedShown = (ctx: SettingsCtx): KeyRow[] => ALL_KEYS.filter((r) => r.ch
 function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
   const [asking, setAsking] = useState(false)
   const changes = changedShown(ctx)
+  const clicks = changedClicks(ctx)
   const filtered = isFiltered(ctx)
-  const n = changes.length
+  const n = changes.length + clicks.length
   const plural = n === 1 ? 'hotkey' : 'hotkeys'
   return (
     <div className="hotkeys__reset-all">
@@ -366,6 +373,7 @@ function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
               delete next[r.id]
               if (r.scope === 'app') delete next[r.id.slice(4)]
             }
+            for (const r of clicks) delete next[r.id]
             ctx.onChange({ ...ctx.settings, hotkeys: filtered ? next : {}, hotkeysAside: filtered ? withoutAside(ctx.settings.hotkeysAside, changes) : {} })
           }}
           onCancel={() => setAsking(false)}
@@ -374,6 +382,11 @@ function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
             {changes.map((r) => (
               <li key={r.id}>
                 {owned(r)}: {isChanged(r, ctx.settings.hotkeys) ? `${shown(keyNow(r, ctx.settings.hotkeys))} → ${shown(r.keys[0] ?? null)}` : 'each tab picks its default action again'}
+              </li>
+            ))}
+            {clicks.map((r) => (
+              <li key={r.id}>
+                {clickOwned(r)}: {shownClick(gestureOf(r, ctx.settings.hotkeys))} → {shownClick(r.gesture)}
               </li>
             ))}
           </ul>
@@ -385,9 +398,9 @@ function ResetAllHotkeys({ ctx }: { ctx: SettingsCtx }) {
 
 // ---------- the page's filters (YAZ-3564 K7) ----------
 
-/** The page's filters: one place or all, only shared keys, only changed keys. The dialog holds it and hands it in `ctx`. */
+/** The page's filters: one place, the clicks (YAZ-3747 demo), or all; only shared keys; only changed keys. The dialog holds it and hands it in `ctx`. */
 export interface HotkeyFilter {
-  scope: KeyScope | 'all'
+  scope: KeyScope | 'all' | 'clicks'
   shared: boolean
   changed: boolean
 }
@@ -396,6 +409,12 @@ export const NO_FILTER: HotkeyFilter = { scope: 'all', shared: false, changed: f
 const isFiltered = (ctx: SettingsCtx): boolean => {
   const f = ctx.hotkeyFilter ?? NO_FILTER
   return f.scope !== 'all' || f.shared || f.changed
+}
+
+/** The "Clicks" chip alone: the built-in clicks and the clicks' legend show with the changeable ones. */
+const clicksOnly = (ctx: SettingsCtx): boolean => {
+  const f = ctx.hotkeyFilter ?? NO_FILTER
+  return f.scope === 'clicks' && !f.shared && !f.changed
 }
 
 /** Whether a row shows under the filters: its place, "Shared keys only" (its key card is shared, or its key went to an App key), "Changed from default". */
@@ -407,7 +426,8 @@ function inFilter(row: KeyRow, ctx: SettingsCtx): boolean {
   return true
 }
 
-const CHIPS: readonly (KeyScope | 'all')[] = ['all', 'app', 'note', 'drawing', 'diagram', 'code', 'views']
+// "Clicks" (YAZ-3747 demo): only the click and drag cards. "Press keys to search" hears keys only.
+const CHIPS: readonly HotkeyFilter['scope'][] = ['all', 'app', 'note', 'drawing', 'diagram', 'code', 'views', 'clicks']
 
 /** The group chips and the two switches at the top of the page (K7). */
 function FilterBar({ filter, onFilter }: { filter: HotkeyFilter; onFilter: (next: HotkeyFilter) => void }) {
@@ -416,7 +436,7 @@ function FilterBar({ filter, onFilter }: { filter: HotkeyFilter; onFilter: (next
       <span className="hotkeys__chips">
         {CHIPS.map((scope) => (
           <button key={scope} type="button" className={`hotkeys__chip${filter.scope === scope ? ' hotkeys__chip--on' : ''}`} aria-pressed={filter.scope === scope} onClick={() => onFilter({ ...filter, scope })}>
-            {scope === 'all' ? 'All' : SCOPE_TITLES[scope]}
+            {scope === 'all' ? 'All' : scope === 'clicks' ? 'Clicks' : SCOPE_TITLES[scope]}
           </button>
         ))}
       </span>
@@ -818,12 +838,297 @@ function cardGroups(ctx: SettingsCtx): SettingsGroup[] {
   ]
 }
 
-/** The mouse tips (YAZ-1679): no key, so no row of the key list; shown while no filter stands. */
-const mouseItems: SettingDef[] = MOUSE_TIPS.map(({ keys, label }) => ({ id: `hotkey-mouse-${slug(shortLabel(label))}`, label, keywords: [keys, ...ROW_KEYWORDS], bare: true, available: (ctx) => !isFiltered(ctx), render: () => fixedRow(keys, label) }))
+// ---------- the clicks and drags (YAZ-3936: one card per gesture) ----------
 
-/** The groups after the key cards: the mouse, macOS and Reset all. */
+/** "Links in a note › Open in this tab": a gesture row as the pop-up and the Reset list name it. */
+const clickOwned = (row: GestureRow): string => `${GESTURE_PLACE_TITLES[row.place]} › ${row.label}`
+const shownClick = (gesture: string | null): string => (gesture === null ? 'No gesture' : gestureDisplay(gesture))
+const clickChanged = (row: GestureRow, overrides: HotkeyOverrides): boolean => overrides[row.id] !== undefined
+
+/** Why a gesture cannot be a row's, or null when it can: ⌃-click is the Mac's right-click (the link menu, the bullet menu). */
+function clickRefusal(gesture: string): string | null {
+  return parseGesture(gesture)?.ctrl === true ? `${gestureDisplay(gesture)} is the Mac's right-click. Pick a different gesture.` : null
+}
+
+/**
+ * While `active`, the click recorder listens (YAZ-3936): Esc and a click outside `inside` stop it, ⌫ asks to remove the
+ * gesture. The keys are taken in the window's capture phase, as the key recorder takes them, so the dialog's Esc never
+ * hears them. No menu key changes: a held modifier alone fires nothing.
+ */
+function useClickRecorder(active: boolean, inside: RefObject<HTMLElement | null>, onStop: () => void, onRemove: () => void): void {
+  const stop = useRef(onStop)
+  stop.current = onStop
+  const remove = useRef(onRemove)
+  remove.current = onRemove
+  useEffect(() => {
+    if (!active) return
+    listening?.stop()
+    const me = { stop: () => stop.current() }
+    listening = me
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' && e.key !== 'Backspace' && e.key !== 'Delete') return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      if (e.key === 'Escape') stop.current()
+      else remove.current()
+    }
+    const onDown = (e: MouseEvent): void => {
+      if (!(e.target instanceof Node) || inside.current?.contains(e.target) !== true) stop.current()
+    }
+    const onBlur = (): void => stop.current()
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('mousedown', onDown, true)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('mousedown', onDown, true)
+      window.removeEventListener('blur', onBlur)
+      if (listening === me) listening = null
+    }
+  }, [active, inside])
+}
+
+type ClickPending = { kind: 'save'; gesture: string; from: GestureRow[] } | { kind: 'remove' } | { kind: 'reset'; from: GestureRow[] }
+type ClickMode = { kind: 'idle' } | { kind: 'recording'; refused: string | null } | { kind: 'confirm'; pending: ClickPending }
+
+/**
+ * One changeable click (YAZ-3936), as a key's box: its place's tag, its action, and the record box. Click the box, then
+ * hold the keys and click it again: the gesture goes to the same pop-up as a key (Now → New, what else loses it), and
+ * only its Save, "Move it here", Remove or Reset writes `settings.hotkeys`. Two rows of one place never share a gesture.
+ */
+function GestureBox({ row, ctx }: { row: GestureRow; ctx: SettingsCtx }) {
+  const overrides = ctx.settings.hotkeys
+  const current = gestureOf(row, overrides)
+  const changed = clickChanged(row, overrides)
+  const [mode, setMode] = useState<ClickMode>({ kind: 'idle' })
+  const boxRef = useRef<HTMLDivElement>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  const idle = (): void => {
+    setMode({ kind: 'idle' })
+    button.current?.focus()
+  }
+  const write = (next: HotkeyOverrides): void => {
+    ctx.onChange({ ...ctx.settings, hotkeys: next })
+    idle()
+  }
+  const askRemove = (): void => (current === null ? idle() : setMode({ kind: 'confirm', pending: { kind: 'remove' } }))
+  useClickRecorder(mode.kind === 'recording', boxRef, idle, askRemove)
+
+  const heard = (gesture: string): void => {
+    if (sameGesture(gesture, current)) return idle()
+    const refused = clickRefusal(gesture)
+    if (refused !== null) return setMode({ kind: 'recording', refused })
+    setMode({ kind: 'confirm', pending: { kind: 'save', gesture, from: gestureClashes(row, gesture, overrides) } })
+  }
+  const askReset = (): void => {
+    const holders = row.gesture === null ? [] : gestureClashes(row, row.gesture, overrides).filter((o) => clickChanged(o, overrides))
+    setMode({ kind: 'confirm', pending: { kind: 'reset', from: holders } })
+  }
+
+  const sheetOf = (pending: ClickPending): { title: string; to: string | null; lines: string[]; yes: string; apply: () => void } => {
+    switch (pending.kind) {
+      case 'save': {
+        const next = pending.from.reduce((acc, o) => withGesture(acc, o, null), overrides)
+        const lines = pending.from.map((o) => `${gestureDisplay(pending.gesture)} is ${clickOwned(o)} now. It will lose its gesture.`)
+        return { title: `Change the gesture for ${clickOwned(row)}?`, to: pending.gesture, lines, yes: pending.from.length === 0 ? 'Save' : 'Move it here', apply: () => write(withGesture(next, row, pending.gesture)) }
+      }
+      case 'remove':
+        return { title: `Remove the gesture from ${clickOwned(row)}?`, to: null, lines: [], yes: 'Remove', apply: () => write(withGesture(overrides, row, null)) }
+      case 'reset': {
+        const next = pending.from.reduce((acc, o) => withGesture(acc, o, null), overrides)
+        const lines = pending.from.map((o) => `${shownClick(row.gesture)} is ${clickOwned(o)} now. It will lose its gesture.`)
+        return { title: `Reset ${clickOwned(row)}?`, to: row.gesture, lines, yes: 'Reset', apply: () => write(withGesture(next, row, row.gesture)) }
+      }
+    }
+  }
+
+  const recording = mode.kind === 'recording'
+  let below: ReactNode = null
+  if (recording) {
+    below = (
+      <>
+        {mode.refused !== null && (
+          <p className="hotkeys__line hotkeys__line--refused" role="alert">
+            {mode.refused}
+          </p>
+        )}
+        <p className="hotkeys__line">
+          Hold the keys and click the box. Esc cancels.{' '}
+          {current !== null && (
+            <button type="button" className="hotkeys__link" onClick={askRemove}>
+              No gesture
+            </button>
+          )}
+        </p>
+      </>
+    )
+  } else if (mode.kind === 'confirm') {
+    const sheet = sheetOf(mode.pending)
+    below = (
+      <ConfirmSheet labelId={`hotkey-confirm-${row.id.replace('.', '-')}`} text={sheet.title} confirmLabel={sheet.yes} focusConfirm keys="contained" onConfirm={sheet.apply} onCancel={idle}>
+        <div className="hotkeys__swap">
+          <span className="hotkeys__swap-side">
+            <span className="hotkeys__swap-label">Now</span>
+            <span className={`hotkeys__cap${current === null ? ' hotkeys__key--none' : ''}`}>{shownClick(current)}</span>
+          </span>
+          <span className="hotkeys__swap-arrow" aria-label="becomes">
+            →
+          </span>
+          <span className="hotkeys__swap-side">
+            <span className="hotkeys__swap-label">New</span>
+            <span className={`hotkeys__cap hotkeys__cap--new${sheet.to === null ? ' hotkeys__key--none' : ''}`}>{shownClick(sheet.to)}</span>
+          </span>
+        </div>
+        {sheet.lines.map((text) => (
+          <p key={text} className="hotkeys__line hotkeys__line--ask">
+            {text}
+          </p>
+        ))}
+      </ConfirmSheet>
+    )
+  }
+  return (
+    <div ref={boxRef} className="hotkeys__box">
+      <div className="hotkeys__box-tab">{GESTURE_PLACE_TITLES[row.place]}</div>
+      <div className="hotkeys__box-action" title={row.hint}>
+        {row.label}
+      </div>
+      <div className="hotkeys__box-foot">
+        <button
+          ref={button}
+          type="button"
+          className={`hotkeys__key${changed ? ' hotkeys__key--changed' : ''}${recording ? ' hotkeys__key--recording' : ''}${current === null ? ' hotkeys__key--none' : ''}`}
+          aria-label={recording ? `Hold the keys and click here for ${row.label}` : `${clickOwned(row)}: ${shownClick(current)}. Change`}
+          // The gesture is the mousedown's modifiers; its click must not start a new recording.
+          onMouseDown={(e) => {
+            if (!recording || e.button !== 0) return
+            e.preventDefault()
+            heard(gestureOfEvent(e))
+          }}
+          onContextMenu={(e) => {
+            if (recording) e.preventDefault()
+          }}
+          onClick={() => {
+            if (mode.kind === 'idle') setMode({ kind: 'recording', refused: null })
+          }}
+        >
+          {recording ? 'Hold keys, click here' : shownClick(current)}
+        </button>
+        {changed && mode.kind === 'idle' && (
+          <button type="button" className="hotkeys__link" aria-label={`Reset ${clickOwned(row)}`} onClick={askReset}>
+            Reset
+          </button>
+        )}
+      </div>
+      {below}
+    </div>
+  )
+}
+
+/** Whether the click rows show under the filters (YAZ-3564 K7): All or Clicks, no "Shared keys only"; "Changed from default" keeps the changed ones. */
+function clickInFilter(ctx: SettingsCtx, changed: boolean): boolean {
+  const f = ctx.hotkeyFilter ?? NO_FILTER
+  return (f.scope === 'all' || f.scope === 'clicks') && !f.shared && (!f.changed || changed)
+}
+
+/** The changed click rows the page shows now: "Reset all" lists them with the keys. */
+const changedClicks = (ctx: SettingsCtx): GestureRow[] => GESTURE_ROWS.filter((r) => clickChanged(r, ctx.settings.hotkeys) && clickInFilter(ctx, true))
+
+/** A changeable click's row (YAZ-3936). Its search text is its action, its gesture now, its hint and its place ("links in a note"). */
+const gestureItem = (row: GestureRow): SettingDef => ({
+  id: `hotkey-${row.id.replace('.', '-')}`,
+  label: row.label,
+  hint: ({ settings }) => [shownClick(gestureOf(row, settings.hotkeys)), row.hint].filter(Boolean).join(' '),
+  keywords: [GESTURE_PLACE_TITLES[row.place].toLowerCase(), 'mouse', 'click', 'gesture', ...ROW_KEYWORDS],
+  bare: true,
+  available: (ctx) => clickInFilter(ctx, clickChanged(row, ctx.settings.hotkeys)),
+  render: (ctx) => <GestureBox row={row} ctx={ctx} />,
+})
+
+/** A built-in click or drag (YAZ-1679): a box like a built-in key's, its gesture as muted text. Shown while no filter stands, or "Clicks" alone. */
+const tipItem = (tip: MouseTip): SettingDef => ({
+  id: `hotkey-mouse-${slug(shortLabel(tip.label))}`,
+  label: tip.label,
+  keywords: [tip.gesture, tip.place.toLowerCase(), 'mouse', ...ROW_KEYWORDS],
+  bare: true,
+  available: (ctx) => !isFiltered(ctx) || clicksOnly(ctx),
+  render: () => (
+    <div className="hotkeys__box hotkeys__box--fixed">
+      <div className="hotkeys__box-tab">{tip.place}</div>
+      <div className="hotkeys__box-action">{tip.label}</div>
+      <div className="hotkeys__box-foot">
+        <span className="hotkeys__keys">{tip.gesture}</span>
+        <span className="hotkeys__hint">Built in</span>
+      </div>
+    </div>
+  ),
+})
+
+/** One card per gesture as the clicks are now: the changeable rows first, then the built-in ones. */
+interface ClickCard {
+  gesture: string
+  rows: GestureRow[]
+  tips: MouseTip[]
+}
+
+/** The cards' order: Click, then the modified clicks (fewer keys first), then the other gestures as the tips list them. */
+const clickRank = (gesture: string): number => (gesture === 'Click' ? 0 : gesture.endsWith('-click') && !gesture.includes('Right') && !gesture.includes('Double') ? gesture.length : 100)
+
+let clickCache: { overrides: HotkeyOverrides; cards: ClickCard[]; none: GestureRow[] } | null = null
+function clickCardsOf(overrides: HotkeyOverrides): { cards: ClickCard[]; none: GestureRow[] } {
+  if (clickCache?.overrides === overrides) return clickCache
+  const byGesture = new Map<string, ClickCard>()
+  const card = (gesture: string): ClickCard => {
+    const found = byGesture.get(gesture) ?? { gesture, rows: [], tips: [] }
+    byGesture.set(gesture, found)
+    return found
+  }
+  const none: GestureRow[] = []
+  for (const row of GESTURE_ROWS) {
+    const gesture = gestureOf(row, overrides)
+    if (gesture === null) none.push(row)
+    else card(gestureDisplay(gesture)).rows.push(row)
+  }
+  for (const tip of MOUSE_TIPS) card(tip.gesture).tips.push(tip)
+  const seen = [...byGesture.keys()]
+  const cards = [...byGesture.values()].sort((a, b) => clickRank(a.gesture) - clickRank(b.gesture) || seen.indexOf(a.gesture) - seen.indexOf(b.gesture))
+  clickCache = { overrides, cards, none }
+  return clickCache
+}
+
+/** How the clicks read, said once (shown while no filter stands, or "Clicks" alone). */
+const clickLegendItem: SettingDef = {
+  id: 'hotkeys-click-legend',
+  label: 'How clicks work',
+  keywords: ['mouse', 'click', 'drag', 'gesture', ...ROW_KEYWORDS],
+  bare: true,
+  available: (ctx) => !isFiltered(ctx) || clicksOnly(ctx),
+  render: () => <p className="hotkeys__line">One card per click or drag, one box per place. Links in a note and Bullet dots are yours to change: click the box, then hold the keys and click it again.</p>,
+}
+
+/** The clicks' groups (YAZ-3936): the legend, one card per gesture, then the clicks with no gesture. */
+function clickGroups(ctx: SettingsCtx): SettingsGroup[] {
+  const { cards, none } = clickCardsOf(ctx.settings.hotkeys)
+  return [
+    { title: 'Clicks and drags', items: [clickLegendItem] },
+    ...cards.map((c) => ({
+      title: c.gesture,
+      anchor: `hotkeys-click-${c.gesture.replace(/[^A-Za-z0-9]/g, (ch) => `_${ch.charCodeAt(0).toString(16)}`)}`,
+      cardClass: 'hotkeys__boxes',
+      header: () => (
+        <div className="hotkeys__card-head">
+          <h3 className="settings-group__title hotkeys__cap-key">{c.gesture}</h3>
+          <span className="hotkeys__hint">{c.rows.length === 0 ? 'Built in.' : c.rows.length + c.tips.length > 1 ? 'Each place has its own action.' : `Works on ${GESTURE_PLACE_TITLES[c.rows[0].place].toLowerCase()}.`}</span>
+        </div>
+      ),
+      items: [...c.rows.map(gestureItem), ...c.tips.map(tipItem)],
+    })),
+    ...(none.length === 0 ? [] : [{ title: 'Clicks with no gesture', hint: 'Click the box, then hold the keys and click it again, to give one.', anchor: 'hotkeys-no-click', cardClass: 'hotkeys__boxes', items: none.map(gestureItem) }]),
+  ]
+}
+
+/** The groups after the clicks: macOS and Reset all. */
 const tailGroups: SettingsGroup[] = [
-    { title: 'Mouse', items: mouseItems },
     {
       title: 'Used by macOS',
       hint: "macOS keeps these keys, so the app never hears them. Change them in the Mac's keyboard settings.",
@@ -836,7 +1141,7 @@ const tailGroups: SettingsGroup[] = [
           label: 'Reset all hotkeys',
           keywords: ['reset', 'default'],
           bare: true,
-          available: (ctx) => changedShown(ctx).length > 0,
+          available: (ctx) => changedShown(ctx).length + changedClicks(ctx).length > 0,
           render: (ctx) => <ResetAllHotkeys ctx={ctx} />,
         },
       ],
@@ -847,7 +1152,7 @@ export const HOTKEYS_SECTION: SettingsSection = {
   id: 'hotkeys',
   title: 'Hotkeys',
   standalone: true,
-  // The part that does not move with the keys; `groupsFor` puts the key cards first.
+  // The part that does not move with the keys; `groupsFor` puts the key cards first, then the clicks (YAZ-3936).
   groups: tailGroups,
-  groupsFor: (ctx) => [...cardGroups(ctx), ...tailGroups],
+  groupsFor: (ctx) => [...cardGroups(ctx), ...clickGroups(ctx), ...tailGroups],
 }

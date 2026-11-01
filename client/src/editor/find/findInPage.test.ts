@@ -25,12 +25,16 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
+import { OPEN_ID_LINK } from '../wikilink/idLinkCaret'
 import { getHeadingFoldKey, HEADING_FOLDED_ATTR, isHeadingCollapsed, undoLastHeadingFold } from '../outline/headingFolding'
 import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { getZoomedItemPos } from '../outline/zoom'
 import { createFindChannel, type FindChannel } from './findChannel'
 import { FIND_ACTIVE_CLASS, FIND_MATCH_CLASS, findThreadAnchor } from './findInPage'
+import { WIKILINK_CLASS, WIKILINK_SYNTAX_CLASS, createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
+import { createViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
+import { buildViewOnlyCatalogFromEntries, type ViewOnlyEntry } from '../../links/viewOnlyCatalog'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -383,5 +387,118 @@ describe('escape and the save path', () => {
     await sleep(400) // outlast the listener's ~200ms debounce
     expect(onMarkdownUpdated).not.toHaveBeenCalled()
     expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+})
+
+describe('pills (YAZ-3744 S9, S17)', () => {
+  const PATHS: Record<string, string> = { 'YAS-466': '/v/AR v2 plan.md', Named: '/v/Named.md', 'docs/subs/Named': '/v/docs/subs/Named.md' }
+  const LINE = 'pad [[YAS-466]] and [[LN Scenarios Diagram.drawio]] and [[Named]] tail\n'
+  // 'pad [[YAS-466]] …': the ID link starts at 5 (paragraph content starts at 1).
+  const ID_FROM = 5
+
+  async function mountPills(markdown = LINE) {
+    const wikilinks = createWikilinkResolveSource()
+    // A vault with IDs (`YAS`): an ID no note has is a missing note (S10).
+    wikilinks.update((target) => PATHS[target] ?? null, [], [], true, ['YAS'])
+    const viewOnlyLinks = createViewOnlyLinkSource()
+    viewOnlyLinks.update(buildViewOnlyCatalogFromEntries('/v', [
+      { path: '/v/LN Scenarios Diagram.drawio', name: 'LN Scenarios Diagram.drawio', kind: 'diagram' },
+    ] as ViewOnlyEntry[]))
+    return mountFind(markdown, { wikilinks, viewOnlyLinks })
+  }
+  const titleEl = (root: HTMLElement) => root.querySelector<HTMLElement>('.ProseMirror-widget.wikilink')!
+  /** The line as drawn: without the text the wikilink plugin hides. */
+  const shownLine = (root: HTMLElement) => {
+    const line = root.querySelector('.ProseMirror p')!.cloneNode(true) as HTMLElement
+    line.querySelectorAll(`.${WIKILINK_SYNTAX_CLASS}`).forEach((el) => el.remove())
+    return line.textContent
+  }
+
+  it('finds an ID pill by its title: one match, the title widget marked', async () => {
+    const { root, channel } = await mountPills()
+    expect(titleEl(root).textContent).toBe('AR v2 plan')
+    channel.open()
+    channel.setQuery('ar v2 plan')
+    expect(channel.getState()).toMatchObject({ total: 1, activeIndex: 0 })
+    expect(matchEls(root)).toEqual([titleEl(root)])
+    expect(activeEls(root)).toEqual([titleEl(root)])
+    channel.setQuery('zzz')
+    expect(titleEl(root).classList.contains(FIND_MATCH_CLASS)).toBe(false)
+  })
+
+  it('a match in the hidden ID is one match that marks the pill, not hidden text', async () => {
+    const { root, channel } = await mountPills()
+    channel.open()
+    channel.setQuery('YAS-466')
+    expect(channel.getState().total).toBe(1)
+    expect(matchEls(root)).toEqual([titleEl(root)])
+    expect(root.querySelector(`.${WIKILINK_SYNTAX_CLASS}.${FIND_MATCH_CLASS}`)).toBeNull()
+  })
+
+  it('a pill counts once, however many matches its hidden text holds (YAZ-3910 A4)', async () => {
+    const { root, channel } = await mountPills('x [[docs/subs/Named]] y\n')
+    channel.open()
+    channel.setQuery('s') // three in the hidden `docs/subs/`, none in the name
+    expect(channel.getState()).toMatchObject({ total: 1, activeIndex: 0 })
+    expect(matchEls(root).map((el) => el.textContent).join('')).toBe('Named')
+  })
+
+  it('a missing note (S10): its ID marks the "Missing note" widget, one match (YAZ-3910 A1)', async () => {
+    const { root, channel } = await mountPills('pad [[YAS-999]] tail\n')
+    expect(titleEl(root).textContent).toBe('Missing note · YAS-999')
+    channel.open()
+    channel.setQuery('YAS-999') // in the widget's text and in the hidden ID: one pill, one match
+    expect(channel.getState()).toMatchObject({ total: 1, activeIndex: 0 })
+    expect(matchEls(root)).toEqual([titleEl(root)])
+    expect(activeEls(root)).toEqual([titleEl(root)])
+    channel.setQuery('missing')
+    expect(channel.getState().total).toBe(1)
+    expect(matchEls(root)).toEqual([titleEl(root)])
+  })
+
+  it('a match in a hidden extension marks the pill\'s shown name', async () => {
+    const { root, channel } = await mountPills()
+    channel.open()
+    channel.setQuery('drawio')
+    expect(channel.getState().total).toBe(1)
+    const marked = matchEls(root)
+    expect(marked.map((el) => el.textContent).join('')).toBe('LN Scenarios Diagram')
+    expect(marked.every((el) => el.classList.contains(WIKILINK_CLASS) && el.classList.contains(FIND_ACTIVE_CLASS))).toBe(true)
+  })
+
+  it('an open link ("Edit link" put the caret inside it, YAZ-3935) is searched as plain text', async () => {
+    const { root, view, channel } = await mountPills()
+    channel.open()
+    channel.setQuery('named]]')
+    expect(channel.getState().total).toBe(1)
+    expect(matchEls(root).map((el) => el.textContent).join('')).toBe('Named') // the pill, its `]]` hidden
+    channel.close()
+    const inside = posOfText(view.state.doc, 'Named') + 2
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, inside)).setMeta(OPEN_ID_LINK, true))
+    channel.open()
+    channel.setQuery('named]]')
+    expect(channel.getState().total).toBe(1)
+    expect(matchEls(root).map((el) => el.textContent).join('')).toBe('Named]]')
+  })
+
+  it('S17: stepping to an ID pill and closing leaves the caret at its edge, the title shown', async () => {
+    const { root, view, channel } = await mountPills('pad [[YAS-466]] mid [[YAS-466#Intro]] plan\n')
+    channel.open()
+    channel.setQuery('plan')
+    // The first pill's title, the second pill's title, then the word.
+    expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 0 })
+    channel.close()
+    expect(view.state.selection.empty && view.state.selection.head).toBe(ID_FROM)
+    expect(titleEl(root).textContent).toBe('AR v2 plan')
+    expect(shownLine(root)).toBe('pad AR v2 plan mid AR v2 planIntro plan')
+
+    // A shown sub part of an ID link: the caret D1 steps out lands on an edge, never inside.
+    const second = posOfText(view.state.doc, '[[YAS-466#Intro]]')
+    channel.open()
+    channel.setQuery('intro')
+    expect(channel.getState().total).toBe(1)
+    channel.close()
+    expect([second, second + '[[YAS-466#Intro]]'.length]).toContain(view.state.selection.head)
+    expect(shownLine(root)).toBe('pad AR v2 plan mid AR v2 planIntro plan')
   })
 })

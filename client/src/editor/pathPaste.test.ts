@@ -11,7 +11,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { LinkCandidate } from '../links/completion'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { EXTERNAL_EDIT_META } from './external/applyExternalMarkdown'
-import { hrefTarget, type PathPasteOptions } from './pathPaste'
+import { hrefTarget, linkFor, type PathPasteOptions } from './pathPaste'
 import { createWikilinkCandidateSource } from './wikilink/wikilinkPicker'
 
 const row = (path: string, insert: string): LinkCandidate => ({ name: insert, insert, label: insert, path })
@@ -385,6 +385,13 @@ describe('links across the vaults of a window (D14, D15, D16)', () => {
     select(view, 'the plan')
     paste(view, PLAN)
     expect(saved(crepe)).toBe('Next:[Plan](../../w/plan.md)\n\nRead [the plan](../../w/plan.md) first.')
+  })
+
+  it('YAZ-3778 D2: a pasted drawing in another vault gets its name as the link text, with no `.excalidraw`', () => {
+    const other = createWikilinkCandidateSource()
+    other.update([{ name: 'Board.excalidraw', insert: 'Board.excalidraw', label: 'Board', path: '/w/Board.excalidraw' }])
+    const options = { ...optionsFor('/v', '/v/a/today.md'), candidatesOf: (path: string) => (path.startsWith('/w/') ? other : null) }
+    expect(linkFor('/w/Board.excalidraw', options)).toBe('[Board](../../w/Board.excalidraw)')
   })
 
   it('W1 a Markdown link into another vault of the window resolves; W2 one into a vault not in the window does not', () => {

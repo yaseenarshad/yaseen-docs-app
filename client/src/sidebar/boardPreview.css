@@ -45,6 +45,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A link's card says how to open the link (YAZ-3935): one quiet line under the header. */
+.board-preview__hint {
+  flex: none;
+  padding: 4px 12px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
 
 /* A subtle checkerboard, so a transparent or background-less board still reads as a picture. */
 .board-preview__body {
