@@ -2,8 +2,12 @@
  * Standard Markdown link interaction (YAZ-1309).
  *
  * A primary mousedown with an open gesture (Settings › Hotkeys › "Links in a note", YAZ-3936) owns navigation before
- * ProseMirror can move the caret; a plain click in an editable note puts the caret in the link's words, as on text
- * (YAZ-3935), and a read-only note keeps "a click opens". Right-click owns the
+ * ProseMirror can move the caret; a read-only note keeps "a click opens". A link that is a pill is one unit, as a
+ * `[[link]]` is (YAZ-4021, demo round 4): in an editable note a plain click puts the caret at its nearer edge, a
+ * double-click selects it whole, and a drag from it holds it whole (`wikilinkClick.ts`'s rules). `idLinkCaret.ts` keeps
+ * the caret out of its words and removes it whole (`markdownPillsAround`), and a letter typed at its end is not part of
+ * the link. Typed over the whole selected pill, words rename it and keep the link. Any other link's words are text, as
+ * on any text (YAZ-3935). Right-click owns the
  * one link menu (YAZ-3609 D23, `linkMenu.ts`), whose edit/remove actions delegate to Crepe's existing link-tooltip
  * API; no parallel link model or serializer is introduced. Fragment-only hrefs deliberately fall
  * through because they are document-local. A link into a vault of the window opens in a tab here
@@ -14,7 +18,7 @@ import { linkTooltipAPI } from '@milkdown/kit/component/link-tooltip'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Mark, MarkType, Node as ProseNode } from '@milkdown/kit/prose/model'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
-import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { fileKind } from '@shared/fileKind'
@@ -23,7 +27,8 @@ import type { GestureAction } from '@shared/keys'
 import { linkClickAction } from './linkGesture'
 import { fileLabel } from '../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkActions, type LinkMenu } from './linkMenu'
-import { vaultSpan } from './wikilink/wikilinkPlugin'
+import { followDrag, nearerEdge } from './wikilink/wikilinkClick'
+import { WIKILINK_CLASS, vaultSpan } from './wikilink/wikilinkPlugin'
 
 /** The link menu's place rows (YAZ-3740: `showInSidebar`, Focus and Favorites, "Open in ▸") are App's `LinkActions`: absent, no row. */
 export interface MarkdownLinkNav extends LinkActions {
@@ -67,6 +72,25 @@ const addLinkOf = new WeakMap<EditorView, (range?: { from: number; to: number })
  */
 export function addLinkOn(view: EditorView, range?: { from: number; to: number }): boolean {
   return addLinkOf.get(view)?.(range) ?? false
+}
+
+/**
+ * The link pills of the textblock that holds `pos` (YAZ-4021): each pill's words, from its first piece to its last. A
+ * pill's pieces share one spec object (`pillsIn`), so a bold piece inside a link is the same pill. Only that textblock's
+ * decorations are read.
+ */
+export function markdownPillsAround(state: EditorState, pos: number): Array<{ from: number; to: number }> {
+  const set = markdownLinkKey.getState(state)
+  if (set === undefined || set === DecorationSet.empty) return []
+  const $pos = state.doc.resolve(pos)
+  if (!$pos.parent.isTextblock) return []
+  const pills = new Map<object, { from: number; to: number }>()
+  for (const piece of set.find($pos.start(), $pos.end(), (spec) => spec.pill !== undefined)) {
+    if (piece.from >= piece.to) continue
+    const pill = pills.get(piece.spec.pill)
+    pills.set(piece.spec.pill, pill === undefined ? { from: piece.from, to: piece.to } : { from: Math.min(pill.from, piece.from), to: Math.max(pill.to, piece.to) })
+  }
+  return [...pills.values()]
 }
 
 /** Draws every link pill of the note again (YAZ-3664): the host calls it when the window's vaults change. No document change. */
@@ -136,10 +160,12 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
         const icon = nav.icon(path, fileKind(name) === null && !name.includes('.'))
         const last = run.pieces.length - 1
         const vault = nav.vaultTag?.(path) ?? null
+        // One object for the pill's pieces: `markdownPillsAround` finds the whole pill from any piece (YAZ-4021).
+        const pill = {}
         run.pieces.forEach(([start, end], i) => {
           const edges = `${i === 0 ? ' link-pill--first' : ''}${i === last ? ' link-pill--last' : ''}`
           const attrs: Record<string, string> = i === 0 ? { ...icon, class: `wikilink link-pill${edges} ${icon.class}`, spellcheck: 'false' } : { class: `wikilink link-pill${edges}`, spellcheck: 'false' }
-          fresh.push(Decoration.inline(start, end, attrs))
+          fresh.push(Decoration.inline(start, end, attrs, { pill }))
         })
         // Its vault's name is the pill's last piece (YAZ-3738 D4): drawn before the caret at the link's end, so the
         // caret shows after the whole pill. Inside the link's anchor: a click on it opens the link, as on the text.
@@ -205,8 +231,9 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
     return new Plugin<DecorationSet>({
       key: markdownLinkKey,
       // A link into a vault of this window looks like a [[link]] (YAZ-3609 D19): its own text is tinted, and the
-      // first piece draws the file's icon on its `::before`. Decorations only, so the text stays real text: the
-      // caret, typing next to it (YAZ-3655) and find work as on any text. The look follows the path, not the index.
+      // first piece draws the file's icon on its `::before`. Decorations only, so the text stays real text: find and
+      // typing next to it (YAZ-3655) work as on any text, and the caret stays out of it (YAZ-4021). The look follows the
+      // path, not the index.
       state: {
         init: (_, state) => (nav.vaultPath === undefined ? DecorationSet.empty : pillsIn(state.doc, 0, state.doc.content.size, type, nav, DecorationSet.empty)),
         apply: (tr, set, before, state) => {
@@ -235,16 +262,37 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
       },
       props: {
         decorations: (state) => markdownLinkKey.getState(state),
+        // A letter typed right after a pill is not part of the link (YAZ-4021): the link mark would take it in. Only a
+        // caret in a link pays the lookup; a composition (an accent, a Japanese word) is the browser's.
+        handleTextInput: (view, from, to, text) => {
+          if (from !== to) return false
+          const $from = view.state.doc.resolve(from)
+          if (type.isInSet($from.marks()) === undefined || !markdownPillsAround(view.state, from).some((p) => p.to === from)) return false
+          view.dispatch(view.state.tr.insertText(text, from, to).removeMark(from, from + text.length, type).scrollIntoView())
+          return true
+        },
         handleDOMEvents: {
           mousedown: (view, event) => {
             if (event.button !== 0) return false
             const hit = linkHit(view, ctx, event.target)
             if (hit === null || hit.href.startsWith('#')) return false
-            // Only an open gesture opens (YAZ-3936); a plain click in an editable note puts the caret in the words (YAZ-3935).
+            // Only an open gesture opens (YAZ-3936). A click no gesture has: on a pill, as on a [[link]] (YAZ-4021); on any
+            // other link, the editor's, as on text (YAZ-3935).
             const where = linkClickAction(view, event, nav.hotkeys?.())
-            if (where === null) return false
+            if (where !== null) {
+              event.preventDefault()
+              follow(hit.href, where)
+              return true
+            }
+            if (!view.editable || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.detail > 2) return false
+            const span = event.target instanceof Element ? event.target.closest(`.${WIKILINK_CLASS}`) : null
+            const pill = span === null ? undefined : markdownPillsAround(view.state, hit.from).find((p) => p.from <= hit.from && hit.to <= p.to)
+            if (span === null || pill === undefined) return false
             event.preventDefault()
-            follow(hit.href, where)
+            const selection = event.detail === 2 ? TextSelection.create(view.state.doc, pill.from, pill.to) : TextSelection.create(view.state.doc, nearerEdge(view, span, pill.from, pill.to, event.clientX))
+            view.dispatch(view.state.tr.setSelection(selection))
+            view.focus()
+            if (event.detail !== 2) followDrag(view, pill, selection.head, event)
             return true
           },
           contextmenu: (view, event) => {

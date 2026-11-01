@@ -1,7 +1,8 @@
 /**
  * Every `[[link]]` is one unit (YAZ-3744 D1 for ID links; YAZ-3935, point 3 of YAZ-3879, for every link that shows as a
  * pill, `isLinkUnit`): it stays a pill wherever the caret is (`wikilinkPlugin.ts` `opens`). The raw `[[…]]` opens only
- * from the link menu's "Edit link", and closes when the caret leaves it.
+ * from the link menu's "Edit link", and closes when the caret leaves it. A Markdown link pill is one unit too, by the
+ * same rules (YAZ-4021, `markdownPillsAround`); its words change only by "Edit link" or by typing over the whole pill.
  *  - A caret or a selection end that lands inside a closed link steps over it: after ← or → (with Shift or ⌥ too) from
  *    one edge to the other, after anything else (↑/↓, a drag, the browser's own nudge) to the nearer edge. A click on
  *    the pill itself is `wikilinkClick.ts`'s: it puts the caret at the edge the pointer is nearer, by the pill's middle.
@@ -20,16 +21,34 @@
 import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { markdownPillsAround } from '../markdownLink'
 import { wikilinkMatchAt } from './wikilinkClick'
 import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, isLinkUnit } from './wikilinkPlugin'
 
 /** Set on "Edit link"'s selection (`wikilinkMenu.ts`): the one way into a link. */
 export const OPEN_ID_LINK = 'mdapp-open-id-link'
 
-/** The link that is a unit and holds `pos` strictly inside it, or null. */
+/** The link that is a unit and holds `pos` strictly inside it, or null: a `[[link]]`, or a Markdown link pill (YAZ-4021). */
 function linkAround(state: EditorState, pos: number): { from: number; to: number } | null {
   const match = wikilinkMatchAt(state.doc, pos)
-  return match !== null && pos > match.from && isLinkUnit(match.inner) ? match : null
+  if (match !== null && pos > match.from && isLinkUnit(match.inner)) return match
+  return markdownPillsAround(state, pos).find((pill) => pill.from < pos && pos < pill.to) ?? null
+}
+
+/** The unit that ends right at `pos` (`back`, for Backspace) or starts right at it (for Delete), or null. */
+function linkBeside(state: EditorState, pos: number, back: boolean): { from: number; to: number } | null {
+  const link = linkAround(state, back ? pos - 1 : pos + 1)
+  if (link !== null) return (back ? link.to : link.from) === pos ? link : null
+  // A one-letter Markdown pill has no position strictly inside it.
+  return markdownPillsAround(state, pos).find((pill) => (back ? pill.to : pill.from) === pos) ?? null
+}
+
+/** `from`..`to` cut at the unit `start`..`end`, on `pos`'s side of it; the unit itself when it holds `pos`. */
+function cutAt(from: number, to: number, start: number, end: number, pos: number): { from: number; to: number } {
+  if (end <= pos) return { from: Math.max(from, end), to }
+  if (start >= pos) return { from, to: Math.min(to, start) }
+  // The word is the link itself (no click plugin took the double-click): exactly the link.
+  return { from: start, to: end }
 }
 
 /** The span between the units of `pos`'s textblock that holds `pos`: the most a word clicked at `pos` may cover. */
@@ -42,16 +61,10 @@ function gapAround(state: EditorState, pos: number): { from: number; to: number 
     for (const m of text.matchAll(WIKILINK_RE)) {
       if (m[1] === '!' || !isLinkUnit(m[2])) continue
       const start = runPos + m.index
-      const end = start + m[0].length
-      if (end <= pos) from = Math.max(from, end)
-      else if (start >= pos) to = Math.min(to, start)
-      else {
-        // The word is the link itself (no click plugin took the double-click): exactly the link.
-        from = start
-        to = end
-      }
+      ;({ from, to } = cutAt(from, to, start, start + m[0].length, pos))
     }
   })
+  for (const pill of markdownPillsAround(state, pos)) ({ from, to } = cutAt(from, to, pill.from, pill.to, pos))
   return { from, to }
 }
 
@@ -143,10 +156,9 @@ export const createIdLinkCaret = () => {
             const back = event.key === 'Backspace' || (event.ctrlKey && event.key === 'h')
             const forward = event.key === 'Delete' || (event.ctrlKey && event.key === 'd')
             if ((!back && !forward) || event.metaKey || event.isComposing || !view.state.selection.empty) return false
-            const pos = view.state.selection.head
             // The link that ends right at the caret (Backspace), or starts right at it (Delete).
-            const link = linkAround(view.state, back ? pos - 1 : pos + 1)
-            if (link === null || (back ? link.to : link.from) !== pos) return false
+            const link = linkBeside(view.state, view.state.selection.head, back)
+            if (link === null) return false
             view.dispatch(view.state.tr.delete(link.from, link.to).scrollIntoView())
             return true
           },

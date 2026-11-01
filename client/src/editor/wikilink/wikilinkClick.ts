@@ -187,7 +187,7 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
  * no handler under the pointer can stop them. A move with no button held ends the drag, as ProseMirror's own does: the
  * mouseup can be lost (the button let go outside the window).
  */
-function followDrag(view: EditorView, link: { from: number; to: number }, pressed: number, start: MouseEvent): void {
+export function followDrag(view: EditorView, link: { from: number; to: number }, pressed: number, start: MouseEvent): void {
   const doc = view.dom.ownerDocument
   let last = -1
   const move = (event: MouseEvent) => {
@@ -211,9 +211,9 @@ function followDrag(view: EditorView, link: { from: number; to: number }, presse
 
 /**
  * The edge of the link at `from`..`to` that a click at `x` is nearer, by the pill's middle (YAZ-3935 C1): the boxes of
- * the link's shown pieces on the clicked piece's line. Read on a click only.
+ * the link's shown pieces on the clicked piece's line. Read on a click only. A Markdown link pill's too (`markdownLink.ts`).
  */
-function nearerEdge(view: EditorView, span: Element, from: number, to: number, x: number): number {
+export function nearerEdge(view: EditorView, span: Element, from: number, to: number, x: number): number {
   const line = span.getBoundingClientRect()
   let left = line.left
   let right = line.right

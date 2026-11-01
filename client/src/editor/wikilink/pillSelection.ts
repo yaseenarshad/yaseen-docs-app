@@ -2,7 +2,8 @@
  * A selected link lights up as one box (YAZ-3747 demo): the browser's selection colours only a link's letters, so a
  * pill showed a patchy box, its icon and padding left out. Every link piece inside the selection gets
  * `wikilink--selected`, and `wikilink.css` draws the whole box and keeps the browser's colour off its letters. A link is
- * one unit (`idLinkCaret.ts`), so it is wholly in a selection or wholly out.
+ * one unit (`idLinkCaret.ts`; a Markdown link pill too, YAZ-4021), so it is wholly in a selection or wholly out. A Markdown
+ * link that is not a pill keeps the browser's colour (YAZ-4004).
  *
  * Typing is never slower: with no selection both parts return at once. A link's text pieces get the class by a
  * decoration over each piece the two link plugins drew (`wikilinkKey`, `markdownLinkKey`); a class set on a text span
