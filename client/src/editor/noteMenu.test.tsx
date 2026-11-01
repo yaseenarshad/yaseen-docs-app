@@ -374,6 +374,30 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
     expect(items()).toEqual([false, false])
   })
 
+  it('a right-click in the indent left of a child line: the child\'s rows, not its parent\'s (6B nit)', async () => {
+    const { crepe, view } = await open('* a\n  1. kid\n  2. kid2\n')
+    // Right before the child list, inside "a"; and between the two children.
+    rightClickOn(view, posOf(crepe, 'kid') - 3)
+    expect(groups()[0]).toEqual([STRIP('Numbered list')])
+    act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    rightClickOn(view, posOf(crepe, 'kid2') - 2)
+    press('Bullet list')
+    expect(md(crepe)).toBe('* a\n  * kid\n  * kid2\n')
+  })
+
+  // 6B1 (YAZ-4019): the real arrow is a widget left of the text box, where `posAtCoords` finds no line.
+  it.each([
+    ['a bullet', '* a\n  * kid\n* b\n', '.outline-toggle', 'Bullet list'],
+    ['a heading', '# H\n\ntext\n', '.heading-toggle', null],
+  ])('on the real fold arrow of %s: the line\'s menu with Collapse all (D23)', async (_, markdown, arrow, lit) => {
+    const { view } = await open(markdown)
+    vi.spyOn(view, 'posAtCoords').mockReturnValue(null)
+    const toggle = view.dom.querySelector(arrow)!
+    act(() => void toggle.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 2, clientY: 50 })))
+    expect(groups()[0]).toEqual([STRIP(lit)])
+    expect(groups()[1]).toEqual(expect.arrayContaining(['Collapse all', 'Expand all']))
+  })
+
   it('in a code block or a table cell: no line rows', async () => {
     const { crepe, view } = await open('```\ncode\n```\n')
     rightClickOn(view, posOf(crepe, 'code') + 1)

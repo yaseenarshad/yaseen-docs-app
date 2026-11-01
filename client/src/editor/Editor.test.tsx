@@ -56,6 +56,8 @@ vi.mock('../api', async (importOriginal) => {
 // A code file opens Monaco (YAZ-3448), which does not run in jsdom: the code tab's own fake.
 vi.mock('../code/monaco', () => import('../code/monacoTestKit'))
 
+/** A view with nothing in it: the fold-all button reads it as it mounts, and subscribes on its `dom` (YAZ-3938 D9). */
+const emptyView = vi.hoisted(() => () => ({ state: null, dispatch: () => {}, dom: document.createElement('div') }))
 vi.mock('./createCrepe', () => {
   interface FakeCrepe {
     md: string
@@ -80,7 +82,7 @@ vi.mock('./createCrepe', () => {
       crepe.md = md
     }),
     focusEditor: vi.fn(),
-    editorViewOf: vi.fn(() => null),
+    editorViewOf: vi.fn(emptyView),
     // The fake's "plain text" is its markdown: enough to see WHICH editor the page settings menu counts.
     getPlainText: vi.fn((crepe: FakeCrepe) => crepe.md),
     // The fake has no zoom plugin: a page view test says which bullet it is drilled into.
@@ -101,6 +103,11 @@ vi.mock('./lineNumbers/lineNumbers', async () => {
 // Section indent (YAZ-2709): the fake Crepe has no view to send the switch to. The real plugin is
 // covered by outline/sectionIndent.test.ts; what the host SENDS is the thing under test here.
 vi.mock('./outline/sectionIndent', () => ({ showSectionIndent: vi.fn() }))
+
+// The fold-all button (YAZ-3938): the fake Crepe has no fold plugins. The real command is covered by
+// FoldAllButton.test.tsx; what the host WIRES to the button is the thing under test here.
+const foldAll = vi.hoisted(() => ({ next: 'collapse' as 'collapse' | 'expand' | 'none', command: vi.fn(() => true) }))
+vi.mock('./outline/foldAllHotkeys', () => ({ FOLDS_CHANGED_EVENT: 'yaseendocs:folds-changed', nextDocumentFold: vi.fn(() => foldAll.next), setAllDocumentFolds: vi.fn(() => foldAll.command) }))
 /** The drawing tab's host (YAZ-3028): a stand-in that records what Editor hands it. */
 const drawingTab = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }))
 vi.mock('../drawings/DrawingEditor', () => ({
@@ -126,7 +133,8 @@ vi.mock('./external/mergeExternal', () => ({
 import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
-import { createCrepe, focusEditor, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
+import { setAllDocumentFolds } from './outline/foldAllHotkeys'
+import { createCrepe, editorViewOf, focusEditor, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
 import { _resetRenameContinuity, carryEditorAcrossRename, registerRenameContinuity } from '../lib/renameContinuity'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { mergeExternalMarkdown } from './external/mergeExternal'
@@ -1752,11 +1760,38 @@ describe('the page settings cog (YAZ-2643)', () => {
     return container
   }
 
-  it('is the first chip of a Markdown note: cog, zoom pill, sync chip, save chip (S1)', async () => {
+  it('YAZ-3938 D1: the fold-all button stands first, left of the cog; a click runs the fold-all command on the note, then gives the note the focus', async () => {
+    readFile.mockResolvedValueOnce({ path: PATH, content: BODY, mtime: 1, size: BODY.length })
+    const view = { state: { doc: 'the state' }, dispatch: vi.fn(), dom: document.createElement('div') }
+    vi.mocked(editorViewOf).mockReturnValue(view as never)
+    try {
+      await open(PATH)
+      const button = container!.querySelector<HTMLButtonElement>('.status-chips > .fold-all__trigger:first-child')!
+      vi.mocked(focusEditor).mockClear()
+      foldAll.next = 'collapse'
+      await act(async () => button.click())
+      expect(setAllDocumentFolds).toHaveBeenLastCalledWith(true)
+      expect(foldAll.command).toHaveBeenLastCalledWith(view.state, view.dispatch)
+      expect(focusEditor).toHaveBeenCalledTimes(1)
+      expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+      foldAll.next = 'expand'
+      await act(async () => button.click())
+      expect(setAllDocumentFolds).toHaveBeenLastCalledWith(false)
+      foldAll.next = 'none'
+      foldAll.command.mockClear()
+      await act(async () => button.click())
+      expect(foldAll.command).not.toHaveBeenCalled()
+      expect(button.getAttribute('aria-label')).toBe('Nothing to fold')
+    } finally {
+      vi.mocked(editorViewOf).mockImplementation(emptyView as never)
+    }
+  })
+
+  it('the cog comes right after the fold-all button on a Markdown note: then zoom pill, sync chip, save chip (S1)', async () => {
     readFile.mockResolvedValueOnce({ path: PATH, content: BODY, mtime: 1, size: BODY.length })
     await open(PATH, { sync: { root: '/vault', state: 'synced' }, onSyncNow: noop })
     const chips = [...container!.querySelector('.status-chips')!.children].map((chip) => chip.className.split(' ')[0])
-    expect(chips).toEqual(['page-settings', 'document-zoom', 'sync-indicator', 'save-indicator'])
+    expect(chips).toEqual(['fold-all__trigger', 'page-settings', 'document-zoom', 'sync-indicator', 'save-indicator'])
     expect(container!.querySelector('.editor-host')!.contains(container!.querySelector('.page-settings'))).toBe(false)
   })
 
@@ -2303,7 +2338,7 @@ describe('the cog’s "Read only" row, the chip and the "Allow edits?" box on a 
     expect(menuSwitch(el, 'Read only').getAttribute('aria-pressed')).toBe('true')
     expect(askBox(el)).toBeNull()
     expect(readonlyOf()).toBe(true)
-    expect([...el.querySelector('.status-chips')!.children].map((c) => c.className)).toEqual(['page-settings', 'document-zoom', 'read-only-chip', expect.stringContaining('save-indicator')])
+    expect([...el.querySelector('.status-chips')!.children].map((c) => c.className)).toEqual(['fold-all__trigger', 'page-settings', 'document-zoom', 'read-only-chip', expect.stringContaining('save-indicator')])
     // The watcher's echo of the switch carries this editor's mtime: no read, no reload, no bar (S12, S17).
     const reads = readFile.mock.calls.length
     await emit({ type: 'change', path: PATH, mtime: 12 })

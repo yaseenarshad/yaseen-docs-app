@@ -4,7 +4,7 @@ import { type ViewSet, type ViewDef, type Mutate, groupByLevels } from '../viewS
 import type { EngineError } from '../engine'
 import type { FolderHost } from '../ViewsPane'
 import { countRules } from './filterRows'
-import { ChevronsIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
+import { CollapseAllIcon, ExpandAllIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
 import { FilterMenu } from './FilterMenu'
 import { Popover } from './Popover'
 import { PropertiesMenu } from './PropertiesMenu'
@@ -112,7 +112,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
             title={groupsLabel}
             onClick={() => onSetAllGroups(allCollapsed ? [] : allGroupKeys)}
           >
-            <ChevronsIcon />
+            {allCollapsed ? <ExpandAllIcon /> : <CollapseAllIcon />}
           </button>
         )}
         <button type="button" className="view-toolbar__btn view-toolbar__new" aria-label="New note" title="New note" onClick={onNew}>

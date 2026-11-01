@@ -4,21 +4,12 @@
  * (`setAllDocumentFolds`). It is the one menu of the dot, the text and the fold chevron, so the rows sit with the
  * children rows, not in a menu of their own (demo feedback).
  */
-import { keyRow, keysOf } from '@shared/keys'
-import { toDisplay } from '@shared/hotkeyBindings'
-import { storage } from '../../lib/storage'
+import { hintOf } from '../../lib/keyHint'
 import type { Node } from '@milkdown/kit/prose/model'
 import type { RowProvider } from '../blockHandleMenu'
 import { setAllDocumentFolds } from './foldAllHotkeys'
 import { DEEPEST_FOLDABLE_LEVEL, headingLevel } from './headingFolding'
 import { childListState } from './numberChildren'
-
-/** A note key's first key as it is now, as a menu writes it ('⌘⇧U'); undefined with no key (the code tab's `hintOf`). */
-const hintOf = (rowId: string): string | undefined => {
-  const row = keyRow(rowId)
-  const key = row === undefined ? undefined : keysOf(row, storage.getSettings()?.hotkeys)[0]
-  return key === undefined ? undefined : key.split(' ').map(toDisplay).join(' ')
-}
 
 /** A heading at `pos` that starts a section (levels 1-3) and has a block in it: the next block is no heading of its level or above. */
 function headingFolds(doc: Node, pos: number): boolean {
