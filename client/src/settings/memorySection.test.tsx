@@ -302,7 +302,7 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect(css).toMatch(/@container memory \(max-width: 599px\)\s*\{[\s\S]*\.memory__bar\s*\{\s*display:\s*none;/)
   })
 
-  it('YAZ-4029, YAZ-4030, YAZ-4031, YAZ-4042: at each width the checker measured, the headers, states and sizes fit, and the Tab column keeps 6 letters of a name; a narrow table hides the times (D19)', () => {
+  it('YAZ-4029, YAZ-4030, YAZ-4031, YAZ-4042, YAZ-4051: at each width the checker measured, the headers, states and sizes fit, and the Tab column keeps 6 letters of a name; a narrow table hides the times (D19)', () => {
     const css = settingsCss.replace(/\/\*[\s\S]*?\*\//g, '')
     const rule = (text: string, selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(text)?.[1] ?? ''
     const bands = [...css.matchAll(/@container memory \(max-width: (\d+)px\)\s*\{((?:[^{}]*\{[^}]*\})*)\s*\}/g)]
@@ -314,14 +314,14 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
       const width = widths.at(-1)
       return width === undefined ? 0 : width[2] === 'em' ? Number(width[1]) * 13 : width[2] === '%' ? (Number(width[1]) * table) / 100 : Number(width[1])
     }
-    // The tables of a 1280, 900, 800, 700, 420 and 620 px window (the narrowest: the Settings list still sits beside the
-    // page). Measured needs: "Last seen ⓘ" 84.4 px, "Awake · sleeps in 15 min" 168 px, "Not loaded" 83 px, "1023.9 MB"
-    // 81 px, and 6 letters of a name after the tab row's indent 72 px.
-    for (const table of [605, 537, 437, 337, 323, 257]) {
+    // The tables of a 1280, 900, 800, 760, 720, 700 and 420 px window. Measured needs in the app: "Last seen ⓘ" 84.4 px,
+    // "Awake · sleeps in 120 min" 158 px (YAZ-4051), "1023.9 MB" 81 px, and 6 letters of a name after the tab row's
+    // indent 72 px. All of them fit down to a 316 px table.
+    for (const table of [605, 537, 437, 397, 357, 337, 323, 316]) {
       const tab = table - px('state', table) - 2 * px('time', table) - px('memory', table)
       expect(tab, `Tab at ${table}`).toBeGreaterThanOrEqual(72)
       expect(px('memory', table), `RAM at ${table}`).toBeGreaterThanOrEqual(81)
-      expect(px('state', table), `State at ${table}`).toBeGreaterThanOrEqual(table >= 420 ? 168 : 90)
+      expect(px('state', table), `State at ${table}`).toBeGreaterThanOrEqual(158)
       if (table >= 520) expect(px('time', table), `Last seen at ${table}`).toBeGreaterThanOrEqual(85)
       // Under 520 px the times go whole (D19): no width, and their cells show nothing and take no room.
       else {

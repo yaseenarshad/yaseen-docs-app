@@ -950,9 +950,9 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Wide enough for "Awake · sleeps in 15 min" (YAZ-4031). */
+/* Wide enough for "Awake · sleeps in 120 min", 158 px (YAZ-4031, YAZ-4051). */
 .memory__col-state {
-  width: 13.25em;
+  width: 12.25em;
 }
 
 /* "59 min ago" and the header with its ⓘ, in full (YAZ-4022, YAZ-4031); a date cuts with "…" and its hover gives it
@@ -1063,10 +1063,10 @@
 }
 
 /* A narrower table (YAZ-4022, YAZ-4029): the bars go, so the RAM column holds just the size, in full ("1023.9 MB").
-   Under 520 px the Last seen and Changed columns go (D19, YAZ-4042), so Tab, State and RAM show in full. Under 420 px
-   (a phone-wide window, or one where the Settings list still sits beside the page) State takes a share, so the Tab
-   column keeps a part of each name; a long state cuts with a hover. These come after the base rules, so they win
-   (YAZ-4030). */
+   Under 520 px the Last seen and Changed columns go (D19, YAZ-4042), so Tab, State and RAM show in full down to a
+   316 px table (a 420 px window). Under that (a phone-wide window, or one where the Settings list still sits beside
+   the page) State takes a share, so the Tab column keeps a part of each name; a long state cuts with a hover. These
+   come after the base rules, so they win (YAZ-4030). */
 @container memory (max-width: 599px) {
   .memory__col-memory {
     width: 6.5em;
@@ -1088,7 +1088,7 @@
   }
 }
 
-@container memory (max-width: 419px) {
+@container memory (max-width: 315px) {
   .memory__col-state {
     width: 36%;
   }
