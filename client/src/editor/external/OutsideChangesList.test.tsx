@@ -141,6 +141,20 @@ describe('OutsideChangesList, unpinned: the dropdown (4J)', () => {
     act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     expect(dropdown()).toBeNull()
   })
+
+  it('4J1: a dropdown open when the list empties, or when the whole note changes, does not open by itself on the next change', () => {
+    const { channel, show, dropdown, count } = mount(false)
+    show(ROWS)
+    act(() => count()?.click())
+    show([])
+    show(ROWS)
+    expect(dropdown()).toBeNull()
+    act(() => count()?.click())
+    act(() => channel.sync({ count: 0, wholeNote: true }, channel.getVersion() + 1))
+    act(() => channel.sync({ count: 0, wholeNote: false }, channel.getVersion() + 1))
+    show(ROWS)
+    expect(dropdown()).toBeNull()
+  })
 })
 
 describe('the channel: a new editor on the same channel (4K)', () => {

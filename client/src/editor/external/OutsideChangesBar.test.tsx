@@ -5,6 +5,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { editorViewCtx } from '@milkdown/kit/core'
+import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { applyExternalMarkdown } from './applyExternalMarkdown'
 import { OutsideChangesBar } from './OutsideChangesBar'
 import { createOutsideChangesChannel, type OutsideChangesController } from './outsideChangesChannel'
 
@@ -87,5 +90,36 @@ describe('OutsideChangesBar (YAZ-3704 D6)', () => {
     act(() => channel.sync({ count: 0, wholeNote: true }))
     expect(listener).toHaveBeenCalledTimes(3)
     expect(Object.keys(channel.getState()).sort()).toEqual(['count', 'wholeNote'])
+  })
+})
+
+describe('the dropdown in a real note (4J2)', () => {
+  it('Escape closes the dropdown and leaves the caret in the note', async () => {
+    const sidebarRow = document.createElement('button')
+    sidebarRow.className = 'tree__row tree__row--active'
+    document.body.appendChild(sidebarRow)
+    const channel = createOutsideChangesChannel()
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const crepe = createCrepe({ root: host, defaultValue: '* One\n* Two\n', outsideChanges: channel })
+    await crepe.create()
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    applyExternalMarkdown(crepe, getMarkdownForSave(crepe).replace('Two', 'Two B'))
+    const barRoot = document.createElement('div')
+    document.body.appendChild(barRoot)
+    const barReact = createRoot(barRoot)
+    act(() => barReact.render(<OutsideChangesBar channel={channel} pinned={false} onPin={() => {}} />))
+    act(() => barRoot.querySelector<HTMLButtonElement>('.outside-changes-bar__count')?.click())
+    view.focus()
+    act(() => {
+      view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }))
+    })
+    expect(barRoot.querySelector('.outside-list--dropdown')).toBeNull()
+    expect(document.activeElement).toBe(view.dom)
+    act(() => barReact.unmount())
+    await crepe.destroy()
+    host.remove()
+    barRoot.remove()
+    sidebarRow.remove()
   })
 })

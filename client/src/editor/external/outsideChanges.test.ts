@@ -20,7 +20,7 @@ import { applyExternalMarkdown, EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, type Ou
 import { MAX_CHANGES, OUTSIDE_ACTIVE_CLASS, OUTSIDE_CHANGE_CLASS, OUTSIDE_CHECKED_CLASS, OUTSIDE_REMOVED_CLASS, OUTSIDE_TIP_ATTR, OUTSIDE_TIP_CLASS } from './outsideChanges'
 import { mergeExternalMarkdown } from './mergeExternal'
 import { createOutsideChangesChannel } from './outsideChangesChannel'
-import { keepOutsideChangesOfTabs, readOutsideChanges, saveOutsideChanges } from './outsideChangesMemory'
+import { keepOutsideChangesOfTabs, MAX_KEPT_PAGES, readOutsideChanges, saveOutsideChanges } from './outsideChangesMemory'
 
 const BASE = `* Parent
   * Child
@@ -444,6 +444,32 @@ describe('a tab keeps the list of a page it left (demo feedback)', () => {
       '2 One -[A]+[AA]',
     ])
     expect(glowTexts(changed.root)).toEqual(['A', ' C', ' D'])
+  })
+
+  it('4I1: a task tick, a heading level or bold made while the tab was away glows on return', async () => {
+    keepOutsideChangesOfTabs(['t3'])
+    for (const edit of [(md: string) => md.replace('[ ] two', '[x] two'), (md: string) => md.replace('## Title', '### Title'), (md: string) => md.replace('Para', '**Para**')]) {
+      const first = await mount('## Title\n\n- [ ] one\n- [ ] two\n\nPara\n\nEnd\n', { tab: 't3' })
+      outsideEdit(first.crepe, (md) => md.replace('End', 'End X'))
+      const markdown = getMarkdownForSave(first.crepe)
+      await leave()
+      const back = await mount(edit(markdown), { tab: 't3' })
+      await Promise.resolve()
+      expect(back.channel.getState().count).toBe(2)
+      back.channel.clear()
+      await leave()
+    }
+  })
+
+  it('a tab keeps the lists of its last MAX_KEPT_PAGES pages; an older one goes, and another tab keeps its own', () => {
+    keepOutsideChangesOfTabs(['t4', 't5'])
+    const list = { shape: '', doc: null, changes: [1], lastNumber: 1 }
+    saveOutsideChanges('t5', 'other.md', list)
+    for (let page = 0; page <= MAX_KEPT_PAGES; page += 1) saveOutsideChanges('t4', `${page}.md`, list)
+    expect(readOutsideChanges('t4', '0.md')).toBeNull()
+    expect(readOutsideChanges('t4', '1.md')).not.toBeNull()
+    expect(readOutsideChanges('t4', `${MAX_KEPT_PAGES}.md`)).not.toBeNull()
+    expect(readOutsideChanges('t5', 'other.md')).not.toBeNull()
   })
 })
 

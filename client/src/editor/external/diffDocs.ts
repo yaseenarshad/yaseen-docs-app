@@ -55,6 +55,8 @@ const attrRange = (pos: number, a: ProseNode, b: ProseNode): ReplaceRange => ({ 
  * the live doc has one, a freshly parsed file does not). A range of only these changes nothing you see.
  */
 const DERIVED_ATTRS = new Set(['label', 'spread', 'id'])
+/** An attr the editor works out itself, never one the file says (a list number, a heading's id). */
+export const isDerivedAttr = (key: string): boolean => DERIVED_ATTRS.has(key)
 
 export const onlyDerived = (range: ReplaceRange): boolean => range.attrs !== undefined && Object.keys(range.attrs).every((key) => DERIVED_ATTRS.has(key))
 

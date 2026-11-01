@@ -28,8 +28,12 @@ function RowsDropdown({ channel, onClose, opener, onPin }: { channel: OutsideCha
       const target = event.target as Node
       if (!ref.current?.contains(target) && !opener.current?.contains(target)) onClose()
     }
+    // The dropdown's own Escape (4J2): it closes, and nothing else hears it (the note's Escape would go to the sidebar).
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      onClose()
     }
     document.addEventListener('mousedown', onDown, true)
     document.addEventListener('keydown', onKey, true)
@@ -60,6 +64,8 @@ export function OutsideChangesBar({ channel, pinned = false, onPin }: { channel:
   const [open, setOpen] = useState(false)
   const opener = useRef<HTMLButtonElement>(null)
   const close = useRef(() => setOpen(false)).current
+  // No count to open (the list emptied, or the whole note changed): the dropdown closes, so the next change finds it closed (4J1).
+  if (open && (wholeNote || count === 0)) setOpen(false)
   if (!wholeNote && count === 0) return null
   const words = count === 1 ? '1 outside change in this note' : `${count} outside changes in this note`
   return (

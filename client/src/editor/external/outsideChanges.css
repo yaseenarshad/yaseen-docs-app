@@ -71,7 +71,7 @@
 
 /* YAZ-3998: the numbered list, in the room LEFT of the note (OutsideChangesList.tsx; the table of contents has the
    right). Chrome, as the table of contents is: a sibling of the scroller inside `section.editor`, so it holds its place
-   while the note scrolls. The component sets `top` (the scroller's top) and `width` (the room left of the text). */
+   while the note scrolls. The component sets `top` (the scroller's top); the width is `--outside-list-width`, pinned (4J). */
 :root {
   /* The pinned list's width; the note's text makes room for it, as for the table of contents' column. */
   --outside-list-width: 220px;

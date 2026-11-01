@@ -314,6 +314,19 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, outsideChangeGlow: 'forever' })).toBe(false)
   })
 
+  it('outsideListPinned (YAZ-3704 4J): a file from before it reads Off; both values survive a restart; junk reads the default', async () => {
+    const { outsideListPinned: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    expect(DEFAULT_SETTINGS.outsideListPinned).toBe(false)
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.outsideListPinned).toBe(false)
+    for (const outsideListPinned of [true, false]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, outsideListPinned } }))
+      expect(createStore(file).get().settings.outsideListPinned).toBe(outsideListPinned)
+    }
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, outsideListPinned: 'yes' }).outsideListPinned).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, outsideListPinned: 1 })).toBe(false)
+  })
+
   it('commentsOrder: a pre-1515 file without the key sanitizes to oldest; both orders survive; junk falls back (YAZ-1515)', async () => {
     const { commentsOrder: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))

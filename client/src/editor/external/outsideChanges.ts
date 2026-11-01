@@ -48,7 +48,7 @@ import { collapsedItemsHiding, setOutlineFoldSet } from '../outline/outlineFoldi
 import { getZoomedItemPos, zoomToKey } from '../outline/zoom'
 import { FLASH_FRAMES, FLASH_MS, reducedMotion } from '../toc/tocMotion'
 import { EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, REWRITE_SHARE, replaceTracked, withTrailingParagraphOf, type OutsideRange } from './applyExternalMarkdown'
-import { diffDocs } from './diffDocs'
+import { diffDocs, isDerivedAttr } from './diffDocs'
 import type { SavedOutsideChanges } from './outsideChangesMemory'
 import type { OutsideChangeRow, OutsideChangesChannel, OutsideChangesController, OutsideChangesSnapshot } from './outsideChangesChannel'
 
@@ -164,16 +164,26 @@ const lineOf = ($pos: ResolvedPos): string => {
   return box + hashes + block.textBetween(0, block.content.size, ' ', ' ')
 }
 
+/** Attrs or marks as the file says them: the derived ones (a heading's id, set again after a load) left out. */
+const ownAttrs = (attrs: Readonly<Record<string, unknown>>): string =>
+  JSON.stringify(
+    Object.keys(attrs)
+      .filter((key) => !isDerivedAttr(key))
+      .sort()
+      .map((key) => [key, attrs[key]]),
+  )
+
 /**
- * A doc's shape, to know a kept list still fits it: its nodes' types and its text, in order. Attrs are left out (the heading ids
- * are set again after a load), and so is an empty last paragraph (the editor adds one after its first transaction).
+ * A doc's shape, to know a kept list still fits it: its nodes' types, own attrs, marks and text, in order, so a task
+ * ticked, a heading's level or a word made bold while the tab was away is a change (4I1). Derived attrs are left out, and
+ * so is an empty last paragraph (the editor adds one after its first transaction).
  */
 const shapeOf = (doc: ProseNode): string => {
   const parts: string[] = []
   const last = doc.lastChild
   const end = last !== null && last.type.name === 'paragraph' && last.content.size === 0 ? doc.content.size - last.nodeSize : doc.content.size
   doc.nodesBetween(0, end, (node) => {
-    parts.push(node.isText ? (node.text ?? '') : `<${node.type.name}>`)
+    parts.push(node.isText ? `${node.marks.map((mark) => `{${mark.type.name}${ownAttrs(mark.attrs)}}`).join('')}${node.text ?? ''}` : `<${node.type.name}${ownAttrs(node.attrs)}>`)
   })
   return parts.join('')
 }
