@@ -56,6 +56,39 @@ const precompile = (source, sourcePath) => {
   });
 };
 
+/**
+ * YAZ-3944 D3: `import source from "./file?worker-source"` gives the file and everything it imports
+ * (packages too) as one script, a string to start a worker from a blob. A worker started from an
+ * engine chunk would import the app's main chunk once the app bundles the engine.
+ */
+const workerSourcePlugin = {
+  name: "worker-source",
+  setup(pluginBuild) {
+    pluginBuild.onResolve({ filter: /\?worker-source$/ }, (args) => ({
+      path: path.resolve(
+        args.resolveDir,
+        args.path.replace(/\?worker-source$/, ""),
+      ),
+      namespace: "worker-source",
+    }));
+    pluginBuild.onLoad(
+      { filter: /.*/, namespace: "worker-source" },
+      async (args) => {
+        const result = await build({
+          entryPoints: [args.path],
+          resolveExtensions: [".ts", ".js"],
+          bundle: true,
+          write: false,
+          format: "iife",
+          target: "es2020",
+          minify: !!pluginBuild.initialOptions.minify,
+        });
+        return { contents: result.outputFiles[0].text, loader: "text" };
+      },
+    );
+  },
+};
+
 // excludes all external dependencies and bundles only the source code
 const getConfig = (outdir) => ({
   outdir,
@@ -67,6 +100,7 @@ const getConfig = (outdir) => ({
     sassPlugin({
       precompile,
     }),
+    workerSourcePlugin,
   ],
   target: "es2020",
   assetNames: "[dir]/[name]",

@@ -87,6 +87,9 @@ const clipboardContainsElements = (
   return false;
 };
 
+/** YAZ-3944 D16: paste events from "Paste at full size"; their pictures skip the shrink. */
+export const fullSizePasteEvents = new WeakSet<ClipboardEvent>();
+
 export const createPasteEvent = ({
   types,
   files,

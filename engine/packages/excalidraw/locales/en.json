@@ -1,6 +1,7 @@
 {
   "labels": {
     "paste": "Paste",
+    "pasteAtFullSize": "Paste at full size",
     "pasteAsPlaintext": "Paste as plaintext",
     "pasteCharts": "Paste charts",
     "chartType_bar": "Bar chart",

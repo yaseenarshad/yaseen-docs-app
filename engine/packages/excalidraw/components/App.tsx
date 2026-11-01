@@ -38,6 +38,7 @@ import {
   ELEMENT_TRANSLATE_AMOUNT,
   EVENT,
   FRAME_STYLE,
+  GIF_MAX_FILE_SIZE_BYTES,
   IMAGE_MIME_TYPES,
   IMAGE_RENDER_TIMEOUT,
   LINE_CONFIRM_THRESHOLD,
@@ -364,7 +365,7 @@ import {
   actionToggleCropEditor,
 } from "../actions";
 import { actionWrapTextInContainer } from "../actions/actionBoundText";
-import { actionPaste } from "../actions/actionClipboard";
+import { actionPaste, actionPasteAtFullSize } from "../actions/actionClipboard";
 import { actionCopyElementLink } from "../actions/actionElementLink";
 import { actionUnlockAllElements } from "../actions/actionElementLock";
 import {
@@ -388,6 +389,7 @@ import {
 } from "../appState";
 import {
   copyTextToSystemClipboard,
+  fullSizePasteEvents,
   parseClipboard,
   parseDataTransferEvent,
   type ParsedDataTransferFile,
@@ -423,6 +425,7 @@ import {
   resizeImageFile,
   SVGStringToFile,
 } from "../data/blob";
+import { shrinkGifFile } from "../gif/gifFile";
 
 import { fileOpen } from "../data/filesystem";
 import {
@@ -4730,6 +4733,7 @@ class App extends React.Component<AppProps, AppState> {
     data: ClipboardData,
     dataTransferFiles: ParsedDataTransferFile[],
     isPlainPaste: boolean,
+    imageOptions?: InsertImagesOptions,
   ) {
     const { x: sceneX, y: sceneY } = viewportCoordsToSceneCoords(
       {
@@ -4751,6 +4755,7 @@ class App extends React.Component<AppProps, AppState> {
         isPlainPaste,
         sceneX,
         sceneY,
+        imageOptions,
       });
       return;
     }
@@ -4785,7 +4790,7 @@ class App extends React.Component<AppProps, AppState> {
 
     if (imageFiles.length > 0) {
       if (this.isToolSupported("image")) {
-        await this.insertImages(imageFiles, sceneX, sceneY);
+        await this.insertImages(imageFiles, sceneX, sceneY, imageOptions);
       } else {
         this.setState({ errorMessage: t("errors.imageToolNotSupported") });
       }
@@ -4940,7 +4945,15 @@ class App extends React.Component<AppProps, AppState> {
         }
       }
 
-      await this.insertClipboardContent(data, filesList, isPlainPaste);
+      await this.insertClipboardContent(
+        data,
+        filesList,
+        isPlainPaste,
+        // YAZ-3944 D16
+        event && fullSizePasteEvents.has(event)
+          ? { fullSize: true }
+          : undefined,
+      );
 
       this.setActiveTool(
         { type: this.state.preferredSelectionTool.type },
@@ -5118,7 +5131,13 @@ class App extends React.Component<AppProps, AppState> {
       isPlainPaste,
       sceneX,
       sceneY,
-    }: { isPlainPaste: boolean; sceneX: number; sceneY: number },
+      imageOptions,
+    }: {
+      isPlainPaste: boolean;
+      sceneX: number;
+      sceneY: number;
+      imageOptions?: InsertImagesOptions;
+    },
   ) {
     if (
       !isPlainPaste &&
@@ -5147,7 +5166,7 @@ class App extends React.Component<AppProps, AppState> {
       const imageFiles = responses
         .filter((response): response is { file: File } => !!response.file)
         .map((response) => response.file);
-      await this.insertImages(imageFiles, sceneX, sceneY);
+      await this.insertImages(imageFiles, sceneX, sceneY, imageOptions);
       const error = responses.find((response) => !!response.errorMessage);
       if (error && error.errorMessage) {
         this.setState({ errorMessage: error.errorMessage });
@@ -13605,12 +13624,21 @@ class App extends React.Component<AppProps, AppState> {
 
     const existingFileData = this.files[fileId];
     if (!existingFileData?.dataURL) {
-      const { maxWidthOrHeight, maxFileSizeBytes } = this.props.imageOptions;
+      const { maxWidthOrHeight } = this.props.imageOptions;
+      // YAZ-3944 D3: a resize writes one PNG frame, so a GIF shrinks in a
+      // worker instead, every frame kept, and has its own 20 MB limit.
+      // D16: "Paste at full size" skips both; the limits stay.
+      const isGif = imageFile.type === MIME_TYPES.gif;
+      const maxFileSizeBytes = isGif
+        ? GIF_MAX_FILE_SIZE_BYTES
+        : this.props.imageOptions.maxFileSizeBytes;
 
       try {
-        imageFile = await resizeImageFile(imageFile, {
-          maxWidthOrHeight,
-        });
+        if (!options?.fullSize) {
+          imageFile = isGif
+            ? await shrinkGifFile(imageFile)
+            : await resizeImageFile(imageFile, { maxWidthOrHeight });
+        }
       } catch (error: any) {
         console.error(
           "Error trying to resizing image file on insertion",
@@ -14778,6 +14806,7 @@ class App extends React.Component<AppProps, AppState> {
 
       return [
         actionPaste,
+        actionPasteAtFullSize, // YAZ-3944 D16
         CONTEXT_MENU_SEPARATOR,
         actionCopyAsPng,
         actionCopyAsSvg,
@@ -14821,6 +14850,7 @@ class App extends React.Component<AppProps, AppState> {
       actionCut,
       actionCopy,
       actionPaste,
+      actionPasteAtFullSize, // YAZ-3944 D16
       CONTEXT_MENU_SEPARATOR,
       actionSelectAllElementsInFrame,
       actionRemoveAllElementsFromFrame,

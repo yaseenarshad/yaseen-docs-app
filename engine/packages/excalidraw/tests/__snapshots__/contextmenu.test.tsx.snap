@@ -102,6 +102,15 @@ exports[`contextMenu element > right-clicking on a group should select whole gro
           "category": "element",
         },
       },
+      {
+        "keyTest": undefined,
+        "label": "labels.pasteAtFullSize",
+        "name": "pasteAtFullSize",
+        "perform": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "label": "labels.selectAllElementsInFrame",
@@ -4861,6 +4870,15 @@ exports[`contextMenu element > shows 'Group selection' in context menu for multi
           "category": "element",
         },
       },
+      {
+        "keyTest": undefined,
+        "label": "labels.pasteAtFullSize",
+        "name": "pasteAtFullSize",
+        "perform": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "label": "labels.selectAllElementsInFrame",
@@ -6087,6 +6105,15 @@ exports[`contextMenu element > shows 'Ungroup selection' in context menu for gro
           "category": "element",
         },
       },
+      {
+        "keyTest": undefined,
+        "label": "labels.pasteAtFullSize",
+        "name": "pasteAtFullSize",
+        "perform": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "label": "labels.selectAllElementsInFrame",
@@ -7288,6 +7315,15 @@ exports[`contextMenu element > shows context menu for canvas > [end of test] app
           "category": "element",
         },
       },
+      {
+        "keyTest": undefined,
+        "label": "labels.pasteAtFullSize",
+        "name": "pasteAtFullSize",
+        "perform": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "icon": <svg
@@ -8057,6 +8093,15 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
         "keyTest": undefined,
         "label": "labels.paste",
         "name": "paste",
+        "perform": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
+      {
+        "keyTest": undefined,
+        "label": "labels.pasteAtFullSize",
+        "name": "pasteAtFullSize",
         "perform": [Function],
         "trackEvent": {
           "category": "element",
@@ -9057,6 +9102,15 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
         "keyTest": undefined,
         "label": "labels.paste",
         "name": "paste",
+        "perform": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
+      {
+        "keyTest": undefined,
+        "label": "labels.pasteAtFullSize",
+        "name": "pasteAtFullSize",
         "perform": [Function],
         "trackEvent": {
           "category": "element",
