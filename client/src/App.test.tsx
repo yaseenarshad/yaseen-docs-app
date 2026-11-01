@@ -1307,6 +1307,19 @@ describe('App section indent settings (YAZ-2709)', () => {
   })
 })
 
+describe('App guide lines and folding defaults (YAZ-4094, YAZ-4119 fix 3)', () => {
+  it('puts the defaults, the show choice and the darkness on <html>, where a preview portalled to <body> sees them, and another window\'s change lands live', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const html = document.documentElement
+    const read = () => [html.dataset.guideLines, html.dataset.guideLinesShow, html.dataset.folding, html.style.getPropertyValue('--guide-line-darkness'), html.style.getPropertyValue('--guide-line-darkness-hover')]
+    expect(read()).toEqual(['on', 'always', 'on', '15%', '35%'])
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, guideLinesOnByDefault: false, guideLinesShow: 'near', foldingOnByDefault: false, guideLineDarkness: 90 } }))
+    expect(read()).toEqual(['off', 'near', 'off', '90%', '100%'])
+    // Not on `.app` any more: one place for each.
+    expect(el.querySelector('.app')?.hasAttribute('data-guide-lines')).toBe(false)
+  })
+})
+
 describe('App sidebar zoom from the menu keys (YAZ-3389 D6)', () => {
   it('with no note focused, ⌘+ at 200 writes nothing, and ⌘0 at 150 writes 100 over the other settings', async () => {
     const at200: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarZoom: 200, theme: 'dark' } }
