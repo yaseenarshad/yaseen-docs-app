@@ -76,6 +76,7 @@ import {
   actionDecreaseFontSize,
   actionIncreaseFontSize,
   actionToggleTextBold,
+  actionToggleTextItalic,
   actionToggleTextStrikethrough,
   actionToggleTextUnderline,
 } from "../actions/actionProperties";
@@ -93,6 +94,8 @@ import {
   normalizeTextLists,
   parseTextListLine,
 } from "../textList";
+
+import { getPendingTextStyle, takePendingTextStyle } from "./pendingTextStyle";
 
 import type { ParsedDataTranferList } from "../clipboard";
 import type App from "../components/App";
@@ -841,6 +844,8 @@ export const textWysiwyg = ({
 
   const handleDocumentSelectionChange = () => {
     if (document.activeElement === editable) {
+      // YAZ-3718 D10: a moved caret drops the style for the next letters
+      getPendingTextStyle(editable);
       renderVisualSelection();
     }
   };
@@ -1135,6 +1140,12 @@ export const textWysiwyg = ({
       const edit = {
         caret: editable.selectionEnd,
         insertedLine: pendingInsertedLine ?? undefined,
+        // YAZ-3718 D10: B, I, U, S or a color pressed with only a caret
+        insertStyle: takePendingTextStyle(
+          editable,
+          editable.selectionEnd -
+            (editable.value.length - previousEditableValue.length),
+        ),
       };
       pendingInsertedLine = null;
       const nextTextRuns = remapTextRunsForTextEdit(
@@ -1204,6 +1215,17 @@ export const textWysiwyg = ({
     ) {
       event.preventDefault();
       app.actionManager.executeAction(actionToggleTextBold, "keyboard");
+      updateWysiwygStyle();
+    } else if (
+      actionToggleTextItalic.keyTest(
+        event,
+        app.state,
+        app.scene.getElementsIncludingDeleted(),
+        app,
+      )
+    ) {
+      event.preventDefault();
+      app.actionManager.executeAction(actionToggleTextItalic, "keyboard");
       updateWysiwygStyle();
     } else if (
       actionToggleTextStrikethrough.keyTest(

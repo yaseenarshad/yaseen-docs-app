@@ -5,8 +5,10 @@ import {
   getLineHeightInPx,
   getOriginalContainerHeightFromCache,
   getStyledVisualLineStart,
+  getStyledVisualLines,
   getTextElementStyledLayout,
   getTextBackgroundGeometry,
+  setCustomTextMetricsProvider,
 } from "@excalidraw/element";
 
 import {
@@ -18,6 +20,7 @@ import {
   THEME,
   VERTICAL_ALIGN,
   applyDarkModeFilter,
+  getFontString,
   sceneCoordsToViewportCoords,
 } from "@excalidraw/common";
 
@@ -43,7 +46,14 @@ import {
   mockBoundingClientRect,
   restoreOriginalGetBoundingClientRect,
 } from "../tests/test-utils";
-import { actionBindText, actionChangeTextStyle } from "../actions";
+import {
+  actionBindText,
+  actionChangeStrokeColor,
+  actionChangeTextStyle,
+  actionClearSelectedTextFormatting,
+} from "../actions";
+import { activeEyeDropperAtom } from "../components/EyeDropper";
+import { editorJotaiStore } from "../editor-jotai";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
 
 const { h } = window;
@@ -1238,6 +1248,199 @@ describe("textWysiwyg", () => {
       expect(
         document.querySelectorAll(".excalidraw-wysiwyg-line-underline"),
       ).toHaveLength(1);
+    });
+
+    describe("YAZ-3718 D10: styles on letters, like notes", () => {
+      const press = (
+        code: string,
+        key: string,
+        extra: { shiftKey?: boolean } = {},
+      ) =>
+        fireEvent.keyDown(textarea, {
+          [KEYS.CTRL_OR_CMD]: true,
+          key,
+          code,
+          ...extra,
+        });
+      const type = (value: string, caret = value.length) => {
+        textarea.value = value;
+        textarea.setSelectionRange(caret, caret);
+        fireEvent.input(textarea);
+      };
+      const runs = () => (h.elements[0] as ExcalidrawTextElement).textRuns;
+
+      it("gives the next typed letters the style of a key pressed with only a caret", () => {
+        type("ab");
+        press(CODES.B, "b");
+        // nothing is styled yet
+        expect(runs()).toBeUndefined();
+
+        type("abc");
+        type("abcd");
+        expect(runs()).toEqual([{ start: 2, end: 4, bold: true }]);
+      });
+
+      it("drops the style for the next letters when the caret moves", () => {
+        type("abcd");
+        textarea.setSelectionRange(1, 1);
+        press(CODES.I, "i");
+        textarea.setSelectionRange(0, 0);
+        fireEvent(document, new Event("selectionchange"));
+
+        type("Xabcd", 1);
+        expect(runs()).toBeUndefined();
+      });
+
+      it("un-styles a part of a run", () => {
+        type("Hello");
+        textarea.setSelectionRange(0, 5);
+        press(CODES.B, "b");
+        textarea.setSelectionRange(1, 3);
+        press(CODES.B, "b");
+
+        expect(runs()).toEqual([
+          { start: 0, end: 1, bold: true },
+          { start: 3, end: 5, bold: true },
+        ]);
+      });
+
+      it("toggles italic on the selected letters with ⌘I and the I button", () => {
+        type("Hello world");
+        textarea.setSelectionRange(6, 11);
+        press(CODES.I, "i");
+        expect(runs()).toEqual([{ start: 6, end: 11, italic: true }]);
+        expect(
+          (h.elements[0] as ExcalidrawTextElement).fontStyle,
+        ).toBeUndefined();
+        const segment = document.querySelectorAll<HTMLElement>(
+          ".excalidraw-wysiwyg-styled-line",
+        )[1];
+        expect(segment.textContent).toBe("world");
+        expect(segment.style.font).toContain("italic");
+
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+            property: "fontStyle",
+            enabled: false,
+          });
+        });
+        expect(runs()).toBeUndefined();
+      });
+
+      it("colors only the selected letters, and the next letters with only a caret", () => {
+        type("Hello world");
+        const boxColor = (h.elements[0] as ExcalidrawTextElement).strokeColor;
+        textarea.setSelectionRange(6, 11);
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: "#e03131",
+          });
+        });
+        expect(runs()).toEqual([{ start: 6, end: 11, color: "#e03131" }]);
+        expect((h.elements[0] as ExcalidrawTextElement).strokeColor).toBe(
+          boxColor,
+        );
+
+        textarea.setSelectionRange(5, 5);
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: "#1971c2",
+          });
+        });
+        type("Hello! world", 6);
+        expect(runs()).toEqual([
+          { start: 5, end: 6, color: "#1971c2" },
+          { start: 7, end: 12, color: "#e03131" },
+        ]);
+      });
+
+      it("styles and colors the whole text of a selected box, and clear formatting removes every run", () => {
+        type("Hello world");
+        textarea.setSelectionRange(0, 5);
+        press(CODES.B, "b");
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: "#e03131",
+          });
+        });
+        Keyboard.exitTextEditor(textarea);
+        API.setSelectedElements([h.elements[0] as NonDeletedExcalidrawElement]);
+
+        Keyboard.withModifierKeys({ ctrl: true }, () => {
+          Keyboard.codePress(CODES.I);
+        });
+        expect(h.elements[0]).toMatchObject({ fontStyle: "italic" });
+        expect(editorJotaiStore.get(activeEyeDropperAtom)).toBeNull();
+
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: "#1971c2",
+          });
+        });
+        expect(h.elements[0]).toMatchObject({
+          strokeColor: "#1971c2",
+          textRuns: [{ start: 0, end: 5, bold: true }],
+        });
+
+        act(() => {
+          h.app.actionManager.executeAction(actionClearSelectedTextFormatting);
+        });
+        expect(runs()).toBeUndefined();
+      });
+
+      it("never opens the eyedropper on ⌘I", () => {
+        Keyboard.exitTextEditor(textarea);
+        API.setSelectedElements([]);
+
+        Keyboard.withModifierKeys({ ctrl: true }, () => {
+          Keyboard.keyPress(KEYS.I);
+        });
+        expect(editorJotaiStore.get(activeEyeDropperAtom)).toBeNull();
+
+        Keyboard.keyPress(KEYS.I);
+        expect(editorJotaiStore.get(activeEyeDropperAtom)).not.toBeNull();
+      });
+
+      it("lays out a styled box once for a keystroke", () => {
+        type("Hello bold world");
+        textarea.setSelectionRange(6, 10);
+        press(CODES.B, "b");
+        let measures = 0;
+        setCustomTextMetricsProvider({
+          getLineWidth: (text) => {
+            measures++;
+            return text.length * 10;
+          },
+        });
+        try {
+          type("Hello bolder world", 12);
+          const keystroke = measures;
+          const element = h.elements[0] as ExcalidrawTextElement;
+
+          // one more layout of the same text and runs, without the memo
+          measures = 0;
+          getStyledVisualLines({
+            originalText: element.originalText,
+            getFont: ({ bold }) =>
+              getFontString({
+                ...element,
+                fontWeight: bold ? "bold" : "normal",
+              }),
+            maxWidth: Infinity,
+            textRuns: element.textRuns,
+            wholeElementBold: false,
+            wholeElementItalic: false,
+            wholeElementUnderlined: false,
+            wholeElementStrikethrough: false,
+          });
+          expect(measures).toBeGreaterThan(0);
+          expect(keystroke).toBe(measures);
+        } finally {
+          setCustomTextMetricsProvider({
+            getLineWidth: (text) => text.length * 10,
+          });
+        }
+      });
     });
 
     it("gives text pasted at the start of an underlined line the underline", () => {

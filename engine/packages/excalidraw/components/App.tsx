@@ -6333,8 +6333,10 @@ class App extends React.Component<AppProps, AppState> {
       const lowerCased = event.key.toLocaleLowerCase();
       const isPickingStroke =
         lowerCased === KEYS.S && event.shiftKey && !event[KEYS.CTRL_OR_CMD];
+      // YAZ-3718 D10: ⌘I is italic, never the eyedropper
       const isPickingBackground =
-        event.key === KEYS.I || (lowerCased === KEYS.G && event.shiftKey);
+        (event.key === KEYS.I && !event[KEYS.CTRL_OR_CMD]) ||
+        (lowerCased === KEYS.G && event.shiftKey);
 
       if (isPickingStroke || isPickingBackground) {
         this.openEyeDropper({

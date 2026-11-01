@@ -282,6 +282,13 @@ const getInsertStyle = (
   return getTextRunStyleAt(runs, offset - 1);
 };
 
+/** The style that a letter typed at `offset` gets (a caret's toolbar state). */
+export const getTextRunInsertStyle = (
+  runs: readonly ExcalidrawTextRun[] | undefined,
+  text: string,
+  offset: number,
+) => getInsertStyle(runs, text, offset, false);
+
 /** Moves the runs through one edit: `start`..`previousEnd` became `start`..`nextEnd`. */
 const applyTextEdit = (
   runs: readonly ExcalidrawTextRun[] | undefined,

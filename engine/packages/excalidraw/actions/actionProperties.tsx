@@ -44,9 +44,10 @@ import {
   canBecomePolygon,
   clearTextRunStyle,
   getNonDeletedElements,
-  getTextRunStyleAt,
+  getTextRunInsertStyle,
   isNonDeletedElement,
   isTextRangeStyled,
+  setTextRunColor,
   setTextRunFlag,
 } from "@excalidraw/element";
 
@@ -193,6 +194,11 @@ import {
   withCaretPositionPreservation,
   restoreCaretPosition,
 } from "../hooks/useTextEditorFocus";
+
+import {
+  getPendingTextStyle,
+  setPendingTextStyle,
+} from "../wysiwyg/pendingTextStyle";
 
 import { getShortcutKey } from "../shortcut";
 
@@ -373,6 +379,47 @@ export const changeFontSize = (
 
 // -----------------------------------------------------------------------------
 
+/**
+ * YAZ-3718 D10: in the editor, a text color colors only the selected letters,
+ * and with only a caret the next typed letters. A selected box gets the color
+ * on all its text, so its runs lose their colors.
+ */
+const changeTextColor = (
+  element: ExcalidrawTextElement,
+  appState: AppState,
+  color: string,
+) => {
+  const editable =
+    element.id === appState.editingTextElement?.id
+      ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
+      : null;
+  // the box color needs no run color
+  const runColor = color === element.strokeColor ? undefined : color;
+  if (!editable) {
+    return newElementWith(element, {
+      strokeColor: color,
+      textRuns: clearTextRunStyle(
+        element.textRuns,
+        element.originalText.length,
+        "color",
+      ),
+    });
+  }
+  if (editable.selectionStart === editable.selectionEnd) {
+    setPendingTextStyle(editable, { color: runColor ?? null });
+    return element;
+  }
+  return newElementWith(element, {
+    textRuns: setTextRunColor(
+      element.textRuns,
+      editable.value.length,
+      editable.selectionStart,
+      editable.selectionEnd,
+      runColor,
+    ),
+  });
+};
+
 export const actionChangeStrokeColor = register<
   Pick<AppState, "currentItemStrokeColor">
 >({
@@ -406,6 +453,13 @@ export const actionChangeStrokeColor = register<
           (el) => {
             if (!hasStrokeColor(el.type)) {
               return el;
+            }
+            if (isTextElement(el)) {
+              return changeTextColor(
+                el,
+                appState,
+                value.currentItemStrokeColor,
+              );
             }
             // First activation of an image border: size the width relative
             // to the image (GRO-1545). Re-coloring a visible border keeps it.
@@ -593,6 +647,8 @@ export const actionClearSelectedTextFormatting = register({
               backgroundColor: COLOR_PALETTE.transparent,
               backgroundPaddingScale: undefined,
               roundness: null,
+              // YAZ-3718 D10: clear formatting removes every run
+              textRuns: undefined,
             })
           : element,
       true,
@@ -1731,6 +1787,7 @@ const ExactFontSizeInput = ({
 
 type TextStyleChange =
   | { property: "fontWeight"; enabled: boolean }
+  | { property: "fontStyle"; enabled: boolean }
   | { property: "textDecoration"; enabled: boolean }
   | { property: "strikethrough"; enabled: boolean }
   | {
@@ -1746,6 +1803,7 @@ type BooleanTextStyleProperty = Exclude<
 // YAZ-3718 D1: the run flag of each whole-box text style
 const TEXT_RUN_FLAG_OF: Record<BooleanTextStyleProperty, TextRunFlag> = {
   fontWeight: "bold",
+  fontStyle: "italic",
   textDecoration: "underline",
   strikethrough: "strikethrough",
 };
@@ -1756,6 +1814,8 @@ const isWholeTextStyled = (
 ) =>
   property === "fontWeight"
     ? element.fontWeight === "bold"
+    : property === "fontStyle"
+    ? element.fontStyle === "italic"
     : property === "textDecoration"
     ? element.textDecoration === "underline"
     : element.strikethrough === true;
@@ -1766,24 +1826,34 @@ const getWholeTextStyle = (
 ): ElementUpdate<ExcalidrawTextElement> =>
   property === "fontWeight"
     ? { fontWeight: enabled ? "bold" : "normal" }
+    : property === "fontStyle"
+    ? // the file keeps `fontStyle` only for italic
+      { fontStyle: enabled ? "italic" : undefined }
     : property === "textDecoration"
     ? { textDecoration: enabled ? "underline" : "none" }
     : { strikethrough: enabled };
 
 /**
- * YAZ-3718 D10: in the editor, a style changes only the selected letters. The
- * whole-box flag first becomes a run over all the text, so a part can lose it.
+ * YAZ-3718 D10: in the editor, a style changes only the selected letters, and
+ * with only a caret the next typed letters get it. The whole-box flag first
+ * becomes a run over all the text, so a part can lose it. Null: no change.
  */
 const setSelectedTextStyle = (
   element: ExcalidrawTextElement,
   property: BooleanTextStyleProperty,
   enabled: boolean,
-  text: string,
-  selectionStart: number,
-  selectionEnd: number,
-): ElementUpdate<ExcalidrawTextElement> => {
+  editable: HTMLTextAreaElement,
+): ElementUpdate<ExcalidrawTextElement> | null => {
+  const { value: text, selectionStart, selectionEnd } = editable;
   const flag = TEXT_RUN_FLAG_OF[property];
-  const runs = isWholeTextStyled(element, property)
+  const whole = isWholeTextStyled(element, property);
+  if (selectionStart === selectionEnd) {
+    setPendingTextStyle(editable, { [flag]: enabled });
+    if (!whole) {
+      return null;
+    }
+  }
+  const runs = whole
     ? setTextRunFlag(element.textRuns, text.length, 0, text.length, flag, true)
     : element.textRuns;
   return {
@@ -1826,9 +1896,12 @@ const getTextStyle = (
     const flag = TEXT_RUN_FLAG_OF[property];
     // a caret shows the style the next typed letter gets
     return editable.selectionStart === editable.selectionEnd
-      ? getTextRunStyleAt(textElement.textRuns, editable.selectionStart - 1)[
-          flag
-        ] === true
+      ? getPendingTextStyle(editable)?.[flag] ??
+          getTextRunInsertStyle(
+            textElement.textRuns,
+            editable.value,
+            editable.selectionStart,
+          )[flag] === true
       : isTextRangeStyled(
           textElement.textRuns,
           editable.selectionStart,
@@ -1913,9 +1986,7 @@ const changeTextStyle = (
               element,
               value.property,
               value.enabled,
-              editable.value,
-              editable.selectionStart,
-              editable.selectionEnd,
+              editable,
             )
           : {
               ...getWholeTextStyle(value.property, value.enabled),
@@ -1925,7 +1996,11 @@ const changeTextStyle = (
                 TEXT_RUN_FLAG_OF[value.property],
               ),
             };
-      if (value.property === "fontWeight") {
+      if (!styles) {
+        return element;
+      }
+      // bold and italic change the letter widths
+      if (value.property === "fontWeight" || value.property === "fontStyle") {
         let nextElement: ExcalidrawTextElement = newElementWith(
           element,
           styles,
@@ -2001,7 +2076,7 @@ const textStyleShortcutTest = (
   appState: AppState,
   elements: readonly ExcalidrawElement[],
   app: AppClassProperties,
-  code: typeof CODES.B | typeof CODES.U | typeof CODES.X,
+  code: typeof CODES.B | typeof CODES.I | typeof CODES.U | typeof CODES.X,
 ) =>
   event[KEYS.CTRL_OR_CMD] &&
   !event.altKey &&
@@ -2031,6 +2106,13 @@ export const actionChangeTextStyle = register<TextStyleChange>({
       elements,
       app,
       (element) => getTextStyle(element, "fontWeight", app),
+      hasTextTarget,
+      false,
+    );
+    const italic = getFormValue(
+      elements,
+      app,
+      (element) => getTextStyle(element, "fontStyle", app),
       hasTextTarget,
       false,
     );
@@ -2088,6 +2170,13 @@ export const actionChangeTextStyle = register<TextStyleChange>({
                 icon: <strong aria-hidden="true">B</strong>,
                 active: bold === true,
                 testId: "textStyle-bold",
+              },
+              {
+                value: { property: "fontStyle", enabled: italic !== true },
+                text: "Italic",
+                icon: <em aria-hidden="true">I</em>,
+                active: italic === true,
+                testId: "textStyle-italic",
               },
               {
                 value: {
@@ -2168,6 +2257,17 @@ export const actionToggleTextBold = register({
     toggleTextStyle(elements, appState, "fontWeight", app),
   keyTest: (event, appState, elements, app) =>
     textStyleShortcutTest(event, appState, elements, app, CODES.B),
+});
+
+// YAZ-3718 D10: ⌘I, as in notes
+export const actionToggleTextItalic = register({
+  name: "toggleTextItalic",
+  label: "Italic",
+  trackEvent: false,
+  perform: (elements, appState, _, app) =>
+    toggleTextStyle(elements, appState, "fontStyle", app),
+  keyTest: (event, appState, elements, app) =>
+    textStyleShortcutTest(event, appState, elements, app, CODES.I),
 });
 
 export const actionToggleTextUnderline = register({

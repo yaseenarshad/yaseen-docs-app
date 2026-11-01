@@ -83,6 +83,7 @@ export type ActionName =
   | "changeLineHeight"
   | "toggleTextBold"
   | "toggleTextStrikethrough"
+  | "toggleTextItalic"
   | "toggleTextUnderline"
   | "undo"
   | "redo"

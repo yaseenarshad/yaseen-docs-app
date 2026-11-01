@@ -500,7 +500,7 @@ describe("element locking", () => {
       });
     });
 
-    it("orders the text style controls as bold, underline, strike, bullets", () => {
+    it("orders the text style controls as bold, italic, underline, strike, bullets", () => {
       const text = API.createElement({ type: "text" });
       API.setElements([text]);
       API.setSelectedElements([text]);
@@ -513,6 +513,8 @@ describe("element locking", () => {
 
       expect(testIds).toEqual([
         "textStyle-bold",
+        // YAZ-3718 D10: I between B and U
+        "textStyle-italic",
         "textStyle-underline",
         "textStyle-strikethrough",
         "textStyle-bullets",
