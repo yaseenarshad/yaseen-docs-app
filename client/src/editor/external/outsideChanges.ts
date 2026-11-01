@@ -27,7 +27,11 @@
  * of the history (Milkdown's heading-id sync after an outside heading edit, YAZ-3844). A timed Glow ends
  * whole-note mode at the same time; until checked, it stays until Dismiss.
  *
- * Next change (D9), `findInPage.ts`'s fold books: the folds that hide the next change open SILENTLY
+ * The numbered list (YAZ-3998, `OutsideChangesList.tsx`): each change gets a number when it comes, in the order the changes
+ * happened (one save's changes top to bottom), and keeps it until it is checked off; the numbers start at 1 again once the
+ * list is empty. Its rows are built only when the list asks, after `version` moved: never on a keystroke.
+ *
+ * Next change (D9), `findInPage.ts`'s fold books: it goes in number order. the folds that hide the next change open SILENTLY
  * (⌘Z panic-undo untouched) and fold again when Next moves on. Mark all checked, or a list that empties,
  * leaves the folds that hide the active change open: the landing. Outside the zoomed bullet, the page
  * zooms out first and the host tells the tab.
@@ -42,7 +46,7 @@ import { collapsedHeadingsHiding, setHeadingFoldSet } from '../outline/headingFo
 import { collapsedItemsHiding, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos, zoomToKey } from '../outline/zoom'
 import { EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, type OutsideRange } from './applyExternalMarkdown'
-import type { OutsideChangesChannel, OutsideChangesController, OutsideChangesSnapshot } from './outsideChangesChannel'
+import type { OutsideChangeRow, OutsideChangesChannel, OutsideChangesController, OutsideChangesSnapshot } from './outsideChangesChannel'
 
 export const OUTSIDE_CHANGE_CLASS = 'outside-change'
 /** The change Next put the ring on carries this IN ADDITION to its own class. */
@@ -70,6 +74,8 @@ interface Span {
 
 interface OutsideChange {
   id: number
+  /** Its place in the numbered list (YAZ-3998): the order the changes happened. */
+  number: number
   /** The position right before the change's textblock. */
   pos: number
   /** The changed words that glow; empty for a pure deletion. */
@@ -87,6 +93,10 @@ interface OutsideState {
   changes: readonly OutsideChange[]
   /** The change Next put the ring on. */
   activeId: number | null
+  /** The last number a change got; the next one gets one more. */
+  lastNumber: number
+  /** Moves each time the decorations are built again: the list, a change's text, or the ring changed. */
+  version: number
   wholeNote: boolean
   /** When whole-note mode ends with a timed Glow (ms since the epoch); null = until Dismiss. */
   wholeNoteEnds: number | null
@@ -156,6 +166,7 @@ const addRanges = (
   doc: ProseNode,
   ends: number | null,
   beforeOf: (pos: number) => string | null,
+  numberOf: () => number,
 ): OutsideChange[] => {
   const byPos = new Map(changes.map((change) => [change.pos, change]))
   for (const range of ranges) {
@@ -167,6 +178,8 @@ const addRanges = (
         index === 0 && range.removed !== '' ? [...marks.filter((mark) => mark.pos !== range.from), { pos: range.from, text: range.removed }].slice(-MAX_REMOVED_PER_CHANGE) : marks
       byPos.set(pos, {
         id: old?.id ?? nextId++,
+        // 0 until the end: one save's new changes are numbered top to bottom.
+        number: old?.number ?? 0,
         pos,
         before: old === undefined ? beforeOf(pos) : old.before,
         glow: glow === null ? (old?.glow ?? []) : [...(old?.glow ?? []), glow],
@@ -176,7 +189,7 @@ const addRanges = (
       })
     })
   }
-  return [...byPos.values()].sort((a, b) => a.pos - b.pos)
+  return [...byPos.values()].sort((a, b) => a.pos - b.pos).map((change) => (change.number === 0 ? { ...change, number: numberOf() } : change))
 }
 
 /**
@@ -243,7 +256,7 @@ const beforeTitle = (before: string | null): string => (before === null ? 'New l
 /** A task's box first ("[ ]" → "[x]" is one piece), then words, spaces, and each mark of punctuation alone. */
 const WORDS = /^\[[ x]\]|\s+|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]/gu
 
-type DiffPart = { kind: 'same' | 'del' | 'ins'; text: string }
+type DiffPart = OutsideChangeRow['parts'][number]
 
 /** Word by word, `before` into `now`: the same start and end, then the longest common words of the middle. */
 const wordDiff = (before: string, now: string): DiffPart[] => {
@@ -306,6 +319,40 @@ const wordDiff = (before: string, now: string): DiffPart[] => {
   return parts
 }
 
+/** A long same start or end is cut to "…": the box and the row show the change, not the whole paragraph. */
+const cutContext = (parts: DiffPart[]): DiffPart[] =>
+  parts.map((part, index) =>
+    part.kind !== 'same' || part.text.length <= TIP_CONTEXT_CHARS
+      ? part
+      : index === 0
+        ? { ...part, text: `…${part.text.slice(-TIP_CONTEXT_CHARS)}` }
+        : index === parts.length - 1
+          ? { ...part, text: `${part.text.slice(0, TIP_CONTEXT_CHARS)}…` }
+          : part,
+  )
+
+const removedParts = (text: string): DiffPart[] => [
+  { kind: 'same', text: 'Removed: ' },
+  { kind: 'del', text: cut(text) },
+]
+
+/** The line word by word, or null when its words did not change (a removed bullet beside it, a link or bold made). */
+const lineParts = (doc: ProseNode, change: OutsideChange): DiffPart[] | null => {
+  if (change.before === null) return null
+  const parts = wordDiff(change.before, lineOf(doc.resolve(change.pos + 1)))
+  return parts.some((part) => part.kind !== 'same') ? cutContext(parts) : null
+}
+
+/** A numbered list's row: the line word by word, a new line with its text, a removed bullet, or the line itself. */
+const rowParts = (doc: ProseNode, change: OutsideChange): DiffPart[] => {
+  const line = lineOf(doc.resolve(change.pos + 1))
+  if (change.before === null) return [{ kind: 'same', text: 'New line: ' }, { kind: 'ins', text: cut(line) }]
+  const parts = lineParts(doc, change)
+  if (parts !== null) return parts
+  const bullet = change.removed.find((mark) => !doc.resolve(mark.pos).parent.inlineContent)
+  return bullet !== undefined ? removedParts(bullet.text) : [{ kind: 'same', text: `Changed: ${cut(line)}` }]
+}
+
 const tipText = (tag: 'span' | 'del' | 'ins', text: string): HTMLElement => {
   const el = document.createElement(tag)
   el.textContent = text
@@ -324,21 +371,15 @@ const tipContent = (view: EditorView, target: HTMLElement): HTMLElement[] => {
   const change = state.changes.find((each) =>
     isMark ? each.removed.some((removed) => removed.pos === pos) : pos > each.pos && pos < each.pos + (doc.nodeAt(each.pos)?.nodeSize ?? 0),
   )
-  if (change !== undefined) {
-    const mark = change.removed.find((removed) => removed.pos === pos)
-    if (mark !== undefined && target.classList.contains(`${OUTSIDE_REMOVED_CLASS}--between`)) return [tipText('span', 'Removed: '), tipText('del', cut(mark.text))]
-    if (change.before === null) return [tipText('span', 'New line')]
-    const parts = wordDiff(change.before, lineOf(doc.resolve(change.pos + 1)))
-    if (!parts.some((part) => part.kind !== 'same')) return fallback
-    return parts.map((part, index) => {
-      let text = part.text
-      // A long same start or end is cut to "…": the box shows the change, not the whole paragraph.
-      if (part.kind === 'same' && index === 0 && text.length > TIP_CONTEXT_CHARS) text = `…${text.slice(-TIP_CONTEXT_CHARS)}`
-      else if (part.kind === 'same' && index === parts.length - 1 && text.length > TIP_CONTEXT_CHARS) text = `${text.slice(0, TIP_CONTEXT_CHARS)}…`
-      return tipText(part.kind === 'same' ? 'span' : part.kind, text)
-    })
-  }
-  return fallback
+  if (change === undefined) return fallback
+  const mark = change.removed.find((removed) => removed.pos === pos)
+  const parts =
+    mark !== undefined && target.classList.contains(`${OUTSIDE_REMOVED_CLASS}--between`)
+      ? removedParts(mark.text)
+      : change.before === null
+        ? [{ kind: 'same' as const, text: 'New line' }]
+        : lineParts(doc, change)
+  return parts === null ? fallback : parts.map((part) => tipText(part.kind === 'same' ? 'span' : part.kind, part.text))
 }
 
 /** The box under the mouse: shown on mouse-over at once, hidden off a change, on any change of the list, and with the view. */
@@ -462,29 +503,43 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
   const foldHeadings = (positions: Iterable<number>, collapsed: boolean): void => {
     setHeadingFoldSet([...positions], collapsed, { silent: true })(view.state, view.dispatch)
   }
+  /** Next and a row's click (D9, YAZ-3998): the ring on `target`, its folds opened, scrolled into view. */
+  const goTo = (target: OutsideChange): void => {
+    const state = current()
+    if (state === undefined) return
+    // Moving on: what Next opened for the last change folds again first.
+    fold(state.revealed, true)
+    foldHeadings(state.revealedHeadings, true)
+    const zoomed = getZoomedItemPos(view.state)
+    const item = zoomed === null ? null : view.state.doc.nodeAt(zoomed)
+    if (zoomed !== null && item !== null && (target.pos < zoomed || target.pos >= zoomed + item.nodeSize) && zoomToKey(null)(view.state, view.dispatch))
+      channel.zoomedOut()
+    const inside = target.pos + 1
+    const revealed = new Set(collapsedItemsHiding(view.state, inside))
+    const revealedHeadings = new Set(collapsedHeadingsHiding(view.state, inside))
+    fold(revealed, false)
+    foldHeadings(revealedHeadings, false)
+    dispatchMeta({ type: 'active', id: target.id, revealed, revealedHeadings })
+    // The ring, not the caret: the selection stays where the reader left it. jsdom has no scrollIntoView.
+    const { node } = view.domAtPos(inside)
+    const element = view.dom.querySelector(`.${OUTSIDE_ACTIVE_CLASS}`) ?? (node instanceof Element ? node : node.parentElement)
+    element?.scrollIntoView?.({ block: 'center' })
+  }
+  const byNumber = (): OutsideChange[] => [...(current()?.changes ?? [])].sort((a, b) => a.number - b.number)
   return {
     next: () => {
-      const state = current()
-      if (state === undefined || state.changes.length === 0) return
-      const index = state.changes.findIndex((change) => change.id === state.activeId)
-      const target = state.changes[(index + 1) % state.changes.length]
-      // Moving on: what Next opened for the last change folds again first.
-      fold(state.revealed, true)
-      foldHeadings(state.revealedHeadings, true)
-      const zoomed = getZoomedItemPos(view.state)
-      const item = zoomed === null ? null : view.state.doc.nodeAt(zoomed)
-      if (zoomed !== null && item !== null && (target.pos < zoomed || target.pos >= zoomed + item.nodeSize) && zoomToKey(null)(view.state, view.dispatch))
-        channel.zoomedOut()
-      const inside = target.pos + 1
-      const revealed = new Set(collapsedItemsHiding(view.state, inside))
-      const revealedHeadings = new Set(collapsedHeadingsHiding(view.state, inside))
-      fold(revealed, false)
-      foldHeadings(revealedHeadings, false)
-      dispatchMeta({ type: 'active', id: target.id, revealed, revealedHeadings })
-      // The ring, not the caret: the selection stays where the reader left it. jsdom has no scrollIntoView.
-      const { node } = view.domAtPos(inside)
-      const element = view.dom.querySelector(`.${OUTSIDE_ACTIVE_CLASS}`) ?? (node instanceof Element ? node : node.parentElement)
-      element?.scrollIntoView?.({ block: 'center' })
+      const ordered = byNumber()
+      if (ordered.length === 0) return
+      const index = ordered.findIndex((change) => change.id === current()?.activeId)
+      goTo(ordered[(index + 1) % ordered.length])
+    },
+    go: (id) => {
+      const target = current()?.changes.find((change) => change.id === id)
+      if (target !== undefined) goTo(target)
+    },
+    rows: () => {
+      const activeId = current()?.activeId ?? null
+      return byNumber().map((change) => ({ id: change.id, number: change.number, active: change.id === activeId, parts: rowParts(view.state.doc, change) }))
     },
     clear: () => {
       const state = current()
@@ -512,7 +567,7 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
       new Plugin<OutsideState>({
         key: outsideKey,
         state: {
-          init: () => ({ changes: [], activeId: null, wholeNote: false, wholeNoteEnds: null, glow: channel.getGlow(), revealed: NONE, revealedHeadings: NONE, decorations: DecorationSet.empty }),
+          init: () => ({ changes: [], activeId: null, lastNumber: 0, version: 0, wholeNote: false, wholeNoteEnds: null, glow: channel.getGlow(), revealed: NONE, revealedHeadings: NONE, decorations: DecorationSet.empty }),
           apply: (transaction, previous, oldState, newState) => {
             const meta: OutsideMeta | undefined = transaction.getMeta(outsideKey)
             const ranges: OutsideRange[] | undefined = transaction.getMeta(OUTSIDE_RANGES_META)
@@ -540,7 +595,10 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
                 const $old = oldState.doc.resolve(result.pos)
                 return result.deletedAcross || !$old.parent.isTextblock ? null : lineOf($old)
               }
-              state = { ...state, changes: addRanges(state.changes, ranges, doc, endsAt(state.glow, Date.now()), beforeOf) }
+              // YAZ-3998: numbers in the order the changes came; an empty list starts at 1 again.
+              let last = state.changes.length === 0 ? 0 : state.lastNumber
+              state = { ...state, changes: addRanges(state.changes, ranges, doc, endsAt(state.glow, Date.now()), beforeOf, () => ++last) }
+              state = { ...state, lastNumber: last }
               redraw = true
             }
             if (meta !== undefined) {
@@ -556,7 +614,7 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
             // A list that empties leaves the landing open: what Next opened hides the active change.
             if (state.changes.length === 0) state = { ...state, revealed: NONE, revealedHeadings: NONE }
             const decorations = redraw ? buildDecorations(doc, state.changes, state.activeId) : transaction.docChanged ? drawn.map(transaction.mapping, doc) : drawn
-            return { ...state, decorations }
+            return { ...state, version: redraw ? state.version + 1 : state.version, decorations }
           },
         },
         props: {
@@ -570,7 +628,7 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
           const sync = () => {
             const state = outsideKey.getState(editorView.state)
             if (state === undefined) return
-            channel.sync(snapshotOf(state))
+            channel.sync(snapshotOf(state), state.version)
             const soonest = state.changes.reduce((min, change) => Math.min(min, change.ends ?? Infinity), state.wholeNoteEnds ?? Infinity)
             if (soonest === timerAt && (timer !== undefined || soonest === Infinity)) return
             clearTimeout(timer)

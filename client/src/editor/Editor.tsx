@@ -22,6 +22,7 @@ import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
 import { createOutsideChangesChannel } from './external/outsideChangesChannel'
 import { OutsideChangesBar } from './external/OutsideChangesBar'
+import { OutsideChangesList } from './external/OutsideChangesList'
 import { TableOfContents } from './toc/TableOfContents'
 import { createTocChannel } from './toc/tocChannel'
 import { FrontmatterPanel } from './FrontmatterPanel'
@@ -1073,6 +1074,8 @@ function CrepeHost({
           section's right edge, from the scroller's top to its bottom. It draws nothing for a note
           with fewer than two rows (its headings or its bullets), while this page shows none (its
           choice, else "Table of contents default", YAZ-3558), and while a bullet is zoomed. */}
+      {/* The numbered list of outside changes (YAZ-3998) floats in the room LEFT of the note the same way. */}
+      <OutsideChangesList channel={outsideChanges} hostRef={hostRef} />
       <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={contentWidth} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusNote} />
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the

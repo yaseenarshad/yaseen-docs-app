@@ -22,7 +22,7 @@ afterEach(() => {
 
 function mount() {
   const channel = createOutsideChangesChannel()
-  const controller: OutsideChangesController = { next: vi.fn(), clear: vi.fn(), markWholeNote: vi.fn(), setGlow: vi.fn() }
+  const controller: OutsideChangesController = { next: vi.fn(), go: vi.fn(), rows: vi.fn(() => []), clear: vi.fn(), markWholeNote: vi.fn(), setGlow: vi.fn() }
   channel.bind(controller)
   container = document.createElement('div')
   document.body.appendChild(container)

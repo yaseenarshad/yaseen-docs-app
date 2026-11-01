@@ -323,6 +323,63 @@ describe('the word-by-word box (YAZ-3989)', () => {
   })
 })
 
+describe('the numbered list (YAZ-3998)', () => {
+  const rowText = (row: { parts: readonly { kind: string; text: string }[] }): string =>
+    row.parts.map((part) => (part.kind === 'del' ? `-[${part.text}]` : part.kind === 'ins' ? `+[${part.text}]` : part.text)).join('')
+
+  it('numbers the changes in the order they happened, and Next goes in that order', async () => {
+    const { crepe, root, channel } = await mount('* One\n* Two\n* Three\n* Four\n')
+    outsideEdit(crepe, (md) => md.replace('Three', 'Three changed'))
+    outsideEdit(crepe, (md) => md.replace('One', 'One changed').replace('Four', 'Four changed'))
+    expect(channel.rows().map((row) => `${row.number} ${rowText(row)}`)).toEqual(['1 Three+[ changed]', '2 One+[ changed]', '3 Four+[ changed]'])
+    channel.next()
+    expect(activeTexts(root)).toEqual([' changed'])
+    expect(channel.rows().map((row) => row.active)).toEqual([true, false, false])
+    channel.next()
+    expect(channel.rows().map((row) => row.active)).toEqual([false, true, false])
+    channel.next()
+    channel.next()
+    expect(channel.rows().map((row) => row.active)).toEqual([true, false, false])
+  })
+
+  it('a click on a row rings that change; a checked change leaves the list and the others keep their numbers', async () => {
+    const { crepe, root, channel } = await mount('* One\n* Two\n* Three\n')
+    outsideEdit(crepe, (md) => md.replace('One', 'One A').replace('Two', 'Two B').replace('Three', 'Three C'))
+    const [, second] = channel.rows()
+    channel.go(second.id)
+    expect(activeTexts(root)).toEqual([' B'])
+    root.querySelectorAll<HTMLButtonElement>(`.${OUTSIDE_CHECKED_CLASS}`)[1].click()
+    expect(channel.rows().map((row) => row.number)).toEqual([1, 3])
+    channel.clear()
+    expect(channel.rows()).toEqual([])
+    // An empty list starts at 1 again.
+    outsideEdit(crepe, (md) => md.replace('Two B', 'Two B D'))
+    expect(channel.rows().map((row) => row.number)).toEqual([1])
+  })
+
+  it('a row says a new line with its text, a removed bullet, and a link made of a word', async () => {
+    const { crepe, channel } = await mount('* Book the room\n* Ask about parking\n* Send the agenda\n\nOther\n')
+    outsideEdit(crepe, (md) => md.replace('* Book the room', '* Charge the camera\n* Book the room'))
+    outsideEdit(crepe, (md) => md.replace('* Ask about parking\n', ''))
+    outsideEdit(crepe, (md) => md.replace('Other', '[Other](https://example.com)'))
+    expect(channel.rows().map(rowText)).toEqual(['New line: +[Charge the camera]', 'Removed: -[Ask about parking]', 'Changed: Other'])
+  })
+
+  it('typing elsewhere moves no version: the list reads nothing on a keystroke', async () => {
+    const { crepe, view, channel } = await mount(BASE)
+    outsideEdit(crepe, (md) => md.replace('Leaf tail', 'Leaf tail EXTERNAL'))
+    const listener = vi.fn()
+    channel.subscribeRows(listener)
+    const version = channel.getVersion()
+    typeBefore(view, 'Child', 'x')
+    typeBefore(view, 'Child', 'y')
+    expect(channel.getVersion()).toBe(version)
+    expect(listener).not.toHaveBeenCalled()
+    channel.next()
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('checking off (D8)', () => {
   it('Checked on one change removes only that one, and keeps the caret; Mark all checked empties the list', async () => {
     const { crepe, root, view, channel } = await mount(BASE)
