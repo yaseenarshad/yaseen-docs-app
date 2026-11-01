@@ -85,3 +85,30 @@ describe('exportFileName', () => {
     expect(exportFileName('   ')).toBe('Drawing.excalidraw')
   })
 })
+
+describe('standard fonts in an exported copy (YAZ-3943 D14)', () => {
+  const textEl = (id: string, fontFamily: number, over: Record<string, unknown> = {}) => ({ id, type: 'text', fontFamily, ...over })
+  const runs = [{ start: 0, end: 2, bold: true }]
+
+  it('Export Excalidraw Drawing… sets the flag: 10-13 become Nunito (6), 14 becomes Comic Shanns (8), the rest and the text runs stay', () => {
+    const { engine, serializeAsJSON } = stubEngine()
+    const elements = [textEl('a', 10), textEl('b', 11), textEl('c', 12), textEl('d', 13, { textRuns: runs }), textEl('e', 14), textEl('f', 5), { id: 'g', type: 'rectangle' }]
+    assembleStandaloneScene(engine, { elements, appState: { currentItemFontFamily: 14 }, files: {} }, { standardFonts: true })
+    const [sent, appState] = serializeAsJSON.mock.calls[0] as unknown as [Array<Record<string, unknown>>, Record<string, unknown>]
+    expect(sent.map((e) => e.fontFamily)).toEqual([6, 6, 6, 6, 8, 5, undefined])
+    expect(sent[3].textRuns).toEqual(runs)
+    expect(sent[6]).toBe(elements[6])
+    expect(appState.currentItemFontFamily).toBe(8)
+    // The board's own elements are not touched: only the copy changes.
+    expect(elements.map((e) => (e as Record<string, unknown>).fontFamily)).toEqual([10, 11, 12, 13, 14, 5, undefined])
+  })
+
+  it('without the flag (the note embed\'s sidecar, Share Link) every element and the appState go to the writer as they are', () => {
+    const { engine, serializeAsJSON } = stubEngine()
+    const elements = [textEl('a', 10), textEl('e', 14)]
+    const appState = { currentItemFontFamily: 11 }
+    assembleStandaloneScene(engine, { elements, appState, files: {} })
+    expect(serializeAsJSON.mock.calls[0][0]).toBe(elements)
+    expect(serializeAsJSON.mock.calls[0][1]).toBe(appState)
+  })
+})

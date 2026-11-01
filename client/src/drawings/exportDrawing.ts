@@ -45,13 +45,34 @@ export function embeddedFiles(elements: readonly unknown[], files: Record<string
 }
 
 /**
+ * YAZ-3943 D14: the fonts normal Excalidraw offers in its font picker, for a copy that leaves the app.
+ * Assistant (10), Inter (11), Roboto (12) and Liberation Serif (13) become Nunito (6); IBM Plex Mono
+ * (14) becomes Comic Shanns (8). Every other font stays.
+ */
+const STANDARD_FONT: Readonly<Record<number, number>> = { 10: 6, 11: 6, 12: 6, 13: 6, 14: 8 }
+
+/** `item` with its `key` font swapped for the standard one; the SAME object when there is nothing to swap. */
+function withStandardFont<T>(item: T, key: string): T {
+  const font = (item as Record<string, unknown> | null)?.[key]
+  const to = typeof font === 'number' ? STANDARD_FONT[font] : undefined
+  return to === undefined ? item : { ...item, [key]: to }
+}
+
+/**
  * The bytes of the standalone file. `serializeAsJSON(…, 'local')` is the library's own writer — the
  * same one "Save to disk" uses and the same one the vault save uses — so element cleanup and the
  * appState whitelist are its rules, not ours. Two things are ours: the files map above, and a
  * trailing newline, so an exported file and a saved one differ only in what they carry.
+ *
+ * `standardFonts` (YAZ-3943 D14) is set by Export Excalidraw Drawing… only: the copy gets the standard
+ * fonts (`STANDARD_FONT`), so a friend on normal Excalidraw sees readable text. The board's own save,
+ * the note embed's sidecar and Share Link never set it and keep their fonts. Per-letter styles (text
+ * runs) stay in the copy; normal Excalidraw shows them as plain text.
  */
-export function assembleStandaloneScene(engine: ExportEngine, scene: ExportableScene): string {
-  return `${engine.serializeAsJSON(scene.elements as never, scene.appState as never, embeddedFiles(scene.elements, scene.files) as never, 'local')}\n`
+export function assembleStandaloneScene(engine: ExportEngine, scene: ExportableScene, { standardFonts = false }: { standardFonts?: boolean } = {}): string {
+  const elements = standardFonts ? scene.elements.map((el) => withStandardFont(el, 'fontFamily')) : scene.elements
+  const appState = standardFonts ? withStandardFont(scene.appState, 'currentItemFontFamily') : scene.appState
+  return `${engine.serializeAsJSON(elements as never, appState as never, embeddedFiles(scene.elements, scene.files) as never, 'local')}\n`
 }
 
 /** The save dialog's default name: the board's own name, with the extension it is getting back (`pdf` for the PDF button, YAZ-3943 D6). */

@@ -20,7 +20,7 @@ vi.mock('./engine', () => {
     restoreElements: (elements: unknown) => elements,
     restoreAppState: () => ({}),
     getSceneVersion: () => 0,
-    serializeAsJSON: () => JSON.stringify({ appState: {} }),
+    serializeAsJSON: vi.fn((elements: unknown) => JSON.stringify({ elements, appState: {} })),
   }
   return { loadExcalidraw: async () => mod, applyToolbarMode: () => undefined }
 })
@@ -94,5 +94,48 @@ describe('readOnlyHandle', () => {
     api.setViewport({} as never)
     expect(raw.getSceneElements).toHaveBeenCalled()
     expect(raw.setViewport).toHaveBeenCalled()
+  })
+})
+
+/**
+ * YAZ-3943 D14 and D6 at the seam: only File › Export Excalidraw Drawing… (`exportScene`) gets the standard
+ * fonts; the board's own save (`serialize`) and the note embed's sidecar (`standalone`) keep the board's. And
+ * the PDF button reaches the engine only when the host gives `onExportPdf`.
+ */
+describe('the exported copy and the board itself (YAZ-3943)', () => {
+  const ELEMENTS = [{ id: 't', type: 'text', fontFamily: 10 }, { id: 'm', type: 'text', fontFamily: 14 }]
+  const fontsOf = (json: string) => (JSON.parse(json) as { elements: { fontFamily: number }[] }).elements.map((e) => e.fontFamily)
+
+  it('exportScene swaps 10 → 6 and 14 → 8; serialize and standalone keep 10 and 14', async () => {
+    let handle: import('./ExcalidrawSurface').DrawingSurfaceApi | null = null
+    let snapshot: import('./ExcalidrawSurface').DrawingSnapshot | null = null
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={{ elements: ELEMENTS, appState: {}, files: {} }} theme="light" onSnapshot={(s) => (snapshot = s)} onFailed={() => undefined} onApi={(a) => (handle = a)} />)
+    })
+    const api = { getSceneElements: () => ELEMENTS, getAppState: () => ({}), getFiles: () => ({}), refresh: () => undefined, updateScene: () => undefined, updateFrameRendering: () => undefined }
+    act(() => (last().onExcalidrawAPI as (a: unknown) => void)(api))
+    expect(fontsOf(handle!.exportScene())).toEqual([6, 8])
+    // The mount's baseline snapshot: what a save and the sidecar write.
+    expect(fontsOf(snapshot!.serialize().json)).toEqual([10, 14])
+    expect(fontsOf(snapshot!.standalone())).toEqual([10, 14])
+  })
+
+  it('the engine gets `onExportPdf` only from a host that gives it, and the click reaches the host', async () => {
+    await render(false)
+    expect(last().onExportPdf).toBeUndefined()
+    act(() => root?.unmount())
+    root = null
+    const onExportPdf = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onExportPdf={onExportPdf} />)
+    })
+    void (last().onExportPdf as (svg: string, size: unknown) => void)('<svg/>', { width: 1, height: 2 })
+    expect(onExportPdf).toHaveBeenCalledWith('<svg/>', { width: 1, height: 2 })
   })
 })

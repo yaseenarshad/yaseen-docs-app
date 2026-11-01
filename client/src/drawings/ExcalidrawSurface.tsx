@@ -113,7 +113,7 @@ export interface DrawingSurfaceApi {
   openImageExport(): void
   /** View › Canvas Background (Draw's 🔒 YAZ-1775 D10): `appState.viewBackgroundColor`, which the engine then writes into the file. */
   setCanvasBackground(color: string): void
-  /** File › Export Drawing… (Draw's YAZ-1821): the canvas as a STANDALONE `.excalidraw`, the whole live files map embedded. */
+  /** File › Export Drawing… (Draw's YAZ-1821): the canvas as a STANDALONE `.excalidraw`, the whole live files map embedded, in the standard fonts (YAZ-3943 D14). */
   exportScene(): string
   /** The cog's size row (YAZ-3943 D5): the pictures the canvas uses now, counted when asked (`picturesSize`). */
   pictures(): { bytes: number; count: number }
@@ -564,14 +564,14 @@ export function ExcalidrawSurface({
       setCanvasBackground: (color) => {
         if (!readOnlyRef.current) api.updateScene({ appState: { viewBackgroundColor: color } as unknown as EngineAppState })
       },
-      // The FULL files map, straight off the engine: everything hydrated out of `assets/` at load
-      // plus anything pasted since and not yet saved. The store's copy would be missing the second half.
+      // The FULL files map, straight off the engine: everything hydrated at load plus anything pasted
+      // since and not yet saved. The copy leaves the app, so it takes the standard fonts (YAZ-3943 D14).
       exportScene: () =>
         assembleStandaloneScene(mod, {
           elements: api.getSceneElements() as readonly unknown[],
           appState: api.getAppState() as unknown as Record<string, unknown>,
           files: api.getFiles() as unknown as Record<string, unknown>,
-        }),
+        }, { standardFonts: true }),
       pictures: () => picturesSize(api.getSceneElements() as readonly unknown[], api.getFiles() as unknown as Record<string, unknown>),
       replaceScene: (next) => {
         const restored = mod.restoreElements(next.elements as ChangeArgs[0], null)
