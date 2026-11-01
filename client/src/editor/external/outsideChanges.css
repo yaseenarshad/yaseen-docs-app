@@ -35,10 +35,10 @@
   cursor: help;
 }
 
-/* Between two blocks (a bullet removed): a thin line instead of a bar. */
+/* Between two blocks (a bullet removed): a short dash where the bullet was, not a line across the page (YAZ-3704 demo). */
 .outside-removed--between {
   display: block;
-  width: auto;
+  width: 40px;
   height: 2px;
   padding: 3px 0;
   margin: -3px 0;

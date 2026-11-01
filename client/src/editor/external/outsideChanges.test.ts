@@ -267,6 +267,27 @@ describe('the word-by-word box (YAZ-3989)', () => {
     expect(tip()).toBeNull()
   })
 
+  it('punctuation is its own piece: a comma or a full stop next to a word does not strike the word', async () => {
+    const { crepe, root } = await mount('* Reply to Sam\n* Other\n\nWe go in May.\n')
+    outsideEdit(crepe, (md) => md.replace('Reply to Sam', 'Reply to Sam, urgent').replace('We go in May.', 'We go in late May, for two weeks.'))
+    const [sam, may] = [...root.querySelectorAll(`.${OUTSIDE_CHANGE_CLASS}`)]
+    hover(sam)
+    expect(parts(tip(), 'del')).toEqual([])
+    expect(parts(tip(), 'ins')).toEqual([', urgent'])
+    hover(may)
+    expect(parts(tip(), 'del')).toEqual([])
+    expect(parts(tip(), 'ins')).toEqual(['late', ', for two weeks'])
+    expect(tip()?.textContent).toBe('We go in late May, for two weeks.')
+  })
+
+  it("a task's tick is one piece: the old box struck, the new box lit", async () => {
+    const { crepe, root } = await mount('- [ ] Send the report\n- [ ] Order paper\n')
+    outsideEdit(crepe, (md) => md.replace('[ ] Send the report', '[x] Send the report'))
+    hover(root.querySelector(`.${OUTSIDE_CHANGE_CLASS}`)!)
+    expect(parts(tip(), 'del')).toEqual(['[ ]'])
+    expect(parts(tip(), 'ins')).toEqual(['[x]'])
+  })
+
   it('a new line says so, a bullet removed says what it was, and a long same start or end is cut', async () => {
     const head = 'a'.repeat(30)
     const tail = 'z '.repeat(60)

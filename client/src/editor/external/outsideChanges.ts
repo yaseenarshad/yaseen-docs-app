@@ -240,12 +240,16 @@ const cut = (text: string): string => (text.length > REMOVED_TITLE_CHARS ? `${te
 const removedTitle = (text: string): string => `Removed: ${cut(text)}`
 const beforeTitle = (before: string | null): string => (before === null ? 'New line' : `Before: ${cut(before)}`)
 
+/** A task's box first ("[ ]" → "[x]" is one piece), then words, spaces, and each mark of punctuation alone. */
+const WORDS = /^\[[ x]\]|\s+|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]/gu
+
 type DiffPart = { kind: 'same' | 'del' | 'ins'; text: string }
 
 /** Word by word, `before` into `now`: the same start and end, then the longest common words of the middle. */
 const wordDiff = (before: string, now: string): DiffPart[] => {
-  const a = before.match(/\s+|\S+/g) ?? []
-  const b = now.match(/\s+|\S+/g) ?? []
+  // "Sam" → "Sam, urgent" adds ", urgent" and strikes nothing.
+  const a = before.match(WORDS) ?? []
+  const b = now.match(WORDS) ?? []
   let start = 0
   while (start < a.length && start < b.length && a[start] === b[start]) start++
   let end = 0
