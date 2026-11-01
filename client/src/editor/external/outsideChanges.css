@@ -44,27 +44,15 @@
   margin: -3px 0;
 }
 
-/* YAZ-3947: the mouse on a glow or a removed mark shows its text AT ONCE ("Before: …", "Removed: …"), as the
-   Checked button shows: a native title waits about a second. A pseudo-element: never in the doc, copied or saved. */
-.outside-change[data-outside-tip],
-.outside-removed[data-outside-tip] {
-  position: relative;
-}
-
-.outside-change[data-outside-tip]:hover::after,
-.outside-removed[data-outside-tip]:hover::after {
-  content: attr(data-outside-tip);
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 20;
-  width: max-content;
+/* YAZ-3947, YAZ-3989: the mouse on a glow or a removed mark shows this box AT ONCE, as the Checked button shows (a
+   native title waits about a second): the line word by word, the removed words struck, the new ones lit. One box
+   for each editor, on the body, so no scroll box cuts it; never in the doc, copied or saved. */
+.outside-tip {
+  position: fixed;
+  z-index: 1000;
   max-width: 420px;
   padding: 4px 8px;
   font: 12px/18px var(--font);
-  font-weight: normal;
-  font-style: normal;
-  text-decoration: none;
   color: var(--fg);
   white-space: pre-wrap;
   pointer-events: none;
@@ -72,6 +60,18 @@
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.outside-tip del {
+  color: var(--danger);
+  text-decoration: line-through;
+}
+
+.outside-tip ins {
+  margin-left: 3px;
+  text-decoration: none;
+  background: var(--outside-change-bg);
+  border-radius: 2px;
 }
 
 /* D8: shown only while the mouse is over the changed line. */

@@ -17,7 +17,7 @@ import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { getZoomedItemPos } from '../outline/zoom'
 import { applyExternalMarkdown, EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, type OutsideRange } from './applyExternalMarkdown'
-import { MAX_CHANGES, OUTSIDE_ACTIVE_CLASS, OUTSIDE_CHANGE_CLASS, OUTSIDE_CHECKED_CLASS, OUTSIDE_REMOVED_CLASS, OUTSIDE_TIP_ATTR } from './outsideChanges'
+import { MAX_CHANGES, OUTSIDE_ACTIVE_CLASS, OUTSIDE_CHANGE_CLASS, OUTSIDE_CHECKED_CLASS, OUTSIDE_REMOVED_CLASS, OUTSIDE_TIP_ATTR, OUTSIDE_TIP_CLASS } from './outsideChanges'
 import { mergeExternalMarkdown } from './mergeExternal'
 import { createOutsideChangesChannel } from './outsideChangesChannel'
 
@@ -243,6 +243,62 @@ describe('the Before hover (YAZ-3947)', () => {
     const { crepe, root } = await mount(`## Section\n\n- [ ] task one\n- [ ] task two\n\n${long}\n`)
     outsideEdit(crepe, (md) => md.replace('[ ] task one', '[x] task one').replace('## Section', '### Section').replace(long, `${long} z`))
     expect(glowTitles(root)).toEqual(['Before: ## Section', 'Before: [ ] task one', `Before: ${'y'.repeat(200)}…`])
+  })
+})
+
+describe('the word-by-word box (YAZ-3989)', () => {
+  const hover = (el: Element): void => {
+    el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+  }
+  const tip = (): HTMLElement | null => document.querySelector<HTMLElement>(`.${OUTSIDE_TIP_CLASS}:not([hidden])`)
+  const parts = (box: HTMLElement | null, tag: 'del' | 'ins'): string[] => [...(box?.querySelectorAll(tag) ?? [])].map((el) => el.textContent ?? '')
+
+  it('the mouse on a glow shows the line word by word at once: the removed word struck, the new word lit', async () => {
+    const { crepe, root, view } = await mount('* Budget is 3500 euros ok this is a test\n* Owner is Sam\n')
+    outsideEdit(crepe, (md) => md.replace('3500 euros', '4000 euros'))
+    hover(root.querySelector(`.${OUTSIDE_CHANGE_CLASS}`)!)
+    expect(parts(tip(), 'del')).toEqual(['3500'])
+    expect(parts(tip(), 'ins')).toEqual(['4000'])
+    expect(tip()?.textContent).toBe('Budget is 35004000 euros ok this is a test')
+    // The red mark in the line shows the same box; off the change, the box goes.
+    hover(removedMarks(root)[0])
+    expect(parts(tip(), 'del')).toEqual(['3500'])
+    hover(view.dom.querySelector('li p')!)
+    expect(tip()).toBeNull()
+  })
+
+  it('a new line says so, a bullet removed says what it was, and a long same start or end is cut', async () => {
+    const head = 'a'.repeat(30)
+    const tail = 'z '.repeat(60)
+    const { crepe, root } = await mount(`* Book the room\n* Ask about parking\n* Send the agenda\n\n${head} ${'b '.repeat(30)}old ${tail}\n`)
+    // Three saves: one save that adds and removes bullets of one list pairs them by index (CONTRACTS rule 44's known limit).
+    outsideEdit(crepe, (md) => md.replace('* Book the room', '* Charge the camera\n* Book the room'))
+    outsideEdit(crepe, (md) => md.replace('* Ask about parking\n', ''))
+    outsideEdit(crepe, (md) => md.replace(' old ', ' new '))
+    hover([...root.querySelectorAll(`.${OUTSIDE_CHANGE_CLASS}`)].find((el) => el.textContent === 'Charge the camera')!)
+    expect(tip()?.textContent).toBe('New line')
+    hover(root.querySelector(`.${OUTSIDE_REMOVED_CLASS}--between`)!)
+    expect(tip()?.textContent).toBe('Removed: Ask about parking')
+    expect(parts(tip(), 'del')).toEqual(['Ask about parking'])
+    hover([...root.querySelectorAll(`.${OUTSIDE_CHANGE_CLASS}`)].find((el) => el.textContent === 'new')!)
+    expect(parts(tip(), 'del')).toEqual(['old'])
+    expect(tip()?.textContent?.startsWith('…')).toBe(true)
+    expect(tip()?.textContent?.endsWith('…')).toBe(true)
+    expect(tip()?.textContent?.length).toBeLessThan(160)
+  })
+
+  it('the box goes when the change is checked off, and with the editor', async () => {
+    const { crepe, root } = await mount('* Deadline is Friday\n')
+    outsideEdit(crepe, (md) => md.replace('Friday', 'Thursday'))
+    hover(root.querySelector(`.${OUTSIDE_CHANGE_CLASS}`)!)
+    expect(tip()).not.toBeNull()
+    root.querySelector<HTMLButtonElement>(`.${OUTSIDE_CHECKED_CLASS}`)!.click()
+    expect(tip()).toBeNull()
+    hover(root.querySelector(`.${OUTSIDE_CHANGE_CLASS}`) ?? root)
+    const [m] = mounted.splice(0)
+    await m.crepe.destroy()
+    m.root.remove()
+    expect(document.querySelector(`.${OUTSIDE_TIP_CLASS}`)).toBeNull()
   })
 })
 

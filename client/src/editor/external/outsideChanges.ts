@@ -14,10 +14,11 @@
  * textblocks (bullets added) is one change for each. More than `MAX_CHANGES` empties the list into
  * whole-note mode, with no glow.
  *
- * Drawing: the changed words glow (inline `outside-change`), and the mouse on them shows at once the line as it was
- * before the first outside edit of it, or "New line" (YAZ-3947; kept with the change, in memory only); removed text is
- * a thin red mark that shows its text the same way (D7, a widget: not in the doc, never copied or saved). The text is
- * the `OUTSIDE_TIP_ATTR` attribute, drawn by CSS on :hover: no delay, as a native title has; each changed textblock carries a node
+ * Drawing: the changed words glow (inline `outside-change`); removed text is a thin red mark (D7, a widget: not in
+ * the doc, never copied or saved). The mouse on either shows at once a box with the line word by word: the words
+ * removed since the first outside edit of it struck, the new ones lit; or "New line", or a removed bullet's text
+ * (YAZ-3947, YAZ-3989: the Before line is kept with the change, in memory only; the box is built on mouse-over, never
+ * on a keystroke). `OUTSIDE_TIP_ATTR` marks what has a box, with its text in short. Each changed textblock carries a node
  * class that shows its **Checked** button on hover (D8). The DecorationSet lives in the state and is built
  * again only when the list changes; a keystroke only maps it.
  *
@@ -50,8 +51,10 @@ export const OUTSIDE_REMOVED_CLASS = 'outside-removed'
 /** On each changed textblock: its hover shows the Checked button (outsideChanges.css). */
 export const OUTSIDE_BLOCK_CLASS = 'outside-change-block'
 export const OUTSIDE_CHECKED_CLASS = 'outside-checked'
-/** The text a glow or a removed mark shows while the mouse is on it (outsideChanges.css draws it). */
+/** On a glow or a removed mark: the mouse on it shows the box. Its value is the box's text in short ("Before: …"). */
 export const OUTSIDE_TIP_ATTR = 'data-outside-tip'
+/** The word-by-word box (YAZ-3989): one for each editor, on the body, hidden while the mouse is on no change. */
+export const OUTSIDE_TIP_CLASS = 'outside-tip'
 
 /** D3: above this many changes the list empties and the note is "changed as a whole". */
 export const MAX_CHANGES = 200
@@ -228,9 +231,143 @@ const touches = (change: OutsideChange, spans: readonly Span[], doc: ProseNode):
 
 const mapSet = (set: ReadonlySet<number>, mapping: Mapping): ReadonlySet<number> => (set.size === 0 ? set : new Set([...set].map((pos) => mapping.map(pos, 1))))
 
+/** YAZ-3989: around the changed words, the box shows at most this much of a line's same start and same end. */
+const TIP_CONTEXT_CHARS = 60
+/** Above this many word pairs to compare, the changed middle shows as all removed, then all new. */
+const MAX_DIFF_CELLS = 10_000
+
 const cut = (text: string): string => (text.length > REMOVED_TITLE_CHARS ? `${text.slice(0, REMOVED_TITLE_CHARS)}…` : text)
 const removedTitle = (text: string): string => `Removed: ${cut(text)}`
 const beforeTitle = (before: string | null): string => (before === null ? 'New line' : `Before: ${cut(before)}`)
+
+type DiffPart = { kind: 'same' | 'del' | 'ins'; text: string }
+
+/** Word by word, `before` into `now`: the same start and end, then the longest common words of the middle. */
+const wordDiff = (before: string, now: string): DiffPart[] => {
+  const a = before.match(/\s+|\S+/g) ?? []
+  const b = now.match(/\s+|\S+/g) ?? []
+  let start = 0
+  while (start < a.length && start < b.length && a[start] === b[start]) start++
+  let end = 0
+  while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end++
+  const midA = a.slice(start, a.length - end)
+  const midB = b.slice(start, b.length - end)
+  const middle: DiffPart[] = []
+  if (midA.length * midB.length > MAX_DIFF_CELLS) {
+    middle.push(...midA.map((text) => ({ kind: 'del' as const, text })), ...midB.map((text) => ({ kind: 'ins' as const, text })))
+  } else {
+    // lcs[i][j]: the most words midA[i..] and midB[j..] have in common, in order.
+    const lcs = Array.from({ length: midA.length + 1 }, () => new Array<number>(midB.length + 1).fill(0))
+    for (let i = midA.length - 1; i >= 0; i--)
+      for (let j = midB.length - 1; j >= 0; j--) lcs[i][j] = midA[i] === midB[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1])
+    let i = 0
+    let j = 0
+    while (i < midA.length || j < midB.length) {
+      if (i < midA.length && j < midB.length && midA[i] === midB[j]) middle.push({ kind: 'same', text: midA[i++] }), j++
+      else if (j < midB.length && (i === midA.length || lcs[i][j + 1] >= lcs[i + 1][j])) middle.push({ kind: 'ins', text: midB[j++] })
+      else middle.push({ kind: 'del', text: midA[i++] })
+    }
+  }
+  // Removed words before the new ones, and one part for each run of a kind.
+  const parts: DiffPart[] = []
+  const push = (kind: DiffPart['kind'], text: string): void => {
+    if (text === '') return
+    const last = parts[parts.length - 1]
+    if (last?.kind === kind) last.text += text
+    else parts.push({ kind, text })
+  }
+  push('same', a.slice(0, start).join(''))
+  let dels = ''
+  let inss = ''
+  for (const part of middle) {
+    if (part.kind === 'del') dels += part.text
+    else if (part.kind === 'ins') inss += part.text
+    else {
+      // A space alone between two changes joins them: "~~3500 euros~~ 4000 dollars", not word by word.
+      if (/^\s+$/.test(part.text) && (dels !== '' || inss !== '')) {
+        dels += dels === '' ? '' : part.text
+        inss += inss === '' ? '' : part.text
+        continue
+      }
+      push('del', dels.trimEnd())
+      push('ins', inss.trimEnd())
+      push('same', (dels.endsWith(' ') || inss.endsWith(' ') ? ' ' : '') + part.text)
+      dels = ''
+      inss = ''
+    }
+  }
+  push('del', dels)
+  push('ins', inss)
+  push('same', a.slice(a.length - end).join(''))
+  return parts
+}
+
+const tipText = (tag: 'span' | 'del' | 'ins', text: string): HTMLElement => {
+  const el = document.createElement(tag)
+  el.textContent = text
+  return el
+}
+
+/** The box's content for a glow or a removed mark: the line word by word, "New line", or a removed bullet. */
+const tipContent = (view: EditorView, target: HTMLElement): HTMLElement[] => {
+  const fallback = [tipText('span', target.getAttribute(OUTSIDE_TIP_ATTR) ?? '')]
+  const state = outsideKey.getState(view.state)
+  if (state === undefined) return fallback
+  const doc = view.state.doc
+  const pos = view.posAtDOM(target, 0)
+  const isMark = target.classList.contains(OUTSIDE_REMOVED_CLASS)
+  // A removed mark is found by its place (a bullet's sits between blocks, before its change's block); a glow by its block.
+  const change = state.changes.find((each) =>
+    isMark ? each.removed.some((removed) => removed.pos === pos) : pos > each.pos && pos < each.pos + (doc.nodeAt(each.pos)?.nodeSize ?? 0),
+  )
+  if (change !== undefined) {
+    const mark = change.removed.find((removed) => removed.pos === pos)
+    if (mark !== undefined && target.classList.contains(`${OUTSIDE_REMOVED_CLASS}--between`)) return [tipText('span', 'Removed: '), tipText('del', cut(mark.text))]
+    if (change.before === null) return [tipText('span', 'New line')]
+    const parts = wordDiff(change.before, lineOf(doc.resolve(change.pos + 1)))
+    if (!parts.some((part) => part.kind !== 'same')) return fallback
+    return parts.map((part, index) => {
+      let text = part.text
+      // A long same start or end is cut to "…": the box shows the change, not the whole paragraph.
+      if (part.kind === 'same' && index === 0 && text.length > TIP_CONTEXT_CHARS) text = `…${text.slice(-TIP_CONTEXT_CHARS)}`
+      else if (part.kind === 'same' && index === parts.length - 1 && text.length > TIP_CONTEXT_CHARS) text = `${text.slice(0, TIP_CONTEXT_CHARS)}…`
+      return tipText(part.kind === 'same' ? 'span' : part.kind, text)
+    })
+  }
+  return fallback
+}
+
+/** The box under the mouse: shown on mouse-over at once, hidden off a change, on any change of the list, and with the view. */
+const createTip = (view: EditorView): { hide: () => void; destroy: () => void } => {
+  let box: HTMLElement | null = null
+  const hide = (): void => {
+    if (box !== null) box.hidden = true
+  }
+  const onOver = (event: MouseEvent): void => {
+    const target = event.target instanceof Element ? event.target.closest<HTMLElement>(`[${OUTSIDE_TIP_ATTR}]`) : null
+    if (target === null || !view.dom.contains(target)) return hide()
+    if (box === null) {
+      box = document.createElement('div')
+      box.className = OUTSIDE_TIP_CLASS
+      document.body.appendChild(box)
+    }
+    box.replaceChildren(...tipContent(view, target))
+    box.hidden = false
+    const rect = target.getBoundingClientRect()
+    box.style.top = `${rect.bottom + 4}px`
+    box.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - box.offsetWidth - 8))}px`
+  }
+  view.dom.addEventListener('mouseover', onOver)
+  view.dom.addEventListener('mouseleave', hide)
+  return {
+    hide,
+    destroy: () => {
+      view.dom.removeEventListener('mouseover', onOver)
+      view.dom.removeEventListener('mouseleave', hide)
+      box?.remove()
+    },
+  }
+}
 
 /** D7: the thin red mark. Between two blocks (a bullet removed) it is a line, not a bar. */
 const removedMark = (text: string, between: boolean, active: boolean) => (): HTMLElement => {
@@ -442,10 +579,16 @@ export const createOutsideChanges = (channel: OutsideChangesChannel) =>
             }, Math.max(0, soonest - Date.now()))
           }
           sync()
+          const tip = createTip(editorView)
           return {
-            update: sync,
+            update: (_view, previous) => {
+              // A change checked off, mapped or redrawn: what the box showed may be gone.
+              if (outsideKey.getState(editorView.state) !== outsideKey.getState(previous)) tip.hide()
+              sync()
+            },
             destroy: () => {
               clearTimeout(timer)
+              tip.destroy()
               unbind()
             },
           }
