@@ -1345,4 +1345,26 @@ describe('YAZ-3727 6B. Tab makes a sublist in its siblings\' kind, else bullets 
     press(crepe, 'Tab')
     expect(md(crepe)).toBe('* Keys\n  1. id\n\n1. version\n')
   })
+
+  // 6B2 (YAZ-4020): the new sublist is found from the item above, not from the caret's line.
+  it('a selection that starts in a child line: the new sublist is bullets, the child keeps its numbers', async () => {
+    const { crepe } = await mount('1. a\n2. b\n   1. bk\n3. c\n')
+    select(crepe, posOf(crepe, 'bk', 1), posOf(crepe, 'c', 1))
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. a\n   * b\n     1. bk\n   * c\n')
+  })
+
+  it('the caret in a quote inside a numbered item: the new sublist is bullets', async () => {
+    const { crepe } = await mount('1. a\n2. b\n\n   > q\n')
+    caretIn(crepe, 'q')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toMatch(/^1\. a\n {3}\* b\n\n {5}> q\n$/)
+  })
+
+  it('the caret in a table cell inside a numbered item: Tab stays the table\'s, the item does not move', async () => {
+    const { crepe } = await mount('1. a\n2. b\n\n   | h1 | h2 |\n   | -- | -- |\n   | c1 | c2 |\n')
+    caretIn(crepe, 'c1')
+    press(crepe, 'Tab')
+    expect(md(crepe)).toMatch(/^1\. a\n2\. b\n/)
+  })
 })

@@ -65,12 +65,17 @@ export function handleTargetPos(view: EditorView, e: MouseEvent): HandleTarget |
 /**
  * The line a right-click on its text is in (YAZ-3727 D15), as the handle points at it: a bullet's first line
  * stands for its bullet, any other line for itself. A right-click beside the text, in a bullet's row (the gap
- * after a checkbox, D22), stands for that bullet. Null elsewhere off a line, and in code or a table cell,
+ * after a checkbox, D22), stands for that bullet, and one in the indent left of a child line for that child. Null elsewhere off a line, and in code or a table cell,
  * which have menus of their own.
  */
 export function textLineTarget(doc: Node, pos: number, selection: Selection): HandleTarget | null {
   const $pos = doc.resolve(pos)
   if (!$pos.parent.isTextblock) {
+    // In the indent left of a child line (6B nit): the bullet right after the pointer, not the one around it.
+    const after = $pos.nodeAfter
+    const first = after?.firstChild ?? null
+    const child = after !== null && isListItem(after) ? pos : isListItem($pos.parent) && first !== null && isListItem(first) ? pos + 1 : null
+    if (child !== null) return { pos: child, inside: child, selection }
     for (let depth = $pos.depth; depth > 0; depth--) {
       if ($pos.node(depth).type.spec.tableRole !== undefined) return null
       if (isListItem($pos.node(depth))) return { pos: $pos.before(depth), inside: $pos.before(depth), selection }

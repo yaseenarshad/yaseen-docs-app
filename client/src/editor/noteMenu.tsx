@@ -21,6 +21,8 @@ import { blockMenuItems } from './blockHandleMenu'
 import { textLineTarget } from './blockHandleTarget'
 import { bulletToCopy, copyVisibleNext, forgetCopyVisible } from './clipboardCopyOut'
 import { addLinkOn } from './markdownLink'
+import { HEADING_TOGGLE_CLASS } from './outline/headingFolding'
+import { OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
 import { TABLE_HANDLE_MENU, tableMenuSections } from './table/tableMenu'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuEntry, MenuSection } from '../sidebar/menuSections'
@@ -209,6 +211,16 @@ interface OpenMenu {
 
 export { TABLE_HANDLE_MENU }
 
+/**
+ * The document position right-clicked. A fold arrow is read from its own widget (6B1): it sits left of the text box,
+ * where `posAtCoords` finds no line.
+ */
+function pointerPos(view: EditorView, target: Element, x: number, y: number): number | null {
+  const arrow = target.closest(`.${OUTLINE_TOGGLE_CLASS}, .${HEADING_TOGGLE_CLASS}`)
+  if (arrow !== null && view.dom.contains(arrow)) return view.posAtDOM(arrow, 0)
+  return view.posAtCoords({ left: x, top: y })?.pos ?? null
+}
+
 /** The menu for `view`'s note: a right-click in the note, or a table handle, opens it; nothing renders while it is shut. */
 export function NoteMenu({ view }: { view: EditorView | null }) {
   const [menu, setMenu] = useState<OpenMenu | null>(null)
@@ -232,7 +244,7 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
         y: event.clientY,
         image: image === null ? null : image.currentSrc || image.src,
         misspelling: misspellingAt(view, event.clientX, event.clientY, (word) => api.spell.suggestions(word)),
-        pointer: view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null,
+        pointer: pointerPos(view, event.target, event.clientX, event.clientY),
         doc: view.state.doc,
         selection: before,
         focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null,

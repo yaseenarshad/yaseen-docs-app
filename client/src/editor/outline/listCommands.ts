@@ -71,6 +71,12 @@ const selectionInListItems = (state: EditorState, itemType: NodeType): boolean =
   return $from.depth >= 2 && $from.node(-1).type === itemType && $to.depth >= 2 && $to.node(-1).type === itemType
 }
 
+/** `$pos` has a list item around it at any depth. */
+const insideListItem = ($pos: ResolvedPos, itemType: NodeType): boolean => {
+  for (let depth = $pos.depth; depth > 0; depth--) if ($pos.node(depth).type === itemType) return true
+  return false
+}
+
 /** Caret (empty selection) inside the FIRST block of a list_item, or null. */
 const caretInFirstBlock = (state: EditorState, itemType: NodeType): ResolvedPos | null => {
   const { $from, empty } = state.selection
@@ -139,10 +145,12 @@ const sinkInList = (itemType: NodeType, bulletType: NodeType): Command => (state
   const tr = sunk as unknown as Transaction
   const above = range.parent.child(range.startIndex - 1)
   const ownSublist = above.lastChild !== null && LIST_NODE_NAMES.has(above.lastChild.type.name)
-  // The lines' list now: the parent of the item that holds the caret's line.
-  const $line = tr.doc.resolve(tr.mapping.map($from.pos))
-  const listPos = $line.before($line.depth - 2)
-  const list = $line.node($line.depth - 2)
+  // The lines' list now: the last child of the item above them. `sinkListItem` puts them there (joined into that item's
+  // sublist when it ends with one of their kind). Not read from the caret: it can be in a child line or a quote (6B2).
+  const abovePos = tr.mapping.map(range.start - above.nodeSize, -1)
+  const aboveNow = tr.doc.nodeAt(abovePos)!
+  const list = aboveNow.lastChild!
+  const listPos = abovePos + aboveNow.nodeSize - 1 - list.nodeSize
   const $list = tr.doc.resolve(listPos)
   if (ownSublist) {
     // `sinkListItem` joins a sublist of its own kind only; one of the other kind is joined here, and its kind wins.
@@ -160,7 +168,11 @@ const sinkInList = (itemType: NodeType, bulletType: NodeType): Command => (state
 
 const indentCommand = (itemType: NodeType, bulletType: NodeType): Command =>
   onCoveredLines((state, dispatch) => {
-    if (!selectionInListItems(state, itemType)) return spansLines(state)
+    if (!selectionInListItems(state, itemType)) {
+      // A line deeper in a bullet, such as a quote (6B2): Tab sinks that bullet as from its first line, D10 included.
+      if (insideListItem(state.selection.$from, itemType) && sinkInList(itemType, bulletType)(state, dispatch)) return true
+      return spansLines(state)
+    }
     if (!sinkInList(itemType, bulletType)(state, dispatch)) sinkIntoListAbove(itemType)(state, dispatch)
     // Handled either way: a first sibling cannot sink, and the indent plugin must not insert spaces.
     return true
