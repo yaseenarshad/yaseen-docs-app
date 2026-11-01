@@ -45,27 +45,43 @@ import { useMemoryReport } from './useMemoryReport'
 
 /** The ⓘ of each kind of row (YAZ-3932, round 2), as Yasin approved them. */
 const INFO = {
-  window: 'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
+  window: 'This is one window. The bar shows the memory it uses now: the biggest row fills its bar. If it has tabs, click it to see them. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
   core: 'The parts of the app that all windows share: Main (it controls the app), GPU (it draws the screen), Utility (small helpers) and Other (small system parts, for example DevTools). Closing tabs does not make this smaller.',
-  helpers: 'These run only while code files are open. They stop 2 minutes after you close the last one.',
+  helpers: 'These run only while a code tab is open and awake. They stop 2 minutes after the last one closes or sleeps.',
 } as const
 
-/** The State header's ⓘ (YAZ-3958): one line for each state a tab row can show. */
+/** The State header's ⓘ (YAZ-3958): one line for each state a tab row can show, and the empty cell (YAZ-4024). */
 const STATES_INFO = [
   'In view: the tab you look at now. It never sleeps.',
   'Awake · sleeps in N min: it uses memory. It sleeps in N minutes.',
   'Awake · not saved yet: it has typing that is not saved yet. It sleeps after the save.',
-  'Asleep: it uses almost no memory. A click wakes it.',
-  'Not loaded: you have not opened it since the app started. It uses almost no memory.',
-  'Awake: Sleep is set to Never, so it does not sleep.',
+  'Asleep: it uses almost no memory. A click on its tab wakes it.',
+  'Not loaded: you have not opened it since its window opened or reloaded. It uses almost no memory.',
+  'Awake: it uses memory and has no sleep time now. For example, Sleep is set to Never, or the tab board is open.',
+  'Empty: its window did not answer in time. The page asks again in 30 seconds.',
 ].join('\n')
 
 /** The ⓘ of the Last seen, Changed and RAM headers (YAZ-3988): each word and number on the page is explained. */
 const COLUMN_INFO = {
-  lastSeen: 'The last time this tab was on your screen.',
+  lastSeen: 'The last time this tab was on your screen. Empty for the tab in view (you see it now) and for a tab that is not loaded.',
   changed: 'The last time the file was saved to disk: by you, by Sync or by another app.',
   ram: 'The memory the window uses now. All tabs in a window share this memory, so a tab has no number of its own. Hover on a size to see its parts. JS heap is the memory of your notes and tabs. Other is the rest of the window: the screen, images and drawings.',
 } as const
+
+/** A header's text, cut with "…" when its column is narrow, and its ⓘ, which is never cut (YAZ-4022). */
+function Head({ text, info, label }: { text: string; info: string; label: string }) {
+  return (
+    <span className="memory__th">
+      <span className="memory__th-text" title={text}>
+        {text}
+      </span>
+      <Info text={info} label={label} />
+    </span>
+  )
+}
+
+/** A time cell's hover (YAZ-4022): the full date and time, also when the cell cuts its text. */
+const fullTime = (at: number) => new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
 /** A row's ⓘ (YAZ-3932): its line shows while the pointer is on it or it has the focus. */
 function Info({ text, label = 'What this row means' }: { text: string; label?: string }) {
@@ -161,15 +177,18 @@ function TabRows({ tabs }: { tabs: MemoryTabRow[] }) {
   const ordered = [...tabs.filter((t) => !idle(t)), ...tabs.filter(idle)]
   return ordered.map((t, i) => {
     const state = stateText(t, now)
+    const title = t.title ?? pageLabel(t.path, false, NO_TITLES)
     return (
       <tr key={i} className={idle(t) ? 'memory__tab memory__tab--asleep' : 'memory__tab'}>
-        <td className="memory__tab-name">{t.title ?? pageLabel(t.path, false, NO_TITLES)}</td>
+        <td className="memory__tab-name" title={title}>
+          {title}
+        </td>
         <td title={state}>
           {state}
           {t.state === 'asleep' && <AsleepIcon className="memory__asleep" title="Asleep: it uses almost no memory." />}
         </td>
-        <td>{t.lastSeen === null ? '' : agoText(t.lastSeen, now)}</td>
-        <td>{t.changed === null ? '' : agoText(t.changed, now)}</td>
+        <td title={t.lastSeen === null ? undefined : fullTime(t.lastSeen)}>{t.lastSeen === null ? '' : agoText(t.lastSeen, now)}</td>
+        <td title={t.changed === null ? undefined : fullTime(t.changed)}>{t.changed === null ? '' : agoText(t.changed, now)}</td>
         <td />
       </tr>
     )
@@ -190,80 +209,83 @@ function MemoryRows() {
       return next
     })
   return (
-    <table className="memory__table">
-      <colgroup>
-        <col />
-        <col className="memory__col-state" />
-        <col className="memory__col-time" />
-        <col className="memory__col-time" />
-        <col className="memory__col-memory" />
-      </colgroup>
-      <thead>
-        <tr>
-          <th scope="col">Tab</th>
-          <th scope="col" className="memory__state-head">
-            State <Info text={STATES_INFO} label="What each state means" />
-          </th>
-          <th scope="col" className="memory__info-head">
-            Last seen <Info text={COLUMN_INFO.lastSeen} label="What this column means" />
-          </th>
-          <th scope="col" className="memory__info-head">
-            Changed <Info text={COLUMN_INFO.changed} label="What this column means" />
-          </th>
-          <th scope="col" className="memory__info-head">
-            RAM <Info text={COLUMN_INFO.ram} label="What this column means" />
-          </th>
-        </tr>
-      </thead>
-      {rows.map((row) => {
-        const opens = row.tabs !== undefined && row.tabs.length > 0
-        const expanded = opens && opened.has(row.key)
-        const name = (
-          <>
-            <span className="memory__arrow" aria-hidden="true">
-              {opens ? (expanded ? '▾' : '▸') : ''}
-            </span>
-            <span className="memory__name" title={row.open === undefined || row.open === '' ? row.name : `${row.name}\n${row.open}`}>
-              {row.name}
-            </span>
-          </>
-        )
-        return (
-          <tbody key={row.key} data-memory-row={row.key}>
-            <tr className={opens ? 'memory__row memory__row--window' : 'memory__row'} onClick={opens ? () => toggle(row.key) : undefined}>
-              <td colSpan={3} className="memory__head">
-                <span className="memory__head-line">
-                  {opens ? (
-                    // The row's click opens it; this button is its keyboard door (Enter and Space click it).
-                    <button type="button" className="memory__toggle" aria-expanded={expanded}>
-                      {name}
-                    </button>
-                  ) : (
-                    <span className="memory__toggle">{name}</span>
-                  )}
-                  <Info text={row.info} />
-                  {row.grew === true && (
-                    <span className="memory__grew" title="Grew more than 150 MB or 20 % in the last hour.">
-                      Growing
-                    </span>
-                  )}
-                </span>
-              </td>
-              <td />
-              <td title={row.hint}>
-                <span className="memory__memory">
-                  <span className="storage__bar memory__bar" aria-hidden="true">
-                    <span className="storage__fill" style={{ width: `${Math.max(1, (row.bytes / max) * 100)}%` }} />
+    // The table measures its own width (YAZ-4022): a narrow one drops the bars, so each size shows in full.
+    <div className="memory__wrap">
+      <table className="memory__table">
+        <colgroup>
+          <col />
+          <col className="memory__col-state" />
+          <col className="memory__col-time" />
+          <col className="memory__col-time" />
+          <col className="memory__col-memory" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col">Tab</th>
+            <th scope="col" className="memory__state-head">
+              <Head text="State" info={STATES_INFO} label="What each state means" />
+            </th>
+            <th scope="col" className="memory__info-head">
+              <Head text="Last seen" info={COLUMN_INFO.lastSeen} label="What Last seen means" />
+            </th>
+            <th scope="col" className="memory__info-head">
+              <Head text="Changed" info={COLUMN_INFO.changed} label="What Changed means" />
+            </th>
+            <th scope="col" className="memory__info-head">
+              <Head text="RAM" info={COLUMN_INFO.ram} label="What RAM means" />
+            </th>
+          </tr>
+        </thead>
+        {rows.map((row) => {
+          const opens = row.tabs !== undefined && row.tabs.length > 0
+          const expanded = opens && opened.has(row.key)
+          const name = (
+            <>
+              <span className="memory__arrow" aria-hidden="true">
+                {opens ? (expanded ? '▾' : '▸') : ''}
+              </span>
+              <span className="memory__name" title={row.open === undefined || row.open === '' ? row.name : `${row.name}\n${row.open}`}>
+                {row.name}
+              </span>
+            </>
+          )
+          return (
+            <tbody key={row.key} data-memory-row={row.key}>
+              <tr className={opens ? 'memory__row memory__row--window' : 'memory__row'} onClick={opens ? () => toggle(row.key) : undefined}>
+                <td colSpan={3} className="memory__head">
+                  <span className="memory__head-line">
+                    {opens ? (
+                      // The row's click opens it; this button is its keyboard door (Enter and Space click it).
+                      <button type="button" className="memory__toggle" aria-expanded={expanded}>
+                        {name}
+                      </button>
+                    ) : (
+                      <span className="memory__toggle">{name}</span>
+                    )}
+                    <Info text={row.info} />
+                    {row.grew === true && (
+                      <span className="memory__grew" title="Grew more than 150 MB or 20 % in the last hour.">
+                        Growing
+                      </span>
+                    )}
                   </span>
-                  <span className="memory__size">{formatBytes(row.bytes)}</span>
-                </span>
-              </td>
-            </tr>
-            {expanded && <TabRows tabs={row.tabs!} />}
-          </tbody>
-        )
-      })}
-    </table>
+                </td>
+                <td />
+                <td title={row.hint}>
+                  <span className="memory__memory">
+                    <span className="storage__bar memory__bar" aria-hidden="true">
+                      <span className="storage__fill" style={{ width: `${Math.max(1, (row.bytes / max) * 100)}%` }} />
+                    </span>
+                    <span className="memory__size">{formatBytes(row.bytes)}</span>
+                  </span>
+                </td>
+              </tr>
+              {expanded && <TabRows tabs={row.tabs!} />}
+            </tbody>
+          )
+        })}
+      </table>
+    </div>
   )
 }
 

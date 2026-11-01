@@ -11,6 +11,7 @@ import { DEFAULT_SETTINGS, MEMORY_SAMPLE_MS, type MemoryReport, type MemoryTabRo
 import { api } from '../api'
 import { SettingsDialog } from './SettingsDialog'
 import { agoText } from './memorySection'
+import settingsCss from './settings.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -87,7 +88,7 @@ const tabRows = (key: string) => [...el.querySelectorAll<HTMLTableRowElement>(`[
 describe('Settings › Memory (YAZ-3737 D9)', () => {
   it('YAZ-3945: a table with headers; a row for each window with its full name, then App core and Code helpers; "Growing" only for the window that grew; the hover text; no ⓘ by the title', async () => {
     await mountMemory()
-    expect([...el.querySelectorAll('.memory__table thead th')].map((th) => th.firstChild!.textContent!.trim())).toEqual(['Tab', 'State', 'Last seen', 'Changed', 'RAM'])
+    expect([...el.querySelectorAll('.memory__table thead th')].map((th) => (th.querySelector('.memory__th-text') ?? th).textContent)).toEqual(['Tab', 'State', 'Last seen', 'Changed', 'RAM'])
     // YAZ-3977: the line under the title says the work is automatic.
     expect(el.querySelector('.settings-section__note')!.textContent).toBe('The app frees memory by itself. A tab that you do not use goes to sleep. A window that gets too big reloads. You do not need to do anything here.')
     expect([...el.querySelectorAll<HTMLElement>('[data-memory-row]')].map((r) => r.dataset.memoryRow)).toEqual(['w1', 'w2', 'w3', 'core', 'helpers'])
@@ -120,11 +121,11 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
       return { info, tip: document.getElementById(info.getAttribute('aria-describedby')!)! }
     }
     expect(['w1', 'w2', 'w3', 'core', 'helpers'].map((key) => tipOf(key).tip.textContent)).toEqual([
-      'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
-      'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
-      'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
+      'This is one window. The bar shows the memory it uses now: the biggest row fills its bar. If it has tabs, click it to see them. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
+      'This is one window. The bar shows the memory it uses now: the biggest row fills its bar. If it has tabs, click it to see them. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
+      'This is one window. The bar shows the memory it uses now: the biggest row fills its bar. If it has tabs, click it to see them. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
       'The parts of the app that all windows share: Main (it controls the app), GPU (it draws the screen), Utility (small helpers) and Other (small system parts, for example DevTools). Closing tabs does not make this smaller.',
-      'These run only while code files are open. They stop 2 minutes after you close the last one.',
+      'These run only while a code tab is open and awake. They stop 2 minutes after the last one closes or sleeps.',
     ])
     const { info, tip } = tipOf('core')
     expect(tip.getAttribute('role')).toBe('tooltip')
@@ -144,12 +145,13 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     const stateTip = document.getElementById(stateInfo.getAttribute('aria-describedby')!)!
     act(() => stateInfo.focus())
     expect(stateTip.hidden).toBe(false)
-    expect(stateTip.textContent!.split('\n').map((line) => line.split(':')[0])).toEqual(['In view', 'Awake · sleeps in N min', 'Awake · not saved yet', 'Asleep', 'Not loaded', 'Awake'])
+    expect(stateTip.textContent!.split('\n').map((line) => line.split(':')[0])).toEqual(['In view', 'Awake · sleeps in N min', 'Awake · not saved yet', 'Asleep', 'Not loaded', 'Awake', 'Empty'])
     expect(row('w1').querySelector<HTMLTableCellElement>('.memory__head')!.colSpan).toBe(3)
     // YAZ-3988: Last seen, Changed and RAM each have an ⓘ; the RAM one says why a tab has no number and names the hover's parts.
-    const columnTips = [...document.querySelectorAll<HTMLButtonElement>('th .memory__info-btn[aria-label="What this column means"]')].map((b) => document.getElementById(b.getAttribute('aria-describedby')!)!.textContent)
+    // YAZ-4024 nit: each has its own name for a screen reader.
+    const columnTips = ['Last seen', 'Changed', 'RAM'].map((name) => document.querySelector<HTMLButtonElement>(`th .memory__info-btn[aria-label="What ${name} means"]`)!).map((b) => document.getElementById(b.getAttribute('aria-describedby')!)!.textContent)
     expect(columnTips).toEqual([
-      'The last time this tab was on your screen.',
+      'The last time this tab was on your screen. Empty for the tab in view (you see it now) and for a tab that is not loaded.',
       'The last time the file was saved to disk: by you, by Sync or by another app.',
       'The memory the window uses now. All tabs in a window share this memory, so a tab has no number of its own. Hover on a size to see its parts. JS heap is the memory of your notes and tabs. Other is the rest of the window: the screen, images and drawings.',
     ])
@@ -247,5 +249,46 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect(buttons('memoryReload').find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('On')
     act(() => buttons('memoryReload')[1].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, memoryReload: false })
+  })
+
+  it('YAZ-4024: the State ⓘ gives the true reason for a plain "Awake" and says what an empty cell means', async () => {
+    await mountMemory()
+    const info = document.querySelector<HTMLButtonElement>('th .memory__info-btn[aria-label="What each state means"]')!
+    const lines = document.getElementById(info.getAttribute('aria-describedby')!)!.textContent!.split('\n')
+    expect(lines.find((l) => l.startsWith('Awake:'))).toBe('Awake: it uses memory and has no sleep time now. For example, Sleep is set to Never, or the tab board is open.')
+    expect(lines.find((l) => l.startsWith('Asleep:'))).toBe('Asleep: it uses almost no memory. A click on its tab wakes it.')
+    expect(lines.find((l) => l.startsWith('Not loaded:'))).toBe('Not loaded: you have not opened it since its window opened or reloaded. It uses almost no memory.')
+    expect(lines.at(-1)).toBe('Empty: its window did not answer in time. The page asks again in 30 seconds.')
+  })
+
+  it('YAZ-4022, YAZ-4025: a cut header, tab name or time has a hover with all of it; the ⓘ is beside the header text, never in it', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    vi.setSystemTime(NOW)
+    await mountMemory()
+    for (const th of [...el.querySelectorAll('.memory__table thead th')].slice(1)) {
+      const text = th.querySelector<HTMLElement>('.memory__th-text')!
+      expect(text.title).toBe(text.textContent)
+      expect(text.nextElementSibling!.classList.contains('memory__info')).toBe(true)
+    }
+    act(() => row('w1').click())
+    for (const tr of tabRows('w1')) {
+      const [name, , seen, changed] = [...tr.cells]
+      expect(name.title).toBe(name.textContent)
+      expect(seen.title === '' ? seen.textContent : seen.title).toMatch(seen.textContent === '' ? /^$/ : /\d{4}/)
+      expect(changed.title === '' ? changed.textContent : changed.title).toMatch(changed.textContent === '' ? /^$/ : /\d{4}/)
+    }
+    vi.useRealTimers()
+  })
+
+  it('YAZ-4022, YAZ-4023: the rules keep the page from scrolling sideways: the header ⓘ lines hang from the header row and are as wide as the table at most; a narrow table drops the bars', () => {
+    const css = settingsCss.replace(/\/\*[\s\S]*?\*\//g, '')
+    const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(css)?.[1] ?? ''
+    expect(rule('.memory__table thead tr')).toMatch(/position:\s*relative;/)
+    expect(css).not.toMatch(/\.memory__(?:state|info)-head\s*\{[^}]*position/)
+    expect(rule('.memory__state-head .memory__tip')).toMatch(/width:\s*min\(340px, calc\(100% - 12px\)\);/)
+    expect(rule('.memory__info-head .memory__tip')).toMatch(/width:\s*min\(260px, calc\(100% - 12px\)\);/)
+    expect(rule('.memory__th-text')).toMatch(/overflow:\s*hidden;[\s\S]*text-overflow:\s*ellipsis;/)
+    expect(rule('.memory__wrap')).toMatch(/container:\s*memory \/ inline-size;/)
+    expect(css).toMatch(/@container memory \(max-width: 480px\)\s*\{[\s\S]*\.memory__bar\s*\{\s*display:\s*none;/)
   })
 })

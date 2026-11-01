@@ -938,6 +938,10 @@
  * Settings › Memory (YAZ-3737 D9; YAZ-3945): a table read like a spreadsheet. Fixed columns in shares of the page, so
  * it never scrolls sideways; a cell too narrow for its text cuts it with "…". The bar is Storage's.
  */
+.memory__wrap {
+  container: memory / inline-size;
+}
+
 .memory__table {
   width: 100%;
   table-layout: fixed;
@@ -947,15 +951,31 @@
 }
 
 .memory__col-state {
-  width: 25%;
+  width: 24%;
 }
 
+/* "30 min ago" in full (YAZ-4022); a date cuts with "…" and its hover gives it whole. */
 .memory__col-time {
-  width: 13%;
+  width: 6em;
 }
 
 .memory__col-memory {
   width: 21%;
+}
+
+/* A narrow table (YAZ-4022): the bars go, so the RAM column holds just the size, in full. */
+@container memory (max-width: 480px) {
+  .memory__col-memory {
+    width: 5.5em;
+  }
+
+  .memory__bar {
+    display: none;
+  }
+
+  .memory__size {
+    min-width: 0;
+  }
 }
 
 .memory__table th,
@@ -965,6 +985,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
+}
+
+/* The header row: muted, small, one line under it. It anchors the headers' ⓘ lines (YAZ-4023), so each is as wide as
+   the table at most and never leaves it. */
+.memory__table thead tr {
+  position: relative;
 }
 
 /* The header row: muted, small, one line under it. */
@@ -1110,27 +1136,32 @@
   white-space: normal;
 }
 
-/* The State header's ⓘ (YAZ-3958): its list of states, one per line, wider than its column. */
-.memory__table .memory__state-head {
-  position: relative;
-  overflow: visible;
+/* A header (YAZ-4022): its text cuts with "…" in a narrow column; its ⓘ never does. */
+.memory__th {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
+.memory__th-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The headers' ⓘ lines hang from the header row (YAZ-4023), not from their cell, so a narrow page never cuts them or
+   scrolls sideways. The State one (YAZ-3958) lists the states one per line, from the left; the Last seen, Changed and
+   RAM ones (YAZ-3988), near the right edge, open toward the left. */
 .memory__state-head .memory__tip {
-  width: 340px;
+  width: min(340px, calc(100% - 12px));
   white-space: pre-line;
-}
-
-/* The Last seen, Changed and RAM headers' ⓘ (YAZ-3988): near the right edge, so the line opens toward the left. */
-.memory__table .memory__info-head {
-  position: relative;
-  overflow: visible;
 }
 
 .memory__info-head .memory__tip {
   left: auto;
-  right: 0;
-  width: 260px;
+  right: 6px;
+  width: min(260px, calc(100% - 12px));
 }
 
 .memory__tip[hidden] {
