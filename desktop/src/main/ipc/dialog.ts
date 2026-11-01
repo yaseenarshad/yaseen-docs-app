@@ -5,6 +5,7 @@ import { CONTRACT } from '@shared/ipc'
 import { isDrawing } from '@shared/fileKind'
 import { BOARDS } from '../fs/boardDocument'
 import { readBoundedRegularFile } from '../fs/boundedRead'
+import { printSvgToPdf } from '../drawings/printPdf'
 import { atomicWrite, BridgeFailure, fsCall } from '../fs/fsUtils'
 import { requireRequest, str } from '../fs/validate'
 import { handleWithEvent } from './envelope'
@@ -123,6 +124,33 @@ export async function saveImageFile(e: IpcMainInvokeEvent, inFlight: Set<Browser
   return { path: file }
 }
 
+/** A drawing's PDF (YAZ-3943 D6). */
+const SAVE_PDF_OPTIONS: Omit<Electron.SaveDialogOptions, 'defaultPath'> = {
+  title: 'Export PDF',
+  filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  properties: ['createDirectory', 'showOverwriteConfirmation'],
+}
+
+const isSide = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0
+
+/**
+ * `window.yaseenDocs.dialog.savePdf(req)` (YAZ-3943 D6): the PDF button. `saveDrawingFile`'s one-door
+ * rule — the sheet, then the write, in the same call, one sheet per window — with `.pdf` enforced. The
+ * PDF is printed from the SVG only once a place is picked (`printSvgToPdf`, one hidden window).
+ */
+export async function savePdfFile(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | null>, body: unknown, print = printSvgToPdf): Promise<SaveDrawingResponse> {
+  const { svg, width, height, ...rest } = requireRequest(body)
+  const defaultName = str(rest.defaultName, 'defaultName')
+  if (typeof svg !== 'string' || !svg.trimStart().startsWith('<svg')) throw new BridgeFailure('BAD_REQUEST', "'svg' must be an SVG document")
+  if (!isSide(width) || !isSide(height)) throw new BridgeFailure('BAD_REQUEST', "'width' and 'height' must be positive numbers")
+  const file = await showSave(e, inFlight, { ...SAVE_PDF_OPTIONS, defaultPath: defaultName })
+  if (file === null) return { cancelled: true }
+  if (path.extname(file).toLowerCase() !== '.pdf') throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'a PDF exports as .pdf', { path: file })
+  const pdf = await print(svg, { width, height })
+  await fsCall(file, () => atomicWrite(file, pdf))
+  return { path: file }
+}
+
 /**
  * The native SAVE sheet parented to the calling window, under `pickFolder`'s one-sheet-per-window
  * rule (the same `inFlight` set): the absolute path picked, or null when the sheet was dismissed or
@@ -144,10 +172,12 @@ async function showSave(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | nul
   return result.canceled || picked === undefined || picked === '' ? null : path.resolve(picked)
 }
 
-export function registerDialogIpc(): void {
+/** `print` is the PDF maker: the hidden window's, or a test's. */
+export function registerDialogIpc(print = printSvgToPdf): void {
   const inFlight = new Set<BrowserWindow | null>()
   handleWithEvent(CONTRACT.pickFolder, (e) => pickFolder(e, inFlight))
   handleWithEvent(CONTRACT.dialog.saveDrawing, (e, body: unknown) => saveDrawingFile(e, inFlight, body))
   handleWithEvent(CONTRACT.dialog.saveImage, (e, body: unknown) => saveImageFile(e, inFlight, body))
+  handleWithEvent(CONTRACT.dialog.savePdf, (e, body: unknown) => savePdfFile(e, inFlight, body, print))
   handleWithEvent(CONTRACT.dialog.openDrawing, (e) => openDrawingFile(e, inFlight))
 }

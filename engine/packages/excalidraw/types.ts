@@ -1026,6 +1026,14 @@ export interface ExcalidrawProps {
   generateLinkForSelection?: (id: string, type: "element" | "group") => string;
   /** Yaseen Docs (YAZ-4039 D7, D11): page links in text boxes. Keep it stable. */
   hostLinks?: HostLinks;
+  /**
+   * Yaseen Docs (YAZ-3943 D6): a PDF button in the export box, shown only when this is given. It gets the
+   * export as an SVG (fonts and pictures inline) and its size in CSS pixels; the host makes the PDF.
+   */
+  onExportPdf?: (
+    svg: string,
+    size: { width: number; height: number },
+  ) => void | Promise<void>;
   onLinkOpen?: (
     element: NonDeletedExcalidrawElement,
     event: CustomEvent<{

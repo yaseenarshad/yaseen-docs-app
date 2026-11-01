@@ -186,6 +186,11 @@ export interface DrawingSurfaceProps {
   hotkeysAside?: HotkeyAside
   /** Page links (YAZ-4039): the tab passes them; the note embed's modal does not, and its pills stay text. */
   links?: DrawingSurfaceLinks
+  /**
+   * The export box's PDF button (YAZ-3943 D6): the engine's SVG of the export and its size, for the host to
+   * make the PDF. The tab passes it; without it the box has no PDF button. Read once, at mount.
+   */
+  onExportPdf?: (svg: string, size: { width: number; height: number }) => void | Promise<void>
 }
 
 /**
@@ -250,6 +255,7 @@ export function ExcalidrawSurface({
   hotkeys,
   hotkeysAside,
   links,
+  onExportPdf,
 }: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
   /** The canvas panel is the tab's (see the module doc); read once, so a surface never changes mode. */
@@ -305,6 +311,10 @@ export function ExcalidrawSurface({
   /** Read by `onLinkOpen`, which is made once. */
   const linksRef = useRef(links)
   linksRef.current = links
+  /** The PDF button (YAZ-3943 D6): one engine prop for the surface's life, or none; the host's latest callback through a ref. */
+  const exportPdfRef = useRef(onExportPdf)
+  exportPdfRef.current = onExportPdf
+  const [exportPdf] = useState(() => (onExportPdf === undefined ? undefined : (svg: string, size: { width: number; height: number }) => exportPdfRef.current?.(svg, size)))
 
   /**
    * A shape's link icon (YAZ-4039 D7): a `[[link]]` or a vault path opens through the host. A local link the host does
@@ -635,6 +645,7 @@ export function ExcalidrawSurface({
         viewModeEnabled={readOnly ? true : undefined}
         keyBindings={keyBindings}
         hostLinks={links?.hostLinks}
+        onExportPdf={exportPdf}
         onLinkOpen={onLinkOpen}
       >
         {canvasSidebar}

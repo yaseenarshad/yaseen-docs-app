@@ -54,8 +54,8 @@ export function assembleStandaloneScene(engine: ExportEngine, scene: ExportableS
   return `${engine.serializeAsJSON(scene.elements as never, scene.appState as never, embeddedFiles(scene.elements, scene.files) as never, 'local')}\n`
 }
 
-/** The save dialog's default name: the board's own name, with the extension it is getting back. */
-export function exportFileName(boardName: string): string {
+/** The save dialog's default name: the board's own name, with the extension it is getting back (`pdf` for the PDF button, YAZ-3943 D6). */
+export function exportFileName(boardName: string, ext = 'excalidraw'): string {
   const name = boardBaseName(boardName).trim()
-  return `${name === '' ? 'Drawing' : name}.excalidraw`
+  return `${name === '' ? 'Drawing' : name}.${ext}`
 }

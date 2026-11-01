@@ -20,7 +20,7 @@ import { fakeWatch, withRevealObserver } from '../documents/boardTestKit'
 
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
-  return { ...actual, api: { ...actual.api, drawing: { load: vi.fn(), save: vi.fn() }, dialog: { saveDrawing: vi.fn() }, setBoardPictures: vi.fn() } }
+  return { ...actual, api: { ...actual.api, drawing: { load: vi.fn(), save: vi.fn() }, dialog: { saveDrawing: vi.fn(), savePdf: vi.fn() }, setBoardPictures: vi.fn() } }
 })
 
 /** The engine stub: records what it was given and hands the host the two callbacks it owns. */
@@ -85,6 +85,7 @@ const load = vi.mocked(api.drawing.load)
 const save = vi.mocked(api.drawing.save)
 const saveDrawing = vi.mocked(api.dialog.saveDrawing)
 const setBoardPictures = vi.mocked(api.setBoardPictures)
+const savePdf = vi.mocked(api.dialog.savePdf)
 
 const ROOT = '/vault'
 const PATH = '/vault/Board.excalidraw'
@@ -652,5 +653,33 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     await act(async () => void requestBoardCommand({ kind: 'export-drawing' }, document.body))
     await flush()
     expect(saveDrawing.mock.calls).toEqual([[{ defaultName: 'Board.excalidraw', content: surface.exportedScene }], [{ defaultName: 'Board.excalidraw', content: surface.exportedScene }]])
+  })
+})
+
+describe('YAZ-3943 1C — the PDF button of the export box (D6)', () => {
+  it('the tab gives the engine `onExportPdf`; a press sends the SVG and its size to main\'s PDF sheet under the board\'s name, and the notice says where it landed', async () => {
+    const onNotice = vi.fn()
+    savePdf.mockReset().mockResolvedValue({ path: '/Users/y/Desktop/Board.pdf' })
+    render({ onNotice })
+    await flush()
+    expect(surface.props?.onExportPdf).toBeTypeOf('function')
+    await act(async () => {
+      await surface.props!.onExportPdf!('<svg width="960" height="480"/>', { width: 960, height: 480 })
+    })
+    expect(savePdf).toHaveBeenCalledWith({ defaultName: 'Board.pdf', svg: '<svg width="960" height="480"/>', width: 960, height: 480 })
+    expect(onNotice).toHaveBeenCalledWith('Exported to Board.pdf')
+    // The vault file is not touched.
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('a failed print or write is the one error notice; a dismissed sheet is silent', async () => {
+    const onNotice = vi.fn()
+    render({ onNotice })
+    await flush()
+    savePdf.mockReset().mockResolvedValueOnce({ cancelled: true }).mockRejectedValueOnce(new Error('boom'))
+    await act(async () => void (await surface.props!.onExportPdf!('<svg/>', { width: 1, height: 1 })))
+    expect(onNotice).not.toHaveBeenCalled()
+    await act(async () => void (await surface.props!.onExportPdf!('<svg/>', { width: 1, height: 1 })))
+    expect(onNotice).toHaveBeenCalledWith("The PDF couldn't be exported.", 'error')
   })
 })

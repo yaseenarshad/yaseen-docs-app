@@ -92,6 +92,8 @@ export function drawingCogRows({ pictures, out, readOnly, onMovePictures, onExpo
 
 /** What File › Export Drawing… says when the save sheet or the write refused (🔒 YAZ-1775 D3, YAZ-1821). */
 const EXPORT_FAILED = "The Excalidraw drawing couldn't be exported."
+/** What the PDF button says when the sheet, the print or the write refused (YAZ-3943 D6). */
+const PDF_FAILED = "The PDF couldn't be exported."
 
 /** Page links in the board's text (YAZ-4039): the props a note's editor gets for its `[[links]]` (`useDrawingLinks`). */
 export interface DrawingEditorProps extends DocumentHostProps, DrawingLinkProps {
@@ -330,6 +332,15 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     [chips, picturesOut, readOnly],
   )
 
+  /**
+   * The export box's PDF button (YAZ-3943 D6): main's PDF sheet, then one page printed from the engine's SVG.
+   * Like Export Drawing…, the vault file is not touched. The notice says where the PDF landed, as today.
+   */
+  const exportPdf = async (svg: string, size: { width: number; height: number }): Promise<void> => {
+    if (board.retired.current) return
+    await exportWithNotice(() => api.dialog.savePdf({ defaultName: exportFileName(basename(path), 'pdf'), svg, width: size.width, height: size.height }), PDF_FAILED, onNotice)
+  }
+
   /** ⌘S (or the user's key for it, YAZ-3564) flushes now — caught before the engine's own keymap, and never on `window`. */
   const onKeyDownCapture = (e: ReactKeyboardEvent): void => {
     if (pressed(e, 'drawing.saveNow', hotkeys)) {
@@ -359,6 +370,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
           hotkeysAside={hotkeysAside}
           autoFocus
           links={links}
+          onExportPdf={exportPdf}
         />
       </div>
       <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={linkProps.diagramDarkColors ?? 'adapt'} />

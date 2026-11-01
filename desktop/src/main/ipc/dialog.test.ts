@@ -35,8 +35,8 @@ const pick = () => registered(CONTRACT.pickFolder.channel)({ sender })
 const open = () => registered(CONTRACT.dialog.openDrawing.channel)({ sender })
 
 describe('dialog:pick-folder', () => {
-  it('registers exactly the pick-folder, the two export channels and the import (YAZ-3038)', () => {
-    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel, CONTRACT.dialog.saveDrawing.channel, CONTRACT.dialog.saveImage.channel, CONTRACT.dialog.openDrawing.channel])
+  it('registers exactly the pick-folder, the three export channels and the import (YAZ-3038, YAZ-3943 D6)', () => {
+    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel, CONTRACT.dialog.saveDrawing.channel, CONTRACT.dialog.saveImage.channel, CONTRACT.dialog.savePdf.channel, CONTRACT.dialog.openDrawing.channel])
   })
 
   it('opens an openDirectory dialog parented to the calling window and answers { path }', async () => {
@@ -211,5 +211,56 @@ describe('dialog:save-file', () => {
     expect(await image(req)).toMatchObject({ ok: false, error: { code: 'UNSUPPORTED_EXTENSION' } })
     expect(await image({ ...req, png: 'nope' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
     expect(await readdir(dir)).toEqual(['Flow.svg'])
+  })
+})
+
+/** A drawing's PDF button (YAZ-3943 D6): the sheet, the print and the write are one door, one sheet per window. */
+describe('dialog:save-pdf', () => {
+  const showSaveDialog = vi.mocked(dialog.showSaveDialog)
+  const print = vi.fn(async (_svg: string, _size: { width: number; height: number }) => Buffer.from('%PDF-1.7 fake'))
+  const savePdf = (req: unknown) => registered(CONTRACT.dialog.savePdf.channel)({ sender }, req)
+  const REQ = { defaultName: 'Flow.pdf', svg: '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480"></svg>', width: 960, height: 480 }
+  let dir = ''
+  beforeEach(async () => {
+    showSaveDialog.mockReset()
+    print.mockClear()
+    vi.mocked(ipcMain.handle).mockClear()
+    registerDialogIpc(print)
+    dir = await mkdtemp(path.join(tmpdir(), 'yaz-3943-pdf-'))
+  })
+  afterEach(() => rm(dir, { recursive: true, force: true }))
+
+  it('opens the sheet on `<drawing name>.pdf`, prints the SVG at its size, and writes the PDF where the user picked', async () => {
+    const file = path.join(dir, 'Flow.pdf')
+    showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: file })
+    expect(await savePdf(REQ)).toEqual({ ok: true, value: { path: file } })
+    expect(showSaveDialog.mock.calls[0][0]).toMatchObject({ defaultPath: 'Flow.pdf', filters: [{ name: 'PDF', extensions: ['pdf'] }] })
+    expect(print).toHaveBeenCalledWith(REQ.svg, { width: 960, height: 480 })
+    expect(await readFile(file, 'utf8')).toBe('%PDF-1.7 fake')
+  })
+
+  it('a dismissed sheet prints and writes nothing; another name, or a bad request, is refused', async () => {
+    showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: '' })
+    expect(await savePdf(REQ)).toEqual({ ok: true, value: { cancelled: true } })
+    showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: path.join(dir, 'Flow.png') })
+    expect(await savePdf(REQ)).toMatchObject({ ok: false, error: { code: 'UNSUPPORTED_EXTENSION' } })
+    expect(await savePdf({ ...REQ, svg: '<html/>' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    expect(await savePdf({ ...REQ, width: 0 })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    expect(print).not.toHaveBeenCalled()
+    expect(await readdir(dir)).toEqual([])
+  })
+
+  it('refuses a second sheet in the same window while the first is open ({ cancelled }), and lets one through after', async () => {
+    const win = { id: 'w' } as unknown as BrowserWindow
+    fromWebContents.mockReturnValue(win)
+    let settle!: (v: Electron.SaveDialogReturnValue) => void
+    showSaveDialog.mockReturnValueOnce(new Promise((r) => (settle = r)))
+    const first = savePdf(REQ)
+    expect(await savePdf(REQ)).toEqual({ ok: true, value: { cancelled: true } })
+    expect(showSaveDialog).toHaveBeenCalledTimes(1)
+    settle({ canceled: false, filePath: path.join(dir, 'One.pdf') })
+    expect(await first).toEqual({ ok: true, value: { path: path.join(dir, 'One.pdf') } })
+    showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: path.join(dir, 'Two.pdf') })
+    expect(await savePdf(REQ)).toEqual({ ok: true, value: { path: path.join(dir, 'Two.pdf') } })
   })
 })

@@ -646,6 +646,20 @@ export interface SaveImageRequest {
   svg: string
 }
 
+/**
+ * The PDF button of a drawing's export box (YAZ-3943 D6): `SaveDrawingRequest`'s one-door rule with a
+ * PDF sheet. Main draws the SVG in a hidden window and prints one page the size of the drawing.
+ */
+export interface SavePdfRequest {
+  /** The name the sheet opens on, extension included (`<drawing name>.pdf`). */
+  defaultName: string
+  /** The engine's export (`exportToSvg`): the fonts and the pictures inline. */
+  svg: string
+  /** Its size in CSS pixels. */
+  width: number
+  height: number
+}
+
 // ---------- writeFile(req) ----------
 
 export interface FileWriteRequest {
