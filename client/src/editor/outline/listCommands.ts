@@ -170,8 +170,10 @@ const indentCommand = (itemType: NodeType, bulletType: NodeType): Command =>
   onCoveredLines((state, dispatch) => {
     if (!selectionInListItems(state, itemType)) {
       // A line deeper in a bullet, such as a quote (6B2): Tab sinks that bullet as from its first line, D10 included.
-      if (insideListItem(state.selection.$from, itemType) && sinkInList(itemType, bulletType)(state, dispatch)) return true
-      return spansLines(state)
+      // Handled either way: in a first bullet it does nothing, and the indent plugin must not type spaces (6B3).
+      if (!insideListItem(state.selection.$from, itemType)) return spansLines(state)
+      sinkInList(itemType, bulletType)(state, dispatch)
+      return true
     }
     if (!sinkInList(itemType, bulletType)(state, dispatch)) sinkIntoListAbove(itemType)(state, dispatch)
     // Handled either way: a first sibling cannot sink, and the indent plugin must not insert spaces.

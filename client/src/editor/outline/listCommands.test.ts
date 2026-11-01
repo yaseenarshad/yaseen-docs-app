@@ -1361,6 +1361,13 @@ describe('YAZ-3727 6B. Tab makes a sublist in its siblings\' kind, else bullets 
     expect(md(crepe)).toMatch(/^1\. a\n {3}\* b\n\n {5}> q\n$/)
   })
 
+  it('the caret in a quote inside the first item: Tab does nothing and types no spaces (6B3)', async () => {
+    const { crepe } = await mount('1. apple\n\n   > quoted\n2. berry\n')
+    caretIn(crepe, 'quoted', 3)
+    press(crepe, 'Tab')
+    expect(md(crepe)).toBe('1. apple\n\n   > quoted\n2. berry\n')
+  })
+
   it('the caret in a table cell inside a numbered item: Tab stays the table\'s, the item does not move', async () => {
     const { crepe } = await mount('1. a\n2. b\n\n   | h1 | h2 |\n   | -- | -- |\n   | c1 | c2 |\n')
     caretIn(crepe, 'c1')
