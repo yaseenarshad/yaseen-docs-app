@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { renderToStaticMarkup } from 'react-dom/server'
 import type { FileResponse, FileWriteRequest, FileWriteResponse } from '@shared/types'
 
 vi.mock('./monaco', () => import('./monacoTestKit'))
@@ -17,6 +18,7 @@ import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { readPageView } from '../lib/pageView'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
+import { ExpandAllIcon } from '../views/view/icons'
 import { BROKEN_CODE_DOCUMENT, CodeEditor, appCommandOf, findersFor, stickyModelFor } from './CodeEditor'
 import { LARGE_CODE_CHARS } from './outline/symbolSource'
 import { keepBackView, MAX_BACK_VIEWS, openCodeAt, takeBackView } from './codeOpener'
@@ -330,7 +332,11 @@ describe('no read-only switch in the file (YAZ-3448)', () => {
     await opened('a\n')
     const chips = [...container.querySelector('.status-chips')!.children].map((chip) => chip.className.split(' ')[0])
     // The text size pill (YAZ-3451) is this tab's own; no cog without a door to the settings.
-    expect(chips).toEqual(['document-zoom', 'sync-indicator', 'save-indicator'])
+    expect(chips).toEqual(['fold-all__trigger', 'document-zoom', 'sync-indicator', 'save-indicator'])
+    // No block to fold (YAZ-3938 D4): the button says so.
+    const fold = container.querySelector<HTMLButtonElement>('.fold-all__trigger')!
+    await act(async () => fold.focus())
+    expect(fold.getAttribute('aria-label')).toBe('Nothing to fold')
     expect(container.querySelector('.page-settings')).toBeNull()
     expect(container.querySelector('.read-only-chip')).toBeNull()
     type('b\n')
@@ -947,6 +953,35 @@ describe('collapse all and expand all (YAZ-3478)', () => {
     const event = rightClick(editor().input)
     expect(event.defaultPrevented).toBe(false)
     expect(menuItems()).toEqual([])
+  })
+
+  it("YAZ-3938 D4: the fold-all button, first in the chips row: a look names what a click does, with its key; a click runs Monaco's fold all, the next its unfold all", async () => {
+    await focused()
+    const button = container.querySelector<HTMLButtonElement>('.status-chips > .fold-all__trigger')!
+    await act(async () => button.focus())
+    expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+    await act(async () => button.click())
+    expect(editor().triggered).toEqual(['editor.foldAll'])
+    expect([...editor().folded].sort((a, b) => a - b)).toEqual([1, 2, 5])
+    expect(document.activeElement).toBe(editor().input)
+    expect(button.getAttribute('aria-label')).toBe('Expand all (⌘⇧I)')
+    await act(async () => button.click())
+    expect(editor().triggered).toEqual(['editor.foldAll', 'editor.unfoldAll'])
+    expect([...editor().folded]).toEqual([])
+    expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+  })
+
+  it('YAZ-3938 D9: the chevrons point up for "Collapse all" and down for "Expand all", and follow a fold arrow or key with no look at the button', async () => {
+    await focused()
+    const button = container.querySelector<HTMLButtonElement>('.status-chips > .fold-all__trigger')!
+    const pointsDown = (): boolean => button.innerHTML === renderToStaticMarkup(<ExpandAllIcon />)
+    expect(pointsDown()).toBe(false)
+    await act(async () => editor().trigger('keyboard', 'editor.foldAll'))
+    expect(pointsDown()).toBe(true)
+    expect(button.getAttribute('aria-label')).toBe('Expand all (⌘⇧I)')
+    await act(async () => editor().toggleFold(2))
+    expect(pointsDown()).toBe(false)
+    expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
   })
 })
 

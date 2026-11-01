@@ -10,6 +10,7 @@ import { MAX_ICON_MATCH, MAX_ICON_RULES, type VaultIcons } from '@shared/vaultIc
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { copyFoldKey } from '@shared/foldKey'
 import { parseFrontmatter } from '@shared/frontmatter'
 import { CLIP_CHANGED, DEFAULT_ROW_DATES, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type ImportResponse, type IndexRecord, type PasteRequest, type PasteResponse, type SettingsState, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity, type SidebarTabsPrefs } from '@shared/types'
@@ -20,6 +21,7 @@ import { EMPTY_SELECTION } from '../lib/selection'
 // The focus list's persistence is the REAL storage module (no mock in this file): `storage.init()`
 // against a mount's bridge is how a test hands the Sidebar a list restored from an earlier session.
 import { storage } from '../lib/storage'
+import { CollapseAllIcon, ExpandAllIcon } from '../views/view/icons'
 
 /**
  * File-row render counter (YAZ-2194): every file row renders its label through `pageLabel`, so the
@@ -5506,6 +5508,7 @@ describe('lens tabs (🔒 D4, YAZ-847; YAZ-2638 D2)', () => {
     expect(selectedTabs(el)).toEqual(['Sessions'])
     expect(el.querySelector('.sidebar__body .tree')).toBeNull()
     expect(el.querySelector<HTMLButtonElement>('.sidebar__expand-all')?.disabled).toBe(true) // on every tab, dimmed with nothing to fold (YAZ-3511 D19)
+    expect(el.querySelector<HTMLButtonElement>('.sidebar__expand-all')?.title).toBe('Nothing to fold') // every fold-all button's words (YAZ-3938 D8)
     expect(el.querySelector('.sidebar__body .sidebar__focus-bar')?.textContent).toBe('No sessionsSave open tabs')
     expect(bodyMsg(el)).toBe('Save your open tabs as a session. Restore them later in one click.')
     const blank = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
@@ -5960,6 +5963,13 @@ describe('expand / collapse all (⚡ YAZ-862)', () => {
     expect(dirLabels(el)).toEqual(['docs', 'deep', 'notes'])
     expect(label(el)).toBe('Collapse all')
     expect(allButton(el)?.title).toBe('Collapse all')
+  })
+
+  it('YAZ-3938 D9: the chevrons point down while a click expands, and up while it collapses', async () => {
+    const { el } = await mountVault()
+    expect(allButton(el)?.innerHTML).toBe(renderToStaticMarkup(<ExpandAllIcon />))
+    act(() => allButton(el)?.click())
+    expect(allButton(el)?.innerHTML).toBe(renderToStaticMarkup(<CollapseAllIcon />))
   })
 
   it('an open tree — fully or PARTLY — offers "Collapse all", and one click closes the lot; with one vault the button asks nothing of a vault row (YAZ-2631 S61)', async () => {

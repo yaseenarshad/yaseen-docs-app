@@ -91,6 +91,15 @@
   outline-offset: -2px;
 }
 
+/* Nothing to fold (YAZ-3938 D6): dimmed with no hover, as the sidebar's fold-all button. */
+.outline__tool:disabled,
+.outline__tool:disabled:hover {
+  opacity: 0.35;
+  color: var(--fg-muted);
+  background: none;
+  cursor: default;
+}
+
 /* ---------- the list: only the rows on screen are drawn ---------- */
 
 .outline__list {

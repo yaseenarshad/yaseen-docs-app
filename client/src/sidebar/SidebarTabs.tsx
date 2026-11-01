@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SidebarTab, SidebarTabsPrefs } from '@shared/types'
-import { ChevronsIcon, MoreIcon, SortIcon } from '../views/view/icons'
+import { CollapseAllIcon, ExpandAllIcon, MoreIcon, SortIcon } from '../views/view/icons'
 import { ContextMenu } from './ContextMenu'
 import { rowGlyph, TabFace, TabRowPanel } from './TabRowPanel'
 import { fitTabs, onBar, rowLayout, TAB_LABEL, tabRowSections, toggleTab, type RowButtons } from './tabRow'
@@ -31,6 +31,8 @@ interface SidebarTabsProps {
   /** The tab has nothing to fold (YAZ-3511 D19): the button stays, dimmed, so it never jumps in and out. */
   foldDisabled?: boolean
   foldLabel: string
+  /** Something is open, so a click collapses (YAZ-3938 D9): the chevrons point up; with all folded they point down. */
+  foldOpen: boolean
   onFold: () => void
 }
 
@@ -62,7 +64,7 @@ const isMenuKey = (e: { key: string; shiftKey: boolean; metaKey: boolean; ctrlKe
  * the row again only when a tab comes or goes (S30). With no observer, or no layout (jsdom), nothing
  * is measured and every tab fits.
  */
-export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs, onChangePrefs, sortShows, sortOpen, sortFiltered = false, onSort, foldShows, foldDisabled = false, foldLabel, onFold }: SidebarTabsProps) {
+export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs, onChangePrefs, sortShows, sortOpen, sortFiltered = false, onSort, foldShows, foldDisabled = false, foldLabel, foldOpen, onFold }: SidebarTabsProps) {
   const buttons: RowButtons = { sort: sortShows, fold: foldShows }
   const [fit, setFit] = useState(Number.POSITIVE_INFINITY)
   const layout = rowLayout(prefs, lens, fit, buttons)
@@ -308,10 +310,11 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
         {/* One button for both directions AND every lens (⚡ YAZ-862, ⚡ YAZ-873): anything open
             collapses everything, and only a fully closed tree expands it. It acts on whichever lens is
             ACTIVE: on Search the search's own folds, on Sessions and Recents their rows (YAZ-3511 D19).
-            On every tab, dimmed where the active reading has nothing to unfold. Sidebar decides; this draws. */}
+            On every tab, dimmed where the active reading has nothing to unfold. Sidebar decides; this draws.
+            Its tooltip and its chevrons are every fold-all button's (YAZ-3938 D8, D9). */}
         {onBar(prefs, buttons, 'fold') && (
-          <button type="button" className="sidebar__expand-all" aria-label={foldLabel} title={foldLabel} disabled={foldDisabled} onClick={onFold}>
-            <ChevronsIcon />
+          <button type="button" className="sidebar__expand-all" aria-label={foldDisabled ? 'Nothing to fold' : foldLabel} title={foldDisabled ? 'Nothing to fold' : foldLabel} disabled={foldDisabled} onClick={onFold}>
+            {foldOpen || foldDisabled ? <CollapseAllIcon /> : <ExpandAllIcon />}
           </button>
         )}
       </div>
