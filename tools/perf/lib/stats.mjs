@@ -2,7 +2,8 @@
 
 /** Nearest-rank percentile of an ascending list. */
 const pct = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))]
-const round = (n) => Math.round(n * 10) / 10
+// Under 10, 2 decimals: a ratio such as long-day's 1.14 must not show (and pass) as 1.1 (YAZ-3861).
+const round = (n) => (Math.abs(n) < 10 ? Math.round(n * 100) / 100 : Math.round(n * 10) / 10)
 
 /** Contender order for round `i`: A B, B A, A B … so over rounds each build runs as often first as second (ABBA). */
 export const abba = (i, contenders) => (i % 2 ? [...contenders].reverse() : contenders)
@@ -47,10 +48,20 @@ export const PAGE_PROBES = `window.__perf ??= (() => {
 /**
  * The perf ceilings a scenario's medians break (YAZ-3044 A19, Draw's run.mjs): each `<scenario>.<metric>`
  * row of budget.json's `perf` whose median is over `max` by more than `tolerance` (a fraction), as a line.
+ * A row's own `tolerance` wins (long-day's memory rows: 0, YAZ-3861).
  */
 export function overCeilings(name, metrics, ceilings = {}, tolerance = 0) {
   return Object.entries(ceilings)
     .filter(([k, row]) => k.startsWith(`${name}.`) && row?.max != null && metrics[k.slice(name.length + 1)]?.median != null)
-    .filter(([k, { max }]) => metrics[k.slice(name.length + 1)].median - max > max * tolerance)
+    .filter(([k, { max, tolerance: own }]) => metrics[k.slice(name.length + 1)].median - max > max * (own ?? tolerance))
     .map(([k, { max }]) => `${k} median ${metrics[k.slice(name.length + 1)].median} > ceiling ${max}`)
+}
+
+/** The least-squares slope of `ys` over their index (0, 1, 2 …): long-day's growth per cycle (YAZ-3861). 0 for fewer than 2. */
+export function slope(ys) {
+  const n = ys.length
+  if (n < 2) return 0
+  const mx = (n - 1) / 2
+  const my = ys.reduce((a, b) => a + b, 0) / n
+  return ys.reduce((a, y, i) => a + (i - mx) * (y - my), 0) / ys.reduce((a, _, i) => a + (i - mx) ** 2, 0)
 }

@@ -180,9 +180,13 @@ export function useDocumentHost(options: DocumentHostOptions) {
 
   // The close/quit handshake (main holds the window until this settles, 5 s cap) and the unmount
   // flush. A retired host does neither — that is what keeps a delete deleted.
+  // It answers whether the document is clean (YAZ-3737 D2): a conflict or a failed write keeps a reload away.
   useEffect(() => {
     const offFlush = api.window.onFlush(async () => {
-      if (!retired.current) await autosave.current?.flush()
+      const a = autosave.current
+      if (a === null || retired.current) return true
+      await a.flush()
+      return a.isClean()
     })
     return () => {
       offFlush()

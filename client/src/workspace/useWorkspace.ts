@@ -29,7 +29,8 @@ export interface TabsState {
   /**
    * Tab ids visited since boot, in first-activation order: exactly the editors kept mounted.
    * A background tab's editor lazy-mounts on first activation — which is also why opening
-   * one never steals focus (`focusEditor` only fires when an editor mounts).
+   * one never steals focus (`focusEditor` only fires when an editor mounts). A tab unseen for
+   * `tabSleepAfter` leaves it (`sleep`, YAZ-3737 5A) and comes back when it shows again, or on a hover (`wake`, S7).
    */
   mounted: string[]
   /**
@@ -51,6 +52,12 @@ export interface TabsState {
    * kept tab; a trip to another tab drops it.
    */
   blank: boolean
+  /**
+   * The last tab opened BEHIND next to the active one (YAZ-3808 D4), so the next one goes after it and several keep the
+   * order they were opened in, as in Chrome. Renderer- and session-only, never stored. A trip to another tab ends it
+   * (`endChain`, at the exit of both reducers), and so does a close.
+   */
+  chain?: string
 }
 
 /** One open tab (YAZ-2940 D1): its own id, the page it shows, and its display name (YAZ-2949 D1). */
@@ -176,10 +183,10 @@ export type WorkspaceAction =
 // Actions that name a TAB take its id; actions that name a FILE take a path (YAZ-2940 D1). A trip to
 // a file that is open goes to `tabOf` it: the active tab if it shows it, else the first from the left.
 export type TabsAction =
-  | { type: 'open-current'; path: string } // sidebar click & friends: open in the PREVIEW tab, replacing the page it showed (go to `tabOf` instead when already open)
+  | { type: 'open-current'; path: string; next?: boolean } // sidebar click & friends: open in the PREVIEW tab, replacing the page it showed (go to `tabOf` instead when already open); `next` (YAZ-3808 D3): a NEW preview tab opens next to the current tab
   | { type: 'navigate'; path: string } // a link inside a page: replace the ACTIVE tab in its slot, with history (go to `tabOf` instead when already open)
-  | { type: 'open-new'; path: string; copy?: true } // the ONE door to a kept tab: append it at the end + activate; a page that is open is gone to (with `copy`, a new copy opens: a link's "new tab"), and the preview tab that shows it is kept
-  | { type: 'open-background'; path: string } // append a KEPT tab at the end, do NOT activate (a copy when already open, as browsers do: YAZ-3943 demo)
+  | { type: 'open-new'; path: string; copy?: true; next?: boolean } // the ONE door to a kept tab: at the end — or next to the current tab, `next` (YAZ-3808 D2) — + activate; a page that is open is gone to (with `copy`, a new copy opens: a link's "new tab", YAZ-3943 demo), and the preview tab that shows it is kept
+  | { type: 'open-background'; path: string; next?: boolean } // a KEPT tab at the end — or next to the current tab, after the ones opened behind it, `next` (YAZ-3808 D2, D4) — do NOT activate (a copy when already open, as browsers do: YAZ-3943 demo)
   | { type: 'duplicate'; id: string } // "Duplicate tab" (YAZ-2940 D6): a copy of the tab, right after it, active
   | { type: 'open-zoom'; id: string; zoom: string | null; background?: true } // a bullet in a new tab (YAZ-3646 D11): a copy of the tab right after it, at that bullet; null the whole page (a title crumb, YAZ-3647 E2)
   | { type: 'take'; path: string; background?: boolean; at?: number } // a tab another window moved here (YAZ-3091 D5): ALWAYS a new kept tab at the end, active — a copy when the page is open; `background` (a quiet move from a tab board, YAZ-3343 D13): not active, not mounted, while a page is on show; `at` (a tab dropped on this strip, YAZ-3637 D4): at that slot instead of the end
@@ -202,6 +209,8 @@ export type TabsAction =
   | { type: 'delete'; path: string } // in-app delete (GRO-2272): every tab of the file goes, each closing as `close` does (S18)
   | { type: 'delete-dir'; path: string } // in-app FOLDER delete (GRO-2272): the folder's own tab and every tab under it go
   | { type: 'zoom'; id: string; zoom: string | null; quiet?: true; from?: ZoomFrom } // a drill-in in a tab's page (YAZ-3647 D2): a step, unless the page is at that level already; `from`: the key a quiet report replaces (YAZ-3662 F6b)
+  | { type: 'sleep'; ids: readonly string[] } // tab sleep (YAZ-3737 5A): these tabs' editors unmount; never the active tab's, so `active ∈ mounted` holds
+  | { type: 'wake'; id: string } // a hover on a sleeping tab (YAZ-3737 S7): its editor mounts behind the page on show; `active` stays
 
 /** The page and key a quiet zoom report replaces (YAZ-3662 F6b): the key the page last reported or was set to, on that page. */
 export interface ZoomFrom {
@@ -220,6 +229,28 @@ function withActive(s: TabsState, active: string): TabsState {
 function appendActive(s: TabsState, path: string, preview: boolean, at?: number): TabsState {
   const tab = newTab(path)
   return { tabs: at === undefined ? [...s.tabs, tab] : insertAt(s.tabs, tab, at), active: tab.id, mounted: [...s.mounted, tab.id], history: s.history, preview: preview ? tab.id : s.preview, blank: false }
+}
+
+/**
+ * Where a new tab opens with "Next to the current tab" (YAZ-3808 D2, D4): right after the active tab, or after the last
+ * tab opened behind it (`chain`), when that tab is still open. Undefined, the end: no `next`, no active tab in the strip,
+ * or the blank tab on show — it stands last, so the end is next to it.
+ */
+function nextSlot(s: TabsState, next: boolean | undefined): number | undefined {
+  if (next !== true || s.blank) return undefined
+  const chained = s.chain === undefined ? -1 : s.tabs.findIndex((t) => t.id === s.chain)
+  const i = chained !== -1 ? chained : s.tabs.findIndex((t) => t.id === s.active)
+  return i === -1 ? undefined : i + 1
+}
+
+/**
+ * The chain ends on a trip to another tab (YAZ-3808 D4): whatever brought it — a click, Back, a page moved in from the
+ * right panel, a reset. One rule at the exit of both reducers, since the workspace merges a tab state over the old one
+ * and a state that leaves `chain` out would keep it. The same object when nothing changes.
+ */
+function endChain<S extends TabsState>(was: TabsState, next: S): S {
+  if (next === was || (was.chain === undefined && next.chain === undefined)) return next
+  return next.active !== was.active || next.blank !== was.blank ? { ...next, chain: undefined } : next
 }
 
 /**
@@ -334,14 +365,19 @@ const atOrUnder = (path: string, dir: string): boolean => path === dir || path.s
 
 /** Pure; returns the SAME state object for a no-op so callers can skip the identity mirror. */
 export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
+  return endChain(s, tabsStep(s, a))
+}
+
+function tabsStep(s: TabsState, a: TabsAction): TabsState {
   switch (a.type) {
     case 'open-current': {
       if (s.blank) return fillBlank(s, a.path)
       // Open already: go to its tab, never duplicate (S7). The active tab that shows it is a no-op.
       const open = tabOf(s, a.path)
       if (open !== null) return open.id === s.active ? s : withActive(s, open.id)
-      // No preview tab yet: the page gets one, at the end of the strip. A kept tab is never replaced (YAZ-2648 D1).
-      if (s.preview === null) return appendActive(s, a.path, true)
+      // No preview tab yet: the page gets one, at the end of the strip or next to the current tab (YAZ-3808 D3). A kept
+      // tab is never replaced (YAZ-2648 D1).
+      if (s.preview === null) return appendActive(s, a.path, true, nextSlot(s, a.next))
       // The page takes the PREVIEW tab's slot, wherever it stands, and that tab becomes the active one.
       return replaceSlot(s, s.preview, a.path)
     }
@@ -362,14 +398,17 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       if (kept.blank) return fillBlank(kept, a.path)
       const open = a.copy ? null : tabOf(kept, a.path)
       if (open !== null) return open.id === kept.active ? kept : withActive(kept, open.id)
-      return appendActive(s, a.path, false)
+      return appendActive(s, a.path, false, nextSlot(s, a.next))
     }
     case 'open-background': {
       // The first tab of an empty window must activate: non-empty `tabs` requires a non-null `file`.
       // Under the blank tab too (YAZ-2655 S78): the page becomes the stored file, and the blank tab still shows.
       if (s.active === null) return { ...appendActive(s, a.path, false), blank: s.blank }
-      // Not mounted: the editor lazy-mounts on first activation, and the tab's step comes then (YAZ-3647 D4).
-      return { ...s, tabs: [...s.tabs, newTab(a.path)] }
+      // Not mounted: the editor lazy-mounts on first activation, and the tab's step comes then (YAZ-3647 D4). Next to the
+      // current tab (YAZ-3808 D2), it joins the chain, so the next one goes after it (D4).
+      const tab = newTab(a.path)
+      const at = nextSlot(s, a.next)
+      return at === undefined ? { ...s, tabs: [...s.tabs, tab] } : { ...s, tabs: insertAt(s.tabs, tab, at), chain: tab.id }
     }
     case 'duplicate': {
       // A copy (YAZ-2940 D6, S1, S3, S4): a new id on the same page, right after the source, active and
@@ -394,7 +433,8 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // A moved tab (YAZ-3091 D5, S11, S13): never a trip to the tab that is open, so its name and page view
       // are not lost. Under the blank tab this is `fillBlank` for a page that is not open: the page fills it.
       // A quiet move (YAZ-3343 D13) only joins the strip: the page on show stays, and the tab mounts when first shown.
-      if (a.background === true && s.active !== null && !s.blank) return { ...s, tabs: [...s.tabs, newTab(a.path)] }
+      // A tab board card let go on this strip (YAZ-3808 6H) is quiet too, at its slot.
+      if (a.background === true && s.active !== null && !s.blank) return { ...s, tabs: a.at === undefined ? [...s.tabs, newTab(a.path)] : insertAt(s.tabs, newTab(a.path), a.at) }
       // Dropped on this strip (YAZ-3637 D4): the new tab stands at the drop slot.
       return appendActive(s, a.path, false, a.at)
     }
@@ -439,6 +479,7 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
         history: dropSteps(s.history, (step) => step.tab === a.id),
         preview: s.preview === a.id ? null : s.preview,
         blank: s.blank,
+        chain: undefined,
       }
       if (a.id !== s.active) return rest
       // ⌘W ladder (rule 7): the right neighbour takes over, else the left; closing the last
@@ -448,6 +489,14 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       const heir = s.tabs[i + 1] ?? s.tabs[i - 1] ?? null
       return heir === null ? { ...rest, active: null } : { ...withActive({ ...rest, active: null }, heir.id), blank: s.blank }
     }
+    case 'sleep': {
+      // Only `mounted` changes (YAZ-3737 5A): the tab, its place, its name and its Back steps stay. A click on it is
+      // its wake — `withActive` adds it back. The active tab never sleeps, whatever the caller asked.
+      const mounted = s.mounted.filter((id) => id === s.active || !a.ids.includes(id))
+      return mounted.length === s.mounted.length ? s : { ...s, mounted }
+    }
+    case 'wake':
+      return s.mounted.includes(a.id) || tabById(s, a.id) === null ? s : { ...s, mounted: [...s.mounted, a.id] }
     case 'close-many':
       // One fold over `close`, as `delete-dir` does: the heir is whatever is left when all of them are gone.
       return a.ids.reduce((acc, id) => tabsReducer(acc, { type: 'close', id }), s)
@@ -673,7 +722,7 @@ function repairRightPaths(
  * Back and Forward walk the list and add none. A background tab adds its step when it shows.
  */
 function withStep(before: WorkspaceState, a: WorkspaceAction, after: WorkspaceState): WorkspaceState {
-  if (after === before || after.blank || a.type === 'back' || a.type === 'forward' || a.type === 'go') return after
+  if (after === before || after.blank || a.type === 'back' || a.type === 'forward' || a.type === 'go' || a.type === 'sleep' || a.type === 'wake') return after
   const tab = tabById(after, after.active)
   const { steps, index } = after.history
   const now = steps[index]
@@ -684,7 +733,7 @@ function withStep(before: WorkspaceState, a: WorkspaceAction, after: WorkspaceSt
 
 /** One pure owner for main tabs, right headers, the Back lists, and all lifecycle repair. */
 export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): WorkspaceState {
-  return withStep(s, a, reduceWorkspace(s, a))
+  return endChain(s, withStep(s, a, reduceWorkspace(s, a)))
 }
 
 function reduceWorkspace(s: WorkspaceState, a: WorkspaceAction): WorkspaceState {
@@ -874,8 +923,12 @@ export interface UseWorkspace extends WorkspaceState {
   closeBlank: () => void
   /** Rule 5: append at the end without activating (and so without stealing focus). Its Back step comes when it shows (YAZ-3647 D4). */
   openBackground: (path: string) => void
-  /** A tab, by id (YAZ-2940 D1). */
+  /** A tab, by id (YAZ-2940 D1). A sleeping tab wakes: its editor mounts again (YAZ-3737 5A). */
   activate: (id: string) => void
+  /** Tab sleep (YAZ-3737 5A): these tabs' editors unmount, in ONE change; the active tab never does. Never mirrored: nothing stored changes. */
+  sleep: (ids: readonly string[]) => void
+  /** A hover on a sleeping tab (YAZ-3737 S7): its editor mounts behind the page on show. Never mirrored. */
+  wake: (id: string) => void
   /** That tab only: a copy closes alone (S11). Its note goes to "Recently closed" (YAZ-3487 D10) — not when `moved`: it lives on in another window. */
   close: (id: string, moved?: boolean) => void
   /** The tab board's closes of several tabs (YAZ-2648 D9, D15), by id: each as `close`, and ONE identity write for all of them. */
@@ -931,6 +984,9 @@ export interface UseWorkspace extends WorkspaceState {
   setRightWidth: (width: number) => void
 }
 
+/** Settings › Files & Links › Open new tabs (YAZ-3808 D2), read as each tab opens: a change of it renders nothing. */
+const opensNext = (): boolean => storage.getSettings().newTabPlace === 'next'
+
 export function useWorkspace(root: string | null): UseWorkspace {
   const [state, setState] = useState<WorkspaceState>(() => bootWorkspace(root))
   // Dispatch reads/writes the ref so consecutive dispatches in one event see each other; the
@@ -960,7 +1016,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
     if (opts?.mirror !== false) storage.setWorkspace(opts?.root !== undefined ? opts.root : rootRef.current, tabStrip(nextState), activePath(nextState), nextState.rightPanel)
   }, [])
 
-  const openCurrent = useCallback((path: string) => dispatch({ type: 'open-current', path }), [dispatch])
+  const openCurrent = useCallback((path: string) => dispatch({ type: 'open-current', path, next: opensNext() }), [dispatch])
   const navigate = useCallback((path: string) => dispatch({ type: 'navigate', path }), [dispatch])
   // `keep` changes no stored field (the mark is session-only, D4), so it is never mirrored — and
   // neither is `open-new` on the page the active preview tab shows, which only takes its mark off.
@@ -970,7 +1026,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   const openKept = useCallback(
     (path: string, copy = false) => {
       const s = stateRef.current
-      dispatch({ type: 'open-new', path, ...(copy ? { copy: true as const } : {}) }, { mirror: !(s.preview === s.active && activePath(s) === path) })
+      dispatch({ type: 'open-new', path, next: opensNext(), ...(copy ? { copy: true as const } : {}) }, { mirror: !(s.preview === s.active && activePath(s) === path) })
     },
     [dispatch],
   )
@@ -996,8 +1052,11 @@ export function useWorkspace(root: string | null): UseWorkspace {
     // The one new tab, wherever it landed (YAZ-3637 D4: at the drop slot, else the end), active or not.
     return stateRef.current.tabs.find((t) => !before.has(t.id))?.id ?? stateRef.current.tabs[stateRef.current.tabs.length - 1].id
   }, [dispatch])
-  const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path }), [dispatch])
+  const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path, next: opensNext() }), [dispatch])
   const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
+  // `mounted` is renderer-only (rule above): sleep and wake write nothing.
+  const sleep = useCallback((ids: readonly string[]) => dispatch({ type: 'sleep', ids }, { mirror: false }), [dispatch])
+  const wake = useCallback((id: string) => dispatch({ type: 'wake', id }, { mirror: false }), [dispatch])
   /** YAZ-3487 D10: the notes of the tabs that close go to "Recently closed". A tab that MOVES to another window is no close: its caller says so. */
   const noteClosed = useCallback((ids: readonly string[]): void => {
     const paths = stateRef.current.tabs.filter((t) => ids.includes(t.id)).map((t) => t.path)
@@ -1069,7 +1128,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   return {
     ...state,
     file: activePath(state),
-    openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, activate, close, closeMany, openStored, move, closeActive, next, prev, back, forward, go, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
+    openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, activate, sleep, wake, close, closeMany, openStored, move, closeActive, next, prev, back, forward, go, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,
     navigateRight: navigateRightCallback,

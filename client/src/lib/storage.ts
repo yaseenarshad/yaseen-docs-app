@@ -416,6 +416,10 @@ export const storage = {
    * a window that ⌘⇧N or "Move to new window" opened has one. Memory only: it is never sent back.
    */
   getStartView: (): StartView | undefined => identity.startView,
+  /** After a memory reload (YAZ-3737 D4): each tab's page view from before it, by its place in the strip. Memory only. */
+  getReloadViews: (): (StartView | null)[] | undefined => identity.reloadViews,
+  /** After a memory reload (YAZ-3737 D12): the size it reloaded at, in MB, for the window's one notice. */
+  getReloadedAtMb: (): number | undefined => identity.reloadedAtMb,
   setSidebarLens(lens: SidebarLens): void {
     identity = { ...identity, sidebarLens: lens }
     send('window.setIdentity', () => api.window.setIdentity({ sidebarLens: lens }))
@@ -441,6 +445,17 @@ export const storage = {
     else tocSources[file] = source
     patchFolder(root, { tocSources })
     send('state.setTocSource', () => api.state.setTocSource(root, file, source))
+  },
+
+  /** The folded rows of this note's table of contents (YAZ-3939 D1): `tocFoldKeys` keys. */
+  getTocFolds: (root: string, file: string): string[] => folderOf(root).tocFolds[file] ?? [],
+  /** Replace them for one note; an empty list removes the entry. */
+  setTocFolds(root: string, file: string, keys: readonly string[]): void {
+    const tocFolds = { ...folderOf(root).tocFolds }
+    if (keys.length === 0) delete tocFolds[file]
+    else tocFolds[file] = keys.slice(0, MAX_FOLD_KEYS_PER_FILE)
+    patchFolder(root, { tocFolds })
+    send('state.setTocFolds', () => api.state.setTocFolds(root, file, keys))
   },
 
   /** This note's "Section indent" switch (YAZ-2709 D2). A note with no entry is off. */

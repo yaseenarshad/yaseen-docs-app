@@ -14,11 +14,13 @@ interface UseLinkEventsOptions {
   /** Another window's tab board closed tabs of this window (YAZ-3343 D3, D10): close them here, as ⌘W does. */
   onCloseTabs?: (refs: TabRef[]) => void
   /** Another window's tab board dropped this window's tab `ref` in the frame of window `to` (YAZ-3343 D13): save it, send it with `window.moveTo`, close it here. */
-  onSendTab?: (req: { to: string; ref: TabRef }) => void
+  onSendTab?: (req: { to: string; ref: TabRef; at?: number; background?: true }) => void
   /** A tab board's vault chip picked this EMPTY window's vaults (YAZ-3343 D22): show them, if it still has no tab. */
   onSetRoots?: (roots: string[]) => void
   /** A tab board of another window asked this one to move its tab `ref` to a new window, quietly (YAZ-3343). */
   onPopOutTab?: (ref: TabRef) => void
+  /** A tab board asked this window to add `vault`, then take the tab `ref` of window `from` (YAZ-3808 6B). */
+  onAddVaultAndTake?: (req: { vault: string; from: string; ref: TabRef }) => void
   /** Another window's board highlights this window's tab `ref`, or `null` (YAZ-3343): the strip lights it. */
   onHighlightTab?: (ref: TabRef | null) => void
   /** Another window's board asks a tab action of this window's tab (YAZ-3343): run it here. */
@@ -33,7 +35,7 @@ interface UseLinkEventsOptions {
  * D3, D13). Every listener is on BEFORE `link.ready`: main sends what it held at that call, and a push with no
  * listener is lost. The board's seven are optional: a window without them hears nothing of the board.
  */
-export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onHighlightTab, onTabAction, onOpenFromFiles }: UseLinkEventsOptions): void {
+export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onAddVaultAndTake, onHighlightTab, onTabAction, onOpenFromFiles }: UseLinkEventsOptions): void {
   useEffect(() => {
     const offs = [
       api.link.onOpenFile(onOpenFile),
@@ -44,6 +46,7 @@ export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onC
       ...(onSendTab === undefined ? [] : [api.link.onSendTab(onSendTab)]),
       ...(onSetRoots === undefined ? [] : [api.link.onSetRoots(onSetRoots)]),
       ...(onPopOutTab === undefined ? [] : [api.link.onPopOutTab(onPopOutTab)]),
+      ...(onAddVaultAndTake === undefined ? [] : [api.link.onAddVaultAndTake(onAddVaultAndTake)]),
       ...(onHighlightTab === undefined ? [] : [api.link.onHighlightTab(onHighlightTab)]),
       ...(onTabAction === undefined ? [] : [api.link.onTabAction(onTabAction)]),
       ...(onOpenFromFiles === undefined ? [] : [api.link.onOpenFromFiles(onOpenFromFiles)]),
@@ -53,5 +56,5 @@ export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onC
     return () => {
       for (const off of offs) off()
     }
-  }, [onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onHighlightTab, onTabAction, onOpenFromFiles])
+  }, [onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onAddVaultAndTake, onHighlightTab, onTabAction, onOpenFromFiles])
 }

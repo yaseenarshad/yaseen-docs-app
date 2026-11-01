@@ -134,18 +134,18 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines']
+const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
-const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents']
+const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents', 'Outside changes']
 /** Settings › Excalidraw canvas (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
 const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
 // Daily notes (YAZ-3607 D12): off by default, so its group shows the switch alone.
-const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'dailyNotes', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links'].map((place) => `hoverPreviewIn.${place}`)]
+const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newTabPlace', 'newNoteLocation', 'dailyNotes', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links'].map((place) => `hoverPreviewIn.${place}`)]
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
@@ -160,6 +160,7 @@ const HOTKEY_ROWS = groupsOf(HOTKEYS_SECTION, DEFAULT_CTX)
 const THREADING_HINT = 'Guide lines that connect nested bullets.'
 const TEXT_FORMATTING_HINT = 'How text looks in every note of this vault.'
 const TOC_HINT = 'The headings or the bullets of a note, at its right edge.'
+const OUTSIDE_CHANGES_HINT = 'Text that an AI or another app changed in an open note.'
 const SECTION_INDENT_HINT = 'Text stands below its heading, with lines that show the sections. Turn it on for a note from the page cog. The purple path uses the Bullet threading settings above.'
 
 describe('SettingsDialog shell (D1)', () => {
@@ -277,17 +278,17 @@ describe('SettingsDialog shell (D1)', () => {
 describe('SettingsDialog: a page for each section (YAZ-2709, amending the one long page)', () => {
   it('the nav: the settings pages (Review only with a vault, Sync only with the engine), a divider, then the Hotkeys reference page', () => {
     const { el } = mount()
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Memory', 'Hotkeys'])
     unmount()
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
-    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', '—', 'Hotkeys'])
+    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', '—', 'Memory', 'Hotkeys'])
     unmount()
     const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
-    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Hotkeys'])
+    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Memory', 'Hotkeys'])
   })
 
   it('the registry order once both YAZ-3028 halves land: canvas and images after Editor (YAZ-3037, YAZ-3038), storage and sharing after Sync (YAZ-3039, YAZ-3040), Hotkeys last', () => {
-    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'code', 'canvas', 'images', 'files', 'review', 'sync', 'storage', 'sharing', 'hotkeys'])
+    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'code', 'canvas', 'images', 'files', 'review', 'sync', 'memory', 'storage', 'sharing', 'hotkeys'])
   })
 
   it('opens on General, the first page: the one section in the pane, anchored by id, with only its rows — no row of a later section is there (YAZ-3276 D7)', () => {
@@ -325,6 +326,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       page('Files & Links', 'settings-files', FILES_ROWS),
       page('Review', 'settings-review', REVIEW_ROWS),
       page('Sync', 'settings-sync', ['githubSync']),
+      page('Memory', 'settings-memory', ['memoryWindows', 'tabSleepAfter', 'memoryReload']),
       page('Hotkeys', 'settings-hotkeys', HOTKEY_ROWS),
     ])
   })
@@ -353,7 +355,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
 
     clickNav(el, 'Editor')
     expect(groupTitles(el)).toEqual(EDITOR_GROUPS)
-    expect(hints()).toEqual([THREADING_HINT, SECTION_INDENT_HINT, 'The buttons over a selection, as the preview shows them. Drag a square to move it, or a group by its handle; click a square to hide or show it. Hotkeys keep working.', TOC_HINT])
+    expect(hints()).toEqual([THREADING_HINT, SECTION_INDENT_HINT, 'The buttons over a selection, as the preview shows them. Drag a square to move it, or a group by its handle; click a square to hide or show it. Hotkeys keep working.', TOC_HINT, OUTSIDE_CHANGES_HINT])
     // The threading rows carry the shortened labels; the group names the feature.
     expect(['bulletThreading', 'threadWidth', 'threadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Show', 'Line width', 'Line colour'])
     for (const id of ['bulletThreading', 'threadWidth', 'threadColor']) expect(row(el, id)?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Bullet threading')
@@ -367,7 +369,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(el.querySelector('#settings-files .settings-group')?.querySelector('.settings-group__title')).toBeNull()
   })
 
-  it('the two per-vault sections, Review and Sync, carry a note under their titles; no other page does', () => {
+  it('the two per-vault sections, Review and Sync, and Memory (YAZ-3977) carry a note under their titles; no other page does', () => {
     const { el } = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
     const notes = onEachPage(el, () => [...el.querySelectorAll('.settings-section__note')].map((n) => [n.closest('[data-section]')?.id, n.textContent]))
     expect(notes).toEqual([
@@ -382,6 +384,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Files & Links', []],
       ['Review', [['settings-review', "These settings are saved in this vault's .yaseendocs folder and sync with it."]]],
       ['Sync', [['settings-sync', "These settings are saved in this vault's .yaseendocs folder, not app-wide."]]],
+      ['Memory', [['settings-memory', 'The app frees memory by itself. A tab that you do not use goes to sleep. A window that gets too big reloads. You do not need to do anything here.']]],
       ['Hotkeys', []],
     ])
   })
@@ -406,6 +409,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Files & Links', [{ text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' }]],
       ['Review', [{ text: 'Vault: Work', under: 'Review', className: 'settings-section__note' }]],
       ['Sync', [{ text: 'Vault: Work', under: 'Sync', className: 'settings-section__note' }]],
+      ['Memory', []],
       ['Hotkeys', []],
     ])
     clickNav(el, 'Review')
@@ -417,7 +421,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
 
   it('Hotkeys is a page like the others, under the divider: clicking it swaps the pane for its groups, one row per key, and takes aria-current="page"', () => {
     const { el } = mount()
-    expect(navShape(el).slice(-2)).toEqual(['—', 'Hotkeys'])
+    expect(navShape(el).slice(-3)).toEqual(['—', 'Memory', 'Hotkeys'])
     clickNav(el, 'Hotkeys')
     expect(currentNav(el)).toBe('Hotkeys')
     expect(currentKind(el)).toBe('page') // the same kind every page has
@@ -443,7 +447,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Sync')
     expect(currentNav(el)).toBe('Sync')
     act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange }} onClose={onClose} />))
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Memory', 'Hotkeys'])
     expect(headings(el)).toEqual(['General'])
     expect(currentNav(el)).toBe('General')
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
@@ -649,6 +653,38 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       { ...DEFAULT_SETTINGS, sectionStep: 36 },
       { ...DEFAULT_SETTINGS, sectionLines: 'hover' },
     ])
+  })
+
+  it('"Glow" under "Outside changes", the last group of the Editor page: four choices, Until I check it by default; a pick writes the whole object with only its field changed (YAZ-3704 D5)', () => {
+    const { el, onChange } = mountOn('Editor')
+    const group = row(el, 'outsideChangeGlow')?.closest('.settings-group')
+    expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Outside changes')
+    expect(group?.querySelector('.settings-group__hint')?.textContent).toBe(OUTSIDE_CHANGES_HINT)
+    expect(row(el, 'outsideChangeGlow')?.querySelector('.setting__label')?.textContent).toBe('Glow')
+    expect(rowButtons(el, 'outsideChangeGlow').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['Until I check it', 'true'],
+      ['10 seconds', 'false'],
+      ['1 minute', 'false'],
+      ['Off', 'false'],
+    ])
+    act(() => rowButtons(el, 'outsideChangeGlow')[2].click())
+    act(() => rowButtons(el, 'outsideChangeGlow')[3].click())
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([
+      { ...DEFAULT_SETTINGS, outsideChangeGlow: '60s' },
+      { ...DEFAULT_SETTINGS, outsideChangeGlow: 'off' },
+    ])
+  })
+
+  it('"Pin default" after "Glow" (YAZ-3704 demo, 4J): Off by default, as the table of contents\' pin; On writes only its own field; Glow says Off turns off the whole feature', () => {
+    const { el, onChange } = mountOn('Editor')
+    expect(row(el, 'outsideChangeGlow')?.textContent).toContain('Off turns off this whole feature: no glow, no list, no bar.')
+    expect(row(el, 'outsideListPinned')?.querySelector('.setting__label')?.textContent).toBe('Pin default')
+    expect(rowButtons(el, 'outsideListPinned').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['On', 'false'],
+      ['Off', 'true'],
+    ])
+    act(() => rowButtons(el, 'outsideListPinned')[0].click())
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([{ ...DEFAULT_SETTINGS, outsideListPinned: true }])
   })
 
   it('"Table of contents default" (On · Off, with its hint) then "Pin default" (On · Off) under "Table of contents" on the Editor page, after Section indent; each writes the whole object with only its own field flipped (YAZ-2700; YAZ-3558 D2, D2a, D2b, D3, S15–S17)', () => {
@@ -1040,7 +1076,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
     const { el } = mount()
     expect(navByTitle(el, 'Review')).toBeUndefined()
     const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'baseDays')])
-    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Hotkeys'])
+    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Memory', 'Hotkeys'])
     for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 

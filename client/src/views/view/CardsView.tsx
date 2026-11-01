@@ -1,6 +1,7 @@
 import { type CSSProperties, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { api } from '../../api'
+import { createPreviewCache } from '../../lib/previewCache'
 import type { ViewSet, ViewDef } from '../viewSchema'
 import { titleCandidates, type LinkCandidate } from '../../links/completion'
 import { belongsToTitles } from '../../links/folderLinks'
@@ -83,24 +84,21 @@ function coverOf(record: IndexRecord, imageKey: string): Cover {
   return ref === '' ? null : { kind: 'asset', ref }
 }
 
-/** `data:` URLs by root + ref, so a grid never fetches one cover twice; failures cache too (→ placeholder). */
-const assetCache = new Map<string, Promise<string>>()
-
-function loadAsset(root: string, ref: string): Promise<string> {
-  const key = `${root}\0${ref}`
-  let p = assetCache.get(key)
-  if (p === undefined) {
-    p = api.readAsset(root, ref).then((a) => `data:${a.mime};base64,${a.data}`)
-    p.catch(() => undefined) // consumers handle; this only silences the unhandled-rejection noise
-    assetCache.set(key, p)
-  }
-  return p
-}
+/**
+ * `data:` URLs by root + ref, so a grid never fetches one cover twice. Bounded (YAZ-3737): the 100 covers seen
+ * last, 32 MB at most, through the shared preview cache. A failed read is not kept: the next mount asks again.
+ */
+const covers = createPreviewCache(
+  async (key) => {
+    const [root, ref] = key.split('\0')
+    const a = await api.readAsset(root, ref)
+    return `data:${a.mime};base64,${a.data}`
+  },
+  { limit: 100, maxBytes: 32 * 1024 * 1024 },
+)
 
 /** Test hook: drops every cached cover. */
-export function _resetAssetCache(): void {
-  assetCache.clear()
-}
+export const _resetAssetCache = covers.clear
 
 /** One card's cover box (only rendered when the view sets `image`): colour block, remote img, resolved asset img, or the neutral placeholder. */
 function CardCover({ root, cover }: { root: string; cover: Cover }) {
@@ -112,10 +110,11 @@ function CardCover({ root, cover }: { root: string; cover: Cover }) {
     setFailed(false)
     if (ref === null) return
     let live = true
-    loadAsset(root, ref).then(
-      (url) => live && setSrc(url),
-      () => live && setFailed(true),
-    )
+    void covers.load(`${root}\0${ref}`).then((url) => {
+      if (!live) return
+      if (url === null) setFailed(true)
+      else setSrc(url)
+    })
     return () => {
       live = false
     }

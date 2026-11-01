@@ -302,3 +302,22 @@ export function createImageView(opts: ImageOptions) {
   const fromDir = noteDirRel(opts.root, opts.notePath)
   return $view(imageSchema.node, () => (node, view, getPos) => new ImageNodeView(node, view, getPos, opts, fromDir))
 }
+
+/**
+ * An image read from Markdown with no title (or no alt) gets `''`, as every image the editor makes does (Milkdown's
+ * schema default); Milkdown's own parser keeps the file's `null`. The file writes both the same way, so two values for
+ * one image made a pasted image differ from the same image read back: the next outside save glowed it as a change
+ * (YAZ-3704 4I2). One value, so a diff of the note sees no change there.
+ */
+export const imageParseDefaults = imageSchema.extendSchema((prev) => (ctx) => {
+  const base = prev(ctx)
+  return {
+    ...base,
+    parseMarkdown: {
+      match: base.parseMarkdown.match,
+      runner: (state, node, type) => {
+        state.addNode(type, { src: node.url, alt: node.alt ?? '', title: node.title ?? '' })
+      },
+    },
+  }
+})

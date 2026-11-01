@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, normalizeFilesZoom, rootOfPath, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type ScreenPoint, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
-import { isRecord } from '@shared/guards'
+import { isFiniteNumber, isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { normalizeRightPanel, normalizeTabs, readStoredTab, readTabRef, type Store } from '../store'
@@ -82,14 +82,19 @@ function optionalSidebarLens(raw: Record<string, unknown>): SidebarLens | undefi
  * MAX_FOLD_KEYS_PER_FILE; anything else is `undefined`, so the new window opens with no page view
  * rather than not at all.
  */
-function optionalPageView(v: unknown): PageView | undefined {
+export function optionalPageView(v: unknown): PageView | undefined {
   if (!isRecord(v)) return undefined
   const { scrollTop, zoomKey, folds, magnification } = v
   if (typeof scrollTop !== 'number' || !Number.isFinite(scrollTop)) return undefined
   if (zoomKey !== null && typeof zoomKey !== 'string') return undefined
   if (!Array.isArray(folds) || !folds.every((k) => typeof k === 'string')) return undefined
   if (typeof magnification !== 'number' || !Number.isFinite(magnification)) return undefined
-  return { scrollTop, zoomKey, folds: (folds as string[]).slice(0, MAX_FOLD_KEYS_PER_FILE), magnification }
+  const view: PageView = { scrollTop, zoomKey, folds: (folds as string[]).slice(0, MAX_FOLD_KEYS_PER_FILE), magnification }
+  // The caret and a drawing's pan and zoom (YAZ-3737 D3, D13) travel when whole; a bad one is left out, never the view.
+  const { selection, canvas } = v
+  if (isRecord(selection) && isFiniteNumber(selection.anchor) && isFiniteNumber(selection.head)) view.selection = { anchor: selection.anchor, head: selection.head }
+  if (isRecord(canvas) && isFiniteNumber(canvas.scrollX) && isFiniteNumber(canvas.scrollY) && isFiniteNumber(canvas.zoom)) view.canvas = { scrollX: canvas.scrollX, scrollY: canvas.scrollY, zoom: canvas.zoom }
+  return view
 }
 
 /** A slot in a strip (YAZ-3637 D4): a whole number from 0; anything else is no slot, never an error. */
@@ -187,6 +192,8 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const { id, root, roots, file, tabs, tabStrip, name, rightPanel, sidebarCollapsed, sidebarLens, kind, zoom } = entryFor(e)
     // A new window's page view goes out with its FIRST identity only (YAZ-2951 S17): a reload starts fresh.
     const startView = windows.takeStartView(id)
+    // The page after a memory reload (YAZ-3737 D4, D12) gets each tab's view and the size it reloaded at, once.
+    const reload = windows.takeReload(id)
     // A window the tab board opened empty (YAZ-3343) says so once: it boots with no tab.
     const startEmpty = windows.takeStartEmpty(id)
     // A NEW window (YAZ-3487): its tree starts with every folder closed. Once, as `startEmpty`.
@@ -195,7 +202,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     // main ends a wide state left from the page before, so the window is narrow again and the next board grows it.
     if (kind === 'files') windows.filesWide(id, false)
     // The copies and display names (YAZ-3057) go out with EVERY identity read: a reload keeps them, as a restart does.
-    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(startCollapsed ? { startCollapsed: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}) }
+    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(reload !== undefined ? { reloadViews: reload.views, reloadedAtMb: reload.mb } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(startCollapsed ? { startCollapsed: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
@@ -321,14 +328,20 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // `window:move-tab` (YAZ-3343 D13): a card dropped in another window's frame. Window `from` — the caller or any
   // other — sends its tab on to `to` through `link:send-tab`; main checks both windows and `to`'s vaults first, as
   // `window:move-to` does, and `move-to` checks again when the tab goes.
-  // A tab dropped on the caller's strip (YAZ-3637 D4) names the slot `at`; the board's drop names none.
-  handleWithEvent(CONTRACT.window.moveTab, async (e, from: unknown, to: unknown, ref: unknown, at: unknown) => {
+  // A tab dropped on the caller's strip (YAZ-3637 D4) names the slot `at`; the board's drop names none. A board card let
+  // go on the caller's strip (YAZ-3808 6H) names its slot and `background`: it lands there, quietly.
+  handleWithEvent(CONTRACT.window.moveTab, async (e, from: unknown, to: unknown, ref: unknown, at: unknown, background: unknown) => {
     entryFor(e)
     const source = requireString(from, 'from')
     const target = requireString(to, 'to')
     const tab = requireTabRef(ref, 'ref')
     if (source === target) throw new BridgeFailure('BAD_REQUEST', 'a tab cannot move to its own window')
-    if (!windows.moveTab(source, target, tab, optionalSlot(at))) throw new BridgeFailure('NOT_FOUND', 'a window is closed, or that window shows no vault of this page')
+    if (!windows.moveTab(source, target, tab, optionalSlot(at), background === true)) throw new BridgeFailure('NOT_FOUND', 'a window is closed, or that window shows no vault of this page')
+  })
+
+  // `window:raise` (YAZ-3808 6A6): another window's tab over the caller's strip. The caller comes to the front.
+  handleWithEvent(CONTRACT.window.raise, async (e) => {
+    windows.raise(entryFor(e).id)
   })
 
   // `window:close-other` (YAZ-3343 D21): a frame's "Close window" on the tab board. The window's REAL close, so
@@ -352,6 +365,18 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const next = optionalRoots({ roots })
     if (next === undefined || next.length === 0) throw new BridgeFailure('BAD_REQUEST', "'roots' must hold at least one absolute path")
     if (!windows.setRoots(target, next)) throw new BridgeFailure('NOT_FOUND', 'that window is closed, or it has tabs')
+  })
+
+  // `window:add-vault-and-take` (YAZ-3808 6B): the Add of a tab board's question for a card dropped in a window
+  // without its vault. That window adds the vault by its own rules, then takes the tab with `window:move-tab`.
+  handleWithEvent(CONTRACT.window.addVaultAndTake, async (e, to: unknown, vault: unknown, from: unknown, ref: unknown) => {
+    entryFor(e)
+    const target = requireString(to, 'to')
+    const folder = requireAbsPath(vault, 'vault')
+    const source = requireString(from, 'from')
+    const tab = requireTabRef(ref, 'ref')
+    if (source === target) throw new BridgeFailure('BAD_REQUEST', 'a tab cannot move to its own window')
+    if (!windows.addVaultAndTake(target, folder, source, tab)) throw new BridgeFailure('NOT_FOUND', 'a window is closed')
   })
 
   // `window:pop-out-tab` (YAZ-3343 D37): "Move to new window" on another window's card. That window does it
@@ -519,6 +544,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // what it held for it.
   handleWithEvent(CONTRACT.link.ready, async (e) => windows.handleLinkReady(e.sender))
 
-  // The renderer's ack in the flush handshake (fire-and-forget send, so no envelope).
-  ipcMain.on(SPECIAL.appFlushed, (e) => windows.handleFlushed(e.sender))
+  // The renderer's ack in the flush handshake (fire-and-forget send, so no envelope). Only `{ clean: true }`
+  // is clean (YAZ-3737 D2): any other payload must not let a reload drop typing.
+  ipcMain.on(SPECIAL.appFlushed, (e, ack: unknown) => windows.handleFlushed(e.sender, (ack as { clean?: unknown } | undefined)?.clean === true))
 }

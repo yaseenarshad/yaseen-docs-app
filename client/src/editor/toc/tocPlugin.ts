@@ -54,7 +54,7 @@ import { findNestedLists, isListItem, itemLabelText, LIST_NODE_NAMES, UNTITLED_I
 import { collapsedItemsHiding, isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos } from '../outline/zoom'
 import { DEEPEST_TOC_LEVEL, ENOUGH_ROWS, type TocChannel, type TocController, type TocLevel, type TocRow } from './tocChannel'
-import { FLASH_COLOUR, FLASH_HOLD, FLASH_MS, GLIDE_MS, GLIDE_SCREENS, glideEase, LANDING_PX, reducedMotion } from './tocMotion'
+import { FLASH_FRAMES, FLASH_MS, GLIDE_MS, GLIDE_SCREENS, glideEase, LANDING_PX, reducedMotion } from './tocMotion'
 
 /** How long the document must rest before it is scanned again. */
 export const SCAN_DELAY_MS = 150
@@ -63,9 +63,6 @@ export const SCAN_DELAY_MS = 150
 const CURRENT_LINE_PX = 40
 
 /** The glide and the flash are `tocMotion.ts`'s: the code Outline moves the same way. */
-/** A band, not a tight box: the shadow carries the colour 6px past the text on every side. */
-const FLASH_ON = { background: FLASH_COLOUR, boxShadow: `0 0 0 6px ${FLASH_COLOUR}`, borderRadius: '4px' }
-const FLASH_OFF = { background: 'transparent', boxShadow: '0 0 0 6px transparent', borderRadius: '4px' }
 
 /** How long a block that a jump unfolded takes to ease in: an instant unfold pops, right beside a glide. */
 const REVEAL_MS = 320
@@ -268,7 +265,7 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
             if (scroller !== null) scroller.scrollTop = landingTop(scroller, element)
             // jsdom has no `animate`.
             if (typeof element.animate === 'function' && !reducedMotion())
-              element.animate([{ ...FLASH_ON, offset: 0 }, { ...FLASH_ON, offset: FLASH_HOLD }, { ...FLASH_OFF, offset: 1 }], { duration: FLASH_MS, easing: 'ease-out' })
+              element.animate(FLASH_FRAMES, { duration: FLASH_MS, easing: 'ease-out' })
           }
 
           /**

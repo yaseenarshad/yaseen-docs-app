@@ -10,8 +10,8 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardPicturesRequest, BoardPicturesResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SavePdfRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult } from './types'
-import type { CopyAsMode, CopyAsRich, NoteMenuAction, NoteMenuArg } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardPicturesRequest, BoardPicturesResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SavePdfRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult, MemoryReport, StartView } from './types'
+import type { CopyAsMode, CopyAsRich, NoteMenuAction, NoteMenuArg, MemoryTabFacts } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { SystemHotkey } from './macosHotkeys'
@@ -175,6 +175,8 @@ export const CONTRACT = {
     setFolds: invoke<[root: string, file: string, keys: readonly string[]], void>('state:set-folds', 3),
     /** What one note's table of contents is built from (YAZ-2700 D14): `headings`, `bullets`, or `null` for Auto, which removes the entry. */
     setTocSource: invoke<[root: string, file: string, source: TocSource | null], void>('state:set-toc-source', 3),
+    /** Replace the folded rows of one note's table of contents (YAZ-3939 D1); an empty list removes the entry. The preload sends a copy of `keys`. */
+    setTocFolds: invoke<[root: string, file: string, keys: readonly string[]], void>('state:set-toc-folds', 3),
     /** One note's "Section indent" switch (YAZ-2709 D2): `true` or `false`, and each is stored. No call removes the entry: only the delete of the note does. */
     setSectionIndent: invoke<[root: string, file: string, on: boolean], void>('state:set-section-indent', 3),
     /** One note's "Table of contents" switch (YAZ-2950): `true` or `false`, and each is stored. Only the delete of the note removes the entry. */
@@ -224,8 +226,9 @@ export const CONTRACT = {
      * A card dropped in another window's frame (YAZ-3343 D13): window `from` sends its tab `ref` to the window `to`, as "Move to ▸" does.
      * Main checks that both are live and that `to` shows a vault of the page; `from` may be the caller.
      * A tab dropped on the caller's strip (YAZ-3637 D4) names the slot `at` it lands in; absent = the end, quietly.
+     * A tab board card let go on the caller's strip (YAZ-3808 6H) names its slot and `background`: it lands there, quietly.
      */
-    moveTab: invoke<[from: string, to: string, ref: TabRef, at?: number], void>('window:move-tab', 4),
+    moveTab: invoke<[from: string, to: string, ref: TabRef, at?: number, background?: boolean], void>('window:move-tab', 5),
     /**
      * A tab of the strip let go where no surface took it (YAZ-3637 D1, D3, D5): `point` is where, on the screen. Main
      * answers `none` when the point is on an app window (that window's drop, or nothing); else a new window opens
@@ -252,6 +255,17 @@ export const CONTRACT = {
     setRoots: invoke<[id: string, roots: readonly string[]], void>('window:set-roots', 2),
     /** "Move to new window" on ANOTHER window's card of the tab board (YAZ-3343 D37): window `from` moves its tab `ref` to a new window itself, quietly (its text saved first). */
     popOutTab: invoke<[from: string, ref: TabRef], void>('window:pop-out-tab', 2),
+    /**
+     * A tab board card dropped in the frame of window `to`, which does not show the card's vault (YAZ-3808 6B), after
+     * the user said Add: window `to` adds `vault` itself, by its own rules, then takes the tab `ref` of window `from`,
+     * quietly, as a board move does. Main checks both windows and pushes `link:add-vault-and-take`.
+     */
+    addVaultAndTake: invoke<[to: string, vault: string, from: string, ref: TabRef], void>('window:add-vault-and-take', 4),
+    /**
+     * A tab of another window over the caller's tab strip (YAZ-3808 6A6): the caller comes to the front, with no focus,
+     * so the gap opens on a window that shows. The focus comes with the tab, at the drop.
+     */
+    raise: invoke<[], void>('window:raise', 0),
     /** A frame's "Show window" on the tab board (YAZ-3343): a window the board made, still hidden, shows and takes the focus. */
     showWindow: invoke<[id: string], void>('window:show', 1),
     /** A card menu's tab action on ANOTHER window's card (YAZ-3343): window `to` runs `action` on its tab `ref` itself. */
@@ -403,11 +417,13 @@ export const CONTRACT = {
     /** Another window's tab board closed tabs of this window (YAZ-3343 D3, D10). */
     onCloseTabs: push<TabRef[]>('link:close-tabs'),
     /** Another window's tab board moved this window's tab `ref` to the window `to` (YAZ-3343 D13): save it, send it with `window:move-to`, close it here. With `at` (YAZ-3637 D4) it lands at that slot of `to`'s strip, loud. */
-    onSendTab: push<{ to: string; ref: TabRef; at?: number }>('link:send-tab'),
+    onSendTab: push<{ to: string; ref: TabRef; at?: number; background?: true }>('link:send-tab'),
     /** A tab board's vault chip picked this EMPTY window's vaults (YAZ-3343): show them, if it still has no tab. */
     onSetRoots: push<string[]>('link:set-roots'),
     /** A tab board of another window asked this one to move its tab `ref` to a new window, quietly (YAZ-3343): save it, pop it out behind. */
     onPopOutTab: push<TabRef>('link:pop-out-tab'),
+    /** A tab board asked this window to add `vault`, then take the tab `ref` of window `from` (YAZ-3808 6B). */
+    onAddVaultAndTake: push<{ vault: string; from: string; ref: TabRef }>('link:add-vault-and-take'),
     /** Another window's board highlights this window's tab `ref` (YAZ-3343): light it in the strip; `null` puts it out. */
     onHighlightTab: push<TabRef | null>('link:highlight-tab'),
     /** Another window's board asks a tab action of this window's tab `ref` (YAZ-3343): run it here. */
@@ -626,6 +642,11 @@ export const CONTRACT = {
     /** "Restart to update" (D6): quit through the quit sequence, swap, open again. For `manual` (S13) it opens the GitHub release page instead. */
     restart: invoke<[], void>('update:restart', 0),
   },
+  /** The memory meter (YAZ-3737 D1): main samples every window each 30 s and keeps the history in memory only. */
+  memory: {
+    /** Settings › Memory's rows now. It asks each window's preload for its JS heap (at most 1 s); nothing polls it. */
+    report: invoke<[], MemoryReport>('memory:report', 0),
+  },
   /**
    * The language helpers of the code tab (YAZ-3454 4B, YAZ-3455 4C; D9, D10): TypeScript 7 for TS,
    * JS and React, `pyright` for Python, each in its own process of main, one per project, at most 3.
@@ -663,9 +684,18 @@ export const SPECIAL = {
   watchSubscribe: 'watch:subscribe',
   watchUnsubscribe: 'watch:unsubscribe',
   watchEvent: 'watch:event',
-  /** The close/quit flush handshake (GRO-2160): main sends `app:flush` and holds the window until `app:flushed`. */
+  /** The close/quit/reload flush handshake (GRO-2160): main sends `app:flush` and holds the window until `app:flushed` `{ clean }` (YAZ-3737 D2). */
   appFlush: 'app:flush',
   appFlushed: 'app:flushed',
+  /** `memory.report()` asks each window's preload for its JS heap (YAZ-3737 D1): main sends `memory:heap` with a token, the preload answers `memory:heap-reply` `{ token, bytes }`. */
+  memoryHeap: 'memory:heap',
+  memoryHeapReply: 'memory:heap-reply',
+  /** The memory reload (YAZ-3737 D4): main sends `window:views` with a token, the preload answers `window:views-reply` `{ token, views }` from `window.onViews`. */
+  windowViews: 'window:views',
+  windowViewsReply: 'window:views-reply',
+  /** Settings › Memory's tab rows (YAZ-3946): `memory.report()` sends `window:tabs` with a token, the preload answers `window:tabs-reply` `{ token, tabs }` from `window.onTabs`. */
+  windowTabs: 'window:tabs',
+  windowTabsReply: 'window:tabs-reply',
   /** Edit › Copy as / Paste as: the focused editor claims the gesture, else the preload's native fallback answers through the two invokes. */
   menuCopyAs: 'menu:copy-as',
   menuPasteAs: 'menu:paste-as',
@@ -688,8 +718,22 @@ export type YaseenDocsApi = Bridge<typeof CONTRACT> & {
   /** One watcher per root in main (`fs/treeWatcher.ts`), shared by every window; late joiners get `ready` at once. */
   watch(root: string, listener: (ev: WatchEvent) => void): () => void
   window: {
-    /** The close/quit flush handshake (GRO-2160): main holds the window until every listener settled (hard 5s cap in main). */
-    onFlush(listener: () => Promise<void> | void): () => void
+    /**
+     * The close/quit/reload flush handshake (GRO-2160): main holds the window until every listener settled (hard 5s cap in main).
+     * A listener answers whether its saves are clean (YAZ-3737 D2): `false`, a throw or a rejection makes the ack not clean,
+     * and a reload then does not run. Nothing (`undefined`) counts as clean.
+     */
+    onFlush(listener: () => Promise<boolean | void> | boolean | void): () => void
+    /**
+     * The memory reload (YAZ-3737 D4): main asks for each tab's page view, in strip order, just before it reloads the
+     * window. The first listener answers; none (the Welcome window) answers `[]`.
+     */
+    onViews(listener: () => (StartView | null)[]): () => void
+    /**
+     * Settings › Memory (YAZ-3946): main asks for each tab's facts, in strip order, when it builds a report. The first
+     * listener answers; none (the Welcome window) answers `null`, and main shows the stored tabs with no facts.
+     */
+    onTabs(listener: () => MemoryTabFacts[]): () => void
   }
   file: {
     /** The path on disk of a `File` dropped from Finder (YAZ-3253 D3): `webUtils.getPathForFile`, since Electron removed `File.path`. Empty for a `File` made in JS. */

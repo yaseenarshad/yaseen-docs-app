@@ -1,0 +1,159 @@
+{
+  "app": "/Users/yasinarshad/Documents/GitHub/yasinskills2/yaseen-docs-app/feat-yaz-3737-memory/desktop/out/main/index.js",
+  "machine": {
+    "cpu": "Apple M3",
+    "cores": 8,
+    "os": "Darwin 24.6.0"
+  },
+  "runs": 5,
+  "warmupDiscarded": 1,
+  "scenarios": {
+    "long-day-open": {
+      "runs": 1,
+      "warmupDiscarded": 0,
+      "over": [],
+      "load": {
+        "min": 14.5,
+        "max": 14.5,
+        "runs": [
+          14.5
+        ]
+      },
+      "noisy": true,
+      "loadSensitive": [],
+      "metrics": {
+        "tabsOpen": {
+          "median": 21,
+          "p95": 21,
+          "min": 21,
+          "max": 21,
+          "cv": 0,
+          "runs": [
+            21
+          ]
+        },
+        "sleepSeconds": {
+          "median": 20,
+          "p95": 20,
+          "min": 20,
+          "max": 20,
+          "cv": 0,
+          "runs": [
+            20
+          ]
+        },
+        "openSeconds": {
+          "median": 7.5,
+          "p95": 7.5,
+          "min": 7.5,
+          "max": 7.5,
+          "cv": 0,
+          "runs": [
+            7.5
+          ]
+        },
+        "sleptAfterSeconds": {
+          "median": 22.6,
+          "p95": 22.6,
+          "min": 22.6,
+          "max": 22.6,
+          "cv": 0,
+          "runs": [
+            22.6
+          ]
+        },
+        "heapAwakeMb": {
+          "median": 159.2,
+          "p95": 159.2,
+          "min": 159.2,
+          "max": 159.2,
+          "cv": 0,
+          "runs": [
+            159.2
+          ]
+        },
+        "heapAsleepMb": {
+          "median": 66.7,
+          "p95": 66.7,
+          "min": 66.7,
+          "max": 66.7,
+          "cv": 0,
+          "runs": [
+            66.7
+          ]
+        },
+        "heapAfterWakeMb": {
+          "median": 48.8,
+          "p95": 48.8,
+          "min": 48.8,
+          "max": 48.8,
+          "cv": 0,
+          "runs": [
+            48.8
+          ]
+        },
+        "rendererRssAwakeMb": {
+          "median": 1825.3,
+          "p95": 1825.3,
+          "min": 1825.3,
+          "max": 1825.3,
+          "cv": 0,
+          "runs": [
+            1825.3
+          ]
+        },
+        "rendererRssAsleepMb": {
+          "median": 1342.8,
+          "p95": 1342.8,
+          "min": 1342.8,
+          "max": 1342.8,
+          "cv": 0,
+          "runs": [
+            1342.8
+          ]
+        },
+        "rendererRssAfterWakeMb": {
+          "median": 1290.1,
+          "p95": 1290.1,
+          "min": 1290.1,
+          "max": 1290.1,
+          "cv": 0,
+          "runs": [
+            1290.1
+          ]
+        },
+        "layersAwake": {
+          "median": 21,
+          "p95": 21,
+          "min": 21,
+          "max": 21,
+          "cv": 0,
+          "runs": [
+            21
+          ]
+        },
+        "layersAsleep": {
+          "median": 1,
+          "p95": 1,
+          "min": 1,
+          "max": 1,
+          "cv": 0,
+          "runs": [
+            1
+          ]
+        },
+        "layersAfterWake": {
+          "median": 2,
+          "p95": 2,
+          "min": 2,
+          "max": 2,
+          "cv": 0,
+          "runs": [
+            2
+          ]
+        }
+      }
+    }
+  },
+  "yaseendocsHandler": "/Applications/Yaseen Docs.app"
+}

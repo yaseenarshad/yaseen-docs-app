@@ -21,7 +21,8 @@ import { normalizeEmptyItems } from '../listItemRoundTrip'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { KEY_SETTLE_MS, zoomKeyAt } from '../outline/zoom'
-import { applyExternalMarkdown } from './applyExternalMarkdown'
+import { Transform } from '@milkdown/kit/prose/transform'
+import { applyExternalMarkdown, replaceTracked } from './applyExternalMarkdown'
 import { diffDocs } from './diffDocs'
 
 const OUTLINE = `* 1) Parent
@@ -152,6 +153,20 @@ describe('diffDocs (YAZ-1350)', () => {
     })
     const width = Math.max(...ranges.map((r) => r.to - r.from))
     expect(width).toBeLessThan(oldDoc.content.size / 2)
+  })
+
+  it('an item added at the top of an ordered list is ONE insert plus label changes, never a rewrite of the items (YAZ-3704)', async () => {
+    const { crepe } = await mount({ defaultValue: '1. Alpha\n2. Beta\n3. Gamma\n' })
+    const oldDoc = parse(crepe, '1. Alpha\n2. Beta\n3. Gamma\n')
+    const newDoc = parse(crepe, '1. New first\n2. Alpha\n3. Beta\n4. Gamma\n')
+    const ranges = diffDocs(oldDoc, newDoc)
+    const replaces = ranges.filter((r) => r.attrs === undefined)
+    expect(replaces).toHaveLength(1)
+    expect(replaces[0].from).toBe(replaces[0].to) // an insert: no existing item is replaced
+    expect(ranges.filter((r) => r.attrs !== undefined).length).toBeGreaterThan(0)
+    const tr = new Transform(oldDoc)
+    replaceTracked(tr, ranges, oldDoc)
+    expect(tr.doc.eq(newDoc)).toBe(true)
   })
 
   it('returns no ranges for identical docs', async () => {

@@ -3,7 +3,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { IndexRecord, TreeNode } from '@shared/types'
 import { buildViewOnlyCatalog } from '../links/viewOnlyCatalog'
-import { createCrepe, getPlainText } from './createCrepe'
+import { createCrepe, getCaretOf, getPlainText, placeCaret } from './createCrepe'
 import { createViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
@@ -81,5 +81,37 @@ describe('getPlainText: what the page settings menu counts (YAZ-2643)', () => {
     view.dispatch(view.state.tr)
     expect(view.state.doc.lastChild?.type.name).toBe('paragraph')
     expect(getPlainText(crepe)).toBe('one\ntwo')
+  })
+})
+
+describe('the caret a page view keeps (YAZ-3737 D3)', () => {
+  async function made(markdown: string): Promise<Crepe> {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: markdown })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    return crepe
+  }
+
+  it('a selection read from one editor comes back, with its direction, in a new one on the same text; a shorter text cuts it to its end (S24)', async () => {
+    const first = await made('alpha beta\n\ngamma delta\n')
+    const view = first.editor.ctx.get(editorViewCtx)
+    placeCaret(first, { anchor: 15, head: 3 })
+    const kept = getCaretOf(first)
+    expect(kept).toEqual({ anchor: 15, head: 3 })
+    expect(view.state.doc.textBetween(3, 15, '|')).toBe('pha beta|ga')
+
+    const woken = await made('alpha beta\n\ngamma delta\n')
+    placeCaret(woken, kept)
+    expect(getCaretOf(woken)).toEqual({ anchor: 15, head: 3 })
+
+    // The file changed on disk while the tab slept: the caret lands inside what is there now.
+    const shorter = await made('alpha\n')
+    placeCaret(shorter, kept)
+    const at = getCaretOf(shorter)
+    const size = shorter.editor.ctx.get(editorViewCtx).state.doc.content.size
+    expect(at.anchor).toBeLessThanOrEqual(size)
+    expect(at.head).toBe(3)
   })
 })

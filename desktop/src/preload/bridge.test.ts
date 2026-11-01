@@ -1,6 +1,6 @@
 /**
  * The preload's hand-written specials (YAZ-2200): Paste as's claim and fallback, watch's
- * multiplexing, and the close/quit flush handshake. Every table-built door is pinned by
+ * multiplexing, the close/quit flush handshake, the memory reload's views ask (YAZ-3737 D4) and Settings › Memory's tabs ask (YAZ-3946). Every table-built door is pinned by
  * surface.test.ts, and contract.test.ts pins that each channel is wired once.
  */
 import { describe, expect, it, vi } from 'vitest'
@@ -14,6 +14,38 @@ vi.mock('electron', () => ({
 }))
 
 describe('preload bridge specials', () => {
+  it('the views ask (YAZ-3737 D4): the first listener answers main with the token; with none, the answer is []', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const ask = vi.mocked(ipcRenderer.on).mock.calls.find(([channel]) => channel === SPECIAL.windowViews)?.[1] as unknown as (event: unknown, token: string) => void
+    const views = [null, { path: '/v/a.md', view: { scrollTop: 4, zoomKey: null, folds: [], magnification: 100 } }]
+    const off = bridge.window.onViews(() => views)
+    vi.mocked(ipcRenderer.send).mockClear()
+    ask(undefined, 't1')
+    off()
+    ask(undefined, 't2')
+    expect(vi.mocked(ipcRenderer.send).mock.calls).toEqual([
+      [SPECIAL.windowViewsReply, { token: 't1', views }],
+      [SPECIAL.windowViewsReply, { token: 't2', views: [] }],
+    ])
+  })
+
+  it('the tabs ask (YAZ-3946): the first listener answers main with the token; with none, the answer is null', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const ask = vi.mocked(ipcRenderer.on).mock.calls.find(([channel]) => channel === SPECIAL.windowTabs)?.[1] as unknown as (event: unknown, token: string) => void
+    const tabs = [{ path: '/v/a.md', title: 'Start here', state: 'shown' as const, lastSeen: null, sleepsAt: null }]
+    const off = bridge.window.onTabs(() => tabs)
+    vi.mocked(ipcRenderer.send).mockClear()
+    ask(undefined, 't1')
+    off()
+    ask(undefined, 't2')
+    expect(vi.mocked(ipcRenderer.send).mock.calls).toEqual([
+      [SPECIAL.windowTabsReply, { token: 't1', tabs }],
+      [SPECIAL.windowTabsReply, { token: 't2', tabs: null }],
+    ])
+  })
+
   it('paste is claimed by the focused subscriber; removed or unhandled listeners use one native fallback', async () => {
     const { ipcRenderer } = await import('electron')
     const { bridge } = await import('./index')
@@ -109,12 +141,34 @@ describe('preload bridge specials', () => {
     expect(ipcRenderer.send).not.toHaveBeenCalled()
     release()
     await settle()
-    expect(ipcRenderer.send).toHaveBeenCalledWith(SPECIAL.appFlushed)
-    // No listeners registered (Welcome window): the ack comes straight away.
+    expect(ipcRenderer.send).toHaveBeenCalledExactlyOnceWith(SPECIAL.appFlushed, { clean: true })
+    // No listeners registered (Welcome window): the ack comes straight away, clean.
     off()
     vi.mocked(ipcRenderer.send).mockClear()
     flushRequested()
     await settle()
-    expect(ipcRenderer.send).toHaveBeenCalledWith(SPECIAL.appFlushed)
+    expect(ipcRenderer.send).toHaveBeenCalledExactlyOnceWith(SPECIAL.appFlushed, { clean: true })
+  })
+
+  it('the ack is clean only when no listener answered false or threw (YAZ-3737 D2)', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const flushRequested = vi.mocked(ipcRenderer.on).mock.calls.find(([ch]) => ch === SPECIAL.appFlush)?.[1] as unknown as () => void
+    const ackFor = async (...listeners: Array<() => Promise<boolean | void> | boolean | void>): Promise<unknown> => {
+      const offs = listeners.map((l) => bridge.window.onFlush(l))
+      vi.mocked(ipcRenderer.send).mockClear()
+      flushRequested()
+      await new Promise((r) => setTimeout(r))
+      offs.forEach((off) => off())
+      return vi.mocked(ipcRenderer.send).mock.calls.find(([ch]) => ch === SPECIAL.appFlushed)?.[1]
+    }
+    expect(await ackFor(() => undefined, async () => true)).toEqual({ clean: true })
+    expect(await ackFor(async () => true, async () => false)).toEqual({ clean: false }) // a save with a conflict
+    expect(
+      await ackFor(() => {
+        throw new Error('boom')
+      }),
+    ).toEqual({ clean: false })
+    expect(await ackFor(() => Promise.reject(new Error('write failed')))).toEqual({ clean: false })
   })
 })

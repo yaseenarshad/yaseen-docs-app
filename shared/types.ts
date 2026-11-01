@@ -1571,6 +1571,8 @@ export interface SettingsState {
   confirmDelete: boolean
   /** Show the rename sheet, with its count of links to update, before a note or folder is renamed (YAZ-2420 3C1). Off renames at once; the links still follow. */
   confirmRename: boolean
+  /** Files & Links (YAZ-3808 D2, D3): where a page opened in a new tab opens — next to the current tab, or at the end of the strip. ⌘T, the "+", Move to ▸ and Restore session always go to the end; a tab dropped on the strip goes where it is dropped. */
+  newTabPlace: NewTabPlace
   /** Rest the pointer on a note, drawing or diagram row to see it (Draw's YAZ-1800 D2; YAZ-3044 A20; notes since YAZ-3075 D5). Text, PDF and image rows never preview. */
   hoverPreview: boolean
   /** Each place's own say on the hover preview (YAZ-3403), under the `hoverPreview` master switch: a place shows it only while both are on (`hoverOn`). A place missing from a stored state reads on. */
@@ -1603,6 +1605,10 @@ export interface SettingsState {
   tableOfContentsWidth: number
   /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
   tocLines: TocLines
+  /** Settings › Editor › Outside changes (YAZ-3704 D5): how long the words that an AI or another app changed in an open note glow. `off`: no glow and no one-line note; the merge still runs. */
+  outsideChangeGlow: OutsideChangeGlow
+  /** Settings › Editor › Outside changes › Pin default (YAZ-3704 demo): the numbered list of the changes sits left of the note; off, it opens from the bar's count. The list's own Pin and Unpin write it. */
+  outsideListPinned: boolean
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
   sidebarLines: TocLines
   /** The sidebar tree (YAZ-3309 D7, D8): how its level lines look — `plain` grey lines (the default), or `thread`: the bullet-threading path to the row under the mouse. It travels with the settings folder. */
@@ -1678,6 +1684,12 @@ export interface SettingsState {
    */
   sidebarZoom: number
   /**
+   * The zoom of a note's table of contents in percent (YAZ-3939 D7–D11): its names and their fold arrows, never its
+   * header or the rail. One value for every note and window; the code Outline keeps 100%. The steps are the sidebar's
+   * (`SIDEBAR_ZOOM_STEPS`); a stored value is kept within 50–200.
+   */
+  tocZoom: number
+  /**
    * The App size in percent (YAZ-3432): the Chromium page zoom of EVERY window, a Files window too, set by main
    * (`webContents.setZoomFactor`). Only `APP_ZOOM_STEPS`; anything else is stored as 100. Mouse only: the footer's
    * zoom menu writes it, never ⌘+ / ⌘− / ⌘0. The sidebar zoom and a note's zoom stack on it.
@@ -1725,6 +1737,13 @@ export interface SettingsState {
   dailyNoteFormat: string
   /** Make a folder for each day (D9): today's note goes in a folder of the same name. */
   dailyNoteDayFolder: boolean
+  /**
+   * Settings › Memory (YAZ-3737 D10): how long a tab stays unseen before it sleeps (tab sleep, 5A). Travels with the
+   * other settings. Its row is in place before 5A reads it.
+   */
+  tabSleepAfter: TabSleepAfter
+  /** Settings › Memory (YAZ-3737 D6, D10): a window that holds too much memory reloads by itself (6). On by default; travels. */
+  memoryReload: boolean
 }
 
 /** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, a folder or a file by its path inside the vault ('' = the vault root), or today's daily note (YAZ-3607 D1). */
@@ -1750,6 +1769,10 @@ export function hoverOn(settings: Pick<SettingsState, 'hoverPreview' | 'hoverPre
 export type DiagramDarkColors = 'adapt' | 'keep'
 export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
 
+/** How long a tab stays unseen before it sleeps (YAZ-3737 D10): 30 min is the default. */
+export type TabSleepAfter = '15m' | '30m' | '1h' | '2h' | 'never'
+export const TAB_SLEEP_AFTER: readonly TabSleepAfter[] = ['15m', '30m', '1h', '2h', 'never']
+
 /** How long a toast stays (YAZ-3303 D5): 4 s (the length before 3303), 8 s, 15 s, or until closed. */
 export type NoticeLength = '4s' | '8s' | '15s' | 'closed'
 export const NOTICE_LENGTHS: readonly NoticeLength[] = ['4s', '8s', '15s', 'closed']
@@ -1766,6 +1789,10 @@ export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
 /** The table of contents (YAZ-2762): when its level lines show. */
 export type TocLines = 'hover' | 'always' | 'off'
 export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
+
+/** Outside changes (YAZ-3704 D5): a glow stays until you check it, ends after 10 s or 1 min, or never shows. */
+export type OutsideChangeGlow = 'until-checked' | '10s' | '60s' | 'off'
+export const OUTSIDE_CHANGE_GLOWS: readonly OutsideChangeGlow[] = ['until-checked', '10s', '60s', 'off']
 
 /** The sidebar tree (YAZ-3309 D7, D8): the look of its level lines. */
 export type SidebarLineStyle = 'plain' | 'thread'
@@ -1831,6 +1858,10 @@ export const THEMES: readonly Theme[] = ['system', 'light', 'dark']
  */
 export type NewNoteLocation = 'root' | 'current' | 'folder'
 export const NEW_NOTE_LOCATIONS: readonly NewNoteLocation[] = ['root', 'current', 'folder']
+
+/** Where a new tab opens (YAZ-3808 D2): right after the current tab, or at the end of the strip. */
+export type NewTabPlace = 'next' | 'end'
+export const NEW_TAB_PLACES: readonly NewTabPlace[] = ['next', 'end']
 
 /** Comment stream order (YAZ-1515): oldest-first (the model's order) or newest-first by the ROOT's `at`. */
 export type CommentsOrder = 'oldest' | 'newest'
@@ -1904,6 +1935,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   newNoteLocation: 'current',
   newNoteFolder: '',
   confirmDelete: true,
+  newTabPlace: 'next',
   confirmRename: true,
   hoverPreview: true,
   hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, links: true },
@@ -1921,6 +1953,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tocOnByDefault: true,
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
+  outsideChangeGlow: 'until-checked',
+  outsideListPinned: false,
   sidebarLines: 'hover',
   sidebarLineStyle: 'plain',
   sidebarThreadColor: null,
@@ -1944,6 +1978,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   hotkeys: {},
   hotkeysAside: {},
   sidebarZoom: 100,
+  tocZoom: 100,
   appZoom: 100,
   codeReadOnly: false,
   codeWrap: true,
@@ -1957,6 +1992,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   dailyNoteFolder: '',
   dailyNoteFormat: DEFAULT_DAILY_NOTE_FORMAT,
   dailyNoteDayFolder: false,
+  tabSleepAfter: '30m',
+  memoryReload: true,
 }
 
 export interface WindowBounds {
@@ -2185,6 +2222,8 @@ export interface FolderState {
   closed: Record<string, number>
   /** file → what its table of contents is built from (YAZ-2700 D14), for the notes where the reader chose. A note on Auto has NO entry. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   tocSources: Record<string, TocSource>
+  /** file → the folded rows of its table of contents (YAZ-3939 D1): `tocFoldKeys` keys, max MAX_FOLD_KEYS_PER_FILE. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
+  tocFolds: Record<string, string[]>
   /** file → the note's "Section indent" switch (YAZ-2709 D2), for the notes where the reader used it. A note with NO entry is off. `true` and `false` are both kept: a note the reader turned off stays apart from a note never touched, so a default for all notes can come later with no repair of this data. Keyed by page, as `tocSources` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   sectionIndents: Record<string, boolean>
   /** file → the note's "Table of contents" switch (YAZ-2950), for the notes where the reader used it. A note with NO entry is on. `true` and `false` are both kept, as in `sectionIndents`. Keyed by page. Never written to the markdown. Additive: a file without it loads as `{}`. */
@@ -2430,7 +2469,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null }
 }
 
 /** One vault as the app lists it (YAZ-2556 D2): a row of the ⌘O panel, and of `yaseendocs vaults`. */
@@ -2938,6 +2977,13 @@ export interface WindowIdentity {
    * every folder closed, not with the vault's open folders. Given out by its FIRST `window:identity` only. Never stored.
    */
   startCollapsed?: true
+  /**
+   * The memory reload (YAZ-3737 D4): each tab's page view before main reloaded this window, by its place in the strip,
+   * with its path; `null` = that tab had none. Given out by the FIRST `window:identity` after that reload only. Never stored.
+   */
+  reloadViews?: (StartView | null)[]
+  /** The memory reload's size (YAZ-3737 D12), MB: the window shows its notice once. Given out with `reloadViews`. */
+  reloadedAtMb?: number
   /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */
   kind?: WindowKind
   /** A Files window's own sidebar zoom in percent (YAZ-3389 D13), as `WindowEntry.zoom`; absent on a full window. */
@@ -2957,6 +3003,13 @@ export interface PageView {
   folds: string[]
   /** The text size (⌘+ / ⌘−), percent; 100 = normal. */
   magnification: number
+  /**
+   * The caret (YAZ-3737 D3): a note's ProseMirror positions, a code tab's text offsets. Absent where the tab has none
+   * (a drawing) or the view is a new start (a bullet's new tab).
+   */
+  selection?: { anchor: number; head: number }
+  /** A drawing's pan and zoom (YAZ-3737 D13): the engine's `scrollX`, `scrollY` and `zoom.value`. Only a drawing has it. */
+  canvas?: { scrollX: number; scrollY: number; zoom: number }
 }
 
 /** A page view for one file: what a popped-out window starts its active tab with (YAZ-2951 D2). Never stored. */
@@ -3050,6 +3103,69 @@ export function stepZoom(steps: readonly number[], percent: number, direction: 1
 /** One sidebar zoom step (YAZ-3389) along `SIDEBAR_ZOOM_STEPS`: 50% down and 200% up are the walls. */
 export function stepSidebarZoom(percent: number, direction: 1 | -1): number {
   return stepZoom(SIDEBAR_ZOOM_STEPS, percent, direction)
+}
+
+/** The memory meter samples every window this often (YAZ-3737 D1); Settings › Memory asks for its report at the same rate. */
+export const MEMORY_SAMPLE_MS = 30_000
+
+/** One window's row of Settings › Memory (YAZ-3737 D1, D9). Every size is bytes, resident (RSS). */
+export interface MemoryWindowRow {
+  /** The window's id. */
+  id: string
+  /** `WindowEntry.name`, else the window's title. */
+  title: string
+  /** What it has open, as "2 notes, 2 drawings"; '' with no tab. */
+  open: string
+  /** Its renderer plus every frame process in it (draw.io, PDF). */
+  bytes: number
+  /** The page's JS heap in use, from its preload, read only for this report; null = the window did not answer. */
+  jsHeapBytes: number | null
+  /** "Growing": it grew more than 150 MB or 20 % since the sample about 1 h ago. Never in its first hour. */
+  grew: boolean
+  /** Its tabs in strip order, copies included (YAZ-3934, YAZ-3945). No size: the tabs share one heap. */
+  tabs: MemoryTabRow[]
+}
+
+/**
+ * A tab's sleep state as its window says it (YAZ-3946): `shown` = the tab on show (it never sleeps); `unsaved` = its
+ * file is not saved yet (it does not sleep); `unloaded` = not opened since the window started, so no editor (YAZ-3958);
+ * `awake` with `sleepsAt` = its sleep timer runs, without = it does not (Sleep is Never).
+ */
+export type MemoryTabState = 'shown' | 'awake' | 'unsaved' | 'unloaded' | 'asleep'
+
+/** What a window answers main's tabs ask (`window.onTabs`, YAZ-3946) for one tab, in strip order. Times are epoch ms. */
+export interface MemoryTabFacts {
+  path: string
+  /** As its tab bar shows it: the display name, else the page's title, else the file name. */
+  title: string
+  state: MemoryTabState
+  /** When it last left the front; null for the tab on show and a tab not shown since the window started. */
+  lastSeen: number | null
+  /** When its sleep timer puts it to sleep; null unless `state` is `awake` and the timer runs. */
+  sleepsAt: number | null
+}
+
+/**
+ * One tab's row of Settings › Memory (YAZ-3945, YAZ-3946): its window's answer to the tabs ask, and the file's mtime.
+ * A window that did not answer gives its stored strip: `title` = the display name or null, the facts null.
+ */
+export interface MemoryTabRow {
+  path: string
+  title: string | null
+  state: MemoryTabState | null
+  lastSeen: number | null
+  sleepsAt: number | null
+  /** The file's mtime on disk (`fs.stat`), epoch ms; null = the stat failed. */
+  changed: number | null
+}
+
+/** `memory.report()` (YAZ-3737 D1): the windows in the order they opened (a row never moves under the pointer), then App core and the code helpers. */
+export interface MemoryReport {
+  windows: MemoryWindowRow[]
+  /** The main process, the GPU and utility processes, and any process no window owns (`other`, e.g. DevTools). `bytes` is their sum. */
+  core: { bytes: number; main: number; gpu: number; utility: number; other: number }
+  /** The language helpers of the code tab (`ps` RSS); null while none runs. */
+  helpers: { bytes: number; count: number } | null
 }
 
 /**

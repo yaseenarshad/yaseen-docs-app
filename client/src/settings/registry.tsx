@@ -46,13 +46,20 @@ import { DailyNoteFolderControl, DailyNoteFormatControl } from './DailyNoteContr
 import { dailyNoteName } from '@shared/dailyNote'
 import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
+import { MEMORY_SECTION } from './memorySection'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
 import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+
+/** Files & Links › Open new tabs (YAZ-3808 D2). */
+const NEW_TAB_PLACE_OPTIONS: readonly { label: string; value: SettingsState['newTabPlace'] }[] = [
+  { label: 'Next to the current tab', value: 'next' },
+  { label: 'At the end', value: 'end' },
+]
 
 export interface SettingsCtx {
   settings: SettingsState
@@ -132,7 +139,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'code' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'code' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -154,7 +161,7 @@ export interface SettingsSection {
   title: string
   /** A section that only exists in some contexts (sync needs the engine); absent = always. */
   available?: (ctx: SettingsCtx) => boolean
-  /** One line under the section title, for the section whose settings do not live where the rest do. */
+  /** One line under the section title: for the section whose settings do not live where the rest do, or one that says what the page is for (Memory, YAZ-3977). */
   note?: string
   /** The whole section is ONE vault's (YAZ-2602 R10): it names that vault where the window has two or more. */
   vault?: true
@@ -773,6 +780,32 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
         ],
       },
+      {
+        // YAZ-3704 D5: the glow on text an outside save changed in an open note. The words say "outside": the app
+        // cannot tell an AI's save from a sync pull or another app.
+        title: 'Outside changes',
+        hint: 'Text that an AI or another app changed in an open note.',
+        items: [
+          {
+            id: 'outsideChangeGlow',
+            label: 'Glow',
+            hint: 'Off turns off this whole feature: no glow, no list, no bar.',
+            keywords: ['ai', 'agent', 'highlight', 'changed', 'glow'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={OUTSIDE_CHANGE_GLOW_OPTIONS} value={settings.outsideChangeGlow} onChange={(outsideChangeGlow) => onChange({ ...settings, outsideChangeGlow })} ariaLabel="Glow" />
+            ),
+          },
+          {
+            id: 'outsideListPinned',
+            label: 'Pin default',
+            hint: 'On: the numbered list of changes sits left of the note. Off: it opens from the count. Its Pin button sets this too.',
+            keywords: ['ai', 'agent', 'changed', 'list', 'numbered', 'sidebar', 'pin'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.outsideListPinned} onChange={(outsideListPinned) => onChange({ ...settings, outsideListPinned })} ariaLabel="Pin default" />
+            ),
+          },
+        ],
+      },
     ],
   },
   // YAZ-3449: the four switches every code tab shares (its page cog has the first three).
@@ -805,6 +838,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             hint: 'Shows the confirmation, with the number of links that will be updated, before a note or folder is renamed.',
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.confirmRename} onChange={(confirmRename) => onChange({ ...settings, confirmRename })} ariaLabel="Ask before renaming" />
+            ),
+          },
+          {
+            // YAZ-3808 D2, D3: "Open in new tab", a ⌘-click and a new preview tab. ⌘T and the "+" still go to the end.
+            id: 'newTabPlace',
+            label: 'Open new tabs',
+            hint: '⌘T and the "+" still open at the end.',
+            keywords: ['tab', 'new tab', 'order', 'position', 'next', 'end'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={NEW_TAB_PLACE_OPTIONS} value={settings.newTabPlace} onChange={(newTabPlace) => onChange({ ...settings, newTabPlace })} ariaLabel="Open new tabs" />
             ),
           },
           {
@@ -991,6 +1034,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
     ],
   },
+  // YAZ-3737 D9: each window's memory and the two settings that save it, a report page just above Storage.
+  MEMORY_SECTION,
   // YAZ-1801 (YAZ-3039): a per-vault report, its own page in the nav's reference list.
   STORAGE_SECTION,
   // YAZ-3040: share links on the user's own Cloudflare — a setup flow and a write-up, its own page too.

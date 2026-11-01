@@ -229,3 +229,10 @@ export const PinIcon = ({ off = false }: { off?: boolean }) => (
     {off && <path d="M3 3l10 10" />}
   </svg>
 )
+
+/** The fold arrow of a row (YAZ-3939 D3), in the table of contents and the code Outline: open points down; the CSS turns it right on a folded row. */
+export const ChevronIcon = () => (
+  <svg width={10} height={10} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M4 6l4 4 4-4" />
+  </svg>
+)

@@ -410,5 +410,6 @@ export const APP_STANDARD_KEYS: readonly FixedKey[] = [
   { label: 'Copy', accelerator: 'CmdOrCtrl+C' },
   { label: 'Paste', accelerator: 'CmdOrCtrl+V' },
   { label: 'Select all', accelerator: 'CmdOrCtrl+A' },
+  // Our own item since YAZ-3737 D2 (the safe reload), not the role, and still the Mac's standard key.
   { label: 'Reload', accelerator: 'CmdOrCtrl+R' },
 ]

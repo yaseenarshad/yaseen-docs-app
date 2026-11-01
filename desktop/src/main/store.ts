@@ -25,6 +25,9 @@ import {
   MAX_SESSION_TABS,
   MAX_VAULT_SETS,
   NEW_NOTE_LOCATIONS,
+  NEW_TAB_PLACES,
+  type NewTabPlace,
+  OUTSIDE_CHANGE_GLOWS,
   RIGHT_PANEL_DEFAULT_W,
   RIGHT_PANEL_MAX_W,
   RIGHT_PANEL_MIN_W,
@@ -82,7 +85,9 @@ import {
   type HoverPlace,
   type NewNoteLocation,
   type NoticeLength,
+  type TabSleepAfter,
   type OpenStat,
+  type OutsideChangeGlow,
   type RecentRoots,
   type RightPanelIdentity,
   type SectionLines,
@@ -116,6 +121,7 @@ import {
   type WindowEntry,
   DIAGRAM_DARK_COLORS,
   NOTICE_LENGTHS,
+  TAB_SLEEP_AFTER,
   type DiagramDarkColors,
   DEFAULT_CANVAS_PANEL,
   isCanvasPanelTab,
@@ -176,6 +182,8 @@ export interface Store {
   removeRecent(path: string): void
   setFolder(root: string, patch: FolderPatch): void
   setFolds(root: string, file: string, keys: readonly string[]): void
+  /** The folded rows of one note's table of contents (YAZ-3939 D1); an empty list removes the entry. */
+  setTocFolds(root: string, file: string, keys: readonly string[]): void
   /** What one note's table of contents is built from (YAZ-2700 D14). `null` is Auto: the entry goes, and Auto is never stored. */
   setTocSource(root: string, file: string, source: TocSource | null): void
   /** One note's "Section indent" switch (YAZ-2709 D2). `true` and `false` are both stored; nothing here removes an entry. */
@@ -492,6 +500,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   newNoteLocation: (v): v is NewNoteLocation => typeof v === 'string' && (NEW_NOTE_LOCATIONS as readonly string[]).includes(v),
   newNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
   confirmDelete: (v): v is boolean => typeof v === 'boolean',
+  newTabPlace: (v): v is NewTabPlace => typeof v === 'string' && (NEW_TAB_PLACES as readonly string[]).includes(v),
   confirmRename: (v): v is boolean => typeof v === 'boolean',
   hoverPreview: (v): v is boolean => typeof v === 'boolean',
   hoverPreviewIn: isHoverPreviewIn,
@@ -509,6 +518,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tocOnByDefault: (v): v is boolean => typeof v === 'boolean',
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
+  outsideChangeGlow: (v): v is OutsideChangeGlow => typeof v === 'string' && (OUTSIDE_CHANGE_GLOWS as readonly string[]).includes(v),
+  outsideListPinned: (v): v is boolean => typeof v === 'boolean',
   sidebarLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
   sidebarLineStyle: (v): v is SidebarLineStyle => typeof v === 'string' && (SIDEBAR_LINE_STYLES as readonly string[]).includes(v),
   sidebarThreadColor: (v): v is string | null => v === null || isHexColour(v),
@@ -535,6 +546,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   hotkeys: isHotkeyOverrides,
   hotkeysAside: isHotkeyAside,
   sidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
+  tocZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
   // YAZ-3432: one of the App sizes only; a stored value off them loads as 100 (the default, `sanitizeSettings`).
   appZoom: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
   codeReadOnly: (v): v is boolean => typeof v === 'boolean',
@@ -549,6 +561,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   dailyNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
   dailyNoteFormat: (v): v is string => typeof v === 'string' && isValidDailyNoteFormat(v),
   dailyNoteDayFolder: (v): v is boolean => typeof v === 'boolean',
+  tabSleepAfter: (v): v is TabSleepAfter => typeof v === 'string' && (TAB_SLEEP_AFTER as readonly string[]).includes(v),
+  memoryReload: (v): v is boolean => typeof v === 'boolean',
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -577,6 +591,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.codeOutlineHidden = sanitizeOutlineHidden(src.codeOutlineHidden)
   // YAZ-3389 D7: a number off the steps but inside 50–200 is kept; one outside is clamped, not reset; missing or not a number reads 100.
   if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
+  if (isFiniteNumber(src.tocZoom)) out.tocZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.tocZoom))
   // YAZ-3558 D2: a store from before the split said Off in `tableOfContents`. It reads as "Table of contents default" Off, and "Pin default" Off (`auto`).
   if (src.tableOfContents === 'off' && typeof src.tocOnByDefault !== 'boolean') out.tocOnByDefault = false
   return out
@@ -739,7 +754,7 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
   return out
 }
 
-/** Shared by `folds` and `baseGroups`: key → non-empty string list, junk dropped, each list capped. */
+/** Shared by `folds`, `tocFolds` and `baseGroups`: key → non-empty string list, junk dropped, each list capped. */
 function sanitizeKeyLists(raw: unknown, cap: number): Record<string, string[]> {
   if (!isRecord(raw)) return {}
   const out: Record<string, string[]> = {}
@@ -803,6 +818,7 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     // The same shape as the save log, cut at its own limit (YAZ-3487 D9).
     closed: addClosed(sanitizeEdits(raw.closed), [], 0),
     tocSources: sanitizeTocSources(raw.tocSources),
+    tocFolds: sanitizeKeyLists(raw.tocFolds, MAX_FOLD_KEYS_PER_FILE),
     sectionIndents: sanitizeSwitches(raw.sectionIndents),
     tocSwitches: sanitizeSwitches(raw.tocSwitches),
     name: cleanVaultName(raw.name),
@@ -1154,6 +1170,14 @@ export function createStore(filePath: string): Store {
       commit({ ...state, folders: { ...state.folders, [root]: { ...cur, folds } } })
     },
 
+    setTocFolds(root, file, keys) {
+      const cur = folderOf(root)
+      const tocFolds = { ...cur.tocFolds }
+      if (keys.length === 0) delete tocFolds[file]
+      else tocFolds[file] = keys.slice(0, MAX_FOLD_KEYS_PER_FILE)
+      commit({ ...state, folders: { ...state.folders, [root]: { ...cur, tocFolds } } })
+    },
+
     setTocSource(root, file, source) {
       const cur = folderOf(root)
       // Auto on a note that is on Auto already: nothing to write, nothing to tell the windows.
@@ -1323,6 +1347,8 @@ export function createStore(filePath: string): Store {
             closed: remapKeys(folder.closed, remap),
             // And the table of contents source (YAZ-2700 D14), keyed the same way: the choice follows its note.
             tocSources: remapKeys(folder.tocSources, remap),
+            // And the folded rows of the table of contents (YAZ-3939 D1): they follow their note.
+            tocFolds: remapKeys(folder.tocFolds, remap),
             // And the "Section indent" switch (YAZ-2709 D2), on the same terms.
             sectionIndents: remapKeys(folder.sectionIndents, remap),
             // And the "Table of contents" switch (YAZ-2950).
@@ -1421,6 +1447,7 @@ export function createStore(filePath: string): Store {
               edits: dropKeys(folder.edits, gone),
               closed: dropKeys(folder.closed, gone),
               tocSources: dropKeys(folder.tocSources, gone),
+              tocFolds: dropKeys(folder.tocFolds, gone),
               sectionIndents: dropKeys(folder.sectionIndents, gone),
               tocSwitches: dropKeys(folder.tocSwitches, gone),
             },

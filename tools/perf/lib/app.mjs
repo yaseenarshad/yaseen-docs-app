@@ -21,7 +21,10 @@ const freePort = () =>
     })
   })
 
-/** A CDP session: `ev` evaluates an expression (awaited, by value), `waitFor` polls one, `mouse`/`type` send input. */
+/**
+ * A CDP session: `ev` evaluates an expression (awaited, by value), `waitFor` polls one, `mouse`/`type` send input,
+ * `send` sends any command, and `on(method, fn)` hears that event (heap snapshot chunks, YAZ-3861); it returns the off switch.
+ */
 async function attach(wsUrl) {
   const ws = new WebSocket(wsUrl)
   await new Promise((resolve, reject) => {
@@ -30,20 +33,31 @@ async function attach(wsUrl) {
   })
   let id = 0
   const pending = new Map()
+  const listeners = new Map()
   ws.onmessage = (m) => {
     const d = JSON.parse(m.data)
+    if (d.id === undefined) {
+      for (const fn of listeners.get(d.method) ?? []) fn(d.params)
+      return
+    }
     pending.get(d.id)?.(d)
     pending.delete(d.id)
+  }
+  const on = (method, fn) => {
+    if (!listeners.has(method)) listeners.set(method, new Set())
+    listeners.get(method).add(fn)
+    return () => listeners.get(method).delete(fn)
   }
   // A target that dies under a command fails it rather than hanging the run.
   ws.onclose = () => {
     for (const settle of pending.values()) settle({ error: { message: 'the DevTools socket closed' } })
     pending.clear()
   }
-  const send = (method, params = {}) =>
+  // `sessionId`: a target attached to this one in flat mode (a worker, YAZ-3861).
+  const send = (method, params = {}, sessionId) =>
     new Promise((resolve, reject) => {
       pending.set(++id, (d) => (d.error ? reject(new Error(`${method}: ${d.error.message}`)) : resolve(d.result)))
-      ws.send(JSON.stringify({ id, method, params }))
+      ws.send(JSON.stringify({ id, method, params, ...(sessionId !== undefined && { sessionId }) }))
     })
   /** Evaluates `expression`; a renderer frozen longer than `timeoutMs` (a 20k-line open on v0.9.27) rejects instead of hanging. */
   const ev = async (expression, timeoutMs = 120_000) => {
@@ -69,7 +83,7 @@ async function attach(wsUrl) {
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key: ch, text: ch })
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ch })
   }
-  return { ev, waitFor, mouse, type, close: () => ws.close() }
+  return { ev, waitFor, mouse, type, send, on, close: () => ws.close() }
 }
 
 /** Every app main this module started and has not seen exit. */
@@ -118,17 +132,36 @@ export function usage(pids) {
   )
 }
 
+/** `footprint -f bytes` output → MB per pid: macOS's physical footprint (Activity Monitor's Memory column). */
+export function parseFootprint(text) {
+  return new Map([...text.matchAll(/\[(\d+)\]: \d+-bit\s+Footprint: (\d+) B/g)].map(([, pid, bytes]) => [Number(pid), Math.round(Number(bytes) / 104857.6) / 10]))
+}
+
+/**
+ * The physical footprint of each pid (MB). Unlike RSS it counts compressed pages and leaves out clean and
+ * reclaimable ones, so it does not swing with the Mac's memory pressure (YAZ-3862). A pid that is gone is left out.
+ */
+export function footprints(pids) {
+  try {
+    return parseFootprint(execFileSync('footprint', ['-f', 'bytes', '--noCategories', ...pids.flatMap((p) => ['-p', String(p)])], { stdio: ['ignore', 'pipe', 'ignore'] }).toString())
+  } catch (e) {
+    return parseFootprint(e.stdout?.toString() ?? '')
+  }
+}
+
 /**
  * Starts `bin` on `profile`. `spawnedAt` is epoch ms. Main runs with `--inspect=0` so the harness can
  * read main's own clock and call `app.quit()` (the ⌘Q path) — on every build alike, so A/B stays fair.
  * The two Chromium switches keep frames and timers running when another window covers ours.
+ * `args` go first (an unpacked build: Electron's binary, then `desktop/out/main/index.js`). `hidden` sets
+ * `YASEEN_DOCS_E2E_HIDDEN=1` (YAZ-3861): no window ever shows, so the run never takes the screen or focus.
  */
-export async function launch({ bin, profile }) {
+export async function launch({ bin, args = [], profile, hidden = false }) {
   const port = await freePort()
   const spawnedAt = now()
-  const child = spawn(bin, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--inspect=0', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'], {
+  const child = spawn(bin, [...args, `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--inspect=0', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'], {
     // YASEEN_DOCS_E2E=1: a guarded build leaves the machine's yaseendocs:// handler alone (v0.9.27 predates the guard).
-    env: { ...process.env, YASEEN_DOCS_USER_DATA_DIR: profile, YASEEN_DOCS_E2E: '1' },
+    env: { ...process.env, YASEEN_DOCS_USER_DATA_DIR: profile, YASEEN_DOCS_E2E: '1', ...(hidden && { YASEEN_DOCS_E2E_HIDDEN: '1' }) },
     stdio: ['ignore', 'ignore', 'pipe'],
   })
   running.add(child.pid)

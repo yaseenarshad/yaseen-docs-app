@@ -13,6 +13,7 @@ import { CONTRACT, leaves, SPECIAL } from '@shared/ipc'
 import { registerIpc } from './main/ipc'
 import { registerClipboardIpc } from './main/ipc/clipboard'
 import { registerUpdateIpc } from './main/ipc/update'
+import { registerMemoryIpc } from './main/ipc/memory'
 import { createStore } from './main/store'
 import type { WindowManagerIpc } from './main/windows'
 
@@ -34,16 +35,17 @@ vi.mock('./main/storageWorker?modulePath', () => ({ default: '' }))
 const doors = leaves(CONTRACT).map(([, door]) => door)
 /** Renderer → main invokes: the table's, plus the two the preload's Copy as / Paste as fallback makes. */
 const INVOKES = [...doors.filter((d) => d.kind === 'invoke').map((d) => d.channel), SPECIAL.menuCopyText.channel, SPECIAL.menuPasteTextFallback.channel, SPECIAL.menuEdit.channel].sort()
-/** Main → renderer pushes: the table's, plus the watch events, the flush request and Copy as / Paste as. */
-const PUSHES = [...doors.filter((d) => d.kind === 'push').map((d) => d.channel), SPECIAL.watchEvent, SPECIAL.appFlush, SPECIAL.menuCopyAs, SPECIAL.menuPasteAs].sort()
-/** Renderer → main sends: watch (un)subscribe and the flush ack. */
-const SENDS = [SPECIAL.watchSubscribe, SPECIAL.watchUnsubscribe, SPECIAL.appFlushed].sort()
+/** Main → renderer pushes: the table's, plus the watch events, the flush request, Copy as / Paste as, the heap ask, the views ask and the tabs ask. */
+const PUSHES = [...doors.filter((d) => d.kind === 'push').map((d) => d.channel), SPECIAL.watchEvent, SPECIAL.appFlush, SPECIAL.menuCopyAs, SPECIAL.menuPasteAs, SPECIAL.memoryHeap, SPECIAL.windowViews, SPECIAL.windowTabs].sort()
+/** Renderer → main sends: watch (un)subscribe, the flush ack, the heap answer, the views answer and the tabs answer. */
+const SENDS = [SPECIAL.watchSubscribe, SPECIAL.watchUnsubscribe, SPECIAL.appFlushed, SPECIAL.memoryHeapReply, SPECIAL.windowViewsReply, SPECIAL.windowTabsReply].sort()
 
 const dir = await mkdtemp(path.join(tmpdir(), 'yd-contract-'))
 afterAll(() => rm(dir, { recursive: true, force: true }))
 
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
-  // The three registrations `main/index.ts` makes on `ready`.
+  // The four registrations `main/index.ts` makes on `ready`.
+  registerMemoryIpc({ report: vi.fn() })
   registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', releases: [] }) }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
   registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), write: vi.fn(), readText: vi.fn(), revealImage: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
   registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc, { userData: dir, viewerAssetsDir: dir, drawioDir: dir, fontsDir: dir, isPackaged: true }, { missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined })
@@ -64,9 +66,9 @@ it('the preload reaches every channel through exactly one exposure, of the right
     record('send', vi.mocked(ipcRenderer.send).mock.calls)
     vi.clearAllMocks()
   }
-  /** The preload's own subscriptions (the flush handshake, paste, copy): made at load. */
+  /** The preload's own subscriptions (the flush handshake, paste, copy, the heap ask, the views ask, the tabs ask): made at load. */
   const pushHandler = (ch: string) => vi.mocked(ipcRenderer.on).mock.calls.find(([c]) => c === ch)![1] as (...args: unknown[]) => void
-  const [onFlush, onPasteAs, onCopyAs] = [SPECIAL.appFlush, SPECIAL.menuPasteAs, SPECIAL.menuCopyAs].map(pushHandler)
+  const [onFlush, onPasteAs, onCopyAs, onHeap, onViews, onTabs] = [SPECIAL.appFlush, SPECIAL.menuPasteAs, SPECIAL.menuCopyAs, SPECIAL.memoryHeap, SPECIAL.windowViews, SPECIAL.windowTabs].map(pushHandler)
   drain()
 
   // Every API method once: a listener for `on*`/`watch`, placeholder arguments for the rest.
@@ -85,7 +87,12 @@ it('the preload reaches every channel through exactly one exposure, of the right
   await walk(bridge)
   drain()
 
-  // The three channels the preload uses on its own: the paste fallback, copy, and the flush ack.
+  // The six channels the preload uses on its own: the paste fallback, copy, the flush ack, the heap answer, the views answer and the tabs answer.
+  // Electron's preload has `process.getHeapStatistics`; Node does not.
+  Object.assign(process, { getHeapStatistics: () => ({ usedHeapSize: 1 }) })
+  onHeap(undefined, 'token')
+  onViews(undefined, 'token')
+  onTabs(undefined, 'token')
   onPasteAs(undefined, { mode: 'plain', text: 'x' })
   bridge.menu.onCopyAs(() => 'x')
   onCopyAs(undefined, 'plain')

@@ -58,9 +58,10 @@ const getErrorMessage = (error: unknown, fallback: string): string => (error ins
 /**
  * The card pictures, keyed by SLUG — a component's identity. Cleared whenever the library itself
  * changes, because a slug that came back means different bytes. Bounded like Image Studio's tiles
- * (YAZ-2073 8B): scrolling a large library must not keep every picture it ever showed.
+ * (YAZ-2073 8B): scrolling a large library must not keep every picture it ever showed. 32 MB of dataURLs at most,
+ * too (YAZ-3737 S13): one big page component can cost more than many small ones.
  */
-const previews = createPreviewCache(async (slug) => api.components.preview({ slug }), { limit: 300 })
+const previews = createPreviewCache(async (slug) => api.components.preview({ slug }), { limit: 300, maxBytes: 32 * 1024 * 1024 })
 export const clearComponentPreviewMemo = previews.clear
 
 /**

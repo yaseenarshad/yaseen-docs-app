@@ -1,4 +1,4 @@
-import { MAX_WINDOW_ROOTS } from '@shared/types'
+import { MAX_WINDOW_ROOTS, rootOfPath, stripSlash } from '@shared/types'
 
 /**
  * The slots of a window (YAZ-2602 D1). `App` holds one vault scope per slot, a fixed number of
@@ -33,4 +33,19 @@ export const movedRoot = (root: string, oldDir: string, newDir: string): string 
 export function renameSlots(prev: VaultSlots, oldDir: string, newDir: string): VaultSlots {
   const next = prev.map((root) => (root === null ? null : movedRoot(root, oldDir, newDir)))
   return next.every((root, i) => root === prev[i]) ? prev : next
+}
+
+/**
+ * Why a window that shows `roots` cannot add the folder `path` (YAZ-2602 D2), or null: it is there already, it is
+ * inside one of them, or one of them is inside it. `nameOf` names a vault in the words. How many vaults a window holds
+ * (`MAX_WINDOW_ROOTS`) is the caller's to ask: App asks it after it probes the folder. The tab board asks it before it
+ * offers another window a vault (YAZ-3808 6B).
+ */
+export function vaultRefusal(roots: readonly string[], path: string, nameOf: (vault: string) => string): string | null {
+  const name = nameOf(path)
+  if (roots.some((vault) => stripSlash(vault) === path)) return `${name} is already in this window`
+  const holder = rootOfPath(roots, path)
+  if (holder !== null) return `Can't add ${name}: it is inside ${nameOf(holder)}`
+  const held = roots.find((vault) => rootOfPath([path], stripSlash(vault)) !== null)
+  return held === undefined ? null : `Can't add ${name}: it contains ${nameOf(held)}`
 }

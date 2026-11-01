@@ -111,6 +111,32 @@ describe('renderDiagramPreview', () => {
   })
 })
 
+describe('the idle frame (YAZ-3737 S14)', () => {
+  it('closes 5 min after the last picture, a picture in that time restarts the clock, and the next picture opens a fresh frame', async () => {
+    const first = renderer.renderDiagramPreview(XML, 'light', 'adapt', BOUNDS)
+    await settle()
+    const req = await started(first)
+    page({ id: req.id, ok: true, dataUrl: 'one' })
+    await expect(first).resolves.toBe('one')
+    await vi.advanceTimersByTimeAsync(renderer.IDLE_CLOSE_MS - 1000)
+    const second = renderer.renderDiagramPreview(XML, 'light', 'adapt', BOUNDS)
+    await settle()
+    page({ id: requests[1].id, ok: true, dataUrl: 'two' })
+    await expect(second).resolves.toBe('two')
+    await vi.advanceTimersByTimeAsync(renderer.IDLE_CLOSE_MS - 1)
+    expect(frame()).not.toBeNull()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(frame()).toBeNull()
+    const third = renderer.renderDiagramPreview(XML, 'light', 'adapt', BOUNDS)
+    await settle()
+    expect(document.querySelectorAll('iframe')).toHaveLength(1)
+    requests = []
+    const again = await started(third)
+    page({ id: again.id, ok: true, dataUrl: 'three' })
+    await expect(third).resolves.toBe('three')
+  })
+})
+
 describe('renderDiagramImage (File › Export Image…)', () => {
   it('asks for the whole first page in light, in the file’s own colours: a PNG at twice the size, an SVG at full size', async () => {
     const png = renderer.renderDiagramImage(XML, 'png')

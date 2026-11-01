@@ -87,6 +87,12 @@ export class HistoryChangedEvent {
   ) {}
 }
 
+/**
+ * How many steps each stack keeps (YAZ-3737 D15): the oldest drops first. A step only ever
+ * undoes to the one before it, so a drop at the start only shortens how far back undo reaches.
+ */
+export const MAX_UNDO_STEPS = 500;
+
 export class History {
   public readonly onHistoryChangedEmitter = new Emitter<
     [HistoryChangedEvent]
@@ -122,7 +128,7 @@ export class History {
     // construct history entry, so once it's emitted, it's not recorded again
     const historyDelta = HistoryDelta.inverse(delta);
 
-    this.undoStack.push(historyDelta);
+    History.pushCapped(this.undoStack, historyDelta);
 
     if (!historyDelta.elements.isEmpty()) {
       // don't reset redo stack on local appState changes,
@@ -244,6 +250,17 @@ export class History {
 
   private static push(stack: HistoryDelta[], entry: HistoryDelta) {
     const inversedEntry = HistoryDelta.inverse(entry);
-    return stack.push(inversedEntry);
+    History.pushCapped(stack, inversedEntry);
+  }
+
+  /**
+   * Every push goes through here (YAZ-3737 D15): an appState-only record keeps the redo stack,
+   * so a redo can refill a full undo stack.
+   */
+  private static pushCapped(stack: HistoryDelta[], entry: HistoryDelta) {
+    stack.push(entry);
+    if (stack.length > MAX_UNDO_STEPS) {
+      stack.splice(0, stack.length - MAX_UNDO_STEPS);
+    }
   }
 }

@@ -90,6 +90,9 @@ vi.mock('./createCrepe', () => {
     getZoomLabelOf: vi.fn((): string | null => null),
     moveCaretIntoZoom: vi.fn(() => false),
     zoomPageTo: vi.fn(() => false),
+    // The fake has no ProseMirror: a page view test says where the caret is (YAZ-3737 D3).
+    getCaretOf: vi.fn(() => ({ anchor: 0, head: 0 })),
+    placeCaret: vi.fn(),
   }
 })
 
@@ -125,16 +128,23 @@ vi.mock('./external/applyExternalMarkdown', () => ({
   }),
 }))
 
+// The merge of an outside edit over unsaved typing (YAZ-3704 D1): 'conflict' unless a test says it merged.
+vi.mock('./external/mergeExternal', () => ({
+  mergeExternalMarkdown: vi.fn(() => 'conflict'),
+}))
+
 import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
 import { setAllDocumentFolds } from './outline/foldAllHotkeys'
-import { createCrepe, editorViewOf, focusEditor, getPlainText, getZoomKeyOf, moveCaretIntoZoom, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
+import { createCrepe, editorViewOf, focusEditor, getCaretOf, getPlainText, getZoomKeyOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
 import { _resetRenameContinuity, carryEditorAcrossRename, registerRenameContinuity } from '../lib/renameContinuity'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
+import { mergeExternalMarkdown } from './external/mergeExternal'
 import type { BlockLines } from './lineNumbers/blockLines'
 import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
+import { outlineFoldKeyStem } from './outline/outlineFoldKeys'
 
 interface FakeCrepe {
   md: string
@@ -150,6 +160,7 @@ const openLink = vi.mocked(api.shell.openLink)
 const createCrepeMock = vi.mocked(createCrepe)
 const setMarkdownMock = vi.mocked(setMarkdown)
 const applyExternalMock = vi.mocked(applyExternalMarkdown)
+const mergeExternalMock = vi.mocked(mergeExternalMarkdown)
 const requestBlockLinesMock = vi.mocked(requestBlockLines)
 const showLineNumbersMock = vi.mocked(showLineNumbers)
 const openFile = vi.fn()
@@ -178,11 +189,13 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
+  // A tab layer that is not on show (YAZ-3737 S7: a tab woken by a hover).
+  if (extra.behind === true) container.className = 'tabstack__layer tabstack__layer--hidden'
   document.body.appendChild(container)
   root = createRoot(container)
   act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} />))
@@ -448,6 +461,64 @@ describe('CrepeHost table of contents (YAZ-2700)', () => {
     await pastDebounce()
     expect(createCrepeMock.mock.calls.length).toBe(built)
     expect(tocOf()).toBe(before)
+  })
+})
+
+/**
+ * The folded rows of the table of contents (YAZ-3939 D1): saved for THIS note in the app state, never
+ * in the note. The flow: fold a row, close the note, open it again: the row is still folded.
+ */
+describe('CrepeHost table of contents folds (YAZ-3939)', () => {
+  const TREE = [
+    { level: 1, text: 'Overview' },
+    { level: 2, text: 'Goals' },
+    { level: 1, text: 'Design' },
+    { level: 2, text: 'Keys' },
+    { level: 1, text: 'Rollout' },
+  ] as const
+  let saved: string[]
+
+  beforeEach(() => {
+    saved = []
+    vi.spyOn(storage, 'getTocFolds').mockImplementation(() => saved)
+    vi.spyOn(storage, 'setTocFolds').mockImplementation((_root, _file, keys) => void (saved = [...keys]))
+    vi.spyOn(storage, 'setFolds').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    vi.mocked(storage.getTocFolds).mockRestore()
+    vi.mocked(storage.setTocFolds).mockRestore()
+    vi.mocked(storage.setFolds).mockRestore()
+  })
+
+  /** The names column of a 1400px note, as in the width test above. */
+  const openNames = (el: HTMLElement): string[] => {
+    const section = el.querySelector<HTMLElement>('section.editor')
+    if (section === null) throw new Error('no section.editor')
+    Object.defineProperty(section, 'clientWidth', { configurable: true, value: 1400 })
+    act(() => tocOf().publish(TREE))
+    return [...el.querySelectorAll('.toc__name')].map((name) => name.textContent ?? '')
+  }
+
+  it('a fold is saved for this note, the note itself never folds or saves, and the next open of the note shows the row folded', async () => {
+    const el = await mount(BODY, 1, { tableOfContents: 'pinned' })
+    expect(openNames(el)).toEqual(['Overview', 'Goals', 'Design', 'Keys', 'Rollout'])
+    const jump = vi.fn()
+    tocOf().bind({ jump, current: vi.fn(() => -1), rescan: vi.fn() })
+    act(() => el.querySelectorAll<HTMLElement>('.toc__name')[2].querySelector<HTMLElement>('.toc__fold')?.click())
+    expect(storage.setTocFolds).toHaveBeenLastCalledWith('/vault', PATH, [`1:${outlineFoldKeyStem('Design')}#0`])
+    // The note itself never folds: its own folds are not written.
+    expect(storage.setFolds).not.toHaveBeenCalled()
+    expect([...el.querySelectorAll('.toc__name')].map((name) => name.textContent)).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])
+    expect(jump).not.toHaveBeenCalled()
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
+
+    act(() => root?.unmount())
+    container?.remove()
+    const again = await mount(BODY, 1, { tableOfContents: 'pinned' })
+    expect(storage.getTocFolds).toHaveBeenLastCalledWith('/vault', PATH)
+    expect(openNames(again)).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])
   })
 })
 
@@ -756,6 +827,138 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
     expect(crepe().md).toBe('# Hello\n\nunsaved edit\n')
   })
 
+  it('a real body change on disk while dirty merges when the merge can place the typing: no bar, the merged note saves on the new mtime (YAZ-3704 D1)', async () => {
+    const el = await mount(FM + BODY)
+    type('# Hello\n\nunsaved edit\n')
+    mergeExternalMock.mockImplementationOnce((fake) => {
+      ;(fake as unknown as FakeCrepe).md = '# Hello AI\n\nunsaved edit\n'
+      return 'merged'
+    })
+    diskHas(FM + '# Hello AI\n\nsome text\n', 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    // The base is the body as last read; the new body comes without its frontmatter; not quiet.
+    expect(mergeExternalMock).toHaveBeenCalledWith(expect.anything(), BODY, '# Hello AI\n\nsome text\n', false)
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: `${FM}# Hello AI\n\nunsaved edit\n`, expectedMtime: 2 })
+    // The watcher's echo of that save is skipped: nothing is read again.
+    const reads = readFile.mock.calls.length
+    await emit({ type: 'change', path: PATH, mtime: 99 })
+    expect(readFile.mock.calls.length).toBe(reads)
+  })
+
+  it('a save the disk refuses goes to the merge first: merged, no bar flashes, the merged note saves (YAZ-3704 D1)', async () => {
+    const el = await mount(FM + BODY)
+    type('# Hello\n\nunsaved edit\n')
+    const next = FM + '# Hello AI\n\nsome text\n'
+    writeFile.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'newer on disk', 2))
+    diskHas(next, 2) // the save's own check: the body moved, so a real refusal
+    diskHas(next, 2) // the editor's read for the merge
+    mergeExternalMock.mockImplementationOnce((fake) => {
+      ;(fake as unknown as FakeCrepe).md = '# Hello AI\n\nunsaved edit\n'
+      return 'merged'
+    })
+    await pastDebounce()
+    expect(mergeExternalMock).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    // The watcher's event for the same outside write was already landed: no second merge.
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(mergeExternalMock).toHaveBeenCalledTimes(1)
+    await pastDebounce()
+    expect(writeFile).toHaveBeenLastCalledWith({ path: PATH, content: `${FM}# Hello AI\n\nunsaved edit\n`, expectedMtime: 2 })
+  })
+
+  it('Reload lands the last saved body quietly first, so only the outside changes glow, never the dropped typing (YAZ-3704)', async () => {
+    const el = await mount(FM + BODY)
+    type('# Hello\n\nunsaved edit\n')
+    diskHas(FM + '# Someone else\n', 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(el.querySelector('.conflict-bar')).not.toBeNull()
+    diskHas(FM + '# Someone else\n', 2) // reload() reads
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.conflict-bar button')].find((b) => b.textContent === 'Reload')!.click())
+    await settle()
+    // First the body as last saved, quietly; then the new file, which the change list hears.
+    expect(applyExternalMock.mock.calls.map(([, body, quiet]) => [body, quiet])).toEqual([
+      [BODY, true],
+      ['# Someone else\n', false],
+    ])
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+  })
+
+  it('a save the disk refuses shows the bar when the merge cannot place the typing (YAZ-3704 D2)', async () => {
+    const el = await mount(FM + BODY)
+    type('# Hello\n\nunsaved edit\n')
+    writeFile.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'newer on disk', 2))
+    diskHas(FM + '# Someone else\n', 2)
+    diskHas(FM + '# Someone else\n', 2)
+    await pastDebounce()
+    expect(mergeExternalMock).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.conflict-bar')?.textContent).toContain('File changed on disk.')
+    expect(crepe().md).toBe('# Hello\n\nunsaved edit\n')
+  })
+
+  /** The channel the host handed `createCrepe` (YAZ-3704 D6): the one the one-line note reads. */
+  const outsideChannel = () => {
+    const channel = createCrepeMock.mock.calls.at(-1)?.[0].outsideChanges
+    if (channel === undefined) throw new Error('no outside changes channel')
+    return channel
+  }
+
+  it('the one-line note of outside changes sits in the conflict bar\'s place and hides while that bar shows (YAZ-3704 D6)', async () => {
+    const el = await mount(FM + BODY)
+    act(() => outsideChannel().sync({ count: 2, wholeNote: false }))
+    expect(el.querySelector('.outside-changes-bar')?.textContent).toContain('2 outside changes in this note')
+    type('# Hello\n\nunsaved edit\n')
+    diskHas(FM + '# Someone else\n', 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(el.querySelector('.conflict-bar')?.textContent).toContain('File changed on disk.')
+    expect(el.querySelector('.outside-changes-bar')).toBeNull()
+    // Keep mine solves the conflict: the note comes back.
+    await act(async () => {
+      ;[...el.querySelectorAll<HTMLButtonElement>('.conflict-bar button')].find((b) => b.textContent === 'Keep mine')?.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    expect(el.querySelector('.outside-changes-bar')?.textContent).toContain('2 outside changes in this note')
+  })
+
+  it('an outside rewrite that rebuilds the note says "whole note"; a quiet rebuild (a copy of this tab) does not (YAZ-3704)', async () => {
+    await mount(FM + BODY)
+    const markWholeNote = vi.spyOn(outsideChannel(), 'markWholeNote')
+    applyExternalMock.mockReturnValueOnce('rebuilt')
+    diskHas(FM + '# Rewritten\n', 2)
+    diskHas(FM + '# Rewritten\n', 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(markWholeNote).toHaveBeenCalledTimes(1)
+    applyExternalMock.mockReturnValueOnce('rebuilt')
+    diskHas(FM + '# Rewritten by my other tab\n', 3)
+    diskHas(FM + '# Rewritten by my other tab\n', 3)
+    await act(async () => {
+      announceTwinSave(PATH, 3)
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(applyExternalMock).toHaveBeenLastCalledWith(expect.anything(), '# Rewritten by my other tab\n', true)
+    expect(markWholeNote).toHaveBeenCalledTimes(1)
+  })
+
+  it('the Glow setting reaches the editor through the channel and rebuilds no editor (YAZ-3704 D5)', async () => {
+    readFile.mockResolvedValueOnce({ path: PATH, content: FM + BODY, mtime: 1, size: (FM + BODY).length })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const props = { root: '/vault', path: PATH, watch, onOpenFile: openFile, commentsOrder: 'oldest' as const, onChangeCommentsOrder: noop, wikilinks: createWikilinkResolveSource(), onRetitle: noop }
+    act(() => root?.render(<Editor {...props} outsideChangeGlow="10s" />))
+    await settle()
+    await settle()
+    expect(createCrepeMock).toHaveBeenCalledTimes(1)
+    expect(outsideChannel().getGlow()).toBe('10s')
+    act(() => root?.render(<Editor {...props} outsideChangeGlow="off" />))
+    await settle()
+    expect(createCrepeMock).toHaveBeenCalledTimes(1)
+    expect(outsideChannel().getGlow()).toBe('off')
+  })
+
   it('a real body change on disk while clean still reloads the document', async () => {
     const el = await mount(FM + BODY)
     const next = FM + '# Someone else\n'
@@ -763,7 +966,7 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
     diskHas(next, 2) // reload() re-reads
     await emit({ type: 'change', path: PATH, mtime: 2 })
     // A reload is a DIFF apply, never a rebuild (YAZ-1347).
-    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), '# Someone else\n')
+    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), '# Someone else\n', false)
     expect(setMarkdownMock).not.toHaveBeenCalled()
     expect(el.querySelector('.conflict-bar')).toBeNull()
     // The applied body IS the new baseline: no dirty state, no echo save back to disk (YAZ-1352).
@@ -782,7 +985,7 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
     diskHas(next, 3)
     diskHas(next, 3) // reload() re-reads
     await emit({ type: 'change', path: PATH, mtime: 3 })
-    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), '# Someone else\n')
+    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), '# Someone else\n', false)
     type('# Someone else\n')
     await pastDebounce()
     expect(onUserEdit).not.toHaveBeenCalled()
@@ -941,6 +1144,49 @@ describe('a page starts from a page view, and tells its own (YAZ-2951)', () => {
     expect(order).toEqual(['caret', 'focus'])
   })
 
+  it('YAZ-3737 D3: a woken tab (or a copy) gets its caret back after the drill-in and before the caret grab; a view with none sets no caret', async () => {
+    const order: string[] = []
+    vi.mocked(moveCaretIntoZoom).mockImplementation(() => {
+      order.push('zoom')
+      return true
+    })
+    vi.mocked(placeCaret).mockImplementation((_crepe, at) => {
+      order.push(`caret ${at.anchor}-${at.head}`)
+    })
+    vi.mocked(focusEditor).mockImplementation(() => {
+      order.push('focus')
+    })
+    await mount(FM + BODY, 1, { startView: { ...VIEW, selection: { anchor: 30, head: 9 } } })
+    expect(order).toEqual(['zoom', 'caret 30-9', 'focus'])
+    vi.mocked(placeCaret).mockClear()
+    act(() => root?.unmount())
+    root = null
+    await mount(FM + BODY, 1, { startView: VIEW })
+    expect(placeCaret).not.toHaveBeenCalled()
+    vi.mocked(placeCaret).mockReset()
+  })
+
+  it('YAZ-3737 S7: a tab that mounts behind the page on show (a hover wake) takes no caret grab; its caret and scroll still come back', async () => {
+    const el = await mount(FM + BODY, 1, { startView: { ...VIEW, selection: { anchor: 3, head: 3 } }, behind: true })
+    expect(focusEditor).not.toHaveBeenCalled()
+    expect(placeCaret).toHaveBeenCalledWith(expect.anything(), { anchor: 3, head: 3 })
+    expect(el.querySelector<HTMLElement>('.editor-host')!.scrollTop).toBe(420)
+    vi.mocked(placeCaret).mockReset()
+  })
+
+  it('YAZ-3737 S24: a file that changed on disk while its tab slept wakes with the new text and no conflict bar; the kept view still applies', async () => {
+    const el = await mount(FM + BODY, 1)
+    expect(createCrepeMock.mock.calls.at(-1)![0].defaultValue).toBe(BODY)
+    // Asleep: the clean editor unmounts. An agent rewrites the file meanwhile.
+    act(() => root?.unmount())
+    root = null
+    el.remove()
+    const woken = await mount(`${FM}# Hello\n\nnew text from disk\n`, 9, { startView: VIEW })
+    expect(createCrepeMock.mock.calls.at(-1)![0].defaultValue).toBe('# Hello\n\nnew text from disk\n')
+    expect(woken.querySelector('.conflict-bar')).toBeNull()
+    expect(woken.querySelector<HTMLElement>('.editor-host')!.scrollTop).toBe(420)
+  })
+
   it('a page view that is not drilled in does not ask to move the caret', async () => {
     await mount(FM + BODY, 1, { startView: { ...VIEW, zoomKey: null } })
     expect(focusEditor).toHaveBeenCalled()
@@ -962,7 +1208,8 @@ describe('a page starts from a page view, and tells its own (YAZ-2951)', () => {
     vi.mocked(getZoomKeyOf).mockReturnValue('l1 a:0')
     el.querySelector<HTMLElement>('.editor-host')!.scrollTop = 77
     act(() => { el.querySelector('.editor-mount')!.dispatchEvent(new CustomEvent(ZOOM_EVENT, { detail: 1, bubbles: true, cancelable: true })) })
-    expect(readPageView('t1')).toEqual({ scrollTop: 77, zoomKey: 'l1 a:0', folds: ['b:0', 'h:c:0'], magnification: 125 })
+    vi.mocked(getCaretOf).mockReturnValueOnce({ anchor: 40, head: 12 })
+    expect(readPageView('t1')).toEqual({ scrollTop: 77, zoomKey: 'l1 a:0', folds: ['b:0', 'h:c:0'], magnification: 125, selection: { anchor: 40, head: 12 } })
     // Unmounted: the tab has no editor to ask.
     act(() => root?.unmount())
     root = null
@@ -978,6 +1225,18 @@ describe('a page starts from a page view, and tells its own (YAZ-2951)', () => {
  */
 describe('copies of one file hear a save at once (YAZ-2940 D4, S23)', () => {
   const NEXT = '# Hello\n\nfrom the other copy\n'
+
+  it('a dirty copy merges the other copy\'s save quietly: it is the user\'s own typing (YAZ-3704)', async () => {
+    await mount(FM + BODY)
+    type('# Hello\n\nmy unsaved edit\n')
+    diskHas(FM + NEXT, 7)
+    mergeExternalMock.mockReturnValueOnce('merged')
+    await act(async () => {
+      announceTwinSave(PATH, 7)
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(mergeExternalMock).toHaveBeenCalledWith(expect.anything(), BODY, NEXT, true)
+  })
 
   it('a dirty copy shows the conflict bar and keeps its text', async () => {
     const el = await mount(FM + BODY)
@@ -1024,7 +1283,7 @@ describe('copies of one file hear a save at once (YAZ-2940 D4, S23)', () => {
     expect(writeFile).toHaveBeenCalledTimes(1)
     // Only B read the disk (twice: the change check and the reload); A took its announce as an echo.
     expect(readFile.mock.calls.length).toBe(reads + 2)
-    expect(applyExternalMock).toHaveBeenCalledExactlyOnceWith(b, NEXT)
+    expect(applyExternalMock).toHaveBeenCalledExactlyOnceWith(b, NEXT, true) // quiet: the user's own typing (YAZ-3704)
     expect(b.md).toBe(NEXT)
     expect(container.querySelector('.conflict-bar')).toBeNull()
     // The watcher's event for that write is an echo for both copies now.
@@ -1078,7 +1337,7 @@ describe('the frontmatter panel follows the disk (YAZ-1356)', () => {
     diskHas(next, 2)
     diskHas(next, 2) // reload() re-reads
     await emit({ type: 'change', path: PATH, mtime: 2 })
-    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), '# Someone else\n')
+    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), '# Someone else\n', false)
     expect(panelYaml(el)).toBe('status: done')
   })
 
@@ -1876,7 +2135,7 @@ describe('line numbers follow the file on disk (YAZ-2643)', () => {
     diskHas(FM + BODY, 100) // reload() re-reads
     await emit({ type: 'change', path: PATH, mtime: 100 })
     await settle()
-    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), BODY)
+    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), BODY, false)
     expect(requestBlockLinesMock).toHaveBeenCalledTimes(3)
     expect(sent()).toEqual({ lines: [4, 6], ends: [4, 6], kinds: 'hp' })
   })
@@ -2145,7 +2404,7 @@ describe('a read-only note (YAZ-3076 D2)', () => {
     diskHas(next, 2)
     diskHas(next, 2) // reload() re-reads
     await emit({ type: 'change', path: PATH, mtime: 2 })
-    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), '# Agent wrote this\n')
+    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), '# Agent wrote this\n', false)
     expect(el.querySelector('.conflict-bar')).toBeNull()
     expect(fakeOf().readonly).toBe(true)
     await pastDebounce()

@@ -1,0 +1,486 @@
+{
+  "app": "/Users/yasinarshad/Documents/GitHub/yasinskills2/yaseen-docs-app/feat-yaz-3737-long-day/desktop/out/main/index.js",
+  "machine": {
+    "cpu": "Apple M3",
+    "cores": 8,
+    "os": "Darwin 24.6.0"
+  },
+  "runs": 5,
+  "warmupDiscarded": 1,
+  "scenarios": {
+    "long-day": {
+      "runs": 1,
+      "warmupDiscarded": 0,
+      "over": [
+        "long-day.heapEndOverStartRatio median 1.16 > ceiling 1.1",
+        "long-day.rendererRssEndMb median 841.8 > ceiling 0"
+      ],
+      "load": {
+        "min": 94.4,
+        "max": 94.4,
+        "runs": [
+          94.4
+        ]
+      },
+      "noisy": true,
+      "loadSensitive": [],
+      "metrics": {
+        "heapStartMb": {
+          "median": 40.3,
+          "p95": 40.3,
+          "min": 40.3,
+          "max": 40.3,
+          "cv": 0,
+          "runs": [
+            40.3
+          ]
+        },
+        "heapEndMb": {
+          "median": 46.7,
+          "p95": 46.7,
+          "min": 46.7,
+          "max": 46.7,
+          "cv": 0,
+          "runs": [
+            46.7
+          ]
+        },
+        "heapEndOverStartRatio": {
+          "median": 1.16,
+          "p95": 1.16,
+          "min": 1.16,
+          "max": 1.16,
+          "cv": 0,
+          "runs": [
+            1.16
+          ]
+        },
+        "heapSlopeMbPerCycle": {
+          "median": 0.61,
+          "p95": 0.61,
+          "min": 0.61,
+          "max": 0.61,
+          "cv": 0,
+          "runs": [
+            0.61
+          ]
+        },
+        "heapBeforeCyclesMb": {
+          "median": 17.8,
+          "p95": 17.8,
+          "min": 17.8,
+          "max": 17.8,
+          "cv": 0,
+          "runs": [
+            17.8
+          ]
+        },
+        "rendererRssBeforeCyclesMb": {
+          "median": 176.5,
+          "p95": 176.5,
+          "min": 176.5,
+          "max": 176.5,
+          "cv": 0,
+          "runs": [
+            176.5
+          ]
+        },
+        "rendererRssStartMb": {
+          "median": 996.9,
+          "p95": 996.9,
+          "min": 996.9,
+          "max": 996.9,
+          "cv": 0,
+          "runs": [
+            996.9
+          ]
+        },
+        "rendererRssEndMb": {
+          "median": 841.8,
+          "p95": 841.8,
+          "min": 841.8,
+          "max": 841.8,
+          "cv": 0,
+          "runs": [
+            841.8
+          ]
+        },
+        "rendererRssSlopeMbPerCycle": {
+          "median": -7.16,
+          "p95": -7.16,
+          "min": -7.16,
+          "max": -7.16,
+          "cv": 0,
+          "runs": [
+            -7.16
+          ]
+        },
+        "renderersEnd": {
+          "median": 2,
+          "p95": 2,
+          "min": 2,
+          "max": 2,
+          "cv": 0,
+          "runs": [
+            2
+          ]
+        },
+        "windowRssEndMb": {
+          "median": 692.4,
+          "p95": 692.4,
+          "min": 692.4,
+          "max": 692.4,
+          "cv": 0,
+          "runs": [
+            692.4
+          ]
+        },
+        "workerHeapEndMb": {
+          "median": 285.7,
+          "p95": 285.7,
+          "min": 285.7,
+          "max": 285.7,
+          "cv": 0,
+          "runs": [
+            285.7
+          ]
+        },
+        "workersEnd": {
+          "median": 1,
+          "p95": 1,
+          "min": 1,
+          "max": 1,
+          "cv": 0,
+          "runs": [
+            1
+          ]
+        },
+        "domNodesEnd": {
+          "median": 3180,
+          "p95": 3180,
+          "min": 3180,
+          "max": 3180,
+          "cv": 0,
+          "runs": [
+            3180
+          ]
+        },
+        "documentsEnd": {
+          "median": 13,
+          "p95": 13,
+          "min": 13,
+          "max": 13,
+          "cv": 0,
+          "runs": [
+            13
+          ]
+        },
+        "listenersEnd": {
+          "median": 865,
+          "p95": 865,
+          "min": 865,
+          "max": 865,
+          "cv": 0,
+          "runs": [
+            865
+          ]
+        },
+        "mainHeapBeforeCyclesMb": {
+          "median": 12.7,
+          "p95": 12.7,
+          "min": 12.7,
+          "max": 12.7,
+          "cv": 0,
+          "runs": [
+            12.7
+          ]
+        },
+        "mainHeapEndMb": {
+          "median": 12.6,
+          "p95": 12.6,
+          "min": 12.6,
+          "max": 12.6,
+          "cv": 0,
+          "runs": [
+            12.6
+          ]
+        },
+        "mainHeapSlopeMbPerCycle": {
+          "median": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "cv": 0,
+          "runs": [
+            0
+          ]
+        },
+        "emptyWindowRssMb": {
+          "median": 158,
+          "p95": 158,
+          "min": 158,
+          "max": 158,
+          "cv": 0,
+          "runs": [
+            158
+          ]
+        },
+        "oneTabWindowRssMb": {
+          "median": 176.1,
+          "p95": 176.1,
+          "min": 176.1,
+          "max": 176.1,
+          "cv": 0,
+          "runs": [
+            176.1
+          ]
+        },
+        "emptyVaultWindowRssMb": {
+          "median": 106.8,
+          "p95": 106.8,
+          "min": 106.8,
+          "max": 106.8,
+          "cv": 0,
+          "runs": [
+            106.8
+          ]
+        },
+        "emptyWindowHeapMb": {
+          "median": 13.2,
+          "p95": 13.2,
+          "min": 13.2,
+          "max": 13.2,
+          "cv": 0,
+          "runs": [
+            13.2
+          ]
+        },
+        "oneTabWindowHeapMb": {
+          "median": 17.6,
+          "p95": 17.6,
+          "min": 17.6,
+          "max": 17.6,
+          "cv": 0,
+          "runs": [
+            17.6
+          ]
+        },
+        "emptyVaultWindowHeapMb": {
+          "median": 6.9,
+          "p95": 6.9,
+          "min": 6.9,
+          "max": 6.9,
+          "cv": 0,
+          "runs": [
+            6.9
+          ]
+        },
+        "vaultIndexWindowRssMb": {
+          "median": 51.2,
+          "p95": 51.2,
+          "min": 51.2,
+          "max": 51.2,
+          "cv": 0,
+          "runs": [
+            51.2
+          ]
+        },
+        "vaultIndexWindowHeapMb": {
+          "median": 6.3,
+          "p95": 6.3,
+          "min": 6.3,
+          "max": 6.3,
+          "cv": 0,
+          "runs": [
+            6.3
+          ]
+        },
+        "mainHeapEmptyVaultMb": {
+          "median": 8.5,
+          "p95": 8.5,
+          "min": 8.5,
+          "max": 8.5,
+          "cv": 0,
+          "runs": [
+            8.5
+          ]
+        },
+        "mainHeapVaultTwoWindowsMb": {
+          "median": 12.7,
+          "p95": 12.7,
+          "min": 12.7,
+          "max": 12.7,
+          "cv": 0,
+          "runs": [
+            12.7
+          ]
+        }
+      },
+      "series": [
+        [
+          {
+            "cycle": 1,
+            "seconds": 23,
+            "heapMb": 40.3,
+            "blinkHeapMb": 8.7,
+            "backingStoreMb": 8.6,
+            "documents": 13,
+            "domNodes": 3180,
+            "listeners": 865,
+            "workerHeapMb": 284.1,
+            "workers": 1,
+            "mainHeapMb": 13.1,
+            "rendererRssMb": 996.9,
+            "renderers": 2,
+            "windowRssMb": 714.1
+          },
+          {
+            "cycle": 2,
+            "seconds": 22.5,
+            "heapMb": 42.1,
+            "blinkHeapMb": 8.4,
+            "backingStoreMb": 8.6,
+            "documents": 13,
+            "domNodes": 3195,
+            "listeners": 865,
+            "workerHeapMb": 284.4,
+            "workers": 1,
+            "mainHeapMb": 13.2,
+            "rendererRssMb": 892.1,
+            "renderers": 2,
+            "windowRssMb": 730.9
+          },
+          {
+            "cycle": 3,
+            "seconds": 20.7,
+            "heapMb": 44.2,
+            "blinkHeapMb": 8.3,
+            "backingStoreMb": 8.6,
+            "documents": 13,
+            "domNodes": 3180,
+            "listeners": 865,
+            "workerHeapMb": 188.6,
+            "workers": 1,
+            "mainHeapMb": 13.3,
+            "rendererRssMb": 776.1,
+            "renderers": 2,
+            "windowRssMb": 593.3
+          },
+          {
+            "cycle": 4,
+            "seconds": 21.7,
+            "heapMb": 45.1,
+            "blinkHeapMb": 8.4,
+            "backingStoreMb": 8.6,
+            "documents": 13,
+            "domNodes": 3180,
+            "listeners": 865,
+            "workerHeapMb": 272.3,
+            "workers": 1,
+            "mainHeapMb": 13.4,
+            "rendererRssMb": 934.9,
+            "renderers": 2,
+            "windowRssMb": 703.1
+          },
+          {
+            "cycle": 5,
+            "seconds": 20.7,
+            "heapMb": 45.5,
+            "blinkHeapMb": 8.4,
+            "backingStoreMb": 8.6,
+            "documents": 13,
+            "domNodes": 3195,
+            "listeners": 865,
+            "workerHeapMb": 188.8,
+            "workers": 1,
+            "mainHeapMb": 13.4,
+            "rendererRssMb": 917.7,
+            "renderers": 2,
+            "windowRssMb": 629.9
+          },
+          {
+            "cycle": 6,
+            "seconds": 20.1,
+            "heapMb": 45.8,
+            "blinkHeapMb": 8.3,
+            "backingStoreMb": 8.6,
+            "documents": 13,
+            "domNodes": 3195,
+            "listeners": 865,
+            "workerHeapMb": 188.9,
+            "workers": 1,
+            "mainHeapMb": 13.5,
+            "rendererRssMb": 919.6,
+            "renderers": 2,
+            "windowRssMb": 628
+          },
+          {
+            "cycle": 7,
+            "seconds": 20.3,
+            "heapMb": 46,
+            "blinkHeapMb": 8.1,
+            "backingStoreMb": 8.6,
+            "documents": 13,
+            "domNodes": 3180,
+            "listeners": 865,
+            "workerHeapMb": 279.3,
+            "workers": 1,
+            "mainHeapMb": 13.5,
+            "rendererRssMb": 997.7,
+            "renderers": 2,
+            "windowRssMb": 709.9
+          },
+          {
+            "cycle": 8,
+            "seconds": 20.2,
+            "heapMb": 46.2,
+            "blinkHeapMb": 8.2,
+            "backingStoreMb": 8.6,
+            "documents": 13,
+            "domNodes": 3195,
+            "listeners": 865,
+            "workerHeapMb": 281.4,
+            "workers": 1,
+            "mainHeapMb": 13.5,
+            "rendererRssMb": 856.7,
+            "renderers": 2,
+            "windowRssMb": 702.6
+          },
+          {
+            "cycle": 9,
+            "seconds": 20.8,
+            "heapMb": 46.5,
+            "blinkHeapMb": 8.3,
+            "backingStoreMb": 8.6,
+            "documents": 13,
+            "domNodes": 3195,
+            "listeners": 865,
+            "workerHeapMb": 189,
+            "workers": 1,
+            "mainHeapMb": 13.6,
+            "rendererRssMb": 838,
+            "renderers": 2,
+            "windowRssMb": 604.8
+          },
+          {
+            "cycle": 10,
+            "seconds": 21.2,
+            "heapMb": 46.7,
+            "blinkHeapMb": 8.1,
+            "backingStoreMb": 8.6,
+            "documents": 13,
+            "domNodes": 3180,
+            "listeners": 865,
+            "workerHeapMb": 285.7,
+            "workers": 1,
+            "mainHeapMb": 12.6,
+            "rendererRssMb": 841.8,
+            "renderers": 2,
+            "windowRssMb": 692.4
+          }
+        ]
+      ]
+    }
+  },
+  "yaseendocsHandler": "/Applications/Yaseen Docs.app"
+}

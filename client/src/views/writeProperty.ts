@@ -18,9 +18,17 @@ export interface PropertyWrite {
  */
 const inflight = new Set<Promise<unknown>>()
 
-/** Resolves once no transform is in flight, including ones started while it waits. Never rejects. */
-export async function settleFileWrites(): Promise<void> {
-  while (inflight.size > 0) await Promise.allSettled([...inflight])
+/**
+ * Resolves once no transform is in flight, including ones started while it waits. Never rejects. It answers whether
+ * every write it waited for landed (YAZ-3737 D2): a rejected one makes the window's flush not clean.
+ */
+export async function settleFileWrites(): Promise<boolean> {
+  let landed = true
+  while (inflight.size > 0) {
+    const results = await Promise.allSettled([...inflight])
+    if (results.some((r) => r.status === 'rejected')) landed = false
+  }
+  return landed
 }
 
 /**

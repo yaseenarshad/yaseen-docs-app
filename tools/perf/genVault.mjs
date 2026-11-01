@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { crc32, deflateSync } from 'node:zlib'
 
 const E2E_GEN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../desktop/e2e/fixtures/genVault.mjs')
 const WORDS = 'alpha beta gamma delta outline bullet heading vault note sync render frame layout paint budget typing latency editor tree'.split(' ')
@@ -62,4 +63,67 @@ export function writeNote(dir, name, kind, lines) {
 export function writeVault(dir, notes) {
   execFileSync(process.execPath, [E2E_GEN, '--notes', String(notes), '--out', dir, '--seed', '42'], { stdio: 'ignore' })
   return dir
+}
+
+/** A `size`×`size` RGB PNG of seeded noise (no dependency), so a drawing's pictures are real bytes to decode (YAZ-3861). */
+export function noisePng(size, seed) {
+  const raw = Buffer.alloc((size * 3 + 1) * size) // each row: filter byte 0, then RGB
+  let x = seed >>> 0
+  for (let i = 0; i < raw.length; i++) {
+    if (i % (size * 3 + 1) === 0) continue
+    x = (Math.imul(x, 1664525) + 1013904223) >>> 0
+    raw[i] = x >>> 24
+  }
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data])
+    const len = Buffer.alloc(4)
+    len.writeUInt32BE(data.length)
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(body))
+    return Buffer.concat([len, body, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(size, 0)
+  ihdr.writeUInt32BE(size, 4)
+  ihdr.set([8, 2, 0, 0, 0], 8) // 8-bit RGB, no interlace
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])
+}
+
+/** One Excalidraw element with every common field, so the engine restores it as is. */
+const element = (id, type, x, y, w, h, extra = {}) => ({
+  id, type, x, y, width: w, height: h, angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 2, strokeStyle: 'solid',
+  roughness: 1, opacity: 100, groupIds: [], frameId: null, roundness: null, seed: id.length * 97, version: 1, versionNonce: 1, isDeleted: false, boundElements: null,
+  updated: 1, link: null, locked: false, ...extra,
+})
+
+/**
+ * `<dir>/<name>.excalidraw`: `boxes` rectangles and `images` pictures (256 px noise PNGs) embedded in `files`, the
+ * way a pasted picture is saved (YAZ-3737 D14: the long-day drawing has images). Returns the absolute path.
+ */
+export function writeDrawing(dir, name, { boxes = 12, images = 3 } = {}) {
+  const elements = Array.from({ length: boxes }, (_, i) => element(`box-${i}`, 'rectangle', (i % 4) * 180, Math.floor(i / 4) * 120, 140, 80))
+  const files = {}
+  for (let i = 0; i < images; i++) {
+    const fileId = `perf-image-${i}`
+    files[fileId] = { id: fileId, mimeType: 'image/png', dataURL: `data:image/png;base64,${noisePng(256, i + 1).toString('base64')}`, created: 1 }
+    elements.push(element(`image-${i}`, 'image', i * 280, 400, 256, 256, { fileId, status: 'saved', scale: [1, 1] }))
+  }
+  const file = path.join(dir, `${name}.excalidraw`)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(file, `${JSON.stringify({ type: 'excalidraw', version: 2, source: 'yaseen-docs-perf', elements, appState: { viewBackgroundColor: '#ffffff', gridSize: null }, files })}\n`)
+  return file
+}
+
+/** Small code bodies (YAZ-3861): a first line that is the file's sentinel as a comment, then `lines` lines of functions. */
+const CODE = {
+  ts: (name, lines) => [`// ${sentinel(name)}`, ...Array.from({ length: lines }, (_, i) => (i % 4 === 0 ? `export interface Row${i} { id: number; name: string }` : i % 4 === 1 ? `export function make${i}(id: number): Row${i - 1} {` : i % 4 === 2 ? `  return { id, name: '${words(i, 3)}' }` : '}'))],
+  py: (name, lines) => [`# ${sentinel(name)}`, ...Array.from({ length: lines }, (_, i) => (i % 3 === 0 ? `def make_${i}(x):` : i % 3 === 1 ? `    """${words(i, 4)}"""` : '    return x * 2'))],
+}
+
+/** `<dir>/<name>.<ext>` (ts | py): `lines` lines of code under its sentinel comment. Returns the absolute path. */
+export function writeCode(dir, name, ext, lines = 120) {
+  const file = path.join(dir, `${name}.${ext}`)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(file, `${CODE[ext](name, lines).join('\n')}\n`)
+  return file
 }

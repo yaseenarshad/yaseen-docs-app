@@ -28,7 +28,7 @@ const FM = '---\nstatus: draft\n---\n'
 let root: Root | null = null
 let handle: AutosaveHandle
 /** The listener the hook registered on the close/quit handshake; `offFlush` is its unsubscribe. */
-let flushListener: (() => Promise<void> | void) | null
+let flushListener: (() => Promise<boolean | void> | boolean | void) | null
 const offFlush = vi.fn()
 
 function Probe() {
@@ -53,7 +53,7 @@ beforeEach(() => {
   readFile.mockReset()
   readFile.mockResolvedValue({ path: PATH, content: `${FM}someone else`, mtime: 42, size: 0 })
   Object.defineProperty(window, 'yaseenDocs', {
-    value: { window: { onFlush: (listener: () => Promise<void> | void) => ((flushListener = listener), offFlush) } },
+    value: { window: { onFlush: (listener: () => Promise<boolean | void> | boolean | void) => ((flushListener = listener), offFlush) } },
     configurable: true,
     writable: true,
   })
@@ -104,6 +104,27 @@ describe('useAutosave (YAZ-2172)', () => {
     expect(writeFile).toHaveBeenLastCalledWith({ path: PATH, content: `${FM}mine`, expectedMtime: 42 })
     expect(handle.conflictMtime).toBeNull()
     expect(handle.status).toBe('saved')
+  })
+
+  it('the handshake answers clean only when the note is on disk: a conflict or a failed write says not clean (YAZ-3737 D2)', async () => {
+    let live = 'body'
+    mountAttached(() => live)
+    live = 'typed'
+    expect(await act(async () => flushListener!())).toBe(true)
+
+    // Someone else changed the file: the save is a CONFLICT, the typing stays only in memory.
+    writeFile.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'newer on disk', 42))
+    live = 'typed more'
+    expect(await act(async () => flushListener!())).toBe(false)
+    expect(handle.conflictMtime).toBe(42)
+    expect(await act(async () => flushListener!())).toBe(false) // still blocked: nothing was written
+
+    await act(async () => handle.keepMine())
+    expect(await act(async () => flushListener!())).toBe(true)
+
+    writeFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk full'))
+    live = 'typed again'
+    expect(await act(async () => flushListener!())).toBe(false)
   })
 
   it('unmount saves the live editor body at once, even before the editor reported it (file switch, tab close)', () => {

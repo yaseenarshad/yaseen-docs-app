@@ -6,6 +6,7 @@ import { BETWEEN_VAULTS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MA
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
+import { keepOutsideChangesOfTabs } from './editor/external/outsideChangesMemory'
 import { newNoteBase } from './editor/wikilink/createFromLink'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useLinkEvents } from './hooks/useLinkEvents'
@@ -22,6 +23,7 @@ import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type 
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
+import { dropIndex } from './lib/dragSlot'
 import { transformFile } from './views/writeProperty'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
@@ -75,15 +77,17 @@ import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import type { MoveTarget } from './tabs/TabMenu'
 import { setBoardHighlight } from './tabs/boardHighlight'
+import { useWindowHidden, useWindowMinimized } from './tabs/hiddenWindows'
 import { spacePanel } from './tabs/cardPreview'
 import { tabOfRef, windowLabel } from './tabs/windowLabel'
 import { useUpdate } from './update/useUpdate'
 import { RightPanel } from './right-panel/RightPanel'
-import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
+import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots, vaultRefusal } from './vault/slots'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
 import { nearSteps, stepIdOf, tabById, tabOf, useWorkspace, type ZoomFrom } from './workspace/useWorkspace'
+import { useTabSleep } from './workspace/useTabSleep'
 import { restoreSession } from './workspace/restoreSession'
 import { Welcome } from './Welcome'
 
@@ -261,12 +265,19 @@ function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<
 
 /**
  * A new window's boot tab starts with the page view main gave it (YAZ-2951 D5), when that tab shows
- * the view's file: a link or a pasted URL that opened another page wins, and gets none.
+ * the view's file: a link or a pasted URL that opened another page wins, and gets none. After a memory
+ * reload (YAZ-3737 D4) each restored tab gets the view of its place in the strip, when it shows the same file.
  */
-function bootStartView(tab: string | null, file: string | null): Map<string, PageView> {
+function bootStartView(tabs: readonly { id: string; path: string }[], tab: string | null, file: string | null): Map<string, PageView> {
   const start = storage.getStartView()
-  return new Map(tab !== null && start !== undefined && start.path === file ? [[tab, start.view]] : [])
+  const reload = storage.getReloadViews() ?? []
+  const views = new Map(tabs.flatMap((t, i): [string, PageView][] => (reload[i]?.path === t.path ? [[t.id, reload[i].view]] : [])))
+  if (tab !== null && start !== undefined && start.path === file) views.set(tab, start.view)
+  return views
 }
+
+/** The notice of a memory reload (YAZ-3737 D12): `mb` is the window's size before it, said in GB. */
+const reloadedNotice = (mb: number): string => `This window reloaded to free memory (it was ${(mb / 1024).toFixed(1)} GB). Your tabs and typing are kept. Undo and Back start fresh.`
 
 
 /** The place of a tab for its keys (YAZ-3564 K11): a note, a drawing, a diagram or code; null for any other tab. */
@@ -301,7 +312,7 @@ export function App() {
   // window's `file`: title, URL hash and the sidebar highlight all follow it. Each tab has its own
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
-    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
+    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, sleep: sleepTabs, wake: wakeTab, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, go: goToStep, canBack, canForward, history: tabHistory, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
@@ -316,6 +327,8 @@ export function App() {
   const pageOnShow = blank ? null : file
   /** The notes this window's tabs show: "Recently closed" leaves them out (YAZ-3487 D10). One array while the tabs stay the same. */
   const tabPaths = useMemo(() => tabs.map((t) => t.path), [tabs])
+  // The outside-change lists a tab keeps for the pages it left go when the tab closes (YAZ-3704).
+  useEffect(() => keepOutsideChangesOfTabs(tabs.map((t) => t.id)), [tabs])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const sidebarCollapsedRef = useRef(sidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
@@ -622,7 +635,17 @@ export function App() {
   // The table of contents' "Pin" / "Unpin" (YAZ-2700): the same stable door.
   const changeTableOfContents = useCallback((mode: TableOfContents) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContents: mode }), [changeSettings])
   // A drag of the names column's edge (YAZ-2752), on its release: the same stable door.
+  // The outside changes list's Pin and Unpin (YAZ-3704 demo): the same stable door.
+  const changeOutsideListPinned = useCallback((pinned: boolean) => changeSettings({ ...newNoteFolderInputs.current.settings, outsideListPinned: pinned }), [changeSettings])
   const changeTableOfContentsWidth = useCallback((width: number) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContentsWidth: width }), [changeSettings])
+  // The table of contents' zoom (YAZ-3939 D9): the same value writes nothing, as for the sidebar zoom.
+  const changeTocZoom = useCallback(
+    (tocZoom: number) => {
+      const now = newNoteFolderInputs.current.settings
+      if (tocZoom !== now.tocZoom) changeSettings({ ...now, tocZoom })
+    },
+    [changeSettings],
+  )
   // A drawing's engine moved a canvas pref (YAZ-3028, Draw's 🔒 YAZ-1775 D9): the same stable door.
   const changeCanvasPrefs = useCallback((canvas: CanvasPrefs) => changeSettings({ ...newNoteFolderInputs.current.settings, canvas }), [changeSettings])
   // A code tab's cog row (YAZ-3449): Settings › Code, for every code file, through the same stable door.
@@ -810,14 +833,7 @@ export function App() {
      * It reads the identity, not the last render: a restore adds vaults one after the other, before
      * React renders again (YAZ-3147 D3).
      */
-    const refusal = (): string | null => {
-      const now = storage.getRoots()
-      if (now.some((vault) => stripSlash(vault) === path)) return `${name} is already in this window`
-      const holder = rootOfPath(now, path)
-      if (holder !== null) return `Can't add ${name}: it is inside ${storage.vaultName(holder)}`
-      const held = now.find((vault) => rootOfPath([path], stripSlash(vault)) !== null)
-      return held === undefined ? null : `Can't add ${name}: it contains ${storage.vaultName(held)}`
-    }
+    const refusal = (): string | null => vaultRefusal(storage.getRoots(), path, storage.vaultName)
     let refused = refusal()
     if (refused === null) {
       try {
@@ -1470,6 +1486,26 @@ export function App() {
     return all.length === 1 && all[0].id === id && right === 0 && !newTab
   }, [])
   /**
+   * The page view each copy, moved tab and woken tab starts with, by tab id (YAZ-2951 D1, YAZ-3091 D5, YAZ-3737 5A),
+   * handed to its editor once. Built once, at mount (a lazy start: `bootStartView` reads storage and makes a Map).
+   * Changed in place: never a render trigger.
+   */
+  const [startView] = useState(() => bootStartView(tabs, activeTab, file))
+  /** Tab `id`'s page view now: its editor's, or the one it went to sleep with (YAZ-3737 S18). */
+  const pageViewOf = useCallback((id: string) => readPageView(id) ?? startView.get(id), [startView])
+  // The memory reload (YAZ-3737 D4): main reads every tab's view, in strip order, just before it reloads this window.
+  // `pageViewOf`, so a sleeping tab gives the view it slept with (S18), not its first view.
+  useEffect(() => api.window.onViews(() => now.current.tabs.map((t) => {
+    const view = pageViewOf(t.id)
+    return view === undefined ? null : { path: t.path, view }
+  })), [pageViewOf])
+  // The one notice after a memory reload (D12): main says the size in the first identity read of the new page only, so
+  // a ⌘R says nothing.
+  useEffect(() => {
+    const mb = storage.getReloadedAtMb()
+    if (mb !== undefined) notify(reloadedNotice(mb))
+  }, [notify])
+  /**
    * A tab leaves for another window (YAZ-2933 D2, YAZ-3091 D1), from a page of the board or a tab of the strip.
    * The page saves first, so the other window reads what was typed; `send` gives main the page with its page
    * view and display name; only then does the tab leave, as ⌘W closes it — an open board stays until its last
@@ -1479,7 +1515,7 @@ export function App() {
    */
   const sendTabAway = useCallback((path: string, id: string, send: (carry: PopOutCarry) => Promise<void | boolean>, failed: string, closeEmptyWindow: boolean) => {
     // The page opens there as it looks here (YAZ-2951 D2): read before the save, while its editor is the one on show.
-    const view = readPageView(id)
+    const view = pageViewOf(id)
     // The tab's display name goes with it (YAZ-2949 D7, S19).
     const name = now.current.tabs.find((t) => t.id === id)?.name
     flushRenamedPath(path)
@@ -1493,7 +1529,7 @@ export function App() {
         else closeTab(id, true)
       })
       .catch((err: unknown) => notify(`${failed}: ${err instanceof Error ? err.message : String(err)}`))
-  }, [aloneHere, closeUnderOverview, closeTab, notify])
+  }, [aloneHere, closeUnderOverview, closeTab, notify, pageViewOf])
   /** "Move to new window" (YAZ-2933): main opens the window and stores the name with its one tab (YAZ-3057). A last tab leaves this window empty. */
   const movePageToNewWindow = useCallback((path: string, id: string) =>
     sendTabAway(path, id, (carry) => api.window.popOut(path, carry), "Can't move to a new window", false), [sendTabAway])
@@ -1510,10 +1546,15 @@ export function App() {
     sendTabAway(path, id, (carry) => api.window.moveTo(to, path, { ...carry, background: true }), "Can't move to that window", true), [sendTabAway])
   /**
    * A tab dropped on another window's strip (YAZ-3637 D4): the same move, LOUD — the target raises and shows the tab at
-   * the slot `at` — and the source closes when the tab leaves it empty (YAZ-3091 D6).
+   * the slot `at` — and the source closes when the tab leaves it empty (YAZ-3091 D6). With `background`, a tab board card
+   * let go on that strip (YAZ-3808 6H): QUIET, at the slot.
    */
-  const movePageToWindowAt = useCallback((to: string, path: string, id: string, at: number) =>
-    sendTabAway(path, id, (carry) => api.window.moveTo(to, path, { ...carry, at }), "Can't move to that window", true), [sendTabAway])
+  const movePageToWindowAt = useCallback((to: string, path: string, id: string, at: number, background = false) =>
+    sendTabAway(path, id, (carry) => api.window.moveTo(to, path, { ...carry, at, ...(background ? { background } : {}) }), "Can't move to that window", true), [sendTabAway])
+  /** A tab of another window reached this strip (YAZ-3808 6A6): this window comes to the front. A glance: a failure changes nothing. */
+  const raiseSelf = useCallback(() => {
+    api.window.raise().catch(() => undefined)
+  }, [])
   /**
    * A tab of the strip let go where no surface took it (YAZ-3637 D1, D3, D5): main opens a window there with the tab —
    * or, for the only tab of a window with nothing else open (the D6 test), moves this window there, and the tab stays.
@@ -1534,22 +1575,29 @@ export function App() {
     const foreign = foreignDrag(data, storage.getWindowId())
     return foreign !== null && storage.getOtherWindows().find((w) => w.id === foreign.from)?.roots[foreign.root] !== undefined
   }, [filesWindow])
-  /** `at` absent: the end of the strip, as it is when the move goes (a sheet may have stood in between). */
-  const moveTabHere = useCallback((from: string, ref: TabRef, at?: number) => {
-    api.window.moveTab(from, storage.getWindowId(), ref, at ?? now.current.tabs.length).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
+  /** `at` absent: the end of the strip, as it is when the move goes (a sheet may have stood in between). `quiet`: a tab board card's, which does not open (YAZ-3808 6H). */
+  const moveTabHere = useCallback((from: string, ref: TabRef, at?: number, quiet = false) => {
+    const here = storage.getWindowId()
+    const slot = at ?? now.current.tabs.length
+    const moved = quiet ? api.window.moveTab(from, here, ref, slot, true) : api.window.moveTab(from, here, ref, slot)
+    moved.catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
   }, [notify])
   /**
    * Another window's tab dropped here (YAZ-3637 D4): that window sends it here, to the slot (`sendTabHere` there), or to
    * the strip's end for a drop off the strip. A page of a vault this window does not show asks to add that vault first,
    * as a link into one does (YAZ-3609 D21): the tab stays where it is until the vault is in.
    */
-  const [takeAsk, setTakeAsk] = useState<{ from: string; ref: TabRef; at?: number; vault: string } | null>(null)
-  const takeFromWindow = useCallback((from: string, ref: TabRef, at?: number) => {
-    if (rootOfPath(storage.getRoots(), ref.path) !== null) return moveTabHere(from, ref, at)
+  const [takeAsk, setTakeAsk] = useState<{ from: string; ref: TabRef; at?: number; vault: string; quiet: boolean } | null>(null)
+  /** A tab board card let go in another window's frame, which lacks its vault (YAZ-3808 6B): the question, as for a link into a vault. */
+  const [boardVaultAsk, setBoardVaultAsk] = useState<{ from: string; ref: TabRef; to: string; vault: string; page: string; window: string } | null>(null)
+  const takeFromWindow = useCallback((from: string, ref: TabRef, at?: number, quiet = false) => {
+    if (rootOfPath(storage.getRoots(), ref.path) !== null) return moveTabHere(from, ref, at, quiet)
     const there = storage.getOtherWindows().find((w) => w.id === from)
     const vault = there === undefined ? null : rootOfPath(there.roots, ref.path)
-    if (vault !== null) setTakeAsk({ from, ref, at, vault })
+    if (vault !== null) setTakeAsk({ from, ref, at, vault, quiet })
   }, [moveTabHere])
+  /** A tab board card of another window let go on this strip or frame (YAZ-3808 6H): it joins quietly — the tab moves, and opening it is a click. */
+  const takeBoardCard = useCallback((from: string, ref: TabRef, at?: number) => takeFromWindow(from, ref, at, true), [takeFromWindow])
   /**
    * "Move to ▸" (YAZ-3091 D2, D7 revised by D8): the other windows that show a vault of `path`, read from the state
    * cache only while a tab menu is open. Every one of them shows this vault, so a row names what that window SHOWS:
@@ -1570,16 +1618,15 @@ export function App() {
    * opens right after it and shows — under the board it shows on the board beside its source, and the
    * board stays (S5: a menu action is no trip to a page, R30). The copy starts with its source's page view
    * (YAZ-2951 D1: drill-in, live folds, scroll spot, text size): read here, before its layer mounts, and
-   * handed to its editor once (`startView`). A source with no open editor gives none (S8, S9).
+   * handed to its editor once (`startView`). A source with no open editor gives none (S8, S9); a sleeping
+   * source gives the view it went to sleep with (YAZ-3737 S18).
    */
-  // Built once, at mount (a lazy start: `bootStartView` reads storage and makes a Map). Changed in place: never a render trigger.
-  const [startView] = useState(() => bootStartView(activeTab, file))
   const duplicateTab = useCallback((id: string) => {
-    const view = readPageView(id)
+    const view = pageViewOf(id)
     ownChange.current = now.current.phase === 'open'
     const copy = duplicate(id)
     if (copy !== null && view !== undefined) startView.set(copy, view)
-  }, [duplicate, startView])
+  }, [duplicate, startView, pageViewOf])
   /**
    * Each bullet's crumb text by zoom key (YAZ-3647 E3, E4): what the menus of ‹ and › and a zoomed tab's tooltip show. A key
    * is the bullet's text and its count, so one text serves every page. Memory only, as the Back list: a tab whose page has
@@ -1606,7 +1653,8 @@ export function App() {
     const source = tabById(now.current, id)
     if (source !== null) void flushRenamedPath(source.path)
     const copy = openZoom(id, zoom, background)
-    if (copy !== null && view !== undefined) startView.set(copy, { ...view, zoomKey: zoom, scrollTop: 0 })
+    // A new start (YAZ-3737 D3): the source's caret is in another level, so it stays behind.
+    if (copy !== null && view !== undefined) startView.set(copy, { scrollTop: 0, zoomKey: zoom, folds: view.folds, magnification: view.magnification })
   }, [openZoom, startView, learnZoomLabel])
   /**
    * A tab another window moved here (YAZ-3091 D5, S8–S14): the board closes, the page is a NEW tab at the end
@@ -1638,13 +1686,14 @@ export function App() {
     if (now.current.phase === 'open') closeUnderOverview(ids)
     else closeTabs(ids)
   }, [closeUnderOverview, closeTabs])
-  const sendTabHere = useCallback(({ to, ref, at }: { to: string; ref: TabRef; at?: number }) => {
+  const sendTabHere = useCallback(({ to, ref, at, background }: { to: string; ref: TabRef; at?: number; background?: true }) => {
     const tab = tabOfRef(now.current.tabs, ref)
     if (tab === undefined) return
     // A board's drop (D13) is the "Move to ▸" door made quiet — the page saves first, then leaves. A drop on that
-    // window's strip (YAZ-3637 D4) names its slot, and is loud: the tab shows there.
+    // window's strip (YAZ-3637 D4) names its slot, and is loud: the tab shows there. A board card let go on that strip
+    // (YAZ-3808 6H) names its slot and is quiet: the tab joins there, and the board there stays open.
     if (at === undefined) movePageToWindowQuietly(to, tab.path, tab.id)
-    else movePageToWindowAt(to, tab.path, tab.id, at)
+    else movePageToWindowAt(to, tab.path, tab.id, at, background === true)
   }, [movePageToWindowQuietly, movePageToWindowAt])
   // Below `startView`: a moved tab's page view goes there (YAZ-3091 D5).
   /**
@@ -1696,11 +1745,25 @@ export function App() {
   /** A Files window's click, run here (YAZ-3357 D2): set further down, where every door it calls is made. Main holds the push until `link.ready`. */
   const fromFiles = useRef<(action: FilesAction) => void>(() => undefined)
   const openFromFiles = useCallback((action: FilesAction) => fromFiles.current(action), [])
-  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
   /** Another window's card dropped in a frame on this board (YAZ-3343 D13): that window sends it, quietly (`sendTabHere` there). */
   const moveBoardTab = useCallback((from: string, to: string, ref: TabRef) => {
     api.window.moveTab(from, to, ref).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
   }, [notify])
+  /**
+   * The Add of another window's tab board, for a card it dropped in THIS window's frame (YAZ-3808 6B): this window adds
+   * the vault by its own rules — a refusal says why, here — then takes the tab, quietly, as a board move does.
+   */
+  const addVaultAndTakeHere = useCallback(({ vault, from, ref }: { vault: string; from: string; ref: TabRef }) => {
+    void addVault(vault).then((added) => {
+      if (added) moveBoardTab(from, storage.getWindowId(), ref)
+    })
+  }, [addVault, moveBoardTab])
+  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
+  /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
+  const moveBoardCardToSlot = useCallback((id: string, slot: number) => {
+    const from = now.current.tabs.findIndex((t) => t.id === id)
+    if (from !== -1) moveTab(from, dropIndex(from, slot))
+  }, [moveTab])
   /** What the board's preview panel needs of a page's vault (D18): the scope that holds it, or the first one. */
   const boardPreviewScope = useCallback((path: string) => {
     const scope = scopeOf(path)
@@ -1795,10 +1858,6 @@ export function App() {
     else if (e.type === 'dragover') windowDragOver(e)
     else e.preventDefault()
   }
-  // The copy's `Editor` keeps its start in a ref when it mounts, so the entry goes once its layer is there.
-  useEffect(() => {
-    for (const id of startView.keys()) if (mounted.includes(id)) startView.delete(id)
-  }, [mounted, startView])
   /**
    * ⌘⇧N (GRO-2167): a new window on this window's vaults with NO tab — it opens on the blank tab, the caret in the
    * search (YAZ-3343 D35, which replaced YAZ-2951 D5's copy of the tabs and the page view).
@@ -2762,6 +2821,9 @@ export function App() {
       // YAZ-2752: the width of its names column is a SETTING as well.
       tableOfContentsWidth: settings.tableOfContentsWidth,
       onChangeTableOfContentsWidth: changeTableOfContentsWidth,
+      // YAZ-3939 D9: and its zoom, one for every note.
+      tocZoom: settings.tocZoom,
+      onChangeTocZoom: changeTocZoom,
       // YAZ-3028: every drawing tab shares the canvas prefs, a SETTING too.
       canvasPrefs: settings.canvas,
       onChangeCanvasPrefs: changeCanvasPrefs,
@@ -2786,6 +2848,10 @@ export function App() {
       // YAZ-3564: the keys the user changed; a drawing follows them at once (K4).
       hotkeys: settings.hotkeys,
       hotkeysAside: settings.hotkeysAside,
+      // YAZ-3704 D5: how long the words an outside save changed glow, a SETTING; it reaches the editor through a channel, never a rebuild.
+      outsideChangeGlow: settings.outsideChangeGlow,
+      outsideListPinned: settings.outsideListPinned,
+      onChangeOutsideListPinned: changeOutsideListPinned,
       // Upkeep off (🔒 D7): no settings, so no Reviews section.
       reviewSettings: scope.reviewSettings.settings.enabled ? scope.reviewSettings.settings : undefined,
     }
@@ -2807,6 +2873,28 @@ export function App() {
   const reviewLayer = reviewed !== null && mounted.includes(reviewed.id) ? reviewed.id : (mounted.find((id) => pathOf.get(id) === reviewPath) ?? null)
   /** The tab whose layer shows: the active one, none under the blank tab, and the reviewed note's during a review. */
   const shown = session === null ? (pageOnShow === null ? null : activeTab) : reviewLayer
+  // Tab sleep (YAZ-3737 5A, S10): this window is hidden or minimized; then the active tab may sleep too. A boolean
+  // each, so a hide of another window renders no App here.
+  const hiddenHere = useWindowHidden(storage.getWindowId())
+  const minimizedHere = useWindowMinimized(storage.getWindowId())
+  const away = hiddenHere || minimizedHere
+  const tabSleep = useTabSleep(
+    { setting: settings.tabSleepAfter, tabs, mounted, active: activeTab, shown, boardOpen: overview.phase !== 'closed', review: session === null ? null : reviewLayer, away },
+    { startView, sleep: sleepTabs, wake: wakeTab },
+  )
+  const held = tabSleep.held
+  // Settings › Memory's tab rows (YAZ-3946): main asks each window for its tabs' facts only when it builds a report.
+  // The title is the tab bar's: the display name, else the page's title.
+  const sleepFacts = tabSleep.facts
+  useEffect(() => api.window.onTabs(() => {
+    const names = new Map(now.current.tabs.map((t) => [t.id, t.name]))
+    return sleepFacts().map(({ id, path, ...facts }) => ({ path, title: names.get(id) ?? nameOf(path), ...facts }))
+  }), [sleepFacts, nameOf])
+  // The `Editor` keeps its start in a ref when it mounts, so the entry goes once its layer is there — not while the
+  // layer is a held tab's, with no editor (S10).
+  useEffect(() => {
+    for (const id of startView.keys()) if (mounted.includes(id) && id !== held) startView.delete(id)
+  }, [mounted, startView, held])
 
   /**
    * A Files window's sidebar doors (YAZ-3357 D2, D7): each sends ONE message to main, which runs it in a full window.
@@ -2868,6 +2956,7 @@ export function App() {
       preview={preview}
       titles={titles}
       windowId={storage.getWindowId()}
+      asleep={tabSleep.asleep}
       darkColors={settings.diagramDarkColors}
       leaving={overview.phase === 'leaving'}
       onLeft={leftOverview}
@@ -2876,6 +2965,10 @@ export function App() {
       onDismiss={leaveOverviewForOpenPage}
       onKillAll={askKillAll}
       onMoveTab={moveBoardTab}
+      // A card let go on the strip (YAZ-3808 D1): this window's tab moves to the slot; another window's joins at it.
+      onMoveToSlot={moveBoardCardToSlot}
+      onTakeAt={takeBoardCard}
+      onAskVault={setBoardVaultAsk}
       onCloseWindow={closeBoardWindow}
       onNewWindow={openWindowBehind}
       onOpenTabHere={openBackground}
@@ -3149,6 +3242,7 @@ export function App() {
               // A tab of another window's strip dropped here, and a tab of this one let go off every window (YAZ-3637).
               takesDrag={takesDrag}
               onDropFromWindow={takeFromWindow}
+              onRaise={raiseSelf}
               onTearOff={tearOff}
               onMoveToRight={movePageToRight}
               onMoveToNewWindow={movePageToNewWindow}
@@ -3183,17 +3277,22 @@ export function App() {
               hoverPreview={hoverOn(settings, 'tabs')}
               previewScope={boardPreviewScope}
               diagramDarkColors={settings.diagramDarkColors}
+              // Tab sleep (YAZ-3737 D11, S7): the zzz mark, and a hover that wakes a sleeping tab behind the page on show.
+              asleep={tabSleep.asleep}
+              onWake={tabSleep.wake}
             />
           )}
           <div className="tabstack">
-            {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden. Mounted only while it shows (R1). */}
+            {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden, until it sleeps (YAZ-3737 5A). Mounted only while it shows (R1). */}
             {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} openTabs={tabPaths} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
             {mounted.map((id) => {
               const path = pathOf.get(id)
               if (path === undefined) return null
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility + content-visibility — see tabs.css
-              // for why display:none would lose scroll positions.
+              // for why display:none would lose scroll positions. A tab unseen for `tabSleepAfter` sleeps
+              // (YAZ-3737 5A, `useTabSleep`): its id leaves `mounted`, and its wake starts from the view it slept with
+              // (`startView`); undo starts fresh. A hidden window's active tab sleeps as a `held` layer with no editor.
               // Under the tab board (YAZ-2648 D5) the active layer hides the same way: still mounted.
               // The layer the board opened from zooms out as it hides, and the one that is chosen
               // zooms in (tabs.css): a class each, so no editor renders for it.
@@ -3216,7 +3315,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} />
+                  {id !== held && <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} />}
                 </div>
               )
             })}
@@ -3316,10 +3415,26 @@ export function App() {
             // The vault's identity write goes to main before the move asks it, so main sees this window show the page.
             // A vault the window cannot take (the most vaults, one inside another) says why in a notice, and nothing moves.
             void addVault(ask.vault).then((added) => {
-              if (added) moveTabHere(ask.from, ask.ref, ask.at)
+              if (added) moveTabHere(ask.from, ask.ref, ask.at, ask.quiet)
             })
           }}
           onCancel={() => setTakeAsk(null)}
+        />
+      )}
+      {/* A tab board card let go in another window's frame, which lacks its vault (YAZ-3808 6B): that window adds the vault, then takes the tab. */}
+      {boardVaultAsk !== null && (
+        <ConfirmSheet
+          labelId="confirm-add-vault-for-board-text"
+          // The words of the link's sheet (YAZ-3609 D21), for the window the card was let go in.
+          text={`This tab (${boardVaultAsk.page}) is in a vault (${storage.vaultName(boardVaultAsk.vault)}) that is not open in that window (${boardVaultAsk.window}). Add that vault to that window to move the tab there?`}
+          confirmLabel="Add vault to that window"
+          focusConfirm
+          onConfirm={() => {
+            const ask = boardVaultAsk
+            setBoardVaultAsk(null)
+            api.window.addVaultAndTake(ask.to, ask.vault, ask.from, ask.ref).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
+          }}
+          onCancel={() => setBoardVaultAsk(null)}
         />
       )}
       {/* "Kill all tabs" asks first (YAZ-2739 D3): the focus starts on Cancel, as on every sheet that takes something away. */}

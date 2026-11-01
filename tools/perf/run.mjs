@@ -1,21 +1,27 @@
 #!/usr/bin/env node
 /**
- * USAGE: npm run perf -- <scenario…|all> [--runs 5] [--app <.app>] [--vs <.app>] [--work <dir>] [--out <file.json>]
+ * USAGE: npm run perf -- <scenario…|all> [--runs 5] [--app <.app>] [--vs <.app>] [--work <dir>] [--out <file.json>] [--cycles 10] [--snapshots]
  *
  * The local perf harness (YAZ-2131 1C). Launches the packaged app on generated fixtures in isolated
  * profiles, runs each scenario `--runs` times after one discarded warm-up, and writes JSON: per
  * metric the median, p95, min, max, cv (noise) and every run, plus the machine load of every run.
  * Local only: it opens real windows.
- *   --app   the build to measure (default: desktop/dist-app/mac-arm64/Yaseen Docs.app)
+ *   --app   the build to measure (default: desktop/dist-app/mac-arm64/Yaseen Docs.app), or an unpacked
+ *           build's main entry (`desktop/out/main/index.js` after `npm run build`), run by Electron's binary
  *   --vs    a second build, interleaved run by run in ABBA order (A B, B A, …), each with its own
  *           warm-up, fixtures and profiles; the table shows both and the change
  *   --work  scratch dir for vaults and profiles (default <tmpdir>/yaseen-docs-perf); must be under a
  *           temp root and empty or this harness's own; removed when the run ends
  *   --out   where the JSON goes (default <tmpdir>/yaseen-docs-perf-<time>.json)
+ *   --cycles  long-day's cycle count (default 10)
+ *   --snapshots  long-day writes renderer heap snapshots at cycle 1 and the last into <work>/snapshots,
+ *           which the end of the run keeps (never in the repo: --work is a temp dir)
+ * A scenario may export `runs` and `warmup` (long-day: 1 and 0) and `optIn` (not in `all`; YAZ-3861).
  * Compare builds on the same machine, idle, with the same --runs. A scenario whose runs saw a
  * 1-minute load over 10 is flagged `noisy`; its time and CPU metrics are `loadSensitive`.
  */
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -35,38 +41,44 @@ import * as watcher from './scenarios/watcher.mjs'
 import * as idle from './scenarios/idle.mjs'
 import * as quit from './scenarios/quit.mjs'
 import * as drawio from './scenarios/drawio.mjs'
+import * as longDay from './scenarios/long-day.mjs'
+import * as longDayOpen from './scenarios/long-day-open.mjs'
 
-const SCENARIOS = { launch, 'open-big': openBig, typing, 'open-big-code': openBigCode, 'typing-code': typingCode, 'sidebar-resize': sidebarResize, 'tab-switch': tabSwitch, 'multi-vault': multiVault, storm, watcher, idle, quit, drawio }
+const SCENARIOS = { launch, 'open-big': openBig, typing, 'open-big-code': openBigCode, 'typing-code': typingCode, 'sidebar-resize': sidebarResize, 'tab-switch': tabSwitch, 'multi-vault': multiVault, storm, watcher, idle, quit, drawio, 'long-day': longDay, 'long-day-open': longDayOpen }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 /** The timing ceilings (YAZ-3044 A19): budget.json's `perf` rows, checked against each scenario's medians. */
 const { perf: ceilings = {}, perfTolerance = 0 } = JSON.parse(fs.readFileSync(path.join(here, 'budget.json'), 'utf8'))
 const argv = process.argv.slice(2)
 const opt = (name, dflt) => (argv.includes(`--${name}`) ? argv[argv.indexOf(`--${name}`) + 1] : dflt)
-const names = argv.filter((a, i) => !a.startsWith('--') && !/^--(runs|app|vs|work|out)$/.test(argv[i - 1] ?? ''))
-const todo = names.includes('all') ? Object.keys(SCENARIOS) : names
+const names = argv.filter((a, i) => !a.startsWith('--') && !/^--(runs|app|vs|work|out|cycles)$/.test(argv[i - 1] ?? ''))
+// An opt-in scenario (long-day, YAZ-3861) runs only when it is named.
+const todo = names.includes('all') ? Object.keys(SCENARIOS).filter((n) => !SCENARIOS[n].optIn) : names
 const unknown = todo.filter((n) => !SCENARIOS[n])
 if (todo.length === 0 || unknown.length > 0) {
-  console.error(`usage: npm run perf -- <${Object.keys(SCENARIOS).join('|')}|all> [--runs 5] [--app <.app>] [--vs <.app>] [--work <dir>] [--out <file.json>]${unknown.length ? `\nunknown: ${unknown.join(', ')}` : ''}`)
+  console.error(`usage: npm run perf -- <${Object.keys(SCENARIOS).join('|')}|all> [--runs 5] [--app <.app>] [--vs <.app>] [--work <dir>] [--out <file.json>] [--cycles 10] [--snapshots]${unknown.length ? `\nunknown: ${unknown.join(', ')}` : ''}`)
   process.exit(2)
 }
 const runs = Number(opt('runs', '5'))
 const bundles = [opt('app', path.join(here, '../../desktop/dist-app/mac-arm64/Yaseen Docs.app')), opt('vs')].filter(Boolean).map((b) => path.resolve(b))
-const apps = bundles.map((b) => ({ bin: path.join(b, 'Contents/MacOS/Yaseen Docs') }))
-for (const { bin } of apps) {
-  if (fs.existsSync(bin)) continue
-  console.error(`no app binary at ${bin}: run \`npm run desktop:build\`, or pass --app`)
+// A `.js` is an unpacked build's main entry (YAZ-3861): Electron's binary runs it, as the e2e suite does.
+const apps = bundles.map((b) => (b.endsWith('.js') ? { bin: createRequire(import.meta.url)('electron'), args: [b] } : { bin: path.join(b, 'Contents/MacOS/Yaseen Docs') }))
+for (const { bin, args = [] } of apps) {
+  if ([bin, ...args].every((f) => fs.existsSync(f))) continue
+  console.error(`no app at ${[bin, ...args].join(' ')}: run \`npm run desktop:build\` (or \`npm run build\` for desktop/out), or pass --app`)
   process.exit(2)
 }
 const out = path.resolve(opt('out', path.join(os.tmpdir(), `yaseen-docs-perf-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)))
 const work = claimWorkDir(path.resolve(opt('work', path.join(os.tmpdir(), 'yaseen-docs-perf'))))
+const scenarioOpts = { cycles: Number(opt('cycles', '10')), snapshots: argv.includes('--snapshots') ? path.join(work.root, 'snapshots') : null }
 const load1 = () => Math.round(os.loadavg()[0] * 10) / 10
 /** Above this 1-minute load a timing run is not a usable number (several agents share this Mac). */
 const NOISY_LOAD = 10
 /** Leaves the machine as it was: nothing of ours running, the work dir gone, `yaseendocs://` back on the installed app. */
 function teardown() {
   killLaunched()
-  work.remove()
+  work.remove(scenarioOpts.snapshots === null ? undefined : 'snapshots')
+  if (scenarioOpts.snapshots !== null) console.error(`heap snapshots kept in ${scenarioOpts.snapshots}`)
   const handler = releaseLaunchServices(bundles)
   if (handler !== INSTALLED_APP) console.error(`WARNING: yaseendocs:// now opens ${handler}, not ${INSTALLED_APP}. Launch the installed app once to take it back.`)
   return handler
@@ -82,15 +94,19 @@ const report = { app: bundles[0], ...(bundles[1] && { vs: bundles[1] }), machine
 try {
   for (const name of todo) {
     const scenario = SCENARIOS[name]
-    const contenders = apps.map((app, j) => ({ app, fx: scenario.setup(work.dirFor(j ? `${name}~vs` : name)), results: [] }))
+    const contenders = apps.map((app, j) => ({ app, fx: scenario.setup(work.dirFor(j ? `${name}~vs` : name), scenarioOpts), results: [], series: [] }))
     const load = []
-    for (let i = 0; i <= runs; i++) {
+    // A scenario's own `runs` / `warmup` win (long-day: one run, no warm-up, YAZ-3737 D7).
+    const [n, warmup] = [scenario.runs ?? runs, scenario.warmup ?? 1]
+    for (let i = 1 - warmup; i <= n; i++) {
       for (const c of abba(i, contenders)) {
         const at = load1()
-        const r = await scenario.run(c.app, c.fx)
+        // `series` (long-day's per-cycle numbers) is kept beside the metrics, not summarized.
+        const { series, ...r } = await scenario.run(c.app, c.fx)
         // Run 0 warms the OS file cache and Chromium's caches.
         if (i > 0) {
           c.results.push(r)
+          if (series !== undefined) c.series.push(series)
           load.push(at)
         }
         console.error(`${name} ${c === contenders[0] ? 'app' : 'vs'} run ${i}${i ? '' : ' (warm-up)'} load ${at}: ${JSON.stringify(r)}`)
@@ -99,12 +115,15 @@ try {
     const metrics = summarizeRuns(contenders[0].results)
     const over = overCeilings(name, metrics, ceilings, perfTolerance)
     report.scenarios[name] = {
+      ...((n !== runs || warmup !== 1) && { runs: n, warmupDiscarded: warmup }),
       over,
       load: { min: Math.min(...load), max: Math.max(...load), runs: load },
       noisy: Math.max(...load) > NOISY_LOAD,
       loadSensitive: Object.keys(metrics).filter(loadSensitive),
       metrics,
       ...(contenders[1] && { vs: summarizeRuns(contenders[1].results) }),
+      ...(contenders[0].series.length > 0 && { series: contenders[0].series }),
+      ...(contenders[1]?.series.length > 0 && { vsSeries: contenders[1].series }),
     }
   }
 } finally {

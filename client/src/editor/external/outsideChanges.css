@@ -1,0 +1,249 @@
+/* Outside changes (YAZ-3704 D4–D8): the glow on the changed words, the thin red mark of removed text,
+   the Checked button of a changed line, and the one-line note (OutsideChangesBar.tsx).
+
+   The glow tokens live on :root beside app.css's palette and swap under [data-theme='dark'], as
+   find.css's do. The note is the conflict bar's family, but calm: it informs, it asks for nothing. */
+:root {
+  --outside-change-bg: rgba(124, 58, 237, 0.14);
+}
+
+[data-theme='dark'] {
+  --outside-change-bg: rgba(167, 139, 250, 0.22);
+}
+
+.outside-change {
+  background: var(--outside-change-bg);
+  border-radius: 2px;
+}
+
+/* Next change's ring (D9): on the glow, on a removed mark, or on the block when it has neither. */
+.outside-change--active {
+  box-shadow: 0 0 0 2px var(--agent);
+}
+
+/* D7: a thin red bar where text was; the padding widens what the mouse can rest on, not the bar. */
+.outside-removed {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  padding: 0 3px;
+  margin: 0 -2px;
+  vertical-align: text-bottom;
+  background: var(--danger);
+  background-clip: content-box;
+  border-radius: 1px;
+  cursor: help;
+}
+
+/* Between two blocks (a bullet removed): a short dash where the bullet was, not a line across the page (YAZ-3704 demo). */
+.outside-removed--between {
+  display: block;
+  width: 40px;
+  height: 2px;
+  padding: 3px 0;
+  margin: -3px 0;
+}
+
+/* YAZ-3947, YAZ-3989: the mouse on a glow or a removed mark shows this box AT ONCE, as the Checked button shows (a
+   native title waits about a second): the line word by word, the removed words struck, the new ones lit. One box
+   for each editor, on the body, so no scroll box cuts it; never in the doc, copied or saved. */
+.outside-tip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 420px;
+  padding: 4px 8px;
+  font: 12px/18px var(--font);
+  color: var(--fg);
+  white-space: pre-wrap;
+  pointer-events: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.outside-tip ins {
+  margin-left: 3px;
+  text-decoration: none;
+  background: var(--outside-change-bg);
+  border-radius: 2px;
+}
+
+/* YAZ-3998: the numbered list, in the room LEFT of the note (OutsideChangesList.tsx; the table of contents has the
+   right). Chrome, as the table of contents is: a sibling of the scroller inside `section.editor`, so it holds its place
+   while the note scrolls. The component sets `top` (the scroller's top); the width is `--outside-list-width`, pinned (4J). */
+:root {
+  /* The pinned list's width; the note's text makes room for it, as for the table of contents' column. */
+  --outside-list-width: 220px;
+}
+
+.editor:has(> .outside-list:not(.outside-list--dropdown)) > .editor-host {
+  padding-left: var(--outside-list-width);
+}
+
+.outside-list {
+  position: absolute;
+  bottom: 0;
+  left: 8px;
+  width: calc(var(--outside-list-width) - 16px);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0 8px;
+  font-size: 12px;
+  line-height: 18px;
+  pointer-events: none;
+}
+
+.outside-list__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px 4px 8px;
+  pointer-events: auto;
+}
+
+.outside-list__title {
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.outside-list ol {
+  flex: 0 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  pointer-events: auto;
+}
+
+.outside-list__row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 8px;
+  font: inherit;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+}
+
+.outside-list__row:hover {
+  background: var(--bg-hover);
+}
+
+/* The change Next or a click put the ring on. */
+.outside-list__row[aria-current] {
+  box-shadow: inset 0 0 0 2px var(--agent);
+}
+
+.outside-list__number {
+  flex: none;
+  min-width: 16px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Two lines at most; the mouse-over box in the note shows the rest. */
+.outside-list__text {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Unpinned (4J): the bar's count opens the same rows under the bar. */
+.outside-changes-bar .outside-changes-bar__count {
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.outside-changes-bar .outside-changes-bar__count:hover {
+  text-decoration: underline;
+  background: none;
+}
+
+.outside-list--dropdown {
+  top: 100%;
+  bottom: auto;
+  left: 12px;
+  z-index: 3;
+  width: 320px;
+  max-height: 60vh;
+  padding: 4px 0;
+  pointer-events: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.outside-tip del,
+.outside-list del {
+  color: var(--danger);
+  text-decoration: line-through;
+}
+
+.outside-list ins {
+  text-decoration: none;
+  background: var(--outside-change-bg);
+  border-radius: 2px;
+}
+
+/* D8: shown only while the mouse is over the changed line. */
+.outside-checked {
+  display: none;
+  margin-left: 8px;
+  padding: 0 6px;
+  font: 12px/18px var(--font);
+  color: var(--fg-muted);
+  vertical-align: text-bottom;
+  cursor: pointer;
+  user-select: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.outside-change-block:hover .outside-checked {
+  display: inline-block;
+}
+
+.outside-checked:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.outside-changes-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border);
+}
+
+.outside-changes-bar button {
+  padding: 3px 10px;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.outside-changes-bar button:hover {
+  background: var(--bg-hover);
+}

@@ -22,5 +22,5 @@ export function writeBigCode(vault) {
   return file
 }
 
-/** In the page: true once the code tab in front shows the file's first constant. */
-export const CODE_SHOWN = `(document.querySelector('.tabstack__layer:not(.tabstack__layer--hidden) .editor--code .view-lines')?.textContent.includes(${JSON.stringify(BIG_CODE_FIRST_LINE)}) ?? false)`
+/** In the page: true once the code tab in front shows the file's first constant. Monaco draws each space as U+00A0 (YAZ-3861). */
+export const CODE_SHOWN = `(document.querySelector('.tabstack__layer:not(.tabstack__layer--hidden) .editor--code .view-lines')?.textContent.replace(/\\u00a0/g, ' ').includes(${JSON.stringify(BIG_CODE_FIRST_LINE)}) ?? false)`

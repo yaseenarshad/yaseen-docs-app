@@ -187,6 +187,22 @@ describe('the tab and its helper', () => {
     expect(lsp.close).toHaveBeenCalledWith(`h:${A}`)
   })
 
+  it('S15 (YAZ-3737): a code tab that sleeps closes its file with the helper; the last one to sleep closes the last file, and main then stops the helper (pool.test.ts S6)', async () => {
+    const second = document.createElement('div')
+    document.body.appendChild(second)
+    await opened(A)
+    const other = await opened(MATH, second)
+    expect(lsp.open).toHaveBeenCalledTimes(2)
+    // A sleep unmounts the tab's editor, as a close does; the other tab keeps its file open.
+    act(() => root?.render(<></>))
+    await settle()
+    expect(lsp.close.mock.calls).toEqual([[`h:${A}`]])
+    act(() => other.root.unmount())
+    await settle()
+    expect(lsp.close.mock.calls).toEqual([[`h:${A}`], [`h:${MATH}`]])
+    second.remove()
+  })
+
   it('a file no helper takes is never opened there', async () => {
     files['/vault/data.json'] = '{}'
     await opened('/vault/data.json')
