@@ -568,7 +568,8 @@ test('step 6 — a note of bullets lists its bullets, three levels deep, and a c
   await card(win).locator('.toc__name', { hasText: 'Build' }).click()
   await expectLanded(win, 'li', 'Build')
   await expect(card(win)).toHaveCount(0)
-  expect(await readFile(bulletsPath, 'utf8')).toBe(setNotePageSwitch(BULLETS, 'toc', true))
+  // No step before this one uses the cog of this note: the file is as it was written.
+  expect(await readFile(bulletsPath, 'utf8')).toBe(BULLETS)
 })
 
 test('step 7 — "TOC made from:" selects the source of one note, and the choice is there after a reopen and a restart', async () => {
