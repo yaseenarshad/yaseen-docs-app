@@ -124,6 +124,11 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
     const f = requireAbsPath(file, 'file')
     store.setFolds(r, f, requireStringArray(keys, 'keys'))
   })
+  handle(CONTRACT.state.setTocFolds, async (root: unknown, file: unknown, keys: unknown) => {
+    const r = requireAbsPath(root, 'root')
+    const f = requireAbsPath(file, 'file')
+    store.setTocFolds(r, f, requireStringArray(keys, 'keys'))
+  })
   handle(CONTRACT.state.setTocSource, async (root: unknown, file: unknown, source: unknown) => {
     const r = requireAbsPath(root, 'root')
     const f = requireAbsPath(file, 'file')

@@ -1643,6 +1643,12 @@ export interface SettingsState {
    */
   sidebarZoom: number
   /**
+   * The zoom of a note's table of contents in percent (YAZ-3939 D7–D11): its names and their fold arrows, never its
+   * header or the rail. One value for every note and window; the code Outline keeps 100%. The steps are the sidebar's
+   * (`SIDEBAR_ZOOM_STEPS`); a stored value is kept within 50–200.
+   */
+  tocZoom: number
+  /**
    * The App size in percent (YAZ-3432): the Chromium page zoom of EVERY window, a Files window too, set by main
    * (`webContents.setZoomFactor`). Only `APP_ZOOM_STEPS`; anything else is stored as 100. Mouse only: the footer's
    * zoom menu writes it, never ⌘+ / ⌘− / ⌘0. The sidebar zoom and a note's zoom stack on it.
@@ -1920,6 +1926,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   hotkeys: {},
   hotkeysAside: {},
   sidebarZoom: 100,
+  tocZoom: 100,
   appZoom: 100,
   codeReadOnly: false,
   codeWrap: true,
@@ -2163,6 +2170,8 @@ export interface FolderState {
   closed: Record<string, number>
   /** file → what its table of contents is built from (YAZ-2700 D14), for the notes where the reader chose. A note on Auto has NO entry. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   tocSources: Record<string, TocSource>
+  /** file → the folded rows of its table of contents (YAZ-3939 D1): `tocFoldKeys` keys, max MAX_FOLD_KEYS_PER_FILE. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
+  tocFolds: Record<string, string[]>
   /** file → the note's "Section indent" switch (YAZ-2709 D2), for the notes where the reader used it. A note with NO entry is off. `true` and `false` are both kept: a note the reader turned off stays apart from a note never touched, so a default for all notes can come later with no repair of this data. Keyed by page, as `tocSources` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   sectionIndents: Record<string, boolean>
   /** file → the note's "Table of contents" switch (YAZ-2950), for the notes where the reader used it. A note with NO entry is on. `true` and `false` are both kept, as in `sectionIndents`. Keyed by page. Never written to the markdown. Additive: a file without it loads as `{}`. */
@@ -2408,7 +2417,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null }
 }
 
 /** One vault as the app lists it (YAZ-2556 D2): a row of the ⌘O panel, and of `yaseendocs vaults`. */

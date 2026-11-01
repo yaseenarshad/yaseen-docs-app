@@ -35,7 +35,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncEx
 import { createPortal } from 'react-dom'
 import { CODE_SYMBOL_KINDS, type CodeOutlineSort, type CodeSymbolKind, type TableOfContents as TableOfContentsMode } from '@shared/types'
 import { NAMES_FLOOR, namesRoom, namesShow, railPitch } from '../../editor/toc/TableOfContents'
-import { beginTocResize, CLICK_GUARD_MS, EDGE_PX, PinIcon, RAIL_PADDING_PX, useTocBox, useTocCard, useTocLinger, useTocShortcut, useTocWidthVar } from '../../editor/toc/tocFrame'
+import { beginTocResize, ChevronIcon, CLICK_GUARD_MS, EDGE_PX, PinIcon, RAIL_PADDING_PX, useTocBox, useTocCard, useTocLinger, useTocShortcut, useTocWidthVar } from '../../editor/toc/tocFrame'
 import { ContextMenu } from '../../sidebar/ContextMenu'
 import { CollapseAllIcon, ExpandAllIcon } from '../../views/view/icons'
 import type { MenuAction } from '../../sidebar/menuSections'
@@ -622,12 +622,6 @@ function highlight(name: string, needle: string): ReactNode {
 }
 
 const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
-
-const ChevronIcon = () => (
-  <svg width={10} height={10} viewBox="0 0 16 16" {...stroke} aria-hidden>
-    <path d="M4 6l4 4 4-4" />
-  </svg>
-)
 
 const MoreIcon = () => (
   <svg width={14} height={14} viewBox="0 0 16 16" fill="currentColor" aria-hidden>

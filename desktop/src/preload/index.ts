@@ -138,6 +138,7 @@ const api: YaseenDocsApi = {
     ...generated.state,
     // Copies, as the hand-written bridge always sent.
     setFolds: (root, file, keys) => call(CONTRACT.state.setFolds.channel, root, file, [...keys]),
+    setTocFolds: (root, file, keys) => call(CONTRACT.state.setTocFolds.channel, root, file, [...keys]),
     setBaseGroups: (root, key, collapsed) => call(CONTRACT.state.setBaseGroups.channel, root, key, [...collapsed]),
   },
   window: { ...generated.window, onFlush: (listener) => listen(flushListeners, listener), onViews: (listener) => listen(viewsListeners, listener), onTabs: (listener) => listen(tabsListeners, listener) },

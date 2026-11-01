@@ -4,6 +4,7 @@
  *    window's own `WindowEntry.zoom`, D13) — never the frame, never a note, which has its own zoom
  *    (`editor/DocumentZoom.tsx`). ⌘+ / ⌘− / ⌘0 step it too when no note claims them.
  *  - `app` (YAZ-3432): the App size of every window (`settings.appZoom`). Mouse only.
+ *  - `toc` (YAZ-3939 D7): the names of a note's table of contents (`settings.tocZoom`), on the sidebar's steps.
  * − and + walk the kind's steps (`stepZoom`) and stop at the walls; a click on the percent goes back to 100%. A step
  * that reaches a wall turns its own button off, so the focus moves to the percent first: it stays in the row instead
  * of falling to the page (YAZ-3434).
@@ -30,6 +31,15 @@ const KINDS = {
     outTitle: 'Make every window smaller',
     intoTitle: 'Make every window larger',
     valueTitle: 'App size. Click for 100%',
+  },
+  toc: {
+    steps: SIDEBAR_ZOOM_STEPS,
+    label: 'Table of contents zoom',
+    out: 'Zoom the table of contents out',
+    into: 'Zoom the table of contents in',
+    outTitle: 'Zoom the table of contents out (⌘−)',
+    intoTitle: 'Zoom the table of contents in (⌘+)',
+    valueTitle: 'Table of contents zoom. Click for 100%',
   },
 } as const
 

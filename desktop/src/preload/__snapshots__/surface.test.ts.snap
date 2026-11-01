@@ -175,6 +175,7 @@ state.setSettings/1: invoke state:set-settings ["a0"]; => "answer"; !> {"code":"
 state.setSettingsFolder/1: invoke state:set-settings-folder ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setSidebarWidth/1: invoke state:set-sidebar-width ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setTabCanvas/1: invoke state:set-tab-canvas ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.setTocFolds/3: invoke state:set-toc-folds ["a0","a1",["a","2"]]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setTocSource/3: invoke state:set-toc-source ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setTocSwitch/3: invoke state:set-toc-switch ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.settingsFolder/0: invoke state:settings-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
