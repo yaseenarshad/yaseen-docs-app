@@ -240,19 +240,14 @@
   mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
 }
 
-/* The name between the file icon and the zzz (YAZ-4003). Awake, it runs on under the label's end and fades there, as
-   before. Asleep, it gives way with "…", so a long name never hides the zzz, also at 72px with many tabs. */
+/* The name after the file icon and a sleeping tab's zzz (YAZ-4003): it runs on under the label's end and fades there. */
 .tabbar__name {
   min-width: 0;
 }
 
-.tabbar__name--asleep {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* A tab asleep to save memory (YAZ-3737 D11): three small z's after its name, in the muted text colour, so they read
-   as a state, not a button. Yasin judges it in the demo; a dimmed name is the fallback. The board's card wears it too. */
+/* A tab asleep to save memory (YAZ-3737 D11): three small z's in the muted text colour, so they read as a state, not
+   a button. On the strip they stand before the name, after the file icon, so a long name or a 72px tab never hides
+   them (YAZ-4003, D18); the board's card wears them after its title. */
 .tabbar__asleep,
 .taboverview__asleep {
   display: inline-flex;
@@ -263,6 +258,7 @@
 
 .tabbar__asleep {
   flex: none;
+  margin: 0 4px 0 0;
 }
 
 .taboverview__asleep {

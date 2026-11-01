@@ -1172,7 +1172,7 @@ describe('tab sleep on the strip (YAZ-3737 D11, S7)', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('the zzz mark stands after the name of a sleeping tab only, and says what it is on hover and to a screen reader', () => {
+  it('the zzz mark stands before the name of a sleeping tab only, and says what it is on hover and to a screen reader', () => {
     const el = mount({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], active: '/v/a.md', asleep: new Set(['/v/b.md']), ...noop, ...noNav })
     expect([...el.querySelectorAll('.tabbar__asleep')].map((m) => m.closest<HTMLElement>('.tabbar__tab')!.dataset.tab)).toEqual(['/v/b.md'])
     const mark = tabOf(el, '/v/b.md').querySelector('.tabbar__label .tabbar__asleep')!
@@ -1183,20 +1183,17 @@ describe('tab sleep on the strip (YAZ-3737 D11, S7)', () => {
     expect(tabOf(el, '/v/b.md').querySelector('[role="tab"]')!.textContent).toBe('b')
   })
 
-  it('YAZ-4003: a long name never hides the zzz: the name gives way with "…", the mark does not shrink', () => {
+  it('YAZ-4003, D18: no name hides the zzz: it stands after the file icon, before the name, and does not shrink; the name fades as an awake one does', () => {
     const el = mount({ tabs: ['/v/a.md', '/v/Living room moodboard.excalidraw'], active: '/v/a.md', asleep: new Set(['/v/Living room moodboard.excalidraw']), ...noop, ...noNav })
     const label = tabOf(el, '/v/Living room moodboard.excalidraw').querySelector('.tabbar__label')!
-    // The mark is beside the name, not in it, so what cuts the name cannot cut the mark.
-    expect([...label.children].map((c) => c.getAttribute('class'))).toEqual(['file-icon file-icon--file', 'tabbar__name tabbar__name--asleep', 'tabbar__asleep'])
+    expect([...label.children].map((c) => c.getAttribute('class'))).toEqual(['file-icon file-icon--file', 'tabbar__asleep', 'tabbar__name'])
     expect(label.textContent).toBe('Living room moodboard.excalidraw')
+    // An awake tab has no mark, and the same name box.
+    expect([...tabOf(el, '/v/a.md').querySelector('.tabbar__label')!.children].map((c) => c.getAttribute('class'))).toEqual(['file-icon file-icon--file', 'tabbar__name'])
     // jsdom lays nothing out: the rules are read as written.
     const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(tabsCss.replace(/\/\*[\s\S]*?\*\//g, ''))?.[1] ?? ''
     expect(rule('.tabbar__label')).toMatch(/display:\s*flex;/)
-    expect(rule('.tabbar__name--asleep')).toMatch(/overflow:\s*hidden;[\s\S]*text-overflow:\s*ellipsis;/)
     expect(rule('.tabbar__asleep')).toMatch(/flex:\s*none;/)
-    // An awake tab's name keeps its fade: it runs on under the label's end, as before.
-    const awake = tabOf(el, '/v/a.md').querySelector('.tabbar__label .tabbar__name')!
-    expect(awake.className).toBe('tabbar__name')
     expect(rule('.tabbar__name')).toMatch(/min-width:\s*0;/)
     expect(rule('.tabbar__name')).not.toMatch(/overflow/)
   })

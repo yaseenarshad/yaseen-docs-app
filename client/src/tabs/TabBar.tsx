@@ -129,7 +129,7 @@ export interface TabBarProps {
   diagramDarkColors?: DiagramDarkColors
   /** `settings.hotkeys` (YAZ-3397 D2): the "+" and the grid button name their keys as they are now (YAZ-3410). Absent = the defaults. */
   hotkeys?: HotkeyOverrides
-  /** The tabs asleep to save memory (YAZ-3737 D11): each wears the zzz mark after its name. */
+  /** The tabs asleep to save memory (YAZ-3737 D11): each wears the zzz mark before its name (D18). */
   asleep?: ReadonlySet<string>
   /** A sleeping tab hovered `WAKE_HOVER_MS` (YAZ-3737 S7): App mounts its editor behind the page on show, so the click feels instant. */
   onWake?: (id: string) => void
@@ -590,14 +590,13 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                 {/* The file's icon, as its tree row has it (YAZ-3440 D11): a folder page's is the folder's, and a display name keeps the file's. */}
                 <span className="tabbar__label">
                   <FileIcon path={path} folder={isFolder(path)} />
-                  {/* Asleep, the name gives way with "…" so a long one never hides the zzz (YAZ-4003). */}
-                  <span className={asleep.has(id) ? 'tabbar__name tabbar__name--asleep' : 'tabbar__name'}>
+                  {/* Asleep to save memory (YAZ-3737 D11): quiet, before the name, so no name hides it (YAZ-4003, D18). */}
+                  {asleep.has(id) && <AsleepIcon className="tabbar__asleep" />}
+                  <span className="tabbar__name">
                     {label}
                     {/* A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4). */}
                     {name === undefined && !isFolder(path) && <NameEnding path={path} />}
                   </span>
-                  {/* Asleep to save memory (YAZ-3737 D11): quiet, after the name. */}
-                  {asleep.has(id) && <AsleepIcon className="tabbar__asleep" />}
                 </span>
               </button>
               )}
