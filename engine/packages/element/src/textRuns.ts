@@ -229,6 +229,29 @@ export const getTextRangeHighlight = (
   return covered >= end ? highlight : undefined;
 };
 
+/**
+ * YAZ-4103 3F: the pasted letters `start` to `start + length` get exactly the
+ * pasted runs (offsets from `start`), not the style of the letters around.
+ */
+export const setPastedTextRuns = (
+  runs: readonly ExcalidrawTextRun[] | undefined,
+  textLength: number,
+  start: number,
+  length: number,
+  pasted: readonly ExcalidrawTextRun[],
+) =>
+  pasted.reduce(
+    (next, run) =>
+      updateTextRunStyle(
+        next,
+        textLength,
+        start + run.start,
+        start + run.end,
+        () => toStyle(run),
+      ),
+    updateTextRunStyle(runs, textLength, start, start + length, () => ({})),
+  );
+
 /** Removes one flag, the color or the highlight from every run (the whole box changes). */
 export const clearTextRunStyle = (
   runs: readonly ExcalidrawTextRun[] | undefined,

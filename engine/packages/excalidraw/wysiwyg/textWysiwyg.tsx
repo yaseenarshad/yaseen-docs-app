@@ -49,6 +49,7 @@ import {
   hasHostLinks,
   TEXT_HIGHLIGHT_FILLS,
   remapTextRunsForTextEdit,
+  setPastedTextRuns,
 } from "@excalidraw/element";
 
 import { normalizeText } from "@excalidraw/element";
@@ -67,6 +68,7 @@ import type {
   ExcalidrawTextElement,
   NonDeleted,
   ExcalidrawTextContainer,
+  ExcalidrawTextRun,
 } from "@excalidraw/element/types";
 
 import { actionSaveToActiveFile } from "../actions";
@@ -101,6 +103,7 @@ import {
 } from "../textList";
 
 import { getPendingTextStyle, takePendingTextStyle } from "./pendingTextStyle";
+import { getStyledHtml, parseStyledHtml } from "./styledClipboard";
 import {
   createLinkPillOverlay,
   getLinkToDelete,
@@ -728,6 +731,14 @@ export const textWysiwyg = ({
   });
   editable.value = element.originalText;
   let previousEditableValue = editable.value;
+  /** YAZ-4103 3F: ⌘⇧V was pressed for the next paste: it stays plain. */
+  let plainPasteKey = false;
+  /** YAZ-4103 3F: the styles of a styled paste, for the input it makes. */
+  let pendingPastedRuns: {
+    start: number;
+    text: string;
+    textRuns: readonly ExcalidrawTextRun[];
+  } | null = null;
   let pendingInsertedLine: number | null = null;
 
   function renderVisualSelection() {
@@ -1197,11 +1208,44 @@ export const textWysiwyg = ({
     renderVisualSelection();
   };
 
+  // YAZ-4103 3F: letters copied with styles keep them in a note (its HTML);
+  // letters with no style other than color copy as the browser does
+  const copyStyledText = (event: ClipboardEvent, cut: boolean) => {
+    const { selectionStart, selectionEnd, value } = editable;
+    const html =
+      selectionStart < selectionEnd && event.clipboardData
+        ? getStyledHtml(
+            value,
+            (app.scene.getElement(element.id) as ExcalidrawTextElement | null)
+              ?.textRuns,
+            selectionStart,
+            selectionEnd,
+          )
+        : null;
+    if (!html) {
+      return;
+    }
+    event.preventDefault();
+    event.clipboardData!.setData(
+      MIME_TYPES.text,
+      value.slice(selectionStart, selectionEnd),
+    );
+    event.clipboardData!.setData(MIME_TYPES.html, html);
+    if (cut) {
+      replaceEditorText(selectionStart, selectionEnd, "");
+    }
+  };
+  editable.oncopy = (event) => copyStyledText(event, false);
+  editable.oncut = (event) => copyStyledText(event, true);
+
   if (onChange) {
     editable.onpaste = async (event) => {
       // we need to synchronously get the MIME types so we can preventDefault()
       // in the same tick (FF requires that)
       const mimeTypes = parseDataTransferEventMimeTypes(event);
+      // YAZ-4103 3F: ⌘⇧V stays plain
+      const isPlainPaste = plainPasteKey;
+      plainPasteKey = false;
 
       // YAZ-4039 D12: a pasted page path or `yaseendocs://` link is a link
       const pastedLink = app.props.hostLinks?.pasteLink?.(
@@ -1238,6 +1282,28 @@ export const textWysiwyg = ({
       const isListPaste =
         pasteLine.markerKind !== "none" &&
         (pasteListMode === "bullet" || pasteListMode === "numbered");
+
+      // YAZ-4103 3F: a paste from a note keeps its letter styles (and its
+      // `[[links]]`, which are text); a list line pastes as before
+      const styled =
+        isPlainPaste ||
+        isListPaste ||
+        mimeTypes.has(MIME_TYPES.excalidrawClipboard) ||
+        mimeTypes.has(MIME_TYPES.excalidraw)
+          ? null
+          : parseStyledHtml(
+              event.clipboardData?.getData(MIME_TYPES.html) ?? "",
+            );
+      if (styled) {
+        event.preventDefault();
+        pendingPastedRuns = {
+          start: pasteSelectionStart,
+          text: styled.text,
+          textRuns: styled.textRuns,
+        };
+        replaceEditorText(pasteSelectionStart, pasteSelectionEnd, styled.text);
+        return;
+      }
 
       if (isListPaste) {
         event.preventDefault();
@@ -1385,12 +1451,29 @@ export const textWysiwyg = ({
         ),
       };
       pendingInsertedLine = null;
-      const nextTextRuns = remapTextRunsForTextEdit(
+      const remappedTextRuns = remapTextRunsForTextEdit(
         previousEditableValue,
         editable.value,
         currentElement?.textRuns,
         edit,
       );
+      // YAZ-4103 3F: the pasted letters take the styles they were copied with
+      const pasted = pendingPastedRuns;
+      pendingPastedRuns = null;
+      const nextTextRuns =
+        pasted &&
+        editable.value.slice(
+          pasted.start,
+          pasted.start + pasted.text.length,
+        ) === pasted.text
+          ? setPastedTextRuns(
+              remappedTextRuns,
+              editable.value.length,
+              pasted.start,
+              pasted.text.length,
+              pasted.textRuns,
+            )
+          : remappedTextRuns;
       previousEditableValue = editable.value;
       onChange({
         nextOriginalText: editable.value,
@@ -1431,6 +1514,9 @@ export const textWysiwyg = ({
   };
 
   editable.onkeydown = (event) => {
+    if (event[KEYS.CTRL_OR_CMD] && event.code === CODES.V) {
+      plainPasteKey = event.shiftKey;
+    }
     // YAZ-4039 D12: the host's open `[[` picker takes ↑, ↓, Enter and Esc
     if (app.props.hostLinks?.onEditorKeyDown?.(event)) {
       event.preventDefault();

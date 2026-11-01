@@ -1405,6 +1405,157 @@ describe("textWysiwyg", () => {
         renders.mockRestore();
       });
 
+      describe("YAZ-4103 3F: copy and paste keep styles with notes", () => {
+        /** What a note's copy puts on the clipboard (ProseMirror's HTML). */
+        const NOTE =
+          '<p data-pm-slice="1 1 []">a <strong>b</strong> <em>i</em> <u>u</u> <del>s</del> <mark>h</mark> <mark class="highlight-green">g</mark> [[YAS-1]]</p>';
+        const paste = (html: string, text: string) => {
+          // the editor's own handler; the canvas's paste is not under test
+          const event = new Event("paste", {
+            bubbles: false,
+            cancelable: true,
+          }) as ClipboardEvent;
+          Object.defineProperty(event, "clipboardData", {
+            value: {
+              items: [
+                { kind: "string", type: "text/plain" },
+                { kind: "string", type: "text/html" },
+              ],
+              getData: (type: string) =>
+                type === "text/html" ? html : type === "text/plain" ? text : "",
+            },
+          });
+          textarea.dispatchEvent(event);
+          return event;
+        };
+        const copy = (type: "copy" | "cut") => {
+          const data: Record<string, string> = {};
+          const event = new Event(type, {
+            bubbles: false,
+            cancelable: true,
+          }) as ClipboardEvent;
+          Object.defineProperty(event, "clipboardData", {
+            value: {
+              setData: (format: string, value: string) => {
+                data[format] = value;
+              },
+            },
+          });
+          textarea.dispatchEvent(event);
+          return { event, data };
+        };
+
+        it("note → drawing: bold, italic, underline, strike, the highlights and a link keep their style", () => {
+          type("");
+          const event = paste(NOTE, "a b i u s h g Growth plan");
+          expect(event.defaultPrevented).toBe(true);
+          expect(textarea.value).toBe("a b i u s h g [[YAS-1]]");
+          expect(runs()).toEqual([
+            { start: 2, end: 3, bold: true },
+            { start: 4, end: 5, italic: true },
+            { start: 6, end: 7, underline: true },
+            { start: 8, end: 9, strikethrough: true },
+            { start: 10, end: 11, highlight: "yellow" },
+            { start: 12, end: 13, highlight: "green" },
+          ]);
+        });
+
+        it("note → drawing: pasted letters take their own styles, not the bold around the caret", () => {
+          type("XY");
+          textarea.setSelectionRange(0, 2);
+          press(CODES.B, "b");
+          textarea.setSelectionRange(1, 1);
+          paste("<p>c<em>d</em></p>", "cd");
+          expect(textarea.value).toBe("XcdY");
+          expect(runs()).toEqual([
+            { start: 0, end: 1, bold: true },
+            { start: 2, end: 3, italic: true },
+            { start: 3, end: 4, bold: true },
+          ]);
+        });
+
+        it("note → drawing: a list and its lines", () => {
+          type("");
+          paste(
+            "<ul><li><p>one <strong>b</strong></p><ul><li><p>sub</p></li></ul></li><li><p>two</p></li></ul>",
+            "",
+          );
+          expect(textarea.value).toBe("• one b\n    ○ sub\n• two");
+          expect(runs()).toEqual([{ start: 6, end: 7, bold: true }]);
+        });
+
+        it("text with no style pastes as before; ⌘⇧V stays plain", () => {
+          type("");
+          expect(
+            paste("<p>plain words</p>", "plain words").defaultPrevented,
+          ).toBe(false);
+          fireEvent.keyDown(textarea, {
+            [KEYS.CTRL_OR_CMD]: true,
+            shiftKey: true,
+            key: "V",
+            code: CODES.V,
+          });
+          expect(paste(NOTE, "a b").defaultPrevented).toBe(false);
+          expect(runs()).toBeUndefined();
+          // the next ⌘V keeps styles again
+          fireEvent.keyDown(textarea, {
+            [KEYS.CTRL_OR_CMD]: true,
+            key: "v",
+            code: CODES.V,
+          });
+          expect(paste(NOTE, "a b").defaultPrevented).toBe(true);
+        });
+
+        it("drawing → note: the note's tags for each style; text color is dropped; links as written", () => {
+          type("ab cd ef gh ij [[YAS-1]] kl\nmn");
+          const style = (
+            start: number,
+            end: number,
+            run: { code: string; key: string; shiftKey?: boolean },
+          ) => {
+            textarea.setSelectionRange(start, end);
+            press(run.code, run.key, { shiftKey: run.shiftKey });
+          };
+          style(0, 2, { code: CODES.B, key: "b" });
+          style(3, 5, { code: CODES.I, key: "i" });
+          style(6, 8, { code: CODES.U, key: "u" });
+          style(9, 11, { code: CODES.X, key: "x", shiftKey: true });
+          style(12, 14, { code: CODES.H, key: "H", shiftKey: true });
+          textarea.setSelectionRange(26, 28);
+          act(() => {
+            h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+              currentItemStrokeColor: "#e03131",
+            });
+          });
+          textarea.setSelectionRange(0, 31);
+          const { event, data } = copy("copy");
+          expect(event.defaultPrevented).toBe(true);
+          expect(data["text/plain"]).toBe("ab cd ef gh ij [[YAS-1]] kl\nmn");
+          expect(data["text/html"]).toBe(
+            "<p><strong>ab</strong> <em>cd</em> <u>ef</u> <del>gh</del> <mark>ij</mark> [[YAS-1]] kl</p><p>mn</p>",
+          );
+        });
+
+        it("drawing → note: letters with no style, or only a color, copy as the browser does; cut removes styled letters", () => {
+          type("ab cd");
+          textarea.setSelectionRange(3, 5);
+          act(() => {
+            h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+              currentItemStrokeColor: "#e03131",
+            });
+          });
+          textarea.setSelectionRange(0, 5);
+          expect(copy("copy").event.defaultPrevented).toBe(false);
+
+          textarea.setSelectionRange(0, 2);
+          press(CODES.B, "b");
+          textarea.setSelectionRange(0, 2);
+          const cut = copy("cut");
+          expect(cut.data["text/html"]).toBe("<p><strong>ab</strong></p>");
+          expect(textarea.value).toBe(" cd");
+        });
+      });
+
       describe("YAZ-4102 3E: highlight letters", () => {
         const highlightKey = () => press(CODES.H, "H", { shiftKey: true });
         const overlayOf = (text: string) =>

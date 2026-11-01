@@ -478,6 +478,8 @@ export {
 export { actions as registeredActions } from "./actions/register";
 export { TOOLS } from "./components/Tools";
 export type { KeyBinding, KeyChord } from "./keyRemap";
+// Yaseen Docs (YAZ-4103 3F): the host's tests check the round trip with a note
+export { getStyledHtml, parseStyledHtml } from "./wysiwyg/styledClipboard";
 
 export { WelcomeScreen };
 export { LiveCollaborationTrigger };
