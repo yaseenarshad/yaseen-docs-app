@@ -850,6 +850,20 @@ const renderElementToSvg = (
                 }
                 const iconX = x + pill.padding;
                 const iconY = top + (pill.height - pill.iconSize) / 2;
+                const image = segment.link.icon;
+                if (image) {
+                  // the page's own file icon, as the sidebar draws it
+                  const icon = svgRoot.ownerDocument.createElementNS(
+                    SVG_NS,
+                    "image",
+                  );
+                  icon.setAttribute("href", image.url);
+                  icon.setAttribute("x", `${iconX}`);
+                  icon.setAttribute("y", `${iconY}`);
+                  icon.setAttribute("width", `${pill.iconSize}`);
+                  icon.setAttribute("height", `${pill.iconSize}`);
+                  node.appendChild(icon);
+                }
                 const icon = svgRoot.ownerDocument.createElementNS(
                   SVG_NS,
                   "path",
@@ -869,9 +883,16 @@ const renderElementToSvg = (
                   "stroke-width",
                   `${Math.max(1, pill.iconSize / 10)}`,
                 );
-                node.appendChild(icon);
+                if (image === undefined) {
+                  node.appendChild(icon);
+                }
                 tspan.textContent = segment.link.label;
-                tspan.setAttribute("x", `${iconX + pill.iconSize + pill.gap}`);
+                tspan.setAttribute(
+                  "x",
+                  `${
+                    image === null ? iconX : iconX + pill.iconSize + pill.gap
+                  }`,
+                );
                 setTextStyle(
                   tspan,
                   { ...segment, underlined: false, strikethrough: false },

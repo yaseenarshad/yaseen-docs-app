@@ -1161,8 +1161,6 @@ export function App() {
   reviewing.current = reviewer !== null
   const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : navigate)(path), [openBackground, navigate])
   /** The open tabs' pages, read at click time: a link to one of them goes to its tab, whatever the setting says. */
-  const openPaths = useRef(tabs)
-  openPaths.current = tabs
   /**
    * A link opened from a note: where its gesture's action says (YAZ-3936, Settings › Hotkeys › "Links in a note"), this
    * tab when none says. A folder view's row, a backlink and a code jump use `openFromPage`.
@@ -1170,9 +1168,9 @@ export function App() {
   const openLink = useCallback((path: string, where: GestureAction = 'thisTab') => {
     // Back returns to the page with the link wherever the page opens: the window's one Back list (YAZ-3647 D4). A review's open is no link click.
     if (reviewing.current || where === 'backgroundTab') openBackground(path)
-    // A page another tab shows: go to that tab (D10), as "This tab" does.
-    else if (where === 'thisTab' || openPaths.current.some((tab) => tab.path === path)) navigate(path)
-    else openKept(path)
+    // "New tab" is always a new tab, a copy when another tab shows the page (YAZ-3943 demo, as browsers do; it was D10's "go to that tab").
+    else if (where === 'newTab') openKept(path, true)
+    else navigate(path)
   }, [openBackground, navigate, openKept])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
   // A trip to another copy of the same file (YAZ-2940) moves `activeTab` and not `file`, so both are watched.

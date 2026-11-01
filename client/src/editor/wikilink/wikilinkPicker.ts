@@ -341,6 +341,27 @@ export const createWikilinkPickerKeymap = (links: WikilinkResolveSource, nav?: W
     WikilinkPickerDismiss: { key: 'Escape', priority: PRIORITY, onRun: () => dismiss },
   }))
 
+/**
+ * The file's icon on a picker row, as the pill has it (S14): an empty span that draws it, as the sidebar's `FileIcon`;
+ * and a drawing's or a diagram's extension after the name. A drawing's `[[` picker rows have it too (YAZ-4039).
+ */
+export function addRowIcon(item: HTMLElement, path: string, look: LinkLook): void {
+  const icon = document.createElement('span')
+  // A folder's row names its directory: no file kind, as `linkIcon` tells it.
+  for (const [name, value] of Object.entries(look.icon(path, fileKind(basename(path)) === null))) icon.setAttribute(name, value)
+  icon.setAttribute('aria-hidden', 'true')
+  item.prepend(icon)
+  // A drawing's or a diagram's extension, shown with File icons Off only, as the sidebar's `NameEnding` (app.css).
+  const name = basename(path)
+  const bare = boardBaseName(name)
+  if (bare !== name) {
+    const ending = document.createElement('span')
+    ending.className = 'name-ending'
+    ending.textContent = name.slice(bare.length)
+    item.append(ending)
+  }
+}
+
 /** The popup element + its rows; mousedown-preventDefault so picking never blurs the editor. */
 function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: WikilinkNav, look?: LinkLook): { element: HTMLElement; render: (session: PickerSession | null) => void } {
   const element = document.createElement('div')
@@ -360,23 +381,7 @@ function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: Wikili
       item.className = row.create ? `${WIKILINK_PICKER_ITEM_CLASS} ${WIKILINK_PICKER_CREATE_CLASS}` : WIKILINK_PICKER_ITEM_CLASS
       item.setAttribute('aria-selected', String(i === session.selected))
       item.textContent = row.create ? `Create "${row.label}"` : row.label
-      // The file's icon, as the pill has it (S14): an empty span that draws it, as the sidebar's `FileIcon`.
-      if (!row.create && row.path !== undefined && look !== undefined) {
-        const icon = document.createElement('span')
-        // A folder's row names its directory: no file kind, as `linkIcon` tells it.
-        for (const [name, value] of Object.entries(look.icon(row.path, fileKind(basename(row.path)) === null))) icon.setAttribute(name, value)
-        icon.setAttribute('aria-hidden', 'true')
-        item.prepend(icon)
-        // A drawing's or a diagram's extension, shown with File icons Off only, as the sidebar's `NameEnding` (app.css).
-        const name = basename(row.path)
-        const bare = boardBaseName(name)
-        if (bare !== name) {
-          const ending = document.createElement('span')
-          ending.className = 'name-ending'
-          ending.textContent = name.slice(bare.length)
-          item.append(ending)
-        }
-      }
+      if (!row.create && row.path !== undefined && look !== undefined) addRowIcon(item, row.path, look)
       item.addEventListener('mousedown', (e) => e.preventDefault())
       item.addEventListener('click', () => {
         // Re-read the live session: the state may have moved between render and click.

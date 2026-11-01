@@ -15,8 +15,8 @@ import type { LinkCandidate } from '../links/completion'
 import { trailingLinkFragment } from '../links/completion'
 import { createFromLink } from '../editor/wikilink/createFromLink'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
-import { linkPageName, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { WIKILINK_PICKER_CLASS, WIKILINK_PICKER_CREATE_CLASS, WIKILINK_PICKER_ITEM_CLASS, rowsFor, type PickerRow } from '../editor/wikilink/wikilinkPicker'
+import { linkPageName, type LinkLook, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { WIKILINK_PICKER_CLASS, WIKILINK_PICKER_CREATE_CLASS, WIKILINK_PICKER_ITEM_CLASS, addRowIcon, rowsFor, type PickerRow } from '../editor/wikilink/wikilinkPicker'
 
 /** The engine's `HostTextEditor`. */
 export interface PickerEditor {
@@ -67,8 +67,11 @@ export async function createLinkedPage(editor: PickerEditor, name: string, links
   if (linked) editor.replaceLink(`[[${id}${rest}]]`, `[[${name}]]`)
 }
 
-/** `create`: a Create row's page is made (`createLinkedPage`); absent, no Create row (no vault to make it in). */
-export function createDrawingLinkPicker(parent: () => HTMLElement | null, candidates: () => readonly LinkCandidate[], create?: (editor: PickerEditor, name: string) => void) {
+/**
+ * `create`: a Create row's page is made (`createLinkedPage`); absent, no Create row (no vault to make it in). `look`: the
+ * rows' file icons, as the note's picker shows them.
+ */
+export function createDrawingLinkPicker(parent: () => HTMLElement | null, candidates: () => readonly LinkCandidate[], create?: (editor: PickerEditor, name: string) => void, look?: LinkLook) {
   let session: Session | null = null
   /** The `[[` that Esc closed: it stays closed until the caret leaves it. */
   let dismissed: number | null = null
@@ -101,6 +104,7 @@ export function createDrawingLinkPicker(parent: () => HTMLElement | null, candid
         item.className = row.create ? `${WIKILINK_PICKER_ITEM_CLASS} ${WIKILINK_PICKER_CREATE_CLASS}` : WIKILINK_PICKER_ITEM_CLASS
         item.setAttribute('aria-selected', String(index === now.selected))
         item.textContent = row.create ? `Create "${row.label}"` : row.label
+        if (!row.create && row.path !== undefined && look !== undefined) addRowIcon(item, row.path, look)
         // The text editor keeps the caret: a pick never blurs it.
         item.addEventListener('mousedown', (event) => event.preventDefault())
         item.addEventListener('click', () => pick(row))

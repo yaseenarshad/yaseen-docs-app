@@ -18,7 +18,15 @@ export type HostLink = {
   missing?: boolean;
   /** The link opens a folder: the folder icon. */
   folder?: boolean;
+  /**
+   * The page's file icon, as the app's sidebar draws it: a drawn image and
+   * its URL (the SVG export). null: no icon (the app's icons are off).
+   * Absent: the outline icon, until the host has the image.
+   */
+  icon?: HostLinkIcon | null;
 };
+
+export type HostLinkIcon = { image: CanvasImageSource; url: string };
 
 /** The host's answer for `[[inner]]`, or null: the link stays plain text. */
 export type HostLinkResolver = (inner: string) => HostLink | null;
@@ -135,9 +143,17 @@ export const getLinkPillMetrics = (font: FontString) => {
 };
 
 /** The drawn width of a link pill: it counts in the line wrapping. */
-export const getLinkPillWidth = (label: string, font: FontString) => {
+export const getLinkPillWidth = (
+  label: string,
+  font: FontString,
+  icon?: HostLinkIcon | null,
+) => {
   const { padding, iconSize, gap } = getLinkPillMetrics(font);
-  return padding * 2 + iconSize + gap + getLineWidth(label, font);
+  return (
+    padding * 2 +
+    (icon === null ? 0 : iconSize + gap) +
+    getLineWidth(label, font)
+  );
 };
 
 /**

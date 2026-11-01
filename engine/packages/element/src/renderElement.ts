@@ -726,24 +726,39 @@ const drawLinkPill = (
   }
   const iconX = x + pill.padding;
   const iconY = top + (pill.height - pill.iconSize) / 2;
-  context.strokeStyle = colors.text;
-  context.lineWidth = Math.max(1, pill.iconSize / 10);
-  context.beginPath();
-  for (const [index, [px, py]] of getLinkPillIconOutline(
-    pill.iconSize,
-    link.folder,
-  ).entries()) {
-    if (index === 0) {
-      context.moveTo(iconX + px, iconY + py);
-    } else {
-      context.lineTo(iconX + px, iconY + py);
+  if (link.icon) {
+    // the page's own file icon, as the sidebar draws it
+    context.drawImage(
+      link.icon.image,
+      iconX,
+      iconY,
+      pill.iconSize,
+      pill.iconSize,
+    );
+  } else if (link.icon === undefined) {
+    context.strokeStyle = colors.text;
+    context.lineWidth = Math.max(1, pill.iconSize / 10);
+    context.beginPath();
+    for (const [index, [px, py]] of getLinkPillIconOutline(
+      pill.iconSize,
+      link.folder,
+    ).entries()) {
+      if (index === 0) {
+        context.moveTo(iconX + px, iconY + py);
+      } else {
+        context.lineTo(iconX + px, iconY + py);
+      }
     }
+    context.closePath();
+    context.stroke();
   }
-  context.closePath();
-  context.stroke();
   context.font = segment.font;
   context.fillStyle = colors.text;
-  context.fillText(link.label, iconX + pill.iconSize + pill.gap, baseline);
+  context.fillText(
+    link.label,
+    link.icon === null ? iconX : iconX + pill.iconSize + pill.gap,
+    baseline,
+  );
 };
 
 export const elementWithCanvasCache = new WeakMap<

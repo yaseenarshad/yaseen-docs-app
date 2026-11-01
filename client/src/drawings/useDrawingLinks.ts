@@ -4,7 +4,7 @@
  * mounted; the pills' follower, the hover card beside a pill, the one link menu with Edit link and Remove link, the `[[`
  * picker and the paste are made once, and every live value is read through a ref at the event.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { GestureAction } from '@shared/keys'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { DiagramDarkColors } from '@shared/types'
@@ -16,10 +16,12 @@ import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
+import { VaultLinksContext } from '../links/vaultLinks'
+import { IconsContext, fileIconDecoration } from '../sidebar/FileIcon'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import { useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import { createDrawingLinkPicker, createLinkedPage } from './drawingLinkPicker'
-import { drawingHostLinks, drawingPasteLink, drawingVaultOf, linkVault, mountDrawingVault, openShapeLink, windowFollow, type DrawingLinkDeps } from './drawingLinks'
+import { drawingHostLinks, drawingPasteLink, drawingVaultOf, linkVault, mountDrawingVault, openShapeLink, redrawWindowLinks, setWindowLinkIcons, windowFollow, type DrawingLinkDeps } from './drawingLinks'
 import { openEditLinkBox } from './editLinkBox'
 import type { DrawingSurfaceLinks } from './ExcalidrawSurface'
 
@@ -46,6 +48,8 @@ export interface DrawingLinkProps {
 
 export interface DrawingLinkHost {
   root: string
+  /** The app's theme: a pill's file icon has a light and a dark look. */
+  theme: 'light' | 'dark'
   /** The board's file: where its missing pages are made, and the `from` of a pasted path. */
   path: string
   readOnly: boolean
@@ -72,6 +76,20 @@ export function useDrawingLinks(host: DrawingLinkHost) {
     [],
   )
   const { root, props } = host
+  // The window's icons (the vaults' picks and rules): the pills' and the picker's file icons, as a note's.
+  const iconsHere = useContext(IconsContext)
+  const icons = useRef(iconsHere)
+  icons.current = iconsHere
+  // The window's vaults: a pasted path of another of them is that vault's link.
+  const vaultLinksHere = useContext(VaultLinksContext)
+  const vaultLinks = useRef(vaultLinksHere)
+  vaultLinks.current = vaultLinksHere
+  useLayoutEffect(() => setWindowLinkIcons(iconsHere), [iconsHere])
+  // A new theme gives the icons their other look.
+  const firstTheme = useRef(host.theme)
+  useEffect(() => {
+    if (host.theme !== firstTheme.current) redrawWindowLinks()
+  }, [host.theme])
   // The vault joins the window's links before the canvas lays out its text (YAZ-4039 D7).
   useLayoutEffect(() => (props.wikilinks === undefined ? undefined : mountDrawingVault(root, props.wikilinks, props.viewOnlyLinks)), [root, props.wikilinks, props.viewOnlyLinks])
   const [links] = useState<DrawingSurfaceLinks | undefined>(() => {
@@ -92,6 +110,7 @@ export function useDrawingLinks(host: DrawingLinkHost) {
       () => live.current.hostRef.current,
       () => live.current.props.wikilinkCandidates?.candidates ?? [],
       (editor, name) => void createLinkedPage(editor, name, wikilinks, nav),
+      { icon: (target, folder) => fileIconDecoration(icons.current, target, folder) },
     )
     closePicker.current = picker.close
     const deps = (): DrawingLinkDeps => ({
@@ -123,7 +142,7 @@ export function useDrawingLinks(host: DrawingLinkHost) {
       picker,
       pasteLink: (text) => {
         const candidates = live.current.props.wikilinkCandidates
-        return candidates === undefined ? null : drawingPasteLink(text, root, live.current.path, candidates)
+        return candidates === undefined ? null : drawingPasteLink(text, root, live.current.path, candidates, vaultLinks.current)
       },
     })
     return { hostLinks: drawingHostLinks(deps), openShapeLink: (link, event) => openShapeLink(link, event, deps()) }

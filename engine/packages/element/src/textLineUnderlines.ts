@@ -434,6 +434,7 @@ const getPiecesMeasure = (
             (getLinkPillWidth(
               piece.link.label,
               getFont(piece.bold, piece.italic),
+              piece.link.icon,
             ) *
               (Math.min(end, piece.end) - Math.max(start, piece.start))) /
             (piece.end - piece.start);
@@ -473,7 +474,7 @@ const getLineSegments = (
     const text = line.text.slice(start - line.start, end - line.start);
     const font = getFont(piece.bold, piece.italic);
     const width = piece.link
-      ? getLinkPillWidth(piece.link.label, font)
+      ? getLinkPillWidth(piece.link.label, font, piece.link.icon)
       : getLineWidth(text, font);
     segments.push({
       text,

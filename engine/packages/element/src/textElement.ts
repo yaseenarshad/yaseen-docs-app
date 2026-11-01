@@ -35,7 +35,7 @@ import {
   getStyledVisualLineStart,
   getTextElementStyledLayout,
 } from "./textLineUnderlines";
-import { getLinkPillMetrics } from "./textLinks";
+import { getLinkPillMetrics, hasHostLinks } from "./textLinks";
 import {
   isBoundToContainer,
   isArrowElement,
@@ -489,6 +489,13 @@ export const redrawTextBoundingBox = (
 
   // Note: only update width for unwrapped text and bound texts (which always have autoResize set to true)
   if (textElement.autoResize) {
+    boundTextUpdates.width = metrics.width;
+  } else if (
+    !container &&
+    metrics.width > textElement.width &&
+    hasHostLinks(textElement.originalText)
+  ) {
+    // YAZ-4039 D7: a pill never breaks, so a wrapped box grows to hold it
     boundTextUpdates.width = metrics.width;
   }
   boundTextUpdates.height = metrics.height;

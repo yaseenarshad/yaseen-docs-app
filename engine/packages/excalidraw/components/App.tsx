@@ -826,6 +826,8 @@ class App extends React.Component<AppProps, AppState> {
   hitLinkElement?: NonDeletedExcalidrawElement;
   /** YAZ-4039 D11: the link pill under the pointer, as last reported. */
   private hostLinkHover: HostLinkHit | null = null;
+  /** The scene's fonts are loaded: a pill's box can be measured. */
+  private hostLinkFontsReady = false;
   private unmountHostLinks: (() => void) | null = null;
   lastPointerDownEvent: React.PointerEvent<HTMLElement> | null = null;
   lastPointerUpEvent: React.PointerEvent<HTMLElement> | PointerEvent | null =
@@ -3849,6 +3851,11 @@ class App extends React.Component<AppProps, AppState> {
     // manually loading the font faces seems faster even in browsers that do fire the loadingdone event
     this.fonts.loadSceneFonts().then((fontFaces) => {
       this.fonts.onLoaded(fontFaces);
+      // YAZ-4039 D7: the pills' sizes, measured with the real fonts
+      this.hostLinkFontsReady = true;
+      if (this.props.hostLinks) {
+        this.redrawHostLinks();
+      }
     });
 
     if (isElementLink(window.location.href)) {
@@ -5252,6 +5259,19 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   private addTextFromPaste(text: string, isPlainPaste = false) {
+    // YAZ-4039 D12: one pasted page reference (a vault path, a `yaseendocs://`
+    // link, a `[[link]]`) is its link, a pill in a box sized to it
+    const single = text.trim();
+    const link =
+      isPlainPaste || !single || single.includes("\n")
+        ? null
+        : this.props.hostLinks?.pasteLink?.(single) ??
+          (/^\[\[[^[\]]+\]\]$/.test(single) && hasHostLinks(single)
+            ? single
+            : null);
+    if (link) {
+      text = link;
+    }
     const { x, y } = viewportCoordsToSceneCoords(
       {
         clientX: this.viewport.lastPosition.x,
@@ -5300,7 +5320,8 @@ class App extends React.Component<AppProps, AppState> {
           });
 
           let metrics = measureText(originalText, fontString, lineHeight);
-          const isTextUnwrapped = metrics.width > maxTextWidth;
+          // a pill never wraps: its box is auto-sized to it
+          const isTextUnwrapped = !link && metrics.width > maxTextWidth;
 
           const text = isTextUnwrapped
             ? wrapText(originalText, fontString, maxTextWidth)
@@ -8052,24 +8073,53 @@ class App extends React.Component<AppProps, AppState> {
   };
 
   /**
-   * Draws the text boxes with links again. Their size stays until their next
-   * edit: a label change is not an edit of the file.
+   * Draws the text boxes with links again, and fits each box whose measured
+   * size moved (a label resolved, a page was renamed or made) to its pills.
+   * Only a real size change changes the scene, outside the undo steps: a
+   * board whose saved sizes match is not changed by its opening. The box in
+   * the text editor is fitted by the editor itself.
    */
   private redrawHostLinks = () => {
     const elementsMap = this.scene.getNonDeletedElementsMap();
     let changed = false;
+    const fitted = new Map<string, ExcalidrawTextElement>();
     for (const element of this.scene.getNonDeletedElements()) {
-      if (isTextElement(element) && element.originalText.includes("[[")) {
-        changed = true;
-        ShapeCache.delete(element);
-        const container = getContainerElement(element, elementsMap);
-        if (container) {
-          ShapeCache.delete(container);
-        }
+      if (!isTextElement(element) || !element.originalText.includes("[[")) {
+        continue;
+      }
+      changed = true;
+      ShapeCache.delete(element);
+      const container = getContainerElement(element, elementsMap);
+      if (container) {
+        ShapeCache.delete(container);
+      }
+      if (
+        !this.hostLinkFontsReady ||
+        this.state.editingTextElement?.id === element.id
+      ) {
+        continue;
+      }
+      const size = refreshTextDimensions(element, container, elementsMap);
+      if (
+        size &&
+        (size.text !== element.text ||
+          Math.abs(size.width - element.width) > 0.5 ||
+          Math.abs(size.height - element.height) > 0.5)
+      ) {
+        const next = newElementWith(element, {});
+        redrawTextBoundingBox(next, container, this.scene);
+        fitted.set(element.id, next);
       }
     }
     this.setHostLinkHover(null);
-    if (changed) {
+    if (fitted.size) {
+      this.updateScene({
+        elements: this.scene
+          .getElementsIncludingDeleted()
+          .map((element) => fitted.get(element.id) ?? element),
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    } else if (changed) {
       this.scene.triggerUpdate();
     }
   };

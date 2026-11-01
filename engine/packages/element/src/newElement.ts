@@ -28,6 +28,7 @@ import {
   getStyledTextLayout,
   getTextElementStyledLayout,
 } from "./textLineUnderlines";
+import { hasHostLinks } from "./textLinks";
 import { normalizeTextRuns } from "./textRuns";
 import { isLineElement } from "./typeChecks";
 
@@ -361,9 +362,12 @@ const getAdjustedDimensions = (
     styledMetrics ??
     measureText(nextText, getFontString(element), element.lineHeight);
 
-  // wrapped text
+  // wrapped text (YAZ-4039 D7: grown to hold a pill, which never breaks)
   if (!element.autoResize) {
-    nextWidth = element.width;
+    nextWidth =
+      styledMetrics && hasHostLinks(nextText)
+        ? Math.max(element.width, nextWidth)
+        : element.width;
   }
 
   const { textAlign, verticalAlign } = element;

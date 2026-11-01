@@ -18,7 +18,7 @@
  */
 import { fileKind } from '@shared/fileKind'
 import { gestureAction, type MouseMods } from '@shared/keys'
-import { basename } from '@shared/types'
+import { basename, rootOfPath } from '@shared/types'
 import { linkFor, pastedPath } from '../editor/pathPaste'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { linkClickAction } from '../editor/linkGesture'
@@ -27,6 +27,9 @@ import { idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName,
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { pathTitles } from '../lib/pageLabel'
 import type { AnchorRect } from '../sidebar/previewPlacement'
+import type { VaultLinks } from '../links/vaultLinks'
+import type { IconsHere } from '../sidebar/FileIcon'
+import { drawingLinkIcon, setDrawingLinkIcons, type PillIcon } from './drawingLinkIcons'
 import type { PickerEditor } from './drawingLinkPicker'
 
 /** What a pill shows: the engine's `HostLink`. */
@@ -34,6 +37,8 @@ export interface DrawingLink {
   label: string
   missing?: boolean
   folder?: boolean
+  /** The page's file icon (`drawingLinkIcon`); null: none; absent: the outline until it is drawn. */
+  icon?: PillIcon | null
 }
 
 /** A pill under the pointer: the engine's `HostLinkHit`. */
@@ -120,11 +125,26 @@ export function linkVault(inner: string): DrawingVault | undefined {
   return vaults.find((vault) => linkPath(inner, vault.source, vault.viewOnly) !== null)
 }
 
-/** The engine's one resolver for the window: what the pill of `[[inner]]` shows. */
+/** The engine's one resolver for the window: what the pill of `[[inner]]` shows, with the page's file icon. */
 export function windowLinkLook(inner: string): DrawingLink | null {
   const page = linkPageName(inner)
-  const vault = linkVault(inner) ?? vaults.find((held) => linkNoteId(page, held.source) !== undefined) ?? vaults[0]
-  return vault === undefined ? null : drawingLinkLook(inner, vault.source, vault.viewOnly)
+  const found = linkVault(inner)
+  const vault = found ?? vaults.find((held) => linkNoteId(page, held.source) !== undefined) ?? vaults[0]
+  const look = vault === undefined ? null : drawingLinkLook(inner, vault.source, vault.viewOnly)
+  const path = found === undefined || look === null ? null : linkPath(inner, found.source, found.viewOnly)
+  if (path === null) return look
+  const icon = drawingLinkIcon(path, look!.folder === true, windowChanged)
+  return icon === undefined ? look : { ...look!, icon }
+}
+
+/** The pills draw again with what the window says now (a theme change: the icons' other look). */
+export function redrawWindowLinks(): void {
+  windowChanged()
+}
+
+/** The window's icons changed (`IconsContext`): the pills draw their icons again. */
+export function setWindowLinkIcons(icons: IconsHere | null): void {
+  if (setDrawingLinkIcons(icons)) windowChanged()
 }
 
 /**
@@ -193,13 +213,17 @@ export function drawingHostLinks(deps: () => DrawingLinkDeps) {
 
 /**
  * A pasted page path or `yaseendocs://` link as the link the `[[` picker writes for that page (YAZ-4039 D12; the note's
- * `pastedPath` and `linkFor`): `[[ID]]`, or its name where it has none. Null for anything else, which pastes as text: a
- * copied `[[link]]` is text that is already a pill, and a file no tab shows has no pill.
+ * `pastedPath` and `linkFor`): `[[ID]]`, or its name where it has none. A page of another vault of the window gets that
+ * vault's link (`vaultLinks`): the window's resolver finds an ID in any of its vaults. Null for anything else, which
+ * pastes as text: a copied `[[link]]` is text that is already a pill, and a file no tab shows has no pill.
  */
-export function drawingPasteLink(text: string, root: string, boardPath: string, candidates: WikilinkCandidateSource): string | null {
+export function drawingPasteLink(text: string, root: string, boardPath: string, candidates: WikilinkCandidateSource, vaultLinks?: Pick<VaultLinks, 'roots' | 'candidatesOf'> | null): string | null {
   if (text.includes('\n')) return null
   const path = pastedPath(text)
-  const link = path === null ? null : linkFor(path, { root, notePath: boardPath, candidates })
+  if (path === null) return null
+  const otherRoot = vaultLinks == null ? null : rootOfPath(vaultLinks.roots, path)
+  const other = otherRoot === null || otherRoot === root ? null : vaultLinks!.candidatesOf(path)
+  const link = other === null ? linkFor(path, { root, notePath: boardPath, candidates }) : linkFor(path, { root: otherRoot!, notePath: boardPath, candidates: other })
   return link?.startsWith('[[') === true ? link : null
 }
 

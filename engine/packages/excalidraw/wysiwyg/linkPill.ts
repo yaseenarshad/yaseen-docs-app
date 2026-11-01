@@ -32,7 +32,9 @@ export const createLinkPillOverlay = (
     top: `${lineTop + (lineHeightPx - pill.height) / 2}px`,
     width: `${segment.width}px`,
     height: `${pill.height}px`,
-    paddingLeft: `${pill.padding + pill.iconSize + pill.gap}px`,
+    paddingLeft: `${
+      pill.padding + (link.icon === null ? 0 : pill.iconSize + pill.gap)
+    }px`,
     borderRadius: `${pill.radius}px`,
     background: colors.background ?? "transparent",
     color: colors.text,
@@ -42,6 +44,22 @@ export const createLinkPillOverlay = (
     whiteSpace: "pre",
     zIndex: "1",
   });
+  if (link.icon !== undefined) {
+    // the page's own file icon, or none (the app's icons are off)
+    if (link.icon) {
+      const image = document.createElement("img");
+      image.src = link.icon.url;
+      Object.assign(image.style, {
+        position: "absolute",
+        left: `${pill.padding}px`,
+        top: `${(pill.height - pill.iconSize) / 2}px`,
+        width: `${pill.iconSize}px`,
+        height: `${pill.iconSize}px`,
+      });
+      span.appendChild(image);
+    }
+    return span;
+  }
   const icon = document.createElementNS(SVG_NS, "svg");
   icon.setAttribute("width", `${pill.iconSize}`);
   icon.setAttribute("height", `${pill.iconSize}`);

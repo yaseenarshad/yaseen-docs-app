@@ -181,7 +181,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   /** The drawing's own file says read only (YAZ-3076 D2, S28): the engine's view mode, and nothing to save. */
   const readOnly = loaded?.scene.readOnly === true
   // The drawing's page links (YAZ-4039), as in a drawing tab: pills, hover, the open gestures, the menu, the picker, paste.
-  const { links, linkPreview, linkCard } = useDrawingLinks({ root, path: loaded?.path ?? root, readOnly, hotkeys, onNotice, hostRef: sheetRef, props: linkProps })
+  const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path: loaded?.path ?? root, readOnly, hotkeys, onNotice, hostRef: sheetRef, props: linkProps })
 
   /** One guarded write of the live scene; `Autosave` calls it once per save, never once per change. */
   const write = useCallback(

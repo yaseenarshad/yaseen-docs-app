@@ -218,7 +218,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     focus: () => surface.current?.focus(),
   })
   const { autosave, start, chips, readOnly, reload } = board
-  const { links, linkPreview, linkCard } = useDrawingLinks({ root, path, readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: linkProps })
+  const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: linkProps })
   /**
    * Read only (YAZ-3076 D2): the engine is in view mode, so nothing should change; a snapshot whose
    * version moves anyway (a door the view mode does not close) is kept off disk, and the canvas is
