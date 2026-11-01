@@ -13,7 +13,8 @@ import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 const PRIORITY = 100
 
-const setAllDocumentFolds =
+/** Every bullet and heading fold at once, one ⌘Z; also the fold chevron's Collapse all / Expand all (YAZ-3727 D23). */
+export const setAllDocumentFolds =
   (collapsed: boolean): Command =>
   (state, dispatch) => {
     const transaction = state.tr

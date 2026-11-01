@@ -254,6 +254,66 @@ describe('locked editor rules (createCrepe)', () => {
 })
 
 /**
+ * Rule 8 (YAZ-3727 D1, `alignNestedIndent`): the list depth comes from the indentation, as in an
+ * outliner. Each file loads in a real editor and saves canonical: a second round trip is the same.
+ */
+describe('list depth from indentation (YAZ-3727 D1)', () => {
+  it.each([
+    {
+      shape: 'an AI-indented list of 10 and more: 3 spaces under every number',
+      file: '9. chat_so_far\n   * The texts\n10. new_texts\n   * An array\n   * Keep\n11. must\n   * At least 1\n',
+      saved: '9. chat\\_so\\_far\n   * The texts\n10. new\\_texts\n    * An array\n    * Keep\n11. must\n    * At least 1\n',
+    },
+    {
+      shape: 'the same under a bullet, numbered from 8',
+      file: '* Keys\n  8. chat_so_far\n     * The texts\n  9. starting_state\n     * child\n  10. new_texts\n     * An array\n',
+      saved: '* Keys\n\n  8. chat\\_so\\_far\n     * The texts\n  9. starting\\_state\n     * child\n  10. new\\_texts\n      * An array\n',
+    },
+    { shape: 'Obsidian tabs', file: '- a\n\t1. one\n\t\t- deep\n\t2. two\n- b\n', saved: '* a\n  1. one\n     * deep\n  2. two\n* b\n' },
+    { shape: 'a too-deep indent (6 spaces)', file: '* a\n      * b\n      * c\n* d\n', saved: '* a\n  * b\n  * c\n* d\n' },
+    {
+      shape: 'continuation text under 10.',
+      file: '10. ten\n   more text of ten\n   * child\n     child more\n11. eleven\n',
+      saved: '10. ten\n    more text of ten\n    * child\n      child more\n11. eleven\n',
+    },
+    { shape: 'a blank line, then a paragraph, ends the list', file: '1. one\n   * kid\n\nPlain paragraph\n', saved: '1. one\n   * kid\n\nPlain paragraph\n' },
+    { shape: 'a fence inside an item', file: '* a\n  ```\n  code\n  ```\n* b\n', saved: '* a\n  ```\n  code\n  ```\n* b\n' },
+    { shape: 'an empty parent with a numbered child from 8', file: '*\n  8. x\n  9. y\n', saved: '*\n  8. x\n  9. y\n' },
+    { shape: 'a heading right under the list closes it', file: '10. a\n# H\n  * x\n', saved: '10. a\n\n# H\n\n* x\n' },
+    { shape: 'a fence right under the list closes it', file: '10. a\n```\ncode\n```\n  * x\n', saved: '10. a\n\n```\ncode\n```\n\n* x\n' },
+    { shape: 'a CRLF file', file: '9. a\r\n   * k\r\n10. b\r\n   * k2\r\n', saved: '9. a\n   * k\n10. b\n    * k2\n' },
+    { shape: 'a loose list: a paragraph and a child under 10.', file: '10. ten\n\n   Para\n   * child\n', saved: '10. ten\n\n    Para\n\n    * child\n' },
+    {
+      shape: 'a loose list: a paragraph under 9. and under 10.',
+      file: '9. nine\n\n   Para of nine\n\n10. ten\n\n   Para of ten\n',
+      saved: '9. nine\n\n   Para of nine\n\n10. ten\n\n    Para of ten\n',
+    },
+    // Milkdown writes every code block as a fence: the line stays code, in item 1.
+    { shape: 'indented code after a blank line in an item', file: '1. one\n\n       - code line\n', saved: '1. one\n\n   ```\n   - code line\n   ```\n' },
+    { shape: 'a table in an empty bullet (`*` + the indented table, YAZ-3696 D12)', file: '*\n  | a | b |\n  | - | - |\n  | 1 | 2 |\n', saved: '*\n  | a | b |\n  | - | - |\n  | 1 | 2 |\n' },
+    {
+      shape: 'a table under 10. at its text column',
+      file: '10. x\n    | a | b |\n    | - | - |\n    | 1 | 2 |\n11. y\n',
+      saved: '10. x\n    | a | b |\n    | - | - |\n    | 1 | 2 |\n11. y\n',
+    },
+    {
+      shape: 'a table under 10. at 3 spaces after a blank line',
+      file: '10. x\n\n   | a | b |\n   | - | - |\n   | 1 | 2 |\n',
+      saved: '10. x\n\n    | a | b |\n    | - | - |\n    | 1 | 2 |\n',
+    },
+  ])('$shape: nests and saves canonical', async ({ file, saved }) => {
+    expect(await roundTrip(file)).toBe(saved)
+    expect(await roundTrip(saved)).toBe(saved)
+  })
+
+  it('Markdown the app writes stays byte-identical', async () => {
+    const numbers = Array.from({ length: 10 }, (_, i) => `  ${i + 1}. k${i + 1}\n${' '.repeat(i < 9 ? 5 : 6)}* child${i + 1}\n`).join('')
+    const app = `* Keys\n${numbers}  * bullet\n    text line\n\n    second para\n* [ ] task\n  * sub\n`
+    expect(await roundTrip(app)).toBe(app)
+  })
+})
+
+/**
  * 🔒 The editor never changes the text of code. Every text rule, on load and on save, goes through
  * the one walk `mapOutsideFences` (listItemRoundTrip.ts), and the wikilink save rule also skips a
  * code span on its line. The page is checked beside the saved text: a load rule that the save
