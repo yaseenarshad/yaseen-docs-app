@@ -155,6 +155,8 @@ export interface ExcalidrawElementWithCanvas {
   canvasOffsetY: number;
   imageCrop: ExcalidrawImageElement["crop"] | null;
   containingFrameOpacity: number;
+  /** YAZ-3944 D2: the GIF frame drawn on `canvas` (`GifPlayer.frameToken`) */
+  gifFrame?: number;
 }
 
 const cappedElementCanvasSize = (
@@ -218,8 +220,9 @@ const generateElementCanvas = (
   zoom: Zoom,
   renderConfig: StaticCanvasRenderConfig,
   appState: StaticCanvasAppState | InteractiveCanvasAppState,
+  /** YAZ-3944 D2: a GIF's next frame redraws its own canvas */
+  canvas = document.createElement("canvas"),
 ): ExcalidrawElementWithCanvas | null => {
-  const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d")!;
   const padding = getCanvasPadding(element);
 
@@ -386,8 +389,9 @@ const drawElementOnCanvas = (
         element.fileId !== null
           ? renderConfig.imageCache.get(element.fileId)
           : null;
+      // YAZ-3944 D2: the frame on show of a playing GIF, else the still image
       const img = isInitializedImageElement(element)
-        ? cacheEntry?.image
+        ? renderConfig.gifPlayer?.frameFor(element) ?? cacheEntry?.image
         : undefined;
 
       if (img != null && !(img instanceof Promise)) {
@@ -408,8 +412,8 @@ const drawElementOnCanvas = (
           : {
               x: 0,
               y: 0,
-              width: img.naturalWidth,
-              height: img.naturalHeight,
+              width: "naturalWidth" in img ? img.naturalWidth : img.width,
+              height: "naturalHeight" in img ? img.naturalHeight : img.height,
             };
 
         const shouldInvertImage =
@@ -767,26 +771,34 @@ const generateElementWithCanvas = (
 
   const containingFrameOpacity =
     getContainingFrame(element, elementsMap)?.opacity || 100;
-
-  if (
+  // YAZ-3944 D2: a new GIF frame rebuilds only this element's canvas
+  const gifFrame = isImageElement(element)
+    ? renderConfig.gifPlayer?.frameToken(element)
+    : undefined;
+  const changed =
     !prevElementWithCanvas ||
     shouldRegenerateBecauseZoom ||
     prevElementWithCanvas.theme !== appState.theme ||
     prevElementWithCanvas.imageCrop !== imageCrop ||
-    prevElementWithCanvas.containingFrameOpacity !== containingFrameOpacity
-  ) {
+    prevElementWithCanvas.containingFrameOpacity !== containingFrameOpacity;
+
+  if (changed || prevElementWithCanvas.gifFrame !== gifFrame) {
     const elementWithCanvas = generateElementCanvas(
       element,
       elementsMap,
       zoom,
       renderConfig,
       appState,
+      // only the GIF frame is new: the same element, at the same size,
+      // draws on its own canvas again
+      changed ? undefined : prevElementWithCanvas.canvas,
     );
 
     if (!elementWithCanvas) {
       return null;
     }
 
+    elementWithCanvas.gifFrame = gifFrame;
     elementWithCanvasCache.set(element, elementWithCanvas);
 
     return elementWithCanvas;

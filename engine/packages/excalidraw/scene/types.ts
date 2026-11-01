@@ -1,4 +1,5 @@
 import type { UserIdleState, EditorInterface } from "@excalidraw/common";
+import type { GifPlayer } from "@excalidraw/element";
 import type {
   ExcalidrawElement,
   NonDeletedElementsMap,
@@ -40,6 +41,8 @@ export type StaticCanvasRenderConfig = {
   elementsPendingErasure: ElementsPendingErasure;
   pendingFlowchartNodes: PendingExcalidrawElements | null;
   theme: AppState["theme"];
+  /** YAZ-3944 D2: the board's GIF frames; absent (exports), a GIF shows its first frame */
+  gifPlayer?: GifPlayer;
 };
 
 export type SVGRenderConfig = {

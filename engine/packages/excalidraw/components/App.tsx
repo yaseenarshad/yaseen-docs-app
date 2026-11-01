@@ -177,6 +177,7 @@ import {
   maybeParseEmbedSrc,
   getEmbedLink,
   getInitializedImageElements,
+  GifPlayer,
   normalizeSVG,
   updateImageCache as _updateImageCache,
   getBoundTextElement,
@@ -695,6 +696,8 @@ class App extends React.Component<AppProps, AppState> {
 
   public files: BinaryFiles = {};
   public imageCache: AppClassProperties["imageCache"] = new Map();
+  /** YAZ-3944 D2: this board's GIF frames */
+  public gifPlayer = new GifPlayer((id) => this.files[id]);
   private iFrameRefs = new Map<ExcalidrawElement["id"], HTMLIFrameElement>();
   /**
    * Indicates whether the embeddable's url has been validated for rendering.
@@ -2785,6 +2788,7 @@ class App extends React.Component<AppProps, AppState> {
                             appState={this.state}
                             renderConfig={{
                               imageCache: this.imageCache,
+                              gifPlayer: this.gifPlayer,
                               isExporting: false,
                               renderGrid: isGridModeEnabled(this),
                               renderLinks: this.isLinksEnabled(),
@@ -4065,6 +4069,7 @@ class App extends React.Component<AppProps, AppState> {
     this.renderer = new Renderer(this.scene);
     this.files = {};
     this.imageCache.clear();
+    this.gifPlayer.dispose();
     this.resizeObserver?.disconnect();
     this.unmounted = true;
     this.viewport.destroy();
