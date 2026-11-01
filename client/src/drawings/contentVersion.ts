@@ -2,8 +2,8 @@
  * A VERSION BUMP THAT CHANGED NOTHING IS NOT A CHANGE (YAZ-3210). The snapshot's version was
  * `getSceneVersion`, the sum of every element's `version`, and the engine bumps `version` on writes
  * that move no content: leaving a text element's editor with no edit rewrites it through
- * `newElementWith`, which always bumps when an update carries an object (the fork's per-line
- * `lineBolds` / `lineUnderlines` / `lineStrikethroughs` arrays are fresh on every submit). The modal
+ * `newElementWith`, which always bumps when an update carries an object (the fork's `textRuns`
+ * array, YAZ-3718 D1, rides on every submit). The modal
  * then read dirty and the tab wrote the same bytes back.
  *
  * So each element counts the version at which its CONTENT last moved: everything but the engine's

@@ -11,7 +11,11 @@ import {
 } from "@excalidraw/common";
 
 import {
+  getBoundTextMaxWidth,
   getCommonBounds,
+  getLineHeightInPx,
+  getStyledVisualSelectionGeometry,
+  getTextElementStyledLines,
   isElementCompletelyInViewport,
 } from "@excalidraw/element";
 
@@ -610,7 +614,40 @@ const getMatchedLines = (
   textElement: ExcalidrawTextElement,
   searchQuery: SearchQuery,
   index: number,
-) => {
+  app: AppClassProperties,
+): SearchMatch["matchedLines"] => {
+  // YAZ-3718 D1: a box with runs places the match on its styled layout, so
+  // each letter is measured with its own font
+  if (textElement.textRuns) {
+    const container = app.scene.getContainerElement(textElement);
+    const lines = getTextElementStyledLines(
+      textElement,
+      container
+        ? getBoundTextMaxWidth(container, textElement)
+        : textElement.autoResize
+        ? Infinity
+        : textElement.width,
+      textElement.originalText,
+    );
+    return getStyledVisualSelectionGeometry({
+      lines,
+      containerWidth: textElement.width,
+      textAlign: textElement.textAlign,
+      lineHeightPx: getLineHeightInPx(
+        textElement.fontSize,
+        textElement.lineHeight,
+      ),
+      selectionStart: index,
+      selectionEnd: index + searchQuery.length,
+    }).rectangles.map((rectangle) => ({
+      offsetX: rectangle.left,
+      offsetY: rectangle.top,
+      width: rectangle.width,
+      height: rectangle.height,
+      showOnCanvas: true,
+    }));
+  }
+
   const normalizedText = normalizeWrappedText(
     textElement.text,
     textElement.originalText,
@@ -791,7 +828,12 @@ const handleSearch = debounce(
 
       while ((match = regex.exec(text)) !== null) {
         const preview = getMatchPreview(text, match.index, searchQuery);
-        const matchedLines = getMatchedLines(textEl, searchQuery, match.index);
+        const matchedLines = getMatchedLines(
+          textEl,
+          searchQuery,
+          match.index,
+          app,
+        );
 
         if (matchedLines.length > 0) {
           textMatches.push({

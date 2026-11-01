@@ -138,7 +138,7 @@ const test = <U extends `${string}:${"L" | "R"}`>(
 };
 
 describe("elements reconciliation", () => {
-  it("keeps line underline metadata from the newer remote text element", () => {
+  it("keeps the text runs of the newer remote text element", () => {
     const local = {
       ...API.createElement({
         type: "text",
@@ -153,7 +153,7 @@ describe("elements reconciliation", () => {
       ...local,
       version: 2,
       versionNonce: randomInteger(),
-      lineUnderlines: [true],
+      textRuns: [{ start: 0, end: 1, underline: true }],
     };
 
     const [reconciled] = reconcileElements(
@@ -165,7 +165,7 @@ describe("elements reconciliation", () => {
     expect(reconciled).toMatchObject({
       id: "styledText",
       version: 2,
-      lineUnderlines: [true],
+      textRuns: [{ start: 0, end: 1, underline: true }],
     });
   });
 

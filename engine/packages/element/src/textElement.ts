@@ -53,6 +53,7 @@ import type {
   ExcalidrawTextContainer,
   ExcalidrawTextElement,
   ExcalidrawTextElementWithContainer,
+  FontString,
   NonDeleted,
 } from "./types";
 
@@ -228,33 +229,59 @@ const getTextVisualBounds = (
   let bottom = -Infinity;
 
   for (let index = 0; index < lines.length; index++) {
-    context.font = lines[index].font;
+    const line = lines[index];
     const lineStart = getStyledVisualLineStart(
-      lines[index],
+      line,
       element.width,
       element.textAlign,
     );
-    const drawX = lines[index].isListItem ? lineStart : horizontalOffset;
-    context.textAlign = lines[index].isListItem
-      ? "left"
-      : (element.textAlign as CanvasTextAlign);
-    const metrics = context.measureText(lines[index].text || " ");
     const baseline = index * lineHeightPx + verticalOffset;
-    const values = [
-      metrics.actualBoundingBoxLeft,
-      metrics.actualBoundingBoxRight,
-      metrics.actualBoundingBoxAscent,
-      metrics.actualBoundingBoxDescent,
-    ];
-
-    if (!values.every((value) => Number.isFinite(value))) {
-      return null;
+    // YAZ-3718 D1: a line with runs draws each segment from the left
+    const pieces: {
+      text: string;
+      font: FontString;
+      x: number;
+      textAlign: CanvasTextAlign;
+    }[] = [];
+    for (const segment of line.segments ?? []) {
+      pieces.push({
+        text: segment.text,
+        font: segment.font,
+        x: lineStart + segment.x,
+        textAlign: "left",
+      });
+    }
+    if (!pieces.length) {
+      pieces.push({
+        text: line.text || " ",
+        font: line.font,
+        x: line.isListItem ? lineStart : horizontalOffset,
+        textAlign: line.isListItem
+          ? "left"
+          : (element.textAlign as CanvasTextAlign),
+      });
     }
 
-    left = Math.min(left, drawX - metrics.actualBoundingBoxLeft);
-    right = Math.max(right, drawX + metrics.actualBoundingBoxRight);
-    top = Math.min(top, baseline - metrics.actualBoundingBoxAscent);
-    bottom = Math.max(bottom, baseline + metrics.actualBoundingBoxDescent);
+    for (const piece of pieces) {
+      context.font = piece.font;
+      context.textAlign = piece.textAlign;
+      const metrics = context.measureText(piece.text);
+      const values = [
+        metrics.actualBoundingBoxLeft,
+        metrics.actualBoundingBoxRight,
+        metrics.actualBoundingBoxAscent,
+        metrics.actualBoundingBoxDescent,
+      ];
+
+      if (!values.every((value) => Number.isFinite(value))) {
+        return null;
+      }
+
+      left = Math.min(left, piece.x - metrics.actualBoundingBoxLeft);
+      right = Math.max(right, piece.x + metrics.actualBoundingBoxRight);
+      top = Math.min(top, baseline - metrics.actualBoundingBoxAscent);
+      bottom = Math.max(bottom, baseline + metrics.actualBoundingBoxDescent);
+    }
   }
 
   if (

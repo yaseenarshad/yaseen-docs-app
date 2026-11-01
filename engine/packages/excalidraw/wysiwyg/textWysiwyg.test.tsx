@@ -660,8 +660,7 @@ describe("textWysiwyg", () => {
           backgroundColor: "#000000",
         }),
         originalText,
-        lineBolds: [true],
-        lineUnderlines: [true],
+        textRuns: [{ start: 0, end: 11, bold: true, underline: true }],
       } as ExcalidrawTextElement;
       API.setElements([text]);
 
@@ -704,8 +703,8 @@ describe("textWysiwyg", () => {
     });
 
     it.each([
-      ["bold", { lineBolds: [true] }],
-      ["underlined", { lineUnderlines: [true] }],
+      ["bold", { textRuns: [{ start: 0, end: 21, bold: true }] }],
+      ["underlined", { textRuns: [{ start: 0, end: 21, underline: true }] }],
     ])(
       "keeps keyboard and drag selection visible for %s text",
       async (_styleName, lineStyles) => {
@@ -906,7 +905,7 @@ describe("textWysiwyg", () => {
           textAlign: "left",
         }),
         originalText,
-        lineBolds: [true, false],
+        textRuns: [{ start: 0, end: 12, bold: true }],
       } as ExcalidrawTextElement;
       API.setElements([text]);
 
@@ -1110,9 +1109,10 @@ describe("textWysiwyg", () => {
       restoreOriginalGetBoundingClientRect();
     });
 
-    it("should toggle line bold, underline, and strikethrough with keyboard shortcuts", () => {
+    it("toggles bold, underline, and strikethrough on the selected letters with keyboard shortcuts", () => {
       const primaryModifier = { [KEYS.CTRL_OR_CMD]: true };
       fireEvent.input(textarea, { target: { value: "Styled" } });
+      textarea.setSelectionRange(0, 6);
 
       fireEvent.keyDown(textarea, {
         ...primaryModifier,
@@ -1122,8 +1122,8 @@ describe("textWysiwyg", () => {
       expect((h.elements[0] as ExcalidrawTextElement).fontWeight).toBe(
         "normal",
       );
-      expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 6, bold: true },
       ]);
 
       fireEvent.keyDown(textarea, {
@@ -1131,8 +1131,8 @@ describe("textWysiwyg", () => {
         key: "u",
         code: CODES.U,
       });
-      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 6, bold: true, underline: true },
       ]);
       expect((h.elements[0] as ExcalidrawTextElement).textDecoration).toBe(
         "none",
@@ -1144,9 +1144,9 @@ describe("textWysiwyg", () => {
         key: "x",
         code: CODES.X,
       });
-      expect(
-        (h.elements[0] as ExcalidrawTextElement).lineStrikethroughs,
-      ).toEqual([true]);
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 6, bold: true, underline: true, strikethrough: true },
+      ]);
       expect((h.elements[0] as ExcalidrawTextElement).strikethrough).toBe(
         false,
       );
@@ -1154,7 +1154,7 @@ describe("textWysiwyg", () => {
         ".excalidraw-wysiwyg-styled-line",
       );
       expect(styledLine).not.toBeNull();
-      expect(styledLine?.style.fontWeight).toBe("bold");
+      expect(styledLine?.style.font).toContain("bold");
       expect(styledLine?.style.textDecoration).toContain("underline");
       expect(styledLine?.style.textDecoration).toContain("line-through");
 
@@ -1177,21 +1177,13 @@ describe("textWysiwyg", () => {
       expect((h.elements[0] as ExcalidrawTextElement).fontWeight).toBe(
         "normal",
       );
-      expect(
-        (h.elements[0] as ExcalidrawTextElement).lineBolds,
-      ).toBeUndefined();
       expect((h.elements[0] as ExcalidrawTextElement).textDecoration).toBe(
         "none",
       );
-      expect(
-        (h.elements[0] as ExcalidrawTextElement).lineUnderlines,
-      ).toBeUndefined();
-      expect(
-        (h.elements[0] as ExcalidrawTextElement).lineStrikethroughs,
-      ).toBeUndefined();
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toBeUndefined();
     });
 
-    it("toggles underline for only the logical lines selected in the editor", async () => {
+    it("toggles underline for only the letters selected in the editor", async () => {
       fireEvent.input(textarea, {
         target: { value: "Title\nSubtitle" },
       });
@@ -1209,13 +1201,26 @@ describe("textWysiwyg", () => {
 
       expect(h.elements[0]).toMatchObject({
         textDecoration: "none",
-        lineUnderlines: [true],
+        textRuns: [{ start: 0, end: 5, underline: true }],
       });
       expect(textarea.selectionStart).toBe(0);
       expect(textarea.selectionEnd).toBe(5);
+
+      // a part of a word
+      textarea.setSelectionRange(8, 11);
+      act(() => {
+        h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+          property: "textDecoration",
+          enabled: true,
+        });
+      });
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 5, underline: true },
+        { start: 8, end: 11, underline: true },
+      ]);
     });
 
-    it("toggles only the selected line with the underline shortcut", () => {
+    it("toggles only the selected letters with the underline shortcut", () => {
       fireEvent.input(textarea, {
         target: { value: "Title\nSubtitle" },
       });
@@ -1227,15 +1232,15 @@ describe("textWysiwyg", () => {
         code: CODES.U,
       });
 
-      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 5, underline: true },
       ]);
       expect(
         document.querySelectorAll(".excalidraw-wysiwyg-line-underline"),
       ).toHaveLength(1);
     });
 
-    it("shifts line underline state when a newline is inserted above it", () => {
+    it("gives text pasted at the start of an underlined line the underline", () => {
       fireEvent.input(textarea, {
         target: { value: "Title\nBody" },
       });
@@ -1245,17 +1250,16 @@ describe("textWysiwyg", () => {
         key: "u",
         code: CODES.U,
       });
-      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 5, underline: true },
       ]);
 
       fireEvent.input(textarea, {
         target: { value: "Intro\nTitle\nBody" },
       });
 
-      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
-        true,
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 11, underline: true },
       ]);
     });
 
@@ -1294,11 +1298,9 @@ describe("textWysiwyg", () => {
         target: { value: "Ti\ntle\nNext" },
       });
 
-      expect(h.elements[0]).toMatchObject({
-        lineBolds: [true, true, true],
-        lineUnderlines: [true, true, true],
-        lineStrikethroughs: [true, true, true],
-      });
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 11, bold: true, underline: true, strikethrough: true },
+      ]);
     });
 
     it("keeps a whole-element style whole when Enter creates a line", () => {
@@ -1327,9 +1329,8 @@ describe("textWysiwyg", () => {
       textarea.setSelectionRange(6, 6);
       fireEvent.input(textarea, { inputType: "insertLineBreak" });
 
-      expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
-        true,
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 6, bold: true },
       ]);
     });
 
@@ -1340,7 +1341,7 @@ describe("textWysiwyg", () => {
       "carries the style of the %s item above when Enter is not on the last item",
       (_kind, value, lineEnd, expected) => {
         fireEvent.input(textarea, { target: { value } });
-        textarea.setSelectionRange(0, 3);
+        textarea.setSelectionRange(0, lineEnd);
         fireEvent.keyDown(textarea, {
           [KEYS.CTRL_OR_CMD]: true,
           key: "b",
@@ -1350,9 +1351,9 @@ describe("textWysiwyg", () => {
         fireEvent.keyDown(textarea, { key: KEYS.ENTER });
 
         expect(textarea.value).toBe(expected);
-        expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
-          true,
-          true,
+        // the new item's marker continues the bold, the items below stay plain
+        expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+          { start: 0, end: expected.indexOf("\n", lineEnd + 1), bold: true },
         ]);
       },
     );
@@ -1373,8 +1374,8 @@ describe("textWysiwyg", () => {
         inputType: "insertLineBreak",
       });
 
-      expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 5, bold: true },
       ]);
     });
 
@@ -1509,17 +1510,16 @@ describe("textWysiwyg", () => {
         key: "b",
         code: CODES.B,
       });
-      expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 8, bold: true },
       ]);
 
       textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
       fireEvent.keyDown(textarea, { key: KEYS.ENTER });
 
       expect(textarea.value).toBe("• Styled\n• ");
-      expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
-        true,
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 11, bold: true },
       ]);
     });
 

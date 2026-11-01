@@ -41,11 +41,13 @@ import {
 } from "@excalidraw/common";
 
 import {
-  areSelectedLinesStyled,
   canBecomePolygon,
+  clearTextRunStyle,
   getNonDeletedElements,
+  getTextRunStyleAt,
   isNonDeletedElement,
-  toggleSelectedLineStyles,
+  isTextRangeStyled,
+  setTextRunFlag,
 } from "@excalidraw/element";
 
 import {
@@ -113,7 +115,7 @@ import type {
   VerticalAlign,
 } from "@excalidraw/element/types";
 
-import type { ElementUpdate, Scene } from "@excalidraw/element";
+import type { ElementUpdate, Scene, TextRunFlag } from "@excalidraw/element";
 
 import type { CaptureUpdateActionType } from "@excalidraw/element";
 
@@ -1741,6 +1743,62 @@ type BooleanTextStyleProperty = Exclude<
   "listMode"
 >;
 
+// YAZ-3718 D1: the run flag of each whole-box text style
+const TEXT_RUN_FLAG_OF: Record<BooleanTextStyleProperty, TextRunFlag> = {
+  fontWeight: "bold",
+  textDecoration: "underline",
+  strikethrough: "strikethrough",
+};
+
+const isWholeTextStyled = (
+  element: ExcalidrawTextElement,
+  property: BooleanTextStyleProperty,
+) =>
+  property === "fontWeight"
+    ? element.fontWeight === "bold"
+    : property === "textDecoration"
+    ? element.textDecoration === "underline"
+    : element.strikethrough === true;
+
+const getWholeTextStyle = (
+  property: BooleanTextStyleProperty,
+  enabled: boolean,
+): ElementUpdate<ExcalidrawTextElement> =>
+  property === "fontWeight"
+    ? { fontWeight: enabled ? "bold" : "normal" }
+    : property === "textDecoration"
+    ? { textDecoration: enabled ? "underline" : "none" }
+    : { strikethrough: enabled };
+
+/**
+ * YAZ-3718 D10: in the editor, a style changes only the selected letters. The
+ * whole-box flag first becomes a run over all the text, so a part can lose it.
+ */
+const setSelectedTextStyle = (
+  element: ExcalidrawTextElement,
+  property: BooleanTextStyleProperty,
+  enabled: boolean,
+  text: string,
+  selectionStart: number,
+  selectionEnd: number,
+): ElementUpdate<ExcalidrawTextElement> => {
+  const flag = TEXT_RUN_FLAG_OF[property];
+  const runs = isWholeTextStyled(element, property)
+    ? setTextRunFlag(element.textRuns, text.length, 0, text.length, flag, true)
+    : element.textRuns;
+  return {
+    ...getWholeTextStyle(property, false),
+    textRuns: setTextRunFlag(
+      runs,
+      text.length,
+      selectionStart,
+      selectionEnd,
+      flag,
+      enabled,
+    ),
+  };
+};
+
 const getTextStyle = (
   element: ExcalidrawElement,
   property: TextStyleChange["property"],
@@ -1760,38 +1818,23 @@ const getTextStyle = (
     app.state.editingTextElement?.id === textElement.id
       ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
       : null;
-  if (property === "fontWeight") {
-    return editable
-      ? areSelectedLinesStyled({
-          text: editable.value,
-          lineStyles: textElement.lineBolds,
-          selectionStart: editable.selectionStart,
-          selectionEnd: editable.selectionEnd,
-          wholeElementStyled: textElement.fontWeight === "bold",
-        })
-      : textElement.fontWeight === "bold";
-  }
-  if (property === "textDecoration") {
-    return editable
-      ? areSelectedLinesStyled({
-          text: editable.value,
-          lineStyles: textElement.lineUnderlines,
-          selectionStart: editable.selectionStart,
-          selectionEnd: editable.selectionEnd,
-          wholeElementStyled: textElement.textDecoration === "underline",
-        })
-      : textElement.textDecoration === "underline";
-  }
-  if (property === "strikethrough") {
-    return editable
-      ? areSelectedLinesStyled({
-          text: editable.value,
-          lineStyles: textElement.lineStrikethroughs,
-          selectionStart: editable.selectionStart,
-          selectionEnd: editable.selectionEnd,
-          wholeElementStyled: textElement.strikethrough === true,
-        })
-      : textElement.strikethrough === true;
+  if (property !== "listMode") {
+    const whole = isWholeTextStyled(textElement, property);
+    if (!editable || whole) {
+      return whole;
+    }
+    const flag = TEXT_RUN_FLAG_OF[property];
+    // a caret shows the style the next typed letter gets
+    return editable.selectionStart === editable.selectionEnd
+      ? getTextRunStyleAt(textElement.textRuns, editable.selectionStart - 1)[
+          flag
+        ] === true
+      : isTextRangeStyled(
+          textElement.textRuns,
+          editable.selectionStart,
+          editable.selectionEnd,
+          flag,
+        );
   }
 
   return editable
@@ -1862,60 +1905,32 @@ const changeTextStyle = (
         );
         return nextElement;
       }
-      if (value.property === "textDecoration") {
-        if (editable && element.id === appState.editingTextElement?.id) {
-          return newElementWith(
-            element,
-            {
-              textDecoration: "none",
-              lineUnderlines: toggleSelectedLineStyles({
-                text: editable.value,
-                lineStyles: element.lineUnderlines,
-                selectionStart: editable.selectionStart,
-                selectionEnd: editable.selectionEnd,
-                wholeElementStyled: element.textDecoration === "underline",
-                enabled: value.enabled,
-              }),
-            },
-            true,
-          );
-        }
-
-        return newElementWith(
+      // YAZ-3718 D10: the editor styles the selected letters, a selected box
+      // styles all its text and drops that style from its runs
+      const styles =
+        editable && element.id === appState.editingTextElement?.id
+          ? setSelectedTextStyle(
+              element,
+              value.property,
+              value.enabled,
+              editable.value,
+              editable.selectionStart,
+              editable.selectionEnd,
+            )
+          : {
+              ...getWholeTextStyle(value.property, value.enabled),
+              textRuns: clearTextRunStyle(
+                element.textRuns,
+                element.originalText.length,
+                TEXT_RUN_FLAG_OF[value.property],
+              ),
+            };
+      if (value.property === "fontWeight") {
+        let nextElement: ExcalidrawTextElement = newElementWith(
           element,
-          {
-            textDecoration: value.enabled ? "underline" : "none",
-            lineUnderlines: undefined,
-          },
+          styles,
           true,
         );
-      }
-      if (value.property === "fontWeight") {
-        let nextElement: ExcalidrawTextElement =
-          editable && element.id === appState.editingTextElement?.id
-            ? newElementWith(
-                element,
-                {
-                  fontWeight: "normal",
-                  lineBolds: toggleSelectedLineStyles({
-                    text: editable.value,
-                    lineStyles: element.lineBolds,
-                    selectionStart: editable.selectionStart,
-                    selectionEnd: editable.selectionEnd,
-                    wholeElementStyled: element.fontWeight === "bold",
-                    enabled: value.enabled,
-                  }),
-                },
-                true,
-              )
-            : newElementWith(
-                element,
-                {
-                  fontWeight: value.enabled ? "bold" : "normal",
-                  lineBolds: undefined,
-                },
-                true,
-              );
         redrawTextBoundingBox(
           nextElement,
           app.scene.getContainerElement(element),
@@ -1928,31 +1943,7 @@ const changeTextStyle = (
         );
         return nextElement;
       }
-      if (editable && element.id === appState.editingTextElement?.id) {
-        return newElementWith(
-          element,
-          {
-            strikethrough: false,
-            lineStrikethroughs: toggleSelectedLineStyles({
-              text: editable.value,
-              lineStyles: element.lineStrikethroughs,
-              selectionStart: editable.selectionStart,
-              selectionEnd: editable.selectionEnd,
-              wholeElementStyled: element.strikethrough === true,
-              enabled: value.enabled,
-            }),
-          },
-          true,
-        );
-      }
-      return newElementWith(
-        element,
-        {
-          strikethrough: value.enabled,
-          lineStrikethroughs: undefined,
-        },
-        true,
-      );
+      return newElementWith(element, styles, true);
     },
     true,
   );

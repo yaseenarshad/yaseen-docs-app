@@ -56,7 +56,7 @@ import {
 import { getLineHeightInPx } from "./textMeasurements";
 import {
   getStyledVisualLineStart,
-  getStyledVisualLines,
+  getTextElementStyledLines,
 } from "./textLineUnderlines";
 import {
   isTextElement,
@@ -553,10 +553,11 @@ const drawElementOnCanvas = (
         }
 
         context.font = getFontString(element);
-        context.fillStyle = applyDarkModeFilter(
+        const textColor = applyDarkModeFilter(
           element.strokeColor,
           renderConfig.theme === THEME.DARK,
         );
+        context.fillStyle = textColor;
         context.textAlign = element.textAlign as CanvasTextAlign;
 
         const container = getContainerElement(element, elementsMap);
@@ -565,28 +566,12 @@ const drawElementOnCanvas = (
           : element.autoResize
           ? Infinity
           : element.width;
-        const shouldUseSourceLayout =
-          !!element.lineBolds?.some(Boolean) ||
-          !!element.lineUnderlines?.some(Boolean) ||
-          !!element.lineStrikethroughs?.some(Boolean) ||
-          hasTextList(element.originalText);
-        const lines = getStyledVisualLines({
-          originalText: shouldUseSourceLayout
-            ? element.originalText
-            : element.text,
-          regularFont: getFontString({
-            ...element,
-            fontWeight: "normal",
-          }),
-          boldFont: getFontString({ ...element, fontWeight: "bold" }),
-          maxWidth: shouldUseSourceLayout ? maxWidth : Infinity,
-          lineBolds: element.lineBolds,
-          lineUnderlines: element.lineUnderlines,
-          lineStrikethroughs: element.lineStrikethroughs,
-          wholeElementBold: element.fontWeight === "bold",
-          wholeElementUnderlined: element.textDecoration === "underline",
-          wholeElementStrikethrough: element.strikethrough === true,
-        });
+        // YAZ-3718 D1: text with runs shares the layout memo with
+        // refreshTextDimensions and the editor overlay
+        const lines =
+          !!element.textRuns || hasTextList(element.originalText)
+            ? getTextElementStyledLines(element, maxWidth, element.originalText)
+            : getTextElementStyledLines(element, Infinity, element.text);
 
         const horizontalOffset =
           element.textAlign === "center"
@@ -614,6 +599,40 @@ const drawElementOnCanvas = (
             element.width,
             element.textAlign,
           );
+          const segments = lines[index].segments;
+          if (segments) {
+            // YAZ-3718 D1: each segment with its own font, color and lines
+            context.textAlign = "left";
+            for (const segment of segments) {
+              context.font = segment.font;
+              context.fillStyle = segment.color
+                ? applyDarkModeFilter(
+                    segment.color,
+                    renderConfig.theme === THEME.DARK,
+                  )
+                : textColor;
+              const x = lineStart + segment.x;
+              context.fillText(segment.text, x, baseline);
+              if (segment.underlined) {
+                context.fillRect(
+                  x,
+                  baseline + Math.max(1, element.fontSize * 0.08),
+                  segment.width,
+                  Math.max(1, element.fontSize / 16),
+                );
+              }
+              if (segment.strikethrough) {
+                context.fillRect(
+                  x,
+                  baseline - element.fontSize * 0.3,
+                  segment.width,
+                  Math.max(1, element.fontSize / 16),
+                );
+              }
+            }
+            context.fillStyle = textColor;
+            continue;
+          }
           if (lines[index].isListItem) {
             context.textAlign = "left";
             context.fillText(lines[index].text, lineStart, baseline);

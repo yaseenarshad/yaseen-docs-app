@@ -6738,9 +6738,8 @@ class App extends React.Component<AppProps, AppState> {
         fontWeight: ExcalidrawTextElement["fontWeight"];
         textDecoration: ExcalidrawTextElement["textDecoration"];
         strikethrough: ExcalidrawTextElement["strikethrough"];
-        lineBolds: ExcalidrawTextElement["lineBolds"];
-        lineUnderlines: ExcalidrawTextElement["lineUnderlines"];
-        lineStrikethroughs: ExcalidrawTextElement["lineStrikethroughs"];
+        fontStyle: ExcalidrawTextElement["fontStyle"];
+        textRuns: ExcalidrawTextElement["textRuns"];
       },
     ) => {
       this.scene.replaceAllElements([
@@ -6751,9 +6750,10 @@ class App extends React.Component<AppProps, AppState> {
               originalText: nextOriginalText,
               ...nextStyles,
               isDeleted: isDeleted ?? _element.isDeleted,
-              // returns (wrapped) text and new dimensions
+              // returns (wrapped) text and new dimensions; YAZ-3718 D1: laid
+              // out with the next runs, so the canvas reuses this layout
               ...refreshTextDimensions(
-                _element,
+                { ..._element, ...nextStyles },
                 getContainerElement(_element, elementsMap),
                 elementsMap,
                 nextOriginalText,
@@ -6786,17 +6786,15 @@ class App extends React.Component<AppProps, AppState> {
           nextFontWeight,
           nextTextDecoration,
           nextStrikethrough,
-          nextLineBolds,
-          nextLineUnderlines,
-          nextLineStrikethroughs,
+          nextFontStyle,
+          nextTextRuns,
         }) => {
           updateElement(nextOriginalText, false, {
             fontWeight: nextFontWeight,
             textDecoration: nextTextDecoration,
             strikethrough: nextStrikethrough,
-            lineBolds: nextLineBolds,
-            lineUnderlines: nextLineUnderlines,
-            lineStrikethroughs: nextLineStrikethroughs,
+            fontStyle: nextFontStyle,
+            textRuns: nextTextRuns,
           });
           if (isNonDeletedElement(element)) {
             updateBoundElements(element, this.scene);
@@ -6810,9 +6808,8 @@ class App extends React.Component<AppProps, AppState> {
           nextFontWeight,
           nextTextDecoration,
           nextStrikethrough,
-          nextLineBolds,
-          nextLineUnderlines,
-          nextLineStrikethroughs,
+          nextFontStyle,
+          nextTextRuns,
         }) => {
           this.textWysiwygSubmitHandler = null;
 
@@ -6821,9 +6818,8 @@ class App extends React.Component<AppProps, AppState> {
             fontWeight: nextFontWeight,
             textDecoration: nextTextDecoration,
             strikethrough: nextStrikethrough,
-            lineBolds: nextLineBolds,
-            lineUnderlines: nextLineUnderlines,
-            lineStrikethroughs: nextLineStrikethroughs,
+            fontStyle: nextFontStyle,
+            textRuns: nextTextRuns,
           });
 
           // keyboard-submit keeps focus on the edited object. For bound text, keep
@@ -6903,9 +6899,8 @@ class App extends React.Component<AppProps, AppState> {
       fontWeight: element.fontWeight,
       textDecoration: element.textDecoration,
       strikethrough: element.strikethrough,
-      lineBolds: element.lineBolds,
-      lineUnderlines: element.lineUnderlines,
-      lineStrikethroughs: element.lineStrikethroughs,
+      fontStyle: element.fontStyle,
+      textRuns: element.textRuns,
     });
   }
 

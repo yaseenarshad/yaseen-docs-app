@@ -480,7 +480,7 @@ export class Fonts {
       const weights: Array<ExcalidrawTextElement["fontWeight"]> =
         element.fontWeight === "bold"
           ? ["bold"]
-          : element.lineBolds?.some(Boolean)
+          : element.textRuns?.some((run) => run.bold)
           ? ["normal", "bold"]
           : ["normal"];
 

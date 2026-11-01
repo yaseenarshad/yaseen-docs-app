@@ -5,7 +5,6 @@ import {
   THEME,
   DARK_THEME_FILTER,
   getFontFamilyString,
-  getFontString,
   isRTL,
   isTestEnv,
   getVerticalOffset,
@@ -26,7 +25,7 @@ import {
   getContainerElement,
   getTextBackgroundGeometry,
   getStyledVisualLineStart,
-  getStyledVisualLines,
+  getTextElementStyledLines,
   hasTextList,
 } from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
@@ -745,28 +744,10 @@ const renderElementToSvg = (
           : element.autoResize
           ? Infinity
           : element.width;
-        const shouldUseSourceLayout =
-          !!element.lineBolds?.some(Boolean) ||
-          !!element.lineUnderlines?.some(Boolean) ||
-          !!element.lineStrikethroughs?.some(Boolean) ||
-          hasTextList(element.originalText);
-        const lines = getStyledVisualLines({
-          originalText: shouldUseSourceLayout
-            ? element.originalText
-            : element.text,
-          regularFont: getFontString({
-            ...element,
-            fontWeight: "normal",
-          }),
-          boldFont: getFontString({ ...element, fontWeight: "bold" }),
-          maxWidth: shouldUseSourceLayout ? maxWidth : Infinity,
-          lineBolds: element.lineBolds,
-          lineUnderlines: element.lineUnderlines,
-          lineStrikethroughs: element.lineStrikethroughs,
-          wholeElementBold: element.fontWeight === "bold",
-          wholeElementUnderlined: element.textDecoration === "underline",
-          wholeElementStrikethrough: element.strikethrough === true,
-        });
+        const lines =
+          !!element.textRuns || hasTextList(element.originalText)
+            ? getTextElementStyledLines(element, maxWidth, element.originalText)
+            : getTextElementStyledLines(element, Infinity, element.text);
         const lineHeightPx = getLineHeightInPx(
           element.fontSize,
           element.lineHeight,
@@ -789,44 +770,72 @@ const renderElementToSvg = (
             : element.textAlign === "right" || direction === "rtl"
             ? "end"
             : "start";
+        const setTextStyle = (
+          node: SVGElement,
+          style: {
+            bold: boolean;
+            italic: boolean;
+            underlined: boolean;
+            strikethrough: boolean;
+          },
+          color: string,
+        ) => {
+          if (style.bold) {
+            node.setAttribute("font-weight", "bold");
+          }
+          if (style.italic) {
+            node.setAttribute("font-style", "italic");
+          }
+          const decorations = [
+            style.underlined ? "underline" : null,
+            style.strikethrough ? "line-through" : null,
+          ].filter(Boolean);
+          if (decorations.length) {
+            node.setAttribute("text-decoration", decorations.join(" "));
+          }
+          node.setAttribute(
+            "fill",
+            applyDarkModeFilter(color, renderConfig.theme === THEME.DARK),
+          );
+        };
         for (let i = 0; i < lines.length; i++) {
           const text = svgRoot.ownerDocument.createElementNS(SVG_NS, "text");
-          text.textContent = lines[i].text;
+          const segments = lines[i].segments;
+          const lineStart = getStyledVisualLineStart(
+            lines[i],
+            element.width,
+            element.textAlign,
+          );
+          if (segments) {
+            // YAZ-3718 D1: one <tspan> for each styled segment, placed as on canvas
+            for (const segment of segments) {
+              const tspan = svgRoot.ownerDocument.createElementNS(
+                SVG_NS,
+                "tspan",
+              );
+              tspan.textContent = segment.text;
+              tspan.setAttribute("x", `${lineStart + segment.x}`);
+              setTextStyle(
+                tspan,
+                segment,
+                segment.color ?? element.strokeColor,
+              );
+              text.appendChild(tspan);
+            }
+          } else {
+            text.textContent = lines[i].text;
+          }
           text.setAttribute(
             "x",
-            `${
-              lines[i].isListItem
-                ? getStyledVisualLineStart(
-                    lines[i],
-                    element.width,
-                    element.textAlign,
-                  )
-                : horizontalOffset
-            }`,
+            `${segments || lines[i].isListItem ? lineStart : horizontalOffset}`,
           );
           text.setAttribute("y", `${i * lineHeightPx + verticalOffset}`);
           text.setAttribute("font-family", getFontFamilyString(element));
           text.setAttribute("font-size", `${element.fontSize}px`);
-          if (lines[i].bold) {
-            text.setAttribute("font-weight", "bold");
-          }
-          const decorations = [
-            lines[i].underlined ? "underline" : null,
-            lines[i].strikethrough ? "line-through" : null,
-          ].filter(Boolean);
-          if (decorations.length) {
-            text.setAttribute("text-decoration", decorations.join(" "));
-          }
-          text.setAttribute(
-            "fill",
-            applyDarkModeFilter(
-              element.strokeColor,
-              renderConfig.theme === THEME.DARK,
-            ),
-          );
+          setTextStyle(text, lines[i], element.strokeColor);
           text.setAttribute(
             "text-anchor",
-            lines[i].isListItem ? "start" : textAnchor,
+            segments || lines[i].isListItem ? "start" : textAnchor,
           );
           text.setAttribute("style", "white-space: pre;");
           text.setAttribute("direction", direction);

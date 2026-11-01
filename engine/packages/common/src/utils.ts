@@ -111,12 +111,15 @@ export const getFontString = ({
   fontSize,
   fontFamily,
   fontWeight,
+  fontStyle,
 }: {
   fontSize: number;
   fontFamily: FontFamilyValues;
   fontWeight?: "normal" | "bold";
+  // YAZ-3718 D1: no italic font files exist; the browser slants the face
+  fontStyle?: "normal" | "italic";
 }) => {
-  return `${
+  return `${fontStyle === "italic" ? "italic " : ""}${
     fontWeight === "bold" ? "bold " : ""
   }${fontSize}px ${getFontFamilyString({ fontFamily })}` as FontString;
 };

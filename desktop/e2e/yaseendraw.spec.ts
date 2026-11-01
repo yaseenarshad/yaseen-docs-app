@@ -13,7 +13,7 @@
  *   3 a STOCK-authored scene (no formatting fields at all) still opens clean in the modal —
  *     the label says Saved, nothing on disk moves: old drawings are untouched by the new engine
  *   4 Enter keeps the line format (YAZ-3177): a new line typed after the styled line is saved bold
- *     and underlined too — `lineBolds` / `lineUnderlines` grow to `[true, true]`
+ *     and underlined too — the file now holds one `textRuns` run over both lines (YAZ-3718 D1)
  *   5 in the text editor of a per-line bold element, a double click selects one word, a triple
  *     click selects the line, and a drag after a double click keeps its range (YAZ-3175:
  *     Chromium's pointerdown carries no click count)
@@ -136,7 +136,7 @@ test('step 1 — fork formatting metadata renders as real bold + underline SVG, 
 
   await expect(rendered(win)).toHaveCount(2)
   // The styled line came out styled: these attributes are what the fork's SVG exporter emits for
-  // `lineBolds` / `lineUnderlines` — stock 0.18.x cannot produce either.
+  // the runs that `lineBolds` / `lineUnderlines` become (YAZ-3718 D1) — stock 0.18.x cannot produce either.
   const styledSvg = await previewOf(win, STYLED).locator('svg').innerHTML()
   expect(styledSvg).toContain('font-weight="bold"')
   expect(styledSvg).toContain('text-decoration="underline"')
@@ -222,8 +222,7 @@ test('step 4 — Enter keeps the line format: the new line is saved bold and und
 
   await expect.poll(async () => JSON.parse(await readSidecar(STYLED)).elements[0]).toMatchObject({
     originalText: 'styled-label\nnext-line',
-    lineBolds: [true, true],
-    lineUnderlines: [true, true],
+    textRuns: [{ start: 0, end: 22, bold: true, underline: true }],
   })
 })
 
@@ -240,7 +239,7 @@ test('step 5 — a double click selects a word, a triple click the line, and a d
   await win.keyboard.press('ControlOrMeta+a')
   await win.keyboard.press('Enter')
 
-  // Per-line bold (`lineBolds`) turns on the fork's own caret layer, the path that counts clicks itself.
+  // A bold run (the converted `lineBolds`) turns on the fork's own caret layer, the path that counts clicks itself.
   const editor = modal(win).locator('textarea.excalidraw-wysiwyg')
   await expect(editor).toBeVisible()
   const field = await editor.boundingBox()

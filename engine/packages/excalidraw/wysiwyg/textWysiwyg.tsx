@@ -39,12 +39,12 @@ import { getTextWidth } from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
 import {
   getTextBackgroundGeometry,
+  getStyledVisualLineOffsetX,
   getStyledVisualLineStart,
-  getStyledVisualLines,
   getStyledVisualSelectionGeometry,
   getLogicalLineIndexAtOffset,
-  remapLineStylesForTextEdit,
-  remapLineUnderlinesForTextEdit,
+  getTextElementStyledLines,
+  remapTextRunsForTextEdit,
 } from "@excalidraw/element";
 
 import { normalizeText } from "@excalidraw/element";
@@ -240,9 +240,8 @@ export const textWysiwyg = ({
     nextFontWeight: ExcalidrawTextElement["fontWeight"];
     nextTextDecoration: ExcalidrawTextElement["textDecoration"];
     nextStrikethrough: ExcalidrawTextElement["strikethrough"];
-    nextLineBolds: readonly boolean[] | undefined;
-    nextLineUnderlines: readonly boolean[] | undefined;
-    nextLineStrikethroughs: readonly boolean[] | undefined;
+    nextFontStyle: ExcalidrawTextElement["fontStyle"];
+    nextTextRuns: ExcalidrawTextElement["textRuns"];
   }) => void;
   onSubmit: (data: {
     viaKeyboard: boolean;
@@ -250,9 +249,8 @@ export const textWysiwyg = ({
     nextFontWeight: ExcalidrawTextElement["fontWeight"];
     nextTextDecoration: ExcalidrawTextElement["textDecoration"];
     nextStrikethrough: ExcalidrawTextElement["strikethrough"];
-    nextLineBolds: readonly boolean[] | undefined;
-    nextLineUnderlines: readonly boolean[] | undefined;
-    nextLineStrikethroughs: readonly boolean[] | undefined;
+    nextFontStyle: ExcalidrawTextElement["fontStyle"];
+    nextTextRuns: ExcalidrawTextElement["textRuns"];
   }) => void;
   getViewportCoords: (x: number, y: number) => [number, number];
   element: ExcalidrawTextElement;
@@ -473,29 +471,22 @@ export const textWysiwyg = ({
       } else {
         textBackgroundOverlay.style.display = "none";
       }
-      const visualLines = getStyledVisualLines({
-        originalText: editable.value,
-        regularFont: getFontString({
-          ...updatedTextElement,
-          fontWeight: "normal",
-        }),
-        boldFont: getFontString({
-          ...updatedTextElement,
-          fontWeight: "bold",
-        }),
-        maxWidth: whiteSpace === "pre-wrap" ? width : Infinity,
-        lineBolds: updatedTextElement.lineBolds,
-        lineUnderlines: updatedTextElement.lineUnderlines,
-        lineStrikethroughs: updatedTextElement.lineStrikethroughs,
-        wholeElementBold: updatedTextElement.fontWeight === "bold",
-        wholeElementUnderlined:
-          updatedTextElement.textDecoration === "underline",
-        wholeElementStrikethrough: updatedTextElement.strikethrough === true,
-      });
-      const hasPerLineStyles =
-        !!updatedTextElement.lineBolds?.some(Boolean) ||
-        !!updatedTextElement.lineUnderlines?.some(Boolean) ||
-        !!updatedTextElement.lineStrikethroughs?.some(Boolean);
+      // YAZ-3718 D1: text with runs takes the canvas width, so it reuses the
+      // layout that refreshTextDimensions made on this keystroke
+      const hasPerLineStyles = !!updatedTextElement.textRuns;
+      const visualLines = getTextElementStyledLines(
+        updatedTextElement,
+        !hasPerLineStyles
+          ? whiteSpace === "pre-wrap"
+            ? width
+            : Infinity
+          : container
+          ? getBoundTextMaxWidth(container, updatedTextElement)
+          : updatedTextElement.autoResize
+          ? Infinity
+          : updatedTextElement.width,
+        editable.value,
+      );
       const hasHangingIndent = visualLines.some(
         (line) => line.horizontalOffset > 0,
       );
@@ -557,6 +548,45 @@ export const textWysiwyg = ({
         }
 
         const left = getStyledVisualLineStart(line, width, textAlign);
+        if (line.segments) {
+          // YAZ-3718 D1: each segment with its own style, as on the canvas
+          for (const segment of line.segments) {
+            const styledSegment = document.createElement("span");
+            styledSegment.className = [
+              "excalidraw-wysiwyg-styled-line",
+              segment.underlined ? "excalidraw-wysiwyg-line-underline" : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            styledSegment.textContent = segment.text;
+            Object.assign(styledSegment.style, {
+              position: "absolute",
+              left: `${left + segment.x}px`,
+              top: `${index * lineHeightPx}px`,
+              width: `${segment.width}px`,
+              height: `${lineHeightPx}px`,
+              color: segment.color
+                ? applyDarkModeFilter(
+                    segment.color,
+                    appState.theme === THEME.DARK,
+                  )
+                : color,
+              font: segment.font,
+              lineHeight: `${lineHeightPx}px`,
+              textAlign: "left",
+              textDecoration: [
+                segment.underlined ? "underline" : null,
+                segment.strikethrough ? "line-through" : null,
+              ]
+                .filter(Boolean)
+                .join(" "),
+              whiteSpace: "pre",
+              zIndex: "1",
+            });
+            underlineOverlay.appendChild(styledSegment);
+          }
+          continue;
+        }
         const styledLine = document.createElement("span");
         styledLine.className = [
           "excalidraw-wysiwyg-styled-line",
@@ -756,6 +786,22 @@ export const textWysiwyg = ({
 
     if (!line.text) {
       return line.start;
+    }
+
+    if (line.segments) {
+      // YAZ-3718 D1: the letter edge nearest to the click, from segment widths
+      let closest = line.start;
+      let closestDistance = Infinity;
+      for (const offset of getCaretBoundaryOffsets(line.text)) {
+        const distance = Math.abs(
+          getStyledVisualLineOffsetX(line, line.start + offset) - relativeX,
+        );
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closest = line.start + offset;
+        }
+      }
+      return closest;
     }
 
     const lineCaretOffset = getLineCaretOffsetFromNativeLayout({
@@ -1091,32 +1137,11 @@ export const textWysiwyg = ({
         insertedLine: pendingInsertedLine ?? undefined,
       };
       pendingInsertedLine = null;
-      const nextLineBolds = remapLineStylesForTextEdit(
+      const nextTextRuns = remapTextRunsForTextEdit(
         previousEditableValue,
         editable.value,
-        currentElement?.lineBolds,
-        {
-          ...edit,
-          wholeElementStyled: currentElement?.fontWeight === "bold",
-        },
-      );
-      const nextLineUnderlines = remapLineUnderlinesForTextEdit(
-        previousEditableValue,
-        editable.value,
-        currentElement?.lineUnderlines,
-        {
-          ...edit,
-          wholeElementStyled: currentElement?.textDecoration === "underline",
-        },
-      );
-      const nextLineStrikethroughs = remapLineStylesForTextEdit(
-        previousEditableValue,
-        editable.value,
-        currentElement?.lineStrikethroughs,
-        {
-          ...edit,
-          wholeElementStyled: currentElement?.strikethrough === true,
-        },
+        currentElement?.textRuns,
+        edit,
       );
       previousEditableValue = editable.value;
       onChange({
@@ -1124,9 +1149,8 @@ export const textWysiwyg = ({
         nextFontWeight: currentElement?.fontWeight,
         nextTextDecoration: currentElement?.textDecoration,
         nextStrikethrough: currentElement?.strikethrough,
-        nextLineBolds,
-        nextLineUnderlines,
-        nextLineStrikethroughs,
+        nextFontStyle: currentElement?.fontStyle,
+        nextTextRuns,
       });
     };
   }
@@ -1426,9 +1450,8 @@ export const textWysiwyg = ({
       nextFontWeight: updateElement.fontWeight,
       nextTextDecoration: updateElement.textDecoration,
       nextStrikethrough: updateElement.strikethrough,
-      nextLineBolds: updateElement.lineBolds,
-      nextLineUnderlines: updateElement.lineUnderlines,
-      nextLineStrikethroughs: updateElement.lineStrikethroughs,
+      nextFontStyle: updateElement.fontStyle,
+      nextTextRuns: updateElement.textRuns,
     });
   };
 

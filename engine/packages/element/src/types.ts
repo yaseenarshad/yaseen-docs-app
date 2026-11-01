@@ -232,6 +232,20 @@ export type NonDeleted<TElement extends ExcalidrawElement> = TElement & {
 
 export type NonDeletedExcalidrawElement = NonDeleted<ExcalidrawElement>;
 
+/**
+ * YAZ-3718 D1: one style over the letters `start` to `end` (UTF-16 offsets in
+ * `originalText`, end-exclusive).
+ */
+export type ExcalidrawTextRun = Readonly<{
+  start: number;
+  end: number;
+  bold?: true;
+  italic?: true;
+  underline?: true;
+  strikethrough?: true;
+  color?: string;
+}>;
+
 export type ExcalidrawTextElement = _ExcalidrawElementBase &
   Readonly<{
     type: "text";
@@ -245,9 +259,14 @@ export type ExcalidrawTextElement = _ExcalidrawElementBase &
      * Missing values preserve the legacy 0.23em/0.26em geometry.
      */
     backgroundPaddingScale?: number;
-    lineBolds?: readonly boolean[];
-    lineUnderlines?: readonly boolean[];
-    lineStrikethroughs?: readonly boolean[];
+    /** YAZ-3718 D1: the whole box in italic (Chromium slants the upright face). */
+    fontStyle?: "normal" | "italic";
+    /**
+     * YAZ-3718 D1: styles on a range of letters. Sorted, not overlapping, not
+     * empty, and two neighbors never have the same style. A missing field is
+     * "as the whole box".
+     */
+    textRuns?: readonly ExcalidrawTextRun[];
     text: string;
     textAlign: TextAlign;
     verticalAlign: VerticalAlign;
