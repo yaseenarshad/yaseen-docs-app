@@ -18,7 +18,7 @@ import { linkPreviewTooltip, linkTooltipAPI } from '@milkdown/kit/component/link
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Mark, MarkType, Node as ProseNode } from '@milkdown/kit/prose/model'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
-import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, TextSelection, type EditorState, type PluginView } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { fileKind } from '@shared/fileKind'
@@ -219,18 +219,22 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
 }
 
 /** Crepe's link preview (the path, edit and remove) opens on a hover over any link. A pill has the link menu, as a
- * `[[link]]` has, so a hover over a pill closes the preview instead (YAZ-3747 demo). A web link keeps it. */
+ * `[[link]]` has, so the preview never shows for a pill (YAZ-3747 demo, YAZ-4041); a web link keeps it. Crepe finds the
+ * link by the position under the mouse, which is a pill's beside it too (the line's margin), so its `show` is the
+ * gate, not the element under the mouse. */
 export const noPreviewOnPills = (ctx: Ctx) => {
   if (!ctx.isInjected(linkPreviewTooltip.key)) return
   ctx.update(linkPreviewTooltip.key, (spec) => {
-    const events = spec.props?.handleDOMEvents
-    const move = events?.mousemove
-    if (move === undefined) return spec
-    const leave = events?.mouseleave
-    function mousemove(this: Plugin, view: EditorView, event: MouseEvent) {
-      return event.target instanceof Element && event.target.closest('.link-pill') !== null ? leave?.call(this, view, event) : move!.call(this, view, event)
+    const make = spec.view
+    if (make === undefined) return spec
+    const view = (editor: EditorView) => {
+      const preview = make(editor) as PluginView & { show?: (mark: Mark, from: number, to: number, rect: DOMRect) => void; hide?: () => void }
+      const show = preview.show
+      if (show !== undefined)
+        preview.show = (mark, from, to, rect) => (markdownPillsAround(editor.state, from).some((p) => p.from < to && from < p.to) ? preview.hide?.() : show(mark, from, to, rect))
+      return preview
     }
-    return { ...spec, props: { ...spec.props, handleDOMEvents: { ...events, mousemove } } }
+    return { ...spec, view }
   })
 }
 

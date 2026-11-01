@@ -12,7 +12,6 @@ import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from './createCrepe'
-import { noPreviewOnPills } from './markdownLink'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -234,24 +233,31 @@ describe('a Markdown link pill is one unit (YAZ-4021)', () => {
     document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }))
   })
 
-  it('a hover over a pill closes Crepe\'s link preview; a hover over a web link keeps it (YAZ-3747 demo)', async () => {
-    const { root, view } = await mount(DOC)
-    const move = vi.fn()
-    const mouseleave = vi.fn()
-    let spec = { props: { handleDOMEvents: { mousemove: move, mouseleave } } }
-    noPreviewOnPills({ isInjected: () => true, update: (_key: unknown, f: (s: typeof spec) => typeof spec) => (spec = f(spec)) } as never)
-    const hover = (el: Element) => {
-      const event = new MouseEvent('mousemove', { bubbles: true })
-      Object.defineProperty(event, 'target', { value: el })
-      spec.props.handleDOMEvents.mousemove.call(null as never, view as never, event as never)
+  it('a mouse on a pill, or beside it where Crepe finds its link, shows no link preview; a web link keeps it (YAZ-4041)', async () => {
+    ;(document as unknown as { elementsFromPoint?: () => Element[] }).elementsFromPoint ??= () => []
+    const { root, view } = await mount('- [Plan](../plan.md)\n- [web](https://example.com)\n')
+    let pill = -1
+    let web = -1
+    view.state.doc.descendants((node, pos) => {
+      if (node.isText && pill < 0) pill = pos
+      else if (node.isText && node.text === 'web') web = pos
+    })
+    const shown = () => document.querySelector('[data-show="true"] .milkdown-link-preview, .milkdown-link-preview[data-show="true"]') !== null
+    // jsdom has no layout: the position under the mouse is given, as Crepe's preview reads it.
+    const hover = (target: Element, pos: number) => {
+      vi.spyOn(view, 'hasFocus').mockReturnValue(true)
+      vi.spyOn(view, 'posAtCoords').mockReturnValue({ pos, inside: -1 })
+      target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 1, clientY: 1 }))
     }
-    hover(root.querySelector('.link-pill')!)
-    expect(mouseleave).toHaveBeenCalledTimes(1)
-    expect(move).not.toHaveBeenCalled()
-    hover(root.querySelector('a[href="https://example.com"]') ?? root.querySelectorAll('p')[1]!)
-    expect(move).toHaveBeenCalledTimes(1)
-    // The real editor's preview has the wrapped handler, not Crepe's own.
-    const preview = view.state.plugins.find((p) => (p as unknown as { key: string }).key.startsWith('LINK_PREVIEW_TOOLTIP'))!
-    expect(preview.props.handleDOMEvents?.mousemove?.name).toBe('bound mousemove') // Crepe's own is 'bound debounced'
+    const wait = () => new Promise((done) => setTimeout(done, 80))
+    hover(root.querySelector('a[href="https://example.com"]')!, web + 1)
+    await wait()
+    expect(shown()).toBe(true)
+    hover(root.querySelector('.link-pill')!, pill + 1)
+    await wait()
+    expect(shown()).toBe(false)
+    hover(view.dom, pill) // the margin left of the line: the line's start, the pill's first letter
+    await wait()
+    expect(shown()).toBe(false)
   })
 })
