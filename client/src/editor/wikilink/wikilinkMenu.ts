@@ -72,9 +72,11 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
   // A folder's name row says so: an id is its settings file's, and resolves to its directory.
   const dir = page === '' ? null : source.resolve?.(page)
   const isFolder = dir != null && (id === null ? folderRecord(source.folders, dir) !== undefined : folderRecord(source.folders, dir)?.id === id)
-  const name = title === undefined || title === '' ? undefined : isFolder ? folderLabel(title) : title
   // The page's name as the pill shows it (D2, D3): its title for an ID link, else its name without folders or a hidden extension.
   const shown = page === '' ? '' : linkDisplayText(page, titleOf, named)
+  // The top line names the page as the pill does (YAZ-3747 demo): never a name link's typed path, which made the menu wide.
+  const label = id === null ? shown : title
+  const name = label === undefined || label === '' ? undefined : isFolder ? folderLabel(label) : label
   const found = id === null || title !== undefined
   // The place rows (YAZ-3740): only for a file or a folder that is there.
   const path = page === '' ? null : linkPath(inner, source, viewOnly)

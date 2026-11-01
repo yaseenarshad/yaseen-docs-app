@@ -217,6 +217,23 @@ describe('a name link gets the same menu (YAZ-3609 D23)', () => {
     }
   })
 
+  it('the top line names a pathed link as its pill does, never by its typed path: a note, and a folder with "(folder)" (YAZ-3747 demo)', async () => {
+    const FOLDER_ID = 'f7n2w8rt4xyz'
+    const record = (path: string, id: string, title: string): IndexRecord => ({
+      path, id, name: path.slice(path.lastIndexOf('/') + 1), basename: 'x', title, folder: 'area', ext: 'md', size: 1, ctime: 1, mtime: 1,
+      properties: {}, aliases: [], tags: [], links: [], embeds: [],
+    })
+    const folders = [record('/vault/evals/context/fernhill/.folder.md', FOLDER_ID, 'fernhill')]
+    const base = linkResolver([], '/vault', ['/vault/evals', '/vault/evals/context', '/vault/evals/context/fernhill'], folders)
+    const { root, view } = await mount('pad [[evals/context/fernhill]] and [[Sub/Deep/Known]] tail\n', true, (source) =>
+      source.update((target) => (target === 'Sub/Deep/Known' ? '/vault/Sub/Deep/Known.md' : base(target)), [], folders, true),
+    )
+    mouse(linkSpan(root, 'fernhill'), 'contextmenu')
+    expect(rowsOf(popupOf(view)!)[0]!.textContent).toBe('fernhill (folder)')
+    mouse(linkSpan(root, 'Known'), 'contextmenu')
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(nameMenu('Known'))
+  })
+
   // The ID vault's half is `replaces the native menu` and `the reveal trap`, above.
   it('in a vault that does not use IDs a link whose text looks like an id is a name link: no Copy ID (YAZ-2523 V5)', async () => {
     const { root, view } = await mount(`pad [[${ID}]] tail\n`, true, (source) => source.update(() => null))

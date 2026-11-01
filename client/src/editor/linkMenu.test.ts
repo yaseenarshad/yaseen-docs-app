@@ -151,7 +151,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     const { root, view } = await mount('pad [[Plans/Road Map]] tail\n')
     const menu = menuOf(root, view, 'Road Map')
     expect(shape(menu)).toEqual([
-      '(Plans/Road Map)', '──',
+      '(Road Map)', '──', // the pill's name, not the typed path (YAZ-3747 demo)
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
