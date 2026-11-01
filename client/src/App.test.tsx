@@ -352,6 +352,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       openRecent: vi.fn(async (_path: string) => true),
       // Main saves the CALLING window's vaults under the name (YAZ-2602 D8): a reorder asks it for the workspace that matches (YAZ-2631 D5).
       saveSet: vi.fn(async (_name: string) => true),
+      // A saved workspace's door (YAZ-2602 S65): main raises its window, else the empty caller hears `link:set-roots` (YAZ-3886).
+      openSet: vi.fn(async (_id: string): Promise<{ opened: boolean; missing: string[] }> => ({ opened: true, missing: [] })),
       // Sessions (YAZ-3147 D2): main saves the CALLING window's tabs and answers the id; a restore answers what exists.
       saveSession: vi.fn(async (_name: string, _replaceId?: string): Promise<string | null> => 's-new'),
       restoreSession: vi.fn(async (_id: string): Promise<RestoreSessionResult> => ({ tabs: [], roots: [], missing: [] })),
@@ -513,7 +515,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onChanged: vi.fn(() => () => undefined),
     },
     // The sounds of a gesture (YAZ-3267 D15): App asks once per gesture that lands or trashes something.
-    app: { sound: vi.fn(async (_kind: 'land' | 'trash') => undefined) },
+    app: { sound: vi.fn(async (_kind: 'land' | 'trash') => undefined), home: vi.fn(async () => '/Users/me') },
     // Focus and Favorites of each vault (YAZ-3264 D1): App reads them now, the sidebar draws them. Empty here.
     favorites: { get: vi.fn(async (_root: string): Promise<string[]> => []), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     icons: { get: vi.fn(async (_root: string) => ({ paths: {} })), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
@@ -967,7 +969,7 @@ describe('App notice icon (D10 amended, YAZ-1674)', () => {
 describe('App on a null root (C2, GRO-2164)', () => {
   it('boots to the Welcome screen with the recents and never auto-opens the folder dialog', async () => {
     const { bridge, el } = await mount({ ...defaultAppState(), recents: [recent('/vaults/notes')] }, { id: 'w1', root: null, file: null, tabs: [] })
-    expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
+    expect(el.querySelector('.welcome__title')?.textContent?.trim()).toBe('Yaseen Docs')
     expect([...el.querySelectorAll('.welcome__recent-path')].map((s) => s.textContent)).toEqual(['/vaults/notes'])
     expect(bridge.pickFolder).not.toHaveBeenCalled()
     expect(el.querySelector('[data-editor]')).toBeNull()
@@ -996,6 +998,41 @@ describe('App on a null root (C2, GRO-2164)', () => {
     expect(bridge.window.setIdentity).not.toHaveBeenCalled()
     expect(el.querySelector('.welcome__recent-when')?.textContent).toBe('Folder not found')
     expect(el.querySelector('[data-sidebar]')).toBeNull()
+  })
+})
+
+describe('App: a workspace on the Welcome screen (YAZ-3886)', () => {
+  const work = { id: 'set-1', name: 'Work', roots: ['/v', '/w'], lastUsed: Date.now() }
+
+  it('a click asks main\'s openSet door; main\'s push then puts EVERY vault of the workspace in this window, not only the first', async () => {
+    const { bridge, el, emitSetRoots } = await mount({ ...defaultAppState(), vaultSets: [work] }, { id: 'w1', root: null, file: null, tabs: [] })
+    expect(el.querySelector('.welcome__label')?.textContent).toBe('Workspaces')
+    await act(async () => el.querySelector<HTMLButtonElement>('.welcome__recent')?.click())
+    expect(bridge.window.openSet).toHaveBeenCalledExactlyOnceWith('set-1')
+    await act(async () => emitSetRoots(['/v', '/w']))
+    expect(el.querySelector('.welcome')).toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ roots: ['/v', '/w'] })
+    expect(bridge.state.pushRecent).toHaveBeenCalledWith('/w')
+  })
+
+  it('when main raises the window that shows the workspace, no push comes: the Welcome screen stays, its row live', async () => {
+    const { bridge, el } = await mount({ ...defaultAppState(), vaultSets: [work] }, { id: 'w1', root: null, file: null, tabs: [] })
+    await act(async () => el.querySelector<HTMLButtonElement>('.welcome__recent')?.click())
+    expect(bridge.window.openSet).toHaveBeenCalledExactlyOnceWith('set-1')
+    expect(el.querySelector('.welcome')).not.toBeNull()
+    expect(el.querySelector<HTMLButtonElement>('.welcome__recent')?.disabled).toBe(false)
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+  })
+
+  it('a folder of the workspace that is gone is named in a notice; with none left the row greys', async () => {
+    const { bridge, el } = await mount({ ...defaultAppState(), vaultSets: [work] }, { id: 'w1', root: null, file: null, tabs: [] })
+    bridge.window.openSet.mockResolvedValueOnce({ opened: true, missing: ['/w'] })
+    await act(async () => el.querySelector<HTMLButtonElement>('.welcome__recent')?.click())
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Not found: w')
+    bridge.window.openSet.mockResolvedValueOnce({ opened: false, missing: ['/v', '/w'] })
+    await act(async () => el.querySelector<HTMLButtonElement>('.welcome__recent')?.click())
+    expect(el.querySelector<HTMLButtonElement>('.welcome__recent')?.disabled).toBe(true)
+    expect(el.querySelector('.welcome__recent-when')?.textContent).toBe('Folders not found')
   })
 })
 
@@ -4813,7 +4850,7 @@ describe('App root-missing (C2, GRO-2164)', () => {
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
     expect(el.querySelector('.welcome')).toBeNull()
     act(() => captured.sidebar?.onRootMissing('/v'))
-    expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
+    expect(el.querySelector('.welcome__title')?.textContent?.trim()).toBe('Yaseen Docs')
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(el.querySelector('[data-editor]')).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
