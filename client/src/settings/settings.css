@@ -952,7 +952,7 @@
 
 /* Wide enough for "Awake · sleeps in 15 min" (YAZ-4031). */
 .memory__col-state {
-  width: 13.5em;
+  width: 13.25em;
 }
 
 /* "59 min ago" and the header with its ⓘ, in full (YAZ-4022, YAZ-4031); a date cuts with "…" and its hover gives it
@@ -1063,8 +1063,10 @@
 }
 
 /* A narrower table (YAZ-4022, YAZ-4029): the bars go, so the RAM column holds just the size, in full ("1023.9 MB").
-   Under 520 px the State and time columns take shares, so the Tab column keeps a part of each name; a cut cell has a
-   hover. These come after the base rules, so they win (YAZ-4030). */
+   Under 520 px the Last seen and Changed columns go (D19, YAZ-4042), so Tab, State and RAM show in full. Under 420 px
+   (a phone-wide window, or one where the Settings list still sits beside the page) State takes a share, so the Tab
+   column keeps a part of each name; a long state cuts with a hover. These come after the base rules, so they win
+   (YAZ-4030). */
 @container memory (max-width: 599px) {
   .memory__col-memory {
     width: 6.5em;
@@ -1076,12 +1078,19 @@
 }
 
 @container memory (max-width: 519px) {
-  .memory__col-state {
-    width: 22%;
+  .memory__col-time {
+    width: 0;
   }
 
-  .memory__col-time {
-    width: 13%;
+  .memory__table .memory__time {
+    padding: 0;
+    visibility: hidden;
+  }
+}
+
+@container memory (max-width: 419px) {
+  .memory__col-state {
+    width: 36%;
   }
 }
 
@@ -1176,6 +1185,16 @@
 
 .memory__tip[hidden] {
   display: none;
+}
+
+/* Memory's five sleep times wrap in a narrow window (YAZ-4042), so the page never scrolls sideways. They leave 7em of
+   the row for the label, so they wrap only when they do not fit beside it. */
+.setting[data-setting='tabSleepAfter'] .setting__control {
+  max-width: calc(100% - 7em);
+}
+
+.setting[data-setting='tabSleepAfter'] .settings__options {
+  flex-wrap: wrap;
 }
 
 /*

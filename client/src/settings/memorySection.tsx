@@ -187,8 +187,8 @@ function TabRows({ tabs }: { tabs: MemoryTabRow[] }) {
           {state}
           {t.state === 'asleep' && <AsleepIcon className="memory__asleep" title="Asleep: it uses almost no memory." />}
         </td>
-        <td title={t.lastSeen === null ? undefined : fullTime(t.lastSeen)}>{t.lastSeen === null ? '' : agoText(t.lastSeen, now)}</td>
-        <td title={t.changed === null ? undefined : fullTime(t.changed)}>{t.changed === null ? '' : agoText(t.changed, now)}</td>
+        <td className="memory__time" title={t.lastSeen === null ? undefined : fullTime(t.lastSeen)}>{t.lastSeen === null ? '' : agoText(t.lastSeen, now)}</td>
+        <td className="memory__time" title={t.changed === null ? undefined : fullTime(t.changed)}>{t.changed === null ? '' : agoText(t.changed, now)}</td>
         <td />
       </tr>
     )
@@ -209,7 +209,8 @@ function MemoryRows() {
       return next
     })
   return (
-    // The table measures its own width (YAZ-4022): a narrow one drops the bars, so each size shows in full.
+    // The table measures its own width (YAZ-4022): a narrow one drops the bars, so each size shows in full, and then the
+    // times (D19), so Tab, State and RAM show in full.
     <div className="memory__wrap">
       <table className="memory__table">
         <colgroup>
@@ -225,10 +226,10 @@ function MemoryRows() {
             <th scope="col" className="memory__state-head">
               <Head text="State" info={STATES_INFO} label="What each state means" />
             </th>
-            <th scope="col" className="memory__info-head">
+            <th scope="col" className="memory__info-head memory__time">
               <Head text="Last seen" info={COLUMN_INFO.lastSeen} label="What Last seen means" />
             </th>
-            <th scope="col" className="memory__info-head">
+            <th scope="col" className="memory__info-head memory__time">
               <Head text="Changed" info={COLUMN_INFO.changed} label="What Changed means" />
             </th>
             <th scope="col" className="memory__info-head">
@@ -270,7 +271,7 @@ function MemoryRows() {
                     )}
                   </span>
                 </td>
-                <td />
+                <td className="memory__time" />
                 <td title={row.hint}>
                   <span className="memory__memory">
                     <span className="storage__bar memory__bar" aria-hidden="true">

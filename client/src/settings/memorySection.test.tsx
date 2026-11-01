@@ -280,6 +280,16 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     vi.useRealTimers()
   })
 
+  it('YAZ-4042, D19: the Last seen and Changed cells, and their headers, are the time cells a narrow table hides; no other cell is', async () => {
+    await mountMemory()
+    act(() => row('w1').click())
+    const heads = [...el.querySelectorAll('.memory__table thead th')]
+    expect(heads.map((th) => th.classList.contains('memory__time'))).toEqual([false, false, true, true, false])
+    for (const tr of tabRows('w1')) expect([...tr.cells].map((td) => td.classList.contains('memory__time'))).toEqual([false, false, true, true, false])
+    // A window row: its name spans Tab to Last seen; the Changed cell under it is a time cell.
+    expect([...row('w1').cells].map((td) => td.classList.contains('memory__time'))).toEqual([false, true, false])
+  })
+
   it('YAZ-4022, YAZ-4023: the rules keep the page from scrolling sideways: the header ⓘ lines hang from the header row and are as wide as the table at most; a narrow table drops the bars', () => {
     const css = settingsCss.replace(/\/\*[\s\S]*?\*\//g, '')
     const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(css)?.[1] ?? ''
@@ -292,28 +302,36 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect(css).toMatch(/@container memory \(max-width: 599px\)\s*\{[\s\S]*\.memory__bar\s*\{\s*display:\s*none;/)
   })
 
-  it('YAZ-4029, YAZ-4030, YAZ-4031: at each width the checker measured, the headers, states and sizes fit, and the Tab column keeps 6 letters of a name', () => {
+  it('YAZ-4029, YAZ-4030, YAZ-4031, YAZ-4042: at each width the checker measured, the headers, states and sizes fit, and the Tab column keeps 6 letters of a name; a narrow table hides the times (D19)', () => {
     const css = settingsCss.replace(/\/\*[\s\S]*?\*\//g, '')
     const rule = (text: string, selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(text)?.[1] ?? ''
     const bands = [...css.matchAll(/@container memory \(max-width: (\d+)px\)\s*\{((?:[^{}]*\{[^}]*\})*)\s*\}/g)]
     const base = bands.reduce((text, band) => text.replace(band[0], ''), css)
-    // A column's width in px in a table this wide: its base rule, then each band that holds the table, in file order.
+    // A rule's text in a table this wide: its base rule, then each band that holds the table, in file order.
+    const at = (selector: string, table: number) => [rule(base, selector), ...bands.filter((band) => table <= Number(band[1])).map((band) => rule(band[2], selector))].join(';')
     const px = (col: string, table: number) => {
-      let width = /width:\s*([\d.]+)(em|%)/.exec(rule(base, `.memory__col-${col}`))
-      for (const band of bands) if (table <= Number(band[1])) width = /width:\s*([\d.]+)(em|%)/.exec(rule(band[2], `.memory__col-${col}`)) ?? width
-      return width === null ? 0 : width[2] === 'em' ? Number(width[1]) * 13 : (Number(width[1]) * table) / 100
+      const widths = [...at(`.memory__col-${col}`, table).matchAll(/width:\s*([\d.]+)(em|%|px)?/g)]
+      const width = widths.at(-1)
+      return width === undefined ? 0 : width[2] === 'em' ? Number(width[1]) * 13 : width[2] === '%' ? (Number(width[1]) * table) / 100 : Number(width[1])
     }
-    // The tables of a 1280, 900, 800, 700 and 420 px window. Measured needs: "Last seen ⓘ" 84.4 px, "Awake · sleeps in
-    // 15 min" 168 px, "1023.9 MB" 81 px, and 6 letters of a name after the tab row's indent 72 px.
-    for (const table of [616, 536, 435, 335, 320]) {
+    // The tables of a 1280, 900, 800, 700, 420 and 620 px window (the narrowest: the Settings list still sits beside the
+    // page). Measured needs: "Last seen ⓘ" 84.4 px, "Awake · sleeps in 15 min" 168 px, "Not loaded" 83 px, "1023.9 MB"
+    // 81 px, and 6 letters of a name after the tab row's indent 72 px.
+    for (const table of [605, 537, 437, 337, 323, 257]) {
       const tab = table - px('state', table) - 2 * px('time', table) - px('memory', table)
       expect(tab, `Tab at ${table}`).toBeGreaterThanOrEqual(72)
       expect(px('memory', table), `RAM at ${table}`).toBeGreaterThanOrEqual(81)
-      if (table >= 520) {
-        expect(px('time', table), `Last seen at ${table}`).toBeGreaterThanOrEqual(85)
-        expect(px('state', table), `State at ${table}`).toBeGreaterThanOrEqual(168)
+      expect(px('state', table), `State at ${table}`).toBeGreaterThanOrEqual(table >= 420 ? 168 : 90)
+      if (table >= 520) expect(px('time', table), `Last seen at ${table}`).toBeGreaterThanOrEqual(85)
+      // Under 520 px the times go whole (D19): no width, and their cells show nothing and take no room.
+      else {
+        expect(px('time', table), `Last seen at ${table}`).toBe(0)
+        expect(at('.memory__table .memory__time', table), `time cells at ${table}`).toMatch(/padding:\s*0;[\s\S]*visibility:\s*hidden;/)
       }
     }
+    // The five sleep times wrap beside their label, so they never make the page scroll sideways (YAZ-4042).
+    expect(rule(base, ".setting[data-setting='tabSleepAfter'] .setting__control")).toMatch(/max-width:\s*calc\(100% - 7em\);/)
+    expect(rule(base, ".setting[data-setting='tabSleepAfter'] .settings__options")).toMatch(/flex-wrap:\s*wrap;/)
     // The bands come after the base rules they change, so they win (YAZ-4030).
     expect(css.indexOf('@container memory')).toBeGreaterThan(css.search(/\}\s*\.memory__size\s*\{/))
     expect(css.indexOf('@container memory')).toBeGreaterThan(css.search(/\}\s*\.memory__bar\s*\{/))
