@@ -6,7 +6,14 @@ import {
 } from "./textWrapping";
 import { charWidth, getLineHeightInPx, getLineWidth } from "./textMeasurements";
 import { parseTextListLine } from "./textList";
+import {
+  getHostLinksVersion,
+  getLinkPillWidth,
+  getTextLinks,
+  hasHostLinks,
+} from "./textLinks";
 
+import type { TextLinkMatch } from "./textLinks";
 import type { TextMeasure, WrappedTextLine } from "./textWrapping";
 import type {
   ExcalidrawTextElement,
@@ -37,7 +44,14 @@ export type StyledTextSegment = {
   strikethrough: boolean;
   /** Missing: the color of the whole box. */
   color: string | undefined;
+  /**
+   * YAZ-4039 D7: a link run. `text` is the raw `[[inner]]`, and `width` is the
+   * drawn pill with the page's name.
+   */
+  link?: StyledTextLink;
 };
+
+export type StyledTextLink = Omit<TextLinkMatch, "start" | "end">;
 
 export type StyledVisualLine = {
   text: string;
@@ -92,6 +106,14 @@ export const getStyledVisualLineOffsetX = (
       return segment.x;
     }
     if (position < segment.end) {
+      if (segment.link) {
+        // inside a pill: its letters share its drawn width
+        return (
+          segment.x +
+          (segment.width * (position - segment.start)) /
+            (segment.end - segment.start)
+        );
+      }
       return (
         segment.x +
         getLineWidth(
@@ -237,20 +259,31 @@ export const getStyledVisualLines = (args: {
       originalLine.length > 0 &&
       runIndex < runs.length &&
       runs[runIndex].start < lineEnd;
-    const pieces = hasRuns
-      ? getLinePieces(originalLine, sourceOffset, runs, runIndex, {
-          bold: args.wholeElementBold,
-          italic: args.wholeElementItalic,
-          underlined: args.wholeElementUnderlined,
-          strikethrough: args.wholeElementStrikethrough,
-          color: undefined,
-        })
-      : null;
+    // YAZ-4039 D7: a line with a link pill takes the segment path too
+    const links = getTextLinks(originalLine);
+    const pieces =
+      hasRuns || links.length
+        ? getLinePieces(
+            originalLine,
+            sourceOffset,
+            runs,
+            runIndex,
+            {
+              bold: args.wholeElementBold,
+              italic: args.wholeElementItalic,
+              underlined: args.wholeElementUnderlined,
+              strikethrough: args.wholeElementStrikethrough,
+              color: undefined,
+            },
+            links,
+          )
+        : null;
     const visualLines = pieces
       ? getWrappedTextLineWithMeasure(
           originalLine,
           getPiecesMeasure(pieces, getFont),
           args.maxWidth,
+          links,
         )
       : getWrappedTextLines(originalLine, font, args.maxWidth);
     const isListItem = parseTextListLine(originalLine).markerKind !== "none";
@@ -299,10 +332,51 @@ export const getStyledVisualLines = (args: {
   return lines;
 };
 
-type LinePiece = ResolvedTextStyle & { start: number; end: number };
+type LinePiece = ResolvedTextStyle & {
+  start: number;
+  end: number;
+  link?: StyledTextLink;
+};
 
-/** The line split at its run edges, with offsets from the line start. */
+/**
+ * The line split at its run edges, with offsets from the line start. A link
+ * is one piece with the style of its first letter (YAZ-4039 D7).
+ */
 const getLinePieces = (
+  line: string,
+  lineStart: number,
+  runs: readonly ExcalidrawTextRun[],
+  firstRun: number,
+  whole: ResolvedTextStyle,
+  links: readonly TextLinkMatch[],
+) => {
+  const pieces = getRunPieces(line, lineStart, runs, firstRun, whole);
+  if (!links.length) {
+    return pieces;
+  }
+  const linked: LinePiece[] = [];
+  for (const piece of pieces) {
+    let start = piece.start;
+    for (const { start: linkStart, end: linkEnd, ...link } of links) {
+      if (linkEnd <= start || linkStart >= piece.end) {
+        continue;
+      }
+      if (linkStart > start) {
+        linked.push({ ...piece, start, end: linkStart });
+      }
+      if (linkStart >= piece.start) {
+        linked.push({ ...piece, start: linkStart, end: linkEnd, link });
+      }
+      start = Math.min(piece.end, linkEnd);
+    }
+    if (start < piece.end) {
+      linked.push({ ...piece, start, end: piece.end });
+    }
+  }
+  return linked;
+};
+
+const getRunPieces = (
   line: string,
   lineStart: number,
   runs: readonly ExcalidrawTextRun[],
@@ -354,6 +428,17 @@ const getPiecesMeasure = (
         if (piece.end <= start || piece.start >= end) {
           continue;
         }
+        if (piece.link) {
+          // a pill's width, shared by its letters
+          width +=
+            (getLinkPillWidth(
+              piece.link.label,
+              getFont(piece.bold, piece.italic),
+            ) *
+              (Math.min(end, piece.end) - Math.max(start, piece.start))) /
+            (piece.end - piece.start);
+          continue;
+        }
         width += getLineWidth(
           text.slice(
             Math.max(start, piece.start) - start,
@@ -387,7 +472,9 @@ const getLineSegments = (
     }
     const text = line.text.slice(start - line.start, end - line.start);
     const font = getFont(piece.bold, piece.italic);
-    const width = getLineWidth(text, font);
+    const width = piece.link
+      ? getLinkPillWidth(piece.link.label, font)
+      : getLineWidth(text, font);
     segments.push({
       text,
       start: lineStart + start,
@@ -400,6 +487,7 @@ const getLineSegments = (
       underlined: piece.underlined,
       strikethrough: piece.strikethrough,
       color: piece.color,
+      ...(piece.link ? { link: piece.link } : {}),
     });
     x += width;
   }
@@ -473,6 +561,7 @@ const styledLinesMemo = new Map<
     textDecoration: ExcalidrawTextElement["textDecoration"];
     strikethrough: ExcalidrawTextElement["strikethrough"];
     maxWidth: number;
+    linksVersion: number;
     lines: StyledVisualLine[];
   }
 >();
@@ -484,11 +573,13 @@ export const getTextElementStyledLines = (
   originalText: string,
 ) => {
   const args = getTextElementStyledLinesArgs(element, maxWidth, originalText);
-  if (!element.textRuns) {
+  if (!element.textRuns && !hasHostLinks(originalText)) {
     return getStyledVisualLines(args);
   }
   const font = getFontString(element);
   const memo = styledLinesMemo.get(element.id);
+  // YAZ-4039 D7: a box with links is memoized too; a label change moves the version
+  const linksVersion = getHostLinksVersion();
   if (
     memo &&
     memo.originalText === originalText &&
@@ -496,7 +587,8 @@ export const getTextElementStyledLines = (
     memo.font === font &&
     memo.textDecoration === element.textDecoration &&
     memo.strikethrough === element.strikethrough &&
-    memo.maxWidth === maxWidth
+    memo.maxWidth === maxWidth &&
+    memo.linksVersion === linksVersion
   ) {
     return memo.lines;
   }
@@ -508,6 +600,7 @@ export const getTextElementStyledLines = (
     textDecoration: element.textDecoration,
     strikethrough: element.strikethrough,
     maxWidth,
+    linksVersion,
     lines,
   });
   return lines;

@@ -35,6 +35,7 @@ import {
   getStyledVisualLineStart,
   getTextElementStyledLayout,
 } from "./textLineUnderlines";
+import { getLinkPillMetrics } from "./textLinks";
 import {
   isBoundToContainer,
   isArrowElement,
@@ -244,6 +245,16 @@ const getTextVisualBounds = (
       textAlign: CanvasTextAlign;
     }[] = [];
     for (const segment of line.segments ?? []) {
+      if (segment.link) {
+        // YAZ-4039 D7: a pill is its own box
+        const pill = getLinkPillMetrics(segment.font);
+        const pillTop = index * lineHeightPx + (lineHeightPx - pill.height) / 2;
+        left = Math.min(left, lineStart + segment.x);
+        right = Math.max(right, lineStart + segment.x + segment.width);
+        top = Math.min(top, pillTop);
+        bottom = Math.max(bottom, pillTop + pill.height);
+        continue;
+      }
       pieces.push({
         text: segment.text,
         font: segment.font,
@@ -251,7 +262,7 @@ const getTextVisualBounds = (
         textAlign: "left",
       });
     }
-    if (!pieces.length) {
+    if (!pieces.length && !line.segments?.some((segment) => segment.link)) {
       pieces.push({
         text: line.text || " ",
         font: line.font,

@@ -97,6 +97,8 @@ export * from "./store";
 export * from "./textElement";
 export * from "./textList";
 export * from "./textLineUnderlines";
+export * from "./textLinks";
+export * from "./textLinkHit";
 export * from "./textRuns";
 export * from "./textMeasurements";
 export * from "./textWrapping";

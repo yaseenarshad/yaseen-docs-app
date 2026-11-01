@@ -101,6 +101,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
     onLibraryChange,
     autoFocus = false,
     generateIdForFile,
+    hostLinks,
     onLinkOpen,
     generateLinkForSelection,
     onPointerDown,
@@ -237,6 +238,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
           onLibraryChange={onLibraryChange}
           autoFocus={autoFocus}
           generateIdForFile={generateIdForFile}
+          hostLinks={hostLinks}
           onLinkOpen={onLinkOpen}
           generateLinkForSelection={generateLinkForSelection}
           onPointerDown={onPointerDown}

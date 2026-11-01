@@ -44,6 +44,7 @@ import {
   getStyledVisualSelectionGeometry,
   getLogicalLineIndexAtOffset,
   getTextElementStyledLines,
+  hasHostLinks,
   remapTextRunsForTextEdit,
 } from "@excalidraw/element";
 
@@ -96,6 +97,7 @@ import {
 } from "../textList";
 
 import { getPendingTextStyle, takePendingTextStyle } from "./pendingTextStyle";
+import { createLinkPillOverlay } from "./linkPill";
 
 import type { ParsedDataTranferList } from "../clipboard";
 import type App from "../components/App";
@@ -476,7 +478,9 @@ export const textWysiwyg = ({
       }
       // YAZ-3718 D1: text with runs takes the canvas width, so it reuses the
       // layout that refreshTextDimensions made on this keystroke
-      const hasPerLineStyles = !!updatedTextElement.textRuns;
+      const hasPerLineStyles =
+        !!updatedTextElement.textRuns ||
+        hasHostLinks(updatedTextElement.originalText);
       const visualLines = getTextElementStyledLines(
         updatedTextElement,
         !hasPerLineStyles
@@ -554,6 +558,19 @@ export const textWysiwyg = ({
         if (line.segments) {
           // YAZ-3718 D1: each segment with its own style, as on the canvas
           for (const segment of line.segments) {
+            if (segment.link) {
+              // YAZ-4039 D15: the pill stays a pill in the editor
+              underlineOverlay.appendChild(
+                createLinkPillOverlay(
+                  segment,
+                  left + segment.x,
+                  index * lineHeightPx,
+                  lineHeightPx,
+                  appState.theme === THEME.DARK,
+                ),
+              );
+              continue;
+            }
             const styledSegment = document.createElement("span");
             styledSegment.className = [
               "excalidraw-wysiwyg-styled-line",

@@ -272,6 +272,11 @@ import {
   hasVectorStrokeWidth,
   hitTestSmartShapeHandle,
   updateSmartShapeFromHandle,
+  getBoundTextMaxWidth,
+  getTextLinkAt,
+  hasHostLinks,
+  refreshHostLinks,
+  registerHostLinkResolver,
 } from "@excalidraw/element";
 
 import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
@@ -511,6 +516,7 @@ import type {
   BinaryFiles,
   Gesture,
   GestureEvent,
+  HostLinkHit,
   LibraryItems,
   PointerDownState,
   SceneData,
@@ -778,6 +784,9 @@ class App extends React.Component<AppProps, AppState> {
     null;
 
   hitLinkElement?: NonDeletedExcalidrawElement;
+  /** YAZ-4039 D11: the link pill under the pointer, as last reported. */
+  private hostLinkHover: HostLinkHit | null = null;
+  private unmountHostLinks: (() => void) | null = null;
   lastPointerDownEvent: React.PointerEvent<HTMLElement> | null = null;
   lastPointerUpEvent: React.PointerEvent<HTMLElement> | PointerEvent | null =
     null;
@@ -2484,6 +2493,11 @@ class App extends React.Component<AppProps, AppState> {
       event.type === "pointerenter" ? "none" : "auto";
   }
 
+  private handlePointerLeave = (event: React.PointerEvent) => {
+    this.setHostLinkHover(null);
+    this.toggleOverscrollBehavior(event);
+  };
+
   public render() {
     const selectedElements = this.scene.getSelectedElements(this.state);
     const { renderTopRightUI, renderTopLeftUI, renderCustomStats } = this.props;
@@ -2575,9 +2589,7 @@ class App extends React.Component<AppProps, AppState> {
             : undefined
         }
         onPointerLeave={
-          this.isInteractionEnabled()
-            ? this.toggleOverscrollBehavior
-            : undefined
+          this.isInteractionEnabled() ? this.handlePointerLeave : undefined
         }
       >
         <ExcalidrawAPIContext.Provider value={this.api}>
@@ -3894,6 +3906,8 @@ class App extends React.Component<AppProps, AppState> {
 
   public async componentDidMount() {
     this.unmounted = false;
+    // before the scene loads, so its text boxes lay out with their pills
+    this.mountHostLinks();
     this.api = this.createExcalidrawAPI();
     window.addEventListener(
       ANIMATION_RUNTIME_POLICY_EVENT,
@@ -3998,6 +4012,8 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   public componentWillUnmount() {
+    this.unmountHostLinks?.();
+    this.unmountHostLinks = null;
     window.removeEventListener(
       ANIMATION_RUNTIME_POLICY_EVENT,
       this.onAnimationRuntimePolicy,
@@ -4339,6 +4355,21 @@ class App extends React.Component<AppProps, AppState> {
 
     this.handleInteractionStateChange(prevProps, prevState);
     this.handleForcedToolChange(prevProps, prevState);
+
+    if (prevProps.hostLinks !== this.props.hostLinks) {
+      this.unmountHostLinks?.();
+      this.mountHostLinks();
+      this.redrawHostLinks();
+    }
+    // YAZ-4039 D11: a pan or a zoom moves the pill from under the hover
+    if (
+      this.hostLinkHover &&
+      (prevState.scrollX !== this.state.scrollX ||
+        prevState.scrollY !== this.state.scrollY ||
+        prevState.zoom !== this.state.zoom)
+    ) {
+      this.setHostLinkHover(null);
+    }
 
     this.appStateObserver.flush(prevState);
 
@@ -7910,6 +7941,128 @@ class App extends React.Component<AppProps, AppState> {
     ];
   };
 
+  /**
+   * YAZ-4039 D7: the host's link resolver joins the layout, and its changes
+   * (a rename, the index loaded) draw the pills again.
+   */
+  private mountHostLinks = () => {
+    const hostLinks = this.props.hostLinks;
+    if (!hostLinks) {
+      this.unmountHostLinks = null;
+      return;
+    }
+    const unregister = registerHostLinkResolver(hostLinks.resolve);
+    const unsubscribe = hostLinks.subscribe?.(() => {
+      refreshHostLinks();
+      this.redrawHostLinks();
+    });
+    this.unmountHostLinks = () => {
+      unregister();
+      unsubscribe?.();
+    };
+  };
+
+  /**
+   * Draws the text boxes with links again. Their size stays until their next
+   * edit: a label change is not an edit of the file.
+   */
+  private redrawHostLinks = () => {
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    let changed = false;
+    for (const element of this.scene.getNonDeletedElements()) {
+      if (isTextElement(element) && element.originalText.includes("[[")) {
+        changed = true;
+        ShapeCache.delete(element);
+        const container = getContainerElement(element, elementsMap);
+        if (container) {
+          ShapeCache.delete(container);
+        }
+      }
+    }
+    this.setHostLinkHover(null);
+    if (changed) {
+      this.scene.triggerUpdate();
+    }
+  };
+
+  /**
+   * YAZ-4039 D11: the link pill under a scene point, through the box's layout
+   * memo. Only the text box under the pointer is looked at, and only when its
+   * text has a `[[`.
+   */
+  private getHostLinkAt = (
+    scenePointer: Readonly<{ x: number; y: number }>,
+    hitElement: NonDeletedExcalidrawElement | null,
+  ): HostLinkHit | null => {
+    if (!this.props.hostLinks || !hitElement) {
+      return null;
+    }
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    const textElement = isTextElement(hitElement)
+      ? hitElement
+      : getBoundTextElement(hitElement, elementsMap);
+    if (
+      !textElement ||
+      !hasHostLinks(textElement.originalText) ||
+      this.state.editingTextElement?.id === textElement.id
+    ) {
+      return null;
+    }
+    const container = getContainerElement(textElement, elementsMap);
+    const hit = getTextLinkAt(
+      textElement,
+      container
+        ? getBoundTextMaxWidth(container, textElement)
+        : textElement.autoResize
+        ? Infinity
+        : textElement.width,
+      scenePointer,
+    );
+    if (!hit) {
+      return null;
+    }
+    const topLeft = sceneCoordsToViewportCoords(
+      { sceneX: hit.rect.x, sceneY: hit.rect.y },
+      this.state,
+    );
+    const bottomRight = sceneCoordsToViewportCoords(
+      {
+        sceneX: hit.rect.x + hit.rect.width,
+        sceneY: hit.rect.y + hit.rect.height,
+      },
+      this.state,
+    );
+    return {
+      elementId: textElement.id,
+      inner: hit.segment.link!.inner,
+      start: hit.segment.start,
+      end: hit.segment.end,
+      rect: {
+        left: topLeft.x,
+        top: topLeft.y,
+        right: bottomRight.x,
+        bottom: bottomRight.y,
+      },
+    };
+  };
+
+  /** Reports the hovered pill to the host, only when it changed. */
+  private setHostLinkHover = (hit: HostLinkHit | null) => {
+    const last = this.hostLinkHover;
+    if (
+      last === hit ||
+      (last &&
+        hit &&
+        last.elementId === hit.elementId &&
+        last.start === hit.start &&
+        last.inner === hit.inner)
+    ) {
+      return;
+    }
+    this.hostLinkHover = hit;
+    this.props.hostLinks?.onHover?.(hit);
+  };
+
   private getElementLinkAtPosition = (
     scenePointer: Readonly<{ x: number; y: number }>,
     hitElementMightBeLocked: NonDeletedExcalidrawElement | null,
@@ -8752,6 +8905,13 @@ class App extends React.Component<AppProps, AppState> {
       hitElement = hitElementMightBeLocked;
     }
 
+    // YAZ-4039 D11: the preview of a link pill, also with the box not in edit mode
+    if (this.props.hostLinks?.onHover) {
+      this.setHostLinkHover(
+        this.getHostLinkAt(scenePointer, hitElementMightBeLocked),
+      );
+    }
+
     const hoveredArrowTextAnchor =
       this.arrowText.updateHoveredAnchor(scenePointer);
 
@@ -9202,6 +9362,27 @@ class App extends React.Component<AppProps, AppState> {
     // panning
     if (this.handleCanvasPanUsingWheelOrSpaceDrag(event)) {
       return;
+    }
+
+    // YAZ-4039 D11: an open gesture on a link pill is the host's; a plain
+    // click goes on and selects the box
+    if (
+      event.button === POINTER_BUTTON.MAIN &&
+      this.props.hostLinks?.onPointerDown &&
+      (this.state.viewModeEnabled ||
+        this.state.activeTool.type === "selection" ||
+        this.state.activeTool.type === "lasso")
+    ) {
+      const hit = this.getHostLinkAt(
+        scenePointer,
+        this.getElementAtPosition(scenePointerX, scenePointerY, {
+          includeLockedElements: true,
+        }),
+      );
+      if (hit && this.props.hostLinks.onPointerDown(hit, event.nativeEvent)) {
+        this.setHostLinkHover(null);
+        return;
+      }
     }
 
     this.setState({
@@ -14052,6 +14233,18 @@ class App extends React.Component<AppProps, AppState> {
       preferSelected: true,
       includeLockedElements: true,
     });
+
+    // YAZ-4039 D11: a right-click on a link pill gives the link menu
+    if (this.props.hostLinks?.onContextMenu) {
+      const hit = this.getHostLinkAt(
+        { x, y },
+        this.getElementAtPosition(x, y, { includeLockedElements: true }),
+      );
+      if (hit && this.props.hostLinks.onContextMenu(hit, event.nativeEvent)) {
+        this.setHostLinkHover(null);
+        return;
+      }
+    }
 
     const selectedElements = this.scene.getSelectedElements(this.state);
     const isHittingCommonBoundBox =

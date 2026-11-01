@@ -69,7 +69,7 @@ import { referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
 import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
-import type { HotkeyAside } from '@shared/keys'
+import type { HotkeyAside, MouseMods } from '@shared/keys'
 import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
 import { contentVersion } from './contentVersion'
@@ -121,6 +121,16 @@ export interface DrawingSurfaceApi {
   replaceScene(scene: DrawingScene): number
 }
 
+/**
+ * The board's page links (YAZ-4039 D7, D11): the engine's `hostLinks` (`drawingLinks.ts`), and the open of a shape's
+ * link. One object for the surface's life (the prop-stability rule).
+ */
+export interface DrawingSurfaceLinks {
+  hostLinks: NonNullable<ExcalidrawProps['hostLinks']>
+  /** A shape's link icon was clicked: true when the host took it, and the engine never opens it. */
+  openShapeLink: (link: string, event: MouseMods) => boolean
+}
+
 export interface DrawingSurfaceProps {
   /** The scene as it came off disk; the canvas opens on it and never re-reads it. */
   scene: DrawingScene
@@ -170,6 +180,8 @@ export interface DrawingSurfaceProps {
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
+  /** Page links (YAZ-4039): the tab passes them; the note embed's modal does not, and its pills stay text. */
+  links?: DrawingSurfaceLinks
 }
 
 /**
@@ -233,6 +245,7 @@ export function ExcalidrawSurface({
   readOnly = false,
   hotkeys,
   hotkeysAside,
+  links,
 }: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
   /** The canvas panel is the tab's (see the module doc); read once, so a surface never changes mode. */
@@ -285,6 +298,18 @@ export function ExcalidrawSurface({
   /** Read by the panel keys below, which are bound once. */
   const hotkeysRef = useRef(hotkeys)
   hotkeysRef.current = hotkeys
+  /** Read by `onLinkOpen`, which is made once. */
+  const linksRef = useRef(links)
+  linksRef.current = links
+
+  /**
+   * A shape's link icon (YAZ-4039 D7): a `[[link]]` or a vault path opens through the host. A local link the host does
+   * not take is stopped too, also with no host: the engine opens a `/` path in this window, which would move the app away.
+   */
+  const onLinkOpen = useCallback<NonNullable<ExcalidrawProps['onLinkOpen']>>((element, event) => {
+    const link = element.link ?? ''
+    if (linksRef.current?.openShapeLink(link, event.detail.nativeEvent) ?? !/^(https?|mailto):/i.test(link.trim())) event.preventDefault()
+  }, [])
   // The engine's `keyBindings` (YAZ-3564 K5), rebuilt only when a DRAWING key moved: a fresh identity on every
   // settings write would re-render the memoized `<Excalidraw>` for nothing (the #185 rule).
   const drawingKeys = drawingKeysKey(hotkeys, hotkeysAside)
@@ -604,6 +629,8 @@ export function ExcalidrawSurface({
         // still leaves view mode: the engine sets it to `!!viewModeEnabled` when the prop changes.
         viewModeEnabled={readOnly ? true : undefined}
         keyBindings={keyBindings}
+        hostLinks={links?.hostLinks}
+        onLinkOpen={onLinkOpen}
       >
         {canvasSidebar}
       </Excalidraw>

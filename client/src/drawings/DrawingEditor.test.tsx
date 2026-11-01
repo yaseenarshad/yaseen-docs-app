@@ -73,6 +73,7 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
 
 import { api } from '../api'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
+import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BROKEN_DRAWING_DOCUMENT, DrawingEditor } from './DrawingEditor'
 import { ENGINE_LOAD_FAILED } from './ExcalidrawSurface'
 
@@ -486,5 +487,35 @@ describe('read only (YAZ-3076 D2)', () => {
       vi.advanceTimersByTime(1000)
     })
     expect(save).not.toHaveBeenCalled()
+  })
+})
+
+describe('page links (YAZ-4039)', () => {
+  const linkSource = () => {
+    const source = createWikilinkResolveSource()
+    source.update((target) => (target === 'Known' ? '/vault/Known.md' : null))
+    return source
+  }
+  const hit = { elementId: 't', inner: 'Known', start: 0, end: 9, rect: { left: 10, top: 10, right: 60, bottom: 30 } }
+
+  it('gives the canvas no links with no resolve source: the pills stay text', async () => {
+    render()
+    await flush()
+    expect(surface.props?.links).toBeUndefined()
+  })
+
+  it("right-click on a pill opens the note's link menu at the pointer, and ⌘-click opens the page behind", async () => {
+    const onOpenLinkBackground = vi.fn()
+    render({ wikilinks: linkSource(), onOpenLink: vi.fn(), onOpenLinkBackground })
+    await flush()
+    const links = surface.props!.links!
+    expect(links.hostLinks.resolve('Known')).toEqual({ label: 'Known' })
+    act(() => {
+      links.hostLinks.onContextMenu?.(hit, new MouseEvent('contextmenu', { clientX: 40, clientY: 20 }))
+    })
+    const rows = [...container.querySelectorAll('.ctx-menu--editor .ctx-menu__item')].map((row) => row.textContent)
+    expect(rows).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path'])
+    expect(links.hostLinks.onPointerDown?.(hit, new PointerEvent('pointerdown', { metaKey: true }))).toBe(true)
+    expect(onOpenLinkBackground).toHaveBeenCalledWith('/vault/Known.md')
   })
 })

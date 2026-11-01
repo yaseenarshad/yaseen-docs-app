@@ -486,24 +486,56 @@ const getFontTextMeasure = (font: FontString): TextMeasure => ({
   char: (char) => charWidth.calculate(char, font),
 });
 
+/** A range of a line that never breaks (YAZ-4039 D7: a link pill). */
+export type TextUnit = { start: number; end: number };
+
 /**
  * Wraps one hard line (no "\n") whose letters `measure` sizes. Offsets are
  * from the line start. YAZ-3718 D1: the layout of a line with text runs.
+ * `units` are ranges that move to the next line whole.
  */
 export const getWrappedTextLineWithMeasure = (
   line: string,
   measure: TextMeasure,
   maxWidth: number,
+  units?: readonly TextUnit[],
 ): WrappedTextLine[] =>
   !Number.isFinite(maxWidth) || maxWidth < 0
     ? getHardLineBreaks(line)
-    : wrapHardLine(line, measure, maxWidth, 0);
+    : wrapHardLine(line, measure, maxWidth, 0, units);
+
+/** True when `offset` is strictly inside a unit: no break may be there. */
+const isInsideUnit = (offset: number, units: readonly TextUnit[] | undefined) =>
+  !!units?.some((unit) => unit.start < offset && offset < unit.end);
+
+/** Joins the pieces that start inside a unit to the piece before them. */
+const joinUnitPieces = (
+  pieces: string[],
+  start: number,
+  units: readonly TextUnit[] | undefined,
+) => {
+  if (!units?.length) {
+    return pieces;
+  }
+  const joined: string[] = [];
+  let offset = start;
+  for (const piece of pieces) {
+    if (joined.length && isInsideUnit(offset, units)) {
+      joined[joined.length - 1] += piece;
+    } else {
+      joined.push(piece);
+    }
+    offset += piece.length;
+  }
+  return joined;
+};
 
 const wrapHardLine = (
   originalLine: string,
   measure: TextMeasure,
   maxWidth: number,
   offset: number,
+  units?: readonly TextUnit[],
 ): WrappedTextLine[] => {
   if (measure.text(originalLine, offset) <= maxWidth) {
     return [
@@ -522,7 +554,14 @@ const wrapHardLine = (
     parsed.markerKind === "none"
       ? 0
       : measure.text(originalLine.slice(0, contentStart), offset);
-  return wrapLine(originalLine, measure, maxWidth, offset, continuationOffset);
+  return wrapLine(
+    originalLine,
+    measure,
+    maxWidth,
+    offset,
+    continuationOffset,
+    units,
+  );
 };
 
 /**
@@ -537,9 +576,10 @@ const wrapLine = (
   maxWidth: number,
   lineStart: number,
   continuationOffset = 0,
+  units?: readonly TextUnit[],
 ): WrappedTextLine[] => {
   const lines: WrappedTextLine[] = [];
-  const tokens = parseTokens(line);
+  const tokens = joinUnitPieces(parseTokens(line), lineStart, units);
 
   let currentLine = "";
   let currentLineStart = lineStart;
@@ -587,6 +627,7 @@ const wrapLine = (
         measure,
         getCurrentMaxWidth(),
         tokenStart,
+        units,
       );
       const trailingLine = wrappedWord[wrappedWord.length - 1] ?? {
         text: "",
@@ -645,6 +686,7 @@ const wrapWord = (
   measure: TextMeasure,
   maxWidth: number,
   wordStart: number,
+  units?: readonly TextUnit[],
 ): SourceTextLine[] => {
   // multi-codepoint emojis are already broken apart and shouldn't be broken further
   if (getEmojiRegex().test(word)) {
@@ -660,7 +702,8 @@ const wrapWord = (
   satisfiesWordInvariant(word);
 
   const lines: SourceTextLine[] = [];
-  const chars = Array.from(word);
+  // a unit is one "letter" here: it never breaks
+  const chars = joinUnitPieces(Array.from(word), wordStart, units);
 
   let currentLine = "";
   let currentLineStart = wordStart;
@@ -671,7 +714,9 @@ const wrapWord = (
   for (const char of chars) {
     const charStart = offset;
     const charEnd = charStart + char.length;
-    const _charWidth = measure.char(char, charStart);
+    const _charWidth = isInsideUnit(charStart + 1, units)
+      ? measure.text(char, charStart)
+      : measure.char(char, charStart);
     const testLineWidth = currentLineWidth + _charWidth;
 
     if (testLineWidth <= maxWidth) {

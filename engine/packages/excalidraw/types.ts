@@ -55,6 +55,7 @@ import type {
   EphemeralIncrement,
 } from "@excalidraw/element";
 import type { GlobalPoint } from "@excalidraw/math";
+import type { HostLinkResolver } from "@excalidraw/element";
 
 import type { Action } from "./actions/types";
 import type { Spreadsheet } from "./charts";
@@ -786,6 +787,36 @@ export type UIConfig = {
   };
 };
 
+/**
+ * Yaseen Docs (YAZ-4039 D11): a link pill under the pointer. `start` and `end`
+ * are the offsets of the raw `[[inner]]` in the box's `originalText`.
+ */
+export type HostLinkHit = {
+  elementId: ExcalidrawElement["id"];
+  inner: string;
+  start: number;
+  end: number;
+  /** The pill's box on screen, in client px. */
+  rect: { left: number; top: number; right: number; bottom: number };
+};
+
+/**
+ * Yaseen Docs (YAZ-4039 D7, D11): the host's side of page links. `[[inner]]`
+ * in a text box is a pill with what `resolve` says. A plain click selects the
+ * box, as on any shape; the host takes the clicks it opens on.
+ */
+export type HostLinks = {
+  resolve: HostLinkResolver;
+  /** The labels changed (the index updated): the canvas draws them again. */
+  subscribe?: (listener: () => void) => () => void;
+  /** The pointer came onto a pill, or left it (null). Called only on a change. */
+  onHover?: (hit: HostLinkHit | null) => void;
+  /** A primary press on a pill: true when the host took it (an open gesture). */
+  onPointerDown?: (hit: HostLinkHit, event: PointerEvent) => boolean;
+  /** A right-click on a pill: true when the host showed its menu. */
+  onContextMenu?: (hit: HostLinkHit, event: MouseEvent) => boolean;
+};
+
 export interface ExcalidrawProps {
   onChange?: (
     elements: readonly OrderedExcalidrawElement[],
@@ -960,6 +991,8 @@ export interface ExcalidrawProps {
   autoFocus?: boolean;
   generateIdForFile?: (file: File) => string | Promise<string>;
   generateLinkForSelection?: (id: string, type: "element" | "group") => string;
+  /** Yaseen Docs (YAZ-4039 D7, D11): page links in text boxes. Keep it stable. */
+  hostLinks?: HostLinks;
   onLinkOpen?: (
     element: NonDeletedExcalidrawElement,
     event: CustomEvent<{

@@ -28,6 +28,12 @@ import {
   getTextElementStyledLines,
   hasTextList,
 } from "@excalidraw/element";
+import {
+  getLinkPillColors,
+  getLinkPillIconOutline,
+  getLinkPillMetrics,
+  hasHostLinks,
+} from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
 import {
   isArrowElement,
@@ -745,7 +751,9 @@ const renderElementToSvg = (
           ? Infinity
           : element.width;
         const lines =
-          !!element.textRuns || hasTextList(element.originalText)
+          !!element.textRuns ||
+          hasTextList(element.originalText) ||
+          hasHostLinks(element.originalText)
             ? getTextElementStyledLines(element, maxWidth, element.originalText)
             : getTextElementStyledLines(element, Infinity, element.text);
         const lineHeightPx = getLineHeightInPx(
@@ -813,6 +821,61 @@ const renderElementToSvg = (
                 SVG_NS,
                 "tspan",
               );
+              if (segment.link) {
+                // YAZ-4039 D7: the pill and its icon, then the page's name
+                const pill = getLinkPillMetrics(segment.font);
+                const colors = getLinkPillColors(
+                  renderConfig.theme === THEME.DARK,
+                  !!segment.link.missing,
+                );
+                const x = lineStart + segment.x;
+                const top = i * lineHeightPx + (lineHeightPx - pill.height) / 2;
+                if (colors.background) {
+                  const rect = svgRoot.ownerDocument.createElementNS(
+                    SVG_NS,
+                    "rect",
+                  );
+                  rect.setAttribute("x", `${x}`);
+                  rect.setAttribute("y", `${top}`);
+                  rect.setAttribute("width", `${segment.width}`);
+                  rect.setAttribute("height", `${pill.height}`);
+                  rect.setAttribute("rx", `${pill.radius}`);
+                  rect.setAttribute("fill", colors.background);
+                  node.appendChild(rect);
+                }
+                const iconX = x + pill.padding;
+                const iconY = top + (pill.height - pill.iconSize) / 2;
+                const icon = svgRoot.ownerDocument.createElementNS(
+                  SVG_NS,
+                  "path",
+                );
+                icon.setAttribute(
+                  "d",
+                  `${getLinkPillIconOutline(pill.iconSize, segment.link.folder)
+                    .map(
+                      ([px, py], index) =>
+                        `${index ? "L" : "M"}${iconX + px} ${iconY + py}`,
+                    )
+                    .join(" ")} Z`,
+                );
+                icon.setAttribute("fill", "none");
+                icon.setAttribute("stroke", colors.text);
+                icon.setAttribute(
+                  "stroke-width",
+                  `${Math.max(1, pill.iconSize / 10)}`,
+                );
+                node.appendChild(icon);
+                tspan.textContent = segment.link.label;
+                tspan.setAttribute("x", `${iconX + pill.iconSize + pill.gap}`);
+                setTextStyle(
+                  tspan,
+                  { ...segment, underlined: false, strikethrough: false },
+                  colors.text,
+                );
+                tspan.setAttribute("fill", colors.text);
+                text.appendChild(tspan);
+                continue;
+              }
               tspan.textContent = segment.text;
               tspan.setAttribute("x", `${lineStart + segment.x}`);
               setTextStyle(

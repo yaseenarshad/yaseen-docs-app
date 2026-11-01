@@ -16,6 +16,7 @@ import {
   getLineHeightInPx,
   getStyledVisualSelectionGeometry,
   getTextElementStyledLines,
+  hasHostLinks,
   isElementCompletelyInViewport,
 } from "@excalidraw/element";
 
@@ -617,8 +618,8 @@ const getMatchedLines = (
   app: AppClassProperties,
 ): SearchMatch["matchedLines"] => {
   // YAZ-3718 D1: a box with runs places the match on its styled layout, so
-  // each letter is measured with its own font
-  if (textElement.textRuns) {
+  // each letter is measured with its own font (YAZ-4039 D7: a pill its width)
+  if (textElement.textRuns || hasHostLinks(textElement.originalText)) {
     const container = app.scene.getContainerElement(textElement);
     const lines = getTextElementStyledLines(
       textElement,

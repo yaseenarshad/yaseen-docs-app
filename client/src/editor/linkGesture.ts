@@ -17,8 +17,8 @@ export const LINK_HAND_ATTR = 'data-link-hand'
 
 const plain = (event: MouseMods): boolean => !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
 
-/** What a primary click on a link does: an open action, or null for a click that works as on text. Bindings read now. */
-export function linkClickAction(view: EditorView, event: MouseMods, hotkeys: HotkeyOverrides | undefined): GestureAction | null {
+/** What a primary click on a link does: an open action, or null for a click that works as on text. Bindings read now. A drawing's pill asks too (YAZ-4039 D11). */
+export function linkClickAction(view: Pick<EditorView, 'editable'>, event: MouseMods, hotkeys: HotkeyOverrides | undefined): GestureAction | null {
   const bound = gestureAction('links', event, hotkeys)
   if (bound !== null) return bound
   // A read-only note and a preview keep "a click opens" (YAZ-3879 point 6): there is no caret to put.

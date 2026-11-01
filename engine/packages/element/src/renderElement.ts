@@ -59,6 +59,12 @@ import {
   getTextElementStyledLines,
 } from "./textLineUnderlines";
 import {
+  getLinkPillColors,
+  getLinkPillIconOutline,
+  getLinkPillMetrics,
+  hasHostLinks,
+} from "./textLinks";
+import {
   isTextElement,
   isLinearElement,
   isFreeDrawElement,
@@ -86,6 +92,7 @@ import type {
   NonDeletedSceneElementsMap,
   ElementsMap,
 } from "./types";
+import type { StyledTextSegment } from "./textLineUnderlines";
 
 import type { RoughCanvas } from "roughjs/bin/canvas";
 
@@ -567,9 +574,11 @@ const drawElementOnCanvas = (
           ? Infinity
           : element.width;
         // YAZ-3718 D1: text with runs shares the layout memo with
-        // refreshTextDimensions and the editor overlay
+        // refreshTextDimensions and the editor overlay (YAZ-4039 D7: links too)
         const lines =
-          !!element.textRuns || hasTextList(element.originalText)
+          !!element.textRuns ||
+          hasTextList(element.originalText) ||
+          hasHostLinks(element.originalText)
             ? getTextElementStyledLines(element, maxWidth, element.originalText)
             : getTextElementStyledLines(element, Infinity, element.text);
 
@@ -604,6 +613,18 @@ const drawElementOnCanvas = (
             // YAZ-3718 D1: each segment with its own font, color and lines
             context.textAlign = "left";
             for (const segment of segments) {
+              if (segment.link) {
+                drawLinkPill(
+                  context,
+                  segment,
+                  lineStart + segment.x,
+                  index * lineHeightPx,
+                  lineHeightPx,
+                  baseline,
+                  renderConfig.theme === THEME.DARK,
+                );
+                continue;
+              }
               context.font = segment.font;
               context.fillStyle = segment.color
                 ? applyDarkModeFilter(
@@ -670,6 +691,55 @@ const drawElementOnCanvas = (
       }
     }
   }
+};
+
+/**
+ * YAZ-4039 D7: a link run as a note draws it: a pill with the file icon and
+ * the page's name. A missing page is a dim name with no pill.
+ */
+const drawLinkPill = (
+  context: CanvasRenderingContext2D,
+  segment: StyledTextSegment,
+  x: number,
+  lineTop: number,
+  lineHeightPx: number,
+  baseline: number,
+  dark: boolean,
+) => {
+  const link = segment.link!;
+  const pill = getLinkPillMetrics(segment.font);
+  const colors = getLinkPillColors(dark, !!link.missing);
+  const top = lineTop + (lineHeightPx - pill.height) / 2;
+  if (colors.background) {
+    context.fillStyle = colors.background;
+    context.beginPath();
+    if (context.roundRect) {
+      context.roundRect(x, top, segment.width, pill.height, pill.radius);
+    } else {
+      context.rect(x, top, segment.width, pill.height);
+    }
+    context.fill();
+  }
+  const iconX = x + pill.padding;
+  const iconY = top + (pill.height - pill.iconSize) / 2;
+  context.strokeStyle = colors.text;
+  context.lineWidth = Math.max(1, pill.iconSize / 10);
+  context.beginPath();
+  for (const [index, [px, py]] of getLinkPillIconOutline(
+    pill.iconSize,
+    link.folder,
+  ).entries()) {
+    if (index === 0) {
+      context.moveTo(iconX + px, iconY + py);
+    } else {
+      context.lineTo(iconX + px, iconY + py);
+    }
+  }
+  context.closePath();
+  context.stroke();
+  context.font = segment.font;
+  context.fillStyle = colors.text;
+  context.fillText(link.label, iconX + pill.iconSize + pill.gap, baseline);
 };
 
 export const elementWithCanvasCache = new WeakMap<

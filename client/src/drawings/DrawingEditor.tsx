@@ -35,20 +35,30 @@
  * bytes into `assets/`, JSON down to `files: {}`. The persisted set only ever grows, so the same
  * image is never shipped twice in one session.
  */
-import { useCallback, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse } from '@shared/types'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { CanvasPanelState, CanvasPrefs, DiagramDarkColors, DrawingLoadResponse } from '@shared/types'
 import { unpersistedFiles } from '@shared/drawingAssets'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
-import type { HotkeyAside } from '@shared/keys'
+import type { GestureAction, HotkeyAside } from '@shared/keys'
 import { api } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, exportWithNotice, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
+import { linkOpenHint } from '../editor/linkGesture'
+import { linkMenuRows, openMenuAt, type LinkActions } from '../editor/linkMenu'
+import { wikilinkFollower, type WikilinkNav } from '../editor/wikilink/wikilinkClick'
+import { linkMenuOf } from '../editor/wikilink/wikilinkMenu'
+import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import type { NoticeKind } from '../lib/notice'
+import { pageLabel, pathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { useAppliedTheme } from '../lib/theme'
+import type { AnchorRect } from '../sidebar/previewPlacement'
+import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import { exportFileName } from './exportDrawing'
+import { drawingHostLinks, openShapeLink, type DrawingLinkDeps } from './drawingLinks'
 import { parseSceneText, type DrawingScene } from './drawingScene'
-import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi } from './ExcalidrawSurface'
+import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi, type DrawingSurfaceLinks } from './ExcalidrawSurface'
 import { pressed } from './drawingKeys'
 import './drawingEditor.css'
 
@@ -76,6 +86,24 @@ export interface DrawingEditorProps extends DocumentHostProps {
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
+  /**
+   * Page links in the board's text (YAZ-4039): the window's resolve source, as a note gets it. Wired only with
+   * `onOpenLinkBackground` too, as in a note; absent → `[[links]]` stay text.
+   */
+  wikilinks?: WikilinkResolveSource
+  viewOnlyLinks?: ViewOnlyLinkSource
+  /** An open gesture on a pill: this tab or a new tab in front (YAZ-3936). */
+  onOpenLink?: (path: string, where?: GestureAction) => void
+  /** ⌘-click on a pill: a background tab. */
+  onOpenLinkBackground?: (path: string) => void
+  /** The link menu's place rows (YAZ-3740). */
+  linkActions?: LinkActions
+  /** Where a missing page of a bare link is made (C2-, GRO-2240). */
+  newNoteFolderFor?: (sourcePath: string) => string
+  /** Settings › Preview on hover › Links in notes (YAZ-3403): a pill shows the page's card too. */
+  hoverLinks?: boolean
+  previewScope?: (path: string) => PreviewScope
+  diagramDarkColors?: DiagramDarkColors
 }
 
 /** A loaded document: the scene the canvas opens on, and the mtime the first save guards with. */
@@ -119,7 +147,7 @@ interface DrawingHostProps extends DrawingEditorProps {
 const FORGET_PANEL = (): void => undefined
 
 /** Mounts exactly one canvas for `loaded`; its board document owns everything that writes. */
-function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, hotkeysAside, onFailed }: DrawingHostProps) {
+function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, hotkeysAside, onFailed, ...linkProps }: DrawingHostProps) {
   const theme = useAppliedTheme()
   /** The latest snapshot; read only when a save fires (see the module doc). */
   const snapshot = useRef<DrawingSnapshot | null>(null)
@@ -175,6 +203,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     focus: () => surface.current?.focus(),
   })
   const { autosave, start, chips, readOnly, reload } = board
+  const { links, linkPreview, linkCard } = useDrawingLinks(root, path, readOnly, hotkeys, onNotice, board.hostRef, linkProps)
   /**
    * Read only (YAZ-3076 D2): the engine is in view mode, so nothing should change; a snapshot whose
    * version moves anyway (a door the view mode does not close) is kept off disk, and the canvas is
@@ -272,8 +301,71 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
           hotkeys={hotkeys}
           hotkeysAside={hotkeysAside}
           autoFocus
+          links={links}
         />
       </div>
+      <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={linkProps.diagramDarkColors ?? 'adapt'} />
     </div>
   )
+}
+
+type LinkProps = Pick<DrawingEditorProps, 'wikilinks' | 'viewOnlyLinks' | 'onOpenLink' | 'onOpenLinkBackground' | 'linkActions' | 'newNoteFolderFor' | 'hoverLinks' | 'previewScope' | 'diagramDarkColors'>
+
+/**
+ * The board's page links (YAZ-4039 D7, D11; `drawingLinks.ts`): the pills' follower, the hover card beside a pill and
+ * the one link menu. Made once for the board; every live value is read through a ref at the event.
+ */
+function useDrawingLinks(root: string, path: string, readOnly: boolean, hotkeys: HotkeyOverrides | undefined, onNotice: DrawingEditorProps['onNotice'], hostRef: { current: HTMLElement | null }, props: LinkProps) {
+  const live = useRef({ readOnly, hotkeys, onNotice, props })
+  live.current = { readOnly, hotkeys, onNotice, props }
+  // The pill the pointer rests on (YAZ-3403's link card): its page and box; the dwell lives in the card's own store.
+  const linkAt = useRef<{ path: string; rect: AnchorRect } | null>(null)
+  const linkPreview = useCardPreview(props.hoverLinks ?? false, (page) => (linkAt.current?.path === page ? linkAt.current.rect : null))
+  const closeMenu = useRef<() => void>(() => undefined)
+  useEffect(() => () => closeMenu.current(), [])
+  const [links] = useState<DrawingSurfaceLinks | undefined>(() => {
+    const { wikilinks, viewOnlyLinks, onOpenLinkBackground } = props
+    if (wikilinks === undefined || onOpenLinkBackground === undefined) return undefined
+    const nav: WikilinkNav = {
+      ...props.linkActions,
+      root,
+      createFolder: () => live.current.props.newNoteFolderFor?.(path) ?? '',
+      openCurrent: (page) => live.current.props.onOpenLink?.(page, 'thisTab'),
+      openNewTab: (page) => live.current.props.onOpenLink?.(page, 'newTab'),
+      openBackground: (page) => live.current.props.onOpenLinkBackground?.(page),
+      hotkeys: () => live.current.hotkeys,
+      onNotice: (message) => live.current.onNotice?.(message),
+    }
+    const follow = wikilinkFollower(wikilinks, nav, viewOnlyLinks)
+    const deps = (): DrawingLinkDeps => ({
+      source: wikilinks,
+      viewOnly: viewOnlyLinks,
+      follow,
+      nav,
+      readOnly: () => live.current.readOnly,
+      hover: (at) => {
+        if (at === null) {
+          if (linkAt.current !== null) linkPreview.leaveCard(linkAt.current.path)
+          linkAt.current = null
+          return
+        }
+        linkAt.current = at
+        linkPreview.hoverCard(at.path, at.path)
+      },
+      // The one link menu (YAZ-3740), at the pointer. Edit link and Remove link are YAZ-4068's.
+      menu: (hit, event) => {
+        closeMenu.current()
+        const parent = hostRef.current
+        if (parent === null) return
+        closeMenu.current = openMenuAt(parent, event.clientX, event.clientY, linkMenuRows(linkMenuOf(hit.inner, wikilinks, nav, follow, viewOnlyLinks, undefined, undefined, undefined)))
+      },
+    })
+    return { hostLinks: drawingHostLinks(deps), openShapeLink: (link, event) => openShapeLink(link, event, deps()) }
+  })
+  // The card says how to open the link (YAZ-3879 point 9): "⌘-click to open in a background tab".
+  const linkCard = (_: string, page: string): { root: string | null; name: string; hint?: string } | null => {
+    const source = live.current.props.wikilinks
+    return source === undefined ? null : { root: null, name: pageLabel(page, false, pathTitles(source.records, source.folders)), hint: linkOpenHint(live.current.hotkeys, !live.current.readOnly) }
+  }
+  return { links, linkPreview, linkCard }
 }
