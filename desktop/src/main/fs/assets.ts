@@ -2,10 +2,7 @@ import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { AssetResponse, AssetWriteRequest, AssetWriteResponse } from '@shared/types'
 import { DRAWING_EXTENSIONS, IMAGE_EXTENSIONS, MAX_FILE_BYTES } from '@shared/types'
-import { serializeBoard, stampBoardMetaScene } from '@shared/drawingAssets'
-import { isRecord } from '@shared/guards'
 import { linkTarget } from '../vaultIndex/scan'
-import { readBoardHead } from './boardHead'
 import { atomicWrite, BridgeFailure, byNameCi, createDurable, fsCall, isSkipped, requireAbsPath, requireDir, resolveUnderRoot } from './fsUtils'
 import { requireRequest } from './validate'
 
@@ -178,24 +175,6 @@ export async function writeAsset(req: AssetWriteRequest): Promise<AssetWriteResp
       const st = await stat(file)
       return { path: file, mtime: st.mtimeMs, size: st.size }
     }
-    return { path: file, ...(await atomicWrite(file, typeof body === 'string' ? await withPriorBlock(file, body) : body)) }
+    return { path: file, ...(await atomicWrite(file, body)) }
   })
-}
-
-/**
- * A drawing's popup save (YAZ-3943 D5) keeps the `yaseendraw` block the file has: the engine's
- * serializer drops it, and with it Read only, "pictures out" and the dates. Stamped as the save door
- * stamps (`guardedStamp`): `createdAt` and every other key kept, `updatedAt` now. A file with no block
- * (a note embed's sidecar) is written as given.
- */
-async function withPriorBlock(file: string, json: string): Promise<string> {
-  const prior = await readBoardHead(file)
-  if (prior === null || prior.block === null) return json
-  let scene: unknown
-  try {
-    scene = JSON.parse(json)
-  } catch {
-    return json
-  }
-  return isRecord(scene) ? serializeBoard(stampBoardMetaScene(scene, { createdAt: prior.mtime, updatedAt: Date.now() }, prior.block)) : json
 }

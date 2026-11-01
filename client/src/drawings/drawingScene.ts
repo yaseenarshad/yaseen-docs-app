@@ -74,6 +74,12 @@ export interface LoadedDrawing {
   readonly scene: DrawingScene
   readonly path: string
   readonly mtime: number
+  /**
+   * The ids a save never ships back (YAZ-3943 1A1), by `drawing:load`'s own rule: every picture of a
+   * board with its pictures inside (main finds each in the file or the store), only the store's for a
+   * "pictures out" board.
+   */
+  readonly stored: readonly string[]
 }
 
 /**
@@ -95,8 +101,9 @@ export async function openDrawing(root: string, target: string): Promise<LoadedD
     if (err instanceof BridgeRequestError && err.code === 'TOO_LARGE' && err.path !== undefined && isDrawingTarget(err.path)) return openLargeDrawing(root, err.path)
     throw err
   }
-  const scene = parseScene(asset.data)
-  return { scene: await withStoredFiles(root, asset.path, scene), path: asset.path, mtime: asset.mtime }
+  const parsed = parseScene(asset.data)
+  const { scene, fromStore } = await withStoredFiles(root, asset.path, parsed)
+  return { scene, path: asset.path, mtime: asset.mtime, stored: scene.picturesOut === true ? fromStore : Object.keys(scene.files ?? {}) }
 }
 
 /** A board past the asset pipe's cap, through `drawing:load`: its scene, its pictures engine-shaped, and the mtime a save guards with. */
@@ -106,25 +113,28 @@ async function openLargeDrawing(root: string, path: string): Promise<LoadedDrawi
   const files: Record<string, unknown> = {}
   const created = Date.now()
   for (const [id, entry] of Object.entries(res.files)) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
-  return { scene: { ...scene, files }, path: res.path, mtime: res.mtime }
+  return { scene: { ...scene, files }, path: res.path, mtime: res.mtime, stored: res.stored }
 }
 
-/** `scene` with every referenced picture it lacks taken from the store (see `openDrawing`). */
-async function withStoredFiles(root: string, path: string, scene: DrawingScene): Promise<DrawingScene> {
+/** `scene` with every referenced picture it lacks taken from the store (see `openDrawing`), and the ids that came from there. */
+async function withStoredFiles(root: string, path: string, scene: DrawingScene): Promise<{ scene: DrawingScene; fromStore: string[] }> {
   const own = scene.files ?? {}
   const missing = [...referencedFileIds(scene.elements)].filter((id) => !(id in own))
-  if (missing.length === 0) return scene
+  if (missing.length === 0) return { scene, fromStore: [] }
   const stored: Record<string, DrawingFileEntry> = await api.drawing.load({ root, path }).then(
     (res) => res.files,
     () => ({}),
   )
   const files: Record<string, unknown> = { ...own }
+  const fromStore: string[] = []
   const created = Date.now()
   for (const id of missing) {
     const entry = stored[id]
-    if (entry !== undefined) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+    if (entry === undefined) continue
+    files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+    fromStore.push(id)
   }
-  return { ...scene, files }
+  return { scene: { ...scene, files }, fromStore }
 }
 
 /**

@@ -23,6 +23,8 @@ import type { ExcalidrawModule } from './engine'
 
 /** The engine value an export needs — the library's OWN writer, the same one a save uses. */
 export type ExportEngine = Pick<ExcalidrawModule, 'serializeAsJSON'>
+/** What Export Excalidraw Drawing…'s copy needs on top (YAZ-3943 1D1): the engine's font loader and its own measure. */
+export type ExportCopyEngine = Pick<ExcalidrawModule, 'serializeAsJSON' | 'restoreElements' | 'Fonts'>
 
 /** What the canvas holds right now: its elements, its appState, and its live image map. */
 export interface ExportableScene {
@@ -70,9 +72,30 @@ function withStandardFont<T>(item: T, key: string): T {
  * runs) stay in the copy; normal Excalidraw shows them as plain text.
  */
 export function assembleStandaloneScene(engine: ExportEngine, scene: ExportableScene, { standardFonts = false }: { standardFonts?: boolean } = {}): string {
-  const elements = standardFonts ? scene.elements.map((el) => withStandardFont(el, 'fontFamily')) : scene.elements
+  const elements = standardFonts ? standardFontElements(scene.elements) : scene.elements
   const appState = standardFonts ? withStandardFont(scene.appState, 'currentItemFontFamily') : scene.appState
   return `${engine.serializeAsJSON(elements as never, appState as never, embeddedFiles(scene.elements, scene.files) as never, 'local')}\n`
+}
+
+/** The elements with the standard fonts (`STANDARD_FONT`); an element with nothing to swap stays the same object. */
+const standardFontElements = (elements: readonly unknown[]): readonly unknown[] => elements.map((el) => withStandardFont(el, 'fontFamily'))
+
+/**
+ * Export Excalidraw Drawing…'s copy (YAZ-3943 D14, 1D1): the standard fonts, and each text box MEASURED
+ * AGAIN in its new font, so Nunito text does not spill out of a box sized for Inter. The engine's own
+ * measure does it (`restoreElements` with `refreshDimensions`, what it runs on a font change), after its
+ * font loader has the new fonts in the page: a box measured in a fallback font would be as wrong as
+ * before. A font that does not load leaves the boxes as they were. Only this copy is measured; the
+ * board, its save and Share Link never pass here.
+ */
+export async function assembleExportCopy(engine: ExportCopyEngine, scene: ExportableScene): Promise<string> {
+  const swapped = standardFontElements(scene.elements)
+  let elements: readonly unknown[] = swapped
+  if (swapped.some((el, i) => el !== scene.elements[i])) {
+    const loaded = await engine.Fonts.loadElementsFonts(swapped as never).then(() => true, () => false)
+    if (loaded) elements = engine.restoreElements(swapped as never, null, { refreshDimensions: true }) as readonly unknown[]
+  }
+  return assembleStandaloneScene(engine, { ...scene, elements }, { standardFonts: true })
 }
 
 /** The save dialog's default name: the board's own name, with the extension it is getting back (`pdf` for the PDF button, YAZ-3943 D6). */

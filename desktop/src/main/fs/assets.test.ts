@@ -254,20 +254,6 @@ describe('writeAsset', () => {
     expect(await code(writeAsset({ root: vault, path: rel('scene'), content: 'x' }))).toBe('UNSUPPORTED_EXTENSION')
   })
 
-  it("a popup save keeps the board's yaseendraw block — Read only, \"pictures out\", createdAt — and moves only updatedAt (YAZ-3943 D5)", async () => {
-    const block = { createdAt: 5, updatedAt: 6, readonly: true, pictures: 'assets', cloudId: 'k7' }
-    const file = path.join(vault, 'Board.excalidraw')
-    await writeFile(file, `${JSON.stringify({ yaseendraw: block, type: 'excalidraw', elements: [], files: {} }, null, 2)}\n`)
-    const before = Date.now()
-    // The engine's serializer never writes the block: the modal sends a scene without it.
-    await writeAsset({ root: vault, path: 'Board.excalidraw', content: SCENE, expectedMtime: (await stat(file)).mtimeMs })
-    const written = JSON.parse(await readFile(file, 'utf8')) as Record<string, Record<string, unknown>>
-    expect(Object.keys(written)[0]).toBe('yaseendraw')
-    expect(written.yaseendraw).toMatchObject({ createdAt: 5, readonly: true, pictures: 'assets', cloudId: 'k7' })
-    expect(written.yaseendraw.updatedAt).toBeGreaterThanOrEqual(before)
-    expect(written.elements).toEqual(JSON.parse(SCENE).elements)
-  })
-
   it('TOO_LARGE above MAX_FILE_BYTES, and nothing lands on disk', async () => {
     const p = rel('huge.excalidraw')
     expect(await code(writeAsset({ root: vault, path: p, content: 'x'.repeat(MAX_FILE_BYTES + 1) }))).toBe('TOO_LARGE')

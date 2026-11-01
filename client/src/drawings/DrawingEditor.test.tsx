@@ -64,7 +64,7 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
       },
       exportScene: () => {
         surface.commands.push({ kind: 'export-drawing' })
-        return surface.exportedScene
+        return Promise.resolve(surface.exportedScene)
       },
       pictures: () => surface.pictures,
     } satisfies DrawingSurfaceApi)
@@ -116,7 +116,7 @@ async function flush(): Promise<void> {
 
 /** Emit a snapshot whose `serialize()` answers `json` and, optionally, live engine files. */
 function emit(version: number, json = scene([{ id: 'a' }]), files: Record<string, DrawingFileData> = {}, referenced = new Set(Object.keys(files))): void {
-  act(() => surface.emit?.({ version, serialize: () => ({ json, files, referenced }), standalone: () => json }))
+  act(() => surface.emit?.({ version, serialize: () => ({ json, files, referenced }) }))
 }
 
 const chips = (): string => container.textContent ?? ''
@@ -211,9 +211,9 @@ describe('autosave', () => {
     await flush()
     emit(7)
     const serialize = vi.fn(() => ({ json: scene([{ id: 'b' }]), files: {}, referenced: new Set<string>() }))
-    act(() => surface.emit?.({ version: 8, serialize, standalone: () => '' }))
+    act(() => surface.emit?.({ version: 8, serialize }))
     expect(chips()).toContain('Unsaved')
-    act(() => surface.emit?.({ version: 9, serialize, standalone: () => '' }))
+    act(() => surface.emit?.({ version: 9, serialize }))
     expect(save).not.toHaveBeenCalled()
     // The version moved twice; the scene is serialised once, when the save actually runs.
     expect(serialize).not.toHaveBeenCalled()

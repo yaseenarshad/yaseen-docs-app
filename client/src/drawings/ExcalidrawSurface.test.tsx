@@ -18,6 +18,7 @@ vi.mock('./engine', () => {
   const mod = {
     Excalidraw,
     restoreElements: (elements: unknown) => elements,
+    Fonts: { loadElementsFonts: async () => [] },
     restoreAppState: () => ({}),
     getSceneVersion: () => 0,
     serializeAsJSON: vi.fn((elements: unknown) => JSON.stringify({ elements, appState: {} })),
@@ -99,14 +100,14 @@ describe('readOnlyHandle', () => {
 
 /**
  * YAZ-3943 D14 and D6 at the seam: only File › Export Excalidraw Drawing… (`exportScene`) gets the standard
- * fonts; the board's own save (`serialize`) and the note embed's sidecar (`standalone`) keep the board's. And
+ * fonts; the board's own save (`serialize`, a tab's and the popup's) keeps the board's. And
  * the PDF button reaches the engine only when the host gives `onExportPdf`.
  */
 describe('the exported copy and the board itself (YAZ-3943)', () => {
   const ELEMENTS = [{ id: 't', type: 'text', fontFamily: 10 }, { id: 'm', type: 'text', fontFamily: 14 }]
   const fontsOf = (json: string) => (JSON.parse(json) as { elements: { fontFamily: number }[] }).elements.map((e) => e.fontFamily)
 
-  it('exportScene swaps 10 → 6 and 14 → 8; serialize and standalone keep 10 and 14', async () => {
+  it('exportScene swaps 10 → 6 and 14 → 8; serialize keeps 10 and 14', async () => {
     let handle: import('./ExcalidrawSurface').DrawingSurfaceApi | null = null
     let snapshot: import('./ExcalidrawSurface').DrawingSnapshot | null = null
     container = document.createElement('div')
@@ -117,10 +118,9 @@ describe('the exported copy and the board itself (YAZ-3943)', () => {
     })
     const api = { getSceneElements: () => ELEMENTS, getAppState: () => ({}), getFiles: () => ({}), refresh: () => undefined, updateScene: () => undefined, updateFrameRendering: () => undefined }
     act(() => (last().onExcalidrawAPI as (a: unknown) => void)(api))
-    expect(fontsOf(handle!.exportScene())).toEqual([6, 8])
-    // The mount's baseline snapshot: what a save and the sidecar write.
+    expect(fontsOf(await handle!.exportScene())).toEqual([6, 8])
+    // The mount's baseline snapshot: what a save writes, in a tab and in the note's popup.
     expect(fontsOf(snapshot!.serialize().json)).toEqual([10, 14])
-    expect(fontsOf(snapshot!.standalone())).toEqual([10, 14])
   })
 
   it('the engine gets `onExportPdf` only from a host that gives it, and the click reaches the host', async () => {

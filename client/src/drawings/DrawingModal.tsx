@@ -11,8 +11,9 @@
  *
  * 🔒 CHROME ONLY. Everything about the ENGINE — the canvas, what "changed" means, how a scene
  * serializes — lives behind `ExcalidrawSurface`, and nothing in this file imports the package or
- * anything that does. Since YAZ-3028 a drawing TAB (`DrawingEditor`) shares that one surface; the
- * modal saves its `standalone()` scene (the images inside it), as it always has.
+ * anything that does. Since YAZ-3028 a drawing TAB (`DrawingEditor`) shares that one surface, and
+ * since YAZ-3943 1A1 the modal saves as the tab does: the small scene plus the pictures main lacks,
+ * through `drawing:save` (`saveDrawing.ts`), so a board past 10 MiB saves here too.
  * `DrawingModal.test.tsx` pins the boundary.
  *
  * ⚡ KEYS ARE THE OVERLAY'S, NEVER `window`'s (the YAZ-888 lesson, learned by `ConfirmRename` and
@@ -54,7 +55,8 @@ import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
 import type { DrawingSnapshot } from './ExcalidrawSurface'
-import { saveDrawing, saveErrorMessage } from './saveDrawing'
+import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing'
+import { unpersistedFiles } from '@shared/drawingAssets'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
 import './drawingModal.css'
@@ -101,6 +103,8 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   loadedRef.current = loaded
   /** The latest snapshot; read only when a save fires (see the module doc). */
   const snapshot = useRef<DrawingSnapshot | null>(null)
+  /** The ids main holds: the load's `stored`, grown by every save's `persisted` (the tab's rule, YAZ-3943 1A1). */
+  const persisted = useRef(new Set<string>())
   /** Made by the surface's FIRST snapshot, the clean baseline; null until then and after a Reload. */
   const autosave = useRef<Autosave<number> | null>(null)
   const [status, setStatus] = useState<SaveStatus>('saved')
@@ -146,7 +150,9 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
     let live = true
     void openDrawing(root, target).then(
       (drawing) => {
-        if (live) setLoaded(drawing)
+        if (!live) return
+        persisted.current = new Set(drawing.stored)
+        setLoaded(drawing)
       },
       // Missing, unreadable, not a scene: ONE state, exactly like the preview's chip.
       () => {
@@ -184,17 +190,20 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       const drawing = loadedRef.current
       if (current === null || drawing === null) throw new Error('nothing to save')
       try {
-        const mtime = await saveDrawing({ root, target, path: drawing.path, content: current.standalone(), expectedMtime })
+        const { json, files, referenced } = current.serialize()
+        const res = await saveDrawing({ root, target, path: drawing.path, json, newFiles: unpersistedFiles(files, referenced, persisted.current), expectedMtime })
+        for (const id of res.persisted) persisted.current.add(id)
+        if (res.movedOut === true) onNotice?.(PICTURES_MOVED_OUT)
         stale.current = true
         setError(null)
-        return { mtime }
+        return { mtime: res.mtime }
       } catch (err) {
         // A conflict raises the bar (`onConflict`); anything else is the inline error line.
         if (!(err instanceof SaveConflict)) setError(saveErrorMessage(err))
         throw err
       }
     },
-    [root, target],
+    [root, target, onNotice],
   )
 
   const onSnapshot = useCallback(
@@ -276,6 +285,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
     setError(null)
     try {
       const drawing = await openDrawing(root, target)
+      persisted.current = new Set(drawing.stored)
       clearConflict()
       generationRef.current += 1
       autosave.current?.dispose()

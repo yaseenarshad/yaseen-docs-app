@@ -89,6 +89,7 @@ describe('openDrawing (YAZ-879)', () => {
       scene: { elements: [], appState: {}, files: {} },
       path: '/v/assets/drawings/x.excalidraw',
       mtime: 1234,
+      stored: [],
     })
   })
 })
@@ -133,6 +134,14 @@ describe('a lean scene gets its pictures from the store (YAZ-3028)', () => {
     expect(drawing.mtime).toBe(77)
     expect(drawing.scene.readOnly).toBe(true)
     expect(drawing.scene.files?.a).toMatchObject({ id: 'a', ...png })
+  })
+
+  it('`stored` follows drawing:load\'s rule (YAZ-3943 1A1): every picture of an "inside" board; only the store\'s for a "pictures out" one', async () => {
+    readAsset.mockResolvedValue(asset(JSON.stringify({ elements: [image('own'), image('a')], files: { own: { id: 'own', ...png } } })))
+    drawingLoad.mockResolvedValue(stored({ a: png }))
+    expect([...(await openDrawing('/v', 'x.excalidraw')).stored].sort()).toEqual(['a', 'own'])
+    readAsset.mockResolvedValue(asset(JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, pictures: 'assets' }, elements: [image('own'), image('a')], files: { own: { id: 'own', ...png } } })))
+    expect((await openDrawing('/v', 'x.excalidraw')).stored).toEqual(['a'])
   })
 
   it('any other refusal of the asset pipe still rejects (the broken state)', async () => {

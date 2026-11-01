@@ -55,14 +55,12 @@ import { exportFileName } from './exportDrawing'
 import { parseSceneText, type DrawingScene } from './drawingScene'
 import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi } from './ExcalidrawSurface'
 import { pressed } from './drawingKeys'
+import { PICTURES_MOVED_OUT } from './saveDrawing'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
 import './drawingEditor.css'
 
 /** What a document that will not open says — one message for its three causes (missing, corrupt, empty). */
 export const BROKEN_DRAWING_DOCUMENT = "This Excalidraw drawing can't be opened: its file is missing or is not a scene."
-
-/** YAZ-3943 D5, the 50 MB rule: a save moved the board's pictures out. */
-export const PICTURES_MOVED_OUT = "This board's pictures moved to the assets folder, because the file passed 50 MB."
 
 /** YAZ-3943 D5: the size row turns amber from here, well before the 50 MB rule moves the pictures out. */
 export const PICTURES_WARN_BYTES = 20 * 1024 * 1024
@@ -287,7 +285,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
   const exportDrawing = async (): Promise<void> => {
     const s = surface.current
     if (s === null || board.retired.current) return
-    await exportWithNotice(() => api.dialog.saveDrawing({ defaultName: exportFileName(basename(path)), content: s.exportScene() }), EXPORT_FAILED, onNotice)
+    await exportWithNotice(async () => api.dialog.saveDrawing({ defaultName: exportFileName(basename(path)), content: await s.exportScene() }), EXPORT_FAILED, onNotice)
   }
 
   /**

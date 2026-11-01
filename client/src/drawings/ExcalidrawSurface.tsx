@@ -32,15 +32,13 @@
  * often a field the serializer writes (the canvas background, the grid size) has moved since the
  * engine's first `onChange` — so a canvas background change is an edit like any other.
  *
- * TWO SHAPES ON DISK, ONE WRITER: `serializeAsJSON(…, 'local')` is the library's own writer either
- * way, with `source` pinned (`engine.ts`) and a trailing newline.
- *  - `serialize()` is a TAB's save: the scene with an EMPTY files map, plus the engine's live images
- *    and the ids the scene still references, so the host can ship what main lacks
- *    (`unpersistedFiles`) without ever seeing an engine type. Main puts the pictures back inside
- *    the file (YAZ-3943 D5), or in `assets/` for a "pictures out" board: the renderer never
- *    serializes them per save, so typing does not pay for them.
- *  - `standalone()` is the scene with every image it uses INSIDE it: the note embed's own sidecar
- *    shape (rule 28, unchanged) and File › Export Drawing…'s file (`exportDrawing.ts`).
+ * ONE WRITER: `serializeAsJSON(…, 'local')` is the library's own writer, with `source` pinned
+ * (`engine.ts`) and a trailing newline. `serialize()` is a save, by a tab and by the note's popup
+ * (YAZ-3943 1A1): the scene with an EMPTY files map, plus the engine's live images and the ids the
+ * scene still references, so the host can ship what main lacks (`unpersistedFiles`) without ever
+ * seeing an engine type. Main puts the pictures back inside the file (YAZ-3943 D5), or in `assets/`
+ * for a "pictures out" board: the renderer never serializes them per save, so typing does not pay
+ * for them. File › Export Drawing… writes its own standalone copy (`exportDrawing.ts`).
  *
  * ⚡ EVERY PROP HANDED TO THE ENGINE IS STABLE. `<Excalidraw>` is memoized and calls `onChange`
  * whenever it renders, so a prop rebuilt per render is a feedback loop (React error #185, caught
@@ -78,7 +76,7 @@ import { contentVersion } from './contentVersion'
 import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
 import { openViewport, type DrawingScene } from './drawingScene'
 import { applyToolbarMode, loadExcalidraw, type ExcalidrawModule } from './engine'
-import { assembleStandaloneScene } from './exportDrawing'
+import { assembleExportCopy } from './exportDrawing'
 import { yaseenFormFactor } from './formFactor'
 import { applyFramesVisibility } from './framesVisibility'
 import { drawingKeyBindings, drawingKeysKey, pressed } from './drawingKeys'
@@ -99,8 +97,6 @@ export interface DrawingSnapshot {
    * (`files: {}`), the engine's live image map, and the ids the scene still references.
    */
   serialize(): { json: string; files: Record<string, DrawingFileData>; referenced: Set<string> }
-  /** The scene with every image it uses embedded: the note embed's sidecar (rule 28). */
-  standalone(): string
 }
 
 /** The engine-free handle a host gets; nothing in it names the package. */
@@ -113,8 +109,8 @@ export interface DrawingSurfaceApi {
   openImageExport(): void
   /** View › Canvas Background (Draw's 🔒 YAZ-1775 D10): `appState.viewBackgroundColor`, which the engine then writes into the file. */
   setCanvasBackground(color: string): void
-  /** File › Export Drawing… (Draw's YAZ-1821): the canvas as a STANDALONE `.excalidraw`, the whole live files map embedded, in the standard fonts (YAZ-3943 D14). */
-  exportScene(): string
+  /** File › Export Drawing… (Draw's YAZ-1821): the canvas as a STANDALONE `.excalidraw`, the whole live files map embedded, in the standard fonts, measured again (YAZ-3943 D14, 1D1). */
+  exportScene(): Promise<string>
   /** The cog's size row (YAZ-3943 D5): the pictures the canvas uses now, counted when asked (`picturesSize`). */
   pictures(): { bytes: number; count: number }
   /**
@@ -567,11 +563,11 @@ export function ExcalidrawSurface({
       // The FULL files map, straight off the engine: everything hydrated at load plus anything pasted
       // since and not yet saved. The copy leaves the app, so it takes the standard fonts (YAZ-3943 D14).
       exportScene: () =>
-        assembleStandaloneScene(mod, {
+        assembleExportCopy(mod, {
           elements: api.getSceneElements() as readonly unknown[],
           appState: api.getAppState() as unknown as Record<string, unknown>,
           files: api.getFiles() as unknown as Record<string, unknown>,
-        }, { standardFonts: true }),
+        }),
       pictures: () => picturesSize(api.getSceneElements() as readonly unknown[], api.getFiles() as unknown as Record<string, unknown>),
       replaceScene: (next) => {
         const restored = mod.restoreElements(next.elements as ChangeArgs[0], null)
@@ -702,6 +698,5 @@ function snapshotOf(
         referenced: referencedFileIds(elements),
       }
     },
-    standalone: () => assembleStandaloneScene(engine, { elements, appState: appState as unknown as Record<string, unknown>, files: files as unknown as Record<string, unknown> }),
   }
 }
