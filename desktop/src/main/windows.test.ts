@@ -1340,6 +1340,18 @@ describe('createWindowManager: moveTo hands a tab to an open window (YAZ-3091 D1
     expect(manager.setRoots('nope', ['/x'])).toBe(false)
   })
 
+  it('YAZ-3808 6B, a tab board\'s Add: the window the card was let go in hears link:add-vault-and-take; one window, a closed one, or a Files window refuses', () => {
+    const { manager, w1, w2 } = seedMove()
+    for (const w of [w1, w2]) manager.handleLinkReady(w.webContents)
+    expect(manager.addVaultAndTake('w2', '/a', 'w1', { path: '/a/x.md', copy: 0 })).toBe(true)
+    expect(w2.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onAddVaultAndTake.channel, { vault: '/a', from: 'w1', ref: { path: '/a/x.md', copy: 0 } })
+    expect(manager.addVaultAndTake('w2', '/a', 'w2', { path: '/a/x.md', copy: 0 })).toBe(false)
+    expect(manager.addVaultAndTake('w2', '/a', 'nope', { path: '/a/x.md', copy: 0 })).toBe(false)
+    expect(manager.addVaultAndTake('nope', '/a', 'w1', { path: '/a/x.md', copy: 0 })).toBe(false)
+    store.upsertWindow({ ...store.get().windows.find((w) => w.id === 'w2')!, kind: 'files' })
+    expect(manager.addVaultAndTake('w2', '/a', 'w1', { path: '/a/x.md', copy: 0 })).toBe(false)
+  })
+
   it('YAZ-3343, "Move to new window" from the tab board: QUIET — the window is built HIDDEN; from another window\'s card, that window hears link:pop-out-tab', () => {
     const { manager, w1, w2, created } = seedMove()
     for (const w of [w1, w2]) manager.handleLinkReady(w.webContents)

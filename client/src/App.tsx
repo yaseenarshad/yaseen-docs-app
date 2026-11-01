@@ -78,7 +78,7 @@ import { spacePanel } from './tabs/cardPreview'
 import { tabOfRef, windowLabel } from './tabs/windowLabel'
 import { useUpdate } from './update/useUpdate'
 import { RightPanel } from './right-panel/RightPanel'
-import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
+import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots, vaultRefusal } from './vault/slots'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
@@ -788,14 +788,7 @@ export function App() {
      * It reads the identity, not the last render: a restore adds vaults one after the other, before
      * React renders again (YAZ-3147 D3).
      */
-    const refusal = (): string | null => {
-      const now = storage.getRoots()
-      if (now.some((vault) => stripSlash(vault) === path)) return `${name} is already in this window`
-      const holder = rootOfPath(now, path)
-      if (holder !== null) return `Can't add ${name}: it is inside ${storage.vaultName(holder)}`
-      const held = now.find((vault) => rootOfPath([path], stripSlash(vault)) !== null)
-      return held === undefined ? null : `Can't add ${name}: it contains ${storage.vaultName(held)}`
-    }
+    const refusal = (): string | null => vaultRefusal(storage.getRoots(), path, storage.vaultName)
     let refused = refusal()
     if (refused === null) {
       try {
@@ -1502,6 +1495,8 @@ export function App() {
    * as a link into one does (YAZ-3609 D21): the tab stays where it is until the vault is in.
    */
   const [takeAsk, setTakeAsk] = useState<{ from: string; ref: TabRef; at?: number; vault: string } | null>(null)
+  /** A tab board card let go in another window's frame, which lacks its vault (YAZ-3808 6B): the question, as for a link into a vault. */
+  const [boardVaultAsk, setBoardVaultAsk] = useState<{ from: string; ref: TabRef; to: string; vault: string; page: string; window: string } | null>(null)
   const takeFromWindow = useCallback((from: string, ref: TabRef, at?: number) => {
     if (rootOfPath(storage.getRoots(), ref.path) !== null) return moveTabHere(from, ref, at)
     const there = storage.getOtherWindows().find((w) => w.id === from)
@@ -1644,11 +1639,20 @@ export function App() {
   /** A Files window's click, run here (YAZ-3357 D2): set further down, where every door it calls is made. Main holds the push until `link.ready`. */
   const fromFiles = useRef<(action: FilesAction) => void>(() => undefined)
   const openFromFiles = useCallback((action: FilesAction) => fromFiles.current(action), [])
-  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
   /** Another window's card dropped in a frame on this board (YAZ-3343 D13): that window sends it, quietly (`sendTabHere` there). */
   const moveBoardTab = useCallback((from: string, to: string, ref: TabRef) => {
     api.window.moveTab(from, to, ref).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
   }, [notify])
+  /**
+   * The Add of another window's tab board, for a card it dropped in THIS window's frame (YAZ-3808 6B): this window adds
+   * the vault by its own rules — a refusal says why, here — then takes the tab, quietly, as a board move does.
+   */
+  const addVaultAndTakeHere = useCallback(({ vault, from, ref }: { vault: string; from: string; ref: TabRef }) => {
+    void addVault(vault).then((added) => {
+      if (added) moveBoardTab(from, storage.getWindowId(), ref)
+    })
+  }, [addVault, moveBoardTab])
+  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
   const moveBoardCardToSlot = useCallback((id: string, slot: number) => {
     const from = now.current.tabs.findIndex((t) => t.id === id)
@@ -2830,6 +2834,7 @@ export function App() {
       // A card let go on the strip (YAZ-3808 D1): this window's tab moves to the slot; another window's joins at it.
       onMoveToSlot={moveBoardCardToSlot}
       onTakeAt={takeFromWindow}
+      onAskVault={setBoardVaultAsk}
       onCloseWindow={closeBoardWindow}
       onNewWindow={openWindowBehind}
       onOpenTabHere={openBackground}
@@ -3274,6 +3279,22 @@ export function App() {
             })
           }}
           onCancel={() => setTakeAsk(null)}
+        />
+      )}
+      {/* A tab board card let go in another window's frame, which lacks its vault (YAZ-3808 6B): that window adds the vault, then takes the tab. */}
+      {boardVaultAsk !== null && (
+        <ConfirmSheet
+          labelId="confirm-add-vault-for-board-text"
+          // The words of the link's sheet (YAZ-3609 D21), for the window the card was let go in.
+          text={`This tab (${boardVaultAsk.page}) is in a vault (${storage.vaultName(boardVaultAsk.vault)}) that is not open in that window (${boardVaultAsk.window}). Add that vault to that window to move the tab there?`}
+          confirmLabel="Add vault to that window"
+          focusConfirm
+          onConfirm={() => {
+            const ask = boardVaultAsk
+            setBoardVaultAsk(null)
+            api.window.addVaultAndTake(ask.to, ask.vault, ask.from, ask.ref).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
+          }}
+          onCancel={() => setBoardVaultAsk(null)}
         />
       )}
       {/* "Kill all tabs" asks first (YAZ-2739 D3): the focus starts on Cancel, as on every sheet that takes something away. */}

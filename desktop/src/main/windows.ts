@@ -175,6 +175,12 @@ export interface WindowManager extends WindowLookup {
   popOutTab(from: string, ref: TabRef): boolean
   /** The vault chip of an empty frame (YAZ-3343): push `link:set-roots` to the live window `id` with NO tab. `false` = not live, or it has a tab. */
   setRoots(id: string, roots: readonly string[]): boolean
+  /**
+   * A tab board's Add on a card dropped in window `to`, which lacks the card's vault (YAZ-3808 6B): push
+   * `link:add-vault-and-take` to `to`, which adds `vault` and takes the tab `ref` of `from`. `false` = either window is
+   * not live, they are one window, or `to` is a Files window.
+   */
+  addVaultAndTake(to: string, vault: string, from: string, ref: TabRef): boolean
   /** "Close window" on another window's frame (YAZ-3343): its REAL close (the flush handshake runs). `false` = `id` is not live. */
   closeOther(id: string): boolean
   /**
@@ -302,7 +308,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -957,6 +963,14 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const win = liveWindow(from)
       if (win === undefined) return false
       sendLink(win, CONTRACT.link.onPopOutTab.channel, { path: ref.path, copy: ref.copy })
+      return true
+    },
+
+    addVaultAndTake(to, vault, from, ref) {
+      const win = liveWindow(to)
+      const entry = entryOf(to)
+      if (win === undefined || entry === undefined || isFilesWindow(entry) || from === to || liveWindow(from) === undefined) return false
+      sendLink(win, CONTRACT.link.onAddVaultAndTake.channel, { vault, from, ref: { path: ref.path, copy: ref.copy } })
       return true
     },
 

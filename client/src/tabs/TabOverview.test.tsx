@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, Profiler } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { applyTabCanvasPatch, type FileHead, type TabCanvasState, type WindowEntry } from '@shared/types'
+import { MAX_WINDOW_ROOTS, applyTabCanvasPatch, type FileHead, type TabCanvasState, type WindowEntry } from '@shared/types'
 import { storage } from '../lib/storage'
 import { BOARD, withoutTitle } from './board'
 import { TabOverview as IdTabOverview, SETTLE_MS, TOOLBAR_INSET, ZOOM_MS, type TabOverviewProps as IdTabOverviewProps } from './TabOverview'
@@ -868,6 +868,34 @@ describe('TabOverview', () => {
     to = inside('me')
     dragTo(page(el, 'w2\n/w/y.md\n0'), to.x, to.y)
     expect(onMoveTab).toHaveBeenCalledExactlyOnceWith('w2', 'me', { path: '/w/y.md', copy: 0 })
+  })
+
+  it('YAZ-3808 6B: a card let go in a frame without its vault asks to add it — to that window, or to this one by its own question; a window that could not take the vault says why', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
+    others = [other('w2', ['/w', '/z'], [{ path: '/w/y.md', active: true }, { path: '/z/q.md' }])]
+    const onAskVault = vi.fn()
+    const onTakeAt = vi.fn()
+    const onNotice = vi.fn()
+    const { el } = await mount({ onAskVault, onTakeAt, onNotice })
+    const inside = (win: string) => ({ x: BOARD.padX + Number.parseFloat(frame(el, win).style.left) + 30, y: BOARD.padTop + Number.parseFloat(frame(el, win).style.top) + 30 })
+    // a.md is of /v, which w2 does not show: the question, for w2, and the card slides back.
+    let to = inside('w2')
+    const a = page(el, '/v/a.md')!
+    dragTo(a, to.x, to.y)
+    expect(onAskVault).toHaveBeenCalledExactlyOnceWith({ from: 'me', ref: { path: '/v/a.md', copy: 0 }, to: 'w2', vault: '/v', page: 'a', window: expect.any(String) })
+    expect(onNotice).not.toHaveBeenCalled()
+    expect(a.dataset.sliding).toBe('')
+    // w2's card in THIS window's frame, which does not show /z: this window's own question (App's `takeFromWindow`), no slot.
+    to = inside('me')
+    dragTo(page(el, 'w2\n/z/q.md\n0')!, to.x, to.y)
+    expect(onTakeAt).toHaveBeenCalledExactlyOnceWith('w2', { path: '/z/q.md', copy: 0 })
+    // A w2 that holds as many vaults as a window can: no question, the board says why.
+    others = [other('w2', Array.from({ length: MAX_WINDOW_ROOTS }, (_, i) => `/w${i}`), [{ path: '/w0/y.md', active: true }])]
+    act(wake)
+    to = inside('w2')
+    dragTo(page(el, '/v/a.md')!, to.x, to.y)
+    expect(onAskVault).toHaveBeenCalledOnce()
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't move here — that window doesn't have this tab's vault. A window holds ${MAX_WINDOW_ROOTS} vaults at most.`)
   })
 
   it('YAZ-3343 S25, D16: a WINDOW FRAME drags as one — frame, groups and cards follow by transform with no render; the drop stores every card of it moved by the same delta, in ONE write and ONE render; a press with no move moves nothing', async () => {

@@ -248,6 +248,12 @@ export const CONTRACT = {
     setRoots: invoke<[id: string, roots: readonly string[]], void>('window:set-roots', 2),
     /** "Move to new window" on ANOTHER window's card of the tab board (YAZ-3343 D37): window `from` moves its tab `ref` to a new window itself, quietly (its text saved first). */
     popOutTab: invoke<[from: string, ref: TabRef], void>('window:pop-out-tab', 2),
+    /**
+     * A tab board card dropped in the frame of window `to`, which does not show the card's vault (YAZ-3808 6B), after
+     * the user said Add: window `to` adds `vault` itself, by its own rules, then takes the tab `ref` of window `from`,
+     * quietly, as a board move does. Main checks both windows and pushes `link:add-vault-and-take`.
+     */
+    addVaultAndTake: invoke<[to: string, vault: string, from: string, ref: TabRef], void>('window:add-vault-and-take', 4),
     /** A frame's "Show window" on the tab board (YAZ-3343): a window the board made, still hidden, shows and takes the focus. */
     showWindow: invoke<[id: string], void>('window:show', 1),
     /** A card menu's tab action on ANOTHER window's card (YAZ-3343): window `to` runs `action` on its tab `ref` itself. */
@@ -404,6 +410,8 @@ export const CONTRACT = {
     onSetRoots: push<string[]>('link:set-roots'),
     /** A tab board of another window asked this one to move its tab `ref` to a new window, quietly (YAZ-3343): save it, pop it out behind. */
     onPopOutTab: push<TabRef>('link:pop-out-tab'),
+    /** A tab board asked this window to add `vault`, then take the tab `ref` of window `from` (YAZ-3808 6B). */
+    onAddVaultAndTake: push<{ vault: string; from: string; ref: TabRef }>('link:add-vault-and-take'),
     /** Another window's board highlights this window's tab `ref` (YAZ-3343): light it in the strip; `null` puts it out. */
     onHighlightTab: push<TabRef | null>('link:highlight-tab'),
     /** Another window's board asks a tab action of this window's tab `ref` (YAZ-3343): run it here. */

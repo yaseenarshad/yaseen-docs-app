@@ -354,6 +354,18 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     if (!windows.setRoots(target, next)) throw new BridgeFailure('NOT_FOUND', 'that window is closed, or it has tabs')
   })
 
+  // `window:add-vault-and-take` (YAZ-3808 6B): the Add of a tab board's question for a card dropped in a window
+  // without its vault. That window adds the vault by its own rules, then takes the tab with `window:move-tab`.
+  handleWithEvent(CONTRACT.window.addVaultAndTake, async (e, to: unknown, vault: unknown, from: unknown, ref: unknown) => {
+    entryFor(e)
+    const target = requireString(to, 'to')
+    const folder = requireAbsPath(vault, 'vault')
+    const source = requireString(from, 'from')
+    const tab = requireTabRef(ref, 'ref')
+    if (source === target) throw new BridgeFailure('BAD_REQUEST', 'a tab cannot move to its own window')
+    if (!windows.addVaultAndTake(target, folder, source, tab)) throw new BridgeFailure('NOT_FOUND', 'a window is closed')
+  })
+
   // `window:pop-out-tab` (YAZ-3343 D37): "Move to new window" on another window's card. That window does it
   // itself, so its unsaved text is saved first; the caller's own cards use `window:pop-out` with `background`.
   handleWithEvent(CONTRACT.window.popOutTab, async (e, from: unknown, ref: unknown) => {

@@ -240,6 +240,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const linkSendTab = new Set<(req: { to: string; ref: TabRef }) => void>()
   const linkSetRoots = new Set<(roots: string[]) => void>()
   const linkPopOutTab = new Set<(ref: TabRef) => void>()
+  const linkAddVaultAndTake = new Set<(req: { vault: string; from: string; ref: TabRef }) => void>()
   const linkHighlightTab = new Set<(ref: TabRef | null) => void>()
   const linkTabAction = new Set<(req: { ref: TabRef; action: TabAction }) => void>()
   const linkFromFiles = new Set<(action: FilesAction) => void>()
@@ -335,6 +336,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       filesZoom: vi.fn(async (_percent: number) => undefined),
       setRoots: vi.fn(async (_id: string, _roots: readonly string[]) => undefined),
       popOutTab: vi.fn(async (_from: string, _ref: TabRef) => undefined),
+      addVaultAndTake: vi.fn(async (_to: string, _vault: string, _from: string, _ref: TabRef) => undefined),
       showWindow: vi.fn(async (_id: string) => undefined),
       hiddenWindows: vi.fn(async (): Promise<string[]> => []),
       onHiddenWindows: vi.fn(() => () => undefined),
@@ -419,6 +421,10 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onPopOutTab: vi.fn((l: (ref: TabRef) => void) => {
         linkPopOutTab.add(l)
         return () => linkPopOutTab.delete(l)
+      }),
+      onAddVaultAndTake: vi.fn((l: (req: { vault: string; from: string; ref: TabRef }) => void) => {
+        linkAddVaultAndTake.add(l)
+        return () => linkAddVaultAndTake.delete(l)
       }),
       onHighlightTab: vi.fn((l: (ref: TabRef | null) => void) => {
         linkHighlightTab.add(l)
@@ -552,6 +558,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitSendTab: (req: { to: string; ref: TabRef; at?: number }) => linkSendTab.forEach((l) => l(req)),
     emitSetRoots: (roots: string[]) => linkSetRoots.forEach((l) => l(roots)),
     emitPopOutTab: (ref: TabRef) => linkPopOutTab.forEach((l) => l(ref)),
+    emitAddVaultAndTake: (req: { vault: string; from: string; ref: TabRef }) => linkAddVaultAndTake.forEach((l) => l(req)),
     emitHighlightTab: (ref: TabRef | null) => linkHighlightTab.forEach((l) => l(ref)),
     emitTabAction: (req: { ref: TabRef; action: TabAction }) => linkTabAction.forEach((l) => l(req)),
     emitFromFiles: (action: FilesAction) => linkFromFiles.forEach((l) => l(action)),
@@ -1618,9 +1625,13 @@ describe('App tab board across windows (YAZ-3343)', () => {
       act(() => void target.dispatchEvent(event))
       return event
     }
-    const a = el.querySelectorAll<HTMLElement>('.tabbar__tab')[1]
-    expect(fire(a, 'dragover', foreign(false), { clientX: -5 }).defaultPrevented).toBe(true)
-    await act(async () => void fire(a, 'drop', foreign(true), { clientX: -5 }))
+    // jsdom has no layout, and the strip reads a drop's slot from where the layout puts each tab (YAZ-3808 6A): tab i
+    // stands at 100·i, 100 px wide, so x 145 is the left half of "a".
+    const tabEls = [...el.querySelectorAll<HTMLElement>('.tabbar [data-tab]')]
+    tabEls.forEach((tab, i) => Object.defineProperties(tab, { offsetLeft: { configurable: true, value: i * 100 }, offsetWidth: { configurable: true, value: 100 } }))
+    const a = tabEls[1]
+    expect(fire(a, 'dragover', foreign(false), { clientX: 145 }).defaultPrevented).toBe(true)
+    await act(async () => void fire(a, 'drop', foreign(true), { clientX: 145 }))
     expect(bridge.window.moveTab).toHaveBeenCalledExactlyOnceWith('w2', 'w1', { path: '/v/x.md', copy: 0 }, 1)
     expect(fire(strip, 'dragover', foreign(false)).defaultPrevented).toBe(true)
     // Off the strip the whole window takes it, at the strip's end, and lights up while the drag is over; no pane below
@@ -1698,6 +1709,20 @@ describe('App tab board across windows (YAZ-3343)', () => {
     await act(async () => {})
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ roots: ['/v', '/o'] })
     expect(bridge.window.moveTab).toHaveBeenCalledExactlyOnceWith('w3', 'w1', { path: '/o/s.md', copy: 0 }, 3)
+  })
+
+  it('YAZ-3808 6B: another window\'s board asks this window to add a vault and take a tab: it adds the vault by its own rules, then takes the tab quietly; a vault it cannot add moves nothing', async () => {
+    const W3 = entry({ id: 'w3', root: '/o', file: '/o/s.md', tabs: ['/o/s.md'] })
+    const { bridge, emitAddVaultAndTake } = await mount(withWindows({ windows: [entry(ME), W2, W3] }), ME)
+    await act(async () => emitAddVaultAndTake({ vault: '/o', from: 'w3', ref: { path: '/o/s.md', copy: 0 } }))
+    await act(async () => {})
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ roots: ['/v', '/o'] })
+    // Quiet, as a board move: no slot.
+    expect(bridge.window.moveTab).toHaveBeenCalledExactlyOnceWith('w3', 'w1', { path: '/o/s.md', copy: 0 })
+    // Inside a vault it shows: refused, and nothing moves.
+    await act(async () => emitAddVaultAndTake({ vault: '/v/sub', from: 'w3', ref: { path: '/v/sub/s.md', copy: 0 } }))
+    await act(async () => {})
+    expect(bridge.window.moveTab).toHaveBeenCalledOnce()
   })
 
   it('D13, D20: a tab moved here QUIETLY joins the strip in the background — the page on show and an open board stay; "Move to ▸" still shows it', async () => {

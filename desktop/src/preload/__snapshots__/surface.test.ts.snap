@@ -68,6 +68,7 @@ ids.reletter/2: invoke ids:reletter ["a0","a1"]; => "answer"; !> {"code":"NOT_FO
 ids.set/3: invoke ids:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 ids.state/1: invoke ids:state ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 index/1: invoke fs:index ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+link.onAddVaultAndTake/1: on link:add-vault-and-take -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:add-vault-and-take
 link.onCloseTabs/1: on link:close-tabs -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:close-tabs
 link.onFocusTab/1: on link:focus-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:focus-tab
 link.onHighlightTab/1: on link:highlight-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:highlight-tab
@@ -185,6 +186,7 @@ vaultConfig.onChange/1: on vaultConfig:changed -> listener[[{"id":"0-0-0-0-0","e
 vaultConfig.read/2: invoke vaultConfig:read ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultConfig.write/3: invoke vaultConfig:write ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 watch/2: send watch:subscribe [{"id":"0-0-0-0-0","root":"a0"}]; on watch:event -> listener[["ev"]]; off watch:event; send watch:unsubscribe ["0-0-0-0-0"]
+window.addVaultAndTake/4: invoke window:add-vault-and-take ["a0","a1","a2",null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.closeOther/1: invoke window:close-other ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.closeSelf/0: invoke window:close-self []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.closeTabs/2: invoke window:close-tabs ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

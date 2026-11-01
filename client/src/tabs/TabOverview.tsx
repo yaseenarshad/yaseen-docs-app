@@ -1,9 +1,10 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { rootOfPath, type CanvasCard, type TabAction, type CanvasLayout, type TabCanvasPatch, type DiagramDarkColors, type StoredTab, type TabRef, type WindowEntry } from '@shared/types'
+import { MAX_WINDOW_ROOTS, rootOfPath, type CanvasCard, type TabAction, type CanvasLayout, type TabCanvasPatch, type DiagramDarkColors, type StoredTab, type TabRef, type WindowEntry } from '@shared/types'
 import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { isFolderPath, pageLabel, useLatestTrees, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
+import { vaultRefusal } from '../vault/slots'
 import type { Tab } from '../workspace/useWorkspace'
 import type { ListState } from '../lists/useVaultListsHere'
 import { arrivalIn, BOARD, buildBoard, cellKey, copiesOf, departureFrom, dropOutcome, fieldOf, frameDrop, layoutCanvas, nearest, placeCard, refsOf, storedAt, tidyFrame, tidyGroup, withoutTitle, type BoardPage, type BoardTab, type CanvasPlan, type Field, type FrameInput, type Island, type Rect, type Way } from './board'
@@ -85,8 +86,18 @@ export interface TabOverviewProps {
   onMoveTab: (from: string, to: string, ref: TabRef) => void
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab (by id) moves to the slot (0…tabs). */
   onMoveToSlot: (id: string, slot: number) => void
-  /** Another window's card let go on the tab strip (YAZ-3808 D1): its tab joins this window at the slot, as a drop from that window's strip does (YAZ-3637 D4). */
-  onTakeAt: (from: string, ref: TabRef, at: number) => void
+  /**
+   * Another window's card let go on the tab strip (YAZ-3808 D1): its tab joins this window at the slot, as a drop from
+   * that window's strip does (YAZ-3637 D4). With no slot, it was let go in this window's frame, which lacks its vault
+   * (6B): the window asks to add the vault first, as for a drop on its strip.
+   */
+  onTakeAt: (from: string, ref: TabRef, at?: number) => void
+  /**
+   * A card let go in ANOTHER window's frame, which lacks the card's vault (YAZ-3808 6B): ask to add the vault to that
+   * window, then move the tab there, as a link into a vault does. `window` is the frame's name. Without it the board
+   * only says it cannot move the tab.
+   */
+  onAskVault?: (ask: { from: string; ref: TabRef; to: string; vault: string; page: string; window: string }) => void
   /** "Move to ▸": the window a row points at glows (YAZ-3091 D8). */
   onHighlightWindow?: (to: string | null) => void
   /** "Duplicate tab" (YAZ-2940 D5): a copy of the tab, by id. */
@@ -341,7 +352,7 @@ type Gesture =
  * end of the top row, is about every tab the board is about, whatever the filter shows; the board only asks:
  * App owns the sheet and the close.
  */
-export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onMoveToSlot, onTakeAt, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, filesWindow = false }: TabOverviewProps) {
+export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onMoveToSlot, onTakeAt, onAskVault, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, filesWindow = false }: TabOverviewProps) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState<string | null>(active)
   const [pageMenu, setPageMenu] = useState<TabMenuAt | null>(null)
@@ -574,9 +585,16 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     }
     const outcome = slot !== null ? ({ kind: 'move', to: windowId } as const) : dropOutcome({ from: card.win, path: card.page.path, at: toWorld(clientX, clientY), frames: now.frames, framed, rootsOf: (win) => wins.get(win)?.roots })
     if (outcome.kind === 'refuse') {
-      // The card slides back to its place, and the board says why (D38).
+      // The card slides back to its place (D38). A window that could add the card's vault is asked to (YAZ-3808 6B), as
+      // a link into a vault asks; one that could not, by the rules it adds a vault by, has the board say why.
       slideBack(g.el)
-      onNotice?.(MOVE_REFUSED)
+      const there = wins.get(outcome.to)
+      const vault = card.root
+      if (there === undefined || vault === null || (onAskVault === undefined && outcome.to !== windowId)) return void onNotice?.(MOVE_REFUSED)
+      const why = vaultRefusal(there.roots, vault, storage.vaultName) ?? (there.roots.length >= MAX_WINDOW_ROOTS ? `A window holds ${MAX_WINDOW_ROOTS} vaults at most` : null)
+      if (why !== null) onNotice?.(`${MOVE_REFUSED} ${why}.`)
+      else if (outcome.to === windowId) onTakeAt(card.win, card.ref)
+      else onAskVault?.({ from: card.win, ref: card.ref, to: outcome.to, vault, page: card.page.label, window: there.label })
       return
     }
     settleCard(g.el)
