@@ -103,6 +103,8 @@
    (app.css). The tablist is as wide as its tabs, so the "+" stands right after the last one and
    stays on show when the strip scrolls (S87); the tail takes the rest of the row. */
 .tabbar {
+  /* The tabs' offset parent: a drag reads its slot from where the layout puts each tab (YAZ-3808 6A). */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -180,16 +182,41 @@
    slot — on the left of the tab the drop would land before, on the right of the LAST tab for the end slot. No tab moves
    while the drag goes on: a tab that slid away under the pointer at each new slot was hard to follow (Yaseen). The line
    is a shadow in the 4px between two tabs, so it changes no box and the slot under the pointer stays put. */
+/* THE LIVE GAP (YAZ-3808 6A), the way Chrome does it: the grabbed tab leaves the strip, and the tabs slide aside to keep
+   an empty place where the drop would land. TabBar sets each tab's `transform`; only the tabs that change side move, one
+   step at a time, and the drop moves nothing, since the strip already shows the new order. The time is TabBar's
+   `PART_MS`. `--gap-before` and `--gap-after` name the tab the gap opens next to; they draw nothing. */
+.tabbar--parting .tabbar__tab {
+  transition: transform var(--tab-part-ms, 150ms) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 .tabbar__tab--dragging {
-  opacity: 0.5;
+  opacity: 0;
 }
 
-.tabbar__tab--gap-before {
-  box-shadow: -3px 0 0 0 var(--accent);
+/* Room at the strip's end for a tab from elsewhere — another window, the right panel, the tab board — that the tabs
+   after the gap slide into. */
+.tabbar__room {
+  flex: none;
+  align-self: stretch;
+  pointer-events: none;
+  animation: tab-room var(--tab-part-ms, 150ms) cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.tabbar__tab--gap-after {
-  box-shadow: 3px 0 0 0 var(--accent);
+@keyframes tab-room {
+  from {
+    width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabbar--parting .tabbar__tab {
+    transition: none;
+  }
+
+  .tabbar__room {
+    animation: none;
+  }
 }
 
 .tabbar--drop-empty {
