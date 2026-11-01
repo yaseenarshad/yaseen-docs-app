@@ -11,7 +11,7 @@ import type { FoldNext } from '../FoldAllButton'
 import { rowShortcuts } from '../noteKeys'
 import { addHeadingFoldAllMeta, addHeadingFoldUndoMeta, hasHeadingFoldMeta } from './headingFolding'
 import { addOutlineFoldAllMeta, addOutlineFoldUndoMeta, hasOutlineFoldMeta } from './outlineFolding'
-import { foldingBlocked } from './foldingSwitch'
+import { foldingBlocked, isFoldingOn } from './foldingSwitch'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 const PRIORITY = 100
@@ -21,7 +21,7 @@ export const setAllDocumentFolds =
   (collapsed: boolean): Command =>
   (state, dispatch) => {
     // Folding off (YAZ-4094 F1): ⌘⇧U / ⌘⇧I are consumed, with the host's message.
-    if (foldingBlocked(state)) return true
+    if (foldingBlocked(state, dispatch)) return true
     const transaction = state.tr
     const outlineChanged = addOutlineFoldAllMeta(state, transaction, collapsed)
     const headingChanged = addHeadingFoldAllMeta(state, transaction, collapsed)
@@ -32,9 +32,9 @@ export const setAllDocumentFolds =
     return true
   }
 
-/** What the fold-all button does now (YAZ-3938 D2): with no dispatch, each command only says if it would change a fold. */
+/** What the fold-all button does now (YAZ-3938 D2): with no dispatch, each command only says if it would change a fold. Folding off (YAZ-4094 F1): nothing. */
 export const nextDocumentFold = (state: EditorState): FoldNext =>
-  setAllDocumentFolds(true)(state) ? 'collapse' : setAllDocumentFolds(false)(state) ? 'expand' : 'none'
+  !isFoldingOn(state) ? 'none' : setAllDocumentFolds(true)(state) ? 'collapse' : setAllDocumentFolds(false)(state) ? 'expand' : 'none'
 
 /** The DOM event on the editor's `view.dom` after a transaction that changed a fold (YAZ-3938 D9): the fold-all button reads again. */
 export const FOLDS_CHANGED_EVENT = 'yaseendocs:folds-changed'

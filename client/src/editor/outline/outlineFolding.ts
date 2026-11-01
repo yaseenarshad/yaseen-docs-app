@@ -178,7 +178,7 @@ export const setOutlineFoldAtSelection = (collapsed: boolean): Command => (state
   const itemPos = innermostItemPos(state.selection.$from)
   if (!foldingState || itemPos === null) return false
   // Folding off (YAZ-4094 F1): still consumed inside a list (GRO-2092), with the host's message.
-  if (foldingBlocked(state)) return true
+  if (foldingBlocked(state, dispatch)) return true
   const isFoldable = foldingState.entries.some((entry) => entry.itemPos === itemPos)
   if (isFoldable && foldingState.collapsedItemPositions.has(itemPos) !== collapsed) {
     dispatch?.(foldTransaction(state, itemPos))

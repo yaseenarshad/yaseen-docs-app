@@ -182,7 +182,7 @@ export const setHeadingFoldAtSelection = (collapsed: boolean): Command => (state
   }
   if (innermost === null) return false
   // Folding off (YAZ-4094 F1): still consumed inside a section, with the host's message.
-  if (foldingBlocked(state)) return true
+  if (foldingBlocked(state, dispatch)) return true
   if (foldingState.collapsedHeadingPositions.has(innermost.headingPos) !== collapsed) {
     dispatch?.(foldTransaction(state, innermost.headingPos))
   }

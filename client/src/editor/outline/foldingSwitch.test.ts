@@ -7,7 +7,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from '../createCrepe'
 import type { HandleTarget } from '../blockHandleTarget'
 import { foldAllRows } from './foldAllRows'
-import { setAllDocumentFolds } from './foldAllHotkeys'
+import { nextDocumentFold, setAllDocumentFolds } from './foldAllHotkeys'
 import { isFoldingOn, setFoldingOn } from './foldingSwitch'
 import { collapsedHeadingsHiding, collapsedSectionAround, collapsedSectionBlocks, HEADING_FOLDED_ATTR, HEADING_TOGGLE_CLASS, isHeadingCollapsed, setHeadingFoldAtSelection, undoLastHeadingFold } from './headingFolding'
 import { collapsedItemsHiding, isOutlineItemCollapsed, OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS, setOutlineFoldAtSelection, setOutlineFoldSet, toggleOutlineFold, undoLastFold } from './outlineFolding'
@@ -123,6 +123,25 @@ describe('the Folding switch', () => {
     expect(foldAllRows(view, target, {} as Ctx)).toEqual([])
     turn(view, true)
     expect(foldAllRows(view, target, {} as Ctx).map((row) => row.label)).toEqual(['Collapse all', 'Expand all'])
+  })
+
+  it('off: a dry run (no dispatch) shows no message, and the fold-all button reads "none"; only a command that runs shows it (YAZ-4119 fix 1)', async () => {
+    const { view, onBlocked } = await mount()
+    turn(view, false)
+    // The fold-all button reads the state before the host's effect turns folding on: that read is a dry run.
+    expect(nextDocumentFold(view.state)).toBe('none')
+    expect(setAllDocumentFolds(true)(view.state)).toBe(true)
+    caretAt(view, posOf(view, 'Parent') + 1)
+    expect(setOutlineFoldAtSelection(true)(view.state)).toBe(true)
+    caretAt(view, posOf(view, 'Plan', 'heading') + 1)
+    expect(setHeadingFoldAtSelection(true)(view.state)).toBe(true)
+    expect(onBlocked).not.toHaveBeenCalled()
+    expect(run(view, setAllDocumentFolds(true))).toBe(true)
+    expect(onBlocked).toHaveBeenCalledTimes(1)
+    // On: the button reads the page again, with no message.
+    turn(view, true)
+    expect(nextDocumentFold(view.state)).toBe('collapse')
+    expect(onBlocked).toHaveBeenCalledTimes(1)
   })
 
   it('on again with the caret inside a saved fold: only the folds that hide the caret open; the others come back folded', async () => {

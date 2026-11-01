@@ -30,10 +30,13 @@ export const setFoldingOn = (tr: Transaction, on: boolean): Transaction => tr.se
 /** Whether `tr` turns folding back on: the caret guard then opens the saved folds that hide the caret. */
 export const turnsFoldingOn = (tr: Transaction): boolean => tr.getMeta(pluginKey) === true
 
-/** A fold key's command asks this first: with folding off it tells the host (the message) and says "blocked". */
-export const foldingBlocked = (state: EditorState): boolean => {
+/**
+ * A fold key's command asks this first: with folding off it says "blocked". It tells the host (the message) only
+ * when the command runs (`dispatch` given): a dry run, as the fold-all button's read, has no side effect.
+ */
+export const foldingBlocked = (state: EditorState, dispatch?: (tr: Transaction) => void): boolean => {
   if (isFoldingOn(state)) return false
-  ;(pluginKey.get(state)?.spec.onBlocked as (() => void) | undefined)?.()
+  if (dispatch !== undefined) (pluginKey.get(state)?.spec.onBlocked as (() => void) | undefined)?.()
   return true
 }
 
