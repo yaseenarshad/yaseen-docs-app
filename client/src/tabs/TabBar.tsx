@@ -173,8 +173,9 @@ interface DragState {
 }
 
 /** The room a tab of the strip takes: its width and the strip's gap between tabs, in px (YAZ-3808 6A). */
-const roomOf = (tab: HTMLElement, strip: HTMLElement | null): number =>
-  tab.offsetWidth + (strip === null ? 0 : parseFloat(getComputedStyle(strip).columnGap) || 0)
+const columnGapOf = (strip: HTMLElement | null): number => (strip === null ? 0 : parseFloat(getComputedStyle(strip).columnGap) || 0)
+
+const roomOf = (tab: HTMLElement, strip: HTMLElement | null): number => tab.offsetWidth + columnGapOf(strip)
 
 /** A tab's slide in the live gap (6A), and the width a close holds for it (6A5). */
 const tabStyle = (shift: number, width: number | undefined): CSSProperties | undefined =>
@@ -183,21 +184,27 @@ const tabStyle = (shift: number, width: number | undefined): CSSProperties | und
     : { ...(shift === 0 ? {} : { transform: `translateX(${shift}px)` }), ...(width === undefined ? {} : { minWidth: width, maxWidth: width }) }
 
 /**
- * A tab's width as the tab on show (YAZ-3808 6A4): as wide as its whole name, in its least and most. A full strip
- * squeezes the others. The name is measured in the look of the tab on show, which sets it heavier (6A9): the tab lands
- * as that one. Its own look is back before anything paints.
+ * A tab's width as the tab on show (YAZ-3808 6A4): as wide as its whole name, in its least and most width. The tab is
+ * drawn as the tab on show for one read: the class that lets it grow to its whole name (a full strip squeezes the
+ * others, and cuts their names: 6A12) and `aria-selected`, which sets the name heavier (6A9). A width that a close holds
+ * (6A5) does not count. Its own look is back before anything paints.
  */
 const shownWidth = (tab: HTMLElement): number | undefined => {
-  const label = tab.querySelector<HTMLElement>('.tabbar__label')
   const btn = tab.querySelector<HTMLElement>('.tabbar__btn')
-  if (label === null || btn === null) return undefined
+  if (btn === null) return undefined
+  const { minWidth, maxWidth } = tab.style
+  const shown = tab.classList.contains('tabbar__tab--active')
   const selected = btn.getAttribute('aria-selected')
+  tab.style.minWidth = ''
+  tab.style.maxWidth = ''
+  tab.classList.add('tabbar__tab--active')
   btn.setAttribute('aria-selected', 'true')
   try {
-    const style = getComputedStyle(tab)
-    const width = tab.getBoundingClientRect().width - label.getBoundingClientRect().width + label.scrollWidth
-    return Math.min(parseFloat(style.maxWidth) || Infinity, Math.max(parseFloat(style.minWidth) || 0, width))
+    return tab.getBoundingClientRect().width
   } finally {
+    tab.style.minWidth = minWidth
+    tab.style.maxWidth = maxWidth
+    if (!shown) tab.classList.remove('tabbar__tab--active')
     if (selected === null) btn.removeAttribute('aria-selected')
     else btn.setAttribute('aria-selected', selected)
   }
@@ -650,6 +657,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // The tablist's own room is the gap's too (6A): the empty place between the parted tabs is the strip's, not its end.
   const stripSlot = slotZone((e) => pointSlot(e.clientX), true)
   const plusSlot = slotZone(() => tabs.length, false)
+  // The blank tab stands at the end: a drag over it is the end slot's (6A11), also when the gap moves it under the pointer.
+  const blankSlot = slotZone(() => tabs.length, false)
   const firstShownSlot = slotZone(() => {
     const r = stripRef.current?.getBoundingClientRect()
     return r === undefined ? 0 : (slotUnder(stripRef.current, r.left, r.top + r.height / 2) ?? 0)
@@ -733,7 +742,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         const width = foreign && e.dataTransfer !== null ? dragWidth(e.dataTransfer) : null
         const strip = stripRef.current
         if (width === null || strip === null) externalRoom.current = null
-        else if (externalRoom.current?.width !== width) externalRoom.current = { width, room: width + (parseFloat(getComputedStyle(strip).columnGap) || 0) }
+        else if (externalRoom.current?.width !== width) externalRoom.current = { width, room: width + columnGapOf(strip) }
         // A part of the row that takes no drag (the blank tab, the row's own room): no slot, so no gap (6A10).
         if (drag === null && !e.isDefaultPrevented()) setExternalOver(null)
       }}
@@ -923,7 +932,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         {ghostsBefore(null)}
         {/* The blank tab (YAZ-2655 D10): no file, so no drag, no menu and no tooltip. Its ✕ and a middle click close it alone. */}
         {blank && (
-          <div ref={activeRef} className="tabbar__tab tabbar__tab--active tabbar__tab--in" style={shiftOf(tabs.length) === 0 ? undefined : { transform: `translateX(${shiftOf(tabs.length)}px)` }}>
+          <div ref={activeRef} className="tabbar__tab tabbar__tab--active tabbar__tab--in" style={shiftOf(tabs.length) === 0 ? undefined : { transform: `translateX(${shiftOf(tabs.length)}px)` }} {...blankSlot}>
             <button
               type="button"
               role="tab"
@@ -940,7 +949,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
             </button>
           </div>
         )}
-        {from === -1 && gap !== null && <div className="tabbar__room" style={{ width: room }} aria-hidden />}
+        {/* The room brings its own column gap, as the tab that fills it will: its width is the room less that gap (6A12). */}
+        {from === -1 && gap !== null && <div className="tabbar__room" style={{ width: room - columnGapOf(stripRef.current) }} aria-hidden />}
         {landing !== null && (
           <div className="tabbar__tab tabbar__tab--landing" style={landing} aria-hidden>
             <span className="tabbar__btn">

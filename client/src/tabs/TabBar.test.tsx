@@ -387,14 +387,13 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
     const event = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
     Object.defineProperty(event, 'dataTransfer', { value: data })
     act(() => void tabAt(el, 0).dispatchEvent(event))
-    expect(data.setData).toHaveBeenCalledTimes(3)
+    // Two types: jsdom draws no tab, so the drag carries no width (YAZ-3808 6A4), and a strip opens its own room.
+    expect(data.setData).toHaveBeenCalledTimes(2)
     expect(data.setData).toHaveBeenCalledWith(
       WORKSPACE_PAGE_MIME,
       JSON.stringify({ path: '/v/a.md', owner: 'main', from: 'w1', copy: 0 }),
     )
     expect(data.setData).toHaveBeenCalledWith('application/x-yaseen-from-w1.1', '1')
-    // Its width as the tab on show (YAZ-3808 6A4): jsdom has no layout, so the tab's least width.
-    expect(data.setData).toHaveBeenCalledWith(expect.stringMatching(/^application\/x-yaseen-width-\d+$/), '1')
     expect(data.effectAllowed).toBe('move')
   })
 
@@ -1688,17 +1687,31 @@ describe('TabBar: the live gap (YAZ-3808 6A)', () => {
     expect(yielding(el)).toEqual([])
   })
 
-  it('6A4 (YAZ-4040): a strip tab\'s drag carries its width as the tab on show — its whole name, not the width a full strip squeezes it to', () => {
+  /**
+   * Where jsdom has no layout: a tab is 72 px, squeezed, unless it is drawn as the tab on show — its class, which lets it
+   * grow to its whole name (112 px), and its button's `aria-selected`, which sets the name heavier (+5 px). Its label's
+   * `scrollWidth` is cut short, as in a full strip, where the name's own box shrinks with the label (6A12).
+   */
+  const layShownWidths = () => {
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
-      return { left: 0, width: this.classList.contains('tabbar__label') ? 50 : 72 } as DOMRect
+      if (!(this instanceof HTMLElement) || this.dataset.tab === undefined) return { left: 0, width: 50 } as DOMRect
+      const shown = this.classList.contains('tabbar__tab--active')
+      const heavy = this.querySelector('.tabbar__btn')?.getAttribute('aria-selected') === 'true'
+      return { left: 0, width: shown ? 112 + (heavy ? 5 : 0) : 72 } as DOMRect
     })
-    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, get: function (this: HTMLElement) { return this.classList.contains('tabbar__label') ? 90 : 0 } })
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, get: () => 60 })
+  }
+  const dragTypes = (el: HTMLElement, i: number) => {
+    const types: string[] = []
+    fire(tabAt(el, i), 'dragstart', 0, { types, effectAllowed: 'move', setData: vi.fn((type: string) => void types.push(type)) })
+    return types
+  }
+
+  it('6A4 (YAZ-4040): a strip tab\'s drag carries its width as the tab on show — its whole name, not the width a full strip squeezes it to', () => {
+    layShownWidths()
     try {
-      const types: string[] = []
-      const data = { types, effectAllowed: 'move', setData: vi.fn((type: string) => void types.push(type)) }
       const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
-      fire(tabAt(el, 2), 'dragstart', 0, data)
-      expect(types).toContain('application/x-yaseen-width-112') // 72 drawn, 40 of its name cut off
+      expect(dragTypes(el, 2)).toContain('application/x-yaseen-width-117')
     } finally {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth
     }
@@ -1787,24 +1800,26 @@ describe('TabBar: the live gap (YAZ-3808 6A)', () => {
     expect(onRaise).toHaveBeenCalledTimes(2)
   })
 
-  it('6A9 (YAZ-4085): a tab that is not on show carries the width of its name in the look of the tab on show, which it lands as', () => {
-    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
-      return { left: 0, width: this.classList.contains('tabbar__label') ? 50 : 72 } as DOMRect
-    })
-    // The name of the tab on show is set heavier (`aria-selected`), so it is wider: 95 px, not 90.
-    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
-      configurable: true,
-      get: function (this: HTMLElement) {
-        return this.classList.contains('tabbar__label') ? (this.closest('.tabbar__btn')?.getAttribute('aria-selected') === 'true' ? 95 : 90) : 0
-      },
-    })
+  it('6A9 (YAZ-4085): a tab that is not on show carries the width of its name in the look of the tab on show, which it lands as; its own look is back at once', () => {
+    layShownWidths()
     try {
-      const types: string[] = []
-      const data = { types, effectAllowed: 'move', setData: vi.fn((type: string) => void types.push(type)) }
       const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
-      fire(tabAt(el, 2), 'dragstart', 0, data)
-      expect(types).toContain('application/x-yaseen-width-117')
-      expect(tabAt(el, 2).querySelector('.tabbar__btn')?.getAttribute('aria-selected')).toBe('false') // its look is its own again
+      expect(dragTypes(el, 2)).toContain('application/x-yaseen-width-117') // 112 + the heavier name
+      expect(tabAt(el, 2).querySelector('.tabbar__btn')?.getAttribute('aria-selected')).toBe('false')
+      expect(tabAt(el, 2).classList.contains('tabbar__tab--active')).toBe(false)
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth
+    }
+  })
+
+  it('6A12 (YAZ-4088): a tab from a full strip carries its whole width as the tab on show, not its cut name; a width a close holds (6A5) does not count', () => {
+    layShownWidths()
+    try {
+      const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+      tabAt(el, 1).style.minWidth = '72px'
+      tabAt(el, 1).style.maxWidth = '72px'
+      expect(dragTypes(el, 1)).toContain('application/x-yaseen-width-117')
+      expect([tabAt(el, 1).style.minWidth, tabAt(el, 1).style.maxWidth]).toEqual(['72px', '72px'])
     } finally {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth
     }
@@ -1844,6 +1859,31 @@ describe('TabBar: the live gap (YAZ-3808 6A)', () => {
       expect(el.querySelector('.tabbar__room')).not.toBeNull()
     }
     expect(onRaise).toHaveBeenCalledTimes(1)
+  })
+
+  it('6A11 (YAZ-4087): at the end of a short strip with the blank tab, the blank tab that slides into the gap under the pointer keeps the gap open and takes the drop', () => {
+    const onDropFromWindow = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', blank: true, onMove: vi.fn(), takesDrag: () => true, onDropFromWindow, ...props })
+    const tail = el.querySelector<HTMLElement>('.tabbar-tail')!
+    const blankLabel = [...el.querySelectorAll<HTMLElement>('.tabbar__label')].find((l) => l.textContent === 'New tab')!
+    const at = (type: string, relatedTarget?: Element) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 430, clientY: 20, relatedTarget })
+      Object.defineProperty(event, 'dataTransfer', { value: stripTab(130) })
+      return event
+    }
+    act(() => void tail.dispatchEvent(at('dragover')))
+    expect(el.querySelector('.tabbar__room')).not.toBeNull()
+    // The gap pushed the blank tab right, under the pointer: the blank tab is entered, the tail left, in one update.
+    const enter = at('dragenter', tail)
+    act(() => {
+      blankLabel.dispatchEvent(enter)
+      tail.dispatchEvent(at('dragleave', blankLabel))
+    })
+    expect(enter.defaultPrevented).toBe(true) // the blank tab takes the drop
+    act(() => void blankLabel.dispatchEvent(at('dragover')))
+    expect(el.querySelector('.tabbar__room')).not.toBeNull() // the gap stays open
+    act(() => void blankLabel.dispatchEvent(at('drop')))
+    expect(onDropFromWindow).toHaveBeenCalledWith('w2', { path: '/v/e.md', copy: 0 }, TABS.length) // it lands at the end
   })
 })
 
