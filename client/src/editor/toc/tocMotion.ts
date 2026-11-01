@@ -17,6 +17,11 @@ export const FLASH_MS = 1300
 export const FLASH_HOLD = 0.45
 /** The landing flash: the accent at a third of its strength — `--accent-soft` is nearly the page's own colour in the dark theme. */
 export const FLASH_COLOUR = 'color-mix(in srgb, var(--accent) 34%, transparent)'
+/** A band, not a tight box: the shadow carries the colour 6px past the text on every side. */
+const FLASH_ON = { background: FLASH_COLOUR, boxShadow: `0 0 0 6px ${FLASH_COLOUR}`, borderRadius: '4px' }
+const FLASH_OFF = { background: 'transparent', boxShadow: '0 0 0 6px transparent', borderRadius: '4px' }
+/** The flash's keyframes for `element.animate`, with `FLASH_MS`: held, then faded. */
+export const FLASH_FRAMES: Keyframe[] = [{ ...FLASH_ON, offset: 0 }, { ...FLASH_ON, offset: FLASH_HOLD }, { ...FLASH_OFF, offset: 1 }]
 
 /** Ease in and out (cubic): a glide leaves gently and settles gently. `t` from 0 to 1. */
 export const glideEase = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)

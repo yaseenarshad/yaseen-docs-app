@@ -21,15 +21,85 @@
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
+import type { Transform } from '@milkdown/kit/prose/transform'
 import { getZoomKeyOf, setMarkdown, zoomPageTo } from '../createCrepe'
 import { normalizeEmptyItems } from '../listItemRoundTrip'
-import { diffDocs } from './diffDocs'
+import { diffDocs, onlyDerived, type ReplaceRange } from './diffDocs'
 
-/** Share of the old document one range may cover before the edit counts as a rewrite. */
-const REWRITE_SHARE = 0.8
+/** Share of the old document one range may cover before the edit counts as a rewrite (the merge refuses one too). */
+export const REWRITE_SHARE = 0.8
 
 /** Transaction meta stamped on every external apply, for plugins that must tell it from typing. */
 export const EXTERNAL_EDIT_META = 'external-edit'
+
+/**
+ * Transaction meta: where an outside edit landed (YAZ-3704 D3), as `OutsideRange[]` in the NEW
+ * document. The change list reads it; a quiet apply (the user's own typing from a copy of the tab) has none.
+ */
+export const OUTSIDE_RANGES_META = 'outside-ranges'
+
+/** One range an outside edit replaced: its new content's place in the new doc, and the text it removed. */
+export interface OutsideRange {
+  from: number
+  to: number
+  removed: string
+}
+
+/**
+ * Lands `ranges` on `tr` right-to-left (each position through `map`, old → `tr`'s coordinates) and
+ * says where each one's new content ended up in the FINAL doc: the step's own map, then every later step.
+ * `old` is the document the ranges' positions are in, for the removed text. An attr range changes its
+ * node's attrs in place (an `AttrStep`, which moves no position). One of only derived attrs (a number, a
+ * heading id) lands nothing to show; any other (a task ticked, a heading's level) shows on its node's first
+ * line of text (YAZ-3704 4B).
+ */
+export const replaceTracked = (tr: Transform, ranges: readonly ReplaceRange[], old: ProseNode, map: (pos: number) => number = (pos) => pos): OutsideRange[] => {
+  const placed: { step: number; removed: string }[] = []
+  const shown: { step: number; from: number; to: number }[] = []
+  for (const range of [...ranges].sort((a, b) => b.from - a.from)) {
+    const { from, to, slice, attrs } = range
+    if (attrs !== undefined) {
+      const at = map(from)
+      for (const [key, value] of Object.entries(attrs)) tr.setNodeAttribute(at, key, value)
+      const text = onlyDerived(range) ? null : firstLineOf(tr.doc, at)
+      if (text !== null) shown.push({ step: tr.steps.length - 1, ...text })
+      continue
+    }
+    const step = tr.steps.length
+    tr.replace(map(from), map(to), slice)
+    if (tr.steps.length > step) placed.push({ step, removed: old.textBetween(from, to, '\n', ' ') })
+  }
+  return placed.map(({ step, removed }) => {
+    let start = 0
+    let end = 0
+    tr.steps[step].getMap().forEach((_oldStart, _oldEnd, newStart, newEnd) => {
+      start = newStart
+      end = newEnd
+    })
+    const later = tr.mapping.slice(step + 1)
+    return { from: later.map(start, -1), to: later.map(end, 1), removed }
+  }).concat(
+    shown.map(({ step, from, to }) => {
+      const later = tr.mapping.slice(step + 1)
+      return { from: later.map(from, 1), to: later.map(to, -1), removed: '' }
+    }),
+  )
+}
+
+/** The content of the node at `pos` when it is a textblock, else of its first textblock (an item's first line). */
+export const firstLineOf = (doc: ProseNode, pos: number): { from: number; to: number } | null => {
+  const node = doc.nodeAt(pos)
+  if (node === null) return null
+  if (node.isTextblock) return { from: pos + 1, to: pos + 1 + node.content.size }
+  let line: { from: number; to: number } | null = null
+  node.descendants((child, offset) => {
+    if (line !== null) return false
+    if (!child.isTextblock) return true
+    line = { from: pos + 2 + offset, to: pos + 2 + offset + child.content.size }
+    return false
+  })
+  return line
+}
 
 const isEmptyParagraph = (node: ProseNode | null): boolean => node !== null && node.type.name === 'paragraph' && node.content.size === 0
 
@@ -39,13 +109,14 @@ const isEmptyParagraph = (node: ProseNode | null): boolean => node !== null && n
  * counts differ on EVERY edit and each apply deletes a paragraph the plugin re-adds a tick later,
  * nudging a caret parked there. `postProcessMarkdown` strips it on save, so disk never sees it.
  */
-const withTrailingParagraphOf = (live: ProseNode, parsed: ProseNode): ProseNode => {
+export const withTrailingParagraphOf = (live: ProseNode, parsed: ProseNode): ProseNode => {
   const tail = live.lastChild
   if (tail === null || !isEmptyParagraph(tail) || isEmptyParagraph(parsed.lastChild)) return parsed
   return parsed.copy(parsed.content.append(Fragment.from(tail)))
 }
 
-export const applyExternalMarkdown = (crepe: Crepe, body: string): 'applied' | 'rebuilt' => {
+/** `quiet`: the user's own typing (a copy of this tab saved), so the change list is not told (YAZ-3704). */
+export const applyExternalMarkdown = (crepe: Crepe, body: string, quiet = false): 'applied' | 'rebuilt' => {
   let applied = false
   const zoomKey = getZoomKeyOf(crepe)
   crepe.editor.action((ctx) => {
@@ -65,9 +136,11 @@ export const applyExternalMarkdown = (crepe: Crepe, body: string): 'applied' | '
     const tr = view.state.tr
     // Right-to-left: every range is expressed in OLD-document coordinates, so applying the later
     // ones first leaves the earlier ones' positions untouched.
-    for (const { from, to, slice } of [...ranges].sort((a, b) => b.from - a.from)) tr.replace(from, to, slice)
+    const landed = replaceTracked(tr, ranges, view.state.doc)
     if (!tr.doc.eq(parsed)) return
-    view.dispatch(tr.setMeta('addToHistory', false).setMeta(EXTERNAL_EDIT_META, true))
+    tr.setMeta('addToHistory', false).setMeta(EXTERNAL_EDIT_META, true)
+    if (!quiet) tr.setMeta(OUTSIDE_RANGES_META, landed)
+    view.dispatch(tr)
     applied = true
   })
   if (applied) return 'applied'
