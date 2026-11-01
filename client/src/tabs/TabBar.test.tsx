@@ -1046,9 +1046,9 @@ describe('the widths of the tabs (YAZ-2689)', () => {
   /** The declarations of the ONE rule whose selector is exactly `selector`. */
   const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(tabsCss.replace(/\/\*[\s\S]*?\*\//g, ''))?.[1] ?? ''
 
-  it('YAZ-3808 6F: while the tabs part, a tab under the pointer does not light up — the tabs slide under it, and each one blinked', () => {
-    expect(rule('.tabbar--parting .tabbar__tab:not(.tabbar__tab--active):not(.tabbar__tab--lit):hover::before')).toMatch(/background:\s*var\(--tab-fill\);/)
-    expect(rule('.tabbar--parting .tabbar__tab:not(.tabbar__tab--active):hover .tabbar__close')).toMatch(/visibility:\s*hidden;/)
+  it('YAZ-3808 6F: with no hover to trust (a drag, and after it until the mouse moves), a tab under the pointer does not light up', () => {
+    expect(rule('.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):not(.tabbar__tab--lit):hover::before')).toMatch(/background:\s*var\(--tab-fill\);/)
+    expect(rule('.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):hover .tabbar__close,\n.tabbar--hoverless .tabbar__close:hover')).toMatch(/visibility:\s*hidden;/)
   })
 
   it('D1, D2: a tab is as wide as its name, from 72px to 200px, and it can shrink — with no flex basis and no container query, which make the strip cut a tab while the row has room', () => {
@@ -1437,6 +1437,37 @@ describe('TabBar: the live gap (YAZ-3808 6A)', () => {
     expect(shifts(el)).toEqual(['a', 'b', 'c', 'd'])
     fire(tabAt(el, 3), 'dragend')
     expect(el.querySelector('.tabbar--parting, .tabbar__tab--dragging')).toBeNull()
+  })
+
+  it('6G: when the drag ends, a slide still running on a tab is cancelled — it would draw the tab one room off its new place', async () => {
+    const cancel = vi.fn()
+    const glide = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'getAnimations', { configurable: true, value: () => [{ transitionProperty: 'transform', cancel }, { cancel: glide }] })
+    try {
+      const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+      fire(tabAt(el, 0), 'dragstart')
+      fire(tabAt(el, 2), 'dragover', 5)
+      expect(cancel).not.toHaveBeenCalled() // mid-drag the slides run
+      fire(tabAt(el, 2), 'drop', 5)
+      expect(cancel).toHaveBeenCalledTimes(TABS.length)
+      expect(glide).not.toHaveBeenCalled() // only a slide: the glide is an animation of its own
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).getAnimations
+    }
+  })
+
+  it('6F: from the drag\'s start the strip shows no hover look, and after the drop not until the mouse moves', async () => {
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    expect(strip.classList.contains('tabbar--hoverless')).toBe(false)
+    fire(tabAt(el, 0), 'dragstart')
+    expect(strip.classList.contains('tabbar--hoverless')).toBe(true)
+    fire(tabAt(el, 2), 'dragover', 5)
+    fire(tabAt(el, 2), 'drop', 5)
+    fire(tabAt(el, 0), 'dragend')
+    expect(strip.classList.contains('tabbar--hoverless')).toBe(true) // the page's hover is where the drag began
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('mousemove', { bubbles: true })))
+    expect(strip.classList.contains('tabbar--hoverless')).toBe(false)
   })
 
   it('the drop place is read from the layout, not from where the gap draws a tab: the gap does not flicker under a still pointer', async () => {

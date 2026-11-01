@@ -37,7 +37,7 @@ let manager: {
   moveTo: ReturnType<typeof vi.fn<(to: string, path: string) => boolean>>
   focusTab: ReturnType<typeof vi.fn<(to: string, ref: TabRef) => boolean>>
   closeTabs: ReturnType<typeof vi.fn<(to: string, refs: readonly TabRef[]) => boolean>>
-  moveTab: ReturnType<typeof vi.fn<(from: string, to: string, ref: TabRef, at?: number) => boolean>>
+  moveTab: ReturnType<typeof vi.fn<(from: string, to: string, ref: TabRef, at?: number, background?: boolean) => boolean>>
   tearOff: ReturnType<typeof vi.fn<(from: WindowEntry, path: string, carry: unknown, point: unknown, alone: boolean) => TearOffResult>>
   setName: ReturnType<typeof vi.fn<(id: string, name: string | null) => boolean>>
   closeOther: ReturnType<typeof vi.fn<(id: string) => boolean>>
@@ -749,9 +749,9 @@ describe('registerWindowIpc', () => {
     it('window:move-tab passes from, to and the ref; from may be the caller; the same window both ends is BAD_REQUEST and a refusal NOT_FOUND', async () => {
       const moveTab = registered(CONTRACT.window.moveTab.channel)
       expect(await moveTab({ sender }, 'w1', 'w2', REF)).toEqual(ok(undefined))
-      expect(manager.moveTab).toHaveBeenLastCalledWith('w1', 'w2', REF, undefined)
+      expect(manager.moveTab).toHaveBeenLastCalledWith('w1', 'w2', REF, undefined, false)
       expect(await moveTab({ sender }, 'w2', 'w3', REF)).toEqual(ok(undefined))
-      expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w3', REF, undefined)
+      expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w3', REF, undefined, false)
       expect(await moveTab({ sender: stranger }, 'w1', 'w2', REF)).toEqual(bad('BAD_REQUEST'))
       expect(await moveTab({ sender }, 'w2', 'w2', REF)).toEqual(bad('BAD_REQUEST'))
       expect(await moveTab({ sender }, 'w1', null, REF)).toEqual(bad('BAD_REQUEST'))
@@ -761,11 +761,16 @@ describe('registerWindowIpc', () => {
       expect(await moveTab({ sender }, 'w1', 'w2', REF)).toEqual(bad('NOT_FOUND'))
       // The slot of a drop on the caller's strip (YAZ-3637 D4): a whole number from 0 passes; anything else is no slot.
       expect(await moveTab({ sender }, 'w2', 'w1', REF, 3)).toEqual(ok(undefined))
-      expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w1', REF, 3)
+      expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w1', REF, 3, false)
       for (const at of [-1, 1.5, '2', null]) {
         expect(await moveTab({ sender }, 'w2', 'w1', REF, at)).toEqual(ok(undefined))
-        expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w1', REF, undefined)
+        expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w1', REF, undefined, false)
       }
+      // A tab board card let go on the caller's strip (YAZ-3808 6H): quiet, at its slot. Only `true` is quiet.
+      expect(await moveTab({ sender }, 'w2', 'w1', REF, 3, true)).toEqual(ok(undefined))
+      expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w1', REF, 3, true)
+      expect(await moveTab({ sender }, 'w2', 'w1', REF, 3, 'yes')).toEqual(ok(undefined))
+      expect(manager.moveTab).toHaveBeenLastCalledWith('w2', 'w1', REF, 3, false)
     })
 
     it('window:tear-off (YAZ-3637 D1, D3, D5) hands the caller entry, the path, the clean carry, the point and `alone` to the manager and answers what it says; a stranger, a relative path, a path in no vault of the caller and a bad point are rejected', async () => {

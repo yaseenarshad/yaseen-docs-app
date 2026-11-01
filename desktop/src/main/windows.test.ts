@@ -1885,6 +1885,11 @@ describe('createWindowManager: the tab board reaches other windows (YAZ-3343 D3,
     // A drop on w2's strip names its slot (YAZ-3637 D4); without one the key is absent, not undefined.
     expect(manager.moveTab('w1', 'w2', REF, 2)).toBe(true)
     expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSendTab.channel, { to: 'w2', ref: REF, at: 2 })
+    // A tab board card let go on w2's strip (YAZ-3808 6H): its slot, quietly. Quiet with no slot is the board's frame drop.
+    expect(manager.moveTab('w1', 'w2', REF, 2, true)).toBe(true)
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSendTab.channel, { to: 'w2', ref: REF, at: 2, background: true })
+    expect(manager.moveTab('w1', 'w2', REF, undefined, true)).toBe(true)
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSendTab.channel, { to: 'w2', ref: REF })
     expect(manager.moveTab('w1', 'w2', { path: '/b/y.md', copy: 0 })).toBe(false) // w2 shows no /b: no vault is added
     expect(manager.moveTab('w1', 'w3', REF)).toBe(false) // a Welcome window shows no vault
     expect(manager.moveTab('w1', 'w1', REF)).toBe(false)
@@ -1892,7 +1897,7 @@ describe('createWindowManager: the tab board reaches other windows (YAZ-3343 D3,
     expect(manager.moveTab('w1', 'nope', REF)).toBe(false)
     w2.destroy()
     expect(manager.moveTab('w1', 'w2', REF)).toBe(false)
-    expect(w1.webContents.send).toHaveBeenCalledTimes(2)
+    expect(w1.webContents.send).toHaveBeenCalledTimes(4)
     for (const c of [w1, w2, w3]) expect(c.focusCount).toBe(0)
   })
 

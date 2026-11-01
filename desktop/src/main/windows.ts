@@ -156,9 +156,10 @@ export interface WindowManager extends WindowLookup {
    * `from`, which saves the tab and sends it with `window:move-to`, as "Move to ▸" does. `false` = either window
    * is not live, they are the same window, or `to` shows no vault of `ref.path` (the `moveTo` rule). No raise, here or
    * after: `from` sends it as a QUIET move (`background`), which `moveTo` does not raise. With `at` (YAZ-3637 D4, a tab
-   * dropped on `to`'s strip) `from` sends it loud, to that slot.
+   * dropped on `to`'s strip) `from` sends it loud, to that slot; with `background` too (YAZ-3808 6H, a tab board card
+   * let go on `to`'s strip), quietly, to that slot.
    */
-  moveTab(from: string, to: string, ref: TabRef, at?: number): boolean
+  moveTab(from: string, to: string, ref: TabRef, at?: number, background?: boolean): boolean
   /** Name the live window `id` (YAZ-3343 D14), or `null` for its automatic label: `store.setWindowName`. `false` = `id` is not live. */
   setName(id: string, name: string | null): boolean
   /** The board's highlight on window `to`'s card (YAZ-3343): it lights that tab in its strip; `null` puts it out. Dropped when `to` is not live. */
@@ -1002,11 +1003,11 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       return true
     },
 
-    moveTab(from, to, ref, at) {
+    moveTab(from, to, ref, at, background) {
       const source = liveWindow(from)
       const entry = entryOf(to)
       if (source === undefined || from === to || liveWindow(to) === undefined || entry === undefined || isFilesWindow(entry) || rootOfPath(entry.roots, ref.path) === null) return false
-      sendLink(source, CONTRACT.link.onSendTab.channel, { to, ref: { path: ref.path, copy: ref.copy }, ...(at === undefined ? {} : { at }) })
+      sendLink(source, CONTRACT.link.onSendTab.channel, { to, ref: { path: ref.path, copy: ref.copy }, ...(at === undefined ? {} : { at }), ...(at !== undefined && background === true ? { background: true } : {}) })
       return true
     },
 

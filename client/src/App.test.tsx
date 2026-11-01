@@ -555,7 +555,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitTakeTab: (tab: MovedTab) => linkTakeTab.forEach((l) => l(tab)),
     emitFocusTab: (ref: TabRef) => linkFocusTab.forEach((l) => l(ref)),
     emitCloseTabsHere: (refs: TabRef[]) => linkCloseTabs.forEach((l) => l(refs)),
-    emitSendTab: (req: { to: string; ref: TabRef; at?: number }) => linkSendTab.forEach((l) => l(req)),
+    emitSendTab: (req: { to: string; ref: TabRef; at?: number; background?: true }) => linkSendTab.forEach((l) => l(req)),
     emitSetRoots: (roots: string[]) => linkSetRoots.forEach((l) => l(roots)),
     emitPopOutTab: (ref: TabRef) => linkPopOutTab.forEach((l) => l(ref)),
     emitAddVaultAndTake: (req: { vault: string; from: string; ref: TabRef }) => linkAddVaultAndTake.forEach((l) => l(req)),
@@ -1683,6 +1683,14 @@ describe('App tab board across windows (YAZ-3343)', () => {
     expect(bridge.window.tearOff).toHaveBeenCalledExactlyOnceWith('/v/a.md', expect.anything(), { x: 900, y: 300 }, true)
     expect(tabNames(el)).toEqual(['a'])
     expect(bridge.window.closeSelf).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-3808 6H: a tab board card let go on another window\'s strip leaves this window QUIETLY, to that slot: the tab moves, and opening it is a click there', async () => {
+    const { bridge, el, emitSendTab } = await mount(withWindows(), ME)
+    await act(async () => emitSendTab({ to: 'w2', ref: { path: '/v/c.md', copy: 0 }, at: 1, background: true }))
+    await act(async () => {})
+    expect(bridge.window.moveTo).toHaveBeenCalledExactlyOnceWith('w2', '/v/c.md', expect.objectContaining({ at: 1, background: true }))
+    expect(tabNames(el)).toEqual(['a', 'b'])
   })
 
   it('YAZ-3637 D6: a tab of a vault this window does not show asks to add that vault, as a link does (YAZ-3609 D21); added, the tab moves here, to the slot; cancelled, nothing moves', async () => {

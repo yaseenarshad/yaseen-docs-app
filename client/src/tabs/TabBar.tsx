@@ -276,6 +276,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   const boardRoom = useRef(0)
   /** The held card's name, for its tab in the gap (YAZ-3808 6D). */
   const [boardLabel, setBoardLabel] = useState<string | null>(null)
+  /** A drag went over the strip, and the mouse has not moved since: the page's hover is stale (YAZ-3808 6F). */
+  const [staleHover, setStaleHover] = useState(false)
   const [scroller] = useState(() =>
     edgeScroller(
       () => stripRef.current,
@@ -458,6 +460,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
 
   const dropExternal = (event: DragEvent, insertion: number): void => {
     setExternalOver(null)
+    setStaleHover(true)
     scroller.stop()
     if (foreignTab(event)) {
       const tab = event.dataTransfer === null ? null : windowTabOf(event.dataTransfer)
@@ -530,6 +533,21 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     return from < i && i < gap ? -room : gap <= i && i < from ? room : 0
   }
   const parting = drag !== null || externalOver !== null || boardOver !== null
+  // No hover look on the tabs while they part, nor after a drag until the mouse moves (YAZ-3808 6F): the page hears no
+  // mouse move during a drag, so its hover stays where the drag began, on the tab that slid into that place.
+  const hoverless = parting || staleHover
+  // The drag's slides end with it (YAZ-3808 6G): a slide still running when the drag ends — the tab on show grabbed,
+  // most often — kept the tab drawn one room off its new place, and it slid back (a jump, in the demo). The glide
+  // starts each tab from where it was drawn, so the new place shows at once and moves nothing more.
+  const wasParting = useRef(false)
+  useLayoutEffect(() => {
+    if (wasParting.current && !parting) {
+      for (const el of stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? []) {
+        for (const slide of el.getAnimations?.() ?? []) if ('transitionProperty' in slide) slide.cancel()
+      }
+    }
+    wasParting.current = parting
+  }, [parting])
   // A tab board card's tab, where it will land (6D): the board clips the card at its own edge, right under the strip,
   // so the gap would be empty. Its place is read from the layout, as the slot is, and only while a card is held here.
   const landingAt = (): { left: number; width: number } | null => {
@@ -559,6 +577,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       onDragOver={(e) => {
         if (drag !== null || externalPage(e) !== null || foreignTab(e)) scroller.at(e.clientX)
       }}
+      onMouseMove={staleHover ? () => setStaleHover(false) : undefined}
       // A drag that leaves the row closes the gap (YAZ-3637 D4): another window's tab may go on to the page below, or
       // out of the window, and nothing else here hears of it. This strip's own tab goes back to its own place (6A): a
       // drop off the strip lands it in no slot.
@@ -605,7 +624,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       </div>
       <div
         ref={stripRef}
-        className={`tabbar scroll-strip${parting ? ' tabbar--parting' : ''}${externalOver === 0 && tabs.length === 0 ? ' tabbar--drop-empty' : ''}`}
+        className={`tabbar scroll-strip${parting ? ' tabbar--parting' : ''}${hoverless ? ' tabbar--hoverless' : ''}${externalOver === 0 && tabs.length === 0 ? ' tabbar--drop-empty' : ''}`}
         role="tablist"
         aria-label="Open files"
         {...stripSlot}
@@ -656,6 +675,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                   writePageDrag(e.dataTransfer, { path, owner: 'main', from: windowId, copy: tabs.slice(0, i).filter((t) => t.path === path).length }, root === null ? -1 : roots.indexOf(root))
                 }
                 setExternalOver(null)
+                setStaleHover(true)
                 setDrag({ from: i, over: null, room: roomOf(e.currentTarget, stripRef.current), lifted: false })
                 requestAnimationFrame(() => setDrag((now) => (now === null || now.from !== i ? now : { ...now, lifted: true })))
               }}

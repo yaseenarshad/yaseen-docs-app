@@ -1191,6 +1191,10 @@ describe('take (YAZ-3091 D5): a tab another window moved here', () => {
     expect([quiet.active, quiet.mounted, quiet.history, quiet.preview]).toEqual(['t1', ['t1'], s.history, null])
     const empty = reduceTabs(two({ tabs: [], active: null, mounted: [] }), { type: 'take', path: '/v/c.md', background: true })
     expect(empty.active).toBe(empty.tabs[0].id)
+    // A tab board card let go on this strip (YAZ-3808 6H): quiet, at its slot.
+    const slot = reduceTabs(s, { type: 'take', path: '/v/c.md', background: true, at: 1 })
+    expect(slot.tabs.map((t) => t.path)).toEqual([A, '/v/c.md', B])
+    expect([slot.active, slot.mounted]).toEqual(['t1', ['t1']])
   })
 
   it('S13: under the blank tab the page fills it — a page that is open too gets its copy, never a trip to its tab', () => {

@@ -321,14 +321,15 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   // `window:move-tab` (YAZ-3343 D13): a card dropped in another window's frame. Window `from` — the caller or any
   // other — sends its tab on to `to` through `link:send-tab`; main checks both windows and `to`'s vaults first, as
   // `window:move-to` does, and `move-to` checks again when the tab goes.
-  // A tab dropped on the caller's strip (YAZ-3637 D4) names the slot `at`; the board's drop names none.
-  handleWithEvent(CONTRACT.window.moveTab, async (e, from: unknown, to: unknown, ref: unknown, at: unknown) => {
+  // A tab dropped on the caller's strip (YAZ-3637 D4) names the slot `at`; the board's drop names none. A board card let
+  // go on the caller's strip (YAZ-3808 6H) names its slot and `background`: it lands there, quietly.
+  handleWithEvent(CONTRACT.window.moveTab, async (e, from: unknown, to: unknown, ref: unknown, at: unknown, background: unknown) => {
     entryFor(e)
     const source = requireString(from, 'from')
     const target = requireString(to, 'to')
     const tab = requireTabRef(ref, 'ref')
     if (source === target) throw new BridgeFailure('BAD_REQUEST', 'a tab cannot move to its own window')
-    if (!windows.moveTab(source, target, tab, optionalSlot(at))) throw new BridgeFailure('NOT_FOUND', 'a window is closed, or that window shows no vault of this page')
+    if (!windows.moveTab(source, target, tab, optionalSlot(at), background === true)) throw new BridgeFailure('NOT_FOUND', 'a window is closed, or that window shows no vault of this page')
   })
 
   // `window:close-other` (YAZ-3343 D21): a frame's "Close window" on the tab board. The window's REAL close, so

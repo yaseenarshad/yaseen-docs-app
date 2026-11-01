@@ -14,7 +14,7 @@ interface UseLinkEventsOptions {
   /** Another window's tab board closed tabs of this window (YAZ-3343 D3, D10): close them here, as ⌘W does. */
   onCloseTabs?: (refs: TabRef[]) => void
   /** Another window's tab board dropped this window's tab `ref` in the frame of window `to` (YAZ-3343 D13): save it, send it with `window.moveTo`, close it here. */
-  onSendTab?: (req: { to: string; ref: TabRef }) => void
+  onSendTab?: (req: { to: string; ref: TabRef; at?: number; background?: true }) => void
   /** A tab board's vault chip picked this EMPTY window's vaults (YAZ-3343 D22): show them, if it still has no tab. */
   onSetRoots?: (roots: string[]) => void
   /** A tab board of another window asked this one to move its tab `ref` to a new window, quietly (YAZ-3343). */

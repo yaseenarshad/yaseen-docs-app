@@ -431,7 +431,8 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
       // A moved tab (YAZ-3091 D5, S11, S13): never a trip to the tab that is open, so its name and page view
       // are not lost. Under the blank tab this is `fillBlank` for a page that is not open: the page fills it.
       // A quiet move (YAZ-3343 D13) only joins the strip: the page on show stays, and the tab mounts when first shown.
-      if (a.background === true && s.active !== null && !s.blank) return { ...s, tabs: [...s.tabs, newTab(a.path)] }
+      // A tab board card let go on this strip (YAZ-3808 6H) is quiet too, at its slot.
+      if (a.background === true && s.active !== null && !s.blank) return { ...s, tabs: a.at === undefined ? [...s.tabs, newTab(a.path)] : insertAt(s.tabs, newTab(a.path), a.at) }
       // Dropped on this strip (YAZ-3637 D4): the new tab stands at the drop slot.
       return appendActive(s, a.path, false, a.at)
     }

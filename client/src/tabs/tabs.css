@@ -207,14 +207,15 @@
   }
 }
 
-/* No hover while the tabs part (YAZ-3808 6F): they slide under a pointer that stays still, and each tab that passed
-   under it lit up for a moment — a blink, on Yaseen's eye in the demo. The tab on show and the board's lit tab keep
-   their own look. */
-.tabbar--parting .tabbar__tab:not(.tabbar__tab--active):not(.tabbar__tab--lit):hover::before {
+/* No hover look while the tabs part, nor after a drag until the mouse moves (YAZ-3808 6F): the page hears no mouse
+   move during a drag, so its hover stays where the drag began — on the tab that slid into that place, which lit up
+   with its ✕ when the drag ended (Yaseen, in the demo). The tab on show and the board's lit tab keep their own look. */
+.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):not(.tabbar__tab--lit):hover::before {
   background: var(--tab-fill);
 }
 
-.tabbar--parting .tabbar__tab:not(.tabbar__tab--active):hover .tabbar__close {
+.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):hover .tabbar__close,
+.tabbar--hoverless .tabbar__close:hover {
   visibility: hidden;
 }
 

@@ -220,8 +220,9 @@ export const CONTRACT = {
      * A card dropped in another window's frame (YAZ-3343 D13): window `from` sends its tab `ref` to the window `to`, as "Move to ▸" does.
      * Main checks that both are live and that `to` shows a vault of the page; `from` may be the caller.
      * A tab dropped on the caller's strip (YAZ-3637 D4) names the slot `at` it lands in; absent = the end, quietly.
+     * A tab board card let go on the caller's strip (YAZ-3808 6H) names its slot and `background`: it lands there, quietly.
      */
-    moveTab: invoke<[from: string, to: string, ref: TabRef, at?: number], void>('window:move-tab', 4),
+    moveTab: invoke<[from: string, to: string, ref: TabRef, at?: number, background?: boolean], void>('window:move-tab', 5),
     /**
      * A tab of the strip let go where no surface took it (YAZ-3637 D1, D3, D5): `point` is where, on the screen. Main
      * answers `none` when the point is on an app window (that window's drop, or nothing); else a new window opens
@@ -405,7 +406,7 @@ export const CONTRACT = {
     /** Another window's tab board closed tabs of this window (YAZ-3343 D3, D10). */
     onCloseTabs: push<TabRef[]>('link:close-tabs'),
     /** Another window's tab board moved this window's tab `ref` to the window `to` (YAZ-3343 D13): save it, send it with `window:move-to`, close it here. With `at` (YAZ-3637 D4) it lands at that slot of `to`'s strip, loud. */
-    onSendTab: push<{ to: string; ref: TabRef; at?: number }>('link:send-tab'),
+    onSendTab: push<{ to: string; ref: TabRef; at?: number; background?: true }>('link:send-tab'),
     /** A tab board's vault chip picked this EMPTY window's vaults (YAZ-3343): show them, if it still has no tab. */
     onSetRoots: push<string[]>('link:set-roots'),
     /** A tab board of another window asked this one to move its tab `ref` to a new window, quietly (YAZ-3343): save it, pop it out behind. */
