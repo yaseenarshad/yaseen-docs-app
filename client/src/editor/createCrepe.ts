@@ -120,6 +120,10 @@
  *  - CMD+F find (YAZ-968, `find/findInPage.ts`): matches + highlight decorations + fold-reveal,
  *    driven through the `FindChannel` the host also gives the find bar. Registered only when
  *    `opts.find` supplies that channel; every transaction it makes is metadata-only.
+ *  - Outside changes (YAZ-3704 D3–D9, `external/outsideChanges.ts`): the words an outside save changed glow,
+ *    removed text is a thin red mark, each changed line has a Checked button on hover; the one-line note reads
+ *    the count and drives Next through the `OutsideChangesChannel` the host also gives the bar. Registered only
+ *    when `opts.outsideChanges` supplies that channel. Memory only; every transaction it makes is metadata-only.
  *  - Table of contents (YAZ-2700, `toc/tocPlugin.ts`): the note's rows — its H1-H5 outside lists,
  *    or its bullets three levels deep when it has fewer than two of those, or what the reader
  *    chose for this note (the channel's source, D14: every heading, or the bullets) — scanned at
@@ -238,9 +242,11 @@ import { createDrawingPreview, type DrawingPreviewOptions } from './drawing/draw
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
 import { createSlashMenu } from './slashMenu'
 import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
-import { createImageView } from './image/imageView'
+import { createImageView, imageParseDefaults } from './image/imageView'
 import type { FindChannel } from './find/findChannel'
 import { createFindInPage } from './find/findInPage'
+import type { OutsideChangesChannel } from './external/outsideChangesChannel'
+import { createOutsideChanges } from './external/outsideChanges'
 import type { TocChannel } from './toc/tocChannel'
 import { createTableOfContents } from './toc/tocPlugin'
 import { bulletThreading } from './outline/bulletThreading'
@@ -323,6 +329,8 @@ export interface CreateCrepeOptions {
   zoom?: ZoomOptions
   /** CMD+F channel (YAZ-968): the host's one channel per mount, shared with the find bar. Absent → no find engine at all. */
   find?: FindChannel
+  /** Outside changes channel (YAZ-3704 D6): the host's one channel per mount, shared with the one-line note. Absent → no change list at all. */
+  outsideChanges?: OutsideChangesChannel
   /** Table of contents channel (YAZ-2700): the host's one channel per mount, shared with the table of contents. Absent → the note is never scanned. */
   toc?: TocChannel
   /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
@@ -532,6 +540,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     extendListItemSchemaForTask.extendSchema((prev) => (ctx) => ({ ...prev(ctx), content: 'block+' })),
   )
   crepe.editor.use(listItemRoundTrip)
+  // An image read with no title gets '' as a made one does (YAZ-3704 4I2).
+  crepe.editor.use(imageParseDefaults)
   // The slash menu's "in a list" flag (YAZ-3550): which stock rows a list item hides.
   crepe.editor.use(slashMenu.inListWatch)
   crepe.editor.use(underline)
@@ -569,6 +579,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const viewOnlyLinks = opts.viewOnlyLinks ?? createViewOnlyLinkSource()
   // ⌘F reads a pill as the note draws it (YAZ-3744 S9): the same two sources.
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find, { wikilinks, viewOnly: viewOnlyLinks }))
+  if (opts.outsideChanges !== undefined) crepe.editor.use(createOutsideChanges(opts.outsideChanges))
   // A row of the table of contents, a crumb, the tab's tooltip and its Back list name a line's links as the note shows them (YAZ-3744 D6).
   const linkText = (text: string) => linksAsShown(text, wikilinks, viewOnlyLinks)
   if (opts.toc !== undefined) crepe.editor.use(createTableOfContents(opts.toc, { linkText, subscribe: wikilinks.subscribe }))

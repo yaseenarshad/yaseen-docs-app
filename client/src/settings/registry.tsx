@@ -53,7 +53,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 /** Files & Links › Open new tabs (YAZ-3808 D2). */
 const NEW_TAB_PLACE_OPTIONS: readonly { label: string; value: SettingsState['newTabPlace'] }[] = [
@@ -776,6 +776,32 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['outline', 'toc', 'hierarchy', 'guide', 'hover'],
             render: ({ settings, onChange }) => (
               <Segmented options={TOC_LINES_OPTIONS} value={settings.tocLines} onChange={(tocLines) => onChange({ ...settings, tocLines })} ariaLabel="Level lines" />
+            ),
+          },
+        ],
+      },
+      {
+        // YAZ-3704 D5: the glow on text an outside save changed in an open note. The words say "outside": the app
+        // cannot tell an AI's save from a sync pull or another app.
+        title: 'Outside changes',
+        hint: 'Text that an AI or another app changed in an open note.',
+        items: [
+          {
+            id: 'outsideChangeGlow',
+            label: 'Glow',
+            hint: 'Off turns off this whole feature: no glow, no list, no bar.',
+            keywords: ['ai', 'agent', 'highlight', 'changed', 'glow'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={OUTSIDE_CHANGE_GLOW_OPTIONS} value={settings.outsideChangeGlow} onChange={(outsideChangeGlow) => onChange({ ...settings, outsideChangeGlow })} ariaLabel="Glow" />
+            ),
+          },
+          {
+            id: 'outsideListPinned',
+            label: 'Pin default',
+            hint: 'On: the numbered list of changes sits left of the note. Off: it opens from the count. Its Pin button sets this too.',
+            keywords: ['ai', 'agent', 'changed', 'list', 'numbered', 'sidebar', 'pin'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.outsideListPinned} onChange={(outsideListPinned) => onChange({ ...settings, outsideListPinned })} ariaLabel="Pin default" />
             ),
           },
         ],
