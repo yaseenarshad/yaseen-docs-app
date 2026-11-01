@@ -2,6 +2,8 @@
  * Where the 6-dot block handle points. The handle floats in the gutter left of the block, so
  * the block it belongs to is found by probing just right of the handle at the pointer's y.
  */
+import type { Node } from '@milkdown/kit/prose/model'
+import type { Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { cssZoom } from '../lib/cssZoom'
 import { isListItem } from './outline/listNodes'
@@ -20,6 +22,11 @@ export const isOwnHandleGrab = (view: EditorView, t: EventTarget | null): t is E
 export interface HandleTarget {
   pos: number
   inside: number
+  /**
+   * The selection before the right-click, when it was on the text (YAZ-3727 D15): a right-click there can
+   * select the word under the pointer first, and that word is no highlight of the user's.
+   */
+  selection?: Selection
 }
 
 /** A task's checkbox in this editor (YAZ-3694 F7): the `.label-wrapper` of a task item. Another editor's box is not this one's. */
@@ -29,12 +36,12 @@ export function isTaskBox(view: EditorView, t: EventTarget | null): boolean {
 }
 
 /**
- * A right-click on a bullet's own dot (YAZ-3646 D8): its list item, as the handle would point at it. A task's
- * checkbox is no dot (its click toggles the task), and another editor's dot is not this one's.
+ * A right-click on a bullet's own dot (YAZ-3646 D8), a number, or a task's checkbox (YAZ-3727 D20: a right press
+ * there ticks nothing, YAZ-3694 F7): its list item, as the handle would point at it. Another editor's dot is not this one's.
  */
 export function bulletDotTarget(view: EditorView, t: EventTarget | null): HandleTarget | null {
   const dot = t instanceof Element ? t.closest('.label-wrapper') : null
-  if (dot === null || !view.dom.contains(dot) || isTaskBox(view, dot)) return null
+  if (dot === null || !view.dom.contains(dot)) return null
   // As the handle's probe gives it for a hovered item: the position BEFORE the list_item (`nearestListItem`).
   const $pos = view.state.doc.resolve(view.posAtDOM(dot, 0))
   if (!isListItem($pos.parent)) return null
@@ -53,4 +60,25 @@ export function handleTargetPos(view: EditorView, e: MouseEvent): HandleTarget |
   // The handle floats beside the zoomed content at 100% (D14), so the probe scales with the content.
   const probe = view.posAtCoords({ left: rect.right + PROBE_OFFSET_PX * cssZoom(view.dom), top: e.clientY })
   return probe === null ? null : { pos: probe.pos, inside: probe.inside }
+}
+
+/**
+ * The line a right-click on its text is in (YAZ-3727 D15), as the handle points at it: a bullet's first line
+ * stands for its bullet, any other line for itself. A right-click beside the text, in a bullet's row (the gap
+ * after a checkbox, D22), stands for that bullet. Null elsewhere off a line, and in code or a table cell,
+ * which have menus of their own.
+ */
+export function textLineTarget(doc: Node, pos: number, selection: Selection): HandleTarget | null {
+  const $pos = doc.resolve(pos)
+  if (!$pos.parent.isTextblock) {
+    for (let depth = $pos.depth; depth > 0; depth--) {
+      if ($pos.node(depth).type.spec.tableRole !== undefined) return null
+      if (isListItem($pos.node(depth))) return { pos: $pos.before(depth), inside: $pos.before(depth), selection }
+    }
+    return null
+  }
+  if ($pos.parent.type.spec.code === true) return null
+  for (let depth = $pos.depth; depth > 0; depth--) if ($pos.node(depth).type.spec.tableRole !== undefined) return null
+  const at = $pos.depth > 1 && isListItem($pos.node(-1)) && $pos.index(-1) === 0 ? $pos.before(-1) : $pos.before()
+  return { pos: at, inside: at, selection }
 }

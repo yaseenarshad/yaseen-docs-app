@@ -1,6 +1,6 @@
 /**
  * A key row's key as the user has it now (Settings › Hotkeys), written for a hint: the code tab's chevron menu
- * (YAZ-3478) and the fold-all button's label (YAZ-3938).
+ * (YAZ-3478), the fold-all button's label (YAZ-3938) and the fold chevron's Collapse all / Expand all rows (YAZ-3727 D23).
  */
 import { toDisplay } from '@shared/hotkeyBindings'
 import { keyRow, keysOf } from '@shared/keys'

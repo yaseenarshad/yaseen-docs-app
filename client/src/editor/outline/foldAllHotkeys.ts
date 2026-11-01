@@ -15,7 +15,7 @@ import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 const PRIORITY = 100
 
-/** The keys' command, and the fold-all button's (YAZ-3938): `true` folds every bullet and heading, `false` opens them. */
+/** Every bullet and heading fold at once, one ⌘Z: the keys' command, the fold-all button's (YAZ-3938) and the fold chevron's Collapse all / Expand all (YAZ-3727 D23). `true` folds, `false` opens. */
 export const setAllDocumentFolds =
   (collapsed: boolean): Command =>
   (state, dispatch) => {
