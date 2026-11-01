@@ -3234,20 +3234,20 @@ body.drag-held iframe {
   line-height: 1;
 }
 
+.fold-all__trigger:hover,
 .document-zoom__trigger:hover,
 .document-zoom__trigger[aria-expanded="true"],
 .document-zoom__step:hover:enabled,
 .page-settings__trigger:hover,
-.page-settings__trigger[aria-expanded="true"],
-.fold-all__trigger:hover {
+.page-settings__trigger[aria-expanded="true"] {
   background: var(--bg-hover);
   color: var(--fg);
 }
 
+.fold-all__trigger:focus-visible,
 .document-zoom__trigger:focus-visible,
 .document-zoom__step:focus-visible,
-.page-settings__trigger:focus-visible,
-.fold-all__trigger:focus-visible {
+.page-settings__trigger:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
