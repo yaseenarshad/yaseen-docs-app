@@ -42,7 +42,7 @@ import type { MenuAction } from '../../sidebar/menuSections'
 import { jumpTo, type JumpEditorLike } from './codeJump'
 import { kindId, kindLabel, kindName, OutlineIcon } from './OutlineIcon'
 import type { OutlineFeed } from './outlineFeed'
-import { allKeys, displayOrder, kindsIn, markSymbols, Mark, pathDepth, rowMark, symbolAt, visibleRows, KIND_COUNT, type OutlineRows, type OutlineTree } from './outlineModel'
+import { allKeys, displayOrder, foldableKeys, kindsIn, markSymbols, Mark, pathDepth, rowMark, symbolAt, visibleRows, KIND_COUNT, type OutlineRows, type OutlineTree } from './outlineModel'
 import '../../editor/toc/toc.css'
 import './outline.css'
 
@@ -129,8 +129,9 @@ export function CodeOutline({ feed, editor, lineHeight, mode, onChangeMode, widt
   const order = useMemo(() => (tree === null ? null : displayOrder(tree, sort)), [tree, sort])
   const rows = useMemo(() => (tree === null || order === null ? null : visibleRows(tree, order, { collapsed, hidden: hiddenKinds, filter })), [tree, order, collapsed, hiddenKinds, filter])
   // One toggle, as every fold-all button (YAZ-3938 D6): while a row that can collapse is open, it collapses all; once all are collapsed, it expands all.
-  // Memoised: a cursor move draws the outline again, and a big file has tens of thousands of keys (S12).
-  const foldable = useMemo(() => (tree === null ? null : allKeys(tree)), [tree])
+  // Only the rows with a chevron count: a hidden kind takes it away (YAZ-4010). Memoised: a cursor move draws the
+  // outline again, and a big file has tens of thousands of keys (S12).
+  const foldable = useMemo(() => (tree === null ? null : foldableKeys(tree, hiddenKinds)), [tree, hiddenKinds])
   const anyOpen = useMemo(() => {
     if (foldable !== null) for (const key of foldable) if (!collapsed.has(key)) return true
     return false

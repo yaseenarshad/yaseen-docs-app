@@ -9,8 +9,8 @@ import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import type { FoldNext } from '../FoldAllButton'
 import { rowShortcuts } from '../noteKeys'
-import { addHeadingFoldAllMeta, addHeadingFoldUndoMeta } from './headingFolding'
-import { addOutlineFoldAllMeta, addOutlineFoldUndoMeta } from './outlineFolding'
+import { addHeadingFoldAllMeta, addHeadingFoldUndoMeta, hasHeadingFoldMeta } from './headingFolding'
+import { addOutlineFoldAllMeta, addOutlineFoldUndoMeta, hasOutlineFoldMeta } from './outlineFolding'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 const PRIORITY = 100
@@ -36,19 +36,19 @@ export const nextDocumentFold = (state: EditorState): FoldNext =>
 /** The DOM event on the editor's `view.dom` after a transaction that changed a fold (YAZ-3938 D9): the fold-all button reads again. */
 export const FOLDS_CHANGED_EVENT = 'yaseendocs:folds-changed'
 
-const FOLD_ACTIONS: readonly unknown[] = ['fold', 'heading-fold', 'document-fold'] satisfies ViewAction[]
 const foldsChangedKey = new PluginKey<number>('yaseenFoldsChanged')
 
 /**
- * Counts the transactions that carry a fold's view-action stamp, and sends `FOLDS_CHANGED_EVENT` when the count
- * moves. A keystroke costs one meta lookup and one compare (D2). Find's fold-reveal is silent (no stamp), so the
- * button reads its folds at the next look.
+ * Counts the transactions that change a fold, and sends `FOLDS_CHANGED_EVENT` when the count moves. Every fold change
+ * carries the bullet or heading plugin's own meta: a chevron, a key, the button, and the silent ones too, which have
+ * no view-action stamp (the caret guard that an edit runs, ⌘Z's fold history, Find's reveal; YAZ-4009). A keystroke
+ * costs two meta lookups and one compare (D2).
  */
 export const foldsChanged = $prose(
   () =>
     new Plugin<number>({
       key: foldsChangedKey,
-      state: { init: () => 0, apply: (transaction, count) => (FOLD_ACTIONS.includes(transaction.getMeta(VIEW_ACTION_META)) ? count + 1 : count) },
+      state: { init: () => 0, apply: (transaction, count) => (hasOutlineFoldMeta(transaction) || hasHeadingFoldMeta(transaction) ? count + 1 : count) },
       view: () => ({
         update: (view, before) => {
           if (foldsChangedKey.getState(view.state) !== foldsChangedKey.getState(before)) view.dom.dispatchEvent(new Event(FOLDS_CHANGED_EVENT))
