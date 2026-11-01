@@ -31,6 +31,7 @@ import { findFoldedChildren, findOwnImages, innermostItemPos, itemLabelText, LIS
 import { IMAGE_FOLD_CLASS } from '../image/imageView'
 import { outlineFoldKeyFromStem, outlineFoldKeyStem, outlineFoldLabel } from './outlineFoldKeys'
 import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
+import { foldingBlocked, isFoldingOn } from './foldingSwitch'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 interface OutlineEntry {
@@ -117,9 +118,9 @@ interface FoldSetMeta {
 const foldTransaction = (state: EditorState, meta: FoldMeta) =>
   state.tr.setMeta(pluginKey, meta).setMeta(VIEW_ACTION_META, 'fold' satisfies ViewAction)
 
-/** Whether the list_item starting at `itemPos` is currently folded (false when the plugin is absent). */
+/** Whether the list_item starting at `itemPos` is currently folded (false when the plugin is absent, or folding is off: YAZ-4094 F1). */
 export const isOutlineItemCollapsed = (state: EditorState, itemPos: number): boolean =>
-  pluginKey.getState(state)?.collapsedItemPositions.has(itemPos) ?? false
+  isFoldingOn(state) && (pluginKey.getState(state)?.collapsedItemPositions.has(itemPos) ?? false)
 
 /**
  * The collapsed items whose nested lists or tables contain `pos` — everything hiding that position, from the
@@ -127,7 +128,7 @@ export const isOutlineItemCollapsed = (state: EditorState, itemPos: number): boo
  */
 export const collapsedItemsHiding = (state: EditorState, pos: number): number[] => {
   const foldingState = pluginKey.getState(state)
-  if (!foldingState) return []
+  if (!foldingState || !isFoldingOn(state)) return []
   return foldingState.entries
     .filter(
       ({ itemPos, foldedRanges }) =>
@@ -176,6 +177,8 @@ export const setOutlineFoldAtSelection = (collapsed: boolean): Command => (state
   const foldingState = pluginKey.getState(state)
   const itemPos = innermostItemPos(state.selection.$from)
   if (!foldingState || itemPos === null) return false
+  // Folding off (YAZ-4094 F1): still consumed inside a list (GRO-2092), with the host's message.
+  if (foldingBlocked(state)) return true
   const isFoldable = foldingState.entries.some((entry) => entry.itemPos === itemPos)
   if (isFoldable && foldingState.collapsedItemPositions.has(itemPos) !== collapsed) {
     dispatch?.(foldTransaction(state, itemPos))
@@ -251,6 +254,8 @@ export const addOutlineFoldUndoMeta = (state: EditorState, transaction: Transact
 
 /** ⌘Z: revert the latest eligible bullet fold, otherwise let ProseMirror's undo run. */
 export const undoLastFold: Command = (state, dispatch) => {
+  // Folding off (YAZ-4094 F1): ⌘Z undoes text, never a fold the reader cannot see.
+  if (!isFoldingOn(state)) return false
   const transaction = state.tr
   if (!addOutlineFoldUndoMeta(state, transaction)) return false
   dispatch?.(transaction.setMeta(VIEW_ACTION_META, 'fold' satisfies ViewAction))
@@ -427,7 +432,8 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                     }
             }
 
-            const meta: FoldMeta | undefined = transaction.getMeta(pluginKey)
+            // Folding off (YAZ-4094 F1): ignore every fold request. The saved set still maps through edits and waits for the switch.
+            const meta: FoldMeta | undefined = isFoldingOn(newState) ? transaction.getMeta(pluginKey) : undefined
             if (meta === 'fold-all')
               return {
                 entries,
@@ -502,7 +508,8 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
           },
           decorations: (state) => {
             const foldingState = pluginKey.getState(state)
-            if (!foldingState) return DecorationSet.empty
+            // Folding off (YAZ-4094 F1): no chevron and nothing hidden.
+            if (!foldingState || !isFoldingOn(state)) return DecorationSet.empty
             const key = collapsedKey(foldingState.collapsedItemPositions)
             const cached = decorationCache.get(foldingState.entries)
             if (cached?.collapsedKey === key) return cached.set

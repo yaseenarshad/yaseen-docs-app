@@ -51,3 +51,11 @@
 .app[data-guide-lines-show='near'] .editor-instance .milkdown > .ProseMirror:not(:hover) .milkdown-list-item-block li.list-item > .children > .content-dom > :is(ul, ol)::before {
   background-image: none;
 }
+
+/* Folding off (YAZ-4094 F1, fix 5): the line still shows, but it folds nothing, so it is no button —
+   guideLines.ts takes no press or hover then. The page's own choice (`data-folding` on its host) wins;
+   with none, the app default on `.app`. */
+.editor-host[data-folding='off'] .editor-instance .milkdown .milkdown-list-item-block li.list-item > .children > .content-dom > :is(ul, ol)::before,
+.app[data-folding='off'] .editor-instance:not(.editor-host[data-folding='on'] .editor-instance) .milkdown .milkdown-list-item-block li.list-item > .children > .content-dom > :is(ul, ol)::before {
+  cursor: auto;
+}

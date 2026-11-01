@@ -199,6 +199,15 @@ describe('guide lines: click → fold', () => {
     expect(list.classList.contains(GUIDE_HOVER_CLASS)).toBe(false)
   })
 
+  it('folding off (YAZ-4094 F1, fix 5): a press in the strip is the page’s — not swallowed, nothing folds — and a hover lights nothing', async () => {
+    const { root } = await mount({ foldingOn: () => false })
+    const list = nestedListOf(root, 'Parent')
+    expect(mouse(list, 'mousedown', STRIP_X)).toBe(true)
+    expect(folded(root)).toHaveLength(0)
+    mouse(list, 'mousemove', STRIP_X)
+    expect(list.classList.contains(GUIDE_HOVER_CLASS)).toBe(false)
+  })
+
   it('never reaches markdownUpdated and leaves the markdown unchanged', async () => {
     const onMarkdownUpdated = vi.fn()
     const { crepe, root } = await mount({ onMarkdownUpdated })

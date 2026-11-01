@@ -13,6 +13,7 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { isFoldingOn } from './outline/foldingSwitch'
 import { inStripBand, isGuideStripHit } from './outline/guideLines'
 import { HEADING_TOGGLE_CLASS } from './outline/headingFolding'
 import { OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
@@ -32,7 +33,8 @@ function overAffordance(view: EditorView, x: number, stack: readonly Element[]):
       view.dom.contains(el) &&
       el.parentElement?.classList.contains('content-dom')
     ) {
-      if (isGuideStripHit(x, el)) return true
+      // Folding off (YAZ-4094 F1): the line folds nothing, so the handle stays (fix 5).
+      if (isFoldingOn(view.state) && isGuideStripHit(x, el)) return true
     }
     // A section line (YAZ-2709): the indent is the top-level block's own border, so the block is in
     // the stack. Crepe floats the handle from 48px to 16px left of the box of the row under the

@@ -27,6 +27,7 @@ import { $prose } from '@milkdown/kit/utils'
 import { innermostItemPos, LIST_NODE_NAMES } from './listNodes'
 import { getOutlineFoldKey } from './outlineFoldKeys'
 import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
+import { foldingBlocked, isFoldingOn } from './foldingSwitch'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 /** H1-H3 fold; H4-H6 are in-paragraph labels here, not structure. The table of contents lists down to H5 (`DEEPEST_TOC_LEVEL`, YAZ-3051), but its H4 and H5 rows do not fold. A click on a section line (sectionIndent.ts) folds only what a chevron folds. */
@@ -101,9 +102,9 @@ const foldTransaction = (state: EditorState, meta: FoldMeta) =>
  */
 export const getHeadingFoldKey = (label: string, occurrence: number): string => `h:${getOutlineFoldKey(label, occurrence)}`
 
-/** Whether the heading starting at `headingPos` is currently folded (false when the plugin is absent). */
+/** Whether the heading starting at `headingPos` is currently folded (false when the plugin is absent, or folding is off: YAZ-4094 F1). */
 export const isHeadingCollapsed = (state: EditorState, headingPos: number): boolean =>
-  pluginKey.getState(state)?.collapsedHeadingPositions.has(headingPos) ?? false
+  isFoldingOn(state) && (pluginKey.getState(state)?.collapsedHeadingPositions.has(headingPos) ?? false)
 
 /**
  * The collapsed headings whose sections contain `pos` — everything hiding that position, in
@@ -111,7 +112,7 @@ export const isHeadingCollapsed = (state: EditorState, headingPos: number): bool
  */
 export const collapsedHeadingsHiding = (state: EditorState, pos: number): number[] => {
   const foldingState = pluginKey.getState(state)
-  if (!foldingState) return []
+  if (!foldingState || !isFoldingOn(state)) return []
   return foldingState.entries
     .filter(
       ({ headingPos, sectionBlockRanges }) =>
@@ -127,6 +128,7 @@ export const collapsedHeadingsHiding = (state: EditorState, pos: number): number
  * for the next visible line next to a fold that may hide thousands).
  */
 export const collapsedSectionAround = (state: EditorState, pos: number): { from: number; to: number } | null => {
+  if (!isFoldingOn(state)) return null
   const foldingState = pluginKey.getState(state)
   const entry = foldingState?.entries.find(
     ({ headingPos, sectionBlockRanges }) =>
@@ -143,7 +145,7 @@ export const collapsedSectionAround = (state: EditorState, pos: number): { from:
 export const collapsedSectionBlocks = (state: EditorState): ReadonlySet<number> => {
   const foldingState = pluginKey.getState(state)
   const starts = new Set<number>()
-  if (!foldingState || foldingState.collapsedHeadingPositions.size === 0) return starts
+  if (!foldingState || !isFoldingOn(state) || foldingState.collapsedHeadingPositions.size === 0) return starts
   for (const { headingPos, sectionBlockRanges } of foldingState.entries) {
     if (foldingState.collapsedHeadingPositions.has(headingPos)) for (const { from } of sectionBlockRanges) starts.add(from)
   }
@@ -179,6 +181,8 @@ export const setHeadingFoldAtSelection = (collapsed: boolean): Command => (state
     if (onHeading || inSection) innermost = entry
   }
   if (innermost === null) return false
+  // Folding off (YAZ-4094 F1): still consumed inside a section, with the host's message.
+  if (foldingBlocked(state)) return true
   if (foldingState.collapsedHeadingPositions.has(innermost.headingPos) !== collapsed) {
     dispatch?.(foldTransaction(state, innermost.headingPos))
   }
@@ -221,6 +225,8 @@ export const addHeadingFoldUndoMeta = (state: EditorState, transaction: Transact
 
 /** ⌘Z: revert the latest eligible heading fold, otherwise let the next undo handler run. */
 export const undoLastHeadingFold: Command = (state, dispatch) => {
+  // Folding off (YAZ-4094 F1): ⌘Z undoes text, never a fold the reader cannot see.
+  if (!isFoldingOn(state)) return false
   const transaction = state.tr
   if (!addHeadingFoldUndoMeta(state, transaction)) return false
   dispatch?.(transaction.setMeta(VIEW_ACTION_META, 'heading-fold' satisfies ViewAction))
@@ -434,7 +440,8 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                     }
             }
 
-            const meta: FoldMeta | undefined = transaction.getMeta(pluginKey)
+            // Folding off (YAZ-4094 F1): ignore every fold request. The saved set still maps through edits and waits for the switch.
+            const meta: FoldMeta | undefined = isFoldingOn(newState) ? transaction.getMeta(pluginKey) : undefined
             if (meta === 'fold-all')
               return {
                 entries,
@@ -476,7 +483,8 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
         props: {
           decorations: (state) => {
             const foldingState = pluginKey.getState(state)
-            if (!foldingState) return DecorationSet.empty
+            // Folding off (YAZ-4094 F1): no chevron and nothing hidden.
+            if (!foldingState || !isFoldingOn(state)) return DecorationSet.empty
             const key = collapsedKey(foldingState.collapsedHeadingPositions)
             const cached = decorationCache.get(foldingState.entries)
             if (cached?.collapsedKey === key) return cached.set

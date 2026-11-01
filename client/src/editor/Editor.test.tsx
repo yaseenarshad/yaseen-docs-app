@@ -106,6 +106,8 @@ vi.mock('./lineNumbers/lineNumbers', async () => {
 // Section indent (YAZ-2709): the fake Crepe has no view to send the switch to. The real plugin is
 // covered by outline/sectionIndent.test.ts; what the host SENDS is the thing under test here.
 vi.mock('./outline/sectionIndent', () => ({ showSectionIndent: vi.fn() }))
+// The page's Folding switch (YAZ-4094 F1): the fake Crepe has no fold plugins; the door is what the host wires.
+vi.mock('./outline/foldingSwitch', async (importOriginal) => ({ ...(await importOriginal<typeof import('./outline/foldingSwitch')>()), showFolding: vi.fn() }))
 
 // The fold-all button (YAZ-3938): the fake Crepe has no fold plugins. The real command is covered by
 // FoldAllButton.test.tsx; what the host WIRES to the button is the thing under test here.
@@ -144,6 +146,7 @@ import { mergeExternalMarkdown } from './external/mergeExternal'
 import type { BlockLines } from './lineNumbers/blockLines'
 import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
+import { showFolding } from './outline/foldingSwitch'
 import { outlineFoldKeyStem } from './outline/outlineFoldKeys'
 
 interface FakeCrepe {
@@ -750,6 +753,27 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(written()).toEqual(['---\nguide-lines: false\n---\n' + BODY])
     expect(row(el, 'Guide lines').getAttribute('aria-pressed')).toBe('false')
     expect(host(el).dataset.guideLines).toBe('off')
+  })
+
+  it('"Folding" off writes `folding: false` IN the note, takes the "Collapse all" button away and tells the editor once; a fold key then shows the message (YAZ-4094 F1, item 12)', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 2, size: body.content.length }))
+    const onNotice = vi.fn()
+    const el = await mount(BODY, 1, { onNotice })
+    const host = el.querySelector<HTMLElement>('.editor-host')!
+    expect(el.querySelector('.fold-all__trigger')).not.toBeNull()
+    clickCog(el)
+    diskHas(BODY, 1)
+    await clickRow(el, 'Folding')
+    expect(written()).toEqual(['---\nfolding: false\n---\n' + BODY])
+    expect(row(el, 'Folding').getAttribute('aria-pressed')).toBe('false')
+    expect(host.dataset.folding).toBe('off')
+    expect(el.querySelector('.fold-all__trigger')).toBeNull()
+    expect(vi.mocked(showFolding)).toHaveBeenLastCalledWith(crepe(), false)
+    // The editor was built with the switch on and its message; the host sends the change, never a remount.
+    const options = createCrepeMock.mock.calls.at(-1)![0]
+    expect(options.foldingOn?.()).toBe(false)
+    options.onFoldingBlocked?.()
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Folding is off on this page. Turn it on in the page cog.')
   })
 
   it('a toggle in another tab, another window or an agent lands as an outside change of the note, and this editor follows at once (YAZ-4094 G1)', async () => {

@@ -20,6 +20,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
 import { isListItem, LIST_NODE_NAMES } from './listNodes'
+import { isFoldingOn } from './foldingSwitch'
 import { toggleOutlineFoldChildren } from './outlineFolding'
 
 export const GUIDE_HOVER_CLASS = 'outline-guide-hover'
@@ -76,6 +77,8 @@ export const guideLines = $prose(
       props: {
         handleDOMEvents: {
           mousedown: (view, event) => {
+            // Folding off (YAZ-4094 F1): the line folds nothing, so the press is the page's (fix 5).
+            if (!isFoldingOn(view.state)) return false
             const list = stripHit(view, event)
             if (list === null) return false
             const listPos = nestedListPos(view, list)
@@ -87,7 +90,7 @@ export const guideLines = $prose(
             return true
           },
           mousemove: (view, event) => {
-            setHovered(stripHit(view, event))
+            setHovered(isFoldingOn(view.state) ? stripHit(view, event) : null)
             return false
           },
           mouseleave: () => {

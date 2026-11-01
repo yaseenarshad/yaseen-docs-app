@@ -139,6 +139,8 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
 
     const seeded = outlineDoc(seedRef.current)
     const crepe = createCrepe({
+      // Settings › "Folding default" (YAZ-4094 F1): a folder's outline has no page cog, so it follows the default, read at mount.
+      foldingOn: () => storage.getSettings().foldingOnByDefault,
       root: el,
       defaultValue: serializeOutline(seeded),
       features: outlineFeatures,

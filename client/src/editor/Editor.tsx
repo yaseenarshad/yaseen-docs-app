@@ -51,6 +51,7 @@ import { SyncIndicator } from './SyncIndicator'
 import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
 import { FoldAllButton } from './FoldAllButton'
 import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from './outline/foldAllHotkeys'
+import { FOLDING_OFF_NOTICE, showFolding } from './outline/foldingSwitch'
 import { PageSettings } from './PageSettings'
 import { ReadOnlyChip } from './ReadOnlyChip'
 import { NoteMenu } from './noteMenu'
@@ -637,6 +638,9 @@ function CrepeHost({
   const tableOfContentsOn = pageSwitches.toc ?? tocOnByDefault
   const guideLinesOn = pageSwitches['guide-lines'] ?? guideLinesOnByDefault
   const foldingOn = pageSwitches.folding ?? foldingOnByDefault
+  // Read by the editor's mount (createCrepe), which must not re-run when the switch turns: the effect below sends the change.
+  const foldingOnRef = useRef(foldingOn)
+  foldingOnRef.current = foldingOn
   /** The chip's "Allow edits?" box is open (YAZ-3076 D4): this tab's own, and gone once read only is. */
   const [askingUnlock, setAskingUnlock] = useState(false)
   useEffect(() => {
@@ -737,6 +741,8 @@ function CrepeHost({
       root: el,
       defaultValue: body,
       onMarkdownUpdated: (md) => controller?.update(md),
+      foldingOn: () => foldingOnRef.current,
+      onFoldingBlocked: () => onNotice?.(FOLDING_OFF_NOTICE),
       folding: {
         seedCollapsedKeys: () => new Set(bulletFoldKeys),
         onCollapsedKeysChange: (keys) => {
@@ -1097,13 +1103,19 @@ function CrepeHost({
       if (crepeRef.current === crepe) showSectionIndent(crepe, false)
     }
   }, [sectionIndentOn, readyCrepe])
+  // The page's "Folding" switch (YAZ-4094 F1): one meta-only transaction, no remount. On again brings the saved folds back.
+  useEffect(() => {
+    const crepe = readyCrepe
+    if (crepe !== null && crepeRef.current === crepe) showFolding(crepe, foldingOn)
+  }, [foldingOn, readyCrepe])
 
   return (
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
       <div className="status-chips">
         {/* Collapse all / Expand all (YAZ-3938 D1): the ⌘⇧U / ⌘⇧I command, left of the cog. */}
-        <FoldAllButton
+        {/* Folding off (YAZ-4094 F1): nothing on the page can fold, so the button goes. */}
+        {foldingOn && <FoldAllButton
           read={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? nextDocumentFold(editorViewOf(readyCrepe).state) : 'none')}
           run={(collapse) => {
             if (readyCrepe === null || crepeRef.current !== readyCrepe) return
@@ -1113,7 +1125,7 @@ function CrepeHost({
           }}
           subscribe={subscribeFolds}
           keys={{ collapse: 'note.foldAll', expand: 'note.unfoldAll' }}
-        />
+        />}
         <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} guideLines={guideLinesOn} onToggleGuideLines={toggleGuideLines} folding={foldingOn} onToggleFolding={toggleFolding} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContentsOn ? changeTocSource : undefined} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
         <DocumentZoom value={documentZoom} onChange={changeZoom} />
         {readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={() => setAskingUnlock(true)} onAllow={() => { setAskingUnlock(false); void setReadOnly(false) }} onCancel={() => setAskingUnlock(false)} />}
@@ -1141,7 +1153,7 @@ function CrepeHost({
           there, the composer being the door to the first comment), then "Linked mentions"
           (Links D, GRO-2193), then "Reviews" (YAZ-2322), which stays last. All of it scrolls WITH
           the note, never in a panel. */}
-      <div className="editor-host" data-page="note" data-read-only={readOnly || undefined} data-line-numbers={lineNumbersOn || undefined} data-section-indent={sectionIndentOn || undefined} data-guide-lines={pageSwitches['guide-lines'] === undefined ? undefined : pageSwitches['guide-lines'] ? 'on' : 'off'} data-heading-levels={headingLevelsOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
+      <div className="editor-host" data-page="note" data-read-only={readOnly || undefined} data-line-numbers={lineNumbersOn || undefined} data-section-indent={sectionIndentOn || undefined} data-guide-lines={pageSwitches['guide-lines'] === undefined ? undefined : pageSwitches['guide-lines'] ? 'on' : 'off'} data-folding={pageSwitches.folding === undefined ? undefined : pageSwitches.folding ? 'on' : 'off'} data-heading-levels={headingLevelsOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
         {/* Title and properties share ONE header row (YAZ-918): the panel sits to
             the title's right and wraps under it when the title runs long. */}
         <div className="page-header">

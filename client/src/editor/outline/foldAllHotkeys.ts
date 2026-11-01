@@ -11,6 +11,7 @@ import type { FoldNext } from '../FoldAllButton'
 import { rowShortcuts } from '../noteKeys'
 import { addHeadingFoldAllMeta, addHeadingFoldUndoMeta, hasHeadingFoldMeta } from './headingFolding'
 import { addOutlineFoldAllMeta, addOutlineFoldUndoMeta, hasOutlineFoldMeta } from './outlineFolding'
+import { foldingBlocked } from './foldingSwitch'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 const PRIORITY = 100
@@ -19,6 +20,8 @@ const PRIORITY = 100
 export const setAllDocumentFolds =
   (collapsed: boolean): Command =>
   (state, dispatch) => {
+    // Folding off (YAZ-4094 F1): ⌘⇧U / ⌘⇧I are consumed, with the host's message.
+    if (foldingBlocked(state)) return true
     const transaction = state.tr
     const outlineChanged = addOutlineFoldAllMeta(state, transaction, collapsed)
     const headingChanged = addHeadingFoldAllMeta(state, transaction, collapsed)

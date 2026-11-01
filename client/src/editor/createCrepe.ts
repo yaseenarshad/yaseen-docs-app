@@ -297,6 +297,7 @@ import { caretReveal, foldHistory } from './outline/foldReveal'
 import { enterTracker, outlinerKeymap } from './outline/listCommands'
 import { listMarkers } from './outline/listMarkers'
 import { listMarkerTyping, undoListMarker } from './listMarkerTyping'
+import { createFoldingSwitch } from './outline/foldingSwitch'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
 import { foldAllRows } from './outline/foldAllRows'
@@ -325,6 +326,10 @@ export interface CreateCrepeOptions {
   folding?: OutlineFoldingOptions
   /** Fold state for collapsible heading sections (YAZ-1140): same contract as `folding`, its own `h:`-prefixed key space. */
   headingFolding?: HeadingFoldingOptions
+  /** The page's "Folding" switch at mount (YAZ-4094 F1); the host changes it later with `setFoldingOn`. Absent → on. */
+  foldingOn?: () => boolean
+  /** A fold key on a page with folding off (YAZ-4094 F1): the host's message. */
+  onFoldingBlocked?: () => void
   /** Zoom into a bullet (GRO-2029); `title` is the root breadcrumb. Defaults to an unnamed file. */
   zoom?: ZoomOptions
   /** CMD+F channel (YAZ-968): the host's one channel per mount, shared with the find bar. Absent → no find engine at all. */
@@ -568,6 +573,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // Milkdown's list-number plugin walks the whole note on each change and fixes numbered lists only (YAZ-3727 D2); ours replaces it.
   void crepe.editor.remove(syncListOrderPlugin)
   crepe.editor.use(listMarkers)
+  // Before the fold plugins: their `apply` reads the switch's NEW value off the state being built (YAZ-4094 F1).
+  crepe.editor.use(createFoldingSwitch(opts.foldingOn ?? (() => true), opts.onFoldingBlocked))
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createHeadingFolding(opts.headingFolding))
   crepe.editor.use(headingLevelTag)
