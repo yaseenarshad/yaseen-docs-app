@@ -1474,6 +1474,33 @@ describe('TabBar: the live gap (YAZ-3808 6A)', () => {
     expect(el.querySelector('.tabbar__room, .tabbar--parting')).toBeNull()
   })
 
+  it('6D: a card held over the strip shows its tab, with its name, where it will land; off the strip and after the release there is none', () => {
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    strip.getBoundingClientRect = () => ({ left: 0, right: 400, top: 0, bottom: 40, width: 400, height: 40 }) as DOMRect
+    const landing = () => {
+      const tab = el.querySelector<HTMLElement>('.tabbar__tab--landing')
+      return tab === null ? null : `${tab.textContent} ${tab.style.left} ${tab.style.width}`
+    }
+    // This window's a, after c: where a stands once the drop is done.
+    let on = false
+    act(() => void (on = holdOverStrip(250, 20, '/v/a.md', 'Alpha')))
+    expect(on).toBe(true)
+    expect(landing()).toBe('Alpha 200px 100px')
+    expect(el.querySelector('.tabbar__tab--landing')?.hasAttribute('data-tab')).toBe(false) // never a slot of its own
+    act(() => void holdOverStrip(60, 20, '/v/a.md', 'Alpha')) // either side of its own place: it stands there
+    expect(landing()).toBe('Alpha 0px 100px')
+    // Another window's card, before d: the room opened for it.
+    act(() => void holdOverStrip(250, 20, undefined, 'Elsewhere'))
+    expect(landing()).toBe('Elsewhere 300px 124px')
+    act(() => void (on = holdOverStrip(250, 99, undefined, 'Elsewhere')))
+    expect(on).toBe(false)
+    expect(landing()).toBeNull()
+    act(() => void holdOverStrip(250, 20, undefined, 'Elsewhere'))
+    act(() => void releaseOverStrip(250, 20))
+    expect(landing()).toBeNull()
+  })
+
   it('a drop into the gap glides nothing: the strip already shows the new order, and the tab let go stood nowhere', async () => {
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false }) })
     // Where each tab is drawn: its place in the layout, moved by the gap.

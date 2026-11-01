@@ -274,6 +274,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   const [boardOwn, setBoardOwn] = useState<string | null>(null)
   /** The room the held card's own tab leaves in the strip (YAZ-3808 6A), read when the hold starts. */
   const boardRoom = useRef(0)
+  /** The held card's name, for its tab in the gap (YAZ-3808 6D). */
+  const [boardLabel, setBoardLabel] = useState<string | null>(null)
   const [scroller] = useState(() =>
     edgeScroller(
       () => stripRef.current,
@@ -285,20 +287,23 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   )
   useEffect(() => {
     setStripTarget({
-      hold: (x, y, own) => {
+      hold: (x, y, own, label) => {
         const slot = slotUnder(stripRef.current, x, y)
         const tab = own === undefined ? null : (stripRef.current?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(own)}"]`) ?? null)
         if (tab !== null) boardRoom.current = roomOf(tab, stripRef.current)
         setBoardOwn(own ?? null)
+        setBoardLabel(label ?? null)
         boardPoint.current = slot === null ? null : { x, y }
         setBoardOver(slot)
         if (slot === null) scroller.stop()
         else scroller.at(x)
+        return slot !== null
       },
       release: (x, y) => {
         boardPoint.current = null
         scroller.stop()
         setBoardOver(null)
+        setBoardLabel(null)
         return x === undefined || y === undefined ? null : slotUnder(stripRef.current, x, y)
       },
     })
@@ -525,6 +530,26 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     return from < i && i < gap ? -room : gap <= i && i < from ? room : 0
   }
   const parting = drag !== null || externalOver !== null || boardOver !== null
+  // A tab board card's tab, where it will land (6D): the board clips the card at its own edge, right under the strip,
+  // so the gap would be empty. Its place is read from the layout, as the slot is, and only while a card is held here.
+  const landingAt = (): { left: number; width: number } | null => {
+    const strip = stripRef.current
+    if (strip === null) return null
+    const els = [...strip.querySelectorAll<HTMLElement>('[data-tab]')]
+    if (from !== -1) {
+      const own = els[from]
+      if (own === undefined) return null
+      const left = gap === null ? own.offsetLeft : gap > from ? els[gap - 1].offsetLeft + els[gap - 1].offsetWidth - own.offsetWidth : els[gap].offsetLeft
+      return { left, width: own.offsetWidth }
+    }
+    if (gap === null) return null
+    const style = getComputedStyle(strip)
+    const between = parseFloat(style.columnGap) || 0
+    const last = els[els.length - 1]
+    const left = gap < els.length ? els[gap].offsetLeft : last !== undefined ? last.offsetLeft + last.offsetWidth + between : parseFloat(style.paddingLeft) || 0
+    return { left, width: room - between }
+  }
+  const landing = boardOver === null || boardLabel === null ? null : landingAt()
 
   return (
     <div
@@ -727,6 +752,13 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
           </div>
         )}
         {from === -1 && gap !== null && <div className="tabbar__room" style={{ width: room }} aria-hidden />}
+        {landing !== null && (
+          <div className="tabbar__tab tabbar__tab--landing" style={landing} aria-hidden>
+            <span className="tabbar__btn">
+              <span className="tabbar__label">{boardLabel}</span>
+            </span>
+          </div>
+        )}
       </div>
       {onNewTab && (
         <button type="button" className="tabbar__new" aria-label="New tab" title={titleWithKey('New tab', 'newTab', hotkeys)} onClick={onNewTab} {...plusSlot}>

@@ -1745,7 +1745,7 @@ describe('TabOverview display name (YAZ-2949 D4, D5)', () => {
 describe('YAZ-3808 D1: a card let go on the tab strip moves its tab there', () => {
   /** A stand-in for the window's strip: above the board (y < 0) is on it, slot 1 at x < 100, else the end slot 6. */
   const slotAt = (x?: number, y?: number) => (x === undefined || y === undefined || y >= 0 ? null : x < 100 ? 1 : 6)
-  const strip = { hold: vi.fn(), release: vi.fn(slotAt) }
+  const strip = { hold: vi.fn((x: number, y: number) => slotAt(x, y) !== null), release: vi.fn(slotAt) }
   beforeEach(() => setStripTarget(strip))
   afterEach(() => setStripTarget(null))
 
@@ -1755,9 +1755,13 @@ describe('YAZ-3808 D1: a card let go on the tab strip moves its tab there', () =
     const card = page(el, '/v/a.md')!
     pointer(card, 'pointerdown', 0, 0)
     pointer(window, 'pointermove', 10, 10)
+    expect(card.hasAttribute('data-over-strip')).toBe(false)
     pointer(window, 'pointermove', 50, -20)
-    expect(strip.hold).toHaveBeenLastCalledWith(50, -20, '/v/a.md') // its own tab: no line either side of it
+    // Its own tab: no gap either side of it. Its name, for its tab in the gap (6D); over the strip the card fades.
+    expect(strip.hold).toHaveBeenLastCalledWith(50, -20, '/v/a.md', 'a')
+    expect(card.hasAttribute('data-over-strip')).toBe(true)
     pointer(window, 'pointerup', 50, -20)
+    expect(card.hasAttribute('data-over-strip')).toBe(false)
     expect(strip.release).toHaveBeenLastCalledWith(50, -20)
     expect(onMoveToSlot).toHaveBeenCalledExactlyOnceWith('/v/a.md', 1)
     expect(storage.setTabCanvas).not.toHaveBeenCalled()

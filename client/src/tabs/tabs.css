@@ -178,14 +178,12 @@
   font-style: italic;
 }
 
-/* Drag-to-reorder (I3; YAZ-2656 S89, revised in the YAZ-3637 demo): the grabbed tab dims, and a line marks the drop
-   slot — on the left of the tab the drop would land before, on the right of the LAST tab for the end slot. No tab moves
-   while the drag goes on: a tab that slid away under the pointer at each new slot was hard to follow (Yaseen). The line
-   is a shadow in the 4px between two tabs, so it changes no box and the slot under the pointer stays put. */
-/* THE LIVE GAP (YAZ-3808 6A), the way Chrome does it: the grabbed tab leaves the strip, and the tabs slide aside to keep
-   an empty place where the drop would land. TabBar sets each tab's `transform`; only the tabs that change side move, one
-   step at a time, and the drop moves nothing, since the strip already shows the new order. The time is TabBar's
-   `PART_MS`. `--gap-before` and `--gap-after` name the tab the gap opens next to; they draw nothing. */
+/* Drag-to-reorder (I3; YAZ-2656 S89). THE LIVE GAP (YAZ-3808 6A), the way Chrome does it: the grabbed tab leaves the
+   strip, and the tabs slide aside to keep an empty place where the drop would land. TabBar sets each tab's `transform`;
+   only the tabs that change side move, one step at a time, and the drop moves nothing, since the strip already shows
+   the new order. The slot is read from the layout, which a transform does not change, so the place under the pointer
+   stays put. It replaces the line of the YAZ-3637 demo, which no tab moved for, on Yaseen's ask in the YAZ-3808 demo.
+   The time is TabBar's `PART_MS`. `--gap-before` and `--gap-after` name the tab the gap opens next to; they draw nothing. */
 .tabbar--parting .tabbar__tab {
   transition: transform var(--tab-part-ms, 150ms) cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -209,8 +207,26 @@
   }
 }
 
+/* A tab board card's tab where it will land (YAZ-3808 6D): the board clips the card at its edge, under the strip. */
+.tabbar__tab--landing {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  margin: auto 0;
+  box-sizing: border-box;
+  min-width: 0;
+  opacity: 0.75;
+  pointer-events: none;
+  transition: left var(--tab-part-ms, 150ms) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.tabbar__tab--landing::before {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .tabbar--parting .tabbar__tab {
+  .tabbar--parting .tabbar__tab,
+  .tabbar__tab--landing {
     transition: none;
   }
 
@@ -771,6 +787,11 @@
   transition: none;
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
   cursor: grabbing;
+}
+
+/* Held over the tab strip (YAZ-3808 6D), the card fades: its tab in the strip's gap is where it will land. */
+.taboverview__page[data-over-strip] {
+  opacity: 0.35;
 }
 
 /* A drop another window refused (D13): the card slides back to its place. */

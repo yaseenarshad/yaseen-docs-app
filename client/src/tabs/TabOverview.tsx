@@ -603,6 +603,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   /** The card slides back to its place (tabs.css: `data-sliding`): a refused drop, or a drop on the tab strip (YAZ-3808 D1). */
   const slideBack = (el: HTMLElement): void => {
     delete el.dataset.lifted
+    delete el.dataset.overStrip
     el.dataset.sliding = ''
     el.style.transform = ''
     window.setTimeout(() => delete el.dataset.sliding, 240)
@@ -612,6 +613,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     el.style.transform = ''
     void el.offsetWidth
     delete el.dataset.lifted
+    delete el.dataset.overStrip
   }
 
   // The window's pointer while a gesture runs: a pan moves the camera, a held card follows the pointer (D7, D12).
@@ -657,8 +659,10 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     g.dx = dx
     g.dy = dy
     g.el.style.transform = `translate(${dx / cam.current.zoom}px, ${dy / cam.current.zoom}px)`
-    // Over the tab strip (YAZ-3808 D1): the strip draws its line, and scrolls at its ends (D5).
-    holdOverStrip(e.clientX, e.clientY, live.current.info.get(g.id)?.mine === true ? g.id : undefined)
+    // Over the tab strip (YAZ-3808 D1): the strip opens its gap with the card's tab in it (6A, 6D), and scrolls at its
+    // ends (D5); the card fades meanwhile.
+    const info = live.current.info.get(g.id)
+    g.el.toggleAttribute('data-over-strip', holdOverStrip(e.clientX, e.clientY, info?.mine === true ? g.id : undefined, info?.page.label))
   }
   const onUp = (e: PointerEvent): void => {
     const g = gesture.current
@@ -737,7 +741,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     window.addEventListener('pointercancel', listeners.current.cancel)
   }
   const endGesture = (): void => {
-    // A card held over the tab strip (YAZ-3808 D1): its line goes out and the strip stops scrolling, however the hold
+    // A card held over the tab strip (YAZ-3808 D1): its gap closes and the strip stops scrolling, however the hold
     // ends — a drop, a cancel, or the board closing under it.
     if (gesture.current?.kind === 'card') releaseOverStrip()
     gesture.current = null
