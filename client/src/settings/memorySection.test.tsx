@@ -123,7 +123,7 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
       'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
       'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
       'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
-      'The parts of the app that all windows share: Main (it controls the app), GPU (it draws the screen) and Utility (small helpers). Closing tabs does not make this smaller.',
+      'The parts of the app that all windows share: Main (it controls the app), GPU (it draws the screen), Utility (small helpers) and Other (small system parts, for example DevTools). Closing tabs does not make this smaller.',
       'These run only while code files are open. They stop 2 minutes after you close the last one.',
     ])
     const { info, tip } = tipOf('core')
@@ -146,6 +146,13 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect(stateTip.hidden).toBe(false)
     expect(stateTip.textContent!.split('\n').map((line) => line.split(':')[0])).toEqual(['In view', 'Awake · sleeps in N min', 'Awake · not saved yet', 'Asleep', 'Not loaded', 'Awake'])
     expect(row('w1').querySelector<HTMLTableCellElement>('.memory__head')!.colSpan).toBe(3)
+    // YAZ-3988: Last seen, Changed and RAM each have an ⓘ; the RAM one says why a tab has no number and names the hover's parts.
+    const columnTips = [...document.querySelectorAll<HTMLButtonElement>('th .memory__info-btn[aria-label="What this column means"]')].map((b) => document.getElementById(b.getAttribute('aria-describedby')!)!.textContent)
+    expect(columnTips).toEqual([
+      'The last time this tab was on your screen.',
+      'The last time the file was saved to disk: by you, by Sync or by another app.',
+      'The memory the window uses now. All tabs in a window share this memory, so a tab has no number of its own. Hover on a size to see its parts. JS heap is the memory of your notes and tabs. Other is the rest of the window: the screen, images and drawings.',
+    ])
     expect(row('w1').querySelector<HTMLElement>('.memory__name')!.title).toBe('App Memory Bloat Fix demo, a long window name\n4 notes, 1 drawing')
   })
 

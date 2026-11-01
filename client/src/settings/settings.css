@@ -1121,6 +1121,18 @@
   white-space: pre-line;
 }
 
+/* The Last seen, Changed and RAM headers' ⓘ (YAZ-3988): near the right edge, so the line opens toward the left. */
+.memory__table .memory__info-head {
+  position: relative;
+  overflow: visible;
+}
+
+.memory__info-head .memory__tip {
+  left: auto;
+  right: 0;
+  width: 260px;
+}
+
 .memory__tip[hidden] {
   display: none;
 }

@@ -46,7 +46,7 @@ import { useMemoryReport } from './useMemoryReport'
 /** The ⓘ of each kind of row (YAZ-3932, round 2), as Yasin approved them. */
 const INFO = {
   window: 'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
-  core: 'The parts of the app that all windows share: Main (it controls the app), GPU (it draws the screen) and Utility (small helpers). Closing tabs does not make this smaller.',
+  core: 'The parts of the app that all windows share: Main (it controls the app), GPU (it draws the screen), Utility (small helpers) and Other (small system parts, for example DevTools). Closing tabs does not make this smaller.',
   helpers: 'These run only while code files are open. They stop 2 minutes after you close the last one.',
 } as const
 
@@ -59,6 +59,13 @@ const STATES_INFO = [
   'Not loaded: you have not opened it since the app started. It uses almost no memory.',
   'Awake: Sleep is set to Never, so it does not sleep.',
 ].join('\n')
+
+/** The ⓘ of the Last seen, Changed and RAM headers (YAZ-3988): each word and number on the page is explained. */
+const COLUMN_INFO = {
+  lastSeen: 'The last time this tab was on your screen.',
+  changed: 'The last time the file was saved to disk: by you, by Sync or by another app.',
+  ram: 'The memory the window uses now. All tabs in a window share this memory, so a tab has no number of its own. Hover on a size to see its parts. JS heap is the memory of your notes and tabs. Other is the rest of the window: the screen, images and drawings.',
+} as const
 
 /** A row's ⓘ (YAZ-3932): its line shows while the pointer is on it or it has the focus. */
 function Info({ text, label = 'What this row means' }: { text: string; label?: string }) {
@@ -197,9 +204,15 @@ function MemoryRows() {
           <th scope="col" className="memory__state-head">
             State <Info text={STATES_INFO} label="What each state means" />
           </th>
-          <th scope="col">Last seen</th>
-          <th scope="col">Changed</th>
-          <th scope="col">RAM</th>
+          <th scope="col" className="memory__info-head">
+            Last seen <Info text={COLUMN_INFO.lastSeen} label="What this column means" />
+          </th>
+          <th scope="col" className="memory__info-head">
+            Changed <Info text={COLUMN_INFO.changed} label="What this column means" />
+          </th>
+          <th scope="col" className="memory__info-head">
+            RAM <Info text={COLUMN_INFO.ram} label="What this column means" />
+          </th>
         </tr>
       </thead>
       {rows.map((row) => {
