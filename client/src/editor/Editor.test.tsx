@@ -776,6 +776,29 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(onNotice).toHaveBeenCalledExactlyOnceWith('Folding is off on this page. Turn it on in the page cog.')
   })
 
+  it('a read-only note still changes its page switches: the row writes the key beside `readonly` (YAZ-4111 choice 2)', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 2, size: body.content.length }))
+    const LOCKED = '---\nreadonly: true\n---\n'
+    const el = await mount(LOCKED + BODY)
+    clickCog(el)
+    diskHas(LOCKED + BODY, 1)
+    await clickRow(el, 'Guide lines')
+    expect(written()).toEqual(['---\nreadonly: true\nguide-lines: false\n---\n' + BODY])
+    expect(row(el, 'Guide lines').getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('a note whose frontmatter does not parse: the row changes nothing, writes nothing, and says so in one notice', async () => {
+    const onNotice = vi.fn()
+    const BAD = '---\na: [\n---\n'
+    const el = await mount(BAD + BODY, 1, { onNotice })
+    clickCog(el)
+    diskHas(BAD + BODY, 1)
+    await clickRow(el, 'Guide lines')
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/^Guide lines could not change: frontmatter is not valid YAML/), 'error')
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(row(el, 'Guide lines').getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('a toggle in another tab, another window or an agent lands as an outside change of the note, and this editor follows at once (YAZ-4094 G1)', async () => {
     const el = await mount(BODY, 1, { tableOfContents: 'auto' })
     act(() => tocOf().publish(TWO))

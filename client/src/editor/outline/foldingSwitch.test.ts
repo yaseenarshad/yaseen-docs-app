@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
+import { undo, undoDepth } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from '../createCrepe'
@@ -152,5 +153,39 @@ describe('the Folding switch', () => {
     turn(view, true)
     expect(isOutlineItemCollapsed(view.state, itemPos(view, 'Parent'))).toBe(false)
     expect(isHeadingCollapsed(view.state, posOf(view, 'Plan', 'heading'))).toBe(true)
+  })
+
+  it('on again with the caret inside a saved fold: the opening is no edit, so ⌘Z has nothing to undo and does not fold it again (foldReveal.ts)', async () => {
+    const { view } = await mount()
+    foldBoth(view)
+    turn(view, false)
+    caretAt(view, posOf(view, 'Child') + 1)
+    const depth = undoDepth(view.state)
+    turn(view, true)
+    expect(isOutlineItemCollapsed(view.state, itemPos(view, 'Parent'))).toBe(false)
+    expect(undoDepth(view.state)).toBe(depth)
+    undo(view.state, view.dispatch)
+    expect(isOutlineItemCollapsed(view.state, itemPos(view, 'Parent'))).toBe(false)
+  })
+
+  it('off: an edit that renames a folded row reports the kept fold under its new key, and one that deletes it reports it gone; on again shows what is left', async () => {
+    const { view, keys } = await mount()
+    foldBoth(view)
+    const reported = keys.length
+    const [before] = keys.slice(-1)
+    turn(view, false)
+    view.dispatch(view.state.tr.insertText('!', posOf(view, 'Parent') + 1 + 'Parent'.length))
+    expect(keys).toHaveLength(reported + 1)
+    const [renamed] = keys.slice(-1)
+    expect(renamed).toHaveLength(before.length)
+    expect(renamed).not.toEqual(before)
+    turn(view, true)
+    expect(isOutlineItemCollapsed(view.state, itemPos(view, 'Parent!'))).toBe(true)
+    turn(view, false)
+    const item = itemPos(view, 'Parent!')
+    view.dispatch(view.state.tr.delete(item, item + view.state.doc.nodeAt(item)!.nodeSize))
+    expect(keys.slice(-1)).toEqual([[]])
+    turn(view, true)
+    expect(collapsedItemsHiding(view.state, posOf(view, 'Leaf') + 1)).toEqual([])
   })
 })
