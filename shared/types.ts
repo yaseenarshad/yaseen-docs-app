@@ -2059,7 +2059,8 @@ export type FilesOpenHow = 'preview' | 'keep' | 'background'
  * the window and pushes the action to it (`link:open-from-files`), and that window runs its own callback for it.
  */
 export type FilesAction =
-  | { kind: 'open'; path: string; how: FilesOpenHow }
+  // `copy` (YAZ-3943 5B): a ⌘-click's background tab, a copy when the page is open; the daily note's background open has none
+  | { kind: 'open'; path: string; how: FilesOpenHow; copy?: true }
   | { kind: 'history' | 'share'; path: string }
   | { kind: 'review'; dir: string }
   | { kind: 'inbox'; root: string }

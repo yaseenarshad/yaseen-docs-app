@@ -6722,7 +6722,7 @@ describe('App Files window (YAZ-3357)', () => {
     expect(bridge.window.openFromFiles.mock.calls.map(([action]) => action)).toEqual([
       { kind: 'open', path: '/v/a.md', how: 'preview' },
       { kind: 'open', path: '/v/b.md', how: 'keep' },
-      { kind: 'open', path: '/v/c.md', how: 'background' },
+      { kind: 'open', path: '/v/c.md', how: 'background', copy: true },
       { kind: 'open', path: '/v/d.md', how: 'keep' },
       { kind: 'inbox', root: '/v' },
     ])
@@ -6731,7 +6731,7 @@ describe('App Files window (YAZ-3357)', () => {
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ tabs: expect.arrayContaining(['/v/a.md']) }))
   })
 
-  it('YAZ-3776: the daily note button in a Files window asks main too: ⌘-click for a background tab, a click as a row click', async () => {
+  it('YAZ-3776: the daily note button in a Files window asks main too: ⌘-click for a background tab with no copy (D2, YAZ-3943 5B), a click as a row click', async () => {
     noPopup()
     const daily = dailyNoteName(DEFAULT_SETTINGS.dailyNoteFormat, new Date()).trim()
     const state = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyNotes: true, dailyNoteFolder: 'Daily' }, windows: [entry({ ...FILES }), entry({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })] }
@@ -6810,6 +6810,12 @@ describe('App Files window (YAZ-3357)', () => {
     expect(el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent).toBe('b')
     act(() => emitFromFiles({ kind: 'open', path: '/v/c.md', how: 'background' }))
     expect(tabNames(el)).toEqual(['a', 'b', 'c'])
+    expect(el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent).toBe('b')
+    // YAZ-3943 5B: an open page again — the daily note's open (no `copy`) adds nothing, a ⌘-click's (`copy`) a copy
+    act(() => emitFromFiles({ kind: 'open', path: '/v/c.md', how: 'background' }))
+    expect(tabNames(el)).toEqual(['a', 'b', 'c'])
+    act(() => emitFromFiles({ kind: 'open', path: '/v/c.md', how: 'background', copy: true }))
+    expect(tabNames(el)).toEqual(['a', 'b', 'c', 'c'])
     expect(el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent).toBe('b')
     // History opens this window's history panel on the page; a session restores through this window's own door.
     act(() => emitFromFiles({ kind: 'history', path: '/v/b.md' }))

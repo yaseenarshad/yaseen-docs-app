@@ -2019,7 +2019,7 @@ export function App() {
   fromFiles.current = (action: FilesAction): void => {
     switch (action.kind) {
       case 'open':
-        return (action.how === 'keep' ? openKeptPage : action.how === 'background' ? openBackgroundCopy : openPage)(action.path)
+        return (action.how === 'keep' ? openKeptPage : action.how === 'background' ? (action.copy === true ? openBackgroundCopy : openBackground) : openPage)(action.path)
       case 'history':
         return openHistory(action.path)
       case 'share':
@@ -2914,7 +2914,9 @@ export function App() {
     return {
       open: (path: string) => ask({ kind: 'open', path, how: filesClickHow() }),
       keep: (path: string) => ask({ kind: 'open', path, how: 'keep' }),
-      background: (path: string) => ask({ kind: 'open', path, how: 'background' }),
+      // A ⌘-click: a copy when the page is open (YAZ-3943 5B); the daily note's background open is `behind`, never a copy (YAZ-3776 D2).
+      background: (path: string) => ask({ kind: 'open', path, how: 'background', copy: true }),
+      behind: (path: string) => ask({ kind: 'open', path, how: 'background' }),
       history: (path: string) => ask({ kind: 'history', path }),
       share: (path: string) => ask({ kind: 'share', path }),
       review: (dir: string) => ask({ kind: 'review', dir }),
@@ -2923,7 +2925,7 @@ export function App() {
     }
   }, [filesWindow, notify])
   openAsSidebar.current = filesDoors?.open ?? openPage
-  openBehindSidebar.current = filesDoors?.background ?? openBackground
+  openBehindSidebar.current = filesDoors?.behind ?? openBackground
   /**
    * Tabs Mission Control in a Files window (YAZ-3357 D3, D8): it stands right of the sidebar, and main makes the window wide
    * for it. The board shows only once the window IS wide, and stays until it is narrow again (D10): it never lays out
