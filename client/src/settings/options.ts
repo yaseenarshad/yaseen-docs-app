@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -58,6 +58,15 @@ export const STARTUP_WINDOWS_OPTIONS: readonly Option<StartupWindows>[] = [
 export const VAULT_OPENS_ON_OPTIONS: readonly Option<VaultOpensOn>[] = [
   { label: 'A blank tab', value: 'blank' },
   { label: 'Its last note', value: 'last' },
+]
+
+/** Settings › Memory › Sleep unseen tabs after (YAZ-3737 D10): 30 min is the default. */
+export const TAB_SLEEP_AFTER_OPTIONS: readonly Option<TabSleepAfter>[] = [
+  { label: '15 min', value: '15m' },
+  { label: '30 min', value: '30m' },
+  { label: '1 h', value: '1h' },
+  { label: '2 h', value: '2h' },
+  { label: 'Never', value: 'never' },
 ]
 
 /** Settings › Notifications › Show for (YAZ-3303 D5): how long a toast stays. */

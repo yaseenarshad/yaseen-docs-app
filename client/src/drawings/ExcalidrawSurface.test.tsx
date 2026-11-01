@@ -71,21 +71,79 @@ describe('the engine’s view mode (YAZ-3076 D2, YAZ-3120)', () => {
   })
 })
 
+describe('a woken drawing keeps its pan and zoom (YAZ-3737 D13)', () => {
+  const BOX = { elements: [{ id: 'a', type: 'rectangle', x: 0, y: 0, width: 10, height: 10 }], appState: { viewBackgroundColor: '#fff' }, files: {} }
+  const mount = async (startCanvas?: { scrollX: number; scrollY: number; zoom: number }, onApi?: (api: { canvas(): unknown }) => void): Promise<void> => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={BOX} startCanvas={startCanvas} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onApi={onApi} />)
+    })
+  }
+
+  it('a start view opens on its pan and zoom, over the file`s view and with no fit; none fits the whole scene', async () => {
+    await mount({ scrollX: -300, scrollY: 75, zoom: 2.5 })
+    const seeded = last().initialData as { appState: Record<string, unknown> }
+    expect(seeded.appState).toMatchObject({ viewBackgroundColor: '#fff', scrollX: -300, scrollY: 75, zoom: { value: 2.5 } })
+    expect(last().initialState).toBeUndefined()
+    act(() => root?.unmount())
+    root = null
+    container?.remove()
+    container = null
+    await mount()
+    expect((last().initialData as { appState: Record<string, unknown> }).appState).not.toHaveProperty('scrollX')
+    expect(last().initialState).toEqual({ viewport: { target: BOX.elements, fit: 'scale-down' } })
+  })
+
+  it('the handle reads the engine`s pan and zoom now', async () => {
+    let handle: { canvas(): unknown } | null = null
+    await mount(undefined, (api) => {
+      handle = api
+    })
+    const onExcalidrawAPI = last().onExcalidrawAPI as (api: unknown) => void
+    act(() => onExcalidrawAPI({ getAppState: () => ({ scrollX: 12, scrollY: -8, zoom: { value: 0.5 } }), updateScene: () => undefined, updateFrameRendering: () => undefined }))
+    expect(handle!.canvas()).toEqual({ scrollX: 12, scrollY: -8, zoom: 0.5 })
+  })
+})
+
+describe('a reload from disk drops the images nothing shows (YAZ-3737 D14)', () => {
+  it('replaceScene puts in the new scene and its files, THEN prunes the engine`s files', async () => {
+    let handle: { replaceScene(scene: unknown): number } | null = null
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onApi={(api) => (handle = api as never)} />)
+    })
+    const order: string[] = []
+    const raw = { getAppState: () => ({}), updateFrameRendering: () => undefined, updateScene: vi.fn(() => void order.push('scene')), addFiles: vi.fn(() => void order.push('files')), pruneFiles: vi.fn(() => void order.push('prune')) }
+    act(() => (last().onExcalidrawAPI as (api: unknown) => void)(raw))
+    const file = { id: 'img', mimeType: 'image/png', dataURL: 'data:image/png;base64,AA==', created: 1 }
+    handle!.replaceScene({ elements: [], appState: {}, files: { img: file } })
+    expect(raw.addFiles).toHaveBeenCalledExactlyOnceWith([file])
+    expect(raw.pruneFiles).toHaveBeenCalledOnce()
+    expect(order).toEqual(['scene', 'files', 'prune'])
+  })
+})
+
 /**
  * The canvas panel's handle on a read-only drawing (YAZ-3076 D2, S26): the panel can still look
  * and present, but its inserts, its slide reorder and its slide rename change nothing.
  */
 describe('readOnlyHandle', () => {
-  const engineApi = () => ({ insertElements: vi.fn(), addFiles: vi.fn(), updateScene: vi.fn(), getSceneElements: vi.fn(() => []), setViewport: vi.fn() })
+  const engineApi = () => ({ insertElements: vi.fn(), addFiles: vi.fn(), pruneFiles: vi.fn(), updateScene: vi.fn(), getSceneElements: vi.fn(() => []), setViewport: vi.fn() })
 
   it('shuts every door that changes the scene, and leaves the views open', () => {
     const raw = engineApi()
     const api = readOnlyHandle(raw as never) as unknown as ReturnType<typeof engineApi>
     api.insertElements([] as never)
     api.addFiles([] as never)
+    api.pruneFiles()
     api.updateScene({ elements: [] } as never)
     expect(raw.insertElements).not.toHaveBeenCalled()
     expect(raw.addFiles).not.toHaveBeenCalled()
+    expect(raw.pruneFiles).not.toHaveBeenCalled()
     expect(raw.updateScene).not.toHaveBeenCalled()
     // A view, a tool or a dialog is not an edit of the file's elements.
     api.updateScene({ appState: { openDialog: { name: 'imageExport' } } } as never)

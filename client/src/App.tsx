@@ -76,6 +76,7 @@ import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import type { MoveTarget } from './tabs/TabMenu'
 import { setBoardHighlight } from './tabs/boardHighlight'
+import { useWindowHidden, useWindowMinimized } from './tabs/hiddenWindows'
 import { spacePanel } from './tabs/cardPreview'
 import { tabOfRef, windowLabel } from './tabs/windowLabel'
 import { useUpdate } from './update/useUpdate'
@@ -85,6 +86,7 @@ import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
 import { nearSteps, stepIdOf, tabById, tabOf, useWorkspace, type ZoomFrom } from './workspace/useWorkspace'
+import { useTabSleep } from './workspace/useTabSleep'
 import { restoreSession } from './workspace/restoreSession'
 import { Welcome } from './Welcome'
 
@@ -262,12 +264,19 @@ function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<
 
 /**
  * A new window's boot tab starts with the page view main gave it (YAZ-2951 D5), when that tab shows
- * the view's file: a link or a pasted URL that opened another page wins, and gets none.
+ * the view's file: a link or a pasted URL that opened another page wins, and gets none. After a memory
+ * reload (YAZ-3737 D4) each restored tab gets the view of its place in the strip, when it shows the same file.
  */
-function bootStartView(tab: string | null, file: string | null): Map<string, PageView> {
+function bootStartView(tabs: readonly { id: string; path: string }[], tab: string | null, file: string | null): Map<string, PageView> {
   const start = storage.getStartView()
-  return new Map(tab !== null && start !== undefined && start.path === file ? [[tab, start.view]] : [])
+  const reload = storage.getReloadViews() ?? []
+  const views = new Map(tabs.flatMap((t, i): [string, PageView][] => (reload[i]?.path === t.path ? [[t.id, reload[i].view]] : [])))
+  if (tab !== null && start !== undefined && start.path === file) views.set(tab, start.view)
+  return views
 }
+
+/** The notice of a memory reload (YAZ-3737 D12): `mb` is the window's size before it, said in GB. */
+const reloadedNotice = (mb: number): string => `This window reloaded to free memory (it was ${(mb / 1024).toFixed(1)} GB). Your tabs and typing are kept. Undo and Back start fresh.`
 
 
 /** The place of a tab for its keys (YAZ-3564 K11): a note, a drawing, a diagram or code; null for any other tab. */
@@ -302,7 +311,7 @@ export function App() {
   // window's `file`: title, URL hash and the sidebar highlight all follow it. Each tab has its own
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
-    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
+    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, sleep: sleepTabs, wake: wakeTab, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, go: goToStep, canBack, canForward, history: tabHistory, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
@@ -1485,6 +1494,26 @@ export function App() {
     return all.length === 1 && all[0].id === id && right === 0 && !newTab
   }, [])
   /**
+   * The page view each copy, moved tab and woken tab starts with, by tab id (YAZ-2951 D1, YAZ-3091 D5, YAZ-3737 5A),
+   * handed to its editor once. Built once, at mount (a lazy start: `bootStartView` reads storage and makes a Map).
+   * Changed in place: never a render trigger.
+   */
+  const [startView] = useState(() => bootStartView(tabs, activeTab, file))
+  /** Tab `id`'s page view now: its editor's, or the one it went to sleep with (YAZ-3737 S18). */
+  const pageViewOf = useCallback((id: string) => readPageView(id) ?? startView.get(id), [startView])
+  // The memory reload (YAZ-3737 D4): main reads every tab's view, in strip order, just before it reloads this window.
+  // `pageViewOf`, so a sleeping tab gives the view it slept with (S18), not its first view.
+  useEffect(() => api.window.onViews(() => now.current.tabs.map((t) => {
+    const view = pageViewOf(t.id)
+    return view === undefined ? null : { path: t.path, view }
+  })), [pageViewOf])
+  // The one notice after a memory reload (D12): main says the size in the first identity read of the new page only, so
+  // a ⌘R says nothing.
+  useEffect(() => {
+    const mb = storage.getReloadedAtMb()
+    if (mb !== undefined) notify(reloadedNotice(mb))
+  }, [notify])
+  /**
    * A tab leaves for another window (YAZ-2933 D2, YAZ-3091 D1), from a page of the board or a tab of the strip.
    * The page saves first, so the other window reads what was typed; `send` gives main the page with its page
    * view and display name; only then does the tab leave, as ⌘W closes it — an open board stays until its last
@@ -1494,7 +1523,7 @@ export function App() {
    */
   const sendTabAway = useCallback((path: string, id: string, send: (carry: PopOutCarry) => Promise<void | boolean>, failed: string, closeEmptyWindow: boolean) => {
     // The page opens there as it looks here (YAZ-2951 D2): read before the save, while its editor is the one on show.
-    const view = readPageView(id)
+    const view = pageViewOf(id)
     // The tab's display name goes with it (YAZ-2949 D7, S19).
     const name = now.current.tabs.find((t) => t.id === id)?.name
     flushRenamedPath(path)
@@ -1508,7 +1537,7 @@ export function App() {
         else closeTab(id, true)
       })
       .catch((err: unknown) => notify(`${failed}: ${err instanceof Error ? err.message : String(err)}`))
-  }, [aloneHere, closeUnderOverview, closeTab, notify])
+  }, [aloneHere, closeUnderOverview, closeTab, notify, pageViewOf])
   /** "Move to new window" (YAZ-2933): main opens the window and stores the name with its one tab (YAZ-3057). A last tab leaves this window empty. */
   const movePageToNewWindow = useCallback((path: string, id: string) =>
     sendTabAway(path, id, (carry) => api.window.popOut(path, carry), "Can't move to a new window", false), [sendTabAway])
@@ -1585,16 +1614,15 @@ export function App() {
    * opens right after it and shows — under the board it shows on the board beside its source, and the
    * board stays (S5: a menu action is no trip to a page, R30). The copy starts with its source's page view
    * (YAZ-2951 D1: drill-in, live folds, scroll spot, text size): read here, before its layer mounts, and
-   * handed to its editor once (`startView`). A source with no open editor gives none (S8, S9).
+   * handed to its editor once (`startView`). A source with no open editor gives none (S8, S9); a sleeping
+   * source gives the view it went to sleep with (YAZ-3737 S18).
    */
-  // Built once, at mount (a lazy start: `bootStartView` reads storage and makes a Map). Changed in place: never a render trigger.
-  const [startView] = useState(() => bootStartView(activeTab, file))
   const duplicateTab = useCallback((id: string) => {
-    const view = readPageView(id)
+    const view = pageViewOf(id)
     ownChange.current = now.current.phase === 'open'
     const copy = duplicate(id)
     if (copy !== null && view !== undefined) startView.set(copy, view)
-  }, [duplicate, startView])
+  }, [duplicate, startView, pageViewOf])
   /**
    * Each bullet's crumb text by zoom key (YAZ-3647 E3, E4): what the menus of ‹ and › and a zoomed tab's tooltip show. A key
    * is the bullet's text and its count, so one text serves every page. Memory only, as the Back list: a tab whose page has
@@ -1621,7 +1649,8 @@ export function App() {
     const source = tabById(now.current, id)
     if (source !== null) void flushRenamedPath(source.path)
     const copy = openZoom(id, zoom, background)
-    if (copy !== null && view !== undefined) startView.set(copy, { ...view, zoomKey: zoom, scrollTop: 0 })
+    // A new start (YAZ-3737 D3): the source's caret is in another level, so it stays behind.
+    if (copy !== null && view !== undefined) startView.set(copy, { scrollTop: 0, zoomKey: zoom, folds: view.folds, magnification: view.magnification })
   }, [openZoom, startView, learnZoomLabel])
   /**
    * A tab another window moved here (YAZ-3091 D5, S8–S14): the board closes, the page is a NEW tab at the end
@@ -1810,10 +1839,6 @@ export function App() {
     else if (e.type === 'dragover') windowDragOver(e)
     else e.preventDefault()
   }
-  // The copy's `Editor` keeps its start in a ref when it mounts, so the entry goes once its layer is there.
-  useEffect(() => {
-    for (const id of startView.keys()) if (mounted.includes(id)) startView.delete(id)
-  }, [mounted, startView])
   /**
    * ⌘⇧N (GRO-2167): a new window on this window's vaults with NO tab — it opens on the blank tab, the caret in the
    * search (YAZ-3343 D35, which replaced YAZ-2951 D5's copy of the tabs and the page view).
@@ -2829,6 +2854,28 @@ export function App() {
   const reviewLayer = reviewed !== null && mounted.includes(reviewed.id) ? reviewed.id : (mounted.find((id) => pathOf.get(id) === reviewPath) ?? null)
   /** The tab whose layer shows: the active one, none under the blank tab, and the reviewed note's during a review. */
   const shown = session === null ? (pageOnShow === null ? null : activeTab) : reviewLayer
+  // Tab sleep (YAZ-3737 5A, S10): this window is hidden or minimized; then the active tab may sleep too. A boolean
+  // each, so a hide of another window renders no App here.
+  const hiddenHere = useWindowHidden(storage.getWindowId())
+  const minimizedHere = useWindowMinimized(storage.getWindowId())
+  const away = hiddenHere || minimizedHere
+  const tabSleep = useTabSleep(
+    { setting: settings.tabSleepAfter, tabs, mounted, active: activeTab, shown, boardOpen: overview.phase !== 'closed', review: session === null ? null : reviewLayer, away },
+    { startView, sleep: sleepTabs, wake: wakeTab },
+  )
+  const held = tabSleep.held
+  // Settings › Memory's tab rows (YAZ-3946): main asks each window for its tabs' facts only when it builds a report.
+  // The title is the tab bar's: the display name, else the page's title.
+  const sleepFacts = tabSleep.facts
+  useEffect(() => api.window.onTabs(() => {
+    const names = new Map(now.current.tabs.map((t) => [t.id, t.name]))
+    return sleepFacts().map(({ id, path, ...facts }) => ({ path, title: names.get(id) ?? nameOf(path), ...facts }))
+  }), [sleepFacts, nameOf])
+  // The `Editor` keeps its start in a ref when it mounts, so the entry goes once its layer is there — not while the
+  // layer is a held tab's, with no editor (S10).
+  useEffect(() => {
+    for (const id of startView.keys()) if (mounted.includes(id) && id !== held) startView.delete(id)
+  }, [mounted, startView, held])
 
   /**
    * A Files window's sidebar doors (YAZ-3357 D2, D7): each sends ONE message to main, which runs it in a full window.
@@ -2890,6 +2937,7 @@ export function App() {
       preview={preview}
       titles={titles}
       windowId={storage.getWindowId()}
+      asleep={tabSleep.asleep}
       darkColors={settings.diagramDarkColors}
       leaving={overview.phase === 'leaving'}
       onLeft={leftOverview}
@@ -3205,17 +3253,22 @@ export function App() {
               hoverPreview={hoverOn(settings, 'tabs')}
               previewScope={boardPreviewScope}
               diagramDarkColors={settings.diagramDarkColors}
+              // Tab sleep (YAZ-3737 D11, S7): the zzz mark, and a hover that wakes a sleeping tab behind the page on show.
+              asleep={tabSleep.asleep}
+              onWake={tabSleep.wake}
             />
           )}
           <div className="tabstack">
-            {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden. Mounted only while it shows (R1). */}
+            {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden, until it sleeps (YAZ-3737 5A). Mounted only while it shows (R1). */}
             {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} openTabs={tabPaths} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
             {mounted.map((id) => {
               const path = pathOf.get(id)
               if (path === undefined) return null
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility + content-visibility — see tabs.css
-              // for why display:none would lose scroll positions.
+              // for why display:none would lose scroll positions. A tab unseen for `tabSleepAfter` sleeps
+              // (YAZ-3737 5A, `useTabSleep`): its id leaves `mounted`, and its wake starts from the view it slept with
+              // (`startView`); undo starts fresh. A hidden window's active tab sleeps as a `held` layer with no editor.
               // Under the tab board (YAZ-2648 D5) the active layer hides the same way: still mounted.
               // The layer the board opened from zooms out as it hides, and the one that is chosen
               // zooms in (tabs.css): a class each, so no editor renders for it.
@@ -3238,7 +3291,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The note's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} />
+                  {id !== held && <RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackground} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} />}
                 </div>
               )
             })}

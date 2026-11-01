@@ -935,11 +935,275 @@
 }
 
 /*
+ * Settings › Memory (YAZ-3737 D9; YAZ-3945): a table read like a spreadsheet. Fixed columns in shares of the page, so
+ * it never scrolls sideways; a cell too narrow for its text cuts it with "…". The bar is Storage's.
+ */
+.memory__wrap {
+  container: memory / inline-size;
+}
+
+.memory__table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Wide enough for "Awake · sleeps in 120 min", 158 px (YAZ-4031, YAZ-4051). */
+.memory__col-state {
+  width: 12.25em;
+}
+
+/* "59 min ago" and the header with its ⓘ, in full (YAZ-4022, YAZ-4031); a date cuts with "…" and its hover gives it
+   whole. */
+.memory__col-time {
+  width: 7em;
+}
+
+.memory__col-memory {
+  width: 20%;
+}
+
+.memory__table th,
+.memory__table td {
+  padding: 4px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* The header row: muted, small, one line under it. It anchors the headers' ⓘ lines (YAZ-4023), so each is as wide as
+   the table at most and never leaves it. */
+.memory__table thead tr {
+  position: relative;
+}
+
+/* The header row: muted, small, one line under it. */
+.memory__table th {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.memory__row--window {
+  cursor: pointer;
+}
+
+.memory__row--window:hover {
+  background: var(--bg-hover-row);
+}
+
+/* A row's name cell spans Tab to Changed. It does not clip, so its ⓘ line can show below it; the name cuts itself. */
+.memory__table .memory__head {
+  position: relative;
+  overflow: visible;
+}
+
+.memory__head-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.memory__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: inherit;
+}
+
+.memory__arrow {
+  flex: none;
+  width: 1em;
+  color: var(--fg-muted);
+}
+
+.memory__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "Growing" (YAZ-3933): a small word in the app's orange, not a ▲ that reads as a dropdown. */
+.memory__grew {
+  flex: none;
+  font-size: 11px;
+  color: var(--warn);
+}
+
+/* The Memory cell: the bar, then the size. */
+.memory__memory {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.memory__bar {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.memory__size {
+  flex: none;
+  min-width: 5.5em;
+  text-align: right;
+}
+
+/* A narrower table (YAZ-4022, YAZ-4029): the bars go, so the RAM column holds just the size, in full ("1023.9 MB").
+   Under 520 px the Last seen and Changed columns go (D19, YAZ-4042), so Tab, State and RAM show in full down to a
+   316 px table (a 420 px window). Under that (a phone-wide window, or one where the Settings list still sits beside
+   the page) State takes a share, so the Tab column keeps a part of each name; a long state cuts with a hover. These
+   come after the base rules, so they win (YAZ-4030). */
+@container memory (max-width: 599px) {
+  .memory__col-memory {
+    width: 6.5em;
+  }
+
+  .memory__bar {
+    display: none;
+  }
+}
+
+@container memory (max-width: 519px) {
+  .memory__col-time {
+    width: 0;
+  }
+
+  .memory__table .memory__time {
+    padding: 0;
+    visibility: hidden;
+  }
+}
+
+@container memory (max-width: 315px) {
+  .memory__col-state {
+    width: 36%;
+  }
+}
+
+/* A window's tab rows (YAZ-3934, YAZ-3946), under its row: indented past the arrow, smaller; the sleeping ones dimmed. */
+.memory__tab td {
+  padding-top: 2px;
+  padding-bottom: 2px;
+  font-size: 12px;
+}
+
+.memory__table .memory__tab-name {
+  padding-left: calc(6px + 1em + 6px);
+}
+
+.memory__tab--asleep {
+  color: var(--fg-muted);
+}
+
+.memory__asleep {
+  display: inline-flex;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* A row's ⓘ (YAZ-3932): its line shows under the name cell, from the table's left edge, so it never runs off the page. */
+.memory__info {
+  flex: none;
+}
+
+.memory__info-btn {
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: default;
+}
+
+.memory__info-btn:hover,
+.memory__info-btn:focus-visible {
+  color: var(--fg);
+}
+
+.memory__tip {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 6px;
+  z-index: 5;
+  width: min(320px, calc(100% - 12px));
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+/* A header (YAZ-4022): its text cuts with "…" in a narrow column; its ⓘ never does. */
+.memory__th {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.memory__th-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The headers' ⓘ lines hang from the header row (YAZ-4023), not from their cell, so a narrow page never cuts them or
+   scrolls sideways. The State one (YAZ-3958) lists the states one per line, from the left; the Last seen, Changed and
+   RAM ones (YAZ-3988), near the right edge, open toward the left. */
+.memory__state-head .memory__tip {
+  width: min(340px, calc(100% - 12px));
+  white-space: pre-line;
+}
+
+.memory__info-head .memory__tip {
+  left: auto;
+  right: 6px;
+  width: min(260px, calc(100% - 12px));
+}
+
+.memory__tip[hidden] {
+  display: none;
+}
+
+/* Memory's five sleep times wrap in a narrow window (YAZ-4042), so the page never scrolls sideways. They leave 7em of
+   the row for the label, so they wrap only when they do not fit beside it. */
+.setting[data-setting='tabSleepAfter'] .setting__control {
+  max-width: calc(100% - 7em);
+}
+
+.setting[data-setting='tabSleepAfter'] .settings__options {
+  flex-wrap: wrap;
+}
+
+/*
  * A narrow window (YAZ-3357 D14: a Files window is about 230 px of page): the nav and the page side
  * by side leave the page no width. The nav stands above the page instead, shorter, and the sheet
  * takes the window less a small margin. The nav leaves room on its right for the close button.
+ * Up to 680 px (D20, YAZ-4052): beside the nav, a 561 to 680 px window left the page under 300 px.
  */
-@media (max-width: 560px) {
+@media (max-width: 680px) {
   .settings-dialog {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);

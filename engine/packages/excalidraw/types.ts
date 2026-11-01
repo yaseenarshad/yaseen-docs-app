@@ -1294,6 +1294,8 @@ export interface ExcalidrawImperativeAPI {
   refresh: InstanceType<typeof App>["refresh"];
   setToast: InstanceType<typeof App>["setToast"];
   addFiles: (data: BinaryFileData[]) => void;
+  /** Drops the files that nothing can show again: not the scene, not undo or redo (YAZ-3737 D14). */
+  pruneFiles: InstanceType<typeof App>["pruneFiles"];
   insertImages: InstanceType<typeof App>["insertImages"];
   /**
    * Inserts a fresh copy of the supplied elements at the center of the

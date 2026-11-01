@@ -22,7 +22,8 @@
  * stored; "Duplicate tab" reads folds, scroll and text size through `registerPageView`. An outside
  * reload is ONE undoable edit over the part that changed (`reloadEdit.ts`): ⌘Z still works after it.
  * Scroll and cursor survive a tab switch because the tab stays mounted (a hidden layer sends Monaco's
- * `ResizeObserver` nothing, so it keeps its layout).
+ * `ResizeObserver` nothing, so it keeps its layout). A tab that sleeps (YAZ-3737 5A) keeps them, with its folds and
+ * text size, in its page view, and its wake starts from it.
  *
  * THE APP'S KEYS WIN (YAZ-3447). A keydown in the capture phase, on this tab's own element, before
  * Monaco: the menu's commands (`HOTKEY_COMMANDS`, as the user set them) stop there, so Monaco never
@@ -176,6 +177,16 @@ const eolOf = (text: string) => (lineBreakOf(text) === '\r\n' ? monaco.editor.En
 
 const NO_KINDS: readonly CodeSymbolKind[] = []
 const noChange = (): void => undefined
+
+type MonacoEditor = ReturnType<typeof monaco.editor.create>
+type MonacoModel = ReturnType<typeof monaco.editor.createModel>
+
+/** The caret as text offsets, for the page view (YAZ-3737 D3); the start of the file when Monaco has none. */
+function caretOf(editor: MonacoEditor, model: MonacoModel): { anchor: number; head: number } {
+  const sel = editor.getSelection()
+  if (sel === null) return { anchor: 0, head: 0 }
+  return { anchor: model.getOffsetAt({ lineNumber: sel.selectionStartLineNumber, column: sel.selectionStartColumn }), head: model.getOffsetAt({ lineNumber: sel.positionLineNumber, column: sel.positionColumn }) }
+}
 
 export function CodeEditor(props: CodeEditorProps) {
   return (
@@ -354,12 +365,19 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
       },
       // After the folds: they change the height above the spot. Never on a closed tab (`attachFolds`).
       onRestored: () => {
-        if (copy !== undefined) editor.setScrollTop(copy.scrollTop)
-        else if (back !== undefined && !jumps.placed) editor.restoreViewState(back)
+        if (copy !== undefined) {
+          // The caret it had (YAZ-3737 D3): a woken tab's, a copy's. Setting it scrolls nothing, so the spot comes after.
+          if (copy.selection !== undefined) {
+            const anchor = model.getPositionAt(copy.selection.anchor)
+            const head = model.getPositionAt(copy.selection.head)
+            editor.setSelection({ selectionStartLineNumber: anchor.lineNumber, selectionStartColumn: anchor.column, positionLineNumber: head.lineNumber, positionColumn: head.column })
+          }
+          editor.setScrollTop(copy.scrollTop)
+        } else if (back !== undefined && !jumps.placed) editor.restoreViewState(back)
       },
     })
     const host = mount.closest('.code-editor')
-    const offPageView = host === null ? null : registerPageView(host, () => ({ scrollTop: editor.getScrollTop(), zoomKey: null, folds: folds.keys(), magnification: zoomRef.current }))
+    const offPageView = host === null ? null : registerPageView(host, () => ({ scrollTop: editor.getScrollTop(), zoomKey: null, folds: folds.keys(), magnification: zoomRef.current, selection: caretOf(editor, model) }))
 
     // The project's helper for the jumps across files.
     const helper = attachLanguageClient(model, { root, path })

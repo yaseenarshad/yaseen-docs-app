@@ -17,6 +17,7 @@
  *    twice, and the copy showed a false TS2451 "Cannot redeclare" (YAZ-3462).
  *  - The worker does not read the disk, so "cannot find module" and its kin would mark every import
  *    red: those codes are not shown.
+ * The TS worker stops 2 min after the last TS or JS model goes (`tsWorkerStop.ts`, YAZ-3862).
  * Every other language gets colours only: Monaco's own, and for the 8 D4 types Monaco lacks, the small
  * tokenizers of `monacoLanguages.ts` (YAZ-3479), registered here before any model is made.
  */
@@ -29,6 +30,7 @@ import TsWorker from './tsWorker?worker'
 import { storage } from '../lib/storage'
 import { followCodeKeys } from './codeKeys'
 import { registerExtraLanguages } from './monacoLanguages'
+import { stopTsWorkersWhenUnused } from './tsWorkerStop'
 import { buildMonacoTheme, monacoThemeName, readAppTokens, type AppTheme } from './monacoTheme'
 
 function workerFor(label: string): Worker {
@@ -74,6 +76,8 @@ for (const defaults of [ts.typescriptDefaults, ts.javascriptDefaults]) {
   // Jumps and references: `languageClient.ts` is the one source (the project's helper, else this worker). YAZ-3454.
   defaults.setModeConfiguration({ ...defaults.modeConfiguration, definitions: false, references: false })
 }
+// Monaco never stops its TS worker; this stops it when the last TS or JS model goes (YAZ-3862).
+stopTsWorkersWhenUnused(monaco)
 
 /**
  * Monaco's theme is one for the whole page. Each call rebuilds it from the app.css tokens as they

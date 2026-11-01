@@ -12,11 +12,14 @@ const bySender = new Map<number, Map<string, () => void>>()
  * vault's watcher alive for the window's life (YAZ-2178).
  */
 const pending = new Map<number, Set<string>>()
+/** Senders whose `destroyed` and navigation hooks are on: one set of hooks per renderer, however often it subscribes. */
+const hooked = new Set<number>()
 
 /**
  * `window.yaseenDocs.watch(root, listener)`: the preload sends `{ id, root }`, main answers every
  * event as `watch:event { id, ev }` on that sender. One watcher per root (see `fs/watchers.ts`)
- * no matter how many windows or subscriptions; a window going away drops all of its subscriptions.
+ * no matter how many windows or subscriptions; a window going away, or its page reloading, drops
+ * all of its subscriptions.
  */
 export function registerWatchIpc(): void {
   ipcMain.on(SPECIAL.watchSubscribe, (e, msg: unknown) => onSubscribe(e, msg))
@@ -28,6 +31,7 @@ async function onSubscribe(e: IpcMainEvent, msg: unknown): Promise<void> {
   const { id, root } = msg as Record<string, unknown>
   if (typeof id !== 'string') return
   const { sender } = e
+  hook(sender)
   // A watcher event can land between the window closing and its `destroyed` hook running.
   const send = (ev: WatchEvent) => {
     if (!sender.isDestroyed()) sender.send(SPECIAL.watchEvent, { id, ev })
@@ -46,15 +50,31 @@ async function onSubscribe(e: IpcMainEvent, msg: unknown): Promise<void> {
   }
   if (!settle(sender.id, id) || sender.isDestroyed()) return
   let subs = bySender.get(sender.id)
-  if (subs === undefined) {
-    subs = new Map()
-    bySender.set(sender.id, subs)
-    sender.once('destroyed', () => {
-      bySender.get(sender.id)?.forEach((off) => off())
-      bySender.delete(sender.id)
-    })
-  }
+  if (subs === undefined) bySender.set(sender.id, (subs = new Map()))
   subs.set(id, subscribe(dir, send))
+}
+
+/**
+ * Drops everything `sender` holds when it goes away, AND when its page goes (YAZ-3737: ⌘R, a crash, HMR's
+ * full reload keep the same `webContents`, so `destroyed` alone left the old page's watchers alive until the
+ * window closed). A root check still running is dropped too, so its late subscribe registers nothing.
+ */
+function hook(sender: IpcMainEvent['sender']): void {
+  const senderId = sender.id
+  if (hooked.has(senderId)) return
+  hooked.add(senderId)
+  const drop = (): void => {
+    bySender.get(senderId)?.forEach((off) => off())
+    bySender.delete(senderId)
+    pending.delete(senderId)
+  }
+  sender.once('destroyed', () => {
+    hooked.delete(senderId)
+    drop()
+  })
+  sender.on('did-start-navigation', (details: { isMainFrame?: boolean; isSameDocument?: boolean }) => {
+    if (details?.isMainFrame && !details.isSameDocument) drop()
+  })
 }
 
 /** Ends `id`'s root check; false when it was unsubscribed meanwhile. */

@@ -16,6 +16,7 @@ import { CardPreviewHost, useCardPreview, type PreviewScope } from './cardPrevie
 import { useHiddenWindows, useMinimizedWindows } from './hiddenWindows'
 import { TabSearchPanel } from './TabSearchPanel'
 import { autoWindowLabel, windowLabel } from './windowLabel'
+import { AsleepIcon } from '../views/view/icons'
 import './tabs.css'
 
 export { SETTLE_MS, TOOLBAR_INSET } from './useCamera'
@@ -53,6 +54,8 @@ export interface TabOverviewProps {
   titles: PathTitles
   /** This window's id (`WindowEntry.id`, YAZ-3343 D1): the stored places of its cards are keyed by it. */
   windowId: string
+  /** This window's tabs asleep to save memory (YAZ-3737 D11): their cards wear the zzz mark. Another window's never do. */
+  asleep?: ReadonlySet<string>
   /** The diagrams' dark-mode colours, for a drawing's picture (YAZ-3343 D6). */
   darkColors?: DiagramDarkColors
   /** App is on its way to the active tab's page: the board zooms into that page, and says so `ZOOM_MS` later. */
@@ -229,10 +232,14 @@ interface CardProps {
   armed: boolean
   /** Its drawing's picture shows (D6): it is on screen and the zoom shows detail. */
   picture: boolean
+  /** A tab of this window asleep to save memory (YAZ-3737 D11): the zzz mark after its title. */
+  asleep: boolean
   root: string | null
   darkColors: DiagramDarkColors
   actions: CardActions
 }
+
+const NONE_ASLEEP: ReadonlySet<string> = new Set()
 
 /**
  * One card of the canvas (YAZ-2648 D9, YAZ-3343 D11): a page's name and first lines — a display name with the
@@ -273,7 +280,10 @@ const Card = memo(function Card(p: CardProps) {
           <TabNameField className="taboverview__rename" label={p.label} pageName={p.page} onCommit={(next) => p.actions.rename(p.id, next)} onDone={p.actions.renamed} />
         </span>
       ) : (
-        <span className="taboverview__title">{p.label}</span>
+        <span className="taboverview__title">
+          {p.label}
+          {p.asleep && <AsleepIcon className="taboverview__asleep" />}
+        </span>
       )}
       {p.folder !== null && <span className="taboverview__folder">{p.folder}</span>}
       {p.named && <span className="taboverview__pagename">Page: {p.page}</span>}
@@ -313,8 +323,8 @@ type Gesture =
 
 /**
  * The tab board (YAZ-2648 D5, YAZ-3343): every open tab as a card on a CANVAS, in the editor's place while it
- * shows — App hides the tab stack under it and unmounts nothing, so each page is as it was when the board
- * closes. A card shows its title and, for a note, its first lines (D6, `useTabHeads`); a drawing's card its
+ * shows — App hides the tab stack under it and unmounts nothing while it shows (no tab sleeps then, YAZ-3737 5A),
+ * so each page is as it was when the board closes. A card shows its title and, for a note, its first lines (D6, `useTabHeads`); a drawing's card its
  * picture. With "Show all windows" off, cards stand in GROUPS, one per folder that directly holds them, under
  * their vault (D7, D8); on, every open window is a FRAME that holds its cards directly, in folder order (D17).
  * `layoutCanvas` (board.ts) computes every place with no DOM; a card, a group or a frame the user dragged stands
@@ -336,7 +346,7 @@ type Gesture =
  * end of the top row, is about every tab the board is about, whatever the filter shows; the board only asks:
  * App owns the sheet and the close.
  */
-export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, filesWindow = false }: TabOverviewProps) {
+export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, asleep = NONE_ASLEEP, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, filesWindow = false }: TabOverviewProps) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState<string | null>(active)
   const [pageMenu, setPageMenu] = useState<TabMenuAt | null>(null)
@@ -1235,6 +1245,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         renaming={id === renaming}
         armed={armed === `card:${id}`}
         picture={pictured.has(id)}
+        asleep={w?.mine === true && asleep.has(id)}
         root={card.root}
         darkColors={darkColors}
         actions={actions}

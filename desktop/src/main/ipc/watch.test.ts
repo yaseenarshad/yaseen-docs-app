@@ -19,14 +19,20 @@ function listener(channel: string): Listener {
 }
 
 let nextId = 1
-/** Stand-in for `event.sender` (a WebContents): records sends and the `destroyed` hook. */
+/** Stand-in for `event.sender` (a WebContents): records sends, the `destroyed` hook and the navigation hook. */
 function makeSender() {
-  return { id: nextId++, send: vi.fn(), once: vi.fn(), isDestroyed: () => false }
+  return { id: nextId++, send: vi.fn(), once: vi.fn(), on: vi.fn(), isDestroyed: () => false }
 }
 type Sender = ReturnType<typeof makeSender>
 
 const sent = (s: Sender): Array<{ id: string; ev: WatchEvent }> =>
   s.send.mock.calls.filter(([ch]) => ch === SPECIAL.watchEvent).map(([, msg]) => msg as { id: string; ev: WatchEvent })
+/** The page navigates (YAZ-3737): ⌘R and HMR's full reload are a main-frame, cross-document navigation on the same sender. */
+const navigate = (s: Sender, details: { isMainFrame: boolean; isSameDocument: boolean }) => {
+  const hooks = s.on.mock.calls.filter(([name]) => name === 'did-start-navigation')
+  expect(hooks).toHaveLength(1)
+  ;(hooks[0][1] as (d: typeof details) => void)(details)
+}
 const destroy = (s: Sender) => {
   const hook = s.once.mock.calls.find(([name]) => name === 'destroyed')
   if (hook === undefined) throw new Error('no destroyed hook registered')
@@ -96,6 +102,30 @@ describe('watch IPC', () => {
     await until(() => activeWatcherRoots().length === 0)
   })
 
+  it('a reload drops the old page\'s subscriptions and its pending root checks; same-document and frame navigations do not; the hooks go on once (YAZ-3737)', async () => {
+    const s = makeSender()
+    await subscribeAs(s, 'old-a', root)
+    await subscribeAs(s, 'old-b', root)
+    await until(() => sent(s).length >= 2)
+    navigate(s, { isMainFrame: true, isSameDocument: true }) // a hash change keeps the page
+    navigate(s, { isMainFrame: false, isSameDocument: false }) // so does an iframe's navigation
+    expect(activeWatcherRoots()).toEqual([root])
+
+    const late = listener(SPECIAL.watchSubscribe)({ sender: s }, { id: 'old-late', root }) // still checking its root
+    navigate(s, { isMainFrame: true, isSameDocument: false }) // ⌘R
+    await late
+    await until(() => activeWatcherRoots().length === 0)
+
+    // The new page subscribes on the same sender, and only its own id hears events.
+    await subscribeAs(s, 'new', root)
+    await until(() => sent(s).some((m) => m.id === 'new'))
+    const file = path.join(root, 'alpha', 'after-reload.md')
+    await writeFile(file, 'v1')
+    await until(() => sent(s).some((m) => m.ev.type === 'add'))
+    expect(sent(s).filter((m) => m.ev.type === 'add').map((m) => m.id)).toEqual(['new'])
+    expect(s.once).toHaveBeenCalledTimes(1)
+  })
+
   it('two windows on one root (GRO-2169): one watcher, a save reaches both as `change`; one window closing leaves the other live, the last closing disposes the watcher', async () => {
     const a = makeSender()
     const b = makeSender()
@@ -136,7 +166,6 @@ describe('watch IPC', () => {
       ['file', 'error', 'expected a directory'],
     ])
     expect(activeWatcherRoots()).toEqual([])
-    expect(s.once).not.toHaveBeenCalled()
   })
 
   it('an unsubscribe that lands while the subscribe is still checking its root cancels it: no watcher, no events (YAZ-2178)', async () => {

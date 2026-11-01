@@ -11,8 +11,8 @@
  */
 
 /**
- * Focus the document on screen. The VISIBLE one, never the first in the DOM: every visited tab
- * keeps its editor mounted and hidden, and a folder's outline is an editor too. `offsetParent` is
+ * Focus the document on screen. The VISIBLE one, never the first in the DOM: a visited tab that
+ * is not asleep keeps its editor mounted and hidden (YAZ-3737), and a folder's outline is an editor too. `offsetParent` is
  * the cheap "actually rendered" question — null for a `display: none` subtree. The note in the
  * preview panel of the search is no page (YAZ-2662 R4), and nor is the note in the sidebar's hover
  * preview (YAZ-3075 C29): each wears the editor's class for its stylesheets, and the caret never
