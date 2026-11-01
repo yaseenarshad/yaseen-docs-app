@@ -1308,6 +1308,14 @@ describe('createWindowManager: moveTo hands a tab to an open window (YAZ-3091 D1
     expect([manager.takeStartEmpty(id), manager.takeStartEmpty(id), manager.takeStartEmpty('w1')]).toEqual([true, false, false])
   })
 
+  it('YAZ-3808 6A6: raise brings a live window to the front with no focus; a window that is not live is false', () => {
+    const { manager, w2 } = seedMove()
+    const [top, focus] = [w2.moveTopCount, w2.focusCount]
+    expect(manager.raise('w2')).toBe(true)
+    expect([w2.moveTopCount - top, w2.focusCount - focus]).toEqual([1, 0])
+    expect(manager.raise('nope')).toBe(false)
+  })
+
   it('YAZ-3343, a hidden window: "Show window" shows and focuses it; opening one of its tabs from the board shows it; and with no window left on screen it shows by itself', () => {
     const { manager, w1, w2, w3, created } = seedMove()
     const from = store.get().windows.find((w) => w.id === 'w1')!

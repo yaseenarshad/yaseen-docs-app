@@ -220,6 +220,7 @@ window.openRecent/1: invoke window:open-recent ["a0"]; => "answer"; !> {"code":"
 window.openSet/1: invoke window:open-set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.popOut/2: invoke window:pop-out ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.popOutTab/2: invoke window:pop-out-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.raise/0: invoke window:raise []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.removeSession/1: invoke window:remove-session ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.removeSet/1: invoke window:remove-set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.renameSession/2: invoke window:rename-session ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

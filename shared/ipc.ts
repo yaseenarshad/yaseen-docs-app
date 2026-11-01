@@ -255,6 +255,11 @@ export const CONTRACT = {
      * quietly, as a board move does. Main checks both windows and pushes `link:add-vault-and-take`.
      */
     addVaultAndTake: invoke<[to: string, vault: string, from: string, ref: TabRef], void>('window:add-vault-and-take', 4),
+    /**
+     * A tab of another window over the caller's tab strip (YAZ-3808 6A6): the caller comes to the front, with no focus,
+     * so the gap opens on a window that shows. The focus comes with the tab, at the drop.
+     */
+    raise: invoke<[], void>('window:raise', 0),
     /** A frame's "Show window" on the tab board (YAZ-3343): a window the board made, still hidden, shows and takes the focus. */
     showWindow: invoke<[id: string], void>('window:show', 1),
     /** A card menu's tab action on ANOTHER window's card (YAZ-3343): window `to` runs `action` on its tab `ref` itself. */

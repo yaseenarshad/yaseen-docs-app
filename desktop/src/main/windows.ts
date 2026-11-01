@@ -168,6 +168,8 @@ export interface WindowManager extends WindowLookup {
   tabAction(to: string, ref: TabRef, action: TabAction): boolean
   /** A hidden window the tab board made (YAZ-3343): show it and focus it. `false` = not live. */
   showWindow(id: string): boolean
+  /** A tab of another window over window `id`'s strip (YAZ-3808 6A6): bring it to the front, with no focus. `false` = not live. */
+  raise(id: string): boolean
   /** The live windows built hidden and not shown yet (YAZ-3343). In memory only: a restart shows every window. */
   hiddenWindows(): string[]
   /** The live windows minimized in the Dock now (YAZ-3343). In memory only. */
@@ -309,7 +311,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'raise' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -1013,6 +1015,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     setName(id, name) {
       return liveWindow(id) !== undefined && store.setWindowName(id, name)
+    },
+
+    raise(id) {
+      const win = liveWindow(id)
+      if (win === undefined) return false
+      win.moveTop()
+      return true
     },
 
     setRoots(id, roots) {

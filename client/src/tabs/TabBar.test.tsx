@@ -387,12 +387,14 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
     const event = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
     Object.defineProperty(event, 'dataTransfer', { value: data })
     act(() => void tabAt(el, 0).dispatchEvent(event))
-    expect(data.setData).toHaveBeenCalledTimes(2)
+    expect(data.setData).toHaveBeenCalledTimes(3)
     expect(data.setData).toHaveBeenCalledWith(
       WORKSPACE_PAGE_MIME,
       JSON.stringify({ path: '/v/a.md', owner: 'main', from: 'w1', copy: 0 }),
     )
     expect(data.setData).toHaveBeenCalledWith('application/x-yaseen-from-w1.1', '1')
+    // Its width as the tab on show (YAZ-3808 6A4): jsdom has no layout, so the tab's least width.
+    expect(data.setData).toHaveBeenCalledWith(expect.stringMatching(/^application\/x-yaseen-width-\d+$/), '1')
     expect(data.effectAllowed).toBe('move')
   })
 
@@ -1637,5 +1639,111 @@ describe('TabBar: the live gap (YAZ-3808 6A)', () => {
     fire(tabAt(el, 2), 'drop', 5)
     expect(tabs).toEqual(['/v/b.md', '/v/c.md', '/v/a.md', '/v/d.md'])
     expect(glides).toEqual([])
+  })
+
+  /** Another window's strip tab as Chromium shows it while it passes over: the type names, its width among them (6A4). */
+  const stripTab = (width?: number) => ({
+    types: [WORKSPACE_PAGE_MIME, 'application/x-yaseen-from-w2.0', ...(width === undefined ? [] : [`application/x-yaseen-width-${width}`])],
+    effectAllowed: 'move',
+    dropEffect: 'none',
+    getData: () => JSON.stringify({ path: '/v/e.md', owner: 'main', from: 'w2', copy: 0 }),
+    setData: vi.fn(),
+  })
+  const yielding = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab--yield')].map((tab) => tab.dataset.tab)
+
+  it('6A4 (YAZ-4040): a tab of another window opens a gap as wide as it comes, and the tab on show shrinks while the tabs part — until the tab lands, so the drop moves nothing', () => {
+    const onDropFromWindow = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow, ...props })
+    expect(yielding(el)).toEqual([])
+    fire(tabAt(el, 1), 'dragover', 5, stripTab(130))
+    expect(shifts(el)).toEqual(['a', 'b', 'c translateX(130px)', 'd translateX(130px)'])
+    expect(el.querySelector<HTMLElement>('.tabbar__room')?.style.width).toBe('130px')
+    expect(yielding(el)).toEqual(['/v/a.md'])
+    // A drag that goes away: the tab on show gets its width back with the gap.
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    expect(yielding(el)).toEqual([])
+    // The drop: the gap and the shrink wait for the tab, which comes through main.
+    fire(tabAt(el, 1), 'dragover', 5, stripTab(130))
+    fire(tabAt(el, 1), 'drop', 5, stripTab(130))
+    expect(onDropFromWindow).toHaveBeenCalledWith('w2', { path: '/v/e.md', copy: 0 }, 2)
+    expect(yielding(el)).toEqual(['/v/a.md'])
+    expect(el.querySelector<HTMLElement>('.tabbar__room')?.style.width).toBe('130px')
+    // It lands as the tab on show: no tab yields, and no room is left.
+    act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={['/v/a.md', '/v/b.md', '/v/e.md', '/v/c.md', '/v/d.md']} active="/v/e.md" onMove={vi.fn()} takesDrag={() => true} onDropFromWindow={onDropFromWindow} {...props} />))
+    expect(yielding(el)).toEqual([])
+    expect(el.querySelector('.tabbar__room')).toBeNull()
+  })
+
+  it('6A4 (YAZ-4040): a drag with no width keeps the old room; a tab board card of another window lands quietly, so the tab on show does not shrink', () => {
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow: vi.fn(), ...props })
+    fire(tabAt(el, 1), 'dragover', 5, stripTab())
+    expect(el.querySelector<HTMLElement>('.tabbar__room')?.style.width).toBe('124px')
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    strip.getBoundingClientRect = () => ({ left: 0, right: 400, top: 0, bottom: 40, width: 400, height: 40 }) as DOMRect
+    act(() => void holdOverStrip(150, 20, undefined, 'Elsewhere'))
+    expect(el.querySelector('.tabbar__room')).not.toBeNull()
+    expect(yielding(el)).toEqual([])
+    act(() => void releaseOverStrip(150, 20))
+    expect(yielding(el)).toEqual([])
+  })
+
+  it('6A4 (YAZ-4040): a strip tab\'s drag carries its width as the tab on show — its whole name, not the width a full strip squeezes it to', () => {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return { left: 0, width: this.classList.contains('tabbar__label') ? 50 : 72 } as DOMRect
+    })
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, get: function (this: HTMLElement) { return this.classList.contains('tabbar__label') ? 90 : 0 } })
+    try {
+      const types: string[] = []
+      const data = { types, effectAllowed: 'move', setData: vi.fn((type: string) => void types.push(type)) }
+      const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+      fire(tabAt(el, 2), 'dragstart', 0, data)
+      expect(types).toContain('application/x-yaseen-width-112') // 72 drawn, 40 of its name cut off
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth
+    }
+  })
+
+  it('6A5 (YAZ-4079): a close with ✕ or a middle click keeps each width, and the next tab takes the closed one\'s, so its ✕ comes under the mouse — until the mouse leaves the strip, or the strip changes', () => {
+    const widths: Record<string, number> = { '/v/a.md': 100, '/v/b.md': 110, '/v/c.md': 120, '/v/d.md': 130 }
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return { left: 0, width: this instanceof HTMLElement ? (widths[this.dataset.tab ?? ''] ?? 0) : 0 } as DOMRect
+    })
+    let tabs = TABS
+    const onClose = vi.fn((id: string) => {
+      tabs = tabs.filter((t) => t !== id)
+      act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={tabs} active="/v/a.md" onMove={vi.fn()} {...props} onClose={onClose} />))
+    })
+    const el = mount({ tabs, active: '/v/a.md', onMove: vi.fn(), ...props, onClose })
+    const held = () => [...el.querySelectorAll<HTMLElement>('[data-tab]')].map((tab) => `${tab.dataset.tab} ${tab.style.minWidth}/${tab.style.maxWidth}`)
+    act(() => el.querySelector<HTMLButtonElement>('[data-tab="/v/b.md"] .tabbar__close')!.click())
+    expect(onClose).toHaveBeenCalledWith('/v/b.md')
+    expect(held()).toEqual(['/v/a.md 100px/100px', '/v/c.md 110px/110px', '/v/d.md 130px/130px'])
+    // The mouse on the strip: the widths stay. Off it: they go.
+    act(() => void el.querySelector('[data-tab]')!.dispatchEvent(new MouseEvent('mousemove', { bubbles: true })))
+    expect(held()[1]).toBe('/v/c.md 110px/110px')
+    act(() => void document.body.dispatchEvent(new MouseEvent('mousemove', { bubbles: true })))
+    expect(held()).toEqual(['/v/a.md /', '/v/c.md /', '/v/d.md /'])
+    // A middle click holds the same way; a tab that opens ends it.
+    act(() => void el.querySelector('[data-tab="/v/c.md"] .tabbar__btn')!.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 1 })))
+    expect(held()).toEqual(['/v/a.md 100px/100px', '/v/d.md 120px/120px'])
+    act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={[...tabs, '/v/e.md']} active="/v/a.md" onMove={vi.fn()} {...props} onClose={onClose} />))
+    expect(held()).toEqual(['/v/a.md /', '/v/d.md /', '/v/e.md /'])
+  })
+
+  it('6A6 (YAZ-4080): a tab of another window over the strip raises this window, once for each drag; this strip\'s own drag raises nothing', async () => {
+    const onRaise = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: (data: DataTransfer) => data.types.includes('application/x-yaseen-from-w2.0'), onDropFromWindow: vi.fn(), onRaise, ...props })
+    fire(tabAt(el, 1), 'dragover', 5, stripTab(130))
+    fire(tabAt(el, 2), 'dragover', 5, stripTab(130))
+    expect(onRaise).toHaveBeenCalledTimes(1)
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    fire(tabAt(el, 1), 'dragover', 5, stripTab(130))
+    expect(onRaise).toHaveBeenCalledTimes(2)
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    fire(tabAt(el, 0), 'dragstart')
+    await nextFrame()
+    fire(tabAt(el, 2), 'dragover', 5)
+    expect(onRaise).toHaveBeenCalledTimes(2)
   })
 })

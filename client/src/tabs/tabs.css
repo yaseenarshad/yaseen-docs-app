@@ -185,7 +185,9 @@
    stays put. It replaces the line of the YAZ-3637 demo, which no tab moved for, on Yaseen's ask in the YAZ-3808 demo.
    The time is TabBar's `PART_MS`. `--gap-before` and `--gap-after` name the tab the gap opens next to; they draw nothing. */
 .tabbar--parting .tabbar__tab {
-  transition: transform var(--tab-part-ms, 150ms) cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    transform var(--tab-part-ms, 150ms) cubic-bezier(0.2, 0.8, 0.2, 1),
+    flex-shrink var(--tab-part-ms, 150ms) cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .tabbar__tab--dragging {
@@ -331,6 +333,12 @@
 /* The active tab never shrinks (YAZ-2689 D3): its name reads whole however many tabs are open. */
 .tabbar__tab--active {
   flex-shrink: 0;
+}
+
+/* A tab from elsewhere over the strip opens as the tab on show (YAZ-3808 6A4): the tab on show now shrinks as the others
+   do while the tabs part, so the drop moves nothing. */
+.tabbar__tab--active.tabbar__tab--yield {
+  flex-shrink: 1;
 }
 
 /* One layer per VISITED tab, all mounted, only the active one visible (GRO-2234 rule 6).

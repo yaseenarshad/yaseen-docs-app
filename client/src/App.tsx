@@ -1511,6 +1511,10 @@ export function App() {
    */
   const movePageToWindowAt = useCallback((to: string, path: string, id: string, at: number, background = false) =>
     sendTabAway(path, id, (carry) => api.window.moveTo(to, path, { ...carry, at, ...(background ? { background } : {}) }), "Can't move to that window", true), [sendTabAway])
+  /** A tab of another window reached this strip (YAZ-3808 6A6): this window comes to the front. A glance: a failure changes nothing. */
+  const raiseSelf = useCallback(() => {
+    api.window.raise().catch(() => undefined)
+  }, [])
   /**
    * A tab of the strip let go where no surface took it (YAZ-3637 D1, D3, D5): main opens a window there with the tab —
    * or, for the only tab of a window with nothing else open (the D6 test), moves this window there, and the tab stays.
@@ -3172,6 +3176,7 @@ export function App() {
               // A tab of another window's strip dropped here, and a tab of this one let go off every window (YAZ-3637).
               takesDrag={takesDrag}
               onDropFromWindow={takeFromWindow}
+              onRaise={raiseSelf}
               onTearOff={tearOff}
               onMoveToRight={movePageToRight}
               onMoveToNewWindow={movePageToNewWindow}

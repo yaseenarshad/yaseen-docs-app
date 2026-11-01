@@ -332,6 +332,11 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     if (!windows.moveTab(source, target, tab, optionalSlot(at), background === true)) throw new BridgeFailure('NOT_FOUND', 'a window is closed, or that window shows no vault of this page')
   })
 
+  // `window:raise` (YAZ-3808 6A6): another window's tab over the caller's strip. The caller comes to the front.
+  handleWithEvent(CONTRACT.window.raise, async (e) => {
+    windows.raise(entryFor(e).id)
+  })
+
   // `window:close-other` (YAZ-3343 D21): a frame's "Close window" on the tab board. The window's REAL close, so
   // its flush handshake runs; the caller closes itself with `close-self`.
   handleWithEvent(CONTRACT.window.closeOther, async (e, id: unknown) => {

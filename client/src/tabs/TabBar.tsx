@@ -7,7 +7,7 @@ import { edgeScroller } from '../lib/edgeScroll'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
 import { GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
-import { foreignDrag, readPageDrag, windowTabOf, writePageDrag, type PageDrag } from '../workspace/pageDrag'
+import { dragWidth, foreignDrag, readPageDrag, windowTabOf, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import type { Tab } from '../workspace/useWorkspace'
 import type { ListState } from '../lists/useVaultListsHere'
 import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
@@ -57,6 +57,8 @@ export interface TabBarProps {
   takesDrag?: (data: DataTransfer) => boolean
   /** Another window's tab dropped here (YAZ-3637 D4): the window `from`, its tab by ref, and the slot it lands in. */
   onDropFromWindow?: (from: string, ref: TabRef, at: number) => void
+  /** A tab of another window reached this strip (YAZ-3808 6A6): bring this window to the front, once for each drag. */
+  onRaise?: () => void
   /** A tab let go where no surface took it (YAZ-3637 D1, D3): off every window, or on one that refused it; `point` is on the screen. */
   onTearOff?: (path: string, id: string, point: ScreenPoint) => void
   /** Context-menu equivalent of dragging this tab into the right panel. */
@@ -166,6 +168,21 @@ interface DragState {
 const roomOf = (tab: HTMLElement, strip: HTMLElement | null): number =>
   tab.offsetWidth + (strip === null ? 0 : parseFloat(getComputedStyle(strip).columnGap) || 0)
 
+/** A tab's slide in the live gap (6A), and the width a close holds for it (6A5). */
+const tabStyle = (shift: number, width: number | undefined): CSSProperties | undefined =>
+  shift === 0 && width === undefined
+    ? undefined
+    : { ...(shift === 0 ? {} : { transform: `translateX(${shift}px)` }), ...(width === undefined ? {} : { minWidth: width, maxWidth: width }) }
+
+/** A tab's width as the tab on show (YAZ-3808 6A4): as wide as its whole name, in its least and most. A full strip squeezes the others. */
+const shownWidth = (tab: HTMLElement): number | undefined => {
+  const label = tab.querySelector<HTMLElement>('.tabbar__label')
+  if (label === null) return undefined
+  const style = getComputedStyle(tab)
+  const width = tab.getBoundingClientRect().width - label.getBoundingClientRect().width + label.scrollWidth
+  return Math.min(parseFloat(style.maxWidth) || Infinity, Math.max(parseFloat(style.minWidth) || 0, width))
+}
+
 const Chevron = ({ d }: { d: string }) => (
   <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d={d} />
@@ -201,7 +218,7 @@ export interface NavStep {
 /** How long a press on ‹ or › is held before its menu opens instead of a step (YAZ-3647 E3), as in Chrome. */
 export const NAV_HOLD_MS = 500
 
-export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, zoomLabels, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: TabBarProps) {
+export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, zoomLabels, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -284,7 +301,11 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
    * A tab from elsewhere let go here (YAZ-3808 6A1): its gap stays open until it lands — a tab of another window comes
    * through main, a moment after the drop — and it lands in the gap with no slide-open. `count`: the tabs before it lands.
    */
-  const [arrival, setArrival] = useState<{ at: number; count: number } | null>(null)
+  const [arrival, setArrival] = useState<{ at: number; count: number; room: number; yields: boolean } | null>(null)
+  /** The room a tab of another window takes here (6A4), from its drag: as wide as it will be as the tab on show. */
+  const externalRoom = useRef<number | null>(null)
+  /** This window came to the front for the drag over its strip now (6A6). */
+  const raised = useRef(false)
   const waiting = arrival !== null && tabs.length === arrival.count ? arrival : null
   const arrived = arrival !== null && tabs.length === arrival.count + 1
   /** The held card's own tab, and the tabs there are, for `release` (the strip target is set once). */
@@ -322,7 +343,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         setBoardLabel(null)
         const slot = x === undefined || y === undefined ? null : slotUnder(stripRef.current, x, y)
         // Another window's card lands through main: its gap waits for it (6A1). This window's own card only moves.
-        if (slot !== null && boardOwnRef.current === null) setArrival({ at: slot, count: tabCount.current })
+        if (slot !== null && boardOwnRef.current === null) setArrival({ at: slot, count: tabCount.current, room: ARRIVAL_ROOM, yields: false })
         return slot
       },
     })
@@ -405,14 +426,52 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   const order = useRef<readonly string[]>([])
   const glideFrom = useRef<Map<string, number> | null>(null)
   const ids = tabs.map((t) => t.id)
-  // A tab that lands in the live gap (6A1) does not glide; the tabs after it glide the rest of the way, from the room
-  // the gap held to the room the tab takes.
-  if (arrived || (ids.length === order.current.length && ids.some((id, i) => id !== order.current[i]) && ids.every((id) => order.current.includes(id)))) {
+  const drawnPlaces = (): Map<string, number> => {
     const strip = stripRef.current
     const origin = strip === null ? 0 : strip.getBoundingClientRect().left + strip.clientLeft - strip.scrollLeft
     const drawn = [...(strip?.querySelectorAll<HTMLElement>('[data-tab]:not(.tabbar__tab--dragging)') ?? [])]
-    glideFrom.current = new Map(drawn.map((el) => [el.dataset.tab!, el.getBoundingClientRect().left - origin]))
+    return new Map(drawn.map((el) => [el.dataset.tab!, el.getBoundingClientRect().left - origin]))
   }
+  // A tab that lands in the live gap (6A1) does not glide; the tabs after it glide the rest of the way, from the room
+  // the gap held to the room the tab takes.
+  if (arrived || (ids.length === order.current.length && ids.some((id, i) => id !== order.current[i]) && ids.every((id) => order.current.includes(id)))) {
+    glideFrom.current = drawnPlaces()
+  }
+  // THE HOLD (YAZ-3808 6A5, as Chrome does it). A tab closed with the mouse — its ✕, a middle click — leaves each other
+  // tab its width, and the tab that takes its place takes its width too: the next ✕ comes under the mouse, and a click
+  // there closes the next tab. The widths stay until the mouse leaves the strip, or the strip changes another way; then
+  // the tabs glide to their own widths.
+  const [held, setHeld] = useState<{ widths: ReadonlyMap<string, number>; ids: string } | null>(null)
+  const holding = held !== null && held.ids === ids.join('\n') ? held : null
+  const closeByMouse = (id: string) => {
+    const i = tabs.findIndex((t) => t.id === id)
+    const drawn = [...(stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? [])]
+    const widths = new Map(drawn.map((el) => [el.dataset.tab!, el.getBoundingClientRect().width]))
+    const next = tabs[i + 1]
+    if (next !== undefined && widths.has(id)) widths.set(next.id, widths.get(id)!)
+    widths.delete(id)
+    setHeld({ widths, ids: ids.filter((t) => t !== id).join('\n') })
+    onClose(id)
+  }
+  useEffect(() => {
+    if (held === null) return
+    if (holding === null) return setHeld(null)
+    const row = stripRef.current?.parentElement
+    const letGo = () => {
+      glideFrom.current = drawnPlaces()
+      setHeld(null)
+    }
+    const moved = (event: MouseEvent) => {
+      if (!(event.target instanceof Node && row?.contains(event.target) === true)) letGo()
+    }
+    window.addEventListener('mousemove', moved)
+    document.addEventListener('mouseleave', letGo)
+    return () => {
+      window.removeEventListener('mousemove', moved)
+      document.removeEventListener('mouseleave', letGo)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `drawnPlaces` reads the strip as it is drawn when the hold ends
+  }, [held, holding])
   useLayoutEffect(() => {
     order.current = tabs.map((t) => t.id)
     const from = glideFrom.current
@@ -423,7 +482,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       // Under a pixel is rounding, not a move.
       if (Math.abs(dx) >= 1) el.animate?.([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: GLIDE_MS, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' })
     }
-  }, [tabs])
+  }, [tabs, held])
   const ghostsBefore = (id: string | null) =>
     ghosts
       .filter((ghost) => ghost.before === id)
@@ -435,7 +494,10 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         </div>
       ))
   useEffect(() => {
-    if (externalOver === null) return
+    if (externalOver === null) {
+      raised.current = false
+      return
+    }
     const clear = () => {
       setExternalOver(null)
       scroller.stop()
@@ -488,14 +550,14 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       const tab = event.dataTransfer === null ? null : windowTabOf(event.dataTransfer)
       if (tab === null) return
       event.preventDefault()
-      setArrival({ at: insertion, count: tabs.length })
+      setArrival({ at: insertion, count: tabs.length, room, yields: true })
       onDropFromWindow?.(tab.from, tab.ref, insertion)
       return
     }
     const page = externalPage(event)
     if (page === null) return
     event.preventDefault()
-    setArrival({ at: insertion, count: tabs.length })
+    setArrival({ at: insertion, count: tabs.length, room, yields: true })
     onDropPage?.(page, insertion)
   }
 
@@ -549,13 +611,17 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // THE LIVE GAP (YAZ-3808 6A): the grabbed tab's room moves to the slot. The tabs between the two slide toward the
   // grab point by one room; a tab from elsewhere has no room in the strip, so the tabs after the slot slide into room
   // opened at the strip's end.
-  const room = drag?.room ?? (from === -1 ? ARRIVAL_ROOM : boardRoom.current)
+  const room = drag?.room ?? (from !== -1 ? boardRoom.current : externalOver !== null ? (externalRoom.current ?? ARRIVAL_ROOM) : (waiting?.room ?? ARRIVAL_ROOM))
   const shiftOf = (i: number): number => {
     if (gap === null) return 0
     if (from === -1) return i >= gap ? room : 0
     return from < i && i < gap ? -room : gap <= i && i < from ? room : 0
   }
   const parting = drag !== null || externalOver !== null || boardOver !== null || waiting !== null
+  // A tab let go here from elsewhere opens as the tab on show (YAZ-3637 D4), and the tab on show now goes back to its own
+  // width. In a full strip that width is less, so the tabs after it moved under the drop (6A4). It goes back while the
+  // tabs part instead, in the same motion, and the gap is as wide as the tab that comes: the drop moves nothing.
+  const yielding = (externalOver !== null && gap !== null) || waiting?.yields === true
   useEffect(() => {
     if (arrival === null) return
     if (tabs.length !== arrival.count) return setArrival(null)
@@ -605,7 +671,16 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       style={SLIDE}
       // Each drag the strip takes scrolls it at its ends (YAZ-3808 D5): over a tab, the tail, ‹ › and the "+" alike.
       onDragOver={(e) => {
-        if (drag !== null || externalPage(e) !== null || foreignTab(e)) scroller.at(e.clientX)
+        const foreign = foreignTab(e)
+        if (drag !== null || externalPage(e) !== null || foreign) scroller.at(e.clientX)
+        // The window under the drag comes to the front (6A6): the gap opens where it shows, and the drop has nothing to wait for.
+        if (foreign && !raised.current) {
+          raised.current = true
+          onRaise?.()
+        }
+        const width = foreign && e.dataTransfer !== null ? dragWidth(e.dataTransfer) : null
+        const strip = stripRef.current
+        externalRoom.current = width === null || strip === null ? null : width + (parseFloat(getComputedStyle(strip).columnGap) || 0)
       }}
       onMouseMove={staleHover ? () => setStaleHover(false) : undefined}
       // A drag that leaves the row closes the gap (YAZ-3637 D4): another window's tab may go on to the page below, or
@@ -669,6 +744,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
           const shownAt = atBullet(path, zoom)
           const cls = ['tabbar__tab']
           if (isActive) cls.push('tabbar__tab--active')
+          if (isActive && yielding) cls.push('tabbar__tab--yield')
           if (id === preview) cls.push('tabbar__tab--preview')
           if (id === renaming) cls.push('tabbar__tab--renaming')
           if (id === lit) cls.push('tabbar__tab--lit')
@@ -688,7 +764,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                 if (id === lit) litRef.current = node
               }}
               className={cls.join(' ')}
-              style={shiftOf(i) === 0 ? undefined : { transform: `translateX(${shiftOf(i)}px)` }}
+              style={tabStyle(shiftOf(i), holding?.widths.get(id))}
               // A tab whose name is a field does not drag (YAZ-2949 S9): a press in the field places the caret.
               draggable={id !== renaming}
               onAnimationEnd={(e) => {
@@ -702,7 +778,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                   // Which copy of the page this tab is (YAZ-3637 D1): the ref another window sends back for it, and the
                   // index of its vault here, for `canTake` there. A page in no vault (-1) no other window takes.
                   const root = rootOfPath(roots, path)
-                  writePageDrag(e.dataTransfer, { path, owner: 'main', from: windowId, copy: tabs.slice(0, i).filter((t) => t.path === path).length }, root === null ? -1 : roots.indexOf(root))
+                  writePageDrag(e.dataTransfer, { path, owner: 'main', from: windowId, copy: tabs.slice(0, i).filter((t) => t.path === path).length }, root === null ? -1 : roots.indexOf(root), shownWidth(e.currentTarget))
                 }
                 setExternalOver(null)
                 setStaleHover(true)
@@ -763,7 +839,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                 }}
                 onAuxClick={(e) => {
                   // Middle-click closes — the browser-tab convention.
-                  if (e.button === 1) onClose(id)
+                  if (e.button === 1) closeByMouse(id)
                 }}
               >
                 {/* The file's icon, as its tree row has it (YAZ-3440 D11): a folder page's is the folder's, and a display name keeps the file's. */}
@@ -775,7 +851,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                 </span>
               </button>
               )}
-              <button type="button" className="tabbar__close" aria-label={`Close ${label}`} title={`Close ${label}`} onClick={() => onClose(id)}>
+              <button type="button" className="tabbar__close" aria-label={`Close ${label}`} title={`Close ${label}`} onClick={() => closeByMouse(id)}>
                 ✕
               </button>
             </div>,
