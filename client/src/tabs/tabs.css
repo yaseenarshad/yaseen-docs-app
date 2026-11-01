@@ -207,6 +207,17 @@
   }
 }
 
+/* No hover while the tabs part (YAZ-3808 6F): they slide under a pointer that stays still, and each tab that passed
+   under it lit up for a moment — a blink, on Yaseen's eye in the demo. The tab on show and the board's lit tab keep
+   their own look. */
+.tabbar--parting .tabbar__tab:not(.tabbar__tab--active):not(.tabbar__tab--lit):hover::before {
+  background: var(--tab-fill);
+}
+
+.tabbar--parting .tabbar__tab:not(.tabbar__tab--active):hover .tabbar__close {
+  visibility: hidden;
+}
+
 /* A tab board card's tab where it will land (YAZ-3808 6D): the board clips the card at its edge, under the strip. */
 .tabbar__tab--landing {
   position: absolute;

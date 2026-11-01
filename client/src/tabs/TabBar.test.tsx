@@ -1046,6 +1046,11 @@ describe('the widths of the tabs (YAZ-2689)', () => {
   /** The declarations of the ONE rule whose selector is exactly `selector`. */
   const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(tabsCss.replace(/\/\*[\s\S]*?\*\//g, ''))?.[1] ?? ''
 
+  it('YAZ-3808 6F: while the tabs part, a tab under the pointer does not light up — the tabs slide under it, and each one blinked', () => {
+    expect(rule('.tabbar--parting .tabbar__tab:not(.tabbar__tab--active):not(.tabbar__tab--lit):hover::before')).toMatch(/background:\s*var\(--tab-fill\);/)
+    expect(rule('.tabbar--parting .tabbar__tab:not(.tabbar__tab--active):hover .tabbar__close')).toMatch(/visibility:\s*hidden;/)
+  })
+
   it('D1, D2: a tab is as wide as its name, from 72px to 200px, and it can shrink — with no flex basis and no container query, which make the strip cut a tab while the row has room', () => {
     const tab = rule('.tabbar__tab')
     expect(tab).toMatch(/flex:\s*0 1 auto;/)
