@@ -145,7 +145,7 @@ const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoin
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
 // Daily notes (YAZ-3607 D12): off by default, so its group shows the switch alone.
-const FILES_ROWS = ['confirmDelete', 'confirmRename', 'linkOpen', 'newNoteLocation', 'dailyNotes', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links'].map((place) => `hoverPreviewIn.${place}`)]
+const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newNoteLocation', 'dailyNotes', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links'].map((place) => `hoverPreviewIn.${place}`)]
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
@@ -429,7 +429,9 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(sections(el).map((s) => s.id)).toEqual(['settings-hotkeys'])
     // One card per key since YAZ-3564, the shared keys a pick settles first; "Used by macOS" shows once main answers.
     expect(groupTitles(el).slice(0, 2)).toEqual(['⌘D', '⌘K'])
-    expect(groupTitles(el).slice(-2)).toEqual(['Actions with no key', 'Mouse'])
+    // Then the clicks and drags, one card per gesture (YAZ-3936): Click first, then the modified clicks, then the rest.
+    const titles = groupTitles(el)
+    expect(titles.slice(titles.indexOf('Actions with no key'))).toEqual(['Actions with no key', 'Clicks and drags', 'Click', '⌘-click', '⇧-click', '⌥-click', '⌘⇧-click', 'Drag', '/', 'Right-click', 'Double-click', 'Clicks with no gesture'])
     expect(rowIds(el)).toEqual(HOTKEY_ROWS)
     // A changeable key is a button (D6); a built-in one is text (D8).
     expect(row(el, 'hotkey-settings')?.querySelector('.hotkeys__key')?.textContent).toBe('⌘,')
@@ -580,13 +582,10 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(row(el, 'confirmDelete')?.querySelector('.setting__hint')?.textContent).toBe('Deleted notes and folders move to the Trash either way.')
   })
 
-  it('Open a link in (YAZ-3609 D11): This tab by default, three choices, and each writes the whole object with only it changed', () => {
-    const { el, onChange } = mountOn('Files & Links')
-    expect(row(el, 'linkOpen')?.querySelector('.setting__label')?.textContent).toBe('Open a link in')
-    expect(row(el, 'linkOpen')?.querySelector('.setting__hint')?.textContent).toBe('⌘-click always opens the link in a background tab.')
-    expect(rowButtons(el, 'linkOpen').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['This tab', 'true'], ['A new tab', 'false'], ['A new background tab', 'false']])
-    act(() => rowButtons(el, 'linkOpen')[2].click())
-    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, linkOpen: 'background-tab' })
+  it('has no "Open a link in" row (YAZ-3936): where a link opens is a gesture of Settings › Hotkeys › "Links in a note"', () => {
+    const { el } = mountOn('Files & Links')
+    expect(row(el, 'linkOpen')).toBeNull()
+    expect([...el.querySelectorAll('.setting__label')].map((l) => l.textContent)).not.toContain('Open a link in')
   })
 
   it('Ask before renaming is on by default, says what it shows, and Off writes the whole object with only it flipped (YAZ-2420 3C1)', () => {
@@ -1195,13 +1194,16 @@ describe('SettingsDialog search (D6)', () => {
     const settingsHits = ['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Selection toolbar', 'Editor › Table of contents']
     expect(headings(el).slice(0, 5)).toEqual(settingsHits)
     // On Hotkeys a hit is the ONE row that names a bullet, not its whole table (YAZ-3397 D5), under its key's card (YAZ-3564).
-    expect(headings(el).at(-1)).toBe('Hotkeys › Mouse')
-    expect(headings(el).slice(5, -1).every((h) => h?.startsWith('Hotkeys › '))).toBe(true)
+    // The clicks follow the keys (YAZ-3936): the three "Bullet dots" rows, and the built-in clicks of bullet lines and fold arrows.
+    expect(headings(el).slice(-3)).toEqual(['Hotkeys › Click', 'Hotkeys › ⌘-click', 'Hotkeys › ⇧-click'])
+    expect(headings(el).slice(5).every((h) => h?.startsWith('Hotkeys › '))).toBe(true)
     expect(rowIds(el).slice(0, 10)).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines'])
     expect(new Set(rowIds(el).slice(10))).toEqual(
       new Set([
         ...['bulletList', 'cycleTask', 'indent', 'outdent', 'foldHere', 'unfoldHere', 'foldAll', 'unfoldAll', 'zoomIn', 'copyVisible', 'enter', 'tab'].map((r) => `hotkey-note-${r}`),
-        ...['zoom-into-that-bullet', 'fold-unfold-that-bullet-or-heading-secti'].map((r) => `hotkey-mouse-${r}`),
+        ...['thisTab', 'newTab', 'backgroundTab'].map((r) => `hotkey-bullets-${r}`),
+        // A built-in click is found by its place too: "Bullet lines".
+        ...['fold-unfold-that-bullet-or-heading-secti', 'collapse-direct-children-fully-expand-th'].map((r) => `hotkey-mouse-${r}`),
       ]),
     )
     type(searchInput(el), 'spacing')

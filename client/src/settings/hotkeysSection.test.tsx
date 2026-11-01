@@ -359,3 +359,110 @@ describe('one card per key (YAZ-3564)', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: {} })
   })
 })
+
+/** YAZ-3936 (demo round 1 C4 of YAZ-3879): the clicks are cards like the keys, and two places are the user's to change. */
+describe('the clicks and drags (YAZ-3936)', () => {
+  const clickBox = (id: string) => row(`hotkey-${id}`).querySelector<HTMLButtonElement>('.hotkeys__key') as HTMLButtonElement
+  /** A click on the record box, with the modifiers held: what the recorder hears. */
+  const clickWith = (b: HTMLElement, mods: MouseEventInit = {}) =>
+    act(() => {
+      b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, ...mods }))
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, ...mods }))
+    })
+  const cardOf = (id: string) => row(`hotkey-${id}`).closest('.settings-group')?.querySelector('.settings-group__title')?.textContent
+  const tagOf = (id: string) => row(`hotkey-${id}`).querySelector('.hotkeys__box-tab')?.textContent
+
+  it('one card per gesture, each row with its place tag: ⌘-click holds Open in a background tab of Links and of Bullet dots (browser style, YAZ-3747 demo)', async () => {
+    await mount()
+    expect(cardOf('links-backgroundTab')).toBe('⌘-click')
+    expect(cardOf('bullets-backgroundTab')).toBe('⌘-click')
+    expect(cardOf('bullets-thisTab')).toBe('Click')
+    expect(cardOf('bullets-newTab')).toBe('⇧-click')
+    expect(cardOf('links-newTab')).toBe('⌘⇧-click')
+    expect(cardOf('links-thisTab')).toBe('Clicks with no gesture')
+    expect([tagOf('links-backgroundTab'), tagOf('bullets-backgroundTab')]).toEqual(['Links in a note', 'Bullet dots'])
+    expect(clickBox('links-thisTab').textContent).toBe('No gesture')
+    // The other clicks are built in, in the same boxes: muted text, no button.
+    const drag = row('hotkey-mouse-move-block')
+    expect(drag.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Drag')
+    expect(drag.querySelector('.hotkeys__box-tab')?.textContent).toBe('6 dots')
+    expect(drag.querySelector('.hotkeys__key')).toBeNull()
+    expect(drag.querySelector('.hotkeys__hint')?.textContent).toBe('Built in')
+  })
+
+  it('the "Clicks" chip shows only the click and drag cards, the built-in ones too; All brings the keys back (YAZ-3747 demo)', async () => {
+    await mount()
+    const chip = (text: string) => button(el.querySelector('.hotkeys__filters') as HTMLElement, text)
+    const isClick = (id: string | undefined) => /^hotkey-(links|bullets|mouse)-/.test(id ?? '')
+    click(chip('Clicks'))
+    const shown = shownRows().filter((id) => id?.startsWith('hotkey'))
+    expect(shown).toEqual(expect.arrayContaining(['hotkeys-click-legend', 'hotkey-links-thisTab', 'hotkey-bullets-newTab', 'hotkey-mouse-move-block']))
+    expect(shown.filter((id) => id !== 'hotkeys-click-legend').every(isClick)).toBe(true)
+    click(chip('All'))
+    expect(shownRows()).toEqual(expect.arrayContaining(['hotkey-goTo', 'hotkey-links-thisTab']))
+  })
+
+  it('record: click the box, hold the keys and click it again → the pop-up, nothing written; Save writes only the change; Reset asks, then puts the default back', async () => {
+    await mount()
+    click(clickBox('links-thisTab'))
+    expect(clickBox('links-thisTab').textContent).toBe('Hold keys, click here')
+    expect(recording).not.toHaveBeenCalled() // a click takes no key from the menu
+    clickWith(clickBox('links-thisTab'), { altKey: true })
+    expect(says()).toEqual(['Change the gesture for Links in a note › Open in this tab?', 'No gesture → ⌥-click'])
+    expect(onChange).not.toHaveBeenCalled()
+    click(button(popup() as HTMLElement, 'Save'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'links.thisTab': 'Alt+Click' } })
+    expect(cardOf('links-thisTab')).toBe('⌥-click')
+    expect(clickBox('links-thisTab').classList.contains('hotkeys__key--changed')).toBe(true)
+
+    click(button(row('hotkey-links-thisTab'), 'Reset'))
+    expect(says()).toEqual(['Reset Links in a note › Open in this tab?', '⌥-click → No gesture'])
+    click(button(popup() as HTMLElement, 'Reset'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: {} })
+  })
+
+  it('"the old way" (#11): Click on Links › Open in this tab; a gesture of the same place moves, with "Move it here"; another place keeps its own', async () => {
+    await mount()
+    click(clickBox('links-thisTab'))
+    clickWith(clickBox('links-thisTab'))
+    expect(says()).toEqual(['Change the gesture for Links in a note › Open in this tab?', 'No gesture → Click'])
+    expect(button(popup() as HTMLElement, 'Save')).toBeDefined()
+    click(button(popup() as HTMLElement, 'Save'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'links.thisTab': 'Click' } })
+    // Click is Bullet dots › Open in this tab too: another place, no clash. ⌘-click is Links › background's: it moves.
+    click(clickBox('links-newTab'))
+    clickWith(clickBox('links-newTab'), { metaKey: true })
+    expect(says()).toEqual(['Change the gesture for Links in a note › Open in a new tab?', '⌘⇧-click → ⌘-click', '⌘-click is Links in a note › Open in a background tab now. It will lose its gesture.'])
+    click(button(popup() as HTMLElement, 'Move it here'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'links.thisTab': 'Click', 'links.newTab': 'CmdOrCtrl+Click', 'links.backgroundTab': null } })
+  })
+
+  it('⌃-click is refused (the Mac\'s right-click) and the box keeps recording; Esc stops it and never reaches the dialog; ⌫ asks to remove the gesture', async () => {
+    await mount()
+    click(clickBox('bullets-newTab'))
+    clickWith(clickBox('bullets-newTab'), { ctrlKey: true })
+    expect(lines('bullets-newTab')[0]).toBe("⌃-click is the Mac's right-click. Pick a different gesture.")
+    expect(clickBox('bullets-newTab').textContent).toBe('Hold keys, click here')
+    press('Escape', 'Escape')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(clickBox('bullets-newTab').textContent).toBe('⇧-click')
+    click(clickBox('bullets-newTab'))
+    press('Backspace', 'Backspace')
+    expect(says()).toEqual(['Remove the gesture from Bullet dots › Open in a new tab?', '⇧-click → No gesture'])
+    click(button(popup() as HTMLElement, 'Remove'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: { 'bullets.newTab': null } })
+  })
+
+  it('the page\'s search finds a row by its place and by its action: "links in a note" → the three Links rows; Reset all lists a click change too', async () => {
+    await mount({ 'links.thisTab': 'Click' })
+    type(hotkeyBox(), 'links in a note')
+    expect(shownRows().filter((id) => id?.startsWith('hotkey-'))).toEqual(['hotkey-links-thisTab', 'hotkey-links-backgroundTab', 'hotkey-links-newTab'])
+    type(hotkeyBox(), 'open in a background tab')
+    expect(shownRows().filter((id) => id?.startsWith('hotkey-'))).toEqual(['hotkey-links-backgroundTab', 'hotkey-bullets-backgroundTab'])
+    type(hotkeyBox(), '')
+    click(button(row('hotkeys-reset-all'), 'Reset all hotkeys'))
+    expect([...(el.querySelector('.hotkeys__changes') as HTMLElement).querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Links in a note › Open in this tab: Click → No gesture'])
+    click(button(el.querySelector('.confirm') as HTMLElement, 'Reset 1 hotkey'))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hotkeys: {} })
+  })
+})

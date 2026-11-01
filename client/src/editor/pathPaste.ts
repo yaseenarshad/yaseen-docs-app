@@ -19,6 +19,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
 import { fileKind } from '@shared/fileKind'
 import { parseFileLink } from '@shared/links'
+import { fileLabel } from '../lib/pageLabel'
 import type { LinkCandidate } from '../links/completion'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 
@@ -71,7 +72,8 @@ export function linkFor(path: string, options: PathPasteOptions): string | null 
     // Another vault of this window (D15): a relative Markdown link, which a click opens in a tab (D14).
     const other = options.candidatesOf?.(path)
     const row = other == null ? undefined : rowOf(path, other.candidates)
-    return row === undefined ? null : markdownLink(row.name, options.notePath, path)
+    // The link's text is the page's name, as the sidebar shows it (YAZ-3778 D2): no `.excalidraw`.
+    return row === undefined ? null : markdownLink(fileLabel(row.name), options.notePath, path)
   }
   const insert = rowOf(path, options.candidates.candidates)?.insert
   if (insert !== undefined) return `[[${insert}]]`

@@ -21,6 +21,12 @@
  *
  * The thread (YAZ-3166): after a query or a step, bullet threading and section indent point at the
  * active match instead of the caret (`findThreadAnchor`); a caret move or an edit gives them back.
+ *
+ * Pills (YAZ-3744 S9): a `[[link]]` the note draws as a pill (`pillLinks`, the wikilink plugin's own drawing) hides
+ * text. The matches that touch its hidden text (an ID, `.drawio`, folders, the brackets) are together ONE match, and each
+ * match in the title an ID link shows is one. Each marks the whole pill: its shown text, and its title widget (a widget takes no
+ * decoration, so the plugin view puts the classes on it). Such a match starts at the link's start, so `close()` lands
+ * the caret on the link's edge, where an ID link keeps its title (D1, S17). A link the selection opens is plain text.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
@@ -29,6 +35,8 @@ import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { collapsedHeadingsHiding, setHeadingFoldSet } from '../outline/headingFolding'
 import { collapsedItemsHiding, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos } from '../outline/zoom'
+import { pillLinks, type PillLink, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
+import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import type { FindChannel, FindController, FindResult } from './findChannel'
 
 export const FIND_MATCH_CLASS = 'find-match'
@@ -39,6 +47,14 @@ export const FIND_ACTIVE_CLASS = 'find-match--active'
 interface Match {
   from: number
   to: number
+  /** A match that marks a whole pill (S9): the link is `from`..`to`. */
+  pill?: PillLink
+}
+
+/** The links find reads as the note draws them (YAZ-3744 S9): the editor's own sources. */
+export interface FindLinks {
+  wikilinks: WikilinkResolveSource
+  viewOnly?: ViewOnlyLinkSource
 }
 
 interface FindState {
@@ -98,23 +114,77 @@ const textRuns = (block: ProseNode, blockPos: number): { text: string; start: nu
   return runs
 }
 
+/** Each start of `needle` in `haystack`, not overlapping. */
+const occurrences = (haystack: string, needle: string): number[] => {
+  const found: number[] = []
+  for (let i = haystack.indexOf(needle); i !== -1; i = haystack.indexOf(needle, i + needle.length)) found.push(i)
+  return found
+}
+
+/**
+ * One textblock's matches (S9): a match that touches a pill's hidden text marks the pill; a title's matches too. A pill
+ * counts once for its hidden text, however many matches that text holds, and not at all when its title counts it: the
+ * title of a missing note shows the ID it hides (S10). Each match in a title counts, as in any text.
+ */
+const blockMatches = (node: ProseNode, pos: number, needle: string, pills: readonly PillLink[]): Match[] => {
+  const matches: Match[] = []
+  const counted = new Set<PillLink>()
+  // A title stands where its ID was: its matches go first, and the stable sort below keeps them before the ID's.
+  for (const pill of pills) {
+    if (pill.title === null) continue
+    for (const _ of occurrences(pill.title.toLowerCase(), needle)) {
+      matches.push({ from: pill.from, to: pill.to, pill })
+      counted.add(pill)
+    }
+  }
+  for (const run of textRuns(node, pos)) {
+    for (const i of occurrences(run.text.toLowerCase(), needle)) {
+      const from = run.start + i
+      const to = from + needle.length
+      const pill = pills.find((link) => from < link.to && to > link.from && link.hidden.some(([a, b]) => from < b && to > a))
+      if (pill === undefined) matches.push({ from, to })
+      else if (!counted.has(pill)) {
+        counted.add(pill)
+        matches.push({ from: pill.from, to: pill.to, pill })
+      }
+    }
+  }
+  return pills.length === 0 ? matches : matches.sort((a, b) => a.from - b.from)
+}
+
 /** Every case-insensitive literal occurrence of `query`, in document order; `zoom` filters to the zoomed subtree. */
-const findMatches = (doc: ProseNode, query: string, zoom: Match | null): Match[] => {
+const findMatches = (state: EditorState, query: string, zoom: Match | null, links: FindLinks | undefined): Match[] => {
   const needle = query.toLowerCase()
   if (needle === '') return []
   const matches: Match[] = []
-  doc.descendants((node, pos) => {
+  state.doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
-    for (const run of textRuns(node, pos)) {
-      const haystack = run.text.toLowerCase()
-      for (let i = haystack.indexOf(needle); i !== -1; i = haystack.indexOf(needle, i + needle.length)) {
-        const from = run.start + i
-        if (zoom === null || (from >= zoom.from && from < zoom.to)) matches.push({ from, to: from + needle.length })
-      }
+    const pills = links === undefined || node.type.spec.code === true ? [] : pillLinks(node, pos, state.selection, links.wikilinks, links.viewOnly)
+    for (const match of blockMatches(node, pos, needle, pills)) {
+      if (zoom === null || (match.from >= zoom.from && match.from < zoom.to)) matches.push(match)
     }
     return false
   })
   return matches
+}
+
+/** What a pill match paints (S9): the pill's shown text, the link minus what it hides. The title widget is the view's. */
+const shownRanges = ({ from, to, hidden }: PillLink): [number, number][] => {
+  const ranges: [number, number][] = []
+  let at = from
+  for (const [a, b] of [...hidden].sort((x, y) => x[0] - y[0])) {
+    if (a > at) ranges.push([at, a])
+    at = Math.max(at, b)
+  }
+  if (to > at) ranges.push([at, to])
+  return ranges
+}
+
+/** The title widgets of the ID pills, by position: `wikilinkPlugin.ts` `decorate` draws one at the link's end, or at `from + 2` before a heading. */
+const titleWidgets = (view: EditorView): Map<number, HTMLElement> => {
+  const widgets = new Map<number, HTMLElement>()
+  for (const widget of view.dom.querySelectorAll<HTMLElement>('.ProseMirror-widget.wikilink')) widgets.set(view.posAtDOM(widget, 0), widget)
+  return widgets
 }
 
 /**
@@ -252,7 +322,7 @@ const releaseThread = (view: EditorView): false => {
   return false
 }
 
-const findPlugin = (channel: FindChannel) =>
+const findPlugin = (channel: FindChannel, links?: FindLinks) =>
   $prose(
     () =>
       new Plugin<FindState>({
@@ -288,7 +358,7 @@ const findPlugin = (channel: FindChannel) =>
               revealedHeadings === previous.revealedHeadings
             )
               return previous
-            const matches = recompute ? findMatches(newState.doc, query, zoomedRange(transaction, oldState, newState)) : previous.matches
+            const matches = recompute ? findMatches(newState, query, zoomedRange(transaction, oldState, newState), links) : previous.matches
             return { query, matches, activeIndex: nextActive(previous, meta, matches, newState.selection.from), revealed, revealedHeadings, onMatch }
           },
         },
@@ -302,19 +372,41 @@ const findPlugin = (channel: FindChannel) =>
             if (matches.length === 0) return DecorationSet.empty
             return DecorationSet.create(
               state.doc,
-              matches.map((match, index) =>
-                Decoration.inline(match.from, match.to, {
-                  class: index === activeIndex ? `${FIND_MATCH_CLASS} ${FIND_ACTIVE_CLASS}` : FIND_MATCH_CLASS,
-                }),
-              ),
+              matches.flatMap((match, index) => {
+                const attrs = { class: index === activeIndex ? `${FIND_MATCH_CLASS} ${FIND_ACTIVE_CLASS}` : FIND_MATCH_CLASS }
+                const ranges = match.pill === undefined ? [[match.from, match.to]] : shownRanges(match.pill)
+                return ranges.map(([from, to]) => Decoration.inline(from, to, attrs))
+              }),
             )
           },
         },
         view: (editorView) => {
           const unbind = channel.bind(createController(editorView))
+          /**
+           * The title widgets this search marked (S9). Marked again when the find state or the doc changed, or when a redraw
+           * took a marked widget away (a new one has no classes); not on each caret move (YAZ-3910 A12). ProseMirror ignores
+           * a widget's class changes (no DOM read, no transaction).
+           */
+          let marked: HTMLElement[] = []
+          const markTitles = (matches: readonly Match[], activeIndex: number) => {
+            for (const el of marked) el.classList.remove(FIND_MATCH_CLASS, FIND_ACTIVE_CLASS)
+            marked = []
+            let widgets: Map<number, HTMLElement> | undefined
+            matches.forEach((match, index) => {
+              if (match.pill?.title == null) return
+              widgets ??= titleWidgets(editorView)
+              const widget = widgets.get(match.pill.to) ?? widgets.get(match.pill.from + 2)
+              if (widget === undefined) return
+              widget.classList.add(FIND_MATCH_CLASS)
+              if (index === activeIndex) widget.classList.add(FIND_ACTIVE_CLASS)
+              marked.push(widget)
+            })
+          }
           // An edit under an open find changes the count without anyone asking; the bar hears it here.
-          const sync = () => {
-            const { matches, activeIndex } = findKey.getState(editorView.state) ?? EMPTY
+          const sync = (_view: EditorView, prevState: EditorState) => {
+            const find = findKey.getState(editorView.state) ?? EMPTY
+            const { matches, activeIndex } = find
+            if (find !== findKey.getState(prevState) || editorView.state.doc !== prevState.doc || marked.some((el) => !el.isConnected)) markTitles(matches, activeIndex)
             channel.sync({ total: matches.length, activeIndex })
           }
           return { update: sync, destroy: unbind }
@@ -340,6 +432,6 @@ const findEscapeKeymap = (channel: FindChannel) =>
     },
   }))
 
-export function createFindInPage(channel: FindChannel) {
-  return [findPlugin(channel), findEscapeKeymap(channel)]
+export function createFindInPage(channel: FindChannel, links?: FindLinks) {
+  return [findPlugin(channel, links), findEscapeKeymap(channel)]
 }

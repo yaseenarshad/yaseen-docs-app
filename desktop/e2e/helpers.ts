@@ -340,6 +340,16 @@ export function seededState(vault: string, file: string | null): AppState {
 }
 
 /**
+ * Links follow the browser by default (YAZ-3747 demo): ⌘-click opens a background tab, ⌘⇧-click a new tab in front, and
+ * "Open in this tab" has no click. A spec that follows a link in place binds ⌘⌥-click to it, and clicks with `LINK_HERE`.
+ */
+export const LINK_HERE: Array<'Meta' | 'Alt'> = ['Meta', 'Alt']
+export function openLinksHere(state: AppState): AppState {
+  state.settings = { ...state.settings, hotkeys: { 'links.thisTab': 'CmdOrCtrl+Alt+Click', ...state.settings.hotkeys } }
+  return state
+}
+
+/**
  * The search by Name (YAZ-3511): for the specs that pin the cut, the folds and the keys of a search, not its sort — the
  * order before Best match became the Search default (YAZ-3511 D12). searchSort.spec.ts covers the default itself.
  */
@@ -583,9 +593,9 @@ export async function closeWindow(app: ElectronApplication, winId: string): Prom
  *  - `Home` / `End` do NOT move the caret on macOS. `Meta+ArrowLeft` / `Meta+ArrowRight` do — and
  *    `Meta+ArrowUp` / `Meta+ArrowDown` are the outliner's own fold keys, so they never move it.
  *  - a resolved wikilink renders its `[[ ]]` as `display: none` spans, and a caret cannot stop
- *    inside hidden text — so end-of-line lands in FRONT of the closing `]]` until the plugin's
- *    REVEAL rule steps the decorations aside, which the click itself triggers. The second attempt,
- *    on the raw text, lands properly.
+ *    inside hidden text — so end-of-line can land in FRONT of the closing `]]` until the link's
+ *    caret rule steps it over the whole link (every link is one unit since YAZ-3935; a click on a
+ *    pill puts the caret at its nearer edge). The second attempt lands properly.
  *  - the browser owns the DOM selection but ProseMirror owns `state.selection`, and PM reads the
  *    browser's only on its own deferred flush. Every keyboard COMMAND runs against PM's — so an
  *    Enter sent too early splits the document where PM still THINKS the caret is (on a freshly
