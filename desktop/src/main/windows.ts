@@ -165,9 +165,10 @@ export interface WindowManager extends WindowLookup {
    * `from`, which saves the tab and sends it with `window:move-to`, as "Move to ▸" does. `false` = either window
    * is not live, they are the same window, or `to` shows no vault of `ref.path` (the `moveTo` rule). No raise, here or
    * after: `from` sends it as a QUIET move (`background`), which `moveTo` does not raise. With `at` (YAZ-3637 D4, a tab
-   * dropped on `to`'s strip) `from` sends it loud, to that slot.
+   * dropped on `to`'s strip) `from` sends it loud, to that slot; with `background` too (YAZ-3808 6H, a tab board card
+   * let go on `to`'s strip), quietly, to that slot.
    */
-  moveTab(from: string, to: string, ref: TabRef, at?: number): boolean
+  moveTab(from: string, to: string, ref: TabRef, at?: number, background?: boolean): boolean
   /** Name the live window `id` (YAZ-3343 D14), or `null` for its automatic label: `store.setWindowName`. `false` = `id` is not live. */
   setName(id: string, name: string | null): boolean
   /** The board's highlight on window `to`'s card (YAZ-3343): it lights that tab in its strip; `null` puts it out. Dropped when `to` is not live. */
@@ -176,6 +177,8 @@ export interface WindowManager extends WindowLookup {
   tabAction(to: string, ref: TabRef, action: TabAction): boolean
   /** A hidden window the tab board made (YAZ-3343): show it and focus it. `false` = not live. */
   showWindow(id: string): boolean
+  /** A tab of another window over window `id`'s strip (YAZ-3808 6A6): bring it to the front, with no focus. `false` = not live. */
+  raise(id: string): boolean
   /** The live windows built hidden and not shown yet (YAZ-3343). In memory only: a restart shows every window. */
   hiddenWindows(): string[]
   /** The live windows minimized in the Dock now (YAZ-3343). In memory only. */
@@ -184,6 +187,12 @@ export interface WindowManager extends WindowLookup {
   popOutTab(from: string, ref: TabRef): boolean
   /** The vault chip of an empty frame (YAZ-3343): push `link:set-roots` to the live window `id` with NO tab. `false` = not live, or it has a tab. */
   setRoots(id: string, roots: readonly string[]): boolean
+  /**
+   * A tab board's Add on a card dropped in window `to`, which lacks the card's vault (YAZ-3808 6B): push
+   * `link:add-vault-and-take` to `to`, which adds `vault` and takes the tab `ref` of `from`. `false` = either window is
+   * not live, they are one window, or `to` is a Files window.
+   */
+  addVaultAndTake(to: string, vault: string, from: string, ref: TabRef): boolean
   /** "Close window" on another window's frame (YAZ-3343): its REAL close (the flush handshake runs). `false` = `id` is not live. */
   closeOther(id: string): boolean
   /**
@@ -339,7 +348,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'popOutTab' | 'showWindow' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'raise' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -1031,6 +1040,14 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       return true
     },
 
+    addVaultAndTake(to, vault, from, ref) {
+      const win = liveWindow(to)
+      const entry = entryOf(to)
+      if (win === undefined || entry === undefined || isFilesWindow(entry) || from === to || liveWindow(from) === undefined) return false
+      sendLink(win, CONTRACT.link.onAddVaultAndTake.channel, { vault, from, ref: { path: ref.path, copy: ref.copy } })
+      return true
+    },
+
     moveTo(to, path, carry) {
       const win = live.get(to)
       const entry = entryOf(to)
@@ -1059,16 +1076,23 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       return true
     },
 
-    moveTab(from, to, ref, at) {
+    moveTab(from, to, ref, at, background) {
       const source = liveWindow(from)
       const entry = entryOf(to)
       if (source === undefined || from === to || liveWindow(to) === undefined || entry === undefined || isFilesWindow(entry) || rootOfPath(entry.roots, ref.path) === null) return false
-      sendLink(source, CONTRACT.link.onSendTab.channel, { to, ref: { path: ref.path, copy: ref.copy }, ...(at === undefined ? {} : { at }) })
+      sendLink(source, CONTRACT.link.onSendTab.channel, { to, ref: { path: ref.path, copy: ref.copy }, ...(at === undefined ? {} : { at }), ...(at !== undefined && background === true ? { background: true } : {}) })
       return true
     },
 
     setName(id, name) {
       return liveWindow(id) !== undefined && store.setWindowName(id, name)
+    },
+
+    raise(id) {
+      const win = liveWindow(id)
+      if (win === undefined) return false
+      win.moveTop()
+      return true
     },
 
     setRoots(id, roots) {

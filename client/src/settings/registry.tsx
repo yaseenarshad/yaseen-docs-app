@@ -55,6 +55,12 @@ import { TextFormattingControl, type TextFormattingVault } from './TextFormattin
 import { ToolbarArrange } from './ToolbarArrange'
 import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
+/** Files & Links › Open new tabs (YAZ-3808 D2). */
+const NEW_TAB_PLACE_OPTIONS: readonly { label: string; value: SettingsState['newTabPlace'] }[] = [
+  { label: 'Next to the current tab', value: 'next' },
+  { label: 'At the end', value: 'end' },
+]
+
 export interface SettingsCtx {
   settings: SettingsState
   onChange: (next: SettingsState) => void
@@ -832,6 +838,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             hint: 'Shows the confirmation, with the number of links that will be updated, before a note or folder is renamed.',
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.confirmRename} onChange={(confirmRename) => onChange({ ...settings, confirmRename })} ariaLabel="Ask before renaming" />
+            ),
+          },
+          {
+            // YAZ-3808 D2, D3: "Open in new tab", a ⌘-click and a new preview tab. ⌘T and the "+" still go to the end.
+            id: 'newTabPlace',
+            label: 'Open new tabs',
+            hint: '⌘T and the "+" still open at the end.',
+            keywords: ['tab', 'new tab', 'order', 'position', 'next', 'end'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={NEW_TAB_PLACE_OPTIONS} value={settings.newTabPlace} onChange={(newTabPlace) => onChange({ ...settings, newTabPlace })} ariaLabel="Open new tabs" />
             ),
           },
           {

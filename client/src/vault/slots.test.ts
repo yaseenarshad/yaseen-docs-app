@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { MAX_WINDOW_ROOTS } from '@shared/types'
-import { EMPTY_SLOTS, assignSlots, renameSlots } from './slots'
+import { EMPTY_SLOTS, assignSlots, renameSlots, vaultRefusal } from './slots'
 
 const rest = (n: number): null[] => Array.from({ length: MAX_WINDOW_ROOTS - n }, () => null)
 
@@ -72,5 +72,15 @@ describe('renameSlots', () => {
 
   it('a rename that holds no vault changes nothing', () => {
     expect(renameSlots(three, '/v/notes', '/v/pages')).toBe(three)
+  })
+})
+
+describe('vaultRefusal (YAZ-2602 D2; shared with the tab board, YAZ-3808 6B)', () => {
+  const nameOf = (vault: string) => vault.slice(vault.lastIndexOf('/') + 1)
+  it('a vault there already, inside one, or holding one is refused, with its words; any other folder is not', () => {
+    expect(vaultRefusal(['/a/v/'], '/a/v', nameOf)).toBe('v is already in this window')
+    expect(vaultRefusal(['/a'], '/a/v', nameOf)).toBe("Can't add v: it is inside a")
+    expect(vaultRefusal(['/a/v/x'], '/a/v', nameOf)).toBe("Can't add v: it contains x")
+    expect(vaultRefusal(['/a/w', '/b'], '/a/v', nameOf)).toBeNull()
   })
 })

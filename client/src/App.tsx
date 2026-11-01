@@ -23,6 +23,7 @@ import { dropFolderValuesAfterMove, restoreFolderValues, valuesLeftBehind, type 
 import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
+import { dropIndex } from './lib/dragSlot'
 import { transformFile } from './views/writeProperty'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
@@ -81,7 +82,7 @@ import { spacePanel } from './tabs/cardPreview'
 import { tabOfRef, windowLabel } from './tabs/windowLabel'
 import { useUpdate } from './update/useUpdate'
 import { RightPanel } from './right-panel/RightPanel'
-import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots } from './vault/slots'
+import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots, vaultRefusal } from './vault/slots'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
@@ -832,14 +833,7 @@ export function App() {
      * It reads the identity, not the last render: a restore adds vaults one after the other, before
      * React renders again (YAZ-3147 D3).
      */
-    const refusal = (): string | null => {
-      const now = storage.getRoots()
-      if (now.some((vault) => stripSlash(vault) === path)) return `${name} is already in this window`
-      const holder = rootOfPath(now, path)
-      if (holder !== null) return `Can't add ${name}: it is inside ${storage.vaultName(holder)}`
-      const held = now.find((vault) => rootOfPath([path], stripSlash(vault)) !== null)
-      return held === undefined ? null : `Can't add ${name}: it contains ${storage.vaultName(held)}`
-    }
+    const refusal = (): string | null => vaultRefusal(storage.getRoots(), path, storage.vaultName)
     let refused = refusal()
     if (refused === null) {
       try {
@@ -1554,10 +1548,15 @@ export function App() {
     sendTabAway(path, id, (carry) => api.window.moveTo(to, path, { ...carry, background: true }), "Can't move to that window", true), [sendTabAway])
   /**
    * A tab dropped on another window's strip (YAZ-3637 D4): the same move, LOUD — the target raises and shows the tab at
-   * the slot `at` — and the source closes when the tab leaves it empty (YAZ-3091 D6).
+   * the slot `at` — and the source closes when the tab leaves it empty (YAZ-3091 D6). With `background`, a tab board card
+   * let go on that strip (YAZ-3808 6H): QUIET, at the slot.
    */
-  const movePageToWindowAt = useCallback((to: string, path: string, id: string, at: number) =>
-    sendTabAway(path, id, (carry) => api.window.moveTo(to, path, { ...carry, at }), "Can't move to that window", true), [sendTabAway])
+  const movePageToWindowAt = useCallback((to: string, path: string, id: string, at: number, background = false) =>
+    sendTabAway(path, id, (carry) => api.window.moveTo(to, path, { ...carry, at, ...(background ? { background } : {}) }), "Can't move to that window", true), [sendTabAway])
+  /** A tab of another window reached this strip (YAZ-3808 6A6): this window comes to the front. A glance: a failure changes nothing. */
+  const raiseSelf = useCallback(() => {
+    api.window.raise().catch(() => undefined)
+  }, [])
   /**
    * A tab of the strip let go where no surface took it (YAZ-3637 D1, D3, D5): main opens a window there with the tab —
    * or, for the only tab of a window with nothing else open (the D6 test), moves this window there, and the tab stays.
@@ -1578,22 +1577,29 @@ export function App() {
     const foreign = foreignDrag(data, storage.getWindowId())
     return foreign !== null && storage.getOtherWindows().find((w) => w.id === foreign.from)?.roots[foreign.root] !== undefined
   }, [filesWindow])
-  /** `at` absent: the end of the strip, as it is when the move goes (a sheet may have stood in between). */
-  const moveTabHere = useCallback((from: string, ref: TabRef, at?: number) => {
-    api.window.moveTab(from, storage.getWindowId(), ref, at ?? now.current.tabs.length).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
+  /** `at` absent: the end of the strip, as it is when the move goes (a sheet may have stood in between). `quiet`: a tab board card's, which does not open (YAZ-3808 6H). */
+  const moveTabHere = useCallback((from: string, ref: TabRef, at?: number, quiet = false) => {
+    const here = storage.getWindowId()
+    const slot = at ?? now.current.tabs.length
+    const moved = quiet ? api.window.moveTab(from, here, ref, slot, true) : api.window.moveTab(from, here, ref, slot)
+    moved.catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
   }, [notify])
   /**
    * Another window's tab dropped here (YAZ-3637 D4): that window sends it here, to the slot (`sendTabHere` there), or to
    * the strip's end for a drop off the strip. A page of a vault this window does not show asks to add that vault first,
    * as a link into one does (YAZ-3609 D21): the tab stays where it is until the vault is in.
    */
-  const [takeAsk, setTakeAsk] = useState<{ from: string; ref: TabRef; at?: number; vault: string } | null>(null)
-  const takeFromWindow = useCallback((from: string, ref: TabRef, at?: number) => {
-    if (rootOfPath(storage.getRoots(), ref.path) !== null) return moveTabHere(from, ref, at)
+  const [takeAsk, setTakeAsk] = useState<{ from: string; ref: TabRef; at?: number; vault: string; quiet: boolean } | null>(null)
+  /** A tab board card let go in another window's frame, which lacks its vault (YAZ-3808 6B): the question, as for a link into a vault. */
+  const [boardVaultAsk, setBoardVaultAsk] = useState<{ from: string; ref: TabRef; to: string; vault: string; page: string; window: string } | null>(null)
+  const takeFromWindow = useCallback((from: string, ref: TabRef, at?: number, quiet = false) => {
+    if (rootOfPath(storage.getRoots(), ref.path) !== null) return moveTabHere(from, ref, at, quiet)
     const there = storage.getOtherWindows().find((w) => w.id === from)
     const vault = there === undefined ? null : rootOfPath(there.roots, ref.path)
-    if (vault !== null) setTakeAsk({ from, ref, at, vault })
+    if (vault !== null) setTakeAsk({ from, ref, at, vault, quiet })
   }, [moveTabHere])
+  /** A tab board card of another window let go on this strip or frame (YAZ-3808 6H): it joins quietly — the tab moves, and opening it is a click. */
+  const takeBoardCard = useCallback((from: string, ref: TabRef, at?: number) => takeFromWindow(from, ref, at, true), [takeFromWindow])
   /**
    * "Move to ▸" (YAZ-3091 D2, D7 revised by D8): the other windows that show a vault of `path`, read from the state
    * cache only while a tab menu is open. Every one of them shows this vault, so a row names what that window SHOWS:
@@ -1682,13 +1688,14 @@ export function App() {
     if (now.current.phase === 'open') closeUnderOverview(ids)
     else closeTabs(ids)
   }, [closeUnderOverview, closeTabs])
-  const sendTabHere = useCallback(({ to, ref, at }: { to: string; ref: TabRef; at?: number }) => {
+  const sendTabHere = useCallback(({ to, ref, at, background }: { to: string; ref: TabRef; at?: number; background?: true }) => {
     const tab = tabOfRef(now.current.tabs, ref)
     if (tab === undefined) return
     // A board's drop (D13) is the "Move to ▸" door made quiet — the page saves first, then leaves. A drop on that
-    // window's strip (YAZ-3637 D4) names its slot, and is loud: the tab shows there.
+    // window's strip (YAZ-3637 D4) names its slot, and is loud: the tab shows there. A board card let go on that strip
+    // (YAZ-3808 6H) names its slot and is quiet: the tab joins there, and the board there stays open.
     if (at === undefined) movePageToWindowQuietly(to, tab.path, tab.id)
-    else movePageToWindowAt(to, tab.path, tab.id, at)
+    else movePageToWindowAt(to, tab.path, tab.id, at, background === true)
   }, [movePageToWindowQuietly, movePageToWindowAt])
   // Below `startView`: a moved tab's page view goes there (YAZ-3091 D5).
   /**
@@ -1740,11 +1747,25 @@ export function App() {
   /** A Files window's click, run here (YAZ-3357 D2): set further down, where every door it calls is made. Main holds the push until `link.ready`. */
   const fromFiles = useRef<(action: FilesAction) => void>(() => undefined)
   const openFromFiles = useCallback((action: FilesAction) => fromFiles.current(action), [])
-  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
   /** Another window's card dropped in a frame on this board (YAZ-3343 D13): that window sends it, quietly (`sendTabHere` there). */
   const moveBoardTab = useCallback((from: string, to: string, ref: TabRef) => {
     api.window.moveTab(from, to, ref).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
   }, [notify])
+  /**
+   * The Add of another window's tab board, for a card it dropped in THIS window's frame (YAZ-3808 6B): this window adds
+   * the vault by its own rules — a refusal says why, here — then takes the tab, quietly, as a board move does.
+   */
+  const addVaultAndTakeHere = useCallback(({ vault, from, ref }: { vault: string; from: string; ref: TabRef }) => {
+    void addVault(vault).then((added) => {
+      if (added) moveBoardTab(from, storage.getWindowId(), ref)
+    })
+  }, [addVault, moveBoardTab])
+  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
+  /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
+  const moveBoardCardToSlot = useCallback((id: string, slot: number) => {
+    const from = now.current.tabs.findIndex((t) => t.id === id)
+    if (from !== -1) moveTab(from, dropIndex(from, slot))
+  }, [moveTab])
   /** What the board's preview panel needs of a page's vault (D18): the scope that holds it, or the first one. */
   const boardPreviewScope = useCallback((path: string) => {
     const scope = scopeOf(path)
@@ -2946,6 +2967,10 @@ export function App() {
       onDismiss={leaveOverviewForOpenPage}
       onKillAll={askKillAll}
       onMoveTab={moveBoardTab}
+      // A card let go on the strip (YAZ-3808 D1): this window's tab moves to the slot; another window's joins at it.
+      onMoveToSlot={moveBoardCardToSlot}
+      onTakeAt={takeBoardCard}
+      onAskVault={setBoardVaultAsk}
       onCloseWindow={closeBoardWindow}
       onNewWindow={openWindowBehind}
       onOpenTabHere={openBackground}
@@ -3219,6 +3244,7 @@ export function App() {
               // A tab of another window's strip dropped here, and a tab of this one let go off every window (YAZ-3637).
               takesDrag={takesDrag}
               onDropFromWindow={takeFromWindow}
+              onRaise={raiseSelf}
               onTearOff={tearOff}
               onMoveToRight={movePageToRight}
               onMoveToNewWindow={movePageToNewWindow}
@@ -3391,10 +3417,26 @@ export function App() {
             // The vault's identity write goes to main before the move asks it, so main sees this window show the page.
             // A vault the window cannot take (the most vaults, one inside another) says why in a notice, and nothing moves.
             void addVault(ask.vault).then((added) => {
-              if (added) moveTabHere(ask.from, ask.ref, ask.at)
+              if (added) moveTabHere(ask.from, ask.ref, ask.at, ask.quiet)
             })
           }}
           onCancel={() => setTakeAsk(null)}
+        />
+      )}
+      {/* A tab board card let go in another window's frame, which lacks its vault (YAZ-3808 6B): that window adds the vault, then takes the tab. */}
+      {boardVaultAsk !== null && (
+        <ConfirmSheet
+          labelId="confirm-add-vault-for-board-text"
+          // The words of the link's sheet (YAZ-3609 D21), for the window the card was let go in.
+          text={`This tab (${boardVaultAsk.page}) is in a vault (${storage.vaultName(boardVaultAsk.vault)}) that is not open in that window (${boardVaultAsk.window}). Add that vault to that window to move the tab there?`}
+          confirmLabel="Add vault to that window"
+          focusConfirm
+          onConfirm={() => {
+            const ask = boardVaultAsk
+            setBoardVaultAsk(null)
+            api.window.addVaultAndTake(ask.to, ask.vault, ask.from, ask.ref).catch((err: unknown) => notify(`Can't move that tab: ${err instanceof Error ? err.message : String(err)}`))
+          }}
+          onCancel={() => setBoardVaultAsk(null)}
         />
       )}
       {/* "Kill all tabs" asks first (YAZ-2739 D3): the focus starts on Cancel, as on every sheet that takes something away. */}

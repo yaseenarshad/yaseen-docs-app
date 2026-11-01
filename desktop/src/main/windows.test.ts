@@ -1487,6 +1487,14 @@ describe('createWindowManager: moveTo hands a tab to an open window (YAZ-3091 D1
     expect([manager.takeStartEmpty(id), manager.takeStartEmpty(id), manager.takeStartEmpty('w1')]).toEqual([true, false, false])
   })
 
+  it('YAZ-3808 6A6: raise brings a live window to the front with no focus; a window that is not live is false', () => {
+    const { manager, w2 } = seedMove()
+    const [top, focus] = [w2.moveTopCount, w2.focusCount]
+    expect(manager.raise('w2')).toBe(true)
+    expect([w2.moveTopCount - top, w2.focusCount - focus]).toEqual([1, 0])
+    expect(manager.raise('nope')).toBe(false)
+  })
+
   it('YAZ-3343, a hidden window: "Show window" shows and focuses it; opening one of its tabs from the board shows it; and with no window left on screen it shows by itself', () => {
     const { manager, w1, w2, w3, created } = seedMove()
     const from = store.get().windows.find((w) => w.id === 'w1')!
@@ -1517,6 +1525,18 @@ describe('createWindowManager: moveTo hands a tab to an open window (YAZ-3091 D1
     expect(w2.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSetRoots.channel, ['/x'])
     expect(manager.setRoots('w1', ['/x'])).toBe(false) // w1 has a tab
     expect(manager.setRoots('nope', ['/x'])).toBe(false)
+  })
+
+  it('YAZ-3808 6B, a tab board\'s Add: the window the card was let go in hears link:add-vault-and-take; one window, a closed one, or a Files window refuses', () => {
+    const { manager, w1, w2 } = seedMove()
+    for (const w of [w1, w2]) manager.handleLinkReady(w.webContents)
+    expect(manager.addVaultAndTake('w2', '/a', 'w1', { path: '/a/x.md', copy: 0 })).toBe(true)
+    expect(w2.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onAddVaultAndTake.channel, { vault: '/a', from: 'w1', ref: { path: '/a/x.md', copy: 0 } })
+    expect(manager.addVaultAndTake('w2', '/a', 'w2', { path: '/a/x.md', copy: 0 })).toBe(false)
+    expect(manager.addVaultAndTake('w2', '/a', 'nope', { path: '/a/x.md', copy: 0 })).toBe(false)
+    expect(manager.addVaultAndTake('nope', '/a', 'w1', { path: '/a/x.md', copy: 0 })).toBe(false)
+    store.upsertWindow({ ...store.get().windows.find((w) => w.id === 'w2')!, kind: 'files' })
+    expect(manager.addVaultAndTake('w2', '/a', 'w1', { path: '/a/x.md', copy: 0 })).toBe(false)
   })
 
   it('YAZ-3343, "Move to new window" from the tab board: QUIET — the window is built HIDDEN; from another window\'s card, that window hears link:pop-out-tab', () => {
@@ -2052,6 +2072,11 @@ describe('createWindowManager: the tab board reaches other windows (YAZ-3343 D3,
     // A drop on w2's strip names its slot (YAZ-3637 D4); without one the key is absent, not undefined.
     expect(manager.moveTab('w1', 'w2', REF, 2)).toBe(true)
     expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSendTab.channel, { to: 'w2', ref: REF, at: 2 })
+    // A tab board card let go on w2's strip (YAZ-3808 6H): its slot, quietly. Quiet with no slot is the board's frame drop.
+    expect(manager.moveTab('w1', 'w2', REF, 2, true)).toBe(true)
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSendTab.channel, { to: 'w2', ref: REF, at: 2, background: true })
+    expect(manager.moveTab('w1', 'w2', REF, undefined, true)).toBe(true)
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSendTab.channel, { to: 'w2', ref: REF })
     expect(manager.moveTab('w1', 'w2', { path: '/b/y.md', copy: 0 })).toBe(false) // w2 shows no /b: no vault is added
     expect(manager.moveTab('w1', 'w3', REF)).toBe(false) // a Welcome window shows no vault
     expect(manager.moveTab('w1', 'w1', REF)).toBe(false)
@@ -2059,7 +2084,7 @@ describe('createWindowManager: the tab board reaches other windows (YAZ-3343 D3,
     expect(manager.moveTab('w1', 'nope', REF)).toBe(false)
     w2.destroy()
     expect(manager.moveTab('w1', 'w2', REF)).toBe(false)
-    expect(w1.webContents.send).toHaveBeenCalledTimes(2)
+    expect(w1.webContents.send).toHaveBeenCalledTimes(4)
     for (const c of [w1, w2, w3]) expect(c.focusCount).toBe(0)
   })
 

@@ -8,10 +8,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { flushSync } from 'react-dom'
 import { NAV_HOLD_MS, TabBar as IdTabBar, WAKE_HOVER_MS, type TabBarProps as IdTabBarProps } from './TabBar'
 import tabsCss from './tabs.css?inline'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 import { setBoardHighlight } from './boardHighlight'
+import { holdOverStrip, releaseOverStrip } from './stripDrop'
 import { IconsContext } from '../sidebar/FileIcon'
 import { buildRowIcons, rowIcon } from '../sidebar/rowIcons'
 
@@ -53,6 +55,24 @@ afterEach(() => {
 
 /** The history props (YAZ-721) the tab tests don't exercise: nowhere to go, nothing wired. */
 const noNav = { canBack: false, canForward: false, onBack: vi.fn(), onForward: vi.fn() }
+
+/**
+ * jsdom has no layout, and a drag reads its slot from where the layout puts each tab (YAZ-3808 6A). `layTabsOut` puts
+ * tab i of a strip at 100·i, 100 px wide; `xOn` gives a client x `dx` from the middle of a tab — negative is its left
+ * half, the rest its right — and leaves any other target's x as it is.
+ */
+const OFFSET_LEFT = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetLeft')!
+const OFFSET_WIDTH = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!
+const tabIndex = (el: Element): number => (el instanceof HTMLElement && el.dataset.tab !== undefined ? [...el.parentElement!.querySelectorAll('[data-tab]')].indexOf(el) : -1)
+const layTabsOut = () => {
+  Object.defineProperty(HTMLElement.prototype, 'offsetLeft', { configurable: true, get: function (this: HTMLElement) { return Math.max(0, tabIndex(this)) * 100 } })
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: function (this: HTMLElement) { return tabIndex(this) === -1 ? 0 : 100 } })
+}
+const putLayoutBack = () => {
+  Object.defineProperty(HTMLElement.prototype, 'offsetLeft', OFFSET_LEFT)
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', OFFSET_WIDTH)
+}
+const xOn = (target: Element, dx: number): number => (tabIndex(target) === -1 ? dx : tabIndex(target) * 100 + 50 + dx)
 
 describe('TabBar', () => {
   const noop = { onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn() }
@@ -287,18 +307,25 @@ describe('TabBar', () => {
 describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
   const TABS = ['/v/a.md', '/v/b.md', '/v/c.md']
   const tabAt = (el: HTMLElement, i: number) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab')][i]
+  beforeEach(layTabsOut)
+  afterEach(putLayoutBack)
   /**
    * Drag events bubble like the real thing; jsdom has no DragEvent, the handlers guard
-   * `dataTransfer` (the groupDrag idiom). jsdom rects are all-zero, so the before/after
-   * midpoint test reduces to the sign of clientX: negative = before the tab, else after.
+   * `dataTransfer` (the groupDrag idiom). On a tab, the sign of clientX is the half:
+   * negative = before the tab, else after (`xOn`).
    */
   const fire = (target: Element, type: string, clientX = 0) =>
-    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX })))
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: xOn(target, clientX) })))
+  /** The frame after a drag starts, when the grabbed tab leaves the strip (YAZ-3808 6A). */
+  const nextFrame = () => act(() => new Promise<void>((done) => requestAnimationFrame(() => done())))
 
-  it('dropping past a tab\'s midpoint calls onMove with the final index; the grab class and the gap classes mark the drag', () => {
+  it('dropping past a tab\'s midpoint calls onMove with the final index; the grab class and the gap classes mark the drag', async () => {
     const onMove = vi.fn()
     const el = mount({ tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove, ...noNav })
     fire(tabAt(el, 0), 'dragstart')
+    // The Mac takes the tab's picture first: the tab leaves the strip one frame later (YAZ-3808 6A).
+    expect(tabAt(el, 0).classList.contains('tabbar__tab--dragging')).toBe(false)
+    await nextFrame()
     expect(tabAt(el, 0).classList.contains('tabbar__tab--dragging')).toBe(true)
     fire(tabAt(el, 2), 'dragover', 5) // right half of c → the end slot: the tabs part after the last one (--gap-after)
     expect(tabAt(el, 2).classList.contains('tabbar__tab--gap-after')).toBe(true)
@@ -360,6 +387,7 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
     const event = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
     Object.defineProperty(event, 'dataTransfer', { value: data })
     act(() => void tabAt(el, 0).dispatchEvent(event))
+    // Two types: jsdom draws no tab, so the drag carries no width (YAZ-3808 6A4), and a strip opens its own room.
     expect(data.setData).toHaveBeenCalledTimes(2)
     expect(data.setData).toHaveBeenCalledWith(
       WORKSPACE_PAGE_MIME,
@@ -382,7 +410,7 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
     const onDropPage = vi.fn()
     const el = mount({ tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), onDropPage, ...noNav })
     const fireData = (target: Element, type: string, data: DataTransfer, clientX = 0): MouseEvent => {
-      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX })
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: xOn(target, clientX) })
       Object.defineProperty(event, 'dataTransfer', { value: data })
       act(() => void target.dispatchEvent(event))
       return event
@@ -415,8 +443,10 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
 describe('TabBar: a tab of ANOTHER window (YAZ-3637 D1, D4, D6)', () => {
   const TABS = ['/v/a.md', '/v/b.md', '/v/c.md']
   const tabAt = (el: HTMLElement, i: number) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab')][i]
+  beforeEach(layTabsOut)
+  afterEach(putLayoutBack)
   const fireData = (target: Element, type: string, data: DataTransfer, clientX = 0): MouseEvent => {
-    const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX })
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: xOn(target, clientX) })
     Object.defineProperty(event, 'dataTransfer', { value: data })
     act(() => void target.dispatchEvent(event))
     return event
@@ -441,7 +471,8 @@ describe('TabBar: a tab of ANOTHER window (YAZ-3637 D1, D4, D6)', () => {
     fireData(tabAt(el, 1), 'drop', foreign(true), -5)
     expect(onDropFromWindow).toHaveBeenCalledExactlyOnceWith('w2', { path: '/w/x.md', copy: 1 }, 1)
     expect(base.onDropPage).not.toHaveBeenCalled()
-    expect(el.querySelector('.tabbar__tab--gap-before')).toBeNull()
+    // The tab comes through main: its gap waits for it (YAZ-3808 6A1).
+    expect(tabAt(el, 1).classList.contains('tabbar__tab--gap-before')).toBe(true)
     // A drag this window does not take: no line, the drop is not taken, nothing happens.
     const other = { ...foreign(false), types: [WORKSPACE_PAGE_MIME, 'application/x-yaseen-from-w2.1'] } as unknown as DataTransfer
     expect(fireData(tabAt(el, 2), 'dragover', other, 5).defaultPrevented).toBe(false)
@@ -453,6 +484,22 @@ describe('TabBar: a tab of ANOTHER window (YAZ-3637 D1, D4, D6)', () => {
     expect(fireData(tail, 'dragover', foreign(false)).defaultPrevented).toBe(true)
     fireData(tail, 'drop', foreign(true))
     expect(onDropFromWindow).toHaveBeenLastCalledWith('w2', { path: '/w/x.md', copy: 1 }, 3)
+  })
+
+  it('YAZ-3808 D5: another window\'s drag held at the strip\'s end scrolls it; Esc stops the scroll and puts the line out', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => frames.push(f))
+    vi.stubGlobal('cancelAnimationFrame', () => void frames.splice(0))
+    const el = mount({ ...base, takesDrag: () => true, onDropFromWindow: vi.fn() })
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    strip.getBoundingClientRect = () => ({ left: 100, right: 400, top: 0, bottom: 40, width: 300, height: 40 }) as DOMRect
+    fireData(tabAt(el, 2), 'dragover', foreign(false), 395)
+    expect(frames).toHaveLength(1)
+    expect(el.querySelector('.tabbar__tab--gap-after, .tabbar__tab--gap-before')).not.toBeNull()
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(frames).toHaveLength(0)
+    expect(el.querySelector('.tabbar__tab--gap-after, .tabbar__tab--gap-before')).toBeNull()
+    vi.unstubAllGlobals()
   })
 
   it('D4: the line goes out when another window\'s drag leaves the row, and on a drop elsewhere that never bubbles', () => {
@@ -536,6 +583,21 @@ describe('TabBar slide and room (YAZ-2656 D12)', () => {
     expect([tabOf('d') === d, tabOf('e') === e]).toEqual([true, true])
     render({ tabs: ['/v/e.md', '/v/a.md', '/v/d.md'], active: '/v/e.md', blank: false })
     expect([tabOf('d') === d, tabOf('e') === e]).toEqual([true, true])
+  })
+
+  it('YAZ-3808 6C: the slide-open class goes when the slide ends, so a tab that moves later does not play it again (a flash)', () => {
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', ...props })
+    render({ tabs: ['/v/a.md', '/v/b.md', '/v/c.md'], active: '/v/c.md' })
+    expect(sliding(el, 'in')).toEqual(['c'])
+    const c = [...el.querySelectorAll('[data-tab]')].find((tab) => tab.textContent?.startsWith('c'))!
+    // jsdom has no AnimationEvent, so React listens for the prefixed name there. An animation inside the tab is not its slide.
+    act(() => void c.querySelector('.tabbar__close')!.dispatchEvent(new Event('webkitAnimationEnd', { bubbles: true })))
+    expect(sliding(el, 'in')).toEqual(['c'])
+    act(() => void c.dispatchEvent(new Event('webkitAnimationEnd', { bubbles: true })))
+    expect(sliding(el, 'in')).toEqual([])
+    // It moves to the front: put back in the strip, it has no slide to play.
+    render({ tabs: ['/v/c.md', '/v/a.md', '/v/b.md'], active: '/v/c.md' })
+    expect(sliding(el, 'in')).toEqual([])
   })
 
   it('S88: a closed tab slides shut where it stood — a ghost that is no tab, gone after the slide; with no motion asked for there is none', () => {
@@ -987,6 +1049,11 @@ describe('the widths of the tabs (YAZ-2689)', () => {
   /** The declarations of the ONE rule whose selector is exactly `selector`. */
   const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(tabsCss.replace(/\/\*[\s\S]*?\*\//g, ''))?.[1] ?? ''
 
+  it('YAZ-3808 6F: with no hover to trust (a drag, and after it until the mouse moves), a tab under the pointer does not light up', () => {
+    expect(rule('.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):not(.tabbar__tab--lit):hover::before')).toMatch(/background:\s*var\(--tab-fill\);/)
+    expect(rule('.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):hover .tabbar__close,\n.tabbar--hoverless .tabbar__close:hover')).toMatch(/visibility:\s*hidden;/)
+  })
+
   it('D1, D2: a tab is as wide as its name, from 72px to 200px, and it can shrink — with no flex basis and no container query, which make the strip cut a tab while the row has room', () => {
     const tab = rule('.tabbar__tab')
     expect(tab).toMatch(/flex:\s*0 1 auto;/)
@@ -1161,6 +1228,662 @@ describe('TabBar display name (YAZ-2949 D4, D5)', () => {
     act(() => void tabs(el)[1].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === 'Reset to page name')?.click())
     expect(onSetName).toHaveBeenLastCalledWith('t2', null)
+  })
+})
+
+describe('TabBar: the four tab changes (YAZ-3808)', () => {
+  const TABS = ['/v/a.md', '/v/b.md', '/v/c.md']
+  const props = { onActivate: vi.fn(), onClose: vi.fn(), ...noNav }
+  const tabAt = (el: HTMLElement, i: number) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab')][i]
+  const gaps = (el: HTMLElement) => [...el.querySelectorAll('.tabbar__tab--gap-before, .tabbar__tab--gap-after')].map((tab) => `${tab.textContent?.replace('✕', '')}:${tab.classList.contains('tabbar__tab--gap-before') ? 'before' : 'after'}`)
+  const fire = (target: Element, type: string, clientX = 0, clientY = 0) =>
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY })))
+  /** A strip from x 100 to 400, scrolled so the first tab is half hidden: tab i stands at 50 + 100·i, 100 px wide. */
+  const layOut = (el: HTMLElement) => {
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    strip.getBoundingClientRect = () => ({ left: 100, right: 400, top: 0, bottom: 40, width: 300, height: 40 }) as DOMRect
+    Object.defineProperties(strip, { scrollWidth: { configurable: true, value: 1000 }, clientWidth: { configurable: true, value: 300 } })
+    // The row ends at x 600, where the right panel would start.
+    strip.parentElement!.getBoundingClientRect = () => ({ left: 0, right: 600, top: 0, bottom: 40, width: 600, height: 40 }) as DOMRect
+    el.querySelectorAll<HTMLElement>('[data-tab]').forEach((tab, i) => {
+      Object.defineProperties(tab, { offsetLeft: { configurable: true, value: i * 100 - 50 }, offsetWidth: { configurable: true, value: 100 } })
+      tab.getBoundingClientRect = () => ({ left: 50 + i * 100, width: 100, top: 0, bottom: 40 }) as DOMRect
+    })
+  }
+  afterEach(() => {
+    act(() => void releaseOverStrip())
+    vi.unstubAllGlobals()
+    delete (window as unknown as Record<string, unknown>).matchMedia
+    putLayoutBack()
+    vi.restoreAllMocks()
+    delete (HTMLElement.prototype as unknown as Record<string, unknown>).animate
+  })
+
+  it('D1: a tab board card held over the strip draws the same line as a drag; the release answers its slot and puts the line out; unmounted, the strip takes no card', () => {
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+    layOut(el)
+    act(() => holdOverStrip(140, 20)) // right half of b (b stands at 150 to 250; the strip starts at 100)
+    expect(gaps(el)).toEqual(['b:before'])
+    act(() => holdOverStrip(420, 20)) // past the strip's end, over the "+"
+    expect(gaps(el)).toEqual(['c:after'])
+    act(() => holdOverStrip(250, 99)) // below the strip
+    expect(gaps(el)).toEqual([])
+    // This window's own card: either side of its own tab moves nothing, so no line shows there (as for a tab drag).
+    act(() => holdOverStrip(140, 20, '/v/b.md'))
+    expect(gaps(el)).toEqual([])
+    act(() => holdOverStrip(210, 20, '/v/b.md'))
+    expect(gaps(el)).toEqual([])
+    act(() => holdOverStrip(210, 20, '/v/a.md'))
+    expect(gaps(el)).toEqual(['c:before'])
+    act(() => holdOverStrip(210, 20))
+    let slot: number | null = null
+    act(() => void (slot = releaseOverStrip(210, 20)))
+    expect(slot).toBe(2)
+    // Another window's card: its tab comes through main, and its gap waits for it (6A1).
+    expect(gaps(el)).toEqual(['c:before'])
+    act(() => root?.unmount())
+    root = null
+    expect(releaseOverStrip(210, 20)).toBeNull()
+  })
+
+  it('D5: a drag held at the strip\'s right end scrolls it frame by frame; the drop stops it', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => frames.push(f))
+    vi.stubGlobal('cancelAnimationFrame', () => void frames.splice(0))
+    const onMove = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove, ...props })
+    layOut(el)
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    fire(tabAt(el, 0), 'dragstart')
+    act(() => frames.splice(0).forEach((f) => f(0))) // the tab leaves the strip (6A)
+    fire(tabAt(el, 2), 'dragover', 395)
+    expect(frames).toHaveLength(1)
+    act(() => frames.splice(0).forEach((f) => f(0)))
+    expect(strip.scrollLeft).toBeGreaterThan(0)
+    fire(tabAt(el, 2), 'drop', 395)
+    expect(frames).toHaveLength(0)
+    expect(onMove).toHaveBeenCalledWith(0, 2)
+  })
+
+  it('D5: a drag held over the "+" scrolls the strip, and a drop there lands at the end, never a tear-off (YAZ-3984)', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => frames.push(f))
+    vi.stubGlobal('cancelAnimationFrame', () => void frames.splice(0))
+    const onMove = vi.fn()
+    const onTearOff = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove, onTearOff, onNewTab: vi.fn(), ...props })
+    layOut(el)
+    const plus = el.querySelector<HTMLElement>('.tabbar__new')!
+    fire(tabAt(el, 0), 'dragstart')
+    act(() => frames.splice(0).forEach((f) => f(0))) // the tab leaves the strip (6A)
+    const over = new MouseEvent('dragover', { bubbles: true, cancelable: true, clientX: 415, clientY: 20 })
+    act(() => void plus.dispatchEvent(over))
+    expect(over.defaultPrevented).toBe(true) // the "+" takes the drop
+    expect(frames).toHaveLength(1) // and the strip scrolls
+    expect(gaps(el)).toEqual(['c:after'])
+    // On its icon too: the drag's target is the svg inside the button.
+    act(() => void plus.querySelector('svg')?.dispatchEvent(new MouseEvent('dragover', { bubbles: true, cancelable: true, clientX: 415, clientY: 20 })))
+    fire(plus, 'drop', 415, 20)
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(0, 2)
+    expect(frames).toHaveLength(0)
+    vi.unstubAllGlobals()
+  })
+
+  it('D5: a drop on ‹ › lands at the first tab on show — never off every surface (a tear-off)', () => {
+    const onMove = vi.fn()
+    const onTearOff = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove, onTearOff, ...props })
+    layOut(el)
+    const nav = el.querySelector<HTMLElement>('.tabbar-nav')!
+    fire(tabAt(el, 2), 'dragstart')
+    fire(nav, 'dragover', 60, 20)
+    expect(gaps(el)).toEqual(['b:before']) // a is half hidden: b is the first tab on show
+    fire(nav, 'drop', 60, 20)
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(2, 1)
+    expect(onTearOff).not.toHaveBeenCalled()
+  })
+
+  it('D6: a reorder glides each tab that changed place from where it stood; a tab that opens, and "Reduce motion", glide nothing', () => {
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false }) })
+    Object.defineProperty(HTMLElement.prototype, 'offsetLeft', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.tab === undefined ? 0 : [...this.parentElement!.querySelectorAll('[data-tab]')].indexOf(this) * 100
+      },
+    })
+    // Where each tab is drawn: where the layout puts it, with no gap open.
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return { left: this instanceof HTMLElement && this.dataset.tab !== undefined ? this.offsetLeft : 0 } as DOMRect
+    })
+    const glides: Array<[string, string]> = []
+    // jsdom has no Web Animations API.
+    Object.defineProperty(HTMLElement.prototype, 'animate', {
+      configurable: true,
+      value(this: HTMLElement, keyframes: Keyframe[]) {
+        glides.push([this.dataset.tab ?? '', String(keyframes[0].transform)])
+        return {} as Animation
+      },
+    })
+    const render = (tabs: string[]) => act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={tabs} active="/v/a.md" onMove={vi.fn()} {...props} />))
+    mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+    render(['/v/c.md', '/v/a.md', '/v/b.md'])
+    expect(glides).toEqual([
+      ['/v/c.md', 'translateX(200px)'],
+      ['/v/a.md', 'translateX(-100px)'],
+      ['/v/b.md', 'translateX(-100px)'],
+    ])
+    // A new name moves tabs, but the order is the same: no glide.
+    glides.length = 0
+    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} windowId="w1" tabs={[{ id: '/v/c.md', path: '/v/c.md', name: 'A much longer name' }, { id: '/v/a.md', path: '/v/a.md' }, { id: '/v/b.md', path: '/v/b.md' }]} active="/v/a.md" onMove={vi.fn()} {...props} />))
+    expect(glides).toEqual([])
+    render(['/v/c.md', '/v/a.md', '/v/d.md', '/v/b.md'])
+    expect(glides).toEqual([])
+    render(['/v/c.md', '/v/d.md', '/v/b.md']) // a close slides the ghost shut; nothing glides
+    expect(glides).toEqual([])
+    render(['/v/c.md', '/v/a.md', '/v/d.md', '/v/b.md'])
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true }) })
+    render(['/v/a.md', '/v/c.md', '/v/d.md', '/v/b.md'])
+    expect(glides).toEqual([])
+  })
+})
+
+describe('TabBar: the live gap (YAZ-3808 6A)', () => {
+  const TABS = ['/v/a.md', '/v/b.md', '/v/c.md', '/v/d.md']
+  const props = { onActivate: vi.fn(), onClose: vi.fn(), ...noNav }
+  const tabAt = (el: HTMLElement, i: number) => [...el.querySelectorAll<HTMLElement>('[data-tab]')][i]
+  /** Each tab's `transform`, by name: where the gap draws it, in px off its place. */
+  const shifts = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('[data-tab]')].map((tab) => `${tab.textContent?.replace('✕', '').replace('.md', '')}${tab.style.transform === '' ? '' : ` ${tab.style.transform}`}`)
+  const fire = (target: Element, type: string, dx = 0, data?: unknown) => {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: xOn(target, dx), clientY: 20 })
+    if (data !== undefined) Object.defineProperty(event, 'dataTransfer', { value: data })
+    act(() => void target.dispatchEvent(event))
+  }
+  const nextFrame = () => act(() => new Promise<void>((done) => requestAnimationFrame(() => done())))
+  beforeEach(layTabsOut)
+  afterEach(() => {
+    act(() => void releaseOverStrip())
+    putLayoutBack()
+    vi.restoreAllMocks()
+    delete (window as unknown as Record<string, unknown>).matchMedia
+    delete (HTMLElement.prototype as unknown as Record<string, unknown>).animate
+  })
+
+  it('a tab dragged right leaves its place, and only the tabs it passes slide back one room; the drop clears every shift', async () => {
+    const onMove = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove, ...props })
+    fire(tabAt(el, 0), 'dragstart')
+    await nextFrame()
+    expect(tabAt(el, 0).classList.contains('tabbar__tab--dragging')).toBe(true)
+    expect(el.querySelector('.tabbar')!.classList.contains('tabbar--parting')).toBe(true)
+    fire(tabAt(el, 1), 'dragover', 5) // right half of b: the gap is after b
+    expect(shifts(el)).toEqual(['a', 'b translateX(-100px)', 'c', 'd'])
+    fire(tabAt(el, 2), 'dragover', 5) // one tab on: one more tab slides
+    expect(shifts(el)).toEqual(['a', 'b translateX(-100px)', 'c translateX(-100px)', 'd'])
+    // Off the row the gap goes back to the tab's own place: a drop there lands in no slot. Back on, it follows again.
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    expect(shifts(el)).toEqual(['a', 'b', 'c', 'd'])
+    expect(tabAt(el, 0).classList.contains('tabbar__tab--dragging')).toBe(true)
+    fire(tabAt(el, 2), 'dragover', 5)
+    expect(shifts(el)).toEqual(['a', 'b translateX(-100px)', 'c translateX(-100px)', 'd'])
+    fire(tabAt(el, 2), 'drop', 5)
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(0, 2)
+    expect(shifts(el)).toEqual(['a', 'b', 'c', 'd'])
+    expect(el.querySelector('.tabbar--parting, .tabbar__tab--dragging')).toBeNull()
+  })
+
+  it('a tab dragged left: the tabs it passes slide right; on either side of its own place the gap stays where it was', async () => {
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+    fire(tabAt(el, 3), 'dragstart')
+    await nextFrame()
+    fire(tabAt(el, 1), 'dragover', -5)
+    expect(shifts(el)).toEqual(['a', 'b translateX(100px)', 'c translateX(100px)', 'd'])
+    fire(tabAt(el, 3), 'dragover', -5) // its own place: nothing moves
+    expect(shifts(el)).toEqual(['a', 'b', 'c', 'd'])
+    fire(tabAt(el, 3), 'dragend')
+    expect(el.querySelector('.tabbar--parting, .tabbar__tab--dragging')).toBeNull()
+  })
+
+  it('6G: when the drag ends, a slide still running on a tab is cancelled — it would draw the tab one room off its new place', async () => {
+    const cancel = vi.fn()
+    const glide = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'getAnimations', { configurable: true, value: () => [{ transitionProperty: 'transform', cancel }, { cancel: glide }] })
+    try {
+      const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+      fire(tabAt(el, 0), 'dragstart')
+      fire(tabAt(el, 2), 'dragover', 5)
+      expect(cancel).not.toHaveBeenCalled() // mid-drag the slides run
+      fire(tabAt(el, 2), 'drop', 5)
+      expect(cancel).toHaveBeenCalledTimes(TABS.length)
+      expect(glide).not.toHaveBeenCalled() // only a slide: the glide is an animation of its own
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).getAnimations
+    }
+  })
+
+  it('6F: from the drag\'s start the strip shows no hover look, and after the drop not until the mouse moves', async () => {
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    expect(strip.classList.contains('tabbar--hoverless')).toBe(false)
+    fire(tabAt(el, 0), 'dragstart')
+    expect(strip.classList.contains('tabbar--hoverless')).toBe(true)
+    fire(tabAt(el, 2), 'dragover', 5)
+    fire(tabAt(el, 2), 'drop', 5)
+    fire(tabAt(el, 0), 'dragend')
+    expect(strip.classList.contains('tabbar--hoverless')).toBe(true) // the page's hover is where the drag began
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('mousemove', { bubbles: true })))
+    expect(strip.classList.contains('tabbar--hoverless')).toBe(false)
+  })
+
+  it('the drop place is read from the layout, not from where the gap draws a tab: the gap does not flicker under a still pointer', async () => {
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+    fire(tabAt(el, 0), 'dragstart')
+    await nextFrame()
+    // At x 170: b's right half in the layout (b stands at 100 to 200). b slides to 0 to 100; the pointer is over
+    // the gap now, and the slot stays.
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    for (let i = 0; i < 3; i++) {
+      act(() => void strip.dispatchEvent(new MouseEvent('dragover', { bubbles: true, cancelable: true, clientX: 170 })))
+      expect(shifts(el)).toEqual(['a', 'b translateX(-100px)', 'c', 'd'])
+    }
+  })
+
+  it('a tab from another window: the tabs after the slot slide into room opened at the strip\'s end; leaving the row closes it', () => {
+    const data = { types: [WORKSPACE_PAGE_MIME, 'application/x-yaseen-from-w2.0'], effectAllowed: 'move', dropEffect: 'none', getData: () => '', setData: vi.fn() }
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow: vi.fn(), ...props })
+    fire(tabAt(el, 1), 'dragover', -5, data)
+    expect(shifts(el)).toEqual(['a', 'b translateX(124px)', 'c translateX(124px)', 'd translateX(124px)'])
+    expect(el.querySelector<HTMLElement>('.tabbar__room')?.style.width).toBe('124px')
+    expect(el.querySelector('.tabbar__tab--dragging')).toBeNull() // no tab of this strip left it
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    expect(shifts(el)).toEqual(['a', 'b', 'c', 'd'])
+    expect(el.querySelector('.tabbar__room')).toBeNull()
+  })
+
+  it('a tab board card: this window\'s own tab leaves the strip and the gap moves as for a drag; another window\'s card opens room', () => {
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    strip.getBoundingClientRect = () => ({ left: 0, right: 400, top: 0, bottom: 40, width: 400, height: 40 }) as DOMRect
+    act(() => holdOverStrip(250, 20, '/v/a.md')) // c's right half: the gap after c
+    expect(tabAt(el, 0).classList.contains('tabbar__tab--dragging')).toBe(true)
+    expect(shifts(el)).toEqual(['a', 'b translateX(-100px)', 'c translateX(-100px)', 'd'])
+    act(() => holdOverStrip(250, 20))
+    expect(tabAt(el, 0).classList.contains('tabbar__tab--dragging')).toBe(false)
+    expect(shifts(el)).toEqual(['a', 'b', 'c', 'd translateX(124px)'])
+    // Let go: another window's tab comes through main, and its room waits for it (6A1).
+    act(() => void releaseOverStrip(250, 20))
+    expect(shifts(el)).toEqual(['a', 'b', 'c', 'd translateX(124px)'])
+    expect(el.querySelector('.tabbar__room')).not.toBeNull()
+  })
+
+  it('6D: a card held over the strip shows its tab, with its name, where it will land; off the strip and after the release there is none', () => {
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    strip.getBoundingClientRect = () => ({ left: 0, right: 400, top: 0, bottom: 40, width: 400, height: 40 }) as DOMRect
+    const landing = () => {
+      const tab = el.querySelector<HTMLElement>('.tabbar__tab--landing')
+      return tab === null ? null : `${tab.textContent} ${tab.style.left} ${tab.style.width}`
+    }
+    // This window's a, after c: where a stands once the drop is done.
+    let on = false
+    act(() => void (on = holdOverStrip(250, 20, '/v/a.md', 'Alpha')))
+    expect(on).toBe(true)
+    expect(landing()).toBe('Alpha 200px 100px')
+    expect(el.querySelector('.tabbar__tab--landing')?.hasAttribute('data-tab')).toBe(false) // never a slot of its own
+    act(() => void holdOverStrip(60, 20, '/v/a.md', 'Alpha')) // either side of its own place: it stands there
+    expect(landing()).toBe('Alpha 0px 100px')
+    // Another window's card, before d: the room opened for it.
+    act(() => void holdOverStrip(250, 20, undefined, 'Elsewhere'))
+    expect(landing()).toBe('Elsewhere 300px 124px')
+    act(() => void (on = holdOverStrip(250, 99, undefined, 'Elsewhere')))
+    expect(on).toBe(false)
+    expect(landing()).toBeNull()
+    act(() => void holdOverStrip(250, 20, undefined, 'Elsewhere'))
+    act(() => void releaseOverStrip(250, 20))
+    expect(landing()).toBeNull()
+  })
+
+  it('6A1 (YAZ-4026): a tab of another window keeps its gap open until it lands, and lands in it with no slide-open; one that never comes gives the gap back', () => {
+    vi.useFakeTimers()
+    try {
+      const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+      const strip = el.querySelector<HTMLElement>('.tabbar')!
+      strip.getBoundingClientRect = () => ({ left: 0, right: 400, top: 0, bottom: 40, width: 400, height: 40 }) as DOMRect
+      const room = ['a', 'b', 'c translateX(124px)', 'd translateX(124px)']
+      act(() => void holdOverStrip(150, 20, undefined, 'Elsewhere')) // after b
+      expect(shifts(el)).toEqual(room)
+      let slot: number | null = null
+      act(() => void (slot = releaseOverStrip(150, 20)))
+      expect(slot).toBe(2)
+      // The take goes through main: the gap waits for the tab.
+      expect(shifts(el)).toEqual(room)
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+      act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={['/v/a.md', '/v/b.md', '/v/e.md', '/v/c.md', '/v/d.md']} active="/v/a.md" onMove={vi.fn()} {...props} />))
+      expect(shifts(el)).toEqual(['a', 'b', 'e', 'c', 'd'])
+      expect(el.querySelector('.tabbar__room')).toBeNull()
+      expect(tabAt(el, 2).classList.contains('tabbar__tab--in')).toBe(false) // it fills the gap; it does not slide open
+      // A tab that never comes (refused, or a question asked first): the gap goes after a while.
+      act(() => void holdOverStrip(150, 20, undefined, 'Elsewhere'))
+      act(() => void releaseOverStrip(150, 20))
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+      act(() => void vi.advanceTimersByTime(2000))
+      expect(el.querySelector('.tabbar__room')).toBeNull()
+      expect(shifts(el)).toEqual(['a', 'b', 'e', 'c', 'd'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('6A3 (YAZ-4036): a strip tab of another window lands in the slot its gap showed — the window\'s own drop listener does not close the gap before the strip reads the drop', () => {
+    // The layout as a full strip has it: with the room for the tab, tabs stand 100 px apart; without it they widen to
+    // 120 px. A browser runs its pending work between two listeners of one event; `flushSync` does it here.
+    Object.defineProperty(HTMLElement.prototype, 'offsetLeft', { configurable: true, get: function (this: HTMLElement) { const i = tabIndex(this); return i === -1 ? 0 : i * (this.parentElement?.querySelector('.tabbar__room') ? 100 : 120) } })
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: function (this: HTMLElement) { return tabIndex(this) === -1 ? 0 : this.parentElement?.querySelector('.tabbar__room') ? 100 : 120 } })
+    const data = { types: [WORKSPACE_PAGE_MIME, 'application/x-yaseen-from-w2.0'], effectAllowed: 'move', dropEffect: 'none', getData: () => JSON.stringify({ path: '/v/e.md', owner: 'main', from: 'w2', copy: 0 }), setData: vi.fn() }
+    const onDropFromWindow = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow, ...props })
+    const at = (type: string) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 160, clientY: 20 })
+      Object.defineProperty(event, 'dataTransfer', { value: data })
+      return event
+    }
+    act(() => void tabAt(el, 1).dispatchEvent(at('dragover')))
+    act(() => void tabAt(el, 1).dispatchEvent(at('dragover'))) // x 160 in the room's layout: after b
+    expect(shifts(el)).toEqual(['a', 'b', 'c translateX(124px)', 'd translateX(124px)'])
+    const between = () => flushSync(() => undefined)
+    window.addEventListener('drop', between, true)
+    try {
+      act(() => void tabAt(el, 1).dispatchEvent(at('drop')))
+    } finally {
+      window.removeEventListener('drop', between, true)
+    }
+    expect(onDropFromWindow).toHaveBeenCalledExactlyOnceWith('w2', { path: '/v/e.md', copy: 0 }, 2)
+  })
+
+  it('6A1 (YAZ-4026): a strip tab of another window dropped here keeps its gap open until it lands', () => {
+    const data = { types: [WORKSPACE_PAGE_MIME, 'application/x-yaseen-from-w2.0'], effectAllowed: 'move', dropEffect: 'none', getData: () => JSON.stringify({ path: '/v/e.md', owner: 'main', from: 'w2', copy: 0 }), setData: vi.fn() }
+    const onDropFromWindow = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow, ...props })
+    fire(tabAt(el, 1), 'dragover', 5, data)
+    fire(tabAt(el, 1), 'drop', 5, data)
+    expect(onDropFromWindow).toHaveBeenCalledWith('w2', { path: '/v/e.md', copy: 0 }, 2)
+    expect(shifts(el)).toEqual(['a', 'b', 'c translateX(124px)', 'd translateX(124px)'])
+  })
+
+  it('a drop into the gap glides nothing: the strip already shows the new order, and the tab let go stood nowhere', async () => {
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false }) })
+    // Where each tab is drawn: its place in the layout, moved by the gap.
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (!(this instanceof HTMLElement) || this.dataset.tab === undefined) return { left: 0 } as DOMRect
+      return { left: this.offsetLeft + (parseFloat(/-?[\d.]+/.exec(this.style.transform)?.[0] ?? '0') || 0) } as DOMRect
+    })
+    const glides: string[] = []
+    Object.defineProperty(HTMLElement.prototype, 'animate', {
+      configurable: true,
+      value(this: HTMLElement) {
+        glides.push(this.dataset.tab ?? '')
+        return {} as Animation
+      },
+    })
+    let tabs = TABS
+    const onMove = vi.fn((from: number, to: number) => {
+      const next = [...tabs]
+      next.splice(to, 0, ...next.splice(from, 1))
+      tabs = next
+      act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={tabs} active="/v/a.md" onMove={onMove} {...props} />))
+    })
+    const el = mount({ tabs, active: '/v/a.md', onMove, ...props })
+    fire(tabAt(el, 0), 'dragstart')
+    await nextFrame()
+    fire(tabAt(el, 2), 'dragover', 5)
+    fire(tabAt(el, 2), 'drop', 5)
+    expect(tabs).toEqual(['/v/b.md', '/v/c.md', '/v/a.md', '/v/d.md'])
+    expect(glides).toEqual([])
+  })
+
+  /** Another window's strip tab as Chromium shows it while it passes over: the type names, its width among them (6A4). */
+  const stripTab = (width?: number) => ({
+    types: [WORKSPACE_PAGE_MIME, 'application/x-yaseen-from-w2.0', ...(width === undefined ? [] : [`application/x-yaseen-width-${width}`])],
+    effectAllowed: 'move',
+    dropEffect: 'none',
+    getData: () => JSON.stringify({ path: '/v/e.md', owner: 'main', from: 'w2', copy: 0 }),
+    setData: vi.fn(),
+  })
+  const yielding = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab--yield')].map((tab) => tab.dataset.tab)
+
+  it('6A4 (YAZ-4040): a tab of another window opens a gap as wide as it comes, and the tab on show shrinks while the tabs part — until the tab lands, so the drop moves nothing', () => {
+    const onDropFromWindow = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow, ...props })
+    expect(yielding(el)).toEqual([])
+    fire(tabAt(el, 1), 'dragover', 5, stripTab(130))
+    expect(shifts(el)).toEqual(['a', 'b', 'c translateX(130px)', 'd translateX(130px)'])
+    expect(el.querySelector<HTMLElement>('.tabbar__room')?.style.width).toBe('130px')
+    expect(yielding(el)).toEqual(['/v/a.md'])
+    // A drag that goes away: the tab on show gets its width back with the gap.
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    expect(yielding(el)).toEqual([])
+    // The drop: the gap and the shrink wait for the tab, which comes through main.
+    fire(tabAt(el, 1), 'dragover', 5, stripTab(130))
+    fire(tabAt(el, 1), 'drop', 5, stripTab(130))
+    expect(onDropFromWindow).toHaveBeenCalledWith('w2', { path: '/v/e.md', copy: 0 }, 2)
+    expect(yielding(el)).toEqual(['/v/a.md'])
+    expect(el.querySelector<HTMLElement>('.tabbar__room')?.style.width).toBe('130px')
+    // It lands as the tab on show: no tab yields, and no room is left.
+    act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={['/v/a.md', '/v/b.md', '/v/e.md', '/v/c.md', '/v/d.md']} active="/v/e.md" onMove={vi.fn()} takesDrag={() => true} onDropFromWindow={onDropFromWindow} {...props} />))
+    expect(yielding(el)).toEqual([])
+    expect(el.querySelector('.tabbar__room')).toBeNull()
+  })
+
+  it('6A4 (YAZ-4040): a drag with no width keeps the old room; a tab board card of another window lands quietly, so the tab on show does not shrink', () => {
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow: vi.fn(), ...props })
+    fire(tabAt(el, 1), 'dragover', 5, stripTab())
+    expect(el.querySelector<HTMLElement>('.tabbar__room')?.style.width).toBe('124px')
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    strip.getBoundingClientRect = () => ({ left: 0, right: 400, top: 0, bottom: 40, width: 400, height: 40 }) as DOMRect
+    act(() => void holdOverStrip(150, 20, undefined, 'Elsewhere'))
+    expect(el.querySelector('.tabbar__room')).not.toBeNull()
+    expect(yielding(el)).toEqual([])
+    act(() => void releaseOverStrip(150, 20))
+    expect(yielding(el)).toEqual([])
+  })
+
+  /**
+   * Where jsdom has no layout: a tab is 72 px, squeezed, unless it is drawn as the tab on show — its class, which lets it
+   * grow to its whole name (112 px), and its button's `aria-selected`, which sets the name heavier (+5 px). Its label's
+   * `scrollWidth` is cut short, as in a full strip, where the name's own box shrinks with the label (6A12).
+   */
+  const layShownWidths = () => {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (!(this instanceof HTMLElement) || this.dataset.tab === undefined) return { left: 0, width: 50 } as DOMRect
+      const shown = this.classList.contains('tabbar__tab--active')
+      const heavy = this.querySelector('.tabbar__btn')?.getAttribute('aria-selected') === 'true'
+      return { left: 0, width: shown ? 112 + (heavy ? 5 : 0) : 72 } as DOMRect
+    })
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, get: () => 60 })
+  }
+  const dragTypes = (el: HTMLElement, i: number) => {
+    const types: string[] = []
+    fire(tabAt(el, i), 'dragstart', 0, { types, effectAllowed: 'move', setData: vi.fn((type: string) => void types.push(type)) })
+    return types
+  }
+
+  it('6A4 (YAZ-4040): a strip tab\'s drag carries its width as the tab on show — its whole name, not the width a full strip squeezes it to', () => {
+    layShownWidths()
+    try {
+      const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+      expect(dragTypes(el, 2)).toContain('application/x-yaseen-width-117')
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth
+    }
+  })
+
+  it('6A5 (YAZ-4079): a close with ✕ or a middle click keeps each width, and the next tab takes the closed one\'s, so its ✕ comes under the mouse — until the mouse leaves the strip, or the strip changes', () => {
+    const widths: Record<string, number> = { '/v/a.md': 100, '/v/b.md': 110, '/v/c.md': 120, '/v/d.md': 130 }
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return { left: 0, width: this instanceof HTMLElement ? (widths[this.dataset.tab ?? ''] ?? 0) : 0 } as DOMRect
+    })
+    let tabs = TABS
+    const onClose = vi.fn((id: string) => {
+      tabs = tabs.filter((t) => t !== id)
+      act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={tabs} active="/v/a.md" onMove={vi.fn()} {...props} onClose={onClose} />))
+    })
+    const el = mount({ tabs, active: '/v/a.md', onMove: vi.fn(), ...props, onClose })
+    const held = () => [...el.querySelectorAll<HTMLElement>('[data-tab]')].map((tab) => `${tab.dataset.tab} ${tab.style.minWidth}/${tab.style.maxWidth}`)
+    act(() => el.querySelector<HTMLButtonElement>('[data-tab="/v/b.md"] .tabbar__close')!.click())
+    expect(onClose).toHaveBeenCalledWith('/v/b.md')
+    expect(held()).toEqual(['/v/a.md 100px/100px', '/v/c.md 110px/110px', '/v/d.md 130px/130px'])
+    // The mouse on the strip: the widths stay. Off it: they go.
+    act(() => void el.querySelector('[data-tab]')!.dispatchEvent(new MouseEvent('mousemove', { bubbles: true })))
+    expect(held()[1]).toBe('/v/c.md 110px/110px')
+    act(() => void document.body.dispatchEvent(new MouseEvent('mousemove', { bubbles: true })))
+    expect(held()).toEqual(['/v/a.md /', '/v/c.md /', '/v/d.md /'])
+    // A middle click holds the same way; a tab that opens ends it.
+    act(() => void el.querySelector('[data-tab="/v/c.md"] .tabbar__btn')!.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 1 })))
+    expect(held()).toEqual(['/v/a.md 100px/100px', '/v/d.md 120px/120px'])
+    act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={[...tabs, '/v/e.md']} active="/v/a.md" onMove={vi.fn()} {...props} onClose={onClose} />))
+    expect(held()).toEqual(['/v/a.md /', '/v/d.md /', '/v/e.md /'])
+  })
+
+  it('6A6 (YAZ-4080): a tab of another window over the strip raises this window, once for each drag; this strip\'s own drag raises nothing', async () => {
+    const onRaise = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: (data: DataTransfer) => data.types.includes('application/x-yaseen-from-w2.0'), onDropFromWindow: vi.fn(), onRaise, ...props })
+    fire(tabAt(el, 1), 'dragover', 5, stripTab(130))
+    fire(tabAt(el, 2), 'dragover', 5, stripTab(130))
+    expect(onRaise).toHaveBeenCalledTimes(1)
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    fire(tabAt(el, 1), 'dragover', 5, stripTab(130))
+    expect(onRaise).toHaveBeenCalledTimes(2)
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    fire(tabAt(el, 0), 'dragstart')
+    await nextFrame()
+    fire(tabAt(el, 2), 'dragover', 5)
+    expect(onRaise).toHaveBeenCalledTimes(2)
+  })
+
+  it('6A7 (YAZ-4083): at the end of a short strip the gap stays open while the pointer goes from the tail onto the strip that the gap widened, and the window comes to the front once', () => {
+    const onRaise = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow: vi.fn(), onRaise, ...props })
+    const tail = el.querySelector<HTMLElement>('.tabbar-tail')!
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    const at = (type: string, relatedTarget?: Element) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 430, clientY: 20, relatedTarget })
+      Object.defineProperty(event, 'dataTransfer', { value: stripTab(130) })
+      return event
+    }
+    act(() => void tail.dispatchEvent(at('dragover')))
+    expect(el.querySelector('.tabbar__room')).not.toBeNull()
+    for (let i = 0; i < 3; i++) {
+      // Chromium leaves one and goes over the other in one go, with no render between the two.
+      act(() => {
+        tail.dispatchEvent(at('dragleave', strip))
+        strip.dispatchEvent(at('dragover'))
+      })
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+      act(() => {
+        strip.dispatchEvent(at('dragleave', tail))
+        tail.dispatchEvent(at('dragover'))
+      })
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+    }
+    expect(onRaise).toHaveBeenCalledTimes(1)
+  })
+
+  it('6A8 (YAZ-4084): a drag that reaches the row where no slot opens (the blank tab) raises once, and the NEXT drag raises again', () => {
+    const onRaise = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', blank: true, onMove: vi.fn(), takesDrag: () => true, onDropFromWindow: vi.fn(), onRaise, ...props })
+    const blankTab = el.querySelector<HTMLElement>('.tabbar__tab--in')!
+    fire(blankTab, 'dragover', 5, stripTab(130))
+    expect(onRaise).toHaveBeenCalledTimes(1)
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    // A new drag, over a tab this time.
+    fire(tabAt(el, 1), 'dragover', 5, stripTab(130))
+    expect(onRaise).toHaveBeenCalledTimes(2)
+  })
+
+  it('6A9 (YAZ-4085): a tab that is not on show carries the width of its name in the look of the tab on show, which it lands as; its own look is back at once', () => {
+    layShownWidths()
+    try {
+      const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+      expect(dragTypes(el, 2)).toContain('application/x-yaseen-width-117') // 112 + the heavier name
+      expect(tabAt(el, 2).querySelector('.tabbar__btn')?.getAttribute('aria-selected')).toBe('false')
+      expect(tabAt(el, 2).classList.contains('tabbar__tab--active')).toBe(false)
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth
+    }
+  })
+
+  it('6A12 (YAZ-4088): a tab from a full strip carries its whole width as the tab on show, not its cut name; a width a close holds (6A5) does not count', () => {
+    layShownWidths()
+    try {
+      const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+      tabAt(el, 1).style.minWidth = '72px'
+      tabAt(el, 1).style.maxWidth = '72px'
+      expect(dragTypes(el, 1)).toContain('application/x-yaseen-width-117')
+      expect([tabAt(el, 1).style.minWidth, tabAt(el, 1).style.maxWidth]).toEqual(['72px', '72px'])
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth
+    }
+  })
+
+  it('6A10 (YAZ-4086): at the end of a short strip the gap holds through Chromium\'s own order — on a change of element a dragenter on the new one and a dragleave on the old one, with no dragover — and each element takes the drop', () => {
+    const onRaise = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow: vi.fn(), onRaise, ...props })
+    const tail = el.querySelector<HTMLElement>('.tabbar-tail')!
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    const at = (type: string, relatedTarget?: Element) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 430, clientY: 20, relatedTarget })
+      Object.defineProperty(event, 'dataTransfer', { value: stripTab(130) })
+      return event
+    }
+    act(() => void tail.dispatchEvent(at('dragover')))
+    expect(el.querySelector('.tabbar__room')).not.toBeNull()
+    for (let i = 0; i < 3; i++) {
+      // The gap widened the strip under the pointer: the strip is entered, the tail left, in one update.
+      let enter = at('dragenter', tail)
+      act(() => {
+        strip.dispatchEvent(enter)
+        tail.dispatchEvent(at('dragleave', strip))
+      })
+      expect(enter.defaultPrevented).toBe(true) // the strip takes the drop
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+      act(() => void strip.dispatchEvent(at('dragover')))
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+      enter = at('dragenter', strip)
+      act(() => {
+        tail.dispatchEvent(enter)
+        strip.dispatchEvent(at('dragleave', tail))
+      })
+      expect(enter.defaultPrevented).toBe(true)
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+      act(() => void tail.dispatchEvent(at('dragover')))
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+    }
+    expect(onRaise).toHaveBeenCalledTimes(1)
+  })
+
+  it('6A11 (YAZ-4087): at the end of a short strip with the blank tab, the blank tab that slides into the gap under the pointer keeps the gap open and takes the drop', () => {
+    const onDropFromWindow = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', blank: true, onMove: vi.fn(), takesDrag: () => true, onDropFromWindow, ...props })
+    const tail = el.querySelector<HTMLElement>('.tabbar-tail')!
+    const blankLabel = [...el.querySelectorAll<HTMLElement>('.tabbar__label')].find((l) => l.textContent === 'New tab')!
+    const at = (type: string, relatedTarget?: Element) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 430, clientY: 20, relatedTarget })
+      Object.defineProperty(event, 'dataTransfer', { value: stripTab(130) })
+      return event
+    }
+    act(() => void tail.dispatchEvent(at('dragover')))
+    expect(el.querySelector('.tabbar__room')).not.toBeNull()
+    // The gap pushed the blank tab right, under the pointer: the blank tab is entered, the tail left, in one update.
+    const enter = at('dragenter', tail)
+    act(() => {
+      blankLabel.dispatchEvent(enter)
+      tail.dispatchEvent(at('dragleave', blankLabel))
+    })
+    expect(enter.defaultPrevented).toBe(true) // the blank tab takes the drop
+    act(() => void blankLabel.dispatchEvent(at('dragover')))
+    expect(el.querySelector('.tabbar__room')).not.toBeNull() // the gap stays open
+    act(() => void blankLabel.dispatchEvent(at('drop')))
+    expect(onDropFromWindow).toHaveBeenCalledWith('w2', { path: '/v/e.md', copy: 0 }, TABS.length) // it lands at the end
   })
 })
 

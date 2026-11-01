@@ -92,11 +92,19 @@
   cursor: default;
 }
 
+/* During a drag (YAZ-3808 D5) a greyed ‹ or › lets the drag through to the row, which scrolls the strip and takes the
+   drop: a disabled button hears no drag events of its own. */
+.tabbar-row--drag .tabbar-nav__btn:disabled {
+  pointer-events: none;
+}
+
 /* Overflow (I3, YAZ-2689 D2): the tabs that are not the active one shrink to their floor first, then the strip scrolls; TabBar scrolls the
    ACTIVE tab into view. The scrolling itself — no scrollbar, an edge fade — is `.scroll-strip`
    (app.css). The tablist is as wide as its tabs, so the "+" stands right after the last one and
    stays on show when the strip scrolls (S87); the tail takes the rest of the row. */
 .tabbar {
+  /* The tabs' offset parent: a drag reads its slot from where the layout puts each tab (YAZ-3808 6A). */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -170,20 +178,75 @@
   font-style: italic;
 }
 
-/* Drag-to-reorder (I3; YAZ-2656 S89, revised in the YAZ-3637 demo): the grabbed tab dims, and a line marks the drop
-   slot — on the left of the tab the drop would land before, on the right of the LAST tab for the end slot. No tab moves
-   while the drag goes on: a tab that slid away under the pointer at each new slot was hard to follow (Yaseen). The line
-   is a shadow in the 4px between two tabs, so it changes no box and the slot under the pointer stays put. */
+/* Drag-to-reorder (I3; YAZ-2656 S89). THE LIVE GAP (YAZ-3808 6A), the way Chrome does it: the grabbed tab leaves the
+   strip, and the tabs slide aside to keep an empty place where the drop would land. TabBar sets each tab's `transform`;
+   only the tabs that change side move, one step at a time, and the drop moves nothing, since the strip already shows
+   the new order. The slot is read from the layout, which a transform does not change, so the place under the pointer
+   stays put. It replaces the line of the YAZ-3637 demo, which no tab moved for, on Yaseen's ask in the YAZ-3808 demo.
+   The time is TabBar's `PART_MS`. `--gap-before` and `--gap-after` name the tab the gap opens next to; they draw nothing. */
+.tabbar--parting .tabbar__tab {
+  transition:
+    transform var(--tab-part-ms, 150ms) cubic-bezier(0.2, 0.8, 0.2, 1),
+    flex-shrink var(--tab-part-ms, 150ms) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 .tabbar__tab--dragging {
-  opacity: 0.5;
+  opacity: 0;
 }
 
-.tabbar__tab--gap-before {
-  box-shadow: -3px 0 0 0 var(--accent);
+/* Room at the strip's end for a tab from elsewhere — another window, the right panel, the tab board — that the tabs
+   after the gap slide into. */
+.tabbar__room {
+  flex: none;
+  align-self: stretch;
+  pointer-events: none;
+  animation: tab-room var(--tab-part-ms, 150ms) cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.tabbar__tab--gap-after {
-  box-shadow: 3px 0 0 0 var(--accent);
+@keyframes tab-room {
+  from {
+    width: 0;
+  }
+}
+
+/* No hover look while the tabs part, nor after a drag until the mouse moves (YAZ-3808 6F): the page hears no mouse
+   move during a drag, so its hover stays where the drag began — on the tab that slid into that place, which lit up
+   with its ✕ when the drag ended (Yaseen, in the demo). The tab on show and the board's lit tab keep their own look. */
+.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):not(.tabbar__tab--lit):hover::before {
+  background: var(--tab-fill);
+}
+
+.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):hover .tabbar__close,
+.tabbar--hoverless .tabbar__close:hover {
+  visibility: hidden;
+}
+
+/* A tab board card's tab where it will land (YAZ-3808 6D): the board clips the card at its edge, under the strip. */
+.tabbar__tab--landing {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  margin: auto 0;
+  box-sizing: border-box;
+  min-width: 0;
+  opacity: 0.75;
+  pointer-events: none;
+  transition: left var(--tab-part-ms, 150ms) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.tabbar__tab--landing::before {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabbar--parting .tabbar__tab,
+  .tabbar__tab--landing {
+    transition: none;
+  }
+
+  .tabbar__room {
+    animation: none;
+  }
 }
 
 .tabbar--drop-empty {
@@ -302,6 +365,12 @@
 /* The active tab never shrinks (YAZ-2689 D3): its name reads whole however many tabs are open. */
 .tabbar__tab--active {
   flex-shrink: 0;
+}
+
+/* A tab from elsewhere over the strip opens as the tab on show (YAZ-3808 6A4): the tab on show now shrinks as the others
+   do while the tabs part, so the drop moves nothing. */
+.tabbar__tab--active.tabbar__tab--yield {
+  flex-shrink: 1;
 }
 
 /* One layer per VISITED tab, all mounted, only the active one visible (GRO-2234 rule 6).
@@ -772,6 +841,22 @@
   cursor: grabbing;
 }
 
+/* The card a pointer carries (YAZ-3808 6E): a copy in a layer above the whole window, so the board's own clip, under
+   its filter and the tab strip, never cuts it. TabOverview places it and moves it; it hears no pointer. On the strip
+   it goes, and only its tab in the gap shows (6D), on Yaseen's ask in the demo. */
+.taboverview__page.taboverview__carry {
+  position: fixed;
+  z-index: 1000;
+  margin: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.taboverview__page.taboverview__carry[data-over-strip] {
+  opacity: 0;
+}
+
 /* A drop another window refused (D13): the card slides back to its place. */
 .taboverview__page[data-sliding] {
   z-index: 3;
@@ -836,10 +921,14 @@
   -webkit-line-clamp: 1;
 }
 
-/* Zoomed far out (camera's `data-far`, zoom < 0.6): the title alone, which still reads. */
+/* Zoomed far out (camera's `data-far`, zoom < 0.6): the title alone, which still reads. The carried copy of a card
+   (YAZ-3808 6E) stands outside the board, so it carries the mark itself. */
 .taboverview[data-far] .taboverview__lines,
 .taboverview[data-far] .taboverview__pagename,
-.taboverview[data-far] .taboverview__folder {
+.taboverview[data-far] .taboverview__folder,
+.taboverview__carry[data-far] .taboverview__lines,
+.taboverview__carry[data-far] .taboverview__pagename,
+.taboverview__carry[data-far] .taboverview__folder {
   display: none;
 }
 

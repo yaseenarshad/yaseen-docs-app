@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, Profiler } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { applyTabCanvasPatch, type FileHead, type TabCanvasState, type WindowEntry } from '@shared/types'
+import { MAX_WINDOW_ROOTS, applyTabCanvasPatch, type FileHead, type TabCanvasState, type WindowEntry } from '@shared/types'
 import { storage } from '../lib/storage'
 import { BOARD, withoutTitle } from './board'
 import { TabOverview as IdTabOverview, SETTLE_MS, TOOLBAR_INSET, ZOOM_MS, type TabOverviewProps as IdTabOverviewProps } from './TabOverview'
@@ -30,6 +30,8 @@ vi.mock('../api', async (importOriginal) => ({
 // The sidebar's preview panels (D18: one preview look): stand-ins that say which file they show.
 vi.mock('../sidebar/NotePreview', () => ({ default: ({ name }: { name: string }) => <div className="note-preview" aria-label={`Preview of ${name}`} /> }))
 vi.mock('../sidebar/BoardPreview', () => ({ default: ({ node }: { node: { path: string } }) => <div className="board-preview" aria-label={`Preview of ${node.path}`} /> }))
+import { setStripTarget } from './stripDrop'
+import tabsCss from './tabs.css?inline'
 import { api } from '../api'
 const readHeads = vi.mocked(api.readHeads)
 
@@ -80,7 +82,7 @@ const HEADS: Record<string, string> = {
 }
 
 async function mount(over: Partial<TabOverviewProps> = {}) {
-  const props: TabOverviewProps = { roots: ['/v', '/w'], vaultNames: ['Notes', 'Work'], tabs: TABS, active: '/v/a.md', preview: '/w/x.md', titles: new Map(), windowId: 'me', onOpen: vi.fn(), onCloseTabs: vi.fn(), onDismiss: vi.fn(), onMoveToRight: vi.fn(), onShowInSidebar: vi.fn(), onDropToWindow: vi.fn(), onMoveTab: vi.fn(), onMoveToNewWindowQuietly: vi.fn(), ...over }
+  const props: TabOverviewProps = { roots: ['/v', '/w'], vaultNames: ['Notes', 'Work'], tabs: TABS, active: '/v/a.md', preview: '/w/x.md', titles: new Map(), windowId: 'me', onOpen: vi.fn(), onCloseTabs: vi.fn(), onDismiss: vi.fn(), onMoveToRight: vi.fn(), onShowInSidebar: vi.fn(), onDropToWindow: vi.fn(), onMoveTab: vi.fn(), onMoveToSlot: vi.fn(), onTakeAt: vi.fn(), onMoveToNewWindowQuietly: vi.fn(), ...over }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -763,7 +765,7 @@ describe('TabOverview', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/v/b.md' }, { id: 't3', path: '/v/a.md' }]
-    await act(async () => root?.render(<IdTabOverview roots={['/v']} vaultNames={['Notes']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={vi.fn()} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
+    await act(async () => root?.render(<IdTabOverview roots={['/v']} vaultNames={['Notes']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={vi.fn()} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToSlot={vi.fn()} onTakeAt={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
     const el = container
     const face = (id: string) => [page(el, id)?.querySelector('.taboverview__title')?.textContent, page(el, id)?.querySelector('.taboverview__pagename')?.textContent ?? null, page(el, id)?.querySelector('.taboverview__copy')?.textContent ?? null]
     expect(face('t1')).toEqual(['Outline', 'Page: Plan', '1 of 2'])
@@ -867,6 +869,34 @@ describe('TabOverview', () => {
     to = inside('me')
     dragTo(page(el, 'w2\n/w/y.md\n0'), to.x, to.y)
     expect(onMoveTab).toHaveBeenCalledExactlyOnceWith('w2', 'me', { path: '/w/y.md', copy: 0 })
+  })
+
+  it('YAZ-3808 6B: a card let go in a frame without its vault asks to add it — to that window, or to this one by its own question; a window that could not take the vault says why', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
+    others = [other('w2', ['/w', '/z'], [{ path: '/w/y.md', active: true }, { path: '/z/q.md' }])]
+    const onAskVault = vi.fn()
+    const onTakeAt = vi.fn()
+    const onNotice = vi.fn()
+    const { el } = await mount({ onAskVault, onTakeAt, onNotice })
+    const inside = (win: string) => ({ x: BOARD.padX + Number.parseFloat(frame(el, win).style.left) + 30, y: BOARD.padTop + Number.parseFloat(frame(el, win).style.top) + 30 })
+    // a.md is of /v, which w2 does not show: the question, for w2, and the card slides back.
+    let to = inside('w2')
+    const a = page(el, '/v/a.md')!
+    dragTo(a, to.x, to.y)
+    expect(onAskVault).toHaveBeenCalledExactlyOnceWith({ from: 'me', ref: { path: '/v/a.md', copy: 0 }, to: 'w2', vault: '/v', page: 'a', window: expect.any(String) })
+    expect(onNotice).not.toHaveBeenCalled()
+    expect(a.dataset.sliding).toBe('')
+    // w2's card in THIS window's frame, which does not show /z: this window's own question (App's `takeFromWindow`), no slot.
+    to = inside('me')
+    dragTo(page(el, 'w2\n/z/q.md\n0')!, to.x, to.y)
+    expect(onTakeAt).toHaveBeenCalledExactlyOnceWith('w2', { path: '/z/q.md', copy: 0 })
+    // A w2 that holds as many vaults as a window can: no question, the board says why.
+    others = [other('w2', Array.from({ length: MAX_WINDOW_ROOTS }, (_, i) => `/w${i}`), [{ path: '/w0/y.md', active: true }])]
+    act(wake)
+    to = inside('w2')
+    dragTo(page(el, '/v/a.md')!, to.x, to.y)
+    expect(onAskVault).toHaveBeenCalledOnce()
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't move here — that window doesn't have this tab's vault. A window holds ${MAX_WINDOW_ROOTS} vaults at most.`)
   })
 
   it('YAZ-3343 S25, D16: a WINDOW FRAME drags as one — frame, groups and cards follow by transform with no render; the drop stores every card of it moved by the same delta, in ONE write and ONE render; a press with no move moves nothing', async () => {
@@ -1692,7 +1722,7 @@ describe('TabOverview display name (YAZ-2949 D4, D5)', () => {
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/w/x.md' }]
     const onOpen = vi.fn()
-    await act(async () => root?.render(<IdTabOverview roots={['/v', '/w']} vaultNames={['Notes', 'Work']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={onOpen} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onSetName={onSetName} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
+    await act(async () => root?.render(<IdTabOverview roots={['/v', '/w']} vaultNames={['Notes', 'Work']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={onOpen} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onSetName={onSetName} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToSlot={vi.fn()} onTakeAt={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
     const el = container
     const card = page(el, 't1')!
     expect(card.querySelector('.taboverview__title')?.textContent).toBe('Outline')
@@ -1738,6 +1768,105 @@ describe('TabOverview display name (YAZ-2949 D4, D5)', () => {
     expect(document.activeElement).toBe(filter(el))
     key(el, 'Escape')
     expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('YAZ-3808 D1: a card let go on the tab strip moves its tab there', () => {
+  /** A stand-in for the window's strip: above the board (y < 0) is on it, slot 1 at x < 100, else the end slot 6. */
+  const slotAt = (x?: number, y?: number) => (x === undefined || y === undefined || y >= 0 ? null : x < 100 ? 1 : 6)
+  const strip = { hold: vi.fn((x: number, y: number) => slotAt(x, y) !== null), release: vi.fn(slotAt) }
+  beforeEach(() => setStripTarget(strip))
+  afterEach(() => setStripTarget(null))
+
+  it('this window\'s card: the board holds it over the strip on each move, the tab moves to the slot, and the board stores no place for it', async () => {
+    const onMoveToSlot = vi.fn()
+    const { el } = await mount({ onMoveToSlot })
+    const card = page(el, '/v/a.md')!
+    pointer(card, 'pointerdown', 0, 0)
+    pointer(window, 'pointermove', 10, 10)
+    // The pointer carries a copy of the card in a layer above the whole window (6E): the board's clip never cuts it.
+    // The card goes on under it, hidden.
+    const carry = () => document.body.querySelector<HTMLElement>(':scope > .taboverview__carry')
+    expect(carry()?.textContent).toBe(card.textContent)
+    expect(carry()?.hasAttribute('data-tab')).toBe(false)
+    expect(card.style.visibility).toBe('hidden')
+    pointer(window, 'pointermove', 50, -20)
+    expect(carry()?.style.transform).toBe('translate(50px, -20px) scale(1)')
+    // Its own tab: no gap either side of it. Its name, for its tab in the gap (6D); over the strip only that tab shows,
+    // and the carried card goes.
+    expect(strip.hold).toHaveBeenLastCalledWith(50, -20, '/v/a.md', 'a')
+    expect(carry()?.hasAttribute('data-over-strip')).toBe(true)
+    pointer(window, 'pointermove', 50, 20)
+    expect(carry()?.hasAttribute('data-over-strip')).toBe(false)
+    pointer(window, 'pointermove', 50, -20)
+    pointer(window, 'pointerup', 50, -20)
+    expect(carry()).toBeNull()
+    expect(card.style.visibility).toBe('')
+    expect(strip.release).toHaveBeenLastCalledWith(50, -20)
+    expect(onMoveToSlot).toHaveBeenCalledExactlyOnceWith('/v/a.md', 1)
+    expect(storage.setTabCanvas).not.toHaveBeenCalled()
+    expect(card.dataset.sliding).toBe('') // it slides back to its place
+  })
+
+  it('6E1 (YAZ-4027): zoomed far out, the carried copy shows what the card shows — the title alone', async () => {
+    const { el } = await mount()
+    el.querySelector<HTMLElement>('.taboverview')!.setAttribute('data-far', '')
+    const card = page(el, '/v/a.md')!
+    pointer(card, 'pointerdown', 0, 0)
+    pointer(window, 'pointermove', 10, 10)
+    const carry = document.body.querySelector<HTMLElement>(':scope > .taboverview__carry')!
+    expect(carry.hasAttribute('data-far')).toBe(true)
+    expect(tabsCss).toMatch(/\.taboverview__carry\[data-far\] \.taboverview__lines,/)
+    pointer(window, 'pointerup', 10, 10)
+  })
+
+  it('another window\'s card: its tab joins this window at the slot, as a drop from that window\'s strip does, and leaves its frame in the same write', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
+    others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }, { path: '/w/z.md' }])]
+    const onTakeAt = vi.fn()
+    const onMoveTab = vi.fn()
+    const { el } = await mount({ onTakeAt, onMoveTab })
+    pointer(page(el, 'w2\n/w/y.md\n0'), 'pointerdown', 0, 0)
+    pointer(window, 'pointermove', 10, 10)
+    pointer(window, 'pointermove', 300, -20)
+    pointer(window, 'pointerup', 300, -20)
+    expect(onTakeAt).toHaveBeenCalledExactlyOnceWith('w2', { path: '/w/y.md', copy: 0 }, 6)
+    expect(onMoveTab).not.toHaveBeenCalled()
+    // ONE write: w2's other card keeps its place, and the tab arrives in this window's frame.
+    expect(storage.setTabCanvas).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(storage.setTabCanvas).mock.calls[0][0].set?.at(-1)).toMatchObject({ win: 'me', path: '/w/y.md', by: 'window' })
+  })
+
+  it('another window\'s card of a vault this window does not show: it only asks (the add-vault question), slides back, and the board stores nothing', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
+    others = [other('w3', ['/z'], [{ path: '/z/far.md', active: true }])]
+    const onTakeAt = vi.fn()
+    const { el } = await mount({ onTakeAt })
+    const card = page(el, 'w3\n/z/far.md\n0')!
+    pointer(card, 'pointerdown', 0, 0)
+    pointer(window, 'pointermove', 10, 10)
+    pointer(window, 'pointermove', 300, -20)
+    pointer(window, 'pointerup', 300, -20)
+    expect(onTakeAt).toHaveBeenCalledExactlyOnceWith('w3', { path: '/z/far.md', copy: 0 }, 6)
+    expect(storage.setTabCanvas).not.toHaveBeenCalled()
+    expect(card.dataset.sliding).toBe('')
+  })
+
+  it('a hold that ends any other way puts the strip\'s line out: a cancel, and the board closing under the card', async () => {
+    const { el } = await mount()
+    pointer(page(el, '/v/a.md'), 'pointerdown', 0, 0)
+    pointer(window, 'pointermove', 10, 10)
+    pointer(window, 'pointermove', 50, -20)
+    strip.release.mockClear()
+    pointer(window, 'pointercancel', 50, -20)
+    expect(strip.release).toHaveBeenCalledWith(undefined, undefined)
+    pointer(page(el, '/v/a.md'), 'pointerdown', 0, 0)
+    pointer(window, 'pointermove', 10, 10)
+    pointer(window, 'pointermove', 50, -20)
+    strip.release.mockClear()
+    act(() => root?.unmount())
+    root = null
+    expect(strip.release).toHaveBeenCalledWith(undefined, undefined)
   })
 })
 

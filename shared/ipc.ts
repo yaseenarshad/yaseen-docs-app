@@ -222,8 +222,9 @@ export const CONTRACT = {
      * A card dropped in another window's frame (YAZ-3343 D13): window `from` sends its tab `ref` to the window `to`, as "Move to ▸" does.
      * Main checks that both are live and that `to` shows a vault of the page; `from` may be the caller.
      * A tab dropped on the caller's strip (YAZ-3637 D4) names the slot `at` it lands in; absent = the end, quietly.
+     * A tab board card let go on the caller's strip (YAZ-3808 6H) names its slot and `background`: it lands there, quietly.
      */
-    moveTab: invoke<[from: string, to: string, ref: TabRef, at?: number], void>('window:move-tab', 4),
+    moveTab: invoke<[from: string, to: string, ref: TabRef, at?: number, background?: boolean], void>('window:move-tab', 5),
     /**
      * A tab of the strip let go where no surface took it (YAZ-3637 D1, D3, D5): `point` is where, on the screen. Main
      * answers `none` when the point is on an app window (that window's drop, or nothing); else a new window opens
@@ -250,6 +251,17 @@ export const CONTRACT = {
     setRoots: invoke<[id: string, roots: readonly string[]], void>('window:set-roots', 2),
     /** "Move to new window" on ANOTHER window's card of the tab board (YAZ-3343 D37): window `from` moves its tab `ref` to a new window itself, quietly (its text saved first). */
     popOutTab: invoke<[from: string, ref: TabRef], void>('window:pop-out-tab', 2),
+    /**
+     * A tab board card dropped in the frame of window `to`, which does not show the card's vault (YAZ-3808 6B), after
+     * the user said Add: window `to` adds `vault` itself, by its own rules, then takes the tab `ref` of window `from`,
+     * quietly, as a board move does. Main checks both windows and pushes `link:add-vault-and-take`.
+     */
+    addVaultAndTake: invoke<[to: string, vault: string, from: string, ref: TabRef], void>('window:add-vault-and-take', 4),
+    /**
+     * A tab of another window over the caller's tab strip (YAZ-3808 6A6): the caller comes to the front, with no focus,
+     * so the gap opens on a window that shows. The focus comes with the tab, at the drop.
+     */
+    raise: invoke<[], void>('window:raise', 0),
     /** A frame's "Show window" on the tab board (YAZ-3343): a window the board made, still hidden, shows and takes the focus. */
     showWindow: invoke<[id: string], void>('window:show', 1),
     /** A card menu's tab action on ANOTHER window's card (YAZ-3343): window `to` runs `action` on its tab `ref` itself. */
@@ -401,11 +413,13 @@ export const CONTRACT = {
     /** Another window's tab board closed tabs of this window (YAZ-3343 D3, D10). */
     onCloseTabs: push<TabRef[]>('link:close-tabs'),
     /** Another window's tab board moved this window's tab `ref` to the window `to` (YAZ-3343 D13): save it, send it with `window:move-to`, close it here. With `at` (YAZ-3637 D4) it lands at that slot of `to`'s strip, loud. */
-    onSendTab: push<{ to: string; ref: TabRef; at?: number }>('link:send-tab'),
+    onSendTab: push<{ to: string; ref: TabRef; at?: number; background?: true }>('link:send-tab'),
     /** A tab board's vault chip picked this EMPTY window's vaults (YAZ-3343): show them, if it still has no tab. */
     onSetRoots: push<string[]>('link:set-roots'),
     /** A tab board of another window asked this one to move its tab `ref` to a new window, quietly (YAZ-3343): save it, pop it out behind. */
     onPopOutTab: push<TabRef>('link:pop-out-tab'),
+    /** A tab board asked this window to add `vault`, then take the tab `ref` of window `from` (YAZ-3808 6B). */
+    onAddVaultAndTake: push<{ vault: string; from: string; ref: TabRef }>('link:add-vault-and-take'),
     /** Another window's board highlights this window's tab `ref` (YAZ-3343): light it in the strip; `null` puts it out. */
     onHighlightTab: push<TabRef | null>('link:highlight-tab'),
     /** Another window's board asks a tab action of this window's tab `ref` (YAZ-3343): run it here. */

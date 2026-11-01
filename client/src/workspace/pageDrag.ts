@@ -23,10 +23,23 @@ export interface PageDrag {
  * The payload, and the FROM type that names the window and `root`, the index of the page's vault in the source
  * window's roots (YAZ-3637 D1). `root = -1` means no other window takes it (a right-panel page).
  */
-export function writePageDrag(data: DataTransfer, value: PageDrag, root: number): void {
+export function writePageDrag(data: DataTransfer, value: PageDrag, root: number, width?: number): void {
   data.setData(WORKSPACE_PAGE_MIME, JSON.stringify(value))
   data.setData(`${FROM_PREFIX}${value.from}.${root}`, '1')
+  if (width !== undefined && width > 0) data.setData(`${WIDTH_PREFIX}${Math.round(width)}`, '1')
   data.effectAllowed = 'move'
+}
+
+/**
+ * The third type of a strip tab's drag (YAZ-3808 6A4): `application/x-yaseen-width-<px>`, the tab's width as the tab on
+ * show. Another strip opens a gap that wide, so the tab lands in it with no move. In the name, for the reason FROM is.
+ */
+const WIDTH_PREFIX = 'application/x-yaseen-width-'
+
+export function dragWidth(data: DataTransfer): number | null {
+  const type = [...data.types].find((t) => t.startsWith(WIDTH_PREFIX))
+  const width = type === undefined ? NaN : Number(type.slice(WIDTH_PREFIX.length))
+  return Number.isFinite(width) && width > 0 ? width : null
 }
 
 const isCopy = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0

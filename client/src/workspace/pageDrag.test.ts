@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { WORKSPACE_PAGE_MIME, foreignDrag, readPageDrag, writePageDrag } from './pageDrag'
+import { WORKSPACE_PAGE_MIME, dragWidth, foreignDrag, readPageDrag, writePageDrag } from './pageDrag'
 
 const dataWith = (type: string, value: string): DataTransfer => ({
   types: [type],
@@ -50,5 +50,18 @@ describe('private workspace page drag payload', () => {
     const data = types(`application/x-yaseen-from-${W1}.0`)
     foreignDrag(data, W2)
     expect(data.getData).not.toHaveBeenCalled()
+  })
+
+  it('a strip tab\'s drag carries its width as the tab on show in a type name (YAZ-3808 6A4); dragWidth reads it, and no width or a bad one reads null', () => {
+    const types: string[] = []
+    const data = { types, setData: vi.fn((type: string) => void types.push(type)) } as unknown as DataTransfer
+    writePageDrag(data, { path: '/v/a.md', owner: 'main', from: W1, copy: 0 }, 0, 131.6)
+    expect(types).toContain('application/x-yaseen-width-132')
+    expect(dragWidth(data)).toBe(132)
+    const none = dataWith(WORKSPACE_PAGE_MIME, '')
+    writePageDrag(none, { path: '/v/a.md', owner: 'main', from: W1, copy: 0 }, 0, 0) // no layout: no width
+    expect(none.setData).toHaveBeenCalledTimes(2)
+    expect(dragWidth(none)).toBeNull()
+    expect(dragWidth({ types: ['application/x-yaseen-width-wide'] } as unknown as DataTransfer)).toBeNull()
   })
 })
