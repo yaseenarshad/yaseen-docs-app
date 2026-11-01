@@ -1746,4 +1746,67 @@ describe('TabBar: the live gap (YAZ-3808 6A)', () => {
     fire(tabAt(el, 2), 'dragover', 5)
     expect(onRaise).toHaveBeenCalledTimes(2)
   })
+
+  it('6A7 (YAZ-4083): at the end of a short strip the gap stays open while the pointer goes from the tail onto the strip that the gap widened, and the window comes to the front once', () => {
+    const onRaise = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow: vi.fn(), onRaise, ...props })
+    const tail = el.querySelector<HTMLElement>('.tabbar-tail')!
+    const strip = el.querySelector<HTMLElement>('.tabbar')!
+    const at = (type: string, relatedTarget?: Element) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 430, clientY: 20, relatedTarget })
+      Object.defineProperty(event, 'dataTransfer', { value: stripTab(130) })
+      return event
+    }
+    act(() => void tail.dispatchEvent(at('dragover')))
+    expect(el.querySelector('.tabbar__room')).not.toBeNull()
+    for (let i = 0; i < 3; i++) {
+      // Chromium leaves one and goes over the other in one go, with no render between the two.
+      act(() => {
+        tail.dispatchEvent(at('dragleave', strip))
+        strip.dispatchEvent(at('dragover'))
+      })
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+      act(() => {
+        strip.dispatchEvent(at('dragleave', tail))
+        tail.dispatchEvent(at('dragover'))
+      })
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+    }
+    expect(onRaise).toHaveBeenCalledTimes(1)
+  })
+
+  it('6A8 (YAZ-4084): a drag that reaches the row where no slot opens (the blank tab) raises once, and the NEXT drag raises again', () => {
+    const onRaise = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', blank: true, onMove: vi.fn(), takesDrag: () => true, onDropFromWindow: vi.fn(), onRaise, ...props })
+    const blankTab = el.querySelector<HTMLElement>('.tabbar__tab--in')!
+    fire(blankTab, 'dragover', 5, stripTab(130))
+    expect(onRaise).toHaveBeenCalledTimes(1)
+    act(() => void el.querySelector('.tabbar-row')!.dispatchEvent(new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body })))
+    // A new drag, over a tab this time.
+    fire(tabAt(el, 1), 'dragover', 5, stripTab(130))
+    expect(onRaise).toHaveBeenCalledTimes(2)
+  })
+
+  it('6A9 (YAZ-4085): a tab that is not on show carries the width of its name in the look of the tab on show, which it lands as', () => {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return { left: 0, width: this.classList.contains('tabbar__label') ? 50 : 72 } as DOMRect
+    })
+    // The name of the tab on show is set heavier (`aria-selected`), so it is wider: 95 px, not 90.
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get: function (this: HTMLElement) {
+        return this.classList.contains('tabbar__label') ? (this.closest('.tabbar__btn')?.getAttribute('aria-selected') === 'true' ? 95 : 90) : 0
+      },
+    })
+    try {
+      const types: string[] = []
+      const data = { types, effectAllowed: 'move', setData: vi.fn((type: string) => void types.push(type)) }
+      const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+      fire(tabAt(el, 2), 'dragstart', 0, data)
+      expect(types).toContain('application/x-yaseen-width-117')
+      expect(tabAt(el, 2).querySelector('.tabbar__btn')?.getAttribute('aria-selected')).toBe('false') // its look is its own again
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth
+    }
+  })
 })

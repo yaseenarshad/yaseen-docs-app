@@ -174,13 +174,25 @@ const tabStyle = (shift: number, width: number | undefined): CSSProperties | und
     ? undefined
     : { ...(shift === 0 ? {} : { transform: `translateX(${shift}px)` }), ...(width === undefined ? {} : { minWidth: width, maxWidth: width }) }
 
-/** A tab's width as the tab on show (YAZ-3808 6A4): as wide as its whole name, in its least and most. A full strip squeezes the others. */
+/**
+ * A tab's width as the tab on show (YAZ-3808 6A4): as wide as its whole name, in its least and most. A full strip
+ * squeezes the others. The name is measured in the look of the tab on show, which sets it heavier (6A9): the tab lands
+ * as that one. Its own look is back before anything paints.
+ */
 const shownWidth = (tab: HTMLElement): number | undefined => {
   const label = tab.querySelector<HTMLElement>('.tabbar__label')
-  if (label === null) return undefined
-  const style = getComputedStyle(tab)
-  const width = tab.getBoundingClientRect().width - label.getBoundingClientRect().width + label.scrollWidth
-  return Math.min(parseFloat(style.maxWidth) || Infinity, Math.max(parseFloat(style.minWidth) || 0, width))
+  const btn = tab.querySelector<HTMLElement>('.tabbar__btn')
+  if (label === null || btn === null) return undefined
+  const selected = btn.getAttribute('aria-selected')
+  btn.setAttribute('aria-selected', 'true')
+  try {
+    const style = getComputedStyle(tab)
+    const width = tab.getBoundingClientRect().width - label.getBoundingClientRect().width + label.scrollWidth
+    return Math.min(parseFloat(style.maxWidth) || Infinity, Math.max(parseFloat(style.minWidth) || 0, width))
+  } finally {
+    if (selected === null) btn.removeAttribute('aria-selected')
+    else btn.setAttribute('aria-selected', selected)
+  }
 }
 
 const Chevron = ({ d }: { d: string }) => (
@@ -303,7 +315,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
    */
   const [arrival, setArrival] = useState<{ at: number; count: number; room: number; yields: boolean } | null>(null)
   /** The room a tab of another window takes here (6A4), from its drag: as wide as it will be as the tab on show. */
-  const externalRoom = useRef<number | null>(null)
+  const externalRoom = useRef<{ width: number; room: number } | null>(null)
   /** This window came to the front for the drag over its strip now (6A6). */
   const raised = useRef(false)
   const waiting = arrival !== null && tabs.length === arrival.count ? arrival : null
@@ -494,10 +506,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         </div>
       ))
   useEffect(() => {
-    if (externalOver === null) {
-      raised.current = false
-      return
-    }
+    if (externalOver === null) return
     const clear = () => {
       setExternalOver(null)
       scroller.stop()
@@ -581,7 +590,9 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       if (externalPage(e) === null && !foreignTab(e)) return
       e.preventDefault()
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-      if (externalOver !== at) setExternalOver(at)
+      // Set each time, never from what the last render read (6A7): Chromium sends one place's `dragleave` and the next
+      // one's `dragover` with no render between, and a gap at the end widens the strip under the pointer.
+      setExternalOver(at)
     },
     onDrop: (e: DragEvent<HTMLElement>) => {
       if (direct && e.target !== e.currentTarget) return
@@ -611,7 +622,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // THE LIVE GAP (YAZ-3808 6A): the grabbed tab's room moves to the slot. The tabs between the two slide toward the
   // grab point by one room; a tab from elsewhere has no room in the strip, so the tabs after the slot slide into room
   // opened at the strip's end.
-  const room = drag?.room ?? (from !== -1 ? boardRoom.current : externalOver !== null ? (externalRoom.current ?? ARRIVAL_ROOM) : (waiting?.room ?? ARRIVAL_ROOM))
+  const room = drag?.room ?? (from !== -1 ? boardRoom.current : externalOver !== null ? (externalRoom.current?.room ?? ARRIVAL_ROOM) : (waiting?.room ?? ARRIVAL_ROOM))
   const shiftOf = (i: number): number => {
     if (gap === null) return 0
     if (from === -1) return i >= gap ? room : 0
@@ -680,7 +691,11 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         }
         const width = foreign && e.dataTransfer !== null ? dragWidth(e.dataTransfer) : null
         const strip = stripRef.current
-        externalRoom.current = width === null || strip === null ? null : width + (parseFloat(getComputedStyle(strip).columnGap) || 0)
+        if (width === null || strip === null) externalRoom.current = null
+        else if (externalRoom.current?.width !== width) externalRoom.current = { width, room: width + (parseFloat(getComputedStyle(strip).columnGap) || 0) }
+      }}
+      onDropCapture={() => {
+        raised.current = false
       }}
       onMouseMove={staleHover ? () => setStaleHover(false) : undefined}
       // A drag that leaves the row closes the gap (YAZ-3637 D4): another window's tab may go on to the page below, or
@@ -688,6 +703,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       // drop off the strip lands it in no slot.
       onDragLeave={(e) => {
         if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+        // The next drag over the row raises the window again (6A6), also after one that opened no gap (6A8).
+        raised.current = false
         setExternalOver(null)
         if (drag !== null && drag.over !== null) setDrag({ ...drag, over: null })
         scroller.stop()
@@ -804,7 +821,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                 if (externalPage(e) === null && !foreignTab(e)) return
                 e.preventDefault()
                 if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-                if (externalOver !== over) setExternalOver(over)
+                setExternalOver(over)
               }}
               onDrop={(e) => {
                 const at = pointSlot(e.clientX)
