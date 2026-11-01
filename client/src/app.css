@@ -695,14 +695,24 @@ button {
 
 /* ---------- welcome (C2, GRO-2164): shown while this window has no folder ---------- */
 
+/* The page's own scroller (YAZ-3978): `.editor` clips. The page's auto margin centres it while it fits. */
+.welcome-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .welcome {
   display: flex;
+  flex: none;
   flex-direction: column;
   align-items: center;
   gap: 20px;
   width: min(440px, 90%);
   margin: auto;
-  padding-bottom: 8vh;
+  padding: 24px 0 8vh;
 }
 
 .welcome__title {
@@ -719,13 +729,14 @@ button {
   flex: none;
 }
 
-/* A group's label (YAZ-3886): "Workspaces", then "Folders" below a line. Only when a workspace is saved. In line with the row text. */
+/* A group's label (YAZ-3886): "Workspaces", then "Folders" below a line. Only when a workspace is saved. Bold, in line with the row text. */
 .welcome__label {
   align-self: stretch;
-  margin-bottom: -14px;
-  padding: 0 16px;
-  font-size: 11px;
-  color: var(--fg-muted);
+  margin-bottom: -12px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
 }
 
 .welcome__label--rule {
@@ -736,7 +747,7 @@ button {
 /* Under "Folders", the empty note lines up with the label. */
 .welcome__label--rule + .welcome__empty {
   align-self: stretch;
-  padding: 0 16px;
+  padding: 0 14px;
 }
 
 .welcome__empty {
@@ -747,24 +758,22 @@ button {
 .welcome__recents {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   width: 100%;
   margin: 0;
-  /* Each group on a soft panel (YAZ-3886 P3), so its rows read as buttons. */
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--bg-side);
+  padding: 0;
   list-style: none;
 }
 
-/* One recent folder: name + last-opened on the first line, full path beneath. */
+/* One recent folder: name + last-opened on the first line, full path beneath. Its own soft tile, so it reads as a button (YAZ-3886 P3). */
 .welcome__recent {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 1px 12px;
   width: 100%;
-  padding: 8px 12px;
-  border-radius: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--bg-side);
   text-align: left;
 }
 
@@ -774,6 +783,26 @@ button {
 
 .welcome__recent:disabled {
   cursor: default;
+}
+
+/* A long path cuts from the LEFT (YAZ-3886 Q1): its end names the folder. A `bdi` inside keeps the slashes in order. */
+.welcome__recent-path--tail {
+  direction: rtl;
+  text-align: left;
+}
+
+/* A row whose name is an inline field (Q2): "Set display name", or a workspace's "Rename". */
+.welcome__rename {
+  min-width: 0;
+  padding: 0 4px;
+  margin: -1px 0 -1px -5px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  outline: none;
 }
 
 .welcome__recent-name {

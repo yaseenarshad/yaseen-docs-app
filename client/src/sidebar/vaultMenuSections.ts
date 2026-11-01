@@ -54,10 +54,13 @@ export interface VaultMenuHandlers {
   onOpenAlone: (path: string) => void
   /** "Open in Files window" (YAZ-3357 D5): main's `window.openFiles` on the vault. Absent: no such item. */
   onOpenFilesWindow?: (path: string) => void
-  /** Switch THIS window to the vault in place (D8, D11) — the one deliberate overwrite; every plain gesture opens beside. */
-  onOpenHere: (path: string) => void
-  /** Add the vault to THIS window, beside the vaults it shows (YAZ-2602 D2). */
-  onAddHere: (path: string) => void
+  /**
+   * Switch THIS window to the vault in place (D8, D11) — the one deliberate overwrite; every plain gesture opens beside.
+   * Absent on the Welcome screen (YAZ-3886 Q2): a click there does it, so there is no such item.
+   */
+  onOpenHere?: (path: string) => void
+  /** Add the vault to THIS window, beside the vaults it shows (YAZ-2602 D2). Absent on the Welcome screen: it has no vault to add to. */
+  onAddHere?: (path: string) => void
   /** Turn the vault's name into an inline field where it stands (YAZ-1974 D5). */
   onRename: (path: string) => void
   /** Drop the display name — back to the folder name (D5). */
@@ -107,12 +110,8 @@ export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, ren
     [
       ...(isAloneHere ? [] : [{ id: 'open-alone', label: 'Open by itself', hint: '⌥⏎', onSelect: () => h.onOpenAlone(path) }]),
       ...(h.onOpenFilesWindow === undefined ? [] : [{ id: 'open-files-window', label: 'Open in Files window', hint: keyHint('newFilesWindow', hotkeys), onSelect: () => h.onOpenFilesWindow?.(path) }]),
-      ...(isCurrent
-        ? []
-        : [
-            { id: 'add-here', label: 'Add to this window', onSelect: () => h.onAddHere(path) },
-            { id: 'open-here', label: 'Open in this window', hint: '⇧⏎', onSelect: () => h.onOpenHere(path) },
-          ]),
+      ...(isCurrent || h.onAddHere === undefined ? [] : [{ id: 'add-here', label: 'Add to this window', onSelect: () => h.onAddHere?.(path) }]),
+      ...(isCurrent || h.onOpenHere === undefined ? [] : [{ id: 'open-here', label: 'Open in this window', hint: '⇧⏎', onSelect: () => h.onOpenHere?.(path) }]),
     ],
     [
       { id: 'rename', label: 'Set display name', onSelect: () => h.onRename(path) },
