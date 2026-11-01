@@ -34,6 +34,14 @@ export const shouldShrinkGif = (
   byteLength > GIF_SHRINK_ABOVE_BYTES ||
   Math.max(size.width, size.height) > GIF_SHRINK_MAX_SIDE;
 
+/** YAZ-3944 D3: the GIF is over the limits, from its size and header alone. */
+export const gifNeedsShrink = async (file: File) => {
+  const size = readGifSize(
+    new Uint8Array(await blobToArrayBuffer(file.slice(0, 10))),
+  );
+  return !!size && shouldShrinkGif(file.size, size);
+};
+
 /**
  * YAZ-3944 D3: an added GIF over the limits comes back at 800 px on its long side, every frame and
  * delay kept, written again in a worker so the board does not freeze. A GIF under both limits keeps

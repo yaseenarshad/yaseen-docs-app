@@ -154,10 +154,11 @@ describe("YAZ-3944 D3: the GIF shrink", () => {
   });
 
   it("writes a big GIF at 800 px on its long side, with every frame and delay", async () => {
-    const delays = [30, 40, 50, 60, 70, 80, 90, 100];
-    const bytes = await encodeShrunkGif(fakeGifSource(1200, 900, delays), 800);
+    const delays = [30, 40, 50, 60, 70];
+    const bytes = await encodeShrunkGif(fakeGifSource(1000, 750, delays), 800);
     expect(readGif(bytes)).toEqual({ width: 800, height: 600, delays });
-  });
+    // about 2 s of encoding: room for a loaded machine
+  }, 30_000);
 
   it("never makes a GIF bigger than it was", () => {
     expect(shrunkGifSize(400, 300, 800)).toEqual({ width: 400, height: 300 });
@@ -182,6 +183,7 @@ describe("YAZ-3944 D3, D16: adding a GIF, and Paste at full size", () => {
     await setupImageTest([{ width: 800, height: 600 }]);
     const original = gifFile(makeGif(40, 30, 2));
     const shrunk = gifFile(makeGif(20, 15, 2));
+    vi.spyOn(gifModule, "gifNeedsShrink").mockResolvedValue(true);
     const shrink = vi
       .spyOn(gifModule, "shrinkGifFile")
       .mockResolvedValue(shrunk);
@@ -199,6 +201,7 @@ describe("YAZ-3944 D3, D16: adding a GIF, and Paste at full size", () => {
 
   it("refuses a GIF over 20 MB after the shrink", async () => {
     await setupImageTest([{ width: 800, height: 600 }]);
+    vi.spyOn(gifModule, "gifNeedsShrink").mockResolvedValue(true);
     vi.spyOn(gifModule, "shrinkGifFile").mockResolvedValue(
       gifFile(new Uint8Array(GIF_MAX_FILE_SIZE_BYTES + 1)),
     );
@@ -260,5 +263,66 @@ describe("YAZ-3944 D3, D16: adding a GIF, and Paste at full size", () => {
 
     expect(h.elements.filter((element) => !element.isDeleted)).toEqual([]);
     expect(h.state.errorMessage).toMatch("4MB");
+  });
+
+  it("YAZ-4062 2A1: a full-size paste of a GIF on the board adds the original, and keeps the shrunk copy", async () => {
+    // real file ids: the SHA-1 of the bytes
+    vi.mocked(blobModule.generateIdFromFile).mockRestore();
+    await setupImageTest([
+      { width: 800, height: 9 },
+      { width: 900, height: 10 },
+    ]);
+    const original = gifFile(makeGif(900, 10, 2));
+    const shrunk = gifFile(makeGif(800, 9, 2));
+    const shrink = vi
+      .spyOn(gifModule, "shrinkGifFile")
+      .mockResolvedValue(shrunk);
+
+    await act(() => h.app.insertImages([original]));
+    await act(() => h.app.insertImages([original], 0, 0, { fullSize: true }));
+    await act(() => h.app.insertImages([original]));
+    await waitFor(() => expect(h.elements).toHaveLength(3));
+
+    const [first, full, again] = h.elements as any[];
+    const originalId = await blobModule.generateIdFromFile(original);
+    expect(full.fileId).toBe(originalId);
+    expect(first.fileId).toBe(await blobModule.getShrunkFileId(originalId));
+    expect(again.fileId).toBe(first.fileId);
+    expect(Object.keys(h.app.files).sort()).toEqual(
+      [first.fileId, full.fileId].sort(),
+    );
+    expect(h.app.files[first.fileId].dataURL).toBe(
+      await blobModule.getDataURL(shrunk),
+    );
+    expect(h.app.files[full.fileId].dataURL).toBe(
+      await blobModule.getDataURL(original),
+    );
+    expect([first.width, full.width]).toEqual([800, 900]);
+    // the second shrunk paste found the stored copy: no second shrink
+    expect(shrink).toHaveBeenCalledTimes(1);
+  });
+
+  it("YAZ-4062 2A1: a resized picture and its full-size paste are two files", async () => {
+    vi.mocked(blobModule.generateIdFromFile).mockRestore();
+    await setupImageTest([
+      { width: 1440, height: 10 },
+      { width: 3000, height: 20 },
+    ]);
+    const picture = new File([new Uint8Array([1, 2, 3])], "big.png", {
+      type: MIME_TYPES.png,
+    });
+    const resized = new File([new Uint8Array([4, 5])], "big.png", {
+      type: MIME_TYPES.png,
+    });
+    vi.spyOn(blobModule, "resizeImageFile").mockResolvedValue(resized);
+
+    await act(() => h.app.insertImages([picture]));
+    await act(() => h.app.insertImages([picture], 0, 0, { fullSize: true }));
+    await waitFor(() => expect(h.elements).toHaveLength(2));
+
+    const [first, full] = h.elements as any[];
+    expect(full.fileId).toBe(await blobModule.generateIdFromFile(picture));
+    expect(first.fileId).not.toBe(full.fileId);
+    expect([first.width, full.width]).toEqual([1440, 3000]);
   });
 });

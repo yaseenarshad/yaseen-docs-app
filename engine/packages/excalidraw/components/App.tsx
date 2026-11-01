@@ -416,6 +416,7 @@ import {
 import {
   dataURLToString,
   generateIdFromFile,
+  getShrunkFileId,
   getDataURL,
   getDataURL_sync,
   ImageURLToFile,
@@ -427,7 +428,7 @@ import {
   resizeImageFile,
   SVGStringToFile,
 } from "../data/blob";
-import { shrinkGifFile } from "../gif/gifFile";
+import { gifNeedsShrink, shrinkGifFile } from "../gif/gifFile";
 
 import { fileOpen } from "../data/filesystem";
 import {
@@ -13679,48 +13680,64 @@ class App extends React.Component<AppProps, AppState> {
 
     // generate image id (by default the file digest) before any
     // resizing/compression takes place to keep it more portable
-    const fileId = await ((this.props.generateIdForFile?.(
+    const originalId = await ((this.props.generateIdForFile?.(
       imageFile,
     ) as Promise<FileId>) || generateIdFromFile(imageFile));
 
-    if (!fileId) {
+    if (!originalId) {
       console.warn(
         "Couldn't generate file id or the supplied `generateIdForFile` didn't resolve to one.",
       );
       throw new Error(t("errors.imageInsertError"));
     }
 
-    const existingFileData = this.files[fileId];
-    if (!existingFileData?.dataURL) {
-      const { maxWidthOrHeight } = this.props.imageOptions;
-      // YAZ-3944 D3: a resize writes one PNG frame, so a GIF shrinks in a
-      // worker instead, every frame kept, and has its own 20 MB limit.
-      // D16: "Paste at full size" skips both; the limits stay.
-      const isGif = imageFile.type === MIME_TYPES.gif;
-      const maxFileSizeBytes = isGif
-        ? GIF_MAX_FILE_SIZE_BYTES
-        : this.props.imageOptions.maxFileSizeBytes;
+    // YAZ-3944 D3: a resize writes one PNG frame, so a GIF shrinks in a
+    // worker instead, every frame kept, and has its own 20 MB limit.
+    // D16: "Paste at full size" skips both; the limits stay. A shrunk or
+    // resized copy has its own id (`getShrunkFileId`), known before the
+    // work: the same picture added again reuses it, and a full-size paste
+    // (the original's id) never changes it.
+    const isGif = imageFile.type === MIME_TYPES.gif;
+    const maxFileSizeBytes = isGif
+      ? GIF_MAX_FILE_SIZE_BYTES
+      : this.props.imageOptions.maxFileSizeBytes;
+    let fileId = originalId;
 
-      try {
-        if (!options?.fullSize) {
-          imageFile = isGif
-            ? await shrinkGifFile(imageFile)
-            : await resizeImageFile(imageFile, { maxWidthOrHeight });
+    if (!options?.fullSize) {
+      const shrunkId = await getShrunkFileId(originalId);
+      if (this.files[shrunkId]?.dataURL) {
+        fileId = shrunkId;
+      } else {
+        try {
+          if (isGif) {
+            if (await gifNeedsShrink(imageFile)) {
+              imageFile = await shrinkGifFile(imageFile);
+              fileId = shrunkId;
+            }
+          } else {
+            const resized = await resizeImageFile(imageFile, {
+              maxWidthOrHeight: this.props.imageOptions.maxWidthOrHeight,
+            });
+            if (resized !== imageFile) {
+              imageFile = resized;
+              fileId = shrunkId;
+            }
+          }
+        } catch (error: any) {
+          console.error(
+            "Error trying to resizing image file on insertion",
+            error,
+          );
         }
-      } catch (error: any) {
-        console.error(
-          "Error trying to resizing image file on insertion",
-          error,
-        );
       }
+    }
 
-      if (imageFile.size > maxFileSizeBytes) {
-        throw new Error(
-          t("errors.fileTooBig", {
-            maxSize: `${Math.trunc(maxFileSizeBytes / 1024 / 1024)}MB`,
-          }),
-        );
-      }
+    if (!this.files[fileId]?.dataURL && imageFile.size > maxFileSizeBytes) {
+      throw new Error(
+        t("errors.fileTooBig", {
+          maxSize: `${Math.trunc(maxFileSizeBytes / 1024 / 1024)}MB`,
+        }),
+      );
     }
 
     const dataURL =
