@@ -1198,6 +1198,7 @@ export type AppClassProperties = {
     }
   >;
   files: BinaryFiles;
+  gifPlayer: App["gifPlayer"];
   editorInterface: App["editorInterface"];
   scene: App["scene"];
   syncActionResult: App["syncActionResult"];

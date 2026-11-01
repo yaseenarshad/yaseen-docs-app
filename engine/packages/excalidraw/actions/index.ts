@@ -103,5 +103,6 @@ export { actionToggleSearchMenu } from "./actionToggleSearchMenu";
 export { actionChangeSmartShape } from "./actionSmartShape";
 
 export { actionToggleCropEditor } from "./actionCropEditor";
+export { actionToggleGifPlayback } from "./actionToggleGifPlayback";
 
 export { actionResizeSelectionToPreset } from "../selectionSizePresets";

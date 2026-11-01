@@ -8,6 +8,7 @@ import {
 import type { BinaryFileData, DataURL } from "@excalidraw/excalidraw/types";
 
 import {
+  GIF_IDLE_MS,
   GifPlayer,
   gifFrameDelay,
   nextGifFrame,
@@ -23,8 +24,8 @@ const file = (id: string, mimeType: string, frames = 1): BinaryFileData => ({
   created: 0,
 });
 
-const image = (fileId: string) =>
-  ({ type: "image", fileId } as unknown as ExcalidrawImageElement);
+const image = (fileId: string, customData?: Record<string, unknown>) =>
+  ({ type: "image", fileId, customData } as unknown as ExcalidrawImageElement);
 
 describe("YAZ-3944 D2: the frame clock", () => {
   const clock = {
@@ -187,5 +188,63 @@ describe("YAZ-3944 D2: the GIF player", () => {
     expect(FakeImageDecoder.made.map((d) => d.closed)).toEqual([true, true]);
     expect(vi.getTimerCount()).toBe(0);
     expect(player.frameFor(image("a"))).toBe(null);
+  });
+
+  it("YAZ-3944 D4: a paused GIF opens no decoder and shows its still image", async () => {
+    files.a = file("a", MIME_TYPES.gif, 3);
+    const paused = image("a", { gifPaused: true });
+
+    expect(player.frameToken(paused)).toBe(undefined);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(FakeImageDecoder.made).toEqual([]);
+    expect(player.frameFor(paused)).toBe(null);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("YAZ-3944 D4: a hidden board stops the timer, and showing it starts it again", async () => {
+    files.a = file("a", MIME_TYPES.gif, 3);
+    player.frameToken(image("a"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    player.setHidden(true);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(repaints).toBe(0);
+
+    player.setHidden(false);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(repaints).toBe(1);
+  });
+
+  it("YAZ-3944 D4: 5 min with no use stops the timer, and a mouse move starts it again", async () => {
+    files.a = file("a", MIME_TYPES.gif, 3);
+    player.frameToken(image("a"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.advanceTimersByTimeAsync(GIF_IDLE_MS);
+    const played = repaints;
+    expect(player.idle).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(repaints).toBe(played);
+
+    player.activity();
+    expect(player.idle).toBe(false);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(repaints).toBe(played + 1);
+  });
+
+  it("YAZ-3944 D4: closes the decoder of a GIF that left the board", async () => {
+    files.a = file("a", MIME_TYPES.gif, 3);
+    files.b = file("b", MIME_TYPES.gif, 3);
+    player.frameToken(image("a"));
+    player.frameToken(image("b"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    player.retain(new Set(["b" as FileId]));
+
+    expect(FakeImageDecoder.made.map((d) => d.closed)).toEqual([true, false]);
+    expect(player.size).toBe(1);
   });
 });

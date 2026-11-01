@@ -364,6 +364,7 @@ import {
   actionToggleArrowBinding,
   actionToggleMidpointSnapping,
   actionToggleCropEditor,
+  actionToggleGifPlayback,
 } from "../actions";
 import { actionWrapTextInContainer } from "../actions/actionBoundText";
 import { actionPaste, actionPasteAtFullSize } from "../actions/actionClipboard";
@@ -684,6 +685,9 @@ class App extends React.Component<AppProps, AppState> {
    * in-progress `newElement` and the edited text element) */
   private hasRenderableElements: boolean = false;
   private resizeObserver: ResizeObserver | undefined;
+  /** YAZ-3944 D4: whether the board is in view (a hidden tab layer is not) */
+  private gifViewObserver: IntersectionObserver | undefined;
+  private boardInView = true;
   public library: AppClassProperties["library"];
   public libraryItemsFromStorage: LibraryItems | undefined;
   public id: string;
@@ -698,6 +702,34 @@ class App extends React.Component<AppProps, AppState> {
   public imageCache: AppClassProperties["imageCache"] = new Map();
   /** YAZ-3944 D2: this board's GIF frames */
   public gifPlayer = new GifPlayer((id) => this.files[id]);
+
+  /** YAZ-3944 D4: GIFs stop while the board's tab is not in front or the window is hidden. */
+  private updateGifsHidden = () => {
+    this.gifPlayer.setHidden(
+      document.visibilityState === "hidden" || !this.boardInView,
+    );
+  };
+
+  /** YAZ-3944 D4: a mouse or key use on the board keeps its GIFs playing. */
+  private onBoardActivity = () => this.gifPlayer.activity();
+
+  /** YAZ-3944 D4: close the decoders of deleted GIFs, a second after the scene settles. */
+  private retainGifs = debounce(() => {
+    this.gifPlayer.retain(
+      new Set(
+        getInitializedImageElements(this.scene.getNonDeletedElements()).map(
+          (element) => element.fileId,
+        ),
+      ),
+    );
+  }, 1000);
+
+  private onSceneUpdatedForGifs = () => {
+    if (this.gifPlayer.size) {
+      this.retainGifs();
+    }
+  };
+
   private iFrameRefs = new Map<ExcalidrawElement["id"], HTMLIFrameElement>();
   /**
    * Indicates whether the embeddable's url has been validated for rendering.
@@ -3979,6 +4011,7 @@ class App extends React.Component<AppProps, AppState> {
     }
 
     this.scene.onUpdate(this.triggerRender);
+    this.scene.onUpdate(this.onSceneUpdatedForGifs);
     this.addEventListeners();
 
     if (this.props.autoFocus && this.excalidrawContainerRef.current) {
@@ -3991,6 +4024,19 @@ class App extends React.Component<AppProps, AppState> {
         this.updateDOMRect();
       });
       this.resizeObserver?.observe(this.excalidrawContainerRef.current);
+    }
+
+    // YAZ-3944 D4: a tab layer that is not in front skips its paint
+    // (`content-visibility: hidden`), so the board leaves the view
+    if (
+      typeof IntersectionObserver !== "undefined" &&
+      this.excalidrawContainerRef.current
+    ) {
+      this.gifViewObserver = new IntersectionObserver((entries) => {
+        this.boardInView = entries.some((entry) => entry.isIntersecting);
+        this.updateGifsHidden();
+      });
+      this.gifViewObserver.observe(this.excalidrawContainerRef.current);
     }
 
     const searchParams = new URLSearchParams(window.location.search.slice(1));
@@ -4070,6 +4116,8 @@ class App extends React.Component<AppProps, AppState> {
     this.files = {};
     this.imageCache.clear();
     this.gifPlayer.dispose();
+    this.retainGifs.cancel();
+    this.gifViewObserver?.disconnect();
     this.resizeObserver?.disconnect();
     this.unmounted = true;
     this.viewport.destroy();
@@ -4140,6 +4188,21 @@ class App extends React.Component<AppProps, AppState> {
           this.fonts.onLoaded(fontFaces);
         },
         { passive: false },
+      ),
+      // YAZ-3944 D4
+      addEventListener(
+        document,
+        EVENT.VISIBILITY_CHANGE,
+        this.updateGifsHidden,
+      ),
+      ...(["pointermove", "pointerdown", "wheel", "keydown"] as const).map(
+        (type) =>
+          addEventListener(
+            this.excalidrawContainerRef.current,
+            type,
+            this.onBoardActivity,
+            { passive: true, capture: true },
+          ),
       ),
       addEventListener(
         window,
@@ -14862,6 +14925,7 @@ class App extends React.Component<AppProps, AppState> {
       actionWrapSelectionInFrame,
       CONTEXT_MENU_SEPARATOR,
       actionToggleCropEditor,
+      actionToggleGifPlayback, // YAZ-3944 D4
       CONTEXT_MENU_SEPARATOR,
       ...options,
       CONTEXT_MENU_SEPARATOR,

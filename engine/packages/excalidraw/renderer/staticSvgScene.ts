@@ -12,7 +12,7 @@ import {
   MIME_TYPES,
 } from "@excalidraw/common";
 import { normalizeLink, toValidURL } from "@excalidraw/common";
-import { hashString } from "@excalidraw/element";
+import { hashString, isGifPaused } from "@excalidraw/element";
 import { getUncroppedWidthAndHeight } from "@excalidraw/element";
 import {
   createPlaceholderEmbeddableLabel,
@@ -468,8 +468,13 @@ const renderElementToSvg = (
         isInitializedImageElement(element) && files[element.fileId];
       if (fileData) {
         const { reuseImages = true } = renderConfig;
+        // YAZ-3944 D4: a paused GIF is still: its first frame, as a PNG
+        const still = isGifPaused(element)
+          ? renderConfig.gifStills?.get(fileData.id)
+          : undefined;
+        const symbolFileId = still ? `still-${fileData.id}` : fileData.id;
 
-        let symbolId = `image-${fileData.id}`;
+        let symbolId = `image-${symbolFileId}`;
 
         let uncroppedWidth = element.width;
         let uncroppedHeight = element.height;
@@ -477,7 +482,7 @@ const renderElementToSvg = (
           ({ width: uncroppedWidth, height: uncroppedHeight } =
             getUncroppedWidthAndHeight(element));
 
-          symbolId = `image-crop-${fileData.id}-${hashString(
+          symbolId = `image-crop-${symbolFileId}-${hashString(
             `${uncroppedWidth}x${uncroppedHeight}`,
           )}`;
         }
@@ -492,7 +497,7 @@ const renderElementToSvg = (
           symbol.id = symbolId;
 
           const image = svgRoot.ownerDocument.createElementNS(SVG_NS, "image");
-          image.setAttribute("href", fileData.dataURL);
+          image.setAttribute("href", still ?? fileData.dataURL);
           image.setAttribute("preserveAspectRatio", "none");
 
           if (element.crop || !reuseImages) {

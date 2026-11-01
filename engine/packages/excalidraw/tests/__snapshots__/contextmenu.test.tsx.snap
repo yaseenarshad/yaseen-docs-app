@@ -183,6 +183,15 @@ exports[`contextMenu element > right-clicking on a group should select whole gro
         },
         "viewMode": true,
       },
+      {
+        "label": [Function],
+        "name": "toggleGifPlayback",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "icon": <svg
@@ -4951,6 +4960,15 @@ exports[`contextMenu element > shows 'Group selection' in context menu for multi
         },
         "viewMode": true,
       },
+      {
+        "label": [Function],
+        "name": "toggleGifPlayback",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "icon": <svg
@@ -6185,6 +6203,15 @@ exports[`contextMenu element > shows 'Ungroup selection' in context menu for gro
           "category": "menu",
         },
         "viewMode": true,
+      },
+      {
+        "label": [Function],
+        "name": "toggleGifPlayback",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
       },
       "separator",
       {
@@ -8179,6 +8206,15 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
         },
         "viewMode": true,
       },
+      {
+        "label": [Function],
+        "name": "toggleGifPlayback",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "icon": <svg
@@ -9187,6 +9223,15 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
           "category": "menu",
         },
         "viewMode": true,
+      },
+      {
+        "label": [Function],
+        "name": "toggleGifPlayback",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
       },
       "separator",
       {

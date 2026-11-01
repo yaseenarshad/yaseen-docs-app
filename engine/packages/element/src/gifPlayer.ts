@@ -11,6 +11,13 @@ import type { ExcalidrawImageElement, FileId } from "./types";
 /** All GIFs on a board share at most 25 repaints a second. */
 export const GIF_MIN_REPAINT_MS = 40;
 
+/** YAZ-3944 D4: GIFs stop after 5 min with no mouse or key use on the board. */
+export const GIF_IDLE_MS = 5 * 60 * 1000;
+
+/** YAZ-3944 D4: "Pause GIF", saved in the file. A paused GIF shows its first frame. */
+export const isGifPaused = (element: ExcalidrawImageElement) =>
+  element.customData?.gifPaused === true;
+
 /** A frame's delay as browsers play it: 10 ms or less shows for 100 ms (Chrome and Firefox do this). */
 export const gifFrameDelay = (durationMs: number) =>
   durationMs <= 10 ? 100 : durationMs;
@@ -75,6 +82,9 @@ type GifTrack = GifClock & {
  * frame at a time into a canvas, and repaints the board layer (`repaint`, set by the static canvas)
  * once for all GIFs whose frame is due. A GIF that the last repaint did not draw (off screen,
  * deleted) waits until a paint draws it again.
+ *
+ * YAZ-3944 D4, auto-pause, never saved: nothing plays while the board is hidden (`setHidden`) or
+ * after 5 min with no use (`activity`); it plays again on return. A paused GIF never opens a decoder.
  */
 export class GifPlayer {
   /** The board layer's paint, without React. */
@@ -86,6 +96,11 @@ export class GifPlayer {
   private repaintCount = 0;
   /** grows with each dispose: a tick that awaited across one stops */
   private generation = 0;
+  /** the tab is not in front, or the window is hidden or minimized */
+  hidden = false;
+  /** no mouse or key use on the board for 5 min */
+  idle = false;
+  private lastActivityAt = performance.now();
 
   constructor(
     private readonly getFile: (id: FileId) => BinaryFileData | undefined,
@@ -108,25 +123,75 @@ export class GifPlayer {
   /** The frame on show of a playing GIF; null for the still image. */
   frameFor(element: ExcalidrawImageElement): HTMLCanvasElement | null {
     const track = element.fileId ? this.tracks.get(element.fileId) : undefined;
-    return track && !track.still && track.token > 0 ? track.canvas : null;
+    return track && !track.still && track.token > 0 && !isGifPaused(element)
+      ? track.canvas
+      : null;
+  }
+
+  /** The GIF file has more than one frame (known once its decoder opened). */
+  isAnimated(fileId: FileId) {
+    const track = this.tracks.get(fileId);
+    return !!track && !track.still && track.frameCount > 1;
+  }
+
+  /** The board went out of view (another tab in front, the window hidden) or came back. */
+  setHidden(hidden: boolean) {
+    if (this.hidden === hidden) {
+      return;
+    }
+    this.hidden = hidden;
+    if (hidden) {
+      this.stop();
+    } else {
+      this.schedule();
+    }
+  }
+
+  /** A mouse or key use on the board. Cheap: it runs on each pointer move. */
+  activity() {
+    this.lastActivityAt = performance.now();
+    if (this.idle) {
+      this.idle = false;
+      this.schedule();
+    }
+  }
+
+  /** Close the decoders of GIF files that no element on the board uses now (a delete). */
+  retain(fileIds: ReadonlySet<FileId>) {
+    for (const [fileId, track] of this.tracks) {
+      if (!fileIds.has(fileId)) {
+        track.decoder?.close();
+        this.tracks.delete(fileId);
+      }
+    }
+  }
+
+  get size() {
+    return this.tracks.size;
   }
 
   /** Close every decoder and stop; the player can start again (a remount). */
   dispose() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
+    this.stop();
     for (const track of this.tracks.values()) {
       track.decoder?.close();
     }
     this.tracks.clear();
     this.lastRepaintAt = -Infinity;
     this.generation++;
+    this.idle = false;
+    this.lastActivityAt = performance.now();
+  }
+
+  private stop() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
   }
 
   private trackFor(element: ExcalidrawImageElement) {
-    if (!element.fileId) {
+    if (!element.fileId || isGifPaused(element)) {
       return undefined;
     }
     let track = this.tracks.get(element.fileId);
@@ -218,7 +283,11 @@ export class GifPlayer {
   }
 
   private schedule() {
-    if (this.timer) {
+    if (this.timer || this.hidden || this.idle) {
+      return;
+    }
+    if (performance.now() - this.lastActivityAt >= GIF_IDLE_MS) {
+      this.idle = true;
       return;
     }
     const dueAts: number[] = [];

@@ -150,6 +150,7 @@ export type ActionName =
   | "copyElementLink"
   | "linkToElement"
   | "cropEditor"
+  | "toggleGifPlayback"
   | "wrapSelectionInFrame"
   | "toggleShapeSwitch"
   | "togglePolygon"
