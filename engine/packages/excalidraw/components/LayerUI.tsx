@@ -93,6 +93,8 @@ interface LayerUIProps {
   scrollBackToContentUIEnabled: boolean;
   isCollaborating: boolean;
   generateLinkForSelection?: AppProps["generateLinkForSelection"];
+  /** YAZ-4101 3D: a new value draws the toolbar again (`areEqual`). */
+  textEditorToolbarVersion?: number;
 }
 
 const DefaultMainMenu: React.FC<{

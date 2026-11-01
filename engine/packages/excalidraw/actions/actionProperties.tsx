@@ -44,6 +44,7 @@ import {
   canBecomePolygon,
   clearTextRunStyle,
   getNonDeletedElements,
+  getTextRangeColor,
   getTextRunInsertStyle,
   isNonDeletedElement,
   isTextRangeStyled,
@@ -420,6 +421,39 @@ const changeTextColor = (
   });
 };
 
+/**
+ * YAZ-4101 3D: the Text color in the editor shows the selected letters' color,
+ * null (mixed) when they have several, and with only a caret the color the
+ * next typed letter gets. Undefined: no text editor is open.
+ */
+const getEditorTextColor = (app: AppClassProperties) => {
+  const editing = app.state.editingTextElement;
+  const editable = editing
+    ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
+    : null;
+  if (!editing || !editable) {
+    return undefined;
+  }
+  const element = app.scene.getElement(editing.id) ?? editing;
+  if (!isTextElement(element)) {
+    return element.strokeColor;
+  }
+  const pending =
+    editable.selectionStart === editable.selectionEnd
+      ? getPendingTextStyle(editable)?.color
+      : undefined;
+  const color =
+    pending !== undefined
+      ? pending ?? undefined
+      : getTextRangeColor(
+          element.textRuns,
+          editable.value,
+          editable.selectionStart,
+          editable.selectionEnd,
+        );
+  return color === null ? null : color ?? element.strokeColor;
+};
+
 export const actionChangeStrokeColor = register<
   Pick<AppState, "currentItemStrokeColor">
 >({
@@ -499,6 +533,7 @@ export const actionChangeStrokeColor = register<
     const targetElements = getTargetElements(elements, appState);
     const hasExclusiveTextTarget =
       targetElements.length > 0 && targetElements.every(isTextElement);
+    const editorColor = getEditorTextColor(app);
 
     return (
       <>
@@ -514,14 +549,18 @@ export const actionChangeStrokeColor = register<
           palette={DEFAULT_ELEMENT_STROKE_COLOR_PALETTE}
           type="elementStroke"
           label={t("labels.stroke")}
-          color={getFormValue(
-            elements,
-            app,
-            (element) => element.strokeColor,
-            true,
-            (hasSelection) =>
-              !hasSelection ? appState.currentItemStrokeColor : null,
-          )}
+          color={
+            editorColor !== undefined
+              ? editorColor
+              : getFormValue(
+                  elements,
+                  app,
+                  (element) => element.strokeColor,
+                  true,
+                  (hasSelection) =>
+                    !hasSelection ? appState.currentItemStrokeColor : null,
+                )
+          }
           onChange={(color) => updateData({ currentItemStrokeColor: color })}
           elements={elements}
           appState={appState}

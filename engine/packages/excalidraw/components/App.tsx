@@ -828,6 +828,8 @@ class App extends React.Component<AppProps, AppState> {
   private hostLinkHover: HostLinkHit | null = null;
   /** The scene's fonts are loaded: a pill's box can be measured. */
   private hostLinkFontsReady = false;
+  /** YAZ-4101 3D: moves when the text editor's selection shows another style. */
+  private textEditorToolbarVersion = 0;
   private unmountHostLinks: (() => void) | null = null;
   lastPointerDownEvent: React.PointerEvent<HTMLElement> | null = null;
   lastPointerUpEvent: React.PointerEvent<HTMLElement> | PointerEvent | null =
@@ -2688,6 +2690,9 @@ class App extends React.Component<AppProps, AppState> {
                             isCollaborating={this.props.isCollaborating}
                             generateLinkForSelection={
                               this.props.generateLinkForSelection
+                            }
+                            textEditorToolbarVersion={
+                              this.textEditorToolbarVersion
                             }
                           >
                             {this.props.children}
@@ -5733,6 +5738,15 @@ class App extends React.Component<AppProps, AppState> {
       informMutation,
       isDragging: false,
     });
+  };
+
+  /**
+   * YAZ-4101 3D: the toolbar draws again for the text editor's selection. The
+   * toolbar is memoized on the app state, which a selection does not change.
+   */
+  public refreshTextEditorToolbar = () => {
+    this.textEditorToolbarVersion++;
+    this.setState({});
   };
 
   public triggerRender = (

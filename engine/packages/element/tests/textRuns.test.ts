@@ -1,5 +1,6 @@
 import {
   convertLineStylesToTextRuns,
+  getTextRangeColor,
   isTextRangeStyled,
   normalizeTextRuns,
   remapTextRunsForTextEdit,
@@ -267,5 +268,35 @@ describe("YAZ-3718 D10: remapTextRunsForTextEdit", () => {
       { start: 0, end: 2, bold: true },
       { start: 2, end: 3, bold: true, underline: true },
     ]);
+  });
+});
+
+describe("YAZ-4101 3D: getTextRangeColor", () => {
+  const text = "Hello red world";
+  const runs = [
+    { start: 6, end: 9, color: "#e03131" },
+    { start: 9, end: 10, color: "#e03131", bold: true as const },
+    { start: 10, end: 15, bold: true as const },
+  ];
+
+  it("gives one color for letters of one color, across runs", () => {
+    expect(getTextRangeColor(runs, text, 6, 10)).toBe("#e03131");
+    expect(getTextRangeColor(runs, text, 7, 8)).toBe("#e03131");
+  });
+
+  it("gives undefined (the box color) for letters with no run color", () => {
+    expect(getTextRangeColor(runs, text, 0, 5)).toBeUndefined();
+    expect(getTextRangeColor(runs, text, 11, 15)).toBeUndefined();
+    expect(getTextRangeColor(undefined, text, 0, 15)).toBeUndefined();
+  });
+
+  it("gives null (mixed) for letters of several colors, a gap included", () => {
+    expect(getTextRangeColor(runs, text, 4, 8)).toBeNull();
+    expect(getTextRangeColor(runs, text, 8, 12)).toBeNull();
+  });
+
+  it("gives a caret the color the next typed letter gets", () => {
+    expect(getTextRangeColor(runs, text, 9, 9)).toBe("#e03131");
+    expect(getTextRangeColor(runs, text, 6, 6)).toBeUndefined();
   });
 });

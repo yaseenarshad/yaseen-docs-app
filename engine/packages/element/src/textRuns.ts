@@ -201,6 +201,38 @@ export const isTextRangeStyled = (
   return covered >= end;
 };
 
+/**
+ * YAZ-4101 3D: the color of the letters `start` to `end` as the toolbar shows
+ * it: their one run color, undefined for the box color, or null when they have
+ * several. A caret gives the color the next typed letter gets.
+ */
+export const getTextRangeColor = (
+  runs: readonly ExcalidrawTextRun[] | undefined,
+  text: string,
+  start: number,
+  end: number,
+): string | undefined | null => {
+  if (start === end) {
+    return getTextRunInsertStyle(runs, text, start).color;
+  }
+  const colors = new Set<string | undefined>();
+  let covered = start;
+  for (const run of runs ?? []) {
+    if (run.end <= covered || run.start >= end) {
+      continue;
+    }
+    if (run.start > covered) {
+      colors.add(undefined);
+    }
+    colors.add(run.color);
+    covered = run.end;
+  }
+  if (covered < end) {
+    colors.add(undefined);
+  }
+  return colors.size > 1 ? null : [...colors][0];
+};
+
 /** Converts the old per-line flags (one run over each flagged line). */
 export const convertLineStylesToTextRuns = (
   text: string,

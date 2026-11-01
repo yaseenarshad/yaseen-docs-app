@@ -1354,6 +1354,57 @@ describe("textWysiwyg", () => {
         ]);
       });
 
+      it("YAZ-4101 3D: the Text color shows the selected letters' color, and mixed for several", () => {
+        type("Hello world");
+        const boxColor = (h.elements[0] as ExcalidrawTextElement).strokeColor;
+        textarea.setSelectionRange(6, 11);
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: "#e03131",
+          });
+        });
+        const swatch = () =>
+          document.querySelector<HTMLElement>(
+            '[data-openpopup="elementStroke"]',
+          )!;
+        const select = (start: number, end: number) =>
+          act(() => {
+            textarea.setSelectionRange(start, end);
+            fireEvent(document, new Event("selectionchange"));
+          });
+
+        // one colored word
+        select(7, 10);
+        expect(swatch().style.getPropertyValue("--swatch-color")).toBe(
+          "#e03131",
+        );
+        // letters with the box color
+        select(0, 5);
+        expect(swatch().style.getPropertyValue("--swatch-color")).toBe(
+          boxColor,
+        );
+        // both: mixed, as for other mixed values
+        select(3, 8);
+        expect(swatch().style.getPropertyValue("--swatch-color")).toBe("");
+        expect(swatch().classList).toContain("is-transparent");
+        // a caret: the color the next letter gets
+        select(11, 11);
+        expect(swatch().style.getPropertyValue("--swatch-color")).toBe(
+          "#e03131",
+        );
+      });
+
+      it("YAZ-4101 3D: a caret move in a box with no runs draws the toolbar again never", () => {
+        type("Hello world");
+        const renders = vi.spyOn(h.app, "refreshTextEditorToolbar");
+        for (let offset = 0; offset < 11; offset++) {
+          textarea.setSelectionRange(offset, offset);
+          fireEvent(document, new Event("selectionchange"));
+        }
+        expect(renders).not.toHaveBeenCalled();
+        renders.mockRestore();
+      });
+
       it("styles and colors the whole text of a selected box, and clear formatting removes every run", () => {
         type("Hello world");
         textarea.setSelectionRange(0, 5);

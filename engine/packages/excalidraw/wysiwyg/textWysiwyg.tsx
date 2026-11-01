@@ -45,6 +45,7 @@ import {
   getLogicalLineIndexAtOffset,
   getTextElementStyledLines,
   getTextLinkRanges,
+  getTextRangeColor,
   hasHostLinks,
   remapTextRunsForTextEdit,
 } from "@excalidraw/element";
@@ -980,9 +981,32 @@ export const textWysiwyg = ({
     });
   };
 
+  // YAZ-4101 3D: the toolbar's Text color shows the selected letters' color,
+  // so it draws again when that color changes. A box with no runs has one
+  // color: it never asks.
+  let toolbarColor: string | undefined | null;
+  const refreshToolbarColor = () => {
+    const runs = (
+      app.scene.getElement(element.id) as ExcalidrawTextElement | null
+    )?.textRuns;
+    const color = runs?.length
+      ? getTextRangeColor(
+          runs,
+          editable.value,
+          editable.selectionStart,
+          editable.selectionEnd,
+        )
+      : undefined;
+    if (color !== toolbarColor) {
+      toolbarColor = color;
+      app.refreshTextEditorToolbar();
+    }
+  };
+
   const handleSelectionMoved = () => {
     keepCaretOutOfLinks();
     renderVisualSelection();
+    refreshToolbarColor();
   };
 
   const handleDocumentSelectionChange = () => {
@@ -992,6 +1016,7 @@ export const textWysiwyg = ({
       getPendingTextStyle(editable);
       renderVisualSelection();
       reportEditor(false);
+      refreshToolbarColor();
     }
   };
 
