@@ -1,4 +1,4 @@
-import { getFontString } from "@excalidraw/common";
+import { getFontString, isRTL } from "@excalidraw/common";
 
 import {
   getWrappedTextLineWithMeasure,
@@ -75,6 +75,11 @@ export type StyledVisualLine = {
    * no run has none, and draws as one text with the line's own style.
    */
   segments?: readonly StyledTextSegment[];
+  /**
+   * YAZ-4100 3C: a styled line of a right-to-left script. Its segments stay in
+   * text order, and their `x` goes from the right.
+   */
+  rtl?: true;
 };
 
 export const getStyledVisualLineStart = (
@@ -102,6 +107,9 @@ export const getStyledVisualLineOffsetX = (
     return getLineWidth(line.text.slice(0, localOffset), line.font);
   }
   const position = line.start + localOffset;
+  if (line.rtl) {
+    return getRightToLeftOffsetX(line.segments, position);
+  }
   let x = 0;
   for (const segment of line.segments) {
     if (position <= segment.start) {
@@ -127,6 +135,32 @@ export const getStyledVisualLineOffsetX = (
     x = segment.x + segment.width;
   }
   return x;
+};
+
+/** YAZ-4100 3C: the offset's x in a right-to-left line: a segment's text starts at its right edge. */
+const getRightToLeftOffsetX = (
+  segments: readonly StyledTextSegment[],
+  position: number,
+) => {
+  for (const segment of segments) {
+    const right = segment.x + segment.width;
+    if (position <= segment.start) {
+      return right;
+    }
+    if (position < segment.end) {
+      return (
+        right -
+        (segment.link
+          ? (segment.width * (position - segment.start)) /
+            (segment.end - segment.start)
+          : getLineWidth(
+              segment.text.slice(0, position - segment.start),
+              segment.font,
+            ))
+      );
+    }
+  }
+  return segments.length ? segments[segments.length - 1].x : 0;
 };
 
 export type StyledVisualSelectionRect = {
@@ -177,7 +211,10 @@ export const getStyledVisualSelectionGeometry = (args: {
         continue;
       }
 
-      const left = getStyledVisualLineOffsetX(line, start);
+      // YAZ-4100 3C: in a right-to-left line the end is left of the start
+      const from = getStyledVisualLineOffsetX(line, start);
+      const to = getStyledVisualLineOffsetX(line, end);
+      const left = Math.min(from, to);
 
       rectangles.push({
         lineIndex,
@@ -185,7 +222,7 @@ export const getStyledVisualSelectionGeometry = (args: {
           getStyledVisualLineStart(line, args.containerWidth, args.textAlign) +
           left,
         top: lineIndex * args.lineHeightPx,
-        width: getStyledVisualLineOffsetX(line, end) - left,
+        width: Math.abs(to - from),
         height: args.lineHeightPx,
       });
     }
@@ -290,21 +327,31 @@ export const getStyledVisualLines = (args: {
         )
       : getWrappedTextLines(originalLine, font, args.maxWidth);
     const isListItem = parseTextListLine(originalLine).markerKind !== "none";
+    // YAZ-4100 3C: a styled line in a right-to-left script draws its pieces
+    // from the right; a line with no run keeps today's path
+    const rtl = !!pieces && isRTL(originalLine);
     const measuredLines = visualLines.map((line) => {
-      const segments = pieces
+      const pieceSegments = pieces
         ? getLineSegments(line, pieces, lineStart, getFont)
         : undefined;
       // Empty text lines still occupy one space of layout width in the
       // existing text metrics contract. This keeps a new/empty bound text
       // editor centered and large enough to place the caret.
-      const width = segments?.length
-        ? segments.reduce((sum, segment) => sum + segment.width, 0)
+      const width = pieceSegments?.length
+        ? pieceSegments.reduce((sum, segment) => sum + segment.width, 0)
         : getLineWidth(line.text || " ", font);
+      const segments = rtl
+        ? pieceSegments?.map((segment) => ({
+            ...segment,
+            x: width - segment.x - segment.width,
+          }))
+        : pieceSegments;
       return {
         ...line,
         width,
         visualWidth: line.horizontalOffset + width,
         segments,
+        ...(rtl ? { rtl: true as const } : {}),
       };
     });
     const listBlockWidth = Math.max(

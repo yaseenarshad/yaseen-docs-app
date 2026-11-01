@@ -630,6 +630,8 @@ const drawElementOnCanvas = (
             }
             // YAZ-3718 D1: each segment with its own font, color and lines
             context.textAlign = "left";
+            // YAZ-4100 3C: a right-to-left segment's letters and spaces in their order
+            context.direction = lines[index].rtl ? "rtl" : "inherit";
             for (const segment of segments) {
               if (segment.link) {
                 drawLinkPill(
@@ -670,6 +672,7 @@ const drawElementOnCanvas = (
               }
             }
             context.fillStyle = textColor;
+            context.direction = "inherit";
             continue;
           }
           if (lines[index].isListItem) {

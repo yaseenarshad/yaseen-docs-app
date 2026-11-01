@@ -1,4 +1,5 @@
 import {
+  getStyledVisualLineOffsetX,
   getStyledVisualLineStart,
   getStyledVisualLines,
   getStyledVisualSelectionGeometry,
@@ -238,6 +239,67 @@ describe("YAZ-3718 D1: text runs in the layout", () => {
   const getMixedFont = ({ bold, italic }: { bold: boolean; italic: boolean }) =>
     `${italic ? "italic " : ""}${bold ? "bold " : ""}10px Mixed` as FontString;
   const mixedArgs = { ...plainArgs, getFont: getMixedFont };
+
+  describe("YAZ-4100 3C: right-to-left text in a styled line", () => {
+    // "مرحبا" bold (5 × 15 px), then " بالعالم" (8 × 10 px): 155 px
+    const ARABIC = "مرحبا بالعالم";
+    const arabicLine = () =>
+      getStyledVisualLines({
+        ...mixedArgs,
+        originalText: ARABIC,
+        maxWidth: Infinity,
+        textRuns: [{ start: 0, end: 5, bold: true }],
+      })[0];
+
+    it("places a mixed-style Arabic line's pieces from the right, in text order", () => {
+      const line = arabicLine();
+      expect(line.rtl).toBe(true);
+      expect(
+        line.segments!.map(({ text, x, width }) => ({ text, x, width })),
+      ).toEqual([
+        { text: "مرحبا", x: 80, width: 75 },
+        { text: " بالعالم", x: 0, width: 80 },
+      ]);
+    });
+
+    it("puts the caret and the selection where the letters are drawn", () => {
+      const line = arabicLine();
+      expect(
+        [0, 2, 5, 13].map((offset) => getStyledVisualLineOffsetX(line, offset)),
+      ).toEqual([155, 125, 80, 0]);
+      const { rectangles } = getStyledVisualSelectionGeometry({
+        lines: [line],
+        containerWidth: 155,
+        textAlign: "left",
+        lineHeightPx: 20,
+        selectionStart: 0,
+        selectionEnd: 5,
+      });
+      expect(rectangles).toEqual([
+        { lineIndex: 0, left: 80, top: 0, width: 75, height: 20 },
+      ]);
+    });
+
+    it("leaves a left-to-right line and an Arabic line with no run as they were", () => {
+      const ltr = getStyledVisualLines({
+        ...mixedArgs,
+        originalText: "Hello world",
+        maxWidth: Infinity,
+        textRuns: [{ start: 0, end: 5, bold: true }],
+      })[0];
+      expect(ltr.rtl).toBeUndefined();
+      expect(ltr.segments!.map((segment) => segment.x)).toEqual([0, 75]);
+      expect(getStyledVisualLineOffsetX(ltr, 2)).toBe(30);
+
+      const plain = getStyledVisualLines({
+        ...mixedArgs,
+        originalText: ARABIC,
+        maxWidth: Infinity,
+      })[0];
+      expect(plain.rtl).toBeUndefined();
+      expect(plain.segments).toBeUndefined();
+    });
+  });
 
   it("gives a line with no run exactly today's layout", () => {
     const originalText = "Plain words that wrap\nStyled";

@@ -252,6 +252,42 @@ describe("exportToSvg", () => {
     expect(textOf(fills[1])).toBe(children.indexOf(fills[1]) + 1);
   });
 
+  it("YAZ-4100 3C: exports a styled right-to-left line from the right, and a left-to-right one as before", async () => {
+    const arabic = {
+      ...API.createElement({
+        type: "text",
+        text: "مرحبا بالعالم\nab cd",
+        width: 200,
+        height: 50,
+        textAlign: "left",
+      }),
+      textRuns: [
+        { start: 0, end: 5, bold: true },
+        { start: 14, end: 16, italic: true },
+      ],
+    } as NonDeleted<ExcalidrawTextElement>;
+    const { lines } = getTextElementStyledLayout(arabic, Infinity);
+
+    const svg = await exportUtils.exportToSvg([arabic], DEFAULT_OPTIONS, null);
+    const [rtlLine, ltrLine] = Array.from(svg.querySelectorAll("text"));
+    expect(rtlLine.getAttribute("direction")).toBe("rtl");
+    expect(rtlLine.getAttribute("text-anchor")).toBe("start");
+    // each piece starts at its right edge; the first word is the rightmost
+    const [first, second] = lines[0].segments!;
+    expect(
+      Array.from(rtlLine.querySelectorAll("tspan")).map((tspan) =>
+        Number(tspan.getAttribute("x")),
+      ),
+    ).toEqual([first.x + first.width, second.x + second.width]);
+    expect(first.x).toBeGreaterThan(second.x);
+    expect(ltrLine.getAttribute("direction")).toBe("ltr");
+    expect(
+      Array.from(ltrLine.querySelectorAll("tspan")).map((tspan) =>
+        Number(tspan.getAttribute("x")),
+      ),
+    ).toEqual(lines[1].segments!.map((segment) => segment.x));
+  });
+
   it("exports one tspan for each styled part of a line (YAZ-3718 D1)", async () => {
     const styledText = {
       ...API.createElement({

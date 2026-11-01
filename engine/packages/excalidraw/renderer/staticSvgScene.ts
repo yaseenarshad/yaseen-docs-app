@@ -923,7 +923,11 @@ const renderElementToSvg = (
                 continue;
               }
               tspan.textContent = segment.text;
-              tspan.setAttribute("x", `${lineStart + segment.x}`);
+              // YAZ-4100 3C: a right-to-left text starts at its right edge
+              tspan.setAttribute(
+                "x",
+                `${lineStart + segment.x + (lines[i].rtl ? segment.width : 0)}`,
+              );
               setTextStyle(
                 tspan,
                 segment,
@@ -947,7 +951,11 @@ const renderElementToSvg = (
             segments || lines[i].isListItem ? "start" : textAnchor,
           );
           text.setAttribute("style", "white-space: pre;");
-          text.setAttribute("direction", direction);
+          // YAZ-4100 3C: a styled line has its own direction, as its pieces are placed
+          text.setAttribute(
+            "direction",
+            segments ? (lines[i].rtl ? "rtl" : "ltr") : direction,
+          );
           text.setAttribute("dominant-baseline", "alphabetic");
           node.appendChild(text);
         }

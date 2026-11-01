@@ -1405,6 +1405,30 @@ describe("textWysiwyg", () => {
         renders.mockRestore();
       });
 
+      it("YAZ-4100 3C: the editor draws a styled Arabic line from the right, and its selection where the letters are", () => {
+        type("مرحبا بالعالم");
+        textarea.setSelectionRange(0, 5);
+        press(CODES.B, "b");
+        const [first, second] = [
+          ...document.querySelectorAll<HTMLElement>(
+            ".excalidraw-wysiwyg-styled-line",
+          ),
+        ];
+        expect(first.textContent).toBe("مرحبا");
+        expect(first.style.direction).toBe("rtl");
+        expect(parseFloat(first.style.left)).toBeGreaterThan(
+          parseFloat(second.style.left),
+        );
+        // the bold word, selected, is on the right
+        textarea.setSelectionRange(0, 5);
+        fireEvent(document, new Event("selectionchange"));
+        const selection = document.querySelector<HTMLElement>(
+          ".excalidraw-wysiwyg-selection",
+        )!;
+        expect(selection.style.left).toBe(first.style.left);
+        expect(selection.style.width).toBe(first.style.width);
+      });
+
       describe("YAZ-4103 3F: copy and paste keep styles with notes", () => {
         /** What a note's copy puts on the clipboard (ProseMirror's HTML). */
         const NOTE =

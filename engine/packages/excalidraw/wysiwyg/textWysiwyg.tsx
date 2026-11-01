@@ -610,6 +610,8 @@ export const textWysiwyg = ({
               font: segment.font,
               lineHeight: `${lineHeightPx}px`,
               textAlign: "left",
+              // YAZ-4100 3C: a right-to-left segment's letters in their order
+              direction: line.rtl ? "rtl" : "",
               textDecoration: [
                 segment.underlined ? "underline" : null,
                 segment.strikethrough ? "line-through" : null,
