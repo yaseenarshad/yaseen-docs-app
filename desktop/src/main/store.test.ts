@@ -1430,7 +1430,7 @@ describe('createStore: mutations', () => {
   })
 
   it('folders: `tocSwitches` loads as `{}` from a file written before it; `true` and `false` both load; a wrong entry drops alone (YAZ-2950)', async () => {
-    await seed(valid({ folders: { '/v': { lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, name: null, key: null } } })) // a file of YAZ-2709: no key at all
+    await seed(valid({ folders: { '/v': { lastFile: '/v/a.md', folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, sectionIndents: {}, name: null, key: null } } })) // a file of YAZ-2709: no key at all
     expect(createStore(file).get().folders['/v'].tocSwitches).toEqual({})
     for (const junk of ['nope', 5, null, true, ['/v/a.md']]) {
       await seed(valid({ folders: { '/v': { tocSwitches: junk } } }))

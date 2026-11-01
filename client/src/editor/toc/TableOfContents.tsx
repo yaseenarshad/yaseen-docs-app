@@ -63,6 +63,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalS
 import { TOC_DEFAULT_W, TOC_MAX_W, type ContentWidth, type TableOfContents as TableOfContentsMode } from '@shared/types'
 import { ENOUGH_ROWS, type TocChannel, type TocRow } from './tocChannel'
 import { CollapseAllIcon, ExpandAllIcon } from '../../views/view/icons'
+import { outlineFoldKeyStem } from '../outline/outlineFoldKeys'
 import { beginTocResize, ChevronIcon, CLICK_GUARD_MS, EDGE_PX, PinIcon, RAIL_PADDING_PX, shown, useTocBox, useTocCard, useTocLinger, useTocShortcut, useTocWidthVar } from './tocFrame'
 import './toc.css'
 
@@ -121,14 +122,15 @@ export const shownRows = (all: readonly TocRow[]): ShownRow[] => {
 }
 
 /**
- * A FOLD KEY for each row (YAZ-3939 D1): its level, its text, and which row of that level and text
- * it is — the rule of the note's own heading folds (`getHeadingFoldKey`). A fold stays on its row
- * through edits elsewhere; a renamed row opens again.
+ * A FOLD KEY for each row (YAZ-3939 D1): its level, the hash of its text, and which row of that
+ * level and text it is. The text is hashed as the note's own fold keys hash it
+ * (`outlineFoldKeyStem`), so a long bullet costs the state file a short key. A fold stays on its
+ * row through edits elsewhere; a renamed row opens again.
  */
 export const tocFoldKeys = (rows: readonly TocRow[]): string[] => {
   const seen = new Map<string, number>()
   return rows.map(({ level, text }) => {
-    const key = `${level}:${text}`
+    const key = `${level}:${outlineFoldKeyStem(text)}`
     const n = seen.get(key) ?? 0
     seen.set(key, n + 1)
     return `${key}#${n}`
@@ -302,7 +304,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   }
   // One toggle, as every fold-all button (YAZ-3938 D6): while a row that can fold is open, it
   // collapses all, so only the top rows show; once all are folded, it expands all (YAZ-3939 D4).
-  const anyOpen = [...parents].some((index) => !folded.has(keys[index]))
+  const anyOpen = useMemo(() => [...parents].some((index) => !folded.has(keys[index])), [parents, folded, keys])
   const foldAll = (): void => saveFolds(anyOpen ? new Set([...parents].map((index) => keys[index])) : new Set())
 
   // Mirror for the listeners below, which are registered once per shown table of contents.
@@ -440,11 +442,15 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
       leave()
       return
     }
+    const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
+    const side = event.key === 'ArrowLeft' || event.key === 'ArrowRight'
+    if (step === 0 && !side && event.key !== 'Home' && event.key !== 'End') return
     const items = [...event.currentTarget.querySelectorAll<HTMLElement>('.toc__name')]
     const from = items.indexOf(document.activeElement as HTMLElement)
     // ← and → on a name (YAZ-3939 D6), the tree rule and the code Outline's: → opens it, ← folds it,
     // and ← on a folded name or one with no rows under it goes to its parent.
-    if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && from !== -1) {
+    if (side) {
+      if (from === -1) return
       event.preventDefault()
       const row = rows[from]
       const kids = parents.has(row.index)
@@ -458,8 +464,6 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
       }
       return
     }
-    const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
-    if (step === 0 && event.key !== 'Home' && event.key !== 'End') return
     if (items.length === 0) return
     event.preventDefault()
     // From a button that is not a name (the rail, "Pin"), an arrow starts at the current one.
@@ -494,12 +498,12 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
    */
   const startResize = (event: ReactMouseEvent<HTMLElement>): void => beginTocResize(event, sectionOf(), shownWidth, room, onChangeWidth, endResize)
 
-  const nameList = <Names rows={rows} at={at} onPick={jump} parents={parents} folded={(row) => folded.has(keys[row.index])} onFold={toggleFold} />
+  const nameList = <Names rows={rows} at={at} onPick={jump} parents={parents} isFolded={(row) => folded.has(keys[row.index])} onFold={toggleFold} />
   // The words and the icon of every fold-all button (YAZ-3938 D8, D9): chevrons up for "Collapse all",
   // down for "Expand all". With no row that can fold it stays, dimmed, so it never jumps in and out.
   const foldLabel = parents.size === 0 ? 'Nothing to fold' : anyOpen ? 'Collapse all' : 'Expand all'
   const foldAllButton = (
-    <button type="button" className="toc__fold-all" title={foldLabel} aria-label={foldLabel} disabled={parents.size === 0} onClick={foldAll}>
+    <button type="button" className="toc__pin toc__pin--all" title={foldLabel} aria-label={foldLabel} disabled={parents.size === 0} onClick={foldAll}>
       {anyOpen || parents.size === 0 ? <CollapseAllIcon /> : <ExpandAllIcon />}
     </button>
   )
@@ -593,13 +597,13 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
  * list fades at an edge that has more behind it — its own scrollbar is hidden, so the fade is
  * what says "there is more".
  */
-function Names({ rows, at, onPick, parents, folded, onFold }: {
+function Names({ rows, at, onPick, parents, isFolded, onFold }: {
   rows: readonly ShownRow[]
   at: number
   onPick: (row: number) => void
   /** The rows that fold, by `index` (`foldable`). */
   parents: ReadonlySet<number>
-  folded: (row: ShownRow) => boolean
+  isFolded: (row: ShownRow) => boolean
   onFold: (row: ShownRow) => void
 }) {
   const listRef = useRef<HTMLDivElement>(null)
@@ -649,7 +653,7 @@ function Names({ rows, at, onPick, parents, folded, onFold }: {
       <span ref={markerRef} className="toc__marker" aria-hidden="true" />
       {rows.map((row, i) => {
         const kids = parents.has(row.index)
-        const closed = kids && folded(row)
+        const closed = kids && isFolded(row)
         return (
           // One tab stop for the list, on the current name; the arrows walk the rest.
           <button

@@ -421,9 +421,9 @@ function CrepeHost({
   // What this page's table of contents is built from (YAZ-2700 D14). Stored, as "Section indent"
   // above is: with the note in the app state, as its folds are, and `null` (Auto) is no entry.
   const [tocSource, setTocSource] = useState<TocSource | null>(() => storage.getTocSource(root, file.path))
-  /** The folded rows of the table of contents (YAZ-3939 D1), as saved for this note when it mounted. */
+  // The folded rows of the table of contents (YAZ-3939 D1), as saved for this note when it mounted.
   const [tocFolds] = useState(() => storage.getTocFolds(root, file.path))
-  /** Stable: the table of contents is memoised. */
+  // Stable: the table of contents is memoised.
   const changeTocFolds = useCallback((keys: string[]) => storage.setTocFolds(root, file.path, keys), [root, file.path])
   const hostRef = useRef<HTMLDivElement>(null)
   // A copied page's start (YAZ-2940 D7, YAZ-2951 D1): a ref, so the create effect does not depend on it, and used once.

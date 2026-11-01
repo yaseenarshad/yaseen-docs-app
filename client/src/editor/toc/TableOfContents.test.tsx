@@ -15,6 +15,7 @@ import appCss from '../../app.css?inline'
 import { COLUMN_MAX, foldable, MAX_ROWS, namesRoom, namesShow, NAMES_FLOOR, pathLines, railPitch, shownRows, TableOfContents, TEXT_FLOOR, tocFoldKeys, TOC_WIDTH, unfoldedRows } from './TableOfContents'
 import tocCss from './toc.css?inline'
 import { createTocChannel, type TocChannel, type TocLevel, type TocRow } from './tocChannel'
+import { outlineFoldKeyStem } from '../outline/outlineFoldKeys'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -748,7 +749,7 @@ describe('names: the column', () => {
     expect(nav(m)?.hasAttribute('data-names')).toBe(true)
     expect(names(m).map((name) => name.textContent)).toEqual(['Part 1', 'Section A', 'Deep dive', 'Section B', 'Part 2'])
     expect(lines(m)).toHaveLength(0)
-    expect(m.section.querySelector('.toc__pin')).toBeNull()
+    expect(m.section.querySelector('.toc__pin:not(.toc__pin--all)')).toBeNull()
   })
 
   it('auto one pixel short of that: lines', () => {
@@ -1268,10 +1269,10 @@ describe('where the reader is: the marker, and a long list in step with the note
       expect(scrollTo).not.toHaveBeenCalled()
       const reduced = tocCss.match(/@media \(prefers-reduced-motion: reduce\)\s*\{(.*)\}\s*$/s)?.[1] ?? ''
       expect(reduced).toMatch(/\.toc\[data-names\],\s*\.toc__card\s*\{\s*animation:\s*none;/)
-      expect(reduced).toMatch(/\.toc__card,\s*\.toc__line,\s*\.toc__name,\s*\.toc__names,\s*\.toc__pin,\s*\.toc__fold-all,\s*\.toc__fold,\s*\.toc__fold > svg,\s*\.toc__marker\[data-placed\]\s*\{\s*transition:\s*none;/)
+      expect(reduced).toMatch(/\.toc__card,\s*\.toc__line,\s*\.toc__name,\s*\.toc__names,\s*\.toc__pin,\s*\.toc__fold,\s*\.toc__fold > svg,\s*\.toc__marker\[data-placed\]\s*\{\s*transition:\s*none;/)
       // Every rule of the sheet that eases is one of those nine.
       const eased = [...tocCss.replace(/@media.*$/s, '').matchAll(/([^{}]+)\{[^{}]*transition:/g)].map(([, selector]) => selector.replace(/\/\*.*?\*\//gs, '').trim())
-      expect(eased).toEqual(['.toc__names', '.toc__name', '.toc__fold', '.toc__fold > svg', '.toc__marker[data-placed]', '.toc__pin', '.toc__fold-all', '.toc__line', '.toc__card'])
+      expect(eased).toEqual(['.toc__names', '.toc__name', '.toc__fold', '.toc__fold > svg', '.toc__marker[data-placed]', '.toc__pin', '.toc__line', '.toc__card'])
     } finally {
       delete (window as unknown as Record<string, unknown>).matchMedia
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollTo
@@ -1653,6 +1654,8 @@ describe('folds (YAZ-3939)', () => {
     { level: 1, text: 'Rollout' },
   ]
   const keys = tocFoldKeys(TREE)
+  /** The saved key of a row: level, the hashed text, the occurrence. */
+  const key = (level: number, text: string, n = 0): string => `${level}:${outlineFoldKeyStem(text)}#${n}`
   const texts = (rows: readonly TocRow[]): string[] => rows.map(({ text }) => text)
   const shownTexts = (m: Mounted): string[] => names(m).map((name) => name.textContent ?? '')
   const arrow = (m: Mounted, text: string): HTMLElement => {
@@ -1661,13 +1664,16 @@ describe('folds (YAZ-3939)', () => {
     return el
   }
   const foldAll = (m: Mounted): HTMLButtonElement => {
-    const el = m.section.querySelector<HTMLButtonElement>('.toc__fold-all')
+    const el = m.section.querySelector<HTMLButtonElement>('.toc__pin--all')
     if (!el) throw new Error('no fold-all button')
     return el
   }
 
   it('D1: a fold key is the level, the text and which row of the two it is: the note\'s heading fold rule', () => {
-    expect(tocFoldKeys([{ level: 1, text: 'Notes' }, { level: 2, text: 'Notes' }, { level: 1, text: 'Notes' }])).toEqual(['1:Notes#0', '2:Notes#0', '1:Notes#1'])
+    expect(tocFoldKeys([{ level: 1, text: 'Notes' }, { level: 2, text: 'Notes' }, { level: 1, text: 'Notes' }])).toEqual([key(1, 'Notes'), key(2, 'Notes'), key(1, 'Notes', 1)])
+    // The text is hashed, as the note's own fold keys are: a long bullet makes a short key.
+    const [long] = tocFoldKeys([{ level: 1, text: 'x'.repeat(5000) }])
+    expect(long.length).toBeLessThan(40)
   })
 
   it('D2: only a row with a deeper row next folds, and a fold hides each deeper row down to the next of its level or higher', () => {
@@ -1692,7 +1698,7 @@ describe('folds (YAZ-3939)', () => {
     expect(names(m)[2].getAttribute('aria-expanded')).toBe('false')
     expect(m.jump).not.toHaveBeenCalled()
     // D2: the note never folds; the fold is saved for this note.
-    expect(m.onChangeFolds).toHaveBeenLastCalledWith(['1:Design#0'])
+    expect(m.onChangeFolds).toHaveBeenLastCalledWith([key(1, 'Design')])
     click(arrow(m, 'Design'))
     expect(shownTexts(m)).toEqual(texts(TREE))
     expect(m.onChangeFolds).toHaveBeenLastCalledWith([])
@@ -1752,10 +1758,10 @@ describe('folds (YAZ-3939)', () => {
   })
 
   it('D1: the saved folds come back on the next mount, and a saved key whose row is gone is not written again', () => {
-    const m = mount('pinned', TREE, 900, TOC_DEFAULT_W, ['1:Design#0', '2:Renamed#0'])
+    const m = mount('pinned', TREE, 900, TOC_DEFAULT_W, [key(1, 'Design'), key(2, 'Renamed')])
     expect(shownTexts(m)).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])
     click(arrow(m, 'Overview'))
-    expect(m.onChangeFolds).toHaveBeenLastCalledWith(['1:Overview#0', '1:Design#0'])
+    expect(m.onChangeFolds).toHaveBeenLastCalledWith([key(1, 'Overview'), key(1, 'Design')])
   })
 
   it('D4: one toggle with the icon and the words of every fold-all button: Collapse all, then Expand all', () => {
@@ -1767,7 +1773,7 @@ describe('folds (YAZ-3939)', () => {
     const collapseIcon = button.innerHTML
     click(button)
     expect(shownTexts(m)).toEqual(['Overview', 'Design', 'Rollout'])
-    expect(m.onChangeFolds).toHaveBeenLastCalledWith(['1:Overview#0', '1:Design#0', '2:Data model#0'])
+    expect(m.onChangeFolds).toHaveBeenLastCalledWith([key(1, 'Overview'), key(1, 'Design'), key(2, 'Data model')])
     expect(foldAll(m).getAttribute('aria-label')).toBe('Expand all')
     expect(foldAll(m).innerHTML).not.toBe(collapseIcon)
     click(foldAll(m))
@@ -1779,17 +1785,47 @@ describe('folds (YAZ-3939)', () => {
     expect(m.jump).not.toHaveBeenCalled()
   })
 
+  it('D4: in a pinned column too narrow for auto, "Unpin" and the fold-all button share the top row, "Unpin" first', () => {
+    const m = mount('pinned', TREE, 1040 + TOC_WIDTH - 1)
+    const tools = m.section.querySelector('.toc__tools')
+    expect([...(tools?.children ?? [])].map((el) => el.getAttribute('aria-label') ?? el.textContent)).toEqual(['Unpin', 'Collapse all'])
+  })
+
   it('D4: with no row that can fold, the button stays, dimmed, and says "Nothing to fold"; the card has the button too', () => {
     const flat = mount('pinned', [{ level: 2, text: 'A' }, { level: 2, text: 'B' }], 900)
     expect(foldAll(flat).getAttribute('aria-label')).toBe('Nothing to fold')
     expect(foldAll(flat).disabled).toBe(true)
     const lined = mount('auto', TREE, NAMES_FLOOR)
-    expect(lined.section.querySelector('.toc__fold-all')).toBeNull() // the rail has none
+    expect(lined.section.querySelector('.toc__pin--all')).toBeNull() // the rail has none
     click(rail(lined))
     const inCard = foldAll(lined)
     expect(inCard.closest('.toc__header')).not.toBeNull()
     click(inCard)
     expect(shownTexts(lined)).toEqual(['Overview', 'Design', 'Rollout'])
+  })
+})
+
+describe('the stylesheet of the folds (YAZ-3939 D3, D4)', () => {
+  const rules = (): Array<[string, string]> => [...tocCss.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/gs, '').replace(/\/\*.*?\*\//gs, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => [selector.trim().replace(/\s+/g, ' '), body])
+  const body = (selector: string): string => rules().find(([sel]) => sel === selector)?.[1] ?? ''
+  const at = (selector: string): number => rules().findIndex(([sel]) => sel === selector)
+
+  it('the arrow is hidden until the mouse or the focus is in the list, or the row is folded; a folded row turns it right', () => {
+    expect(body('.toc__fold')).toMatch(/opacity:\s*0;/)
+    expect(body('.toc__names:hover .toc__fold, .toc__names:focus-within .toc__fold, .toc__name[data-fold=\'closed\'] .toc__fold')).toMatch(/opacity:\s*1;/)
+    expect(body('.toc__name[data-fold=\'closed\'] .toc__fold > svg')).toMatch(/transform:\s*rotate\(-90deg\);/)
+    // In the last 12px of the indent: the name never moves.
+    expect(body('.toc__fold')).toMatch(/left:\s*calc\(var\(--toc-indent\) - 12px\);/)
+  })
+
+  it('where the arrow shows, the level piece goes: the rule stands after the `1t` rule, which has the same weight', () => {
+    const hide = ".toc__names:hover .toc__name[data-fold], .toc__names:focus-within .toc__name[data-fold], .toc__name[data-fold='closed']"
+    expect(body(hide)).toMatch(/--toc-piece:\s*transparent;/)
+    expect(at(hide)).toBeGreaterThan(at(".toc__name[data-path='1t']"))
+  })
+
+  it('the fold-all button dims with no hover when there is nothing to fold', () => {
+    expect(body('.toc__pin--all:disabled, .toc__pin--all:disabled:hover')).toMatch(/opacity:\s*0\.35;[\s\S]*background:\s*none;/)
   })
 })
 

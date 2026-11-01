@@ -135,6 +135,7 @@ import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import type { BlockLines } from './lineNumbers/blockLines'
 import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
+import { outlineFoldKeyStem } from './outline/outlineFoldKeys'
 
 interface FakeCrepe {
   md: string
@@ -469,11 +470,13 @@ describe('CrepeHost table of contents folds (YAZ-3939)', () => {
     saved = []
     vi.spyOn(storage, 'getTocFolds').mockImplementation(() => saved)
     vi.spyOn(storage, 'setTocFolds').mockImplementation((_root, _file, keys) => void (saved = [...keys]))
+    vi.spyOn(storage, 'setFolds').mockImplementation(() => undefined)
   })
 
   afterEach(() => {
     vi.mocked(storage.getTocFolds).mockRestore()
     vi.mocked(storage.setTocFolds).mockRestore()
+    vi.mocked(storage.setFolds).mockRestore()
   })
 
   /** The names column of a 1400px note, as in the width test above. */
@@ -491,7 +494,9 @@ describe('CrepeHost table of contents folds (YAZ-3939)', () => {
     const jump = vi.fn()
     tocOf().bind({ jump, current: vi.fn(() => -1), rescan: vi.fn() })
     act(() => el.querySelectorAll<HTMLElement>('.toc__name')[2].querySelector<HTMLElement>('.toc__fold')?.click())
-    expect(storage.setTocFolds).toHaveBeenLastCalledWith('/vault', PATH, ['1:Design#0'])
+    expect(storage.setTocFolds).toHaveBeenLastCalledWith('/vault', PATH, [`1:${outlineFoldKeyStem('Design')}#0`])
+    // The note itself never folds: its own folds are not written.
+    expect(storage.setFolds).not.toHaveBeenCalled()
     expect([...el.querySelectorAll('.toc__name')].map((name) => name.textContent)).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])
     expect(jump).not.toHaveBeenCalled()
     await pastDebounce()
