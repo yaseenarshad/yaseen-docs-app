@@ -8293,14 +8293,19 @@ describe('update pill (YAZ-2976 D4)', () => {
     expect(footer).toEqual(['settings-button', 'zoom-footer'])
   })
 
-  it('the daily note button (YAZ-3607 D7): after the zoom chip while App hands its door over, and its click opens today\'s note', async () => {
+  it('the daily note button (YAZ-3607 D7): after the zoom chip while App hands its door over, and its click opens today\'s note; ⌘-click asks for a background tab (YAZ-3776)', async () => {
     const onOpenDailyNote = vi.fn()
     const { el } = await mount({ onOpenDailyNote })
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
     expect(footer).toEqual(['settings-button', 'zoom-footer', 'sidebar__daily'])
     act(() => el.querySelector<HTMLButtonElement>('.sidebar__daily')?.click())
-    expect(onOpenDailyNote).toHaveBeenCalledTimes(1)
+    expect(onOpenDailyNote).toHaveBeenLastCalledWith(false)
+    // ⌘-click (YAZ-3776 D1): App opens it in a background tab.
+    act(() => void el.querySelector('.sidebar__daily')?.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+    expect(onOpenDailyNote).toHaveBeenLastCalledWith(true)
+    expect(onOpenDailyNote).toHaveBeenCalledTimes(2)
     expect(el.querySelector('.sidebar__daily')?.getAttribute('aria-label')).toBe("Open today's daily note")
+    expect(el.querySelector('.sidebar__daily')?.getAttribute('title')).toBe("Open today's daily note (⌘-click: background tab)")
   })
 
   it('the sidebar zoom (YAZ-3389): the lists take `--sidebar-zoom` from the setting, the chip shows it, the menu\'s + writes the next step over the other settings, and the same value writes nothing (D6)', async () => {
