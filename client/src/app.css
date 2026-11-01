@@ -3434,15 +3434,12 @@ body.drag-held iframe {
    as the toolbar draws them (Crepe's `toolbar.css`): 32px boxes, 24px glyphs in the outline colour, the toolbar's
    hover. The lit one sits in a soft accent box in the accent colour (D16): the toolbar's dark-on-grey was too faint. Scoped under `.ctx-menu--editor` so Crepe's `.milkdown button` reset does not win;
    a note's right-click menu (D15) draws it in a `.ctx-menu__group`. */
-/* A note's right-click menu (D15) is drawn outside the editor, where Crepe's theme sets no `--crepe-color-*`:
-   the app's tokens stand in, so the buttons look as on the bullet's menu. */
-.ctx-menu__group > .ctx-menu__strip {
+/* Both menus take the app's tokens (6B nit): a note's right-click menu (D15) is drawn outside the editor, where
+   Crepe's theme sets no `--crepe-color-*`, and the bullet's menu inside it must look the same. */
+:is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip {
   --crepe-color-outline: var(--fg-muted);
   --crepe-color-hover: var(--bg-hover);
   --crepe-color-selected: var(--bg-hover-row);
-}
-
-:is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip {
   display: flex;
   gap: 2px;
   padding: 2px 6px;
