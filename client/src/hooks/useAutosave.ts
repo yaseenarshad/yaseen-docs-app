@@ -101,11 +101,13 @@ export function useAutosave(path: string): AutosaveHandle {
 
   useEffect(() => {
     // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
+    // It answers whether this note is clean (YAZ-3737 D2); a retired editor handed its text on, so it is.
     const offFlush = api.window.onFlush(async () => {
       const s = ref.current
-      if (s === null || retiredRef.current) return
+      if (s === null || retiredRef.current) return true
       s.autosave.update(s.getContent())
       await s.autosave.flush()
+      return s.autosave.isClean()
     })
     return () => {
       offFlush()

@@ -1536,3 +1536,71 @@ describe('display name in the hook (YAZ-3057 D1): stored with the window', () =>
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('sleep and wake (YAZ-3737 5A, S7)', () => {
+  const s = (): TabsState => ({ ...state(['/v/a.md', '/v/b.md', '/v/c.md'], '/v/b.md', ['/v/a.md', '/v/b.md', '/v/c.md']), history: { steps: [step(1, '/v/a.md', '/v/a.md'), step(2, '/v/b.md', '/v/b.md')], index: 1 } })
+
+  it('sleep takes the tabs out of `mounted` only — never the active one — and keeps the tabs, the Back list and the preview mark; a no-op is the same state', () => {
+    const before = { ...s(), preview: '/v/c.md' }
+    const after = tabsReducer(before, { type: 'sleep', ids: ['/v/a.md', '/v/b.md', '/v/c.md'] })
+    expect(after).toEqual({ ...before, mounted: ['/v/b.md'] })
+    expect(tabsReducer(after, { type: 'sleep', ids: ['/v/a.md', '/v/b.md'] })).toBe(after)
+    expect(tabsReducer(after, { type: 'sleep', ids: ['/v/zzz.md'] })).toBe(after)
+  })
+
+  it('a click is the wake: the tab mounts again and is active, with its Back step; a hover wake mounts it behind and changes nothing else', () => {
+    const asleep = tabsReducer(s(), { type: 'sleep', ids: ['/v/a.md', '/v/c.md'] })
+    const clicked = workspaceReducer({ ...asleep, rightPanel: defaultRightPanelIdentity(), rightMounted: [], rightHistory: {} }, { type: 'activate', path: '/v/a.md' })
+    expect(clicked.active).toBe('/v/a.md')
+    expect(clicked.mounted).toEqual(['/v/b.md', '/v/a.md'])
+    expect(clicked.history.steps.at(-1)).toMatchObject({ tab: '/v/a.md' })
+    const hovered = workspaceReducer({ ...asleep, rightPanel: defaultRightPanelIdentity(), rightMounted: [], rightHistory: {} }, { type: 'wake', id: '/v/c.md' })
+    expect(hovered).toMatchObject({ active: '/v/b.md', mounted: ['/v/b.md', '/v/c.md'], history: asleep.history })
+    // Mounted already, or no such tab: nothing.
+    expect(tabsReducer(asleep, { type: 'wake', id: '/v/b.md' })).toBe(asleep)
+    expect(tabsReducer(asleep, { type: 'wake', id: '/v/zzz.md' })).toBe(asleep)
+  })
+
+  it('S19: a rename or a move of a sleeping tab\'s file keeps it asleep under its new path; a delete closes it', () => {
+    const asleep = tabsReducer(s(), { type: 'sleep', ids: ['/v/a.md'] })
+    const renamed = tabsReducer(asleep, { type: 'rename', oldPath: '/v/a.md', newPath: '/v/sub/A.md' })
+    expect(renamed.tabs).toEqual(['/v/sub/A.md', '/v/b.md', '/v/c.md'])
+    expect(renamed.mounted).toEqual(['/v/b.md', '/v/c.md'])
+    const deleted = tabsReducer(asleep, { type: 'delete', path: '/v/a.md' })
+    expect(deleted.tabs).toEqual(['/v/b.md', '/v/c.md'])
+    expect(deleted.active).toBe('/v/b.md')
+  })
+
+  describe('in the hook', () => {
+    let reactRoot: Root | null = null
+    let latest: UseWorkspace
+    let bridge: ReturnType<typeof installBridge>
+    function Probe() {
+      latest = useWorkspace('/v')
+      return null
+    }
+    beforeEach(async () => {
+      bridge = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+      await storage.init()
+      reactRoot = createRoot(document.createElement('div'))
+      act(() => reactRoot?.render(<Probe />))
+    })
+    afterEach(() => {
+      act(() => reactRoot?.unmount())
+      reactRoot = null
+    })
+
+    it('sleep and wake write nothing: `mounted` is the renderer\'s own', () => {
+      act(() => latest.openKept('/v/a.md'))
+      act(() => latest.openKept('/v/b.md'))
+      const a = latest.tabs[0].id
+      const writes = bridge.window.setIdentity.mock.calls.length
+      act(() => latest.sleep([a]))
+      expect(latest.mounted).toEqual([latest.tabs[1].id])
+      act(() => latest.wake(a))
+      expect(latest.mounted).toEqual([latest.tabs[1].id, a])
+      expect(latest.active).toBe(latest.tabs[1].id)
+      expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes)
+    })
+  })
+})

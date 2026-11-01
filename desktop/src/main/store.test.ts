@@ -272,6 +272,22 @@ describe('createStore: loading', () => {
     for (const key of ['dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder'] as const) expect(LOCAL_SETTINGS).not.toContain(key)
   })
 
+  it('Settings › Memory (YAZ-3737 D10): a file from before it reads 30 min and reload on; each survives a restart; a wrong value reads its default; they travel', async () => {
+    const { tabSleepAfter: _a, memoryReload: _b, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    const before = createStore(file).get().settings
+    expect([before.tabSleepAfter, before.memoryReload]).toEqual(['30m', true])
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, tabSleepAfter: 'never', memoryReload: false } }))
+    expect(createStore(file).get().settings).toMatchObject({ tabSleepAfter: 'never', memoryReload: false })
+    for (const wrong of [{ tabSleepAfter: '45m' }, { tabSleepAfter: 30 }, { memoryReload: 'on' }]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, ...wrong } }))
+      const [key] = Object.keys(wrong) as (keyof typeof DEFAULT_SETTINGS)[]
+      expect(createStore(file).get().settings[key], JSON.stringify(wrong)).toEqual(DEFAULT_SETTINGS[key])
+      expect(isSettings({ ...DEFAULT_SETTINGS, ...wrong })).toBe(false)
+    }
+    for (const key of ['tabSleepAfter', 'memoryReload'] as const) expect(LOCAL_SETTINGS).not.toContain(key)
+  })
+
   it('the code Outline (YAZ-3486 S4, S5): a file from before it reads Position and no hidden kind; each value survives a restart; a wrong value is repaired', async () => {
     const { codeOutlineSort: _a, codeOutlineHidden: _b, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))

@@ -229,6 +229,8 @@
 
 /* A long name fades out at its end. The label is as wide as its room, so a short name is clear of the fade. */
 .tabbar__label {
+  display: flex;
+  align-items: center;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -236,6 +238,36 @@
   /* Room after the name for the fade and for the ✕, which stands over it (YAZ-2689 D4). A short name is clear of both. */
   padding-right: 18px;
   mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+}
+
+/* The name after the file icon and a sleeping tab's zzz (YAZ-4003): it runs on under the label's end and fades there. */
+.tabbar__name {
+  min-width: 0;
+}
+
+/* A tab asleep to save memory (YAZ-3737 D11): three small z's in the muted text colour, so they read as a state, not
+   a button. On the strip they stand before the name, after the file icon, so a long name or a 72px tab never hides
+   them (YAZ-4003, D18); the board's card wears them after its title. */
+.tabbar__asleep,
+.taboverview__asleep {
+  display: inline-flex;
+  margin-left: 4px;
+  color: var(--fg-muted);
+  vertical-align: middle;
+}
+
+.tabbar__asleep {
+  flex: none;
+  margin: 0 4px 0 0;
+}
+
+.taboverview__asleep {
+  margin-left: 6px;
+}
+
+.taboverview__asleep svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* Shown on hover and on the active tab. */
@@ -295,8 +327,8 @@
 
 .tabstack__layer--hidden {
   visibility: hidden;
-  /* YAZ-2195 (🔒 D5: every visited tab stays mounted): a hidden layer also skips style, layout and
-     paint, so tab switches, resizes and theme changes stop paying for every mounted tab. Unlike
+  /* YAZ-2195 (🔒 D5: every visited tab stays mounted, until it sleeps — YAZ-3737 5A): a hidden layer also skips
+     style, layout and paint, so tab switches, resizes and theme changes stop paying for every mounted tab. Unlike
      display:none it keeps each scroller's offset, so rule 6 still holds. */
   content-visibility: hidden;
 }
@@ -344,7 +376,7 @@
 /* ---------- tab board (YAZ-2648 D5–D8, the canvas of YAZ-3343) ---------- */
 
 /* Every open tab as a card on a canvas, over the stack while it shows: the layers under it are
-   hidden, never unmounted, so each page keeps its scroll, caret and undo. The top row stays put;
+   hidden, never unmounted while it shows (no tab sleeps then, YAZ-3737 5A), so each page keeps its scroll, caret and undo. The top row stays put;
    the camera moves the world under it. Every length of the board is a custom property
    TabOverview.tsx sets from `board.ts`, where the layout reads the same numbers. */
 .taboverview {

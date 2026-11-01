@@ -67,7 +67,7 @@ import { requestKeySheet } from '../keys/keySheetRequest'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
-import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs } from '@shared/types'
+import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type PageView } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
 import { namingTab } from '../lib/focusHandoff'
@@ -119,11 +119,18 @@ export interface DrawingSurfaceApi {
    * RESTORED elements handed in, never read back (a read-back races the engine's own commit).
    */
   replaceScene(scene: DrawingScene): number
+  /** The pan and zoom now (YAZ-3737 D13): what a tab that goes to sleep, or is copied, starts on again. */
+  canvas(): NonNullable<PageView['canvas']>
 }
 
 export interface DrawingSurfaceProps {
   /** The scene as it came off disk; the canvas opens on it and never re-reads it. */
   scene: DrawingScene
+  /**
+   * The pan and zoom to open on (YAZ-3737 D13): a woken tab's, a copy's. Read once, at mount, in place of the
+   * fit-on-open view. Omitted = fit the whole scene.
+   */
+  startCanvas?: PageView['canvas']
   /** The app's resolved appearance, handed to the engine as-is (a prop change re-themes live). */
   theme: 'light' | 'dark'
   /**
@@ -173,8 +180,8 @@ export interface DrawingSurfaceProps {
 }
 
 /**
- * The engine's handle with its scene-changing doors shut (YAZ-3076 D2): `insertElements` and
- * `addFiles` do nothing, and `updateScene` passes only what is not the scene's elements (a view,
+ * The engine's handle with its scene-changing doors shut (YAZ-3076 D2): `insertElements`,
+ * `addFiles` and `pruneFiles` do nothing, and `updateScene` passes only what is not the scene's elements (a view,
  * a dialog, a tool), so the canvas panel can still present and look but never edit a read-only drawing.
  */
 export function readOnlyHandle(api: ImperativeApi): ImperativeApi {
@@ -182,6 +189,7 @@ export function readOnlyHandle(api: ImperativeApi): ImperativeApi {
     ...api,
     insertElements: () => undefined,
     addFiles: () => undefined,
+    pruneFiles: () => undefined,
     updateScene: (scene) => {
       if (scene.elements === undefined) api.updateScene(scene)
     },
@@ -220,6 +228,7 @@ function engineScene(scene: DrawingScene, canvasAppState: Record<string, unknown
 
 export function ExcalidrawSurface({
   scene,
+  startCanvas,
   theme,
   canvasPrefs = DEFAULT_CANVAS_PREFS,
   onCanvasPrefsChange,
@@ -473,8 +482,10 @@ export function ExcalidrawSurface({
   // and a fresh identity on every settings write would re-render the memoized `<Excalidraw>` for
   // nothing (the #185 rule). The saved scene may sit far from the origin, so open on ALL of it
   // (Draw's 🔒 YAZ-1855 D1, fit-on-open) — `initialState.viewport`, resolved once the canvas is measured.
-  const [initialData] = useState(() => engineScene(scene, prefsToAppState(canvasPrefs)))
-  const [initialState] = useState(() => openViewport(scene) as ExcalidrawProps['initialState'])
+  // A woken tab or a copy opens where it was (YAZ-3737 D13): its pan and zoom over the file's, and no fit. Pan and
+  // zoom are never written into the file, so they are no edit (`boardAppState.ts`).
+  const [initialData] = useState(() => engineScene(scene, { ...prefsToAppState(canvasPrefs), ...(startCanvas !== undefined && { scrollX: startCanvas.scrollX, scrollY: startCanvas.scrollY, zoom: { value: startCanvas.zoom } }) }))
+  const [initialState] = useState(() => (startCanvas === undefined ? openViewport(scene) : undefined) as ExcalidrawProps['initialState'])
 
   const onChange = useCallback(
     (elements: ChangeArgs[0], appState: EngineAppState, files: ChangeArgs[2]) => {
@@ -541,7 +552,13 @@ export function ExcalidrawSurface({
         api.updateScene({ elements: restored })
         const entries = Object.values(next.files ?? {}) as Parameters<ImperativeApi['addFiles']>[0]
         if (entries.length > 0) api.addFiles(entries)
+        // The engine's files only grew: drop what neither the new scene nor undo can show (YAZ-3737 D14).
+        api.pruneFiles()
         return version
+      },
+      canvas: () => {
+        const { scrollX, scrollY, zoom } = api.getAppState()
+        return { scrollX, scrollY, zoom: zoom.value }
       },
     })
   }, [withPanel, rail])

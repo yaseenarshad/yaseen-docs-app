@@ -5,9 +5,11 @@ import path from 'node:path'
 import { defaultRightPanelIdentity, type PageView, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { createStore, type Store } from './store'
+import { RELOAD_QUIET_MS } from './memory'
 import {
   BOUNDS_DEBOUNCE_MS,
   FLUSH_TIMEOUT_MS,
+  LINK_SETTLE_MS,
   TEAR_OFF_GRAB,
   WINDOW_CASCADE_PX,
   besideFilesBounds,
@@ -65,7 +67,7 @@ let nextWebContentsId = 100
 
 /** A `ManagedWindow` stand-in: records sends, replays events, destroys like Electron (`closed` fires, `close` does not). */
 class FakeWindow {
-  webContents = { id: nextWebContentsId++, send: vi.fn() }
+  webContents = { id: nextWebContentsId++, send: vi.fn(), reload: vi.fn() }
   destroyed = false
   minimized = false
   focusCount = 0
@@ -106,7 +108,7 @@ class FakeWindow {
     this.listeners.set(event, list)
     return this
   }
-  emit(event: 'move' | 'resize' | 'focus' | 'minimize' | 'restore'): void {
+  emit(event: 'move' | 'resize' | 'focus' | 'blur' | 'minimize' | 'restore'): void {
     for (const l of this.listeners.get(event) ?? []) l()
   }
   /** What Electron does on a user close: emit `close`; destroy only when nobody preventDefault-ed. */
@@ -249,7 +251,7 @@ describe('createWindowManager: close', () => {
     w1.close()
     expect(w1.flushCount()).toBe(1)
     expect(w1.isDestroyed()).toBe(false)
-    manager.handleFlushed(w1.webContents)
+    manager.handleFlushed(w1.webContents, true)
     await vi.advanceTimersByTimeAsync(0)
     expect(w1.isDestroyed()).toBe(true)
     expect(store.get().windows.map((w) => w.id)).toEqual(['w2'])
@@ -266,7 +268,7 @@ describe('createWindowManager: close', () => {
     const win = created[0].win
     win.bounds = { x: 200, y: 100, width: 800, height: 600 }
     win.close()
-    manager.handleFlushed(win.webContents)
+    manager.handleFlushed(win.webContents, true)
     await vi.advanceTimersByTimeAsync(0)
     expect(win.isDestroyed()).toBe(true)
     expect(store.get().windows).toEqual([{ id: 'w1', root: '/v', roots: ['/v'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 200, y: 100, width: 800, height: 600 } }])
@@ -281,7 +283,7 @@ describe('createWindowManager: close', () => {
     const manager = createWindowManager(store, host)
     manager.restore('all')
     created[0].win.close()
-    manager.handleFlushed(created[0].win.webContents)
+    manager.handleFlushed(created[0].win.webContents, true)
     await vi.advanceTimersByTimeAsync(0)
     expect(created[0].win.isDestroyed()).toBe(true)
     expect(store.get().recents.map((r) => r.path)).toEqual(['/v/b', '/v/a'])
@@ -310,7 +312,7 @@ describe('createWindowManager: close', () => {
     manager.closeWindow('w1')
     expect(w1.flushCount()).toBe(1)
     expect(w1.isDestroyed()).toBe(false) // never a bare destroy — the handshake holds the window
-    manager.handleFlushed(w1.webContents)
+    manager.handleFlushed(w1.webContents, true)
     await vi.advanceTimersByTimeAsync(0)
     expect(w1.isDestroyed()).toBe(true)
     expect(store.get().windows.map((w) => w.id)).toEqual(['w2'])
@@ -322,11 +324,188 @@ describe('createWindowManager: close', () => {
     expect(w1.flushCount()).toBe(0)
     expect(w2.flushCount()).toBe(0)
     w1.close()
-    manager.handleFlushed(w1.webContents)
+    manager.handleFlushed(w1.webContents, true)
     await vi.advanceTimersByTimeAsync(0)
     expect(w1.isDestroyed()).toBe(true)
     manager.closeWindow('w1') // gone: nothing to close, nothing thrown
     expect(w1.flushCount()).toBe(1)
+  })
+})
+
+describe('createWindowManager: reloadWindow (YAZ-3737 D2)', () => {
+  it('⌘R flushes first; a dirty ack leaves the page as it is; a clean ack or no ack in the 5 s cap reloads (a hung page, as before)', async () => {
+    const { manager, w1 } = seedTwo()
+    const clean = manager.reloadWindow('w1')
+    expect(w1.flushCount()).toBe(1)
+    expect(w1.webContents.reload).not.toHaveBeenCalled() // never before the ack
+    manager.handleFlushed(w1.webContents, true)
+    await expect(clean).resolves.toBe(true)
+    expect(w1.webContents.reload).toHaveBeenCalledOnce()
+
+    // A save with a conflict (or a failed write) acks `{ clean: false }`.
+    const dirty = manager.reloadWindow('w1')
+    manager.handleFlushed(w1.webContents, false)
+    await expect(dirty).resolves.toBe(false)
+
+    expect(w1.webContents.reload).toHaveBeenCalledOnce()
+
+    // A hung renderer never acks: after the cap ⌘R reloads it, as `role: 'reload'` did before D2.
+    const hung = manager.reloadWindow('w1')
+    await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS - 1)
+    expect(w1.webContents.reload).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(hung).resolves.toBe(true)
+    expect(w1.webContents.reload).toHaveBeenCalledTimes(2)
+    expect(w1.isDestroyed()).toBe(false)
+  })
+
+  it('no live window, a window closed during the flush, or a quit: nothing reloads', async () => {
+    const { manager, w1, w2 } = seedTwo()
+    await expect(manager.reloadWindow('nope')).resolves.toBe(false)
+
+    const closing = manager.reloadWindow('w1')
+    w1.close() // joins the same handshake
+    manager.handleFlushed(w1.webContents, true)
+    await expect(closing).resolves.toBe(false)
+    expect(w1.isDestroyed()).toBe(true)
+    expect(w1.webContents.reload).not.toHaveBeenCalled()
+
+    void manager.flushAllForQuit()
+    await expect(manager.reloadWindow('w2')).resolves.toBe(false)
+    manager.handleFlushed(w2.webContents, true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(w2.webContents.reload).not.toHaveBeenCalled()
+  })
+})
+
+describe('createWindowManager: the memory reload (YAZ-3737 D4, D6, S22)', () => {
+  const VIEWS = [null, { path: '/v/a.md', view: { scrollTop: 300, zoomKey: null, folds: [], magnification: 100 } }]
+
+  it('memoryReload keeps the views and size for the next page, ONE time, after a clean flush; a dirty ack or no ack drops them', async () => {
+    const { manager, w1 } = seedTwo()
+    vi.setSystemTime(Date.now() + RELOAD_QUIET_MS) // D6: it lost the focus long enough ago
+    const hung = manager.memoryReload('w1', VIEWS, 1740)
+    await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS)
+    await expect(hung).resolves.toBe(false) // unlike ⌘R: no ack is not clean
+    expect(manager.takeReload('w1')).toBeUndefined()
+
+    const dirty = manager.memoryReload('w1', VIEWS, 1740)
+    manager.handleFlushed(w1.webContents, false)
+    await expect(dirty).resolves.toBe(false)
+    expect(w1.webContents.reload).not.toHaveBeenCalled()
+    expect(manager.takeReload('w1')).toBeUndefined()
+
+    const clean = manager.memoryReload('w1', VIEWS, 1740)
+    manager.handleFlushed(w1.webContents, true)
+    await expect(clean).resolves.toBe(true)
+    expect(w1.webContents.reload).toHaveBeenCalledOnce()
+    expect(manager.takeReload('w1')).toEqual({ views: VIEWS, mb: 1740 })
+    expect(manager.takeReload('w1')).toBeUndefined() // a ⌘R after it gets none (no second notice)
+
+    // A window that closes before its new page asks drops them.
+    const closing = manager.memoryReload('w1', VIEWS, 1740)
+    manager.handleFlushed(w1.webContents, true)
+    await closing
+    w1.destroy()
+    expect(manager.takeReload('w1')).toBeUndefined()
+  })
+
+  it('memoryReload checks the focus again after the flush (D6): a window that took it during the views ask or the flush stays', async () => {
+    const { manager, w1, w2 } = seedTwo()
+    vi.setSystemTime(Date.now() + RELOAD_QUIET_MS)
+    // It has the focus when the ack comes.
+    const focused = manager.memoryReload('w1', VIEWS, 1740)
+    w1.emit('focus')
+    manager.handleFlushed(w1.webContents, true)
+    await expect(focused).resolves.toBe(false)
+    // It had the focus and lost it to w2: it was used under RELOAD_QUIET_MS ago.
+    w1.emit('blur')
+    w2.emit('focus')
+    const justUsed = manager.memoryReload('w1', VIEWS, 1740)
+    manager.handleFlushed(w1.webContents, true)
+    await expect(justUsed).resolves.toBe(false)
+    // The app lost the focus with w1 in front: it is still the window focused last.
+    vi.setSystemTime(Date.now() + RELOAD_QUIET_MS)
+    w1.emit('focus')
+    w1.emit('blur')
+    vi.setSystemTime(Date.now() + RELOAD_QUIET_MS)
+    const last = manager.memoryReload('w1', VIEWS, 1740)
+    manager.handleFlushed(w1.webContents, true)
+    await expect(last).resolves.toBe(false)
+    expect(w1.webContents.reload).not.toHaveBeenCalled()
+    expect(manager.takeReload('w1')).toBeUndefined()
+    // Another window in front, w1 away long enough: it reloads.
+    w2.emit('focus')
+    const away = manager.memoryReload('w1', VIEWS, 1740)
+    manager.handleFlushed(w1.webContents, true)
+    await expect(away).resolves.toBe(true)
+    expect(w1.webContents.reload).toHaveBeenCalledOnce()
+  })
+
+  it('a reload holds the link pushes again until the new page says link:ready (S22)', async () => {
+    const { manager, w1 } = seedTwo()
+    manager.handleLinkReady(w1.webContents)
+    const reload = manager.reloadWindow('w1')
+    manager.handleFlushed(w1.webContents, true)
+    await reload
+    manager.vaultNotice('/v', 'Synced')
+    const told = () => w1.webContents.send.mock.calls.filter(([ch]) => ch === CONTRACT.link.onNotice.channel)
+    expect(told()).toEqual([])
+    manager.handleLinkReady(w1.webContents)
+    expect(told()).toEqual([[CONTRACT.link.onNotice.channel, 'Synced']])
+  })
+
+  it('blurredAt: since its last blur, or since it opened when never focused; null with the focus; lastFocused is the front of the focus list', async () => {
+    vi.setSystemTime(1_000_000)
+    const { manager, w1, w2 } = seedTwo()
+    expect(manager.blurredAt('w1')).toBe(1_000_000)
+    expect(manager.lastFocused()).toBeUndefined()
+    w1.emit('focus')
+    expect(manager.blurredAt('w1')).toBeNull()
+    expect(manager.lastFocused()).toBe('w1')
+    vi.setSystemTime(1_005_000)
+    w1.emit('blur') // the app lost the focus: w1 is still the window focused last
+    expect(manager.blurredAt('w1')).toBe(1_005_000)
+    expect(manager.lastFocused()).toBe('w1')
+    w2.emit('focus')
+    expect(manager.lastFocused()).toBe('w2')
+    w1.destroy()
+    expect(manager.blurredAt('w1')).toBeNull()
+    expect(manager.blurredAt('nope')).toBeNull()
+  })
+
+  it('busy (S22): a held link push, a push in the last 10 s, a pop-out that did not read its view, a close, a Files window with its board open', async () => {
+    const { manager, w1, w2 } = seedTwo()
+    expect(manager.busy('w1')).toBe(false)
+    // w1's page does not listen yet: the push waits for it.
+    manager.vaultNotice('/v', 'Synced')
+    expect(manager.busy('w1')).toBe(true)
+    manager.handleLinkReady(w1.webContents)
+    // Sent now; a tab move runs in its page after the push.
+    expect(manager.busy('w1')).toBe(true)
+    await vi.advanceTimersByTimeAsync(LINK_SETTLE_MS)
+    expect(manager.busy('w1')).toBe(false)
+    // A new pop-out window until its first identity read.
+    manager.popOut(store.get().windows.find((w) => w.id === 'w1')!, '/v/a.md', { view: VIEWS[1]!.view })
+    const popped = store.get().windows.at(-1)!.id
+    expect(manager.busy(popped)).toBe(true)
+    manager.takeStartView(popped)
+    expect(manager.busy(popped)).toBe(false)
+    // A close that runs.
+    w2.close()
+    expect(manager.busy('w2')).toBe(true)
+    expect(manager.busy('nope')).toBe(false)
+    // A Files window: busy only while its board makes it wide.
+    store.upsertWindow({ id: 'f', kind: 'files', root: '/v', roots: ['/v'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 280, height: 600 } })
+    const files = makeHost()
+    const other = createWindowManager(store, files.host)
+    other.restore('all')
+    for (const c of files.created) other.handleLinkReady(c.win.webContents)
+    expect(other.busy('f')).toBe(false)
+    other.filesWide('f', true)
+    expect(other.busy('f')).toBe(true)
+    other.filesWide('f', false)
+    expect(other.busy('f')).toBe(false)
   })
 })
 
@@ -338,12 +517,12 @@ describe('createWindowManager: quit', () => {
     void manager.flushAllForQuit().then(done)
     await vi.advanceTimersByTimeAsync(0)
     expect([w1.flushCount(), w2.flushCount()]).toEqual([1, 1]) // both asked together, not one after the other
-    manager.handleFlushed(w2.webContents)
+    manager.handleFlushed(w2.webContents, true)
     await vi.advanceTimersByTimeAsync(0)
     expect(w2.isDestroyed()).toBe(true)
     expect(w1.isDestroyed()).toBe(false)
     expect(done).not.toHaveBeenCalled()
-    manager.handleFlushed(w1.webContents)
+    manager.handleFlushed(w1.webContents, true)
     await vi.advanceTimersByTimeAsync(0)
     expect(w1.isDestroyed()).toBe(true)
     expect(done).toHaveBeenCalled()
@@ -356,7 +535,7 @@ describe('createWindowManager: quit', () => {
     const done = vi.fn()
     void manager.flushAllForQuit().then(done)
     await vi.advanceTimersByTimeAsync(0)
-    manager.handleFlushed(w2.webContents) // w2 answers; w1 hangs
+    manager.handleFlushed(w2.webContents, true) // w2 answers; w1 hangs
     await vi.advanceTimersByTimeAsync(0)
     expect(w2.isDestroyed()).toBe(true)
     await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS)
@@ -371,7 +550,7 @@ describe('createWindowManager: quit', () => {
     await vi.advanceTimersByTimeAsync(0)
     w1.close()
     expect(w1.flushCount()).toBe(1)
-    manager.handleFlushed(w1.webContents)
+    manager.handleFlushed(w1.webContents, true)
     await vi.advanceTimersByTimeAsync(0)
     expect(w1.isDestroyed()).toBe(true)
     expect(store.get().windows).toHaveLength(2) // quit keeps every entry
@@ -587,7 +766,7 @@ describe('createWindowManager: a request that cannot open is not a request (YAZ-
     expect(w1.focusCount).toBe(1) // raised at once; the words follow
     expect(w1.webContents.send).not.toHaveBeenCalled()
     w1.close()
-    manager.handleFlushed(w1.webContents)
+    manager.handleFlushed(w1.webContents, true)
     await vi.advanceTimersByTimeAsync(0)
     manager.handleLinkReady(w1.webContents)
     expect(w1.webContents.send.mock.calls.filter(([ch]) => ch === CONTRACT.link.onNotice.channel)).toEqual([])
@@ -1055,7 +1234,7 @@ describe('createWindowManager: "last used" (YAZ-2555 D5 — a focus on a vault\'
     for (const w of [b, a]) w.emit('focus') // each one's first focus; A is in front
     void manager.flushAllForQuit()
     await vi.advanceTimersByTimeAsync(0)
-    manager.handleFlushed(a.webContents)
+    manager.handleFlushed(a.webContents, true)
     await vi.advanceTimersByTimeAsync(0)
     expect(a.isDestroyed()).toBe(true)
     b.emit('focus') // not a first focus: without the guard this is a use of B
@@ -1070,7 +1249,7 @@ describe('createWindowManager: "last used" (YAZ-2555 D5 — a focus on a vault\'
     vi.setSystemTime(7000)
     const quit = manager.flushAllForQuit()
     expect(store.get().recents[0]).toEqual({ path: '/v/b', lastOpened: 7000 })
-    for (const w of [b, a]) manager.handleFlushed(w.webContents)
+    for (const w of [b, a]) manager.handleFlushed(w.webContents, true)
     await quit
     manager.linkNotice("Can't open link: late") // a quit has no window on purpose: no Welcome window opens for it (A2)
     expect(mru()).toEqual(['/v/b', '/v/a'])
@@ -1089,7 +1268,7 @@ describe('createWindowManager: "last used" (YAZ-2555 D5 — a focus on a vault\'
     expect(mru()).toEqual(['/v/a', '/v/c', '/v/b'])
     const quit = manager.flushAllForQuit()
     expect(mru()).toEqual(['/v/b', '/v/a', '/v/c']) // AB works in its SECOND vault
-    for (const w of [ab, b, a, c]) manager.handleFlushed(w.webContents)
+    for (const w of [ab, b, a, c]) manager.handleFlushed(w.webContents, true)
     await quit
     const next = makeHost()
     createWindowManager(store, next.host).restore('last') // the next launch
@@ -1520,7 +1699,7 @@ describe('createWindowManager: a popped-out window gets its page view once (YAZ-
     manager.duplicateWindow(from)
     for (const { win } of created) {
       win.close()
-      manager.handleFlushed(win.webContents)
+      manager.handleFlushed(win.webContents, true)
     }
     await vi.advanceTimersByTimeAsync(0)
     expect(created.map(({ win }) => win.isDestroyed())).toEqual([true, true])
@@ -2269,7 +2448,7 @@ describe('Files windows (YAZ-3357)', () => {
     // Wide again, then quit: the next launch opens it narrow.
     manager.filesWide('f', true)
     const quit = manager.flushAllForQuit()
-    for (const c of [f]) manager.handleFlushed(c.webContents)
+    for (const c of [f]) manager.handleFlushed(c.webContents, true)
     vi.advanceTimersByTime(FLUSH_TIMEOUT_MS)
     await quit
     expect(store.get().windows.find((w) => w.id === 'f')?.bounds).toEqual(narrow)
@@ -2394,7 +2573,7 @@ describe('createWindowManager: the empty-window door (YAZ-3487 D1, D2, D3)', () 
 describe('createWindowManager: a closed window\'s notes go to "Recently closed" (YAZ-3487 D10)', () => {
   const close = async (manager: ReturnType<typeof createWindowManager>, win: FakeWindow) => {
     win.close()
-    manager.handleFlushed(win.webContents)
+    manager.handleFlushed(win.webContents, true)
     await vi.advanceTimersByTimeAsync(0)
   }
 

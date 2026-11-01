@@ -5,9 +5,9 @@ import path from 'node:path'
 import type { MenuItemConstructorOptions } from 'electron'
 import { defaultRightPanelIdentity, type FileKind, type RecentRoots, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
-import { HOTKEY_COMMANDS, MENU_FIXED_KEYS, sameKey } from '@shared/hotkeyBindings'
+import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, sameKey } from '@shared/hotkeyBindings'
 import { createStore, type Store } from './store'
-import { CANVAS_BACKGROUND_PICKS, HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, gateOnBoardKind, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile, type ContextMenuActions, type MenuHandlers, type MenuHost, type MenuInputs } from './menu'
+import { CANVAS_BACKGROUND_PICKS, HEAP_SNAPSHOT_BUSY_NOTICE, HELP_URL, RELOAD_NOT_CLEAN_NOTICE, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, gateOnBoardKind, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile, type ContextMenuActions, type MenuHandlers, type MenuHost, type MenuInputs } from './menu'
 
 // ---------- buildMenuTemplate (pure) ----------
 
@@ -36,6 +36,8 @@ const noopHandlers = (): MenuHandlers => ({
   prevTab: vi.fn(),
   tabOverview: vi.fn(),
   toggleSidebar: vi.fn(),
+  reload: vi.fn(),
+  saveHeapSnapshot: vi.fn(),
   openHelp: vi.fn(),
   checkForUpdates: vi.fn(),
   whatsNew: vi.fn(),
@@ -195,16 +197,28 @@ describe('buildMenuTemplate', () => {
     expect(vi.mocked(handlers.pasteAs).mock.calls).toEqual([['plain'], ['markdown']])
   })
 
-  it('View menu: Toggle Sidebar, Reload, our own zoom items (not the roles); Toggle DevTools only in dev', () => {
+  it('View menu: Toggle Sidebar, our own Reload and zoom items (not the roles); Toggle DevTools only in dev', () => {
     const handlers = noopHandlers()
     const view = menuOf(build(RECENTS, false, handlers), 'View')
-    expect(view.map((i) => i.role).filter(Boolean)).toEqual(['reload'])
+    expect(view.map((i) => i.role).filter(Boolean)).toEqual([])
     const toggle = view.find((i) => i.label === 'Toggle Sidebar')
     click(toggle)
     expect(handlers.toggleSidebar).toHaveBeenCalledTimes(1)
+    // ⌘R is the safe reload (YAZ-3737 D2), never `role: 'reload'`, which reloads with no flush.
+    const reload = view.find((i) => i.id === 'menu.view.reload')
+    expect([reload?.label, reload?.accelerator]).toEqual(['Reload', 'CmdOrCtrl+R'])
+    click(reload)
+    expect(handlers.reload).toHaveBeenCalledTimes(1)
 
-    const dev = menuOf(build(RECENTS, true), 'View')
-    expect(dev.map((i) => i.role).filter(Boolean)).toEqual(['reload', 'toggleDevTools'])
+    expect(view.find((i) => i.id === 'menu.view.heap-snapshot')).toBeUndefined()
+
+    // Dev only (YAZ-3737 D9): Save Heap Snapshot sits right after Toggle DevTools.
+    const dev = menuOf(build(RECENTS, true, handlers), 'View')
+    expect(dev.map((i) => i.role).filter(Boolean)).toEqual(['toggleDevTools'])
+    const at = dev.findIndex((i) => i.role === 'toggleDevTools')
+    expect([dev[at + 1].id, dev[at + 1].label, dev[at + 1].accelerator]).toEqual(['menu.view.heap-snapshot', 'Save Heap Snapshot', undefined])
+    click(dev[at + 1])
+    expect(handlers.saveHeapSnapshot).toHaveBeenCalledTimes(1)
   })
 
   it('View › Actual Size / Zoom In / Zoom Out own ⌘0 / ⌘+ (and hidden ⌘=) / ⌘− and hand the step to handlers.zoom (YAZ-1710)', () => {
@@ -580,12 +594,13 @@ const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', roots: ['/vaults/n
 
 /** `folderExists` is the open-recent door's answer: `false` = the folder is gone (the door pruned it from the recents). */
 function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, folderExists = true) {
-  const windows = { duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => folderExists), linkNotice: vi.fn(), idFor: vi.fn((wc: { id: number }) => (wc.id === 7 ? 'w1' : undefined)), openFilesWindow: vi.fn((from: string | undefined) => from !== undefined), closeWindow: vi.fn() }
+  const windows = { duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => folderExists), linkNotice: vi.fn(), idFor: vi.fn((wc: { id: number }) => (wc.id === 7 ? 'w1' : undefined)), openFilesWindow: vi.fn((from: string | undefined) => from !== undefined), closeWindow: vi.fn(), reloadWindow: vi.fn(async (_id: string) => true) }
   const host: MenuHost = {
     focusedWebContents: () => focused,
     readClipboardText: vi.fn(() => '# Clipboard\n\nText'),
     openExternal: vi.fn(),
     checkForUpdates: vi.fn(),
+    saveHeapSnapshot: vi.fn(async () => true),
   }
   const handlers = createMenuHandlers(windows, host)
   return { handlers, windows, host }
@@ -715,6 +730,41 @@ describe('createMenuHandlers', () => {
     expect(gone.windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work', 'w1')
     expect(gone.windows.linkNotice).toHaveBeenCalledExactlyOnceWith("Can't open Work: folder not found")
     expect(wc.send).not.toHaveBeenCalled()
+  })
+
+  it('reload (⌘R, YAZ-3737 D2): the focused window\'s safe reload in main; not reloaded → a notice in that window only; no window → nothing', async () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers, windows } = makeHandlers(wc)
+    handlers.reload()
+    await vi.waitFor(() => expect(windows.reloadWindow).toHaveBeenCalledExactlyOnceWith('w1'))
+    await Promise.resolve()
+    expect(wc.send).not.toHaveBeenCalled()
+
+    windows.reloadWindow.mockResolvedValueOnce(false)
+    handlers.reload()
+    await vi.waitFor(() => expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.link.onNotice.channel, RELOAD_NOT_CLEAN_NOTICE))
+    expect(windows.linkNotice).not.toHaveBeenCalled() // the window it is about, never "the window in front"
+
+    const none = makeHandlers(undefined)
+    none.handlers.reload()
+    expect(none.windows.reloadWindow).not.toHaveBeenCalled()
+  })
+
+  it('saveHeapSnapshot (YAZ-3737 D9): the focused window\'s snapshot; a debugger already attached → a notice in that window (S23); no window → nothing', async () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers, host } = makeHandlers(wc)
+    handlers.saveHeapSnapshot()
+    await vi.waitFor(() => expect(host.saveHeapSnapshot).toHaveBeenCalledExactlyOnceWith(wc, 'w1'))
+    await Promise.resolve()
+    expect(wc.send).not.toHaveBeenCalled()
+
+    vi.mocked(host.saveHeapSnapshot).mockResolvedValueOnce(false)
+    handlers.saveHeapSnapshot()
+    await vi.waitFor(() => expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.link.onNotice.channel, HEAP_SNAPSHOT_BUSY_NOTICE))
+
+    const none = makeHandlers(undefined)
+    none.handlers.saveHeapSnapshot()
+    expect(none.host.saveHeapSnapshot).not.toHaveBeenCalled()
   })
 
   it('closeTab / nextTab / prevTab go to the focused renderer only (GRO-2232); no focused window is a no-op', () => {
@@ -988,12 +1038,12 @@ describe('subscribeMenuRebuildOnActiveFile', () => {
 })
 
 describe('the menu\'s fixed keys (YAZ-3419)', () => {
-  it('every key the menu carries is a changeable command\'s, a numbered vault\'s, or in MENU_FIXED_KEYS — so the recorder and the store refuse it', () => {
+  it('every key the menu carries is a changeable command\'s, a numbered vault\'s, in MENU_FIXED_KEYS, or a Mac standard key (⌘R, YAZ-3737 D2) — so the recorder and the store refuse it', () => {
     const vaults: MenuInputs['keyedVaults'] = [{ key: 1, name: 'Notes', path: '/vaults/notes' }]
     const fixed = (['markdown', 'drawing', 'diagram', null] as const).flatMap((kind) =>
       allItems(build(RECENTS, true, noopHandlers(), vaults, kind)).filter((i) => typeof i.accelerator === 'string' && i.accelerator !== '' && !i.id?.startsWith('menu.window.vault.')),
     )
-    const stray = fixed.filter((i) => !HOTKEY_COMMANDS.some((c) => sameKey(c.key, i.accelerator as string)) && !MENU_FIXED_KEYS.some((k) => sameKey(k.accelerator, i.accelerator as string)))
+    const stray = fixed.filter((i) => !HOTKEY_COMMANDS.some((c) => sameKey(c.key, i.accelerator as string)) && ![...MENU_FIXED_KEYS, ...APP_STANDARD_KEYS].some((k) => sameKey(k.accelerator, i.accelerator as string)))
     expect(stray.map((i) => `${i.id} ${String(i.accelerator)}`)).toEqual([])
     expect(fixed.length).toBeGreaterThan(MENU_FIXED_KEYS.length)
   })

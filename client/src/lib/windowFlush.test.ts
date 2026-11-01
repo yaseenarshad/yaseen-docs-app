@@ -27,12 +27,19 @@ describe('flushWindow (YAZ-2174)', () => {
     vi.mocked(api.writeFile).mockImplementationOnce(() => new Promise((r) => (landWrite = () => r({ path: PATH, mtime: 200, size: 5 }))))
     const off = onWindowFlush(() => void transformFile(PATH, () => 'after'))
     let done = false
-    const flushing = flushWindow().then(() => (done = true))
+    const flushing = flushWindow().then((clean) => ((done = true), clean))
 
     await vi.waitFor(() => expect(api.writeFile).toHaveBeenCalledOnce())
     expect(done).toBe(false)
     landWrite()
-    await flushing
+    expect(await flushing).toBe(true) // nothing failed: clean (YAZ-3737 D2)
+    off()
+  })
+
+  it('a write it waited for that failed makes the flush not clean (YAZ-3737 D2)', async () => {
+    vi.mocked(api.writeFile).mockRejectedValueOnce(new Error('disk full'))
+    const off = onWindowFlush(() => void transformFile(PATH, () => 'after').catch(() => undefined))
+    await expect(flushWindow()).resolves.toBe(false)
     off()
   })
 
@@ -44,7 +51,7 @@ describe('flushWindow (YAZ-2174)', () => {
       }),
       onWindowFlush(second),
     ]
-    await expect(flushWindow()).resolves.toBeUndefined()
+    await expect(flushWindow()).resolves.toBe(false) // a flusher that threw may have lost its edit
     expect(second).toHaveBeenCalledOnce()
     offs.forEach((off) => off())
   })

@@ -15,14 +15,19 @@ export function onWindowFlush(flusher: () => void): () => void {
   return () => void flushers.delete(flusher)
 }
 
-/** Every flusher first, so each has started its write, then every whole-file write still in flight. */
-export async function flushWindow(): Promise<void> {
+/**
+ * Every flusher first, so each has started its write, then every whole-file write still in flight. It answers
+ * whether all of it is clean (YAZ-3737 D2): a flusher that threw or a write that failed keeps a reload away.
+ */
+export async function flushWindow(): Promise<boolean> {
+  let clean = true
   for (const flusher of [...flushers]) {
     try {
       flusher()
     } catch (err) {
+      clean = false
       console.warn(`[flush] a flusher threw: ${String(err)}`) // the rest still run: none may cost another its edit
     }
   }
-  await settleFileWrites()
+  return (await settleFileWrites()) && clean
 }

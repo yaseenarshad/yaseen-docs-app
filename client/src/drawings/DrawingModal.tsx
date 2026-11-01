@@ -204,10 +204,14 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   )
 
   // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
-  // Unmounted any other way (the note closed under it): save what is pending, then never write again.
+  // It answers whether the drawing is clean (YAZ-3737 D2). Unmounted any other way (the note closed under it):
+  // save what is pending, then never write again.
   useEffect(() => {
     const offFlush = api.window.onFlush(async () => {
-      await autosave.current?.flush()
+      const a = autosave.current
+      if (a === null) return true
+      await a.flush()
+      return a.isClean()
     })
     return () => {
       offFlush()
