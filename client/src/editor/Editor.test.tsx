@@ -135,6 +135,7 @@ import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import type { BlockLines } from './lineNumbers/blockLines'
 import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
+import { outlineFoldKeyStem } from './outline/outlineFoldKeys'
 
 interface FakeCrepe {
   md: string
@@ -448,6 +449,64 @@ describe('CrepeHost table of contents (YAZ-2700)', () => {
     await pastDebounce()
     expect(createCrepeMock.mock.calls.length).toBe(built)
     expect(tocOf()).toBe(before)
+  })
+})
+
+/**
+ * The folded rows of the table of contents (YAZ-3939 D1): saved for THIS note in the app state, never
+ * in the note. The flow: fold a row, close the note, open it again: the row is still folded.
+ */
+describe('CrepeHost table of contents folds (YAZ-3939)', () => {
+  const TREE = [
+    { level: 1, text: 'Overview' },
+    { level: 2, text: 'Goals' },
+    { level: 1, text: 'Design' },
+    { level: 2, text: 'Keys' },
+    { level: 1, text: 'Rollout' },
+  ] as const
+  let saved: string[]
+
+  beforeEach(() => {
+    saved = []
+    vi.spyOn(storage, 'getTocFolds').mockImplementation(() => saved)
+    vi.spyOn(storage, 'setTocFolds').mockImplementation((_root, _file, keys) => void (saved = [...keys]))
+    vi.spyOn(storage, 'setFolds').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    vi.mocked(storage.getTocFolds).mockRestore()
+    vi.mocked(storage.setTocFolds).mockRestore()
+    vi.mocked(storage.setFolds).mockRestore()
+  })
+
+  /** The names column of a 1400px note, as in the width test above. */
+  const openNames = (el: HTMLElement): string[] => {
+    const section = el.querySelector<HTMLElement>('section.editor')
+    if (section === null) throw new Error('no section.editor')
+    Object.defineProperty(section, 'clientWidth', { configurable: true, value: 1400 })
+    act(() => tocOf().publish(TREE))
+    return [...el.querySelectorAll('.toc__name')].map((name) => name.textContent ?? '')
+  }
+
+  it('a fold is saved for this note, the note itself never folds or saves, and the next open of the note shows the row folded', async () => {
+    const el = await mount(BODY, 1, { tableOfContents: 'pinned' })
+    expect(openNames(el)).toEqual(['Overview', 'Goals', 'Design', 'Keys', 'Rollout'])
+    const jump = vi.fn()
+    tocOf().bind({ jump, current: vi.fn(() => -1), rescan: vi.fn() })
+    act(() => el.querySelectorAll<HTMLElement>('.toc__name')[2].querySelector<HTMLElement>('.toc__fold')?.click())
+    expect(storage.setTocFolds).toHaveBeenLastCalledWith('/vault', PATH, [`1:${outlineFoldKeyStem('Design')}#0`])
+    // The note itself never folds: its own folds are not written.
+    expect(storage.setFolds).not.toHaveBeenCalled()
+    expect([...el.querySelectorAll('.toc__name')].map((name) => name.textContent)).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])
+    expect(jump).not.toHaveBeenCalled()
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
+
+    act(() => root?.unmount())
+    container?.remove()
+    const again = await mount(BODY, 1, { tableOfContents: 'pinned' })
+    expect(storage.getTocFolds).toHaveBeenLastCalledWith('/vault', PATH)
+    expect(openNames(again)).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])
   })
 })
 
