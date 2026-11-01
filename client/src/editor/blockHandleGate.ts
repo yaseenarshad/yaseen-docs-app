@@ -41,7 +41,8 @@ function overAffordance(view: EditorView, x: number, stack: readonly Element[]):
     // pointer. A paragraph's or a heading's box starts at the column edge, so its handle is clear
     // of every line; a bullet's box starts after its list's indent, so its handle lies on the
     // list's innermost line and would take the press that folds.
-    if (el.parentElement === view.dom && sectionLineAt(x, el) !== null) return true
+    // Folding off (YAZ-4094 F1): the section line folds nothing either, so the handle stays.
+    if (el.parentElement === view.dom && isFoldingOn(view.state) && sectionLineAt(x, el) !== null) return true
   }
   return false
 }

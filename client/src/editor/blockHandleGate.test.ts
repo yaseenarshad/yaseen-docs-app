@@ -122,6 +122,7 @@ describe('a section line (YAZ-2709)', () => {
     const { editorViewCtx } = await import('@milkdown/kit/core')
     const { HANDLE_MUTED_CLASS } = await import('./blockHandleGate')
     const { showSectionIndent } = await import('./outline/sectionIndent')
+    const { setFoldingOn } = await import('./outline/foldingSwitch')
 
     const root = document.createElement('div')
     document.body.appendChild(root)
@@ -150,8 +151,52 @@ describe('a section line (YAZ-2709)', () => {
       expect(await mutedAt(40)).toBe(true)
       expect(await mutedAt(25)).toBe(false)
       expect(await mutedAt(10)).toBe(true)
+      // Folding off (YAZ-4094 F1): the line folds nothing, so the handle stays.
+      view.dispatch(setFoldingOn(view.state.tr, false))
+      expect(await mutedAt(40)).toBe(false)
+      expect(await mutedAt(10)).toBe(false)
     } finally {
       computed.mockRestore()
+      document.elementsFromPoint = originalFrom
+      await crepe.destroy()
+      root.remove()
+    }
+  })
+})
+
+describe('a guide line with folding off (YAZ-4094 F1, fix 5)', () => {
+  // The guide strip hit-tests as the list itself (guideLines.ts). With folding on, the handle steps aside
+  // so the press lands on the line; with folding off the line folds nothing, so the handle stays.
+  it('mutes the handle over the strip with folding on, and not with folding off', async () => {
+    const { createCrepe } = await import('./createCrepe')
+    const { editorViewCtx } = await import('@milkdown/kit/core')
+    const { HANDLE_MUTED_CLASS } = await import('./blockHandleGate')
+    const { setFoldingOn } = await import('./outline/foldingSwitch')
+
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: '* parent\n  * child\n' })
+    await crepe.create()
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const handle = document.createElement('div')
+    handle.className = 'milkdown-block-handle'
+    view.dom.parentElement!.appendChild(handle)
+
+    // jsdom lays nothing out: the nested list's box is at 0 and the font falls back to 16px, so the strip
+    // is centred at x = -22.2 (guideLines.test.ts).
+    const nested = view.dom.querySelector('li.list-item > .children > .content-dom > ul')!
+    const originalFrom = document.elementsFromPoint
+    document.elementsFromPoint = () => [nested]
+    const mutedAt = async (clientX: number): Promise<boolean> => {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX, clientY: 10, bubbles: true }))
+      await new Promise((r) => requestAnimationFrame(() => r(null)))
+      return handle.classList.contains(HANDLE_MUTED_CLASS)
+    }
+    try {
+      expect(await mutedAt(-22.2)).toBe(true)
+      view.dispatch(setFoldingOn(view.state.tr, false))
+      expect(await mutedAt(-22.2)).toBe(false)
+    } finally {
       document.elementsFromPoint = originalFrom
       await crepe.destroy()
       root.remove()
