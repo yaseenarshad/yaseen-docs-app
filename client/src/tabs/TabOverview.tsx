@@ -697,6 +697,8 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     delete copy.dataset.tab
     copy.classList.add('taboverview__carry')
     copy.setAttribute('aria-hidden', 'true')
+    // Zoomed far out, a card is its title alone (`data-far` on the board): the copy, outside the board, looks the same.
+    if (el.closest('.taboverview')?.hasAttribute('data-far') === true) copy.setAttribute('data-far', '')
     const { font, color } = getComputedStyle(el)
     Object.assign(copy.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${el.offsetWidth}px`, height: `${el.offsetHeight}px`, transform: `scale(${cam.current.zoom})`, font, color })
     document.body.appendChild(copy)

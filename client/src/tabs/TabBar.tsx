@@ -140,6 +140,8 @@ const PART_MS = 150
 const SLIDE = { '--tab-slide-ms': `${SLIDE_MS}ms`, '--tab-part-ms': `${PART_MS}ms` } as CSSProperties
 /** The room the tabs open for a tab from elsewhere, in px (YAZ-3808 6A): about one tab, whose width is not known until it lands. */
 const ARRIVAL_ROOM = 124
+/** How long the gap waits for a tab of another window that was let go here, in ms (YAZ-3808 6A1): a take refused, or one that asks first, never lands. */
+const LANDING_MS = 1500
 /** How long a tab glides to its new place after a reorder, in ms (YAZ-3808 D6; tuned in the demo). */
 const GLIDE_MS = 200
 
@@ -278,6 +280,17 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   const [boardLabel, setBoardLabel] = useState<string | null>(null)
   /** A drag went over the strip, and the mouse has not moved since: the page's hover is stale (YAZ-3808 6F). */
   const [staleHover, setStaleHover] = useState(false)
+  /**
+   * A tab from elsewhere let go here (YAZ-3808 6A1): its gap stays open until it lands — a tab of another window comes
+   * through main, a moment after the drop — and it lands in the gap with no slide-open. `count`: the tabs before it lands.
+   */
+  const [arrival, setArrival] = useState<{ at: number; count: number } | null>(null)
+  const waiting = arrival !== null && tabs.length === arrival.count ? arrival : null
+  const arrived = arrival !== null && tabs.length === arrival.count + 1
+  /** The held card's own tab, and the tabs there are, for `release` (the strip target is set once). */
+  const boardOwnRef = useRef<string | null>(null)
+  const tabCount = useRef(tabs.length)
+  tabCount.current = tabs.length
   const [scroller] = useState(() =>
     edgeScroller(
       () => stripRef.current,
@@ -293,6 +306,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         const slot = slotUnder(stripRef.current, x, y)
         const tab = own === undefined ? null : (stripRef.current?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(own)}"]`) ?? null)
         if (tab !== null) boardRoom.current = roomOf(tab, stripRef.current)
+        boardOwnRef.current = own ?? null
         setBoardOwn(own ?? null)
         setBoardLabel(label ?? null)
         boardPoint.current = slot === null ? null : { x, y }
@@ -306,7 +320,10 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         scroller.stop()
         setBoardOver(null)
         setBoardLabel(null)
-        return x === undefined || y === undefined ? null : slotUnder(stripRef.current, x, y)
+        const slot = x === undefined || y === undefined ? null : slotUnder(stripRef.current, x, y)
+        // Another window's card lands through main: its gap waits for it (6A1). This window's own card only moves.
+        if (slot !== null && boardOwnRef.current === null) setArrival({ at: slot, count: tabCount.current })
+        return slot
       },
     })
     return () => {
@@ -346,15 +363,13 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   const [ghosts, setGhosts] = useState<Ghost[]>([])
   const ghostKey = useRef(0)
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
-  /** A page from the right panel was let go in the live gap (YAZ-3808 6A): its tab lands in the room open for it, and does not slide open. */
-  const landed = useRef(false)
-  if (tabs.length > last.current.tabs.length && !(last.current.blank && !blank) && !landed.current) {
+  // A tab from elsewhere let go in the live gap lands in the room open for it, and does not slide open (6A1).
+  if (tabs.length > last.current.tabs.length && !(last.current.blank && !blank) && !arrived) {
     for (const tab of tabs) if (!last.current.tabs.some((t) => t.id === tab.id)) slidIn.current.add(tab.id)
   }
   useEffect(() => {
     const was = last.current
     last.current = { tabs, blank }
-    landed.current = false
     const open = new Set(tabs.map((t) => t.id))
     for (const id of slidIn.current) if (!open.has(id)) slidIn.current.delete(id)
     // With no motion asked for — and where there is no `matchMedia` to ask — nothing slides shut.
@@ -390,7 +405,9 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   const order = useRef<readonly string[]>([])
   const glideFrom = useRef<Map<string, number> | null>(null)
   const ids = tabs.map((t) => t.id)
-  if (ids.length === order.current.length && ids.some((id, i) => id !== order.current[i]) && ids.every((id) => order.current.includes(id))) {
+  // A tab that lands in the live gap (6A1) does not glide; the tabs after it glide the rest of the way, from the room
+  // the gap held to the room the tab takes.
+  if (arrived || (ids.length === order.current.length && ids.some((id, i) => id !== order.current[i]) && ids.every((id) => order.current.includes(id)))) {
     const strip = stripRef.current
     const origin = strip === null ? 0 : strip.getBoundingClientRect().left + strip.clientLeft - strip.scrollLeft
     const drawn = [...(strip?.querySelectorAll<HTMLElement>('[data-tab]:not(.tabbar__tab--dragging)') ?? [])]
@@ -403,7 +420,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     if (from === null || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== false) return
     for (const el of stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? []) {
       const dx = (from.get(el.dataset.tab!) ?? el.offsetLeft) - el.offsetLeft
-      if (dx !== 0) el.animate?.([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: GLIDE_MS, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' })
+      // Under a pixel is rounding, not a move.
+      if (Math.abs(dx) >= 1) el.animate?.([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: GLIDE_MS, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' })
     }
   }, [tabs])
   const ghostsBefore = (id: string | null) =>
@@ -466,13 +484,14 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       const tab = event.dataTransfer === null ? null : windowTabOf(event.dataTransfer)
       if (tab === null) return
       event.preventDefault()
+      setArrival({ at: insertion, count: tabs.length })
       onDropFromWindow?.(tab.from, tab.ref, insertion)
       return
     }
     const page = externalPage(event)
     if (page === null) return
     event.preventDefault()
-    landed.current = true
+    setArrival({ at: insertion, count: tabs.length })
     onDropPage?.(page, insertion)
   }
 
@@ -520,7 +539,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // Where the tabs part (YAZ-2656 S89): the slot a drop would land in — and none where a drop
   // would leave the grabbed tab in its place, on either side of it.
   // A tab board card over the strip (YAZ-3808 D1) opens the same gap.
-  const over = drag?.over ?? externalOver ?? boardOver
+  const over = drag?.over ?? externalOver ?? boardOver ?? waiting?.at ?? null
   const from = drag?.from ?? (boardOver === null || boardOwn === null ? -1 : tabs.findIndex((t) => t.id === boardOwn))
   const gap = over === null || (from !== -1 && (over === from || over === from + 1)) ? null : over
   // THE LIVE GAP (YAZ-3808 6A): the grabbed tab's room moves to the slot. The tabs between the two slide toward the
@@ -532,7 +551,14 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     if (from === -1) return i >= gap ? room : 0
     return from < i && i < gap ? -room : gap <= i && i < from ? room : 0
   }
-  const parting = drag !== null || externalOver !== null || boardOver !== null
+  const parting = drag !== null || externalOver !== null || boardOver !== null || waiting !== null
+  useEffect(() => {
+    if (arrival === null) return
+    if (tabs.length !== arrival.count) return setArrival(null)
+    // A take refused, or one that asks first, never lands: the gap gives way.
+    const timer = setTimeout(() => setArrival(null), LANDING_MS)
+    return () => clearTimeout(timer)
+  }, [arrival, tabs.length])
   // No hover look on the tabs while they part, nor after a drag until the mouse moves (YAZ-3808 6F): the page hears no
   // mouse move during a drag, so its hover stays where the drag began, on the tab that slid into that place.
   const hoverless = parting || staleHover

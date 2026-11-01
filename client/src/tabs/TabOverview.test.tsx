@@ -31,6 +31,7 @@ vi.mock('../api', async (importOriginal) => ({
 vi.mock('../sidebar/NotePreview', () => ({ default: ({ name }: { name: string }) => <div className="note-preview" aria-label={`Preview of ${name}`} /> }))
 vi.mock('../sidebar/BoardPreview', () => ({ default: ({ node }: { node: { path: string } }) => <div className="board-preview" aria-label={`Preview of ${node.path}`} /> }))
 import { setStripTarget } from './stripDrop'
+import tabsCss from './tabs.css?inline'
 import { api } from '../api'
 const readHeads = vi.mocked(api.readHeads)
 
@@ -1805,6 +1806,18 @@ describe('YAZ-3808 D1: a card let go on the tab strip moves its tab there', () =
     expect(onMoveToSlot).toHaveBeenCalledExactlyOnceWith('/v/a.md', 1)
     expect(storage.setTabCanvas).not.toHaveBeenCalled()
     expect(card.dataset.sliding).toBe('') // it slides back to its place
+  })
+
+  it('6E1 (YAZ-4027): zoomed far out, the carried copy shows what the card shows — the title alone', async () => {
+    const { el } = await mount()
+    el.querySelector<HTMLElement>('.taboverview')!.setAttribute('data-far', '')
+    const card = page(el, '/v/a.md')!
+    pointer(card, 'pointerdown', 0, 0)
+    pointer(window, 'pointermove', 10, 10)
+    const carry = document.body.querySelector<HTMLElement>(':scope > .taboverview__carry')!
+    expect(carry.hasAttribute('data-far')).toBe(true)
+    expect(tabsCss).toMatch(/\.taboverview__carry\[data-far\] \.taboverview__lines,/)
+    pointer(window, 'pointerup', 10, 10)
   })
 
   it('another window\'s card: its tab joins this window at the slot, as a drop from that window\'s strip does, and leaves its frame in the same write', async () => {

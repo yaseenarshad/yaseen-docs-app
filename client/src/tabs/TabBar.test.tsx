@@ -469,7 +469,8 @@ describe('TabBar: a tab of ANOTHER window (YAZ-3637 D1, D4, D6)', () => {
     fireData(tabAt(el, 1), 'drop', foreign(true), -5)
     expect(onDropFromWindow).toHaveBeenCalledExactlyOnceWith('w2', { path: '/w/x.md', copy: 1 }, 1)
     expect(base.onDropPage).not.toHaveBeenCalled()
-    expect(el.querySelector('.tabbar__tab--gap-before')).toBeNull()
+    // The tab comes through main: its gap waits for it (YAZ-3808 6A1).
+    expect(tabAt(el, 1).classList.contains('tabbar__tab--gap-before')).toBe(true)
     // A drag this window does not take: no line, the drop is not taken, nothing happens.
     const other = { ...foreign(false), types: [WORKSPACE_PAGE_MIME, 'application/x-yaseen-from-w2.1'] } as unknown as DataTransfer
     expect(fireData(tabAt(el, 2), 'dragover', other, 5).defaultPrevented).toBe(false)
@@ -1276,7 +1277,8 @@ describe('TabBar: the four tab changes (YAZ-3808)', () => {
     let slot: number | null = null
     act(() => void (slot = releaseOverStrip(210, 20)))
     expect(slot).toBe(2)
-    expect(gaps(el)).toEqual([])
+    // Another window's card: its tab comes through main, and its gap waits for it (6A1).
+    expect(gaps(el)).toEqual(['c:before'])
     act(() => root?.unmount())
     root = null
     expect(releaseOverStrip(210, 20)).toBeNull()
@@ -1505,9 +1507,10 @@ describe('TabBar: the live gap (YAZ-3808 6A)', () => {
     act(() => holdOverStrip(250, 20))
     expect(tabAt(el, 0).classList.contains('tabbar__tab--dragging')).toBe(false)
     expect(shifts(el)).toEqual(['a', 'b', 'c', 'd translateX(124px)'])
+    // Let go: another window's tab comes through main, and its room waits for it (6A1).
     act(() => void releaseOverStrip(250, 20))
-    expect(shifts(el)).toEqual(['a', 'b', 'c', 'd'])
-    expect(el.querySelector('.tabbar__room, .tabbar--parting')).toBeNull()
+    expect(shifts(el)).toEqual(['a', 'b', 'c', 'd translateX(124px)'])
+    expect(el.querySelector('.tabbar__room')).not.toBeNull()
   })
 
   it('6D: a card held over the strip shows its tab, with its name, where it will land; off the strip and after the release there is none', () => {
@@ -1535,6 +1538,47 @@ describe('TabBar: the live gap (YAZ-3808 6A)', () => {
     act(() => void holdOverStrip(250, 20, undefined, 'Elsewhere'))
     act(() => void releaseOverStrip(250, 20))
     expect(landing()).toBeNull()
+  })
+
+  it('6A1 (YAZ-4026): a tab of another window keeps its gap open until it lands, and lands in it with no slide-open; one that never comes gives the gap back', () => {
+    vi.useFakeTimers()
+    try {
+      const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), ...props })
+      const strip = el.querySelector<HTMLElement>('.tabbar')!
+      strip.getBoundingClientRect = () => ({ left: 0, right: 400, top: 0, bottom: 40, width: 400, height: 40 }) as DOMRect
+      const room = ['a', 'b', 'c translateX(124px)', 'd translateX(124px)']
+      act(() => void holdOverStrip(150, 20, undefined, 'Elsewhere')) // after b
+      expect(shifts(el)).toEqual(room)
+      let slot: number | null = null
+      act(() => void (slot = releaseOverStrip(150, 20)))
+      expect(slot).toBe(2)
+      // The take goes through main: the gap waits for the tab.
+      expect(shifts(el)).toEqual(room)
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+      act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={['/v/a.md', '/v/b.md', '/v/e.md', '/v/c.md', '/v/d.md']} active="/v/a.md" onMove={vi.fn()} {...props} />))
+      expect(shifts(el)).toEqual(['a', 'b', 'e', 'c', 'd'])
+      expect(el.querySelector('.tabbar__room')).toBeNull()
+      expect(tabAt(el, 2).classList.contains('tabbar__tab--in')).toBe(false) // it fills the gap; it does not slide open
+      // A tab that never comes (refused, or a question asked first): the gap goes after a while.
+      act(() => void holdOverStrip(150, 20, undefined, 'Elsewhere'))
+      act(() => void releaseOverStrip(150, 20))
+      expect(el.querySelector('.tabbar__room')).not.toBeNull()
+      act(() => void vi.advanceTimersByTime(2000))
+      expect(el.querySelector('.tabbar__room')).toBeNull()
+      expect(shifts(el)).toEqual(['a', 'b', 'e', 'c', 'd'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('6A1 (YAZ-4026): a strip tab of another window dropped here keeps its gap open until it lands', () => {
+    const data = { types: [WORKSPACE_PAGE_MIME, 'application/x-yaseen-from-w2.0'], effectAllowed: 'move', dropEffect: 'none', getData: () => JSON.stringify({ path: '/v/e.md', owner: 'main', from: 'w2', copy: 0 }), setData: vi.fn() }
+    const onDropFromWindow = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onMove: vi.fn(), takesDrag: () => true, onDropFromWindow, ...props })
+    fire(tabAt(el, 1), 'dragover', 5, data)
+    fire(tabAt(el, 1), 'drop', 5, data)
+    expect(onDropFromWindow).toHaveBeenCalledWith('w2', { path: '/v/e.md', copy: 0 }, 2)
+    expect(shifts(el)).toEqual(['a', 'b', 'c translateX(124px)', 'd translateX(124px)'])
   })
 
   it('a drop into the gap glides nothing: the strip already shows the new order, and the tab let go stood nowhere', async () => {

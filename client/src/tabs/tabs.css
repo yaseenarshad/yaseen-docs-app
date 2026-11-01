@@ -881,10 +881,14 @@
   -webkit-line-clamp: 1;
 }
 
-/* Zoomed far out (camera's `data-far`, zoom < 0.6): the title alone, which still reads. */
+/* Zoomed far out (camera's `data-far`, zoom < 0.6): the title alone, which still reads. The carried copy of a card
+   (YAZ-3808 6E) stands outside the board, so it carries the mark itself. */
 .taboverview[data-far] .taboverview__lines,
 .taboverview[data-far] .taboverview__pagename,
-.taboverview[data-far] .taboverview__folder {
+.taboverview[data-far] .taboverview__folder,
+.taboverview__carry[data-far] .taboverview__lines,
+.taboverview__carry[data-far] .taboverview__pagename,
+.taboverview__carry[data-far] .taboverview__folder {
   display: none;
 }
 
