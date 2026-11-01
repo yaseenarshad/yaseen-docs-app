@@ -443,6 +443,17 @@ export const storage = {
     send('state.setTocSource', () => api.state.setTocSource(root, file, source))
   },
 
+  /** The folded rows of this note's table of contents (YAZ-3939 D1): `tocFoldKeys` keys. */
+  getTocFolds: (root: string, file: string): string[] => folderOf(root).tocFolds[file] ?? [],
+  /** Replace them for one note; an empty list removes the entry. */
+  setTocFolds(root: string, file: string, keys: readonly string[]): void {
+    const tocFolds = { ...folderOf(root).tocFolds }
+    if (keys.length === 0) delete tocFolds[file]
+    else tocFolds[file] = keys.slice(0, MAX_FOLD_KEYS_PER_FILE)
+    patchFolder(root, { tocFolds })
+    send('state.setTocFolds', () => api.state.setTocFolds(root, file, keys))
+  },
+
   /** This note's "Section indent" switch (YAZ-2709 D2). A note with no entry is off. */
   getSectionIndent: (root: string, file: string): boolean => folderOf(root).sectionIndents[file] === true,
   /** The reader's switch for one note. On and off are both stored; the same value again writes nothing. */
