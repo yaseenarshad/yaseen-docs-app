@@ -302,7 +302,7 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect(css).toMatch(/@container memory \(max-width: 599px\)\s*\{[\s\S]*\.memory__bar\s*\{\s*display:\s*none;/)
   })
 
-  it('YAZ-4029, YAZ-4030, YAZ-4031, YAZ-4042, YAZ-4051: at each width the checker measured, the headers, states and sizes fit, and the Tab column keeps 6 letters of a name; a narrow table hides the times (D19)', () => {
+  it('YAZ-4029, YAZ-4030, YAZ-4031, YAZ-4042, YAZ-4051, YAZ-4052: at each width the checker measured, the headers, states and sizes fit, and the Tab column keeps 6 letters of a name; a narrow table hides the times (D19)', () => {
     const css = settingsCss.replace(/\/\*[\s\S]*?\*\//g, '')
     const rule = (text: string, selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(text)?.[1] ?? ''
     const bands = [...css.matchAll(/@container memory \(max-width: (\d+)px\)\s*\{((?:[^{}]*\{[^}]*\})*)\s*\}/g)]
@@ -332,6 +332,10 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     // The five sleep times wrap beside their label, so they never make the page scroll sideways (YAZ-4042).
     expect(rule(base, ".setting[data-setting='tabSleepAfter'] .setting__control")).toMatch(/max-width:\s*calc\(100% - 7em\);/)
     expect(rule(base, ".setting[data-setting='tabSleepAfter'] .settings__options")).toMatch(/flex-wrap:\s*wrap;/)
+    // In a window up to 680 px the Settings list stands above the page (D20, YAZ-4052), so the table gets the window's
+    // width: 561 to 679 px windows left it 198 to 297 px.
+    expect(css).toMatch(/@media \(max-width: 680px\)\s*\{\s*\.settings-dialog\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\);/)
+    expect(css).not.toMatch(/@media \(max-width: 560px\)/)
     // The bands come after the base rules they change, so they win (YAZ-4030).
     expect(css.indexOf('@container memory')).toBeGreaterThan(css.search(/\}\s*\.memory__size\s*\{/))
     expect(css.indexOf('@container memory')).toBeGreaterThan(css.search(/\}\s*\.memory__bar\s*\{/))

@@ -1201,8 +1201,9 @@
  * A narrow window (YAZ-3357 D14: a Files window is about 230 px of page): the nav and the page side
  * by side leave the page no width. The nav stands above the page instead, shorter, and the sheet
  * takes the window less a small margin. The nav leaves room on its right for the close button.
+ * Up to 680 px (D20, YAZ-4052): beside the nav, a 561 to 680 px window left the page under 300 px.
  */
-@media (max-width: 560px) {
+@media (max-width: 680px) {
   .settings-dialog {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
