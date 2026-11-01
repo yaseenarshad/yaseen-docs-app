@@ -515,3 +515,26 @@ describe('S12: a big file', () => {
     expect(moveMs).toBeLessThan(500)
   })
 })
+
+// YAZ-4010 (4B1A1): a row whose children are all of a hidden kind has no chevron, so it cannot collapse.
+describe('YAZ-3938 D6 with hidden kinds (YAZ-4010)', () => {
+  it('D6: every child kind hidden (Show menu): no row can collapse, so the button says "Nothing to fold"', () => {
+    const m = mount()
+    m.render({ hidden: ['method'] })
+    const fold = (): HTMLButtonElement => document.querySelector<HTMLButtonElement>('.outline__tool')!
+    expect(document.querySelectorAll('.outline__twisty:not([data-leaf])').length).toBe(0)
+    expect(fold().getAttribute('aria-label')).toBe('Nothing to fold')
+    expect(fold().disabled).toBe(true)
+  })
+
+  it('D6: the only row that can collapse is collapsed; the button says "Expand all", not "Collapse all"', () => {
+    const m = mount()
+    m.render({ hidden: ['variable'] })
+    const fold = (): HTMLButtonElement => document.querySelector<HTMLButtonElement>('.outline__tool')!
+    click(row('Pipeline').querySelector('.outline__twisty')!)
+    expect(rowNames()).toEqual(['Pipeline'])
+    expect(fold().getAttribute('aria-label')).toBe('Expand all')
+    click(fold())
+    expect(rowNames().slice(0, 2)).toEqual(['Pipeline', 'step1'])
+  })
+})

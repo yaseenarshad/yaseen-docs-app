@@ -9,6 +9,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
+import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { FoldAllButton, type FoldNext } from './FoldAllButton'
@@ -81,6 +82,12 @@ const chevrons = (button: HTMLButtonElement): 'up' | 'down' | 'other' =>
   button.innerHTML === renderToStaticMarkup(<CollapseAllIcon />) ? 'up' : button.innerHTML === renderToStaticMarkup(<ExpandAllIcon />) ? 'down' : 'other'
 /** The pointer comes to the button: React's onPointerEnter, from a pointerover. */
 const hover = (button: HTMLButtonElement) => act(async () => void button.dispatchEvent(new MouseEvent('pointerover', { bubbles: true })))
+
+/** Enter through the note's own key chain. */
+function enter(view: EditorView): boolean {
+  const event = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true })
+  return view.someProp('handleKeyDown', (handler) => handler(view, event)) ?? false
+}
 
 /** ⌘Z (Ctrl+Z in jsdom) through the note's own key chain. */
 function undo(view: EditorView): boolean {
@@ -189,5 +196,35 @@ describe('the note fold-all button (YAZ-3938)', () => {
     expect(read).toHaveBeenCalledTimes(1)
     await act(async () => button.focus())
     expect(read).toHaveBeenCalledTimes(2)
+  })
+})
+
+// YAZ-4009 (4B2A1): a fold that an edit opens or closes has no view-action stamp; the chevrons must still follow it.
+describe('a fold that an edit opens (the caret guard, YAZ-3695) or that ⌘Z puts back (YAZ-4009)', () => {
+  it('D9: after Collapse all, Enter at the end of a folded heading opens it; the chevrons turn back to up', async () => {
+    const { host, view, button } = await mount(MIXED)
+    await click(button)
+    expect(folded(host)).toBe(3)
+    expect(chevrons(button)).toBe('down')
+    // The caret at the end of the heading "Top" (a visible line), with the pointer elsewhere.
+    await act(async () => void view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 4))))
+    await act(async () => void (enter(view) || view.dispatch(view.state.tr.split(4))))
+    await act(async () => {})
+    expect(folded(host)).toBeLessThan(3) // the caret guard opened the heading
+    expect(nextDocumentFold(view.state)).toBe('collapse')
+    expect(chevrons(button)).toBe('up')
+  })
+
+  it('D9: ⌘Z of that edit closes the fold again (fold history); the chevrons turn back to down', async () => {
+    const { view, button } = await mount(MIXED)
+    await click(button)
+    await act(async () => void view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 4))))
+    await act(async () => void (enter(view) || view.dispatch(view.state.tr.split(4))))
+    await hover(button)
+    expect(chevrons(button)).toBe('up')
+    await act(async () => void undo(view))
+    await act(async () => {})
+    expect(nextDocumentFold(view.state)).toBe('expand')
+    expect(chevrons(button)).toBe('down')
   })
 })
