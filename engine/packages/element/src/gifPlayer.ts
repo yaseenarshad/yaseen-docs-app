@@ -230,6 +230,9 @@ export class GifPlayer {
         return;
       }
       track.decoder = new ImageDecoder({ data, type: MIME_TYPES.gif });
+      // `selectedTrack` is null until the tracks are ready, and Chromium can
+      // resolve `completed` first
+      await track.decoder.tracks.ready;
       await track.decoder.completed;
       const { frameCount, repetitionCount } =
         track.decoder.tracks.selectedTrack!;

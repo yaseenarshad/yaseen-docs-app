@@ -81,8 +81,10 @@ export function drawingCogRows({ pictures, out, readOnly, onMovePictures, onExpo
 }): PageSwitch[] {
   const rows: PageSwitch[] = []
   if (pictures.count > 0) {
-    const where = out ? 'Pictures in the assets folder' : 'Pictures in this file'
-    rows.push({ label: `${where}: ${formatBytes(pictures.bytes)} (${pictures.count})`, warn: !out && pictures.bytes >= PICTURES_WARN_BYTES, divider: true })
+    // In words, count first (YAZ-3943 demo): "6 pictures in this file (3.3 MB)".
+    const what = pictures.count === 1 ? '1 picture' : `${pictures.count} pictures`
+    const where = out ? 'in the assets folder' : 'in this file'
+    rows.push({ label: `${what} ${where} (${formatBytes(pictures.bytes)})`, warn: !out && pictures.bytes >= PICTURES_WARN_BYTES, divider: true })
     rows.push({ label: out ? 'Keep pictures inside' : 'Move pictures out', onToggle: onMovePictures, disabled: readOnly })
   }
   rows.push({ label: 'Export Image or PDF…', onToggle: onExportImage, divider: true }, { label: 'Export Excalidraw Drawing…', onToggle: onExportDrawing })

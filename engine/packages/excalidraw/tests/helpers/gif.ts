@@ -10,11 +10,17 @@ export class FakeImageDecoder {
   decoded: number[] = [];
   closed = false;
   completed = Promise.resolve();
-  tracks: { selectedTrack: { frameCount: number; repetitionCount: number } };
+  tracks: {
+    ready: Promise<void>;
+    selectedTrack: { frameCount: number; repetitionCount: number };
+  };
 
   constructor(init: { data: ArrayBuffer }) {
     const frameCount = new Uint8Array(init.data)[0];
-    this.tracks = { selectedTrack: { frameCount, repetitionCount: Infinity } };
+    this.tracks = {
+      ready: Promise.resolve(),
+      selectedTrack: { frameCount, repetitionCount: Infinity },
+    };
     FakeImageDecoder.made.push(this);
   }
 

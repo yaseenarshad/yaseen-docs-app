@@ -104,6 +104,9 @@ export const encodeShrunkGif = async (
 export const decodeGif = async (data: ArrayBuffer): Promise<GifSource> => {
   const decoder = new ImageDecoder({ data, type: "image/gif" });
   try {
+    // `selectedTrack` is null until the tracks are ready, and Chromium can
+    // resolve `completed` first
+    await decoder.tracks.ready;
     await decoder.completed;
     const track = decoder.tracks.selectedTrack!;
     const first = (await decoder.decode({ frameIndex: 0 })).image;
