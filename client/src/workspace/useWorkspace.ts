@@ -143,6 +143,19 @@ export function tabOf(s: Pick<TabsState, 'tabs' | 'active'>, path: string): Tab 
   return active !== null && active.path === path ? active : (s.tabs.find((t) => t.path === path) ?? null)
 }
 
+/**
+ * "Close duplicate tabs" (YAZ-3943 5A): the ids of every extra copy of a page. One tab of each page stays: the active
+ * one, else the leftmost. A tab zoomed into a bullet shows another view, so a copy is the same path at the same zoom.
+ */
+export function duplicateTabIds(s: { tabs: readonly Tab[]; active: string | null }): string[] {
+  const keep = new Map<string, string>()
+  const key = (t: Tab): string => `${t.path}\n${t.zoom ?? ''}`
+  for (const t of s.tabs) if (!keep.has(key(t))) keep.set(key(t), t.id)
+  const active = s.tabs.find((t) => t.id === s.active)
+  if (active !== undefined) keep.set(key(active), active.id)
+  return s.tabs.filter((t) => keep.get(key(t)) !== t.id).map((t) => t.id)
+}
+
 /** The window's paths (S25): each once, in the order of its first tab — `WindowEntry.tabs`. */
 export const storedTabs = (tabs: readonly Tab[]): string[] => [...new Set(tabs.map((t) => t.path))]
 

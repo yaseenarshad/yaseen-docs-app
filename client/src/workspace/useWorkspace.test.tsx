@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { defaultAppState, defaultRightPanelIdentity, type AppState, type WindowIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
 import { _resetRenameContinuity, registerRenameContinuity, takeRenameBuffer } from '../lib/renameContinuity'
-import { activePath, bootTabs, bootWorkspace, newTabId, NO_STEPS, storedTabs, tabStrip as tabStripOf, tabById, tabOf, tabsReducer as reduceTabs, useWorkspace, workspaceReducer as reduceWorkspace, type Step, type TabsState as IdTabsState, type UseWorkspace, type WorkspaceState as IdWorkspaceState } from './useWorkspace'
+import { activePath, bootTabs, bootWorkspace, duplicateTabIds, newTabId, NO_STEPS, storedTabs, tabStrip as tabStripOf, tabById, tabOf, tabsReducer as reduceTabs, useWorkspace, workspaceReducer as reduceWorkspace, type Step, type TabsState as IdTabsState, type UseWorkspace, type WorkspaceState as IdWorkspaceState } from './useWorkspace'
 import { byPath, pathTabsReducer, pathWorkspaceReducer, plain, type PathTabs, type PathWorkspace } from './testTabs'
 
 // These tests read the model by path (`testTabs.ts`): with no copies, a path names one tab (YAZ-2940 D1).
@@ -686,6 +686,25 @@ describe('useWorkspace legacy main-tab mirror', () => {
     act(() => latest.newTab())
     act(() => void latest.closeActive())
     expect(bridge.window.noteClosed).toHaveBeenCalledTimes(3)
+  })
+
+  it('"Close duplicate tabs" (YAZ-3943 5A): three copies of a and two of b leave one of each, the active copy kept, the leftmost otherwise; the copies go to "Recently closed" in ONE close; no copy, no change', () => {
+    for (const path of ['/v/a.md', '/v/b.md']) act(() => latest.openBackground(path))
+    for (const path of ['/v/a.md', '/v/b.md', '/v/a.md', '/v/c.md']) act(() => latest.openBackground(path, true))
+    const tabs = latest.tabs.map((t) => t.id)
+    act(() => latest.activate(tabs[4])) // the second copy of a
+    expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md', '/v/a.md', '/v/b.md', '/v/a.md', '/v/c.md'])
+    const ids = duplicateTabIds(latest)
+    expect(ids).toEqual([tabs[0], tabs[2], tabs[3]])
+    const writes = bridge.window.setIdentity.mock.calls.length
+    act(() => latest.closeMany(ids))
+    expect(latest.tabs.map((t) => t.id)).toEqual([tabs[1], tabs[4], tabs[5]])
+    expect(latest.active).toBe(tabs[4])
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
+    expect(bridge.window.noteClosed).toHaveBeenLastCalledWith(['/v/a.md', '/v/a.md', '/v/b.md'])
+    expect(duplicateTabIds(latest)).toEqual([])
+    // A tab zoomed into a bullet shows another view of the page: no copy of the whole page.
+    expect(duplicateTabIds({ tabs: [{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/a.md', zoom: 'k' }, { id: 't3', path: '/v/a.md', zoom: 'k' }], active: null })).toEqual(['t3'])
   })
 
   it('keep writes nothing — the preview mark is session-only (YAZ-2648 D4) — and openKept is a double click: the previewed page stays, a page not open yet opens kept', () => {

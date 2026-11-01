@@ -86,7 +86,7 @@ import { EMPTY_SLOTS, assignSlots, movedRoot, renameSlots, vaultRefusal } from '
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
-import { nearSteps, stepIdOf, tabById, tabOf, useWorkspace, type ZoomFrom } from './workspace/useWorkspace'
+import { duplicateTabIds, nearSteps, stepIdOf, tabById, tabOf, useWorkspace, type ZoomFrom } from './workspace/useWorkspace'
 import { useTabSleep } from './workspace/useTabSleep'
 import { restoreSession } from './workspace/restoreSession'
 import { Welcome } from './Welcome'
@@ -1424,6 +1424,11 @@ export function App() {
     }
     for (const { win, refs } of others) api.window.closeTabs(win, refs).catch(() => notify("Can't close the tabs of a window that closed"))
   }, [closeBlank, closeUnderOverview, notify, filesWindow])
+  // "Close duplicate tabs" (YAZ-3943 5A), beside Kill all: no sheet, since each page keeps a tab. The copies go to "Recently closed".
+  const closeDuplicateTabs = useCallback(() => {
+    const ids = duplicateTabIds(now.current)
+    if (ids.length > 0) closeUnderOverview(ids)
+  }, [closeUnderOverview])
   /**
    * A save of the open tabs as a session (YAZ-3147 D5, S1–S9): "Save open tabs" on the Sessions tab and the
    * grid menu's two items. Main saves THIS window's tabs under "New session" (the blank tab is no tab, and the
@@ -3272,6 +3277,7 @@ export function App() {
               onToggleOverview={toggleOverview}
               overviewOpen={overviewOpen}
               onKillAll={askKillAll}
+              onCloseDuplicates={closeDuplicateTabs}
               onSaveSession={saveFromGrid}
               onNotice={notify}
               titles={titles}

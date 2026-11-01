@@ -580,7 +580,7 @@ The dev app (`npm run dev`) will do, on an isolated profile (`YASEEN_DOCS_USER_D
 7. Double-click window 2's frame label, type `Client work`, press ⏎: the frame, the "Move to ▸" rows and window 2's title bar start with "Client work". Right-click the frame › "Reset name": the automatic label is back.
 8. Right-click empty canvas: one item, "New window" (no Cut, Copy, Paste). Click it: a frame with a grey "Hidden" tag appears at the click point and the search opens for it; pick two notes: two background tabs there; no window shows on the screen. Its vault chip, before the first pick, switches it to B. Right-click the frame › "Show window": it shows. Minimize window 3: its frame says "Minimized".
 9. Right-click window 2's frame › "Close window": the item turns red ("Click again to close") at once, in light and dark; click again: window 2 closes through its real close. A card's ✕: the first click shows a red "Close", the second closes the tab in its own window.
-10. With 3 windows, click "Kill all tabs" on the board: the sheet reads "Close N tabs in 3 windows? …"; Cancel keeps every tab. Right-click the grid button: "Save tabs as session", "Save and close all tabs", a line, "Kill all tabs" (this window's tabs only).
+10. With 3 windows, click "Kill all tabs" on the board: the sheet reads "Close N tabs in 3 windows? …"; Cancel keeps every tab. Right-click the grid button: "Save tabs as session", "Save and close all tabs", a line, "Close duplicate tabs" (grey with no copy of a page; YAZ-3943 5A) and "Kill all tabs" (this window's tabs only).
 11. Open 25 notes as tabs and leave the board. Go from tab to tab with clicks and with `⌃Tab`: each switch is at once, and each page is at the scroll position it had.
 
 ### W13 The new tab page
