@@ -11,6 +11,14 @@
  * Gaps fixed here (registered with priority 100 so they run before Crepe's 50s):
  *  - Tab inside a list item never falls through to `@milkdown/plugin-indent`, which would
  *    insert literal spaces into the text when the item cannot sink (first sibling).
+ *  - Tab on the first item of a list that sits right after another list (a numbered list under a
+ *    bullet, or the reverse: Markdown keeps one kind per list) moves the covered items into the
+ *    last item of the list above, as `sinkListItem` does inside one list (YAZ-3727 D3). They join
+ *    that item's child list and take its kind; with no child list they keep their own (D4).
+ *  - Tab inside one list makes a sublist the way its siblings did (YAZ-3727 D10): into the item above's own sublist,
+ *    of either kind, taking its kind; else a new sublist of the kind of the nearest sibling's sublist, above first,
+ *    then below; else bullets. `sinkListItem` alone wrapped the line in its parent's kind (a number under a number)
+ *    and made a second sublist beside one of the other kind.
  *  - Tab, Shift-Tab, Mod-] and Mod-[ act on the lines the selection COVERS (YAZ-3003): a keyboard
  *    line selection touches the parent or the next sibling at zero width, and that line stays put.
  *    So Shift-Tab and Mod-[ are ours now: the zoom guard first, then Crepe's own lift. A text
@@ -34,22 +42,23 @@
  *    closes it again (`foldReveal.ts`). Into a code block or a table, or at the top of a zoom, nothing
  *    happens; a rule next to the caret is selected; at the top of the note an empty line goes, a bullet
  *    lifts and a heading becomes text. Crepe's `joinBackward` produced stray `* * child` lists, second paragraphs and bigger
- *    headings, and joined text into hidden lines.
+ *    headings, and joined text into hidden lines. The item above is the one above on screen, also the last item of
+ *    a list that ends right above the line's own list (YAZ-3727 D5).
  */
 import type { Ctx } from '@milkdown/kit/ctx'
-import { listItemSchema, paragraphSchema } from '@milkdown/kit/preset/commonmark'
+import { bulletListSchema, listItemSchema, paragraphSchema } from '@milkdown/kit/preset/commonmark'
 import { setBlockType } from '@milkdown/kit/prose/commands'
-import { Fragment, type Node as ProseNode, type NodeType, type ResolvedPos } from '@milkdown/kit/prose/model'
+import { Fragment, type Node as ProseNode, type NodeType, type ResolvedPos, Slice } from '@milkdown/kit/prose/model'
 import { liftListItem, sinkListItem } from '@milkdown/kit/prose/schema-list'
 import { type Command, type EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
-import { canJoin } from '@milkdown/kit/prose/transform'
+import { canJoin, ReplaceAroundStep } from '@milkdown/kit/prose/transform'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { deleteBlockAndEmptyWrappers, emptyWrapperDepth, liftHeadlessItem, nextVisibleTextblock, onCoveredLines } from '../lineSelection'
 import { rowShortcuts } from '../noteKeys'
 import { type Folds, openFolds, recordOpenedFolds } from './foldReveal'
 import { headingLevel, isHeadingCollapsed } from './headingFolding'
-import { findNestedList, isListItem, LIST_NODE_NAMES } from './listNodes'
+import { findNestedList, findNestedLists, isListItem, LIST_NODE_NAMES } from './listNodes'
 import { isOutlineItemCollapsed } from './outlineFolding'
 import { blockEscapingLift, getZoomedItemPos } from './zoom'
 
@@ -75,10 +84,84 @@ const spansLines = (state: EditorState): boolean => {
   return sel instanceof TextSelection && !sel.$from.sameParent(sel.$to)
 }
 
-const indentCommand = (itemType: NodeType): Command =>
+/**
+ * Tab where `sinkListItem` cannot: the covered items start their list, and another list sits right above it (YAZ-3727
+ * D3). They move into that list's last item; the items after them stay where they are, as a list of their own. One step,
+ * so folds, zoom and the selection map through and ⌘Z undoes it at once.
+ */
+const sinkIntoListAbove = (itemType: NodeType): Command => (state, dispatch) => {
+  const { $from, $to } = state.selection
+  const range = $from.blockRange($to, (node) => node.childCount > 0 && node.firstChild!.type === itemType)
+  if (!range || range.startIndex !== 0) return false
+  const listPos = range.start - 1
+  const above = state.doc.resolve(listPos).nodeBefore
+  if (!above || !LIST_NODE_NAMES.has(above.type.name)) return false
+  if (!dispatch) return true
+  const tr = state.tr
+  if (range.endIndex < range.parent.childCount) tr.split(range.end)
+  const list = tr.doc.nodeAt(listPos)!
+  const target = above.lastChild!
+  const joinsChildList = target.lastChild !== null && LIST_NODE_NAMES.has(target.lastChild.type.name)
+  // Move the list, kept whole, to the end of the item above: `sinkListItem`'s own step.
+  const slice = new Slice(Fragment.from(above.type.create(null, itemType.create())), 2, 0)
+  tr.step(new ReplaceAroundStep(listPos - 2, listPos + list.nodeSize, listPos, listPos + list.nodeSize, slice, 0, true))
+  // D4: the item's child list and the moved list become one; the first list's kind wins.
+  if (joinsChildList) tr.join(listPos - 2)
+  dispatch(tr.scrollIntoView())
+  return true
+}
+
+/** The kind of the nearest sublist among the items of `list` before `start`, nearest first, then from `end` on; null when none has one. */
+const siblingSublistKind = (list: ProseNode, start: number, end: number): NodeType | null => {
+  const kindOf = (index: number): NodeType | null => findNestedLists(list.child(index)).at(-1)?.list.type ?? null
+  for (let index = start - 1; index >= 0; index--) {
+    const kind = kindOf(index)
+    if (kind) return kind
+  }
+  for (let index = end; index < list.childCount; index++) {
+    const kind = kindOf(index)
+    if (kind) return kind
+  }
+  return null
+}
+
+/**
+ * Tab inside one list (YAZ-3727 D10): `sinkListItem`, then the sublist the lines went into is set as their siblings'
+ * sublists are. In the same transaction, so ⌘Z undoes it at once. False when the lines cannot sink in their list.
+ */
+const sinkInList = (itemType: NodeType, bulletType: NodeType): Command => (state, dispatch) => {
+  const { $from, $to } = state.selection
+  const range = $from.blockRange($to, (node) => node.childCount > 0 && node.firstChild!.type === itemType)
+  if (!range || range.startIndex === 0) return false
+  if (!dispatch) return sinkListItem(itemType)(state)
+  let sunk: Transaction | null = null
+  if (!sinkListItem(itemType)(state, (tr) => { sunk = tr })) return false
+  const tr = sunk as unknown as Transaction
+  const above = range.parent.child(range.startIndex - 1)
+  const ownSublist = above.lastChild !== null && LIST_NODE_NAMES.has(above.lastChild.type.name)
+  // The lines' list now: the parent of the item that holds the caret's line.
+  const $line = tr.doc.resolve(tr.mapping.map($from.pos))
+  const listPos = $line.before($line.depth - 2)
+  const list = $line.node($line.depth - 2)
+  const $list = tr.doc.resolve(listPos)
+  if (ownSublist) {
+    // `sinkListItem` joins a sublist of its own kind only; one of the other kind is joined here, and its kind wins.
+    if ($list.nodeBefore && LIST_NODE_NAMES.has($list.nodeBefore.type.name) && canJoin(tr.doc, listPos)) tr.join(listPos)
+  } else {
+    const kind = siblingSublistKind(range.parent, range.startIndex, range.endIndex) ?? bulletType
+    const index = $list.index()
+    if (kind !== list.type && $list.parent.canReplaceWith(index, index + 1, kind)) {
+      tr.setNodeMarkup(listPos, kind, kind.spec.attrs && 'spread' in kind.spec.attrs ? { spread: list.attrs.spread } : null)
+    }
+  }
+  dispatch(tr)
+  return true
+}
+
+const indentCommand = (itemType: NodeType, bulletType: NodeType): Command =>
   onCoveredLines((state, dispatch) => {
     if (!selectionInListItems(state, itemType)) return spansLines(state)
-    sinkListItem(itemType)(state, dispatch)
+    if (!sinkInList(itemType, bulletType)(state, dispatch)) sinkIntoListAbove(itemType)(state, dispatch)
     // Handled either way: a first sibling cannot sink, and the indent plugin must not insert spaces.
     return true
   })
@@ -196,6 +279,17 @@ const isLine = ($pos: ResolvedPos): boolean => $pos.depth === 1 || isListItem($p
 /** A line in a table cell: nothing joins into or out of a table (YAZ-3783). */
 const inTable = ($pos: ResolvedPos): boolean => $pos.node(-1).type.spec.tableRole !== undefined
 
+/**
+ * The item just above the line's item on screen (YAZ-3727 D5): its previous sibling, or the last item of a list that
+ * ends right above its own list (a bullet list then a numbered list). Null when there is neither.
+ */
+const previousItemPos = (doc: ProseNode, $line: ResolvedPos): number | null => {
+  if ($line.index(-2) > 0) return $line.before(-1) - $line.node(-2).child($line.index(-2) - 1).nodeSize
+  const listPos = $line.before(-2)
+  const above = doc.resolve(listPos).nodeBefore
+  return above !== null && LIST_NODE_NAMES.has(above.type.name) ? listPos - 1 - above.lastChild!.nodeSize : null
+}
+
 /** The zoomed item's own line: the top of a zoom, which nothing joins into. */
 const isZoomLine = (state: EditorState, $pos: ResolvedPos): boolean =>
   $pos.depth >= 2 && $pos.index(-1) === 0 && isListItem($pos.node(-1)) && $pos.before(-1) === getZoomedItemPos(state)
@@ -221,27 +315,33 @@ const lineFolds = (state: EditorState, $line: ResolvedPos): { open: Folds; gone:
     gone[list].push(owner)
     if (!isCollapsed(state, slider)) open[list].push(owner)
   }
-  if (moves && $line.index(-2) > 0) {
-    const prevPos = owner - $line.node(-2).child($line.index(-2) - 1).nodeSize
-    if (isOutlineItemCollapsed(state, prevPos)) open.items.push(prevPos)
-  }
+  const prevPos = moves ? previousItemPos(state.doc, $line) : null
+  if (prevPos !== null && isOutlineItemCollapsed(state, prevPos)) open.items.push(prevPos)
   return { open, gone }
 }
 
 /**
  * Remove the line at `$line` from `tr` (D5). A bullet's other blocks — its children — keep their place on screen: they
- * become the last children of its previous sibling, or, with none, they take its place one level left. Both moves map
- * the children's positions exactly, so their folds stay. `$line` is in `tr.doc`: the fold step (no change) may come first.
+ * become the last children of the item above (`previousItemPos`), or, with none, they take its place one level left.
+ * Both moves map the children's positions exactly, so their folds stay. `$line` is in `tr.doc`: the fold step (no
+ * change) may come first.
  */
 const removeLine = (tr: Transaction, $line: ResolvedPos): void => {
   const item = $line.node(-1)
   if (!isListItem(item) || $line.index(-1) !== 0 || item.childCount === 1) return deleteBlockAndEmptyWrappers(tr, $line)
-  const owner = $line.before(-1)
-  if ($line.index(-2) === 0) {
-    // No previous sibling: the children take its place.
+  let owner = $line.before(-1)
+  if (previousItemPos(tr.doc, $line) === null) {
+    // No item above: the children take its place.
     tr.delete($line.before(), $line.after())
     liftHeadlessItem(tr, owner)
     return
+  }
+  if ($line.index(-2) === 0) {
+    // The item above ends the list right above (YAZ-3727 D5): the items after this one keep a list of their own, then
+    // the two lists become one, so the item above is its previous sibling. The upper list's kind wins (D4).
+    if ($line.index(-2) + 1 < $line.node(-2).childCount) tr.split(owner + item.nodeSize)
+    tr.join($line.before(-2))
+    owner -= 2
   }
   // The previous sibling takes the rest of the item, then its own last list and the children's list become one.
   tr.join(owner)
@@ -385,9 +485,10 @@ const DELETE_KEYS = ['Delete', 'Ctrl-d', 'Alt-Delete', 'Mod-Delete', 'Ctrl-Alt-B
 export const outlinerKeymap = $shortcut((ctx: Ctx) => {
   const itemType = listItemSchema.type(ctx)
   const paragraphType = paragraphSchema.type(ctx)
+  const bulletType = bulletListSchema.type(ctx)
   return {
-    Tab: { key: 'Tab', priority: PRIORITY, onRun: () => indentCommand(itemType) },
-    ...rowShortcuts(ctx, 'note.indent', 'IndentBracket', { priority: PRIORITY, onRun: () => indentCommand(itemType) }),
+    Tab: { key: 'Tab', priority: PRIORITY, onRun: () => indentCommand(itemType, bulletType) },
+    ...rowShortcuts(ctx, 'note.indent', 'IndentBracket', { priority: PRIORITY, onRun: () => indentCommand(itemType, bulletType) }),
     Outdent: { key: 'Shift-Tab', priority: PRIORITY, onRun: () => outdentCommand(itemType) },
     ...rowShortcuts(ctx, 'note.outdent', 'OutdentBracket', { priority: PRIORITY, onRun: () => outdentCommand(itemType) }),
     Enter: { key: 'Enter', priority: PRIORITY, onRun: () => enterCommand(itemType, paragraphType) },

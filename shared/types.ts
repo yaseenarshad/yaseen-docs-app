@@ -2994,7 +2994,10 @@ export type CopyAsMode = 'plain' | 'markdown' | 'visible'
 export interface CopyAsRich { text: string; html: string }
 
 /** A row of a note's right-click menu (YAZ-3653): main runs it on the window that sent it. */
-export type NoteMenuAction = 'cut' | 'copy' | 'paste' | `copy-${CopyAsMode}` | `paste-${ClipboardPasteRequest['mode']}` | 'add-word'
+export type NoteMenuAction = 'cut' | 'copy' | 'paste' | `copy-${CopyAsMode}` | `paste-${ClipboardPasteRequest['mode']}` | 'add-word' | 'copy-image' | 'reveal-image'
+
+/** What a note menu row sends with its action: the word (`add-word`), the image's `src` (`reveal-image`), or the point right-clicked in page px (`copy-image`, YAZ-3727 D22). */
+export type NoteMenuArg = string | { x: number; y: number }
 
 /** One ⌘+ / ⌘− / ⌘0 press: up, down, or back to the default (YAZ-1710). */
 export type ZoomStep = -1 | 0 | 1
