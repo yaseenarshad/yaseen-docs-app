@@ -520,6 +520,8 @@
   border-radius: 10px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.08);
   transform-origin: right center;
+  /* Its top stays put while it is open (YAZ-4050): the component sets the shift after a change of height. */
+  translate: 0 var(--toc-card-shift, 0px);
   animation: toc-card-in 180ms var(--toc-ease);
   transition: opacity 130ms ease, transform 130ms ease;
 }

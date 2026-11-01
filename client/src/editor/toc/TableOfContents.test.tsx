@@ -15,6 +15,7 @@ import appCss from '../../app.css?inline'
 import { COLUMN_MAX, foldable, MAX_ROWS, namesRoom, namesShow, NAMES_FLOOR, pathLines, railPitch, shownRows, TableOfContents, TEXT_FLOOR, tocFoldKeys, TOC_WIDTH, unfoldedRows } from './TableOfContents'
 import tocCss from './toc.css?inline'
 import { createTocChannel, type TocChannel, type TocLevel, type TocRow } from './tocChannel'
+import { EDGE_PX } from './tocFrame'
 import { outlineFoldKeyStem } from '../outline/outlineFoldKeys'
 import { ZOOM_EVENT } from '../zoomRequest'
 
@@ -1299,6 +1300,42 @@ describe('where the reader is: the marker, and a long list in step with the note
     }
   })
 
+  it('an unfold into the section the reader is in, by the arrow or by "Expand all", holds the list still too: the marker goes to that row at once (YAZ-4048)', async () => {
+    const undo = layOutNames(120)
+    const scrollTo = vi.fn()
+    Object.assign(HTMLElement.prototype, { scrollTo })
+    try {
+      const NESTED: TocRow[] = ['A', 'a1', 'a2', 'B', 'b1', 'b2', 'C', 'c1', 'c2', 'D'].map((text) => ({ level: text.length === 1 ? 1 : 2, text }))
+      const m = mount('pinned', NESTED, 900)
+      // The reader is in "c2" (index 8). The spy answers the last shown row at or above it.
+      const reading = 8
+      m.current.mockImplementation((indices: number[]) => indices.filter((i) => i <= reading).length - 1)
+      await scrollFrame(m)
+      const before = scrollTo.mock.calls.length
+      const arrowOfC = (): HTMLElement => names(m)[6].querySelector<HTMLElement>('.toc__fold')!
+      // Fold "C": "C" is current, the list holds.
+      click(arrowOfC())
+      expect(names(m)[6].getAttribute('aria-current')).toBe('true')
+      expect(scrollTo).toHaveBeenCalledTimes(before)
+      // Open "C" again with its arrow. The note did not move: "c2" is current, and the list holds.
+      click(arrowOfC())
+      expect(names(m).map((name) => name.textContent)).toEqual(['A', 'a1', 'a2', 'B', 'b1', 'b2', 'C', 'c1', 'c2', 'D'])
+      expect(names(m)[8].getAttribute('aria-current')).toBe('true')
+      expect(scrollTo).toHaveBeenCalledTimes(before)
+      // The same with "Collapse all", then "Expand all".
+      const foldAll = m.section.querySelector<HTMLButtonElement>('.toc__pin--all')!
+      click(foldAll)
+      expect(names(m).map((name) => name.textContent)).toEqual(['A', 'B', 'C', 'D'])
+      expect(names(m)[2].getAttribute('aria-current')).toBe('true')
+      click(foldAll)
+      expect(names(m)[8].getAttribute('aria-current')).toBe('true')
+      expect(scrollTo).toHaveBeenCalledTimes(before)
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollTo
+      undo()
+    }
+  })
+
   it('under "Reduce Motion" the long list is placed in step, never glided, and toc.css stops every transition of the table of contents', async () => {
     const undo = layOutNames(120)
     const scrollTo = vi.fn()
@@ -1833,6 +1870,75 @@ describe('folds (YAZ-3939)', () => {
     const m = mount('pinned', TREE, 1040 + TOC_WIDTH - 1)
     const tools = m.section.querySelector('.toc__tools')
     expect([...(tools?.querySelectorAll('button') ?? [])].map((el) => el.getAttribute('aria-label') ?? el.textContent)).toEqual(['Unpin', 'Zoom the table of contents out', '100%', 'Zoom the table of contents in', 'Collapse all'])
+  })
+
+  /**
+   * jsdom lays nothing out: the nav is 800px tall, and the rail centers a card of 24px per name and 40px more
+   * (its offset parent is the nav). Returns the undo.
+   */
+  const layOutCard = (): (() => void) => {
+    const keys = ['offsetTop', 'offsetHeight', 'clientHeight'] as const
+    const before = keys.map((key) => Object.getOwnPropertyDescriptor(HTMLElement.prototype, key))
+    const height = (el: HTMLElement): number => el.querySelectorAll('.toc__name').length * 24 + 40
+    const laidOut: Record<(typeof keys)[number], (el: HTMLElement) => number> = {
+      offsetTop: (el) => (el.matches('.toc__card') ? (800 - height(el)) / 2 : 0),
+      offsetHeight: (el) => (el.matches('.toc__card') ? height(el) : 0),
+      clientHeight: (el) => (el.matches('nav.toc') ? 800 : 0),
+    }
+    for (const key of keys) Object.defineProperty(HTMLElement.prototype, key, { configurable: true, get(this: HTMLElement) { return laidOut[key](this) } })
+    return () =>
+      keys.forEach((key, i) => {
+        const was = before[i]
+        if (was === undefined) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[key]
+        else Object.defineProperty(HTMLElement.prototype, key, was)
+      })
+  }
+
+  it('the card keeps its top while it is open: Collapse all, an unfold and Expand all change its height at its bottom, inside the box (YAZ-4050)', () => {
+    const undo = layOutCard()
+    try {
+      // Five parents with two names each: 15 names, a card of 400px at 200px.
+      const FIFTEEN: TocRow[] = ['A', 'B', 'C', 'D', 'E'].flatMap((p) => [{ level: 1 as TocLevel, text: p }, { level: 2 as TocLevel, text: `${p}1` }, { level: 2 as TocLevel, text: `${p}2` }])
+      const m = mount('auto', FIFTEEN, NAMES_FLOOR)
+      click(rail(m))
+      const shift = (): string => m.section.querySelector<HTMLElement>('.toc__card')!.style.getPropertyValue('--toc-card-shift')
+      // Its first place is the centered one.
+      expect(shift()).toBe('')
+      // Collapse all: 5 names, 160px, centered at 320px; moved back up to 200px.
+      click(foldAll(m))
+      expect(names(m)).toHaveLength(5)
+      expect(shift()).toBe('-120px')
+      // Open "A": 7 names, 208px, centered at 296px; back to 200px.
+      click(names(m)[0].querySelector<HTMLElement>('.toc__fold')!)
+      expect(shift()).toBe('-96px')
+      // "A" is open, so the button collapses all again; then it expands all: 400px, centered at 200px again.
+      click(foldAll(m))
+      expect(shift()).toBe('-120px')
+      click(foldAll(m))
+      expect(names(m)).toHaveLength(15)
+      expect(shift()).toBe('')
+      expect(tocCss.match(/\.toc__card\s*\{([^}]*)\}/s)?.[1]).toMatch(/translate:\s*0 var\(--toc-card-shift, 0px\);/)
+    } finally {
+      undo()
+    }
+  })
+
+  it('a card that opens short and then grows keeps its top until the bottom of the box stops it (YAZ-4050)', () => {
+    const undo = layOutCard()
+    try {
+      // 25 names in five parents; all folded: 5 names, a card of 160px at 320px.
+      const BIG: TocRow[] = ['A', 'B', 'C', 'D', 'E'].flatMap((p) => [{ level: 1 as TocLevel, text: p }, ...[1, 2, 3, 4].map((n) => ({ level: 2 as TocLevel, text: `${p}${n}` }))])
+      const folds = tocFoldKeys(BIG).filter((_, i) => i % 5 === 0)
+      const m = mount('auto', BIG, NAMES_FLOOR, TOC_DEFAULT_W, folds)
+      click(rail(m))
+      expect(names(m)).toHaveLength(5)
+      // Expand all: 640px. Its top stays at 320px only down to the box's bottom edge.
+      click(foldAll(m))
+      const shift = m.section.querySelector<HTMLElement>('.toc__card')!.style.getPropertyValue('--toc-card-shift')
+      expect(shift).toBe(`${800 - EDGE_PX - 640 - 80}px`)
+    } finally {
+      undo()
+    }
   })
 
   it('D4: with no row that can fold, the button stays, dimmed, and says "Nothing to fold"; the card has the button too', () => {

@@ -293,16 +293,21 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     channel.jump(rows[row].index)
   }
   /**
-   * Every fold and unfold (YAZ-3939 D2): no `channel` call, so the note never folds. The current
+   * Every fold and unfold (YAZ-3939 D2): no `channel.jump`, so the note never folds. The current
    * row moves at once to the row the reader is in, or to the folded row over it (D5): the spy reads
    * again only after the render, and the marker must not light another row first. Only the keys
    * that a row of the note still has are saved: the fold of a renamed or deleted row goes.
    */
   const saveFolds = (next: ReadonlySet<string>): void => {
-    const reading = rows[at]?.index ?? -1
     const after = unfoldedRows(listed, keys, next)
-    let to = 0
-    for (let i = 0; i < after.length && after[i].index <= reading; i++) to = i
+    // The spy's own answer on the new rows (YAZ-4048): an unfold into the section the reader is in
+    // lights that row now, so the spy's read after the render finds nothing new and the list holds
+    // (demo 5C). With no answer (a hidden scroller, no row on screen): the row of `at`, or the folded row over it.
+    const scroller = scrollerOf()
+    const spied = scroller !== null && shown(scroller) ? channel.current(after.map(({ index }) => index), scroller) : -1
+    const reading = rows[at]?.index ?? -1
+    let to = Math.max(0, spied)
+    if (spied < 0) for (let i = 0; i < after.length && after[i].index <= reading; i++) to = i
     currentRef.current = to
     setCurrent(to)
     hold.current = true
@@ -451,6 +456,27 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   const card = shows && !names && open
   // A closed card stays in the page for `EXIT_MS` as `data-leaving`, so it fades out instead of vanishing.
   const lingers = useTocLinger(card)
+  // The card keeps its top while it is open (YAZ-4050). A fold, fold all, an unfold and the zoom change its
+  // height, and the rail centers it: its header would move away from the mouse. `--toc-card-shift` (toc.css)
+  // moves it back, inside the box, so it grows and shrinks at its bottom. Its first place is the centered one.
+  const cardTop = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const nav = navRef.current
+    const el = nav?.querySelector<HTMLElement>('.toc__card:not([data-leaving])')
+    if (!card || !nav || !el) {
+      cardTop.current = null
+      return
+    }
+    // Layout numbers (the nav is the card's offset parent): no transform counts, not the open's scale and not the shift.
+    const natural = el.offsetTop
+    if (cardTop.current === null) {
+      cardTop.current = natural
+      return
+    }
+    const top = Math.max(EDGE_PX, Math.min(cardTop.current, nav.clientHeight - EDGE_PX - el.offsetHeight))
+    if (top === natural) el.style.removeProperty('--toc-card-shift')
+    else el.style.setProperty('--toc-card-shift', `${top - natural}px`)
+  }, [card, rows, zoom, box])
   useLayoutEffect(() => {
     if (!card || !pendingFocus.current) return
     pendingFocus.current = false
