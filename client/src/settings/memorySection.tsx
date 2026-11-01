@@ -19,7 +19,7 @@
  * Windows in the order they opened (main's order), so a row never moves under the pointer. A window's name runs across
  * Tab to Last seen and ends with "…" before Changed (YAZ-3958; the full name on hover); the page never scrolls sideways. The
  * biggest row fills its bar. "Growing" (YAZ-3933, the app's orange) = it grew more than 150 MB or 20 % in the last
- * hour (main decides). Each kind of row has its own ⓘ (YAZ-3932, round 2), on hover and on keyboard focus. Hover on a
+ * hour (main decides); the window ⓘ says so too (YAZ-3987). Each kind of row has its own ⓘ (YAZ-3932, round 2), on hover and on keyboard focus. Hover on a
  * name: what a window has open; on a size: a window's JS heap and the rest, App core's parts, the helper count.
  *
  * A click on a window row opens (▾) or closes (▸) its tab rows (YAZ-3934): the tabs that hold memory first, then the
@@ -45,7 +45,7 @@ import { useMemoryReport } from './useMemoryReport'
 
 /** The ⓘ of each kind of row (YAZ-3932, round 2), as Yasin approved them. */
 const INFO = {
-  window: 'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory.',
+  window: 'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
   core: 'The parts of the app that all windows share: Main (it controls the app), GPU (it draws the screen) and Utility (small helpers). Closing tabs does not make this smaller.',
   helpers: 'These run only while code files are open. They stop 2 minutes after you close the last one.',
 } as const

@@ -120,9 +120,9 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
       return { info, tip: document.getElementById(info.getAttribute('aria-describedby')!)! }
     }
     expect(['w1', 'w2', 'w3', 'core', 'helpers'].map((key) => tipOf(key).tip.textContent)).toEqual([
-      'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory.',
-      'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory.',
-      'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory.',
+      'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
+      'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
+      'This is one window. The bar shows the memory it uses now. Open it to see its tabs. An asleep tab uses almost no memory. "Growing": it grew more than 150 MB or 20 % in the last hour. You do not need to do anything.',
       'The parts of the app that all windows share: Main (it controls the app), GPU (it draws the screen) and Utility (small helpers). Closing tabs does not make this smaller.',
       'These run only while code files are open. They stop 2 minutes after you close the last one.',
     ])
