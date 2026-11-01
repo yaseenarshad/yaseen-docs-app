@@ -21,13 +21,15 @@ export interface OutlineViewProps {
   wikilinkCandidates?: WikilinkCandidateSource
   /** Wiki-link click navigation (Links C) — assembled by the host, its identity STABLE (YAZ-901). */
   nav?: WikilinkNav
+  /** Settings › "Folding default" (YAZ-4094 F1), followed live. */
+  foldingOn?: boolean
 }
 
 /** What the editor's seed guard (YAZ-974) says out loud: read-only, and the file on disk is untouched. */
 const SEED_LOSS_MESSAGE =
   'This outline contains a line the editor cannot display safely. The view is read-only and nothing was written — the file is untouched.'
 
-export function OutlineView({ outline, onDocument, wikilinks, wikilinkCandidates, nav }: OutlineViewProps) {
+export function OutlineView({ outline, onDocument, wikilinks, wikilinkCandidates, nav, foldingOn }: OutlineViewProps) {
   /** The seed guard fired (YAZ-974): the editor is read-only and says why. */
   const [lossy, setLossy] = useState(false)
   /** The document: seeded from the settings, advanced by every commit and by the disk moving under the open folder (below). */
@@ -61,6 +63,7 @@ export function OutlineView({ outline, onDocument, wikilinks, wikilinkCandidates
         wikilinks={wikilinks}
         wikilinkCandidates={wikilinkCandidates}
         nav={nav}
+        foldingOn={foldingOn}
       />
     </div>
   )

@@ -80,6 +80,8 @@ export interface FolderViewProps {
   hoverPreview?: boolean
   previewScope?: (path: string) => PreviewScope
   diagramDarkColors?: DiagramDarkColors
+  /** Settings › "Folding default" (YAZ-4094 F1): a folder's outline has no page cog, so it follows this. Handed to `ViewsPane`. */
+  foldingOnByDefault?: boolean
 }
 
 /**
@@ -129,6 +131,7 @@ export function FolderView({
   hoverPreview,
   previewScope,
   diagramDarkColors,
+  foldingOnByDefault,
 }: FolderViewProps) {
   const feed = useIndexFeed(source)
   const titles = usePathTitles(source)
@@ -403,6 +406,7 @@ export function FolderView({
             hoverPreview={hoverPreview}
             previewScope={previewScope}
             diagramDarkColors={diagramDarkColors}
+            foldingOnByDefault={foldingOnByDefault}
           />
         </ViewFolder.Provider>
       </section>
