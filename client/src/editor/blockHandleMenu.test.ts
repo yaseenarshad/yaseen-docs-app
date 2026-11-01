@@ -458,32 +458,32 @@ describe("a bullet's own dot (YAZ-3646 D8, D9)", () => {
     return { view, dot }
   }
 
-  it('a right-click on the dot opens the bullet\'s menu: "Open in new tab" first, with its glyph and its ⇧-click hint, a line, then the next group', async () => {
+  it('a right-click on the dot opens the bullet\'s menu: "Open in new tab" first, with no glyph (YAZ-3727 D19) and no hint (D20), a line, then the next group', async () => {
     const open = vi.fn()
     const { view, dot } = await mountList(open)
     const e = contextmenu(dot('One'))
     expect(e.defaultPrevented).toBe(true)
     const popup = popupOf(view)!
     expect([...popup.children].map((el) => el.className)).toEqual(['ctx-menu__item', 'document-zoom__divider', 'ctx-menu__item'])
-    expect(popup.classList.contains('ctx-menu--glyphs')).toBe(true)
+    expect(popup.classList.contains('ctx-menu--glyphs')).toBe(false)
     const [first] = itemsOf(view)
-    expect([first.textContent, first.dataset.hint, first.querySelector('svg') !== null]).toEqual(['Open in new tab', '⇧-click', true])
+    expect([first.textContent, first.dataset.hint, first.querySelector('svg') !== null]).toEqual(['Open in new tab', undefined, false])
     first.click()
     const key = zoomKeyAt(view.state.doc, view.state.doc.resolve(view.posAtDOM(dot('One'), 0)).before())
     expect(open).toHaveBeenCalledExactlyOnceWith(key, false, 'One')
     expect(popupOf(view)).toBeNull()
   })
 
-  it('a task\'s checkbox is no dot, and a page with no tab has no "Open in new tab"', async () => {
+  it('a task\'s checkbox opens the same menu as a dot (YAZ-3727 D20), and a page with no tab has no "Open in new tab"', async () => {
     const { view, dot } = await mountList(vi.fn())
-    expect(contextmenu(dot('Task')).defaultPrevented).toBe(false)
-    expect(popupOf(view)).toBeNull()
+    expect(contextmenu(dot('Task')).defaultPrevented).toBe(true)
+    expect(itemsOf(view)[0].textContent).toBe('Open in new tab')
     const noTab = await mountList(undefined)
     contextmenu(noTab.dot('Two'))
     expect(itemsOf(noTab.view).map((b) => b.textContent)).toEqual(['Number children'])
   })
 
-  it('YAZ-3694 F7: a right press on a task\'s box does not tick it; a plain (left) press still does', async () => {
+  it('YAZ-3694 F7: a right press on a task\'s box does not tick it (it opens the bullet\'s menu, YAZ-3727 D20); a plain (left) press still does', async () => {
     const { view, dot } = await mountList(vi.fn())
     const press = (button: number) => {
       const box = dot('Task')
@@ -499,7 +499,7 @@ describe("a bullet's own dot (YAZ-3646 D8, D9)", () => {
       return state
     }
     press(2)
-    expect([checked(), popupOf(view)]).toEqual([false, null])
+    expect([checked(), popupOf(view) !== null]).toEqual([false, true])
     press(0)
     expect(checked()).toBe(true)
   })

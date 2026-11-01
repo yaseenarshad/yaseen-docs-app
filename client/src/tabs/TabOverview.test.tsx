@@ -1052,6 +1052,7 @@ describe('TabOverview', () => {
     expect(search.getAttribute('aria-label')).toBe('Open tabs in Empty window')
     const input = search.querySelector<HTMLInputElement>('input')!
     expect(document.activeElement).toBe(input)
+    expect(input.getAttribute('spellcheck')).toBe('false') // YAZ-3748 B2: names, no red line
     const typeIn = (value: string) =>
       act(async () => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)

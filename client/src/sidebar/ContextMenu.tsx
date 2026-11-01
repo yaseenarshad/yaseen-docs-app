@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import type { MenuAction, MenuItem, MenuParent, MenuSection } from './menuSections'
+import type { MenuAction, MenuEntry, MenuParent, MenuStrip } from './menuSections'
 
 /** How long a hover waits before it swaps or closes an open flyout (YAZ-3085 D4): the pointer's time to cross a row. */
 export const SWITCH_MS = 200
@@ -17,12 +17,12 @@ interface ContextMenuProps {
    * `textContent` and the accessible name stay the bare label. A parent item ("Open in ▸", D7
    * amended) opens a flyout drawn by the SAME group renderer, one level deep.
    */
-  sections: readonly MenuSection[]
+  sections: readonly (readonly MenuEntry[])[]
   onClose: () => void
 }
 
 /** Groups of items (🔒 D7): one `role="group"` per NON-EMPTY section — the root and every flyout share it. */
-function Groups<T extends MenuItem>({ sections, render }: { sections: readonly (readonly T[])[]; render: (item: T) => ReactNode }) {
+function Groups<T extends MenuEntry>({ sections, render }: { sections: readonly (readonly T[])[]; render: (item: T) => ReactNode }) {
   return (
     <>
       {sections
@@ -80,6 +80,31 @@ function ActionButton({ item, onClose, onMouseEnter }: { item: MenuAction; onClo
         </span>
       )}
     </button>
+  )
+}
+
+/** A strip (YAZ-3727 D15): the block menu's icon buttons in one row, the same markup and CSS as there. */
+function StripButtons({ item, onClose, onMouseEnter }: { item: MenuStrip; onClose: () => void; onMouseEnter: () => void }) {
+  return (
+    <div className="ctx-menu__strip" role="group" aria-label={item.label} onMouseEnter={onMouseEnter}>
+      {item.buttons.map((button) => (
+        <button
+          key={button.label}
+          type="button"
+          role="menuitem"
+          className={`ctx-menu__strip-button${button.active ? ' active' : ''}`}
+          aria-label={button.label}
+          aria-pressed={button.active}
+          title={button.label}
+          onClick={() => {
+            button.onSelect()
+            onClose()
+          }}
+        >
+          {button.icon}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -175,7 +200,7 @@ function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { i
 export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
   // A glyph on any row (YAZ-3264 D6) leaves an empty slot on the rows without one, so every label
   // starts at the same place, as in a Finder menu. A flyout is its own menu and keeps its own rule.
-  const glyphs = sections.some((section) => section.some((item) => item.children === undefined && item.icon !== undefined))
+  const glyphs = sections.some((section) => section.some((item) => item.kind !== 'strip' && item.children === undefined && item.icon !== undefined))
   // The ONE open flyout (D7 amended): at most one parent is expanded at a time.
   const [openId, setOpenId] = useState<string | null>(null)
   // Hover intent (YAZ-3085 D4): three parents stand in a column, so a pointer on its way into a
@@ -232,7 +257,9 @@ export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
         <Groups
           sections={sections}
           render={(item) =>
-            item.children === undefined ? (
+            item.kind === 'strip' ? (
+              <StripButtons key={item.id} item={item} onClose={onClose} onMouseEnter={() => hover(null)} />
+            ) : item.children === undefined ? (
               // Entering a DIFFERENT top-level item is what closes an open flyout — after the hover wait (D4).
               <ActionButton key={item.id} item={item} onClose={onClose} onMouseEnter={() => hover(null)} />
             ) : (

@@ -188,8 +188,8 @@ interface SidebarProps {
   onChangeSettings: (next: SettingsState) => void
   /** The footer cog: App mounts the settings dialog, so the cog only asks for it (YAZ-1679). */
   onOpenSettings: () => void
-  /** The footer's "Open today's daily note" (YAZ-3607 D7); absent while Settings › Files & Links › Daily notes is off. */
-  onOpenDailyNote?: () => void
+  /** The footer's "Open today's daily note" (YAZ-3607 D7), a background tab on ⌘-click (YAZ-3776); absent while Daily notes is off. */
+  onOpenDailyNote?: (background: boolean) => void
   /** The updater's state (YAZ-2976 D4): App reads it once for the window, and the footer shows its pill beside the cog. */
   update: UpdateState
   /** The pill's click: App mounts the "What's new" sheet (D5), as it does the settings dialog. */
@@ -1518,6 +1518,7 @@ export function Sidebar({
             placeholder="Search"
             title={titleWithKey('Search', 'search', settings.hotkeys)}
             aria-label="Search notes"
+            spellCheck={false} // a search is names, not prose: no red line under `yaseen` (YAZ-3748 B2)
             value={query}
             onChange={changeQuery}
             // With no text → and ↓ have nothing to do in the bar: they go to the first row of the
@@ -1747,7 +1748,7 @@ export function Sidebar({
         <ZoomMenu sidebar={zoomValue} onSidebar={onZoom} app={settings.appZoom} onApp={changeAppZoom} onOpenChange={onZoomMenu} />
         {onOpenDailyNote !== undefined && (
           // YAZ-3607 D7: today's daily note in one click, the same as ⌘D on "Today's daily note".
-          <button type="button" className="sidebar__daily" title="Open today's daily note" aria-label="Open today's daily note" onClick={onOpenDailyNote}>
+          <button type="button" className="sidebar__daily" title="Open today's daily note (⌘-click: background tab)" aria-label="Open today's daily note" onClick={(e) => onOpenDailyNote(e.metaKey)}>
             <CalendarIcon />
           </button>
         )}

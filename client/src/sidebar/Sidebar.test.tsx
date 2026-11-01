@@ -2690,6 +2690,13 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(shape(el)).toEqual(['Plans', '  Zed'])
   })
 
+  it('YAZ-3748 D3: `yaseen workflow` finds `1-yaseen-engineering-workflow` by its words and marks each word; the parts between stay plain. B2: the bar draws no spelling line', async () => {
+    const { el, v, input } = await search('yaseen workflow', {}, { nodes: (v) => [note(`${v}/1-yaseen-engineering-workflow.md`), note(`${v}/Working-Log.md`)] })
+    expect(input.getAttribute('spellcheck')).toBe('false')
+    expect(shape(el)).toEqual(['1-yaseen-engineering-workflow'])
+    expect(row(el, `${v}/1-yaseen-engineering-workflow.md`)?.querySelector('.tree__label')?.innerHTML).toBe('1-<mark class="tree__mark">yaseen</mark>-engineering-<mark class="tree__mark">workflow</mark>')
+  })
+
   it('S37, S38, S40, S9, S10: a match shows the typed text bold where it first sits — whatever its case, spaces aside — and every other row steps back; a tree outside a search is drawn as ever (R7)', async () => {
     const vault = await search('', {}, {
       records: (root) => notePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Alpha.md') ? { aliases: ['First letter'] } : path.endsWith('/Zed.md') ? { id: 'k3m9x2pq7abc' } : {})),
@@ -2766,9 +2773,10 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     await type(input, 'scan')
     await press(input, 'Enter')
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/skills/scan.pdf`)
-    // S12: a note is found by its title and aliases, never by its file name.
+    // S12, as YAZ-3748 B4 changed it: a note whose file was named by hand (`up-001.md`, titled "Abdul") is found by
+    // that file name too, through its `up-001 — Abdul` row; a file name the app made from the title still finds nothing.
     await type(input, 'up-001')
-    expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('No matches')
+    expect(shape(el)).toEqual(['up-001'])
     await type(input, 'abdul')
     expect(shape(el)).toEqual(['up-001']) // the row's label is the window index's business; the search found it by title
   })
@@ -8285,14 +8293,19 @@ describe('update pill (YAZ-2976 D4)', () => {
     expect(footer).toEqual(['settings-button', 'zoom-footer'])
   })
 
-  it('the daily note button (YAZ-3607 D7): after the zoom chip while App hands its door over, and its click opens today\'s note', async () => {
+  it('the daily note button (YAZ-3607 D7): after the zoom chip while App hands its door over, and its click opens today\'s note; ⌘-click asks for a background tab (YAZ-3776)', async () => {
     const onOpenDailyNote = vi.fn()
     const { el } = await mount({ onOpenDailyNote })
     const footer = [...el.querySelector('.sidebar__footer')!.children].map((child) => child.className)
     expect(footer).toEqual(['settings-button', 'zoom-footer', 'sidebar__daily'])
     act(() => el.querySelector<HTMLButtonElement>('.sidebar__daily')?.click())
-    expect(onOpenDailyNote).toHaveBeenCalledTimes(1)
+    expect(onOpenDailyNote).toHaveBeenLastCalledWith(false)
+    // ⌘-click (YAZ-3776 D1): App opens it in a background tab.
+    act(() => void el.querySelector('.sidebar__daily')?.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+    expect(onOpenDailyNote).toHaveBeenLastCalledWith(true)
+    expect(onOpenDailyNote).toHaveBeenCalledTimes(2)
     expect(el.querySelector('.sidebar__daily')?.getAttribute('aria-label')).toBe("Open today's daily note")
+    expect(el.querySelector('.sidebar__daily')?.getAttribute('title')).toBe("Open today's daily note (⌘-click: background tab)")
   })
 
   it('the sidebar zoom (YAZ-3389): the lists take `--sidebar-zoom` from the setting, the chip shows it, the menu\'s + writes the next step over the other settings, and the same value writes nothing (D6)', async () => {

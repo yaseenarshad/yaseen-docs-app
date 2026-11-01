@@ -99,7 +99,24 @@ export interface MenuChoiceField {
   run: (value: string | null) => void
 }
 
-export type MenuItem = MenuRow | MenuNumberField | MenuChoiceField
+/** One button of a strip: an icon, its name as the tooltip and the accessible name, lit when `active`. */
+export interface MenuStripButton {
+  label: string
+  icon: () => SVGElement
+  active: boolean
+  run: () => void
+}
+
+/** A row of icon buttons that look like the selection toolbar's (YAZ-3727 D14): a click runs one, then the menu closes. */
+export interface MenuStrip {
+  kind: 'strip'
+  /** The group's accessible name. */
+  label: string
+  group?: string
+  buttons: MenuStripButton[]
+}
+
+export type MenuItem = MenuRow | MenuNumberField | MenuChoiceField | MenuStrip
 
 /** Called at open time with the handle's target (from blockHandleTarget.handleTargetPos) and the editor ctx. */
 export type RowProvider = (view: EditorView, target: HandleTarget, ctx: Ctx) => MenuItem[]
@@ -408,6 +425,31 @@ function renderParent(row: MenuRow, children: MenuRow[][], menu: HTMLElement, cl
   return wrap
 }
 
+/** A strip (YAZ-3727 D14): the toolbar's buttons in one menu row, icons only, each named by its tooltip. */
+function renderStrip(strip: MenuStrip, close: () => void): HTMLElement {
+  const el = document.createElement('div')
+  el.className = 'ctx-menu__strip'
+  el.setAttribute('role', 'group')
+  el.setAttribute('aria-label', strip.label)
+  for (const button of strip.buttons) {
+    const item = document.createElement('button')
+    item.type = 'button'
+    item.className = `ctx-menu__strip-button${button.active ? ' active' : ''}`
+    item.setAttribute('role', 'menuitem')
+    item.setAttribute('aria-label', button.label)
+    item.setAttribute('aria-pressed', String(button.active))
+    item.title = button.label
+    item.appendChild(button.icon())
+    item.addEventListener('mousedown', (e) => e.preventDefault())
+    item.addEventListener('click', () => {
+      button.run()
+      close()
+    })
+    el.appendChild(item)
+  }
+  return el
+}
+
 /**
  * Draws the popup into `parent`, unplaced: a clicked row runs, then `close`; a picker works as the
  * header says, every one closed, and nothing takes the focus. Exported for the id link's menu
@@ -417,10 +459,10 @@ function renderParent(row: MenuRow, children: MenuRow[][], menu: HTMLElement, cl
  */
 export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close: () => void): HTMLElement {
   const el = document.createElement('div')
-  el.className = items.some((row) => row.kind !== 'number' && row.kind !== 'choice' && row.icon !== undefined) ? 'ctx-menu ctx-menu--editor ctx-menu--glyphs' : 'ctx-menu ctx-menu--editor'
+  el.className = items.some((row) => row.kind !== 'number' && row.kind !== 'choice' && row.kind !== 'strip' && row.icon !== undefined) ? 'ctx-menu ctx-menu--editor ctx-menu--glyphs' : 'ctx-menu ctx-menu--editor'
   el.setAttribute('role', 'menu')
   let pickers = false
-  let previous: MenuRow | null = null
+  let previous: MenuRow | MenuStrip | null = null
   for (const row of items) {
     if (row.kind === 'number' || row.kind === 'choice') {
       // One divider between the rows and the pickers; the pickers sit together.
@@ -430,12 +472,27 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
       continue
     }
     // A line parts two kinds of rows (YAZ-3646 D9) and stands above a row that asks for one (YAZ-3609 D23).
-    if (el.childElementCount > 0 && (row.divider === true || (previous !== null && previous.group !== row.group))) el.appendChild(divider())
+    if (el.childElementCount > 0 && ((row.kind !== 'strip' && row.divider === true) || (previous !== null && previous.group !== row.group))) el.appendChild(divider())
     previous = row
+    if (row.kind === 'strip') {
+      el.appendChild(renderStrip(row, close))
+      continue
+    }
     el.appendChild(row.children === undefined ? rowButton(row, close) : renderParent(row, row.children, el, close))
   }
   parent?.appendChild(el)
   return el
+}
+
+/** Each mounted editor's rows, for its note menu (`noteMenu.tsx`). */
+const providers = new WeakMap<EditorView, (target: HandleTarget) => MenuItem[]>()
+
+/**
+ * The menu's rows and strips for `target` in `view` (YAZ-3727 D15): a right-click on a line's text shows them
+ * too, in the note's own menu, so both menus come from one list of rows. No pickers: they stay on the handle.
+ */
+export function blockMenuItems(view: EditorView, target: HandleTarget): Array<MenuRow | MenuStrip> {
+  return (providers.get(view)?.(target) ?? []).filter((item): item is MenuRow | MenuStrip => item.kind !== 'number' && item.kind !== 'choice')
 }
 
 export const createBlockHandleMenu = (rows: RowProvider) =>
@@ -444,6 +501,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
       new Plugin({
         key: new PluginKey('mdapp-block-handle-menu'),
         view: (view) => {
+          providers.set(view, (target) => rows(view, target, ctx))
           // Exists only while open: `.ctx-menu` means "open" everywhere (the sidebar menu is
           // mounted only while open too), so nothing lingers per mounted editor.
           let popup: HTMLElement | null = null
@@ -517,6 +575,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
               if (v.state.doc !== prevState.doc) close()
             },
             destroy: () => {
+              providers.delete(view)
               document.removeEventListener('pointerdown', onPointerDown, true)
               document.removeEventListener('mousedown', onMouseDown, true)
               document.removeEventListener('mouseup', onMouseUp, true)

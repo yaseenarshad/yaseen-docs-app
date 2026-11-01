@@ -9,7 +9,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe } from './createCrepe'
+import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { toggleNumberedChildren } from './outline/numberChildren'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
@@ -95,6 +95,15 @@ describe('clipboard payload of a numbered child list', () => {
     const { text, html } = payload(view)
     expect(text).toBe('1. Setup\n2. VS Code')
     expect(html).toContain('<ol')
+  })
+
+  it('its text/plain alone pastes back as a real numbered list (YAZ-3727 D6)', async () => {
+    const { view } = await mountNumbered()
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, nodePos(view, 'ordered_list'))))
+    const { text } = payload(view)
+    const target = await mount('')
+    target.view.pasteText(text, { clipboardData: { getData: (type: string) => (type === 'text/plain' ? text : '') }, preventDefault() {} } as unknown as ClipboardEvent)
+    expect(getMarkdownForSave(target.crepe)).toBe('1. Setup\n2. VS Code\n')
   })
 
   it('selecting inside the single word "Setup" copies pure text with no number and no <ol> — this is the rule, not a bug', async () => {

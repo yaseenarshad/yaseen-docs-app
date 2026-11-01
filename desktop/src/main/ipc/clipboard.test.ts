@@ -17,11 +17,13 @@ const invoke = (event: unknown, ...args: unknown[]) => {
   return (handler as unknown as (event: unknown, ...args: unknown[]) => Promise<Envelope<void>>)(event, ...args)
 }
 const bad = { ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST' }) }
+const revealImage = vi.fn(async (_src: string) => undefined)
 
 beforeEach(() => {
   vi.mocked(ipcMain.handle).mockClear()
   writeText.mockClear()
   write.mockClear()
+  revealImage.mockClear()
   target = sender
   formats = { 'text/plain': 'old', 'text/html': '<b>old</b>' }
   registerClipboardIpc({ idFor: (wc) => wc.id === 1 ? 'w1' : undefined }, {
@@ -29,6 +31,7 @@ beforeEach(() => {
     writeText,
     write,
     readText: () => 'clip',
+    revealImage,
     rendererUrl: 'app://yaseen/index.html',
   })
 })
@@ -68,7 +71,7 @@ describe('private explicit copy IPC', () => {
 
   it('accepts the exact configured development renderer, including its window query', async () => {
     vi.mocked(ipcMain.handle).mockClear()
-    registerClipboardIpc({ idFor: () => 'w1' }, { target: () => sender, writeText, write, readText: () => 'clip', rendererUrl: 'http://localhost:5173/' })
+    registerClipboardIpc({ idFor: () => 'w1' }, { target: () => sender, writeText, write, readText: () => 'clip', revealImage, rendererUrl: 'http://localhost:5173/' })
     const devFrame = { url: 'http://localhost:5173/?win=w1' }
     expect(await invoke({ sender: { ...sender, mainFrame: devFrame }, senderFrame: devFrame }, 'text')).toEqual({ ok: true, value: undefined })
   })
@@ -104,7 +107,7 @@ describe('the note menu runs its row on the window that sent it (YAZ-3653)', () 
     return (handler as unknown as (event: unknown, ...args: unknown[]) => Promise<Envelope<void>>)(ev, ...args)
   }
   const window = () => {
-    const wc = { ...sender, cut: vi.fn(), copy: vi.fn(), paste: vi.fn(), send: vi.fn(), session: { addWordToSpellCheckerDictionary: vi.fn() } }
+    const wc = { ...sender, cut: vi.fn(), copy: vi.fn(), paste: vi.fn(), send: vi.fn(), copyImageAt: vi.fn(), getZoomFactor: () => 1.25, session: { addWordToSpellCheckerDictionary: vi.fn() } }
     return { wc, ev: { sender: wc, senderFrame: frame } }
   }
 
@@ -118,6 +121,17 @@ describe('the note menu runs its row on the window that sent it (YAZ-3653)', () 
       [SPECIAL.menuCopyAs, 'plain'], [SPECIAL.menuCopyAs, 'markdown'], [SPECIAL.menuCopyAs, 'visible'],
       [SPECIAL.menuPasteAs, { mode: 'plain', text: 'clip' }], [SPECIAL.menuPasteAs, { mode: 'markdown', text: 'clip' }],
     ])
+  })
+
+  it('an image\'s rows (YAZ-3727 D22): Copy image at the point in the window\'s px; Reveal a vault image only', async () => {
+    const { wc, ev } = window()
+    expect(await edit(ev, 'copy-image', { x: 40, y: 50 })).toEqual({ ok: true, value: undefined })
+    expect(wc.copyImageAt).toHaveBeenCalledExactlyOnceWith(50, 63)
+    for (const point of [undefined, 'x', { x: 1 }, { x: Number.NaN, y: 2 }, { x: '1', y: 2 }]) expect(await edit(ev, 'copy-image', point)).toEqual(bad)
+    expect(await edit(ev, 'reveal-image', 'app://vault/root/a.png?from=')).toEqual({ ok: true, value: undefined })
+    expect(revealImage).toHaveBeenCalledExactlyOnceWith('app://vault/root/a.png?from=')
+    for (const src of [undefined, 'https://example.com/a.png', 'file:///etc/hosts', `app://vault/${'x'.repeat(9000)}`]) expect(await edit(ev, 'reveal-image', src)).toEqual(bad)
+    expect([wc.copyImageAt.mock.calls.length, revealImage.mock.calls.length]).toEqual([1, 1])
   })
 
   it('adds one word to the dictionary, and refuses anything else', async () => {

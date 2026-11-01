@@ -1,0 +1,12 @@
+/* A single line break inside a paragraph shows as a line break (YAZ-3727 6C), as Obsidian shows it. Milkdown keeps
+   it as a `hardbreak` with `isInline: true` (`\n` on disk) and draws it as a span holding one space, so two lines read
+   as one. Visual only: the span's space takes no width, and a new line follows it. A hard break (`\` or two spaces)
+   is a `<br>` and is untouched. Prefixed with `.editor-instance`, like bullets.css, to outrank Crepe's theme. */
+.editor-instance .milkdown span[data-type='hardbreak'][data-is-inline='true'] {
+  font-size: 0;
+}
+
+.editor-instance .milkdown span[data-type='hardbreak'][data-is-inline='true']::after {
+  content: '\A';
+  white-space: pre;
+}

@@ -6,7 +6,7 @@ const LINE_END = /\r\n|\r|\n/
 /**
  * The text the editor parses, and the way back from one of ITS lines to a line of the file. Two
  * things move a line: the frontmatter block above the body, and the blank lines the load-time
- * normalizer adds (listItemRoundTrip rule 7). It adds nothing else, so a blank line that the disk
+ * normalizer adds (listItemRoundTrip rules 7 and 8). It adds nothing else, so a blank line that the disk
  * body does not have at that place is one of its own.
  */
 export function fileLines(frontmatter: string, body: string): { text: string; toFileLine: (line: number) => number } {

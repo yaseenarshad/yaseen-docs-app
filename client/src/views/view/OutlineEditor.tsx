@@ -51,6 +51,7 @@ import '../../editor/outline/bullets.css'
 import '../../editor/outline/guideLines.css'
 import '../../editor/outline/outlineFolding.css'
 import '../../editor/outline/zoom.css'
+import '../../editor/softBreaks.css'
 import './outlineEditor.css'
 
 /** Same interval as `useAutosave`'s `delayMs` — one debounce rhythm across the app. */

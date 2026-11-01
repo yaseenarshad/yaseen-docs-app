@@ -46,7 +46,7 @@ import { type Command, type EditorState, Plugin, PluginKey, Selection } from '@m
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
-import { gestureAction, gestureDisplay, gestureFor, type GestureAction } from '@shared/keys'
+import { gestureAction } from '@shared/keys'
 import { rowShortcuts } from '../noteKeys'
 import { ancestorItemPositions, innermostItemPos, isListItem, itemLabelText } from './listNodes'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
@@ -113,9 +113,6 @@ export const KEY_SETTLE_MS = 1000
 const PRIORITY = 100
 
 const pluginKey = new PluginKey<ZoomState>('mdapp-outline-zoom')
-
-/** The "Bullet dots" gesture of `action` now, as the app writes it ('⇧-click'), or '' for none (YAZ-3936): a menu row's hint. */
-export const bulletGestureText = (state: EditorState, action: GestureAction): string => gestureDisplay(gestureFor('bullets', action, pluginKey.getState(state)?.hotkeys?.()))
 
 /** Position of the zoomed list_item (null when not zoomed or when the plugin is absent). */
 export const getZoomedItemPos = (state: EditorState): number | null => pluginKey.getState(state)?.itemPos ?? null

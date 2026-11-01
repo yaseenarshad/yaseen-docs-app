@@ -135,7 +135,10 @@ describe('RightPanel', () => {
     act(() => separator.dispatchEvent(new MouseEvent('mousedown', { clientX: 500, bubbles: true, cancelable: true })))
     act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 420 })))
     expect((el.querySelector('.right-panel') as HTMLElement).style.getPropertyValue('--right-panel-width')).toBe('520px')
+    // YAZ-3719 1A: no frame takes the mouse while the edge is held, so a release over a diagram still ends it.
+    expect(document.body.classList.contains('drag-held')).toBe(true)
     act(() => window.dispatchEvent(new MouseEvent('mouseup')))
+    expect(document.body.classList.contains('drag-held')).toBe(false)
     expect(props.onResizeCommit).toHaveBeenCalledOnce()
     expect(props.onResizeCommit).toHaveBeenCalledWith(520)
 
@@ -144,6 +147,17 @@ describe('RightPanel', () => {
     act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 760 })))
     act(() => window.dispatchEvent(new MouseEvent('mouseup')))
     expect(props.onHide).toHaveBeenCalledOnce()
+    expect(props.onResizeCommit).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-3719 1B: a right press on the edge starts no drag', () => {
+    const props = base()
+    const el = mount(props)
+    const separator = el.querySelector<HTMLElement>('[role="separator"]')!
+    act(() => separator.dispatchEvent(new MouseEvent('mousedown', { clientX: 500, button: 2, bubbles: true, cancelable: true })))
+    expect(document.body.classList.contains('drag-held')).toBe(false)
+    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 420 })))
+    act(() => window.dispatchEvent(new MouseEvent('mouseup')))
     expect(props.onResizeCommit).not.toHaveBeenCalled()
   })
 
