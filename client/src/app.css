@@ -766,10 +766,11 @@ button {
   list-style: none;
 }
 
-/* One recent folder: name + last-opened on the first line, full path beneath. Its own soft tile, so it reads as a button (YAZ-3886 P3). */
+/* One recent folder: name + last-opened on the first line, full path beneath. Its own soft tile, so it reads as a button (YAZ-3886 P3).
+   The name takes its full width first; the time gets what is left and cuts with "…" (YAZ-3886 round 2). */
 .welcome__recent {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
   gap: 1px 12px;
   width: 100%;
   padding: 8px 14px;
@@ -817,6 +818,10 @@ button {
   align-self: center;
   font-size: 12px;
   color: var(--fg-muted);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .welcome__recent-when--missing {
