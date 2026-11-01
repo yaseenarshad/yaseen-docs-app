@@ -18,7 +18,7 @@ import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import { useCardPreview, type PreviewScope } from '../tabs/cardPreview'
-import { createDrawingLinkPicker } from './drawingLinkPicker'
+import { createDrawingLinkPicker, createLinkedPage } from './drawingLinkPicker'
 import { drawingHostLinks, drawingPasteLink, drawingVaultOf, linkVault, mountDrawingVault, openShapeLink, windowFollow, type DrawingLinkDeps } from './drawingLinks'
 import { openEditLinkBox } from './editLinkBox'
 import type { DrawingSurfaceLinks } from './ExcalidrawSurface'
@@ -91,6 +91,7 @@ export function useDrawingLinks(host: DrawingLinkHost) {
     const picker = createDrawingLinkPicker(
       () => live.current.hostRef.current,
       () => live.current.props.wikilinkCandidates?.candidates ?? [],
+      (editor, name) => void createLinkedPage(editor, name, wikilinks, nav),
     )
     closePicker.current = picker.close
     const deps = (): DrawingLinkDeps => ({

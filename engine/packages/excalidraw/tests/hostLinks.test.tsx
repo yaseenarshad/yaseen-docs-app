@@ -235,6 +235,20 @@ describe("links in the text editor", () => {
     expect(textOf(text.id)).toBe("see [[YAS-1]]");
   });
 
+  it("puts a new page's ID in the link, in the open editor and in the saved box", async () => {
+    const { text, editor } = await edit();
+    moveCaret(editor, 2);
+    const state = hostLinks.onEditorChange.mock.calls.at(-1)![0]!;
+    expect(state.replaceLink("[[YAS-1]]", "[[Notes]]")).toBe(true);
+    expect(editor.value).toBe("see [[Notes]] now");
+    // the caret stays where the user left it
+    expect(editor.selectionStart).toBe(2);
+    Keyboard.exitTextEditor(editor);
+    expect(state.replaceLink("[[Notes]]", "[[YAS-1]]")).toBe(true);
+    expect(textOf(text.id)).toBe("see [[YAS-1]] now");
+    expect(state.replaceLink("[[Gone]]", "[[X]]")).toBe(false);
+  });
+
   it("lets the host's open picker take its keys", async () => {
     const { editor } = await edit();
     hostLinks.onEditorKeyDown.mockReturnValue(true);

@@ -817,6 +817,11 @@ export type HostTextEditor = {
   caretRect: () => { left: number; top: number; right: number; bottom: number };
   /** Puts `text` in place of `start`..`end` and the caret after it. */
   replace: (start: number, end: number, text: string) => void;
+  /**
+   * Puts `text` in place of the link `raw`, also after the editor closed
+   * (the saved box). True when `raw` was there.
+   */
+  replaceLink: (raw: string, text: string) => boolean;
 };
 
 /**

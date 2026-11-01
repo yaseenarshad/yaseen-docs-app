@@ -943,6 +943,31 @@ export const textWysiwyg = ({
     editable.dispatchEvent(new Event("input"));
   };
 
+  /**
+   * YAZ-4039 D12: puts `text` in place of the link `raw` later (a Create row's
+   * new ID): in this editor while it is open, the caret kept where it was,
+   * else in the saved box. True when `raw` was found.
+   */
+  const replaceEditorLink = (raw: string, text: string) => {
+    if (isDestroyed) {
+      return app.replaceHostLinkText(element.id, -1, -1, raw, text);
+    }
+    const at = editable.value.indexOf(raw);
+    if (at < 0) {
+      return false;
+    }
+    const end = at + raw.length;
+    const delta = text.length - raw.length;
+    const map = (offset: number) =>
+      offset >= end ? offset + delta : offset > at ? at + text.length : offset;
+    const { selectionStart, selectionEnd } = editable;
+    // the caret at the edit while the input handler moves the runs, then back
+    editable.setRangeText(text, at, end, "end");
+    editable.dispatchEvent(new Event("input"));
+    editable.setSelectionRange(map(selectionStart), map(selectionEnd));
+    return true;
+  };
+
   /** YAZ-4039 D12: the host's `[[` picker follows the text and the caret. */
   const reportEditor = (typed: boolean) => {
     app.props.hostLinks?.onEditorChange?.({
@@ -951,6 +976,7 @@ export const textWysiwyg = ({
       typed,
       caretRect: getCaretClientRect,
       replace: replaceEditorText,
+      replaceLink: replaceEditorLink,
     });
   };
 

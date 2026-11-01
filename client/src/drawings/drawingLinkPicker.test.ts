@@ -4,10 +4,16 @@
  * `engine/.../tests/hostLinks.test.tsx`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../api', async (original) => ({ api: { ...(await original<typeof import('../api')>()).api, mintNoteId: vi.fn() } }))
+vi.mock('../editor/wikilink/createFromLink', () => ({ createFromLink: vi.fn() }))
 import { fileLink } from '@shared/links'
 import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { LinkCandidate } from '../links/completion'
-import { createDrawingLinkPicker, type PickerEditor } from './drawingLinkPicker'
+import { api } from '../api'
+import { createFromLink } from '../editor/wikilink/createFromLink'
+import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { createDrawingLinkPicker, createLinkedPage, type PickerEditor } from './drawingLinkPicker'
 import { drawingPasteLink } from './drawingLinks'
 import { openEditLinkBox } from './editLinkBox'
 
@@ -16,14 +22,15 @@ const rows: LinkCandidate[] = [
   { name: 'Groceries', insert: 'YAS-2', label: 'Groceries', path: '/vault/Groceries.md' },
 ]
 
-function setup() {
+function setup(create?: (editor: PickerEditor, name: string) => void) {
   const parent = document.createElement('div')
   document.body.appendChild(parent)
-  const picker = createDrawingLinkPicker(() => parent, () => rows)
+  const picker = createDrawingLinkPicker(() => parent, () => rows, create)
   const replace = vi.fn()
-  const editor = (text: string, typed = true, caret = text.length): PickerEditor => ({ text, caret, typed, caretRect: () => ({ left: 10, top: 20, right: 10, bottom: 40 }), replace })
+  const replaceLink = vi.fn(() => true)
+  const editor = (text: string, typed = true, caret = text.length): PickerEditor => ({ text, caret, typed, caretRect: () => ({ left: 10, top: 20, right: 10, bottom: 40 }), replace, replaceLink })
   const items = () => [...parent.querySelectorAll('.wikilink-picker__item')].map((item) => item.textContent)
-  return { parent, picker, replace, editor, items }
+  return { parent, picker, replace, replaceLink, editor, items }
 }
 
 const key = (name: string) => new KeyboardEvent('keydown', { key: name })
@@ -71,10 +78,64 @@ describe('the [[ picker', () => {
     expect(items()).toEqual([])
   })
 
-  it('offers no Create row: no row, no popup', () => {
+  it('offers a Create row while no row has the typed name; its pick writes the link and makes the page', () => {
+    const create = vi.fn()
+    const { picker, editor, items, replace } = setup(create)
+    picker.change(editor('[[Gro'))
+    expect(items()).toEqual(['Growth plan', 'Groceries', 'Create "Gro"'])
+    picker.change(editor('[[Nothing like it'))
+    expect(items()).toEqual(['Create "Nothing like it"'])
+    picker.keyDown(key('Enter'))
+    expect(replace).toHaveBeenCalledWith(0, 17, '[[Nothing like it]]')
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ text: '[[Nothing like it' }), 'Nothing like it')
+  })
+
+  it('offers no Create row with no vault to make the page in', () => {
     const { picker, editor, items } = setup()
     picker.change(editor('[[Nothing like it'))
     expect(items()).toEqual([])
+  })
+})
+
+describe("a Create row's page (YAZ-1357 D3, the note's order)", () => {
+  const nav = { root: '/vault', createFolder: () => 'Inbox', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
+  const mint = vi.mocked(api.mintNoteId)
+  const make = vi.mocked(createFromLink)
+  const ids = () => {
+    const links = createWikilinkResolveSource()
+    links.update(() => null, [], [], true, ['YAS'])
+    return links
+  }
+
+  it('asks for the number, puts [[ID]] where the name stands, then makes the note with that ID', async () => {
+    const { editor, replaceLink } = setup()
+    mint.mockResolvedValueOnce('YAS-9')
+    make.mockResolvedValueOnce({ status: 'created', path: '/vault/Inbox/New page.md' })
+    await createLinkedPage(editor('[[New page]]'), 'New page', ids(), nav)
+    expect(replaceLink).toHaveBeenCalledWith('[[New page]]', '[[YAS-9]]')
+    expect(make).toHaveBeenLastCalledWith('/vault', 'New page', true, 'Inbox', 'YAS-9')
+    expect(nav.onNotice).toHaveBeenLastCalledWith('Created "New page"')
+  })
+
+  it('gives the link its name back when the note is not made', async () => {
+    const { editor, replaceLink } = setup()
+    mint.mockResolvedValueOnce('YAS-9')
+    make.mockResolvedValueOnce({ status: 'error', message: 'disk full' })
+    await createLinkedPage(editor('[[New page]]'), 'New page', ids(), nav)
+    expect(replaceLink).toHaveBeenLastCalledWith('[[YAS-9]]', '[[New page]]')
+    expect(nav.onNotice).toHaveBeenLastCalledWith('disk full')
+  })
+
+  it('keeps the typed name where the vault uses no IDs', async () => {
+    const { editor, replaceLink } = setup()
+    const links = createWikilinkResolveSource()
+    links.update(() => null)
+    make.mockResolvedValueOnce({ status: 'created', path: '/vault/Inbox/New page.md' })
+    mint.mockClear()
+    await createLinkedPage(editor('[[New page]]'), 'New page', links, nav)
+    expect(mint).not.toHaveBeenCalled()
+    expect(replaceLink).not.toHaveBeenCalled()
+    expect(make).toHaveBeenLastCalledWith('/vault', 'New page', false, 'Inbox', undefined)
   })
 })
 

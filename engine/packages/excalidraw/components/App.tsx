@@ -8049,7 +8049,8 @@ class App extends React.Component<AppProps, AppState> {
 
   /**
    * YAZ-4039 D15: puts `text` in place of a link's raw `[[inner]]` in a text
-   * box (Edit link, Remove link), as one undo step. The editor of that box can
+   * box (Edit link, Remove link, a new page's ID), as one undo step. True when
+   * the link was there. The editor of that box can
    * have saved since the right-click, so the link is found again by its text.
    */
   public replaceHostLinkText = (
@@ -8061,14 +8062,14 @@ class App extends React.Component<AppProps, AppState> {
   ) => {
     const element = this.scene.getElement(elementId);
     if (!element || element.isDeleted || !isTextElement(element)) {
-      return;
+      return false;
     }
     const at =
       element.originalText.slice(start, end) === raw
         ? start
         : element.originalText.indexOf(raw);
     if (at < 0) {
-      return;
+      return false;
     }
     const originalText =
       element.originalText.slice(0, at) +
@@ -8094,6 +8095,7 @@ class App extends React.Component<AppProps, AppState> {
         .map((candidate) => (candidate.id === elementId ? next : candidate)),
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     });
+    return true;
   };
 
   /** Reports the hovered pill to the host, only when it changed. */
