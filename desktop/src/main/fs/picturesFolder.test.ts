@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -8,6 +8,12 @@ import { loadDrawing, saveDrawing } from './drawing'
 import { blockedPicturesFolder, landingFolder } from './picturesFolders'
 import { shrinkVault } from './shrink'
 import { failure } from './testFixture'
+
+// The real rules; the spy lets one test count the calls (YAZ-4071 nit).
+vi.mock('./picturesFolders', async (actual) => {
+  const mod = await actual<typeof import('./picturesFolders')>()
+  return { ...mod, landingFolder: vi.fn(mod.landingFolder) }
+})
 
 /**
  * A pictures folder for each board (YAZ-3943 demo round 3): a "pictures out" board may name its own folder
@@ -99,6 +105,16 @@ describe('drawing:save — new pictures land in the board\'s folder', () => {
     expect(res.persisted).toEqual(['bbb'])
     expect(await list(path.join(root, 'assets'))).toEqual(['bbb.png'])
     expect((await loadDrawing({ root, path: file })).files.bbb?.dataURL).toBe(png('B'))
+  })
+
+  it('YAZ-4071 nit: an autosave with no new picture asks no `realpath` (`landingFolder` is not called); one with a new picture does', async () => {
+    const file = await seed('Board.excalidraw', board(out(outside), []))
+    vi.mocked(landingFolder).mockClear()
+    await saveDrawing({ root, path: file, json: sent([]), expectedMtime: await mtimeOf(file), newFiles: [] }, [outside])
+    expect(landingFolder).not.toHaveBeenCalled()
+    await saveDrawing({ root, path: file, json: sent([imageEl('aaa')]), expectedMtime: await mtimeOf(file), newFiles: [{ fileId: 'aaa', mimeType: 'image/png', dataURL: png('A') }] }, [outside])
+    expect(landingFolder).toHaveBeenCalledTimes(1)
+    expect(await list(outside)).toEqual(['aaa.png'])
   })
 
   it('YAZ-4071 7G: an approved outside folder that was deleted is not made again: the picture lands in assets/', async () => {

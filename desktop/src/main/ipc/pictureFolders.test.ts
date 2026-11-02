@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
 import { CONTRACT } from '@shared/ipc'
 import { MAX_PICTURE_FOLDERS, PICTURE_FOLDERS_FULL } from '../fs/picturesFolders'
-import { FOLDER_REFUSED, registerPictureFoldersIpc } from './pictureFolders'
+import { FOLDER_REFUSED, registerPictureFoldersIpc, rememberPick } from './pictureFolders'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }))
 
@@ -36,11 +36,14 @@ const store = {
 
 const OUTSIDE = path.join(tmpdir(), 'Board pictures')
 
+/** The cog's picks this session (`ipc/index.ts`): Settings › Remove forgets one there too. */
+let picked: Set<string>
 beforeEach(() => {
   list = []
+  picked = new Set()
   vi.mocked(ipcMain.handle).mockClear()
   vi.mocked(store.approvePictureFolder).mockClear()
-  registerPictureFoldersIpc(store)
+  registerPictureFoldersIpc(store, picked)
 })
 
 describe('picture-folders IPC (YAZ-3943 demo round 3)', () => {
@@ -65,6 +68,36 @@ describe('picture-folders IPC (YAZ-3943 demo round 3)', () => {
     vi.mocked(store.approvePictureFolder).mockImplementationOnce(() => false)
     expect(await registered(CONTRACT.pictureFolders.allow)(undefined, OUTSIDE)).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: PICTURE_FOLDERS_FULL }) })
     expect(list).toHaveLength(MAX_PICTURE_FOLDERS)
+  })
+
+  it('YAZ-4071 nit: allow checks the hidden-folder rule on the real place too: a link to a hidden folder is refused', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'allow-hidden-'))
+    try {
+      await mkdir(path.join(dir, '.secret'))
+      await symlink(path.join(dir, '.secret'), path.join(dir, 'Pics'))
+      expect(await registered(CONTRACT.pictureFolders.allow)(undefined, path.join(dir, 'Pics'))).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: FOLDER_REFUSED }) })
+      expect(list).toEqual([])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('YAZ-4071 nit: Settings › Remove forgets a folder the cog picked this session too, so a move cannot write there', async () => {
+    rememberPick(picked, OUTSIDE)
+    list = [OUTSIDE]
+    await registered(CONTRACT.pictureFolders.remove)(undefined, OUTSIDE)
+    expect([...picked]).toEqual([])
+  })
+
+  it('YAZ-4071 nit: the cog\'s picks this session hold MAX_PICTURE_FOLDERS at most: the oldest pick goes first', () => {
+    for (let n = 0; n <= MAX_PICTURE_FOLDERS; n++) rememberPick(picked, `/pics/${n}`)
+    expect(picked.size).toBe(MAX_PICTURE_FOLDERS)
+    expect(picked.has('/pics/0')).toBe(false)
+    // A pick again is the newest.
+    rememberPick(picked, '/pics/1')
+    rememberPick(picked, '/pics/new')
+    expect(picked.has('/pics/1')).toBe(true)
+    expect(picked.has('/pics/2')).toBe(false)
   })
 
   it('YAZ-4074 6A item 4: allow refuses a symbolic link to a system folder', async () => {

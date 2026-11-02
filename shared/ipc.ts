@@ -102,7 +102,7 @@ export const CONTRACT = {
   /**
    * This Mac's list of pictures folders OUTSIDE a vault the app may write to (YAZ-3943 demo round 3; `AppState.approvedPictureFolders`,
    * `ipc/pictureFolders.ts`): a board's "Allow" sheet and Settings › Files & Links › "Allowed picture folders". `allow` checks the
-   * path like a pick (`isValidPicturesFolder`, not a system folder) and refuses `BAD_REQUEST`; `remove` takes it off the list only.
+   * path like a pick (`isValidPicturesFolder`, not a system folder, both at its real place) and refuses `BAD_REQUEST`; `remove` takes it off the list only.
    * Each answers the list after it.
    */
   pictureFolders: {
@@ -112,7 +112,11 @@ export const CONTRACT = {
   },
   /** Native open-directory dialog parented to the calling window (GRO-2163). */
   pickFolder: invoke<[], PickFolderResponse>('dialog:pick-folder', 0),
-  /** A board's own pictures folder (YAZ-3943 demo round 3): the same dialog, opened in the vault, answering a vault-relative folder; a pick outside the vault is `BAD_REQUEST`. */
+  /**
+   * A board's own pictures folder (YAZ-3943 demo round 3): the same dialog, opened on the board's folder or the vault. It answers a
+   * vault-relative folder for a pick in the vault, and an absolute one for a pick outside it (remembered, or approved at once with
+   * `approveNow`). The vault itself, a system folder, a hidden folder or node_modules, each at its real place, is `BAD_REQUEST`.
+   */
   pickPicturesFolder: invoke<[req: PickPicturesFolderRequest], PickPicturesFolderResponse>('dialog:pick-pictures-folder', 1),
   /** Native save sheets, parented to the calling window, each with its write in the same door (YAZ-3028). */
   dialog: {

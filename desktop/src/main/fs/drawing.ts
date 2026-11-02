@@ -258,8 +258,8 @@ export async function saveDrawing(req: unknown, approved: readonly string[] = []
     pending.push(...lifted)
     const stamped = await guardedStamp(file, 'drawing', expectedMtime, (at, prior) => serializeBoard(stampBoardMetaScene(lean, at, withId(prior))), known)
     // Assets first (see the module doc), and only once the conflict guard has passed — a refused
-    // save must leave the vault exactly as it found it.
-    const persisted = await landAssets(dir, pending, await landingFolder(dir, picturesFolderOf(known?.block), approved))
+    // save must leave the vault exactly as it found it. A save with no new picture asks no `realpath` (YAZ-4071 nit).
+    const persisted = pending.length === 0 ? [] : await landAssets(dir, pending, await landingFolder(dir, picturesFolderOf(known?.block), approved))
     const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
     return { path: file, mtime, size, persisted, ...given }
   }
