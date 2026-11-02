@@ -146,7 +146,7 @@ describe('a slot change keeps all text (D8)', () => {
 })
 
 describe('"Time slots" in the six-dot menu (D7)', () => {
-  const menu = (view: EditorView): MenuItem[] => tableRows(view, { inside: firstTable(view.state.doc).pos + 3 } as Parameters<typeof tableRows>[1])
+  const menu = (view: EditorView): MenuItem[] => tableRows(view, { inside: firstTable(view.state.doc).pos + 3 } as Parameters<typeof tableRows>[1], undefined as never)
   const slots = (view: EditorView) => menu(view).find((item) => 'label' in item && item.label === 'Time slots') as MenuChoiceField
 
   it('shows Off / 15 min / 30 min / 1 hour with the current value; a pick sets it', async () => {

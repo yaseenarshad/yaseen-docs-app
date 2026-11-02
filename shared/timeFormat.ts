@@ -66,7 +66,7 @@ const CHECK_TIMES = [0, 5, 545, 720, 750, 1290, 1439]
 
 /** Why `format` cannot be the time format, or null when it can: `readTime` must read each time back as written. */
 export function timeFormatProblem(format: string): string | null {
-  const tokens = format.match(TIME_TOKEN) ?? []
+  const tokens: string[] = format.match(TIME_TOKEN) ?? []
   if (!tokens.some((t) => /^[Hh]{1,2}$/.test(t)) || !tokens.includes('mm')) return 'Add the hour (H, HH, h or hh) and the minutes (mm)'
   if (tokens.some((t) => /^h{1,2}$/.test(t)) && !tokens.some((t) => t === 'a' || t === 'A')) return 'With h or hh, add a or A for am and pm'
   if (CHECK_TIMES.some((t) => readTime(formatTime(format, t)) !== t)) return 'The app cannot read this time back. Keep only the hour, a ":", the minutes and am / pm'
