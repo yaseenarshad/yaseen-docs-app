@@ -73,6 +73,15 @@
   right: var(--toc-width);
 }
 
+/* A bullet zoom hid the names, and their room stays (`.toc-held`, YAZ-4094 demo), so the text does not move. */
+.editor:has(> .toc-held) > .editor-host {
+  padding-right: var(--toc-width);
+}
+
+.editor:has(> .toc-held) > .find-bar-dock--note {
+  right: var(--toc-width);
+}
+
 /* The drag edge of the column (YAZ-2752): a strip over the names' hairline, wider than the line
    and hidden until the mouse is on it — the sidebar edge's look (app.css: `.sidebar-resize`). */
 .toc__resize {

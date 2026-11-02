@@ -404,6 +404,20 @@ describe('which notes show one', () => {
     expect(nav(m)).not.toBeNull()
   })
 
+  it('a bullet zoom keeps the names column’s room, so the text does not move; the rail keeps none (YAZ-4094 demo)', () => {
+    const names = mount('pinned', HEADINGS, 1400)
+    const held = () => names.section.querySelector('.toc-held')
+    act(() => names.channel.setHidden(true))
+    expect(nav(names)).toBeNull()
+    expect(held()).not.toBeNull()
+    act(() => names.channel.setHidden(false))
+    expect(held()).toBeNull()
+    expect(nav(names)).not.toBeNull()
+    const rail = mount('auto')
+    act(() => rail.channel.setHidden(true))
+    expect(rail.section.querySelector('.toc-held')).toBeNull()
+  })
+
   it('a note whose second heading is typed later gets one then; one that loses it, loses it', () => {
     const m = mount('auto', [HEADINGS[0]])
     expect(nav(m)).toBeNull()
@@ -1158,7 +1172,8 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
     expect(document.body.style.cursor).toBe('')
     moveTo(800)
     release()
-    expect(widthOf(zoomed)).toBe('')
+    // The zoom holds the column's room at the saved width, not the abandoned drag's (YAZ-4094 demo).
+    expect(widthOf(zoomed)).toBe('200px')
     expect(zoomed.onChangeWidth).not.toHaveBeenCalled()
     // Back from the zoom: the saved width, not the abandoned drag's.
     act(() => zoomed.channel.setHidden(false))
@@ -1401,6 +1416,9 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
     expect(tocCss).toMatch(new RegExp(`--toc-width:\\s*${TOC_WIDTH}px;`))
     expect(rule(tocCss, '.editor:has(> .toc[data-names]) > .editor-host')).toMatch(/padding-right:\s*var\(--toc-width/)
     expect(rule(tocCss, '.editor:has(> .toc[data-names]) > .find-bar-dock--note')).toMatch(/right:\s*var\(--toc-width/)
+    // A bullet zoom keeps that room (`.toc-held`, YAZ-4094 demo).
+    expect(rule(tocCss, '.editor:has(> .toc-held) > .editor-host')).toMatch(/padding-right:\s*var\(--toc-width/)
+    expect(rule(tocCss, '.editor:has(> .toc-held) > .find-bar-dock--note')).toMatch(/right:\s*var\(--toc-width/)
     const column = rule(tocCss, '.toc[data-names]')
     expect(column).toMatch(/right:\s*var\(--toc-gutter/)
     expect(column).toMatch(/width:\s*var\(--toc-width\);/)
