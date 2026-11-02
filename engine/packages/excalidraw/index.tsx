@@ -102,6 +102,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
     autoFocus = false,
     generateIdForFile,
     hostLinks,
+    hostContextMenuItems,
     onExportPdf,
     onLinkOpen,
     generateLinkForSelection,
@@ -240,6 +241,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
           autoFocus={autoFocus}
           generateIdForFile={generateIdForFile}
           hostLinks={hostLinks}
+          hostContextMenuItems={hostContextMenuItems}
           onExportPdf={onExportPdf}
           onLinkOpen={onLinkOpen}
           generateLinkForSelection={generateLinkForSelection}

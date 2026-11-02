@@ -28,6 +28,7 @@ vi.mock('./engine', () => {
 vi.mock('katex/dist/katex.min.css', () => ({}))
 
 import { ExcalidrawSurface, readOnlyHandle } from './ExcalidrawSurface'
+import { imageStudioSession, resetImageStudioSession } from '../image-studio/imageStudioSession'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -54,6 +55,58 @@ async function render(readOnly: boolean | undefined): Promise<void> {
 }
 
 const last = (): Record<string, unknown> => engine.props.at(-1) ?? {}
+
+describe('the board`s right-click menu: Save to library… (YAZ-4157 demo 6L)', () => {
+  async function renderWithPanel(readOnly: boolean): Promise<void> {
+    container ??= document.createElement('div')
+    document.body.appendChild(container)
+    root ??= createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} readOnly={readOnly} onCanvasPanelChange={() => undefined} />)
+    })
+  }
+  type Items = (type: 'canvas' | 'element') => Array<{ name: string; label: string; replaces?: string; perform: () => void }>
+
+  it('takes the place of the engine`s "Add to library" on a selection, and asks the Add tab for its name form', async () => {
+    resetImageStudioSession()
+    await renderWithPanel(false)
+    const items = last().hostContextMenuItems as Items
+    expect(items('canvas')).toEqual([])
+    const [save] = items('element')
+    expect(save).toMatchObject({ name: 'saveToLibrary', label: 'Save to library…', replaces: 'addToLibrary' })
+    save.perform()
+    expect(imageStudioSession.getState().saveRequested).toBe(true)
+  })
+
+  it('⌘F with the focus on no element (a click on the panel header) still puts the caret in the Add tab`s search (demo 6N)', async () => {
+    await renderWithPanel(false)
+    const surface = container!.querySelector<HTMLElement>('.drawing-surface')!
+    // jsdom lays nothing out; the board is on screen.
+    surface.getClientRects = () => [{}] as unknown as DOMRectList
+    const sidebar = () => (last().children as { props: { searchFocusPending: boolean } }).props
+    expect(sidebar().searchFocusPending).toBe(false)
+    const press = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void document.body.dispatchEvent(press))
+    expect(press.defaultPrevented).toBe(true)
+    expect(sidebar().searchFocusPending).toBe(true)
+  })
+
+  it('a board that is not on screen leaves ⌘F alone', async () => {
+    await renderWithPanel(false)
+    const press = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void document.body.dispatchEvent(press))
+    expect(press.defaultPrevented).toBe(false)
+  })
+
+  it('a board with no panel, or read only, adds nothing to the menu', async () => {
+    await render(false)
+    expect(last().hostContextMenuItems).toBeUndefined()
+    act(() => root?.unmount())
+    root = null
+    await renderWithPanel(true)
+    expect(last().hostContextMenuItems).toBeUndefined()
+  })
+})
 
 describe('the engine’s view mode (YAZ-3076 D2, YAZ-3120)', () => {
   it('an editable drawing passes NO viewModeEnabled, so the engine’s own ⌥R still toggles its view mode', async () => {

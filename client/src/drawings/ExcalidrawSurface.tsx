@@ -64,12 +64,13 @@
  * (rule 28). Which mode a surface is in is read ONCE, at mount.
  */
 import { requestKeySheet } from '../keys/keySheetRequest'
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { picturesSize, referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
-import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type PageView } from '@shared/types'
+import { CANVAS_PANEL_DEFAULT_W, CANVAS_PANEL_MAX_W, CANVAS_PANEL_MIN_W, DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type PageView } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside, MouseMods } from '@shared/keys'
+import { holdColResize } from '../lib/colResize'
 import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
 import { contentVersion } from './contentVersion'
@@ -202,6 +203,11 @@ export interface DrawingSurfaceProps {
  * `addFiles` and `pruneFiles` do nothing, and `updateScene` passes only what is not the scene's elements (a view,
  * a dialog, a tool), so the canvas panel can still present and look but never edit a read-only drawing.
  */
+
+/** One arrow key on the canvas panel's edge (YAZ-4157 demo 6C). */
+const PANEL_KEY_STEP = 16
+const clampPanelWidth = (width: number) => Math.round(Math.min(CANVAS_PANEL_MAX_W, Math.max(CANVAS_PANEL_MIN_W, width)))
+
 export function readOnlyHandle(api: ImperativeApi): ImperativeApi {
   return {
     ...api,
@@ -364,7 +370,7 @@ export function ExcalidrawSurface({
   /** Remember a panel choice (Draw's 🔒 YAZ-1775 D10); a value that did not move is not a write. */
   const rememberPanel = useCallback((patch: Partial<CanvasPanelState>) => {
     const next = { ...panelRef.current, ...patch }
-    if (next.tab === panelRef.current.tab && next.docked === panelRef.current.docked) return
+    if (next.tab === panelRef.current.tab && next.docked === panelRef.current.docked && next.width === panelRef.current.width) return
     panelRef.current = next
     panelOutRef.current?.(next)
   }, [])
@@ -413,6 +419,72 @@ export function ExcalidrawSurface({
   const onDock = useCallback((docked: boolean) => rememberPanel({ docked }), [rememberPanel])
 
   /**
+   * The app's own items in the board's right-click menu (YAZ-4157 demo 6L, the engine's `hostContextMenuItems`).
+   * "Save to library…" takes the place of the engine's "Add to library", whose library this app does not show: it
+   * opens the Add tab, and the tab opens its name form for the selection. A tab with no panel, or read only, adds none.
+   */
+  const hostContextMenuItems = useMemo(() => {
+    if (!withPanel || readOnly) return undefined
+    const saveToLibrary = {
+      name: 'saveToLibrary',
+      label: 'Save to library…',
+      replaces: 'addToLibrary',
+      perform: () => {
+        imageStudioSession.set({ saveRequested: true })
+        if (rail.getState().activeTab !== 'image-studio') rail.openTab('image-studio')
+      },
+    }
+    return (type: 'canvas' | 'element') => (type === 'element' ? [saveToLibrary] : [])
+  }, [withPanel, readOnly, rail])
+
+  /**
+   * The panel's edge (YAZ-4157 demo 6C). A drag writes the width on the surface as it goes, with no render per move,
+   * and the release stores it; the arrow keys on the edge step it. The engine reads it through `canvasPanel.css`.
+   */
+  const panelResizeCleanup = useRef<(() => void) | null>(null)
+  useEffect(() => () => panelResizeCleanup.current?.(), [])
+  const showPanelWidth = useCallback((width: number) => rootRef.current?.style.setProperty('--canvas-panel-width', `${width}px`), [])
+  const startPanelResize = useCallback(
+    (event: ReactMouseEvent) => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      panelResizeCleanup.current?.()
+      const x0 = event.clientX
+      const from = panelRef.current.width ?? CANVAS_PANEL_DEFAULT_W
+      let next = from
+      const move = (e: MouseEvent) => {
+        next = clampPanelWidth(from + e.clientX - x0)
+        showPanelWidth(next)
+      }
+      const cleanup = () => {
+        window.removeEventListener('mousemove', move)
+        window.removeEventListener('mouseup', release)
+        holdColResize(false)
+        panelResizeCleanup.current = null
+      }
+      const release = () => {
+        cleanup()
+        rememberPanel({ width: next })
+      }
+      window.addEventListener('mousemove', move)
+      window.addEventListener('mouseup', release)
+      holdColResize(true)
+      panelResizeCleanup.current = cleanup
+    },
+    [rememberPanel, showPanelWidth],
+  )
+  const resizePanelByKey = useCallback(
+    (event: ReactKeyboardEvent) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      event.preventDefault()
+      const next = clampPanelWidth((panelRef.current.width ?? CANVAS_PANEL_DEFAULT_W) + (event.key === 'ArrowRight' ? PANEL_KEY_STEP : -PANEL_KEY_STEP))
+      showPanelWidth(next)
+      rememberPanel({ width: next })
+    },
+    [rememberPanel, showPanelWidth],
+  )
+
+  /**
    * ? opens the app's "Keys of this tab" (YAZ-3564 K11) in place of the engine's own help dialog, which shows only the
    * engine's defaults. A bare ?, outside a text field and with no text being edited; true when it took the key.
    */
@@ -433,9 +505,18 @@ export function ExcalidrawSurface({
    * `AppSidebar.tsx:983-1078`; the keys as the user set them, YAZ-3564),
    * with its guards: the primary modifier alone, no repeat, no IME composition, no editable target, no
    * live text selection, and — asked of the engine itself — no element being drawn, dragged, resized,
-   * rotated or cropped, no text being edited, no dialog open and nothing selected. Those gates are why
-   * ⌘C still copies a selection. Bound on THIS element in the capture phase, in the tab only.
+   * rotated or cropped, no text being edited, no dialog open, and for ⌘C nothing selected: that gate is why ⌘C still
+   * copies a selection. Bound on THIS element in the capture phase, in the tab only.
+   *
+   * ⌘F ALWAYS puts the caret in the Add tab's search field (demo 6N): it opens the tab when it is not open and never
+   * closes it, and a selection on the board does not stop it (the engine's own ⌘F, find on the board, then lost it).
    */
+  /** ⌘F's one job (demo 6N): the caret in the Add tab's search field, opening the tab if it is not open. */
+  const focusAddSearch = useCallback(() => {
+    setSearchFocusPending(true)
+    if (rail.getState().activeTab !== 'image-studio') rail.openTab('image-studio')
+  }, [rail])
+
   const onKeyDownCapture = useCallback(
     (event: ReactKeyboardEvent) => {
       if (onHelpKey(event)) return
@@ -443,7 +524,8 @@ export function ExcalidrawSurface({
       if (api === null) return
       const keys = hotkeysRef.current
       const components = pressed(event, 'drawing.componentsPanel', keys)
-      if ((!components && !pressed(event, 'drawing.imagesPanel', keys)) || event.repeat || event.nativeEvent.isComposing) return
+      const find = !components && pressed(event, 'drawing.imagesPanel', keys)
+      if ((!components && !find) || event.repeat || event.nativeEvent.isComposing) return
       const target = event.target
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
       if (target instanceof HTMLElement && (target.isContentEditable || target.closest("[contenteditable='true']") !== null)) return
@@ -451,24 +533,42 @@ export function ExcalidrawSurface({
       if (selection !== null && !selection.isCollapsed) return
       const appState = api.getAppState() as unknown as Record<string, unknown>
       const busy = BUSY_APP_STATE_KEYS.some((k) => Boolean(appState[k]))
-      if (busy || appState.cursorButton === 'down' || Object.keys((appState.selectedElementIds ?? {}) as Record<string, unknown>).length > 0) return
+      if (busy || appState.cursorButton === 'down') return
+      if (find) {
+        event.preventDefault()
+        event.stopPropagation()
+        focusAddSearch()
+        return
+      }
+      if (Object.keys((appState.selectedElementIds ?? {}) as Record<string, unknown>).length > 0) return
       event.preventDefault()
       event.stopPropagation()
+      // ⌘C on the open tab moves it to the Components chip; only a second ⌘C, already there, closes the panel.
       const open = rail.getState().activeTab === 'image-studio'
-      if (components) {
-        // ⌘C on the open tab moves it to the Components chip; only a second ⌘C, already there, closes the panel.
-        const there = imageStudioSession.getState().chip === 'components'
-        pickChip('components')
-        if (open && !there) return
-      } else if (!open) {
-        // ⌘F puts the caret in the search field too — only when this press OPENS the tab: the active
-        // tab's own shortcut closes the panel, and must leave nothing pending behind.
-        setSearchFocusPending(true)
-      }
+      const there = imageStudioSession.getState().chip === 'components'
+      pickChip('components')
+      if (open && !there) return
       rail.openTab('image-studio')
     },
-    [rail, onHelpKey],
+    [rail, onHelpKey, focusAddSearch],
   )
+
+  // ⌘F with the focus on no element (demo 6N): a click on a spot that takes no focus — the panel's header, a gap in the
+  // toolbar — leaves it on the page itself, out of reach of the handler above. While this board shows, the window
+  // hears that ⌘F for it.
+  useEffect(() => {
+    if (!withPanel) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.target !== document.body && event.target !== document.documentElement) return
+      if (rootRef.current === null || rootRef.current.getClientRects().length === 0) return
+      if (event.repeat || event.isComposing || !pressed(event, 'drawing.imagesPanel', hotkeysRef.current)) return
+      event.preventDefault()
+      event.stopPropagation()
+      focusAddSearch()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [withPanel, focusAddSearch])
 
   // Shell → engine (🔒 D9): a prop that differs from what was last applied is pushed, changed keys
   // only. `framesVisible` goes through `updateFrameRendering`; `toolLock` is merged into the tool
@@ -635,10 +735,13 @@ export function ExcalidrawSurface({
           onSearchFocused={onSearchFocused}
           hasSelection={hasSelection}
           onStartPresentation={startPresentation}
+          width={canvasPanel.width ?? CANVAS_PANEL_DEFAULT_W}
+          onResizeStart={startPanelResize}
+          onResizeKey={resizePanelByKey}
         />
       ),
     // `keyBindings` too: a new child is what re-renders the engine's toolbar, so its tooltips name a changed key at once (K12).
-    [engine, withPanel, activeTab, closePanel, onDock, imperativeApi, readOnly, searchFocusPending, onSearchFocused, hasSelection, startPresentation, keyBindings],
+    [engine, withPanel, activeTab, closePanel, onDock, imperativeApi, readOnly, searchFocusPending, onSearchFocused, hasSelection, startPresentation, keyBindings, canvasPanel.width, startPanelResize, resizePanelByKey],
   )
 
   // The frame held while the engine chunk is arriving; the host's canvas frame sizes it.
@@ -646,7 +749,12 @@ export function ExcalidrawSurface({
   const { Excalidraw } = engine
   return (
     // The surface's own element, so ⌘F / ⌘C are heard here and nowhere else in the shell (the tab only).
-    <div ref={rootRef} className="drawing-surface" onKeyDownCapture={withPanel ? onKeyDownCapture : onHelpKey}>
+    <div
+      ref={rootRef}
+      className="drawing-surface"
+      style={{ '--canvas-panel-width': `${canvasPanel.width ?? CANVAS_PANEL_DEFAULT_W}px` } as CSSProperties}
+      onKeyDownCapture={withPanel ? onKeyDownCapture : onHelpKey}
+    >
       <Excalidraw
         initialData={initialData}
         initialState={initialState}
@@ -667,6 +775,7 @@ export function ExcalidrawSurface({
         viewModeEnabled={readOnly ? true : undefined}
         keyBindings={keyBindings}
         hostLinks={links?.hostLinks}
+        hostContextMenuItems={hostContextMenuItems}
         onExportPdf={exportPdf}
         onLinkOpen={onLinkOpen}
       >

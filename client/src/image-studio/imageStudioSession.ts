@@ -9,7 +9,8 @@
  *
  * TYPING SEARCHES THE WEB ON A PAUSE (YAZ-4157 D3): your own items re-rank on every key in the component, which costs
  * nothing; the providers are asked only `SEARCH_PAUSE_MS` after the last key, and Enter asks at once. Main's 24 h
- * disk cache answers a query it has seen, so a pause on an old query costs no network either.
+ * disk cache answers a query it has seen, so a pause on an old query costs no network either. `waiting` is true for the
+ * pause, so the tab can say the web is coming from the first key (YAZ-4157 demo).
  */
 import type { ComponentItem, MediaSearchSource, StoredMediaItem, StudioItem, UsedMediaItem } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
@@ -39,6 +40,8 @@ export interface StudioSession {
   cursor: string | null
   warnings: string[]
   isSearching: boolean
+  /** The pause is running: a web search is coming for the text in the field. */
+  waiting: boolean
   offline: boolean
   pageError: string | null
   error: string | null
@@ -48,8 +51,15 @@ export interface StudioSession {
   recent: StoredMediaItem[]
   used: UsedMediaItem[]
   components: ComponentItem[]
+  /** Every named item of Excalidraw's public libraries (demo 6K), asked once a window; null until it is here. */
+  drawings: StudioItem[] | null
   /** The Recent section shows every row (it has no chip of its own to show them with). */
   recentOpen: boolean
+  /**
+   * The board's right-click "Save to library…" asked for the name form (demo 6L). The tab may not be mounted yet when
+   * it asks, so the request waits here until the tab can capture the selection.
+   */
+  saveRequested: boolean
   smart: SmartShapeApi | null
 }
 
@@ -61,6 +71,7 @@ const EMPTY: StudioSession = {
   cursor: null,
   warnings: [],
   isSearching: false,
+  waiting: false,
   offline: false,
   pageError: null,
   error: null,
@@ -69,7 +80,9 @@ const EMPTY: StudioSession = {
   recent: [],
   used: [],
   components: [],
+  drawings: null,
   recentOpen: false,
+  saveRequested: false,
   smart: null,
 }
 
@@ -99,6 +112,12 @@ export const getErrorMessage = (error: unknown, fallback: string): string => (er
 
 /** Fewer letters than this is no web search: the providers answer two letters with noise. */
 const MIN_QUERY = 2
+/**
+ * Fewer letters than this is no web search ON A PAUSE (YAZ-4157 demo 6E): each search costs the providers about twenty
+ * requests with its tile pictures, and a two-letter stop on the way to a word is the one most often thrown away. Enter
+ * still searches two letters.
+ */
+const MIN_PAUSE_QUERY = 3
 
 /**
  * One page. `append` is the infinite scroll's next page and keeps what is on screen; a fresh
@@ -119,7 +138,7 @@ export async function runSearch({ append = false, retry = false }: { append?: bo
     set({ isSearching: true, pageError: null })
   } else {
     requestedCursors.clear()
-    set({ isSearching: true, error: null, pageError: null, offline: false, results: [], cursor: null, warnings: [], searchedQuery: askedQuery })
+    set({ isSearching: true, waiting: false, error: null, pageError: null, offline: false, results: [], cursor: null, warnings: [], searchedQuery: askedQuery })
   }
   try {
     const response = await api.media.search({ q: askedQuery, source, cursor: requestedCursor })
@@ -145,20 +164,22 @@ export async function runSearch({ append = false, retry = false }: { append?: bo
 export function typeQuery(query: string) {
   clearTimeout(pauseTimer)
   const { set, getState } = imageStudioSession
-  set({ query, error: null })
+  set({ query, error: null, waiting: false })
   if (query.trim().length < MIN_QUERY) {
     searchRequestId++
     requestedCursors.clear()
     set({ results: [], cursor: null, warnings: [], searchedQuery: '', isSearching: false, pageError: null, offline: false })
     return
   }
-  if (query.trim() === getState().searchedQuery) return
+  if (query.trim().length < MIN_PAUSE_QUERY || query.trim() === getState().searchedQuery || chipSource(getState().chip) === null) return
+  set({ waiting: true })
   pauseTimer = setTimeout(() => void runSearch(), SEARCH_PAUSE_MS)
 }
 
 /** Enter: ask now, not after the pause. */
 export function searchNow() {
   clearTimeout(pauseTimer)
+  imageStudioSession.set({ waiting: false })
   void runSearch()
 }
 
@@ -170,6 +191,6 @@ export function pickChip(chip: StudioChip) {
   clearTimeout(pauseTimer)
   searchRequestId++
   requestedCursors.clear()
-  set({ results: [], cursor: null, warnings: [], searchedQuery: '', isSearching: false, pageError: null })
+  set({ results: [], cursor: null, warnings: [], searchedQuery: '', isSearching: false, waiting: false, pageError: null })
   void runSearch()
 }

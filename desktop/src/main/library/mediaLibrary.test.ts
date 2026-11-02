@@ -214,8 +214,9 @@ describe('the used list in the file (YAZ-4157 D1)', () => {
   })
 
   it('reads a used row back, and drops a row with a bad count — the other rows survive', () => {
-    const good = used({ count: 4, words: ['tree'], noAutoFavorite: true })
-    const out = sanitizeMediaLibrary({ version: 1, favorites: [], recent: [], used: [good, { ...used({ itemKey: 'pixabay:2' }), count: -1 }, { ...used({ itemKey: 'pixabay:3' }), count: 1.5 }] })
+    const good = used({ count: 4, words: ['tree'] })
+    // The first demo build's `noAutoFavorite` mark (demo 6A) reads as nothing.
+    const out = sanitizeMediaLibrary({ version: 1, favorites: [], recent: [], used: [{ ...good, noAutoFavorite: true }, { ...used({ itemKey: 'pixabay:2' }), count: -1 }, { ...used({ itemKey: 'pixabay:3' }), count: 1.5 }] })
     expect(out?.used).toEqual([good])
   })
 
@@ -273,22 +274,19 @@ describe('recordUse — one add (YAZ-4157 D1, D9)', () => {
     expect(recordUse(state, item(), '', 11).favorites).toEqual([stamp(item(), 10)])
   })
 
-  it('a favorite the user removed never comes back on its own — a star by hand still works', () => {
+  it(`a removed favorite starts its count again: ${AUTO_FAVORITE_USES} more adds bring it back, not the next one (demo 6A)`, () => {
     let state = lib()
-    for (let i = 1; i <= AUTO_FAVORITE_USES; i++) state = recordUse(state, item(), '', i)
+    for (let i = 1; i <= AUTO_FAVORITE_USES; i++) state = recordUse(state, item(), 'tree', i)
     state = removeFavorite(state, item().itemKey)
-    expect(state.used[0].noAutoFavorite).toBe(true)
-    for (let i = 0; i < 5; i++) state = recordUse(state, item(), '', 20 + i)
+    expect(state.used[0]).toMatchObject({ count: 0, words: ['tree'] })
+    for (let i = 1; i < AUTO_FAVORITE_USES; i++) state = recordUse(state, item(), '', 20 + i)
     expect(state.favorites).toEqual([])
-    expect(addFavorite(state, item(), 99).favorites).toHaveLength(1)
+    state = recordUse(state, item(), '', 30)
+    expect(state.favorites).toEqual([stamp(item(), 30)])
   })
 
-  it('removing a favorite that was never added still sticks: a row at 0 uses holds the mark', () => {
-    const state = removeFavorite(lib({ favorites: [stored()] }), stored().itemKey)
-    expect(state.used).toEqual([{ ...stored(), count: 0, words: [], noAutoFavorite: true }])
-    let after = state
-    for (let i = 0; i < AUTO_FAVORITE_USES; i++) after = recordUse(after, item(), '', i)
-    expect(after.favorites).toEqual([])
+  it('removing a favorite that was never added to a board changes only the favorites', () => {
+    expect(removeFavorite(lib({ favorites: [stored()] }), stored().itemKey)).toEqual(lib())
   })
 
   it(`moves the item to the head of used and keeps ${MAX_MEDIA_USED} rows`, () => {

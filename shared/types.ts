@@ -1372,7 +1372,15 @@ export const isCanvasPanelTab = (v: unknown): v is CanvasPanelTab => (CANVAS_PAN
 export interface CanvasPanelState {
   tab: CanvasPanelTab
   docked: boolean
+  /** The width the user dragged the panel to (YAZ-4157 demo 6C); absent is the engine's own 302 px. */
+  width?: number
 }
+
+/** The canvas panel's drag range (YAZ-4157 demo 6C). The default is the engine's `RIGHT_SIDEBAR_WIDTH`. */
+export const CANVAS_PANEL_DEFAULT_W = 302
+export const CANVAS_PANEL_MIN_W = 260
+export const CANVAS_PANEL_MAX_W = 720
+export const isCanvasPanelWidth = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= CANVAS_PANEL_MIN_W && v <= CANVAS_PANEL_MAX_W
 
 export const DEFAULT_CANVAS_PANEL: CanvasPanelState = { tab: 'image-studio', docked: false }
 
@@ -1383,14 +1391,15 @@ export const DEFAULT_CANVAS_PANEL: CanvasPanelState = { tab: 'image-studio', doc
  * verbatim): Pixabay photos and illustrations, Iconify icons and logos, and the app's own shapes.
  * `shape` needs no network and no key at all. `component` is a saved component of the library, its
  * `providerId` the slug (YAZ-4157 D2): so it can be a favorite, a recent and a counted use like any item.
+ * `excalidraw` is one item of Excalidraw's public libraries (YAZ-4157 demo 6K), its `providerId` `<source>#<index>`.
  */
-type MediaProvider = 'pixabay' | 'iconify' | 'shape' | 'component'
-const MEDIA_PROVIDERS: readonly MediaProvider[] = ['pixabay', 'iconify', 'shape', 'component']
+type MediaProvider = 'pixabay' | 'iconify' | 'shape' | 'component' | 'excalidraw'
+const MEDIA_PROVIDERS: readonly MediaProvider[] = ['pixabay', 'iconify', 'shape', 'component', 'excalidraw']
 export const isMediaProvider = (v: unknown): v is MediaProvider => MEDIA_PROVIDERS.includes(v as MediaProvider)
 
 /** What the item IS, independent of who served it (the web app's `ImageStudioItemKind`). */
-export type MediaItemKind = 'photo' | 'illustration' | 'icon' | 'logo' | 'shape' | 'component'
-const MEDIA_ITEM_KINDS: readonly MediaItemKind[] = ['photo', 'illustration', 'icon', 'logo', 'shape', 'component']
+export type MediaItemKind = 'photo' | 'illustration' | 'icon' | 'logo' | 'shape' | 'component' | 'drawing'
+const MEDIA_ITEM_KINDS: readonly MediaItemKind[] = ['photo', 'illustration', 'icon', 'logo', 'shape', 'component', 'drawing']
 export const isMediaItemKind = (v: unknown): v is MediaItemKind => MEDIA_ITEM_KINDS.includes(v as MediaItemKind)
 
 /**
@@ -1430,11 +1439,11 @@ export interface MediaItem {
 export type StoredMediaItem = MediaItem & { updatedAt: number }
 
 /**
- * One row of `used` (YAZ-4157 D1): an item the user added to a board, how many times, the words that found it
- * (newest first; a search they added it from, or one they typed in "Add a word…"), and `noAutoFavorite` once
- * they took it out of the favorites — after that it never becomes a favorite on its own again (D9).
+ * One row of `used` (YAZ-4157 D1): an item the user added to a board, how many times, and the words that found it
+ * (newest first; a search they added it from, or one they typed in "Add a word…"). Taking it out of the favorites
+ * starts its count again (demo 6A).
  */
-export type UsedMediaItem = StoredMediaItem & { count: number; words: string[]; noAutoFavorite?: true }
+export type UsedMediaItem = StoredMediaItem & { count: number; words: string[] }
 
 /**
  * `<library>/media.json` (🔒 YAZ-1775 D5): the cross-vault media library, ONE file for the whole account.
@@ -1546,6 +1555,22 @@ export interface MediaPreviewResponse {
  */
 export interface MediaImportResponse extends MediaPreviewResponse {
   item: StudioItem
+}
+
+/**
+ * Excalidraw's public libraries (YAZ-4157 demo 6K): hand-drawn items that go on the board as editable elements.
+ * `media.drawingIndex` answers every named item of every library (about 3,000), which the Add tab ranks itself as
+ * you type; `media.drawing` answers one item's elements. Main fetches and caches both for 24 h.
+ */
+export interface MediaDrawingIndexResponse {
+  items: StudioItem[]
+}
+/** `id` is the item's `providerId`, `<source>#<index>`. */
+export interface MediaDrawingRequest {
+  id: string
+}
+export interface MediaDrawingResponse {
+  elements: unknown[]
 }
 
 // ---------- Saved components (`<library>/components/` — 🔒 YAZ-1775 D5, YAZ-1819) ----------

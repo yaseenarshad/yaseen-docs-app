@@ -23,8 +23,8 @@
  * as a prop rather than importing the package (`engine.ts`'s lazy rule), and it is rendered only
  * by `ExcalidrawSurface`, as a memoized child of `<Excalidraw>`.
  */
-import type { ReactNode } from 'react'
-import { CANVAS_PANEL_TABS, type CanvasPanelTab } from '@shared/types'
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import { CANVAS_PANEL_MAX_W, CANVAS_PANEL_MIN_W, CANVAS_PANEL_TABS, type CanvasPanelTab } from '@shared/types'
 import { ImageStudio } from '../image-studio/ImageStudio'
 import type { ExcalidrawImperativeApi, ExcalidrawModule } from './engine'
 import { PresentationSidebar } from './presentation/PresentationSidebar'
@@ -73,9 +73,13 @@ export interface CanvasSidebarProps {
   hasSelection: boolean
   /** Play, from the Present tab (YAZ-1820): the SURFACE owns the player, so it outlives this panel. */
   onStartPresentation: (initialFrameId: string | null) => void
+  /** The panel's stored width, and its edge's drag and arrow keys (YAZ-4157 demo 6C); the surface owns all three. */
+  width: number
+  onResizeStart: (event: ReactMouseEvent) => void
+  onResizeKey: (event: ReactKeyboardEvent) => void
 }
 
-export function CanvasSidebar({ engine, activeTab, onClose, onDock, excalidrawAPI, searchFocusPending, onSearchFocused, hasSelection, onStartPresentation }: CanvasSidebarProps) {
+export function CanvasSidebar({ engine, activeTab, onClose, onDock, excalidrawAPI, searchFocusPending, onSearchFocused, hasSelection, onStartPresentation, width, onResizeStart, onResizeKey }: CanvasSidebarProps) {
   const { DefaultSidebar, Sidebar } = engine
   return (
     <>
@@ -111,6 +115,19 @@ export function CanvasSidebar({ engine, activeTab, onClose, onDock, excalidrawAP
             )}
           </Sidebar.Tab>
         ))}
+        {/* The edge: drag it, or focus it and press the arrow keys (YAZ-4157 demo 6C). */}
+        <div
+          className="canvas-panel__resize"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the canvas panel"
+          aria-valuemin={CANVAS_PANEL_MIN_W}
+          aria-valuemax={CANVAS_PANEL_MAX_W}
+          aria-valuenow={width}
+          tabIndex={0}
+          onMouseDown={onResizeStart}
+          onKeyDown={onResizeKey}
+        />
       </DefaultSidebar>
     </>
   )

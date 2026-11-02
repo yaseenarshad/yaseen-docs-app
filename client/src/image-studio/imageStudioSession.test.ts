@@ -136,6 +136,28 @@ describe('typing (YAZ-4157 D3): the web is asked on a pause, Enter asks at once'
     expect(search).toHaveBeenCalledWith({ q: 'rocket', source: 'all', cursor: null })
   })
 
+  it('a pause on two letters asks nothing; Enter on them still asks (demo 6E)', async () => {
+    typeQuery('ro')
+    expect(state().waiting).toBe(false)
+    await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS * 2)
+    expect(search).not.toHaveBeenCalled()
+    searchNow()
+    expect(search).toHaveBeenCalledWith({ q: 'ro', source: 'all', cursor: null })
+  })
+
+  it('is `waiting` for the pause only: from the key until the search starts', async () => {
+    typeQuery('rocket')
+    expect(state().waiting).toBe(true)
+    await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS)
+    expect(state().waiting).toBe(false)
+    typeQuery('rocketship')
+    typeQuery('r')
+    expect(state().waiting).toBe(false)
+    typeQuery('rocketship')
+    searchNow()
+    expect(state().waiting).toBe(false)
+  })
+
   it('Enter asks now, and the pause after it asks nothing again', async () => {
     typeQuery('rocket')
     searchNow()

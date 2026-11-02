@@ -15139,7 +15139,7 @@ class App extends React.Component<AppProps, AppState> {
         ];
       }
 
-      return [
+      return this.withHostContextMenuItems("canvas", [
         actionPaste,
         actionPasteAtFullSize, // YAZ-3944 D16
         CONTEXT_MENU_SEPARATOR,
@@ -15157,7 +15157,7 @@ class App extends React.Component<AppProps, AppState> {
         actionToggleZenMode,
         actionToggleViewMode,
         actionToggleStats,
-      ];
+      ]);
     }
 
     // element contextMenu
@@ -15180,7 +15180,7 @@ class App extends React.Component<AppProps, AppState> {
           ]
         : [];
 
-    return [
+    return this.withHostContextMenuItems("element", [
       CONTEXT_MENU_SEPARATOR,
       actionCut,
       actionCopy,
@@ -15221,7 +15221,53 @@ class App extends React.Component<AppProps, AppState> {
       actionToggleElementLock,
       CONTEXT_MENU_SEPARATOR,
       actionDeleteSelected,
-    ];
+    ]);
+  };
+
+  /**
+   * Yaseen Docs (YAZ-4157 demo 6L): the host's items in the menu. One that
+   * `replaces` an engine item takes its place; the others go in a group of
+   * their own — after "Add to library"'s group on an element, at the end on
+   * the canvas.
+   */
+  private withHostContextMenuItems = (
+    type: "canvas" | "element",
+    items: ContextMenuItems,
+  ): ContextMenuItems => {
+    const host = this.props.hostContextMenuItems?.(type) ?? [];
+    if (host.length === 0) {
+      return items;
+    }
+    const replacing = new Map(
+      host.flatMap((item) => (item.replaces ? [[item.replaces, item]] : [])),
+    );
+    const own = host
+      .filter((item) => !item.replaces)
+      .map((item) => ({ host: item }));
+    const placed = items.map((item) => {
+      const replaced =
+        item && item !== CONTEXT_MENU_SEPARATOR && "name" in item
+          ? replacing.get(item.name)
+          : undefined;
+      return replaced ? { host: replaced } : item;
+    });
+    if (own.length === 0) {
+      return placed;
+    }
+    const after =
+      type === "element"
+        ? placed.findIndex(
+            (item) =>
+              !!item &&
+              item !== CONTEXT_MENU_SEPARATOR &&
+              (("name" in item && item.name === "addToLibrary") ||
+                ("host" in item && item.host.replaces === "addToLibrary")),
+          )
+        : -1;
+    const group: ContextMenuItems = [CONTEXT_MENU_SEPARATOR, ...own];
+    return after === -1
+      ? [...placed, ...group]
+      : [...placed.slice(0, after + 1), ...group, ...placed.slice(after + 1)];
   };
 
   private handleWheel = withBatchedUpdates(

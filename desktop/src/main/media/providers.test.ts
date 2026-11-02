@@ -10,7 +10,7 @@ import type { MediaSearchResponse, StudioItem } from '@shared/types'
 import { BridgeFailure } from '../fs/fsUtils'
 import type { MediaCache } from './cache'
 import { decodeCursor } from './curation'
-import { createMediaProviders, type MediaProviders } from './providers'
+import { createMediaProviders, PROVIDER_BUSY, type MediaProviders } from './providers'
 
 /** The disk cache's contract, in a Map — `cache.test.ts` owns the disk half. */
 function memoryCache(): MediaCache & { store: Map<string, unknown>; reads: string[] } {
@@ -39,6 +39,16 @@ const iconifyPayload = (icons: string[], extra: Record<string, unknown> = {}) =>
   collections: Object.fromEntries(icons.map((id) => [id.split(':')[0], { name: id.split(':')[0] }])),
   ...extra,
 })
+
+/** Iconify's two byte doors: a set's data for the tile pictures, a finished SVG for an import (and a rotated icon). */
+const iconifyBytes = (input: RequestInfo | URL) => {
+  const url = new URL(String(input))
+  if (url.pathname.endsWith('.json')) {
+    const names = url.searchParams.get('icons')!.split(',')
+    return json({ prefix: 'noto', width: 128, height: 128, icons: Object.fromEntries(names.map((n) => [n, n === 'turned' ? { body: '<g/>', rotate: 1 } : { body: `<path d="${n}"/>` }])) })
+  }
+  return new Response('<svg/>', { headers: { 'Content-Type': 'image/svg+xml' } })
+}
 
 let cache: ReturnType<typeof memoryCache>
 beforeEach(() => {
@@ -231,6 +241,39 @@ describe('when a provider is having a bad day', () => {
     await expect(code(build(fetchMock as unknown as typeof globalThis.fetch).search({ q: 'rocket', source: 'all' }))).resolves.toBe('PROVIDER_FAILED')
   })
 
+  it('asks once more after a 429, waiting what Retry-After names (YAZ-4157 demo 6E)', async () => {
+    vi.useFakeTimers()
+    try {
+      let refused = false
+      const fetchMock = vi.fn(async () => {
+        if (refused) return json(iconifyPayload(['noto:rocket'], { total: 1 }))
+        refused = true
+        return json({ error: 'slow down' }, { status: 429, headers: { 'Retry-After': '1' } })
+      })
+      const page = build(fetchMock as unknown as typeof globalThis.fetch).search({ q: 'rocket', source: 'iconify' })
+      await vi.advanceTimersByTimeAsync(999)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect((await page).items.map(({ itemKey }) => itemKey)).toEqual(['iconify:noto:rocket'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a 429 that stays is a plain "busy" message, not a status code', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = vi.fn(async () => new Response('busy', { status: 429 }))
+      const preview = build(fetchMock as unknown as typeof globalThis.fetch).preview({ provider: 'iconify', id: 'noto:rocket' })
+      const settled = preview.then(() => 'RESOLVED', (err: unknown) => (err as Error).message)
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(await settled).toBe(PROVIDER_BUSY)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('is OFFLINE, not PROVIDER_FAILED, when the machine never reached the provider', async () => {
     const fetchMock = vi.fn(async () => {
       throw new TypeError('fetch failed')
@@ -267,8 +310,7 @@ describe('the 24 h disk cache (🔒 YAZ-1775 D4)', () => {
   })
 
   it('caches a preview and re-serves it, but NEVER caches an import (🔒 YAZ-1775 D4)', async () => {
-    const svg = () => new Response('<svg/>', { headers: { 'Content-Type': 'image/svg+xml' } })
-    const fetchMock = vi.fn(async () => svg())
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => iconifyBytes(input))
     const providers = build(fetchMock as unknown as typeof globalThis.fetch, null)
 
     const first = await providers.preview({ provider: 'iconify', id: 'noto:money-bag' })
@@ -284,7 +326,7 @@ describe('the 24 h disk cache (🔒 YAZ-1775 D4)', () => {
   })
 
   it('still shows a cached preview with no network at all — the offline half of the rule', async () => {
-    const online = build(vi.fn(async () => new Response('<svg/>', { headers: { 'Content-Type': 'image/svg+xml' } })) as unknown as typeof globalThis.fetch, null)
+    const online = build(vi.fn(async (input: RequestInfo | URL) => iconifyBytes(input)) as unknown as typeof globalThis.fetch, null)
     await online.preview({ provider: 'iconify', id: 'noto:money-bag' })
     const offline = build(
       vi.fn(async () => {
@@ -307,6 +349,59 @@ describe('the 24 h disk cache (🔒 YAZ-1775 D4)', () => {
     await withKey.preview({ provider: 'pixabay', id: '101' })
     const withoutKey = build(vi.fn() as unknown as typeof globalThis.fetch, null)
     await expect(withoutKey.preview({ provider: 'pixabay', id: '101' })).resolves.toMatchObject({ mimeType: 'image/png' })
+  })
+})
+
+describe('fewer requests per page (YAZ-4157 demo 6G)', () => {
+  it('the Iconify tiles of one set are ONE request, and the picture is the set`s data built as an SVG', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => iconifyBytes(input))
+    const providers = build(fetchMock as unknown as typeof globalThis.fetch, null)
+    const [rocket, bag] = await Promise.all([providers.preview({ provider: 'iconify', id: 'noto:rocket' }), providers.preview({ provider: 'iconify', id: 'noto:money-bag' })])
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['https://api.iconify.design/noto.json?icons=rocket%2Cmoney-bag'])
+    expect(Buffer.from(rocket.dataURL.split(',')[1], 'base64').toString()).toContain('<path d="rocket"/>')
+    expect(bag.mimeType).toBe('image/svg+xml')
+  })
+
+  it('an icon the set data cannot build is fetched as its own finished SVG', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => iconifyBytes(input))
+    await build(fetchMock as unknown as typeof globalThis.fetch, null).preview({ provider: 'iconify', id: 'noto:turned' })
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['https://api.iconify.design/noto.json?icons=turned', 'https://api.iconify.design/noto/turned.svg'])
+  })
+
+  it('a Pixabay tile reads the record its search page brought: no API call per tile', async () => {
+    const hit = { id: 101, type: 'vector', previewURL: 'https://cdn.test/p.png', tags: 'money' }
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('pixabay.com/api') ? json({ hits: [hit], totalHits: 1 }) : new Response('PNG', { headers: { 'Content-Type': 'image/png' } }),
+    )
+    const providers = build(fetchMock as unknown as typeof globalThis.fetch)
+    await providers.search({ q: 'money', source: 'pixabay' })
+    const searchCalls = fetchMock.mock.calls.length
+    await providers.preview({ provider: 'pixabay', id: '101' })
+    expect(fetchMock.mock.calls.slice(searchCalls).map(([url]) => String(url))).toEqual(['https://cdn.test/p.png'])
+  })
+})
+
+describe('Excalidraw`s public libraries (YAZ-4157 demo 6K)', () => {
+  const index = [{ name: 'Tools', source: 'pixelass/tools.excalidrawlib', itemNames: ['Nail', 'Hammer'] }]
+  const file = { type: 'excalidrawlib', version: 2, libraryItems: [{ name: 'Nail', elements: [{ id: 'n' }] }, { name: 'Hammer', elements: [{ id: 'h' }] }] }
+  const libraries = () => vi.fn(async (input: RequestInfo | URL) => (String(input).endsWith('libraries.json') ? json(index) : json(file)))
+
+  it('the index is asked once a day; two items of one library are ONE library file', async () => {
+    const fetchMock = libraries()
+    const providers = build(fetchMock as unknown as typeof globalThis.fetch, null)
+    expect((await providers.drawingIndex()).items.map((i) => i.title)).toEqual(['Nail', 'Hammer'])
+    await providers.drawingIndex()
+    expect(await providers.drawing({ id: 'pixelass/tools.excalidrawlib#1' })).toEqual({ elements: [{ id: 'h' }] })
+    expect(await providers.drawing({ id: 'pixelass/tools.excalidrawlib#0' })).toEqual({ elements: [{ id: 'n' }] })
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['https://libraries.excalidraw.com/libraries.json', 'https://libraries.excalidraw.com/libraries/pixelass/tools.excalidrawlib'])
+  })
+
+  it('a bad id is BAD_REQUEST and asks nothing; an item gone from its library is NOT_FOUND', async () => {
+    const fetchMock = libraries()
+    const providers = build(fetchMock as unknown as typeof globalThis.fetch, null)
+    await expect(code(providers.drawing({ id: '../secrets.json#0' }))).resolves.toBe('BAD_REQUEST')
+    expect(fetchMock).not.toHaveBeenCalled()
+    await expect(code(providers.drawing({ id: 'pixelass/tools.excalidrawlib#7' }))).resolves.toBe('NOT_FOUND')
   })
 })
 

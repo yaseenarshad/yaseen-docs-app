@@ -51,14 +51,59 @@
   align-self: center;
 }
 
+/* The save step (demo 6O): the one lit card while it waits. */
 .image-studio__naming {
   background: var(--island-bg-color);
-  border: 1px solid var(--default-border-color);
+  border: 1px solid var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
   border-radius: 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px;
+}
+
+/* The save step (demo 6O): a picture of what it saves, under its title. */
+.image-studio__naming-title {
+  color: var(--text-primary-color);
+  font-size: 12px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.image-studio__naming-preview {
+  align-items: center;
+  background:
+    linear-gradient(45deg, var(--color-gray-10) 25%, transparent 25%) 0 0 / 12px 12px,
+    linear-gradient(-45deg, var(--color-gray-10) 25%, transparent 25%) 0 0 / 12px 12px,
+    var(--island-bg-color);
+  border-radius: 8px;
+  display: flex;
+  height: 120px;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.image-studio__naming-preview img {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+/* Everything under the save step: one column, as the tab itself was; greyed while the step waits. */
+.image-studio__rest {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  transition: opacity 120ms ease;
+}
+
+.image-studio__rest.is-dimmed,
+.image-studio__search[inert] {
+  filter: grayscale(1);
+  opacity: 0.35;
 }
 
 .image-studio__naming-actions {
@@ -282,9 +327,8 @@
   text-transform: capitalize;
 }
 
-/* The star and the ⋯ sit ON the picture. They show on hover and focus; a set star always shows. */
-.image-studio__favorite,
-.image-studio__more {
+/* The star sits ON the picture. It shows on hover and focus; a set star always shows. */
+.image-studio__favorite {
   background: var(--island-bg-color);
   border: 0;
   border-radius: 999px;
@@ -296,25 +340,15 @@
   opacity: 0;
   padding: 0;
   position: absolute;
+  right: 3px;
   text-align: center;
   top: 3px;
   width: 20px;
 }
 
-.image-studio__favorite {
-  right: 3px;
-}
-
-.image-studio__more {
-  left: 3px;
-}
-
 .image-studio__card:hover .image-studio__favorite,
-.image-studio__card:hover .image-studio__more,
 .image-studio__card:focus-within .image-studio__favorite,
-.image-studio__card:focus-within .image-studio__more,
-.image-studio__favorite.is-active,
-.image-studio__more[aria-expanded='true'] {
+.image-studio__favorite.is-active {
   opacity: 1;
 }
 
@@ -329,9 +363,9 @@
   box-shadow: var(--shadow-island);
   display: flex;
   flex-direction: column;
-  left: 3px;
   min-width: 140px;
   padding: 4px;
+  /* A tile's menu opens where the right-click was: its `top`, and `left` or `right`, are set inline. */
   position: absolute;
   top: 26px;
   z-index: 3;
@@ -361,8 +395,50 @@
   outline: none;
 }
 
+/* Where the item comes from (demo 6H): a label, not an action. */
+.image-studio__menu-source {
+  border-bottom: 1px solid var(--default-border-color);
+  color: var(--text-secondary-color);
+  font-size: 11px;
+  margin-bottom: 2px;
+  max-width: 200px;
+  overflow: hidden;
+  padding: 4px 8px 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .image-studio__menu .is-danger {
   color: var(--color-danger);
+}
+
+/* "+N" (demo 6J): the copies of this icon from other sets and its other styles. Always shown, top left, so a tile
+   that stands for many reads as one. */
+.image-studio__variants-toggle {
+  background: var(--island-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 999px;
+  color: var(--text-secondary-color);
+  cursor: pointer;
+  font-size: 9px;
+  left: 3px;
+  line-height: 1;
+  padding: 3px 5px;
+  position: absolute;
+  top: 3px;
+}
+
+.image-studio__variants-toggle[aria-expanded='true'] {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--island-bg-color);
+}
+
+.image-studio__variants-grid {
+  display: grid;
+  flex: 1 1 100%;
+  gap: 6px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 /* "Add a word…", Rename and Delete open a full-width row under the tile's row: a 4-column tile is too small for a field. */
@@ -413,9 +489,43 @@
   text-align: center;
 }
 
-.image-studio__footer {
+/* How to save a copied picture at full size (demo 6M): a quiet line, not an action. */
+.image-studio__hint {
   color: var(--text-secondary-color);
+  font-size: 10px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* The tab takes the focus only so ⌘V lands here; it draws no ring of its own. */
+.image-studio:focus {
+  outline: none;
+}
+
+.image-studio__footer {
+  align-items: center;
+  color: var(--text-secondary-color);
+  display: flex;
+  flex-wrap: wrap;
   font-size: 9px;
+  gap: 4px 8px;
+  justify-content: center;
   line-height: 1.35;
-  text-align: center;
+}
+
+/* One quiet way out to the web (demo 6I): it opens the browser, so it reads as a link, not as a main action. */
+.image-studio__google {
+  background: transparent;
+  border: 1px solid var(--default-border-color);
+  border-radius: 999px;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 8px;
+}
+
+.image-studio__google:disabled {
+  color: var(--text-secondary-color);
+  cursor: default;
+  opacity: 0.6;
 }

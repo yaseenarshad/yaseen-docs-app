@@ -195,6 +195,8 @@ export function useComponentLibrary(engine: ComponentEngine & PreviewEngine, exc
     busySlug,
     confirmDelete,
     startSave,
+    /** A picture pasted or dropped into the tab (demo 6M, `pastedImage.ts`): the name form, for it and not the selection. */
+    startSaveFrom: (picture: CapturedComponent) => setCaptured(picture),
     cancelSave: () => setCaptured(null),
     commitSave,
     importFile,

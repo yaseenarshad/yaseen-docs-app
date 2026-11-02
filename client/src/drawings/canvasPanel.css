@@ -10,6 +10,30 @@
  * Each tab keeps its own sheet for what is genuinely its own.
  */
 
+/* The panel's width (YAZ-4157 demo 6C). The engine sets `--right-sidebar-width` inline and reads it for the panel and
+   for the canvas beside a docked panel; the surface's `--canvas-panel-width`, the dragged width, wins over it. */
+.drawing-surface .excalidraw {
+  --right-sidebar-width: var(--canvas-panel-width, 302px) !important;
+}
+
+/* The panel's drag edge: over its right border, a hit area wider than the line. */
+.canvas-panel__resize {
+  bottom: 0;
+  cursor: col-resize;
+  position: absolute;
+  right: -4px;
+  top: 0;
+  width: 8px;
+  z-index: 2;
+}
+
+.canvas-panel__resize:hover,
+.canvas-panel__resize:focus-visible {
+  background: var(--color-primary);
+  opacity: 0.35;
+  outline: none;
+}
+
 /* The panel shell: a column that fills the sidebar and scrolls nothing itself. */
 .image-studio,
 .presentation-sidebar {

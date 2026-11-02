@@ -79,9 +79,8 @@ export function normalizeUsedItem(v: unknown): UsedMediaItem | null {
   const item = normalizeStoredMediaItem(v)
   if (item === null || !isRecord(v) || !Number.isSafeInteger(v.count) || (v.count as number) < 0 || !Array.isArray(v.words)) return null
   const words = [...new Set(v.words.flatMap((w) => (typeof w === 'string' ? (normalizeWord(w) ?? []) : [])))].slice(0, MAX_ITEM_WORDS)
-  const row: UsedMediaItem = { ...item, count: v.count as number, words }
-  if (v.noAutoFavorite === true) row.noAutoFavorite = true
-  return row
+  // A row from the first demo build may carry `noAutoFavorite`; that rule is gone (demo 6A), so the field drops.
+  return { ...item, count: v.count as number, words }
 }
 
 /** How an incoming item gets its stamp: main's clock, never the renderer's. */
@@ -104,17 +103,12 @@ export function addFavorite(lib: MediaLibraryFile, item: MediaItem, now: number)
 }
 
 /**
- * A removal sticks (YAZ-4157 D9): the item's `used` row is marked, so it never becomes a favorite on its own again.
- * A favorite that was never added to a board gets a row at 0 uses, only to hold that mark.
+ * A removal starts the item's count again (YAZ-4157 demo 6A): it becomes a favorite again after `AUTO_FAVORITE_USES`
+ * more adds, the same rule as the first time, and never on the very next add. Its words stay.
  */
 export function removeFavorite(lib: MediaLibraryFile, itemKey: string): MediaLibraryFile {
-  const removed = lib.favorites.find((f) => f.itemKey === itemKey)
-  if (removed === undefined) return lib
-  const favorites = lib.favorites.filter((f) => f !== removed)
-  const used = lib.used.some((u) => u.itemKey === itemKey)
-    ? lib.used.map((u) => (u.itemKey === itemKey ? { ...u, noAutoFavorite: true as const } : u))
-    : [{ ...removed, count: 0, words: [], noAutoFavorite: true as const }, ...lib.used].slice(0, MAX_MEDIA_USED)
-  return { ...lib, favorites, used }
+  if (!lib.favorites.some((f) => f.itemKey === itemKey)) return lib
+  return { ...lib, favorites: lib.favorites.filter((f) => f.itemKey !== itemKey), used: lib.used.map((u) => (u.itemKey === itemKey ? { ...u, count: 0 } : u)) }
 }
 
 /** The web app's `recordRecent`: an MRU — the item as it arrives NOW moves to the head, re-stamped. */
@@ -133,15 +127,11 @@ const withWord = (words: readonly string[], word: string | null): string[] =>
   word === null ? [...words] : [word, ...words.filter((w) => w !== word)].slice(0, MAX_ITEM_WORDS)
 
 /** A row as it was, or a fresh one at 0 uses; the item's own fields are the ones that arrive now. */
-const usedRow = (before: UsedMediaItem | undefined, item: MediaItem, now: number): UsedMediaItem => {
-  const row: UsedMediaItem = { ...stamp(item, now), count: before?.count ?? 0, words: before?.words ?? [] }
-  if (before?.noAutoFavorite) row.noAutoFavorite = true
-  return row
-}
+const usedRow = (before: UsedMediaItem | undefined, item: MediaItem, now: number): UsedMediaItem => ({ ...stamp(item, now), count: before?.count ?? 0, words: before?.words ?? [] })
 
 /**
  * One add to a board (YAZ-4157 D1, D9): the MRU as `recordRecent`, the count up by one, the search it was found
- * by as a word, and — at `AUTO_FAVORITE_USES` — a favorite, unless the user once took it out of the favorites.
+ * by as a word, and — at `AUTO_FAVORITE_USES` — a favorite. A removal restarts the count (`removeFavorite`).
  */
 export function recordUse(lib: MediaLibraryFile, item: MediaItem, query: string, now: number): MediaLibraryFile {
   const next = recordRecent(
@@ -153,7 +143,7 @@ export function recordUse(lib: MediaLibraryFile, item: MediaItem, query: string,
     now,
   )
   const row = next.used[0]
-  return row.count >= AUTO_FAVORITE_USES && !row.noAutoFavorite ? addFavorite(next, item, now) : next
+  return row.count >= AUTO_FAVORITE_USES ? addFavorite(next, item, now) : next
 }
 
 /**

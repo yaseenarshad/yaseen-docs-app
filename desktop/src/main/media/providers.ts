@@ -25,14 +25,17 @@
  * it was, which is the behaviour the Worker's own test pins. Only when EVERY requested provider
  * failed does the call itself reject.
  */
-import type { MediaBytesRequest, MediaImportResponse, MediaPreviewResponse, MediaSearchRequest, MediaSearchResponse, StudioItem } from '@shared/types'
+import type { MediaBytesRequest, MediaDrawingIndexResponse, MediaDrawingRequest, MediaDrawingResponse, MediaImportResponse, MediaPreviewResponse, MediaSearchRequest, MediaSearchResponse, StudioItem } from '@shared/types'
 import { BridgeFailure } from '../fs/fsUtils'
 import type { MediaCache } from './cache'
 import { pixabayItemCacheKey, pixabayPageCacheKey, previewCacheKey, searchCacheKey } from './cachePolicy'
+import { indexItems, libraryItemElements, LIBRARIES_INDEX_URL, LIBRARIES_ORIGIN, MAX_DRAWING_ELEMENTS_BYTES, parseDrawingId } from './excalidrawLibraries'
+import { createIconifyBatcher, type IconifySetData } from './iconifyBatch'
 import {
   decodeCursor,
   encodeCursor,
   hasMorePages,
+  ICONIFY_API,
   ICONIFY_COLOR_BATCH_LIMIT,
   iconifyItemFromId,
   iconifyPageExhausted,
@@ -67,6 +70,12 @@ import {
 /** The identity the Worker sent; providers rate-limit anonymous traffic harder. */
 const USER_AGENT = 'Yaseen Docs Image Studio'
 
+/** The longest wait a "too many requests" answer (429) gets before its one retry (YAZ-4157 demo 6E). */
+const MAX_RETRY_WAIT_MS = 2000
+/** What a provider that is still refusing after the retry says: its raw status means nothing to the user. */
+export const PROVIDER_BUSY = 'The image service is busy. Try again in a minute.'
+const providerFailed = (status: number) => new BridgeFailure('PROVIDER_FAILED', status === 429 ? PROVIDER_BUSY : `provider returned ${status}`)
+
 /** The shortest query the studio will run — the Worker's own floor. */
 export const MIN_QUERY_LENGTH = 2
 /** And its ceiling; a query longer than this is cut, not refused. */
@@ -84,6 +93,8 @@ export interface MediaProviders {
   search(req: MediaSearchRequest): Promise<MediaSearchResponse>
   preview(req: MediaBytesRequest): Promise<MediaPreviewResponse>
   import(req: MediaBytesRequest): Promise<MediaImportResponse>
+  drawingIndex(): Promise<MediaDrawingIndexResponse>
+  drawing(req: MediaDrawingRequest): Promise<MediaDrawingResponse>
 }
 
 /** What a provider's failure looks like to the search loop: which one, and why. */
@@ -92,18 +103,29 @@ type ProviderFailure = { provider: SearchProvider; error: BridgeFailure }
 const warningFor = (provider: SearchProvider) => (provider === 'iconify' ? 'Icons are temporarily unavailable.' : 'Pixabay graphics are temporarily unavailable.')
 
 export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProvidersDeps): MediaProviders {
-  /** A request that never got an answer is OFFLINE; one that got a bad answer is the provider's fault. */
+  /**
+   * A request that never got an answer is OFFLINE; one that got a bad answer is the provider's fault. A 429 is asked
+   * once more, after the wait its `Retry-After` names (1 s when it names none, 2 s at most): typing searches on a pause
+   * (YAZ-4157 D3), and a burst of searches and tile pictures can pass a provider's rate limit for a moment.
+   */
   async function request(url: string): Promise<Response> {
-    try {
-      return await fetch(url, { headers: { 'User-Agent': USER_AGENT }, redirect: 'follow' })
-    } catch {
-      throw new BridgeFailure('OFFLINE', `could not reach ${new URL(url).host}`)
+    const once = async () => {
+      try {
+        return await fetch(url, { headers: { 'User-Agent': USER_AGENT }, redirect: 'follow' })
+      } catch {
+        throw new BridgeFailure('OFFLINE', `could not reach ${new URL(url).host}`)
+      }
     }
+    const first = await once()
+    if (first.status !== 429) return first
+    const seconds = Number(first.headers.get('Retry-After'))
+    await new Promise((resolve) => setTimeout(resolve, Math.min(MAX_RETRY_WAIT_MS, (seconds > 0 ? seconds : 1) * 1000)))
+    return once()
   }
 
   async function fetchJson<T>(url: string): Promise<T> {
     const response = await request(url)
-    if (!response.ok) throw new BridgeFailure('PROVIDER_FAILED', `provider returned ${response.status}`)
+    if (!response.ok) throw providerFailed(response.status)
     try {
       return (await response.json()) as T
     } catch {
@@ -121,6 +143,13 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
   }
 
   // ---------- Iconify ----------
+
+  /** The tile pictures, one request per icon set (YAZ-4157 demo 6G, `iconifyBatch.ts`). */
+  const iconifyBatch = createIconifyBatcher((prefix, names) => {
+    const url = new URL(`${ICONIFY_API}/${encodeURIComponent(prefix)}.json`)
+    url.searchParams.set('icons', names.join(','))
+    return fetchJson<IconifySetData>(url.toString())
+  })
 
   async function fetchIconifyPage(query: string, start: number, limit: number, prefixes?: string[]) {
     const payload = await fetchJson<IconifySearchPayload>(iconifySearchUrl(query, start, limit, prefixes).toString())
@@ -180,6 +209,9 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     const url = pixabaySearchUrl(query, page, imageType, key, PIXABAY_PAGE_SIZE)
     const payload = await cachedJson<{ hits?: PixabayHit[]; totalHits?: number }>(pixabayPageCacheKey(query, imageType, page, PIXABAY_PAGE_SIZE), url.toString())
     const hits = payload.hits ?? []
+    // Each hit is also the record a tile picture and an import read (`pixabayRecord`), so neither asks the API for it
+    // again (YAZ-4157 demo 6G): one request per tile used to count against Pixabay's 100 a minute.
+    await Promise.all(hits.map((hit) => cache.write(pixabayItemCacheKey(String(hit.id)), { hits: [hit] })))
     const totalHits = finiteNumber(payload.totalHits)
     return { hits, hasMore: totalHits !== undefined ? page * PIXABAY_PAGE_SIZE < totalHits : hits.length === PIXABAY_PAGE_SIZE }
   }
@@ -335,7 +367,7 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
   /** Fetch one picture and hand it back as a dataURL, with the type and size guards 🔒 YAZ-1775 D4 names. */
   async function fetchImage(url: string): Promise<MediaPreviewResponse> {
     const response = await request(url)
-    if (!response.ok) throw new BridgeFailure('PROVIDER_FAILED', `provider returned ${response.status}`)
+    if (!response.ok) throw providerFailed(response.status)
     const mimeType = response.headers.get('Content-Type')?.split(';')[0].trim() ?? ''
     if (!mimeType.startsWith('image/')) throw new BridgeFailure('UNSUPPORTED_TYPE', 'the provider answered with something that is not an image')
     const claimed = Number(response.headers.get('Content-Length') ?? 0)
@@ -368,8 +400,9 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
       // The cache first, always: it is what keeps a favorited tile visible with no network and,
       // for Pixabay, with no key (🔒 YAZ-1775 D4's offline half).
       if (hit !== null) return hit
-      const { url } = await sourceUrl(req, true, await readPixabayKey())
-      const image = await fetchImage(url)
+      const built = req.provider === 'iconify' && iconifySvgUrl(req.id) !== null ? await iconifyBatch.svg(req.id) : null
+      // An icon the set data cannot build (rotated, flipped, gone) is the one finished SVG, on its own.
+      const image = built !== null ? { mimeType: 'image/svg+xml', dataURL: `data:image/svg+xml;base64,${Buffer.from(built).toString('base64')}` } : await fetchImage((await sourceUrl(req, true, await readPixabayKey())).url)
       await cache.write(cacheKey, image)
       return image
     },
@@ -379,6 +412,23 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
       // and de-duplicates them already (🔒 YAZ-1775 D3).
       const { url, item } = await sourceUrl(req, false, await readPixabayKey())
       return { ...(await fetchImage(url)), item }
+    },
+
+    // Excalidraw's public libraries (YAZ-4157 demo 6K, `excalidrawLibraries.ts`): the index and the library files
+    // through the same 24 h disk cache. Elements are not an `assets/` file, so caching them is no import rule's concern.
+    async drawingIndex() {
+      return { items: indexItems(await cachedJson<unknown>('excalidraw/index', LIBRARIES_INDEX_URL)) }
+    },
+
+    async drawing(req) {
+      const id = parseDrawingId(req.id)
+      if (id === null) throw new BridgeFailure('BAD_REQUEST', "'id' is not an Excalidraw library item")
+      const named = indexItems(await cachedJson<unknown>('excalidraw/index', LIBRARIES_INDEX_URL)).find((item) => item.providerId === req.id)
+      const file = await cachedJson<unknown>(`excalidraw/library/${id.source}`, `${LIBRARIES_ORIGIN}/libraries/${id.source}`)
+      const elements = libraryItemElements(file, id.index, named?.title ?? null)
+      if (elements === null) throw new BridgeFailure('NOT_FOUND', 'that item is no longer in its library')
+      if (JSON.stringify(elements).length > MAX_DRAWING_ELEMENTS_BYTES) throw new BridgeFailure('TOO_LARGE', 'that library item is too large to add')
+      return { elements }
     },
   }
 }

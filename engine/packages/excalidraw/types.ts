@@ -825,6 +825,19 @@ export type HostTextEditor = {
 };
 
 /**
+ * Yaseen Docs (YAZ-4157 demo 6L): an item the host adds to the board's
+ * right-click menu. `replaces` names one of the engine's own items (its action
+ * name, e.g. "addToLibrary"), whose place it takes; without it the item goes
+ * in a group of the host's own. `perform` runs after the menu has closed.
+ */
+export type HostContextMenuItem = {
+  name: string;
+  label: string;
+  perform: () => void;
+  replaces?: string;
+};
+
+/**
  * Yaseen Docs (YAZ-4039 D7, D11): the host's side of page links. `[[inner]]`
  * in a text box is a pill with what `resolve` says. A plain click selects the
  * box, as on any shape; the host takes the clicks it opens on.
@@ -1033,6 +1046,14 @@ export interface ExcalidrawProps {
   generateLinkForSelection?: (id: string, type: "element" | "group") => string;
   /** Yaseen Docs (YAZ-4039 D7, D11): page links in text boxes. Keep it stable. */
   hostLinks?: HostLinks;
+  /**
+   * Yaseen Docs (YAZ-4157 demo 6L): the host's own items in the board's
+   * right-click menu, asked each time the menu opens on the canvas or on a
+   * selection. Not asked in view mode.
+   */
+  hostContextMenuItems?: (
+    type: "canvas" | "element",
+  ) => readonly HostContextMenuItem[];
   /**
    * Yaseen Docs (YAZ-3943 D6): a PDF button in the export box, shown only when this is given. It gets the
    * export as an SVG (fonts and pictures inline) and its size in CSS pixels; the host makes the PDF.
