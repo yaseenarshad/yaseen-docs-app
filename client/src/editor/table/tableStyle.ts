@@ -2,7 +2,8 @@
  * The table's settings in the file (YAZ-3758, YAZ-3696 🔒 D1 / D3 / D7 / S3; CONTRACTS rule 41a).
  * The `table` node gets seven attributes, each at its default on a plain table: `border` (`null` or
  * `{ px, darkness }`), `header` (`shaded` | `plain`), `stripes`, `height` (`compact` | `normal` |
- * `tall`), `wrap`, `freezeRows` and `freezeCols`; and `unknownParts`, the comment's parts this build
+ * `tall`), `wrap`, `freezeRows` and `freezeCols`; `calendar` (the slot length in minutes, `0` for none,
+ * YAZ-4162); and `unknownParts`, the comment's parts this build
  * does not know, kept as their text (YAZ-4161). A column's alignment is the cells' own GFM
  * `alignment` (the `:-` row), not ours (YAZ-3767). Each
  * cell gets `fill`, `color` and its own `align` (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
@@ -37,7 +38,7 @@ import type { NodeSchema } from '@milkdown/kit/transformer'
 import { $prose, $remark } from '@milkdown/kit/utils'
 import type { Nodes, Table } from 'mdast'
 import { joinNextComment } from '../joinComment'
-import { BORDER_PX_MAX, WIDTH_MAX, cellAddress, cellAlign, cellColor, formatTableComment, parseTableComment, plainTable, unknownPart, type TableStyle, type UnknownPart } from './tableComment'
+import { BORDER_PX_MAX, WIDTH_MAX, calendarSlot, cellAddress, cellAlign, cellColor, formatTableComment, parseTableComment, plainTable, unknownPart, type TableStyle, type UnknownPart } from './tableComment'
 import './table.css'
 
 export * from './tableComment'
@@ -51,6 +52,7 @@ export const TABLE_DEFAULTS = {
   wrap: true,
   freezeRows: 0,
   freezeCols: 0,
+  calendar: 0 as 0 | 15 | 30 | 60,
   unknownParts: [] as UnknownPart[],
 }
 export type TableAttrs = typeof TABLE_DEFAULTS
@@ -69,6 +71,8 @@ function tableLevel(attrs: Record<string, unknown>): Omit<TableStyle, 'widths' |
   const rows = isWhole(attrs.freezeRows, 1, 999) ? attrs.freezeRows : 0
   const cols = isWhole(attrs.freezeCols, 1, 999) ? attrs.freezeCols : 0
   if (rows > 0 || cols > 0) out.freeze = { rows, cols }
+  const calendar = calendarSlot(attrs.calendar)
+  if (calendar !== null) out.calendar = calendar
   const unknown = Array.isArray(attrs.unknownParts) ? attrs.unknownParts.map(unknownPart) : []
   if (unknown.length > 0 && unknown.every((part) => part !== null)) out.unknown = unknown as UnknownPart[]
   return out
@@ -106,6 +110,7 @@ function tableDomAttrs(attrs: Record<string, unknown>): Record<string, string> |
   if (level.stripes) out['data-table-stripes'] = ''
   if (level.height) out['data-table-height'] = level.height
   if (level.nowrap) out['data-table-nowrap'] = ''
+  if (level.calendar) out['data-table-calendar'] = String(level.calendar)
   return Object.keys(out).length === 0 ? null : out
 }
 
@@ -129,6 +134,7 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
     wrap: !dom.hasAttribute('data-table-nowrap'),
     freezeRows: rows,
     freezeCols: cols,
+    calendar: Number(dom.getAttribute('data-table-calendar')),
     unknownParts,
   }
   return levelAttrs(tableLevel(raw))
@@ -143,6 +149,7 @@ const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align
   wrap: style.nowrap !== true,
   freezeRows: style.freeze?.rows ?? 0,
   freezeCols: style.freeze?.cols ?? 0,
+  calendar: style.calendar ?? 0,
   unknownParts: style.unknown ?? [],
 })
 

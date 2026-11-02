@@ -6,7 +6,9 @@
  *
  * The parts, in their fixed order, each only when set:
  * `widths 140 240 auto, fill A1:C1 blue B3 #ff8800, color B2:B5 red, align B2:C3 center, border 2px 40%,
- * header plain, stripes, height compact, nowrap, freeze 2 rows 1 col`. A column's alignment is no
+ * header plain, stripes, height compact, nowrap, freeze 2 rows 1 col, calendar 30m`. `calendar` (YAZ-4162,
+ * D1) is the slot length of a calendar table, `15m`, `30m` or `60m`; it is last, so a build that does not know it
+ * keeps it in place (YAZ-4161). A column's alignment is no
  * part: it is the GFM `:-` row, so GitHub and Obsidian show it too ("Align all columns" sets it,
  * YAZ-3767); `align` is a cell's own, which wins over its column's (YAZ-3819). Cells are A1 addresses:
  * columns are letters (A…Z, AA…), rows are numbers, row 1 is the header row.
@@ -49,7 +51,13 @@ export interface UnknownPart {
 }
 
 /** The words of the known parts, in the fixed order. */
-export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze'] as const
+export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar'] as const
+
+/** The slot lengths of a calendar table, in minutes (YAZ-4162, D1). */
+export const CALENDAR_SLOTS = [15, 30, 60] as const
+export type CalendarSlot = (typeof CALENDAR_SLOTS)[number]
+/** A slot length, checked, or `null`. */
+export const calendarSlot = (value: unknown): CalendarSlot | null => ((CALENDAR_SLOTS as readonly unknown[]).includes(value) ? (value as CalendarSlot) : null)
 
 /** An unknown part as the save writes it: a line break is one space, and it holds no `,` and no `-->`. `null` when it cannot be one. */
 export function unknownPart(value: unknown): UnknownPart | null {
@@ -78,6 +86,8 @@ export interface TableStyle {
   height?: 'compact' | 'tall'
   nowrap?: true
   freeze?: { rows: number; cols: number }
+  /** A calendar table's slot length (YAZ-4162). */
+  calendar?: CalendarSlot
   /** The parts this build does not know, in their order (YAZ-4161). */
   unknown?: UnknownPart[]
 }
@@ -212,6 +222,12 @@ function readPart(style: TableStyle, word: string, rest: string[]): boolean {
       style.freeze = freeze
       return true
     }
+    case 'calendar': {
+      const slot = calendarSlot(Number(/^(\d+)m$/.exec(first ?? '')?.[1]))
+      if (rest.length !== 1 || slot === null) return false
+      style.calendar = slot
+      return true
+    }
     default:
       return false
   }
@@ -290,6 +306,7 @@ export function formatTableComment(style: TableStyle): string | null {
   if (style.nowrap) push('nowrap', 'nowrap')
   const { rows = 0, cols = 0 } = style.freeze ?? {}
   if (rows > 0 || cols > 0) push('freeze', ['freeze', ...(rows > 0 ? [plural(rows, 'row')] : []), ...(cols > 0 ? [plural(cols, 'col')] : [])].join(' '))
+  if (style.calendar) push('calendar', `calendar ${style.calendar}m`)
   const unknown = style.unknown ?? []
   const written = new Set(known.map(([word]) => word))
   const parts = known.flatMap(([word, text]) => [text, ...unknown.filter((part) => part.after === word).map((part) => part.text)])

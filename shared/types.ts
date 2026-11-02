@@ -1668,6 +1668,10 @@ export interface SettingsState {
   outsideChangeGlow: OutsideChangeGlow
   /** Settings › Editor › Outside changes › Pin default (YAZ-3704 demo): the numbered list of the changes sits left of the note; off, it opens from the bar's count. The list's own Pin and Unpin write it. */
   outsideListPinned: boolean
+  /** Settings › Editor › Tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
+  tableNowMark: TableNowMark
+  /** Settings › Editor › Tables › Dim past rows (YAZ-4162 D14): a calendar table's rows before now show grey text. `data-table-dim-past` on `.app`. */
+  tableDimPast: boolean
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
   sidebarLines: TocLines
   /** The sidebar tree (YAZ-3309 D7, D8): how its level lines look — `plain` grey lines (the default), or `thread`: the bullet-threading path to the row under the mouse. It travels with the settings folder. */
@@ -1853,6 +1857,10 @@ export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
 export type OutsideChangeGlow = 'until-checked' | '10s' | '60s' | 'off'
 export const OUTSIDE_CHANGE_GLOWS: readonly OutsideChangeGlow[] = ['until-checked', '10s', '60s', 'off']
 
+/** Calendar tables (YAZ-4162 D6): how the now row is marked. */
+export type TableNowMark = 'line' | 'tint' | 'both'
+export const TABLE_NOW_MARKS: readonly TableNowMark[] = ['line', 'tint', 'both']
+
 /** The sidebar tree (YAZ-3309 D7, D8): the look of its level lines. */
 export type SidebarLineStyle = 'plain' | 'thread'
 export const SIDEBAR_LINE_STYLES: readonly SidebarLineStyle[] = ['plain', 'thread']
@@ -2020,6 +2028,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tocLines: 'hover',
   outsideChangeGlow: 'until-checked',
   outsideListPinned: false,
+  tableNowMark: 'line',
+  tableDimPast: true,
   sidebarLines: 'hover',
   sidebarLineStyle: 'plain',
   sidebarThreadColor: null,

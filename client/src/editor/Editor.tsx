@@ -728,6 +728,8 @@ function CrepeHost({
       root: el,
       defaultValue: body,
       onMarkdownUpdated: (md) => controller?.update(md),
+      // A calendar table's marker moves each minute here (YAZ-4162 D2, D9); a preview card starts no timer.
+      calendarClock: true,
       folding: {
         seedCollapsedKeys: () => new Set(bulletFoldKeys),
         onCollapsedKeysChange: (keys) => {

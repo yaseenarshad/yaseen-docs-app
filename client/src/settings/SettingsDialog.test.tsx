@@ -134,11 +134,11 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned']
+const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableNowMark', 'tableDimPast']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
-const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents', 'Outside changes']
+const EDITOR_GROUPS = ['Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents', 'Outside changes', 'Tables']
 /** Settings › Excalidraw canvas (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
 const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
@@ -673,6 +673,20 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(onChange.mock.calls.map((call) => call[0])).toEqual([
       { ...DEFAULT_SETTINGS, outsideChangeGlow: '60s' },
       { ...DEFAULT_SETTINGS, outsideChangeGlow: 'off' },
+    ])
+  })
+
+  it('"Tables" (YAZ-4162 D6, D14): "Mark the current time" Line · Tint · Both, Line by default; "Dim past rows" On by default; each writes only its own field', () => {
+    const { el, onChange } = mountOn('Editor')
+    expect(row(el, 'tableNowMark')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Tables')
+    expect(row(el, 'tableNowMark')?.querySelector('.setting__label')?.textContent).toBe('Mark the current time')
+    expect(rowButtons(el, 'tableNowMark').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Line', 'true'], ['Tint', 'false'], ['Both', 'false']])
+    expect(rowButtons(el, 'tableDimPast').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
+    act(() => rowButtons(el, 'tableNowMark')[2].click())
+    act(() => rowButtons(el, 'tableDimPast')[1].click())
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([
+      { ...DEFAULT_SETTINGS, tableNowMark: 'both' },
+      { ...DEFAULT_SETTINGS, tableDimPast: false },
     ])
   })
 

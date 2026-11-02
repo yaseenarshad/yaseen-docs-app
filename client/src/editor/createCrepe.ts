@@ -272,6 +272,7 @@ import { tableRows } from './table/tableRows'
 import { cellToolbar } from './table/cellToolbar'
 import { customColourPick } from './table/colours'
 import { tableFreeze } from './table/tableFreeze'
+import { createTableCalendar } from './table/tableCalendar'
 import { lineView } from './line/lineView'
 import { lineRows } from './line/lineRows'
 import { liftHeadlessItems, lineKeymap, visibleRangeHasMark, visibleTypeOver } from './lineSelection'
@@ -375,6 +376,11 @@ export interface CreateCrepeOptions {
   hotkeys?: HotkeyOverrides
   /** Copy as › Without folded lines' toast (YAZ-3653): how many folded lines the copy left out. Absent → no toast. */
   onCopyNotice?: (text: string) => void
+  /**
+   * The note editor (YAZ-4162 D2, D9): a calendar table's current-time marker moves each minute (`table/tableCalendar.ts`).
+   * Absent on the hover preview card and the other previews: they show the marker of the time they opened and start no timer.
+   */
+  calendarClock?: boolean
 }
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
@@ -598,6 +604,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(customColourPick)
   // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.
   crepe.editor.use(tableFreeze)
+  // Calendar tables (YAZ-4162): the now row and the past rows; the minute clock in the note editor only.
+  crepe.editor.use(createTableCalendar(opts.calendarClock === true))
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook, opts.vaultsOfLetters))

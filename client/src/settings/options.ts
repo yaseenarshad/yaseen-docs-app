@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type TableNowMark, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -118,6 +118,13 @@ export const OUTSIDE_CHANGE_GLOW_OPTIONS: readonly Option<OutsideChangeGlow>[] =
   { label: '10 seconds', value: '10s' },
   { label: '1 minute', value: '60s' },
   { label: 'Off', value: 'off' },
+]
+
+/** Calendar tables (YAZ-4162 D6): how the now row is marked; table.css reads it as `data-table-now` on `.app`. */
+export const TABLE_NOW_MARK_OPTIONS: readonly Option<TableNowMark>[] = [
+  { label: 'Line', value: 'line' },
+  { label: 'Tint', value: 'tint' },
+  { label: 'Both', value: 'both' },
 ]
 
 /** The table of contents (YAZ-2762): when its level lines show; toc.css reads it as `data-toc-lines` on `.app`. */

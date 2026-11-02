@@ -55,7 +55,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_NOW_MARK_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 /** Files & Links › Open new tabs (YAZ-3808 D2). */
 const NEW_TAB_PLACE_OPTIONS: readonly { label: string; value: SettingsState['newTabPlace'] }[] = [
@@ -806,6 +806,30 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['ai', 'agent', 'changed', 'list', 'numbered', 'sidebar', 'pin'],
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.outsideListPinned} onChange={(outsideListPinned) => onChange({ ...settings, outsideListPinned })} ariaLabel="Pin default" />
+            ),
+          },
+        ],
+      },
+      {
+        // YAZ-4162 D6, D14 (YAZ-4159 D16 names the group): how a calendar table looks, for every note. A look, never in the file.
+        title: 'Tables',
+        items: [
+          {
+            id: 'tableNowMark',
+            label: 'Mark the current time',
+            hint: 'In a calendar table, the row that holds the current time.',
+            keywords: ['calendar', 'now', 'time', 'line', 'tint', 'red', 'schedule', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TABLE_NOW_MARK_OPTIONS} value={settings.tableNowMark} onChange={(tableNowMark) => onChange({ ...settings, tableNowMark })} ariaLabel="Mark the current time" />
+            ),
+          },
+          {
+            id: 'tableDimPast',
+            label: 'Dim past rows',
+            hint: 'In a calendar table, the rows before the current time show grey text.',
+            keywords: ['calendar', 'past', 'grey', 'gray', 'time', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableDimPast} onChange={(tableDimPast) => onChange({ ...settings, tableDimPast })} ariaLabel="Dim past rows" />
             ),
           },
         ],
