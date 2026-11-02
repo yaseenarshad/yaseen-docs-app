@@ -20,7 +20,8 @@ export function registerStorageIpc(store?: Pick<Store, 'get'>): void {
   handle(CONTRACT.storage.stats, async (root: unknown) => {
     const dir = requireAbsPath(root, 'root')
     await requireDir(dir)
-    return runOffThread(storageWorker, { kind: 'stats', root: dir })
+    // A board's own pictures folder counts as pictures; one outside the vault only when this Mac allows it (YAZ-4127 6B1).
+    return runOffThread(storageWorker, { kind: 'stats', root: dir, approved: store?.get().approvedPictureFolders ?? [] })
   })
   handle(CONTRACT.storage.shrink, async (root: unknown, skip: unknown) => {
     const dir = requireAbsPath(root, 'root')

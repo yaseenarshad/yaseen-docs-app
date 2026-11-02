@@ -6,4 +6,4 @@ import type { StorageJob } from './storageJob'
 // The thread `runOffThread` starts (YAZ-1801 D8, 🔒 D11): one job, one message, then it exits.
 // A rejection surfaces as the Worker's `error` event.
 const job = workerData as StorageJob
-void (job.kind === 'stats' ? vaultStorage(job.root) : shrinkVault(job.root, { skip: job.skip, approved: job.approved })).then((answer) => parentPort!.postMessage(answer))
+void (job.kind === 'stats' ? vaultStorage(job.root, { approved: job.approved }) : shrinkVault(job.root, { skip: job.skip, approved: job.approved })).then((answer) => parentPort!.postMessage(answer))
