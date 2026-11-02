@@ -242,6 +242,13 @@ export const addOutlineFoldSetMeta = (transaction: Transaction, set: readonly nu
   if (set.length > 0) transaction.setMeta(pluginKey, { set, collapsed, silent: true } satisfies FoldSetMeta)
 }
 
+/** The foldable bullets and their keys, for the fold lock (`foldLock.ts`). */
+export const outlineFoldRows = (state: EditorState): { pos: number; foldKey: string }[] =>
+  pluginKey.getState(state)?.entries.map(({ itemPos, foldKey }) => ({ pos: itemPos, foldKey })) ?? []
+
+/** The folded bullets as kept, also while folding is off, for the fold lock (`foldLock.ts`). */
+export const outlineCollapsedPositions = (state: EditorState): ReadonlySet<number> => pluginKey.getState(state)?.collapsedItemPositions ?? new Set()
+
 /** Whether `transaction` changes the bullet folds: every fold change carries this plugin's meta, a silent one too (YAZ-4009). */
 export const hasOutlineFoldMeta = (transaction: Transaction): boolean => transaction.getMeta(pluginKey) !== undefined
 

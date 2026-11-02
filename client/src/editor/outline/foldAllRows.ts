@@ -9,6 +9,7 @@ import type { Node } from '@milkdown/kit/prose/model'
 import type { RowProvider } from '../blockHandleMenu'
 import { setAllDocumentFolds } from './foldAllHotkeys'
 import { isFoldingOn } from './foldingSwitch'
+import { isFoldLocked, toggleFoldLock } from './foldLock'
 import { DEEPEST_FOLDABLE_LEVEL, headingLevel } from './headingFolding'
 import { childListState } from './numberChildren'
 
@@ -31,8 +32,14 @@ export const foldAllRows: RowProvider = (view, target) => {
     setAllDocumentFolds(collapsed)(view.state, view.dispatch)
     view.focus()
   }
+  // Lock this row open, or unlock it (YAZ-4094 4A, `foldLock.ts`).
+  const lock = () => {
+    toggleFoldLock(target.inside)(view.state, view.dispatch)
+    view.focus()
+  }
   return [
     { label: 'Collapse all', hint: hintOf('note.foldAll'), group: 'children', run: fold(true) },
     { label: 'Expand all', hint: hintOf('note.unfoldAll'), group: 'children', run: fold(false) },
+    { label: isFoldLocked(view.state, target.inside) ? 'Unlock' : 'Lock open', group: 'children', run: lock },
   ]
 }

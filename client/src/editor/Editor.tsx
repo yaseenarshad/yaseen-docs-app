@@ -36,6 +36,7 @@ import type { WikilinkHover } from './wikilink/wikilinkHover'
 import { linkOpenHint } from './linkGesture'
 import './outline/outlineFolding.css'
 import './outline/headingFolding.css'
+import './outline/foldLock.css'
 import './outline/headingLevelTag.css'
 import './outline/bullets.css'
 import './outline/zoom.css'
@@ -52,6 +53,7 @@ import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
 import { FoldAllButton } from './FoldAllButton'
 import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from './outline/foldAllHotkeys'
 import { FOLDING_OFF_NOTICE, showFolding } from './outline/foldingSwitch'
+import { FOLD_LOCKED_NOTICE } from './outline/foldLock'
 import { PageSettings } from './PageSettings'
 import { ReadOnlyChip } from './ReadOnlyChip'
 import { NoteMenu } from './noteMenu'
@@ -726,11 +728,13 @@ function CrepeHost({
     // A copied page starts with its source's LIVE folds (YAZ-2951 S2), never the ones another copy stored last.
     const start = startViewRef.current
     const startFolds = start?.folds ?? storage.getFolds(root, file.path)
-    let bulletFoldKeys: readonly string[] = startFolds.filter((k) => !k.startsWith('h:'))
+    let bulletFoldKeys: readonly string[] = startFolds.filter((k) => !k.startsWith('h:') && !k.startsWith('lock:'))
     let headingFoldKeys: readonly string[] = startFolds.filter((k) => k.startsWith('h:'))
+    // Rows locked open (YAZ-4094 4A): `lock:` + the row's fold key, in the same bucket.
+    let lockedKeys: readonly string[] = startFolds.filter((k) => k.startsWith('lock:'))
     // One bucket, two writers (D3): each plugin reports its own keys; the union write means neither
     // can wipe the other's. Heading keys are 'h:'-prefixed by the plugin itself, so they can't collide.
-    const writeFolds = () => storage.setFolds(root, file.path, [...bulletFoldKeys, ...headingFoldKeys])
+    const writeFolds = () => storage.setFolds(root, file.path, [...bulletFoldKeys, ...headingFoldKeys, ...lockedKeys])
     // Each plugin reports its keys once as the editor opens. From a page view that report is the
     // seed, not a change: it is not written until a fold changes in this copy (YAZ-2951 S10).
     let bulletSeedPending = start !== undefined
@@ -743,6 +747,14 @@ function CrepeHost({
       onMarkdownUpdated: (md) => controller?.update(md),
       foldingOn: () => foldingOnRef.current,
       onFoldingBlocked: () => onNotice?.(FOLDING_OFF_NOTICE),
+      foldLock: {
+        seedLockedKeys: () => new Set(lockedKeys),
+        onLockedKeysChange: (keys) => {
+          lockedKeys = keys
+          writeFolds()
+        },
+        onBlocked: () => onNotice?.(FOLD_LOCKED_NOTICE),
+      },
       folding: {
         seedCollapsedKeys: () => new Set(bulletFoldKeys),
         onCollapsedKeysChange: (keys) => {
@@ -897,7 +909,7 @@ function CrepeHost({
         offPageView = registerPageView(scroller, () => ({
           scrollTop: scroller.scrollTop,
           zoomKey: getZoomKeyOf(crepe),
-          folds: [...bulletFoldKeys, ...headingFoldKeys],
+          folds: [...bulletFoldKeys, ...headingFoldKeys, ...lockedKeys],
           magnification: documentZoomRef.current,
           selection: getCaretOf(crepe),
         }))

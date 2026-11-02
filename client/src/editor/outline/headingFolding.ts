@@ -241,6 +241,13 @@ export const addHeadingFoldSetMeta = (transaction: Transaction, set: readonly nu
   if (set.length > 0) transaction.setMeta(pluginKey, { set, collapsed, silent: true } satisfies FoldSetMeta)
 }
 
+/** The foldable headings and their keys, for the fold lock (`foldLock.ts`). */
+export const headingFoldRows = (state: EditorState): { pos: number; foldKey: string }[] =>
+  pluginKey.getState(state)?.entries.map(({ headingPos, foldKey }) => ({ pos: headingPos, foldKey })) ?? []
+
+/** The folded headings as kept, also while folding is off, for the fold lock (`foldLock.ts`). */
+export const headingCollapsedPositions = (state: EditorState): ReadonlySet<number> => pluginKey.getState(state)?.collapsedHeadingPositions ?? new Set()
+
 /** Whether `transaction` changes the heading folds: every fold change carries this plugin's meta, a silent one too (YAZ-4009). */
 export const hasHeadingFoldMeta = (transaction: Transaction): boolean => transaction.getMeta(pluginKey) !== undefined
 
