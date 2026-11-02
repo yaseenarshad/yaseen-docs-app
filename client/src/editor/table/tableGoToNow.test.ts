@@ -1,7 +1,7 @@
 /**
  * Go to now (YAZ-4164, YAZ-4159 D11 / D12): the caret in the first empty cell of the now row of a calendar table, the
  * request a host makes for a note it opens (the daily-note button, ⌘D), "Go to now" in the six-dot menu, and the
- * "Now ↓" chip.
+ * "Now" chip.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -171,7 +171,7 @@ describe('"Go to now" in the six-dot menu (D11)', () => {
   })
 })
 
-describe('the "Now ↓" chip (D12)', () => {
+describe('the "Now" chip (D12, D22)', () => {
   /** An observer stub: `see(el, visible, above)` reports one element. */
   function stubObserver() {
     const observers: Array<{ cb: IntersectionObserverCallback; els: Set<Element> }> = []

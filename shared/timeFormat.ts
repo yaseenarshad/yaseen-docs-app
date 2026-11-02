@@ -32,7 +32,7 @@ export const TIME_FORMAT_STYLES = ['h:mm a', 'h:mma', 'h(:mm)a', 'HH:mm'] as con
 export const DEFAULT_TIME_FORMAT = 'h:mm a'
 
 /**
- * Settings › Editor › Tables › Calendar day (YAZ-4163 demo): the first and the last time of a new calendar table, in
+ * Settings › Editor › Calendar tables › Calendar day (YAZ-4163 demo): the first and the last time of a new calendar table, in
  * minutes from midnight, on the half hour. 5:00 am to 10:00 pm by default (Yaseen's call in the demo).
  */
 export const DEFAULT_CALENDAR_DAY = { start: 5 * 60, end: 22 * 60 } as const

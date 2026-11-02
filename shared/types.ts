@@ -1679,18 +1679,18 @@ export interface SettingsState {
   outsideListPinned: boolean
   /** Settings › Editor › Tables › Row band (YAZ-4167, YAZ-4159 D16): a light accent band on the table row under the caret or the mouse, its first cell bold — in no table, in calendar tables, or in all tables. A look, never in the file: `data-table-row-band` on `.app`. */
   tableRowBand: TableRowBand
-  /** Settings › Editor › Tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
+  /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
   tableNowButton: boolean
-  /** Settings › Editor › Tables › Dim past rows (YAZ-4162 D14; the shade from the YAZ-4163 demo): a calendar table's rows before now show grey text, or grey text on a light grey shade. `data-table-dim-past` on `.app`. */
+  /** Settings › Editor › Calendar tables › Dim past rows (YAZ-4162 D14; the shade from the YAZ-4163 demo): a calendar table's rows before now show grey text, or grey text on a light grey shade. `data-table-dim-past` on `.app`. */
   tableDimPast: TableDimPast
   /** Settings › Editor › Calendar tables › Shade darkness (YAZ-4163 demo): the past rows' shade, a percent of the text colour, `TABLE_SHADE_MIN`–`MAX` in steps of `TABLE_SHADE_STEP`. `--table-past-shade` on the root. */
   tableShadeDarkness: number
-  /** Settings › Editor › Tables › Calendar day (YAZ-4163 demo): the first and the last time of a new calendar table, minutes from midnight on the half hour (`isCalendarDayTime`). A start not before the end is the default day. */
+  /** Settings › Editor › Calendar tables › Calendar day (YAZ-4163 demo): the first and the last time of a new calendar table, minutes from midnight on the half hour (`isCalendarDayTime`). A start not before the end is the default day. */
   tableDayStart: number
   tableDayEnd: number
-  /** Settings › Editor › Tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mma`, for new tables, new times in a table with none, and "Current time". */
+  /** Settings › Editor › Calendar tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mm a`, for new tables, new times in a table with none, and "Current time". */
   tableTimeFormat: string
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
   sidebarLines: TocLines

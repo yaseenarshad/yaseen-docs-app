@@ -1,4 +1,4 @@
-/* The "Now ↓" chip (YAZ-4164 D12, built for the demo; `tableCalendar.ts`): a widget after a calendar table. Its anchor
+/* The "Now" chip (YAZ-4164 D12, D22; `tableCalendar.ts`): a widget after a calendar table. Its anchor
    has no height and sticks to the bottom of the note while the table is in view, so the chip needs no position read
    on a scroll; the clock's observer shows it only while the table is on the screen and its now row is not. Its own
    file: `table.css` holds one sticky rule, the frozen cells' (`tableFreezeCss.test.ts`); this is one per table. */

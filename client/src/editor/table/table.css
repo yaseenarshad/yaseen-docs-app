@@ -266,7 +266,7 @@
    down its slot now is). Its cells paint the mark as background layers, so no cell changes its `position` and a
    frozen cell stays sticky; `::after` is the selected-cell wash and `::before` the fill-down range. The line is 2px
    red with a dot in column A; the tint is a light red over the cell's own fill. `data-table-now` on `.app`
-   (Settings › Editor › Tables) picks the line (the default), the tint or both: a change restyles, no decoration. */
+   (Settings › Editor › Calendar tables) picks the line (the default), the tint or both: a change restyles, no decoration. */
 .milkdown .ProseMirror .milkdown-table-block .table-now-row {
   --table-now-colour: var(--table-text-red);
   --table-now-at: calc(var(--table-now, 0) * 100%);

@@ -1,21 +1,22 @@
 /**
  * The table's settings in the block handle menu (YAZ-3767, YAZ-3696 🔒 D6 / D7 option 2; CONTRACTS
- * rule 41a): a right-click on a table's six dots shows "Border thickness" and "Border darkness"
- * (number fields, as `line/lineRows.ts`), "Header row", "Align all columns", "Vertical align" (Top / Middle /
- * Bottom, the table's default; a cell's own wins, YAZ-4166 D10), "Fit columns to the page" (a row), "Stripes", "Row height" and "Wrap text" (choices), and "Time slots" (Off / 15 min / 30 min /
- * 1 hour, YAZ-4163 D7: `setTimeSlots` in `tableCalendar.ts` makes any table a calendar table and keeps its text, D8);
- * a calendar table also has "Go to now" (a row, YAZ-4164 D11: `goToNow`), disabled while no row holds the current time,
- * and "Fill the calendar day" (the YAZ-4163 demo: `fillCalendarDay`), disabled while the table has every slot of the day.
+ * rule 41a): a right-click on a table's six dots shows three captioned icon strips (the YAZ-4163 demo, D23: `caption`
+ * and `stay` of `MenuStrip`; a click sets one and the menu stays open, drawn again by `blockHandleMenu.ts`'s `refresh`):
+ * Look (Shaded header row, Stripes, Fit columns to the page), Text (Align left / center / right for all columns,
+ * Align top / middle / bottom, the table's default; a cell's own wins, YAZ-4166 D10) and Rows (Compact / Normal / Tall
+ * rows, Wrap text); then "Border thickness" and "Border darkness" (number fields, as `line/lineRows.ts`) and "Time
+ * slots" (Off / 15 min / 30 min / 1 hour, YAZ-4163 D7: `setTimeSlots` in `tableCalendar.ts` makes any table a calendar
+ * table and keeps its text, D8). A calendar table also has "Now button" (On / Off, the table's `nowButton`, saved as
+ * `nonow`, D22), "Go to now" (a row, YAZ-4164 D11: `goToNow`), disabled while no row holds the current time, and "Fill
+ * the calendar day" (the YAZ-4163 demo: `fillCalendarDay`), disabled while the table has every slot of the day.
  *
- * Each picker shows the table's current value; "Default (…)" sets the attribute's default. A value
- * that IS the default saves no part, so the picker reads "Default (…)" with ✓, and its list does not
- * hold the default a second time (YAZ-3791, as the line pickers, YAZ-3208 D11). Each pick
+ * A strip's lit button is the table's current value; a value that IS the default saves no part. Each pick
  * is ONE transaction with the history closed first, so one ⌘Z (R4); the save writes it in the table
- * comment (`tableStyle.ts`). "Align all columns" is no comment part: it sets every cell's GFM
+ * comment (`tableStyle.ts`). The horizontal alignment is no comment part: it sets every cell's GFM
  * `alignment`, which the save writes in the `:-` row, so GitHub and Obsidian show it too, and clears
  * the cells' own alignment (YAZ-3819) in the same step. Its value
- * is the alignment all columns share; mixed columns read as the default. While any cell has its own
- * alignment it reads "Mixed": no item has ✓, so a pick of the shown value clears them too. "Fit
+ * is the alignment all columns share; mixed columns light no button. While any cell has its own
+ * alignment it reads "Mixed": no button is lit, so a pick of the shown value clears them too. "Fit
  * columns to the page" clears every cell's `colwidth`, and is disabled while no column has a width. A read-only note
  * shows no rows (R3).
  */
