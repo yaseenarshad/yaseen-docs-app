@@ -303,6 +303,29 @@ describe("YAZ-3944 D3, D16: adding a GIF, and Paste at full size", () => {
     expect(shrink).toHaveBeenCalledTimes(1);
   });
 
+  it("YAZ-4074 6A item 5: a GIF the shrink gives back unchanged keeps its own id, so a full-size paste adds no second copy", async () => {
+    vi.mocked(blobModule.generateIdFromFile).mockRestore();
+    await setupImageTest([
+      { width: 700, height: 9 },
+      { width: 700, height: 9 },
+    ]);
+    const gif = gifFile(makeGif(700, 9, 2));
+    // over 2 MB and already 800 px or less: the shrink cannot make it smaller
+    vi.spyOn(gifModule, "gifNeedsShrink").mockResolvedValue(true);
+    vi.spyOn(gifModule, "shrinkGifFile").mockImplementation(async (file) => file);
+
+    await act(() => h.app.insertImages([gif]));
+    await act(() => h.app.insertImages([gif], 0, 0, { fullSize: true }));
+    await waitFor(() => expect(h.elements).toHaveLength(2));
+
+    const originalId = await blobModule.generateIdFromFile(gif);
+    expect((h.elements as any[]).map((element) => element.fileId)).toEqual([
+      originalId,
+      originalId,
+    ]);
+    expect(Object.keys(h.app.files)).toEqual([originalId]);
+  });
+
   it("YAZ-4062 2A1: a resized picture and its full-size paste are two files", async () => {
     vi.mocked(blobModule.generateIdFromFile).mockRestore();
     await setupImageTest([

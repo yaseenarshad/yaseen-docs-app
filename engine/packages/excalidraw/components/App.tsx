@@ -13907,8 +13907,13 @@ class App extends React.Component<AppProps, AppState> {
         try {
           if (isGif) {
             if (await gifNeedsShrink(imageFile)) {
-              imageFile = await shrinkGifFile(imageFile);
-              fileId = shrunkId;
+              // YAZ-4074 6A item 5: a GIF the shrink cannot make smaller
+              // comes back as it is, and keeps its own id, as a picture does.
+              const shrunk = await shrinkGifFile(imageFile);
+              if (shrunk !== imageFile) {
+                imageFile = shrunk;
+                fileId = shrunkId;
+              }
             }
           } else {
             const resized = await resizeImageFile(imageFile, {
