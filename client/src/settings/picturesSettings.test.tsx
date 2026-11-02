@@ -130,6 +130,18 @@ describe('Settings › Files & Links › Allowed picture folders', () => {
   })
 })
 
+describe('YAZ-4074 6A item 13: a pick on the same page shows in the list', () => {
+  it('"In a folder you pick" › Choose… of an outside folder: the list reads again and shows it', async () => {
+    await mount({ ...DEFAULT_SETTINGS, newBoardPictures: 'folder' })
+    expect(row('allowedPictureFolders').textContent).toContain('None yet')
+    pick.mockResolvedValueOnce({ folder: '/Users/me/Pictures/Boards' })
+    list.mockResolvedValue(['/Users/me/Pictures/Boards'])
+    await act(async () => button('newBoardPictures', 'Choose…')!.click())
+    await rerender(onChange.mock.lastCall![0] as SettingsState)
+    expect([...row('allowedPictureFolders').querySelectorAll('.settings__path')].map((p) => p.textContent)).toEqual(['~/Pictures/Boards'])
+  })
+})
+
 describe('Settings › Files & Links › Preview on hover › Links in drawings (YAZ-3943 demo 2)', () => {
   it('is on by default, and Off turns the drawings place off alone', async () => {
     await mount()

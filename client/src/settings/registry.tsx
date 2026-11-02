@@ -871,7 +871,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             hint: "Folders outside a vault where the app may save a board's pictures on this Mac. Remove takes a folder off the list only; no file moves or goes.",
             keywords: ['allowed folders', 'pictures folder', 'picture folders', 'pictures', 'outside', 'board'],
             wide: () => true,
-            render: () => <AllowedPictureFoldersControl />,
+            // A pick in "New boards keep pictures" on this page can add a folder: the list reads again (YAZ-4074 6A item 13).
+            render: ({ settings }) => <AllowedPictureFoldersControl picked={settings.newBoardPicturesFolder} />,
           },
           {
             id: 'newNoteLocation',

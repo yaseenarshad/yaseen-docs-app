@@ -9,7 +9,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { withHomeTilde } from '@shared/drawingAssets'
 import { api } from '../api'
 
-export function AllowedPictureFoldersControl() {
+/** `picked`: Settings' own pictures folder for new boards. Its pick on this page can add a folder, so a change reads the list again (YAZ-4074 6A item 13). */
+export function AllowedPictureFoldersControl({ picked }: { picked?: string }) {
   /** null while the first answer is in flight, or when the bridge could not answer: the row then says "…". */
   const [folders, setFolders] = useState<string[] | null>(null)
   const [home, setHome] = useState('')
@@ -26,7 +27,6 @@ export function AllowedPictureFoldersControl() {
   }, [])
   useEffect(() => {
     live.current = true
-    read()
     api.app.home().then(
       (h) => {
         if (live.current) setHome(h)
@@ -36,7 +36,8 @@ export function AllowedPictureFoldersControl() {
     return () => {
       live.current = false
     }
-  }, [read])
+  }, [])
+  useEffect(read, [read, picked])
   const remove = (folder: string) => {
     api.pictureFolders.remove(folder).then(read, read)
   }
