@@ -1,4 +1,6 @@
-import { BOARD_META_KEY } from './drawingAssets'
+import { BOARD_ID_KEY, BOARD_META_KEY, boardIdOf, FORMER_IDS_KEY, formerBoardIdsOf, HOVER_LINKS_KEY, PICTURES_FOLDER_KEY, PICTURES_KEY, SWITCHED_KEY } from './drawingAssets'
+import { canonicalNoteId, noteIdNumber } from './noteId'
+import { READ_ONLY_KEY } from './readOnly'
 import { isFiniteNumber, isRecord } from './guards'
 
 /**
@@ -22,7 +24,9 @@ import { isFiniteNumber, isRecord } from './guards'
  *    A parent neither side kept is let go of instead (the reference is cleared).
  * The board's own settings (`appState`) and any other top-level key merge per key the same way,
  * ours winning a clash — except the `yaseendraw` dates block (🔒 YAZ-1834), which stays the file's
- * FIRST key with the earlier `createdAt` and the later `updatedAt` of the two.
+ * FIRST key with the earlier `createdAt` and the later `updatedAt` of the two, and whose switches
+ * (Read only, pictures) each take the newest change (YAZ-3943 1E). Two board IDs (each Mac gave one before a sync): the
+ * lower number, and the other in `formerIds` (YAZ-4071 7I).
  *
  * Pure and engine-free: it runs in the main process in the middle of a rebase. Answers null for
  * anything it must not merge — a side that is not a scene — and the caller keeps both copies.
@@ -164,9 +168,57 @@ export function mergeBoards(baseText: string, theirsText: string, mineText: stri
   return { json: `${JSON.stringify(doc, null, 2)}\n`, clashes: clashed.size }
 }
 
-/** The dates block both machines stamped: the board was born at the earlier time and last changed at the later one. */
+/**
+ * The switches of the block (YAZ-3943 1E): Read only, "pictures out" and the link preview on hover (demo 2). The default is
+ * no key. A board's own pictures folder (`picturesFolder`, demo round 3) rides with "pictures out": one switch, one time.
+ */
+const SWITCHES = [READ_ONLY_KEY, PICTURES_KEY, HOVER_LINKS_KEY]
+const RIDES_WITH: Readonly<Record<string, readonly string[]>> = { [PICTURES_KEY]: [PICTURES_FOLDER_KEY] }
+
+/** When the switch `key` of `block` last changed; a switch with no time is older than any change. */
+const switchTime = (block: Record<string, unknown>, key: string): number => {
+  const times = block[SWITCHED_KEY]
+  return isRecord(times) && isFiniteNumber(times[key]) ? times[key] : -Infinity
+}
+
+/**
+ * The dates block both machines stamped: the board was born at the earlier time and last changed at the later one.
+ * Each switch takes the side that changed it last (YAZ-3943 1E), "off" (no key) included, with its time: so "pictures
+ * out" on one Mac never loses to the other Mac's untouched "inside". Two switches with no time keep the old rule.
+ */
 function mergeMeta(theirs: unknown, mine: unknown): Record<string, unknown> | null {
   if (!isRecord(theirs) || !isRecord(mine)) return isRecord(mine) ? mine : isRecord(theirs) ? theirs : null
   const pick = (f: (a: number, b: number) => number, key: string) => (isFiniteNumber(theirs[key]) && isFiniteNumber(mine[key]) ? f(theirs[key], mine[key]) : (mine[key] ?? theirs[key]))
-  return { ...theirs, ...mine, createdAt: pick(Math.min, 'createdAt'), updatedAt: pick(Math.max, 'updatedAt') }
+  const meta: Record<string, unknown> = { ...theirs, ...mine, createdAt: pick(Math.min, 'createdAt'), updatedAt: pick(Math.max, 'updatedAt') }
+  const times: Record<string, unknown> = { ...recordOf(theirs[SWITCHED_KEY]), ...recordOf(mine[SWITCHED_KEY]) }
+  for (const key of SWITCHES) {
+    const [t, m] = [switchTime(theirs, key), switchTime(mine, key)]
+    if (t === m) continue
+    const newest = t > m ? theirs : mine
+    for (const k of [key, ...(RIDES_WITH[key] ?? [])]) {
+      if (k in newest) meta[k] = newest[k]
+      else delete meta[k]
+    }
+    times[key] = Math.max(t, m)
+  }
+  if (Object.keys(times).length > 0) meta[SWITCHED_KEY] = times
+  // YAZ-4071 7I: each Mac gave the board its own ID. One fixed rule, so both Macs keep the same one: the lower number. The
+  // other goes to `formerIds`, with every ID either side held before, so a link to any of them still opens the board.
+  const [t, m] = [boardIdOf(theirs), boardIdOf(mine)]
+  const former = new Set([...formerBoardIdsOf(theirs), ...formerBoardIdsOf(mine)])
+  if (t !== undefined && m !== undefined && canonicalNoteId(t) !== canonicalNoteId(m)) {
+    const [keep, lose] = idOrder(t, m) <= 0 ? [t, m] : [m, t]
+    meta[BOARD_ID_KEY] = keep
+    former.add(lose)
+  }
+  former.delete(meta[BOARD_ID_KEY] as string)
+  if (former.size > 0) meta[FORMER_IDS_KEY] = [...former].sort()
+  else delete meta[FORMER_IDS_KEY]
+  return meta
+}
+
+/** The order of two board IDs: the lower number first; IDs with no number (another tool's), or one number, by their text. */
+function idOrder(a: string, b: string): number {
+  const [x, y] = [noteIdNumber(a) ?? Infinity, noteIdNumber(b) ?? Infinity]
+  return x !== y ? x - y : a < b ? -1 : a > b ? 1 : 0
 }

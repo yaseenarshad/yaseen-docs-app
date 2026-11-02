@@ -21,6 +21,8 @@ export interface IndexState {
   ask: IndexResponse['ask']
   /** A run of "Give old IDs numbers" stopped with files left (`IndexResponse.unfinished`). */
   unfinished: boolean
+  /** Each board with an ID of this vault (`IndexResponse.boards`, YAZ-3943 4C): the same array until it changes. */
+  boards: readonly IndexBoard[]
   /** Fetch failure message; null unless `status` is 'error'. */
   error: string | null
   /** Refetch immediately, skipping the debounce. */
@@ -28,6 +30,10 @@ export interface IndexState {
 }
 
 const NO_LETTERS: readonly string[] = []
+
+/** A board with an ID (YAZ-3943 4C). */
+export type IndexBoard = NonNullable<IndexResponse['boards']>[number]
+const NO_BOARDS: readonly IndexBoard[] = []
 
 /** Events settle before the index is re-read, so a burst (a paste of files) costs one fetch. */
 const REFETCH_DEBOUNCE_MS = 300
@@ -61,6 +67,7 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
   const [letters, setLetters] = useState(NO_LETTERS)
   const [ask, setAsk] = useState<IndexResponse['ask']>()
   const [unfinished, setUnfinished] = useState(false)
+  const [boards, setBoards] = useState(NO_BOARDS)
   const [error, setError] = useState<string | null>(null)
   // Bumped on every fetch and on unmount/root change: only the latest fetch may commit.
   const generation = useRef(0)
@@ -79,6 +86,8 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
         setLetters((prev) => (prev.length === next.length && prev.every((held, i) => held === next[i]) ? prev : next))
         setAsk(res.ask)
         setUnfinished(res.unfinished === true)
+        const held = res.boards ?? NO_BOARDS
+        setBoards((prev) => (prev.length === held.length && prev.every((b, i) => b.path === held[i]!.path && b.id === held[i]!.id) ? prev : held))
         setStatus('ready')
         setError(null)
       },
@@ -98,6 +107,7 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     setLetters(NO_LETTERS)
     setAsk(undefined)
     setUnfinished(false)
+    setBoards(NO_BOARDS)
     setError(null)
     refresh()
     const unsubscribe = watch.subscribe((ev) => {
@@ -112,6 +122,7 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
       if (c.root === root && c.name === IDS_FILE) refresh()
     })
     // "Change letters" and "Give old IDs numbers" renamed many notes: read now, not when the events settle (YAZ-3102).
+    // So does a board that took an ID, or one with an ID that came, went or moved (YAZ-3943 4C).
     const unsubscribeChange = api.ids.onChanged((c) => {
       if (c.root === root) refresh()
     })
@@ -125,5 +136,5 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     }
   }, [root, watch, refresh])
 
-  return { status, records, folders, ids, letters, ask, unfinished, error, refresh }
+  return { status, records, folders, ids, letters, ask, unfinished, boards, error, refresh }
 }

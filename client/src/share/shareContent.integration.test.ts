@@ -44,6 +44,10 @@ const entry = (img: Img) => ({ mimeType: 'image/png', id: img, dataURL: dataURL(
 /** A draw.io diagram with a picture inside it, as draw.io saves one. */
 const DIAGRAM = `<mxfile host="yaz-1802"><diagram id="p1" name="Page-1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="2" value="" style="shape=image;image=${dataURL('lean1')};" vertex="1" parent="1"><mxGeometry width="40" height="40" as="geometry"/></mxCell></root></mxGraphModel></diagram></mxfile>\n`
 
+/** YAZ-3943 D14: a text box in each of the app's own fonts (10-14) and two standard ones (5 Excalifont, 6 Nunito). */
+const FONTS = [10, 11, 12, 13, 14, 5, 6]
+const text = (id: string, fontFamily: number) => ({ id, type: 'text', x: 0, y: 0, width: 80, height: 25, text: id, originalText: id, fontSize: 20, fontFamily, textAlign: 'left', verticalAlign: 'top', lineHeight: 1.25, containerId: null, autoResize: true })
+
 let fs: NodeFs
 let root: string
 const at = (rel: string) => `${root}/${rel}`
@@ -71,6 +75,7 @@ beforeAll(async () => {
   await write("08 Tom's “café” board 🎨 — ünïcödé.excalidraw", scene([rect()]))
   await write('Clients/Acme Corp/2026/Q3 workshop/09 Deep.excalidraw', scene([image('lean1')]))
   await write('10 Flow.drawio', DIAGRAM)
+  await write('11 Fonts.excalidraw', scene(FONTS.map((fontFamily, i) => text(`t${i}`, fontFamily))))
 })
 afterAll(() => fs.rm(root, { recursive: true, force: true }))
 
@@ -107,5 +112,17 @@ describe('the bytes a share uploads, from seeded boards (YAZ-1892 scenario 9)', 
   it('unicode, emoji and apostrophe names and a board four folders down load and build', async () => {
     expect((await shared("08 Tom's “café” board 🎨 — ünïcödé.excalidraw")).scene.elements).toHaveLength(1)
     expect(Object.keys((await shared('Clients/Acme Corp/2026/Q3 workshop/09 Deep.excalidraw')).scene.files)).toEqual(['lean1'])
+  })
+})
+
+describe('Share Link keeps its fonts (YAZ-3943 D14: only Export Excalidraw Drawing… swaps them)', () => {
+  it('the shared bytes carry every font as the board has it; the export copy of the same scene gets the standard ones', async () => {
+    const { content, scene: s } = await shared('11 Fonts.excalidraw')
+    const fontsOf = (json: string) => (JSON.parse(json) as { elements: { fontFamily: number }[] }).elements.map((e) => e.fontFamily)
+    expect(fontsOf(content)).toEqual(FONTS)
+    const { assembleStandaloneScene } = await import('../drawings/exportDrawing')
+    const mod = await (await import('../drawings/engine')).loadExcalidraw()
+    const exported = assembleStandaloneScene(mod, { elements: s.elements, appState: {}, files: {} }, { standardFonts: true })
+    expect(fontsOf(exported)).toEqual([6, 6, 6, 6, 8, 5, 6])
   })
 })

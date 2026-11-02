@@ -76,40 +76,42 @@ describe('a drawing: `"readonly": true` in the `yaseendraw` block', () => {
     expect(isDrawingReadOnly({ ...scene(block), readonly: true })).toBe(false)
   })
 
-  it('S5: on writes the key in the block; every other key of the block and of the file stays', () => {
-    const on = withDrawingReadOnly(scene(block), true, 5)
-    expect(on).toEqual(scene({ ...block, readonly: true }))
+  it('S5: on writes the key in the block, and its change time (YAZ-3943 1E); every other key of the block and of the file stays', () => {
+    const on = withDrawingReadOnly(scene(block), true, 5, 3000)
+    expect(on).toEqual(scene({ ...block, readonly: true, switched: { readonly: 3000 } }))
     expect(Object.keys(on)[0]).toBe(BOARD_META_KEY)
     expect(isDrawingReadOnly(on)).toBe(true)
   })
 
-  it('S5: off removes the key, and on then off gives back the same bytes', () => {
-    const before = serializeBoard(scene(block))
-    const on = withDrawingReadOnly(scene(block), true, 5)
-    const off = withDrawingReadOnly(on, false, 5)
-    expect(serializeBoard(off)).toBe(before)
-    expect(JSON.stringify(off)).not.toContain(READ_ONLY_KEY)
+  it('S5: off removes the key, never writes `false`; on then off gives back the same bytes but for the time of the change (YAZ-3943 1E)', () => {
+    const on = withDrawingReadOnly(scene(block), true, 5, 3000)
+    const off = withDrawingReadOnly(on, false, 5, 4000)
+    expect(off).toEqual(scene({ ...block, switched: { readonly: 4000 } }))
+    expect(isDrawingReadOnly(off)).toBe(false)
+    expect(Object.keys(off[BOARD_META_KEY] as object)).not.toContain(READ_ONLY_KEY)
   })
 
   it('a board with no block gets one FIRST, dated by the file, so the save door keeps the switch', () => {
-    const on = withDrawingReadOnly(scene(), true, 7000)
+    const on = withDrawingReadOnly(scene(), true, 7000, 8000)
+    const want = { createdAt: 7000, updatedAt: 7000, readonly: true, switched: { readonly: 8000 } }
     expect(Object.keys(on)[0]).toBe(BOARD_META_KEY)
-    expect(on[BOARD_META_KEY]).toEqual({ createdAt: 7000, updatedAt: 7000, readonly: true })
+    expect(on[BOARD_META_KEY]).toEqual(want)
     // The tree and the save door read the block off the head: it must parse there, extras and all.
     const head = serializeBoard(on).slice(0, 1024)
-    expect(parseBoardMetaBlock(head)).toEqual({ createdAt: 7000, updatedAt: 7000, readonly: true })
-    // The next save of the board (YAZ-1834 D5) carries the switch forward, in the same place.
+    expect(parseBoardMetaBlock(head)).toEqual(want)
+    // The next save of the board (YAZ-1834 D5) carries the switch and its time forward, in the same place.
     const saved = stampBoardMetaScene(scene(), { createdAt: 1, updatedAt: 9000 }, parseBoardMetaBlock(head))
-    expect(saved[BOARD_META_KEY]).toEqual({ createdAt: 7000, updatedAt: 9000, readonly: true })
+    expect(saved[BOARD_META_KEY]).toEqual({ ...want, updatedAt: 9000 })
   })
 
-  it('off of a block that held only the switch drops the block', () => {
-    const off = withDrawingReadOnly(scene({ readonly: true }), false, 5)
-    expect(off).toEqual(scene())
+  it('off of a block that held only the switch keeps a dated block with the time of the change (YAZ-3943 1E), so the save door trusts it', () => {
+    const off = withDrawingReadOnly(scene({ readonly: true }), false, 5, 6)
+    expect(off).toEqual(scene({ createdAt: 5, updatedAt: 5, switched: { readonly: 6 } }))
+    expect(parseBoardMetaBlock(serializeBoard(off).slice(0, 1024))).not.toBeNull()
   })
 
   it('S8: on over a wrong value writes `true`', () => {
-    expect(withDrawingReadOnly(scene({ ...block, readonly: 'yes' }), true, 5)[BOARD_META_KEY]).toEqual({ ...block, readonly: true })
+    expect(withDrawingReadOnly(scene({ ...block, readonly: 'yes' }), true, 5, 6)[BOARD_META_KEY]).toEqual({ ...block, readonly: true, switched: { readonly: 6 } })
   })
 
   it('S11: the same value again returns the SAME object, so the door writes nothing', () => {

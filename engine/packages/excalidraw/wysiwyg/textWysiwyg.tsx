@@ -31,6 +31,7 @@ import {
   redrawTextBoundingBox,
   getBoundTextMaxHeight,
   getBoundTextMaxWidth,
+  getTextLayoutMaxWidth,
   computeContainerDimensionForBoundText,
   computeBoundTextPosition,
   getBoundTextElement,
@@ -39,12 +40,19 @@ import { getTextWidth } from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
 import {
   getTextBackgroundGeometry,
+  getStyledVisualLineOffsetX,
   getStyledVisualLineStart,
-  getStyledVisualLines,
   getStyledVisualSelectionGeometry,
   getLogicalLineIndexAtOffset,
-  remapLineStylesForTextEdit,
-  remapLineUnderlinesForTextEdit,
+  getTextElementStyledLines,
+  getTextLinkRanges,
+  getTextRangeToolbarKey,
+  hasHostLinks,
+  getTextHighlightFill,
+  getInsertedTextRange,
+  getTextRunsInRange,
+  remapTextRunsForTextEdit,
+  setPastedTextRuns,
 } from "@excalidraw/element";
 
 import { normalizeText } from "@excalidraw/element";
@@ -63,6 +71,7 @@ import type {
   ExcalidrawTextElement,
   NonDeleted,
   ExcalidrawTextContainer,
+  ExcalidrawTextRun,
 } from "@excalidraw/element/types";
 
 import { actionSaveToActiveFile } from "../actions";
@@ -76,6 +85,8 @@ import {
   actionDecreaseFontSize,
   actionIncreaseFontSize,
   actionToggleTextBold,
+  actionToggleTextHighlight,
+  actionToggleTextItalic,
   actionToggleTextStrikethrough,
   actionToggleTextUnderline,
 } from "../actions/actionProperties";
@@ -88,11 +99,24 @@ import {
 import {
   continueTextListItem,
   formatPastedTextForList,
+  getBulletMarkerForDepth,
   getTextListMode,
   indentTextList,
   normalizeTextLists,
   parseTextListLine,
 } from "../textList";
+
+import { editEditableText, takeEditableEdit } from "./editableEdit";
+import { getPendingTextStyle, takePendingTextStyle } from "./pendingTextStyle";
+import { textFieldKeyFor } from "../keyRemap";
+
+import { getStyledHtml, parseStyledHtml } from "./styledClipboard";
+import {
+  createLinkPillOverlay,
+  getLinkToDelete,
+  isInsideLink,
+  keepLinksWhole,
+} from "./linkPill";
 
 import type { ParsedDataTranferList } from "../clipboard";
 import type App from "../components/App";
@@ -240,9 +264,8 @@ export const textWysiwyg = ({
     nextFontWeight: ExcalidrawTextElement["fontWeight"];
     nextTextDecoration: ExcalidrawTextElement["textDecoration"];
     nextStrikethrough: ExcalidrawTextElement["strikethrough"];
-    nextLineBolds: readonly boolean[] | undefined;
-    nextLineUnderlines: readonly boolean[] | undefined;
-    nextLineStrikethroughs: readonly boolean[] | undefined;
+    nextFontStyle: ExcalidrawTextElement["fontStyle"];
+    nextTextRuns: ExcalidrawTextElement["textRuns"];
   }) => void;
   onSubmit: (data: {
     viaKeyboard: boolean;
@@ -250,9 +273,8 @@ export const textWysiwyg = ({
     nextFontWeight: ExcalidrawTextElement["fontWeight"];
     nextTextDecoration: ExcalidrawTextElement["textDecoration"];
     nextStrikethrough: ExcalidrawTextElement["strikethrough"];
-    nextLineBolds: readonly boolean[] | undefined;
-    nextLineUnderlines: readonly boolean[] | undefined;
-    nextLineStrikethroughs: readonly boolean[] | undefined;
+    nextFontStyle: ExcalidrawTextElement["fontStyle"];
+    nextTextRuns: ExcalidrawTextElement["textRuns"];
   }) => void;
   getViewportCoords: (x: number, y: number) => [number, number];
   element: ExcalidrawTextElement;
@@ -473,29 +495,20 @@ export const textWysiwyg = ({
       } else {
         textBackgroundOverlay.style.display = "none";
       }
-      const visualLines = getStyledVisualLines({
-        originalText: editable.value,
-        regularFont: getFontString({
-          ...updatedTextElement,
-          fontWeight: "normal",
-        }),
-        boldFont: getFontString({
-          ...updatedTextElement,
-          fontWeight: "bold",
-        }),
-        maxWidth: whiteSpace === "pre-wrap" ? width : Infinity,
-        lineBolds: updatedTextElement.lineBolds,
-        lineUnderlines: updatedTextElement.lineUnderlines,
-        lineStrikethroughs: updatedTextElement.lineStrikethroughs,
-        wholeElementBold: updatedTextElement.fontWeight === "bold",
-        wholeElementUnderlined:
-          updatedTextElement.textDecoration === "underline",
-        wholeElementStrikethrough: updatedTextElement.strikethrough === true,
-      });
+      // YAZ-3718 D1: text with runs takes the canvas width, so it reuses the
+      // layout that refreshTextDimensions made on this keystroke
       const hasPerLineStyles =
-        !!updatedTextElement.lineBolds?.some(Boolean) ||
-        !!updatedTextElement.lineUnderlines?.some(Boolean) ||
-        !!updatedTextElement.lineStrikethroughs?.some(Boolean);
+        !!updatedTextElement.textRuns ||
+        hasHostLinks(updatedTextElement.originalText);
+      const visualLines = getTextElementStyledLines(
+        updatedTextElement,
+        !hasPerLineStyles
+          ? whiteSpace === "pre-wrap"
+            ? width
+            : Infinity
+          : getTextLayoutMaxWidth(updatedTextElement, container),
+        editable.value,
+      );
       const hasHangingIndent = visualLines.some(
         (line) => line.horizontalOffset > 0,
       );
@@ -557,6 +570,64 @@ export const textWysiwyg = ({
         }
 
         const left = getStyledVisualLineStart(line, width, textAlign);
+        if (line.segments) {
+          // YAZ-3718 D1: each segment with its own style, as on the canvas
+          for (const segment of line.segments) {
+            if (segment.link) {
+              // YAZ-4039 D15: the pill stays a pill in the editor
+              underlineOverlay.appendChild(
+                createLinkPillOverlay(
+                  segment,
+                  left + segment.x,
+                  index * lineHeightPx,
+                  lineHeightPx,
+                  appState.theme === THEME.DARK,
+                ),
+              );
+              continue;
+            }
+            const styledSegment = document.createElement("span");
+            styledSegment.className = [
+              "excalidraw-wysiwyg-styled-line",
+              segment.underlined ? "excalidraw-wysiwyg-line-underline" : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            styledSegment.textContent = segment.text;
+            Object.assign(styledSegment.style, {
+              position: "absolute",
+              left: `${left + segment.x}px`,
+              top: `${index * lineHeightPx}px`,
+              width: `${segment.width}px`,
+              height: `${lineHeightPx}px`,
+              color: segment.color
+                ? applyDarkModeFilter(
+                    segment.color,
+                    appState.theme === THEME.DARK,
+                  )
+                : color,
+              // YAZ-4102 3E: the fill behind the letters, as on the canvas
+              background: segment.highlight
+                ? getTextHighlightFill(segment.highlight)
+                : "",
+              font: segment.font,
+              lineHeight: `${lineHeightPx}px`,
+              textAlign: "left",
+              // YAZ-4100 3C: a right-to-left segment's letters in their order
+              direction: line.rtl ? "rtl" : "",
+              textDecoration: [
+                segment.underlined ? "underline" : null,
+                segment.strikethrough ? "line-through" : null,
+              ]
+                .filter(Boolean)
+                .join(" "),
+              whiteSpace: "pre",
+              zIndex: "1",
+            });
+            underlineOverlay.appendChild(styledSegment);
+          }
+          continue;
+        }
         const styledLine = document.createElement("span");
         styledLine.className = [
           "excalidraw-wysiwyg-styled-line",
@@ -665,7 +736,96 @@ export const textWysiwyg = ({
   });
   editable.value = element.originalText;
   let previousEditableValue = editable.value;
+  /** YAZ-4103 3F: ⌘⇧V was pressed for the next paste: it stays plain. */
+  let plainPasteKey = false;
+  /** YAZ-4103 3F: the styles of a styled paste, for the input it makes. */
+  let pendingPastedRuns: {
+    start: number;
+    text: string;
+    textRuns: readonly ExcalidrawTextRun[];
+  } | null = null;
   let pendingInsertedLine: number | null = null;
+  /**
+   * YAZ-4071 7L: letters that ⌘Z or ⌘⇧Z can bring back, with their runs: a
+   * cut or replaced selection, and a styled paste. The browser's undo gives
+   * back the text only. The newest are last; a few are enough.
+   */
+  const restorableTexts: {
+    text: string;
+    textRuns: readonly ExcalidrawTextRun[];
+  }[] = [];
+  const rememberText = (
+    text: string,
+    textRuns: readonly ExcalidrawTextRun[],
+  ) => {
+    restorableTexts.push({ text, textRuns });
+    if (restorableTexts.length > 20) {
+      restorableTexts.shift();
+    }
+  };
+  /**
+   * YAZ-4071 7O: the whole text and its runs before and after each edit the
+   * editor made itself (Tab, Enter in a list, a list button, the cleanup).
+   * Such an edit changes the text in several places, so ⌘Z and ⌘⇧Z cannot
+   * map the runs as one edit. They take the runs remembered for that text.
+   */
+  const scriptedStates: {
+    text: string;
+    textRuns: readonly ExcalidrawTextRun[] | undefined;
+  }[] = [];
+  const rememberScriptedState = (
+    text: string,
+    textRuns: readonly ExcalidrawTextRun[] | undefined,
+  ) => {
+    scriptedStates.push({ text, textRuns });
+    if (scriptedStates.length > 20) {
+      scriptedStates.shift();
+    }
+  };
+  /** The runs remembered for the editor's whole text, if any. */
+  const getScriptedState = () => {
+    for (let index = scriptedStates.length - 1; index >= 0; index--) {
+      if (scriptedStates[index].text === editable.value) {
+        return scriptedStates[index];
+      }
+    }
+    return null;
+  };
+  /** The letters `start`..`end` of the editor, with their runs. */
+  const rememberRemovedText = (start: number, end: number) => {
+    const runs = (
+      app.scene.getElement(element.id) as ExcalidrawTextElement | null
+    )?.textRuns;
+    if (runs?.length) {
+      rememberText(
+        editable.value.slice(start, end),
+        getTextRunsInRange(runs, start, end),
+      );
+    }
+  };
+  /** A typed edit over a selection (typing, Backspace, a plain cut): a caret alone costs one check. */
+  const handleBeforeInput = (event: Event) => {
+    if (
+      editable.selectionStart !== editable.selectionEnd &&
+      !(event as InputEvent).inputType?.startsWith("history")
+    ) {
+      rememberRemovedText(editable.selectionStart, editable.selectionEnd);
+    }
+  };
+  /** The letters that ⌘Z or ⌘⇧Z just brought back, if they are remembered. */
+  const getRestoredText = () => {
+    const { start, end } = getInsertedTextRange(
+      previousEditableValue,
+      editable.value,
+    );
+    const text = editable.value.slice(start, end);
+    for (let index = restorableTexts.length - 1; index >= 0; index--) {
+      if (text && restorableTexts[index].text === text) {
+        return { start, text, textRuns: restorableTexts[index].textRuns };
+      }
+    }
+    return null;
+  };
 
   function renderVisualSelection() {
     underlineOverlay
@@ -720,7 +880,8 @@ export const textWysiwyg = ({
 
   updateWysiwygStyle();
 
-  const getCaretIndexFromSceneCoords = (sceneCoords: {
+  /** The visual line under a scene point, and the point's x from its start. */
+  const getLinePointFromSceneCoords = (sceneCoords: {
     x: number;
     y: number;
   }) => {
@@ -746,16 +907,48 @@ export const textWysiwyg = ({
       Math.min(lines.length - 1, Math.floor(localY / layout.lineHeightPx)),
     );
     const line = lines[lineIndex];
-    const direction = getLineDirection(editable.value, line.start);
     const lineStartX = getStyledVisualLineStart(
       line,
       layout.width,
       layout.textAlign,
     );
-    const relativeX = localX - lineStartX;
+    return { layout, line, relativeX: localX - lineStartX };
+  };
+
+  const getCaretIndexFromSceneCoords = (sceneCoords: {
+    x: number;
+    y: number;
+  }) => {
+    const point = getLinePointFromSceneCoords(sceneCoords);
+    if (!point) {
+      return null;
+    }
+    const { layout, line, relativeX } = point;
+    const direction = getLineDirection(editable.value, line.start);
 
     if (!line.text) {
       return line.start;
+    }
+
+    if (line.segments) {
+      // YAZ-3718 D1: the letter edge nearest to the click, from segment widths
+      // (YAZ-4039 D15: never inside a pill)
+      const links = line.segments.filter((segment) => segment.link);
+      let closest = line.start;
+      let closestDistance = Infinity;
+      for (const offset of getCaretBoundaryOffsets(line.text)) {
+        if (isInsideLink(links, line.start + offset)) {
+          continue;
+        }
+        const distance = Math.abs(
+          getStyledVisualLineOffsetX(line, line.start + offset) - relativeX,
+        );
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closest = line.start + offset;
+        }
+      }
+      return closest;
     }
 
     const lineCaretOffset = getLineCaretOffsetFromNativeLayout({
@@ -793,9 +986,203 @@ export const textWysiwyg = ({
   let visualSelectionAnchor: number | null = null;
   let visualSelectionPointerId: number | null = null;
 
+  /** YAZ-4039 D15: a caret moved into a pill goes to its edge. */
+  let lastSelection = {
+    start: editable.selectionStart,
+    end: editable.selectionEnd,
+  };
+  const keepCaretOutOfLinks = () => {
+    const links = getTextLinkRanges(editable.value);
+    if (links.length) {
+      const next = keepLinksWhole(
+        links,
+        { start: editable.selectionStart, end: editable.selectionEnd },
+        lastSelection,
+      );
+      if (
+        next.start !== editable.selectionStart ||
+        next.end !== editable.selectionEnd
+      ) {
+        editable.setSelectionRange(
+          next.start,
+          next.end,
+          editable.selectionDirection,
+        );
+      }
+    }
+    lastSelection = {
+      start: editable.selectionStart,
+      end: editable.selectionEnd,
+    };
+  };
+
+  /** The caret's box on screen, for the host's `[[` picker. */
+  const getCaretClientRect = () => {
+    const box = editable.getBoundingClientRect();
+    const zoom = app.state.zoom.value;
+    const layout = currentTextLayout;
+    const caret = layout
+      ? getStyledVisualSelectionGeometry({
+          lines: layout.visualLines,
+          containerWidth: layout.width,
+          textAlign: layout.textAlign,
+          lineHeightPx: layout.lineHeightPx,
+          selectionStart: editable.selectionEnd,
+          selectionEnd: editable.selectionEnd,
+        }).caret
+      : null;
+    const left = box.left + (caret?.left ?? 0) * zoom;
+    const top = box.top + (caret?.top ?? 0) * zoom;
+    return {
+      left,
+      top,
+      right: left,
+      bottom: top + (caret?.height ?? layout?.lineHeightPx ?? 0) * zoom,
+    };
+  };
+
+  const replaceEditorText = (start: number, end: number, text: string) => {
+    rememberRemovedText(start, end);
+    editable.focus();
+    editable.setSelectionRange(start, end);
+    // YAZ-4071 7L: the browser's own edit is on the text box's undo stack, so
+    // ⌘Z takes back a styled paste or cut (`setRangeText` is not)
+    if (!document.execCommand?.(text ? "insertText" : "delete", false, text)) {
+      editable.setRangeText(text, start, end, "end");
+      editable.dispatchEvent(new Event("input"));
+    }
+  };
+
+  /**
+   * YAZ-4039 D12: puts `text` in place of the link `raw` later (a Create row's
+   * new ID): in this editor while it is open, the caret kept where it was,
+   * else in the saved box. True when `raw` was found.
+   */
+  const replaceEditorLink = (raw: string, text: string) => {
+    if (isDestroyed) {
+      return app.replaceHostLinkText(element.id, -1, -1, raw, text);
+    }
+    const at = editable.value.indexOf(raw);
+    if (at < 0) {
+      return false;
+    }
+    const end = at + raw.length;
+    const delta = text.length - raw.length;
+    const map = (offset: number) =>
+      offset >= end ? offset + delta : offset > at ? at + text.length : offset;
+    const { selectionStart, selectionEnd } = editable;
+    rememberRemovedText(at, end);
+    // the caret at the edit while the input handler moves the runs, then back.
+    // YAZ-4071 7L: the browser's own edit is on the undo stack, so ⌘Z takes
+    // back the swap, then the pick; a script edit puts the stack out of step
+    // with the text. It never takes the focus: without it, the script edit.
+    const browserEdit = document.activeElement === editable;
+    if (browserEdit) {
+      editable.setSelectionRange(at, end);
+    }
+    if (!browserEdit || !document.execCommand?.("insertText", false, text)) {
+      editable.setRangeText(text, at, end, "end");
+      editable.dispatchEvent(new Event("input"));
+    }
+    editable.setSelectionRange(map(selectionStart), map(selectionEnd));
+    return true;
+  };
+
+  /** YAZ-4039 D12: the host's `[[` picker follows the text and the caret. */
+  const reportEditor = (typed: boolean) => {
+    app.props.hostLinks?.onEditorChange?.({
+      text: editable.value,
+      caret: editable.selectionEnd,
+      typed,
+      caretRect: getCaretClientRect,
+      replace: replaceEditorText,
+      replaceLink: replaceEditorLink,
+    });
+  };
+
+  // YAZ-4101 3D: the toolbar shows the selected letters' style (B, I, U, S,
+  // the color, the highlight), so it draws again when that style changes. A
+  // box with no runs has one style: it never asks.
+  let toolbarStyle = "";
+  const refreshToolbarStyle = () => {
+    const runs = (
+      app.scene.getElement(element.id) as ExcalidrawTextElement | null
+    )?.textRuns;
+    const style = runs?.length
+      ? getTextRangeToolbarKey(
+          runs,
+          editable.value,
+          editable.selectionStart,
+          editable.selectionEnd,
+        )
+      : "";
+    if (style !== toolbarStyle) {
+      toolbarStyle = style;
+      app.refreshTextEditorToolbar();
+    }
+  };
+
+  const handleSelectionMoved = () => {
+    keepCaretOutOfLinks();
+    renderVisualSelection();
+    refreshToolbarStyle();
+  };
+
   const handleDocumentSelectionChange = () => {
     if (document.activeElement === editable) {
+      keepCaretOutOfLinks();
+      // YAZ-3718 D10: a moved caret drops the style for the next letters
+      getPendingTextStyle(editable);
       renderVisualSelection();
+      reportEditor(false);
+      refreshToolbarStyle();
+    }
+  };
+
+  /** YAZ-4039 D15: right-click on a pill in the editor gives the link menu. */
+  const handleEditableContextMenu = (event: MouseEvent) => {
+    const onContextMenu = app.props.hostLinks?.onContextMenu;
+    const point = onContextMenu
+      ? getLinePointFromSceneCoords(
+          viewportCoordsToSceneCoords(event, app.state),
+        )
+      : null;
+    const segment = point?.line.segments?.find(
+      (segment) =>
+        segment.link &&
+        point.relativeX >= segment.x &&
+        point.relativeX <= segment.x + segment.width,
+    );
+    if (!onContextMenu || !segment?.link) {
+      return;
+    }
+    const { inner } = segment.link;
+    const shown = onContextMenu(
+      {
+        elementId: element.id,
+        inner,
+        start: segment.start,
+        end: segment.end,
+        rect: {
+          left: event.clientX,
+          top: event.clientY,
+          right: event.clientX,
+          bottom: event.clientY,
+        },
+        // the menu's click closes this editor first, so the edit goes to the box
+        replace: (text) =>
+          app.replaceHostLinkText(
+            element.id,
+            segment.start,
+            segment.end,
+            `[[${inner}]]`,
+            text,
+          ),
+      },
+      event,
+    );
+    if (shown) {
+      event.preventDefault();
     }
   };
 
@@ -923,11 +1310,58 @@ export const textWysiwyg = ({
     renderVisualSelection();
   };
 
+  // YAZ-4103 3F: letters copied with styles keep them in a note (its HTML);
+  // letters with no style other than color copy as the browser does
+  const copyStyledText = (event: ClipboardEvent, cut: boolean) => {
+    const { selectionStart, selectionEnd, value } = editable;
+    const html =
+      selectionStart < selectionEnd && event.clipboardData
+        ? getStyledHtml(
+            value,
+            (app.scene.getElement(element.id) as ExcalidrawTextElement | null)
+              ?.textRuns,
+            selectionStart,
+            selectionEnd,
+          )
+        : null;
+    if (!html) {
+      return;
+    }
+    event.preventDefault();
+    event.clipboardData!.setData(
+      MIME_TYPES.text,
+      value.slice(selectionStart, selectionEnd),
+    );
+    event.clipboardData!.setData(MIME_TYPES.html, html);
+    if (cut) {
+      replaceEditorText(selectionStart, selectionEnd, "");
+    }
+  };
+  editable.oncopy = (event) => copyStyledText(event, false);
+  editable.oncut = (event) => copyStyledText(event, true);
+
   if (onChange) {
     editable.onpaste = async (event) => {
       // we need to synchronously get the MIME types so we can preventDefault()
       // in the same tick (FF requires that)
       const mimeTypes = parseDataTransferEventMimeTypes(event);
+      // YAZ-4103 3F: ⌘⇧V stays plain
+      const isPlainPaste = plainPasteKey;
+      plainPasteKey = false;
+
+      // YAZ-4039 D12: a pasted page path or `yaseendocs://` link is a link
+      const pastedLink = app.props.hostLinks?.pasteLink?.(
+        event.clipboardData?.getData(MIME_TYPES.text).trim() ?? "",
+      );
+      if (pastedLink) {
+        event.preventDefault();
+        replaceEditorText(
+          editable.selectionStart,
+          editable.selectionEnd,
+          pastedLink,
+        );
+        return;
+      }
 
       const pasteSelectionStart = editable.selectionStart;
       const pasteSelectionEnd = editable.selectionEnd;
@@ -951,6 +1385,30 @@ export const textWysiwyg = ({
         pasteLine.markerKind !== "none" &&
         (pasteListMode === "bullet" || pasteListMode === "numbered");
 
+      // YAZ-4103 3F: a paste from a note keeps its letter styles (and its
+      // `[[links]]`, which are text); a list line pastes as before
+      const styled =
+        isPlainPaste ||
+        isListPaste ||
+        mimeTypes.has(MIME_TYPES.excalidrawClipboard) ||
+        mimeTypes.has(MIME_TYPES.excalidraw)
+          ? null
+          : parseStyledHtml(
+              event.clipboardData?.getData(MIME_TYPES.html) ?? "",
+            );
+      if (styled) {
+        event.preventDefault();
+        pendingPastedRuns = {
+          start: pasteSelectionStart,
+          text: styled.text,
+          textRuns: styled.textRuns,
+        };
+        // YAZ-4071 7L: ⌘⇧Z after ⌘Z pastes it again
+        rememberText(styled.text, styled.textRuns);
+        replaceEditorText(pasteSelectionStart, pasteSelectionEnd, styled.text);
+        return;
+      }
+
       if (isListPaste) {
         event.preventDefault();
       }
@@ -966,13 +1424,8 @@ export const textWysiwyg = ({
         ).split("\n");
         const firstLine = parseTextListLine(formattedLines[0] ?? "").content;
         const insertion = [firstLine, ...formattedLines.slice(1)].join("\n");
-        editable.value =
-          editable.value.slice(0, pasteSelectionStart) +
-          insertion +
-          editable.value.slice(pasteSelectionEnd);
-        const nextCaret = pasteSelectionStart + insertion.length;
-        editable.setSelectionRange(nextCaret, nextCaret);
-        editable.dispatchEvent(new Event("input"));
+        // YAZ-4071 7L: undoable, as a plain paste
+        replaceEditorText(pasteSelectionStart, pasteSelectionEnd, insertion);
         return true;
       };
 
@@ -1002,17 +1455,12 @@ export const textWysiwyg = ({
               if (insertPastedText(text)) {
                 return;
               }
-              const { selectionStart, selectionEnd, value } = editable;
-
-              editable.value =
-                value.slice(0, selectionStart) +
-                text +
-                value.slice(selectionEnd);
-
-              const newPos = selectionStart + text.length;
-              editable.selectionStart = editable.selectionEnd = newPos;
-
-              editable.dispatchEvent(new Event("input"));
+              // YAZ-4071 7L: undoable, as a plain paste
+              replaceEditorText(
+                editable.selectionStart,
+                editable.selectionEnd,
+                text,
+              );
             }
           }
 
@@ -1061,22 +1509,55 @@ export const textWysiwyg = ({
       }
     };
 
-    editable.oninput = () => {
-      const normalized = normalizeText(editable.value);
-      if (editable.value !== normalized) {
-        const selectionStart = editable.selectionStart;
-        editable.value = normalized;
-        // put the cursor at some position close to where it was before
-        // normalization (otherwise it'll end up at the end of the text)
-        editable.selectionStart = selectionStart;
-        editable.selectionEnd = selectionStart;
+    editable.oninput = (event) => {
+      // YAZ-4071 7M: an edit the editor made itself (Tab, Enter in a list, a
+      // list button): its selection, and its runs move line by line
+      const scripted = takeEditableEdit(editable);
+      if (scripted) {
+        editable.setSelectionRange(
+          scripted.selectionStart,
+          scripted.selectionEnd,
+        );
       }
+      // YAZ-3943 demo 2: `- ` or `* ` typed at a line's start is a bullet
+      // line; its replacement is its own input event
+      if (applyListInputRule()) {
+        return;
+      }
+      // tabs become spaces, and the list numbers count up. A keystroke that
+      // needs neither writes nothing.
+      const normalized = normalizeText(editable.value);
+      // put the cursor at some position close to where it was before
+      // normalization (otherwise it'll end up at the end of the text)
       const normalizedList = normalizeTextLists(
-        editable.value,
+        normalized,
         editable.selectionStart,
-        editable.selectionEnd,
+        normalized === editable.value
+          ? editable.selectionEnd
+          : editable.selectionStart,
       );
-      if (editable.value !== normalizedList.text) {
+      if (
+        editable.value !== normalizedList.text &&
+        // YAZ-4071 7M: ⌘Z gives back the text as it was before a cleanup.
+        // A cleanup now would clear ⌘⇧Z, and the next ⌘Z would undo it again.
+        !(event as InputEvent).inputType?.startsWith("history")
+      ) {
+        // YAZ-4071 7M: the browser's own edit, so ⌘Z takes back the cleanup
+        // in one step. It waits until this input event ends: this event can
+        // come from an `execCommand`, and Blink refuses one inside another.
+        if ("execCommand" in document && document.activeElement === editable) {
+          queueMicrotask(() => {
+            if (!isDestroyed) {
+              editEditableText(
+                editable,
+                normalizedList.text,
+                normalizedList.selectionStart,
+                normalizedList.selectionEnd,
+              );
+            }
+          });
+          return;
+        }
         editable.value = normalizedList.text;
         editable.setSelectionRange(
           normalizedList.selectionStart,
@@ -1089,47 +1570,115 @@ export const textWysiwyg = ({
       const edit = {
         caret: editable.selectionEnd,
         insertedLine: pendingInsertedLine ?? undefined,
+        eachLine: scripted?.eachLine,
+        // YAZ-3718 D10: B, I, U, S or a color pressed with only a caret
+        insertStyle: takePendingTextStyle(
+          editable,
+          editable.selectionEnd -
+            (editable.value.length - previousEditableValue.length),
+        ),
       };
+      const isHistory = !!(event as InputEvent).inputType?.startsWith(
+        "history",
+      );
+      const scriptedState = isHistory ? getScriptedState() : null;
+      if (!isHistory && (scripted || pendingInsertedLine !== null)) {
+        rememberScriptedState(previousEditableValue, currentElement?.textRuns);
+      }
       pendingInsertedLine = null;
-      const nextLineBolds = remapLineStylesForTextEdit(
+      const remappedTextRuns = remapTextRunsForTextEdit(
         previousEditableValue,
         editable.value,
-        currentElement?.lineBolds,
-        {
-          ...edit,
-          wholeElementStyled: currentElement?.fontWeight === "bold",
-        },
+        currentElement?.textRuns,
+        edit,
       );
-      const nextLineUnderlines = remapLineUnderlinesForTextEdit(
-        previousEditableValue,
-        editable.value,
-        currentElement?.lineUnderlines,
-        {
-          ...edit,
-          wholeElementStyled: currentElement?.textDecoration === "underline",
-        },
-      );
-      const nextLineStrikethroughs = remapLineStylesForTextEdit(
-        previousEditableValue,
-        editable.value,
-        currentElement?.lineStrikethroughs,
-        {
-          ...edit,
-          wholeElementStyled: currentElement?.strikethrough === true,
-        },
-      );
+      // YAZ-4103 3F: the pasted letters take the styles they were copied with
+      // YAZ-4071 7L: letters that ⌘Z or ⌘⇧Z brought back take their own runs
+      const pasted =
+        pendingPastedRuns ??
+        (restorableTexts.length && isHistory ? getRestoredText() : null);
+      pendingPastedRuns = null;
+      const nextTextRuns = scriptedState
+        ? scriptedState.textRuns
+        : pasted &&
+          editable.value.slice(
+            pasted.start,
+            pasted.start + pasted.text.length,
+          ) === pasted.text
+        ? setPastedTextRuns(
+            remappedTextRuns,
+            editable.value.length,
+            pasted.start,
+            pasted.text.length,
+            pasted.textRuns,
+          )
+        : remappedTextRuns;
+      if (!isHistory && (scripted || edit.insertedLine !== undefined)) {
+        rememberScriptedState(editable.value, nextTextRuns);
+      }
       previousEditableValue = editable.value;
       onChange({
         nextOriginalText: editable.value,
         nextFontWeight: currentElement?.fontWeight,
         nextTextDecoration: currentElement?.textDecoration,
         nextStrikethrough: currentElement?.strikethrough,
-        nextLineBolds,
-        nextLineUnderlines,
-        nextLineStrikethroughs,
+        nextFontStyle: currentElement?.fontStyle,
+        nextTextRuns,
       });
+      lastSelection = {
+        start: editable.selectionStart,
+        end: editable.selectionEnd,
+      };
+      reportEditor(true);
     };
   }
+
+  /**
+   * YAZ-3943 demo 2: a list started by typing, as in notes. `- ` or `* ` just
+   * typed at the start of a line becomes the box's bullet (`• `), through the
+   * browser's own insert, so ⌘Z gives the typed text back. A list makes the
+   * box read from the left.
+   */
+  const applyListInputRule = () => {
+    const caret = editable.selectionEnd;
+    if (
+      editable.selectionStart !== caret ||
+      editable.value.length !== previousEditableValue.length + 1 ||
+      editable.value[caret - 1] !== " "
+    ) {
+      return false;
+    }
+    const lineStart = editable.value.lastIndexOf("\n", caret - 1) + 1;
+    const typed = editable.value.slice(lineStart, caret);
+    const bullet = /^([ \t]*)[-*] $/.exec(typed);
+    if (bullet) {
+      const indent = bullet[1];
+      const depth = Math.floor(indent.replace(/\t/g, "    ").length / 4);
+      startTextList();
+      editable.setSelectionRange(lineStart + indent.length, caret);
+      const marker = `${getBulletMarkerForDepth(depth)} `;
+      if (!document.execCommand?.("insertText", false, marker)) {
+        editable.setRangeText(marker, lineStart + indent.length, caret, "end");
+        editable.dispatchEvent(new Event("input"));
+      }
+      return true;
+    }
+    // `1. ` is a numbered line already (`parseTextListLine`): it only turns
+    // the box to the left (Yasin: "Yes, keep it").
+    if (/^[ \t]*\d+\. $/.test(typed)) {
+      startTextList();
+    }
+    return false;
+  };
+
+  /** YAZ-3943 demo 2: a list reads from the left. */
+  const startTextList = () => {
+    const current = app.scene.getElement(element.id) as ExcalidrawTextElement;
+    if (current && current.textAlign !== "left") {
+      app.scene.mutateElement(current, { textAlign: "left" });
+      updateWysiwygStyle();
+    }
+  };
 
   const handleTextListEnter = () => {
     const { selectionStart, selectionEnd, value } = editable;
@@ -1146,14 +1695,41 @@ export const textWysiwyg = ({
         change.selectionStart,
       );
     }
-    editable.value = change.text;
-    editable.setSelectionRange(change.selectionStart, change.selectionEnd);
-
-    editable.dispatchEvent(new Event("input"));
+    // YAZ-4071 7M: one ⌘Z step
+    editEditableText(
+      editable,
+      change.text,
+      change.selectionStart,
+      change.selectionEnd,
+    );
     return true;
   };
 
   editable.onkeydown = (event) => {
+    if (event[KEYS.CTRL_OR_CMD] && event.code === CODES.V) {
+      plainPasteKey = event.shiftKey;
+    }
+    // YAZ-4039 D12: the host's open `[[` picker takes ↑, ↓, Enter and Esc
+    if (app.props.hostLinks?.onEditorKeyDown?.(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    // YAZ-4039 D15: Backspace after a pill, or Delete before it, selects the
+    // whole pill, so the key deletes it as one unit
+    if (
+      (event.key === KEYS.BACKSPACE || event.key === KEYS.DELETE) &&
+      editable.selectionStart === editable.selectionEnd
+    ) {
+      const link = getLinkToDelete(
+        getTextLinkRanges(editable.value),
+        editable.selectionStart,
+        event.key,
+      );
+      if (link) {
+        editable.setSelectionRange(link.start, link.end);
+      }
+    }
     if (!event.shiftKey && actionZoomIn.keyTest(event)) {
       event.preventDefault();
       app.actionManager.executeAction(actionZoomIn);
@@ -1182,6 +1758,17 @@ export const textWysiwyg = ({
       app.actionManager.executeAction(actionToggleTextBold, "keyboard");
       updateWysiwygStyle();
     } else if (
+      actionToggleTextItalic.keyTest(
+        event,
+        app.state,
+        app.scene.getElementsIncludingDeleted(),
+        app,
+      )
+    ) {
+      event.preventDefault();
+      app.actionManager.executeAction(actionToggleTextItalic, "keyboard");
+      updateWysiwygStyle();
+    } else if (
       actionToggleTextStrikethrough.keyTest(
         event,
         app.state,
@@ -1205,6 +1792,15 @@ export const textWysiwyg = ({
     ) {
       event.preventDefault();
       app.actionManager.executeAction(actionToggleTextUnderline, "keyboard");
+      updateWysiwygStyle();
+    } else if (
+      // a key the user gave it in Settings › Hotkeys, else ⌘⇧H
+      textFieldKeyFor(actionToggleTextHighlight.name, event) ??
+      actionToggleTextHighlight.keyTest(event, app.state)
+    ) {
+      // YAZ-4102 3E: ⌘⇧H, as in notes
+      event.preventDefault();
+      app.actionManager.executeAction(actionToggleTextHighlight, "keyboard");
       updateWysiwygStyle();
     } else if (event.key === KEYS.ESCAPE) {
       event.preventDefault();
@@ -1246,22 +1842,26 @@ export const textWysiwyg = ({
         editable.selectionStart,
         editable.selectionEnd,
       );
-      if (listMode !== "plain") {
-        const change = indentTextList(
-          editable.value,
-          editable.selectionStart,
-          editable.selectionEnd,
-          direction,
-        );
-        editable.value = change.text;
-        editable.setSelectionRange(change.selectionStart, change.selectionEnd);
-      } else if (direction === -1) {
-        outdent();
-      } else {
-        indent();
-      }
-      // We must send an input event to resize the element
-      editable.dispatchEvent(new Event("input"));
+      const change =
+        listMode !== "plain"
+          ? indentTextList(
+              editable.value,
+              editable.selectionStart,
+              editable.selectionEnd,
+              direction,
+            )
+          : direction === -1
+          ? outdent()
+          : indent();
+      // YAZ-4071 7M: one ⌘Z step; its input event resizes the element.
+      // YAZ-4071 7D: the runs move line by line.
+      editEditableText(
+        editable,
+        change.text,
+        change.selectionStart,
+        change.selectionEnd,
+        true,
+      );
     }
   };
 
@@ -1280,10 +1880,11 @@ export const textWysiwyg = ({
       value = `${startValue}${TAB}${endValue}`;
     });
 
-    editable.value = value;
-
-    editable.selectionStart = selectionStart + TAB_SIZE;
-    editable.selectionEnd = selectionEnd + TAB_SIZE * linesStartIndices.length;
+    return {
+      text: value,
+      selectionStart: selectionStart + TAB_SIZE,
+      selectionEnd: selectionEnd + TAB_SIZE * linesStartIndices.length,
+    };
   };
 
   const outdent = () => {
@@ -1307,27 +1908,29 @@ export const textWysiwyg = ({
       }
     });
 
-    editable.value = value;
-
-    if (removedTabs.length) {
-      if (selectionStart > removedTabs[removedTabs.length - 1]) {
-        editable.selectionStart = Math.max(
-          selectionStart - TAB_SIZE,
-          removedTabs[removedTabs.length - 1],
-        );
-      } else {
-        // If the cursor is before the first tab removed, ex:
-        // Line| #1
-        //     Line #2
-        // Lin|e #3
-        // we should reset the selectionStart to his initial value.
-        editable.selectionStart = selectionStart;
-      }
-      editable.selectionEnd = Math.max(
-        editable.selectionStart,
-        selectionEnd - TAB_SIZE * removedTabs.length,
-      );
+    if (!removedTabs.length) {
+      return { text: value, selectionStart, selectionEnd };
     }
+    const nextSelectionStart =
+      selectionStart > removedTabs[removedTabs.length - 1]
+        ? Math.max(
+            selectionStart - TAB_SIZE,
+            removedTabs[removedTabs.length - 1],
+          )
+        : // If the cursor is before the first tab removed, ex:
+          // Line| #1
+          //     Line #2
+          // Lin|e #3
+          // we should reset the selectionStart to his initial value.
+          selectionStart;
+    return {
+      text: value,
+      selectionStart: nextSelectionStart,
+      selectionEnd: Math.max(
+        nextSelectionStart,
+        selectionEnd - TAB_SIZE * removedTabs.length,
+      ),
+    };
   };
 
   /**
@@ -1426,9 +2029,8 @@ export const textWysiwyg = ({
       nextFontWeight: updateElement.fontWeight,
       nextTextDecoration: updateElement.textDecoration,
       nextStrikethrough: updateElement.strikethrough,
-      nextLineBolds: updateElement.lineBolds,
-      nextLineUnderlines: updateElement.lineUnderlines,
-      nextLineStrikethroughs: updateElement.lineStrikethroughs,
+      nextFontStyle: updateElement.fontStyle,
+      nextTextRuns: updateElement.textRuns,
     });
   };
 
@@ -1438,9 +2040,12 @@ export const textWysiwyg = ({
     editable.oninput = null;
     editable.onkeydown = null;
     editable.removeEventListener("select", renderVisualSelection);
-    editable.removeEventListener("keyup", renderVisualSelection);
+    editable.removeEventListener("beforeinput", handleBeforeInput);
+    editable.removeEventListener("keyup", handleSelectionMoved);
     editable.removeEventListener("pointerdown", handleEditablePointerDown);
     editable.removeEventListener("click", handleEditableClick);
+    editable.removeEventListener("contextmenu", handleEditableContextMenu);
+    app.props.hostLinks?.onEditorChange?.(null);
     document.removeEventListener(
       "selectionchange",
       handleDocumentSelectionChange,
@@ -1618,13 +2223,15 @@ export const textWysiwyg = ({
   }
 
   editable.addEventListener("select", renderVisualSelection);
+  editable.addEventListener("beforeinput", handleBeforeInput);
   // `selectionchange` is the canonical signal, but some browser/host
   // combinations do not emit it consistently for native textarea keyboard
   // navigation. Repaint on keyup as a harmless fallback so the custom caret
   // used by styled text cannot appear frozen.
-  editable.addEventListener("keyup", renderVisualSelection);
+  editable.addEventListener("keyup", handleSelectionMoved);
   editable.addEventListener("pointerdown", handleEditablePointerDown);
   editable.addEventListener("click", handleEditableClick);
+  editable.addEventListener("contextmenu", handleEditableContextMenu);
   document.addEventListener("selectionchange", handleDocumentSelectionChange);
 
   // rAF (+ capture to by doubly sure) so we don't catch te pointerdown that

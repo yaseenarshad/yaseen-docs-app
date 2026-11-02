@@ -59,8 +59,11 @@ export const DRAWING_KEYS: readonly KeyRow[] = [
   key('flipHorizontal', 'Flip horizontal', ['Shift+H']),
   key('flipVertical', 'Flip vertical', ['Shift+V']),
   key('textBold', 'Bold', ['CmdOrCtrl+B'], 'A selected text; while you type, ⌘B stays'),
+  key('textItalic', 'Italic', ['CmdOrCtrl+I'], 'A selected text; while you type, ⌘I stays'),
   key('textUnderline', 'Underline', ['CmdOrCtrl+U'], 'A selected text; while you type, ⌘U stays'),
   key('textStrikethrough', 'Strikethrough', ['CmdOrCtrl+Shift+X'], 'A selected text; while you type, ⌘⇧X stays'),
+  // YAZ-4102 3E: highlight letters, as in a note (the note's ⌘⇧H); the text editor hears the changed key too.
+  key('textHighlight', 'Highlight the selected letters', ['CmdOrCtrl+Shift+H'], 'While you type a text, as in a note; the toolbar has the other colours'),
   key('clearTextFormatting', 'Clear text formatting', ['CmdOrCtrl+\\']),
   key('decreaseFontSize', 'Smaller text', ['CmdOrCtrl+Shift+,'], 'While you type, ⌘⇧< stays'),
   key('increaseFontSize', 'Larger text', ['CmdOrCtrl+Shift+.'], 'While you type, ⌘⇧> stays'),
@@ -145,6 +148,7 @@ export const DRAWING_ACTIONS: Readonly<Record<string, string | readonly string[]
   'drawing.flipHorizontal': 'flipHorizontal',
   'drawing.flipVertical': 'flipVertical',
   'drawing.textBold': 'toggleTextBold',
+  'drawing.textItalic': 'toggleTextItalic',
   'drawing.textUnderline': 'toggleTextUnderline',
   'drawing.textStrikethrough': 'toggleTextStrikethrough',
   'drawing.clearTextFormatting': 'clearSelectedTextFormatting',
@@ -172,4 +176,6 @@ export const DRAWING_ACTIONS: Readonly<Record<string, string | readonly string[]
   'drawing.redo': 'redo',
   'drawing.selectAll': 'selectAll',
   'drawing.help': 'toggleShortcuts',
+  // YAZ-3943 demo 2: a changeable row names ONE action, the one the remap moves (the toolbar's picks have no key).
+  'drawing.textHighlight': 'toggleTextHighlight',
 }

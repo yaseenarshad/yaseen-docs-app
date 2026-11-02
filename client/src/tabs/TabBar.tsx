@@ -8,7 +8,7 @@ import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
 import { AsleepIcon, GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
 import { dragWidth, foreignDrag, readPageDrag, windowTabOf, writePageDrag, type PageDrag } from '../workspace/pageDrag'
-import type { Tab } from '../workspace/useWorkspace'
+import { duplicateTabIds, type Tab } from '../workspace/useWorkspace'
 import type { ListState } from '../lists/useVaultListsHere'
 import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
 import { TabNameField } from './TabNameField'
@@ -103,6 +103,8 @@ export interface TabBarProps {
   overviewOpen?: boolean
   /** The grid button's right-click menu (YAZ-2739): "Kill all tabs". App asks first. Absent, the button has no menu. */
   onKillAll?: () => void
+  /** The same menu's "Close duplicate tabs" (YAZ-3943 5A), above "Kill all tabs": App closes every extra copy of a page. Grey with no copy. */
+  onCloseDuplicates?: () => void
   /** The same menu's two saves (YAZ-3147 D5): "Save tabs as session" (`false`) and "Save and close all tabs" (`true`). App saves, then closes all tabs for `true`. */
   onSaveSession?: (closeAll: boolean) => void
   /**
@@ -245,7 +247,7 @@ export interface NavStep {
 /** How long a press on ‹ or › is held before its menu opens instead of a step (YAZ-3647 E3), as in Chrome. */
 export const NAV_HOLD_MS = 500
 
-export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, zoomLabels, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
+export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, zoomLabels, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -989,7 +991,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
           </div>
         </ContextMenuSurface>
       )}
-      {/* The grid button's menu: the two saves of a session (YAZ-3147 D5), a line, then "Kill all tabs". With no tab
+      {/* The grid button's menu: the two saves of a session (YAZ-3147 D5), a line, then "Close duplicate tabs" (YAZ-3943 5A) and "Kill all tabs". With no tab
           there is nothing to save or close, and each item is grey like any item that cannot be used (S4). */}
       {gridMenu !== null && (
         <ContextMenuSurface x={gridMenu.x} y={gridMenu.y} onClose={() => setGridMenu(null)}>
@@ -1014,6 +1016,21 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
             </div>
           )}
           <div className="ctx-menu__group" role="group">
+            {onCloseDuplicates !== undefined && (
+              <button
+                type="button"
+                className="ctx-menu__item"
+                role="menuitem"
+                disabled={duplicateTabIds({ tabs, active }).length === 0}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setGridMenu(null)
+                  onCloseDuplicates()
+                }}
+              >
+                Close duplicate tabs
+              </button>
+            )}
             <button
               type="button"
               className={tabs.length === 0 ? 'ctx-menu__item' : 'ctx-menu__item ctx-menu__item--danger'}

@@ -55,6 +55,7 @@ import type {
   EphemeralIncrement,
 } from "@excalidraw/element";
 import type { GlobalPoint } from "@excalidraw/math";
+import type { HostLinkResolver } from "@excalidraw/element";
 
 import type { Action } from "./actions/types";
 import type { Spreadsheet } from "./charts";
@@ -786,6 +787,76 @@ export type UIConfig = {
   };
 };
 
+/**
+ * Yaseen Docs (YAZ-4039 D11): a link pill under the pointer. `start` and `end`
+ * are the offsets of the raw `[[inner]]` in the box's `originalText`.
+ */
+export type HostLinkHit = {
+  elementId: ExcalidrawElement["id"];
+  inner: string;
+  start: number;
+  end: number;
+  /** The pill's box on screen, in client px. */
+  rect: { left: number; top: number; right: number; bottom: number };
+  /**
+   * YAZ-4039 D15: puts `text` in place of the raw `[[inner]]`, as one undo
+   * step (Edit link, Remove link). Only on a right-click of an editable board.
+   */
+  replace?: (text: string) => void;
+};
+
+/**
+ * Yaseen Docs (YAZ-4039 D12): the text editor, for the host's `[[` picker.
+ * `typed`: the change is typing, not a caret move.
+ */
+export type HostTextEditor = {
+  text: string;
+  caret: number;
+  typed: boolean;
+  /** The caret's box on screen, in client px. It reads the layout: ask it only to place a popup. */
+  caretRect: () => { left: number; top: number; right: number; bottom: number };
+  /** Puts `text` in place of `start`..`end` and the caret after it. */
+  replace: (start: number, end: number, text: string) => void;
+  /**
+   * Puts `text` in place of the link `raw`, also after the editor closed
+   * (the saved box). True when `raw` was there.
+   */
+  replaceLink: (raw: string, text: string) => boolean;
+};
+
+/**
+ * Yaseen Docs (YAZ-4039 D7, D11): the host's side of page links. `[[inner]]`
+ * in a text box is a pill with what `resolve` says. A plain click selects the
+ * box, as on any shape; the host takes the clicks it opens on.
+ */
+export type HostLinks = {
+  resolve: HostLinkResolver;
+  /** The labels changed (the index updated): the canvas draws them again. */
+  subscribe?: (listener: () => void) => () => void;
+  /** The pointer came onto a pill, or left it (null). Called only on a change. */
+  onHover?: (hit: HostLinkHit | null) => void;
+  /** A primary press on a pill: true when the host took it (an open gesture). */
+  onPointerDown?: (hit: HostLinkHit, event: PointerEvent) => boolean;
+  /** A right-click on a pill: true when the host showed its menu. */
+  onContextMenu?: (hit: HostLinkHit, event: MouseEvent) => boolean;
+  /**
+   * YAZ-4039 D12: a pasted text (a page path, a `yaseendocs://` link) as the
+   * link it names, `[[ID]]`, or null: it pastes as text. The ⌘K link box too.
+   */
+  pasteLink?: (text: string) => string | null;
+  /**
+   * YAZ-3943 4D: files dropped on the board (a drag from the sidebar) as the
+   * links of the pages they are, one each; a folder gives none. Null: the
+   * host does not know them (a drop from Finder), and the drop goes on as
+   * before. Pictures are never asked: they are added as pictures (2D).
+   */
+  dropLinks?: (files: readonly File[]) => string[] | null;
+  /** The text editor's text or caret changed; null: the editor closed. */
+  onEditorChange?: (editor: HostTextEditor | null) => void;
+  /** A key in the text editor: true when the host took it (its open picker). */
+  onEditorKeyDown?: (event: KeyboardEvent) => boolean;
+};
+
 export interface ExcalidrawProps {
   onChange?: (
     elements: readonly OrderedExcalidrawElement[],
@@ -960,6 +1031,16 @@ export interface ExcalidrawProps {
   autoFocus?: boolean;
   generateIdForFile?: (file: File) => string | Promise<string>;
   generateLinkForSelection?: (id: string, type: "element" | "group") => string;
+  /** Yaseen Docs (YAZ-4039 D7, D11): page links in text boxes. Keep it stable. */
+  hostLinks?: HostLinks;
+  /**
+   * Yaseen Docs (YAZ-3943 D6): a PDF button in the export box, shown only when this is given. It gets the
+   * export as an SVG (fonts and pictures inline) and its size in CSS pixels; the host makes the PDF.
+   */
+  onExportPdf?: (
+    svg: string,
+    size: { width: number; height: number },
+  ) => void | Promise<void>;
   onLinkOpen?: (
     element: NonDeletedExcalidrawElement,
     event: CustomEvent<{
@@ -1124,6 +1205,7 @@ export type AppClassProperties = {
     }
   >;
   files: BinaryFiles;
+  gifPlayer: App["gifPlayer"];
   editorInterface: App["editorInterface"];
   scene: App["scene"];
   syncActionResult: App["syncActionResult"];
@@ -1414,6 +1496,10 @@ export type Offsets = Partial<{
 
 export type InsertImagesOptions = {
   viewportSizing?: import("./data/viewportInsertion").ViewportInsertionRequest;
+  /** YAZ-3944 D16 "Paste at full size": no shrink and no resize; the size limits stay. */
+  fullSize?: boolean;
+  /** YAZ-4074 6A item 11: the given scene y is the top of the pictures, not their middle. */
+  fromTop?: boolean;
 };
 
 /**

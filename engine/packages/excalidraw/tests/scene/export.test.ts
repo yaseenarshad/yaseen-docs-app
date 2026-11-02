@@ -175,7 +175,7 @@ describe("exportToSvg", () => {
     });
   });
 
-  it("exports combined logical-line text styles", async () => {
+  it("exports combined text run styles as tspans (YAZ-3718 D1)", async () => {
     const lineStyledText = {
       ...API.createElement({
         type: "text",
@@ -183,9 +183,10 @@ describe("exportToSvg", () => {
         width: 100,
         height: 50,
       }),
-      lineBolds: [true],
-      lineUnderlines: [true, true],
-      lineStrikethroughs: [true],
+      textRuns: [
+        { start: 0, end: 5, bold: true, underline: true, strikethrough: true },
+        { start: 6, end: 14, underline: true },
+      ],
     } as NonDeleted<ExcalidrawTextElement>;
 
     const svg = await exportUtils.exportToSvg(
@@ -194,14 +195,142 @@ describe("exportToSvg", () => {
       null,
     );
     const textNodes = Array.from(svg.querySelectorAll("text"));
+    const tspans = textNodes.map((node) =>
+      Array.from(node.querySelectorAll("tspan")),
+    );
 
     expect(textNodes).toHaveLength(2);
-    expect(textNodes[0].getAttribute("font-weight")).toBe("bold");
-    expect(textNodes[0].getAttribute("text-decoration")).toBe(
+    expect(tspans.map((line) => line.length)).toEqual([1, 1]);
+    expect(tspans[0][0].getAttribute("font-weight")).toBe("bold");
+    expect(tspans[0][0].getAttribute("text-decoration")).toBe(
       "underline line-through",
     );
-    expect(textNodes[1].hasAttribute("font-weight")).toBe(false);
-    expect(textNodes[1].getAttribute("text-decoration")).toBe("underline");
+    expect(tspans[1][0].hasAttribute("font-weight")).toBe(false);
+    expect(tspans[1][0].getAttribute("text-decoration")).toBe("underline");
+  });
+
+  it("YAZ-4102 3E: draws a highlight's fill behind its letters, before the line's text", async () => {
+    const highlighted = {
+      ...API.createElement({
+        type: "text",
+        text: "ab cd\nef",
+        width: 100,
+        height: 50,
+        textAlign: "left",
+      }),
+      textRuns: [
+        { start: 3, end: 5, highlight: "yellow" },
+        { start: 6, end: 8, highlight: "pink", bold: true },
+      ],
+    } as NonDeleted<ExcalidrawTextElement>;
+    const { lines } = getTextElementStyledLayout(highlighted, Infinity);
+
+    const svg = await exportUtils.exportToSvg(
+      [highlighted],
+      DEFAULT_OPTIONS,
+      null,
+    );
+    const fills = Array.from(svg.querySelectorAll("rect")).filter((rect) =>
+      rect.getAttribute("fill")?.startsWith("rgba"),
+    );
+    expect(fills.map((rect) => rect.getAttribute("fill"))).toEqual([
+      "rgba(255, 213, 0, 0.4)",
+      "rgba(255, 120, 180, 0.35)",
+    ]);
+    const cd = lines[0].segments!.find((segment) => segment.text === "cd")!;
+    expect(Number(fills[0].getAttribute("x"))).toBe(cd.x);
+    expect(Number(fills[0].getAttribute("width"))).toBe(cd.width);
+    expect(Number(fills[1].getAttribute("y"))).toBeGreaterThan(0);
+    // each fill comes before its line's text
+    const children = Array.from(fills[0].parentNode!.childNodes);
+    const textOf = (fill: Element) =>
+      children.findIndex(
+        (node, index) =>
+          index > children.indexOf(fill) && node.nodeName === "text",
+      );
+    expect(textOf(fills[0])).toBe(children.indexOf(fills[0]) + 1);
+    expect(textOf(fills[1])).toBe(children.indexOf(fills[1]) + 1);
+  });
+
+  it("YAZ-4100 3C: exports a styled right-to-left line from the right, and a left-to-right one as before", async () => {
+    const arabic = {
+      ...API.createElement({
+        type: "text",
+        text: "مرحبا بالعالم\nab cd",
+        width: 200,
+        height: 50,
+        textAlign: "left",
+      }),
+      textRuns: [
+        { start: 0, end: 5, bold: true },
+        { start: 14, end: 16, italic: true },
+      ],
+    } as NonDeleted<ExcalidrawTextElement>;
+    const { lines } = getTextElementStyledLayout(arabic, Infinity);
+
+    const svg = await exportUtils.exportToSvg([arabic], DEFAULT_OPTIONS, null);
+    const [rtlLine, ltrLine] = Array.from(svg.querySelectorAll("text"));
+    expect(rtlLine.getAttribute("direction")).toBe("rtl");
+    expect(rtlLine.getAttribute("text-anchor")).toBe("start");
+    // each piece starts at its right edge; the first word is the rightmost
+    const [first, second] = lines[0].segments!;
+    expect(
+      Array.from(rtlLine.querySelectorAll("tspan")).map((tspan) =>
+        Number(tspan.getAttribute("x")),
+      ),
+    ).toEqual([first.x + first.width, second.x + second.width]);
+    expect(first.x).toBeGreaterThan(second.x);
+    expect(ltrLine.getAttribute("direction")).toBe("ltr");
+    expect(
+      Array.from(ltrLine.querySelectorAll("tspan")).map((tspan) =>
+        Number(tspan.getAttribute("x")),
+      ),
+    ).toEqual(lines[1].segments!.map((segment) => segment.x));
+  });
+
+  it("exports one tspan for each styled part of a line (YAZ-3718 D1)", async () => {
+    const styledText = {
+      ...API.createElement({
+        type: "text",
+        text: "ab cd ef",
+        width: 100,
+        height: 25,
+        strokeColor: "#1e1e1e",
+      }),
+      textRuns: [
+        { start: 3, end: 5, italic: true },
+        { start: 6, end: 8, color: "#e03131" },
+      ],
+    } as NonDeleted<ExcalidrawTextElement>;
+    const [line] = getTextElementStyledLayout(styledText, Infinity).lines;
+
+    const svg = await exportUtils.exportToSvg(
+      [styledText],
+      DEFAULT_OPTIONS,
+      null,
+    );
+    const tspans = Array.from(svg.querySelectorAll("text tspan"));
+
+    expect(tspans.map((tspan) => tspan.textContent)).toEqual([
+      "ab ",
+      "cd",
+      " ",
+      "ef",
+    ]);
+    expect(tspans.map((tspan) => Number(tspan.getAttribute("x")))).toEqual(
+      line.segments!.map(
+        (segment) =>
+          getStyledVisualLineStart(
+            line,
+            styledText.width,
+            styledText.textAlign,
+          ) + segment.x,
+      ),
+    );
+    expect(tspans[1].getAttribute("font-style")).toBe("italic");
+    expect(tspans[0].hasAttribute("font-style")).toBe(false);
+    expect(tspans[3].getAttribute("fill")).toBe("#e03131");
+    expect(tspans[0].getAttribute("fill")).toBe("#1e1e1e");
   });
 
   it("exports wrapped list continuations at their shared layout positions", async () => {
@@ -215,7 +344,7 @@ describe("exportToSvg", () => {
       }),
       originalText: "• Search inventory facts from the connected store",
       autoResize: false,
-      lineUnderlines: [true],
+      textRuns: [{ start: 0, end: 49, underline: true }],
     } as NonDeleted<ExcalidrawTextElement>;
     const layout = getTextElementStyledLayout(listText, listText.width);
 
@@ -594,9 +723,10 @@ describe("exportToCanvas", () => {
         width: 100,
         height: 50,
       }),
-      lineBolds: [true],
-      lineUnderlines: [true, true],
-      lineStrikethroughs: [true],
+      textRuns: [
+        { start: 0, end: 5, bold: true, underline: true, strikethrough: true },
+        { start: 6, end: 14, underline: true },
+      ],
     } as NonDeleted<ExcalidrawTextElement>;
 
     const canvas = await exportToCanvas({
@@ -615,6 +745,40 @@ describe("exportToCanvas", () => {
     expect(underlineRules).toHaveLength(3);
   });
 
+  it("YAZ-4102 3E: draws a highlight's fill on the canvas before the letters of its line", async () => {
+    const highlighted = {
+      ...API.createElement({
+        type: "text",
+        text: "ab cd",
+        width: 100,
+        height: 25,
+        textAlign: "left",
+      }),
+      textRuns: [{ start: 3, end: 5, highlight: "yellow" }],
+    } as NonDeleted<ExcalidrawTextElement>;
+
+    const canvas = await exportToCanvas({
+      elements: [highlighted],
+      files: null,
+      appState: { exportBackground: false },
+    });
+    const events = (canvas.getContext("2d") as any).__getEvents();
+    const fill = events.findIndex(
+      (event: any, index: number) =>
+        event.type === "fillRect" &&
+        events
+          .slice(0, index)
+          .reverse()
+          .find((before: any) => before.type === "fillStyle")?.props.value ===
+          "rgba(255, 213, 0, 0.4)",
+    );
+    const letters = events.findIndex(
+      (event: any) => event.type === "fillText" && event.props.text === "ab ",
+    );
+    expect(fill).toBeGreaterThan(-1);
+    expect(letters).toBeGreaterThan(fill);
+  });
+
   it("draws canvas list continuations at their shared layout positions", async () => {
     const listText = {
       ...API.createElement({
@@ -626,7 +790,7 @@ describe("exportToCanvas", () => {
       }),
       originalText: "• Search inventory facts from the connected store",
       autoResize: false,
-      lineUnderlines: [true],
+      textRuns: [{ start: 0, end: 49, underline: true }],
     } as NonDeleted<ExcalidrawTextElement>;
     const layout = getTextElementStyledLayout(listText, listText.width);
 

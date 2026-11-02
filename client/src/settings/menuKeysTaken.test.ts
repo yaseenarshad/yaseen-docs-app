@@ -8,7 +8,7 @@ import { ALL_KEYS, clashesOf, keyRow } from '@shared/keys'
 
 /** The fixed accelerators of `desktop/src/main/menu.ts` (not the changeable ones, not roles). */
 const FIXED_MENU_KEYS = [
-  'CmdOrCtrl+Shift+E', // Export Image…
+  'CmdOrCtrl+Shift+E', // Export Image… (on a drawing: Export Image or PDF…)
   'CmdOrCtrl+Shift+S', // Export Excalidraw Drawing… (EXPORT_DRAWING_ACCELERATOR)
   'CmdOrCtrl+Shift+L', // Share Link
   'CmdOrCtrl+0', // Actual Size

@@ -5,7 +5,7 @@
  * After each cycle: GC 3 times, then the renderer's JS heap (and its workers' heaps), the RSS and the
  * physical footprint summed over EVERY renderer helper of the app (draw.io runs on `app://drawio`, in its own process while
  * a diagram is open) and main's JS heap after GC (S12). The run ends idle: it waits for the TS worker to stop (2 min after the
- * last code tab closes, YAZ-3862), then 30 s more, then one more sample. The `…EndMb` numbers are that one, the
+ * last code tab closes, YAZ-3862), then until its memory left the window (YAZ-4071 7N), then 30 s more, then one more sample. The `…EndMb` numbers are that one, the
  * `…LastCycleMb` ones the last cycle's.
  * Before the cycles, S11: the base cost of a window with no tab and one with one tab on the same vault, and of a
  * window on an empty vault; the gap is what the vault's index and tree cost each window.
@@ -18,12 +18,13 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { sentinel, writeCode, writeDrawing, writeNote, writeVault } from '../genVault.mjs'
+import { sentinel, writeCode, writeDrawing, writeGifDrawing, writeNote, writeVault } from '../genVault.mjs'
 import { footprints, helpers, sleep, usage } from '../lib/app.mjs'
 import { ACTIVE, js, painted, row, session, tab } from '../lib/session.mjs'
 import { slope } from '../lib/stats.mjs'
 import { CODE_SHOWN, writeBigCode } from './bigCode.mjs'
 import { flowDiagram } from './drawio.mjs'
+import { GIF_PROBE } from './gif-board.mjs'
 
 export const optIn = true
 export const runs = 1
@@ -41,10 +42,12 @@ const LAYER = '.tabstack__layer:not(.tabstack__layer--hidden)'
 export const SETTINGS = { memoryReload: false }
 
 /**
- * The 20 files a cycle opens, in open order: 1k and 5k bullet notes, a 5k prose note, twelve 200-line notes, a
- * `.drawio` (30 boxes), an `.excalidraw` with three pictures in `files` (D14), small `.ts` and `.py`, and the 5 MB
- * `.ts`. Each is `[name, kind, write(vault) → path]`.
+ * The 21 files a cycle opens, in open order: 1k and 5k bullet notes, a 5k prose note, twelve 200-line notes, a
+ * `.drawio` (30 boxes), an `.excalidraw` with three pictures in `files` (D14), a board of `GIFS` animated GIFs
+ * (YAZ-3944 D4, YAZ-4071 7K), small `.ts` and `.py`, and the 5 MB `.ts`. Each is `[name, kind, write(vault) → path]`.
  */
+/** The GIF board's GIFs (YAZ-4071 7K): each one plays, so each holds a decoder while the board is in front. */
+export const GIFS = 4
 export const OPENS = (() => {
   const short = (i) => [`Short ${i}`, 'note', (v) => writeNote(v, `Short ${i}`, i % 2 ? 'bullets' : 'prose', 200)]
   const list = [
@@ -52,13 +55,14 @@ export const OPENS = (() => {
     ['Flow', 'diagram', (v) => writeFile(path.join(v, 'Flow.drawio'), flowDiagram(30))],
     ['Bullets 5k', 'note', (v) => writeNote(v, 'Bullets 5k', 'bullets', 5000)],
     ['Sketch', 'drawing', (v) => writeDrawing(v, 'Sketch')],
+    ['GIFs', 'gifs', (v) => writeGifDrawing(v, 'GIFs', GIFS)],
     ['Small TS', 'code', (v) => writeCode(v, 'Small TS', 'ts')],
     ['Prose 5k', 'note', (v) => writeNote(v, 'Prose 5k', 'prose', 5000)],
     ['Small PY', 'code', (v) => writeCode(v, 'Small PY', 'py')],
     ['big-5mb', 'bigCode', (v) => writeBigCode(v)],
   ]
-  // A 200-line note after each of the first eight, then the last four in a row.
-  return [...list.flatMap((f, i) => [f, short(i + 1)]), ...[9, 10, 11, 12].map(short)]
+  // A 200-line note after each of the first eight, then the last four in a row; the GIF board comes with no note after it.
+  return [...list.flatMap((f, i) => (f[1] === 'gifs' ? [f] : [f, short(i + 1 - (i > 4 ? 1 : 0))])), ...[9, 10, 11, 12].map(short)]
 })()
 
 function writeFile(file, text) {
@@ -105,6 +109,7 @@ function shown({ name, kind }) {
   if (kind === 'code') return `(document.querySelector('${LAYER} .editor--code .view-lines')?.textContent.includes(${js(sentinel(name))}) ?? false)`
   if (kind === 'bigCode') return CODE_SHOWN
   if (kind === 'diagram') return 'window.__drawioLoad !== undefined'
+  // The GIF board is on screen once its GIFs play: each one's decoder opens on its first paint (`GIF_PROBE`).
   return `document.querySelector('${LAYER} .editor--drawing canvas') !== null`
 }
 
@@ -116,6 +121,8 @@ async function open(page, f) {
     for (const [type, detail] of [['click', 1], ['click', 2], ['dblclick', 2]]) el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, detail }))
   })()`)
   await page.waitFor(shown(f), OPEN_TIMEOUT_MS)
+  // The GIF board (YAZ-4071 7K): its GIFs play once each decoder opens on its first paint. A build with no GIF player shows them still.
+  if (f.kind === 'gifs') await page.waitFor(`window.__gifDecoders.open >= ${GIFS}`, 10_000).catch(() => undefined)
 }
 
 /** Clicks the tab of note `f` and waits until it is painted. */
@@ -189,8 +196,29 @@ function renderers(mainPid, windowPid) {
   return { rendererRssMb: sum(rss, 'rssMb'), rendererFootprintMb: sum(foot), renderers: rss.size, windowRssMb: rss.get(windowPid)?.rssMb ?? null, windowFootprintMb: foot.get(windowPid) ?? null }
 }
 
-/** How long the end of the run sits idle after the TS worker stopped: macOS gets a stopped worker's memory back 15 to 30 s later (YAZ-3862). */
+/** How long the end of the run sits idle after the TS worker's memory left (`workerReleased`). */
 const SETTLE_MS = 30_000
+
+/**
+ * YAZ-4071 7N: true once the stopped TS worker's memory has left the window's footprint. The worker's target goes when it
+ * stops, but its V8 heap (190 to 290 MB) leaves the renderer's footprint some time later: about 17 s in 7 of 8 runs at load 3,
+ * over 3 min in one. A fixed 30 s after the stop read 307.8 and 423 MB where the settled window holds about 235 MB. `last` is the
+ * last cycle's sample, which holds that heap: the worker's memory left once the footprint fell by half of it.
+ */
+export const workerReleased = (last, footprintMb) => last.workerHeapMb === 0 || last.windowFootprintMb === null || footprintMb <= last.windowFootprintMb - last.workerHeapMb / 2
+
+/** The longest wait for `workerReleased`; a heap still there after it counts in the end numbers. */
+const RELEASE_MAX_MS = 180_000
+
+/** Waits until `workerReleased`, at most RELEASE_MAX_MS. Returns the seconds it took, or null when the heap is still there. */
+async function workerRelease(proc, windowPid, last) {
+  const t0 = performance.now()
+  while (!workerReleased(last, renderers(proc.pid, windowPid).windowFootprintMb)) {
+    if (performance.now() - t0 > RELEASE_MAX_MS) return null
+    await sleep(1000)
+  }
+  return Math.round((performance.now() - t0) / 100) / 10
+}
 
 /** A session's JS heap after GC (MB): 3 collections, then `Runtime.getHeapUsage`. */
 async function heapAfterGc(s, times = 3) {
@@ -250,6 +278,8 @@ async function sample(proc, page, windowPid, workers) {
     ...(h.backingStorageSize !== undefined && { backingStoreMb: mb(h.backingStorageSize) }),
     documents: dom.documents,
     domNodes: dom.nodes,
+    // YAZ-4071 7K: every GIF decoder closed once the GIF board's tab closed (`GIF_PROBE`).
+    gifDecodersOpen: await page.ev('window.__gifDecoders.open'),
     listeners: dom.jsEventListeners,
     ...(await workerHeaps(page, workers)),
     mainHeapMb,
@@ -310,6 +340,7 @@ export async function run(app, fx) {
     await page.waitFor(`document.querySelector(${homeRow}) !== null`, 30_000)
     // draw.io's first `load` message after each open marks the diagram on screen (as the drawio scenario does).
     await page.ev(`window.addEventListener('message', (e) => { if (typeof e.data === 'string' && e.data.includes('"event":"load"')) window.__drawioLoad ??= performance.now() })`)
+    await page.ev(GIF_PROBE)
     await sleep(3000)
     const windowPid = (await windowPids(proc)).w1
     const workers = await watchWorkers(page)
@@ -323,10 +354,12 @@ export async function run(app, fx) {
       if (snapshots !== null && (n === 1 || n === cycles)) await snapshot(page, path.join(snapshots, `cycle-${n}.heapsnapshot`))
     }
     const last = series.at(-1)
-    // The end, every tab closed: the TS worker stops, then SETTLE_MS more idle.
+    // The end, every tab closed: the TS worker stops, its memory leaves the window, then SETTLE_MS more idle.
     const tsWorkerStopSec = await tsWorkerStop(workers)
+    // A worker that never stopped has nothing to release: its heap counts in the end numbers.
+    const workerReleaseSec = tsWorkerStopSec === null ? null : await workerRelease(proc, windowPid, last)
     await sleep(SETTLE_MS)
-    const settled = { tsWorkerStopSec, ...(await sample(proc, page, windowPid, workers)) }
+    const settled = { tsWorkerStopSec, workerReleaseSec, ...(await sample(proc, page, windowPid, workers)) }
     console.error(`long-day settled: ${JSON.stringify(settled)}`)
     return {
       ...leakMetrics(series.map((s) => s.heapMb)),
@@ -348,6 +381,8 @@ export async function run(app, fx) {
       workerHeapEndMb: settled.workerHeapMb,
       workersEnd: settled.workers,
       domNodesEnd: last.domNodes,
+      gifDecodersOpenEnd: settled.gifDecodersOpen,
+      gifDecodersMade: await page.ev('window.__gifDecoders.made'),
       documentsEnd: last.documents,
       listenersEnd: last.listeners,
       mainHeapBeforeCyclesMb: before.mainHeapMb,

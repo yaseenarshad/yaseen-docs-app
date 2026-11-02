@@ -27,8 +27,9 @@ import { normalizeText, measureText } from "./textMeasurements";
 import {
   getStyledTextLayout,
   getTextElementStyledLayout,
-  normalizeLineUnderlines,
 } from "./textLineUnderlines";
+import { hasHostLinks } from "./textLinks";
+import { normalizeTextRuns } from "./textRuns";
 import { isLineElement } from "./typeChecks";
 
 import type {
@@ -274,9 +275,8 @@ export const newTextElement = (
     textDecoration?: ExcalidrawTextElement["textDecoration"];
     strikethrough?: ExcalidrawTextElement["strikethrough"];
     backgroundPaddingScale?: ExcalidrawTextElement["backgroundPaddingScale"];
-    lineBolds?: ExcalidrawTextElement["lineBolds"];
-    lineUnderlines?: ExcalidrawTextElement["lineUnderlines"];
-    lineStrikethroughs?: ExcalidrawTextElement["lineStrikethroughs"];
+    fontStyle?: ExcalidrawTextElement["fontStyle"];
+    textRuns?: ExcalidrawTextElement["textRuns"];
   } & ElementConstructorOpts,
 ): NonDeleted<ExcalidrawTextElement> => {
   const fontFamily = opts.fontFamily || DEFAULT_FONT_FAMILY;
@@ -285,29 +285,23 @@ export const newTextElement = (
   const text = normalizeText(opts.text);
   const textAlign = opts.textAlign || DEFAULT_TEXT_ALIGN;
   const verticalAlign = opts.verticalAlign || DEFAULT_VERTICAL_ALIGN;
-  const logicalLineCount = (opts.originalText ?? text).split("\n").length;
-  const lineBolds = normalizeLineUnderlines(opts.lineBolds, logicalLineCount);
-  const lineUnderlines = normalizeLineUnderlines(
-    opts.lineUnderlines,
-    logicalLineCount,
-  );
-  const lineStrikethroughs = normalizeLineUnderlines(
-    opts.lineStrikethroughs,
-    logicalLineCount,
+  const textRuns = normalizeTextRuns(
+    opts.textRuns,
+    (opts.originalText ?? text).length,
   );
   const metrics = getStyledTextLayout({
     originalText: opts.originalText ?? text,
-    regularFont: getFontString({
-      fontFamily,
-      fontSize,
-      fontWeight: "normal",
-    }),
-    boldFont: getFontString({ fontFamily, fontSize, fontWeight: "bold" }),
+    getFont: ({ bold, italic }) =>
+      getFontString({
+        fontFamily,
+        fontSize,
+        fontWeight: bold ? "bold" : "normal",
+        fontStyle: italic ? "italic" : "normal",
+      }),
     maxWidth: Infinity,
-    lineBolds,
-    lineUnderlines,
-    lineStrikethroughs,
+    textRuns,
     wholeElementBold: opts.fontWeight === "bold",
+    wholeElementItalic: opts.fontStyle === "italic",
     wholeElementUnderlined: opts.textDecoration === "underline",
     wholeElementStrikethrough: opts.strikethrough === true,
     fontSize,
@@ -334,6 +328,7 @@ export const newTextElement = (
     autoResize: opts.autoResize ?? true,
     lineHeight,
     ...(opts.fontWeight === "bold" ? { fontWeight: "bold" as const } : {}),
+    ...(opts.fontStyle === "italic" ? { fontStyle: "italic" as const } : {}),
     ...(opts.textDecoration === "underline"
       ? { textDecoration: "underline" as const }
       : {}),
@@ -341,9 +336,7 @@ export const newTextElement = (
     ...(opts.backgroundPaddingScale !== undefined
       ? { backgroundPaddingScale: opts.backgroundPaddingScale }
       : {}),
-    ...(lineBolds ? { lineBolds } : {}),
-    ...(lineUnderlines ? { lineUnderlines } : {}),
-    ...(lineStrikethroughs ? { lineStrikethroughs } : {}),
+    ...(textRuns ? { textRuns } : {}),
   };
 
   const textElement: NonDeleted<ExcalidrawTextElement> = newElementWith(
@@ -369,9 +362,12 @@ const getAdjustedDimensions = (
     styledMetrics ??
     measureText(nextText, getFontString(element), element.lineHeight);
 
-  // wrapped text
+  // wrapped text (YAZ-4039 D7: grown to hold a pill, which never breaks)
   if (!element.autoResize) {
-    nextWidth = element.width;
+    nextWidth =
+      styledMetrics && hasHostLinks(nextText)
+        ? Math.max(element.width, nextWidth)
+        : element.width;
   }
 
   const { textAlign, verticalAlign } = element;

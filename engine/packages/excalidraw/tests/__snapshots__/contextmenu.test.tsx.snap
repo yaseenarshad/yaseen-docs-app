@@ -102,6 +102,15 @@ exports[`contextMenu element > right-clicking on a group should select whole gro
           "category": "element",
         },
       },
+      {
+        "keyTest": undefined,
+        "label": "labels.pasteAtFullSize",
+        "name": "pasteAtFullSize",
+        "perform": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "label": "labels.selectAllElementsInFrame",
@@ -173,6 +182,15 @@ exports[`contextMenu element > right-clicking on a group should select whole gro
           "category": "menu",
         },
         "viewMode": true,
+      },
+      {
+        "label": [Function],
+        "name": "toggleGifPlayback",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
       },
       "separator",
       {
@@ -4861,6 +4879,15 @@ exports[`contextMenu element > shows 'Group selection' in context menu for multi
           "category": "element",
         },
       },
+      {
+        "keyTest": undefined,
+        "label": "labels.pasteAtFullSize",
+        "name": "pasteAtFullSize",
+        "perform": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "label": "labels.selectAllElementsInFrame",
@@ -4932,6 +4959,15 @@ exports[`contextMenu element > shows 'Group selection' in context menu for multi
           "category": "menu",
         },
         "viewMode": true,
+      },
+      {
+        "label": [Function],
+        "name": "toggleGifPlayback",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
       },
       "separator",
       {
@@ -6087,6 +6123,15 @@ exports[`contextMenu element > shows 'Ungroup selection' in context menu for gro
           "category": "element",
         },
       },
+      {
+        "keyTest": undefined,
+        "label": "labels.pasteAtFullSize",
+        "name": "pasteAtFullSize",
+        "perform": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "label": "labels.selectAllElementsInFrame",
@@ -6158,6 +6203,15 @@ exports[`contextMenu element > shows 'Ungroup selection' in context menu for gro
           "category": "menu",
         },
         "viewMode": true,
+      },
+      {
+        "label": [Function],
+        "name": "toggleGifPlayback",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
       },
       "separator",
       {
@@ -7288,6 +7342,15 @@ exports[`contextMenu element > shows context menu for canvas > [end of test] app
           "category": "element",
         },
       },
+      {
+        "keyTest": undefined,
+        "label": "labels.pasteAtFullSize",
+        "name": "pasteAtFullSize",
+        "perform": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "icon": <svg
@@ -8062,6 +8125,15 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
           "category": "element",
         },
       },
+      {
+        "keyTest": undefined,
+        "label": "labels.pasteAtFullSize",
+        "name": "pasteAtFullSize",
+        "perform": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "label": "labels.selectAllElementsInFrame",
@@ -8133,6 +8205,15 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
           "category": "menu",
         },
         "viewMode": true,
+      },
+      {
+        "label": [Function],
+        "name": "toggleGifPlayback",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
       },
       "separator",
       {
@@ -9062,6 +9143,15 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
           "category": "element",
         },
       },
+      {
+        "keyTest": undefined,
+        "label": "labels.pasteAtFullSize",
+        "name": "pasteAtFullSize",
+        "perform": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
+      },
       "separator",
       {
         "label": "labels.selectAllElementsInFrame",
@@ -9133,6 +9223,15 @@ exports[`contextMenu element > shows context menu for element > [end of test] ap
           "category": "menu",
         },
         "viewMode": true,
+      },
+      {
+        "label": [Function],
+        "name": "toggleGifPlayback",
+        "perform": [Function],
+        "predicate": [Function],
+        "trackEvent": {
+          "category": "element",
+        },
       },
       "separator",
       {

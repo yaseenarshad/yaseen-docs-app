@@ -99,6 +99,45 @@ declare module "image-blob-reduce" {
   export = reduce;
 }
 
+// YAZ-3944 D3: a file and all it imports, bundled into one script (`scripts/buildPackage.js`)
+declare module "*?worker-source" {
+  const source: string;
+  export default source;
+}
+
+// YAZ-3944 D3: the GIF encoder of the shrink (the parts it uses)
+declare module "gifenc/dist/gifenc.esm.js" {
+  type Format = "rgb565" | "rgb444" | "rgba4444";
+  type Palette = number[][];
+  export function quantize(
+    rgba: Uint8Array | Uint8ClampedArray,
+    maxColors: number,
+    options?: { format?: Format; oneBitAlpha?: boolean | number },
+  ): Palette;
+  export function applyPalette(
+    rgba: Uint8Array | Uint8ClampedArray,
+    palette: Palette,
+    format?: Format,
+  ): Uint8Array;
+  export function GIFEncoder(): {
+    writeFrame(
+      index: Uint8Array,
+      width: number,
+      height: number,
+      options?: {
+        palette?: Palette;
+        delay?: number;
+        repeat?: number;
+        transparent?: boolean;
+        transparentIndex?: number;
+        dispose?: number;
+      },
+    ): void;
+    finish(): void;
+    bytes(): Uint8Array<ArrayBuffer>;
+  };
+}
+
 interface CustomMatchers {
   toBeNonNaNNumber(): void;
   toCloselyEqualPoints(

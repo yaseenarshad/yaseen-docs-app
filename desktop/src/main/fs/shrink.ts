@@ -1,7 +1,11 @@
 /**
- * "MOVE PICTURES OUT OF DRAWINGS" (YAZ-1801 D5 in Draw, ported by YAZ-3039) — Settings › Storage's one action: every legacy
- * board in the vault that still embeds its pictures as base64 is rewritten LEAN, the way its next
- * save would have written it, without waiting for someone to open and edit each one.
+ * "MOVE PICTURES OUT OF DRAWINGS" (YAZ-1801 D5 in Draw, ported by YAZ-3039) — Settings › Storage's one action: every
+ * board in the vault that embeds its pictures as base64 is rewritten LEAN, the way a "pictures out"
+ * save writes it, without waiting for someone to open and edit each one. Since pictures are inside
+ * by default (YAZ-3943 D5), it also sets each board that has pictures to `"pictures": "assets"`
+ * (`withPicturesOut`), so its next save keeps them out. A board with no picture at all is left alone. A board
+ * that names its own pictures folder (YAZ-3943 demo round 3) keeps it, and its pictures land there — or in
+ * `assets/` for an outside folder the user never picked (`landingFolder`), where the board still finds them.
  *
  * It is the save's own extraction (`liftEmbedded` + `landAssets` in `drawing.ts`), not a second
  * set of rules: referenced pictures land in `assets/` first (`wx`, EEXIST ok — two boards sharing
@@ -10,15 +14,16 @@
  * are not there. Unreferenced embedded entries are dropped, as a save drops them.
  *
  * WHAT IT DOES NOT DO — the difference from a save, and the reason this is not `drawing:save`:
- * it does not STAMP. The `yaseendraw` block (🔒 YAZ-1834) rides through verbatim — same keys,
- * same values, same place — because moving bytes between files is not an edit, and "Last updated"
+ * it does not STAMP. The `yaseendraw` block (🔒 YAZ-1834) rides through — same dates, same keys,
+ * the flag added — because moving bytes between files is not an edit, and "Last updated"
  * jumping on forty boards the user never touched would be a lie in the sidebar's sort. The text is
  * re-serialized the way every board main writes (2-space, trailing newline).
  *
  * NEVER THROWS PER BOARD. A board it cannot read, parse, or write — or one in `skip` (the renderer
  * passes boards with unsaved edits in a tab: rewriting under a dirty buffer is exactly the
  * conflict bar's case), or one that changed on disk while it was being read — counts as skipped
- * and the walk goes on. Boards with nothing embedded are neither shrunk nor skipped.
+ * and the walk goes on. Boards already out with nothing embedded, and boards with no picture, are
+ * neither shrunk nor skipped.
  *
  * Clean open tabs need nothing from here: the rewrite is an ordinary external change, and the
  * editor's watcher rule reloads a clean tab silently (`DrawingEditor` — echo / reload / conflict).
@@ -26,10 +31,12 @@
 import { stat } from 'node:fs/promises'
 import { MAX_DRAWING_BYTES, type ShrinkResult } from '@shared/types'
 import { isDrawing } from '@shared/fileKind'
-import { serializeBoard } from '@shared/drawingAssets'
+import { BOARD_META_KEY, picturesFolderOf, picturesOut, referencedFileIds, serializeBoard, withPicturesOut } from '@shared/drawingAssets'
 import { readBoundedRegularFile } from './boundedRead'
-import { landAssets, liftEmbedded, parseScene } from './drawing'
+// The store's half only, never `drawing.ts`: this runs in Settings › Storage's worker (YAZ-4071 7B).
+import { landAssets, liftEmbedded, parseScene } from './pictureStore'
 import { atomicWrite, vaultFiles } from './fsUtils'
+import { landingFolder } from './picturesFolders'
 
 /**
  * Every `.excalidraw` in the vault outside the top-level `assets/`, in a stable order. Docs' note
@@ -50,7 +57,7 @@ function hasEmbedded(scene: Record<string, unknown>): boolean {
 
 type Outcome = { kind: 'none' } | { kind: 'skipped' } | { kind: 'shrunk'; bytesMoved: number }
 
-async function shrinkOne(root: string, file: string, skip: ReadonlySet<string>): Promise<Outcome> {
+async function shrinkOne(root: string, file: string, skip: ReadonlySet<string>, approved: readonly string[]): Promise<Outcome> {
   let snapshot: Awaited<ReturnType<typeof readBoundedRegularFile>>
   try {
     snapshot = await readBoundedRegularFile(file, MAX_DRAWING_BYTES, 'too large')
@@ -66,12 +73,13 @@ async function shrinkOne(root: string, file: string, skip: ReadonlySet<string>):
   } catch {
     return { kind: 'skipped' }
   }
-  if (!hasEmbedded(record)) return { kind: 'none' }
+  const out = picturesOut(record[BOARD_META_KEY])
+  if (!hasEmbedded(record) && (out || referencedFileIds(elements).size === 0)) return { kind: 'none' }
   if (skip.has(file)) return { kind: 'skipped' }
   try {
     const { lean: leanScene, lifted } = liftEmbedded(record, elements)
-    const lean = serializeBoard(leanScene)
-    await landAssets(root, lifted)
+    const lean = serializeBoard(withPicturesOut(leanScene, true, snapshot.mtime))
+    await landAssets(root, lifted, await landingFolder(root, picturesFolderOf(record[BOARD_META_KEY]), approved))
     // The cheap guard against a writer that landed while we were decoding: the file must still be
     // the one we read. A tab that saved in between wins, and this board waits for the next click.
     const now = await stat(file)
@@ -83,12 +91,12 @@ async function shrinkOne(root: string, file: string, skip: ReadonlySet<string>):
   }
 }
 
-/** One pass over the vault; boards one at a time, so a 110 MB board is the most held in memory. */
-export async function shrinkVault(root: string, opts: { skip?: readonly string[] } = {}): Promise<ShrinkResult> {
+/** One pass over the vault; boards one at a time, so a 110 MB board is the most held in memory. `approved`: the outside pictures folders the user picked (YAZ-3943 demo round 3). */
+export async function shrinkVault(root: string, opts: { skip?: readonly string[]; approved?: readonly string[] } = {}): Promise<ShrinkResult> {
   const skip = new Set(opts.skip ?? [])
   const result: ShrinkResult = { shrunk: 0, skipped: 0, bytesMoved: 0 }
   for (const file of await boardsUnder(root)) {
-    const outcome = await shrinkOne(root, file, skip)
+    const outcome = await shrinkOne(root, file, skip, opts.approved ?? [])
     if (outcome.kind === 'skipped') result.skipped += 1
     else if (outcome.kind === 'shrunk') {
       result.shrunk += 1

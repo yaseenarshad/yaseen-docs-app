@@ -67,10 +67,11 @@ export const nameCandidate = (name: string): LinkCandidate => ({ name, insert: n
  * So does a row inserting an `id` (YAZ-2293): an id is no view-only spelling, and unlike its
  * name it does link to a note NAMED like a view-only file. Resolution sources stay split.
  */
-export function mergeLinkCandidates(markdown: readonly LinkCandidate[], viewOnly: readonly LinkCandidate[]): LinkCandidate[] {
+export function mergeLinkCandidates(markdown: readonly LinkCandidate[], viewOnly: readonly LinkCandidate[], boardIds?: ReadonlyMap<string, string>): LinkCandidate[] {
   return [
     ...markdown.filter((candidate) => !isViewOnly(candidate.insert.split('|', 1)[0].trim())),
-    ...viewOnly,
+    // A board with an ID is inserted by it, as a note is (YAZ-3943 4C): the picker, a pasted path and a drop write `[[ID]]`.
+    ...(boardIds === undefined || boardIds.size === 0 ? viewOnly : viewOnly.map((row) => (row.path !== undefined && boardIds.has(row.path) ? { ...row, insert: boardIds.get(row.path)! } : row))),
   ]
 }
 

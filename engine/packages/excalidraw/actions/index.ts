@@ -24,7 +24,10 @@ export {
   actionChangeTextStyle,
   actionChangeLineHeight,
   actionToggleTextBold,
+  actionToggleTextItalic,
   actionToggleTextStrikethrough,
+  actionToggleTextHighlight,
+  actionChangeTextHighlight,
   actionToggleTextUnderline,
   actionChangeFontFamily,
   actionChangeTextAlign,
@@ -102,5 +105,6 @@ export { actionToggleSearchMenu } from "./actionToggleSearchMenu";
 export { actionChangeSmartShape } from "./actionSmartShape";
 
 export { actionToggleCropEditor } from "./actionCropEditor";
+export { actionToggleGifPlayback } from "./actionToggleGifPlayback";
 
 export { actionResizeSelectionToPreset } from "../selectionSizePresets";

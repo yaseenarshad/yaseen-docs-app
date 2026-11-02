@@ -47,7 +47,7 @@ describe("restoreElements", () => {
     expect(restoredElements.length).toBe(elements.length);
   });
 
-  it("normalizes imported logical-line text styles", () => {
+  it("converts the old logical-line text styles to text runs (YAZ-3718 D1)", () => {
     const [restored] = restore.restoreElements(
       [
         {
@@ -66,22 +66,55 @@ describe("restoreElements", () => {
 
     expect(restored).toMatchObject({
       type: "text",
-      lineUnderlines: [true],
-      lineBolds: [false, true],
-      lineStrikethroughs: [true],
+      textRuns: [
+        { start: 0, end: 5, underline: true, strikethrough: true },
+        { start: 6, end: 14, bold: true },
+      ],
       strikethrough: true,
     });
+    expect(restored).not.toHaveProperty("lineUnderlines");
+    expect(restored).not.toHaveProperty("lineBolds");
+    expect(restored).not.toHaveProperty("lineStrikethroughs");
   });
 
-  it("round-trips logical-line text styles through scene JSON", () => {
+  it("clamps stale text runs and keeps an italic box (YAZ-3718 D1)", () => {
+    const [restored, plain] = restore.restoreElements(
+      [
+        {
+          ...API.createElement({ type: "text", text: "Short" }),
+          fontStyle: "italic",
+          textRuns: [
+            { start: 2, end: 99, bold: true },
+            { start: 50, end: 60, color: "#e03131" },
+          ],
+        } as any,
+        {
+          ...API.createElement({ type: "text", text: "Plain" }),
+          fontStyle: "oblique",
+          textRuns: [],
+        } as any,
+      ],
+      null,
+    );
+
+    expect(restored).toMatchObject({
+      fontStyle: "italic",
+      textRuns: [{ start: 2, end: 5, bold: true }],
+    });
+    expect(plain).not.toHaveProperty("textRuns");
+    expect(plain).not.toHaveProperty("fontStyle");
+  });
+
+  it("round-trips text runs through scene JSON", () => {
     const element = {
       ...API.createElement({
         type: "text",
         text: "Title\nSubtitle",
       }),
-      lineUnderlines: [true],
-      lineBolds: [false, true],
-      lineStrikethroughs: [true],
+      textRuns: [
+        { start: 0, end: 5, underline: true, strikethrough: true },
+        { start: 6, end: 9, bold: true, italic: true, color: "#1971c2" },
+      ],
       strikethrough: true,
     } as any;
     const serialized = serializeAsJSON(
@@ -94,9 +127,10 @@ describe("restoreElements", () => {
     const [restored] = restore.restoreElements(parsed.elements, null);
 
     expect(restored).toMatchObject({
-      lineUnderlines: [true],
-      lineBolds: [false, true],
-      lineStrikethroughs: [true],
+      textRuns: [
+        { start: 0, end: 5, underline: true, strikethrough: true },
+        { start: 6, end: 9, bold: true, italic: true, color: "#1971c2" },
+      ],
       strikethrough: true,
     });
   });

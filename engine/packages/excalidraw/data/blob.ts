@@ -271,6 +271,14 @@ export const generateIdFromFile = async (file: File): Promise<FileId> => {
   }
 };
 
+/**
+ * YAZ-3944 D16: the id of a shrunk or resized copy: the original's id and a
+ * fixed marker, hashed again. It is known before the shrink, and it never
+ * equals the original's id, which a full-size copy keeps.
+ */
+export const getShrunkFileId = (originalId: FileId) =>
+  generateIdFromFile(new File([`${originalId}:shrunk`], ""));
+
 /** async. For sync variant, use getDataURL_sync */
 export const getDataURL = async (file: Blob | File): Promise<DataURL> => {
   return new Promise((resolve, reject) => {

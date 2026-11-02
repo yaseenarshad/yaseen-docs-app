@@ -8,8 +8,10 @@ import {
   fileIdOfAssetName,
   isValidFileId,
   mimeForAssetExt,
+  newBoardScene,
   parseDataUrl,
   parseBoardMetaBlock,
+  picturesSize,
   referencedFileIds,
   serializeBoard,
   stampBoardMeta,
@@ -26,12 +28,16 @@ describe('names and mimes', () => {
     expect(extForMime('image/jpeg')).toBe('jpg')
     expect(extForMime('image/svg+xml')).toBe('svg')
     expect(extForMime('image/avif')).toBe('avif')
-    expect(extForMime('image/bmp')).toBeNull()
+    // YAZ-4071 7F: every type the engine accepts has a home in the store.
+    expect(extForMime('image/bmp')).toBe('bmp')
+    expect(extForMime('image/x-icon')).toBe('ico')
+    expect(extForMime('image/jfif')).toBe('jfif')
+    expect(extForMime('image/tiff')).toBeNull()
     expect(extForMime('application/json')).toBeNull()
   })
 
   it('reads back every extension it writes — and `jpeg`, which it never writes but files carry', () => {
-    for (const mime of ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/webp', 'image/avif']) {
+    for (const mime of ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/webp', 'image/avif', 'image/bmp', 'image/x-icon', 'image/jfif']) {
       expect(mimeForAssetExt(extForMime(mime)!), mime).toBe(mime)
     }
     expect(mimeForAssetExt('jpeg')).toBe('image/jpeg')
@@ -42,7 +48,7 @@ describe('names and mimes', () => {
 
   it('names a file `<id>.<ext>` and refuses a mime it cannot store', () => {
     expect(assetFileName('abc123', 'image/png')).toBe('abc123.png')
-    expect(assetFileName('abc123', 'image/bmp')).toBeNull()
+    expect(assetFileName('abc123', 'image/tiff')).toBeNull()
   })
 
   it('reads the id back out of a name, and refuses dot-entries and empty stems', () => {
@@ -237,5 +243,34 @@ describe('parseBoardMetaBlock (🔒 YAZ-1834 D6/D7)', () => {
       array: '[{"yaseendraw":{}}]',
     }
     for (const [name, text] of Object.entries(cases)) expect(parseBoardMetaBlock(text), name).toBeNull()
+  })
+})
+
+describe('picturesSize (YAZ-3943 D5, the cog size row)', () => {
+  it('counts each picture a live element uses once, by its decoded size; a deleted element or a missing entry does not count', () => {
+    const b64 = (text: string) => `data:image/png;base64,${Buffer.from(text).toString('base64')}`
+    const elements = [
+      { type: 'image', fileId: 'a' },
+      { type: 'image', fileId: 'a' },
+      { type: 'image', fileId: 'b' },
+      { type: 'image', fileId: 'gone' },
+      { type: 'image', fileId: 'old', isDeleted: true },
+    ]
+    const files = { a: { dataURL: b64('hello') }, b: { dataURL: b64('hi there!') }, old: { dataURL: b64('xxxxxxxx') } }
+    // A live element whose picture has no entry is missing (YAZ-3943 1F); a deleted one is not.
+    expect(picturesSize(elements, files)).toEqual({ bytes: 5 + 9, count: 2, missing: 1 })
+    expect(picturesSize([], files)).toEqual({ bytes: 0, count: 0, missing: 0 })
+    expect(picturesSize(elements, { ...files, gone: { mimeType: 'image/png' } }).missing).toBe(1)
+  })
+})
+
+describe('newBoardScene (YAZ-3943 demo 2 and round 3, one rule: YAZ-4074 6A item 33)', () => {
+  it('keeps the scene for "inside"; "assets" is born pictures out; "folder" names a valid folder, else the vault assets/', () => {
+    const json = serializeBoard({ type: 'excalidraw', elements: [] })
+    const block = (pictures: Parameters<typeof newBoardScene>[1], folder = '') => JSON.parse(newBoardScene(json, pictures, folder, 7))[BOARD_META_KEY]
+    expect(newBoardScene(json, 'inside', 'Pics', 7)).toBe(json)
+    expect(block('assets', 'Pics')).toEqual({ createdAt: 7, updatedAt: 7, pictures: 'assets', switched: { pictures: 7 } })
+    expect(block('folder', 'Pics')).toMatchObject({ pictures: 'assets', picturesFolder: 'Pics' })
+    expect(block('folder', '../out')).not.toHaveProperty('picturesFolder')
   })
 })

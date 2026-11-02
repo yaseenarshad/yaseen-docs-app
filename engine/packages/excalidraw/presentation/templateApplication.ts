@@ -125,7 +125,7 @@ const createTextElement = ({
   origin,
   metadata,
   warnings,
-  lineBolds,
+  textRuns,
 }: {
   presentation: StoryboardPresentation;
   slide: StoryboardSlide;
@@ -135,7 +135,7 @@ const createTextElement = ({
   origin: { x: number; y: number };
   metadata: PresentationChildMetadata;
   warnings: PresentationLayoutWarning[];
-  lineBolds?: boolean[];
+  textRuns?: ExcalidrawTextElement["textRuns"];
 }) => {
   const wrapped = wrapSlotText({ text, slot, slideId: slide.id, warnings });
   const fontFamily = fontFamilyValue(slot.font.family);
@@ -161,7 +161,7 @@ const createTextElement = ({
     textAlign: slot.alignment,
     verticalAlign: slot.verticalAlignment,
     autoResize: false,
-    lineBolds,
+    textRuns,
     strokeColor: slot.role === "eyebrow" ? "#0f5843" : "#14251f",
     roughness: 0,
     locked: false,
@@ -445,7 +445,6 @@ export const applyPresentationTemplate = ({
       warnings,
     });
     const cardText = `${title}\n\n${body}`;
-    const boldLines = title.split("\n").length;
     elements.push(
       createTextElement({
         presentation,
@@ -456,9 +455,8 @@ export const applyPresentationTemplate = ({
         origin,
         metadata: metadata.children.cards(card.id),
         warnings,
-        lineBolds: cardText
-          .split("\n")
-          .map((_, lineIndex) => lineIndex < boldLines),
+        // YAZ-3718 D1: the title in bold
+        textRuns: [{ start: 0, end: title.length, bold: true }],
       }),
     );
   });

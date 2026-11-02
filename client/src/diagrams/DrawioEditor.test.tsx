@@ -363,6 +363,14 @@ describe('read only (YAZ-3076 D2)', () => {
   })
 })
 
+describe("the cog on a diagram (YAZ-3943 D13: the drawing's rows are a drawing's only)", () => {
+  it('has only "Read only": no pictures row, no export rows', async () => {
+    await opened()
+    act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    expect([...container.querySelectorAll('.page-settings__menu > *')].map((r) => r.textContent)).toEqual(['Read only'])
+  })
+})
+
 describe('read only: a change draw.io queued before the switch landed (YAZ-3116 A3)', () => {
   it('an autosave that arrives while the switch is being written saves WITH the switch: draw.io\u2019s XML has no attribute of ours', async () => {
     await opened()

@@ -88,6 +88,14 @@ describe('the user’s drawing keys as the engine’s keyBindings (K5)', () => {
     expect(names({ 'app.search': true })).toEqual([])
   })
 
+  it('YAZ-3943 demo 2: a change of ⌘⇧H (Highlight the selected letters) reaches the engine as its one action, which the text editor hears', () => {
+    const highlight = drawingKeyBindings({ 'drawing.textHighlight': 'CmdOrCtrl+Alt+H' }).filter((b) => b.name !== 'hyperlink')
+    expect(highlight).toHaveLength(1)
+    expect(highlight[0]).toMatchObject({ name: 'toggleTextHighlight', defaults: [{ code: 'KeyH', metaKey: true, altKey: false, shiftKey: true }], keys: [{ code: 'KeyH', metaKey: true, altKey: true, shiftKey: false }] })
+    // Kept as it is: nothing for the engine to move.
+    expect(drawingKeyBindings(undefined).map((b) => b.name)).not.toContain('toggleTextHighlight')
+  })
+
   it('lists only the changed action and tool rows, each with its defaults and the user’s keys', () => {
     // Moved off ⌘K, Search the vault takes no drawing key: nothing changed.
     expect(drawingKeyBindings({ 'app.search': 'CmdOrCtrl+J' })).toEqual([])

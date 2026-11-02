@@ -577,10 +577,17 @@ describe('registerWindowIpc', () => {
     expect(manager.openFromFiles).toHaveBeenCalledExactlyOnceWith('w1', { kind: 'open', path: '/v/a.md', how: 'keep' })
     expect(await fromFiles({ sender }, { kind: 'session', id: 's1', extra: 1 })).toEqual(ok(undefined))
     expect(manager.openFromFiles).toHaveBeenLastCalledWith('w1', { kind: 'session', id: 's1' })
+    // YAZ-3943 5B: a ⌘-click's `copy` passes with a background open only, and only as `true`
+    expect(await fromFiles({ sender }, { kind: 'open', path: '/v/a.md', how: 'background', copy: true })).toEqual(ok(undefined))
+    expect(manager.openFromFiles).toHaveBeenLastCalledWith('w1', { kind: 'open', path: '/v/a.md', how: 'background', copy: true })
+    expect(await fromFiles({ sender }, { kind: 'open', path: '/v/a.md', how: 'keep', copy: true })).toEqual(ok(undefined))
+    expect(manager.openFromFiles).toHaveBeenLastCalledWith('w1', { kind: 'open', path: '/v/a.md', how: 'keep' })
+    expect(await fromFiles({ sender }, { kind: 'open', path: '/v/a.md', how: 'background', copy: 'yes' })).toEqual(ok(undefined))
+    expect(manager.openFromFiles).toHaveBeenLastCalledWith('w1', { kind: 'open', path: '/v/a.md', how: 'background' })
     expect(await fromFiles({ sender }, { kind: 'open', path: '/elsewhere/a.md', how: 'keep' })).toEqual(bad('BAD_REQUEST'))
     expect(await fromFiles({ sender }, { kind: 'open', path: '/v/a.md', how: 'tab' })).toEqual(bad('BAD_REQUEST'))
     expect(await fromFiles({ sender }, { kind: 'delete', path: '/v/a.md' })).toEqual(bad('BAD_REQUEST'))
-    expect(manager.openFromFiles).toHaveBeenCalledTimes(2)
+    expect(manager.openFromFiles).toHaveBeenCalledTimes(5)
     // The identity read above already ended any wide state (bug YAZ-3392); the door's own call is the last one.
     expect(await registered(CONTRACT.window.filesWide.channel)({ sender }, true)).toEqual(ok(undefined))
     expect(manager.filesWide).toHaveBeenLastCalledWith('w1', true)

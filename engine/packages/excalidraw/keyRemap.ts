@@ -124,6 +124,19 @@ export const remapKeyUp = <T extends KeyEvent>(event: T): T => {
 export const keyMovedAway = (action: string, event: KeyEvent) =>
   byName.has(action) && remapped.get(event) !== action;
 
+/**
+ * YAZ-3943 demo 2: whether `event`, in a text field, is the key the user gave
+ * `action` (the text editor's own keys, as ⌘⇧H); undefined when the user kept
+ * its default, which the action's `keyTest` checks.
+ */
+export const textFieldKeyFor = (
+  action: string,
+  event: KeyEvent,
+): boolean | undefined =>
+  byName.has(action)
+    ? byChord.get(chordId(event, codeOf(event)))?.name === action
+    : undefined;
+
 /** the tool the user's chord picks; null for any other key */
 export const boundTool = (event: KeyEvent): string | null => {
   const name = bindingOf(event)?.name;

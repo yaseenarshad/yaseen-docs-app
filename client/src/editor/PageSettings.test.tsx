@@ -470,3 +470,30 @@ describe('PageSettings: Read only', () => {
     expect(menu()).toBeNull()
   })
 })
+
+/** A drawing's rows (YAZ-3943 D5, D13): an info row, action rows with no check mark, a disabled one, and lines between groups. */
+describe('rows made while the menu is open (YAZ-3943)', () => {
+  it('reads `rows` only while open; an action closes the menu; a disabled one does nothing; an info row is text', () => {
+    const act1 = vi.fn()
+    const act2 = vi.fn()
+    const rows = vi.fn(() => [
+      { label: 'Pictures in this file: 1.0 MB (2)', warn: true, divider: true },
+      { label: 'Move pictures out', onToggle: act1, disabled: true },
+      { label: 'Export Image or PDF…', onToggle: act2, divider: true },
+    ])
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<PageSettings readOnly onToggleReadOnly={() => undefined} rows={rows} />))
+    expect(rows).not.toHaveBeenCalled()
+    click(cog())
+    expect([...menu()!.children].map((c) => c.className || c.textContent)).toEqual(['Read only✓', 'page-settings__divider', 'page-settings__warn', 'Move pictures out', 'page-settings__divider', 'Export Image or PDF…'])
+    const named = (label: string) => [...menu()!.querySelectorAll('button')].find((b) => b.textContent === label)!
+    expect(named('Move pictures out').hasAttribute('aria-pressed')).toBe(false)
+    click(named('Move pictures out'))
+    expect(act1).not.toHaveBeenCalled()
+    click(named('Export Image or PDF…'))
+    expect(act2).toHaveBeenCalledTimes(1)
+    expect(menu()).toBeNull()
+  })
+})

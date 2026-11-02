@@ -10,7 +10,7 @@
  * (send a copy) and `properties.onChange` (unwraps `{ root, properties }`). Long form:
  * docs/CONTRACTS.md › Bridge API.
  */
-import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult, MemoryReport, StartView } from './types'
+import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardHoverLinksRequest, BoardPicturesRequest, BoardPicturesResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaRecentRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PickPicturesFolderRequest, PickPicturesFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SavePdfRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult, MemoryReport, StartView } from './types'
 import type { CopyAsMode, CopyAsRich, NoteMenuAction, NoteMenuArg, MemoryTabFacts } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
@@ -95,14 +95,37 @@ export const CONTRACT = {
   },
   /** A board's read-only switch, in the file (YAZ-3076 D1): one key or attribute, an atomic write, refused with `CONFLICT` when the file moved on. */
   setBoardReadOnly: invoke<[req: BoardReadOnlyRequest], BoardReadOnlyResponse>('board:set-read-only', 1),
+  /** A drawing's pictures moved out to `assets/` or its own folder (`folder`, demo round 3), or taken back inside (YAZ-3943 D5): one atomic write, refused with `CONFLICT` when the file moved on. */
+  setBoardPictures: invoke<[req: BoardPicturesRequest], BoardPicturesResponse>('board:set-pictures', 1),
+  /** A drawing's "Link preview on hover" switch (YAZ-3943 demo 2): one atomic write, refused with `CONFLICT` when the file moved on. */
+  setBoardHoverLinks: invoke<[req: BoardHoverLinksRequest], BoardReadOnlyResponse>('board:set-hover-links', 1),
+  /**
+   * This Mac's list of pictures folders OUTSIDE a vault the app may write to (YAZ-3943 demo round 3; `AppState.approvedPictureFolders`,
+   * `ipc/pictureFolders.ts`): a board's "Allow" sheet and Settings › Files & Links › "Allowed picture folders". `allow` checks the
+   * path like a pick (`isValidPicturesFolder`, not a system folder, both at its real place) and refuses `BAD_REQUEST`; `remove` takes it off the list only.
+   * Each answers the list after it.
+   */
+  pictureFolders: {
+    list: invoke<[], string[]>('picture-folders:list', 0),
+    allow: invoke<[folder: string], string[]>('picture-folders:allow', 1),
+    remove: invoke<[folder: string], string[]>('picture-folders:remove', 1),
+  },
   /** Native open-directory dialog parented to the calling window (GRO-2163). */
   pickFolder: invoke<[], PickFolderResponse>('dialog:pick-folder', 0),
+  /**
+   * A board's own pictures folder (YAZ-3943 demo round 3): the same dialog, opened on the board's folder or the vault. It answers a
+   * vault-relative folder for a pick in the vault, and an absolute one for a pick outside it (remembered, or approved at once with
+   * `approveNow`). The vault itself, a system folder, a hidden folder or node_modules, each at its real place, is `BAD_REQUEST`.
+   */
+  pickPicturesFolder: invoke<[req: PickPicturesFolderRequest], PickPicturesFolderResponse>('dialog:pick-pictures-folder', 1),
   /** Native save sheets, parented to the calling window, each with its write in the same door (YAZ-3028). */
   dialog: {
     /** File › Export Drawing… (Draw's YAZ-1821): pick a place, then the standalone `.excalidraw` is written there; `{ cancelled }` writes nothing. */
     saveDrawing: invoke<[req: SaveDrawingRequest], SaveDrawingResponse>('dialog:save-file', 1),
     /** A diagram's Export Image… (Draw's YAZ-1802 D9): a PNG / SVG sheet; the picked extension decides which picture is written. */
     saveImage: invoke<[req: SaveImageRequest], SaveDrawingResponse>('dialog:save-image', 1),
+    /** A drawing's PDF (YAZ-3943 D6): a PDF sheet, then one page the size of the drawing, printed from the SVG in a hidden window. */
+    savePdf: invoke<[req: SavePdfRequest], SaveDrawingResponse>('dialog:save-pdf', 1),
     /** The Components tab's Import (YAZ-3038, Draw's YAZ-1833): pick one `.excalidraw` outside the vault and get its bytes; `{ cancelled }` reads nothing. */
     openDrawing: invoke<[], OpenDrawingResponse>('dialog:open-file', 0),
   },

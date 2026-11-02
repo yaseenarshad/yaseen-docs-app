@@ -1,4 +1,4 @@
-import { exportToCanvas } from "@excalidraw/utils/export";
+import { exportToCanvas, exportToSvg } from "@excalidraw/utils/export";
 import React, { useEffect, useRef, useState } from "react";
 
 import {
@@ -33,6 +33,7 @@ import { RadioGroup } from "./RadioGroup";
 import { Switch } from "./Switch";
 import { Tooltip } from "./Tooltip";
 import { FilledButton } from "./FilledButton";
+import { useAppProps, useExcalidrawSetAppState } from "./App";
 
 import "./ImageExportDialog.scss";
 
@@ -91,6 +92,12 @@ const ImageExportModal = ({
   const [renderError, setRenderError] = useState<Error | null>(null);
 
   const { onCopy, copyStatus, resetCopyStatus } = useCopyStatus();
+  // Yaseen Docs (YAZ-3943 D6): the host makes the PDF; the button shows only when it says it can.
+  const { onExportPdf } = useAppProps();
+  // YAZ-4074 6A item 9: one PDF at a time (a ref, so a double click before the next render waits too); a failure says so.
+  const setAppState = useExcalidrawSetAppState();
+  const pdfRunning = useRef(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => {
     // if user changes setting right after export to clipboard, reset the status
@@ -325,6 +332,49 @@ const ImageExportModal = ({
           >
             {t("imageExportDialog.button.exportToSvg")}
           </FilledButton>
+          {onExportPdf && (
+            <FilledButton
+              className="ImageExportModal__settings__buttons__button"
+              label={t("imageExportDialog.title.exportToPdf")}
+              status={pdfBusy ? "loading" : null}
+              onClick={async () => {
+                if (pdfRunning.current) {
+                  return;
+                }
+                pdfRunning.current = true;
+                setPdfBusy(true);
+                try {
+                  // Background, Dark mode and Only selected apply; Scale and Embed scene do not (one page the size of the drawing).
+                  const svg = await exportToSvg({
+                    elements: exportedElements,
+                    appState: {
+                      ...appStateSnapshot,
+                      exportBackground: exportWithBackground,
+                      exportWithDarkMode,
+                      exportScale: 1,
+                      exportEmbedScene: false,
+                    },
+                    files,
+                    exportPadding: DEFAULT_EXPORT_PADDING,
+                    exportingFrame,
+                  });
+                  await onExportPdf(svg.outerHTML, {
+                    width: Number(svg.getAttribute("width")),
+                    height: Number(svg.getAttribute("height")),
+                  });
+                } catch (error) {
+                  console.error(error);
+                  setAppState({ errorMessage: t("errors.pdfExportFailed") });
+                } finally {
+                  pdfRunning.current = false;
+                  setPdfBusy(false);
+                }
+              }}
+              icon={downloadIcon}
+            >
+              {t("imageExportDialog.button.exportToPdf")}
+            </FilledButton>
+          )}
           {(probablySupportsClipboardBlob || isFirefox) && (
             <FilledButton
               className="ImageExportModal__settings__buttons__button"

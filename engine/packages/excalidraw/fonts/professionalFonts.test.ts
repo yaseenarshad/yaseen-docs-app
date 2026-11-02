@@ -84,7 +84,7 @@ describe("professional font registration", () => {
     expect(load).toHaveBeenCalledTimes(2);
   });
 
-  it("requests Regular and Bold faces for mixed logical-line weights", async () => {
+  it("requests Regular and Bold faces for a bold text run", async () => {
     vi.clearAllMocks();
     const check = vi.spyOn(document.fonts, "check").mockReturnValue(false);
     const load = vi.spyOn(document.fonts, "load").mockResolvedValue([]);
@@ -97,7 +97,7 @@ describe("professional font registration", () => {
           text: "Title\nBody",
         }),
         fontWeight: "normal",
-        lineBolds: [true],
+        textRuns: [{ start: 0, end: 5, bold: true }],
       },
     ]);
 

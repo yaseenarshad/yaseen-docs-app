@@ -81,7 +81,7 @@ describe("pruneFiles (YAZ-3737 D14)", () => {
     );
 
     // The user deletes b; c leaves with no undo step (as a change from elsewhere does).
-    edit([a, newElementWith(b, { isDeleted: true }), c]);
+    edit([a, newElementWith(b as ExcalidrawElement, { isDeleted: true }), c]);
     API.updateScene({
       elements: h.app.scene
         .getElementsIncludingDeleted()
@@ -131,36 +131,33 @@ describe("undo limit (YAZ-3737 D15)", () => {
     await render(<Excalidraw handleKeyboardGlobally={true} />);
   });
 
-  it(
-    "keeps the newest 500 steps of 600, and they all still undo",
-    { timeout: 60_000 },
-    async () => {
-      const rect = API.createElement({ type: "rectangle", id: "r", x: 0 });
+  it("keeps the newest 500 steps of 600, and they all still undo", async () => {
+    const rect = API.createElement({ type: "rectangle", id: "r", x: 0 });
+    API.updateScene({
+      elements: [rect],
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    for (let x = 1; x <= 600; x++) {
       API.updateScene({
-        elements: [rect],
-        captureUpdate: CaptureUpdateAction.NEVER,
+        elements: [newElementWith(h.elements[0], { x })],
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       });
-      for (let x = 1; x <= 600; x++) {
-        API.updateScene({
-          elements: [newElementWith(h.elements[0], { x })],
-          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-        });
-      }
-      expect(API.getUndoStack().length).toBe(MAX_UNDO_STEPS);
+    }
+    expect(API.getUndoStack().length).toBe(MAX_UNDO_STEPS);
 
+    Keyboard.undo();
+    expect(h.elements[0].x).toBe(599);
+    for (let i = 1; i < MAX_UNDO_STEPS; i++) {
       Keyboard.undo();
-      expect(h.elements[0].x).toBe(599);
-      for (let i = 1; i < MAX_UNDO_STEPS; i++) {
-        Keyboard.undo();
-      }
-      // The 100 oldest steps are gone: undo stops at x = 100, and one more does nothing.
-      expect(h.elements[0].x).toBe(100);
-      expect(API.getUndoStack().length).toBe(0);
-      Keyboard.undo();
-      expect(h.elements[0].x).toBe(100);
+    }
+    // The 100 oldest steps are gone: undo stops at x = 100, and one more does nothing.
+    expect(h.elements[0].x).toBe(100);
+    expect(API.getUndoStack().length).toBe(0);
+    Keyboard.undo();
+    expect(h.elements[0].x).toBe(100);
 
-      Keyboard.redo();
-      expect(h.elements[0].x).toBe(101);
-    },
-  );
+    Keyboard.redo();
+    expect(h.elements[0].x).toBe(101);
+  }, // the engine's vitest 3.0 types take the timeout last, not an options object first
+  60_000);
 });

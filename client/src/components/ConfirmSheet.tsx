@@ -20,6 +20,8 @@ export interface ConfirmSheetProps {
   labelId: string
   text: ReactNode
   confirmLabel: string
+  /** The cancel button's words; "Cancel" unless the sheet's question asks for others ("Not now", YAZ-3943 demo round 3). */
+  cancelLabel?: string
   danger?: boolean
   keys?: 'window' | 'sheet' | 'contained'
   onConfirm: () => void
@@ -36,7 +38,7 @@ export interface ConfirmSheetProps {
   focusConfirm?: boolean
 }
 
-export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys = 'window', onConfirm, onCancel, confirmDisabled = false, children, focusConfirm = false }: ConfirmSheetProps) {
+export function ConfirmSheet({ labelId, text, confirmLabel, cancelLabel = 'Cancel', danger = false, keys = 'window', onConfirm, onCancel, confirmDisabled = false, children, focusConfirm = false }: ConfirmSheetProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
 
@@ -82,7 +84,7 @@ export function ConfirmSheet({ labelId, text, confirmLabel, danger = false, keys
         {children}
         <div className="confirm__actions">
           <button ref={cancelRef} type="button" className="confirm__btn" onClick={onCancel}>
-            Cancel
+            {cancelLabel}
           </button>
           <button ref={confirmRef} type="button" className={danger ? 'confirm__btn confirm__btn--danger' : 'confirm__btn'} disabled={confirmDisabled} onClick={onConfirm}>
             {confirmLabel}

@@ -59,6 +59,33 @@ describe('vaultStorage (YAZ-1801 D2)', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect(stats.large).toEqual([])
   })
 
+  it("YAZ-4127 6B1: a board's own pictures folder counts as pictures — its top-level picture files, each one time; an outside folder only when this Mac allows it", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'mdapp-storage-'))
+    const outside = await mkdtemp(path.join(tmpdir(), 'mdapp-storage-out-'))
+    const stranger = await mkdtemp(path.join(tmpdir(), 'mdapp-storage-not-allowed-'))
+    cleanups.push(() => rm(root, { recursive: true, force: true }), () => rm(outside, { recursive: true, force: true }), () => rm(stranger, { recursive: true, force: true }))
+    const out = (picturesFolder: string) => JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, pictures: 'assets', picturesFolder }, type: 'excalidraw', elements: [], files: {} })
+    const trip = await write(root, 'Boards/Trip.excalidraw', out('Trip pictures'))
+    // a second board names the same folder: its pictures count one time
+    const again = await write(root, 'Boards/Trip 2.excalidraw', out('Trip pictures'))
+    const far = await write(root, 'Far.excalidraw', out(outside))
+    const nope = await write(root, 'Nope.excalidraw', out(stranger))
+    const aaa = await write(root, 'Trip pictures/aaa.png', 'aaa')
+    const bbb = await write(root, 'Trip pictures/bbb.gif', 'bbbb')
+    // not a picture the board can read: a text file, and a file in a folder under it
+    const notes = await write(root, 'Trip pictures/notes.txt', 'notes')
+    const deeper = await write(root, 'Trip pictures/old/ccc.png', 'ccc')
+    const ccc = await write(outside, 'ccc.png', 'ccccc')
+    await write(outside, 'deep/ddd.png', 'not walked')
+    await write(stranger, 'eee.png', 'not allowed')
+
+    const stats = await vaultStorage(root, { approved: [outside] })
+
+    expect(stats.boards).toEqual({ bytes: trip + again + far + nope, count: 4 })
+    expect(stats.pictures).toEqual({ bytes: aaa + bbb + ccc, count: 3 })
+    expect(stats.other).toEqual({ bytes: notes + deeper, count: 2 })
+  })
+
   it('lists EVERY file at or over 50 MiB — board, picture, anything else — biggest first, and nothing under it', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'mdapp-storage-'))
     cleanups.push(() => rm(root, { recursive: true, force: true }))

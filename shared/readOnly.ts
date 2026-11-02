@@ -16,7 +16,7 @@
  * Pure: no fs, no DOM. Main's door (`desktop/src/main/fs/boardReadOnly.ts`) and the renderer
  * (`transformFile` for a note) both use it. Tests: `desktop/src/main/fs/readOnly.test.ts`.
  */
-import { BOARD_META_KEY } from './drawingAssets'
+import { BOARD_META_KEY, withSwitchTime } from './drawingAssets'
 import { mxfileOpenTag, wrapBareModel } from './diagramFile'
 import { frontmatterInterior, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 import { isFiniteNumber, isRecord } from './guards'
@@ -69,18 +69,17 @@ export function isDrawingReadOnly(scene: Record<string, unknown>): boolean {
  * The scene with the switch on or off; the SAME object when it already is (S11). The block comes
  * back FIRST, where the tree and the save door read it off the file head. A block with no dates gets
  * `bornAt` (the file's mtime) for both, as `guardedStamp` dates a dateless board — without two finite
- * dates the save door would not trust the block, and the next save would drop the switch. Off of a
- * block that is then empty removes the block. Every other key of the block and the scene stays (S5).
+ * dates the save door would not trust the block, and the next save would drop the switch. Every
+ * other key of the block and the scene stays (S5). The switch records `at` as its change time
+ * (YAZ-3943 1E: the newest change wins a two-Mac merge), so off keeps the block, with its dates.
  */
-export function withDrawingReadOnly(scene: Record<string, unknown>, on: boolean, bornAt: number): Record<string, unknown> {
+export function withDrawingReadOnly(scene: Record<string, unknown>, on: boolean, bornAt: number, at = Date.now()): Record<string, unknown> {
   const { [BOARD_META_KEY]: own, ...rest } = scene
   const held = isRecord(own) && READ_ONLY_KEY in own
   if (on ? isDrawingReadOnly(scene) : !held) return scene
-  const { [READ_ONLY_KEY]: _old, ...block } = isRecord(own) ? own : {}
-  if (!on) return Object.keys(block).length === 0 ? rest : { [BOARD_META_KEY]: block, ...rest }
-  const { createdAt, updatedAt, ...extras } = block
+  const { [READ_ONLY_KEY]: _old, createdAt, updatedAt, ...extras } = isRecord(own) ? own : {}
   const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }
-  return { [BOARD_META_KEY]: { ...dates, ...extras, [READ_ONLY_KEY]: true }, ...rest }
+  return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...(on ? { [READ_ONLY_KEY]: true } : {}) }, READ_ONLY_KEY, at), ...rest }
 }
 
 // ---------- A diagram ----------

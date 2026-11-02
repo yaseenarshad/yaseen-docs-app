@@ -141,8 +141,10 @@ export const getTextListMode = (
 const formatLineForMode = (
   line: string,
   mode: Exclude<TextListMode, "mixed">,
+  // YAZ-3943 demo 2: the caret's own empty line (a new box) gets its marker
+  markEmpty = false,
 ) => {
-  if (!line.trim()) {
+  if (!line.trim() && (!markEmpty || mode === "plain")) {
     return line;
   }
   const parsed = parseTextListLine(line);
@@ -224,7 +226,10 @@ const mapOffset = (
   const oldContentStart = getContentStart(record.raw);
   const newContentStart = getContentStart(nextLines[lineIndex]);
   const nextLocalOffset =
-    localOffset <= record.parsed.indentation.length
+    // YAZ-3943 demo 2: an empty line that got its marker: the caret after it
+    !record.raw.trim() && nextLines[lineIndex] !== record.raw
+      ? newContentStart
+      : localOffset <= record.parsed.indentation.length
       ? localOffset
       : localOffset >= oldContentStart
       ? localOffset + newContentStart - oldContentStart
@@ -244,7 +249,9 @@ export const setTextListMode = (
     selectionEnd,
   );
   const nextLines = records.map(({ raw }, index) =>
-    index >= first && index <= last ? formatLineForMode(raw, mode) : raw,
+    index >= first && index <= last
+      ? formatLineForMode(raw, mode, first === last)
+      : raw,
   );
   normalizeNumberedLines(nextLines);
 

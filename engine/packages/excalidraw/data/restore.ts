@@ -34,7 +34,8 @@ import {
   normalizeArrowhead,
   isPointInElement,
   isValidPolygon,
-  normalizeLineUnderlines,
+  convertLineStylesToTextRuns,
+  normalizeTextRuns,
   normalizeTextBackgroundPaddingScale,
   projectFixedPointOntoDiagonal,
   isNonDeletedElement,
@@ -534,19 +535,31 @@ export const restoreElement = (
       }
       const text = (typeof element.text === "string" && element.text) || "";
       const originalText = element.originalText || text;
-      const logicalLineCount = originalText.split("\n").length;
-      const lineBolds = normalizeLineUnderlines(
-        (element as { lineBolds?: unknown }).lineBolds,
-        logicalLineCount,
+      // YAZ-3718 D1: the old per-line flags become runs, one over each
+      // flagged line; the file saves runs on its next save
+      const legacyLineStyles = element as {
+        lineBolds?: unknown;
+        lineUnderlines?: unknown;
+        lineStrikethroughs?: unknown;
+      };
+      const textRuns = normalizeTextRuns(
+        [
+          ...convertLineStylesToTextRuns(originalText, {
+            bold: legacyLineStyles.lineBolds,
+            underline: legacyLineStyles.lineUnderlines,
+            strikethrough: legacyLineStyles.lineStrikethroughs,
+          }),
+          ...(Array.isArray(element.textRuns) ? element.textRuns : []),
+        ],
+        originalText.length,
       );
-      const lineUnderlines = normalizeLineUnderlines(
-        (element as { lineUnderlines?: unknown }).lineUnderlines,
-        logicalLineCount,
-      );
-      const lineStrikethroughs = normalizeLineUnderlines(
-        (element as { lineStrikethroughs?: unknown }).lineStrikethroughs,
-        logicalLineCount,
-      );
+      delete legacyLineStyles.lineBolds;
+      delete legacyLineStyles.lineUnderlines;
+      delete legacyLineStyles.lineStrikethroughs;
+      const fontStyle =
+        (element as { fontStyle?: unknown }).fontStyle === "italic"
+          ? ("italic" as const)
+          : undefined;
       const strikethrough =
         (element as { strikethrough?: unknown }).strikethrough === true
           ? true
@@ -579,20 +592,16 @@ export const restoreElement = (
         originalText,
         autoResize: element.autoResize ?? true,
         lineHeight,
-        lineBolds,
-        lineUnderlines,
-        lineStrikethroughs,
+        textRuns,
+        fontStyle,
         strikethrough,
         backgroundPaddingScale,
       });
-      if (!lineBolds) {
-        delete (element as { lineBolds?: unknown }).lineBolds;
+      if (!textRuns) {
+        delete (element as { textRuns?: unknown }).textRuns;
       }
-      if (!lineUnderlines) {
-        delete (element as { lineUnderlines?: unknown }).lineUnderlines;
-      }
-      if (!lineStrikethroughs) {
-        delete (element as { lineStrikethroughs?: unknown }).lineStrikethroughs;
+      if (!fontStyle) {
+        delete (element as { fontStyle?: unknown }).fontStyle;
       }
       if (!strikethrough) {
         delete (element as { strikethrough?: unknown }).strikethrough;

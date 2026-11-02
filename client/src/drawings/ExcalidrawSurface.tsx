@@ -32,13 +32,13 @@
  * often a field the serializer writes (the canvas background, the grid size) has moved since the
  * engine's first `onChange` — so a canvas background change is an edit like any other.
  *
- * TWO SHAPES ON DISK, ONE WRITER: `serializeAsJSON(…, 'local')` is the library's own writer either
- * way, with `source` pinned (`engine.ts`) and a trailing newline.
- *  - `serialize()` is a TAB's save (Draw's 🔒 YAZ-1775 D3): the scene with an EMPTY files map, plus
- *    the engine's live images and the ids the scene still references, so the host can ship what
- *    the `assets/` store lacks (`unpersistedFiles`) without ever seeing an engine type.
- *  - `standalone()` is the scene with every image it uses INSIDE it: the note embed's own sidecar
- *    shape (rule 28, unchanged) and File › Export Drawing…'s file (`exportDrawing.ts`).
+ * ONE WRITER: `serializeAsJSON(…, 'local')` is the library's own writer, with `source` pinned
+ * (`engine.ts`) and a trailing newline. `serialize()` is a save, by a tab and by the note's popup
+ * (YAZ-3943 1A1): the scene with an EMPTY files map, plus the engine's live images and the ids the
+ * scene still references, so the host can ship what main lacks (`unpersistedFiles`) without ever
+ * seeing an engine type. Main puts the pictures back inside the file (YAZ-3943 D5), or in `assets/`
+ * for a "pictures out" board: the renderer never serializes them per save, so typing does not pay
+ * for them. File › Export Drawing… writes its own standalone copy (`exportDrawing.ts`).
  *
  * ⚡ EVERY PROP HANDED TO THE ENGINE IS STABLE. `<Excalidraw>` is memoized and calls `onChange`
  * whenever it renders, so a prop rebuilt per render is a feedback loop (React error #185, caught
@@ -65,18 +65,18 @@
  */
 import { requestKeySheet } from '../keys/keySheetRequest'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import { referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
+import { picturesSize, referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
 import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type PageView } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
-import type { HotkeyAside } from '@shared/keys'
+import type { HotkeyAside, MouseMods } from '@shared/keys'
 import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
 import { contentVersion } from './contentVersion'
 import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
 import { openViewport, type DrawingScene } from './drawingScene'
 import { applyToolbarMode, loadExcalidraw, type ExcalidrawModule } from './engine'
-import { assembleStandaloneScene } from './exportDrawing'
+import { assembleExportCopy } from './exportDrawing'
 import { yaseenFormFactor } from './formFactor'
 import { applyFramesVisibility } from './framesVisibility'
 import { drawingKeyBindings, drawingKeysKey, pressed } from './drawingKeys'
@@ -97,8 +97,6 @@ export interface DrawingSnapshot {
    * (`files: {}`), the engine's live image map, and the ids the scene still references.
    */
   serialize(): { json: string; files: Record<string, DrawingFileData>; referenced: Set<string> }
-  /** The scene with every image it uses embedded: the note embed's sidecar (rule 28). */
-  standalone(): string
 }
 
 /** The engine-free handle a host gets; nothing in it names the package. */
@@ -111,8 +109,10 @@ export interface DrawingSurfaceApi {
   openImageExport(): void
   /** View › Canvas Background (Draw's 🔒 YAZ-1775 D10): `appState.viewBackgroundColor`, which the engine then writes into the file. */
   setCanvasBackground(color: string): void
-  /** File › Export Drawing… (Draw's YAZ-1821): the canvas as a STANDALONE `.excalidraw`, the whole live files map embedded. */
-  exportScene(): string
+  /** File › Export Drawing… (Draw's YAZ-1821): the canvas as a STANDALONE `.excalidraw`, the whole live files map embedded, in the standard fonts, measured again (YAZ-3943 D14, 1D1). */
+  exportScene(): Promise<string>
+  /** The cog's size row (YAZ-3943 D5): the pictures the canvas uses now, and those with no bytes (1F), counted when asked (`picturesSize`). */
+  pictures(): { bytes: number; count: number; missing: number }
   /**
    * Replace what the canvas shows (the file changed on disk under a clean tab). Returns the
    * version the engine will report for it — the host's new clean baseline — computed from the
@@ -121,6 +121,16 @@ export interface DrawingSurfaceApi {
   replaceScene(scene: DrawingScene): number
   /** The pan and zoom now (YAZ-3737 D13): what a tab that goes to sleep, or is copied, starts on again. */
   canvas(): NonNullable<PageView['canvas']>
+}
+
+/**
+ * The board's page links (YAZ-4039 D7, D11): the engine's `hostLinks` (`drawingLinks.ts`), and the open of a shape's
+ * link. One object for the surface's life (the prop-stability rule).
+ */
+export interface DrawingSurfaceLinks {
+  hostLinks: NonNullable<ExcalidrawProps['hostLinks']>
+  /** A shape's link icon was clicked: true when the host took it, and the engine never opens it. */
+  openShapeLink: (link: string, event: MouseMods) => boolean
 }
 
 export interface DrawingSurfaceProps {
@@ -177,6 +187,13 @@ export interface DrawingSurfaceProps {
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
+  /** Page links (YAZ-4039): the tab passes them; the note embed's modal does not, and its pills stay text. */
+  links?: DrawingSurfaceLinks
+  /**
+   * The export box's PDF button (YAZ-3943 D6): the engine's SVG of the export and its size, for the host to
+   * make the PDF. The tab passes it; without it the box has no PDF button. Read once, at mount.
+   */
+  onExportPdf?: (svg: string, size: { width: number; height: number }) => void | Promise<void>
 }
 
 /**
@@ -242,6 +259,8 @@ export function ExcalidrawSurface({
   readOnly = false,
   hotkeys,
   hotkeysAside,
+  links,
+  onExportPdf,
 }: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
   /** The canvas panel is the tab's (see the module doc); read once, so a surface never changes mode. */
@@ -294,6 +313,22 @@ export function ExcalidrawSurface({
   /** Read by the panel keys below, which are bound once. */
   const hotkeysRef = useRef(hotkeys)
   hotkeysRef.current = hotkeys
+  /** Read by `onLinkOpen`, which is made once. */
+  const linksRef = useRef(links)
+  linksRef.current = links
+  /** The PDF button (YAZ-3943 D6): one engine prop for the surface's life, or none; the host's latest callback through a ref. */
+  const exportPdfRef = useRef(onExportPdf)
+  exportPdfRef.current = onExportPdf
+  const [exportPdf] = useState(() => (onExportPdf === undefined ? undefined : (svg: string, size: { width: number; height: number }) => exportPdfRef.current?.(svg, size)))
+
+  /**
+   * A shape's link icon (YAZ-4039 D7): a `[[link]]` or a vault path opens through the host. A local link the host does
+   * not take is stopped too, also with no host: the engine opens a `/` path in this window, which would move the app away.
+   */
+  const onLinkOpen = useCallback<NonNullable<ExcalidrawProps['onLinkOpen']>>((element, event) => {
+    const link = element.link ?? ''
+    if (linksRef.current?.openShapeLink(link, event.detail.nativeEvent) ?? !/^(https?|mailto):/i.test(link.trim())) event.preventDefault()
+  }, [])
   // The engine's `keyBindings` (YAZ-3564 K5), rebuilt only when a DRAWING key moved: a fresh identity on every
   // settings write would re-render the memoized `<Excalidraw>` for nothing (the #185 rule).
   const drawingKeys = drawingKeysKey(hotkeys, hotkeysAside)
@@ -536,14 +571,15 @@ export function ExcalidrawSurface({
       setCanvasBackground: (color) => {
         if (!readOnlyRef.current) api.updateScene({ appState: { viewBackgroundColor: color } as unknown as EngineAppState })
       },
-      // The FULL files map, straight off the engine: everything hydrated out of `assets/` at load
-      // plus anything pasted since and not yet saved. The store's copy would be missing the second half.
+      // The FULL files map, straight off the engine: everything hydrated at load plus anything pasted
+      // since and not yet saved. The copy leaves the app, so it takes the standard fonts (YAZ-3943 D14).
       exportScene: () =>
-        assembleStandaloneScene(mod, {
+        assembleExportCopy(mod, {
           elements: api.getSceneElements() as readonly unknown[],
           appState: api.getAppState() as unknown as Record<string, unknown>,
           files: api.getFiles() as unknown as Record<string, unknown>,
         }),
+      pictures: () => picturesSize(api.getSceneElements() as readonly unknown[], api.getFiles() as unknown as Record<string, unknown>),
       replaceScene: (next) => {
         const restored = mod.restoreElements(next.elements as ChangeArgs[0], null)
         // A new scene, a new count: computed BEFORE the engine reports it, so its first `onChange` agrees.
@@ -621,6 +657,9 @@ export function ExcalidrawSurface({
         // still leaves view mode: the engine sets it to `!!viewModeEnabled` when the prop changes.
         viewModeEnabled={readOnly ? true : undefined}
         keyBindings={keyBindings}
+        hostLinks={links?.hostLinks}
+        onExportPdf={exportPdf}
+        onLinkOpen={onLinkOpen}
       >
         {canvasSidebar}
       </Excalidraw>
@@ -669,13 +708,12 @@ function snapshotOf(
         if (typeof entry?.dataURL === 'string' && typeof entry.mimeType === 'string') live[id] = { mimeType: entry.mimeType, dataURL: entry.dataURL }
       }
       return {
-        // Draw's 🔒 YAZ-1775 D3: an EMPTY files map on purpose — the scene names its images and never
-        // carries them. A text file in a git vault ends with a newline, as a new drawing is written.
+        // An EMPTY files map on purpose: main embeds the pictures (YAZ-3943 D5) or keeps them in
+        // `assets/`, so a save never stringifies them here. A text file in a git vault ends with a newline.
         json: `${engine.serializeAsJSON(elements, appState, {}, 'local')}\n`,
         files: live,
         referenced: referencedFileIds(elements),
       }
     },
-    standalone: () => assembleStandaloneScene(engine, { elements, appState: appState as unknown as Record<string, unknown>, files: files as unknown as Record<string, unknown> }),
   }
 }

@@ -27,6 +27,7 @@ diagram.save/1: invoke diagram:save ["a0"]; => "answer"; !> {"code":"NOT_FOUND",
 dialog.openDrawing/0: invoke dialog:open-file []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 dialog.saveDrawing/1: invoke dialog:save-file ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 dialog.saveImage/1: invoke dialog:save-image ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+dialog.savePdf/1: invoke dialog:save-pdf ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 drawing.libraryFolder/0: invoke drawing:library-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 drawing.load/1: invoke drawing:load ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 drawing.save/1: invoke drawing:save ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -131,6 +132,10 @@ menu.onWhatsNew/1: on menu:whats-new -> listener[[{"id":"0-0-0-0-0","ev":"ev","r
 menu.onZoom/1: on menu:zoom -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:zoom
 mintNoteId/1: invoke fs:mint-note-id ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 pickFolder/0: invoke dialog:pick-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+pickPicturesFolder/1: invoke dialog:pick-pictures-folder ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+pictureFolders.allow/1: invoke picture-folders:allow ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+pictureFolders.list/0: invoke picture-folders:list []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+pictureFolders.remove/1: invoke picture-folders:remove ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 properties.get/1: invoke properties:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 properties.onChange/1: on properties:changed -> listener[["props"]]; off properties:changed
 properties.removeProperty/2: invoke properties:remove-property ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -143,6 +148,8 @@ readPdf/1: invoke fs:read-pdf ["a0"]; => "answer"; !> {"code":"NOT_FOUND","messa
 readTextHead/1: invoke fs:read-text-head ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 secrets.has/1: invoke secrets:has ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 secrets.set/1: invoke secrets:set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+setBoardHoverLinks/1: invoke board:set-hover-links ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+setBoardPictures/1: invoke board:set-pictures ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardReadOnly/1: invoke board:set-read-only ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 share.accounts/1: invoke share:accounts ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 share.disconnect/2: invoke share:disconnect ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

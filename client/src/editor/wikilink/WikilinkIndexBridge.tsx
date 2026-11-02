@@ -41,7 +41,7 @@ export interface WikilinkIndexBridgeProps {
 }
 
 export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly, onSnapshot }: WikilinkIndexBridgeProps) {
-  const { status, records, folders, ids, letters, ask, unfinished } = useIndex(root, watch)
+  const { status, records, folders, ids, letters, ask, unfinished, boards } = useIndex(root, watch)
   // The folders a link can name (YAZ-2290 D10) come off the window's one tree feed. Read as ONE
   // string, so a tree that moved no folder wakes no editor (YAZ-2196).
   const dirList = useSyncExternalStore(
@@ -70,15 +70,17 @@ export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly,
   const semantic = useMemo(() => {
     if (!ready) return null
     const dirs = dirList === '' ? [] : dirList.split('\n')
-    const resolve = linkResolver(records, root, dirs, folders, letters)
-    return { resolve, rows: [...linkCandidates(records), ...folderLinkCandidates(root, dirs, resolve, folders)] }
-  }, [ready, records, folders, letters, root, dirList])
+    const resolve = linkResolver(records, root, dirs, folders, letters, boards)
+    // A board's ID by its path (YAZ-3943 4C): its picker row inserts it.
+    const boardIds = new Map(boards.map((board) => [board.path, board.id]))
+    return { resolve, boardIds, rows: [...linkCandidates(records), ...folderLinkCandidates(root, dirs, resolve, folders)] }
+  }, [ready, records, folders, letters, boards, root, dirList])
   useEffect(() => {
     if (semantic === null) return
     // The snapshot rides ALONG with the resolver (Links D, GRO-2193): the backlinks section
     // reads both off the same source, so N and the resolution behind it always agree.
     source.update(semantic.resolve, records, folders, ids, letters)
-    candidates?.update(mergeLinkCandidates(semantic.rows, viewOnly?.catalog?.candidates ?? []))
+    candidates?.update(mergeLinkCandidates(semantic.rows, viewOnly?.catalog?.candidates ?? [], semantic.boardIds))
   }, [semantic, records, folders, ids, letters, source, candidates, viewOnly])
   // Its own effect: a folder list that moved re-feeds the sources above, and is no index snapshot.
   useEffect(() => {
@@ -89,16 +91,18 @@ export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly,
       root={root}
       watch={watch}
       semantic={semantic?.rows ?? NO_ROWS}
+      boardIds={semantic?.boardIds}
       candidates={candidates}
       viewOnly={viewOnly}
     />
   )
 }
 
-function ViewOnlyCatalogBridge({ root, watch, semantic, candidates, viewOnly }: {
+function ViewOnlyCatalogBridge({ root, watch, semantic, boardIds, candidates, viewOnly }: {
   root: string
   watch: WatchSource
   semantic: readonly LinkCandidate[]
+  boardIds?: ReadonlyMap<string, string>
   candidates?: MutableWikilinkCandidateSource
   viewOnly: MutableViewOnlyLinkSource
 }): null {
@@ -111,7 +115,7 @@ function ViewOnlyCatalogBridge({ root, watch, semantic, candidates, viewOnly }: 
   // the semantic rows too, it re-decorated every open editor a second time per save (YAZ-2196).
   useEffect(() => {
     if (state.status !== 'ready' || state.catalog.root !== root) return
-    candidates?.update(mergeLinkCandidates(semantic, state.catalog.candidates))
-  }, [state.status, state.catalog, root, semantic, candidates])
+    candidates?.update(mergeLinkCandidates(semantic, state.catalog.candidates, boardIds))
+  }, [state.status, state.catalog, root, semantic, boardIds, candidates])
   return null
 }

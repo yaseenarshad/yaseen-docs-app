@@ -14,10 +14,10 @@
  * partial render: a half-parsed scene would be a lie about what the file holds.
  */
 import type { DrawingFileEntry } from '@shared/types'
-import { referencedFileIds } from '@shared/drawingAssets'
+import { BOARD_META_KEY, hoverLinksOff, picturesFolderOf, picturesOut, referencedFileIds } from '@shared/drawingAssets'
 import { isRecord } from '@shared/guards'
 import { isDrawingReadOnly } from '@shared/readOnly'
-import { api } from '../api'
+import { api, BridgeRequestError } from '../api'
 
 /** The scene shape a preview needs; deliberately loose — the file is user data, not our type. */
 export interface DrawingScene {
@@ -29,10 +29,21 @@ export interface DrawingScene {
   readonly files: Record<string, unknown> | null
   /** The file's read-only switch (YAZ-3076 D1, `isDrawingReadOnly`), read in the same parse; absent = editable. */
   readonly readOnly?: boolean
+  /** `"pictures": "assets"` in the block (YAZ-3943 D5), read in the same parse; absent = the pictures are inside. */
+  readonly picturesOut?: boolean
+  /** The board's own pictures folder (`picturesFolder`, YAZ-3943 demo round 3), vault-relative, when the block names a valid one. */
+  readonly picturesFolder?: string
+  /** `"hoverLinks": false` in the block (YAZ-3943 demo 2): the board's link preview on hover is off; absent = on. */
+  readonly hoverLinksOff?: boolean
 }
 
-/** The scene's read-only switch, present only when it is on: an editable scene keeps the shape it always had. */
-const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true } => (isDrawingReadOnly(scene) ? { readOnly: true } : {})
+/** The scene's switches, each present only when it is not the default: a plain scene keeps the shape it always had. */
+const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true; picturesOut?: true; picturesFolder?: string; hoverLinksOff?: true } => ({
+  ...(isDrawingReadOnly(scene) ? { readOnly: true } : {}),
+  ...(picturesOut(scene[BOARD_META_KEY]) ? { picturesOut: true } : {}),
+  ...(picturesFolderOf(scene[BOARD_META_KEY]) === null ? {} : { picturesFolder: picturesFolderOf(scene[BOARD_META_KEY]) as string }),
+  ...(hoverLinksOff(scene[BOARD_META_KEY]) ? { hoverLinksOff: true } : {}),
+})
 
 /** Embed targets that get a preview — everything else renders exactly as it always has. */
 export const DRAWING_EMBED_SUFFIX = '.excalidraw'
@@ -69,39 +80,67 @@ export interface LoadedDrawing {
   readonly scene: DrawingScene
   readonly path: string
   readonly mtime: number
+  /**
+   * The ids a save never ships back (YAZ-3943 1A1), by `drawing:load`'s own rule: every picture of a
+   * board with its pictures inside (main finds each in the file or the store), only the store's for a
+   * "pictures out" board.
+   */
+  readonly stored: readonly string[]
 }
 
 /**
  * Reads `target` under `root` and parses it, keeping the identity a save needs.
  *
- * A scene a drawing TAB saved is lean (YAZ-3028: `files: {}`, its pictures in `<vault>/assets/`), so
+ * A scene a drawing TAB saved with its pictures out (YAZ-3943 D5: `"pictures": "assets"`) is lean (`files: {}`, its pictures in `<vault>/assets/`), so
  * a picture the scene names but does not carry is filled in from the store through `drawing:load`
  * at the resolved path — one extra read, and only for such a scene: an embed's own sidecar carries
  * its pictures and never pays it. An id found nowhere stays out (the engine's placeholder), and a
  * store read that fails leaves the scene as the sidecar said: a picture must never cost the drawing.
  */
 export async function openDrawing(root: string, target: string): Promise<LoadedDrawing> {
-  const asset = await api.readAsset(root, target)
-  const scene = parseScene(asset.data)
-  return { scene: await withStoredFiles(root, asset.path, scene), path: asset.path, mtime: asset.mtime }
+  let asset
+  try {
+    asset = await api.readAsset(root, target)
+  } catch (err) {
+    // YAZ-3943 D5: a board keeps its pictures inside, so it can pass the asset pipe's 10 MiB cap. The
+    // board's own loader reads it (to 200 MiB), at the path the pipe resolved and named in its refusal.
+    if (err instanceof BridgeRequestError && err.code === 'TOO_LARGE' && err.path !== undefined && isDrawingTarget(err.path)) return openLargeDrawing(root, err.path)
+    throw err
+  }
+  const parsed = parseScene(asset.data)
+  const { scene, fromStore } = await withStoredFiles(root, asset.path, parsed)
+  return { scene, path: asset.path, mtime: asset.mtime, stored: scene.picturesOut === true ? fromStore : Object.keys(scene.files ?? {}) }
 }
 
-/** `scene` with every referenced picture it lacks taken from the store (see `openDrawing`). */
-async function withStoredFiles(root: string, path: string, scene: DrawingScene): Promise<DrawingScene> {
+/** A board past the asset pipe's cap, through `drawing:load`: its scene, its pictures engine-shaped, and the mtime a save guards with. */
+async function openLargeDrawing(root: string, path: string): Promise<LoadedDrawing> {
+  const res = await api.drawing.load({ root, path })
+  const scene = parseSceneText(res.json)
+  const files: Record<string, unknown> = {}
+  const created = Date.now()
+  for (const [id, entry] of Object.entries(res.files)) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+  return { scene: { ...scene, files }, path: res.path, mtime: res.mtime, stored: res.stored }
+}
+
+/** `scene` with every referenced picture it lacks taken from the store (see `openDrawing`), and the ids that came from there. */
+async function withStoredFiles(root: string, path: string, scene: DrawingScene): Promise<{ scene: DrawingScene; fromStore: string[] }> {
   const own = scene.files ?? {}
   const missing = [...referencedFileIds(scene.elements)].filter((id) => !(id in own))
-  if (missing.length === 0) return scene
+  if (missing.length === 0) return { scene, fromStore: [] }
   const stored: Record<string, DrawingFileEntry> = await api.drawing.load({ root, path }).then(
     (res) => res.files,
     () => ({}),
   )
   const files: Record<string, unknown> = { ...own }
+  const fromStore: string[] = []
   const created = Date.now()
   for (const id of missing) {
     const entry = stored[id]
-    if (entry !== undefined) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+    if (entry === undefined) continue
+    files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+    fromStore.push(id)
   }
-  return { ...scene, files }
+  return { scene: { ...scene, files }, fromStore }
 }
 
 /**

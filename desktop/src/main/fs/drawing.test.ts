@@ -3,7 +3,7 @@ import { access, link, mkdir, mkdtemp, open, readdir, readFile, rm, stat, utimes
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { MAX_DRAWING_BYTES } from '@shared/types'
-import { BOARD_META_KEY, referencedFileIds, unpersistedFiles } from '@shared/drawingAssets'
+import { BOARD_META_KEY, picturesSize, referencedFileIds, unpersistedFiles } from '@shared/drawingAssets'
 import { loadDrawing, saveDrawing } from './drawing'
 import { failure } from './testFixture'
 
@@ -47,6 +47,11 @@ let root: string
 /** The smallest thing that is a scene: an object with an `elements` array. */
 function scene(elements: unknown[] = [], extra: Record<string, unknown> = {}): string {
   return `${JSON.stringify({ type: 'excalidraw', version: 2, source: 'yaseen-draw', elements, appState: {}, files: {}, ...extra }, null, 2)}\n`
+}
+
+/** A "pictures out" board (YAZ-3943 D5): the block FIRST, saying `"pictures": "assets"`, so a save keeps 🔒 YAZ-1775 D3's shape. */
+function outScene(elements: unknown[] = [], extra: Record<string, unknown> = {}): string {
+  return `${JSON.stringify({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, pictures: 'assets' }, type: 'excalidraw', version: 2, source: 'yaseen-draw', elements, appState: {}, files: {}, ...extra }, null, 2)}\n`
 }
 
 async function seed(rel: string, body: string): Promise<string> {
@@ -206,8 +211,19 @@ describe('🔒 YAZ-1775 D3 — the image store on load', () => {
     expect(res.json).toContain('gone') // the scene is untouched; only the bytes are absent
   })
 
-  it("falls back to a LEGACY scene's own embedded bytes, and does NOT call them stored", async () => {
-    await seed('Legacy.excalidraw', scene([imageEl('emb')], { files: { emb: { mimeType: 'image/png', dataURL: dataUrl() } } }))
+  it('YAZ-3943 1F: what the load found is what the board has; a picture in neither the file nor assets/ is missing, for an "inside" and an "out" board', async () => {
+    await seedAsset('kept.png')
+    await seed('Inside.excalidraw', scene([imageEl('emb'), imageEl('kept'), imageEl('gone1'), imageEl('gone2')], { files: { emb: { mimeType: 'image/png', dataURL: dataUrl() } } }))
+    await seed('Out.excalidraw', outScene([imageEl('kept'), imageEl('gone1')]))
+    const inside = await loadDrawing({ root, path: 'Inside.excalidraw' })
+    const out = await loadDrawing({ root, path: 'Out.excalidraw' })
+    const elements = (json: string) => (JSON.parse(json) as { elements: unknown[] }).elements
+    expect(picturesSize(elements(inside.json), inside.files)).toMatchObject({ count: 2, missing: 2 })
+    expect(picturesSize(elements(out.json), out.files)).toMatchObject({ count: 1, missing: 1 })
+  })
+
+  it("falls back to a \"pictures out\" scene's own embedded bytes, and does NOT call them stored", async () => {
+    await seed('Legacy.excalidraw', outScene([imageEl('emb')], { files: { emb: { mimeType: 'image/png', dataURL: dataUrl() } } }))
     const res = await loadDrawing({ root, path: 'Legacy.excalidraw' })
     expect(res.files.emb).toEqual({ mimeType: 'image/png', dataURL: dataUrl() })
     expect(res.stored).toEqual([])
@@ -268,7 +284,9 @@ describe('🔒 YAZ-1775 D3 — the image store on load', () => {
     expect(res.stored).toEqual(['dup'])
   })
 
-  it("hydrates nothing for a DELETED image element — an undo brings the id back, the bytes stay in the store", async () => {
+  // The store keeps its bytes. An "inside" board's file does not: its next save drops a deleted picture, and
+  // the renderer ships the bytes again after an undo (YAZ-4074 6A item 1, `picturesInside.test.ts`).
+  it("hydrates nothing for a DELETED image element — an undo brings the id back, and the store keeps its bytes", async () => {
     await seedAsset('ghost.png')
     await seed('Board.excalidraw', scene([imageEl('ghost', { isDeleted: true })]))
     expect((await loadDrawing({ root, path: 'Board.excalidraw' })).files).toEqual({})
@@ -284,9 +302,9 @@ describe('🔒 YAZ-1775 D3 — the image store on load', () => {
   })
 })
 
-describe('🔒 YAZ-1775 D3 — the image store on save', () => {
+describe('🔒 YAZ-1775 D3 — the image store on save, for a "pictures out" board (YAZ-3943 D5)', () => {
   it('writes the assets BEFORE the scene, names them `<id>.<ext>`, and reports them persisted', async () => {
-    await seed('Board.excalidraw', scene())
+    await seed('Board.excalidraw', outScene())
     const res = await saveDrawing({
       root,
       path: 'Board.excalidraw',
@@ -316,7 +334,7 @@ describe('🔒 YAZ-1775 D3 — the image store on save', () => {
       return fh
     })
     try {
-      await seed('Board.excalidraw', scene())
+      await seed('Board.excalidraw', outScene())
       await saveDrawing({ root, path: 'Board.excalidraw', json: scene([imageEl('newid')]), newFiles: [{ fileId: 'newid', mimeType: 'image/png', dataURL: dataUrl() }] })
       expect(synced).toEqual(['newid.png.tmp', 'Board.excalidraw.tmp'])
       expect(await readdir(path.join(root, 'assets'))).toEqual(['newid.png'])
@@ -328,7 +346,7 @@ describe('🔒 YAZ-1775 D3 — the image store on save', () => {
   it('never rewrites an asset that is already there — content-addressed means it IS those bytes', async () => {
     const asset = await seedAsset('same.png', 'original')
     const before = (await stat(asset)).mtimeMs
-    await seed('Board.excalidraw', scene())
+    await seed('Board.excalidraw', outScene())
     const res = await saveDrawing({ root, path: 'Board.excalidraw', json: scene([imageEl('same')]), newFiles: [{ fileId: 'same', mimeType: 'image/png', dataURL: dataUrl('ZGlmZmVyZW50') }] })
     expect(res.persisted).toEqual(['same'])
     expect(await readFile(asset, 'utf8')).toBe('original')
@@ -337,7 +355,7 @@ describe('🔒 YAZ-1775 D3 — the image store on save', () => {
   })
 
   it('a write torn mid-way leaves NOTHING under the asset name — no torn "valid" asset, no tmp (YAZ-2073 2B1)', async () => {
-    const original = await seed('Board.excalidraw', scene())
+    const original = await seed('Board.excalidraw', outScene())
     const { open: realOpen } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
     vi.mocked(open).mockImplementation(async (...args) => {
       const fh = await realOpen(...args)
@@ -353,7 +371,7 @@ describe('🔒 YAZ-1775 D3 — the image store on save', () => {
       const err = await failure(saveDrawing({ root, path: 'Board.excalidraw', json: scene([imageEl('newid')]), newFiles: [{ fileId: 'newid', mimeType: 'image/png', dataURL: dataUrl() }] }))
       expect(err.path).toBe(path.join(root, 'assets', 'newid.png'))
       expect(await readdir(path.join(root, 'assets'))).toEqual([])
-      expect(await readFile(original, 'utf8')).toBe(scene())
+      expect(await readFile(original, 'utf8')).toBe(outScene())
     } finally {
       vi.mocked(open).mockRestore()
     }
@@ -361,7 +379,7 @@ describe('🔒 YAZ-1775 D3 — the image store on save', () => {
 
   it('a volume without hard links (exFAT, FAT: ENOTSUP) still lands the asset, by rename (YAZ-2073 2B1)', async () => {
     vi.mocked(link).mockRejectedValueOnce(Object.assign(new Error('ENOTSUP: operation not supported, link'), { code: 'ENOTSUP' }))
-    await seed('Board.excalidraw', scene())
+    await seed('Board.excalidraw', outScene())
     const res = await saveDrawing({ root, path: 'Board.excalidraw', json: scene([imageEl('newid')]), newFiles: [{ fileId: 'newid', mimeType: 'image/png', dataURL: dataUrl() }] })
     expect(res.persisted).toEqual(['newid'])
     expect(await readdir(path.join(root, 'assets'))).toEqual(['newid.png'])
@@ -369,7 +387,7 @@ describe('🔒 YAZ-1775 D3 — the image store on save', () => {
   })
 
   it('EXTRACTS a legacy embedded scene on its first save: bytes into assets/, JSON shrunk', async () => {
-    const legacy = scene([imageEl('emb')], { files: { emb: { mimeType: 'image/png', dataURL: dataUrl() } } })
+    const legacy = outScene([imageEl('emb')], { files: { emb: { mimeType: 'image/png', dataURL: dataUrl() } } })
     await seed('Legacy.excalidraw', legacy)
     const before = (await stat(path.join(root, 'Legacy.excalidraw'))).size
     const res = await saveDrawing({ root, path: 'Legacy.excalidraw', json: legacy, newFiles: [] })
@@ -409,7 +427,7 @@ describe('🔒 YAZ-1775 D3 — the image store on save', () => {
     const bad: unknown[] = [
       { fileId: '../escape', mimeType: 'image/png', dataURL: dataUrl() },
       { fileId: 'a/b', mimeType: 'image/png', dataURL: dataUrl() },
-      { fileId: 'ok', mimeType: 'image/bmp', dataURL: 'data:image/bmp;base64,aGk=' },
+      { fileId: 'ok', mimeType: 'image/tiff', dataURL: 'data:image/tiff;base64,aGk=' },
       { fileId: 'ok', mimeType: 'image/png', dataURL: 'https://example.com/a.png' },
       { fileId: 'ok', mimeType: 'image/png' },
       'not an object',
@@ -423,15 +441,15 @@ describe('🔒 YAZ-1775 D3 — the image store on save', () => {
   })
 
   it('a CONFLICT writes no assets either: a refused save leaves the vault exactly as it was', async () => {
-    const file = await seed('Board.excalidraw', scene())
+    const file = await seed('Board.excalidraw', outScene())
     const st = await stat(file)
     await failure(saveDrawing({ root, path: file, json: scene([imageEl('x')]), expectedMtime: st.mtimeMs - 1000, newFiles: [{ fileId: 'x', mimeType: 'image/png', dataURL: dataUrl() }] }))
     expect(await readdir(path.join(root, 'assets')).catch(() => null)).toBeNull()
   })
 
   it('two boards sharing one image keep ONE file', async () => {
-    await seed('A.excalidraw', scene())
-    await seed('B.excalidraw', scene())
+    await seed('A.excalidraw', outScene())
+    await seed('B.excalidraw', outScene())
     const entry = { fileId: 'shared', mimeType: 'image/png', dataURL: dataUrl() }
     await saveDrawing({ root, path: 'A.excalidraw', json: scene([imageEl('shared')]), newFiles: [entry] })
     await saveDrawing({ root, path: 'B.excalidraw', json: scene([imageEl('shared')]), newFiles: [entry] })
@@ -465,8 +483,8 @@ describe('🔒 YAZ-1834 — the yaseendraw block on save', () => {
     expect(block.updatedAt).toBeGreaterThan(1600000000001)
   })
 
-  it('lifts a legacy embedded scene AND places the block first in the same write', async () => {
-    const legacy = scene([imageEl('abc')], { files: { abc: { mimeType: 'image/png', dataURL: dataUrl() } } })
+  it('lifts a "pictures out" embedded scene AND places the block first in the same write', async () => {
+    const legacy = outScene([imageEl('abc')], { files: { abc: { mimeType: 'image/png', dataURL: dataUrl() } } })
     const file = await seed('Legacy.excalidraw', legacy)
     await saveDrawing({ root, path: file, json: legacy, newFiles: [] })
     const written = await readFile(file, 'utf8')
@@ -494,8 +512,8 @@ describe('🔒 YAZ-1834 — the yaseendraw block on save', () => {
  * Electron and no React.
  */
 describe('end to end on a temp vault', () => {
-  it('legacy board → load → save → assets extracted, JSON shrunk, and it reopens with its picture', async () => {
-    const legacy = scene([imageEl('sha1id')], { files: { sha1id: { mimeType: 'image/png', dataURL: dataUrl() } } })
+  it('"pictures out" board → load → save → assets extracted, JSON shrunk, and it reopens with its picture', async () => {
+    const legacy = outScene([imageEl('sha1id')], { files: { sha1id: { mimeType: 'image/png', dataURL: dataUrl() } } })
     await seed('Boards/Legacy.excalidraw', legacy)
 
     const opened = await loadDrawing({ root, path: 'Boards/Legacy.excalidraw' })
@@ -517,11 +535,11 @@ describe('end to end on a temp vault', () => {
   })
 
   it('the conflict path: a second writer wins, the first is refused, nothing of its save lands', async () => {
-    const file = await seed('Board.excalidraw', scene())
+    const file = await seed('Board.excalidraw', outScene())
     const first = await loadDrawing({ root, path: file })
     // Somebody else (another window, or git) writes the file.
     await new Promise((r) => setTimeout(r, 10))
-    await writeFile(file, scene([{ id: 'theirs' }]))
+    await writeFile(file, outScene([{ id: 'theirs' }]))
     const err = await failure(saveDrawing({ root, path: file, json: scene([imageEl('mine')]), expectedMtime: first.mtime, newFiles: [{ fileId: 'mine', mimeType: 'image/png', dataURL: dataUrl() }] }))
     expect(err.code).toBe('CONFLICT')
     expect(JSON.parse(await readFile(file, 'utf8')).elements).toEqual([{ id: 'theirs' }])

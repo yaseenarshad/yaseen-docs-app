@@ -2,6 +2,7 @@ import { CONTRACT } from '@shared/ipc'
 import { requireAbsPath, requireDir } from '../fs/fsUtils'
 import { absPaths } from '../fs/validate'
 import { runOffThread } from '../storageJob'
+import type { Store } from '../store'
 import storageWorker from '../storageWorker?modulePath'
 import { handle } from './envelope'
 
@@ -15,15 +16,17 @@ import { handle } from './envelope'
  * `skip` crosses from a sandboxed renderer, so it is checked like a request body: an array of
  * absolute paths, nothing else. A path in it that names no board simply matches nothing.
  */
-export function registerStorageIpc(): void {
+export function registerStorageIpc(store?: Pick<Store, 'get'>): void {
   handle(CONTRACT.storage.stats, async (root: unknown) => {
     const dir = requireAbsPath(root, 'root')
     await requireDir(dir)
-    return runOffThread(storageWorker, { kind: 'stats', root: dir })
+    // A board's own pictures folder counts as pictures; one outside the vault only when this Mac allows it (YAZ-4127 6B1).
+    return runOffThread(storageWorker, { kind: 'stats', root: dir, approved: store?.get().approvedPictureFolders ?? [] })
   })
   handle(CONTRACT.storage.shrink, async (root: unknown, skip: unknown) => {
     const dir = requireAbsPath(root, 'root')
     await requireDir(dir)
-    return runOffThread(storageWorker, { kind: 'shrink', root: dir, skip: absPaths(skip, 'skip') })
+    // The outside pictures folders the user picked (YAZ-3943 demo round 3): the only ones the shrink writes to.
+    return runOffThread(storageWorker, { kind: 'shrink', root: dir, skip: absPaths(skip, 'skip'), approved: store?.get().approvedPictureFolders ?? [] })
   })
 }

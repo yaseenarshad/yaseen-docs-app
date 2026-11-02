@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import type { TocSource } from '@shared/types'
 import { CogIcon } from '../settings/SettingsButton'
 
@@ -9,11 +9,24 @@ const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] 
   { label: 'Bullets', value: 'bullets' },
 ]
 
-/** One row of plain switches (YAZ-3449): a label, its check mark while on, and what a click does. */
+/**
+ * One row of the menu (YAZ-3449): a label, its check mark while on, and what a click does. A drawing's
+ * rows (YAZ-3943 D5, D13) add three kinds: an ACTION row (no `on`: no check mark, and a click closes
+ * the menu), an INFO row (no `onToggle`: plain text), and a DISABLED action (greyed out, no click).
+ */
 export interface PageSwitch {
   label: string
-  on: boolean
-  onToggle: () => void
+  /** Absent: an action row, with no check mark. */
+  on?: boolean
+  /** Absent: an info row. */
+  onToggle?: () => void
+  disabled?: boolean
+  /** Amber text: a size past its warning line. */
+  warn?: boolean
+  /** A line above the row. */
+  divider?: boolean
+  /** An info row's tooltip: the whole of a text the label shortens (a pictures folder's full path, YAZ-3943 demo round 3). */
+  title?: string
 }
 
 /**
@@ -32,8 +45,11 @@ export interface PageSwitch {
  * A code tab (YAZ-3449) passes its own rows instead, as `switches`: "Read only", "Wrap long lines" and
  * "Minimap", under the heading "All code files", each one an app setting for every code file; then "Table of
  * contents" (YAZ-3506), this file's only. The menu stays open, as for any row.
+ *
+ * A drawing (YAZ-3943 D5, D13) passes `rows`, read while the menu is open and never while it is closed:
+ * the pictures' size, "Move pictures out" or "Keep pictures inside", and the two exports.
  */
-export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, switches, switchesHeading, readText }: {
+export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, switches, switchesHeading, rows, readText }: {
   /** The file's read-only switch (YAZ-3076 D1): a note, a drawing and a diagram have it. */
   readOnly?: boolean
   /** Off → the host turns it on; on → the host opens the "Allow edits?" box (this menu closes first). Absent → no row (a file with no switch, YAZ-3448). */
@@ -65,6 +81,8 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   switches?: readonly PageSwitch[]
   /** A small heading over `switches`, which then form one group (a code tab: "All code files"), and a line after it. */
   switchesHeading?: string
+  /** Rows after "Read only", made while the menu is open (a drawing's, YAZ-3943); absent → none. */
+  rows?: () => readonly PageSwitch[]
   /** The page's plain text. Read once when the menu opens, never while it is closed. Absent → no counts (a board). */
   readText?: () => string
 }) {
@@ -103,9 +121,18 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
     }
   }, [open])
 
-  const switchRows = switches?.map(({ label, on, onToggle }) => <button key={label} type="button" aria-pressed={on} onClick={onToggle}>
-    <span>{label}</span><span aria-hidden="true">{on ? '✓' : ''}</span>
-  </button>)
+  const rowOf = ({ label, on, onToggle, disabled, warn, divider, title }: PageSwitch) => <Fragment key={label}>
+    {divider === true && <div className="page-settings__divider" aria-hidden="true" />}
+    {onToggle === undefined ? <p className={warn === true ? 'page-settings__warn' : undefined} title={title}>{label}</p>
+      : on === undefined ? <button type="button" disabled={disabled} onClick={() => {
+        setOpen(false)
+        onToggle()
+      }}><span>{label}</span></button>
+      : <button type="button" aria-pressed={on} disabled={disabled} onClick={onToggle}>
+        <span>{label}</span><span aria-hidden="true">{on ? '✓' : ''}</span>
+      </button>}
+  </Fragment>
+  const switchRows = switches?.map(rowOf)
 
   return (
     <div ref={rootRef} className="page-settings"
@@ -128,6 +155,7 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         }}>
           <span>Read only</span><span aria-hidden="true">{readOnly ? '✓' : ''}</span>
         </button>}
+        {rows?.().map(rowOf)}
         {switchesHeading === undefined ? switchRows : <>
           <div role="group" aria-label={switchesHeading}>
             <p className="page-settings__label" aria-hidden="true">{switchesHeading}</p>

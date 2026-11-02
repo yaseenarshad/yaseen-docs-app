@@ -48,6 +48,26 @@ const FOLDER_ID = 'f7n2w8rt4xyz'
 /** The Files tree's folders, outer before inner (`allDirs`): two named Projects, one of them deeper. */
 const DIRS = ['/vault/Archive', '/vault/Archive/Old', '/vault/Projects', '/vault/Work', '/vault/Work/Projects']
 
+describe('linkResolver: a board by its ID (YAZ-3943 4C)', () => {
+  it("comes first, as a note's ID does: before a note only NAMED so; of two boards with one ID the first by path; any other target is the note's or the folder's", () => {
+    const boards = [{ path: '/vault/A/Plan copy.excalidraw', id: 'DEM-5' }, { path: '/vault/B/Plan.excalidraw', id: 'DEM-5' }, { path: '/vault/Sketch.excalidraw', id: 'DEM-6' }]
+    const resolve = linkResolver([rec('/vault/DEM-6.md'), rec('/vault/Note.md')], '/vault', DIRS, [], ['DEM'], boards)
+    expect(resolve('DEM-5')).toBe('/vault/A/Plan copy.excalidraw')
+    expect(resolve('[[dem-6|the sketch]]')).toBe('/vault/Sketch.excalidraw')
+    expect(resolve('Note')).toBe('/vault/Note.md')
+    expect(resolve('Projects')).toBe('/vault/Projects')
+    expect(resolve('DEM-7')).toBeNull()
+  })
+
+  it('YAZ-4071 7I: an ID the board held before a two-Mac merge still opens it, unless a note holds that ID now', () => {
+    const boards = [{ path: '/vault/Plan.excalidraw', id: 'DEM-5', was: ['DEM-9', 'DEM-12'] }]
+    const resolve = linkResolver([rec('/vault/Later.md', { id: 'DEM-12' })], '/vault', DIRS, [], ['DEM'], boards)
+    expect(resolve('DEM-5')).toBe('/vault/Plan.excalidraw')
+    expect(resolve('[[dem-9]]')).toBe('/vault/Plan.excalidraw')
+    expect(resolve('DEM-12')).toBe('/vault/Later.md')
+  })
+})
+
 describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing else holds it', () => {
   it('`[[Projects]]` is the folder when no note is named Projects', () => {
     const resolve = linkResolver([rec('/vault/Note.md')], '/vault', DIRS)

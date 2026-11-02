@@ -10,12 +10,7 @@
 import loadHbSubset from "./harfbuzz/harfbuzz-loader";
 import loadWoff2 from "./woff2/woff2-loader";
 
-/**
- * Shared commands between the main thread and worker threads.
- */
-export const Commands = {
-  Subset: "SUBSET",
-} as const;
+import { toBase64 } from "./subset-utils";
 
 /**
  * Used by browser (main thread), node and jsdom, to subset the font based on the passed codepoints.
@@ -55,27 +50,4 @@ export const subsetToBinary = async (
   const compressedBinary = compress(snftSubset.buffer);
 
   return compressedBinary.buffer;
-};
-
-/**
- * Util for isomoprhic browser (main thread), node and jsdom usage.
- *
- * Isn't used inside the worker to avoid copying large binary strings (as dataurl) between worker threads and the main thread.
- */
-export const toBase64 = async (arrayBuffer: ArrayBuffer) => {
-  let base64: string;
-
-  if (typeof Buffer !== "undefined") {
-    // node, jsdom
-    base64 = Buffer.from(arrayBuffer).toString("base64");
-  } else {
-    // browser (main thread)
-    // it's perfectly fine to treat each byte independently,
-    // as we care only about turning individual bytes into codepoints,
-    // not about multi-byte unicode characters
-    const byteString = String.fromCharCode(...new Uint8Array(arrayBuffer));
-    base64 = btoa(byteString);
-  }
-
-  return `data:font/woff2;base64,${base64}`;
 };

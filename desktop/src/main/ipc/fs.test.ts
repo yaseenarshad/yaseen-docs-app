@@ -5,6 +5,7 @@ import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
 import type { IndexResponse } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
+import { loadDrawing } from '../fs/drawing'
 import { makeFixture, removeVault, sleep, vaultFiles } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
 import { _evictAll } from '../vaultIndex'
@@ -259,6 +260,29 @@ describe('registerFsIpc', () => {
     expect(res).toEqual({ ok: true, value: { oldPath: sub, newPath, kind: 'dir' } })
     expect(store.get().windows.find((win) => win.id === 'w-sub')?.root).toBe(newPath)
     expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath: sub, newPath, kind: 'dir' })
+  })
+
+  it("YAZ-4128 6B2: a folder rename updates `picturesFolder` in each board that keeps its pictures in it or under it; the dates stay, and both boards open with all their pictures", async () => {
+    const board = (picturesFolder: string, id: string) => `${JSON.stringify({ yaseendraw: { createdAt: 11, updatedAt: 22, pictures: 'assets', picturesFolder }, type: 'excalidraw', version: 2, elements: [{ id: `el-${id}`, type: 'image', fileId: id }], appState: {}, files: {} }, null, 2)}\n`
+    await mkdir(path.join(root, 'Pics', 'Sub'), { recursive: true })
+    await writeFile(path.join(root, 'Pics', 'aaa.png'), 'A')
+    await writeFile(path.join(root, 'Pics', 'Sub', 'bbb.png'), 'B')
+    await writeFile(path.join(root, 'One.excalidraw'), board('Pics', 'aaa'))
+    await mkdir(path.join(root, 'Boards'), { recursive: true })
+    await writeFile(path.join(root, 'Boards', 'Two.excalidraw'), board('Pics/Sub', 'bbb'))
+    // a board with a folder whose name only starts the same stays as it is
+    await writeFile(path.join(root, 'Three.excalidraw'), board('Pics copy', 'ccc'))
+    const three = await readFile(path.join(root, 'Three.excalidraw'), 'utf8')
+    store.upsertWindow({ id: 'w-pics', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    senderWinId = 'w-pics'
+    const res = await registered(CONTRACT.file.rename.channel)({ sender: {} }, { oldPath: path.join(root, 'Pics'), newPath: path.join(root, 'Pictures') })
+    expect(res).toMatchObject({ ok: true })
+    const blockOf = async (rel: string) => (JSON.parse(await readFile(path.join(root, rel), 'utf8')) as { yaseendraw: Record<string, unknown> }).yaseendraw
+    expect(await blockOf('One.excalidraw')).toMatchObject({ createdAt: 11, updatedAt: 22, pictures: 'assets', picturesFolder: 'Pictures' })
+    expect(await blockOf('Boards/Two.excalidraw')).toMatchObject({ createdAt: 11, updatedAt: 22, picturesFolder: 'Pictures/Sub' })
+    expect(await readFile(path.join(root, 'Three.excalidraw'), 'utf8')).toBe(three)
+    expect(Object.keys((await loadDrawing({ root, path: 'One.excalidraw' })).files)).toEqual(['aaa'])
+    expect(Object.keys((await loadDrawing({ root, path: 'Boards/Two.excalidraw' })).files)).toEqual(['bbb'])
   })
 
   it('fs:rename failure answers a BridgeError envelope, repairs nothing and broadcasts nothing', async () => {

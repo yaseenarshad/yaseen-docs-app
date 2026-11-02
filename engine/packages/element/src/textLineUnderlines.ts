@@ -1,265 +1,59 @@
-import { getFontString } from "@excalidraw/common";
+import { getFontString, isRTL } from "@excalidraw/common";
 
-import { getWrappedTextLines } from "./textWrapping";
-import { getLineHeightInPx, getLineWidth } from "./textMeasurements";
+import {
+  getWrappedTextLineWithMeasure,
+  getWrappedTextLines,
+} from "./textWrapping";
+import { charWidth, getLineHeightInPx, getLineWidth } from "./textMeasurements";
 import { parseTextListLine } from "./textList";
+import {
+  getHostLinksVersion,
+  getLinkPillWidth,
+  getTextLinks,
+  hasHostLinks,
+} from "./textLinks";
 
-import type { ExcalidrawTextElement, FontString, TextAlign } from "./types";
-
-const getLineCount = (text: string) => text.split("\n").length;
+import type { TextLinkMatch } from "./textLinks";
+import type { TextMeasure, WrappedTextLine } from "./textWrapping";
+import type {
+  ExcalidrawTextElement,
+  ExcalidrawTextRun,
+  FontString,
+  TextAlign,
+} from "./types";
 
 export const getLogicalLineIndexAtOffset = (text: string, offset: number) => {
   const clamped = Math.max(0, Math.min(offset, text.length));
   return text.slice(0, clamped).split("\n").length - 1;
 };
 
-export const getSelectedLogicalLineRange = (
-  text: string,
-  selectionStart: number,
-  selectionEnd: number,
-) => {
-  const start = Math.max(0, Math.min(selectionStart, text.length));
-  const end = Math.max(start, Math.min(selectionEnd, text.length));
-  const adjustedEnd = end > start && text[end - 1] === "\n" ? end - 1 : end;
-
-  return {
-    start: getLogicalLineIndexAtOffset(text, start),
-    end: getLogicalLineIndexAtOffset(text, adjustedEnd),
-  };
-};
-
-export const normalizeLineStyles = (
-  value: unknown,
-  lineCount: number,
-): readonly boolean[] | undefined => {
-  if (!Array.isArray(value) || lineCount <= 0) {
-    return undefined;
-  }
-
-  const normalized = value.slice(0, lineCount).map((entry) => entry === true);
-
-  while (normalized.length && !normalized[normalized.length - 1]) {
-    normalized.pop();
-  }
-
-  return normalized.length ? normalized : undefined;
-};
-
-export const normalizeLineUnderlines = normalizeLineStyles;
-
-export const areSelectedLinesStyled = (args: {
+/**
+ * YAZ-3718 D1: a piece of a visual line with one style. Its `width` is the
+ * drawn width, and `x` is where it starts from the visual line start.
+ */
+export type StyledTextSegment = {
   text: string;
-  lineStyles: readonly boolean[] | undefined;
-  selectionStart: number;
-  selectionEnd: number;
-  wholeElementStyled: boolean;
-}) => {
-  const range = getSelectedLogicalLineRange(
-    args.text,
-    args.selectionStart,
-    args.selectionEnd,
-  );
-
-  return Array.from(
-    { length: range.end - range.start + 1 },
-    (_, offset) =>
-      args.wholeElementStyled ||
-      args.lineStyles?.[range.start + offset] === true,
-  ).every(Boolean);
-};
-
-export const areSelectedLinesUnderlined = (args: {
-  text: string;
-  lineUnderlines: readonly boolean[] | undefined;
-  selectionStart: number;
-  selectionEnd: number;
-  wholeElementUnderlined: boolean;
-}) =>
-  areSelectedLinesStyled({
-    text: args.text,
-    lineStyles: args.lineUnderlines,
-    selectionStart: args.selectionStart,
-    selectionEnd: args.selectionEnd,
-    wholeElementStyled: args.wholeElementUnderlined,
-  });
-
-export const toggleSelectedLineStyles = (args: {
-  text: string;
-  lineStyles: readonly boolean[] | undefined;
-  selectionStart: number;
-  selectionEnd: number;
-  wholeElementStyled: boolean;
-  enabled?: boolean;
-}) => {
-  const lineCount = getLineCount(args.text);
-  const next = args.wholeElementStyled
-    ? Array<boolean>(lineCount).fill(true)
-    : Array.from(
-        { length: lineCount },
-        (_, index) => args.lineStyles?.[index] === true,
-      );
-  const range = getSelectedLogicalLineRange(
-    args.text,
-    args.selectionStart,
-    args.selectionEnd,
-  );
-  const enabled =
-    args.enabled ??
-    !areSelectedLinesStyled({
-      ...args,
-      lineStyles: next,
-      wholeElementStyled: false,
-    });
-
-  for (let index = range.start; index <= range.end; index++) {
-    next[index] = enabled;
-  }
-
-  return normalizeLineStyles(next, lineCount);
-};
-
-export const toggleSelectedLineUnderlines = (args: {
-  text: string;
-  lineUnderlines: readonly boolean[] | undefined;
-  selectionStart: number;
-  selectionEnd: number;
-  wholeElementUnderlined: boolean;
-  enabled?: boolean;
-}) =>
-  toggleSelectedLineStyles({
-    text: args.text,
-    lineStyles: args.lineUnderlines,
-    selectionStart: args.selectionStart,
-    selectionEnd: args.selectionEnd,
-    wholeElementStyled: args.wholeElementUnderlined,
-    enabled: args.enabled,
-  });
-
-const getEditWindow = (
-  previousText: string,
-  nextText: string,
-  caret?: number,
-) => {
-  // An insert ends at the caret. Without it, "Title|" + Enter and "|body" + Enter
-  // give the same text, and the common prefix would put the edit on the wrong line.
-  const maxStart =
-    caret === undefined
-      ? Infinity
-      : caret - Math.max(0, nextText.length - previousText.length);
-  let start = 0;
-  while (
-    start < maxStart &&
-    start < previousText.length &&
-    start < nextText.length &&
-    previousText[start] === nextText[start]
-  ) {
-    start++;
-  }
-
-  let previousEnd = previousText.length;
-  let nextEnd = nextText.length;
-  while (
-    previousEnd > start &&
-    nextEnd > start &&
-    previousText[previousEnd - 1] === nextText[nextEnd - 1]
-  ) {
-    previousEnd--;
-    nextEnd--;
-  }
-
-  return { start, previousEnd, nextEnd };
-};
-
-export const remapLineStylesForTextEdit = (
-  previousText: string,
-  nextText: string,
-  lineStyles: readonly boolean[] | undefined,
-  options?: {
-    wholeElementStyled?: boolean;
-    /** The caret after the edit: it places an insert that the text alone cannot. */
-    caret?: number;
-    /** A line the edit inserted at this index: it copies the line above it. */
-    insertedLine?: number;
-  },
-) => {
-  const previousLineCount = previousText.split("\n").length;
-  const resolvedLineStyles = options?.wholeElementStyled
-    ? Array<boolean>(previousLineCount).fill(true)
-    : lineStyles;
-
-  if (!resolvedLineStyles?.some(Boolean) || previousText === nextText) {
-    return normalizeLineStyles(resolvedLineStyles, nextText.split("\n").length);
-  }
-
-  const insertedLine = options?.insertedLine;
-  if (insertedLine !== undefined) {
-    return normalizeLineStyles(
-      [
-        ...resolvedLineStyles.slice(0, insertedLine),
-        resolvedLineStyles[insertedLine - 1] === true,
-        ...resolvedLineStyles.slice(insertedLine),
-      ],
-      nextText.split("\n").length,
-    );
-  }
-
-  const edit = getEditWindow(previousText, nextText, options?.caret);
-  const previousStartLine = getLogicalLineIndexAtOffset(
-    previousText,
-    edit.start,
-  );
-  const previousEndLine = getLogicalLineIndexAtOffset(
-    previousText,
-    edit.previousEnd,
-  );
-  const nextStartLine = getLogicalLineIndexAtOffset(nextText, edit.start);
-  const nextEndLine = getLogicalLineIndexAtOffset(nextText, edit.nextEnd);
-  const previousAffected = Array.from(
-    { length: previousEndLine - previousStartLine + 1 },
-    (_, offset) => resolvedLineStyles[previousStartLine + offset] === true,
-  );
-  const nextAffectedCount = nextEndLine - nextStartLine + 1;
-  const nextAffected = Array<boolean>(nextAffectedCount).fill(
-    nextAffectedCount < previousAffected.length
-      ? previousAffected.some(Boolean)
-      : previousAffected[0] === true,
-  );
-  const next = [
-    ...resolvedLineStyles.slice(0, previousStartLine),
-    ...nextAffected,
-    ...resolvedLineStyles.slice(previousEndLine + 1),
-  ];
-
-  return normalizeLineStyles(next, nextText.split("\n").length);
-};
-
-export const remapLineUnderlinesForTextEdit = (
-  previousText: string,
-  nextText: string,
-  lineUnderlines: readonly boolean[] | undefined,
-  options?: Parameters<typeof remapLineStylesForTextEdit>[3],
-) =>
-  remapLineStylesForTextEdit(previousText, nextText, lineUnderlines, options);
-
-export const getUnderlinedVisualLines = (args: {
-  originalText: string;
+  start: number;
+  end: number;
+  x: number;
+  width: number;
   font: FontString;
-  maxWidth: number;
-  lineUnderlines: readonly boolean[] | undefined;
-  wholeElementUnderlined: boolean;
-}) =>
-  getStyledVisualLines({
-    originalText: args.originalText,
-    regularFont: args.font,
-    boldFont: args.font,
-    maxWidth: args.maxWidth,
-    lineBolds: undefined,
-    lineUnderlines: args.lineUnderlines,
-    lineStrikethroughs: undefined,
-    wholeElementBold: false,
-    wholeElementUnderlined: args.wholeElementUnderlined,
-    wholeElementStrikethrough: false,
-  });
+  bold: boolean;
+  italic: boolean;
+  underlined: boolean;
+  strikethrough: boolean;
+  /** Missing: the color of the whole box. */
+  color: string | undefined;
+  /** YAZ-4102 3E: the fill behind the letters (`TEXT_HIGHLIGHT_FILLS`). */
+  highlight?: string;
+  /**
+   * YAZ-4039 D7: a link run. `text` is the raw `[[inner]]`, and `width` is the
+   * drawn pill with the page's name.
+   */
+  link?: StyledTextLink;
+};
+
+export type StyledTextLink = Omit<TextLinkMatch, "start" | "end">;
 
 export type StyledVisualLine = {
   text: string;
@@ -268,6 +62,7 @@ export type StyledVisualLine = {
   horizontalOffset: number;
   logicalLine: number;
   bold: boolean;
+  italic: boolean;
   underlined: boolean;
   strikethrough: boolean;
   font: FontString;
@@ -275,6 +70,16 @@ export type StyledVisualLine = {
   visualWidth: number;
   blockWidth: number;
   isListItem: boolean;
+  /**
+   * YAZ-3718 D1: the styled pieces of a line that has text runs. A line with
+   * no run has none, and draws as one text with the line's own style.
+   */
+  segments?: readonly StyledTextSegment[];
+  /**
+   * YAZ-4100 3C: a styled line of a right-to-left script. Its segments stay in
+   * text order, and their `x` goes from the right.
+   */
+  rtl?: true;
 };
 
 export const getStyledVisualLineStart = (
@@ -290,6 +95,72 @@ export const getStyledVisualLineStart = (
       : 0;
 
   return alignedBlockStart + line.horizontalOffset;
+};
+
+/** The x of the source offset `offset` from the visual line start. */
+export const getStyledVisualLineOffsetX = (
+  line: StyledVisualLine,
+  offset: number,
+) => {
+  const localOffset = Math.max(0, Math.min(offset, line.end) - line.start);
+  if (!line.segments) {
+    return getLineWidth(line.text.slice(0, localOffset), line.font);
+  }
+  const position = line.start + localOffset;
+  if (line.rtl) {
+    return getRightToLeftOffsetX(line.segments, position);
+  }
+  let x = 0;
+  for (const segment of line.segments) {
+    if (position <= segment.start) {
+      return segment.x;
+    }
+    if (position < segment.end) {
+      if (segment.link) {
+        // inside a pill: its letters share its drawn width
+        return (
+          segment.x +
+          (segment.width * (position - segment.start)) /
+            (segment.end - segment.start)
+        );
+      }
+      return (
+        segment.x +
+        getLineWidth(
+          segment.text.slice(0, position - segment.start),
+          segment.font,
+        )
+      );
+    }
+    x = segment.x + segment.width;
+  }
+  return x;
+};
+
+/** YAZ-4100 3C: the offset's x in a right-to-left line: a segment's text starts at its right edge. */
+const getRightToLeftOffsetX = (
+  segments: readonly StyledTextSegment[],
+  position: number,
+) => {
+  for (const segment of segments) {
+    const right = segment.x + segment.width;
+    if (position <= segment.start) {
+      return right;
+    }
+    if (position < segment.end) {
+      return (
+        right -
+        (segment.link
+          ? (segment.width * (position - segment.start)) /
+            (segment.end - segment.start)
+          : getLineWidth(
+              segment.text.slice(0, position - segment.start),
+              segment.font,
+            ))
+      );
+    }
+  }
+  return segments.length ? segments[segments.length - 1].x : 0;
 };
 
 export type StyledVisualSelectionRect = {
@@ -340,24 +211,18 @@ export const getStyledVisualSelectionGeometry = (args: {
         continue;
       }
 
-      const localStart = Math.max(0, start - line.start);
-      const localEnd = Math.max(localStart, end - line.start);
-      const prefixWidth = getLineWidth(
-        line.text.slice(0, localStart),
-        line.font,
-      );
-      const selectedWidth = getLineWidth(
-        line.text.slice(localStart, localEnd),
-        line.font,
-      );
+      // YAZ-4100 3C: in a right-to-left line the end is left of the start
+      const from = getStyledVisualLineOffsetX(line, start);
+      const to = getStyledVisualLineOffsetX(line, end);
+      const left = Math.min(from, to);
 
       rectangles.push({
         lineIndex,
         left:
           getStyledVisualLineStart(line, args.containerWidth, args.textAlign) +
-          prefixWidth,
+          left,
         top: lineIndex * args.lineHeightPx,
-        width: selectedWidth,
+        width: Math.abs(to - from),
         height: args.lineHeightPx,
       });
     }
@@ -376,15 +241,11 @@ export const getStyledVisualSelectionGeometry = (args: {
     }
 
     const line = args.lines[lineIndex];
-    const localOffset = Math.max(
-      0,
-      Math.min(selectionStart, line.end) - line.start,
-    );
     caret = {
       lineIndex,
       left:
         getStyledVisualLineStart(line, args.containerWidth, args.textAlign) +
-        getLineWidth(line.text.slice(0, localOffset), line.font),
+        getStyledVisualLineOffsetX(line, selectionStart),
       top: lineIndex * args.lineHeightPx,
       height: args.lineHeightPx,
     };
@@ -393,44 +254,104 @@ export const getStyledVisualSelectionGeometry = (args: {
   return { rectangles, caret };
 };
 
+type ResolvedTextStyle = {
+  bold: boolean;
+  italic: boolean;
+  underlined: boolean;
+  strikethrough: boolean;
+  color: string | undefined;
+  highlight?: string;
+};
+
 export const getStyledVisualLines = (args: {
   originalText: string;
-  regularFont: FontString;
-  boldFont: FontString;
+  getFont: (style: { bold: boolean; italic: boolean }) => FontString;
   maxWidth: number;
-  lineBolds: readonly boolean[] | undefined;
-  lineUnderlines: readonly boolean[] | undefined;
-  lineStrikethroughs: readonly boolean[] | undefined;
+  textRuns: readonly ExcalidrawTextRun[] | undefined;
   wholeElementBold: boolean;
+  wholeElementItalic: boolean;
   wholeElementUnderlined: boolean;
   wholeElementStrikethrough: boolean;
 }): StyledVisualLine[] => {
   const lines: StyledVisualLine[] = [];
+  const fonts: FontString[] = [];
+  const getFont = (bold: boolean, italic: boolean) => {
+    const index = (bold ? 2 : 0) + (italic ? 1 : 0);
+    if (!fonts[index]) {
+      fonts[index] = args.getFont({ bold, italic });
+    }
+    return fonts[index];
+  };
+  const font = getFont(args.wholeElementBold, args.wholeElementItalic);
+  const runs = args.textRuns ?? [];
+  let runIndex = 0;
   let sourceOffset = 0;
 
   for (const [logicalLine, originalLine] of args.originalText
     .split("\n")
     .entries()) {
-    const bold =
-      args.wholeElementBold || args.lineBolds?.[logicalLine] === true;
-    const underlined =
-      args.wholeElementUnderlined ||
-      args.lineUnderlines?.[logicalLine] === true;
-    const strikethrough =
-      args.wholeElementStrikethrough ||
-      args.lineStrikethroughs?.[logicalLine] === true;
-    const font = bold ? args.boldFont : args.regularFont;
-    const visualLines = getWrappedTextLines(originalLine, font, args.maxWidth);
+    const lineStart = sourceOffset;
+    const lineEnd = lineStart + originalLine.length;
+    while (runIndex < runs.length && runs[runIndex].end <= sourceOffset) {
+      runIndex++;
+    }
+    const hasRuns =
+      originalLine.length > 0 &&
+      runIndex < runs.length &&
+      runs[runIndex].start < lineEnd;
+    // YAZ-4039 D7: a line with a link pill takes the segment path too
+    const links = getTextLinks(originalLine);
+    const pieces =
+      hasRuns || links.length
+        ? getLinePieces(
+            originalLine,
+            sourceOffset,
+            runs,
+            runIndex,
+            {
+              bold: args.wholeElementBold,
+              italic: args.wholeElementItalic,
+              underlined: args.wholeElementUnderlined,
+              strikethrough: args.wholeElementStrikethrough,
+              color: undefined,
+            },
+            links,
+          )
+        : null;
+    const visualLines = pieces
+      ? getWrappedTextLineWithMeasure(
+          originalLine,
+          getPiecesMeasure(pieces, getFont),
+          args.maxWidth,
+          links,
+        )
+      : getWrappedTextLines(originalLine, font, args.maxWidth);
     const isListItem = parseTextListLine(originalLine).markerKind !== "none";
+    // YAZ-4100 3C: a styled line in a right-to-left script draws its pieces
+    // from the right; a line with no run keeps today's path
+    const rtl = !!pieces && isRTL(originalLine);
     const measuredLines = visualLines.map((line) => {
+      const pieceSegments = pieces
+        ? getLineSegments(line, pieces, lineStart, getFont)
+        : undefined;
       // Empty text lines still occupy one space of layout width in the
       // existing text metrics contract. This keeps a new/empty bound text
       // editor centered and large enough to place the caret.
-      const width = getLineWidth(line.text || " ", font);
+      const width = pieceSegments?.length
+        ? pieceSegments.reduce((sum, segment) => sum + segment.width, 0)
+        : getLineWidth(line.text || " ", font);
+      const segments = rtl
+        ? pieceSegments?.map((segment) => ({
+            ...segment,
+            x: width - segment.x - segment.width,
+          }))
+        : pieceSegments;
       return {
         ...line,
         width,
         visualWidth: line.horizontalOffset + width,
+        segments,
+        ...(rtl ? { rtl: true as const } : {}),
       };
     });
     const listBlockWidth = Math.max(
@@ -438,18 +359,20 @@ export const getStyledVisualLines = (args: {
       ...measuredLines.map((line) => line.visualWidth),
     );
 
-    for (const line of measuredLines) {
+    for (const { segments, ...line } of measuredLines) {
       lines.push({
         ...line,
         start: sourceOffset + line.start,
         end: sourceOffset + line.end,
         logicalLine,
-        bold,
-        underlined,
-        strikethrough,
+        bold: args.wholeElementBold,
+        italic: args.wholeElementItalic,
+        underlined: args.wholeElementUnderlined,
+        strikethrough: args.wholeElementStrikethrough,
         font,
         blockWidth: isListItem ? listBlockWidth : line.visualWidth,
         isListItem,
+        ...(segments ? { segments } : {}),
       });
     }
 
@@ -459,38 +382,300 @@ export const getStyledVisualLines = (args: {
   return lines;
 };
 
+type LinePiece = ResolvedTextStyle & {
+  start: number;
+  end: number;
+  link?: StyledTextLink;
+};
+
+/**
+ * The line split at its run edges, with offsets from the line start. A link
+ * is one piece with the style of its first letter (YAZ-4039 D7).
+ */
+const getLinePieces = (
+  line: string,
+  lineStart: number,
+  runs: readonly ExcalidrawTextRun[],
+  firstRun: number,
+  whole: ResolvedTextStyle,
+  links: readonly TextLinkMatch[],
+) => {
+  const pieces = getRunPieces(line, lineStart, runs, firstRun, whole);
+  if (!links.length) {
+    return pieces;
+  }
+  const linked: LinePiece[] = [];
+  for (const piece of pieces) {
+    let start = piece.start;
+    for (const { start: linkStart, end: linkEnd, ...link } of links) {
+      if (linkEnd <= start || linkStart >= piece.end) {
+        continue;
+      }
+      if (linkStart > start) {
+        linked.push({ ...piece, start, end: linkStart });
+      }
+      if (linkStart >= piece.start) {
+        linked.push({ ...piece, start: linkStart, end: linkEnd, link });
+      }
+      start = Math.min(piece.end, linkEnd);
+    }
+    if (start < piece.end) {
+      linked.push({ ...piece, start, end: piece.end });
+    }
+  }
+  return linked;
+};
+
+const getRunPieces = (
+  line: string,
+  lineStart: number,
+  runs: readonly ExcalidrawTextRun[],
+  firstRun: number,
+  whole: ResolvedTextStyle,
+) => {
+  const pieces: LinePiece[] = [];
+  let cursor = 0;
+  for (
+    let index = firstRun;
+    index < runs.length && runs[index].start < lineStart + line.length;
+    index++
+  ) {
+    const run = runs[index];
+    const start = Math.max(0, run.start - lineStart);
+    const end = Math.min(line.length, run.end - lineStart);
+    if (start > cursor) {
+      pieces.push({ ...whole, start: cursor, end: start });
+    }
+    pieces.push({
+      start,
+      end,
+      bold: whole.bold || run.bold === true,
+      italic: whole.italic || run.italic === true,
+      underlined: whole.underlined || run.underline === true,
+      strikethrough: whole.strikethrough || run.strikethrough === true,
+      color: run.color,
+      ...(run.highlight ? { highlight: run.highlight } : {}),
+    });
+    cursor = end;
+  }
+  if (cursor < line.length) {
+    pieces.push({ ...whole, start: cursor, end: line.length });
+  }
+  return pieces;
+};
+
+/** Measures each letter with the font of its piece (offsets from the line start). */
+const getPiecesMeasure = (
+  pieces: readonly LinePiece[],
+  getFont: (bold: boolean, italic: boolean) => FontString,
+): TextMeasure => {
+  const pieceAt = (offset: number) =>
+    pieces.find((piece) => offset < piece.end) ?? pieces[pieces.length - 1];
+  return {
+    text: (text, start) => {
+      const end = start + text.length;
+      let width = 0;
+      for (const piece of pieces) {
+        if (piece.end <= start || piece.start >= end) {
+          continue;
+        }
+        if (piece.link) {
+          // a pill's width, shared by its letters
+          width +=
+            (getLinkPillWidth(
+              piece.link.label,
+              getFont(piece.bold, piece.italic),
+              piece.link.icon,
+            ) *
+              (Math.min(end, piece.end) - Math.max(start, piece.start))) /
+            (piece.end - piece.start);
+          continue;
+        }
+        width += getLineWidth(
+          text.slice(
+            Math.max(start, piece.start) - start,
+            Math.min(end, piece.end) - start,
+          ),
+          getFont(piece.bold, piece.italic),
+        );
+      }
+      return width;
+    },
+    char: (char, start) => {
+      const piece = pieceAt(start);
+      return charWidth.calculate(char, getFont(piece.bold, piece.italic));
+    },
+  };
+};
+
+const getLineSegments = (
+  line: WrappedTextLine,
+  pieces: readonly LinePiece[],
+  lineStart: number,
+  getFont: (bold: boolean, italic: boolean) => FontString,
+) => {
+  const segments: StyledTextSegment[] = [];
+  let x = 0;
+  for (const piece of pieces) {
+    const start = Math.max(line.start, piece.start);
+    const end = Math.min(line.end, piece.end);
+    if (start >= end) {
+      continue;
+    }
+    const text = line.text.slice(start - line.start, end - line.start);
+    const font = getFont(piece.bold, piece.italic);
+    const width = piece.link
+      ? getLinkPillWidth(piece.link.label, font, piece.link.icon)
+      : getLineWidth(text, font);
+    segments.push({
+      text,
+      start: lineStart + start,
+      end: lineStart + end,
+      x,
+      width,
+      font,
+      bold: piece.bold,
+      italic: piece.italic,
+      underlined: piece.underlined,
+      strikethrough: piece.strikethrough,
+      color: piece.color,
+      ...(piece.highlight ? { highlight: piece.highlight } : {}),
+      ...(piece.link ? { link: piece.link } : {}),
+    });
+    x += width;
+  }
+  return segments;
+};
+
 export const getStyledTextLayout = (
   args: Parameters<typeof getStyledVisualLines>[0] & {
     fontSize: number;
     lineHeight: ExcalidrawTextElement["lineHeight"];
   },
-) => {
-  const lines = getStyledVisualLines(args);
+) => getStyledTextLayoutFromLines(getStyledVisualLines(args), args);
 
-  return {
+const getStyledTextLayoutFromLines = (
+  lines: StyledVisualLine[],
+  args: {
+    fontSize: number;
+    lineHeight: ExcalidrawTextElement["lineHeight"];
+  },
+) => ({
+  lines,
+  text: lines.map((line) => line.text).join("\n"),
+  width: Math.max(0, ...lines.map((line) => line.blockWidth)),
+  height: getLineHeightInPx(args.fontSize, args.lineHeight) * lines.length,
+});
+
+type TextElementLayoutStyle = Pick<
+  ExcalidrawTextElement,
+  | "fontFamily"
+  | "fontSize"
+  | "fontWeight"
+  | "fontStyle"
+  | "textDecoration"
+  | "strikethrough"
+  | "textRuns"
+>;
+
+const getTextElementStyledLinesArgs = (
+  element: TextElementLayoutStyle,
+  maxWidth: number,
+  originalText: string,
+): Parameters<typeof getStyledVisualLines>[0] => ({
+  originalText,
+  getFont: ({ bold, italic }) =>
+    getFontString({
+      fontFamily: element.fontFamily,
+      fontSize: element.fontSize,
+      fontWeight: bold ? "bold" : "normal",
+      fontStyle: italic ? "italic" : "normal",
+    }),
+  maxWidth,
+  textRuns: element.textRuns,
+  wholeElementBold: element.fontWeight === "bold",
+  wholeElementItalic: element.fontStyle === "italic",
+  wholeElementUnderlined: element.textDecoration === "underline",
+  wholeElementStrikethrough: element.strikethrough === true,
+});
+
+/** YAZ-4074 6A item 16: the most text boxes the styled-lines memo holds. */
+export const STYLED_LINES_MEMO_MAX = 1000;
+
+/**
+ * YAZ-3718 D1: one layout for each text box with runs or links, keyed by its
+ * text, runs, font and width. `refreshTextDimensions`, the canvas and the
+ * editor overlay ask for the same layout on a keystroke, so only the first one
+ * measures. The memo is for the whole window: a box that was deleted, or whose
+ * board closed, keeps its entry until the memo is full. Then the box changed
+ * longest ago goes out (YAZ-4074 6A item 16); it measures again if it comes back.
+ */
+const styledLinesMemo = new Map<
+  ExcalidrawTextElement["id"],
+  {
+    originalText: string;
+    textRuns: ExcalidrawTextElement["textRuns"];
+    font: FontString;
+    textDecoration: ExcalidrawTextElement["textDecoration"];
+    strikethrough: ExcalidrawTextElement["strikethrough"];
+    maxWidth: number;
+    linksVersion: number;
+    lines: StyledVisualLine[];
+  }
+>();
+
+/** The visual lines of a text box laid out from its source text. */
+export const getTextElementStyledLines = (
+  element: TextElementLayoutStyle & Pick<ExcalidrawTextElement, "id">,
+  maxWidth: number,
+  originalText: string,
+) => {
+  const args = getTextElementStyledLinesArgs(element, maxWidth, originalText);
+  if (!element.textRuns && !hasHostLinks(originalText)) {
+    return getStyledVisualLines(args);
+  }
+  const font = getFontString(element);
+  const memo = styledLinesMemo.get(element.id);
+  // YAZ-4039 D7: a box with links is memoized too; a label change moves the version
+  const linksVersion = getHostLinksVersion();
+  if (
+    memo &&
+    memo.originalText === originalText &&
+    memo.textRuns === element.textRuns &&
+    memo.font === font &&
+    memo.textDecoration === element.textDecoration &&
+    memo.strikethrough === element.strikethrough &&
+    memo.maxWidth === maxWidth &&
+    memo.linksVersion === linksVersion
+  ) {
+    return memo.lines;
+  }
+  const lines = getStyledVisualLines(args);
+  // a changed box goes to the end; a full memo drops the box changed longest ago
+  styledLinesMemo.delete(element.id);
+  if (styledLinesMemo.size >= STYLED_LINES_MEMO_MAX) {
+    styledLinesMemo.delete(styledLinesMemo.keys().next().value!);
+  }
+  styledLinesMemo.set(element.id, {
+    originalText,
+    textRuns: element.textRuns,
+    font,
+    textDecoration: element.textDecoration,
+    strikethrough: element.strikethrough,
+    maxWidth,
+    linksVersion,
     lines,
-    text: lines.map((line) => line.text).join("\n"),
-    width: Math.max(0, ...lines.map((line) => line.blockWidth)),
-    height: getLineHeightInPx(args.fontSize, args.lineHeight) * lines.length,
-  };
+  });
+  return lines;
 };
 
 export const getTextElementStyledLayout = (
-  element: ExcalidrawTextElement,
+  element: TextElementLayoutStyle &
+    Pick<ExcalidrawTextElement, "id" | "originalText" | "lineHeight">,
   maxWidth: number,
   originalText = element.originalText,
 ) =>
-  getStyledTextLayout({
-    originalText,
-    regularFont: getFontString({ ...element, fontWeight: "normal" }),
-    boldFont: getFontString({ ...element, fontWeight: "bold" }),
-    maxWidth,
-    lineBolds: element.lineBolds,
-    lineUnderlines: element.lineUnderlines,
-    lineStrikethroughs: element.lineStrikethroughs,
-    wholeElementBold: element.fontWeight === "bold",
-    wholeElementUnderlined: element.textDecoration === "underline",
-    wholeElementStrikethrough: element.strikethrough === true,
-    fontSize: element.fontSize,
-    lineHeight: element.lineHeight,
-  });
+  getStyledTextLayoutFromLines(
+    getTextElementStyledLines(element, maxWidth, originalText),
+    element,
+  );

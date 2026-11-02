@@ -12,6 +12,9 @@ vi.mock('../api', async (importOriginal) => ({
 }))
 
 import { api, BridgeRequestError } from '../api'
+import { storage } from '../lib/storage'
+import { BOARD_META_KEY } from '@shared/drawingAssets'
+import { DEFAULT_SETTINGS, type SettingsState } from '@shared/types'
 
 const writeAsset = vi.mocked(api.writeAsset)
 const receipt = (path: string) => ({ path, mtime: 1, size: EMPTY_SCENE_JSON.length })
@@ -45,6 +48,23 @@ describe('createDrawing', () => {
       content: EMPTY_SCENE_JSON,
       create: true,
     })
+  })
+
+  it('YAZ-3943 demo 2 and round 3: "New boards keep pictures" — assets is born pictures out, a folder you pick names the folder (none chosen yet: assets); inside writes the plain scene', async () => {
+    writeAsset.mockResolvedValue(receipt('/v/assets/drawings/x.excalidraw'))
+    const blockFor = async (newBoardPictures: SettingsState['newBoardPictures'], newBoardPicturesFolder = '') => {
+      vi.spyOn(storage, 'getSettings').mockReturnValue({ ...DEFAULT_SETTINGS, newBoardPictures, newBoardPicturesFolder })
+      await createDrawing('/v', AT)
+      return (JSON.parse(writeAsset.mock.lastCall![0].content as string) as Record<string, unknown>)[BOARD_META_KEY] as Record<string, unknown> | undefined
+    }
+    expect(await blockFor('inside', 'pics')).toBeUndefined()
+    expect(writeAsset.mock.lastCall![0].content).toBe(EMPTY_SCENE_JSON)
+    expect(await blockFor('assets', 'pics')).toEqual({ createdAt: AT.getTime(), updatedAt: AT.getTime(), pictures: 'assets', switched: { pictures: AT.getTime() } })
+    expect(await blockFor('folder', 'Board pictures')).toMatchObject({ pictures: 'assets', picturesFolder: 'Board pictures' })
+    expect(await blockFor('folder', '/Users/me/Pictures/Boards')).toMatchObject({ picturesFolder: '/Users/me/Pictures/Boards' })
+    expect(await blockFor('folder', '')).not.toHaveProperty('picturesFolder')
+    expect(await blockFor('folder', '../outside')).not.toHaveProperty('picturesFolder')
+    vi.restoreAllMocks()
   })
 
   it('NEVER overwrites: ALREADY_EXISTS retries with a " 2", " 3" suffix', async () => {

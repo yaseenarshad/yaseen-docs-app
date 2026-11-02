@@ -11,7 +11,12 @@ import {
 } from "@excalidraw/common";
 
 import {
+  getTextLayoutMaxWidth,
   getCommonBounds,
+  getLineHeightInPx,
+  getStyledVisualSelectionGeometry,
+  getTextElementStyledLines,
+  hasHostLinks,
   isElementCompletelyInViewport,
 } from "@excalidraw/element";
 
@@ -610,7 +615,36 @@ const getMatchedLines = (
   textElement: ExcalidrawTextElement,
   searchQuery: SearchQuery,
   index: number,
-) => {
+  app: AppClassProperties,
+): SearchMatch["matchedLines"] => {
+  // YAZ-3718 D1: a box with runs places the match on its styled layout, so
+  // each letter is measured with its own font (YAZ-4039 D7: a pill its width)
+  if (textElement.textRuns || hasHostLinks(textElement.originalText)) {
+    const container = app.scene.getContainerElement(textElement);
+    const lines = getTextElementStyledLines(
+      textElement,
+      getTextLayoutMaxWidth(textElement, container),
+      textElement.originalText,
+    );
+    return getStyledVisualSelectionGeometry({
+      lines,
+      containerWidth: textElement.width,
+      textAlign: textElement.textAlign,
+      lineHeightPx: getLineHeightInPx(
+        textElement.fontSize,
+        textElement.lineHeight,
+      ),
+      selectionStart: index,
+      selectionEnd: index + searchQuery.length,
+    }).rectangles.map((rectangle) => ({
+      offsetX: rectangle.left,
+      offsetY: rectangle.top,
+      width: rectangle.width,
+      height: rectangle.height,
+      showOnCanvas: true,
+    }));
+  }
+
   const normalizedText = normalizeWrappedText(
     textElement.text,
     textElement.originalText,
@@ -791,7 +825,12 @@ const handleSearch = debounce(
 
       while ((match = regex.exec(text)) !== null) {
         const preview = getMatchPreview(text, match.index, searchQuery);
-        const matchedLines = getMatchedLines(textEl, searchQuery, match.index);
+        const matchedLines = getMatchedLines(
+          textEl,
+          searchQuery,
+          match.index,
+          app,
+        );
 
         if (matchedLines.length > 0) {
           textMatches.push({

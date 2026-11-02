@@ -13,6 +13,7 @@ import type { IndexRecord, TreeResponse } from '@shared/types'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { basename, dirname, relTo } from '../lib/paths'
 import { latestTree } from '../lib/treeFeed'
+import type { IndexBoard } from '../views/useIndex'
 import { allDirs } from '../lib/treeState'
 import { idKey, resolverFor, targetKey, typedFolders } from '../views/engine'
 import { FileValue, type Resolver } from '../views/expr'
@@ -74,11 +75,23 @@ export function folderResolver(root: string, dirs: readonly string[], folders: r
  * path, title, name, a path of titles (YAZ-2478), alias (`resolverFor`) — and a folder only when
  * none answers, so a note or alias of the same name always wins. `letters` are the vault's ID
  * letters (`IndexResponse.letters`): with them an ID that has letters of before is found too (YAZ-2677 R5).
+ * A board's ID (`boards`, YAZ-3943 4C) comes before all of them, as a note's ID does: `[[YAZ-12]]` opens the board
+ * after any rename. Two boards with one ID (a copy made outside the app): the first by path. An ID it held before a two-Mac
+ * merge (`was`, YAZ-4071 7I) opens it too, after the notes.
  */
-export function linkResolver(records: readonly IndexRecord[], root: string, dirs: readonly string[], folders: readonly IndexRecord[] = [], letters?: readonly string[]): ResolveLink {
+export function linkResolver(records: readonly IndexRecord[], root: string, dirs: readonly string[], folders: readonly IndexRecord[] = [], letters?: readonly string[], boards: readonly IndexBoard[] = []): ResolveLink {
   const note = resolverFor(records, root, { folders, letters })
   const folder = folderResolver(root, dirs, folders, { letters })
-  return (target) => note(target)?.record.path ?? folder(target)
+  if (boards.length === 0) return (target) => note(target)?.record.path ?? folder(target)
+  const byId = new Map<string, string>()
+  for (const { id, path } of boards) if (!byId.has(id.toLowerCase())) byId.set(id.toLowerCase(), path)
+  // YAZ-4071 7I: an ID a board held before a two-Mac merge, after the notes: a note that holds it now wins.
+  const byWas = new Map<string, string>()
+  for (const { was, path } of boards) for (const id of was ?? []) if (!byWas.has(id.toLowerCase())) byWas.set(id.toLowerCase(), path)
+  return (target) => {
+    const key = idKey(targetKey(target), letters)
+    return byId.get(key) ?? note(target)?.record.path ?? byWas.get(key) ?? folder(target)
+  }
 }
 
 /**

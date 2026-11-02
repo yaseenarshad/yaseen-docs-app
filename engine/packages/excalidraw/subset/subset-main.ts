@@ -3,7 +3,7 @@ import { isServerEnv, promiseTry } from "@excalidraw/common";
 import { WorkerInTheMainChunkError, WorkerUrlNotDefinedError } from "../errors";
 import { WorkerPool } from "../workers";
 
-import type { Commands } from "./subset-shared.chunk";
+import { Commands, toBase64 } from "./subset-utils";
 
 let shouldUseWorkers = typeof Worker !== "undefined";
 
@@ -22,16 +22,19 @@ export const subsetWoff2GlyphsByCodepoints = async (
   arrayBuffer: ArrayBuffer,
   codePoints: Array<number>,
 ): Promise<string> => {
-  const { Commands, subsetToBase64, toBase64 } =
-    await lazyLoadSharedSubsetChunk();
+  // YAZ-4074 6A item 30: the wasm chunk loads only for a subset on the main thread
+  const onMainThread = async () =>
+    (await lazyLoadSharedSubsetChunk()).subsetToBase64(arrayBuffer, codePoints);
 
   if (!shouldUseWorkers) {
-    return subsetToBase64(arrayBuffer, codePoints);
+    return onMainThread();
   }
 
   return promiseTry(async () => {
+    let started = false;
     try {
       const workerPool = await getOrCreateWorkerPool();
+      started = true;
       // copy the buffer to avoid working on top of the detached array buffer in the fallback
       // i.e. in case the worker throws, the array buffer does not get automatically detached, even if the worker is terminated
       const arrayBufferCopy = arrayBuffer.slice(0);
@@ -43,12 +46,19 @@ export const subsetWoff2GlyphsByCodepoints = async (
         } as const,
         { transfer: [arrayBufferCopy] },
       );
+      if ("error" in result) {
+        throw new Error(result.error);
+      }
 
       // encode on the main thread to avoid copying large binary strings (as dataurl) between threads
       return toBase64(result);
     } catch (e) {
-      // don't use workers if they are failing
-      shouldUseWorkers = false;
+      // YAZ-4074 6A item 8: only a worker that cannot start turns the workers off (the pool
+      // cannot be made, or the worker's `onerror`: an event, not an Error). A job that failed
+      // or ran past the ttl falls back for this subset only.
+      if (!started || !(e instanceof Error)) {
+        shouldUseWorkers = false;
+      }
 
       if (
         // don't log the expected errors server-side
@@ -66,22 +76,13 @@ export const subsetWoff2GlyphsByCodepoints = async (
       }
 
       // fallback to the main thread
-      return subsetToBase64(arrayBuffer, codePoints);
+      return onMainThread();
     }
   });
 };
 
 // lazy-loaded and cached chunks
-let subsetWorker: Promise<typeof import("./subset-worker.chunk")> | null = null;
 let subsetShared: Promise<typeof import("./subset-shared.chunk")> | null = null;
-
-const lazyLoadWorkerSubsetChunk = async () => {
-  if (!subsetWorker) {
-    subsetWorker = import("./subset-worker.chunk");
-  }
-
-  return subsetWorker;
-};
 
 const lazyLoadSharedSubsetChunk = async () => {
   if (!subsetShared) {
@@ -99,8 +100,9 @@ type SubsetWorkerData = {
   codePoints: Array<number>;
 };
 
+/** YAZ-4074 6A item 8: a job that throws answers its error, so it never waits for the ttl. */
 type SubsetWorkerResult<T extends SubsetWorkerData["command"]> =
-  T extends typeof Commands.Subset ? ArrayBuffer : never;
+  T extends typeof Commands.Subset ? ArrayBuffer | { error: string } : never;
 
 let workerPool: Promise<
   WorkerPool<SubsetWorkerData, SubsetWorkerResult<SubsetWorkerData["command"]>>
@@ -109,18 +111,30 @@ let workerPool: Promise<
 /**
  * Lazy initialize or get the worker pool singleton.
  *
+ * YAZ-3943 1G: the worker runs from a blob of its own bundled source, as the GIF shrink worker does
+ * (`gif/gifFile.ts`): a worker started from an engine chunk imports the app's main chunk in the
+ * app's build, cannot run, and every subset fell back to the main thread. A worker that still
+ * cannot start or answer falls back to the main thread, as before.
+ *
  * @throws implicitly if anything goes wrong - worker pool creation, loading wasm, initializing worker, etc.
  */
 const getOrCreateWorkerPool = () => {
   if (!workerPool) {
     // immediate concurrent-friendly return, to ensure we have only one pool instance
     workerPool = promiseTry(async () => {
-      const { WorkerUrl } = await lazyLoadWorkerSubsetChunk();
+      const { default: source } = await import("./subset-worker?worker-source");
+      const url = URL.createObjectURL(
+        new Blob([source], { type: "text/javascript" }),
+      );
 
       const pool = WorkerPool.create<
         SubsetWorkerData,
         SubsetWorkerResult<SubsetWorkerData["command"]>
-      >(WorkerUrl);
+      >(new URL(url), {
+        // YAZ-4074 6A item 8: the first job includes the worker start, a 1.8 MB
+        // script and two wasm compiles, which pass 1 s on a busy Mac
+        ttl: 30_000,
+      });
 
       return pool;
     });

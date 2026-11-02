@@ -25,7 +25,9 @@ import {
   MAX_SESSION_TABS,
   MAX_VAULT_SETS,
   NEW_NOTE_LOCATIONS,
+  NEW_BOARD_PICTURES,
   NEW_TAB_PLACES,
+  type NewBoardPictures,
   type NewTabPlace,
   OUTSIDE_CHANGE_GLOWS,
   RIGHT_PANEL_DEFAULT_W,
@@ -142,6 +144,8 @@ import {
   normalizeFilesZoom,
 } from '@shared/types'
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
+import { isValidPicturesFolder } from '@shared/drawingAssets'
+import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
 import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId, keyFor, sameKey, scopedId, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -173,6 +177,14 @@ export interface Store {
    * The settings stay as they are. The same folder again is no change.
    */
   setSettingsFolder(folder: string | null, savedAt: number): void
+  /**
+   * A pictures folder outside a vault the user picked in the folder window (YAZ-3943 demo round 3): from now on the app may write
+   * pictures there. Already on the list: no commit. False when it is not on the list: a path that is not absolute, or a list
+   * that holds `MAX_PICTURE_FOLDERS` already (YAZ-4074 6A item 21; no old folder is dropped).
+   */
+  approvePictureFolder(folder: string): boolean
+  /** Settings › Files & Links › "Allowed picture folders" › Remove: off the list only; no file moves or goes. Not on it: no commit. */
+  removePictureFolder(folder: string): void
   /**
    * The settings of another Mac's newer file (YAZ-3276 D3), and its `savedAt`. Only fields that travel are
    * taken. A field that the file lacks, or that this build can't read and can't repair, keeps this Mac's value.
@@ -510,6 +522,9 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   newNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
   confirmDelete: (v): v is boolean => typeof v === 'boolean',
   newTabPlace: (v): v is NewTabPlace => typeof v === 'string' && (NEW_TAB_PLACES as readonly string[]).includes(v),
+  newBoardPictures: (v): v is NewBoardPictures => typeof v === 'string' && (NEW_BOARD_PICTURES as readonly string[]).includes(v),
+  // YAZ-3943 demo round 3: a vault-relative folder, or '' for none chosen yet.
+  newBoardPicturesFolder: (v): v is string => typeof v === 'string' && (v === '' || isValidPicturesFolder(v)),
   confirmRename: (v): v is boolean => typeof v === 'boolean',
   hoverPreview: (v): v is boolean => typeof v === 'boolean',
   hoverPreviewIn: isHoverPreviewIn,
@@ -999,6 +1014,8 @@ function sanitizeState(raw: unknown): AppState | null {
     sessions: sanitizeSessions(raw.sessions),
     // YAZ-3276 D2: absent, or not an absolute path, is the default (this file). An old build drops both keys.
     settingsFolder: typeof raw.settingsFolder === 'string' && isAbsolute(raw.settingsFolder) ? raw.settingsFolder : null,
+    // YAZ-3943 demo round 3: absolute paths only, each once; absent is none.
+    approvedPictureFolders: Array.isArray(raw.approvedPictureFolders) ? [...new Set(raw.approvedPictureFolders.filter((p): p is string => typeof p === 'string' && isAbsolute(p)))] : [],
     settingsSavedAt: isFiniteNumber(raw.settingsSavedAt) && raw.settingsSavedAt >= 0 ? raw.settingsSavedAt : 0,
     // YAZ-3343 D1: absent is the default; an old build drops the key.
     tabCanvas: sanitizeTabCanvas(raw.tabCanvas, windows),
@@ -1128,6 +1145,18 @@ export function createStore(filePath: string): Store {
     setSettingsFolder(folder, savedAt) {
       if (folder === state.settingsFolder) return
       commit({ ...state, settingsFolder: folder, settingsSavedAt: savedAt })
+    },
+
+    approvePictureFolder(folder) {
+      if (state.approvedPictureFolders.includes(folder)) return true
+      if (!isAbsolute(folder) || state.approvedPictureFolders.length >= MAX_PICTURE_FOLDERS) return false
+      commit({ ...state, approvedPictureFolders: [...state.approvedPictureFolders, folder] })
+      return true
+    },
+
+    removePictureFolder(folder) {
+      if (!state.approvedPictureFolders.includes(folder)) return
+      commit({ ...state, approvedPictureFolders: state.approvedPictureFolders.filter((f) => f !== folder) })
     },
 
     applyFolderSettings(incoming, savedAt) {

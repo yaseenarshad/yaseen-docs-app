@@ -149,7 +149,7 @@ function requireFilesAction(v: unknown, from: WindowEntry): FilesAction {
   switch (v.kind) {
     case 'open':
       if (v.how !== 'preview' && v.how !== 'keep' && v.how !== 'background') throw new BridgeFailure('BAD_REQUEST', "'action.how' must be preview, keep or background")
-      return { kind: 'open', path: inVault(v.path, 'action.path'), how: v.how }
+      return { kind: 'open', path: inVault(v.path, 'action.path'), how: v.how, ...(v.how === 'background' && v.copy === true ? { copy: true as const } : {}) }
     case 'history':
     case 'share':
       return { kind: v.kind, path: inVault(v.path, 'action.path') }
