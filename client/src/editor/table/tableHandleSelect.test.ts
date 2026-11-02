@@ -50,6 +50,31 @@ describe('a drag along the handles selects a range, as in Sheets', () => {
     expect(menus).toBe(0)
   })
 
+  it('reads the rows\' boxes once at the press, and again after a scroll, not on each move (YAZ-4176)', async () => {
+    const view = await mountTable(WIDE)
+    layOut(view)
+    let reads = 0
+    for (const row of view.dom.querySelector<HTMLTableElement>('.milkdown-table-block .table-wrapper > table')!.rows) {
+      const real = row.getBoundingClientRect
+      row.getBoundingClientRect = () => {
+        reads++
+        return real.call(row)
+      }
+    }
+    fire(handle(view, 'row'), 'mousedown', 5, 45)
+    const atPress = reads
+    expect(atPress).toBeGreaterThan(0)
+    fire(document, 'mousemove', 5, 75)
+    fire(document, 'mousemove', 5, 105)
+    expect(reads).toBe(atPress)
+    // A scroll moves the rows: the next move reads them again.
+    view.dom.dispatchEvent(new Event('scroll'))
+    fire(document, 'mousemove', 5, 75)
+    expect(reads).toBeGreaterThan(atPress)
+    fire(document, 'mouseup', 5, 75)
+    expect(rect(view)).toEqual([true, true, false, 6])
+  })
+
   it('a drag from a body row up over the header row stops at row 2: the header row is never taken in', async () => {
     const view = await mountTable(WIDE)
     layOut(view)

@@ -160,20 +160,27 @@ function openBar(view: EditorView, event: MouseEvent): boolean {
   return false
 }
 
-/** ↑ / ↓ at the edge of a cell's text, onto a folded row: the caret goes to the row past the run, in the same column. */
+/**
+ * ↑ / ↓ at the edge of a cell's text, onto a folded row: the caret goes to the row past the run, in the same column.
+ * The folded row comes first, from the document: with none next to the caret's row, no layout is read (YAZ-4176).
+ */
 const stepOver =
   (dir: 1 | -1): Command =>
   (state, dispatch, view) => {
-    const at = view === undefined ? null : atEndOfCell(view, 'vert', dir)
-    if (at === null) return false
-    // `at` is before the cell: its row is the parent, its table the row's parent.
-    const $cell = state.doc.resolve(at)
-    const table = $cell.node(-1)
-    const tableStart = $cell.start(-1)
+    if (view === undefined || !(state.selection instanceof TextSelection)) return false
+    const { $head } = state.selection
+    let depth = $head.depth
+    while (depth > 0 && $head.node(depth).type.spec.tableRole !== 'row') depth--
+    if (depth === 0) return false
+    const table = $head.node(depth - 1)
+    const tableStart = $head.start(depth - 1)
+    const at = $head.before(depth + 1)
     const map = TableMap.get(table)
     const { top, bottom, left } = map.findCell(at - tableStart)
     let row = dir > 0 ? bottom : top - 1
     if (row < 0 || row >= map.height || !rowFolded(table.child(row))) return false
+    if (atEndOfCell(view, 'vert', dir) === null) return false
+    const $cell = state.doc.resolve(at)
     while (row >= 0 && row < map.height && rowFolded(table.child(row))) row += dir
     // Below a run at the table's end: out of the table, as ↓ from its last row.
     const target = row >= map.height ? $cell.end(-1) + 1 : tableStart + map.map[row * map.width + left]! + 1

@@ -254,6 +254,29 @@ describe('the caret steps over a folded run', () => {
   })
 })
 
+describe('↑ / ↓ with no folded row next to the caret\'s row', () => {
+  it('ask the fold for no layout: it checks the rows in the document first (YAZ-4176)', async () => {
+    const counts: number[] = []
+    for (const fold of [false, true]) {
+      const { crepe, view } = await mountNote(rows(6, 'fold 5-6'))
+      // The baseline: the same note with no fold plugin (`tableEditing` and the keymaps read on their own).
+      if (!fold) view.updateState(view.state.reconfigure({ plugins: view.state.plugins.filter((p) => (p as unknown as { key: string }).key !== 'mdapp-table-fold$') }))
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 1, 0) + 2)))
+      const real = view.endOfTextblock.bind(view)
+      let reads = 0
+      view.endOfTextblock = (dir, state) => {
+        reads++
+        return real(dir, state)
+      }
+      pressKey(crepe, 'ArrowDown')
+      counts.push(reads)
+    }
+    // With a run far from the caret, the fold plugin adds no read.
+    expect(counts[0]).toBeGreaterThan(0)
+    expect(counts[1]).toBe(counts[0])
+  })
+})
+
 describe('fill down and paste skip folded rows (the rule: a folded row is never written)', () => {
   const FILL = '| A |\n| --- |\n| 1 |\n| 2 |\n| x |\n| y |\n| z |\n|  |\n|  |\n\n<!-- table: fold 4-6 -->\n'
 
