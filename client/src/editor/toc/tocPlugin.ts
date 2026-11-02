@@ -149,13 +149,42 @@ export const scanBullets = (doc: ProseNode): ScannedRow[] => {
 /**
  * Every H1-H5 of the note, in document order: the ones outside lists, in blockquotes, and inside
  * list items at any depth. Every block is visited and no textblock is entered.
+ *
+ * A HEADING INSIDE A BULLET takes its level from its PLACE, not from its H number (YAZ-4094 4E): it
+ * is one level under the nearest heading that holds it — a bullet above it whose label is a heading,
+ * or else the heading whose section the list is in — down to H5's level at most. So `* # test` deep
+ * under `* ### Lookback` in the section "Weekly planning" (H1) is a row under Lookback (2), at 3.
+ * A heading outside lists keeps its H number, as before.
  */
 export const scanAllHeadings = (doc: ProseNode): ScannedRow[] => {
   const found: ScannedRow[] = []
+  /** The row level of each bullet whose label is a heading. */
+  const labelLevels = new Map<number, number>()
+  /** The level of the last heading outside lists: the section a list below it is in. */
+  let sectionLevel = 0
   doc.descendants((node, pos) => {
     const level = headingLevel(node)
-    if (level !== null && level <= DEEPEST_TOC_LEVEL) found.push({ level: level as TocLevel, text: node.textContent.trim() || 'Untitled heading', pos })
-    return !node.isTextblock
+    if (level === null || level > DEEPEST_TOC_LEVEL) return !node.isTextblock
+    const $pos = doc.resolve(pos)
+    let holder: number | null = null
+    let inList = false
+    for (let depth = $pos.depth; depth > 0; depth--) {
+      if (!isListItem($pos.node(depth))) continue
+      inList = true
+      const itemPos = $pos.before(depth)
+      // The heading's own bullet holds it only as its label: that is the row itself.
+      const own = depth === $pos.depth && $pos.index() === 0
+      if (!own && labelLevels.has(itemPos)) {
+        holder = labelLevels.get(itemPos) ?? null
+        break
+      }
+    }
+    const rowLevel = inList ? Math.min(DEEPEST_TOC_LEVEL, (holder ?? sectionLevel) + 1) : level
+    if (!inList) sectionLevel = level
+    const itemPos = labelledItemPos(doc, pos)
+    if (itemPos !== null) labelLevels.set(itemPos, rowLevel)
+    found.push({ level: rowLevel as TocLevel, text: node.textContent.trim() || 'Untitled heading', pos })
+    return false
   })
   return found
 }
@@ -169,7 +198,8 @@ export const scanNote = (doc: ProseNode, source: TocSource | null = null): Scann
   if (source === 'headings') return { bullets: false, rows: scanAllHeadings(doc) }
   if (source === 'bullets') return { bullets: true, rows: scanBullets(doc) }
   const headings = scanHeadings(doc)
-  if (headings.length >= ENOUGH_ROWS) return { bullets: false, rows: headings }
+  // Enough headings outside lists make it a heading note: then the headings inside its bullets are rows too (YAZ-4094 4E).
+  if (headings.length >= ENOUGH_ROWS) return { bullets: false, rows: scanAllHeadings(doc) }
   const bullets = scanBullets(doc)
   return bullets.length >= ENOUGH_ROWS ? { bullets: true, rows: bullets } : { bullets: false, rows: headings }
 }
@@ -185,11 +215,10 @@ export const scanZoom = (doc: ProseNode, itemPos: number, source: TocSource | nu
   if (!isListItem(item)) return null
   const rows: ScannedRow[] = []
   if (source === 'headings') {
-    item.descendants((node, offset) => {
-      const level = headingLevel(node)
-      if (level !== null && level <= DEEPEST_TOC_LEVEL) rows.push({ level: level as TocLevel, text: node.textContent.trim() || 'Untitled heading', pos: itemPos + 1 + offset })
-      return !node.isTextblock
-    })
+    // The note's rows inside the bullet, raised so the highest is level 1.
+    const inside = scanAllHeadings(doc).filter(({ pos }) => itemPos < pos && pos < itemPos + item.nodeSize)
+    const top = Math.min(...inside.map(({ level }) => level))
+    for (const row of inside) rows.push({ ...row, level: (row.level - top + 1) as TocLevel })
   } else {
     for (const nested of findNestedLists(item)) collectBullets(nested.list, itemPos + nested.offset + 2, 1, rows)
   }
