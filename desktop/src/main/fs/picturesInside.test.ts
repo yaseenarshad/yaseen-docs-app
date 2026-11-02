@@ -189,6 +189,21 @@ describe('YAZ-3943 D5 — board:set-pictures, the cog\'s "Move pictures out" / "
     expect(await readFile(file, 'utf8')).toBe(body)
   })
 
+  it('YAZ-4074 6A item 2: a move while a used picture is missing is refused, in each direction, and writes nothing', async () => {
+    await seed('Old pictures/aaa.png', 'A')
+    const body = board({ ...OUT, picturesFolder: 'Old pictures' }, [imageEl('aaa'), imageEl('gone'), imageEl('lost')])
+    const file = await seed('Board.excalidraw', body)
+    const mtime = (await stat(file)).mtimeMs
+    for (const req of [{ out: false }, { out: true }, { out: true, folder: 'New pictures' }]) {
+      const err = await failure(setBoardPictures({ root, path: file, ...req, expectedMtime: mtime }))
+      expect(err.code, JSON.stringify(req)).toBe('NOT_FOUND')
+      expect(err.message).toBe('2 pictures are missing. Find them before you move the pictures.')
+    }
+    expect(await readFile(file, 'utf8')).toBe(body)
+    expect(await assets()).toEqual([])
+    expect(await readdir(path.join(root, 'New pictures')).catch(() => null)).toBeNull()
+  })
+
   it('refuses a malformed request', async () => {
     const file = await seed('Board.excalidraw', board(null, []))
     expect((await failure(setBoardPictures({ root, path: file, out: 'yes', expectedMtime: 1 } as never))).code).toBe('BAD_REQUEST')

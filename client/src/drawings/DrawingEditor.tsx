@@ -43,12 +43,13 @@
  * for a folder outside the vault, shown as `~/…`). Each move asks first, in the app's own confirm sheet
  * with the real count, size and places (`picturesMoveAsk`; an outside folder adds its one warning); "Choose a
  * folder…" opens the native folder dialog (`dialog:pick-pictures-folder`) and asks after the pick. Cancel,
- * Esc or a click outside changes nothing. The sheet is built on the click, never on a keystroke. A board that
+ * Esc or a click outside changes nothing. The sheet is built on the click, never on a keystroke. While a picture
+ * is missing, a move only says why (YAZ-4074 6A item 2: it would leave that picture behind). A board that
  * opens naming an outside folder this Mac has not approved asks once to allow it (`usePicturesFolderAllow`).
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse, PageView } from '@shared/types'
-import { missingPicturesText, picturesFolderOutside, picturesSize, unpersistedFiles, withHomeTilde } from '@shared/drawingAssets'
+import { missingPicturesText, picturesFolderOutside, picturesMissingRefusal, picturesSize, unpersistedFiles, withHomeTilde } from '@shared/drawingAssets'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
@@ -429,7 +430,12 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
    */
   const askMovePictures = async (to: PicturesPlace): Promise<void> => {
     if (board.retired.current) return
-    const { count, bytes } = surface.current?.pictures() ?? { bytes: 0, count: 0 }
+    const { count, bytes, missing } = surface.current?.pictures() ?? { bytes: 0, count: 0, missing: 0 }
+    // 6A item 2: a move would leave a missing picture behind, so it asks for nothing (main refuses it too).
+    if (missing > 0) {
+      onNotice?.(picturesMissingRefusal(missing), 'error')
+      return
+    }
     if (to !== 'folder') {
       setPicturesAsk({ to, count, bytes })
       return

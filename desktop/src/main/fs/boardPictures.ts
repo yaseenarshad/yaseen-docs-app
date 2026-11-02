@@ -12,6 +12,8 @@
  *  - INSIDE reads the pictures the board uses from its folder or `assets/` (`embedPictures`), writes them
  *    into `files`, and removes the flag and the folder. A board that would be 50 MB or more with them
  *    inside is refused (`TOO_LARGE`): its next save would move them out again (the 50 MB rule).
+ *  - A move while a picture the board uses is found nowhere is refused (`NOT_FOUND`, YAZ-4074 6A item 2): it would
+ *    stay behind in a folder the block stops naming. The cog says so before it asks.
  *
  * ONE READ, ONE WRITE, like `board:set-read-only`: a stale `expectedMtime` is `CONFLICT` with the disk
  * mtime and writes nothing; the result is one `atomicWrite`. NO WAY DELETES a picture file, in any folder
@@ -21,7 +23,7 @@
  * vault (absolute) must be on `approved` — the folders the user picked in the folder window — or it is refused:
  * only the user's own pick may make the app write outside the vault (`fs/picturesFolders.ts`).
  */
-import { BOARD_META_KEY, isValidPicturesFolder, PICTURES_INSIDE_MAX_BYTES, picturesFolderOf, picturesFolderOutside, serializeBoard, stripEmbeddedScene, withPicturesOut } from '@shared/drawingAssets'
+import { BOARD_META_KEY, isValidPicturesFolder, PICTURES_INSIDE_MAX_BYTES, picturesFolderOf, picturesFolderOutside, picturesMissingRefusal, referencedFileIds, serializeBoard, stripEmbeddedScene, withPicturesOut } from '@shared/drawingAssets'
 import type { BoardPicturesResponse } from '@shared/types'
 import { BOARDS, boardTarget } from './boardDocument'
 import { readBoundedRegularFile } from './boundedRead'
@@ -47,18 +49,14 @@ export async function setBoardPictures(req: unknown, approved: readonly string[]
   const { scene, elements } = parseScene(text, file, 'IO_ERROR')
   // Every picture the board uses, from wherever it is now: the file, the folder it names today, `assets/`.
   const files = await embedPictures(dir, elements, [stripEmbeddedScene(scene).embedded], scene, picturesFolderOf(scene[BOARD_META_KEY]))
-  let next: string
-  if (out) {
-    const { lean } = liftEmbedded(scene, elements)
-    next = serializeBoard(withPicturesOut(lean, true, snap.mtime, Date.now(), folder ?? null))
-    if (next === text) return { path: file, mtime: snap.mtime, size: snap.size }
-    // Assets first, then the file that names them (`drawing.ts`); into the folder the file is about to name.
-    await landAssets(dir, liftEmbedded({ ...scene, files }, elements).lifted, folder ?? null)
-  } else {
-    next = serializeBoard(withPicturesOut({ ...scene, files }, false, snap.mtime))
-    if (next === text) return { path: file, mtime: snap.mtime, size: snap.size }
-    if (Buffer.byteLength(next, 'utf8') >= PICTURES_INSIDE_MAX_BYTES) throw new BridgeFailure('TOO_LARGE', TOO_BIG_INSIDE, { path: file })
-  }
+  const next = out ? serializeBoard(withPicturesOut(liftEmbedded(scene, elements).lean, true, snap.mtime, Date.now(), folder ?? null)) : serializeBoard(withPicturesOut({ ...scene, files }, false, snap.mtime))
+  if (next === text) return { path: file, mtime: snap.mtime, size: snap.size }
+  // 6A item 2: a used picture found nowhere would stay behind, and the block would stop naming the folder it may come back to.
+  const missing = referencedFileIds(elements).size - Object.keys(files).length
+  if (missing > 0) throw new BridgeFailure('NOT_FOUND', picturesMissingRefusal(missing), { path: file })
+  // Assets first, then the file that names them (`drawing.ts`); into the folder the file is about to name.
+  if (out) await landAssets(dir, liftEmbedded({ ...scene, files }, elements).lifted, folder ?? null)
+  else if (Buffer.byteLength(next, 'utf8') >= PICTURES_INSIDE_MAX_BYTES) throw new BridgeFailure('TOO_LARGE', TOO_BIG_INSIDE, { path: file })
   const { mtime, size } = await fsCall(file, () => atomicWrite(file, next))
   return { path: file, mtime, size }
 }

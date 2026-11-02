@@ -413,6 +413,12 @@ export function picturesSize(elements: readonly unknown[], files: Readonly<Recor
 /** "3 pictures are missing" (YAZ-3943 1F): the count first, as the size row says it. */
 export const missingPicturesText = (missing: number): string => (missing === 1 ? '1 picture is missing' : `${missing} pictures are missing`)
 
+/**
+ * Why a picture move is refused while a picture is missing (YAZ-4074 6A item 2): the move would leave it behind, and
+ * the block would stop naming the folder where it may come back (an unmounted drive, a renamed folder).
+ */
+export const picturesMissingRefusal = (missing: number): string => `${missingPicturesText(missing)}. Find ${missing === 1 ? 'it' : 'them'} before you move the pictures.`
+
 // ---------- A new drawing (YAZ-877, moved here for `fs:create-board` by YAZ-3028 D9) ----------
 
 /**

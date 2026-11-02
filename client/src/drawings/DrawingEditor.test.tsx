@@ -778,6 +778,24 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', '1 picture is missing', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
   })
 
+  it('YAZ-4074 6A item 2: with a used picture missing, a move says why and opens no box and no folder window', async () => {
+    const onNotice = vi.fn()
+    surface.pictures = { bytes: 1000, count: 1, missing: 1 }
+    load.mockResolvedValue(loaded({ json: withBlock({ pictures: 'assets', picturesFolder: 'Old pictures' }) }))
+    render({ onNotice })
+    await flush()
+    emit(1)
+    for (const label of ['Keep pictures inside', 'Move to the assets folder', 'Choose a folder…']) {
+      act(() => cog().click())
+      await act(async () => row(label)!.click())
+      await flush()
+      expect(onNotice, label).toHaveBeenLastCalledWith('1 picture is missing. Find it before you move the pictures.', 'error')
+      expect(sheet(), label).toBeNull()
+    }
+    expect(api.pickPicturesFolder).not.toHaveBeenCalled()
+    expect(setBoardPictures).not.toHaveBeenCalled()
+  })
+
   it('demo round 3: a board naming an outside folder this Mac has not allowed asks once when it opens; "Not now" allows nothing, and the cog shows the amber line with "Allow…", which asks again', async () => {
     const list = vi.mocked(api.pictureFolders.list)
     const allow = vi.mocked(api.pictureFolders.allow)
