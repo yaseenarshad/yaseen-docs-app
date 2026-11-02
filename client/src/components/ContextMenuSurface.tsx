@@ -27,21 +27,29 @@ export function ContextMenuSurface({ x, y, onClose, children, minWidth, classNam
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') close()
     }
-    // A click in a frame — a draw.io diagram — never reaches this page: the window's blur says it (YAZ-4156 bug 3H),
-    // as the zoom menu and the tab row panel do. A frame that has the keyboard as the menu opens lets it go first, or
-    // the window, already blurred, could not blur again. A menu only: a dialog on the surface (the icon picker's search,
-    // a board's Info) keeps what was typed when the user switches apps.
-    const onBlur = role === 'menu'
-    if (onBlur && document.activeElement instanceof HTMLIFrameElement) document.activeElement.blur()
+    // A press in a frame — a draw.io diagram — never reaches this page (YAZ-4156 bug 3H). The page sees the keyboard go
+    // into the frame: the window blurs, and the frame is the active element. That counts as a press outside. A switch to
+    // another app moves no focus here, so the surface stays, with what was typed in it (the add-column form's name, the
+    // icon picker's search). The check waits a tick: the frame is the active element only once the blur is done. A frame
+    // that has the keyboard as the surface opens lets it go first, or the window, already blurred, could not blur again.
+    if (document.activeElement instanceof HTMLIFrameElement) document.activeElement.blur()
+    let tick: number | undefined
+    const closeOnFrame = () => {
+      window.clearTimeout(tick)
+      tick = window.setTimeout(() => {
+        if (document.activeElement instanceof HTMLIFrameElement) close()
+      })
+    }
     window.addEventListener('mousedown', close)
     window.addEventListener('keydown', closeOnEscape)
-    if (onBlur) window.addEventListener('blur', close)
+    window.addEventListener('blur', closeOnFrame)
     return () => {
+      window.clearTimeout(tick)
       window.removeEventListener('mousedown', close)
       window.removeEventListener('keydown', closeOnEscape)
-      window.removeEventListener('blur', close)
+      window.removeEventListener('blur', closeOnFrame)
     }
-  }, [role])
+  }, [])
 
   useLayoutEffect(() => {
     const bounds = menuRef.current?.getBoundingClientRect()

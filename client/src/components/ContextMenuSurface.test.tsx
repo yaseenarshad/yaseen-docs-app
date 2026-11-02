@@ -1,6 +1,6 @@
 /**
- * ContextMenuSurface: what closes a menu. A click in a frame (a draw.io diagram) never reaches the page, so the
- * window's blur closes it too (YAZ-4156 demo round 2).
+ * ContextMenuSurface: what closes a menu. A press in a frame (a draw.io diagram) never reaches the page, so the
+ * keyboard going into the frame closes it too (YAZ-4156 bug 3H); a switch to another app does not.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -32,20 +32,26 @@ describe('ContextMenuSurface closes', () => {
     expect(onClose).toHaveBeenCalledTimes(2)
   })
 
-  it('when the window loses focus, as a click into a draw.io frame makes it do', () => {
+  it('when the keyboard goes into a frame, as a press in a draw.io diagram does: the window blurs and the frame is active', async () => {
     const onClose = vi.fn()
     mount(onClose)
+    const frame = document.body.appendChild(document.createElement('iframe'))
+    frame.focus()
     act(() => void window.dispatchEvent(new Event('blur')))
+    await act(async () => new Promise((done) => setTimeout(done)))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('a dialog on the surface stays when the window loses focus, so a typed search is kept, and leaves a frame its keyboard (YAZ-4156 3H, checker)', () => {
-    const onClose = vi.fn()
-    const frame = document.body.appendChild(document.createElement('iframe'))
-    frame.focus()
-    mount(onClose, 'dialog')
-    act(() => void window.dispatchEvent(new Event('blur')))
-    expect([onClose.mock.calls.length, document.activeElement === frame]).toEqual([0, true])
+  it('not on a switch to another app: the window blurs but no frame takes the keyboard, so a typed field keeps its text (YAZ-4156 checker round 2)', async () => {
+    for (const role of ['menu', 'dialog'] as const) {
+      const onClose = vi.fn()
+      mount(onClose, role)
+      act(() => void window.dispatchEvent(new Event('blur')))
+      await act(async () => new Promise((done) => setTimeout(done)))
+      expect([role, onClose.mock.calls.length]).toEqual([role, 0])
+      act(() => root?.unmount())
+      root = null
+    }
   })
 
   it('takes the keyboard back from a frame that has it as the menu opens, so a click into the frame blurs the window again', () => {
