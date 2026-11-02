@@ -193,6 +193,17 @@ describe('Copy as › Without folded lines (YAZ-3653)', () => {
     expect(onCopyNotice).toHaveBeenCalledTimes(2)
   })
 
+  it('a hidden cell note stays out, and counts as a folded line; its mark stays in the cell (YAZ-3818 D4)', async () => {
+    const onCopyNotice = vi.fn()
+    const { crepe } = await focused('Before.\n\n| a          |\n| ---------- |\n| b[^cell-1] |\n\n[^cell-1]: secret\n\nAfter.\n', { onCopyNotice })
+    select(crepe, posOf(crepe, 'Before.'), endOf(crepe, 'After.'))
+    const { text, htmlText } = copyVisible()
+    expect(text).toContain('After.')
+    expect(text).not.toContain('secret')
+    expect(htmlText).not.toContain('secret')
+    expect(onCopyNotice).toHaveBeenLastCalledWith('Copied, 1 folded line left out')
+  })
+
   it('S23: the key, once picked in Settings › Hotkeys, asks main for the copy: the bullet at the caret, else the selection', async () => {
     const edit = vi.fn(async () => undefined)
     window.yaseenDocs = { ...window.yaseenDocs, menu: { ...window.yaseenDocs.menu, edit } }

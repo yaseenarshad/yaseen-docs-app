@@ -14,7 +14,9 @@ import { parseTableComment } from '../table/tableComment'
  * line — a block of two or more lines of the file shows its range (D7), as a setext heading's
  * underline does. A table's comment is skipped the same way (YAZ-3758, rule 41a): the editor joins
  * a `table` and the `<!-- table: … -->` right after it (`tableStyleRemark`), and the table's entry
- * ends on the comment. Any other HTML block is a block, as before.
+ * ends on the comment. Any other HTML block is a block, as before. A footnote is no block: its
+ * blocks are (a cell note's too, YAZ-3818), and a footnote with none (`[^1]:`) is one empty
+ * paragraph on its line, as the editor fills it.
  */
 export interface BlockLines {
   lines: number[]
@@ -54,6 +56,8 @@ export function blockLines(text: string): BlockLines {
   let emptyItem: number | null = null
   // Per open quote, the count of blocks when it opened: the editor fills a quote that holds none with an empty paragraph.
   const quotes: number[] = []
+  // The line of a footnote that holds no block yet (`[^1]:`): the editor fills it with an empty paragraph too (YAZ-3818).
+  let emptyNote: number | null = null
   const add = (line: number, end: number, kind: string) => {
     lines.push(line)
     ends.push(end)
@@ -77,6 +81,14 @@ export function blockLines(text: string): BlockLines {
       if (phase === 'enter' && emptyItem === token.start.line) emptyItem = null
       else flush()
     }
+    if (LISTS.has(type) || type === 'blockQuote') emptyNote = null
+    if (type === 'gfmFootnoteDefinition') {
+      if (phase === 'enter') emptyNote = token.start.line
+      else if (emptyNote !== null) {
+        add(emptyNote, emptyNote, 'p')
+        emptyNote = null
+      }
+    }
     if (type === 'blockQuote') {
       if (phase === 'enter') {
         emptyItem = null
@@ -93,6 +105,7 @@ export function blockLines(text: string): BlockLines {
     const kind = KIND[type]
     if (kind === undefined) continue
     emptyItem = null
+    emptyNote = null
     // A fence that is never closed runs to the end of the text, and ends at the START of the line under its last one.
     const { start, end } = token
     const last = end.column === 1 && end.line > start.line ? end.line - 1 : end.line

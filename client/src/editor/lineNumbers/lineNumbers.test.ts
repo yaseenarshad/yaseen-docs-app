@@ -388,14 +388,28 @@ describe('line numbers: shapes where the page and the file could disagree', () =
     expect(words(root)).toEqual(['1:Intro.', '5:Title', '8:After.'])
   })
 
-  it('a footnote definition is a block the file has no kind for: the numbers stop there (S45, S46)', async () => {
-    const { root } = await open(['Text[^1].', '', '[^1]: The note.', '', 'After.', ''].join('\n'))
-    expect(words(root)).toEqual(['1:Text1.'])
+  it('a footnote definition holds blocks: the numbers go on through it (S45, S46; YAZ-3818)', async () => {
+    const file = ['Text[^1].', '', '[^1]: The note.', '', '    * a bullet', '', 'After.', ''].join('\n')
+    const { root } = await open(file)
+    expect(words(root)).toEqual(['1:Text1.', '3:The', '5:a', '7:After.'])
+    expectWordsOnTheirLines(root, file)
   })
 
-  it('a footnote definition with no text, where the file has no entry left: it stops the numbers and takes none itself (S45)', async () => {
-    const { root } = await open(['Text[^1].', '', '[^1]:', ''].join('\n'))
-    expect(numbered(root).map((el) => el.dataset.line)).toEqual(['1'])
+  it('a footnote definition with no text is one empty line on its own line, before and after a save (S45; YAZ-3818)', async () => {
+    const file = ['Text[^1].', '', '[^1]:', '', 'After.', ''].join('\n')
+    const { root, crepe } = await open(file)
+    expect(words(root)).toEqual(['1:Text1.', '3:', '5:After.'])
+    // The save writes the empty line as `[^1]: <br />`, an HTML block in the footnote.
+    expect(showSaved(crepe, file)).toBe('Text[^1].\n\n[^1]: <br />\n\nAfter.\n')
+    expect(words(root)).toEqual(['1:Text1.', '3:', '5:After.'])
+  })
+
+  it('a cell note pairs its lines, hidden or not (YAZ-3818 D4)', async () => {
+    const file = ['| a          |', '| ---------- |', '| b[^cell-1] |', '', '[^cell-1]: One.', '', '    * bullet', '      * child', '', 'After.', ''].join('\n')
+    const { root, view } = await open(file)
+    expect(view.state.doc.child(1).type.name).toBe('cell_note')
+    expect(numbers(root)).toEqual([1, 5, 7, 8, 10])
+    expectWordsOnTheirLines(root, file)
   })
 
   it('a raw HTML block, a setext heading and an indented code block', async () => {

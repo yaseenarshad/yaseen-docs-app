@@ -13,7 +13,7 @@
  *  - `visibleTypeOver` — the same for typing (`handleTextInput`).
  *  - `liftHeadlessItems` — a list_item whose first child is a list yields its kids one level up,
  *    whatever produced it (D3).
- *  - `isHiddenTextblock` — the fold / heading-fold / zoom plugins' own STATE, never the DOM.
+ *  - `isHiddenTextblock` — the fold / heading-fold / zoom / cell-note plugins' own STATE, never the DOM.
  *  - `coveredLines` / `onCoveredLines` — the selection minus the zero-width touch on the line
  *    after or before, for commands that act on the lines under it: Tab, Shift-Tab, Mod-] / Mod-[,
  *    Mod-Enter (YAZ-3003).
@@ -32,6 +32,7 @@ import { collapsedSectionAround, collapsedSectionBlocks } from './outline/headin
 import { findFoldedChildren, isListItem, isTableCell, LIST_NODE_NAMES } from './outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed } from './outline/outlineFolding'
 import { getZoomedItemPos } from './outline/zoom'
+import { isCellNote, isCellNoteHidden } from './table/cellNotes'
 
 /** Priority above Crepe's list/table/base keymaps (default 50). */
 const PRIORITY = 100
@@ -49,15 +50,16 @@ const edgeAt = ($head: ResolvedPos, dir: 1 | -1): Edge | null => {
 }
 
 /**
- * The whole hidden run around the textblock at `$pos`, or null when it is in view (D6). Asks the three plugins that
+ * The whole hidden run around the textblock at `$pos`, or null when it is in view (D6). Asks the plugins that
  * hide things, through their own state: outside the zoomed item's subtree (`getZoomedItemPos` — the zoom decorations
  * hide every block off the root → item path, the ancestors' own text included), inside a collapsed heading's section
- * (`collapsedSectionAround`), or inside a collapsed bullet's nested list (`collapsedItemsHiding`). All three answer from
- * plugin state, which is what their `display: none` decorations are computed from — no DOM, no re-derived fold logic.
+ * (`collapsedSectionAround`), inside a collapsed bullet's nested list (`collapsedItemsHiding`), or inside a hidden cell
+ * note (`isCellNoteHidden`, YAZ-3818 D4). All answer from plugin state, which is what their `display: none` is computed
+ * from — no DOM, no re-derived fold logic.
  * A folded ANCESTOR of the zoomed item hides nothing: the zoom shows it expanded (zoom.css), so only a fold at or below
  * the zoomed item counts (YAZ-3209 bug 1B1). The run is the OUTERMOST one — all of the zoom's outside, the whole
- * section, the folded item's whole nested list — so a walk steps over it in one jump (YAZ-3695: 2,000 hidden lines
- * cost ~14 ms one by one).
+ * section, the folded item's whole nested list or the whole cell note — so a walk steps over it in one jump (YAZ-3695:
+ * 2,000 hidden lines cost ~14 ms one by one).
  */
 const hiddenRun = (state: EditorState, $pos: ResolvedPos): { from: number; to: number } | null => {
   const pos = $pos.pos
@@ -69,11 +71,18 @@ const hiddenRun = (state: EditorState, $pos: ResolvedPos): { from: number; to: n
   }
   const section = collapsedSectionAround(state, pos)
   if (section !== null) return section
+  // A hidden cell note and a folded item's nested list can hold each other: the one that starts first is the outer.
+  let note: { from: number; to: number } | null = null
+  for (let depth = 1; depth <= $pos.depth && note === null; depth++) {
+    if (isCellNote($pos.node(depth)) && isCellNoteHidden(state, $pos.before(depth))) note = { from: $pos.before(depth), to: $pos.after(depth) }
+  }
   const fold = collapsedItemsHiding(state, pos).find((itemPos) => zoomed === null || itemPos >= zoomed)
-  if (fold === undefined) return null
+  if (fold === undefined) return note
   // The folded item's nested list that holds `pos`: the child one level below the item.
-  for (let depth = 1; depth < $pos.depth; depth++) if ($pos.before(depth) === fold) return { from: $pos.before(depth + 1), to: $pos.after(depth + 1) }
-  return null
+  for (let depth = 1; depth < $pos.depth; depth++) {
+    if ($pos.before(depth) === fold) return note !== null && note.from < $pos.before(depth + 1) ? note : { from: $pos.before(depth + 1), to: $pos.after(depth + 1) }
+  }
+  return note
 }
 
 /** Is the textblock around `$pos` hidden from view (D6)? See `hiddenRun`. */
@@ -150,8 +159,8 @@ export const onCoveredLines = (cmd: Command): Command => (state, dispatch, view)
  * found on the way (one Set lookup) and its nested lists and tables (YAZ-3696 D11) are skipped whole — only those: its own
  * other blocks stay visible, as the fold shows them (bug 1B2), and a folded ancestor of the zoomed
  * item hides nothing, as zoom.css shows it expanded (bug 1B1). A folded heading's section is a set
- * of whole blocks, skipped by their start; the zoom is one range. Each check is O(1), so the walk
- * costs the visible lines only.
+ * of whole blocks, skipped by their start; the zoom is one range; a hidden cell note (YAZ-3818 D4) is skipped whole.
+ * Each check is O(1), so the walk costs the visible lines only.
  */
 export const eachVisibleTextblock = (
   state: EditorState,
@@ -172,7 +181,7 @@ export const eachVisibleTextblock = (
     else visit(block, pos, parent, index)
   }
   state.doc.nodesBetween(from, to, (node, pos, parent, index) => {
-    if (sections.has(pos) || foldedLists.has(pos) || (zoomed !== null && (pos + node.nodeSize <= zoomed || pos >= zoomEnd))) {
+    if (sections.has(pos) || foldedLists.has(pos) || (zoomed !== null && (pos + node.nodeSize <= zoomed || pos >= zoomEnd)) || (isCellNote(node) && isCellNoteHidden(state, pos))) {
       hidden = true
       skip?.(pos)
       return false

@@ -102,6 +102,12 @@ describe('blockLines: one entry per leaf block, in order', () => {
     expect(index('text[^1]', '', '[^1]: the note', '', 'after')).toEqual({ lines: [1, 3, 5], kinds: 'ppp' })
   })
 
+  it('a footnote definition with no block is one empty paragraph on its line; one that starts with a list is not (YAZ-3818)', () => {
+    expect(index('text[^1]', '', '[^1]:', '', 'after')).toEqual({ lines: [1, 3, 5], kinds: 'ppp' })
+    expect(index('text[^1]', '', '[^1]:', '    * a', '', 'after')).toEqual({ lines: [1, 4, 6], kinds: 'ppp' })
+    expect(index('text[^1]', '', '[^1]: <br />', '', 'after')).toEqual({ lines: [1, 3, 5], kinds: 'ppp' })
+  })
+
   it('counts a CRLF line as one line', () => {
     expect(blockLines('# T\r\n\r\ntext\r\n\r\n* a\r\n* b\r\n')).toEqual({ lines: [1, 3, 5, 6], ends: [1, 3, 5, 6], kinds: 'hppp' })
     expect(blockLines('a\r\nb\r\n\r\n```\r\nx\r\n```\r\n')).toEqual({ lines: [1, 4], ends: [2, 6], kinds: 'pc' })

@@ -181,6 +181,8 @@
  *    header, stripes, height, wrap and freeze attributes, and each cell `fill` and `color`
  *    — the SECOND exception to the images rule. A plain table stays the GFM table; one with
  *    settings is the table then the next block `<!-- table: … -->`, joined on load as the line's.
+ *  - Cell notes (YAZ-3818 D4, D12, `table/cellNotes.ts`): a footnote labelled `cell-N` is a `cell_note` block, hidden
+ *    in the note view; after a table, a cell note or a mark moves, each cell note goes back under its table.
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
  *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
@@ -267,6 +269,7 @@ import { inlineBreaks } from './inlineBreaks'
 import { textStringify } from './textStringify'
 import { lineStyle } from './line/lineStyle'
 import { tableStyle } from './table/tableStyle'
+import { cellNotes } from './table/cellNotes'
 import { tableFill } from './table/tableFill'
 import { tableRows } from './table/tableRows'
 import { cellToolbar } from './table/cellToolbar'
@@ -558,6 +561,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(lineStyle)
   // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment.
   crepe.editor.use(tableStyle)
+  // Cell notes (YAZ-3818 D4, D12): a `cell-N` footnote is a `cell_note`, hidden, and it stays under its table. Before
+  // `inlineBreaks`: its remark step reads a footnote's `<br />` line first.
+  crepe.editor.use(cellNotes)
   // YAZ-3209: over hidden lines, Bold, Italic, Strikethrough, code and H1-H3 / T change the visible
   // ones only, and the toolbar lights for visible lines only. After the presets, by `EditorViewReady`.
   crepe.editor.use(visibleFormatting)

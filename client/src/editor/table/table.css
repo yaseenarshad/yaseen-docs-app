@@ -421,3 +421,20 @@
   border-radius: 3px;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 20%, transparent);
 }
+
+/* A cell note (YAZ-3818 D4, `cellNotes.ts`): hidden in the note view; the cell's mark stands for it. A cell note with
+   no mark shows (D12), with a small label over it, so no words are hidden for good. */
+.milkdown .ProseMirror .cell-note {
+  display: none;
+}
+
+.milkdown .ProseMirror .cell-note.cell-note--orphan {
+  display: block;
+}
+
+.milkdown .ProseMirror .cell-note.cell-note--orphan::before {
+  content: 'Cell note with no cell (' attr(data-label) ')';
+  display: block;
+  font-size: 0.8em;
+  color: var(--fg-muted);
+}

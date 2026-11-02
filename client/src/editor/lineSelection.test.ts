@@ -9,8 +9,8 @@
  * The approved scenario matrix (S-numbers) is `lineSelection.scenarios.test.ts`; this file keeps
  * only what the matrix does not pin: the D3 list variants, walking out of / into a nested list,
  * ⇧↑ over hidden kids from the sibling's start, the `Delete` key, Enter (D7), the no-hidden-line
- * control, a node selection, and the anchor never moving; and that removing a line never removes its
- * table cell (YAZ-3818).
+ * control, a node selection, and the anchor never moving; that removing a line never removes its
+ * table cell (YAZ-3818); and that a hidden cell note is a hidden line (YAZ-3818 D4).
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -20,6 +20,7 @@ import { caretIn, endOf, md, mount, nodePos, posOf, pressKey, runCommand, select
 import { setHeadingFoldAtSelection } from './outline/headingFolding'
 import { toggleOutlineFold } from './outline/outlineFolding'
 import { deleteBlockAndEmptyWrappers, deleteVisible } from './lineSelection'
+import { toggleListKind } from './listButtons'
 
 afterEach(unmountAll)
 
@@ -235,5 +236,34 @@ describe('a line in a table cell (YAZ-3818)', () => {
     expect(row.firstChild!.childCount).toBe(1)
     expect(row.firstChild!.firstChild!.type.name).toBe('paragraph')
     expect(md(crepe)).toMatch(/\n\| +\| c2 +\|\n$/)
+  })
+})
+
+describe('a hidden cell note (YAZ-3818 D4)', () => {
+  /** A note the file holds away from its table: the load leaves it where it is, between two lines. */
+  const BETWEEN = '| a          |\n| ---------- |\n| b[^cell-1] |\n\nOne.\n\n[^cell-1]: secret\n\nTwo.\n'
+
+  it('⇧↓ and ⇧↑ step over it; with no mark it shows, and ⇧↓ lands in it', async () => {
+    const { crepe } = await mount(BETWEEN)
+    select(crepe, endOf(crepe, 'One.'))
+    expect(shiftDown(crepe)).toBe(true)
+    expect(selection(crepe)).toEqual({ anchor: endOf(crepe, 'One.'), head: endOf(crepe, 'Two.') })
+    select(crepe, posOf(crepe, 'Two.'))
+    expect(shiftUp(crepe)).toBe(true)
+    expect(selection(crepe)).toEqual({ anchor: posOf(crepe, 'Two.'), head: posOf(crepe, 'One.') })
+    const orphan = await mount('One.\n\n[^cell-1]: shown\n\nTwo.\n')
+    select(orphan.crepe, endOf(orphan.crepe, 'One.'))
+    expect(shiftDown(orphan.crepe)).toBe(true)
+    expect(selection(orphan.crepe).head).toBe(endOf(orphan.crepe, 'shown'))
+  })
+
+  it('Bold and the Bullet button change the visible lines only', async () => {
+    const { crepe } = await mount(BETWEEN)
+    select(crepe, posOf(crepe, 'One.'), endOf(crepe, 'Two.'))
+    expect(pressKey(crepe, 'b', { mod: true })).toBe(true)
+    expect(md(crepe)).toContain('**One.**\n\n[^cell-1]: secret\n\n**Two.**')
+    select(crepe, posOf(crepe, 'One.'), endOf(crepe, 'Two.'))
+    expect(runCommand(crepe, toggleListKind('bulletList'))).toBe(true)
+    expect(md(crepe)).toContain('* **One.**\n\n[^cell-1]: secret\n\n* **Two.**')
   })
 })

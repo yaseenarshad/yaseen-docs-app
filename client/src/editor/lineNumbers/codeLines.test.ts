@@ -119,15 +119,16 @@ describe('a code block’s own line numbers', () => {
     expect(gutter(root)).toEqual([['2'], ['8', '9']])
   })
 
-  it('a block with no number of its own keeps 1, 2, 3: one under a block the file has no kind for, an empty one, a fence never closed (S75, S77)', async () => {
-    const stopped = ['Text[^1].', '', '[^1]: The note.', '', '```', 'code', '```', ''].join('\n')
+  it('a block with no number of its own keeps 1, 2, 3: one under a block whose kind the file does not share, an empty one, a fence never closed (S75, S77)', async () => {
+    // A footnote no longer stops the numbers (YAZ-3818): a file whose first block is a heading, where the page has a line, does.
+    const stopped = ['Text.', '', '```', 'code', '```', ''].join('\n')
     const empty = ['```', '```', ''].join('\n')
     const unclosed = ['~~~', 'never', 'closed'].join('\n')
-    for (const file of [stopped, empty, unclosed]) {
+    for (const [file, disk] of [[stopped, `# ${stopped}`], [empty, empty], [unclosed, unclosed]]) {
       const { crepe, root } = await open(file)
       await scrollTo(root)
       const before = gutter(root)
-      show(crepe, file)
+      show(crepe, disk)
       expect(root.querySelector('[data-line-code]'), file).toBeNull()
       expect(gutter(root), file).toEqual(before)
       expect(before[0]![0]).toBe('1')
