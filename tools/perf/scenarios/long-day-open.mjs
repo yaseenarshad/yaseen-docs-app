@@ -1,13 +1,14 @@
 /**
- * long-day-open (YAZ-3737 5A): long-day's "tabs left open" variant. One window opens long-day's 20 files as kept tabs
- * (`OPENS`: notes, a `.drawio`, an `.excalidraw` with pictures, `.ts`, `.py`, the 5 MB `.ts`), goes back to its
+ * long-day-open (YAZ-3737 5A): long-day's "tabs left open" variant. One window opens long-day's 21 files as kept tabs
+ * (`OPENS`: notes, a `.drawio`, an `.excalidraw` with pictures, a GIF board, `.ts`, `.py`, the 5 MB `.ts`), goes back to its
  * first note, and leaves every tab open. Tab sleep is on with a short clock: `YASEEN_DOCS_TAB_SLEEP_SECONDS`
  * (`SLEEP_SECONDS`), which main reads only under `YASEEN_DOCS_E2E=1` and hands the page as `?sleepSeconds=`. The run
  * waits until every tab but the one in front has slept, then wakes one by a click.
  *
  * Numbers, each after GC: the renderer's JS heap and the RSS summed over every renderer helper of the app (draw.io may
- * run in its own) with all 20 tabs awake, once they sleep, and after one wake; how many tab layers are mounted at each
- * point; and how long the sleep took after the last tab left the front.
+ * run in its own) with all 21 tabs awake, once they sleep, and after one wake; how many tab layers are mounted at each
+ * point; how many GIF decoders are open (`GIF_PROBE`, YAZ-4071 7K: none once the GIF board sleeps); and how long the
+ * sleep took after the last tab left the front.
  *
  * Opt-in (not in `all`), 1 run, no warm-up. The app runs HIDDEN (`YASEEN_DOCS_E2E_HIDDEN=1`) and is driven with in-page
  * events only, never `Input.dispatch*`, so it never takes the screen, mouse or keyboard. The memory reload is off in its
@@ -22,7 +23,8 @@ import { helpers, sleep, usage } from '../lib/app.mjs'
 import { js, painted, row, session, tab } from '../lib/session.mjs'
 import { sentinel } from '../genVault.mjs'
 import { CODE_SHOWN } from './bigCode.mjs'
-import { SETTINGS, setup as longDaySetup } from './long-day.mjs'
+import { GIFS, SETTINGS, setup as longDaySetup } from './long-day.mjs'
+import { GIF_PROBE } from './gif-board.mjs'
 
 export const optIn = true
 export const runs = 1
@@ -38,7 +40,7 @@ const mb = (bytes) => Math.round((bytes / MB) * 10) / 10
 const LAYER = '.tabstack__layer:not(.tabstack__layer--hidden)'
 const LAYERS = `document.querySelectorAll('.tabstack__layer[data-tab]').length`
 
-/** long-day's vault and its 20 files; one cycle's worth. */
+/** long-day's vault and its 21 files; one cycle's worth. */
 export const setup = (dir) => longDaySetup(dir, { cycles: 1 })
 
 /** In the page: true once `f` is on screen in the tab in front (as long-day reads it). */
@@ -58,6 +60,8 @@ async function open(page, f) {
     for (const [type, detail] of [['click', 1], ['click', 2], ['dblclick', 2]]) el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, detail }))
   })()`)
   await page.waitFor(shown(f), OPEN_TIMEOUT_MS)
+  // The GIF board (YAZ-4071 7K): its GIFs play once each decoder opens on its first paint. A build with no GIF player shows them still.
+  if (f.kind === 'gifs') await page.waitFor(`window.__gifDecoders.open >= ${GIFS}`, 10_000).catch(() => undefined)
 }
 
 /** The page's JS heap after 3 GCs, the RSS over every renderer helper, and the tab layers mounted now. */
@@ -66,7 +70,7 @@ async function sample(proc, page) {
   const heap = await page.send('Runtime.getHeapUsage', {})
   const pids = helpers(proc.pid).filter((h) => h.type === 'renderer').map((h) => h.pid)
   const rss = [...usage(pids).values()].reduce((a, u) => a + u.rssMb, 0)
-  return { heapMb: mb(heap.usedSize), rendererRssMb: Math.round(rss * 10) / 10, layers: await page.ev(LAYERS) }
+  return { heapMb: mb(heap.usedSize), rendererRssMb: Math.round(rss * 10) / 10, layers: await page.ev(LAYERS), gifDecoders: await page.ev('window.__gifDecoders.open') }
 }
 
 export async function run(app, fx) {
@@ -79,9 +83,10 @@ export async function run(app, fx) {
       if (!(await page.ev(`location.search.includes('sleepSeconds=${SLEEP_SECONDS}')`))) throw new Error('long-day-open: the build does not take YASEEN_DOCS_TAB_SLEEP_SECONDS (YAZ-3737 5A)')
       // draw.io's first `load` message after each open marks the diagram on screen (as long-day does).
       await page.ev(`window.addEventListener('message', (e) => { if (typeof e.data === 'string' && e.data.includes('"event":"load"')) window.__drawioLoad ??= performance.now() })`)
+      await page.ev(GIF_PROBE)
       const t0 = performance.now()
       for (const f of files) await open(page, f)
-      // Back to the first note: every one of the 20 is now a tab behind it.
+      // Back to the first note: every one of the 21 is now a tab behind it.
       await page.ev(`document.querySelector(${js(tab(home))}).click()`)
       await page.waitFor(painted('Home'), OPEN_TIMEOUT_MS)
       const left = performance.now()
@@ -114,6 +119,8 @@ export async function run(app, fx) {
         layersAwake: awake.layers,
         layersAsleep: asleep.layers,
         layersAfterWake: afterWake.layers,
+        gifDecodersAwake: awake.gifDecoders,
+        gifDecodersAsleep: asleep.gifDecoders,
       }
     })
   } finally {

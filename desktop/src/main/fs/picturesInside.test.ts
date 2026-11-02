@@ -135,6 +135,14 @@ describe('YAZ-3943 D5 — a save keeps the pictures inside the board', () => {
     expect(await readFile(path.join(root, 'assets', 'big.png'), 'utf8')).toBe(big)
   })
 
+  it('YAZ-4071 7H: the 50 MB answer names exactly the pictures the board keeps: one deleted in that save is not among them', async () => {
+    const file = await seed('Board.excalidraw', board({ createdAt: 1, updatedAt: 2 }, [imageEl('small'), imageEl('gone')], { small: { mimeType: 'image/png', id: 'small', dataURL: png('S'), created: 1 }, gone: { mimeType: 'image/png', id: 'gone', dataURL: png('G'), created: 1 } }))
+    const res = await saveDrawing({ root, path: file, json: sent([imageEl('small'), imageEl('gone', { isDeleted: true }), imageEl('big')]), newFiles: [{ fileId: 'big', mimeType: 'image/png', dataURL: png('x'.repeat(5000)) }] })
+    expect(res.movedOut).toBe(true)
+    expect(res.persisted).toEqual(['big', 'small'])
+    expect(await assets()).toEqual(['big.png', 'small.png'])
+  })
+
   it('a refused save (CONFLICT) writes nothing', async () => {
     const body = board(null, [])
     const file = await seed('Board.excalidraw', body)
@@ -160,6 +168,24 @@ describe('YAZ-3943 D5 — board:set-pictures, the cog\'s "Move pictures out" / "
     expect(back[BOARD_META_KEY]).toEqual({ createdAt: 1, updatedAt: 2, switched: { pictures: expect.any(Number) } })
     expect(back.files.aaa).toMatchObject({ mimeType: 'image/png', id: 'aaa', dataURL: png('A') })
     expect(await assets()).toEqual(['aaa.png']) // nothing is deleted from assets/
+  })
+
+  it('YAZ-4071 7F: "Move pictures out" keeps a BMP, ICO and JFIF picture: each lands in assets/ and loads back', async () => {
+    const pic = (mime: string, text: string) => `data:${mime};base64,${b64(text)}`
+    const kinds = { bbb: 'image/bmp', iii: 'image/x-icon', jjj: 'image/jfif' }
+    const files = Object.fromEntries(Object.entries(kinds).map(([id, mime]) => [id, { mimeType: mime, id, dataURL: pic(mime, id), created: 5 }]))
+    const file = await seed('Board.excalidraw', board({ createdAt: 1, updatedAt: 2 }, Object.keys(kinds).map((id) => imageEl(id)), files))
+    await setBoardPictures({ root, path: file, out: true, expectedMtime: (await stat(file)).mtimeMs })
+    expect(await assets()).toEqual(['bbb.bmp', 'iii.ico', 'jjj.jfif'])
+    const loaded = await loadDrawing({ root, path: file })
+    for (const [id, mime] of Object.entries(kinds)) expect(loaded.files[id]).toEqual({ mimeType: mime, dataURL: pic(mime, id) })
+  })
+
+  it('YAZ-4071 7F: a pasted BMP saves inside, as a PNG does', async () => {
+    const file = await seed('Board.excalidraw', board(null, []))
+    const bmp = `data:image/bmp;base64,${b64('B')}`
+    await saveDrawing({ root, path: file, json: sent([imageEl('bbb')]), newFiles: [{ fileId: 'bbb', mimeType: 'image/bmp', dataURL: bmp }] })
+    expect((await read(file)).files.bbb).toMatchObject({ mimeType: 'image/bmp', dataURL: bmp })
   })
 
   it('the same state again writes nothing and answers the mtime unmoved', async () => {

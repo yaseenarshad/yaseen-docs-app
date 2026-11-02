@@ -36,7 +36,8 @@
  * come back from load as not-stored, so its next save is the shrink. A save adds what it stored to the
  * persisted set, so the same image is never shipped twice in one session. An inside save REPLACES the set
  * with the file's pictures (`inside`, 6A item 1): a deleted picture leaves the file, so an undo ships it again. A save that moved the pictures
- * out by the 50 MB rule (`movedOut`) shows the one notice.
+ * out by the 50 MB rule (`movedOut`) replaces it the same way, and shows the one notice. "Keep mine" empties it (YAZ-4071 7H):
+ * the version it overwrites may lack a picture, so that save ships every picture the canvas uses.
  *
  * THE COG'S PICTURE MOVES (YAZ-3943 D5, demo round 3): a board's pictures are inside, in the vault's
  * `assets/`, or in a folder of the board's own (`picturesFolder` in the block: vault-relative, or absolute
@@ -270,8 +271,9 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       const { json, files, referenced } = current.serialize()
       const newFiles = unpersistedFiles(files, referenced, persisted.current)
       const res = await api.drawing.save({ root, path, json, expectedMtime, newFiles })
-      // An inside save names every picture the file holds now; a deleted one is not there (6A item 1).
-      if (res.inside === true) persisted.current = new Set(res.persisted)
+      // An inside save names every picture the file holds now; a deleted one is not there (6A item 1). So does a save
+      // that moved them out by the 50 MB rule: the store holds exactly those (YAZ-4071 7H).
+      if (res.inside === true || res.movedOut === true) persisted.current = new Set(res.persisted)
       else for (const id of res.persisted) persisted.current.add(id)
       if (res.movedOut === true) {
         setPicturesOut(true)
@@ -279,6 +281,10 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
         onNotice?.(PICTURES_MOVED_OUT)
       }
       return res
+    },
+    // YAZ-4071 7H: the other writer's version may lack a picture this canvas uses, so the next save ships them all.
+    onKeepMine: () => {
+      persisted.current = new Set()
     },
     reload: async (a) => {
       const s = surface.current

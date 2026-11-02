@@ -74,6 +74,8 @@ export interface DocumentHostOptions extends DocumentHostProps {
    * Answers the file's read-only switch as it now reads (YAZ-3076 D1); nothing = unchanged.
    */
   reload: (autosave: Autosave<number>) => Promise<boolean | void>
+  /** "Keep mine" is about to overwrite a version this tab did not write: what the engine knows of the file is stale (YAZ-4071 7H). */
+  onKeepMine?: () => void
   /** The loaded file's read-only switch (YAZ-3076 D1): `isDrawingReadOnly` / `isDiagramReadOnly` of what the shell loaded. */
   readOnly?: boolean
   /**
@@ -175,6 +177,7 @@ export function useDocumentHost(options: DocumentHostOptions) {
     const a = autosave.current
     if (a === null || retired.current || conflictMtime === null) return
     setConflictMtime(null)
+    engine.current.onKeepMine?.()
     void a.adopt(conflictMtime)
   }, [conflictMtime])
 

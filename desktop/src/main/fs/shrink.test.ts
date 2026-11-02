@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { landAssets } from './drawing'
+import { landAssets } from './pictureStore'
 import { shrinkVault } from './shrink'
 
 // The real extraction; the spy lets one test land a write from "another window" mid-shrink.
-vi.mock('./drawing', async (actual) => {
-  const mod = await actual<typeof import('./drawing')>()
+vi.mock('./pictureStore', async (actual) => {
+  const mod = await actual<typeof import('./pictureStore')>()
   return { ...mod, landAssets: vi.fn(mod.landAssets) }
 })
 
@@ -129,7 +129,7 @@ describe('shrinkVault (YAZ-1801 D5)', () => {
     vi.mocked(landAssets).mockImplementationOnce(async (dir, pending) => {
       await writeFile(file, theirs)
       await utimes(file, new Date(), new Date(Date.now() + 5_000))
-      return (await vi.importActual<typeof import('./drawing')>('./drawing')).landAssets(dir, pending)
+      return (await vi.importActual<typeof import('./pictureStore')>('./pictureStore')).landAssets(dir, pending)
     })
 
     expect(await shrinkVault(root)).toEqual({ shrunk: 0, skipped: 1, bytesMoved: 0 })

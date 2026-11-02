@@ -427,7 +427,7 @@ describe('🔒 YAZ-1775 D3 — the image store on save, for a "pictures out" boa
     const bad: unknown[] = [
       { fileId: '../escape', mimeType: 'image/png', dataURL: dataUrl() },
       { fileId: 'a/b', mimeType: 'image/png', dataURL: dataUrl() },
-      { fileId: 'ok', mimeType: 'image/bmp', dataURL: 'data:image/bmp;base64,aGk=' },
+      { fileId: 'ok', mimeType: 'image/tiff', dataURL: 'data:image/tiff;base64,aGk=' },
       { fileId: 'ok', mimeType: 'image/png', dataURL: 'https://example.com/a.png' },
       { fileId: 'ok', mimeType: 'image/png' },
       'not an object',

@@ -34,7 +34,10 @@ import { isFiniteNumber, isRecord } from './guards'
  * may sit in `assets/`, and a sweep that trashes unreferenced images there could eat one.
  */
 
-/** Mime → extension for the images the store keeps. Nothing else is an asset. */
+/**
+ * Mime → extension for the images the store keeps. Nothing else is an asset. YAZ-4071 7F: every type the engine accepts
+ * (`IMAGE_MIME_TYPES`), so a move out never drops a picture the board draws, and a pasted BMP saves.
+ */
 const EXT_BY_MIME: Readonly<Record<string, string>> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -42,6 +45,9 @@ const EXT_BY_MIME: Readonly<Record<string, string>> = {
   'image/svg+xml': 'svg',
   'image/webp': 'webp',
   'image/avif': 'avif',
+  'image/bmp': 'bmp',
+  'image/x-icon': 'ico',
+  'image/jfif': 'jfif',
 }
 
 /** Extension → mime, INCLUDING the spellings `extForMime` never writes (`jpeg`), which it must still read. */
@@ -53,6 +59,9 @@ const MIME_BY_EXT: Readonly<Record<string, string>> = {
   svg: 'image/svg+xml',
   webp: 'image/webp',
   avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  jfif: 'image/jfif',
 }
 
 /** The vault-relative folder the store lives in. Docs keeps it visible in the tree (YAZ-3028 D12). */
@@ -226,6 +235,18 @@ export const BOARD_ID_KEY = 'id'
 export function boardIdOf(block: unknown): string | undefined {
   const id = isRecord(block) ? block[BOARD_ID_KEY] : undefined
   return typeof id === 'string' ? id : undefined
+}
+
+/**
+ * The block key of the IDs a board held before (YAZ-4071 7I): two Macs that each gave the board an ID before a sync
+ * keep the lower one (`shared/boardMerge.ts`), and the other one goes here, so a link to it still opens the board.
+ */
+export const FORMER_IDS_KEY = 'formerIds'
+
+/** The IDs a block held before, as written; none for a block without them. */
+export function formerBoardIdsOf(block: unknown): string[] {
+  const ids = isRecord(block) ? block[FORMER_IDS_KEY] : undefined
+  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []
 }
 
 /**

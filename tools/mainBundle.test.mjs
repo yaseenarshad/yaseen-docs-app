@@ -57,4 +57,14 @@ describe('the main-process bundle', () => {
     const bare = loaded.filter((s) => !s.startsWith('.') && !s.startsWith('node:') && !BUILTIN.has(s.split('/')[0]))
     expect(bare).toEqual([])
   })
+
+  // YAZ-4071 7B: Settings › Storage's worker holds the walk, the shrink and the picture store only — not the vault
+  // index and its `yaml` parser (a save's board ID, 4C, once pulled them in: 21 KB became 276 KB).
+  it('keeps the Settings › Storage worker small: no vault index, no yaml', async () => {
+    const name = (await readdir(out, { recursive: true })).find((f) => /(^|\/)storageWorker-[\w-]+\.js$/.test(f))
+    expect(name).toBeDefined()
+    const code = await readFile(path.join(out, name), 'utf8')
+    expect(code.includes('requireDirectives')).toBe(false)
+    expect(Buffer.byteLength(code)).toBeLessThan(40_000)
+  })
 })

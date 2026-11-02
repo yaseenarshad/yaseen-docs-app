@@ -1,7 +1,7 @@
 import path from 'node:path'
-import { IDS_FILE, NOTE_ID_KEY, idsAnswer, isIdLetters, vaultNoteId } from '@shared/noteId'
+import { canonicalNoteId, IDS_FILE, NOTE_ID_KEY, idsAnswer, isIdLetters, vaultNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, isFolderSettingsPath, type IdsState, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
-import { boardIdOf } from '@shared/drawingAssets'
+import { boardIdOf, formerBoardIdsOf } from '@shared/drawingAssets'
 import { isFiniteNumber, isRecord } from '@shared/guards'
 import { isDrawing } from '@shared/fileKind'
 import { readBoardHead } from '../fs/boardHead'
@@ -37,6 +37,8 @@ interface Entry {
   kept: Map<string, string>
   /** Each board's ID as its head holds it (YAZ-3943 4C), by path; a board with no ID is not here. Never cached: the build reads the heads again. */
   boards: Map<string, string>
+  /** Each ID a board held before a two-Mac merge (YAZ-4071 7I, `formerIds`), to the ID it holds now; read with `boards`. */
+  formerIds: Map<string, string>
 }
 
 const DEFAULT_IDLE_MS = 10 * 60 * 1000
@@ -105,12 +107,29 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
   }
 }
 
-/** A board's ID off its head (YAZ-3943 4C): only the first 1 KB is read. Undefined for none, and for a file that is gone. */
-const boardIdAt = (file: string): Promise<string | undefined> => readBoardHead(file).then((head) => boardIdOf(head?.block), () => undefined)
+/** A board's ID off its head (YAZ-3943 4C): only the first 1 KB is read. Undefined for none, and for a file that is gone. `was`: its `formerIds` (YAZ-4071 7I). */
+type BoardIds = { id: string | undefined; was: string[] }
+const boardIdAt = (file: string): Promise<BoardIds> =>
+  readBoardHead(file).then(
+    (head) => ({ id: boardIdOf(head?.block), was: formerBoardIdsOf(head?.block) }),
+    () => ({ id: undefined, was: [] }),
+  )
+
+/** Takes the IDs a board held before (YAZ-4071 7I); true when one is new to the index. */
+function learnFormer(entry: Entry, { id, was }: BoardIds): boolean {
+  let learned = false
+  if (id !== undefined)
+    for (const w of was.map(canonicalNoteId)) {
+      if (entry.formerIds.get(w) === id) continue
+      entry.formerIds.set(w, id)
+      learned = true
+    }
+  return learned
+}
 
 /** The IDs of `boards`, in order, with at most SCAN_CONCURRENCY heads open (YAZ-4074 6A item 19: all at once hit EMFILE, read as "no ID"). */
-async function boardIdsAt(boards: readonly string[]): Promise<Array<string | undefined>> {
-  const ids: Array<string | undefined> = []
+async function boardIdsAt(boards: readonly string[]): Promise<BoardIds[]> {
+  const ids: BoardIds[] = []
   let next = 0
   const worker = async () => {
     while (next < boards.length) {
@@ -124,8 +143,9 @@ async function boardIdsAt(boards: readonly string[]): Promise<Array<string | und
 
 /** The board at `file` as its head says now; the windows hear of a change of its ID (`onBoardIds`). */
 async function readBoard(root: string, entry: Entry, file: string): Promise<void> {
-  const id = await boardIdAt(file)
-  if (entry.boards.get(file) === id) return
+  const ids = await boardIdAt(file)
+  const { id } = ids
+  if (!learnFormer(entry, ids) && entry.boards.get(file) === id) return
   if (id === undefined) entry.boards.delete(file)
   else entry.boards.set(file, id)
   boardsChanged?.(root)
@@ -257,7 +277,7 @@ function wouldWrite(records: ReadonlyMap<string, IndexRecord>, dirs: readonly st
 
 async function build(root: string): Promise<Entry> {
   const dirs: string[] = []
-  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), kept: new Map(), boards: new Map() }
+  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), kept: new Map(), boards: new Map(), formerIds: new Map() }
   const files: string[] = []
   const boards: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
@@ -276,7 +296,10 @@ async function build(root: string): Promise<Entry> {
     // In path order: between two boards with one ID and one `createdAt`, the first one keeps it (6B3).
     boards.sort()
     const [{ records, diff }, ids] = await Promise.all([reconcile(root, files, cached), boardIdsAt(boards)])
-    boards.forEach((file, i) => ids[i] !== undefined && entry.boards.set(file, ids[i]!))
+    boards.forEach((file, i) => {
+      if (ids[i]!.id !== undefined) entry.boards.set(file, ids[i]!.id!)
+      learnFormer(entry, ids[i]!)
+    })
     entry.records = records
     entry.coldDiff = diff
     const { letters, ...held } = await vaultIds(root)
@@ -355,11 +378,14 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   if (!ids) return { root, records, folders, generatedAt: Date.now(), ids, ask: { ...wouldWrite(entry.records, entry.dirs, letters), ...(saved && { letters: letters[0] }) } }
   // A board's ID goes out as a note's does (R5): with the current letters, and not at all when it is another vault's.
   // An ID two boards hold goes out for its keeper alone (YAZ-4129 6B3), so `[[ID]]` opens that board.
+  // The IDs it held before a two-Mac merge go out with it (YAZ-4071 7I): a link to one still opens it.
   const keepers = await boardKeepers(entry)
   const boards = [...entry.boards]
     .flatMap(([p, held]) => {
       const id = vaultNoteId(held, letters)
-      return id === undefined || keepers.get(held) !== p ? [] : [{ path: p, id }]
+      if (id === undefined || keepers.get(held) !== p) return []
+      const was = [...new Set([...entry.formerIds].flatMap(([w, now]) => (now === held ? (vaultNoteId(w, letters) ?? []) : [])))].sort()
+      return [{ path: p, id, ...(was.length > 0 && { was }) }]
     })
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   return { root, records, folders, generatedAt: Date.now(), ids, letters, boards, ...((await planLeft(root)) && { unfinished: true as const }) }

@@ -66,48 +66,23 @@
  * Pure rules (`referencedFileIds`, `stripEmbeddedScene`, `stampBoardMetaScene`, …) live in
  * `shared/drawingAssets.ts`; this file is the fs around them.
  */
-import { link, mkdir, readdir, readFile, rename, unlink } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { DrawingFileEntry, DrawingLoadResponse, DrawingNewFile, DrawingSaveResponse } from '@shared/types'
 import { isRecord } from '@shared/guards'
-import { ASSETS_DIR, assetFileName, BOARD_META_HEAD_BYTES, createdOf, extForMime, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseBoardMetaBlock, parseDataUrl, PICTURES_INSIDE_MAX_BYTES, PICTURES_KEY, PICTURES_OUT, picturesFolderOf, picturesOut, referencedFileIds, serializeBoard, stampBoardMetaScene, BOARD_ID_KEY, boardIdOf, withSwitchTime, stripEmbeddedScene, type BoardMetaBlock, type EmbeddedFile } from '@shared/drawingAssets'
+import { assetFileName, BOARD_META_HEAD_BYTES, createdOf, extForMime, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseBoardMetaBlock, parseDataUrl, PICTURES_INSIDE_MAX_BYTES, PICTURES_KEY, PICTURES_OUT, picturesFolderOf, picturesOut, referencedFileIds, serializeBoard, stampBoardMetaScene, BOARD_ID_KEY, boardIdOf, withSwitchTime, stripEmbeddedScene, type BoardMetaBlock, type EmbeddedFile } from '@shared/drawingAssets'
 import { vaultNoteId } from '@shared/noteId'
 import { boardIdKeeper } from '../vaultIndex/live'
 import { mintIds, vaultIds } from '../vaultIndex/mint'
 import { BOARDS, boardTarget, guardedStamp } from './boardDocument'
 import type { BoardHead } from './boardHead'
 import { readBoundedRegularFile } from './boundedRead'
-import { atomicWrite, BridgeFailure, fsCall, requireDir, tmpSibling, writeDurable } from './fsUtils'
+import { atomicWrite, BridgeFailure, fsCall, requireDir } from './fsUtils'
 import { landingFolder } from './picturesFolders'
+import { landAssets, liftEmbedded, parseScene, storesOf, type PendingAsset } from './pictureStore'
 
-/**
- * THE ONE PARSE of a scene (YAZ-2073 5G), and its check: the OUTLINE only (see the module doc), an
- * object carrying an `elements` array. `code` differs by door — a bad file is the disk's fault
- * (`IO_ERROR`), a bad `json` argument is the caller's (`BAD_REQUEST`).
- */
-export function parseScene(json: string, file: string, code: 'IO_ERROR' | 'BAD_REQUEST'): { scene: Record<string, unknown>; elements: readonly unknown[] } {
-  const bad = (): never => {
-    throw new BridgeFailure(code, code === 'IO_ERROR' ? 'file is not an Excalidraw scene' : "'json' is not an Excalidraw scene", { path: file })
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(json)
-  } catch {
-    return bad()
-  }
-  if (!isRecord(parsed)) return bad()
-  return Array.isArray(parsed.elements) ? { scene: parsed, elements: parsed.elements } : bad()
-}
-
-/**
- * The folders a board's pictures may sit in, in the order a read looks (YAZ-3943 demo round 3): the board's own
- * `folder` (vault-relative with `/` separators, or absolute for one outside the vault; validated by
- * `picturesFolderOf`) when it has one, then `<dir>/assets/`. The FIRST is also where a write lands (`landAssets`).
- */
-function storesOf(dir: string, folder: string | null): string[] {
-  const assets = path.join(dir, ASSETS_DIR)
-  return folder === null ? [assets] : [path.isAbsolute(folder) ? path.resolve(folder) : path.join(dir, ...folder.split('/')), assets]
-}
+// The store's half lives in `pictureStore.ts` (YAZ-4071 7B); the doors' other callers keep importing it from here.
+export { landAssets, liftEmbedded, parseScene, type PendingAsset }
 
 /** One store folder as a map fileId → file name (first match wins); an absent folder is an empty store. */
 async function listStore(store: string): Promise<Map<string, string>> {
@@ -213,76 +188,6 @@ export async function embedPictures(dir: string, elements: readonly unknown[], s
   return files
 }
 
-/** One asset to land: validated shape, resolved name, decoded bytes. */
-export interface PendingAsset {
-  fileId: string
-  name: string
-  bytes: Buffer
-}
-
-/**
- * THE ONE EXTRACTION (Draw's YAZ-1801 D5): a scene's lean text, and the embedded pictures that must
- * land in `assets/` before it. `drawing:save` uses it (a legacy board shrinks on its first save);
- * Settings › Storage's "Move pictures out" (`fs/shrink.ts`) shares it, so the two can never
- * disagree about which bytes survive.
- *
- * Only pictures the scene still REFERENCES are lifted — an embedded entry no live element uses is
- * dropped with the `files` map, never written to the store (it would be an orphan the day it
- * lands). An entry whose dataURL is not base64, or whose mime the store does not keep, is dropped
- * the same way: the engine could not have drawn it either. `exclude` is what the caller already
- * has in hand (the renderer's `newFiles` on a save), so nothing is decoded twice.
- *
- * Works on the parsed scene (YAZ-2073 5G): both callers parsed and validated it already, and
- * serialize the lean result once, with `serializeBoard`.
- */
-export function liftEmbedded(scene: Record<string, unknown>, elements: readonly unknown[], exclude: ReadonlySet<string> = new Set()): { lean: Record<string, unknown>; lifted: PendingAsset[] } {
-  const { lean, embedded } = stripEmbeddedScene(scene)
-  const referenced = referencedFileIds(elements)
-  const lifted: PendingAsset[] = []
-  for (const [fileId, entry] of Object.entries(embedded)) {
-    if (!referenced.has(fileId) || !isValidFileId(fileId) || exclude.has(fileId)) continue
-    const data = parseDataUrl(entry.dataURL)
-    const name = assetFileName(fileId, entry.mimeType)
-    if (data === null || name === null) continue
-    lifted.push({ fileId, name, bytes: Buffer.from(data.base64, 'base64') })
-  }
-  return { lean, lifted }
-}
-
-/**
- * Write each asset durably into `<dir>/assets/` — or into the board's own `folder` (demo round 3), made on the
- * way — and answer the ids now in the store. The other half of the one door `liftEmbedded` opens; a failure
- * rejects as a `BridgeFailure` naming the path.
- *
- * The name IS the content hash, so a torn file under it would pass for valid forever. The bytes land
- * on a tmp sibling, are fsynced, and only then `link`ed to the name (YAZ-2073 2B1): a crash at any
- * point leaves at most a tmp file (`isAtomicTmp`: never listed, never committed). `link` never replaces — EEXIST means identical bytes already landed, which is success. Any
- * other refusal (a volume without hard links, exFAT or FAT, says ENOTSUP) renames instead;
- * replacing identical bytes is harmless there.
- */
-export async function landAssets(dir: string, pending: readonly PendingAsset[], folder: string | null = null): Promise<string[]> {
-  const persisted: string[] = []
-  if (pending.length === 0) return persisted
-  const [store] = storesOf(dir, folder)
-  await fsCall(store, () => mkdir(store, { recursive: true }))
-  for (const asset of pending) {
-    const to = path.join(store, asset.name)
-    const tmp = tmpSibling(to)
-    await fsCall(to, async () => {
-      try {
-        await writeDurable(tmp, asset.bytes, 'wx')
-        await link(tmp, to).catch((err: NodeJS.ErrnoException) => {
-          if (err.code !== 'EEXIST') return rename(tmp, to)
-        })
-      } finally {
-        await unlink(tmp).catch(() => undefined)
-      }
-    })
-    persisted.push(asset.fileId)
-  }
-  return persisted
-}
-
 /** One `newFiles` entry, checked like a request body — it names a file the renderer wants created. */
 function checkAsset(entry: unknown, file: string): PendingAsset {
   if (!isRecord(entry)) throw new BridgeFailure('BAD_REQUEST', 'newFiles entries must be objects', { path: file })
@@ -353,8 +258,8 @@ export async function saveDrawing(req: unknown, approved: readonly string[] = []
     pending.push(...lifted)
     const stamped = await guardedStamp(file, 'drawing', expectedMtime, (at, prior) => serializeBoard(stampBoardMetaScene(lean, at, withId(prior))), known)
     // Assets first (see the module doc), and only once the conflict guard has passed — a refused
-    // save must leave the vault exactly as it found it.
-    const persisted = await landAssets(dir, pending, await landingFolder(dir, picturesFolderOf(known?.block), approved))
+    // save must leave the vault exactly as it found it. A save with no new picture asks no `realpath` (YAZ-4071 nit).
+    const persisted = pending.length === 0 ? [] : await landAssets(dir, pending, await landingFolder(dir, picturesFolderOf(known?.block), approved))
     const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
     return { path: file, mtime, size, persisted, ...given }
   }

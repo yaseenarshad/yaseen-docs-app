@@ -25,7 +25,7 @@ import { registerSecretsIpc } from './secrets'
 import { registerShareIpc, type ShareIpcPlaces } from './share'
 import { registerSoundIpc } from './sound'
 import { registerStateIpc } from './state'
-import { registerPictureFoldersIpc } from './pictureFolders'
+import { registerPictureFoldersIpc, rememberPick } from './pictureFolders'
 import { registerStorageIpc } from './storage'
 import { registerVaultConfigIpc } from './vaultConfig'
 import { registerWatchIpc } from './watch'
@@ -57,7 +57,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // Settings' pick is approved at once; the cog's waits here until its move is confirmed (YAZ-4074 6A item 3).
   const pickedPictureFolders = new Set<string>()
   registerBoardIpc(store, windows, userData, pickedPictureFolders)
-  registerDialogIpc(undefined, (folder) => store.approvePictureFolder(folder), (folder) => pickedPictureFolders.add(folder))
+  registerDialogIpc(undefined, (folder) => store.approvePictureFolder(folder), (folder) => rememberPick(pickedPictureFolders, folder))
   registerWatchIpc()
   registerStateIpc(store, settingsFolder)
   registerVaultConfigIpc(store)
@@ -67,7 +67,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerPropertiesIpc(store)
   registerWindowIpc(store, windows)
   registerStorageIpc(store)
-  registerPictureFoldersIpc(store)
+  registerPictureFoldersIpc(store, pickedPictureFolders)
   registerSoundIpc()
   registerHomeIpc()
   // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).

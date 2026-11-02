@@ -124,6 +124,19 @@ describe('the index reads a board\'s ID off its head', () => {
     expect(await boards()).toEqual([{ path: at('Moved/Renamed.excalidraw'), id: 'DEM-7' }])
   })
 
+  it('YAZ-4071 7I: the IDs a board held before a two-Mac merge (`formerIds`) go out with it, with the current letters', async () => {
+    await idVault()
+    await seed('Plan.excalidraw', `${JSON.stringify({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, id: 'DEM-5', formerIds: ['dem-9', 'OTH-3'] }, type: 'excalidraw', version: 2, elements: [], appState: {}, files: {} }, null, 2)}\n`)
+    await opened()
+    expect(await boards()).toEqual([{ path: at('Plan.excalidraw'), id: 'DEM-5', was: ['DEM-9'] }])
+    // A merge that lands later: the watcher reads the head again, and the windows hear of it.
+    heard.length = 0
+    await seed('Plan.excalidraw', `${JSON.stringify({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 3, id: 'DEM-5', formerIds: ['DEM-12', 'DEM-9'] }, type: 'excalidraw', version: 2, elements: [], appState: {}, files: {} }, null, 2)}\n`)
+    await until(async () => (await boards())?.[0]?.was?.length === 2)
+    expect(await boards()).toEqual([{ path: at('Plan.excalidraw'), id: 'DEM-5', was: ['DEM-12', 'DEM-9'] }])
+    expect(heard).toContain(root)
+  })
+
   it('a board that arrives with an ID, takes one, or goes: the watcher reads its head, and the windows hear of it', async () => {
     await idVault()
     await opened()
@@ -194,7 +207,7 @@ describe('YAZ-4129 6B3: a Finder copy of a board', () => {
 describe('a copy of a board made in the app', () => {
   it('leaves the ID behind (the original keeps it, so its links stay its own), alone and inside a copied folder; it takes its own on its first save', async () => {
     await idVault()
-    await seed('Boards/Plan.excalidraw', boardWith('DEM-7'))
+    await seed('Boards/Plan.excalidraw', boardWith('DEM-7').replace('"id": "DEM-7"', '"id": "DEM-7",\n    "formerIds": ["DEM-9"]'))
     const door = await doorOf(root)
     const alone = await copyEntry(at('Boards/Plan.excalidraw'), at('Boards'), door)
     expect(alone.to).toBe(at('Boards/Plan copy.excalidraw'))

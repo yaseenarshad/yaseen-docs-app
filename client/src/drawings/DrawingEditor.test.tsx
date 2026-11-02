@@ -396,6 +396,41 @@ describe('🔒 YAZ-1775 D3 — which image bytes a save ships', () => {
     expect(onNotice).toHaveBeenCalledWith("This board's pictures moved to the assets folder, because the file passed 50 MB.")
   })
 
+  it('YAZ-4071 7H: "Keep mine" over a version that lacks a picture ships the picture again', async () => {
+    load.mockResolvedValue(loaded({ json: scene([{ type: 'image', fileId: 'pic' }]), files: { pic: png('cA==') }, stored: ['pic'] }))
+    render()
+    await flush()
+    emit(1)
+    // A dirty edit; before it saves, another writer saves the board without `pic` (the popup, or the other Mac).
+    emit(2, scene([{ type: 'image', fileId: 'pic' }, { id: 'x' }]), { pic: png('cA==') }, new Set(['pic']))
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await flush()
+    expect(chips()).toContain('File changed on disk.')
+    const keepMine = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Keep mine')!
+    await act(async () => keepMine.click())
+    await flush()
+    expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ expectedMtime: 300, newFiles: [{ fileId: 'pic', ...png('cA==') }] }))
+  })
+
+  it('YAZ-4071 7H: a save that moved the pictures out by the 50 MB rule replaces the persisted set, so a picture deleted in it ships again after an undo', async () => {
+    load.mockResolvedValue(loaded({ json: scene([{ type: 'image', fileId: 'a' }, { type: 'image', fileId: 'b' }]), files: { a: png('YQ=='), b: png('Yg==') }, stored: ['a', 'b'] }))
+    render()
+    await flush()
+    emit(1)
+    // The save deletes `b` and crosses 50 MB: main moves `a` out and names the store's pictures now.
+    save.mockResolvedValueOnce({ path: PATH, mtime: 200, size: 50, persisted: ['a'], movedOut: true })
+    emit(2, scene([{ type: 'image', fileId: 'a' }, { type: 'image', fileId: 'b', isDeleted: true }]), { a: png('YQ=='), b: png('Yg==') }, new Set(['a']))
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    // ⌘Z: `b` is in neither the lean file nor the store, so its bytes travel.
+    emit(3, scene([{ type: 'image', fileId: 'a' }, { type: 'image', fileId: 'b' }]), { a: png('YQ=='), b: png('Yg==') }, new Set(['a', 'b']))
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(save.mock.calls[1][0].newFiles).toEqual([{ fileId: 'b', ...png('Yg==') }])
+  })
+
   it('a reload resets the persisted set to what the disk now holds', async () => {
     render()
     await flush()

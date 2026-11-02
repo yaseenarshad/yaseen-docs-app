@@ -58,6 +58,14 @@ describe('linkResolver: a board by its ID (YAZ-3943 4C)', () => {
     expect(resolve('Projects')).toBe('/vault/Projects')
     expect(resolve('DEM-7')).toBeNull()
   })
+
+  it('YAZ-4071 7I: an ID the board held before a two-Mac merge still opens it, unless a note holds that ID now', () => {
+    const boards = [{ path: '/vault/Plan.excalidraw', id: 'DEM-5', was: ['DEM-9', 'DEM-12'] }]
+    const resolve = linkResolver([rec('/vault/Later.md', { id: 'DEM-12' })], '/vault', DIRS, [], ['DEM'], boards)
+    expect(resolve('DEM-5')).toBe('/vault/Plan.excalidraw')
+    expect(resolve('[[dem-9]]')).toBe('/vault/Plan.excalidraw')
+    expect(resolve('DEM-12')).toBe('/vault/Later.md')
+  })
 })
 
 describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing else holds it', () => {

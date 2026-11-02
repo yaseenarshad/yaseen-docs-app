@@ -207,8 +207,9 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       try {
         const { json, files, referenced } = current.serialize()
         const res = await saveDrawing({ root, target, path: drawing.path, json, newFiles: unpersistedFiles(files, referenced, persisted.current), expectedMtime })
-        // An inside save names every picture the file holds now; a deleted one is not there (6A item 1).
-        if (res.inside === true) persisted.current = new Set(res.persisted)
+        // An inside save names every picture the file holds now; a deleted one is not there (6A item 1). So does a
+        // save that moved them out by the 50 MB rule: the store holds exactly those (YAZ-4071 7H).
+        if (res.inside === true || res.movedOut === true) persisted.current = new Set(res.persisted)
         else for (const id of res.persisted) persisted.current.add(id)
         if (res.movedOut === true) onNotice?.(PICTURES_MOVED_OUT)
         stale.current = true
@@ -295,6 +296,8 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   const keepMine = (): void => {
     if (conflict === null) return
     clearConflict()
+    // YAZ-4071 7H: the disk's version may lack a picture this canvas uses, so this save ships them all.
+    persisted.current = new Set()
     void autosave.current?.adopt(conflict)
   }
 
