@@ -22,6 +22,7 @@ import { openInVsCode } from '../fs/openInVsCode'
 import { openLink } from '../fs/openLink'
 import { clearOsFiles, readOsFiles, writeOsFiles } from '../osFileClipboard'
 import { readPdf } from '../fs/pdf'
+import { renameBoardFolders } from '../fs/boardFolderRename'
 import { renameFile, repairRename } from '../fs/rename'
 import { removeEntry } from '../fs/remove'
 import { putBack } from '../fs/trash'
@@ -117,6 +118,9 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // new paths; the shared watcher's unlink+add echo comes later and changes nothing.
   const afterRename = async (res: RenameFileResponse): Promise<RenameFileResponse> => {
     await indexMoved(res.oldPath, res.newPath, res.kind)
+    // YAZ-4128 6B2: the boards that keep their pictures in the folder, or under it, name its new path.
+    const root = res.kind === 'dir' ? rootOfPath(rootsOf(store.get()), res.oldPath) : null
+    if (root !== null) await renameBoardFolders(root, res.oldPath, res.newPath)
     store.renamePath(res.oldPath, res.newPath)
     await repairFavorites(favorites.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))
     await repairFocus(focus.renamePath(rootsOf(store.get()), res.oldPath, res.newPath))

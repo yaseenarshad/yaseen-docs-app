@@ -162,7 +162,7 @@ export function picturesMoveAsk(to: PicturesPlace, pictures: { count: number; by
   }
   const path = folder ?? ''
   const outside = picturesFolderOutside(path) ? ` ${OUTSIDE_FOLDER_WARNING}` : ''
-  return { title: `Move pictures to ${lastName(path)}?`, body: `${what} ${one ? 'moves' : 'move'} from ${from} to ${withHomeTilde(path, home)}. ${alone} Keep this folder${outside === '' ? ' in the vault' : ''}. If you rename or delete it, the board shows missing pictures.${outside}`, confirm: 'Move pictures' }
+  return { title: `Move pictures to ${lastName(path)}?`, body: `${what} ${one ? 'moves' : 'move'} from ${from} to ${withHomeTilde(path, home)}. ${alone} Keep this folder${outside === '' ? ' in the vault' : ''}. If you rename it in Finder or delete it, the board shows missing pictures.${outside}`, confirm: 'Move pictures' }
 }
 
 /** What File › Export Drawing… says when the save sheet or the write refused (🔒 YAZ-1775 D3, YAZ-1821). */
