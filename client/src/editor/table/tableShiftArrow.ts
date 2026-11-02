@@ -20,10 +20,10 @@ import { type Command, Plugin, TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection, tableEditingKey } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 
-type Axis = 'horiz' | 'vert'
+export type Axis = 'horiz' | 'vert'
 
-/** The position of the caret's cell when the next move in `dir` leaves the cell's text, else null (prosemirror-tables). */
-function atEndOfCell(view: EditorView, axis: Axis, dir: 1 | -1): number | null {
+/** The position of the caret's cell when the next move in `dir` leaves the cell's text, else null (prosemirror-tables). Also `tableFold.ts`'s. */
+export function atEndOfCell(view: EditorView, axis: Axis, dir: 1 | -1): number | null {
   if (!(view.state.selection instanceof TextSelection)) return null
   const { $head } = view.state.selection
   for (let d = $head.depth - 1; d >= 0; d--) {

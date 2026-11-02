@@ -16,18 +16,22 @@
  * holds. A calendar table's now row in a run puts the marker on the bar (`tableCalendar.ts`, `runOf`).
  *
  * A MOUSEDOWN on the bar opens the run: one transaction with the history closed (one undo step). It goes before
- * `tableEditing`, so the click starts no cell selection. A read-only note keeps the run folded. "Fold N rows" is in
+ * `tableEditing`, so the click starts no cell selection. A read-only note keeps the run folded. ↑ / ↓ at the edge of
+ * a cell's text step over a run, to the row past it (or out of the table below a run at its end): `tableEditing`
+ * would put the caret in the run's hidden cells. "Fold N rows" is in
  * the table menu (`tableMenu.ts`, `foldRows`). Fill down and a paste never write a folded row (`unfoldedRows`).
  */
 import { SchemaReady, prosePluginsCtx } from '@milkdown/kit/core'
 import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
+import { keydownHandler } from '@milkdown/kit/prose/keymap'
+import { Plugin, PluginKey, Selection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
 import { TableMap, selectedRect, tableEditingKey } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
 import { rowFolded, setCellsAttr } from './cells'
+import { atEndOfCell } from './tableShiftArrow'
 import { changedTables, typingOnly } from './tableStyle'
 import { timeFormatSetting } from './timeFormatSetting'
 
@@ -133,6 +137,27 @@ function openBar(view: EditorView, event: MouseEvent): boolean {
   return false
 }
 
+/** ↑ / ↓ at the edge of a cell's text, onto a folded row: the caret goes to the row past the run, in the same column. */
+const stepOver =
+  (dir: 1 | -1): Command =>
+  (state, dispatch, view) => {
+    const at = view === undefined ? null : atEndOfCell(view, 'vert', dir)
+    if (at === null) return false
+    // `at` is before the cell: its row is the parent, its table the row's parent.
+    const $cell = state.doc.resolve(at)
+    const table = $cell.node(-1)
+    const tableStart = $cell.start(-1)
+    const map = TableMap.get(table)
+    const { top, bottom, left } = map.findCell(at - tableStart)
+    let row = dir > 0 ? bottom : top - 1
+    if (row < 0 || row >= map.height || !rowFolded(table.child(row))) return false
+    while (row >= 0 && row < map.height && rowFolded(table.child(row))) row += dir
+    // Below a run at the table's end: out of the table, as ↓ from its last row.
+    const target = row >= map.height ? $cell.end(-1) + 1 : tableStart + map.map[row * map.width + left]! + 1
+    dispatch?.(state.tr.setSelection(Selection.near(state.doc.resolve(target), 1)).scrollIntoView())
+    return true
+  }
+
 const foldPlugin = (): Plugin<DecorationSet> =>
   new Plugin<DecorationSet>({
     key: foldKey,
@@ -164,6 +189,7 @@ const foldPlugin = (): Plugin<DecorationSet> =>
     props: {
       decorations: (state) => foldKey.getState(state),
       handleDOMEvents: { mousedown: openBar },
+      handleKeyDown: keydownHandler({ ArrowUp: stepOver(-1), ArrowDown: stepOver(1) }),
     },
   })
 

@@ -16,6 +16,7 @@ import { calendarTick, goToNow } from './tableCalendar'
 import { formatTableComment, parseTableComment, plainTable, type TableStyle } from './tableComment'
 import { fillCells } from './tableFill'
 import { cellPos, mountNote, unmountAll } from './tableTestKit'
+import { pressKey } from '../marks/markTestKit'
 import tableCss from './table.css?inline'
 
 afterEach(async () => {
@@ -222,6 +223,22 @@ describe('the fold stays on its rows', () => {
     for (let i = 0; i < 3; i++) menuItem(view, 1, 0, 'table-delete-row')!.onSelect()
     expect(firstTable(view).node.attrs.freezeRows).toBe(3)
     expect(getMarkdownForSave(crepe)).toContain('<!-- table: fold 2, freeze 3 rows -->')
+  })
+})
+
+describe('the caret steps over a folded run', () => {
+  it('↓ from the row above a run goes to the row below it, ↑ comes back; ↓ above a run at the table end leaves the table', async () => {
+    const { crepe, view } = await mountNote(`${rows(5, 'fold 3-4')}\nafter\n`)
+    const cellText = () => view.state.selection.$from.parent.textContent
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 1, 0) + 2)))
+    expect(pressKey(crepe, 'ArrowDown')).toBe(true)
+    expect(cellText()).toBe('r4')
+    expect(pressKey(crepe, 'ArrowUp')).toBe(true)
+    expect(cellText()).toBe('r1')
+    const end = await mountNote(`${rows(3, 'fold 3-4')}\nafter\n`)
+    end.view.dispatch(end.view.state.tr.setSelection(TextSelection.create(end.view.state.doc, cellPos(end.view, 1, 0) + 2)))
+    expect(pressKey(end.crepe, 'ArrowDown')).toBe(true)
+    expect(end.view.state.selection.$from.parent.textContent).toBe('after')
   })
 })
 
