@@ -80,7 +80,8 @@ async function heavyVault(root: string, strokes: number): Promise<void> {
 async function contents(root: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
   for (const rel of (await readdir(root, { recursive: true, withFileTypes: true })).filter((e) => e.isFile()).map((e) => path.relative(root, path.join(e.parentPath, e.name)))) {
-    out[rel] = await readFile(path.join(root, rel), 'utf8')
+    // The time a switch changed (YAZ-3943 1E) is the run's own clock: two runs write the same bytes but for it.
+    out[rel] = (await readFile(path.join(root, rel), 'utf8')).replace(/("switched": \{\s*"pictures": )\d+/g, '$1<time>')
   }
   return out
 }
