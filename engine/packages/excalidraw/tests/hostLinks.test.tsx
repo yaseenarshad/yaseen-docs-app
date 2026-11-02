@@ -255,6 +255,49 @@ describe("links in the text editor", () => {
     expect(state.replaceLink("[[Gone]]", "[[X]]")).toBe(false);
   });
 
+  // YAZ-4071 7L: a script edit is not on the text box's undo stack, and it
+  // leaves the stack out of step with the text: ⌘Z after the swap could cut
+  // the wrong letters, or do nothing. jsdom has no undo: the fake
+  // `execCommand` edits as the browser does, and records each call.
+  it("YAZ-4071 7L: a new page's ID goes in through the browser's undoable edit, the caret stays, and it never takes the focus", async () => {
+    const calls: { text: string; at: number[] }[] = [];
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: (_command: string, _ui?: boolean, text = "") => {
+        const editor = document.activeElement as HTMLTextAreaElement;
+        const { selectionStart, selectionEnd } = editor;
+        calls.push({ text, at: [selectionStart, selectionEnd] });
+        editor.setRangeText(text, selectionStart, selectionEnd, "end");
+        editor.dispatchEvent(new Event("input"));
+        return true;
+      },
+    });
+    try {
+      const { text, editor } = await edit();
+      editor.focus();
+      moveCaret(editor, 2);
+      const state = hostLinks.onEditorChange.mock.calls.at(-1)![0]!;
+      expect(state.replaceLink("[[YAS-1]]", "[[Notes]]")).toBe(true);
+      expect(calls).toEqual([{ text: "[[Notes]]", at: [4, 13] }]);
+      expect(editor.value).toBe("see [[Notes]] now");
+      expect(textOf(text.id)).toBe("see [[Notes]] now");
+      expect(editor.selectionStart).toBe(2);
+
+      // the editor without the focus (a toolbar popup has it): the old edit
+      Object.defineProperty(document, "activeElement", {
+        configurable: true,
+        get: () => document.body,
+      });
+      expect(state.replaceLink("[[Notes]]", "[[YAS-1]]")).toBe(true);
+      delete (document as { activeElement?: unknown }).activeElement;
+      expect(calls).toHaveLength(1);
+      expect(editor.value).toBe("see [[YAS-1]] now");
+      expect(document.activeElement).toBe(editor);
+    } finally {
+      delete (document as { execCommand?: unknown }).execCommand;
+    }
+  });
+
   it("lets the host's open picker take its keys", async () => {
     const { editor } = await edit();
     hostLinks.onEditorKeyDown.mockReturnValue(true);

@@ -1044,9 +1044,19 @@ export const textWysiwyg = ({
     const map = (offset: number) =>
       offset >= end ? offset + delta : offset > at ? at + text.length : offset;
     const { selectionStart, selectionEnd } = editable;
-    // the caret at the edit while the input handler moves the runs, then back
-    editable.setRangeText(text, at, end, "end");
-    editable.dispatchEvent(new Event("input"));
+    rememberRemovedText(at, end);
+    // the caret at the edit while the input handler moves the runs, then back.
+    // YAZ-4071 7L: the browser's own edit is on the undo stack, so ⌘Z takes
+    // back the swap, then the pick; a script edit puts the stack out of step
+    // with the text. It never takes the focus: without it, the script edit.
+    const browserEdit = document.activeElement === editable;
+    if (browserEdit) {
+      editable.setSelectionRange(at, end);
+    }
+    if (!browserEdit || !document.execCommand?.("insertText", false, text)) {
+      editable.setRangeText(text, at, end, "end");
+      editable.dispatchEvent(new Event("input"));
+    }
     editable.setSelectionRange(map(selectionStart), map(selectionEnd));
     return true;
   };
