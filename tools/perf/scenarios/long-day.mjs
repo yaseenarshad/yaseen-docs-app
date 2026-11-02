@@ -18,12 +18,13 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { sentinel, writeCode, writeDrawing, writeNote, writeVault } from '../genVault.mjs'
+import { sentinel, writeCode, writeDrawing, writeGifDrawing, writeNote, writeVault } from '../genVault.mjs'
 import { footprints, helpers, sleep, usage } from '../lib/app.mjs'
 import { ACTIVE, js, painted, row, session, tab } from '../lib/session.mjs'
 import { slope } from '../lib/stats.mjs'
 import { CODE_SHOWN, writeBigCode } from './bigCode.mjs'
 import { flowDiagram } from './drawio.mjs'
+import { GIF_PROBE } from './gif-board.mjs'
 
 export const optIn = true
 export const runs = 1
@@ -41,10 +42,12 @@ const LAYER = '.tabstack__layer:not(.tabstack__layer--hidden)'
 export const SETTINGS = { memoryReload: false }
 
 /**
- * The 20 files a cycle opens, in open order: 1k and 5k bullet notes, a 5k prose note, twelve 200-line notes, a
- * `.drawio` (30 boxes), an `.excalidraw` with three pictures in `files` (D14), small `.ts` and `.py`, and the 5 MB
- * `.ts`. Each is `[name, kind, write(vault) → path]`.
+ * The 21 files a cycle opens, in open order: 1k and 5k bullet notes, a 5k prose note, twelve 200-line notes, a
+ * `.drawio` (30 boxes), an `.excalidraw` with three pictures in `files` (D14), a board of `GIFS` animated GIFs
+ * (YAZ-3944 D4, YAZ-4071 7K), small `.ts` and `.py`, and the 5 MB `.ts`. Each is `[name, kind, write(vault) → path]`.
  */
+/** The GIF board's GIFs (YAZ-4071 7K): each one plays, so each holds a decoder while the board is in front. */
+export const GIFS = 4
 export const OPENS = (() => {
   const short = (i) => [`Short ${i}`, 'note', (v) => writeNote(v, `Short ${i}`, i % 2 ? 'bullets' : 'prose', 200)]
   const list = [
@@ -52,13 +55,14 @@ export const OPENS = (() => {
     ['Flow', 'diagram', (v) => writeFile(path.join(v, 'Flow.drawio'), flowDiagram(30))],
     ['Bullets 5k', 'note', (v) => writeNote(v, 'Bullets 5k', 'bullets', 5000)],
     ['Sketch', 'drawing', (v) => writeDrawing(v, 'Sketch')],
+    ['GIFs', 'gifs', (v) => writeGifDrawing(v, 'GIFs', GIFS)],
     ['Small TS', 'code', (v) => writeCode(v, 'Small TS', 'ts')],
     ['Prose 5k', 'note', (v) => writeNote(v, 'Prose 5k', 'prose', 5000)],
     ['Small PY', 'code', (v) => writeCode(v, 'Small PY', 'py')],
     ['big-5mb', 'bigCode', (v) => writeBigCode(v)],
   ]
-  // A 200-line note after each of the first eight, then the last four in a row.
-  return [...list.flatMap((f, i) => [f, short(i + 1)]), ...[9, 10, 11, 12].map(short)]
+  // A 200-line note after each of the first eight, then the last four in a row; the GIF board comes with no note after it.
+  return [...list.flatMap((f, i) => (f[1] === 'gifs' ? [f] : [f, short(i + 1 - (i > 4 ? 1 : 0))])), ...[9, 10, 11, 12].map(short)]
 })()
 
 function writeFile(file, text) {
@@ -105,6 +109,7 @@ function shown({ name, kind }) {
   if (kind === 'code') return `(document.querySelector('${LAYER} .editor--code .view-lines')?.textContent.includes(${js(sentinel(name))}) ?? false)`
   if (kind === 'bigCode') return CODE_SHOWN
   if (kind === 'diagram') return 'window.__drawioLoad !== undefined'
+  // The GIF board is on screen once its GIFs play: each one's decoder opens on its first paint (`GIF_PROBE`).
   return `document.querySelector('${LAYER} .editor--drawing canvas') !== null`
 }
 
@@ -116,6 +121,8 @@ async function open(page, f) {
     for (const [type, detail] of [['click', 1], ['click', 2], ['dblclick', 2]]) el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, detail }))
   })()`)
   await page.waitFor(shown(f), OPEN_TIMEOUT_MS)
+  // The GIF board (YAZ-4071 7K): its GIFs play once each decoder opens on its first paint. A build with no GIF player shows them still.
+  if (f.kind === 'gifs') await page.waitFor(`window.__gifDecoders.open >= ${GIFS}`, 10_000).catch(() => undefined)
 }
 
 /** Clicks the tab of note `f` and waits until it is painted. */
@@ -250,6 +257,8 @@ async function sample(proc, page, windowPid, workers) {
     ...(h.backingStorageSize !== undefined && { backingStoreMb: mb(h.backingStorageSize) }),
     documents: dom.documents,
     domNodes: dom.nodes,
+    // YAZ-4071 7K: every GIF decoder closed once the GIF board's tab closed (`GIF_PROBE`).
+    gifDecodersOpen: await page.ev('window.__gifDecoders.open'),
     listeners: dom.jsEventListeners,
     ...(await workerHeaps(page, workers)),
     mainHeapMb,
@@ -310,6 +319,7 @@ export async function run(app, fx) {
     await page.waitFor(`document.querySelector(${homeRow}) !== null`, 30_000)
     // draw.io's first `load` message after each open marks the diagram on screen (as the drawio scenario does).
     await page.ev(`window.addEventListener('message', (e) => { if (typeof e.data === 'string' && e.data.includes('"event":"load"')) window.__drawioLoad ??= performance.now() })`)
+    await page.ev(GIF_PROBE)
     await sleep(3000)
     const windowPid = (await windowPids(proc)).w1
     const workers = await watchWorkers(page)
@@ -348,6 +358,8 @@ export async function run(app, fx) {
       workerHeapEndMb: settled.workerHeapMb,
       workersEnd: settled.workers,
       domNodesEnd: last.domNodes,
+      gifDecodersOpenEnd: settled.gifDecodersOpen,
+      gifDecodersMade: await page.ev('window.__gifDecoders.made'),
       documentsEnd: last.documents,
       listenersEnd: last.listeners,
       mainHeapBeforeCyclesMb: before.mainHeapMb,
