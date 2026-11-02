@@ -226,7 +226,7 @@ export interface TableOfContentsProps {
 }
 
 export function TableOfContents({ channel, mode, contentWidth, onChangeMode, width, onChangeWidth, hostRef, onReturnFocus, folds, onChangeFolds, zoom, onChangeZoom }: TableOfContentsProps) {
-  const { rows: all, hidden } = useSyncExternalStore(channel.subscribe, channel.getState)
+  const { rows: all, zoomed } = useSyncExternalStore(channel.subscribe, channel.getState)
   const listed = useMemo(() => shownRows(all), [all])
   const keys = useMemo(() => tocFoldKeys(all), [all])
   const parents = useMemo(() => foldable(listed), [listed])
@@ -303,7 +303,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
    */
   const saveFolds = (chosen: ReadonlySet<string>): void => {
     const own = new Set(keys)
-    const next: ReadonlySet<string> = hidden ? new Set([...[...folded].filter((key) => !own.has(key)), ...chosen]) : chosen
+    const next: ReadonlySet<string> = zoomed ? new Set([...[...folded].filter((key) => !own.has(key)), ...chosen]) : chosen
     const after = unfoldedRows(listed, keys, next)
     // The spy's own answer on the new rows (YAZ-4048): an unfold into the section the reader is in
     // lights that row now, so the spy's read after the render finds nothing new and the list holds
@@ -317,7 +317,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     setCurrent(to)
     hold.current = true
     setFolded(next)
-    onChangeFolds(hidden ? [...next] : keys.filter((key) => next.has(key)))
+    onChangeFolds(zoomed ? [...next] : keys.filter((key) => next.has(key)))
   }
   /** Folds or opens `row`; with `open`, only toward it. */
   const toggleFold = (row: ShownRow, open?: boolean): void => {
@@ -374,7 +374,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
       scroller.removeEventListener('scroll', onScroll)
       if (frame !== 0) cancelAnimationFrame(frame)
     }
-  }, [shows, rows, box, names, shownWidth, hidden, channel, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
+  }, [shows, rows, box, names, shownWidth, zoomed, channel, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
 
   // The reader's own moves in the note: each lets go of a jump's hold, and a turn of the wheel
   // shows the path in the names. It never opens the card (YAZ-2886): a reader who scrolls is

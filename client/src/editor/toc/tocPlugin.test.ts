@@ -19,7 +19,7 @@
  *    exists is what the FIRST scan goes by;
  *  - it runs once at view creation and then 150 ms after the LAST document change — a keystroke
  *    only restarts the timer, a caret move starts none;
- *  - the channel says hidden while a bullet zoom is active; the rows are then the zoom's own (4D)
+ *  - the channel says zoomed while a bullet zoom is active; the rows are then the zoom's own (4D)
  *    when it has two or more, else the note's, with the section that holds the zoom current, and
  *    a jump to a row outside the zoom ends the zoom first (4C);
  *  - a jump unfolds what hides its row (an H4 or H5 row too, which has no fold of its own) and the
@@ -540,18 +540,18 @@ describe('a bullet zoom (YAZ-4094 4C, 4D)', () => {
     view.someProp('handleKeyDown', (handler) => handler(view, event))
   }
 
-  it('says hidden when the zoom starts and shown again when it ends', async () => {
+  it('says zoomed when the zoom starts, and not when it ends', async () => {
     const { view, channel } = await mountToc(`# Top\n\n## Under\n\n* Bullet\n  * Child\n`, { zoom: { title: () => 'Notes' } })
-    expect(channel.getState().hidden).toBe(false)
+    expect(channel.getState().zoomed).toBe(false)
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOfText(view.state.doc, 'Bullet') + 1)))
     pressZoom(view)
     expect(getZoomedItemPos(view.state)).not.toBeNull()
-    expect(channel.getState().hidden).toBe(true)
+    expect(channel.getState().zoomed).toBe(true)
     // The headings are still the note's: only the flag moved.
     expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 Under'])
     pressZoom(view, true)
     expect(getZoomedItemPos(view.state)).toBeNull()
-    expect(channel.getState().hidden).toBe(false)
+    expect(channel.getState().zoomed).toBe(false)
   })
 
   /** "Bullet" holds three bullet rows; "Small" holds one. */

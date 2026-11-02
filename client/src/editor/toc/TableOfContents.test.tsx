@@ -399,10 +399,10 @@ describe('which notes show one', () => {
     const m = mount('pinned', HEADINGS, 1400)
     const width = m.section.style.getPropertyValue('--toc-width')
     expect(width).not.toBe('')
-    act(() => m.channel.setHidden(true))
+    act(() => m.channel.setZoomed(true))
     expect(nav(m)?.hasAttribute('data-names')).toBe(true)
     expect(m.section.style.getPropertyValue('--toc-width')).toBe(width)
-    act(() => m.channel.setHidden(false))
+    act(() => m.channel.setZoomed(false))
     expect(nav(m)?.hasAttribute('data-names')).toBe(true)
   })
 
@@ -1154,7 +1154,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
     const zoomed = mount('pinned', HEADINGS, 1400)
     press(zoomed, 1000)
     moveTo(900)
-    act(() => zoomed.channel.setHidden(true))
+    act(() => zoomed.channel.setZoomed(true))
     // The names stay in a zoom, so the drag goes on to its release.
     expect(document.body.style.cursor).not.toBe('')
     moveTo(800)
@@ -1840,7 +1840,7 @@ describe('folds (YAZ-3939)', () => {
     const m = mount('pinned', TREE, 900, TOC_DEFAULT_W, [key(1, 'Design')])
     // The zoom's own list (the engine publishes it in a zoom).
     act(() => {
-      m.channel.setHidden(true)
+      m.channel.setZoomed(true)
       m.channel.publish([{ level: 1, text: 'Hiring' }, { level: 2, text: 'Two engineers' }])
     })
     click(arrow(m, 'Hiring'))
@@ -1848,7 +1848,7 @@ describe('folds (YAZ-3939)', () => {
     click(foldAll(m))
     expect(m.onChangeFolds).toHaveBeenLastCalledWith([key(1, 'Design')])
     act(() => {
-      m.channel.setHidden(false)
+      m.channel.setZoomed(false)
       m.channel.publish(TREE)
     })
     expect(shownTexts(m)).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])

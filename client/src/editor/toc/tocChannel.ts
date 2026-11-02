@@ -18,7 +18,7 @@
  * engine scans by it, and it is NOT part of the snapshot: the component never learns it, and a
  * change of source reaches it only as the new list.
  *
- * 🔒 Subscribers hear a change only when the list of (level, text) changes or the hidden flag
+ * 🔒 Subscribers hear a change only when the list of (level, text) changes or the zoomed flag
  * flips. The engine publishes after every scan, and most scans find the list it already had.
  */
 import type { TocSource } from '@shared/types'
@@ -54,7 +54,7 @@ export interface TocSnapshot {
    */
   rows: readonly TocRow[]
   /** True while a bullet zoom is active. The component still draws (YAZ-4094 4C): its scroll spy reads again. */
-  hidden: boolean
+  zoomed: boolean
 }
 
 /** The engine behind the commands: the plugin binds one per editor view. */
@@ -89,7 +89,7 @@ export interface TocChannel {
   /** Engine side: the rows of the scan just made. */
   publish(rows: readonly TocRow[]): void
   /** Engine side: a bullet zoom started or ended. */
-  setHidden(hidden: boolean): void
+  setZoomed(zoomed: boolean): void
 }
 
 const sameRows = (a: readonly TocRow[], b: readonly TocRow[]): boolean =>
@@ -97,7 +97,7 @@ const sameRows = (a: readonly TocRow[], b: readonly TocRow[]): boolean =>
 
 export function createTocChannel(): TocChannel {
   let controller: TocController | null = null
-  let snapshot: TocSnapshot = { rows: [], hidden: false }
+  let snapshot: TocSnapshot = { rows: [], zoomed: false }
   let source: TocSource | null = null
   const listeners = new Set<() => void>()
 
@@ -113,8 +113,8 @@ export function createTocChannel(): TocChannel {
     publish(rows) {
       if (!sameRows(rows, snapshot.rows)) set({ ...snapshot, rows })
     },
-    setHidden(hidden) {
-      if (hidden !== snapshot.hidden) set({ ...snapshot, hidden })
+    setZoomed(zoomed) {
+      if (zoomed !== snapshot.zoomed) set({ ...snapshot, zoomed })
     },
     setSource(next) {
       if (next === source) return

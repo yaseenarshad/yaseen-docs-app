@@ -461,7 +461,7 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
           }
 
           const unbind = channel.bind(controller)
-          channel.setHidden(getZoomedItemPos(view.state) !== null)
+          channel.setZoomed(getZoomedItemPos(view.state) !== null)
           scan()
           // A title that changes in the index renames the rows that link to it: one scan, as after an edit.
           const unsubscribeLinks = links?.subscribe(() => {
@@ -470,7 +470,7 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
           })
           return {
             update: (_view, previous) => {
-              channel.setHidden(getZoomedItemPos(view.state) !== null)
+              channel.setZoomed(getZoomedItemPos(view.state) !== null)
               // A zoom in or out scans at once, as a change of source does: a click, not typing (YAZ-4094 4D).
               if (getZoomedItemPos(previous) !== getZoomedItemPos(view.state)) {
                 scan()

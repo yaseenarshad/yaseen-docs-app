@@ -55,21 +55,22 @@ const rowRange = (doc: ProseNode, pos: number): { from: number; to: number } | n
 
 export const isFoldLocked = (state: EditorState, pos: number): boolean => pluginKey.getState(state)?.has(pos) ?? false
 
-/**
- * Whether a lock stops the row at `pos` from folding: it is locked, or sits inside a locked row. A row that holds a
- * locked row still folds (user, 4A): to keep a parent open, lock the parent.
- */
-export const foldLockBlocks = (state: EditorState, pos: number): boolean => {
+/** What each lock holds open: the locked row with what its fold hides. Measured once per check, never per row. */
+const lockRanges = (state: EditorState): { from: number; to: number }[] => {
   const locked = pluginKey.getState(state)
-  if (locked === undefined || locked.size === 0) return false
-  const row = rowRange(state.doc, pos)
-  if (row === null) return false
-  for (const lockedPos of locked) {
-    const lock = rowRange(state.doc, lockedPos)
-    if (lock !== null && lock.from <= row.from && row.to <= lock.to) return true
-  }
-  return false
+  if (locked === undefined || locked.size === 0) return []
+  return [...locked].map((pos) => rowRange(state.doc, pos)).filter((range): range is { from: number; to: number } => range !== null)
 }
+
+/**
+ * Whether a row that starts at `pos` is held: it is a locked row, or starts inside one. A row that starts inside a
+ * lock also ends inside it — a bullet inside a bullet, or a heading inside a section, which is deeper and so ends
+ * with it — so its start alone decides. A row that holds a locked row starts before it and still folds (user, 4A).
+ */
+const held = (ranges: readonly { from: number; to: number }[], pos: number): boolean => ranges.some(({ from, to }) => from <= pos && pos < to)
+
+/** Whether a lock stops the row at `pos` from folding: it is locked, or sits inside a locked row. */
+export const foldLockBlocks = (state: EditorState, pos: number): boolean => held(lockRanges(state), pos)
 
 /** Lock the row at `pos` open, or unlock it. Not an edit: ⌘Z never undoes it. Locking opens the folds it blocks. */
 export const toggleFoldLock =
@@ -93,11 +94,13 @@ export const createFoldLock = ({ seedLockedKeys = () => new Set(), onLockedKeysC
           apply: (transaction, locked) => {
             let next = locked
             if (transaction.docChanged && locked.size > 0) {
-              next = new Set()
+              const mapped = new Set<number>()
               for (const pos of locked) {
-                const mapped = transaction.mapping.mapResult(pos, 1)
-                if (!mapped.deletedAfter) (next as Set<number>).add(mapped.pos)
+                const result = transaction.mapping.mapResult(pos, 1)
+                if (!result.deletedAfter) mapped.add(result.pos)
               }
+              // The same set when no lock moved: typing below every lock reports nothing (the view's `notify`).
+              if (mapped.size !== locked.size || [...locked].some((pos) => !mapped.has(pos))) next = mapped
             }
             const meta: unknown = transaction.getMeta(pluginKey)
             if (typeof meta === 'number') {
@@ -114,8 +117,9 @@ export const createFoldLock = ({ seedLockedKeys = () => new Set(), onLockedKeysC
           if (locked === undefined || locked.size === 0) return null
           const folds = transactions.some((tr) => tr.docChanged || hasOutlineFoldMeta(tr) || hasHeadingFoldMeta(tr) || tr.getMeta(pluginKey) !== undefined)
           if (!folds) return null
-          const bullets = [...outlineCollapsedPositions(state)].filter((pos) => foldLockBlocks(state, pos))
-          const headings = [...headingCollapsedPositions(state)].filter((pos) => foldLockBlocks(state, pos))
+          const ranges = lockRanges(state)
+          const bullets = [...outlineCollapsedPositions(state)].filter((pos) => held(ranges, pos))
+          const headings = [...headingCollapsedPositions(state)].filter((pos) => held(ranges, pos))
           if (bullets.length === 0 && headings.length === 0) return null
           const tr = state.tr.setMeta('addToHistory', false)
           addOutlineFoldSetMeta(tr, bullets, false)
@@ -145,9 +149,12 @@ export const createFoldLock = ({ seedLockedKeys = () => new Set(), onLockedKeysC
           }
           view.dom.addEventListener('mousedown', onMouseDown, true)
           let previous: string | null = null
+          /** The lock set of the last report: a transaction that keeps it (no lock, no edit) costs nothing. */
+          let reported: ReadonlySet<number> | undefined
           const notify = () => {
             const locked = pluginKey.getState(view.state)
-            if (locked === undefined || onLockedKeysChange === undefined) return
+            if (locked === undefined || onLockedKeysChange === undefined || locked === reported) return
+            reported = locked
             const keys = foldRows(view.state)
               .filter(({ pos }) => locked.has(pos))
               .map(({ foldKey }) => LOCK_PREFIX + foldKey)

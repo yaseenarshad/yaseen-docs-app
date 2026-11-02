@@ -3,7 +3,7 @@
  * with and without an engine bound.
  *
  * The rule under test: a subscriber hears a change ONLY when the list of (level, text) changes or
- * the hidden flag flips. The engine publishes after every scan, and a scan that found the same
+ * the zoomed flag flips. The engine publishes after every scan, and a scan that found the same
  * rows must render nothing. The source (YAZ-2700 D14) is the host's word to the engine and no
  * part of that: a subscriber hears of it only through the list the engine then publishes.
  */
@@ -17,7 +17,7 @@ const LIST: TocRow[] = [
 
 describe('publishing', () => {
   it('starts empty and shown', () => {
-    expect(createTocChannel().getState()).toEqual({ rows: [], hidden: false })
+    expect(createTocChannel().getState()).toEqual({ rows: [], zoomed: false })
   })
 
   it('a new list reaches the subscribers once; the same list again, as a new array, does not', () => {
@@ -48,18 +48,18 @@ describe('publishing', () => {
     expect(channel.getState().rows).toEqual([LIST[0]])
   })
 
-  it('the hidden flag reaches them when it flips, and only then; the rows stay', () => {
+  it('the zoomed flag reaches them when it flips, and only then; the rows stay', () => {
     const channel = createTocChannel()
     const listener = vi.fn()
     channel.publish(LIST)
     channel.subscribe(listener)
-    channel.setHidden(false)
+    channel.setZoomed(false)
     expect(listener).not.toHaveBeenCalled()
-    channel.setHidden(true)
-    channel.setHidden(true)
+    channel.setZoomed(true)
+    channel.setZoomed(true)
     expect(listener).toHaveBeenCalledTimes(1)
-    expect(channel.getState()).toEqual({ rows: LIST, hidden: true })
-    channel.setHidden(false)
+    expect(channel.getState()).toEqual({ rows: LIST, zoomed: true })
+    channel.setZoomed(false)
     expect(listener).toHaveBeenCalledTimes(2)
   })
 
@@ -126,7 +126,7 @@ describe('the source (YAZ-2700 D14)', () => {
     channel.setSource('bullets')
     expect(listener).not.toHaveBeenCalled()
     expect(channel.getState()).toBe(before)
-    expect(channel.getState()).toEqual({ rows: LIST, hidden: false })
+    expect(channel.getState()).toEqual({ rows: LIST, zoomed: false })
   })
 })
 
