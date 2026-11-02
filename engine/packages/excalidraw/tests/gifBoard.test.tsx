@@ -239,4 +239,29 @@ describe("YAZ-3944 D4: Pause GIF and auto-pause", () => {
       hrefs.find((href) => href!.startsWith("data:image/png")),
     ).toBeTruthy();
   });
+
+  it("YAZ-4130 6B4: two SVGs of a board with a paused GIF make its still one time", async () => {
+    const paused = {
+      ...addGif("cachedStill", 3),
+      customData: { gifPaused: true },
+    };
+    // each still is one PNG made from a canvas (the spy may hold calls of an earlier test)
+    const toDataURL = vi
+      .spyOn(HTMLCanvasElement.prototype, "toDataURL")
+      .mockReturnValue("data:image/png;base64,AA");
+    toDataURL.mockClear();
+    const render = () =>
+      exportToSvg(
+        [paused],
+        { exportBackground: false, viewBackgroundColor: "#fff" },
+        h.app.files,
+      );
+    const first = (await render()).querySelector("image")!.getAttribute("href");
+    const second = (await render())
+      .querySelector("image")!
+      .getAttribute("href");
+    expect(first).toMatch(/^data:image\/png/);
+    expect(second).toBe(first);
+    expect(toDataURL).toHaveBeenCalledTimes(1);
+  });
 });
