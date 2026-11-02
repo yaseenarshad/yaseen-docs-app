@@ -36,6 +36,7 @@ import type { WikilinkHover } from './wikilink/wikilinkHover'
 import { linkOpenHint } from './linkGesture'
 import './outline/outlineFolding.css'
 import './outline/headingFolding.css'
+import './outline/foldLock.css'
 import './outline/headingLevelTag.css'
 import './outline/bullets.css'
 import './outline/zoom.css'
@@ -44,12 +45,15 @@ import './outline/bulletThreading.css'
 import './outline/sectionIndent.css'
 import './softBreaks.css'
 import { splitFrontmatter } from '@shared/frontmatter'
+import { notePageSwitches, setNotePageSwitch, type PageSwitchKey } from '@shared/pageSwitches'
 import { isNoteReadOnly, setNoteReadOnly } from '@shared/readOnly'
 import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
 import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
 import { FoldAllButton } from './FoldAllButton'
 import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from './outline/foldAllHotkeys'
+import { FOLDING_OFF_NOTICE, showFolding } from './outline/foldingSwitch'
+import { FOLD_LOCKED_NOTICE } from './outline/foldLock'
 import { PageSettings } from './PageSettings'
 import { ReadOnlyChip } from './ReadOnlyChip'
 import { NoteMenu } from './noteMenu'
@@ -59,7 +63,6 @@ import { goToNow } from './table/tableCalendar'
 import { fileLines } from './lineNumbers/fileLines'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
-import { usePageSwitch } from './usePageSwitch'
 import type { ZoomStep } from '@shared/types'
 import type { ZoomFrom } from '../workspace/useWorkspace'
 import type { CodeSettingsPatch } from '../code/codeSettings'
@@ -179,6 +182,10 @@ interface EditorProps {
   tableOfContents?: TableOfContentsMode
   /** Settings › "Table of contents default" (YAZ-3558 D2): for a page that made no choice in its cog. Absent → the default, on (with `tableOfContents` absent, nothing shows anyway). */
   tocOnByDefault?: boolean
+  /** Settings › "Guide lines default" (YAZ-4094 D2): for a page that made no choice in its cog. Absent → on. */
+  guideLinesOnByDefault?: boolean
+  /** Settings › "Folding default" (YAZ-4094 F1): for a page that made no choice in its cog. Absent → on. */
+  foldingOnByDefault?: boolean
   /** The content width setting: with the note's own width it decides whether `auto` shows names or lines. Absent → `narrow`, the default. */
   contentWidth?: ContentWidth
   /** The table of contents' own "Pin" / "Unpin" write the SETTING through this. */
@@ -261,7 +268,7 @@ interface EditorProps {
   onChangeOutsideListPinned?: (pinned: boolean) => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, reviewSettings, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, reviewSettings, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -273,7 +280,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     if (inTree === 'dir') {
       return (
         <section className="editor">
-          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+          <FolderView path={path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} onRetitle={onRetitle} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} hoverPreview={hoverFolderViews} previewScope={previewScope} diagramDarkColors={diagramDarkColors} foldingOnByDefault={foldingOnByDefault} />
         </section>
       )
     }
@@ -327,11 +334,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startViewRef.current} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
 }
 
 /** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, reviewSettings, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, diagramDarkColors = 'adapt', hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, reviewSettings, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, diagramDarkColors = 'adapt', hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
   const state = useFile(path)
   const titles = usePathTitles(wikilinks)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
@@ -340,7 +347,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
+        <CrepeHost key={file.path} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} reviewSettings={reviewSettings} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
       )}
     </section>
   )
@@ -374,6 +381,8 @@ function CrepeHost({
   onChangeCommentsOrder,
   tableOfContents = 'off',
   tocOnByDefault = DEFAULT_SETTINGS.tocOnByDefault,
+  guideLinesOnByDefault = DEFAULT_SETTINGS.guideLinesOnByDefault,
+  foldingOnByDefault = DEFAULT_SETTINGS.foldingOnByDefault,
   contentWidth = 'narrow',
   onChangeTableOfContents = noTableOfContentsChange,
   tableOfContentsWidth = TOC_DEFAULT_W,
@@ -421,6 +430,8 @@ function CrepeHost({
   onChangeCommentsOrder: (order: CommentsOrder) => void
   tableOfContents?: TableOfContentsMode
   tocOnByDefault?: boolean
+  guideLinesOnByDefault?: boolean
+  foldingOnByDefault?: boolean
   contentWidth?: ContentWidth
   onChangeTableOfContents?: (mode: TableOfContentsMode) => void
   tableOfContentsWidth?: number
@@ -457,15 +468,10 @@ function CrepeHost({
   documentZoomRef.current = documentZoom
   // Per page and never stored (YAZ-2643): it lives as long as this tab's editor does.
   const [lineNumbersOn, setLineNumbersOn] = useState(false)
-  // Per page and saved with the note in the app state, on and off (YAZ-2709 D2): the page cog's "Section indent".
-  const [sectionIndentOn, toggleSectionIndent] = usePageSwitch(root, file.path, storage.getSectionIndent, storage.setSectionIndent)
   // The same kind of switch (YAZ-2700): every heading of THIS page says its level. Per page, never stored.
   const [headingLevelsOn, setHeadingLevelsOn] = useState(false)
-  // The table of contents follows Settings › "Table of contents default" until this page makes its own choice, which
-  // wins, also over Off (YAZ-3558 D1). Saved with the note, as "Section indent" is (YAZ-2950, which replaces YAZ-2700 D15).
-  const [tableOfContentsOn, toggleTableOfContents] = usePageSwitch(root, file.path, storage.getTocSwitch, storage.setTocSwitch, tocOnByDefault)
-  // What this page's table of contents is built from (YAZ-2700 D14). Stored, as "Section indent"
-  // above is: with the note in the app state, as its folds are, and `null` (Auto) is no entry.
+  // What this page's table of contents is built from (YAZ-2700 D14). Stored with the note in the
+  // app state, as its folds are, and `null` (Auto) is no entry.
   const [tocSource, setTocSource] = useState<TocSource | null>(() => storage.getTocSource(root, file.path))
   // The folded rows of the table of contents (YAZ-3939 D1), as saved for this note when it mounted.
   const [tocFolds] = useState(() => storage.getTocFolds(root, file.path))
@@ -630,6 +636,20 @@ function CrepeHost({
    * Parsed once per `disk`, never per keystroke or per save.
    */
   const readOnly = useMemo(() => isNoteReadOnly(disk), [disk])
+  /**
+   * The page cog's on/off rows (YAZ-4094 G4, G1): IN the note's frontmatter too, read off `disk` the same
+   * way, so a toggle in another tab or window, or an agent's edit, shows here at once. A key that is absent
+   * follows the app default; the page's own choice wins, also over Off (YAZ-3558 D1). Section indent's
+   * default is off (YAZ-2709 D2).
+   */
+  const pageSwitches = useMemo(() => notePageSwitches(disk), [disk])
+  const sectionIndentOn = pageSwitches['section-indent'] ?? false
+  const tableOfContentsOn = pageSwitches.toc ?? tocOnByDefault
+  const guideLinesOn = pageSwitches['guide-lines'] ?? guideLinesOnByDefault
+  const foldingOn = pageSwitches.folding ?? foldingOnByDefault
+  // Read by the editor's mount (createCrepe), which must not re-run when the switch turns: the effect below sends the change.
+  const foldingOnRef = useRef(foldingOn)
+  foldingOnRef.current = foldingOn
   /** The chip's "Allow edits?" box is open (YAZ-3076 D4): this tab's own, and gone once read only is. */
   const [askingUnlock, setAskingUnlock] = useState(false)
   useEffect(() => {
@@ -715,11 +735,14 @@ function CrepeHost({
     // A copied page starts with its source's LIVE folds (YAZ-2951 S2), never the ones another copy stored last.
     const start = startViewRef.current
     const startFolds = start?.folds ?? storage.getFolds(root, file.path)
-    let bulletFoldKeys: readonly string[] = startFolds.filter((k) => !k.startsWith('h:'))
+    let bulletFoldKeys: readonly string[] = startFolds.filter((k) => !k.startsWith('h:') && !k.startsWith('lock:'))
     let headingFoldKeys: readonly string[] = startFolds.filter((k) => k.startsWith('h:'))
+    // Rows locked open (YAZ-4094 4A): `lock:` + the row's fold key, in the same bucket.
+    let lockedKeys: readonly string[] = startFolds.filter((k) => k.startsWith('lock:'))
     // One bucket, two writers (D3): each plugin reports its own keys; the union write means neither
     // can wipe the other's. Heading keys are 'h:'-prefixed by the plugin itself, so they can't collide.
-    const writeFolds = () => storage.setFolds(root, file.path, [...bulletFoldKeys, ...headingFoldKeys])
+    // Locks first: the store keeps the first 500 keys, and a lock is a deliberate choice, a fold often is not (YAZ-4094 4A).
+    const writeFolds = () => storage.setFolds(root, file.path, [...lockedKeys, ...bulletFoldKeys, ...headingFoldKeys])
     // Each plugin reports its keys once as the editor opens. From a page view that report is the
     // seed, not a change: it is not written until a fold changes in this copy (YAZ-2951 S10).
     let bulletSeedPending = start !== undefined
@@ -732,6 +755,16 @@ function CrepeHost({
       onMarkdownUpdated: (md) => controller?.update(md),
       // A calendar table's marker moves each minute here (YAZ-4162 D2, D9); a preview card starts no timer.
       calendarClock: true,
+      foldingOn: () => foldingOnRef.current,
+      onFoldingBlocked: () => onNotice?.(FOLDING_OFF_NOTICE),
+      foldLock: {
+        seedLockedKeys: () => new Set(lockedKeys),
+        onLockedKeysChange: (keys) => {
+          lockedKeys = keys
+          writeFolds()
+        },
+        onBlocked: () => onNotice?.(FOLD_LOCKED_NOTICE),
+      },
       folding: {
         seedCollapsedKeys: () => new Set(bulletFoldKeys),
         onCollapsedKeysChange: (keys) => {
@@ -886,7 +919,7 @@ function CrepeHost({
         offPageView = registerPageView(scroller, () => ({
           scrollTop: scroller.scrollTop,
           zoomKey: getZoomKeyOf(crepe),
-          folds: [...bulletFoldKeys, ...headingFoldKeys],
+          folds: [...lockedKeys, ...bulletFoldKeys, ...headingFoldKeys],
           magnification: documentZoomRef.current,
           selection: getCaretOf(crepe),
         }))
@@ -975,27 +1008,34 @@ function CrepeHost({
   }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, linkActions, onNotice, newNoteFolderFor, drawingFeed, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom])
 
   /**
-   * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1): pending typing saves first
-   * (the pre-rewrite flush every editor on this path takes, S12), then `transformFile` writes the one
-   * key against the fresh bytes. The bytes that landed are adopted at once — the chip shows without
-   * waiting for the watcher, and the watcher's echo then carries this editor's mtime and is skipped:
-   * one read and one write for each click (S17). A refusal is one passive notice; nothing changes.
+   * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1), and the cog's on/off rows
+   * (YAZ-4094 G4): pending typing saves first (the pre-rewrite flush every editor on this path takes,
+   * S12), then `transformFile` writes the one key against the fresh bytes. The bytes that landed are
+   * adopted at once — the chip or the row shows without waiting for the watcher, and the watcher's echo
+   * then carries this editor's mtime and is skipped: one read and one write for each click (S17). A
+   * refusal is one passive notice; nothing changes.
    */
-  const setReadOnly = useCallback(
-    async (on: boolean): Promise<void> => {
+  const writeOwnKey = useCallback(
+    async (transform: (content: string) => string, row: string): Promise<void> => {
       try {
         await flushRenamedPath(file.path)
-        const landed = await transformFile(file.path, (content) => setNoteReadOnly(content, on))
+        const landed = await transformFile(file.path, transform)
         if (absorbFrontmatterOnly(landed.content, landed.mtime)) {
           setDisk(landed.content)
           diskLanded()
         }
       } catch (err) {
-        onNotice?.(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`, 'error')
+        onNotice?.(`${row} could not change: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     },
     [file.path, absorbFrontmatterOnly, onNotice],
   )
+  const setReadOnly = useCallback((on: boolean) => writeOwnKey((content) => setNoteReadOnly(content, on), 'Read only'), [writeOwnKey])
+  const setPageSwitch = useCallback((key: PageSwitchKey, row: string, on: boolean) => writeOwnKey((content) => setNotePageSwitch(content, key, on), row), [writeOwnKey])
+  const toggleSectionIndent = () => void setPageSwitch('section-indent', 'Section indent', !sectionIndentOn)
+  const toggleTableOfContents = () => void setPageSwitch('toc', 'Table of contents', !tableOfContentsOn)
+  const toggleGuideLines = () => void setPageSwitch('guide-lines', 'Guide lines', !guideLinesOn)
+  const toggleFolding = () => void setPageSwitch('folding', 'Folding', !foldingOn)
 
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
@@ -1104,13 +1144,19 @@ function CrepeHost({
       if (crepeRef.current === crepe) showSectionIndent(crepe, false)
     }
   }, [sectionIndentOn, readyCrepe])
+  // The page's "Folding" switch (YAZ-4094 F1): one meta-only transaction, no remount. On again brings the saved folds back.
+  useEffect(() => {
+    const crepe = readyCrepe
+    if (crepe !== null && crepeRef.current === crepe) showFolding(crepe, foldingOn)
+  }, [foldingOn, readyCrepe])
 
   return (
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
       <div className="status-chips">
         {/* Collapse all / Expand all (YAZ-3938 D1): the ⌘⇧U / ⌘⇧I command, left of the cog. */}
-        <FoldAllButton
+        {/* Folding off (YAZ-4094 F1): nothing on the page can fold, so the button goes. */}
+        {foldingOn && <FoldAllButton
           read={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? nextDocumentFold(editorViewOf(readyCrepe).state) : 'none')}
           run={(collapse) => {
             if (readyCrepe === null || crepeRef.current !== readyCrepe) return
@@ -1120,8 +1166,8 @@ function CrepeHost({
           }}
           subscribe={subscribeFolds}
           keys={{ collapse: 'note.foldAll', expand: 'note.unfoldAll' }}
-        />
-        <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContentsOn ? changeTocSource : undefined} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
+        />}
+        <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} guideLines={guideLinesOn} onToggleGuideLines={toggleGuideLines} folding={foldingOn} onToggleFolding={toggleFolding} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContentsOn ? changeTocSource : undefined} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
         <DocumentZoom value={documentZoom} onChange={changeZoom} />
         {readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={() => setAskingUnlock(true)} onAllow={() => { setAskingUnlock(false); void setReadOnly(false) }} onCancel={() => setAskingUnlock(false)} />}
         {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
@@ -1148,7 +1194,7 @@ function CrepeHost({
           there, the composer being the door to the first comment), then "Linked mentions"
           (Links D, GRO-2193), then "Reviews" (YAZ-2322), which stays last. All of it scrolls WITH
           the note, never in a panel. */}
-      <div className="editor-host" data-page="note" data-read-only={readOnly || undefined} data-line-numbers={lineNumbersOn || undefined} data-section-indent={sectionIndentOn || undefined} data-heading-levels={headingLevelsOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
+      <div className="editor-host" data-page="note" data-read-only={readOnly || undefined} data-line-numbers={lineNumbersOn || undefined} data-section-indent={sectionIndentOn || undefined} data-guide-lines={pageSwitches['guide-lines'] === undefined ? undefined : pageSwitches['guide-lines'] ? 'on' : 'off'} data-folding={pageSwitches.folding === undefined ? undefined : pageSwitches.folding ? 'on' : 'off'} data-heading-levels={headingLevelsOn || undefined} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
         {/* Title and properties share ONE header row (YAZ-918): the panel sits to
             the title's right and wraps under it when the title runs long. */}
         <div className="page-header">

@@ -104,8 +104,10 @@ describe('the preview panel of the search (YAZ-2662 D5)', () => {
     expect(setReadonly).toHaveBeenCalledExactlyOnceWith(true)
     expect(opts.features).toMatchObject({ [CrepeFeature.BlockEdit]: false, [CrepeFeature.Toolbar]: false })
     // The window's resolve source, so an id link shows its note's title; and no door of the editor that writes.
-    expect(Object.keys(opts).sort()).toEqual(['defaultValue', 'features', 'root', 'wikilinks'])
+    // `foldingOn` (YAZ-4094 F1) only reads: the note's own `folding` key, else Settings › "Folding default" (on).
+    expect(Object.keys(opts).sort()).toEqual(['defaultValue', 'features', 'foldingOn', 'root', 'wikilinks'])
     expect(opts.wikilinks).toBe(wikilinks)
+    expect((opts.foldingOn as () => boolean)()).toBe(true)
     expect(panel.querySelector('.quicklook__body .ProseMirror')?.textContent).toBe(BODY)
     expect(document.activeElement).toBe(bar)
     expect(viewers).toEqual([])

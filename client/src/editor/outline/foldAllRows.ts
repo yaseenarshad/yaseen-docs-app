@@ -8,6 +8,8 @@ import { hintOf } from '../../lib/keyHint'
 import type { Node } from '@milkdown/kit/prose/model'
 import type { RowProvider } from '../blockHandleMenu'
 import { setAllDocumentFolds } from './foldAllHotkeys'
+import { isFoldingOn } from './foldingSwitch'
+import { isFoldLocked, toggleFoldLock } from './foldLock'
 import { DEEPEST_FOLDABLE_LEVEL, headingLevel } from './headingFolding'
 import { childListState } from './numberChildren'
 
@@ -22,15 +24,22 @@ function headingFolds(doc: Node, pos: number): boolean {
 }
 
 export const foldAllRows: RowProvider = (view, target) => {
-  if (target.inside < 0) return []
+  // Folding off (YAZ-4094 F1): nothing on the page folds, so the menu offers no fold rows.
+  if (target.inside < 0 || !isFoldingOn(view.state)) return []
   const { doc } = view.state
   if (childListState(doc, target.inside) === null && !headingFolds(doc, target.inside)) return []
   const fold = (collapsed: boolean) => () => {
     setAllDocumentFolds(collapsed)(view.state, view.dispatch)
     view.focus()
   }
+  // Lock this row open, or unlock it (YAZ-4094 4A, `foldLock.ts`).
+  const lock = () => {
+    toggleFoldLock(target.inside)(view.state, view.dispatch)
+    view.focus()
+  }
   return [
     { label: 'Collapse all', hint: hintOf('note.foldAll'), group: 'children', run: fold(true) },
     { label: 'Expand all', hint: hintOf('note.unfoldAll'), group: 'children', run: fold(false) },
+    { label: isFoldLocked(view.state, target.inside) ? 'Unlock' : 'Lock open', group: 'children', run: lock },
   ]
 }

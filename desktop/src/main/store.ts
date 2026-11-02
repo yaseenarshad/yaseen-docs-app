@@ -41,6 +41,11 @@ import {
   RIGHT_PANEL_MAX_W,
   RIGHT_PANEL_MIN_W,
   SECTION_LINES,
+  GUIDE_LINES_SHOW,
+  GUIDE_LINE_DARKNESS_MAX,
+  GUIDE_LINE_DARKNESS_MIN,
+  GUIDE_LINE_DARKNESS_STEP,
+  type GuideLinesShow,
   SECTION_STEPS,
   SIDEBAR_DEFAULT_W,
   SIDEBAR_ARROW_MOTIONS,
@@ -205,10 +210,10 @@ export interface Store {
   setTocFolds(root: string, file: string, keys: readonly string[]): void
   /** What one note's table of contents is built from (YAZ-2700 D14). `null` is Auto: the entry goes, and Auto is never stored. */
   setTocSource(root: string, file: string, source: TocSource | null): void
-  /** One note's "Section indent" switch (YAZ-2709 D2). `true` and `false` are both stored; nothing here removes an entry. */
-  setSectionIndent(root: string, file: string, on: boolean): void
-  /** One note's "Table of contents" switch (YAZ-2950). The same terms as `setSectionIndent`. */
+  /** One code file's "Table of contents" switch (YAZ-2950, YAZ-3506). `true` and `false` are both stored; nothing here removes an entry. A note's switch is in its frontmatter (YAZ-4094 G4). */
   setTocSwitch(root: string, file: string, on: boolean): void
+  /** The one-time move of a note's switch into its frontmatter (`movePageSwitches.ts`, YAZ-4094 G4) is done: the entry goes. */
+  dropPageSwitch(root: string, file: string, list: 'sectionIndents' | 'tocSwitches'): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   /**
    * `roots` may be left out: the entry then keeps `root` alone. Either way the vault-list invariant is applied (`normalizeRoots`).
@@ -514,6 +519,10 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   bulletThreading: (v): v is boolean => typeof v === 'boolean',
   threadWidth: (v): v is number => isFiniteNumber(v) && THREAD_WIDTHS.includes(v),
   threadColor: (v): v is string | null => v === null || isHexColour(v),
+  guideLinesOnByDefault: (v): v is boolean => typeof v === 'boolean',
+  guideLinesShow: (v): v is GuideLinesShow => typeof v === 'string' && (GUIDE_LINES_SHOW as readonly string[]).includes(v),
+  guideLineDarkness: (v): v is number => isFiniteNumber(v) && v >= GUIDE_LINE_DARKNESS_MIN && v <= GUIDE_LINE_DARKNESS_MAX && v % GUIDE_LINE_DARKNESS_STEP === 0,
+  foldingOnByDefault: (v): v is boolean => typeof v === 'boolean',
   theme: (v): v is Theme => typeof v === 'string' && (THEMES as readonly string[]).includes(v),
   contentWidth: (v): v is ContentWidth => typeof v === 'string' && (CONTENT_WIDTHS as readonly string[]).includes(v),
   newNoteLocation: (v): v is NewNoteLocation => typeof v === 'string' && (NEW_NOTE_LOCATIONS as readonly string[]).includes(v),
@@ -1229,17 +1238,18 @@ export function createStore(filePath: string): Store {
       commit({ ...state, folders: { ...state.folders, [root]: { ...cur, tocSources } } })
     },
 
-    setSectionIndent(root, file, on) {
-      const cur = folderOf(root)
-      // The same value again: nothing to write, nothing to tell the windows. Off is a value of its own, so it is stored (D2).
-      if (cur.sectionIndents[file] === on) return
-      commit({ ...state, folders: { ...state.folders, [root]: { ...cur, sectionIndents: { ...cur.sectionIndents, [file]: on } } } })
-    },
-
     setTocSwitch(root, file, on) {
       const cur = folderOf(root)
+      // The same value again: nothing to write, nothing to tell the windows. Off is a value of its own, so it is stored.
       if (cur.tocSwitches[file] === on) return
       commit({ ...state, folders: { ...state.folders, [root]: { ...cur, tocSwitches: { ...cur.tocSwitches, [file]: on } } } })
+    },
+
+    dropPageSwitch(root, file, list) {
+      const cur = state.folders[root]
+      if (cur === undefined || !(file in cur[list])) return
+      const { [file]: _moved, ...rest } = cur[list]
+      commit({ ...state, folders: { ...state.folders, [root]: { ...cur, [list]: rest } } })
     },
 
     setBaseGroups(root, key, collapsed) {
@@ -1390,8 +1400,6 @@ export function createStore(filePath: string): Store {
             tocSources: remapKeys(folder.tocSources, remap),
             // And the folded rows of the table of contents (YAZ-3939 D1): they follow their note.
             tocFolds: remapKeys(folder.tocFolds, remap),
-            // And the "Section indent" switch (YAZ-2709 D2), on the same terms.
-            sectionIndents: remapKeys(folder.sectionIndents, remap),
             // And the "Table of contents" switch (YAZ-2950).
             tocSwitches: remapKeys(folder.tocSwitches, remap),
           },
@@ -1489,7 +1497,6 @@ export function createStore(filePath: string): Store {
               closed: dropKeys(folder.closed, gone),
               tocSources: dropKeys(folder.tocSources, gone),
               tocFolds: dropKeys(folder.tocFolds, gone),
-              sectionIndents: dropKeys(folder.sectionIndents, gone),
               tocSwitches: dropKeys(folder.tocSwitches, gone),
             },
           ]),

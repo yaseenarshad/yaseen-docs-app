@@ -57,6 +57,8 @@ describe('settingCandidates', () => {
       'goTo',
       // Settings › Notifications (YAZ-3303), under Appearance.
       ...['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds'],
+      // Settings › Editor › Outline (YAZ-4094).
+      ...['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault'],
       'bulletThreading',
       'threadWidth',
       'threadColor',
@@ -149,7 +151,7 @@ describe('settingCandidates', () => {
     expect(confirm?.name).toBe('Confirm before deleting Deleted notes and folders move to the Trash either way. Files & Links')
     expect(confirm?.lower).toBe(confirm?.name.toLowerCase())
     const width = settingCandidates(ctx()).find((h) => h.item.id === 'threadWidth')
-    expect(width?.name).toBe('Line width thread width Bullet threading Guide lines that connect nested bullets. Editor')
+    expect(width?.name).toBe('Line width thread width Bullet threading The coloured path from each list down to the bullet at the caret. Editor')
     expect(width?.group.title).toBe('Bullet threading')
     // Comments is a group of Appearance (YAZ-2709): its row says so to search.
     const order = settingCandidates(ctx()).find((h) => h.item.id === 'commentsOrder')
@@ -176,7 +178,8 @@ describe('searchSettings', () => {
   it('matches on a keyword the label does not contain', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'system'))).toEqual(['theme'])
     // "dark" is also the draw.io row's word (YAZ-3037), and draw.io's own key for its dark colours (YAZ-3564).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme', 'theme', 'diagramDarkColors'])
+    // And the guide lines' darkness (YAZ-4094 G3).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme', 'theme', 'diagramDarkColors', 'guideLineDarkness'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'readable line'))).toEqual(['contentWidth'])
     // The sounds of Settings › Notifications (YAZ-3303) say "the Trash" in their hints.
     // "trash" is also the word of ⌘⌫ in the Window hotkeys (YAZ-3272 D20).
@@ -208,11 +211,12 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'level lines'))).toEqual(['sidebarLines', 'tocLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'hierarchy'))).toEqual(['sidebarLines', 'tocLines'])
     // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['hotkey-diagram-outline', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-diagram-colourOther', 'hotkey-drawing-colors'])
-    // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['sidebarLines', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
+    // Settings › Editor › Outline (YAZ-4094) names its four rows.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['hotkey-diagram-outline', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-diagram-colourOther', 'hotkey-drawing-colors'])
+    // "guide" names the guide lines' rows (YAZ-4094; Bullet threading's hint no longer says it: one name for one thing) and is a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
+    expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'sidebarLines', 'sectionLines', 'tocLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sidebarLines', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hotkey-code-showHover'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hotkey-code-showHover'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
   })
@@ -233,8 +237,8 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['lineSpacing', 'blockGap'])
   })
 
-  it('matches on the group hint too: "guide lines" finds the three threading rows; "threading" finds them and the two Section indent rows, whose hint names Bullet threading (and the line style of the sidebar, whose hint does too, YAZ-3309 D7)', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'guide lines'))).toEqual(['bulletThreading', 'threadWidth', 'threadColor'])
+  it('matches on the group hint too: "guide lines" finds the three guide line rows of Outline (YAZ-4094); "threading" finds the three threading rows and the two Section indent rows, whose hint names Bullet threading (and the line style of the sidebar, whose hint does too, YAZ-3309 D7)', () => {
+    expect(ids(searchSettings(settingCandidates(ctx()), 'guide lines'))).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'threading'))).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines'])
   })
 

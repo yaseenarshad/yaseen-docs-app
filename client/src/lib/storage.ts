@@ -458,18 +458,9 @@ export const storage = {
     send('state.setTocFolds', () => api.state.setTocFolds(root, file, keys))
   },
 
-  /** This note's "Section indent" switch (YAZ-2709 D2). A note with no entry is off. */
-  getSectionIndent: (root: string, file: string): boolean => folderOf(root).sectionIndents[file] === true,
-  /** The reader's switch for one note. On and off are both stored; the same value again writes nothing. */
-  setSectionIndent(root: string, file: string, on: boolean): void {
-    if (on === folderOf(root).sectionIndents[file]) return
-    patchFolder(root, { sectionIndents: { ...folderOf(root).sectionIndents, [file]: on } })
-    send('state.setSectionIndent', () => api.state.setSectionIndent(root, file, on))
-  },
-
-  /** This note's own "Table of contents" choice (YAZ-2950). No entry is `undefined`: Settings › "Table of contents default" decides (YAZ-3558 D1). */
+  /** This code file's own "Table of contents" choice (YAZ-2950, YAZ-3506). No entry is `undefined`: Settings › "Table of contents default" decides (YAZ-3558 D1). A note's choice is in its frontmatter (YAZ-4094 G4). */
   getTocSwitch: (root: string, file: string): boolean | undefined => folderOf(root).tocSwitches[file],
-  /** The reader's switch for one note. On and off are both stored; the same value again writes nothing. */
+  /** The reader's switch for one code file. On and off are both stored; the same value again writes nothing. */
   setTocSwitch(root: string, file: string, on: boolean): void {
     if (on === folderOf(root).tocSwitches[file]) return
     patchFolder(root, { tocSwitches: { ...folderOf(root).tocSwitches, [file]: on } })

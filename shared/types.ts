@@ -1605,6 +1605,14 @@ export interface SettingsState {
   threadWidth: number
   /** Custom thread colour as `#rrggbb`, or null = the app accent (GRO-2109). */
   threadColor: string | null
+  /** Settings › Outline › "Guide lines default" (YAZ-4094 D2): the thin grey lines of nested bullets, on or off, for each page with no choice in its cog (`guide-lines`) and in every editor with no cog. A page's choice wins. */
+  guideLinesOnByDefault: boolean
+  /** Settings › Outline › "Guide lines show" (YAZ-4094 G2): always, or only while the mouse is over the note (Section indent's rule). */
+  guideLinesShow: GuideLinesShow
+  /** Settings › Outline › "Guide line darkness" (YAZ-4094 G3): a percent of the text colour, `GUIDE_LINE_DARKNESS_MIN`–`MAX` in steps of 5, the grid of Text formatting's line darkness (YAZ-3208). */
+  guideLineDarkness: number
+  /** Settings › Outline › "Folding default" (YAZ-4094 F1): bullets and headings fold, or not, on each page with no choice in its cog (`folding`) and in every editor with no cog. A page's choice wins. */
+  foldingOnByDefault: boolean
   /** Appearance (Desktop K, GRO-2218): explicit values win; `system` tracks the OS live. */
   theme: Theme
   /** Global reading surface width (YAZ-1176): 1040px, 1440px, or fluid within the workspace. */
@@ -1659,7 +1667,7 @@ export interface SettingsState {
   sectionLines: SectionLines
   /** The table of contents at a note's right edge (YAZ-2700): how you READ, global, never part of a note. Settings › "Pin default"; the card's "Pin" and "Unpin" write it too. */
   tableOfContents: TableOfContents
-  /** Settings › "Table of contents default" (YAZ-3558 D2): on or off for each page that made no choice in its cog (`tocSwitches`). A page's choice wins. */
+  /** Settings › "Table of contents default" (YAZ-3558 D2): on or off for each page that made no choice in its cog: a note's choice is its `toc` key (YAZ-4094 G4), a code file's is in `tocSwitches`. A page's choice wins. */
   tocOnByDefault: boolean
   /** The width of the table of contents' names column (YAZ-2752): whole px, `TOC_MIN_W` to `TOC_MAX_W`. The reader drags the column's edge; one width for every note and window. */
   tableOfContentsWidth: number
@@ -1859,6 +1867,14 @@ export const SECTION_STEPS: readonly number[] = [24, 30, 36]
 export type SectionLines = 'always' | 'hover'
 export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
 
+/** Guide lines (YAZ-4094 G2): when they show — `near` is while the mouse is over the note. */
+export type GuideLinesShow = 'always' | 'near'
+export const GUIDE_LINES_SHOW: readonly GuideLinesShow[] = ['always', 'near']
+/** Guide line darkness (YAZ-4094 G3): the range and the grid of Text formatting's line darkness (`@shared/line`). */
+export const GUIDE_LINE_DARKNESS_MIN = 5
+export const GUIDE_LINE_DARKNESS_MAX = 100
+export const GUIDE_LINE_DARKNESS_STEP = 5
+
 /** The table of contents (YAZ-2762): when its level lines show. */
 export type TocLines = 'hover' | 'always' | 'off'
 export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
@@ -2019,6 +2035,10 @@ export const DEFAULT_SETTINGS: SettingsState = {
   bulletThreading: true,
   threadWidth: 2,
   threadColor: null,
+  guideLinesOnByDefault: true,
+  guideLinesShow: 'always',
+  guideLineDarkness: 15,
+  foldingOnByDefault: true,
   theme: 'system',
   contentWidth: 'narrow',
   newNoteLocation: 'current',
@@ -2321,9 +2341,9 @@ export interface FolderState {
   tocSources: Record<string, TocSource>
   /** file → the folded rows of its table of contents (YAZ-3939 D1): `tocFoldKeys` keys, max MAX_FOLD_KEYS_PER_FILE. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   tocFolds: Record<string, string[]>
-  /** file → the note's "Section indent" switch (YAZ-2709 D2), for the notes where the reader used it. A note with NO entry is off. `true` and `false` are both kept: a note the reader turned off stays apart from a note never touched, so a default for all notes can come later with no repair of this data. Keyed by page, as `tocSources` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
+  /** Legacy (YAZ-2709 D2, until YAZ-4094 G4): file → a note's "Section indent" switch. The switch is now IN the note (`section-indent`, `shared/pageSwitches.ts`); `movePageSwitches.ts` moves each entry there once and nothing writes this list again. Only the move reads it: no rename or delete in the store follows it. A later release removes the field, once every Mac has run the move (YAZ-4111). Additive: a file without it loads as `{}`. */
   sectionIndents: Record<string, boolean>
-  /** file → the note's "Table of contents" switch (YAZ-2950), for the notes where the reader used it. A note with NO entry is on. `true` and `false` are both kept, as in `sectionIndents`. Keyed by page. Never written to the markdown. Additive: a file without it loads as `{}`. */
+  /** file → a CODE file's "Table of contents" switch (YAZ-2950, YAZ-3506), for the files where the reader used it. A file with NO entry follows Settings › "Table of contents default". `true` and `false` are both kept. Keyed by page. A note's switch is IN the note since YAZ-4094 G4 (`toc`); `movePageSwitches.ts` moves the old note entries there once. Additive: a file without it loads as `{}`. */
   tocSwitches: Record<string, boolean>
   /** The vault's display name (YAZ-1974 D3) when this bucket's root is a vault; null = its folder name. Persisted, per machine. */
   name: string | null

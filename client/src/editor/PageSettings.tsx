@@ -32,8 +32,9 @@ export interface PageSwitch {
 /**
  * The page's own quick switches (YAZ-2643): a cog left of the zoom pill, and a small menu under it.
  * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab —
- * all but section indent (YAZ-2709), "Table of contents" (YAZ-2950) and "TOC made from" (YAZ-2700
- * D14), which the host saves with the note. "Line numbers" and "Heading levels" are never saved.
+ * all but section indent (YAZ-2709), "Guide lines" and "Folding" (YAZ-4094), "Table of contents" (YAZ-2950)
+ * and "TOC made from" (YAZ-2700 D14), which the host saves with the note. "Line numbers" and "Heading
+ * levels" are never saved.
  *
  * "Read only" (YAZ-3076 D3) is the FIRST row on a note, a drawing and a diagram, and is stored IN
  * the file by the host. A file with no switch (a code file, YAZ-3448) gives no `onToggleReadOnly`. A board's menu has only that row: every Markdown-only row
@@ -48,7 +49,7 @@ export interface PageSwitch {
  * A drawing (YAZ-3943 D5, D13) passes `rows`, read while the menu is open and never while it is closed:
  * the pictures' size, "Move pictures out" or "Keep pictures inside", and the two exports.
  */
-export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, switches, switchesHeading, rows, readText }: {
+export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, switches, switchesHeading, rows, readText }: {
   /** The file's read-only switch (YAZ-3076 D1): a note, a drawing and a diagram have it. */
   readOnly?: boolean
   /** Off → the host turns it on; on → the host opens the "Allow edits?" box (this menu closes first). Absent → no row (a file with no switch, YAZ-3448). */
@@ -59,6 +60,12 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   /** This page's text stands below its headings (YAZ-2709); how it looks is in Settings › Editor › Section indent. */
   sectionIndent?: boolean
   onToggleSectionIndent?: () => void
+  /** This page's thin grey guide lines (YAZ-4094 D2): its own choice, else Settings' "Guide lines default". Absent handler → no row. */
+  guideLines?: boolean
+  onToggleGuideLines?: () => void
+  /** This page's bullets and headings fold (YAZ-4094 F1): its own choice, else Settings' "Folding default". Absent handler → no row. */
+  folding?: boolean
+  onToggleFolding?: () => void
   /** Every heading wears its level, "H2", after its text (YAZ-2700). Without the switch on, only the heading in hand does. */
   headingLevels?: boolean
   onToggleHeadingLevels?: () => void
@@ -161,6 +168,12 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         </button>}
         {onToggleSectionIndent !== undefined && <button type="button" aria-pressed={sectionIndent} onClick={onToggleSectionIndent}>
           <span>Section indent</span><span aria-hidden="true">{sectionIndent ? '✓' : ''}</span>
+        </button>}
+        {onToggleGuideLines !== undefined && <button type="button" aria-pressed={guideLines} onClick={onToggleGuideLines}>
+          <span>Guide lines</span><span aria-hidden="true">{guideLines ? '✓' : ''}</span>
+        </button>}
+        {onToggleFolding !== undefined && <button type="button" aria-pressed={folding} onClick={onToggleFolding}>
+          <span>Folding</span><span aria-hidden="true">{folding ? '✓' : ''}</span>
         </button>}
         {onToggleHeadingLevels !== undefined && <button type="button" aria-pressed={headingLevels} onClick={onToggleHeadingLevels}>
           <span>Heading levels</span><span aria-hidden="true">{headingLevels ? '✓' : ''}</span>

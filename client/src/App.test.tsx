@@ -292,7 +292,6 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       setFolder: vi.fn(async () => undefined),
       setFolds: vi.fn(async () => undefined),
       setTocSource: vi.fn(async () => undefined),
-      setSectionIndent: vi.fn(async () => undefined),
       setTocSwitch: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
       // The tab board's canvas (YAZ-3343 D1): the switch and the moved cards.
@@ -1305,6 +1304,19 @@ describe('App section indent settings (YAZ-2709)', () => {
     expect([app.style.getPropertyValue('--section-step-setting'), app.getAttribute('data-section-lines')]).toEqual(['30', 'always'])
     act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sectionStep: 36, sectionLines: 'hover' } }))
     expect([app.style.getPropertyValue('--section-step-setting'), app.getAttribute('data-section-lines')]).toEqual(['36', 'hover'])
+  })
+})
+
+describe('App guide lines and folding defaults (YAZ-4094, YAZ-4119 fix 3)', () => {
+  it('puts the defaults, the show choice and the darkness on <html>, where a preview portalled to <body> sees them, and another window\'s change lands live', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const html = document.documentElement
+    const read = () => [html.dataset.guideLines, html.dataset.guideLinesShow, html.dataset.folding, html.style.getPropertyValue('--guide-line-darkness'), html.style.getPropertyValue('--guide-line-darkness-hover')]
+    expect(read()).toEqual(['on', 'always', 'on', '15%', '35%'])
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, guideLinesOnByDefault: false, guideLinesShow: 'near', foldingOnByDefault: false, guideLineDarkness: 90 } }))
+    expect(read()).toEqual(['off', 'near', 'off', '90%', '100%'])
+    // Not on `.app` any more: one place for each.
+    expect(el.querySelector('.app')?.hasAttribute('data-guide-lines')).toBe(false)
   })
 })
 

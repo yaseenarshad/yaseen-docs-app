@@ -6,7 +6,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, createRef, type CSSProperties } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { DEFAULT_SETTINGS } from '@shared/types'
 import { cutAtLineEnd } from '../editor/ReadOnlyNote'
+import { storage } from '../lib/storage'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import NotePreview, { NOTE_PREVIEW_CHARS } from './NotePreview'
 
@@ -14,7 +16,7 @@ import NotePreview, { NOTE_PREVIEW_CHARS } from './NotePreview'
 
 const { readFile, crepes } = vi.hoisted(() => ({
   readFile: vi.fn<(path: string) => Promise<{ path: string; content: string; mtime: number; size: number }>>(),
-  crepes: [] as Array<{ defaultValue?: string; destroy: () => void }>,
+  crepes: [] as Array<{ defaultValue?: string; foldingOn?: () => boolean; destroy: () => void }>,
 }))
 
 // The panel reads one file and writes nothing.
@@ -22,8 +24,8 @@ vi.mock('../api', () => ({ api: { readFile } }))
 
 /** A stand-in Crepe: records the Markdown it was handed. */
 vi.mock('../editor/createCrepe', () => ({
-  createCrepe: vi.fn((opts: { root: HTMLElement; defaultValue?: string }) => {
-    const inst = { defaultValue: opts.defaultValue, create: vi.fn(async () => {}), setReadonly: vi.fn(), destroy: vi.fn() }
+  createCrepe: vi.fn((opts: { root: HTMLElement; defaultValue?: string; foldingOn?: () => boolean }) => {
+    const inst = { defaultValue: opts.defaultValue, foldingOn: opts.foldingOn, create: vi.fn(async () => {}), setReadonly: vi.fn(), destroy: vi.fn() }
     crepes.push(inst)
     return inst
   }),
@@ -115,5 +117,33 @@ describe('NotePreview', () => {
     const panel = await show()
     expect(panel.querySelector('.note-preview__body')?.textContent).toBe('Preview unavailable')
     expect(crepes).toHaveLength(0)
+  })
+
+  it('YAZ-4094 G4: the note\'s own "Guide lines" and "Folding" go on its instance, and the editor is built with the note\'s folding', async () => {
+    readFile.mockImplementation(file('---\nguide-lines: false\nfolding: false\n---\n* a\n  * b\n'))
+    const panel = await show()
+    const instance = panel.querySelector<HTMLElement>('.note-preview__body .editor-instance')!
+    expect([instance.dataset.guideLines, instance.dataset.folding]).toEqual(['off', 'off'])
+    expect(crepes[0].foldingOn?.()).toBe(false)
+  })
+
+  it('YAZ-4094 F1: a note with no choice carries no key, and folds as Settings › "Folding default" says', async () => {
+    const settings = vi.spyOn(storage, 'getSettings').mockReturnValue({ ...DEFAULT_SETTINGS, foldingOnByDefault: false })
+    try {
+      readFile.mockImplementation(file('* a\n  * b\n'))
+      const panel = await show()
+      const instance = panel.querySelector<HTMLElement>('.note-preview__body .editor-instance')!
+      expect(instance.hasAttribute('data-guide-lines') || instance.hasAttribute('data-folding')).toBe(false)
+      expect(crepes[0].foldingOn?.()).toBe(false)
+      settings.mockReturnValue(DEFAULT_SETTINGS)
+      act(() => root?.unmount())
+      root = null
+      crepes.length = 0
+      document.body.replaceChildren()
+      await show()
+      expect(crepes[0].foldingOn?.()).toBe(true)
+    } finally {
+      settings.mockRestore()
+    }
   })
 })

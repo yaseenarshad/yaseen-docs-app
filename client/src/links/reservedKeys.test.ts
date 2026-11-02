@@ -4,6 +4,7 @@ import { COMMENTS_KEY } from '@shared/comments'
 import { FOLDER_VALUES_KEY } from '@shared/folderValues'
 import { NOTE_ID_KEY } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
+import { PAGE_SWITCH_KEYS } from '@shared/pageSwitches'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { REVIEW_KEY, REVIEWS_KEY } from '@shared/reviews'
 import { reservedKeys } from './reservedKeys'
@@ -44,13 +45,13 @@ describe('reserved keys: the read-only switch (YAZ-3076 D1, S16)', () => {
 })
 
 describe('reserved keys: a vault that does not use IDs (YAZ-2523 V12)', () => {
-  it('`id`, `title`, `also_in` and `in` are ordinary properties there; the comments store, the review log and the read-only switch are still the app\u2019s', () => {
+  it('`id`, `title`, `also_in` and `in` are ordinary properties there; the comments store, the review log, the read-only switch and the page switches are still the app\u2019s', () => {
     const plain = reservedKeys(false)
     for (const key of [NOTE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY]) expect(plain.has(key)).toBe(false)
-    expect([...plain].sort()).toEqual([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY].sort())
+    expect([...plain].sort()).toEqual([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS].sort())
   })
 
-  it('a vault that uses IDs owns all seven', () => {
-    expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, NOTE_ID_KEY, FOLDER_VALUES_KEY, REVIEWS_KEY, TITLE_KEY, READ_ONLY_KEY].sort())
+  it('a vault that uses IDs owns all eleven', () => {
+    expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, NOTE_ID_KEY, FOLDER_VALUES_KEY, REVIEWS_KEY, TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS].sort())
   })
 })

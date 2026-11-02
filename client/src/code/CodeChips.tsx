@@ -5,8 +5,8 @@
  *
  * The cog's first three rows are APP SETTINGS (YAZ-3438 D5, D6, D8), under the heading "All code files", each row
  * on one line: each one changes every code tab at once, the same field as its row in Settings › Code. The fourth,
- * "Table of contents" (YAZ-3506), after a line, is THIS file's, as a note's cog row is: saved with the file in the
- * app state (`tocSwitches`). The chip is this tab's: "Allow edits" unlocks this tab until it closes, and the
+ * "Table of contents" (YAZ-3506), after a line, is THIS file's, as a note's cog row is: saved for the file in the
+ * app state (`tocSwitches`), because a code file has no frontmatter (a note's is in the note, YAZ-4094 G4). The chip is this tab's: "Allow edits" unlocks this tab until it closes, and the
  * setting stays on.
  */
 import { DocumentZoom } from '../editor/DocumentZoom'

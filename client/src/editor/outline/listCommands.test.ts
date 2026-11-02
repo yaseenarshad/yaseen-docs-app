@@ -22,6 +22,7 @@ import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import { applyExternalMarkdown } from '../external/applyExternalMarkdown'
 import { OUTLINE_TOGGLE_CLASS } from './outlineFolding'
 import { getZoomLabel } from './zoom'
+import { headingFoldHidden } from './headingFoldTestKit'
 
 const OUTLINE = `* L1 a
   * L2 a
@@ -684,7 +685,7 @@ describe('YAZ-3695 3- Backspace joins into the previous VISIBLE line (D5, D6, D7
     caretIn(crepe, 'Sec', 0)
     press(crepe, 'Backspace')
     expect(md(crepe)).toBe('text Sec\n\nbody\n')
-    expect(root.querySelector('[data-heading-folded]')).toBeNull()
+    expect(headingFoldHidden(root)).toEqual([])
   })
 
   it('42b. the fold of a heading that joins never passes to the heading below it', async () => {

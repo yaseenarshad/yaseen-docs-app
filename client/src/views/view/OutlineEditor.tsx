@@ -37,6 +37,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { Crepe } from '@milkdown/crepe'
 import { applyExternalMarkdown } from '../../editor/external/applyExternalMarkdown'
 import { lockToBullets, outlineFeatures } from '../../editor/outline/bulletsOnly'
+import { showFolding } from '../../editor/outline/foldingSwitch'
 import { createCrepe, editorViewOf, getMarkdownForSave } from '../../editor/createCrepe'
 import { NoteMenu } from '../../editor/noteMenu'
 import { FindBar } from '../../editor/find/FindBar'
@@ -81,9 +82,14 @@ export interface OutlineEditorProps {
    * editor, and a remount costs the caret and the undo history.
    */
   nav?: WikilinkNav
+  /**
+   * Settings › "Folding default" (YAZ-4094 F1): a folder's outline has no page cog, so it follows the default,
+   * LIVE — a change is one meta-only transaction (`showFolding`), never a remount. Absent → the stored setting.
+   */
+  foldingOn?: boolean
 }
 
-export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikilinkCandidates, nav }: OutlineEditorProps) {
+export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikilinkCandidates, nav, foldingOn = storage.getSettings().foldingOnByDefault }: OutlineEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   // Mount reads the FIRST markdown; every later one lands as a diff over the live editor (effect below).
   const seedRef = useRef(markdown)
@@ -104,6 +110,9 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
   onChangeRef.current = onChange
   const onSeedLossRef = useRef(onSeedLoss)
   onSeedLossRef.current = onSeedLoss
+  // Read by the mount, which must not run again when the setting turns: the effect below sends the change.
+  const foldingOnRef = useRef(foldingOn)
+  foldingOnRef.current = foldingOn
   /** The document must survive the parse: fewer bullets back than went in means Milkdown dropped content (YAZ-964/974). */
   const guard = (crepe: Crepe, expected: number): void => {
     if (parseOutline(crepe.getMarkdown()).length >= expected) return
@@ -139,6 +148,7 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
 
     const seeded = outlineDoc(seedRef.current)
     const crepe = createCrepe({
+      foldingOn: () => foldingOnRef.current,
       root: el,
       defaultValue: serializeOutline(seeded),
       features: outlineFeatures,
@@ -193,6 +203,11 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
   }, [wikilinks, wikilinkCandidates, nav, findChannel])
+
+  // Settings › "Folding default" changed (YAZ-4094 F1): the open outline follows at once.
+  useEffect(() => {
+    if (view !== null && crepeRef.current !== null) showFolding(crepeRef.current, foldingOn)
+  }, [foldingOn, view])
 
   // A disk edit to `views[i].outline` (YAZ-1356) lands as a DIFF over the live state — the note
   // editor's own path (YAZ-1347) — so caret, folds and scroll ride position mapping. Typing in

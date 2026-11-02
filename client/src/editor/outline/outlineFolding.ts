@@ -31,6 +31,7 @@ import { findFoldedChildren, findOwnImages, innermostItemPos, itemLabelText, LIS
 import { IMAGE_FOLD_CLASS } from '../image/imageView'
 import { outlineFoldKeyFromStem, outlineFoldKeyStem, outlineFoldLabel } from './outlineFoldKeys'
 import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
+import { foldingBlocked, isFoldingOn } from './foldingSwitch'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 interface OutlineEntry {
@@ -117,9 +118,9 @@ interface FoldSetMeta {
 const foldTransaction = (state: EditorState, meta: FoldMeta) =>
   state.tr.setMeta(pluginKey, meta).setMeta(VIEW_ACTION_META, 'fold' satisfies ViewAction)
 
-/** Whether the list_item starting at `itemPos` is currently folded (false when the plugin is absent). */
+/** Whether the list_item starting at `itemPos` is currently folded (false when the plugin is absent, or folding is off: YAZ-4094 F1). */
 export const isOutlineItemCollapsed = (state: EditorState, itemPos: number): boolean =>
-  pluginKey.getState(state)?.collapsedItemPositions.has(itemPos) ?? false
+  isFoldingOn(state) && (pluginKey.getState(state)?.collapsedItemPositions.has(itemPos) ?? false)
 
 /**
  * The collapsed items whose nested lists or tables contain `pos` — everything hiding that position, from the
@@ -127,7 +128,7 @@ export const isOutlineItemCollapsed = (state: EditorState, itemPos: number): boo
  */
 export const collapsedItemsHiding = (state: EditorState, pos: number): number[] => {
   const foldingState = pluginKey.getState(state)
-  if (!foldingState) return []
+  if (!foldingState || !isFoldingOn(state)) return []
   return foldingState.entries
     .filter(
       ({ itemPos, foldedRanges }) =>
@@ -176,6 +177,8 @@ export const setOutlineFoldAtSelection = (collapsed: boolean): Command => (state
   const foldingState = pluginKey.getState(state)
   const itemPos = innermostItemPos(state.selection.$from)
   if (!foldingState || itemPos === null) return false
+  // Folding off (YAZ-4094 F1): still consumed inside a list (GRO-2092), with the host's message.
+  if (foldingBlocked(state, dispatch)) return true
   const isFoldable = foldingState.entries.some((entry) => entry.itemPos === itemPos)
   if (isFoldable && foldingState.collapsedItemPositions.has(itemPos) !== collapsed) {
     dispatch?.(foldTransaction(state, itemPos))
@@ -239,6 +242,23 @@ export const addOutlineFoldSetMeta = (transaction: Transaction, set: readonly nu
   if (set.length > 0) transaction.setMeta(pluginKey, { set, collapsed, silent: true } satisfies FoldSetMeta)
 }
 
+/** The foldable bullets and their keys, for the fold lock (`foldLock.ts`). */
+export const outlineFoldRows = (state: EditorState): { pos: number; foldKey: string }[] =>
+  pluginKey.getState(state)?.entries.map(({ itemPos, foldKey }) => ({ pos: itemPos, foldKey })) ?? []
+
+/** The folded bullets as kept, also while folding is off, for the fold lock (`foldLock.ts`). */
+export const outlineCollapsedPositions = (state: EditorState): ReadonlySet<number> => pluginKey.getState(state)?.collapsedItemPositions ?? new Set()
+
+/**
+ * The folded bullets that `transaction` would leave, by this plugin's own `apply`, without applying it: the fold lock's
+ * filter (`foldLock.ts`, YAZ-4132). Only for a transaction that changes no document.
+ */
+export const outlineCollapsedAfter = (state: EditorState, transaction: Transaction): ReadonlySet<number> => {
+  const current = pluginKey.getState(state)
+  const apply = pluginKey.get(state)?.spec.state?.apply
+  return current === undefined || apply === undefined ? new Set() : apply(transaction, current, state, state).collapsedItemPositions
+}
+
 /** Whether `transaction` changes the bullet folds: every fold change carries this plugin's meta, a silent one too (YAZ-4009). */
 export const hasOutlineFoldMeta = (transaction: Transaction): boolean => transaction.getMeta(pluginKey) !== undefined
 
@@ -251,9 +271,14 @@ export const addOutlineFoldUndoMeta = (state: EditorState, transaction: Transact
 
 /** ⌘Z: revert the latest eligible bullet fold, otherwise let ProseMirror's undo run. */
 export const undoLastFold: Command = (state, dispatch) => {
+  // Folding off (YAZ-4094 F1): ⌘Z undoes text, never a fold the reader cannot see.
+  if (!isFoldingOn(state)) return false
   const transaction = state.tr
   if (!addOutlineFoldUndoMeta(state, transaction)) return false
-  dispatch?.(transaction.setMeta(VIEW_ACTION_META, 'fold' satisfies ViewAction))
+  transaction.setMeta(VIEW_ACTION_META, 'fold' satisfies ViewAction)
+  // The fold lock refuses an undo that would fold only its held rows (YAZ-4135): ⌘Z then goes to the text undo.
+  if (state.applyTransaction(transaction).transactions.length === 0) return false
+  dispatch?.(transaction)
   return true
 }
 
@@ -427,7 +452,9 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                     }
             }
 
-            const meta: FoldMeta | undefined = transaction.getMeta(pluginKey)
+            // Folding off (YAZ-4094 F1): ignore every fold request. The saved set still maps through edits and waits for the switch.
+            // No set is drawn then, so none is carried through an edit either: the first draw after "on" builds it once.
+            const meta: FoldMeta | undefined = isFoldingOn(newState) ? transaction.getMeta(pluginKey) : undefined
             if (meta === 'fold-all')
               return {
                 entries,
@@ -462,7 +489,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
               }
               // A silent set is not a user fold action: ⌘Z keeps whatever it was already pointing at.
               if (meta.silent !== true) lastToggle = { kind: 'set', previousCollapsed }
-            } else if (transaction.docChanged) carryDecorations(previousState, entries, collapsedItemPositions, transaction.mapping, newState.doc)
+            } else if (transaction.docChanged && isFoldingOn(newState)) carryDecorations(previousState, entries, collapsedItemPositions, transaction.mapping, newState.doc)
             return { entries, collapsedItemPositions, lastToggle }
           },
         },
@@ -502,7 +529,8 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
           },
           decorations: (state) => {
             const foldingState = pluginKey.getState(state)
-            if (!foldingState) return DecorationSet.empty
+            // Folding off (YAZ-4094 F1): no chevron and nothing hidden.
+            if (!foldingState || !isFoldingOn(state)) return DecorationSet.empty
             const key = collapsedKey(foldingState.collapsedItemPositions)
             const cached = decorationCache.get(foldingState.entries)
             if (cached?.collapsedKey === key) return cached.set

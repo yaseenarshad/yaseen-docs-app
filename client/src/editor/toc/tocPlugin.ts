@@ -3,11 +3,13 @@
  * `TocChannel`.
  *
  * THE NOTE'S OWN STRUCTURE decides what the rows are, and the channel never says which:
- *  - HEADINGS, when the note has two or more of them. `headingFolding.ts`'s walk, through its own
- *    helpers — the document's blocks and every walkable container (a blockquote), never inside a
- *    list. Two differences: the rows go down to H5 (`DEEPEST_TOC_LEVEL`, YAZ-3051), where folds
- *    stop at H3; and a heading with nothing under it has no section to fold but is still a place
- *    to go, so it is listed. H6 is never a row. The bullets of such a note are not read at all.
+ *  - HEADINGS, when the note has two or more of them outside lists. They are counted by
+ *    `headingFolding.ts`'s walk, through its own helpers — the document's blocks and every
+ *    walkable container (a blockquote), never inside a list. Two differences: the rows go down to
+ *    H5 (`DEEPEST_TOC_LEVEL`, YAZ-3051), where folds stop at H3; and a heading with nothing under it
+ *    has no section to fold but is still a place to go, so it is listed. H6 is never a row. The
+ *    rows are then every heading of the note, the ones inside its bullets too, each nested by its
+ *    place (YAZ-4094 4E, `scanAllHeadings`). Its plain bullets are no rows.
  *  - BULLETS otherwise — a bullet note is one big list with no headings, and its bullets are its
  *    structure. Every item of a list that is a direct child of the document (bulleted or
  *    numbered, each such list in document order) is a row, three levels down: an item is level 1,
@@ -30,9 +32,10 @@
  * keystroke only restarts a timer. The walk visits the blocks outside lists and never descends
  * into a textblock; only when that finds fewer than two headings does it enter the top-level
  * lists, three levels of items and no further, reading of each item its label — its first block —
- * and nothing else. The `headings` source walks every block of the note, lists included, and
- * still no textblock. A caret move does nothing but one read of the zoom level. A change of
- * source is scanned at once: it is a click in a menu, not typing.
+ * and nothing else. The `headings` source, and Auto once it found two headings (YAZ-4094 4E), walks
+ * every block of the note, lists included, and still no textblock. A caret move does nothing but
+ * two reads of the zoom level. A change of source, and a zoom in or out (4D), is scanned at once:
+ * it is a click, not typing.
  *
  * Positions are remembered from the last scan only to find a row's DOM node for the scroll spy —
  * the heading's, or the list item's. For 150 ms after an edit above a row they are stale, so a
@@ -52,7 +55,7 @@ import { $prose } from '@milkdown/kit/utils'
 import { collapsedHeadingsHiding, headingLevel, isHeadingCollapsed, isWalkableContainer, setHeadingFoldSet } from '../outline/headingFolding'
 import { findNestedLists, isListItem, itemLabelText, LIST_NODE_NAMES, UNTITLED_ITEM } from '../outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFolding'
-import { getZoomedItemPos } from '../outline/zoom'
+import { getZoomedItemPos, zoomOutFully } from '../outline/zoom'
 import { DEEPEST_TOC_LEVEL, ENOUGH_ROWS, type TocChannel, type TocController, type TocLevel, type TocRow } from './tocChannel'
 import { FLASH_FRAMES, FLASH_MS, GLIDE_MS, GLIDE_SCREENS, glideEase, LANDING_PX, reducedMotion } from './tocMotion'
 
@@ -149,13 +152,42 @@ export const scanBullets = (doc: ProseNode): ScannedRow[] => {
 /**
  * Every H1-H5 of the note, in document order: the ones outside lists, in blockquotes, and inside
  * list items at any depth. Every block is visited and no textblock is entered.
+ *
+ * A HEADING INSIDE A BULLET takes its level from its PLACE, not from its H number (YAZ-4094 4E): it
+ * is one level under the nearest heading that holds it — a bullet above it whose label is a heading,
+ * or else the heading whose section the list is in — down to H5's level at most. So `* # test` deep
+ * under `* ### Lookback` in the section "Weekly planning" (H1) is a row under Lookback (2), at 3.
+ * A heading outside lists keeps its H number, as before.
  */
 export const scanAllHeadings = (doc: ProseNode): ScannedRow[] => {
   const found: ScannedRow[] = []
+  /** The row level of each bullet whose label is a heading. */
+  const labelLevels = new Map<number, number>()
+  /** The level of the last heading outside lists: the section a list below it is in. */
+  let sectionLevel = 0
   doc.descendants((node, pos) => {
     const level = headingLevel(node)
-    if (level !== null && level <= DEEPEST_TOC_LEVEL) found.push({ level: level as TocLevel, text: node.textContent.trim() || 'Untitled heading', pos })
-    return !node.isTextblock
+    if (level === null || level > DEEPEST_TOC_LEVEL) return !node.isTextblock
+    const $pos = doc.resolve(pos)
+    let holder: number | null = null
+    let inList = false
+    for (let depth = $pos.depth; depth > 0; depth--) {
+      if (!isListItem($pos.node(depth))) continue
+      inList = true
+      const itemPos = $pos.before(depth)
+      // The heading's own bullet holds it only as its label: that is the row itself.
+      const own = depth === $pos.depth && $pos.index() === 0
+      if (!own && labelLevels.has(itemPos)) {
+        holder = labelLevels.get(itemPos) ?? null
+        break
+      }
+    }
+    const rowLevel = inList ? Math.min(DEEPEST_TOC_LEVEL, (holder ?? sectionLevel) + 1) : level
+    if (!inList) sectionLevel = level
+    const itemPos = labelledItemPos(doc, pos)
+    if (itemPos !== null) labelLevels.set(itemPos, rowLevel)
+    found.push({ level: rowLevel as TocLevel, text: node.textContent.trim() || 'Untitled heading', pos })
+    return false
   })
   return found
 }
@@ -169,9 +201,42 @@ export const scanNote = (doc: ProseNode, source: TocSource | null = null): Scann
   if (source === 'headings') return { bullets: false, rows: scanAllHeadings(doc) }
   if (source === 'bullets') return { bullets: true, rows: scanBullets(doc) }
   const headings = scanHeadings(doc)
-  if (headings.length >= ENOUGH_ROWS) return { bullets: false, rows: headings }
+  // Enough headings outside lists make it a heading note: then the headings inside its bullets are rows too (YAZ-4094 4E).
+  if (headings.length >= ENOUGH_ROWS) return { bullets: false, rows: scanAllHeadings(doc) }
   const bullets = scanBullets(doc)
   return bullets.length >= ENOUGH_ROWS ? { bullets: true, rows: bullets } : { bullets: false, rows: headings }
+}
+
+/**
+ * A bullet zoom's own rows (YAZ-4094 4D): the zoom makes the bullet a page, so its rows are what is
+ * in it. Its child bullets three levels down, or with the `headings` source every H1-H5 inside it.
+ * Null when that gives fewer than two rows: the note's own rows then stay, with the zoom's section
+ * current (4C).
+ */
+export const scanZoom = (doc: ProseNode, itemPos: number, source: TocSource | null = null): ScannedNote | null => {
+  const item = doc.nodeAt(itemPos)
+  if (!isListItem(item)) return null
+  const rows: ScannedRow[] = []
+  if (source === 'headings') {
+    // The note's rows inside the bullet, raised so the highest is level 1.
+    const inside = scanAllHeadings(doc).filter(({ pos }) => itemPos < pos && pos < itemPos + item.nodeSize)
+    const top = Math.min(...inside.map(({ level }) => level))
+    for (const row of inside) rows.push({ ...row, level: (row.level - top + 1) as TocLevel })
+  } else {
+    for (const nested of findNestedLists(item)) collectBullets(nested.list, itemPos + nested.offset + 2, 1, rows)
+  }
+  return rows.length >= ENOUGH_ROWS ? { bullets: source !== 'headings', rows } : null
+}
+
+/** Whether every bullet around the row at `pos` — and the row itself when it is a bullet — holds the zoomed bullet at `zoomed`. */
+const holdsZoom = (doc: ProseNode, pos: number, zoomed: number): boolean => {
+  if (pos > doc.content.size) return false
+  const holds = (from: number, node: ProseNode): boolean => from <= zoomed && zoomed < from + node.nodeSize
+  const own = doc.nodeAt(pos)
+  if (own !== null && isListItem(own) && !holds(pos, own)) return false
+  const $pos = doc.resolve(pos)
+  for (let depth = $pos.depth; depth > 0; depth--) if (isListItem($pos.node(depth)) && !holds($pos.before(depth), $pos.node(depth))) return false
+  return true
 }
 
 /** The list item a heading is the label of — its first block — or null for any other heading. */
@@ -244,7 +309,9 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
           const scan = (): ScannedNote => {
             if (timer !== null) clearTimeout(timer)
             timer = null
-            const note = scanNote(view.state.doc, channel.getSource())
+            // In a bullet zoom, the zoom's own rows when it has enough (YAZ-4094 4D).
+            const zoomed = getZoomedItemPos(view.state)
+            const note = (zoomed === null ? null : scanZoom(view.state.doc, zoomed, channel.getSource())) ?? scanNote(view.state.doc, channel.getSource())
             positions = note.rows.map(({ pos }) => pos)
             bullets = note.bullets
             // A row names its links as the note shows them (YAZ-3744 D6).
@@ -338,6 +405,9 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
               const note = scan()
               const target = note.rows[index]
               if (target === undefined) return
+              // A row outside the zoomed bullet ends the zoom first (YAZ-4094 4C): the reader asked for a place the zoom hides.
+              const zoomed = getZoomedItemPos(view.state)
+              if (zoomed !== null && !(zoomed <= target.pos && target.pos < zoomed + (view.state.doc.nodeAt(zoomed)?.nodeSize ?? 0))) zoomOutFully(view.state, view.dispatch)
               // The reader asked for THIS section: every fold that hides its heading opens, and so
               // does its own — a folded heading is one line, and the reader asked for what is under
               // it. Declines an empty set, so a heading that nothing hides and that is open itself
@@ -385,6 +455,15 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
                 if (top <= line) above = row
                 lastInView = row
               }
+              // In a zoom with no row on screen (YAZ-4094 4C): the last row before the zoomed bullet that holds it — a
+              // row inside a bullet counts only when that bullet holds the zoom, so a heading inside an earlier
+              // bullet is passed over and the section heading wins (4C1).
+              const zoomed = getZoomedItemPos(view.state)
+              if (first === -1 && zoomed !== null) {
+                let holder = -1
+                for (let row = 0; row < indices.length && positions[indices[row]] <= zoomed; row++) if (holdsZoom(view.state.doc, positions[indices[row]], zoomed)) holder = row
+                return holder
+              }
               // The last rows of a note can never reach the line: at the very bottom the last one on screen is where the reader is.
               if (atBottom && lastInView !== -1) return lastInView
               return above !== -1 ? above : first
@@ -395,7 +474,7 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
           }
 
           const unbind = channel.bind(controller)
-          channel.setHidden(getZoomedItemPos(view.state) !== null)
+          channel.setZoomed(getZoomedItemPos(view.state) !== null)
           scan()
           // A title that changes in the index renames the rows that link to it: one scan, as after an edit.
           const unsubscribeLinks = links?.subscribe(() => {
@@ -404,7 +483,12 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
           })
           return {
             update: (_view, previous) => {
-              channel.setHidden(getZoomedItemPos(view.state) !== null)
+              channel.setZoomed(getZoomedItemPos(view.state) !== null)
+              // A zoom in or out scans at once, as a change of source does: a click, not typing (YAZ-4094 4D).
+              if (getZoomedItemPos(previous) !== getZoomedItemPos(view.state)) {
+                scan()
+                return
+              }
               if (view.state.doc === previous.doc) return
               if (timer !== null) clearTimeout(timer)
               timer = setTimeout(scan, SCAN_DELAY_MS)

@@ -9,8 +9,9 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
-import { HEADING_FOLDED_ATTR, HEADING_TOGGLE_CLASS } from './headingFolding'
+import { HEADING_TOGGLE_CLASS } from './headingFolding'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
+import { headingFoldHidden } from './headingFoldTestKit'
 
 const DOC = `# Part 1
 
@@ -100,7 +101,7 @@ const headingToggle = (root: HTMLElement, label: string): HTMLButtonElement => {
   if (!btn) throw new Error(`no heading toggle for "${label}"`)
   return btn
 }
-const headingFolded = (root: HTMLElement) => root.querySelectorAll(`[${HEADING_FOLDED_ATTR}="true"]`).length
+const headingFolded = (root: HTMLElement) => headingFoldHidden(root).length
 const bulletFolded = (root: HTMLElement) => root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`).length
 
 describe('Mod-ArrowUp / Mod-ArrowDown on headings', () => {

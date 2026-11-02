@@ -14,7 +14,7 @@ import { focusReadOnlyBody } from './readOnlyKeys'
 import { pageHoldsKeys } from '../lib/readOnlyCaret'
 import { createCrepe, focusEditor, getMarkdownForSave, getZoomKeyOf } from './createCrepe'
 import { OUTLINE_FOLDED_ATTR } from './outline/outlineFolding'
-import { HEADING_FOLDED_ATTR } from './outline/headingFolding'
+import { headingFoldHidden } from './outline/headingFoldTestKit'
 
 const NOTE = `# Head
 
@@ -79,7 +79,7 @@ function clickIn(root: HTMLElement, text: string, offset = 1): void {
 }
 
 const folded = (root: HTMLElement) => root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`).length
-const headingFolded = (root: HTMLElement) => root.querySelectorAll(`[${HEADING_FOLDED_ATTR}="true"]`).length
+const headingFolded = (root: HTMLElement) => headingFoldHidden(root).length
 
 describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
   it('⌘⇧U folds every bullet and heading, ⌘⇧I unfolds them; the text never changes', async () => {

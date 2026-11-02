@@ -395,13 +395,15 @@ describe('which notes show one', () => {
     expect(nav(mount('off', HEADINGS, 1600))).toBeNull()
   })
 
-  it('renders nothing while the channel says hidden, and comes back when it does not', () => {
-    const m = mount('auto')
-    expect(nav(m)).not.toBeNull()
-    act(() => m.channel.setHidden(true))
-    expect(nav(m)).toBeNull()
-    act(() => m.channel.setHidden(false))
-    expect(nav(m)).not.toBeNull()
+  it('a bullet zoom does not hide it: the names column stays, with its room, and comes back the same (YAZ-4094 4C)', () => {
+    const m = mount('pinned', HEADINGS, 1400)
+    const width = m.section.style.getPropertyValue('--toc-width')
+    expect(width).not.toBe('')
+    act(() => m.channel.setZoomed(true))
+    expect(nav(m)?.hasAttribute('data-names')).toBe(true)
+    expect(m.section.style.getPropertyValue('--toc-width')).toBe(width)
+    act(() => m.channel.setZoomed(false))
+    expect(nav(m)?.hasAttribute('data-names')).toBe(true)
   })
 
   it('a note whose second heading is typed later gets one then; one that loses it, loses it', () => {
@@ -665,25 +667,23 @@ describe('a scroll of the note', () => {
       expect([reading(m), vi.getTimerCount(), m.commits()]).toEqual([false, 0, commits])
     })
 
-    it('a table of contents that goes away while the path shows clears its timer and its attribute — a bullet zoom, the setting off, the editor closed — and comes back with no attribute; names that give way to the rail keep both to the end of the linger', () => {
+    it('a table of contents that goes away while the path shows clears its timer and its attribute — the setting off, the editor closed — and comes back with no attribute; names that give way to the rail keep both to the end of the linger', () => {
       fakeClock()
-      const zoomed = mountAtRest('pinned', HEADINGS, 900)
-      wheel(zoomed)
-      const gone = nav(zoomed)!
+      const off = mountAtRest('pinned', HEADINGS, 900)
+      wheel(off)
+      const gone = nav(off)!
       expect(gone.hasAttribute('data-reading')).toBe(true)
-      act(() => zoomed.channel.setHidden(true))
+      off.render('off')
       expect(vi.getTimerCount()).toBe(0)
       // The cleanup kept the element itself: React's ref to it is empty by then.
       expect([gone.isConnected, gone.hasAttribute('data-reading')]).toEqual([false, false])
-      act(() => zoomed.channel.setHidden(false))
-      expect(reading(zoomed)).toBe(false)
+      off.render('pinned')
+      expect(reading(off)).toBe(false)
       // The listener is a new one, and it works: a turn sets the attribute again.
-      wheel(zoomed)
-      expect(reading(zoomed)).toBe(true)
-      zoomed.render('off')
+      wheel(off)
+      expect(reading(off)).toBe(true)
+      off.render('off')
       expect(vi.getTimerCount()).toBe(0)
-      zoomed.render('pinned')
-      expect(reading(zoomed)).toBe(false)
 
       // The names give way to the rail — "Unpin" here; a window that gets narrow does the same. The nav and
       // its listener stay, so the timer still takes the attribute away, and it opens no card on its way.
@@ -1137,7 +1137,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
     expect(document.body.style.cursor).toBe('')
   })
 
-  it('names that go away under a drag end it — the editor closes, a bullet zooms: the listeners go, the cursor comes back, nothing is saved', () => {
+  it('names that go away under a drag end it — the editor closes: the listeners go, the cursor comes back, nothing is saved; a bullet zoom does not end it (YAZ-4094 4C)', () => {
     const closed = mount('pinned', HEADINGS, 1400)
     press(closed, 1000)
     moveTo(900)
@@ -1154,15 +1154,13 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
     const zoomed = mount('pinned', HEADINGS, 1400)
     press(zoomed, 1000)
     moveTo(900)
-    act(() => zoomed.channel.setHidden(true))
-    expect(document.body.style.cursor).toBe('')
+    act(() => zoomed.channel.setZoomed(true))
+    // The names stay in a zoom, so the drag goes on to its release.
+    expect(document.body.style.cursor).not.toBe('')
     moveTo(800)
     release()
-    expect(widthOf(zoomed)).toBe('')
-    expect(zoomed.onChangeWidth).not.toHaveBeenCalled()
-    // Back from the zoom: the saved width, not the abandoned drag's.
-    act(() => zoomed.channel.setHidden(false))
-    expect(widthOf(zoomed)).toBe('200px')
+    expect(widthOf(zoomed)).toBe('400px')
+    expect(zoomed.onChangeWidth).toHaveBeenLastCalledWith(400)
   })
 })
 
@@ -1836,6 +1834,24 @@ describe('folds (YAZ-3939)', () => {
     expect(shownTexts(m)).toEqual(texts(TREE))
     expect(document.activeElement?.textContent).toBe('Rollout')
     expect(m.jump).not.toHaveBeenCalled()
+  })
+
+  it('4D: a fold in a bullet zoom keeps the folds of the rows its list does not show; out of the zoom they come back (YAZ-4094)', () => {
+    const m = mount('pinned', TREE, 900, TOC_DEFAULT_W, [key(1, 'Design')])
+    // The zoom's own list (the engine publishes it in a zoom).
+    act(() => {
+      m.channel.setZoomed(true)
+      m.channel.publish([{ level: 1, text: 'Hiring' }, { level: 2, text: 'Two engineers' }])
+    })
+    click(arrow(m, 'Hiring'))
+    expect(m.onChangeFolds).toHaveBeenLastCalledWith([key(1, 'Design'), key(1, 'Hiring')])
+    click(foldAll(m))
+    expect(m.onChangeFolds).toHaveBeenLastCalledWith([key(1, 'Design')])
+    act(() => {
+      m.channel.setZoomed(false)
+      m.channel.publish(TREE)
+    })
+    expect(shownTexts(m)).toEqual(['Overview', 'Goals', 'Design', 'Rollout'])
   })
 
   it('D1: the saved folds come back on the next mount, and a saved key whose row is gone is not written again', () => {

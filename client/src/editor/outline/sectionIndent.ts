@@ -30,7 +30,8 @@
  *
  * A click on a line folds the sections beside it, the rule a list guide line has (guideLines.ts):
  * the direct child headings of the heading that owns the line, all folded if any is open, else all
- * unfolded. The caret does not move.
+ * unfolded. The caret does not move. With folding off (YAZ-4094 F1) a line is no button: no hand cursor,
+ * and the press is the editor's own.
  */
 import type { Crepe } from '../crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -41,6 +42,7 @@ import { $prose } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
 import { threadAnchor } from './bulletThreading'
 import { DEEPEST_FOLDABLE_LEVEL, headingLevel, isHeadingCollapsed, setHeadingFoldSet } from './headingFolding'
+import { isFoldingOn } from './foldingSwitch'
 import { getZoomedItemPos } from './zoom'
 
 export const SECTION_DEPTH_ATTR = 'data-sd'
@@ -234,7 +236,8 @@ export const sectionIndent = $prose(() => {
       },
       handleDOMEvents: {
         mousedown: (view, event) => {
-          if (event.button !== 0) return false
+          // Folding off (YAZ-4094 F1): the line folds nothing, so the press is the editor's own.
+          if (event.button !== 0 || !isFoldingOn(view.state)) return false
           const hit = lineHit(view, event)
           if (hit === null) return false
           // Swallow the event BEFORE folding: the caret must not move and no text may select —
@@ -246,7 +249,8 @@ export const sectionIndent = $prose(() => {
           return true
         },
         mousemove: (view, event) => {
-          view.dom.classList.toggle(SECTION_LINE_HOVER_CLASS, lineHit(view, event) !== null)
+          // No hand cursor with folding off: the line is no button then.
+          view.dom.classList.toggle(SECTION_LINE_HOVER_CLASS, isFoldingOn(view.state) && lineHit(view, event) !== null)
           return false
         },
         mouseleave: (view) => {

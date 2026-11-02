@@ -5,8 +5,8 @@
  * `findChannel.ts`'s host-created holder idiom. The host makes ONE per editor mount and hands it
  * to `createCrepe` (the engine in `tocPlugin.ts` binds itself at view creation, unbinds on destroy)
  * and to `TableOfContents.tsx`, which subscribes and calls the commands. The channel owns only
- * what the component draws: the note's rows as (level, text) and whether the table of contents
- * is hidden. Row POSITIONS stay in the engine: they move on every edit above a row, and a
+ * what the component draws: the note's rows as (level, text) and whether a bullet zoom is
+ * active. Row POSITIONS stay in the engine: they move on every edit above a row, and a
  * snapshot that carried them would re-render the list on every one of those edits.
  *
  * A ROW is a heading of the note, or — in a note with fewer than two headings — a bullet
@@ -18,7 +18,7 @@
  * engine scans by it, and it is NOT part of the snapshot: the component never learns it, and a
  * change of source reaches it only as the new list.
  *
- * 🔒 Subscribers hear a change only when the list of (level, text) changes or the hidden flag
+ * 🔒 Subscribers hear a change only when the list of (level, text) changes or the zoomed flag
  * flips. The engine publishes after every scan, and most scans find the list it already had.
  */
 import type { TocSource } from '@shared/types'
@@ -47,13 +47,14 @@ export interface TocRow {
 
 export interface TocSnapshot {
   /**
-   * The note's rows in document order, by the source: on Auto every H1-H5 outside lists, or the
-   * bullets of a note with fewer than two of those; else what the reader chose — every H1-H5 of
-   * the note, or its bullets. The component decides which of them it shows.
+   * The note's rows in document order, by the source: on Auto every H1-H5 of a note with two or
+   * more outside lists, the ones inside its bullets too (YAZ-4094 4E), or the bullets of a note
+   * with fewer; else what the reader chose — every H1-H5 of the note, or its bullets. In a bullet
+   * zoom, the zoom's own rows when it has two or more (4D). The component decides which it shows.
    */
   rows: readonly TocRow[]
-  /** True while a bullet zoom is active: the note shows one bullet's subtree, not its structure. */
-  hidden: boolean
+  /** True while a bullet zoom is active. The component still draws (YAZ-4094 4C): its scroll spy reads again. */
+  zoomed: boolean
 }
 
 /** The engine behind the commands: the plugin binds one per editor view. */
@@ -88,7 +89,7 @@ export interface TocChannel {
   /** Engine side: the rows of the scan just made. */
   publish(rows: readonly TocRow[]): void
   /** Engine side: a bullet zoom started or ended. */
-  setHidden(hidden: boolean): void
+  setZoomed(zoomed: boolean): void
 }
 
 const sameRows = (a: readonly TocRow[], b: readonly TocRow[]): boolean =>
@@ -96,7 +97,7 @@ const sameRows = (a: readonly TocRow[], b: readonly TocRow[]): boolean =>
 
 export function createTocChannel(): TocChannel {
   let controller: TocController | null = null
-  let snapshot: TocSnapshot = { rows: [], hidden: false }
+  let snapshot: TocSnapshot = { rows: [], zoomed: false }
   let source: TocSource | null = null
   const listeners = new Set<() => void>()
 
@@ -112,8 +113,8 @@ export function createTocChannel(): TocChannel {
     publish(rows) {
       if (!sameRows(rows, snapshot.rows)) set({ ...snapshot, rows })
     },
-    setHidden(hidden) {
-      if (hidden !== snapshot.hidden) set({ ...snapshot, hidden })
+    setZoomed(zoomed) {
+      if (zoomed !== snapshot.zoomed) set({ ...snapshot, zoomed })
     },
     setSource(next) {
       if (next === source) return

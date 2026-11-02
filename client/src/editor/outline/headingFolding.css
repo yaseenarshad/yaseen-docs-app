@@ -58,8 +58,5 @@
   transform: rotate(-90deg);
 }
 
-/* Prefixed (YAZ-3696 B1) to outrank Crepe's `.milkdown .milkdown-table-block` and
-   `.milkdown .milkdown-code-block { display: block }`, as zoom.css does; `foldCss.test.ts` holds the weight. */
-.editor-instance .milkdown [data-heading-folded='true'] {
-  display: none;
-}
+/* A folded section's blocks are hidden by one rule for each fold, which the plugin writes into its own
+   `<style data-heading-folds>` (`headingFoldHideSelector`, YAZ-3816). */

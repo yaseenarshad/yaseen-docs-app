@@ -242,6 +242,9 @@ export const undoLastZoom: Command = (state, dispatch) => {
 export const zoomToKey = (key: string | null): Command => (state, dispatch) =>
   zoomTo(key === null ? null : itemPosForZoomKey(state.doc, key), { quiet: true })(state, dispatch)
 
+/** Zoom out fully, as the title crumb does: a step in the Back list. The table of contents' jump out of a zoom (YAZ-4094 4C). */
+export const zoomOutFully: Command = (state, dispatch) => zoomTo(null)(state, dispatch)
+
 /** `Mod-.`: zoom into the item at the caret. */
 const zoomIntoSelection: Command = (state, dispatch) => {
   const itemPos = itemAtSelection(state)

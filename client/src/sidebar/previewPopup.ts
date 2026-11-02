@@ -62,7 +62,8 @@ function syncLook(): void {
     doc.head.appendChild(clone)
   }
   const html = doc.documentElement
-  for (const name of ['data-theme', 'style', 'class']) {
+  // The guide-line and folding defaults sit on <html> too (YAZ-4094, App.tsx): a preview's note reads them.
+  for (const name of ['data-theme', 'data-guide-lines', 'data-guide-lines-show', 'data-folding', 'style', 'class']) {
     const value = document.documentElement.getAttribute(name)
     if (value === null) html.removeAttribute(name)
     else html.setAttribute(name, value)

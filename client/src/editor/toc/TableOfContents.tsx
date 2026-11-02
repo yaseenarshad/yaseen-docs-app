@@ -30,8 +30,9 @@
  * `data-reading` on the `<nav>` says the reader is moving the note with the wheel: with the setting
  * "Level lines" on "On hover", the path then shows without the mouse on the list.
  *
- * It renders nothing when the setting is off, when the note has fewer than two rows to show,
- * and while a bullet zoom is active (the channel's `hidden`). Then it also holds no listener.
+ * It renders nothing when the setting is off, or when the note has fewer than two rows to show.
+ * Then it also holds no listener. A bullet zoom does not hide it (YAZ-4094 demo, 4C): the names
+ * stay, the section that holds the zoomed bullet is current, and a jump out of the zoom ends it.
  *
  * WHERE THE READER IS: on the scroller's `scroll` (passive, one read per animation frame) the
  * channel answers which shown row is current. Lines above it are read, the line itself is the
@@ -225,7 +226,7 @@ export interface TableOfContentsProps {
 }
 
 export function TableOfContents({ channel, mode, contentWidth, onChangeMode, width, onChangeWidth, hostRef, onReturnFocus, folds, onChangeFolds, zoom, onChangeZoom }: TableOfContentsProps) {
-  const { rows: all, hidden } = useSyncExternalStore(channel.subscribe, channel.getState)
+  const { rows: all, zoomed } = useSyncExternalStore(channel.subscribe, channel.getState)
   const listed = useMemo(() => shownRows(all), [all])
   const keys = useMemo(() => tocFoldKeys(all), [all])
   const parents = useMemo(() => foldable(listed), [listed])
@@ -233,7 +234,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   // THE ROWS ON SHOW (YAZ-3939 D5): the list, the rail and the scroll spy all read these. A fold
   // never hides the table of contents itself: `shows` counts every listed row.
   const rows = useMemo(() => unfoldedRows(listed, keys, folded), [listed, keys, folded])
-  const shows = mode !== 'off' && !hidden && listed.length >= ENOUGH_ROWS
+  const shows = mode !== 'off' && listed.length >= ENOUGH_ROWS
 
   const scrollerOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('.editor-host') ?? null
   const sectionOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('section.editor') ?? null
@@ -296,9 +297,13 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
    * Every fold and unfold (YAZ-3939 D2): no `channel.jump`, so the note never folds. The current
    * row moves at once to the row the reader is in, or to the folded row over it (D5): the spy reads
    * again only after the render, and the marker must not light another row first. Only the keys
-   * that a row of the note still has are saved: the fold of a renamed or deleted row goes.
+   * that a row of the note still has are saved: the fold of a renamed or deleted row goes. In a
+   * bullet zoom the list can be the zoom's own (YAZ-4094 4D): the folds of the rows it does not
+   * show stay, for the note's own list after the zoom.
    */
-  const saveFolds = (next: ReadonlySet<string>): void => {
+  const saveFolds = (chosen: ReadonlySet<string>): void => {
+    const own = new Set(keys)
+    const next: ReadonlySet<string> = zoomed ? new Set([...[...folded].filter((key) => !own.has(key)), ...chosen]) : chosen
     const after = unfoldedRows(listed, keys, next)
     // The spy's own answer on the new rows (YAZ-4048): an unfold into the section the reader is in
     // lights that row now, so the spy's read after the render finds nothing new and the list holds
@@ -312,7 +317,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     setCurrent(to)
     hold.current = true
     setFolded(next)
-    onChangeFolds(keys.filter((key) => next.has(key)))
+    onChangeFolds(zoomed ? [...next] : keys.filter((key) => next.has(key)))
   }
   /** Folds or opens `row`; with `open`, only toward it. */
   const toggleFold = (row: ShownRow, open?: boolean): void => {
@@ -341,8 +346,8 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
 
   // The scroll spy. At most `MAX_ROWS` rows are read per frame and nothing is written. A new
   // list of rows, a new measure (a resize moves every row), a change of look (the names column
-  // narrows the text) and a new width of that column (the text flows again) are each read once
-  // without a scroll.
+  // narrows the text), a new width of that column (the text flows again) and a zoom in or out (other
+  // rows have a box) are each read once without a scroll.
   useEffect(() => {
     if (!shows) return
     const scroller = scrollerOf()
@@ -369,7 +374,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
       scroller.removeEventListener('scroll', onScroll)
       if (frame !== 0) cancelAnimationFrame(frame)
     }
-  }, [shows, rows, box, names, shownWidth, channel, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
+  }, [shows, rows, box, names, shownWidth, zoomed, channel, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
 
   // The reader's own moves in the note: each lets go of a jump's hold, and a turn of the wheel
   // shows the path in the names. It never opens the card (YAZ-2886): a reader who scrolls is
@@ -495,6 +500,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     track.scrollTop = rows.length > 1 ? (at / (rows.length - 1)) * (track.scrollHeight - track.clientHeight) : 0
   }, [at, rows.length, pitch, fits, shows, names])
 
+  // The held room (toc.css pads the note for it): no names, nothing to read or press.
   if (!shows) return null
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {

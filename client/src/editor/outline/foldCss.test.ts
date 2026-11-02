@@ -2,13 +2,14 @@
  * The CSS weight of the two fold rules (YAZ-3696 B1, D11). jsdom applies no cascade, so this holds the
  * selectors to the contract in words: a folded block's `display: none` must outrank Crepe's own
  * `display: block` on a table block and a code block (`.milkdown .milkdown-table-block`, 0,2,0), or
- * the table stays on screen under a folded heading or bullet.
+ * the table stays on screen under a folded heading or bullet. The heading fold's rule is written by the
+ * plugin, one for each fold (`headingFoldHideSelector`, YAZ-3816).
  */
 import { describe, expect, it } from 'vitest'
-import headingCss from './headingFolding.css?inline'
 import outlineCss from './outlineFolding.css?inline'
 import crepeTableCss from '@milkdown/crepe/theme/common/table.css?inline'
 import crepeCodeCss from '@milkdown/crepe/theme/common/code-mirror.css?inline'
+import { headingFoldHideSelector } from './headingFolding'
 
 const rules = (css: string) =>
   [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({
@@ -16,8 +17,12 @@ const rules = (css: string) =>
     body,
   }))
 
-/** Classes, attributes and pseudo-classes: the only middle-column parts these selectors use. */
-const weight = (selector: string) => (selector.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g) ?? []).length
+/** Classes, attributes and pseudo-classes: the only middle-column parts these selectors use. A `:not()` counts as its heaviest argument. */
+const weight = (selector: string): number => {
+  const not = /:not\(([^()]*)\)/.exec(selector)
+  if (not !== null) return weight(selector.replace(not[0], '')) + Math.max(...not[1].split(',').map(weight))
+  return (selector.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g) ?? []).length
+}
 
 const hidingSelector = (css: string, attr: string) => {
   const rule = rules(css).find(({ selectors, body }) => selectors.some((s) => s.includes(`[${attr}='true']`)) && /display:\s*none/.test(body))
@@ -33,11 +38,10 @@ const crepeDisplayWeight = (css: string, cls: string) => {
 
 describe('fold CSS weight (YAZ-3696 B1, D11)', () => {
   it.each([
-    ['B1: a heading fold', headingCss, 'data-heading-folded'],
-    ['D11: a bullet fold', outlineCss, 'data-outline-folded'],
-  ])('%s outranks Crepe’s table block and code block', (_name, css, attr) => {
-    const selector = hidingSelector(css, attr)
-    expect(selector).toBe(`.editor-instance .milkdown [${attr}='true']`)
+    ['B1: a heading fold', headingFoldHideSelector('1', [], 2, 5), '.editor-instance .milkdown [data-heading-fold-view='],
+    ['D11: a bullet fold', hidingSelector(outlineCss, 'data-outline-folded'), `.editor-instance .milkdown [data-outline-folded='true']`],
+  ])('%s outranks Crepe’s table block and code block', (_name, selector, start) => {
+    expect(selector.startsWith(start)).toBe(true)
     expect(weight(selector)).toBeGreaterThan(crepeDisplayWeight(crepeTableCss, 'milkdown-table-block'))
     expect(weight(selector)).toBeGreaterThan(crepeDisplayWeight(crepeCodeCss, 'milkdown-code-block'))
   })

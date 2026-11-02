@@ -128,6 +128,8 @@ export interface ViewsPaneProps {
   /** What the hover panel needs of a page's vault: App's `boardPreviewScope`. No scope, no hover panel. */
   previewScope?: (path: string) => PreviewScope
   diagramDarkColors?: DiagramDarkColors
+  /** Settings › "Folding default" (YAZ-4094 F1), for the outline skin, which has no page cog. */
+  foldingOnByDefault?: boolean
 }
 
 /**
@@ -163,7 +165,7 @@ export function freeName(base: string, taken: ReadonlySet<string>): string {
   for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
 }
 
-export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: ViewsPaneProps) {
+export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', foldingOnByDefault }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
   // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
@@ -450,6 +452,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, records, readOnl
           wikilinks={folder.wikilinks}
           wikilinkCandidates={folder.wikilinkCandidates}
           nav={folder.nav}
+          foldingOn={foldingOnByDefault}
           // ONE `folder_settings` write, through the same door every config edit uses. It
           // lands on the FIRST outline view because that is the one the seed was read from.
           onDocument={(markdown) =>
