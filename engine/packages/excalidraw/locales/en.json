@@ -291,6 +291,7 @@
   "errors": {
     "unsupportedFileType": "Unsupported file type.",
     "imageInsertError": "Couldn't insert image. Try again later...",
+    "pdfExportFailed": "The PDF couldn't be exported.",
     "fileTooBig": "File is too big. Maximum allowed size is {{maxSize}}.",
     "svgImageInsertError": "Couldn't insert SVG image. The SVG markup looks invalid.",
     "failedToFetchImage": "Failed to fetch image.",

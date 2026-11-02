@@ -55,4 +55,37 @@ describe("the PDF button of the export box (YAZ-3943 D6)", () => {
     expect(size.height).toBeGreaterThan(50);
     expect(size.height).toBeLessThan(150);
   });
+
+  it("YAZ-4074 6A item 9: the button is busy while the PDF is made, so a double click makes one", async () => {
+    let finish: () => void = () => {};
+    const onExportPdf = vi.fn(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    );
+    await render(<Excalidraw onExportPdf={onExportPdf} />);
+    API.setElements([rect()]);
+    openExportBox();
+    act(() => {
+      pdfButton()!.click();
+      pdfButton()!.click();
+    });
+    await waitFor(() => expect(onExportPdf).toHaveBeenCalledTimes(1));
+    expect(pdfButton()!.disabled).toBe(true);
+    act(() => pdfButton()!.click());
+    await act(async () => finish());
+    await waitFor(() => expect(pdfButton()!.disabled).toBe(false));
+    expect(onExportPdf).toHaveBeenCalledTimes(1);
+  });
+
+  it("YAZ-4074 6A item 9: an export that fails says so", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const onExportPdf = vi.fn(() => Promise.reject(new Error("no printer")));
+    await render(<Excalidraw onExportPdf={onExportPdf} />);
+    API.setElements([rect()]);
+    openExportBox();
+    act(() => pdfButton()!.click());
+    await waitFor(() =>
+      expect(h.state.errorMessage).toBe("The PDF couldn't be exported."),
+    );
+    expect(pdfButton()!.disabled).toBe(false);
+  });
 });
