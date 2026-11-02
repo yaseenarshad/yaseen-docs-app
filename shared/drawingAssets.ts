@@ -270,6 +270,19 @@ export const PICTURES_OUT = 'assets'
  */
 export const PICTURES_INSIDE_MAX_BYTES = GITHUB_FILE_WARN_BYTES
 
+/**
+ * YAZ-3943 1E: the block key where each switch of the block (Read only, pictures) records when it last changed, in ms:
+ * `"switched": { "pictures": 1793570760342 }`. When two Macs changed the block, the newest change of a switch wins
+ * (`shared/boardMerge.ts`). A switch with no time is older than any change.
+ */
+export const SWITCHED_KEY = 'switched'
+
+/** `block` with the change time of the switch `key` set to `at`; every other key kept. */
+export function withSwitchTime(block: Record<string, unknown>, key: string, at: number): Record<string, unknown> {
+  const times = isRecord(block[SWITCHED_KEY]) ? block[SWITCHED_KEY] : {}
+  return { ...block, [SWITCHED_KEY]: { ...times, [key]: at } }
+}
+
 /** Whether a `yaseendraw` block says "pictures out". */
 export function picturesOut(block: unknown): boolean {
   return isRecord(block) && block[PICTURES_KEY] === PICTURES_OUT
@@ -278,16 +291,15 @@ export function picturesOut(block: unknown): boolean {
 /**
  * The scene with "pictures out" on or off; the SAME object when it already is. The rule of
  * `withDrawingReadOnly` (`shared/readOnly.ts`): the block comes back FIRST, a block with no dates gets
- * `bornAt` for both, off of a block that is then empty removes it, and every other key stays.
+ * `bornAt` for both, every other key stays, and the switch records `at` as its change time (1E). So off
+ * keeps the block: its time must reach the other Mac.
  */
-export function withPicturesOut(scene: Record<string, unknown>, out: boolean, bornAt: number): Record<string, unknown> {
+export function withPicturesOut(scene: Record<string, unknown>, out: boolean, bornAt: number, at = Date.now()): Record<string, unknown> {
   const { [BOARD_META_KEY]: own, ...rest } = scene
   if (out === picturesOut(own) && (out || !(isRecord(own) && PICTURES_KEY in own))) return scene
-  const { [PICTURES_KEY]: _old, ...block } = isRecord(own) ? own : {}
-  if (!out) return Object.keys(block).length === 0 ? rest : { [BOARD_META_KEY]: block, ...rest }
-  const { createdAt, updatedAt, ...extras } = block
+  const { [PICTURES_KEY]: _old, createdAt, updatedAt, ...extras } = isRecord(own) ? own : {}
   const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }
-  return { [BOARD_META_KEY]: { ...dates, ...extras, [PICTURES_KEY]: PICTURES_OUT }, ...rest }
+  return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...(out ? { [PICTURES_KEY]: PICTURES_OUT } : {}) }, PICTURES_KEY, at), ...rest }
 }
 
 /** One picture inside a board: the shape the engine's `addFiles` reads (it keys on `id`). */

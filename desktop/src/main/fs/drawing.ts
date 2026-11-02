@@ -65,7 +65,7 @@ import { link, mkdir, readdir, readFile, rename, unlink } from 'node:fs/promises
 import path from 'node:path'
 import type { DrawingFileEntry, DrawingLoadResponse, DrawingNewFile, DrawingSaveResponse } from '@shared/types'
 import { isRecord } from '@shared/guards'
-import { ASSETS_DIR, assetFileName, BOARD_META_HEAD_BYTES, createdOf, extForMime, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseBoardMetaBlock, parseDataUrl, PICTURES_INSIDE_MAX_BYTES, PICTURES_KEY, PICTURES_OUT, picturesOut, referencedFileIds, serializeBoard, stampBoardMetaScene, BOARD_ID_KEY, boardIdOf, stripEmbeddedScene, type BoardMetaBlock, type EmbeddedFile } from '@shared/drawingAssets'
+import { ASSETS_DIR, assetFileName, BOARD_META_HEAD_BYTES, createdOf, extForMime, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseBoardMetaBlock, parseDataUrl, PICTURES_INSIDE_MAX_BYTES, PICTURES_KEY, PICTURES_OUT, picturesOut, referencedFileIds, serializeBoard, stampBoardMetaScene, BOARD_ID_KEY, boardIdOf, withSwitchTime, stripEmbeddedScene, type BoardMetaBlock, type EmbeddedFile } from '@shared/drawingAssets'
 import { vaultNoteId } from '@shared/noteId'
 import { mintIds, vaultIds } from '../vaultIndex/mint'
 import { BOARDS, boardTarget, guardedStamp } from './boardDocument'
@@ -351,7 +351,7 @@ export async function saveDrawing(req: unknown): Promise<DrawingSaveResponse> {
       if (Buffer.byteLength(full, 'utf8') < PICTURES_INSIDE_MAX_BYTES) return full
       // The 50 MB rule (D5): the pictures go out, and the block says so from now on.
       movedOut = true
-      return serializeBoard(stampBoardMetaScene(lean, at, { ...block, [PICTURES_KEY]: PICTURES_OUT } as BoardMetaBlock))
+      return serializeBoard(stampBoardMetaScene(lean, at, withSwitchTime({ ...block, [PICTURES_KEY]: PICTURES_OUT }, PICTURES_KEY, at.updatedAt) as BoardMetaBlock))
     },
     known,
   )

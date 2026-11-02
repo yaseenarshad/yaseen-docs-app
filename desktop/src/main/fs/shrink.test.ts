@@ -57,12 +57,12 @@ describe('shrinkVault (YAZ-1801 D5)', () => {
     const after = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>
     expect(Object.keys(after)[0]).toBe('yaseendraw')
     // The SAME dates (updatedAt did not move), the backfill's extra key, and the flag (YAZ-3943 D5).
-    expect(after.yaseendraw).toEqual({ ...BLOCK, pictures: 'assets' })
+    expect(after.yaseendraw).toEqual({ ...BLOCK, pictures: 'assets', switched: { pictures: expect.any(Number) } })
     expect(after.files).toEqual({})
     expect(after.elements).toEqual([imageEl('aaa'), imageEl('bbb')])
   })
 
-  it('keeps the block in place, its keys in order: only the flag is added at its end (YAZ-3943 D5)', async () => {
+  it('keeps the block in place, its keys in order: only the flag and its change time are added at its end (YAZ-3943 D5, 1E)', async () => {
     const body = legacy({ aaa: { mimeType: 'image/png', dataURL: png('A') } }, [imageEl('aaa')])
     const file = await seed('Legacy.excalidraw', body)
     const blockText = (text: string) => text.slice(0, text.indexOf('\n  },') + 5)
@@ -71,7 +71,8 @@ describe('shrinkVault (YAZ-1801 D5)', () => {
 
     const after = await readFile(file, 'utf8')
     expect(after).not.toBe(body)
-    expect(blockText(after)).toBe(blockText(body).replace('"cloudId": "k97"', '"cloudId": "k97",\n    "pictures": "assets"'))
+    const time = /"pictures": (\d+)/.exec(after)?.[1]
+    expect(blockText(after)).toBe(blockText(body).replace('"cloudId": "k97"', `"cloudId": "k97",\n    "pictures": "assets",\n    "switched": {\n      "pictures": ${time}\n    }`))
     expect(blockText(body)).toContain('"cloudId": "k97"')
   })
 
@@ -83,7 +84,7 @@ describe('shrinkVault (YAZ-1801 D5)', () => {
     const blank = await seed('Blank.excalidraw', blankBody)
 
     expect(await shrinkVault(root)).toEqual({ shrunk: 1, skipped: 0, bytesMoved: 0 })
-    expect(JSON.parse(await readFile(oldBoard, 'utf8')).yaseendraw).toEqual({ ...BLOCK, pictures: 'assets' })
+    expect(JSON.parse(await readFile(oldBoard, 'utf8')).yaseendraw).toEqual({ ...BLOCK, pictures: 'assets', switched: { pictures: expect.any(Number) } })
     expect(await readFile(out, 'utf8')).toBe(outBody)
     expect(await readFile(blank, 'utf8')).toBe(blankBody)
   })
@@ -119,7 +120,7 @@ describe('shrinkVault (YAZ-1801 D5)', () => {
 
     expect((await shrinkVault(root)).shrunk).toBe(1)
     expect(await assets()).toEqual(['good.png'])
-    expect(JSON.parse(await readFile(file, 'utf8')).yaseendraw).toEqual({ ...BLOCK, pictures: 'assets' })
+    expect(JSON.parse(await readFile(file, 'utf8')).yaseendraw).toEqual({ ...BLOCK, pictures: 'assets', switched: { pictures: expect.any(Number) } })
   })
 
   it('skips a board another writer changed while its pictures were landing, and leaves that write alone', async () => {

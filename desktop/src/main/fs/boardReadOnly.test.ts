@@ -33,20 +33,24 @@ const PAGE = '<diagram id="p" name="Page-1"><mxGraphModel><root><mxCell id="0" /
 const DIAGRAM = `<mxfile ${DIAGRAM_CREATED_ATTR}="1000" ${DIAGRAM_UPDATED_ATTR}="2000" host="app">${PAGE}</mxfile>\n`
 
 describe('board:set-read-only on a drawing', () => {
-  it('on writes the key in the block, atomically, and answers the new mtime; off gives back the same bytes', async () => {
+  it('on writes the key and its change time (YAZ-3943 1E) in the block, atomically, and answers the new mtime; off removes the key and keeps the time', async () => {
     const { file, mtime } = await seed('Sketch.excalidraw', SCENE)
     const { ino } = await stat(file)
     const on = await setBoardReadOnly({ root, path: 'Sketch.excalidraw', on: true, expectedMtime: mtime })
     const written = await readFile(file, 'utf8')
     expect(isDrawingReadOnly(JSON.parse(written) as Record<string, unknown>)).toBe(true)
-    expect(parseBoardMetaBlock(written)).toEqual({ createdAt: 1000, updatedAt: 2000, readonly: true })
+    expect(parseBoardMetaBlock(written)).toEqual({ createdAt: 1000, updatedAt: 2000, readonly: true, switched: { readonly: expect.any(Number) } })
     const after = await stat(file)
     expect(on).toEqual({ path: file, mtime: after.mtimeMs, size: after.size })
     // A rename over the old file (tmp + rename), never a write in place; no tmp left behind.
     expect(after.ino).not.toBe(ino)
     expect((await readdir(root)).filter((n) => n.includes('.tmp-'))).toEqual([])
     await setBoardReadOnly({ root, path: 'Sketch.excalidraw', on: false, expectedMtime: on.mtime })
-    expect(await readFile(file, 'utf8')).toBe(SCENE)
+    const off = await readFile(file, 'utf8')
+    expect(parseBoardMetaBlock(off)).toEqual({ createdAt: 1000, updatedAt: 2000, switched: { readonly: expect.any(Number) } })
+    const { [BOARD_META_KEY]: _block, ...rest } = JSON.parse(off) as Record<string, unknown>
+    const { [BOARD_META_KEY]: _was, ...before } = JSON.parse(SCENE) as Record<string, unknown>
+    expect(rest).toEqual(before)
   })
 
   it('S11: the same value again writes nothing; the mtime does not move', async () => {
@@ -77,7 +81,7 @@ describe('board:set-read-only on a drawing', () => {
   it('a drawing with no block (written elsewhere) gets one dated by its file, which the save door then keeps', async () => {
     const { file, mtime } = await seed('Plain.excalidraw', JSON.stringify({ type: 'excalidraw', elements: [] }))
     const on = await setBoardReadOnly({ root, path: 'Plain.excalidraw', on: true, expectedMtime: mtime })
-    expect(parseBoardMetaBlock(await readFile(file, 'utf8'))).toEqual({ createdAt: mtime, updatedAt: mtime, readonly: true })
+    expect(parseBoardMetaBlock(await readFile(file, 'utf8'))).toEqual({ createdAt: mtime, updatedAt: mtime, readonly: true, switched: { readonly: expect.any(Number) } })
     await saveDrawing({ root, path: 'Plain.excalidraw', json: '{"elements":[]}', expectedMtime: on.mtime, newFiles: [] })
     expect(parseBoardMetaBlock(await readFile(file, 'utf8'))).toMatchObject({ createdAt: mtime, readonly: true })
   })

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mergeBoards } from '@shared/boardMerge'
+import { picturesOut, withPicturesOut } from '@shared/drawingAssets'
+import { isDrawingReadOnly, withDrawingReadOnly } from '@shared/readOnly'
 
 type El = Record<string, unknown> & { id: string }
 
@@ -154,5 +156,59 @@ describe('mergeBoards — the board around the shapes', () => {
     expect(mergeBoards('not json', board([]), board([]))).toBeNull()
     expect(mergeBoards(board([]), '{"elements": 3}', board([]))).toBeNull()
     expect(mergeBoards(board([]), board([]), '{"elements": [{"noId": true}]}')).toBeNull()
+  })
+})
+
+describe('mergeBoards — the switches of the yaseendraw block (YAZ-3943 1E): the newest change wins', () => {
+  /** A board as each Mac writes it: its block made by the same doors the app uses. */
+  const scene = (block: Record<string, unknown>, elements: El[] = [r1]): Record<string, unknown> => ({ yaseendraw: block, type: 'excalidraw', elements, appState: {}, files: {} })
+  const text = (doc: Record<string, unknown>) => `${JSON.stringify(doc, null, 2)}\n`
+  /** A plain edit on a Mac: a shape moves, the save stamps `updatedAt` and keeps the block's other keys. */
+  const edited = (doc: Record<string, unknown>, at: number) => ({ ...doc, yaseendraw: { ...(doc.yaseendraw as object), updatedAt: at }, elements: [edit(r1, 7, at)] })
+  const blockOf = (base: Record<string, unknown>, theirs: Record<string, unknown>, mine: Record<string, unknown>) =>
+    (JSON.parse(mergeBoards(text(base), text(theirs), text(mine))?.json ?? '{}') as { yaseendraw: Record<string, unknown> }).yaseendraw
+
+  it('Mac A turns pictures out, Mac B edits the board: the merge keeps "out", whichever side is ours', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    const macA = withPicturesOut(base, true, 1, 300)
+    const macB = edited(base, 400)
+    for (const [theirs, mine] of [[macA, macB], [macB, macA]]) {
+      const merged = blockOf(base, theirs, mine)
+      expect(picturesOut(merged)).toBe(true)
+      expect(merged).toMatchObject({ createdAt: 1, updatedAt: 400, switched: { pictures: 300 } })
+    }
+    // And back inside on one Mac, after it was out on both: "inside" (no key) wins, though the other side still holds "out".
+    const out = withPicturesOut(base, true, 1, 300)
+    const inside = withPicturesOut(out, false, 1, 500)
+    for (const [theirs, mine] of [[inside, edited(out, 600)], [edited(out, 600), inside]]) expect(picturesOut(blockOf(out, theirs, mine))).toBe(false)
+  })
+
+  it('the same for Read only: off on one Mac is never lost to the other Mac\'s untouched "on"', () => {
+    const base = withDrawingReadOnly(scene({ createdAt: 1, updatedAt: 2 }), true, 1, 100)
+    const macA = withDrawingReadOnly(base, false, 1, 300)
+    const macB = edited(base, 400)
+    for (const [theirs, mine] of [[macA, macB], [macB, macA]]) {
+      const merged = blockOf(base, theirs, mine)
+      expect(isDrawingReadOnly({ yaseendraw: merged })).toBe(false)
+      expect(merged.switched).toEqual({ readonly: 300 })
+    }
+  })
+
+  it('when both Macs changed a switch, the newer change wins; the two switches are each their own', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    const macA = withPicturesOut(withDrawingReadOnly(base, true, 1, 500), true, 1, 200)
+    const macB = withPicturesOut(withPicturesOut(withDrawingReadOnly(withDrawingReadOnly(base, true, 1, 100), false, 1, 400), true, 1, 150), false, 1, 600)
+    for (const [theirs, mine] of [[macA, macB], [macB, macA]]) {
+      const merged = blockOf(base, theirs, mine)
+      expect(isDrawingReadOnly({ yaseendraw: merged })).toBe(true)
+      expect(picturesOut(merged)).toBe(false)
+      expect(merged.switched).toEqual({ readonly: 500, pictures: 600 })
+    }
+  })
+
+  it('a board whose switches have no time merges as before: ours wins, and a key only theirs holds stays', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    expect(blockOf(base, scene({ createdAt: 1, updatedAt: 5, readonly: true }), scene({ createdAt: 1, updatedAt: 6 }))).toEqual({ createdAt: 1, updatedAt: 6, readonly: true })
+    expect(blockOf(base, scene({ createdAt: 1, updatedAt: 5, pictures: 'assets' }), scene({ createdAt: 1, updatedAt: 6, cloudId: 'x' }))).toEqual({ createdAt: 1, updatedAt: 6, pictures: 'assets', cloudId: 'x' })
   })
 })

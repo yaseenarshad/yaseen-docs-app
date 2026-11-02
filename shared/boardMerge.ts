@@ -1,4 +1,5 @@
-import { BOARD_META_KEY } from './drawingAssets'
+import { BOARD_META_KEY, PICTURES_KEY, SWITCHED_KEY } from './drawingAssets'
+import { READ_ONLY_KEY } from './readOnly'
 import { isFiniteNumber, isRecord } from './guards'
 
 /**
@@ -22,7 +23,8 @@ import { isFiniteNumber, isRecord } from './guards'
  *    A parent neither side kept is let go of instead (the reference is cleared).
  * The board's own settings (`appState`) and any other top-level key merge per key the same way,
  * ours winning a clash — except the `yaseendraw` dates block (🔒 YAZ-1834), which stays the file's
- * FIRST key with the earlier `createdAt` and the later `updatedAt` of the two.
+ * FIRST key with the earlier `createdAt` and the later `updatedAt` of the two, and whose switches
+ * (Read only, pictures) each take the newest change (YAZ-3943 1E).
  *
  * Pure and engine-free: it runs in the main process in the middle of a rebase. Answers null for
  * anything it must not merge — a side that is not a scene — and the caller keeps both copies.
@@ -164,9 +166,33 @@ export function mergeBoards(baseText: string, theirsText: string, mineText: stri
   return { json: `${JSON.stringify(doc, null, 2)}\n`, clashes: clashed.size }
 }
 
-/** The dates block both machines stamped: the board was born at the earlier time and last changed at the later one. */
+/** The switches of the block (YAZ-3943 1E): Read only and "pictures out". "Off" is no key. */
+const SWITCHES = [READ_ONLY_KEY, PICTURES_KEY]
+
+/** When the switch `key` of `block` last changed; a switch with no time is older than any change. */
+const switchTime = (block: Record<string, unknown>, key: string): number => {
+  const times = block[SWITCHED_KEY]
+  return isRecord(times) && isFiniteNumber(times[key]) ? times[key] : -Infinity
+}
+
+/**
+ * The dates block both machines stamped: the board was born at the earlier time and last changed at the later one.
+ * Each switch takes the side that changed it last (YAZ-3943 1E), "off" (no key) included, with its time: so "pictures
+ * out" on one Mac never loses to the other Mac's untouched "inside". Two switches with no time keep the old rule.
+ */
 function mergeMeta(theirs: unknown, mine: unknown): Record<string, unknown> | null {
   if (!isRecord(theirs) || !isRecord(mine)) return isRecord(mine) ? mine : isRecord(theirs) ? theirs : null
   const pick = (f: (a: number, b: number) => number, key: string) => (isFiniteNumber(theirs[key]) && isFiniteNumber(mine[key]) ? f(theirs[key], mine[key]) : (mine[key] ?? theirs[key]))
-  return { ...theirs, ...mine, createdAt: pick(Math.min, 'createdAt'), updatedAt: pick(Math.max, 'updatedAt') }
+  const meta: Record<string, unknown> = { ...theirs, ...mine, createdAt: pick(Math.min, 'createdAt'), updatedAt: pick(Math.max, 'updatedAt') }
+  const times: Record<string, unknown> = { ...recordOf(theirs[SWITCHED_KEY]), ...recordOf(mine[SWITCHED_KEY]) }
+  for (const key of SWITCHES) {
+    const [t, m] = [switchTime(theirs, key), switchTime(mine, key)]
+    if (t === m) continue
+    const newest = t > m ? theirs : mine
+    if (key in newest) meta[key] = newest[key]
+    else delete meta[key]
+    times[key] = Math.max(t, m)
+  }
+  if (Object.keys(times).length > 0) meta[SWITCHED_KEY] = times
+  return meta
 }

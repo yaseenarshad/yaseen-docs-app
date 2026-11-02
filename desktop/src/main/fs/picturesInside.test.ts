@@ -135,13 +135,13 @@ describe('YAZ-3943 D5 — board:set-pictures, the cog\'s "Move pictures out" / "
     const out = await setBoardPictures({ root, path: file, out: true, expectedMtime: (await stat(file)).mtimeMs })
     expect(out.mtime).toBe((await stat(file)).mtimeMs)
     const lean = await read(file)
-    expect(lean[BOARD_META_KEY]).toEqual({ createdAt: 1, updatedAt: 2, pictures: 'assets' })
+    expect(lean[BOARD_META_KEY]).toEqual({ createdAt: 1, updatedAt: 2, pictures: 'assets', switched: { pictures: expect.any(Number) } })
     expect(lean.files).toEqual({})
     expect(await assets()).toEqual(['aaa.png'])
 
     await setBoardPictures({ root, path: file, out: false, expectedMtime: out.mtime })
     const back = await read(file)
-    expect(back[BOARD_META_KEY]).toEqual({ createdAt: 1, updatedAt: 2 })
+    expect(back[BOARD_META_KEY]).toEqual({ createdAt: 1, updatedAt: 2, switched: { pictures: expect.any(Number) } })
     expect(back.files.aaa).toMatchObject({ mimeType: 'image/png', id: 'aaa', dataURL: png('A') })
     expect(await assets()).toEqual(['aaa.png']) // nothing is deleted from assets/
   })
