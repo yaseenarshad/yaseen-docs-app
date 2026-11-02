@@ -10,6 +10,7 @@ import { decodeGif } from "@excalidraw/excalidraw/gif/gifShrink";
 import type { BinaryFileData, DataURL } from "@excalidraw/excalidraw/types";
 
 import {
+  GIF_DECODER_IDLE_MS,
   GIF_IDLE_MS,
   GifPlayer,
   gifFrameDelay,
@@ -171,7 +172,8 @@ describe("YAZ-3944 D2: the GIF player", () => {
 
     await vi.advanceTimersByTimeAsync(1000);
     expect(repaints).toBe(1);
-    expect(vi.getTimerCount()).toBe(0);
+    // no tick: only the 30 s decoder sweep waits (YAZ-4074 6A item 17)
+    expect(vi.getTimerCount()).toBe(1);
 
     player.frameToken(image("a"));
     await vi.advanceTimersByTimeAsync(50);
@@ -247,11 +249,52 @@ describe("YAZ-3944 D2: the GIF player", () => {
     expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(repaints).toBe(played);
+    // a GIF that only waits keeps its decoder (YAZ-4074 6A item 17)
+    await vi.advanceTimersByTimeAsync(GIF_DECODER_IDLE_MS * 2);
+    expect(FakeImageDecoder.made[0].closed).toBe(false);
 
     player.activity();
     expect(player.idle).toBe(false);
     await vi.advanceTimersByTimeAsync(10);
     expect(repaints).toBe(played + 1);
+  });
+
+  it("YAZ-4074 6A item 17: a decoder that no paint drew for 30 s closes, a GIF paused by hand too; a later draw opens it again", async () => {
+    files.a = file("a", MIME_TYPES.gif, 3);
+    files.b = file("b", MIME_TYPES.gif, 3);
+    player.frameToken(image("a"));
+    player.frameToken(image("b"));
+    await vi.advanceTimersByTimeAsync(0);
+    // `a` stays on screen; `b` is paused by hand after it played
+    player.repaint = () => {
+      repaints++;
+      player.frameToken(image("a"));
+      player.frameToken(image("b", { gifPaused: true }));
+    };
+
+    await vi.advanceTimersByTimeAsync(GIF_DECODER_IDLE_MS + 1000);
+
+    expect(FakeImageDecoder.made.map((d) => d.closed)).toEqual([false, true]);
+    expect(player.size).toBe(1);
+    // played again: a new decoder
+    player.frameToken(image("b"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeImageDecoder.made).toHaveLength(3);
+    expect(player.frameFor(image("b"))).toBeInstanceOf(HTMLCanvasElement);
+  });
+
+  it("YAZ-4074 6A item 17: a board scrolled away from its GIFs closes their decoders after 30 s, with no tick", async () => {
+    files.a = file("a", MIME_TYPES.gif, 3);
+    player.frameToken(image("a"));
+    await vi.advanceTimersByTimeAsync(0);
+    player.repaint = () => repaints++;
+
+    await vi.advanceTimersByTimeAsync(GIF_DECODER_IDLE_MS + 1000);
+
+    expect(repaints).toBe(1);
+    expect(FakeImageDecoder.made[0].closed).toBe(true);
+    expect(player.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("YAZ-3944 D4: closes the decoder of a GIF that left the board", async () => {

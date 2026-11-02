@@ -14,6 +14,9 @@ export const GIF_MIN_REPAINT_MS = 40;
 /** YAZ-3944 D4: GIFs stop after 5 min with no mouse or key use on the board. */
 export const GIF_IDLE_MS = 5 * 60 * 1000;
 
+/** YAZ-4074 6A item 17: a decoder that no paint drew for 30 s closes (each holds its GIF and a full-size canvas). */
+export const GIF_DECODER_IDLE_MS = 30 * 1000;
+
 /** YAZ-3944 D4: "Pause GIF", saved in the file. A paused GIF shows its first frame. */
 export const isGifPaused = (element: ExcalidrawImageElement) =>
   element.customData?.gifPaused === true;
@@ -71,6 +74,8 @@ type GifTrack = GifClock & {
   token: number;
   /** the GIF repaint count when a board paint last drew this GIF */
   seenIn: number;
+  /** when a board paint last drew this GIF playing */
+  seenAt: number;
   /** the decoder opens, or a frame decodes */
   busy: boolean;
   /** one frame, or the decoder failed: it never plays */
@@ -85,7 +90,9 @@ type GifTrack = GifClock & {
  *
  * YAZ-3944 D4, auto-pause, never saved: nothing plays while the board is hidden (`setHidden`), while
  * a text box is in edit mode (`setTyping`, YAZ-4074 6A item 6), or after 5 min with no use
- * (`activity`); it plays again on return. A paused GIF never opens a decoder.
+ * (`activity`); it plays again on return. A GIF paused before it played opens no decoder. A decoder
+ * that no paint drew for 30 s closes: a GIF off screen, paused by hand, or on a hidden board
+ * (YAZ-4074 6A item 17). The next paint that draws it opens it again.
  */
 export class GifPlayer {
   /** The board layer's paint, without React. */
@@ -93,6 +100,8 @@ export class GifPlayer {
 
   private tracks = new Map<FileId, GifTrack>();
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** closes the decoders no paint drew for 30 s; set while one is open */
+  private sweepTimer: ReturnType<typeof setTimeout> | null = null;
   private lastRepaintAt = -Infinity;
   private repaintCount = 0;
   /** grows with each dispose: a tick that awaited across one stops */
@@ -119,6 +128,7 @@ export class GifPlayer {
       return undefined;
     }
     track.seenIn = this.repaintCount;
+    track.seenAt = performance.now();
     this.schedule();
     return track.token;
   }
@@ -146,6 +156,7 @@ export class GifPlayer {
     if (hidden) {
       this.stop();
     } else {
+      this.armSweep();
       this.schedule();
     }
   }
@@ -159,6 +170,7 @@ export class GifPlayer {
     if (typing) {
       this.stop();
     } else {
+      this.armSweep();
       this.schedule();
     }
   }
@@ -168,6 +180,7 @@ export class GifPlayer {
     this.lastActivityAt = performance.now();
     if (this.idle) {
       this.idle = false;
+      this.armSweep();
       this.schedule();
     }
   }
@@ -199,10 +212,15 @@ export class GifPlayer {
     this.lastActivityAt = performance.now();
   }
 
+  /** Stop the ticks, and the decoder sweep: a GIF that only waits (hidden, idle, typing) keeps its decoder. */
   private stop() {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this.sweepTimer) {
+      clearTimeout(this.sweepTimer);
+      this.sweepTimer = null;
     }
   }
 
@@ -230,6 +248,7 @@ export class GifPlayer {
         canvas: null,
         token: 0,
         seenIn: this.repaintCount,
+        seenAt: performance.now(),
         busy: true,
         still: false,
       };
@@ -262,6 +281,7 @@ export class GifPlayer {
       }
       await this.draw(track, 0);
       track.shownAt = performance.now();
+      this.armSweep();
     } catch {
       // closed under us (dispose), or a GIF the decoder cannot read: the still image stays
       track.still = true;
@@ -291,6 +311,39 @@ export class GifPlayer {
     track.token++;
   }
 
+  private armSweep() {
+    if (
+      !this.sweepTimer &&
+      [...this.tracks.values()].some((track) => track.decoder)
+    ) {
+      this.sweepTimer = setTimeout(this.sweep, GIF_DECODER_IDLE_MS);
+    }
+  }
+
+  /** YAZ-4074 6A item 17: close each decoder that no paint drew for 30 s. */
+  private sweep = () => {
+    this.sweepTimer = null;
+    if (this.hidden || this.idle || this.typing) {
+      return;
+    }
+    const now = performance.now();
+    let open = false;
+    for (const [fileId, track] of this.tracks) {
+      if (!track.decoder || track.busy) {
+        continue;
+      }
+      if (now - track.seenAt >= GIF_DECODER_IDLE_MS) {
+        track.decoder.close();
+        this.tracks.delete(fileId);
+      } else {
+        open = true;
+      }
+    }
+    if (open) {
+      this.armSweep();
+    }
+  };
+
   private isPlaying(track: GifTrack) {
     return (
       !track.still &&
@@ -307,6 +360,7 @@ export class GifPlayer {
     }
     if (performance.now() - this.lastActivityAt >= GIF_IDLE_MS) {
       this.idle = true;
+      this.stop();
       return;
     }
     const dueAts: number[] = [];
