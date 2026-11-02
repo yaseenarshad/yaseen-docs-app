@@ -2677,6 +2677,183 @@ describe("textWysiwyg", () => {
       expect(textarea.value).toEqual(`Line#1\nLine#2`);
     });
 
+    // YAZ-4071 7M: a script edit of the text is not on the browser's undo
+    // stack, and it puts the stack out of step with the text. jsdom has no
+    // undo: the fake `execCommand` edits as the browser does (and, as Blink,
+    // refuses a call inside another one), and records each call.
+    describe("YAZ-4071 7M: Tab, Enter in a list, the list buttons and the cleanup are browser edits", () => {
+      let calls: { command: string; text: string; at: number[] }[];
+      const descriptor = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )!;
+      beforeEach(() => {
+        calls = [];
+        let running = false;
+        Object.defineProperty(document, "execCommand", {
+          configurable: true,
+          value: (command: string, _ui?: boolean, text = "") => {
+            if (running) {
+              return false;
+            }
+            running = true;
+            const { selectionStart, selectionEnd } = textarea;
+            calls.push({ command, text, at: [selectionStart, selectionEnd] });
+            textarea.setRangeText(
+              command === "delete" ? "" : text,
+              selectionStart,
+              selectionEnd,
+              "end",
+            );
+            input("insertText");
+            running = false;
+            return true;
+          },
+        });
+        textarea.focus();
+      });
+      afterEach(() => {
+        delete (document as { execCommand?: unknown }).execCommand;
+      });
+      const box = () => h.elements[0] as ExcalidrawTextElement;
+      const input = (inputType: string) => {
+        const event = new Event("input");
+        Object.defineProperty(event, "inputType", { value: inputType });
+        textarea.dispatchEvent(event);
+      };
+      /** What the user's own typing leaves, as the browser gives it. */
+      const userEdit = (value: string, caret: number, inputType: string) => {
+        descriptor.set!.call(textarea, value);
+        textarea.setSelectionRange(caret, caret);
+        input(inputType);
+      };
+      const bold = (start: number, end: number) => {
+        textarea.setSelectionRange(start, end);
+        fireEvent.keyDown(textarea, {
+          [KEYS.CTRL_OR_CMD]: true,
+          key: "b",
+          code: CODES.B,
+        });
+      };
+
+      it("Tab on three lines is one browser edit, and the runs and the selection follow", () => {
+        userEdit("aaa\nbbb\nccc", 11, "insertText");
+        bold(4, 7);
+        textarea.setSelectionRange(0, 11);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB });
+
+        expect(calls).toHaveLength(1);
+        expect(textarea.value).toBe(`${tab}aaa\n${tab}bbb\n${tab}ccc`);
+        expect(box().textRuns).toEqual([{ start: 12, end: 15, bold: true }]);
+        expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([
+          4, 23,
+        ]);
+      });
+
+      it("Shift-Tab on three lines is one browser edit, and the runs follow", () => {
+        userEdit(`${tab}aaa\n${tab}bbb\n${tab}ccc`, 23, "insertText");
+        bold(12, 15);
+        textarea.setSelectionRange(0, 23);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB, shiftKey: true });
+
+        expect(calls).toHaveLength(1);
+        expect(textarea.value).toBe("aaa\nbbb\nccc");
+        expect(box().textRuns).toEqual([{ start: 4, end: 7, bold: true }]);
+      });
+
+      it("Tab on list lines is one browser edit", () => {
+        userEdit("1. First\n2. Second", 18, "insertText");
+        textarea.setSelectionRange(9, 18);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB });
+
+        expect(calls).toHaveLength(1);
+        expect(textarea.value).toBe("1. First\n    ○ Second");
+      });
+
+      it("Enter in a numbered list (it renumbers the items below) is one browser edit, and the caret is on the new item", () => {
+        userEdit("1. a\n2. b", 4, "insertText");
+        fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+
+        expect(calls).toHaveLength(1);
+        expect(textarea.value).toBe("1. a\n2. \n3. b");
+        expect(textarea.selectionStart).toBe(8);
+        expect(box().originalText).toBe("1. a\n2. \n3. b");
+      });
+
+      it("the list button in the editor is one browser edit, and the runs follow", () => {
+        userEdit("Hello world", 11, "insertText");
+        bold(6, 11);
+        textarea.setSelectionRange(0, 0);
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+            property: "listMode",
+            mode: "bullet",
+          });
+        });
+
+        expect(calls).toHaveLength(1);
+        expect(textarea.value).toBe("• Hello world");
+        expect(box().textRuns).toEqual([{ start: 8, end: 13, bold: true }]);
+        userEdit("• XHello world", 3, "insertText");
+        expect(box().textRuns).toEqual([{ start: 9, end: 14, bold: true }]);
+      });
+
+      it("a renumber after a typed edit is its own browser edit, after the input event", async () => {
+        userEdit("1. a\n2. b\n3. c", 14, "insertText");
+        // the user deletes the line "2. b"
+        userEdit("1. a\n3. c", 5, "deleteContentBackward");
+        await Promise.resolve();
+
+        expect(calls).toEqual([
+          { command: "insertText", text: "2", at: [5, 6] },
+        ]);
+        expect(textarea.value).toBe("1. a\n2. c");
+        expect(box().originalText).toBe("1. a\n2. c");
+      });
+
+      it("a pasted tab is cleaned up by one browser edit", async () => {
+        userEdit("a\tb", 3, "insertFromPaste");
+        await Promise.resolve();
+
+        expect(calls).toHaveLength(1);
+        expect(textarea.value).toBe(`a${tab}${tab}b`);
+        expect(box().originalText).toBe(`a${tab}${tab}b`);
+      });
+
+      it("⌘Z is not cleaned up again: the text it gives back stays, so the next ⌘Z can go on", async () => {
+        userEdit("1. a\n2. c", 9, "insertText");
+        userEdit("1. a\n3. c", 9, "historyUndo");
+        await Promise.resolve();
+
+        expect(calls).toEqual([]);
+        expect(textarea.value).toBe("1. a\n3. c");
+      });
+
+      it("a plain letter, also in a list, makes no browser edit and does not write the text", async () => {
+        let writes = 0;
+        Object.defineProperty(textarea, "value", {
+          configurable: true,
+          get() {
+            return descriptor.get!.call(this);
+          },
+          set(value: string) {
+            writes++;
+            descriptor.set!.call(this, value);
+          },
+        });
+        userEdit("Hello", 5, "insertText");
+        bold(0, 5);
+        userEdit("Hellox", 6, "insertText");
+        userEdit("1. a\n2. b", 9, "insertText");
+        userEdit("1. a\n2. bx", 10, "insertText");
+        await Promise.resolve();
+
+        expect(calls).toEqual([]);
+        expect(writes).toBe(0);
+        delete (textarea as { value?: unknown }).value;
+      });
+    });
+
     it("should resize text via shortcuts while in wysiwyg", () => {
       textarea.value = "abc def";
       const origFontSize = textElement.fontSize;

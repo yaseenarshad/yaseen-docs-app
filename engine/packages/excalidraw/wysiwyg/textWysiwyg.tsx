@@ -106,6 +106,7 @@ import {
   parseTextListLine,
 } from "../textList";
 
+import { editEditableText, takeEditableEdit } from "./editableEdit";
 import { getPendingTextStyle, takePendingTextStyle } from "./pendingTextStyle";
 import { textFieldKeyFor } from "../keyRemap";
 
@@ -797,8 +798,6 @@ export const textWysiwyg = ({
     }
     return null;
   };
-  /** YAZ-4071 7D: Tab or Shift-Tab changed the start of each selected line. */
-  let pendingEachLine = false;
 
   function renderVisualSelection() {
     underlineOverlay
@@ -1483,26 +1482,54 @@ export const textWysiwyg = ({
     };
 
     editable.oninput = (event) => {
+      // YAZ-4071 7M: an edit the editor made itself (Tab, Enter in a list, a
+      // list button): its selection, and its runs move line by line
+      const scripted = takeEditableEdit(editable);
+      if (scripted) {
+        editable.setSelectionRange(
+          scripted.selectionStart,
+          scripted.selectionEnd,
+        );
+      }
       // YAZ-3943 demo 2: `- ` or `* ` typed at a line's start is a bullet
       // line; its replacement is its own input event
       if (applyListInputRule()) {
         return;
       }
+      // tabs become spaces, and the list numbers count up. A keystroke that
+      // needs neither writes nothing.
       const normalized = normalizeText(editable.value);
-      if (editable.value !== normalized) {
-        const selectionStart = editable.selectionStart;
-        editable.value = normalized;
-        // put the cursor at some position close to where it was before
-        // normalization (otherwise it'll end up at the end of the text)
-        editable.selectionStart = selectionStart;
-        editable.selectionEnd = selectionStart;
-      }
+      // put the cursor at some position close to where it was before
+      // normalization (otherwise it'll end up at the end of the text)
       const normalizedList = normalizeTextLists(
-        editable.value,
+        normalized,
         editable.selectionStart,
-        editable.selectionEnd,
+        normalized === editable.value
+          ? editable.selectionEnd
+          : editable.selectionStart,
       );
-      if (editable.value !== normalizedList.text) {
+      if (
+        editable.value !== normalizedList.text &&
+        // YAZ-4071 7M: ⌘Z gives back the text as it was before a cleanup.
+        // A cleanup now would clear ⌘⇧Z, and the next ⌘Z would undo it again.
+        !(event as InputEvent).inputType?.startsWith("history")
+      ) {
+        // YAZ-4071 7M: the browser's own edit, so ⌘Z takes back the cleanup
+        // in one step. It waits until this input event ends: this event can
+        // come from an `execCommand`, and Blink refuses one inside another.
+        if ("execCommand" in document && document.activeElement === editable) {
+          queueMicrotask(() => {
+            if (!isDestroyed) {
+              editEditableText(
+                editable,
+                normalizedList.text,
+                normalizedList.selectionStart,
+                normalizedList.selectionEnd,
+              );
+            }
+          });
+          return;
+        }
         editable.value = normalizedList.text;
         editable.setSelectionRange(
           normalizedList.selectionStart,
@@ -1515,7 +1542,7 @@ export const textWysiwyg = ({
       const edit = {
         caret: editable.selectionEnd,
         insertedLine: pendingInsertedLine ?? undefined,
-        eachLine: pendingEachLine,
+        eachLine: scripted?.eachLine,
         // YAZ-3718 D10: B, I, U, S or a color pressed with only a caret
         insertStyle: takePendingTextStyle(
           editable,
@@ -1524,7 +1551,6 @@ export const textWysiwyg = ({
         ),
       };
       pendingInsertedLine = null;
-      pendingEachLine = false;
       const remappedTextRuns = remapTextRunsForTextEdit(
         previousEditableValue,
         editable.value,
@@ -1633,10 +1659,13 @@ export const textWysiwyg = ({
         change.selectionStart,
       );
     }
-    editable.value = change.text;
-    editable.setSelectionRange(change.selectionStart, change.selectionEnd);
-
-    editable.dispatchEvent(new Event("input"));
+    // YAZ-4071 7M: one ⌘Z step
+    editEditableText(
+      editable,
+      change.text,
+      change.selectionStart,
+      change.selectionEnd,
+    );
     return true;
   };
 
@@ -1777,23 +1806,26 @@ export const textWysiwyg = ({
         editable.selectionStart,
         editable.selectionEnd,
       );
-      if (listMode !== "plain") {
-        const change = indentTextList(
-          editable.value,
-          editable.selectionStart,
-          editable.selectionEnd,
-          direction,
-        );
-        editable.value = change.text;
-        editable.setSelectionRange(change.selectionStart, change.selectionEnd);
-      } else if (direction === -1) {
-        outdent();
-      } else {
-        indent();
-      }
-      pendingEachLine = true;
-      // We must send an input event to resize the element
-      editable.dispatchEvent(new Event("input"));
+      const change =
+        listMode !== "plain"
+          ? indentTextList(
+              editable.value,
+              editable.selectionStart,
+              editable.selectionEnd,
+              direction,
+            )
+          : direction === -1
+          ? outdent()
+          : indent();
+      // YAZ-4071 7M: one ⌘Z step; its input event resizes the element.
+      // YAZ-4071 7D: the runs move line by line.
+      editEditableText(
+        editable,
+        change.text,
+        change.selectionStart,
+        change.selectionEnd,
+        true,
+      );
     }
   };
 
@@ -1812,10 +1844,11 @@ export const textWysiwyg = ({
       value = `${startValue}${TAB}${endValue}`;
     });
 
-    editable.value = value;
-
-    editable.selectionStart = selectionStart + TAB_SIZE;
-    editable.selectionEnd = selectionEnd + TAB_SIZE * linesStartIndices.length;
+    return {
+      text: value,
+      selectionStart: selectionStart + TAB_SIZE,
+      selectionEnd: selectionEnd + TAB_SIZE * linesStartIndices.length,
+    };
   };
 
   const outdent = () => {
@@ -1839,27 +1872,29 @@ export const textWysiwyg = ({
       }
     });
 
-    editable.value = value;
-
-    if (removedTabs.length) {
-      if (selectionStart > removedTabs[removedTabs.length - 1]) {
-        editable.selectionStart = Math.max(
-          selectionStart - TAB_SIZE,
-          removedTabs[removedTabs.length - 1],
-        );
-      } else {
-        // If the cursor is before the first tab removed, ex:
-        // Line| #1
-        //     Line #2
-        // Lin|e #3
-        // we should reset the selectionStart to his initial value.
-        editable.selectionStart = selectionStart;
-      }
-      editable.selectionEnd = Math.max(
-        editable.selectionStart,
-        selectionEnd - TAB_SIZE * removedTabs.length,
-      );
+    if (!removedTabs.length) {
+      return { text: value, selectionStart, selectionEnd };
     }
+    const nextSelectionStart =
+      selectionStart > removedTabs[removedTabs.length - 1]
+        ? Math.max(
+            selectionStart - TAB_SIZE,
+            removedTabs[removedTabs.length - 1],
+          )
+        : // If the cursor is before the first tab removed, ex:
+          // Line| #1
+          //     Line #2
+          // Lin|e #3
+          // we should reset the selectionStart to his initial value.
+          selectionStart;
+    return {
+      text: value,
+      selectionStart: nextSelectionStart,
+      selectionEnd: Math.max(
+        nextSelectionStart,
+        selectionEnd - TAB_SIZE * removedTabs.length,
+      ),
+    };
   };
 
   /**
@@ -2112,14 +2147,6 @@ export const textWysiwyg = ({
 
   // handle updates of textElement properties of editing element
   const unbindUpdate = app.scene.onUpdate(() => {
-    // YAZ-4071 7C: the list button sets this editor's text and moves the runs
-    // itself, so the next typed letter is an edit of that text
-    if (
-      (app.scene.getElement(element.id) as ExcalidrawTextElement | null)
-        ?.originalText === editable.value
-    ) {
-      previousEditableValue = editable.value;
-    }
     const selectionStart = editable.selectionStart;
     const selectionEnd = editable.selectionEnd;
     updateWysiwygStyle();

@@ -206,6 +206,7 @@ import {
   getPendingTextStyle,
   setPendingTextStyle,
 } from "../wysiwyg/pendingTextStyle";
+import { editEditableText } from "../wysiwyg/editableEdit";
 
 import { getShortcutKey } from "../shortcut";
 
@@ -2154,6 +2155,19 @@ const changeTextStyle = (
         end: editable.selectionEnd,
       }
     : null;
+  // YAZ-4071 7M: in the editor, the markers go in through the editor's own
+  // edit, so ⌘Z takes them back in one step. Its input event sets the box's
+  // text and moves the runs line by line (YAZ-4071 7C).
+  if (editable && editableList) {
+    editable.focus();
+    editEditableText(
+      editable,
+      editableList.text,
+      editableList.selectionStart,
+      editableList.selectionEnd,
+      true,
+    );
+  }
 
   const updatedElements = changeProperty(
     elements,
@@ -2163,24 +2177,27 @@ const changeTextStyle = (
         return element;
       }
       if (value.property === "listMode") {
-        const listChange =
+        // the box in the editor has its markers and runs already (above)
+        const box =
           editableList && element.id === appState.editingTextElement?.id
-            ? editableList
-            : setTextListMode(
-                element.originalText,
-                0,
-                element.originalText.length,
-                value.mode,
-              );
-        let nextElement: ExcalidrawTextElement = newElementWith(element, {
-          originalText: listChange.text,
-          text: listChange.text,
+            ? (app.scene.getElement(element.id) as ExcalidrawTextElement)
+            : element;
+        const listChange = setTextListMode(
+          box.originalText,
+          0,
+          box.originalText.length,
+          value.mode,
+        );
+        const text = box === element ? listChange.text : box.originalText;
+        let nextElement: ExcalidrawTextElement = newElementWith(box, {
+          originalText: text,
+          text,
           // YAZ-4071 7C: the markers change the start of each line, so the
           // letter styles move with their letters
           textRuns: remapTextRunsForTextEdit(
-            element.originalText,
-            listChange.text,
-            element.textRuns,
+            box.originalText,
+            text,
+            box.textRuns,
             { eachLine: true },
           ),
           // YAZ-3943 demo 2: a list reads from the left
@@ -2191,11 +2208,7 @@ const changeTextStyle = (
           app.scene.getContainerElement(element),
           app.scene,
         );
-        nextElement = offsetElementAfterFontResize(
-          element,
-          nextElement,
-          app.scene,
-        );
+        nextElement = offsetElementAfterFontResize(box, nextElement, app.scene);
         return nextElement;
       }
       // YAZ-3718 D10: the editor styles the selected letters, a selected box
@@ -2243,14 +2256,7 @@ const changeTextStyle = (
     true,
   );
 
-  if (editable && editableList) {
-    editable.value = editableList.text;
-    editable.setSelectionRange(
-      editableList.selectionStart,
-      editableList.selectionEnd,
-    );
-    editable.focus();
-  } else if (editable && editableSelection && value.property !== "listMode") {
+  if (editable && editableSelection && value.property !== "listMode") {
     editable.setSelectionRange(editableSelection.start, editableSelection.end);
     editable.focus();
     queueMicrotask(() => {
