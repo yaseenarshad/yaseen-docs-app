@@ -274,7 +274,7 @@ import {
   hasVectorStrokeWidth,
   hitTestSmartShapeHandle,
   updateSmartShapeFromHandle,
-  getBoundTextMaxWidth,
+  getTextLayoutMaxWidth,
   getTextLinkAt,
   hasHostLinks,
   refreshHostLinks,
@@ -8303,11 +8303,7 @@ class App extends React.Component<AppProps, AppState> {
     const container = getContainerElement(textElement, elementsMap);
     const hit = getTextLinkAt(
       textElement,
-      container
-        ? getBoundTextMaxWidth(container, textElement)
-        : textElement.autoResize
-        ? Infinity
-        : textElement.width,
+      getTextLayoutMaxWidth(textElement, container),
       scenePointer,
     );
     if (!hit) {

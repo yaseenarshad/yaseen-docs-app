@@ -11,7 +11,7 @@ import {
 } from "@excalidraw/common";
 
 import {
-  getBoundTextMaxWidth,
+  getTextLayoutMaxWidth,
   getCommonBounds,
   getLineHeightInPx,
   getStyledVisualSelectionGeometry,
@@ -623,11 +623,7 @@ const getMatchedLines = (
     const container = app.scene.getContainerElement(textElement);
     const lines = getTextElementStyledLines(
       textElement,
-      container
-        ? getBoundTextMaxWidth(container, textElement)
-        : textElement.autoResize
-        ? Infinity
-        : textElement.width,
+      getTextLayoutMaxWidth(textElement, container),
       textElement.originalText,
     );
     return getStyledVisualSelectionGeometry({

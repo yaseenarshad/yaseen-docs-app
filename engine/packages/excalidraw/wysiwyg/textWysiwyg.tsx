@@ -31,6 +31,7 @@ import {
   redrawTextBoundingBox,
   getBoundTextMaxHeight,
   getBoundTextMaxWidth,
+  getTextLayoutMaxWidth,
   computeContainerDimensionForBoundText,
   computeBoundTextPosition,
   getBoundTextElement,
@@ -502,11 +503,7 @@ export const textWysiwyg = ({
           ? whiteSpace === "pre-wrap"
             ? width
             : Infinity
-          : container
-          ? getBoundTextMaxWidth(container, updatedTextElement)
-          : updatedTextElement.autoResize
-          ? Infinity
-          : updatedTextElement.width,
+          : getTextLayoutMaxWidth(updatedTextElement, container),
         editable.value,
       );
       const hasHangingIndent = visualLines.some(

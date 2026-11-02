@@ -885,6 +885,21 @@ export const getBoundTextMaxWidth = (
   return width - BOUND_TEXT_PADDING * 2;
 };
 
+/**
+ * YAZ-4074 6A item 34: the width a text box wraps at: its shape's text width, its own width
+ * when it has a fixed width, or no limit for an auto-size box. The canvas, the pill hit test,
+ * search and the editor overlay use this one rule, so they agree.
+ */
+export const getTextLayoutMaxWidth = (
+  textElement: ExcalidrawTextElement,
+  container: ExcalidrawElement | null,
+) =>
+  container
+    ? getBoundTextMaxWidth(container, textElement)
+    : textElement.autoResize
+    ? Infinity
+    : textElement.width;
+
 export const getBoundTextMaxHeight = (
   container: ExcalidrawElement,
   boundTextElement: ExcalidrawTextElementWithContainer,
