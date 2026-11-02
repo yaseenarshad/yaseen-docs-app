@@ -34,7 +34,10 @@ import { isFiniteNumber, isRecord } from './guards'
  * may sit in `assets/`, and a sweep that trashes unreferenced images there could eat one.
  */
 
-/** Mime → extension for the images the store keeps. Nothing else is an asset. */
+/**
+ * Mime → extension for the images the store keeps. Nothing else is an asset. YAZ-4071 7F: every type the engine accepts
+ * (`IMAGE_MIME_TYPES`), so a move out never drops a picture the board draws, and a pasted BMP saves.
+ */
 const EXT_BY_MIME: Readonly<Record<string, string>> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -42,6 +45,9 @@ const EXT_BY_MIME: Readonly<Record<string, string>> = {
   'image/svg+xml': 'svg',
   'image/webp': 'webp',
   'image/avif': 'avif',
+  'image/bmp': 'bmp',
+  'image/x-icon': 'ico',
+  'image/jfif': 'jfif',
 }
 
 /** Extension → mime, INCLUDING the spellings `extForMime` never writes (`jpeg`), which it must still read. */
@@ -53,6 +59,9 @@ const MIME_BY_EXT: Readonly<Record<string, string>> = {
   svg: 'image/svg+xml',
   webp: 'image/webp',
   avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  jfif: 'image/jfif',
 }
 
 /** The vault-relative folder the store lives in. Docs keeps it visible in the tree (YAZ-3028 D12). */

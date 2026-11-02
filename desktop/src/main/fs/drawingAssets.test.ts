@@ -28,12 +28,16 @@ describe('names and mimes', () => {
     expect(extForMime('image/jpeg')).toBe('jpg')
     expect(extForMime('image/svg+xml')).toBe('svg')
     expect(extForMime('image/avif')).toBe('avif')
-    expect(extForMime('image/bmp')).toBeNull()
+    // YAZ-4071 7F: every type the engine accepts has a home in the store.
+    expect(extForMime('image/bmp')).toBe('bmp')
+    expect(extForMime('image/x-icon')).toBe('ico')
+    expect(extForMime('image/jfif')).toBe('jfif')
+    expect(extForMime('image/tiff')).toBeNull()
     expect(extForMime('application/json')).toBeNull()
   })
 
   it('reads back every extension it writes — and `jpeg`, which it never writes but files carry', () => {
-    for (const mime of ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/webp', 'image/avif']) {
+    for (const mime of ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/webp', 'image/avif', 'image/bmp', 'image/x-icon', 'image/jfif']) {
       expect(mimeForAssetExt(extForMime(mime)!), mime).toBe(mime)
     }
     expect(mimeForAssetExt('jpeg')).toBe('image/jpeg')
@@ -44,7 +48,7 @@ describe('names and mimes', () => {
 
   it('names a file `<id>.<ext>` and refuses a mime it cannot store', () => {
     expect(assetFileName('abc123', 'image/png')).toBe('abc123.png')
-    expect(assetFileName('abc123', 'image/bmp')).toBeNull()
+    expect(assetFileName('abc123', 'image/tiff')).toBeNull()
   })
 
   it('reads the id back out of a name, and refuses dot-entries and empty stems', () => {
