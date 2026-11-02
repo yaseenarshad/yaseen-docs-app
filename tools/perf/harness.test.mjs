@@ -192,6 +192,17 @@ describe('long-day (YAZ-3861, YAZ-3737 D7)', () => {
     expect(longDay.leakMetrics([40, 42])).toMatchObject({ heapCycle1Mb: 40, heapStartMb: 42, heapEndOverStartRatio: 1 })
   })
 
+  it('YAZ-4071 7N: the idle end waits until the stopped TS worker\'s heap has left the window\'s footprint', () => {
+    // 7N's runs: the last cycle held a 285.7 MB worker heap in a 561.1 MB window; 10 s after the worker stopped the
+    // window was still 522 MB, 20 s after it 247 MB.
+    const last = { windowFootprintMb: 561.1, workerHeapMb: 285.7 }
+    expect(longDay.workerReleased(last, 522)).toBe(false)
+    expect(longDay.workerReleased(last, 247.5)).toBe(true)
+    // No worker heap at the last cycle (no code tab), or no footprint read: nothing to wait for.
+    expect(longDay.workerReleased({ windowFootprintMb: 450, workerHeapMb: 0 }, 450)).toBe(true)
+    expect(longDay.workerReleased({ windowFootprintMb: null, workerHeapMb: 189 }, null)).toBe(true)
+  })
+
   it('parseFootprint reads each process of `footprint -f bytes` as MB (YAZ-3862)', () => {
     const text = '====\nElectron Helper (Renderer) [52742]: 64-bit    Footprint: 487587840 B (16384 bytes per page)\n====\n====\nElectron Helper (Renderer) [7]: 64-bit    Footprint: 1048576 B (16384 bytes per page)\n'
     expect(parseFootprint(text)).toEqual(new Map([[52742, 465], [7, 1]]))

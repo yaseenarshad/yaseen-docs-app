@@ -5,7 +5,7 @@
  * After each cycle: GC 3 times, then the renderer's JS heap (and its workers' heaps), the RSS and the
  * physical footprint summed over EVERY renderer helper of the app (draw.io runs on `app://drawio`, in its own process while
  * a diagram is open) and main's JS heap after GC (S12). The run ends idle: it waits for the TS worker to stop (2 min after the
- * last code tab closes, YAZ-3862), then 30 s more, then one more sample. The `…EndMb` numbers are that one, the
+ * last code tab closes, YAZ-3862), then until its memory left the window (YAZ-4071 7N), then 30 s more, then one more sample. The `…EndMb` numbers are that one, the
  * `…LastCycleMb` ones the last cycle's.
  * Before the cycles, S11: the base cost of a window with no tab and one with one tab on the same vault, and of a
  * window on an empty vault; the gap is what the vault's index and tree cost each window.
@@ -196,8 +196,29 @@ function renderers(mainPid, windowPid) {
   return { rendererRssMb: sum(rss, 'rssMb'), rendererFootprintMb: sum(foot), renderers: rss.size, windowRssMb: rss.get(windowPid)?.rssMb ?? null, windowFootprintMb: foot.get(windowPid) ?? null }
 }
 
-/** How long the end of the run sits idle after the TS worker stopped: macOS gets a stopped worker's memory back 15 to 30 s later (YAZ-3862). */
+/** How long the end of the run sits idle after the TS worker's memory left (`workerReleased`). */
 const SETTLE_MS = 30_000
+
+/**
+ * YAZ-4071 7N: true once the stopped TS worker's memory has left the window's footprint. The worker's target goes when it
+ * stops, but its V8 heap (190 to 290 MB) leaves the renderer's footprint some time later: about 17 s in 7 of 8 runs at load 3,
+ * over 3 min in one. A fixed 30 s after the stop read 307.8 and 423 MB where the settled window holds about 235 MB. `last` is the
+ * last cycle's sample, which holds that heap: the worker's memory left once the footprint fell by half of it.
+ */
+export const workerReleased = (last, footprintMb) => last.workerHeapMb === 0 || last.windowFootprintMb === null || footprintMb <= last.windowFootprintMb - last.workerHeapMb / 2
+
+/** The longest wait for `workerReleased`; a heap still there after it counts in the end numbers. */
+const RELEASE_MAX_MS = 180_000
+
+/** Waits until `workerReleased`, at most RELEASE_MAX_MS. Returns the seconds it took, or null when the heap is still there. */
+async function workerRelease(proc, windowPid, last) {
+  const t0 = performance.now()
+  while (!workerReleased(last, renderers(proc.pid, windowPid).windowFootprintMb)) {
+    if (performance.now() - t0 > RELEASE_MAX_MS) return null
+    await sleep(1000)
+  }
+  return Math.round((performance.now() - t0) / 100) / 10
+}
 
 /** A session's JS heap after GC (MB): 3 collections, then `Runtime.getHeapUsage`. */
 async function heapAfterGc(s, times = 3) {
@@ -333,10 +354,12 @@ export async function run(app, fx) {
       if (snapshots !== null && (n === 1 || n === cycles)) await snapshot(page, path.join(snapshots, `cycle-${n}.heapsnapshot`))
     }
     const last = series.at(-1)
-    // The end, every tab closed: the TS worker stops, then SETTLE_MS more idle.
+    // The end, every tab closed: the TS worker stops, its memory leaves the window, then SETTLE_MS more idle.
     const tsWorkerStopSec = await tsWorkerStop(workers)
+    // A worker that never stopped has nothing to release: its heap counts in the end numbers.
+    const workerReleaseSec = tsWorkerStopSec === null ? null : await workerRelease(proc, windowPid, last)
     await sleep(SETTLE_MS)
-    const settled = { tsWorkerStopSec, ...(await sample(proc, page, windowPid, workers)) }
+    const settled = { tsWorkerStopSec, workerReleaseSec, ...(await sample(proc, page, windowPid, workers)) }
     console.error(`long-day settled: ${JSON.stringify(settled)}`)
     return {
       ...leakMetrics(series.map((s) => s.heapMb)),
