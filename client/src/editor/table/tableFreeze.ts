@@ -36,6 +36,9 @@
  *   only that row; a custom property on the block restyled every cell of the table on each scroll.
  *   Whole device pixels, rounded up the page (YAZ-3788). Layout px: divided by the document zoom, as
  *   the folder page does.
+ * - The table block's row and column handles sit in the note's coordinates, so they do not move with
+ *   the rows. When the offset changes, the block gets `TABLE_HANDLE_PLACE` and places its shown
+ *   handles again; over a pinned header, the column handle goes inside its top edge (YAZ-4170).
  * An unfrozen or removed table drops its listeners, its custom properties and its rows' animations.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -103,6 +106,9 @@ interface FreezeState {
 
 const freezeKey = new PluginKey<FreezeState>('mdapp-table-freeze')
 
+/** The table block's listener (the vendored `view/pointer.ts` has the same name, YAZ-4170): place the shown handles again. */
+export const TABLE_HANDLE_PLACE = 'milkdown-table-handle-place'
+
 /** One frozen table's listeners and custom properties, on its table block, and its rows' animations. */
 class Freezer {
   node: ProseNode | null = null
@@ -115,6 +121,8 @@ class Freezer {
   #observer: ResizeObserver | null = null
   /** Each moved row's animation (YAZ-3792). */
   #moved = new Map<HTMLElement, Animation>()
+  /** The rows' offset now, in layout px: a change moves the table block's handles too (YAZ-4170). */
+  #offset = 0
 
   constructor(readonly block: HTMLElement) {}
 
@@ -157,6 +165,7 @@ class Freezer {
     }
     this.#scroller = null
     this.#move([], 0)
+    this.#offset = 0
   }
 
   /** `frozen` moves down by `y` layout px; any other row this freezer moved goes back (its animation ends). */
@@ -212,7 +221,11 @@ class Freezer {
     // and a 1px seam shows the rows under them. `floor` puts the part under the note's top edge, never a gap.
     const ratio = window.devicePixelRatio || 1
     const screen = Math.floor(pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, frozenHeight) * ratio) / ratio
-    this.#move(Array.from({ length: this.#rows }, (_, r) => rows[r] as HTMLElement), screen / zoom)
+    const offset = screen / zoom
+    this.#move(Array.from({ length: this.#rows }, (_, r) => rows[r] as HTMLElement), offset)
+    if (offset === this.#offset) return
+    this.#offset = offset
+    this.block.dispatchEvent(new Event(TABLE_HANDLE_PLACE))
   }
 
   destroy(): void {

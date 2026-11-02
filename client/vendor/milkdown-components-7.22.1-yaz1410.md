@@ -67,6 +67,16 @@
   so the column handle centres on the part of the header cell that the block shows
   (`visibleRect` in `view/utils.ts`), not beside the table. The 8px edge zone that
   hid both handles is already gone (YAZ-3800, above).
+- YAZ-4170: a pinned header row and a frozen column A keep their handles. The app
+  pins a frozen header row at the note's top by moving it down
+  (`client/src/editor/table/tableFreeze.ts`). The block sees this from the layout
+  (the header row's top is below the table's top), and the column handle goes half
+  its height lower: inside the header's top edge, not above the note. The app sends
+  `milkdown-table-handle-place` (`TABLE_HANDLE_PLACE` in `view/pointer.ts`; the app
+  has its own copy) on the block when it moves the rows, and the block runs
+  `pointerReplay`, so the handles follow the rows. The row handle goes to the left of
+  the part of its row that the block shows (`visibleRect`): in a sideways scroll it
+  stays at the table's left edge, beside a frozen column A, not off the screen.
 
 Upstream PR: prepared, awaiting Yasin's go (the patch and PR text are in
 `client/vendor/upstream/list-item-restore/`); drop this hunk under

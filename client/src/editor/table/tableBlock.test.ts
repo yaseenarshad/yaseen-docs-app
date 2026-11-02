@@ -2,7 +2,7 @@
  * The vendored table block (`client/vendor/milkdown-components-7.22.1-yaz1410.*`) on the real editor in jsdom:
  * mouse cell select and no redraw on a decoration change (YAZ-3696 B2, B4), column resize (D2), no insert
  * line (YAZ-3800), the handles that ask for the app's table menu (YAZ-3820), and the handles in a sideways
- * scroll (YAZ-4169).
+ * scroll (YAZ-4169, YAZ-4170).
  * jsdom has no layout: `tableTestKit` gives each cell a 100 × 30 px box.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -313,6 +313,7 @@ function sidewaysScroll(view: EditorView) {
   const block = view.dom.querySelector<HTMLElement>('.milkdown-table-block')!
   block.getBoundingClientRect = () => new DOMRect(0, 0, 250, 150)
   const cells = [...view.dom.querySelectorAll<HTMLElement>('td, th')].map(cell => [cell, cell.getBoundingClientRect()] as const)
+  const rows = [...view.dom.querySelectorAll<HTMLTableRowElement>('tbody[data-content-dom] > tr')]
   let scrolled = 0
   view.posAtCoords = ({ left, top }) => {
     const pos = cellPos(view, Math.floor(top / 30), Math.floor((left + scrolled) / 100))
@@ -321,6 +322,7 @@ function sidewaysScroll(view: EditorView) {
   return (x: number) => {
     scrolled = x
     for (const [cell, box] of cells) cell.getBoundingClientRect = () => new DOMRect(box.x - x, box.y, box.width, box.height)
+    rows.forEach((row, r) => { row.getBoundingClientRect = () => new DOMRect(-x, r * 30, 400, 30) })
     block.dispatchEvent(new Event('scroll'))
   }
 }
@@ -349,5 +351,26 @@ describe('table block: the column handle stays on the column under the pointer i
     scrollTo(0)
     await placed()
     expect(col.style.left).toBe('50px')
+  })
+})
+
+// YAZ-4170: the row handle went to the left of the whole row. In a sideways scroll the row's start is scrolled out, so
+// the handle was far left of the table, off the screen, also beside a frozen column A, which stays in view.
+describe('table block: the row handle stays at the table\'s left edge in a sideways scroll (YAZ-4170)', () => {
+  it('the row handle goes to the left of the part of the row that the block shows', async () => {
+    const view = await mount(WIDE)
+    const scrollTo = sidewaysScroll(view)
+    const row = handle(view, 'row')
+    scrollTo(0)
+    pointerAt(view, 50, 75)
+    await placed()
+    // jsdom gives the handle no size: `left` is the left edge of the row's part that shows, `top` the row's middle.
+    expect(row.style.left).toBe('0px')
+    expect(row.style.top).toBe('75px')
+    // The block scrolls 150 px: the row starts at -150 px, and the block still shows it from 0 px.
+    scrollTo(150)
+    await placed()
+    expect(row.style.left).toBe('0px')
+    expect(row.style.top).toBe('75px')
   })
 })
