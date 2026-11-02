@@ -69,7 +69,16 @@ export const shrinkGifFile = async (file: File): Promise<File> => {
 
 type GifWorkerJob = { buffer: ArrayBuffer; maxSide: number };
 
-const shrinkGifBuffer = async (buffer: ArrayBuffer) => {
+/** YAZ-4074 6A item 18: one shrink at a time, so a drop of several big GIFs starts one worker, not one each. */
+let shrinkQueue: Promise<unknown> = Promise.resolve();
+
+const shrinkGifBuffer = (buffer: ArrayBuffer) => {
+  const shrink = shrinkQueue.then(() => shrinkOne(buffer));
+  shrinkQueue = shrink.catch(() => undefined);
+  return shrink;
+};
+
+const shrinkOne = async (buffer: ArrayBuffer) => {
   const pool = await getOrCreateWorkerPool();
   const result = await pool.postMessage(
     { buffer, maxSide: GIF_SHRINK_MAX_SIDE },
