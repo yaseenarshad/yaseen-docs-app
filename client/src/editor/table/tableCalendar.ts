@@ -420,7 +420,8 @@ export function slotTimes(table: ProseNode, slot: number, schema: Schema, fallba
   // Stable: a new row goes after the kept rows of an earlier time, before those of a later one.
   const sorted = [...kept, ...added].map((entry, i) => ({ ...entry, i })).sort((a, b) => a.time - b.time || a.i - b.i)
   const rows: ProseNode[] = []
-  for (const { time, row } of sorted) rows.push(row ?? emptyRow(time, rows.at(-1) ?? table.firstChild!))
+  // A new first row takes the first body row's vertical alignment, not the header's (YAZ-4176).
+  for (const { time, row } of sorted) rows.push(row ?? emptyRow(time, rows.at(-1) ?? body[0]!.row))
   return table.type.create(attrs, [table.firstChild!, ...rows])
 }
 
@@ -461,17 +462,22 @@ export function fillCalendarDay(view: EditorView, pos: number): boolean {
   })
   const sorted = [...kept, ...missing.map((time) => ({ time, row: null }))].map((entry, i) => ({ ...entry, i })).sort((a, b) => a.time - b.time || a.i - b.i)
   const rows: ProseNode[] = []
-  for (const { time, row } of sorted) rows.push(row ?? emptyRowAt(view.state.schema, body[0]?.row ?? table.firstChild!, format, time, rows.at(-1) ?? table.firstChild!))
+  // A new first row takes the first body row's vertical alignment, not the header's (YAZ-4176).
+  for (const { time, row } of sorted) rows.push(row ?? emptyRowAt(view.state.schema, body[0]!.row, format, time, rows.at(-1) ?? body[0]!.row))
   view.dispatch(closeHistory(view.state.tr).replaceWith(pos, pos + table.nodeSize, table.type.create(table.attrs, [table.firstChild!, ...rows])))
   return true
 }
 
-/** The table with a "Time" column before column A, a time in each body row from the Calendar day's start, `slot` apart (D7). */
+/**
+ * The table with a "Time" column before column A, a time in each body row from the Calendar day's start, `slot` apart
+ * (D7); its body cells vertically in the middle, as "/Calendar table" makes them (YAZ-4166, YAZ-4176).
+ */
 function withTimeColumn(table: ProseNode, slot: number, schema: Schema, format: string): ProseNode {
+  const { start } = calendarDaySetting()
   const rows: ProseNode[] = []
   table.forEach((row, _, r) => {
     const type = row.firstChild!.type
-    const first = cellNode(schema, type, r === 0 ? 'Time' : formatTime(format, calendarDaySetting().start + (r - 1) * slot))
+    const first = r === 0 ? cellNode(schema, type, 'Time') : cellNode(schema, type, formatTime(format, start + (r - 1) * slot), { valign: 'middle' })
     rows.push(row.type.create(row.attrs, [first, ...Array.from({ length: row.childCount }, (_, c) => row.child(c))]))
   })
   return table.type.create({ ...table.attrs, calendar: slot }, rows)

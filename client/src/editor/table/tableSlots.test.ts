@@ -159,6 +159,30 @@ describe('a slot change keeps all text (D8)', () => {
   })
 })
 
+describe('new time rows and cells take the vertical alignment of the time column (YAZ-4176)', () => {
+  /** Column A's vertical alignment in each row. */
+  const valignsOf = (node: ProseNode): unknown[] => {
+    const out: unknown[] = []
+    node.forEach((row) => out.push(row.firstChild!.attrs.valign))
+    return out
+  }
+
+  it('"On" for a table with no times: the new Time cells are in the middle, as "/Calendar table" makes them', async () => {
+    const { view } = await mount(table([['Plan', 'Notes'], ['Wake', ''], ['Gym', '']], ''))
+    setTimeSlots(view, firstTable(view.state.doc).pos, 30)
+    expect(valignsOf(firstTable(view.state.doc).node)).toEqual([null, 'middle', 'middle'])
+  })
+
+  it('"Fill the calendar day": a new first row takes the first body row\'s alignment, not the header row\'s', async () => {
+    const { view } = await mount(table([['Time', 'Plan'], ['7:00 am', 'Wake'], ['7:30 am', '']], 'valign A2:A3 middle, calendar 30m'))
+    setCalendarDaySetting(6 * 60, 8 * 60)
+    fillCalendarDay(view, firstTable(view.state.doc).pos)
+    const { node } = firstTable(view.state.doc)
+    expect(cellsOf(node).map(([time]) => time)).toEqual(['Time', '6:00 am', '6:30 am', '7:00 am', '7:30 am', '8:00 am'])
+    expect(valignsOf(node)).toEqual([null, 'middle', 'middle', 'middle', 'middle', 'middle'])
+  })
+})
+
 describe('"Time slots" in the six-dot menu (D7)', () => {
   const menu = (view: EditorView): MenuItem[] => tableRows(view, { inside: firstTable(view.state.doc).pos + 3 } as Parameters<typeof tableRows>[1], undefined as never)
   const slots = (view: EditorView) => menu(view).find((item) => 'label' in item && item.label === 'Time slots') as MenuChoiceField
