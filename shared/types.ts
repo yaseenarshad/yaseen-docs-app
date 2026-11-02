@@ -569,12 +569,45 @@ export interface BoardPicturesRequest {
   root: string
   path: string
   out: boolean
+  /**
+   * With `out: true` (YAZ-3943 demo round 3): the board's own pictures folder, relative to the vault root with `/`
+   * separators, or absolute for one outside the vault (`isValidPicturesFolder`, else `BAD_REQUEST`; an outside folder the
+   * user has not picked in the folder window is `BAD_REQUEST` too). Absent: the vault's `assets/`, and the key is cleared.
+   */
+  folder?: string
   /** Required: the mtime the tab last read or wrote. A differing disk mtime rejects `CONFLICT` and writes NOTHING. */
   expectedMtime: number
 }
 
 /** The file after the write — or as it was, when it already was that way (nothing written, the mtime unmoved). */
 export type BoardPicturesResponse = BoardReadOnlyResponse
+
+/**
+ * `dialog:pick-pictures-folder` (YAZ-3943 demo round 3): the native folder dialog for a board's own pictures folder —
+ * the cog's "Choose a folder…" and Settings › Files & Links › "In a folder you pick". It opens on `current` (the
+ * board's folder, relative or absolute) or the vault root, and answers the picked folder RELATIVE to `root` (`/`
+ * separators) when it is inside the vault, ABSOLUTE when it is outside — and then puts it on the approved list, so the
+ * app may write there. The vault itself, a system folder (`fs/picturesFolders.ts`) or a folder `isValidPicturesFolder`
+ * refuses is `BAD_REQUEST` with a readable message.
+ */
+export interface PickPicturesFolderRequest {
+  root: string
+  current?: string
+}
+
+export type PickPicturesFolderResponse = { folder: string } | { cancelled: true }
+
+/**
+ * `board:set-hover-links` (YAZ-3943 demo 2): the cog's "Link preview on hover" on a drawing, `on: false` written as
+ * `"hoverLinks": false` in the board's `yaseendraw` block. One read, one atomic write, as Read only.
+ */
+export interface BoardHoverLinksRequest {
+  root: string
+  path: string
+  on: boolean
+  /** Required: the mtime the tab last read or wrote. A differing disk mtime rejects `CONFLICT` and writes NOTHING. */
+  expectedMtime: number
+}
 
 /**
  * `fs:create-board` (YAZ-3028 D9): a NEW drawing or diagram, born with its empty content. Main picks
@@ -1580,6 +1613,14 @@ export interface SettingsState {
   confirmRename: boolean
   /** Files & Links (YAZ-3808 D2, D3): where a page opened in a new tab opens — next to the current tab, or at the end of the strip. ⌘T, the "+", Move to ▸ and Restore session always go to the end; a tab dropped on the strip goes where it is dropped. */
   newTabPlace: NewTabPlace
+  /** Files & Links (YAZ-3943 demo 2): where a NEW board keeps its pictures. 'assets' writes `"pictures": "assets"` into the board the app makes; existing boards are not touched. */
+  newBoardPictures: NewBoardPictures
+  /**
+   * Files & Links (YAZ-3943 demo round 3): with `newBoardPictures: 'folder'`, the folder a new board's pictures go to, relative to
+   * the root of whatever vault the board is made in, or absolute for a folder outside the vault (`isValidPicturesFolder`), written
+   * as `picturesFolder` beside `"pictures": "assets"`. `''` (not chosen yet) behaves as 'assets'.
+   */
+  newBoardPicturesFolder: string
   /** Rest the pointer on a note, drawing or diagram row to see it (Draw's YAZ-1800 D2; YAZ-3044 A20; notes since YAZ-3075 D5). Text, PDF and image rows never preview. */
   hoverPreview: boolean
   /** Each place's own say on the hover preview (YAZ-3403), under the `hoverPreview` master switch: a place shows it only while both are on (`hoverOn`). A place missing from a stored state reads on. */
@@ -1765,8 +1806,8 @@ export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
 export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers']
 
 /** The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover. */
-export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'links'
-export const HOVER_PLACES: readonly HoverPlace[] = ['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links']
+export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'links' | 'drawings'
+export const HOVER_PLACES: readonly HoverPlace[] = ['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links', 'drawings']
 
 /** Whether `place` shows the hover preview (YAZ-3403): the master switch and the place's own are both on. */
 export function hoverOn(settings: Pick<SettingsState, 'hoverPreview' | 'hoverPreviewIn'>, place: HoverPlace): boolean {
@@ -1870,6 +1911,10 @@ export const NEW_NOTE_LOCATIONS: readonly NewNoteLocation[] = ['root', 'current'
 export type NewTabPlace = 'next' | 'end'
 export const NEW_TAB_PLACES: readonly NewTabPlace[] = ['next', 'end']
 
+/** Where a new board keeps its pictures (YAZ-3943 demo 2): inside the board (D5, the default), in the assets folder, or in a folder the user picked (`newBoardPicturesFolder`, demo round 3). */
+export type NewBoardPictures = 'inside' | 'assets' | 'folder'
+export const NEW_BOARD_PICTURES: readonly NewBoardPictures[] = ['inside', 'assets', 'folder']
+
 /** Comment stream order (YAZ-1515): oldest-first (the model's order) or newest-first by the ROOT's `at`. */
 export type CommentsOrder = 'oldest' | 'newest'
 export const COMMENTS_ORDERS: readonly CommentsOrder[] = ['oldest', 'newest']
@@ -1943,9 +1988,11 @@ export const DEFAULT_SETTINGS: SettingsState = {
   newNoteFolder: '',
   confirmDelete: true,
   newTabPlace: 'next',
+  newBoardPictures: 'inside',
+  newBoardPicturesFolder: '',
   confirmRename: true,
   hoverPreview: true,
-  hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, links: true },
+  hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, links: true, drawings: true },
   commentsOrder: 'oldest',
   sidebarSort: DEFAULT_SIDEBAR_SORT,
   searchSort: DEFAULT_SEARCH_SORT,
@@ -2345,6 +2392,13 @@ export interface AppState {
    * missing folder falls back on (D5). Additive within version 1: an old build drops the key.
    */
   settingsFolder: string | null
+  /**
+   * The pictures folders OUTSIDE a vault that the user picked in the folder window (YAZ-3943 demo round 3), absolute. A
+   * board's block may name any folder, and the app reads pictures from it, but WRITES to an outside folder only when it
+   * is here (`fs/picturesFolders.ts`): a board file from someone else never makes the app write to an arbitrary place.
+   * Per machine, not in Settings; additive within version 1: an old build drops the key.
+   */
+  approvedPictureFolders: string[]
   /** The time of the settings this Mac has now (YAZ-3276 D3): its own last change of a field that travels, or the `savedAt` of the folder file it took. 0 = none. */
   settingsSavedAt: number
   /**
@@ -2473,7 +2527,7 @@ export function sameTabCanvas(a: TabCanvasState, b: TabCanvasState): boolean {
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, settingsSavedAt: 0, tabCanvas: defaultTabCanvas() }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, approvedPictureFolders: [], settingsSavedAt: 0, tabCanvas: defaultTabCanvas() }
 }
 
 export function defaultFolderState(): FolderState {

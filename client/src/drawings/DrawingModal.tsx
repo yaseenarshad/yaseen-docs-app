@@ -56,9 +56,10 @@ import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
 import type { DrawingSnapshot } from './ExcalidrawSurface'
 import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing'
-import { unpersistedFiles } from '@shared/drawingAssets'
+import { picturesFolderOutside, unpersistedFiles } from '@shared/drawingAssets'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
+import { usePicturesFolderAllow } from './usePicturesFolderAllow'
 import './drawingModal.css'
 
 /**
@@ -181,7 +182,12 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   /** The drawing's own file says read only (YAZ-3076 D2, S28): the engine's view mode, and nothing to save. */
   const readOnly = loaded?.scene.readOnly === true
   // The drawing's page links (YAZ-4039), as in a drawing tab: pills, hover, the open gestures, the menu, the picker, paste.
-  const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path: loaded?.path ?? root, readOnly, hotkeys, onNotice, hostRef: sheetRef, props: linkProps })
+  // The hover preview: "Links in drawings" AND the board's own switch (YAZ-3943 demo 2), read from the file.
+  const hoverLinks = linkProps.hoverLinks === true && loaded?.scene.hoverLinksOff !== true
+  const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path: loaded?.path ?? root, readOnly, hotkeys, onNotice, hostRef: sheetRef, props: { ...linkProps, hoverLinks } })
+  // YAZ-3943 demo round 3: a board naming an outside pictures folder this Mac has not allowed asks once when it opens here too.
+  const outsideFolder = loaded?.scene.picturesOut === true && loaded.scene.picturesFolder !== undefined && picturesFolderOutside(loaded.scene.picturesFolder) ? loaded.scene.picturesFolder : null
+  const { sheet: allowSheet } = usePicturesFolderAllow(outsideFolder, onNotice)
 
   /** One guarded write of the live scene; `Autosave` calls it once per save, never once per change. */
   const write = useCallback(
@@ -351,6 +357,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
           )}
         </div>
         <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={linkProps.diagramDarkColors ?? 'adapt'} />
+        {allowSheet}
       </div>
     </div>
   )

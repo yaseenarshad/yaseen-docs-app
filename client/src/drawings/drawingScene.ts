@@ -14,7 +14,7 @@
  * partial render: a half-parsed scene would be a lie about what the file holds.
  */
 import type { DrawingFileEntry } from '@shared/types'
-import { BOARD_META_KEY, picturesOut, referencedFileIds } from '@shared/drawingAssets'
+import { BOARD_META_KEY, hoverLinksOff, picturesFolderOf, picturesOut, referencedFileIds } from '@shared/drawingAssets'
 import { isRecord } from '@shared/guards'
 import { isDrawingReadOnly } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
@@ -31,12 +31,18 @@ export interface DrawingScene {
   readonly readOnly?: boolean
   /** `"pictures": "assets"` in the block (YAZ-3943 D5), read in the same parse; absent = the pictures are inside. */
   readonly picturesOut?: boolean
+  /** The board's own pictures folder (`picturesFolder`, YAZ-3943 demo round 3), vault-relative, when the block names a valid one. */
+  readonly picturesFolder?: string
+  /** `"hoverLinks": false` in the block (YAZ-3943 demo 2): the board's link preview on hover is off; absent = on. */
+  readonly hoverLinksOff?: boolean
 }
 
-/** The scene's two switches, each present only when it is on: a plain scene keeps the shape it always had. */
-const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true; picturesOut?: true } => ({
+/** The scene's switches, each present only when it is not the default: a plain scene keeps the shape it always had. */
+const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true; picturesOut?: true; picturesFolder?: string; hoverLinksOff?: true } => ({
   ...(isDrawingReadOnly(scene) ? { readOnly: true } : {}),
   ...(picturesOut(scene[BOARD_META_KEY]) ? { picturesOut: true } : {}),
+  ...(picturesFolderOf(scene[BOARD_META_KEY]) === null ? {} : { picturesFolder: picturesFolderOf(scene[BOARD_META_KEY]) as string }),
+  ...(hoverLinksOff(scene[BOARD_META_KEY]) ? { hoverLinksOff: true } : {}),
 })
 
 /** Embed targets that get a preview — everything else renders exactly as it always has. */

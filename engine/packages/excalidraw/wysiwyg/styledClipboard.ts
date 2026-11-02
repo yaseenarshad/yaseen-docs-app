@@ -1,5 +1,6 @@
 import {
   getBulletMarkerForDepth,
+  getNearestNoteHighlight,
   normalizeTextRuns,
   TEXT_HIGHLIGHT_FILLS,
   TEXT_LIST_INDENT,
@@ -42,8 +43,28 @@ const highlightOf = (element: Element) => {
   return name && Object.hasOwn(TEXT_HIGHLIGHT_FILLS, name) ? name : "yellow";
 };
 
-/** The style a tag adds to the letters inside it. */
-const styleOf = (element: Element): TextRunStyle => {
+/**
+ * YAZ-3943 demo 2: the style an element's inline CSS gives (Google Docs
+ * writes `<span style="font-weight:700">`); colors and fonts are dropped.
+ */
+const cssStyleOf = (element: Element): TextRunStyle => {
+  const css = element.getAttribute("style") ?? "";
+  const decoration = /text-decoration[^:;]*:([^;]*)/.exec(css)?.[1] ?? "";
+  return {
+    ...(/font-weight:\s*(bold|[6-9]00)/.test(css) ? { bold: true } : {}),
+    ...(/font-style:\s*italic/.test(css) ? { italic: true } : {}),
+    ...(decoration.includes("underline") ? { underline: true } : {}),
+    ...(decoration.includes("line-through") ? { strikethrough: true } : {}),
+  };
+};
+
+/** The style a tag, and its inline CSS, add to the letters inside it. */
+const styleOf = (element: Element): TextRunStyle => ({
+  ...tagStyleOf(element),
+  ...cssStyleOf(element),
+});
+
+const tagStyleOf = (element: Element): TextRunStyle => {
   switch (element.tagName) {
     case "STRONG":
       return { bold: true };
@@ -65,6 +86,14 @@ const styleOf = (element: Element): TextRunStyle => {
       return { strikethrough: true };
     case "MARK":
       return { highlight: highlightOf(element) };
+    // YAZ-3943 demo 2: a heading is bold text
+    case "H1":
+    case "H2":
+    case "H3":
+    case "H4":
+    case "H5":
+    case "H6":
+      return { bold: true };
     default:
       return {};
   }
@@ -72,11 +101,20 @@ const styleOf = (element: Element): TextRunStyle => {
 
 /**
  * The text and runs of pasted HTML: blocks are lines, a list item gets the
- * text box's marker, and a link keeps its words (a `[[link]]` is text, so it
- * is a pill again). Null when no letter has a style: the paste stays plain.
+ * text box's marker, a heading is bold, and a link keeps its words (a
+ * `[[link]]` is text, so it is a pill again). At most one blank line in a
+ * row. Null when no letter has a style: the paste stays plain.
+ *
+ * YAZ-3943 demo 2 (a paste on the board): `keepPlain` gives the text with no
+ * style too, and `linkOf` turns a link's address into the board's `[[link]]`
+ * (a vault page), in place of its words.
  */
 export const parseStyledHtml = (
   html: string,
+  options?: {
+    keepPlain?: boolean;
+    linkOf?: (href: string) => string | null | undefined;
+  },
 ): { text: string; textRuns: readonly ExcalidrawTextRun[] } | null => {
   const template = document.createElement("template");
   template.innerHTML = html;
@@ -87,9 +125,21 @@ export const parseStyledHtml = (
       text += "\n";
     }
   };
-  const walk = (node: Node, style: TextRunStyle, depth: number) => {
+  const walk = (
+    node: Node,
+    style: TextRunStyle,
+    depth: number,
+    pre = false,
+  ) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      const value = (node.textContent ?? "").replace(/ /g, " ");
+      let value = (node.textContent ?? "").replace(/ /g, " ");
+      // HTML's white space is one space, except in a code block
+      if (!pre) {
+        value = value.replace(/[\t\n\r ]+/g, " ");
+        if (!text || text.endsWith("\n")) {
+          value = value.replace(/^ /, "");
+        }
+      }
       // the white space between blocks is no text
       if (!value.trim() && (!text || text.endsWith("\n"))) {
         return;
@@ -108,7 +158,18 @@ export const parseStyledHtml = (
       return;
     }
     if (node.tagName === "BR") {
-      text += "\n";
+      // at most one blank line in a row
+      if (text && !text.endsWith("\n\n")) {
+        text += "\n";
+      }
+      return;
+    }
+    const link =
+      node.tagName === "A" && options?.linkOf
+        ? options.linkOf(node.getAttribute("href") ?? "")
+        : null;
+    if (link) {
+      text += link;
       return;
     }
     const block = BLOCKS.has(node.tagName);
@@ -135,12 +196,12 @@ export const parseStyledHtml = (
       if (first && child instanceof Element && child.tagName === "P") {
         first = false;
         for (const grandchild of child.childNodes) {
-          walk(grandchild, inner, innerDepth);
+          walk(grandchild, inner, innerDepth, pre);
         }
         continue;
       }
       first = false;
-      walk(child, inner, innerDepth);
+      walk(child, inner, innerDepth, pre || node.tagName === "PRE");
     }
     if (block) {
       newLine();
@@ -149,9 +210,13 @@ export const parseStyledHtml = (
   for (const child of template.content.childNodes) {
     walk(child, {}, 0);
   }
-  text = text.replace(/\n+$/, "");
+  text = text.replace(/\s+$/, "");
   const textRuns = normalizeTextRuns(runs, text.length);
-  return textRuns ? { text, textRuns } : null;
+  return textRuns
+    ? { text, textRuns }
+    : options?.keepPlain && text
+    ? { text, textRuns: [] }
+    : null;
 };
 
 const escapeHtml = (value: string) =>
@@ -165,10 +230,12 @@ const escapeHtml = (value: string) =>
 const wrap = (value: string, style: TextRunStyle) => {
   let html = escapeHtml(value);
   if (style.highlight) {
+    // a custom highlight (YAZ-3943 demo 2) is the nearest of the note's four
+    const note = getNearestNoteHighlight(style.highlight);
     html =
-      style.highlight === "yellow"
+      note === "yellow"
         ? `<mark>${html}</mark>`
-        : `<mark class="highlight-${style.highlight}">${html}</mark>`;
+        : `<mark class="highlight-${note}">${html}</mark>`;
   }
   if (style.strikethrough) {
     html = `<del>${html}</del>`;
@@ -236,4 +303,34 @@ export const getStyledHtml = (
     lines[lines.length - 1] += wrap(piece, run ?? {});
   }
   return lines.map((line) => `<p>${line}</p>`).join("");
+};
+
+/**
+ * YAZ-3943 demo 2: plain pasted text for ONE text box: at most one blank line
+ * in a row, and `-`, `*` or `+` list lines as the box's bullets, with their
+ * indent (the smallest indent is one step).
+ */
+export const getPlainPasteText = (text: string) => {
+  const lines = text
+    .replace(/\r\n?/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .split("\n");
+  const bullet = /^([ \t]*)[-*+][ \t]+/;
+  const width = (indent: string) => indent.replace(/\t/g, "    ").length;
+  const indents = lines
+    .map((line) => bullet.exec(line)?.[1])
+    .filter((indent): indent is string => !!indent)
+    .map(width);
+  const step = indents.length ? Math.min(...indents) : 4;
+  return lines
+    .map((line) =>
+      line.replace(bullet, (_, indent: string) => {
+        const depth = Math.floor(width(indent) / step);
+        return `${TEXT_LIST_INDENT.repeat(depth)}${getBulletMarkerForDepth(
+          depth,
+        )} `;
+      }),
+    )
+    .join("\n");
 };

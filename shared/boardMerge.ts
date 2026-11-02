@@ -1,4 +1,4 @@
-import { BOARD_META_KEY, PICTURES_KEY, SWITCHED_KEY } from './drawingAssets'
+import { BOARD_META_KEY, HOVER_LINKS_KEY, PICTURES_FOLDER_KEY, PICTURES_KEY, SWITCHED_KEY } from './drawingAssets'
 import { READ_ONLY_KEY } from './readOnly'
 import { isFiniteNumber, isRecord } from './guards'
 
@@ -166,8 +166,12 @@ export function mergeBoards(baseText: string, theirsText: string, mineText: stri
   return { json: `${JSON.stringify(doc, null, 2)}\n`, clashes: clashed.size }
 }
 
-/** The switches of the block (YAZ-3943 1E): Read only and "pictures out". "Off" is no key. */
-const SWITCHES = [READ_ONLY_KEY, PICTURES_KEY]
+/**
+ * The switches of the block (YAZ-3943 1E): Read only, "pictures out" and the link preview on hover (demo 2). The default is
+ * no key. A board's own pictures folder (`picturesFolder`, demo round 3) rides with "pictures out": one switch, one time.
+ */
+const SWITCHES = [READ_ONLY_KEY, PICTURES_KEY, HOVER_LINKS_KEY]
+const RIDES_WITH: Readonly<Record<string, readonly string[]>> = { [PICTURES_KEY]: [PICTURES_FOLDER_KEY] }
 
 /** When the switch `key` of `block` last changed; a switch with no time is older than any change. */
 const switchTime = (block: Record<string, unknown>, key: string): number => {
@@ -189,8 +193,10 @@ function mergeMeta(theirs: unknown, mine: unknown): Record<string, unknown> | nu
     const [t, m] = [switchTime(theirs, key), switchTime(mine, key)]
     if (t === m) continue
     const newest = t > m ? theirs : mine
-    if (key in newest) meta[key] = newest[key]
-    else delete meta[key]
+    for (const k of [key, ...(RIDES_WITH[key] ?? [])]) {
+      if (k in newest) meta[k] = newest[k]
+      else delete meta[k]
+    }
     times[key] = Math.max(t, m)
   }
   if (Object.keys(times).length > 0) meta[SWITCHED_KEY] = times

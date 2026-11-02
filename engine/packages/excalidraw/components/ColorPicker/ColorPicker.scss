@@ -30,6 +30,16 @@
       max-width: 11rem;
     }
 
+    // YAZ-3943 demo 2: three picks and a ▾, no separator
+    &.color-picker-container--more {
+      column-gap: 0.125rem;
+      grid-template-columns: auto auto;
+
+      .color-picker__top-picks {
+        gap: 0.25rem;
+      }
+    }
+
     &.color-picker-container--no-top-picks {
       display: flex;
       justify-content: center;
@@ -41,6 +51,34 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+  }
+
+  // YAZ-3943 demo 2: the ▾'s small popover: one row of picks, then "Custom…"
+  .color-picker__more-popover {
+    .color-picker__top-picks {
+      gap: 0.25rem;
+    }
+
+    .color-picker__custom {
+      background: transparent;
+      border: 0;
+      border-radius: 4px;
+      color: var(--text-primary-color);
+      cursor: pointer;
+      font-size: 0.75rem;
+      margin-top: 0.35rem;
+      padding: 0.2rem 0.3rem;
+      text-align: left;
+      width: 100%;
+
+      &:hover {
+        background: var(--button-hover-bg);
+      }
+    }
+  }
+
+  .color-picker__more-anchor {
+    display: inline-flex;
   }
 
   .color-picker__button {

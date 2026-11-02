@@ -62,6 +62,8 @@ export const DRAWING_KEYS: readonly KeyRow[] = [
   key('textItalic', 'Italic', ['CmdOrCtrl+I'], 'A selected text; while you type, ⌘I stays'),
   key('textUnderline', 'Underline', ['CmdOrCtrl+U'], 'A selected text; while you type, ⌘U stays'),
   key('textStrikethrough', 'Strikethrough', ['CmdOrCtrl+Shift+X'], 'A selected text; while you type, ⌘⇧X stays'),
+  // YAZ-4102 3E: highlight letters, as in a note (the note's ⌘⇧H); the text editor hears the changed key too.
+  key('textHighlight', 'Highlight the selected letters', ['CmdOrCtrl+Shift+H'], 'While you type a text, as in a note; the toolbar has the other colours'),
   key('clearTextFormatting', 'Clear text formatting', ['CmdOrCtrl+\\']),
   key('decreaseFontSize', 'Smaller text', ['CmdOrCtrl+Shift+,'], 'While you type, ⌘⇧< stays'),
   key('increaseFontSize', 'Larger text', ['CmdOrCtrl+Shift+.'], 'While you type, ⌘⇧> stays'),
@@ -110,8 +112,6 @@ export const DRAWING_KEYS: readonly KeyRow[] = [
   fixed('fonts', 'Open the fonts', ['Shift+F'], 'With the text tool, or a text selected'),
   fixed('eyedropper', 'Pick a colour off the canvas', ['I', 'Shift+G', 'Shift+S'], 'I or ⇧G for the background, ⇧S for the stroke'),
   fixed('textEditing', 'While you type a text: indent, outdent, finish', [], 'Tab / ⇧Tab or ⌘] / ⌘[ indent and outdent a list; ⌘⏎ or Esc ends the text'),
-  // YAZ-4102 3E: highlight letters, as in a note (the note's ⌘⇧H); only while you type, so it is built in.
-  fixed('textHighlight', 'Highlight the selected letters', ['CmdOrCtrl+Shift+H'], 'While you type a text, as in a note; the toolbar has the other colours'),
   // The presentation player (`presentation/PresentationPlayer.tsx`): its arrows, Space and Esc are the canvas's keys too.
   fixed('presentSteps', 'In a presentation: next and previous slide', [], '→, Page Down or Space: next; ←, Page Up: previous; Esc: back to the deck'),
   fixed('presentEnds', 'In a presentation: first / last slide', ['Home', 'End']),

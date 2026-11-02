@@ -36,10 +36,19 @@
  * come back from load as not-stored, so its next save is the shrink. The persisted set only ever
  * grows, so the same image is never shipped twice in one session. A save that moved the pictures
  * out by the 50 MB rule (`movedOut`) shows the one notice.
+ *
+ * THE COG'S PICTURE MOVES (YAZ-3943 D5, demo round 3): a board's pictures are inside, in the vault's
+ * `assets/`, or in a folder of the board's own (`picturesFolder` in the block: vault-relative, or absolute
+ * for a folder outside the vault, shown as `~/…`). Each move asks first, in the app's own confirm sheet
+ * with the real count, size and places (`picturesMoveAsk`; an outside folder adds its one warning); "Choose a
+ * folder…" opens the native folder dialog (`dialog:pick-pictures-folder`) and asks after the pick. Cancel,
+ * Esc or a click outside changes nothing. The sheet is built on the click, never on a keystroke. A board that
+ * opens naming an outside folder this Mac has not approved asks once to allow it (`usePicturesFolderAllow`).
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse, PageView } from '@shared/types'
-import { missingPicturesText, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
+import { missingPicturesText, picturesFolderOutside, picturesSize, unpersistedFiles, withHomeTilde } from '@shared/drawingAssets'
+import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
 import { api, BridgeRequestError } from '../api'
@@ -57,6 +66,7 @@ import { parseSceneText, type DrawingScene } from './drawingScene'
 import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi } from './ExcalidrawSurface'
 import { pressed } from './drawingKeys'
 import { PICTURES_MOVED_OUT } from './saveDrawing'
+import { usePicturesFolderAllow } from './usePicturesFolderAllow'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
 import './drawingEditor.css'
 
@@ -66,32 +76,88 @@ export const BROKEN_DRAWING_DOCUMENT = "This Excalidraw drawing can't be opened:
 /** YAZ-3943 D5: the size row turns amber from here, well before the 50 MB rule moves the pictures out. */
 export const PICTURES_WARN_BYTES = 20 * 1024 * 1024
 
+/** Where a board's pictures are (YAZ-3943 D5, demo round 3): in its file, in the vault's `assets/`, or in a folder of its own. */
+export type PicturesPlace = 'inside' | 'assets' | 'folder'
+
+/** A folder path as the cog's row shows it: its last name (the whole path is the row's `title`). */
+const lastName = (folder: string): string => folder.slice(folder.lastIndexOf('/') + 1)
+
+/** The one warning an outside folder adds to the confirm box (YAZ-3943 demo round 3). */
+export const OUTSIDE_FOLDER_WARNING = 'This folder is outside the vault. Your other Macs, Version history and copies of the vault will not have these pictures unless you sync this folder yourself.'
+
 /**
- * The drawing's cog rows after "Read only" (YAZ-3943 D5, D13): the pictures' size and count, the button
- * that moves them out or back in, then the two exports. No picture: no size row and no button. The
- * button writes the file, so Read only greys it out; the exports write elsewhere and stay.
+ * The drawing's cog rows after "Read only" (YAZ-3943 D5, D13): the pictures' size, count and place, the
+ * moves to the places they are not in (demo round 3: "Keep pictures inside", "Move to the assets folder",
+ * and always "Choose a folder…", since another folder is always a place), then the two exports. No picture:
+ * no size row and no move. A move writes the file, so Read only greys it out; the exports write elsewhere and stay.
  */
-export function drawingCogRows({ pictures, out, readOnly, onMovePictures, onExportImage, onExportDrawing }: {
+export function drawingCogRows({ pictures, out, folder, home = '', folderAllowed, onAllowFolder, readOnly, onMovePictures, onExportImage, onExportDrawing, hoverLinks, onHoverLinks }: {
   pictures: { bytes: number; count: number; missing?: number }
   out: boolean
+  /** The board's own pictures folder (demo round 3), vault-relative or absolute, while `out`; absent: the vault's `assets/`. */
+  folder?: string
+  /** The user's home folder: an outside folder's full path shows as `~/…` in the row's `title`. '' until main answers. */
+  home?: string
+  /** `false`: `folder` is outside the vault and this Mac has not allowed it — the amber line and "Allow…" (`usePicturesFolderAllow`). */
+  folderAllowed?: boolean | null
+  onAllowFolder?: () => void
   readOnly: boolean
-  onMovePictures: () => void
+  /** A move to `to`; `'folder'` opens the folder dialog first. The host asks before it moves. */
+  onMovePictures: (to: PicturesPlace) => void
   onExportImage: () => void
   onExportDrawing: () => void
+  /** The board's own "Link preview on hover" (YAZ-3943 demo 2), under Read only; absent: no row. */
+  hoverLinks?: boolean
+  onHoverLinks?: () => void
 }): PageSwitch[] {
   const rows: PageSwitch[] = []
+  // It writes the file, so Read only greys it out, as "Move pictures out".
+  if (onHoverLinks !== undefined) rows.push({ label: 'Link preview on hover', on: hoverLinks === true, onToggle: onHoverLinks, disabled: readOnly })
+  const place: PicturesPlace = !out ? 'inside' : folder === undefined ? 'assets' : 'folder'
   if (pictures.count > 0) {
-    // In words, count first (YAZ-3943 demo): "6 pictures in this file (3.3 MB)".
+    // In words, count first (YAZ-3943 demo): "6 pictures in this file (3.3 MB)", "… in the assets folder …", "… in Board pictures …".
     const what = pictures.count === 1 ? '1 picture' : `${pictures.count} pictures`
-    const where = out ? 'in the assets folder' : 'in this file'
-    rows.push({ label: `${what} ${where} (${formatBytes(pictures.bytes)})`, warn: !out && pictures.bytes >= PICTURES_WARN_BYTES, divider: true })
+    const where = place === 'inside' ? 'in this file' : place === 'assets' ? 'in the assets folder' : `in ${lastName(folder as string)}`
+    rows.push({ label: `${what} ${where} (${formatBytes(pictures.bytes)})`, title: place === 'folder' ? withHomeTilde(folder as string, home) : undefined, warn: !out && pictures.bytes >= PICTURES_WARN_BYTES, divider: true })
   }
-  // YAZ-3943 1F: pictures the board uses that are in neither the file nor `assets/`, in amber.
+  // Demo round 3: an outside folder this Mac said "Not now" to — new pictures go to `assets/` until it is allowed.
+  if (place === 'folder' && folderAllowed === false) {
+    rows.push({ label: 'Folder not allowed on this Mac', warn: true, divider: pictures.count === 0 })
+    if (onAllowFolder !== undefined) rows.push({ label: 'Allow…', onToggle: onAllowFolder, disabled: readOnly })
+  }
+  // YAZ-3943 1F: pictures the board uses that are in neither the file, its folder nor `assets/`, in amber.
   const missing = pictures.missing ?? 0
   if (missing > 0) rows.push({ label: missingPicturesText(missing), warn: true, divider: pictures.count === 0 })
-  if (pictures.count > 0) rows.push({ label: out ? 'Keep pictures inside' : 'Move pictures out', onToggle: onMovePictures, disabled: readOnly })
+  if (pictures.count > 0) {
+    if (place !== 'inside') rows.push({ label: 'Keep pictures inside', onToggle: () => onMovePictures('inside'), disabled: readOnly })
+    if (place !== 'assets') rows.push({ label: 'Move to the assets folder', onToggle: () => onMovePictures('assets'), disabled: readOnly })
+    rows.push({ label: 'Choose a folder…', onToggle: () => onMovePictures('folder'), disabled: readOnly })
+  }
   rows.push({ label: 'Export Image or PDF…', onToggle: onExportImage, divider: true }, { label: 'Export Excalidraw Drawing…', onToggle: onExportDrawing })
   return rows
+}
+
+/** Where the pictures are now, as the confirm box names it: "this board's file", "the vault's assets folder", or the folder's path (`~/…` outside the vault). */
+export const picturesPlaceText = (out: boolean, folder: string | null, home = ''): string => (!out ? "this board's file" : folder === null ? "the vault's assets folder" : withHomeTilde(folder, home))
+
+/**
+ * What the confirm box before a picture move says (YAZ-3943 demo round 3), in the user's words: the real count and
+ * size, where the pictures are now (`from`, `picturesPlaceText`) and where they go. Plain, short sentences. A folder
+ * outside the vault adds `OUTSIDE_FOLDER_WARNING`.
+ */
+export function picturesMoveAsk(to: PicturesPlace, pictures: { count: number; bytes: number }, from: string, folder?: string, home = ''): { title: string; body: string; confirm: string } {
+  const one = pictures.count === 1
+  const what = `The ${one ? '1 picture' : `${pictures.count} pictures`} (${formatBytes(pictures.bytes)})`
+  const alone = 'The board file gets smaller. If you copy this board by itself, its pictures do not go with it.'
+  if (to === 'inside') {
+    return { title: 'Keep pictures inside this board?', body: `${what} ${one ? 'is' : 'are'} copied into this board's file. The board file gets bigger. The copies in ${from} stay. The app never deletes picture files.`, confirm: 'Keep inside' }
+  }
+  if (to === 'assets') {
+    return { title: 'Move pictures out of this board?', body: `${what} ${one ? 'moves' : 'move'} from ${from} to the vault's assets folder. ${alone} To bring them back, use "Keep pictures inside" in this menu.`, confirm: 'Move pictures' }
+  }
+  const path = folder ?? ''
+  const outside = picturesFolderOutside(path) ? ` ${OUTSIDE_FOLDER_WARNING}` : ''
+  return { title: `Move pictures to ${lastName(path)}?`, body: `${what} ${one ? 'moves' : 'move'} from ${from} to ${withHomeTilde(path, home)}. ${alone} Keep this folder${outside === '' ? ' in the vault' : ''}. If you rename or delete it, the board shows missing pictures.${outside}`, confirm: 'Move pictures' }
 }
 
 /** What a board with missing pictures says when it opens (YAZ-3943 1F): "3 pictures of this board are missing". */
@@ -177,6 +243,15 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
   const persisted = useRef(new Set(loaded.stored))
   /** `"pictures": "assets"` as the file last said it (YAZ-3943 D5): the load, each reload, the 50 MB rule, the cog's button. */
   const [picturesOut, setPicturesOut] = useState(loaded.scene.picturesOut === true)
+  /** The board's own pictures folder as the file last said it (demo round 3); null: the vault's `assets/`. */
+  const [picturesFolder, setPicturesFolder] = useState<string | null>(loaded.scene.picturesFolder ?? null)
+  /** The picture move the confirm box is asking about (demo round 3), with the count and size it shows; null: no box. */
+  const [picturesAsk, setPicturesAsk] = useState<{ to: PicturesPlace; folder?: string; count: number; bytes: number } | null>(null)
+  // The ask for an outside folder this Mac has not allowed (demo round 3), once per open; `home` for `~/…`.
+  const outsideFolder = picturesOut && picturesFolder !== null && picturesFolderOutside(picturesFolder) ? picturesFolder : null
+  const { allowed: folderAllowed, askAllow, home, sheet: allowSheet } = usePicturesFolderAllow(outsideFolder, onNotice)
+  /** The board's own "Link preview on hover" (YAZ-3943 demo 2): `"hoverLinks": false` as the file last said it. */
+  const [hoverLinksOff, setHoverLinksOff] = useState(loaded.scene.hoverLinksOff === true)
 
   // Fresh closures every render are fine: the hook reads them through its `engine` ref, never stale.
   const board = useDocumentHost({
@@ -196,6 +271,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       for (const id of res.persisted) persisted.current.add(id)
       if (res.movedOut === true) {
         setPicturesOut(true)
+        setPicturesFolder(null)
         onNotice?.(PICTURES_MOVED_OUT)
       }
       return res
@@ -208,6 +284,8 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
         reloadedTo.current = doc.mtime
         persisted.current = new Set(doc.stored)
         setPicturesOut(doc.scene.picturesOut === true)
+        setPicturesFolder(doc.scene.picturesFolder ?? null)
+        setHoverLinksOff(doc.scene.hoverLinksOff === true)
         a.reset(s.replaceScene(doc.scene), doc.mtime)
         return doc.scene.readOnly === true
       } catch (err) {
@@ -229,7 +307,8 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     focus: () => surface.current?.focus(),
   })
   const { autosave, start, chips, readOnly, reload } = board
-  const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: linkProps })
+  // The hover preview: the app's "Links in drawings" AND this board's own switch (YAZ-3943 demo 2); clicks stay.
+  const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: { ...linkProps, hoverLinks: linkProps.hoverLinks === true && !hoverLinksOff } })
   /**
    * Read only (YAZ-3076 D2): the engine is in view mode, so nothing should change; a snapshot whose
    * version moves anyway (a door the view mode does not close) is kept off disk, and the canvas is
@@ -317,16 +396,19 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
   }
 
   /**
-   * The cog's "Move pictures out" / "Keep pictures inside" (YAZ-3943 D5): `board:set-pictures`, beside the
+   * The cog's picture moves (YAZ-3943 D5, demo round 3), once the box is confirmed: `board:set-pictures`, beside the
    * autosave as the Read only switch is (`writeBeside`: pending edits save first, then the one write, and
    * its mtime is adopted, so the watcher's echo reloads nothing). A file changed on disk first is refused.
+   * `folder` is the board's own folder for `'folder'`; `'assets'` clears it.
    */
-  const movePictures = async (out: boolean): Promise<void> => {
+  const movePictures = async (to: PicturesPlace, folder?: string): Promise<void> => {
     const a = autosave.current
     if (a === null || board.retired.current) return
+    const out = to !== 'inside'
     try {
-      await a.writeBeside((expectedMtime) => api.setBoardPictures({ root, path, out, expectedMtime }))
+      await a.writeBeside((expectedMtime) => api.setBoardPictures({ root, path, out, ...(out && folder !== undefined ? { folder } : {}), expectedMtime }))
       setPicturesOut(out)
+      setPicturesFolder(out ? (folder ?? null) : null)
     } catch (err) {
       if (err instanceof BridgeRequestError && err.code === 'CONFLICT') {
         onNotice?.('The file changed on disk. Try again.', 'error')
@@ -337,10 +419,47 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     }
   }
 
+  /**
+   * A cog click (demo round 3): "Choose a folder…" opens the native folder dialog first — a pick outside the vault
+   * comes back refused with its reason, a cancel does nothing — then every move asks in the confirm box, with the
+   * count and size the canvas has now; the box's "Move pictures" / "Keep inside" is what calls `movePictures`.
+   */
+  const askMovePictures = async (to: PicturesPlace): Promise<void> => {
+    if (board.retired.current) return
+    const { count, bytes } = surface.current?.pictures() ?? { bytes: 0, count: 0 }
+    if (to !== 'folder') {
+      setPicturesAsk({ to, count, bytes })
+      return
+    }
+    try {
+      const res = await api.pickPicturesFolder({ root, ...(picturesFolder === null ? {} : { current: picturesFolder }) })
+      if ('folder' in res && !board.retired.current) setPicturesAsk({ to, folder: res.folder, count, bytes })
+    } catch (err) {
+      onNotice?.(err instanceof BridgeRequestError && err.message !== '' ? err.message : "The folder couldn't be chosen.", 'error')
+    }
+  }
+
+  /** The cog's "Link preview on hover" (YAZ-3943 demo 2): `board:set-hover-links`, beside the autosave as "Move pictures out". */
+  const setHoverLinks = async (on: boolean): Promise<void> => {
+    const a = autosave.current
+    if (a === null || board.retired.current) return
+    try {
+      await a.writeBeside((expectedMtime) => api.setBoardHoverLinks({ root, path, on, expectedMtime }))
+      setHoverLinksOff(!on)
+    } catch (err) {
+      if (err instanceof BridgeRequestError && err.code === 'CONFLICT') {
+        onNotice?.('The file changed on disk. Try again.', 'error')
+        if (!a.dirty) void reload()
+        return
+      }
+      onNotice?.(err instanceof BridgeRequestError && err.message !== '' ? err.message : "The switch couldn't be saved.", 'error')
+    }
+  }
+
   // The cog's rows (YAZ-3943 D5, D13), set from here because `renderTopRight` is made once. The rows are
   // made while the cog is open, never on a keystroke; the clicks read this render's handlers through a ref.
-  const cogActions = useRef({ movePictures, exportDrawing })
-  cogActions.current = { movePictures, exportDrawing }
+  const cogActions = useRef({ askMovePictures, exportDrawing, setHoverLinks, askAllow })
+  cogActions.current = { askMovePictures, exportDrawing, setHoverLinks, askAllow }
   useLayoutEffect(
     () =>
       chips.set({
@@ -348,15 +467,23 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
           drawingCogRows({
             pictures: surface.current?.pictures() ?? { bytes: 0, count: 0 },
             out: picturesOut,
+            ...(picturesOut && picturesFolder !== null ? { folder: picturesFolder } : {}),
+            home,
+            folderAllowed,
+            onAllowFolder: () => cogActions.current.askAllow(),
             readOnly,
-            onMovePictures: () => void cogActions.current.movePictures(!picturesOut),
+            onMovePictures: (to) => void cogActions.current.askMovePictures(to),
             // The same handlers as ⌘⇧E and ⌘⇧S (`onCommand`).
             onExportImage: () => surface.current?.openImageExport(),
             onExportDrawing: () => void cogActions.current.exportDrawing(),
+            hoverLinks: !hoverLinksOff,
+            onHoverLinks: () => void cogActions.current.setHoverLinks(hoverLinksOff),
           }),
       }),
-    [chips, picturesOut, readOnly],
+    [chips, picturesOut, picturesFolder, home, folderAllowed, readOnly, hoverLinksOff],
   )
+  // The box's words, made only while it is up (never on a keystroke).
+  const ask = picturesAsk === null ? null : picturesMoveAsk(picturesAsk.to, picturesAsk, picturesPlaceText(picturesOut, picturesFolder, home), picturesAsk.folder, home)
 
   /**
    * The export box's PDF button (YAZ-3943 D6): main's PDF sheet, then one page printed from the engine's SVG.
@@ -401,6 +528,27 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
         />
       </div>
       <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={linkProps.diagramDarkColors ?? 'adapt'} />
+      {allowSheet}
+      {picturesAsk !== null && ask !== null && (
+        // The app's own sheet (YAZ-2201); `contained`, so its Esc, Enter and click-away never reach the engine under it.
+        <ConfirmSheet
+          labelId="confirm-pictures-move-text"
+          text={
+            <>
+              <span className="confirm__title">{ask.title}</span>
+              {ask.body}
+            </>
+          }
+          confirmLabel={ask.confirm}
+          keys="contained"
+          onConfirm={() => {
+            const { to, folder } = picturesAsk
+            setPicturesAsk(null)
+            void movePictures(to, folder)
+          }}
+          onCancel={() => setPicturesAsk(null)}
+        />
+      )}
     </div>
   )
 }

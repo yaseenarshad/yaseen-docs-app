@@ -47,7 +47,7 @@ import {
   getTextLinkRanges,
   getTextRangeToolbarKey,
   hasHostLinks,
-  TEXT_HIGHLIGHT_FILLS,
+  getTextHighlightFill,
   remapTextRunsForTextEdit,
   setPastedTextRuns,
 } from "@excalidraw/element";
@@ -96,6 +96,7 @@ import {
 import {
   continueTextListItem,
   formatPastedTextForList,
+  getBulletMarkerForDepth,
   getTextListMode,
   indentTextList,
   normalizeTextLists,
@@ -103,6 +104,8 @@ import {
 } from "../textList";
 
 import { getPendingTextStyle, takePendingTextStyle } from "./pendingTextStyle";
+import { textFieldKeyFor } from "../keyRemap";
+
 import { getStyledHtml, parseStyledHtml } from "./styledClipboard";
 import {
   createLinkPillOverlay,
@@ -605,7 +608,7 @@ export const textWysiwyg = ({
                 : color,
               // YAZ-4102 3E: the fill behind the letters, as on the canvas
               background: segment.highlight
-                ? TEXT_HIGHLIGHT_FILLS[segment.highlight]
+                ? getTextHighlightFill(segment.highlight)
                 : "",
               font: segment.font,
               lineHeight: `${lineHeightPx}px`,
@@ -1418,6 +1421,11 @@ export const textWysiwyg = ({
     };
 
     editable.oninput = () => {
+      // YAZ-3943 demo 2: `- ` or `* ` typed at a line's start is a bullet
+      // line; its replacement is its own input event
+      if (applyListInputRule()) {
+        return;
+      }
       const normalized = normalizeText(editable.value);
       if (editable.value !== normalized) {
         const selectionStart = editable.selectionStart;
@@ -1492,6 +1500,53 @@ export const textWysiwyg = ({
       reportEditor(true);
     };
   }
+
+  /**
+   * YAZ-3943 demo 2: a list started by typing, as in notes. `- ` or `* ` just
+   * typed at the start of a line becomes the box's bullet (`• `), through the
+   * browser's own insert, so ⌘Z gives the typed text back. A list makes the
+   * box read from the left.
+   */
+  const applyListInputRule = () => {
+    const caret = editable.selectionEnd;
+    if (
+      editable.selectionStart !== caret ||
+      editable.value.length !== previousEditableValue.length + 1 ||
+      editable.value[caret - 1] !== " "
+    ) {
+      return false;
+    }
+    const lineStart = editable.value.lastIndexOf("\n", caret - 1) + 1;
+    const typed = editable.value.slice(lineStart, caret);
+    const bullet = /^([ \t]*)[-*] $/.exec(typed);
+    if (bullet) {
+      const indent = bullet[1];
+      const depth = Math.floor(indent.replace(/\t/g, "    ").length / 4);
+      startTextList();
+      editable.setSelectionRange(lineStart + indent.length, caret);
+      const marker = `${getBulletMarkerForDepth(depth)} `;
+      if (!document.execCommand?.("insertText", false, marker)) {
+        editable.setRangeText(marker, lineStart + indent.length, caret, "end");
+        editable.dispatchEvent(new Event("input"));
+      }
+      return true;
+    }
+    // `1. ` is a numbered line already (`parseTextListLine`): it only turns
+    // the box to the left. Yasin may not want it: remove this branch then.
+    if (/^[ \t]*\d+\. $/.test(typed)) {
+      startTextList();
+    }
+    return false;
+  };
+
+  /** YAZ-3943 demo 2: a list reads from the left. */
+  const startTextList = () => {
+    const current = app.scene.getElement(element.id) as ExcalidrawTextElement;
+    if (current && current.textAlign !== "left") {
+      app.scene.mutateElement(current, { textAlign: "left" });
+      updateWysiwygStyle();
+    }
+  };
 
   const handleTextListEnter = () => {
     const { selectionStart, selectionEnd, value } = editable;
@@ -1603,7 +1658,11 @@ export const textWysiwyg = ({
       event.preventDefault();
       app.actionManager.executeAction(actionToggleTextUnderline, "keyboard");
       updateWysiwygStyle();
-    } else if (actionToggleTextHighlight.keyTest(event, app.state)) {
+    } else if (
+      // a key the user gave it in Settings › Hotkeys, else ⌘⇧H
+      textFieldKeyFor(actionToggleTextHighlight.name, event) ??
+      actionToggleTextHighlight.keyTest(event, app.state)
+    ) {
       // YAZ-4102 3E: ⌘⇧H, as in notes
       event.preventDefault();
       app.actionManager.executeAction(actionToggleTextHighlight, "keyboard");

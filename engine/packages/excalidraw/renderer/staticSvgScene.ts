@@ -15,7 +15,7 @@ import { normalizeLink, toValidURL } from "@excalidraw/common";
 import {
   hashString,
   isGifPaused,
-  TEXT_HIGHLIGHT_FILLS,
+  getTextHighlightFill,
 } from "@excalidraw/element";
 import { getUncroppedWidthAndHeight } from "@excalidraw/element";
 import {
@@ -842,7 +842,7 @@ const renderElementToSvg = (
                 fill.setAttribute("height", `${lineHeightPx}`);
                 fill.setAttribute(
                   "fill",
-                  TEXT_HIGHLIGHT_FILLS[segment.highlight],
+                  getTextHighlightFill(segment.highlight),
                 );
                 node.appendChild(fill);
               }

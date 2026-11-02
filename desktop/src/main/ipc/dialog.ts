@@ -1,12 +1,14 @@
 import path from 'node:path'
 import { BrowserWindow, dialog, type IpcMainInvokeEvent } from 'electron'
-import type { OpenDrawingResponse, PickFolderResponse, SaveDrawingResponse } from '@shared/types'
+import type { OpenDrawingResponse, PickFolderResponse, PickPicturesFolderResponse, SaveDrawingResponse } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
 import { isDrawing } from '@shared/fileKind'
+import { isValidPicturesFolder } from '@shared/drawingAssets'
 import { BOARDS } from '../fs/boardDocument'
 import { readBoundedRegularFile } from '../fs/boundedRead'
 import { printSvgToPdf } from '../drawings/printPdf'
-import { atomicWrite, BridgeFailure, fsCall } from '../fs/fsUtils'
+import { atomicWrite, BridgeFailure, fsCall, requireAbsPath } from '../fs/fsUtils'
+import { blockedPicturesFolder } from '../fs/picturesFolders'
 import { requireRequest, str } from '../fs/validate'
 import { handleWithEvent } from './envelope'
 
@@ -33,6 +35,52 @@ export async function pickFolder(e: IpcMainInvokeEvent, inFlight: Set<BrowserWin
   const picked = result.filePaths[0]
   if (result.canceled || picked === undefined) return { cancelled: true }
   return { path: picked.replace(/\/+$/, '') || '/' }
+}
+
+/** A board's own pictures folder (YAZ-3943 demo round 3); `defaultPath` is set per call. */
+const PICTURES_FOLDER_OPTIONS: Electron.OpenDialogOptions = { title: 'Choose a folder for the pictures', properties: ['openDirectory', 'createDirectory'] }
+
+/** What the refusal of a picked folder says — the renderer shows it as it is. */
+export const PICTURES_FOLDER_ROOT = 'Pick a folder, not the vault itself.'
+export const PICTURES_FOLDER_SYSTEM = "The app can't keep pictures in a system folder. Pick another folder."
+export const PICTURES_FOLDER_HIDDEN = "A hidden folder, or node_modules, can't hold a board's pictures. Pick another folder."
+
+/**
+ * `window.yaseenDocs.pickPicturesFolder({ root, current? })` (YAZ-3943 demo round 3): the cog's "Choose a folder…" and
+ * Settings › Files & Links › "In a folder you pick". `pickFolder`'s dialog, opened on the board's current folder or the
+ * vault root, answering the pick RELATIVE to `root` with `/` separators when it is inside the vault, and ABSOLUTE when
+ * it is outside — the shapes the `yaseendraw` block and the setting store. An outside pick goes to `approve` (the
+ * store's approved list): the user's own pick is the one thing that lets the app write there. The vault itself, a system
+ * folder (`blockedPicturesFolder`) or a folder `isValidPicturesFolder` refuses is `BAD_REQUEST` with the one-line reason;
+ * no picture is written here. One sheet per window, as `pickFolder`.
+ */
+export async function pickPicturesFolder(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | null>, body: unknown, approve: (folder: string) => void = () => undefined): Promise<PickPicturesFolderResponse> {
+  const req = requireRequest(body)
+  const root = requireAbsPath(req.root, 'root')
+  const { current } = req
+  const options = { ...PICTURES_FOLDER_OPTIONS, defaultPath: isValidPicturesFolder(current) ? (path.isAbsolute(current) ? current : path.join(root, ...current.split('/'))) : root }
+  const win = BrowserWindow.fromWebContents(e.sender)
+  if (inFlight.has(win)) return { cancelled: true }
+  inFlight.add(win)
+  let result: Electron.OpenDialogReturnValue
+  try {
+    result = await (win === null ? dialog.showOpenDialog(options) : dialog.showOpenDialog(win, options))
+  } catch (err) {
+    throw new BridgeFailure('PICKER_FAILED', err instanceof Error ? err.message : String(err))
+  } finally {
+    inFlight.delete(win)
+  }
+  const picked = result.filePaths[0]
+  if (result.canceled || picked === undefined) return { cancelled: true }
+  const abs = path.resolve(picked)
+  if (blockedPicturesFolder(abs)) throw new BridgeFailure('BAD_REQUEST', PICTURES_FOLDER_SYSTEM, { path: abs })
+  const rel = path.relative(root, abs)
+  if (rel === '') throw new BridgeFailure('BAD_REQUEST', PICTURES_FOLDER_ROOT, { path: abs })
+  const inside = !rel.startsWith('..') && !path.isAbsolute(rel)
+  const folder = inside ? rel.split(path.sep).join('/') : abs
+  if (!isValidPicturesFolder(folder)) throw new BridgeFailure('BAD_REQUEST', PICTURES_FOLDER_HIDDEN, { path: abs })
+  if (!inside) approve(abs)
+  return { folder }
 }
 
 /** The Components tab's Import sheet (YAZ-3038, Draw's YAZ-1833): one `.excalidraw`, never a folder. */
@@ -172,10 +220,11 @@ async function showSave(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | nul
   return result.canceled || picked === undefined || picked === '' ? null : path.resolve(picked)
 }
 
-/** `print` is the PDF maker: the hidden window's, or a test's. */
-export function registerDialogIpc(print = printSvgToPdf): void {
+/** `print` is the PDF maker: the hidden window's, or a test's. `approve` puts a picked outside pictures folder on the store's list (YAZ-3943 demo round 3). */
+export function registerDialogIpc(print = printSvgToPdf, approve: (folder: string) => void = () => undefined): void {
   const inFlight = new Set<BrowserWindow | null>()
   handleWithEvent(CONTRACT.pickFolder, (e) => pickFolder(e, inFlight))
+  handleWithEvent(CONTRACT.pickPicturesFolder, (e, body: unknown) => pickPicturesFolder(e, inFlight, body, approve))
   handleWithEvent(CONTRACT.dialog.saveDrawing, (e, body: unknown) => saveDrawingFile(e, inFlight, body))
   handleWithEvent(CONTRACT.dialog.saveImage, (e, body: unknown) => saveImageFile(e, inFlight, body))
   handleWithEvent(CONTRACT.dialog.savePdf, (e, body: unknown) => savePdfFile(e, inFlight, body, print))

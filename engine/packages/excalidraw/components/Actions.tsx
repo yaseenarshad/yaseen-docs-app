@@ -40,6 +40,7 @@ import {
 
 import {
   canChangeTextBackgroundPadding,
+  formatFontSize,
   getFormValue,
 } from "../actions/actionProperties";
 
@@ -62,9 +63,13 @@ import {
   adjustmentsIcon,
   DotsHorizontalIcon,
   pencilIcon,
+  TextAlignCenterIcon,
+  TextAlignLeftIcon,
+  TextAlignRightIcon,
 } from "./icons";
 
 import { Island } from "./Island";
+import { ToolbarPopover } from "./ToolbarPopover";
 
 import { getShapeActionPredicates } from "./shapeActionPredicates";
 
@@ -463,6 +468,31 @@ export const ContextualPropertiesToolbar = ({
   }
   const textTarget =
     targetElements.find(isTextElement) ?? appState.editingTextElement;
+  const lineHeight = textTarget?.lineHeight ?? null;
+  const fontSizes = new Set(
+    targetElements.filter(isTextElement).map((element) => element.fontSize),
+  );
+  const fontSizeLabel = formatFontSize(
+    appState.editingTextElement?.fontSize ??
+      (fontSizes.size === 1
+        ? [...fontSizes][0]
+        : fontSizes.size
+        ? null
+        : appState.currentItemFontSize),
+  );
+  // YAZ-3943 demo 2: the highlight is for a text box selected or edited
+  const hasTextToStyle =
+    !!appState.editingTextElement || targetElements.some(isTextElement);
+  const textAligns = new Set(
+    targetElements.filter(isTextElement).map((element) => element.textAlign),
+  );
+  const textAlign =
+    appState.editingTextElement?.textAlign ??
+    (textAligns.size === 1
+      ? [...textAligns][0]
+      : textAligns.size
+      ? "left"
+      : appState.currentItemTextAlign);
   const fontFamilyName =
     Object.entries(FONT_FAMILY).find(
       ([, value]) =>
@@ -480,24 +510,60 @@ export const ContextualPropertiesToolbar = ({
     >
       {isTextTarget && (
         <>
-          <span className="contextual-properties-toolbar__label">
-            Text color
-          </span>
-          {renderAction("changeStrokeColor", { contextToolbar: true })}
-          {renderAction("changeTextHighlight", { contextToolbar: true })}
+          {/* YAZ-3943 demo 2: font by its name, then a tight size */}
+          {renderAction("changeFontFamily", {
+            contextToolbar: true,
+            fontName: fontFamilyName,
+          })}
+          {/* YAZ-3943 demo 2: the size as a value; its popover has a slider and the exact field */}
+          <ContextualToolbarPopover
+            label={`${t("labels.fontSize")} ${fontSizeLabel || "mixed"}`}
+            icon={<span aria-hidden="true">{fontSizeLabel || "–"}</span>}
+            className="text-toolbar-value"
+          >
+            {renderAction("changeFontSize", {
+              contextToolbar: true,
+              sizePopover: true,
+            })}
+          </ContextualToolbarPopover>
           <ContextualToolbarDivider />
-          <div className="contextual-properties-toolbar__font">
-            <span>{fontFamilyName}</span>
-            {renderAction("changeFontFamily", { contextToolbar: true })}
+          <div
+            className="contextual-properties-toolbar__group"
+            role="group"
+            aria-label="Text color"
+          >
+            {renderAction("changeStrokeColor", { contextToolbar: true })}
           </div>
-          <ContextualToolbarDivider />
-          {renderAction("changeFontSize", { contextToolbar: true })}
+          {/* YAZ-3943 demo 2: three highlights, the ▾ has pink, None and Custom… */}
+          {hasTextToStyle && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeTextHighlight", { contextToolbar: true })}
+            </>
+          )}
           <ContextualToolbarDivider />
           {renderAction("changeTextStyle", { contextToolbar: true })}
           <ContextualToolbarDivider />
-          {renderAction("changeTextAlign", { contextToolbar: true })}
-          <ContextualToolbarDivider />
-          {renderAction("changeLineHeight", { contextToolbar: true })}
+          {/* YAZ-3943 demo 2: one align button, its menu has the three */}
+          <ContextualToolbarPopover
+            label={t("labels.textAlign")}
+            icon={
+              textAlign === "center"
+                ? TextAlignCenterIcon
+                : textAlign === "right"
+                ? TextAlignRightIcon
+                : TextAlignLeftIcon
+            }
+          >
+            {renderAction("changeTextAlign", { contextToolbar: true })}
+          </ContextualToolbarPopover>
+          {/* YAZ-3943 demo 2: line spacing in a menu too */}
+          <ContextualToolbarPopover
+            label={`Line spacing${lineHeight ? ` ${lineHeight}` : ""}`}
+            icon={<span aria-hidden="true">↕</span>}
+          >
+            {renderAction("changeLineHeight", { contextToolbar: true })}
+          </ContextualToolbarPopover>
           <ContextualSecondaryProperties
             renderAction={renderAction}
             showBackgroundColor={predicates.backgroundColor}
@@ -690,65 +756,8 @@ export const ContextualToolbarDivider = () => (
   <div className="contextual-properties-toolbar__divider" aria-hidden="true" />
 );
 
-export const ContextualToolbarPopover = ({
-  label,
-  icon,
-  children,
-}: {
-  label: string;
-  icon: ReactNode;
-  children: ReactNode;
-}) => {
-  const { container } = useExcalidrawContainer();
-
-  return (
-    <Popover.Root>
-      <Tooltip label={label}>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            className="contextual-properties-toolbar__popover-trigger"
-            aria-label={label}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-            }}
-          >
-            {icon}
-          </button>
-        </Popover.Trigger>
-      </Tooltip>
-      <Popover.Portal container={container}>
-        <Popover.Content
-          className={clsx(PROPERTIES_CLASSES, "focus-visible-none")}
-          data-prevent-outside-click
-          side="bottom"
-          align="center"
-          sideOffset={8}
-          collisionBoundary={container ?? undefined}
-          onPointerDown={(event) => event.stopPropagation()}
-          onOpenAutoFocus={(event) => event.preventDefault()}
-          onCloseAutoFocus={(event) => event.preventDefault()}
-          style={{ zIndex: "var(--zIndex-ui-styles-popup)" }}
-        >
-          <Island
-            className="contextual-properties-toolbar__popover"
-            padding={3}
-          >
-            {children}
-          </Island>
-          <Popover.Arrow
-            width={20}
-            height={10}
-            style={{
-              fill: "var(--popup-bg-color)",
-              filter: "drop-shadow(rgba(0, 0, 0, 0.05) 0px 3px 2px)",
-            }}
-          />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-};
+/** The text toolbar's shared popover (YAZ-3943 demo 2): `ToolbarPopover`. */
+export const ContextualToolbarPopover = ToolbarPopover;
 
 const ContextualSecondaryProperties = ({
   renderAction,

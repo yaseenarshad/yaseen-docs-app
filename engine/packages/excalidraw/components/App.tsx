@@ -462,6 +462,7 @@ import { LASER_STREAMLINE, LaserTrails } from "../laserTrails";
 import { withBatchedUpdates, withBatchedUpdatesThrottled } from "../reactUtils";
 import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
 import { textWysiwyg } from "../wysiwyg/textWysiwyg";
+import { getPlainPasteText, parseStyledHtml } from "../wysiwyg/styledClipboard";
 import { isOverScrollBars } from "../scene/scrollbars";
 import { isMaybeMermaidDefinition } from "../mermaid";
 import { LassoTrail } from "../lasso";
@@ -4977,7 +4978,7 @@ class App extends React.Component<AppProps, AppState> {
     }
 
     // ------------------- Text -------------------
-    this.addTextFromPaste(data.text, isPlainPaste);
+    this.addTextFromPaste(data.text, isPlainPaste, undefined, data.html);
   }
 
   public pasteFromClipboard = withBatchedUpdates(
@@ -5272,6 +5273,7 @@ class App extends React.Component<AppProps, AppState> {
     text: string,
     isPlainPaste = false,
     drop?: { x: number; y: number },
+    html?: string,
   ) {
     // YAZ-4039 D12: one pasted page reference (a vault path, a `yaseendocs://`
     // link, a `[[link]]`) is its link, a pill in a box sized to it
@@ -5323,6 +5325,65 @@ class App extends React.Component<AppProps, AppState> {
     const [x1, , x2] = getVisibleSceneBounds(this.state);
     // long texts should not go beyond 800 pixels in width nor should it go below 200 px
     const maxTextWidth = Math.max(Math.min((x2 - x1) * 0.5, 800), 200);
+
+    // YAZ-3943 demo 2: a paste is ONE text box with all its lines. HTML (a
+    // note, a web page, Slack, Google Docs) keeps its letter styles, links
+    // and lists; other apps' colors and fonts are dropped. The box fits its
+    // text, and wraps at `maxTextWidth` when a line is wider.
+    if (!drop && !isPlainPaste && !link) {
+      const linkOf = (href: string) => {
+        const pasted = href && this.props.hostLinks?.pasteLink?.(href);
+        return pasted && pasted.startsWith("[[") ? pasted : null;
+      };
+      const pasted = (html &&
+        parseStyledHtml(html, { keepPlain: true, linkOf })) || {
+        text: getPlainPasteText(normalizeText(text)),
+        textRuns: [],
+      };
+      if (!pasted.text.trim()) {
+        return;
+      }
+      const frame = this.getTopLayerFrameAtSceneCoords({ x, y });
+      let element = newTextElement({
+        ...textElementProps,
+        // a list or several lines read best from the left
+        textAlign: pasted.text.includes("\n") ? "left" : DEFAULT_NEW_TEXT_ALIGN,
+        text: pasted.text,
+        originalText: pasted.text,
+        textRuns: pasted.textRuns,
+        lineHeight,
+        autoResize: true,
+        frameId: frame ? frame.id : null,
+      });
+      if (element.width > maxTextWidth) {
+        const wrapped = { ...element, autoResize: false, width: maxTextWidth };
+        element = {
+          ...wrapped,
+          ...refreshTextDimensions(
+            wrapped,
+            null,
+            this.scene.getNonDeletedElementsMap(),
+            pasted.text,
+          ),
+        };
+      }
+      // centered on the pointer, as a pasted line was
+      element = {
+        ...element,
+        x: x - element.width / 2,
+        y: y - element.height / 2,
+      };
+      this.insertNewElements([element]);
+      this.store.scheduleCapture();
+      this.setState({
+        selectedElementIds: makeNextSelectedElementIds(
+          { [element.id]: true },
+          this.state,
+        ),
+      });
+      return;
+    }
+
     const LINE_GAP = 10;
     let currentY = y;
 

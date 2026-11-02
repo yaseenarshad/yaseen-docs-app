@@ -92,7 +92,7 @@ import type {
   NonDeletedSceneElementsMap,
   ElementsMap,
 } from "./types";
-import { TEXT_HIGHLIGHT_FILLS } from "./textRuns";
+import { getTextHighlightFill } from "./textRuns";
 
 import type { StyledTextSegment } from "./textLineUnderlines";
 
@@ -619,7 +619,7 @@ const drawElementOnCanvas = (
             // YAZ-4102 3E: the highlights first, behind every letter of the line
             for (const segment of segments) {
               if (segment.highlight) {
-                context.fillStyle = TEXT_HIGHLIGHT_FILLS[segment.highlight];
+                context.fillStyle = getTextHighlightFill(segment.highlight);
                 context.fillRect(
                   lineStart + segment.x,
                   index * lineHeightPx,

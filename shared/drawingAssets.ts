@@ -8,7 +8,9 @@ import { isFiniteNumber, isRecord } from './guards'
  * it uses INSIDE its own `files` map by default, as normal Excalidraw does, so a copied board keeps
  * its pictures. Only a board whose `yaseendraw` block says `"pictures": "assets"` ("pictures out",
  * the cog's button, the 50 MB rule, Settings › Storage) keeps the old shape below. The rules for
- * "inside" are at the end of this file; main applies them on the save (`fs/drawing.ts`).
+ * "inside" are at the end of this file; main applies them on the save (`fs/drawing.ts`). Since
+ * YAZ-3943 demo round 3 a "pictures out" board may name ITS OWN folder for them (`picturesFolder`,
+ * vault-relative) in place of the vault's `assets/`; a reader looks there first, then in `assets/`.
  *
  * A "pictures out" `.excalidraw` carries `files: {}` — image ELEMENTS keep only their `fileId`,
  * and the bytes live at `<vault>/assets/<fileId>.<ext>`. The id is Excalidraw's own (the SHA-1 of
@@ -265,6 +267,44 @@ export const PICTURES_KEY = 'pictures'
 export const PICTURES_OUT = 'assets'
 
 /**
+ * YAZ-3943 demo round 3: the block key of a board's OWN pictures folder, beside `"pictures": "assets"`:
+ * `"picturesFolder": "Projects/Alpha/pictures"`, relative to the VAULT ROOT with `/` separators, so a moved
+ * board keeps it — or, for a folder OUTSIDE the vault (the user's pick, anywhere on the Mac), the ABSOLUTE
+ * path (`/Users/me/Pictures/Boards`). No key: the vault's `assets/`. It only matters while the pictures are
+ * out; a save that sets or clears it records the time under `pictures` (`withSwitchTime`), so 1E treats
+ * pictures + folder as ONE switch. An invalid value in a file (`isValidPicturesFolder`) reads as no key.
+ *
+ * A board file can come from anyone, so a block alone never makes the app WRITE outside the vault: main
+ * lands pictures in an outside folder only once the user picked it in the folder window (the approved list
+ * in the store, `fs/picturesFolders.ts`); it READS from any folder a block names.
+ */
+export const PICTURES_FOLDER_KEY = 'picturesFolder'
+
+/** Whether a pictures folder is outside the vault: stored absolute (a leading `/`), not vault-relative. */
+export const picturesFolderOutside = (folder: string): boolean => folder.startsWith('/')
+
+/**
+ * A pictures folder a board may name (demo round 3): a vault-relative `/` path, or an absolute one for a folder
+ * outside the vault; normalized — no empty segment, no `.` or `..`, no dot-segment (`.git`, `.yaseen`, …), not
+ * `node_modules` — and never the vault root (`''`) or `/` itself. The value comes from a file or a request, so
+ * it is checked like a request body rather than trusted. Which outside folders are BLOCKED (system folders) is
+ * main's rule (`fs/picturesFolders.ts`), applied where a folder is picked.
+ */
+export function isValidPicturesFolder(v: unknown): v is string {
+  if (typeof v !== 'string' || v === '' || v.includes('\0')) return false
+  return (v.startsWith('/') ? v.slice(1) : v).split('/').every((s) => s.trim() !== '' && !s.startsWith('.') && s !== 'node_modules')
+}
+
+/** A path as the app shows it: `~/…` under the user's `home` (the Welcome screen's rule); unchanged otherwise, and always for a vault-relative one. */
+export const withHomeTilde = (p: string, home: string): string => (home !== '' && p.startsWith(home) && p[home.length] === '/' ? `~${p.slice(home.length)}` : p)
+
+/** The pictures folder a `yaseendraw` block names, or null: no key, or one that is not a valid folder. */
+export function picturesFolderOf(block: unknown): string | null {
+  const folder = isRecord(block) ? block[PICTURES_FOLDER_KEY] : undefined
+  return isValidPicturesFolder(folder) ? folder : null
+}
+
+/**
  * YAZ-3943 D5, the 50 MB rule: a save that would make an "inside" board this big or bigger moves its
  * pictures out instead. The same 50 MiB line as GitHub's warning and Settings › Storage's.
  */
@@ -293,13 +333,43 @@ export function picturesOut(block: unknown): boolean {
  * `withDrawingReadOnly` (`shared/readOnly.ts`): the block comes back FIRST, a block with no dates gets
  * `bornAt` for both, every other key stays, and the switch records `at` as its change time (1E). So off
  * keeps the block: its time must reach the other Mac.
+ *
+ * `folder` (demo round 3) is the board's own pictures folder with "out": a path sets `picturesFolder`, null
+ * clears it (the vault's `assets/`), undefined keeps what the block has. "Inside" always clears it: the
+ * folder key exists only while the pictures are out, so pictures + folder are one switch.
  */
-export function withPicturesOut(scene: Record<string, unknown>, out: boolean, bornAt: number, at = Date.now()): Record<string, unknown> {
+export function withPicturesOut(scene: Record<string, unknown>, out: boolean, bornAt: number, at = Date.now(), folder?: string | null): Record<string, unknown> {
   const { [BOARD_META_KEY]: own, ...rest } = scene
-  if (out === picturesOut(own) && (out || !(isRecord(own) && PICTURES_KEY in own))) return scene
-  const { [PICTURES_KEY]: _old, createdAt, updatedAt, ...extras } = isRecord(own) ? own : {}
+  const held = isRecord(own) ? own : {}
+  const nextFolder = out ? (folder === undefined ? picturesFolderOf(held) : folder) : null
+  if (out === picturesOut(own) && (out || !(PICTURES_KEY in held)) && nextFolder === (PICTURES_FOLDER_KEY in held ? held[PICTURES_FOLDER_KEY] : null)) return scene
+  const { [PICTURES_KEY]: _old, [PICTURES_FOLDER_KEY]: _oldFolder, createdAt, updatedAt, ...extras } = held
   const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }
-  return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...(out ? { [PICTURES_KEY]: PICTURES_OUT } : {}) }, PICTURES_KEY, at), ...rest }
+  const switches = out ? { [PICTURES_KEY]: PICTURES_OUT, ...(nextFolder === null ? {} : { [PICTURES_FOLDER_KEY]: nextFolder }) } : {}
+  return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...switches }, PICTURES_KEY, at), ...rest }
+}
+
+// ---------- Link preview on hover, per board (YAZ-3943 demo 2) ----------
+
+/** The `yaseendraw` block key of the board's "Link preview on hover" switch: `"hoverLinks": false` when off. No key means on. */
+export const HOVER_LINKS_KEY = 'hoverLinks'
+
+/** Whether a `yaseendraw` block turns the board's link preview on hover off. */
+export function hoverLinksOff(block: unknown): boolean {
+  return isRecord(block) && block[HOVER_LINKS_KEY] === false
+}
+
+/**
+ * The scene with its link preview on hover on or off; the SAME object when it already is. The rule of
+ * `withPicturesOut`: the block comes back first, a block with no dates gets `bornAt`, every other key stays, and
+ * the switch records `at` as its change time (1E: the newest change wins a two-Mac merge).
+ */
+export function withHoverLinks(scene: Record<string, unknown>, on: boolean, bornAt: number, at = Date.now()): Record<string, unknown> {
+  const { [BOARD_META_KEY]: own, ...rest } = scene
+  if (on !== hoverLinksOff(own) && (!on || !(isRecord(own) && HOVER_LINKS_KEY in own))) return scene
+  const { [HOVER_LINKS_KEY]: _old, createdAt, updatedAt, ...extras } = isRecord(own) ? own : {}
+  const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }
+  return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...(on ? {} : { [HOVER_LINKS_KEY]: false }) }, HOVER_LINKS_KEY, at), ...rest }
 }
 
 /** One picture inside a board: the shape the engine's `addFiles` reads (it keys on `id`). */
@@ -319,7 +389,7 @@ export function createdOf(scene: Record<string, unknown>, id: string): number | 
  * The cog's size row (YAZ-3943 D5): how many pictures a live element uses, and their own size in bytes
  * (the base64 of each `dataURL`, decoded by its length, never by decoding it). An id with no entry,
  * or an entry with no `dataURL`, does not count: it is `missing` (1F). The load puts in `files` every
- * picture it found in the file or in `assets/`, so a missing one is in neither.
+ * picture it found in the file, in the board's own folder or in `assets/`, so a missing one is in none.
  */
 export function picturesSize(elements: readonly unknown[], files: Readonly<Record<string, unknown>>): { bytes: number; count: number; missing: number } {
   let bytes = 0

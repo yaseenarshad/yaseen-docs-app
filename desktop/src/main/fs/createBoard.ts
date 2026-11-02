@@ -14,21 +14,30 @@
  * parent folder must exist (`NOT_FOUND`), the same as a note's.
  */
 import { stat } from 'node:fs/promises'
-import type { BoardKind, CreateBoardResponse } from '@shared/types'
-import { EMPTY_SCENE_JSON, stampBoardMeta } from '@shared/drawingAssets'
+import type { BoardKind, CreateBoardResponse, NewBoardPictures } from '@shared/types'
+import { EMPTY_SCENE_JSON, isValidPicturesFolder, serializeBoard, stampBoardMeta, withPicturesOut } from '@shared/drawingAssets'
 import { EMPTY_DIAGRAM_XML, stampDiagramMeta } from '@shared/diagramFile'
 import { fileKind } from '@shared/fileKind'
 import { resolveBoard } from './boardDocument'
 import { BridgeFailure, createDurable, fsCall, requireAbsPath } from './fsUtils'
 import { requireRequest } from './validate'
 
-/** The bytes a new board of `kind` is born with, stamped with `now`. */
-export function emptyBoard(kind: BoardKind, now: number): string {
+/**
+ * The bytes a new board of `kind` is born with, stamped with `now`. YAZ-3943 demo 2: a drawing made while
+ * Settings › Files & Links › "New boards keep pictures" is "In the assets folder" is born "pictures out"
+ * (`withPicturesOut`, with its 1E switch time); "Inside the board" writes nothing (D5's default). "In a folder
+ * you pick" (demo round 3) is born out with `picturesFolder: folder`; with no folder chosen yet it is "assets".
+ */
+export function emptyBoard(kind: BoardKind, now: number, pictures: NewBoardPictures = 'inside', folder = ''): string {
   const at = { createdAt: now, updatedAt: now }
-  return kind === 'drawing' ? stampBoardMeta(EMPTY_SCENE_JSON, at) : stampDiagramMeta(EMPTY_DIAGRAM_XML, at)
+  if (kind !== 'drawing') return stampDiagramMeta(EMPTY_DIAGRAM_XML, at)
+  const stamped = stampBoardMeta(EMPTY_SCENE_JSON, at)
+  if (pictures === 'inside') return stamped
+  const own = pictures === 'folder' && isValidPicturesFolder(folder) ? folder : null
+  return serializeBoard(withPicturesOut(JSON.parse(stamped) as Record<string, unknown>, true, now, now, own))
 }
 
-export async function createBoard(req: unknown): Promise<CreateBoardResponse> {
+export async function createBoard(req: unknown, pictures: NewBoardPictures = 'inside', folder = ''): Promise<CreateBoardResponse> {
   // Crosses IPC from a sandboxed renderer: shape-checked like a request body.
   const body = requireRequest(req)
   const dir = requireAbsPath(body.root, 'root')
@@ -36,7 +45,7 @@ export async function createBoard(req: unknown): Promise<CreateBoardResponse> {
   const kind = fileKind(raw)
   if (kind !== 'drawing' && kind !== 'diagram') throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .excalidraw and .drawio files are created as boards', { path: raw })
   const file = resolveBoard(dir, requireAbsPath(raw, 'path'), kind)
-  const content = emptyBoard(kind, Date.now())
+  const content = emptyBoard(kind, Date.now(), pictures, folder)
   return fsCall(file, async () => {
     await createDurable(file, content)
     const st = await stat(file)

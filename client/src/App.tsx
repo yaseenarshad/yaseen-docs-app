@@ -2853,6 +2853,7 @@ export function App() {
       codeOutlineLocals: settings.codeOutlineLocals,
       // YAZ-3403: the hover panel of a note's [[links]], its linked mentions and a folder's views, each its own SETTING.
       hoverLinks: hoverOn(settings, 'links'),
+      hoverDrawingLinks: hoverOn(settings, 'drawings'),
       hoverBacklinks: hoverOn(settings, 'backlinks'),
       hoverFolderViews: hoverOn(settings, 'folderViews'),
       previewScope: editorPreviewScope,

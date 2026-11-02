@@ -25,6 +25,8 @@ export interface PageSwitch {
   warn?: boolean
   /** A line above the row. */
   divider?: boolean
+  /** An info row's tooltip: the whole of a text the label shortens (a pictures folder's full path, YAZ-3943 demo round 3). */
+  title?: string
 }
 
 /**
@@ -112,9 +114,9 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
     }
   }, [open])
 
-  const rowOf = ({ label, on, onToggle, disabled, warn, divider }: PageSwitch) => <Fragment key={label}>
+  const rowOf = ({ label, on, onToggle, disabled, warn, divider, title }: PageSwitch) => <Fragment key={label}>
     {divider === true && <div className="page-settings__divider" aria-hidden="true" />}
-    {onToggle === undefined ? <p className={warn === true ? 'page-settings__warn' : undefined}>{label}</p>
+    {onToggle === undefined ? <p className={warn === true ? 'page-settings__warn' : undefined} title={title}>{label}</p>
       : on === undefined ? <button type="button" disabled={disabled} onClick={() => {
         setOpen(false)
         onToggle()

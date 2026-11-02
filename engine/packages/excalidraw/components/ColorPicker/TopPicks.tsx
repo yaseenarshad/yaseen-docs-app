@@ -22,6 +22,8 @@ interface TopPicksProps {
   type: ColorPickerType;
   activeColor: string | null;
   topPicks?: readonly string[];
+  /** YAZ-3943 demo 2: false: no tooltip (the text toolbar's swatches); the aria-label stays. */
+  titles?: boolean;
 }
 
 export const TopPicks = ({
@@ -29,6 +31,7 @@ export const TopPicks = ({
   type,
   activeColor,
   topPicks,
+  titles = true,
 }: TopPicksProps) => {
   let colors;
   if (type === "elementStroke") {
@@ -78,7 +81,7 @@ export const TopPicks = ({
             style={{ "--swatch-color": color }}
             key={color}
             type="button"
-            title={label}
+            title={titles ? label : undefined}
             aria-label={label}
             aria-pressed={color === activeColor}
             onClick={() => onChange(color)}

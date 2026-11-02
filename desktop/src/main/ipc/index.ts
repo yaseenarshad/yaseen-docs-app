@@ -25,6 +25,7 @@ import { registerSecretsIpc } from './secrets'
 import { registerShareIpc, type ShareIpcPlaces } from './share'
 import { registerSoundIpc } from './sound'
 import { registerStateIpc } from './state'
+import { registerPictureFoldersIpc } from './pictureFolders'
 import { registerStorageIpc } from './storage'
 import { registerVaultConfigIpc } from './vaultConfig'
 import { registerWatchIpc } from './watch'
@@ -53,7 +54,8 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   const { userData } = places
   registerFsIpc(store, windows)
   registerBoardIpc(store, windows, userData)
-  registerDialogIpc()
+  // The folder window's pick of an outside pictures folder is what lets the app write there (YAZ-3943 demo round 3).
+  registerDialogIpc(undefined, (folder) => store.approvePictureFolder(folder))
   registerWatchIpc()
   registerStateIpc(store, settingsFolder)
   registerVaultConfigIpc(store)
@@ -62,7 +64,8 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerFocusIpc(store)
   registerPropertiesIpc(store)
   registerWindowIpc(store, windows)
-  registerStorageIpc()
+  registerStorageIpc(store)
+  registerPictureFoldersIpc(store)
   registerSoundIpc()
   registerHomeIpc()
   // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).

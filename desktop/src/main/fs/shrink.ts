@@ -3,7 +3,9 @@
  * board in the vault that embeds its pictures as base64 is rewritten LEAN, the way a "pictures out"
  * save writes it, without waiting for someone to open and edit each one. Since pictures are inside
  * by default (YAZ-3943 D5), it also sets each board that has pictures to `"pictures": "assets"`
- * (`withPicturesOut`), so its next save keeps them out. A board with no picture at all is left alone.
+ * (`withPicturesOut`), so its next save keeps them out. A board with no picture at all is left alone. A board
+ * that names its own pictures folder (YAZ-3943 demo round 3) keeps it, and its pictures land there — or in
+ * `assets/` for an outside folder the user never picked (`landingFolder`), where the board still finds them.
  *
  * It is the save's own extraction (`liftEmbedded` + `landAssets` in `drawing.ts`), not a second
  * set of rules: referenced pictures land in `assets/` first (`wx`, EEXIST ok — two boards sharing
@@ -29,10 +31,11 @@
 import { stat } from 'node:fs/promises'
 import { MAX_DRAWING_BYTES, type ShrinkResult } from '@shared/types'
 import { isDrawing } from '@shared/fileKind'
-import { BOARD_META_KEY, picturesOut, referencedFileIds, serializeBoard, withPicturesOut } from '@shared/drawingAssets'
+import { BOARD_META_KEY, picturesFolderOf, picturesOut, referencedFileIds, serializeBoard, withPicturesOut } from '@shared/drawingAssets'
 import { readBoundedRegularFile } from './boundedRead'
 import { landAssets, liftEmbedded, parseScene } from './drawing'
 import { atomicWrite, vaultFiles } from './fsUtils'
+import { landingFolder } from './picturesFolders'
 
 /**
  * Every `.excalidraw` in the vault outside the top-level `assets/`, in a stable order. Docs' note
@@ -53,7 +56,7 @@ function hasEmbedded(scene: Record<string, unknown>): boolean {
 
 type Outcome = { kind: 'none' } | { kind: 'skipped' } | { kind: 'shrunk'; bytesMoved: number }
 
-async function shrinkOne(root: string, file: string, skip: ReadonlySet<string>): Promise<Outcome> {
+async function shrinkOne(root: string, file: string, skip: ReadonlySet<string>, approved: readonly string[]): Promise<Outcome> {
   let snapshot: Awaited<ReturnType<typeof readBoundedRegularFile>>
   try {
     snapshot = await readBoundedRegularFile(file, MAX_DRAWING_BYTES, 'too large')
@@ -75,7 +78,7 @@ async function shrinkOne(root: string, file: string, skip: ReadonlySet<string>):
   try {
     const { lean: leanScene, lifted } = liftEmbedded(record, elements)
     const lean = serializeBoard(withPicturesOut(leanScene, true, snapshot.mtime))
-    await landAssets(root, lifted)
+    await landAssets(root, lifted, landingFolder(picturesFolderOf(record[BOARD_META_KEY]), approved))
     // The cheap guard against a writer that landed while we were decoding: the file must still be
     // the one we read. A tab that saved in between wins, and this board waits for the next click.
     const now = await stat(file)
@@ -87,12 +90,12 @@ async function shrinkOne(root: string, file: string, skip: ReadonlySet<string>):
   }
 }
 
-/** One pass over the vault; boards one at a time, so a 110 MB board is the most held in memory. */
-export async function shrinkVault(root: string, opts: { skip?: readonly string[] } = {}): Promise<ShrinkResult> {
+/** One pass over the vault; boards one at a time, so a 110 MB board is the most held in memory. `approved`: the outside pictures folders the user picked (YAZ-3943 demo round 3). */
+export async function shrinkVault(root: string, opts: { skip?: readonly string[]; approved?: readonly string[] } = {}): Promise<ShrinkResult> {
   const skip = new Set(opts.skip ?? [])
   const result: ShrinkResult = { shrunk: 0, skipped: 0, bytesMoved: 0 }
   for (const file of await boardsUnder(root)) {
-    const outcome = await shrinkOne(root, file, skip)
+    const outcome = await shrinkOne(root, file, skip, opts.approved ?? [])
     if (outcome.kind === 'skipped') result.skipped += 1
     else if (outcome.kind === 'shrunk') {
       result.shrunk += 1

@@ -51,6 +51,8 @@ export interface ClipboardData {
   mixedContent?: PastedMixedContent;
   errorMessage?: string;
   programmaticAPI?: boolean;
+  /** YAZ-3943 demo 2: the clipboard's HTML (not for ⌘⇧V): a text paste keeps its styles and lists */
+  html?: string;
 }
 
 type AllowedPasteMimeTypes = typeof ALLOWED_PASTE_MIME_TYPES[number];
@@ -554,7 +556,10 @@ export const parseClipboard = async (
     }
   } catch {}
 
-  return { text: parsedEventData.value };
+  const html = isPlainPaste
+    ? undefined
+    : dataList.findByType(MIME_TYPES.html)?.value;
+  return { text: parsedEventData.value, ...(html ? { html } : {}) };
 };
 
 export const copyBlobToClipboardAsPng = async (blob: Blob | Promise<Blob>) => {

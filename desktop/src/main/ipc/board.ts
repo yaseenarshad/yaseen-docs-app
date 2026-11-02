@@ -14,6 +14,7 @@ import path from 'node:path'
 import { CONTRACT } from '@shared/ipc'
 import { createThumbs, THUMBS_DIR, type Thumbs } from '../drawings/thumbs'
 import { boardHead } from '../fs/boardHead'
+import { setBoardHoverLinks } from '../fs/boardHoverLinks'
 import { setBoardPictures } from '../fs/boardPictures'
 import { setBoardReadOnly } from '../fs/boardReadOnly'
 import { createBoard } from '../fs/createBoard'
@@ -32,14 +33,16 @@ import { handle, handleWithEvent } from './envelope'
  */
 export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit'>, windows: Pick<WindowManager, 'idFor'>, userData?: string): void {
   const thumbs: Thumbs | null = userData === undefined ? null : createThumbs(path.join(userData, THUMBS_DIR))
-  handle(CONTRACT.createBoard, createBoard)
+  // A new drawing keeps its pictures where Settings › Files & Links says (YAZ-3943 demo 2; its own folder, demo round 3), read at each create.
+  handle(CONTRACT.createBoard, (req: unknown) => createBoard(req, store.get().settings.newBoardPictures, store.get().settings.newBoardPicturesFolder))
   handle(CONTRACT.boardHead, boardHead)
   // Only a request with `imageMaxPx` — a picture of the scene, never an editor — reaches the cache.
   handle(CONTRACT.drawing.load, (req: unknown) => loadDrawing(req, thumbs === null ? undefined : (files, elements, px) => thumbs.fit(files, elements, px)))
   // A drawing's and a diagram's save go in the save log, as a note's does (YAZ-3235 D1, S10).
   // A save that gave the board its ID (YAZ-3943 4C) tells the index at once: a `[[` pick right after it writes the ID.
+  // A save writes to an outside pictures folder only when the user picked it (YAZ-3943 demo round 3, `approvedPictureFolders`).
   const save = async (req: unknown) => {
-    const res = await saveDrawing(req)
+    const res = await saveDrawing(req, store.get().approvedPictureFolders)
     if (res.id !== undefined) indexBoard(res.path, res.id)
     return res
   }
@@ -47,5 +50,6 @@ export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit'>, windows:
   handle(CONTRACT.diagram.load, loadDiagram)
   handleWithEvent(CONTRACT.diagram.save, loggedSave(store, windows, saveDiagram))
   handle(CONTRACT.setBoardReadOnly, setBoardReadOnly)
-  handle(CONTRACT.setBoardPictures, setBoardPictures)
+  handle(CONTRACT.setBoardPictures, (req: unknown) => setBoardPictures(req, store.get().approvedPictureFolders))
+  handle(CONTRACT.setBoardHoverLinks, setBoardHoverLinks)
 }

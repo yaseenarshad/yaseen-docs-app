@@ -30,6 +30,49 @@ export const TEXT_HIGHLIGHT_FILLS: Readonly<Record<string, string>> = {
 
 export const DEFAULT_TEXT_HIGHLIGHT = "yellow";
 
+/** YAZ-3943 demo 2: a custom highlight from the full picker: a `#rrggbb` color. */
+const HEX_HIGHLIGHT = /^#[0-9a-f]{6}$/i;
+
+const isTextHighlight = (value: unknown): value is string =>
+  typeof value === "string" &&
+  (Object.hasOwn(TEXT_HIGHLIGHT_FILLS, value) || HEX_HIGHLIGHT.test(value));
+
+/**
+ * The fill behind highlighted letters: a note color's own fill, or a custom
+ * color as translucent as the note fills (40 %), so the letters stay readable.
+ */
+export const getTextHighlightFill = (highlight: string) => {
+  const named = TEXT_HIGHLIGHT_FILLS[highlight];
+  if (named) {
+    return named;
+  }
+  const [r, g, b] = [1, 3, 5].map((at) =>
+    parseInt(highlight.slice(at, at + 2), 16),
+  );
+  return `rgba(${r}, ${g}, ${b}, 0.4)`;
+};
+
+/** The note color nearest to a custom highlight (a note has only the four); a note color as it is. */
+export const getNearestNoteHighlight = (highlight: string) => {
+  if (Object.hasOwn(TEXT_HIGHLIGHT_FILLS, highlight)) {
+    return highlight;
+  }
+  const rgb = (fill: string) =>
+    (/(\d+), (\d+), (\d+)/.exec(fill) ?? []).slice(1).map(Number);
+  const [r, g, b] = rgb(getTextHighlightFill(highlight));
+  let nearest = DEFAULT_TEXT_HIGHLIGHT;
+  let best = Infinity;
+  for (const [name, fill] of Object.entries(TEXT_HIGHLIGHT_FILLS)) {
+    const [nr, ng, nb] = rgb(fill);
+    const distance = (r - nr) ** 2 + (g - ng) ** 2 + (b - nb) ** 2;
+    if (distance < best) {
+      best = distance;
+      nearest = name;
+    }
+  }
+  return nearest;
+};
+
 const hasStyle = (style: TextRunStyle) =>
   TEXT_RUN_FLAGS.some((flag) => style[flag]) ||
   style.color !== undefined ||
@@ -48,10 +91,7 @@ const toStyle = (value: Record<string, unknown>): TextRunStyle => ({
   ...(typeof value.color === "string" && value.color
     ? { color: value.color }
     : {}),
-  ...(typeof value.highlight === "string" &&
-  Object.hasOwn(TEXT_HIGHLIGHT_FILLS, value.highlight)
-    ? { highlight: value.highlight }
-    : {}),
+  ...(isTextHighlight(value.highlight) ? { highlight: value.highlight } : {}),
 });
 
 /** The style of the run that holds the letter at `offset`, or no style. */

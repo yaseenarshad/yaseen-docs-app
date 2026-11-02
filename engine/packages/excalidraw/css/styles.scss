@@ -487,24 +487,111 @@ body.excalidraw-cursor-resize * {
     }
   }
 
-  // YAZ-4102 3E: the highlight colors next to Text color, in the text editor
+  // YAZ-4102 3E, YAZ-3943 demo 2: the highlight swatches look like the
+  // color picks; the active one has the picks' ring
   .text-highlight-picks {
+    align-items: center;
     display: inline-flex;
     gap: 0.25rem;
-    margin-inline-start: 0.25rem;
   }
 
-  .text-highlight-pick {
-    border: 1px solid var(--default-border-color);
-    border-radius: 0.25rem;
-    cursor: pointer;
-    height: 1.25rem;
-    padding: 0;
-    width: 1.25rem;
+  // YAZ-3943 demo 2: the font size as a value, as wide as it needs
+  .contextual-properties-toolbar__popover-trigger.text-toolbar-value {
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    min-width: 2rem;
+    padding: 0 0.3rem;
+    width: auto;
+  }
 
-    &[aria-pressed="true"] {
-      outline: 2px solid var(--color-primary);
-      outline-offset: 1px;
+  // the size popover: the slider, then the exact field
+  .font-size-popover {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+
+    .font-size-slider {
+      width: 9rem;
+    }
+
+    .font-size-custom,
+    .font-size-custom > label {
+      align-items: center;
+      display: flex;
+      gap: 0.15rem;
+    }
+
+    // 3 digits or "19.3" and the padding, never clipped (no spin buttons)
+    input[type="number"] {
+      appearance: textfield;
+      background: var(--input-bg-color);
+      border: 1px solid var(--default-border-color);
+      border-radius: var(--border-radius-md);
+      box-sizing: border-box;
+      color: var(--text-primary-color);
+      flex: 0 0 auto;
+      font: inherit;
+      height: 2rem;
+      max-width: none;
+      min-width: 0;
+      padding: 0 0.4rem;
+      text-align: center;
+      width: calc(4ch + 1rem);
+
+      &::-webkit-inner-spin-button,
+      &::-webkit-outer-spin-button {
+        appearance: none;
+        margin: 0;
+      }
+    }
+
+    span {
+      color: var(--text-secondary-color);
+      font-size: 0.7rem;
+    }
+  }
+
+  // YAZ-3943 demo 2: the ▾ of the text color and highlight groups: one plain
+  // style, with the hover of the other toolbar buttons
+  .contextual-properties-toolbar__popover-trigger.text-toolbar-more {
+    background: transparent;
+    font-size: 0.7rem;
+    position: relative;
+    width: 1rem;
+
+    &:hover,
+    &[data-state="open"] {
+      background: var(--button-hover-bg);
+    }
+
+    // a color not among the three: a bar of it under the ▾
+    &.is-other::after {
+      border-radius: 1px;
+      bottom: 3px;
+      content: "";
+      height: 3px;
+      left: 2px;
+      position: absolute;
+      right: 2px;
+    }
+
+    &.is-other::after {
+      background: var(--swatch-color);
+    }
+  }
+
+  .text-highlight-none {
+    background: transparent;
+    border: 1px solid var(--default-border-color);
+    border-radius: 4px;
+    color: var(--text-primary-color);
+    cursor: pointer;
+    font-size: 0.7rem;
+    height: 1.375rem;
+    padding: 0 0.35rem;
+
+    &:hover {
+      background: var(--button-hover-bg);
     }
   }
 
@@ -720,6 +807,23 @@ body.excalidraw-cursor-resize * {
       }
     }
 
+    // YAZ-3943 demo 2: a tight `− 24 +`, the field as wide as 4 characters
+    .font-size-custom.font-size-custom--compact {
+      gap: 0;
+
+      > button {
+        width: 1.25rem;
+      }
+
+      input {
+        field-sizing: fixed;
+        max-width: none;
+        min-width: 0;
+        padding: 0;
+        width: calc(4ch + 0.4rem);
+      }
+    }
+
     .font-size-custom {
       gap: 0.2rem;
       margin: 0;
@@ -774,50 +878,6 @@ body.excalidraw-cursor-resize * {
       }
     }
 
-    .line-height-custom {
-      gap: 0.2rem;
-      margin: 0;
-
-      > button {
-        align-items: center;
-        background: transparent;
-        border: 0;
-        border-radius: var(--border-radius-md);
-        color: var(--text-primary-color);
-        cursor: pointer;
-        display: flex;
-        font-size: 1rem;
-        height: 2rem;
-        justify-content: center;
-        width: 1.5rem;
-
-        &:hover {
-          background: var(--button-hover-bg);
-        }
-      }
-
-      > label {
-        gap: 0.15rem;
-      }
-
-      input {
-        background: var(--input-bg-color);
-        border: 1px solid var(--default-border-color);
-        border-radius: var(--border-radius-md);
-        color: var(--text-primary-color);
-        font: inherit;
-        height: 2rem;
-        padding: 0 0.25rem;
-        text-align: center;
-        width: 3rem;
-      }
-
-      &__icon {
-        color: var(--text-secondary-color);
-        font-size: 0.85rem;
-      }
-    }
-
     .text-bullets-icon {
       align-items: center;
       display: inline-flex;
@@ -827,11 +887,112 @@ body.excalidraw-cursor-resize * {
     }
   }
 
+  // YAZ-3943 demo 2: the text toolbar's font, by its name
+  .font-picker__name {
+    background: transparent;
+    border: 0;
+    border-radius: var(--border-radius-md);
+    color: var(--text-primary-color);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    height: 2rem;
+    max-width: 7rem;
+    overflow: hidden;
+    padding: 0 0.4rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &:hover,
+    &[aria-pressed="true"] {
+      background: var(--button-hover-bg);
+    }
+  }
+
+  .contextual-properties-toolbar__group {
+    align-items: center;
+    display: flex;
+  }
+
   .contextual-properties-toolbar__popover {
     max-height: min(32rem, calc(100vh - 8rem));
     max-width: min(28rem, calc(100vw - 2rem));
     overflow-x: hidden;
     overflow-y: auto;
+
+    // YAZ-3943 demo 2: the align and line spacing menus, as the toolbar had them
+    > .context-fieldset {
+      align-items: center;
+      border: 0;
+      display: flex;
+      margin: 0;
+      padding: 0;
+
+      .line-height-custom,
+      .line-height-custom > label {
+        align-items: center;
+        display: flex;
+      }
+
+      .line-height-custom {
+        gap: 0.2rem;
+        margin: 0;
+
+        > button {
+          align-items: center;
+          background: transparent;
+          border: 0;
+          border-radius: var(--border-radius-md);
+          color: var(--text-primary-color);
+          cursor: pointer;
+          display: flex;
+          font-size: 1rem;
+          height: 2rem;
+          justify-content: center;
+          width: 1.5rem;
+
+          &:hover {
+            background: var(--button-hover-bg);
+          }
+        }
+
+        > label {
+          gap: 0.15rem;
+        }
+
+        input {
+          background: var(--input-bg-color);
+          border: 1px solid var(--default-border-color);
+          border-radius: var(--border-radius-md);
+          color: var(--text-primary-color);
+          font: inherit;
+          height: 2rem;
+          padding: 0 0.25rem;
+          text-align: center;
+          width: 3rem;
+        }
+
+        &__icon {
+          color: var(--text-secondary-color);
+          font-size: 0.85rem;
+        }
+      }
+
+      .buttonList {
+        display: flex;
+        gap: 0.25rem;
+
+        input[type="radio"] {
+          opacity: 0;
+          pointer-events: none;
+          position: absolute;
+        }
+
+        label {
+          @include outlineButtonIconStyles;
+        }
+      }
+    }
 
     .contextual-properties-toolbar__secondary-properties {
       align-items: flex-end;
