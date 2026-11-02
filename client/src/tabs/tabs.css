@@ -324,24 +324,27 @@
   margin: 0 4px 0 0;
 }
 
-/* A copy's number (YAZ-4156 10): the board's "1 of 2" chip, small, at the name's end (demo round 2), left of the
-   label's room for the ✕. The name gives way to it: it is cut and fades before the chip, so a 72px tab still shows it. */
-.tabbar__name:has(+ .tabbar__copy) {
+/* A copy's number (YAZ-4156 10): a small chip at the name's end (demo round 2), left of the label's room for the ✕.
+   The name gives way to it: it is cut and fades before the chip, so a 72px tab still shows it. The chip is generated
+   content with an empty alternative text (3F1), so it is neither the tab's text nor its accessible name; the tooltip
+   says "2 of 3". Its colours are the text's own, mixed, so it reads on a hovered tab in dark too. */
+.tabbar__label[data-copy] > .tabbar__name {
   overflow: hidden;
   /* As the label's own fade: only a name that runs into this room fades, so a short name stays clear. */
   padding-right: 6px;
   mask-image: linear-gradient(to right, #000 calc(100% - 6px), transparent);
 }
 
-.tabbar__copy {
+.tabbar__label[data-copy]::after {
+  content: attr(data-copy) / '';
   flex: none;
   padding: 0 4px;
   border-radius: 6px;
   font-size: 10px;
   font-style: normal;
   line-height: 14px;
-  color: var(--fg-muted);
-  background: var(--bg-hover);
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
 }
 
 .taboverview__asleep {

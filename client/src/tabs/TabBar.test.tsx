@@ -1018,7 +1018,7 @@ describe('a zoomed tab\'s tooltip (YAZ-3647 E4)', () => {
     act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map([['/v/trip.md', 'Trip plan']])} windowId="w1" tabs={tabs} active="z" zoomLabels={new Map([['k1:0', 'Day 1: Lisbon']])} onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} {...noNav} />))
     const tab = (id: string) => container!.querySelector<HTMLButtonElement>(`[data-tab="${id}"] [role="tab"]`)!
     expect(['z', 'u', 'p', 'n'].map((id) => tab(id).title)).toEqual(['Trip plan › Day 1: Lisbon\n/v/trip.md\n1 of 4', '/v/trip.md\n2 of 4', '/v/trip.md\n3 of 4', 'Trip plan › Day 1: Lisbon\n/v/trip.md\n4 of 4'])
-    expect(['z', 'n'].map((id) => tab(id).querySelector('.tabbar__name')?.textContent)).toEqual(['Trip plan', 'Lisbon'])
+    expect(['z', 'n'].map((id) => tab(id).textContent)).toEqual(['Trip plan', 'Lisbon'])
   })
 })
 
@@ -1173,9 +1173,10 @@ describe('TabBar copies (YAZ-2940 D1): two tabs of one file', () => {
     act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} windowId="w1" tabs={tabs} active="t3" onActivate={onActivate} onClose={onClose} onMove={vi.fn()} onMoveToNewWindow={onMoveToNewWindow} {...noNav} />))
     const el = container
     expect([...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((tab) => tab.dataset.tab)).toEqual(['t1', 't2', 't3'])
-    expect([...el.querySelectorAll('[role="tab"]')].map((tab) => [tab.querySelector('.tabbar__name')?.textContent, tab.getAttribute('aria-selected')])).toEqual([['a', 'false'], ['b', 'false'], ['a', 'true']])
-    // Each copy wears its number before the name, and its tooltip says "1 of 2", as the tab board's card (YAZ-4156 10); a page with one tab has none.
-    expect([...el.querySelectorAll('[role="tab"]')].map((tab) => [tab.querySelector('.tabbar__copy')?.textContent ?? null, (tab as HTMLElement).title])).toEqual([['1', '/v/a.md\n1 of 2'], [null, '/v/b.md'], ['2', '/v/a.md\n2 of 2']])
+    expect([...el.querySelectorAll('[role="tab"]')].map((tab) => [tab.textContent, tab.getAttribute('aria-selected')])).toEqual([['a', 'false'], ['b', 'false'], ['a', 'true']])
+    // Each copy wears its number at the end of its name, and its tooltip says "1 of 2", as the tab board's card (YAZ-4156 10); a page with one tab has none.
+    // The number is drawn from `data-copy` (YAZ-4156 3F1): it is no text of the tab, so the tab's name stays the page's.
+    expect([...el.querySelectorAll('[role="tab"]')].map((tab) => [tab.querySelector('.tabbar__label')?.getAttribute('data-copy') ?? null, (tab as HTMLElement).title])).toEqual([['1', '/v/a.md\n1 of 2'], [null, '/v/b.md'], ['2', '/v/a.md\n2 of 2']])
     act(() => el.querySelector<HTMLButtonElement>('[data-tab="t1"] [role="tab"]')?.click())
     expect(onActivate).toHaveBeenCalledWith('t1')
     act(() => el.querySelector<HTMLButtonElement>('[data-tab="t3"] .tabbar__close')?.click())
@@ -1248,7 +1249,7 @@ describe('TabBar display name (YAZ-2949 D4, D5)', () => {
 
   it('S11, S14: a named tab shows its name; the tooltip gives the page name, then the path; the ✕ names the tab by its display name', () => {
     const el = mountIds()
-    expect(tabs(el).map((t) => t.querySelector('.tabbar__name')?.textContent)).toEqual(['Plan', 'Outline'])
+    expect(tabs(el).map((t) => t.querySelector('.tabbar__label')?.textContent)).toEqual(['Plan', 'Outline'])
     expect(tabs(el).map((t) => t.querySelector<HTMLElement>('.tabbar__btn')?.title)).toEqual([`${A}\n1 of 2`, `Plan\n${A}\n2 of 2`])
     expect(tabs(el)[1].querySelector('.tabbar__close')?.getAttribute('aria-label')).toBe('Close Outline')
   })

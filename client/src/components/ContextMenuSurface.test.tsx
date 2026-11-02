@@ -16,9 +16,9 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-const mount = (onClose: () => void) => {
+const mount = (onClose: () => void, role?: 'menu' | 'dialog') => {
   root = createRoot(document.body.appendChild(document.createElement('div')))
-  act(() => root?.render(<ContextMenuSurface x={0} y={0} onClose={onClose}><button type="button">Row</button></ContextMenuSurface>))
+  act(() => root?.render(<ContextMenuSurface x={0} y={0} onClose={onClose} role={role}><button type="button">Row</button></ContextMenuSurface>))
 }
 
 describe('ContextMenuSurface closes', () => {
@@ -37,6 +37,15 @@ describe('ContextMenuSurface closes', () => {
     mount(onClose)
     act(() => void window.dispatchEvent(new Event('blur')))
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('a dialog on the surface stays when the window loses focus, so a typed search is kept, and leaves a frame its keyboard (YAZ-4156 3H, checker)', () => {
+    const onClose = vi.fn()
+    const frame = document.body.appendChild(document.createElement('iframe'))
+    frame.focus()
+    mount(onClose, 'dialog')
+    act(() => void window.dispatchEvent(new Event('blur')))
+    expect([onClose.mock.calls.length, document.activeElement === frame]).toEqual([0, true])
   })
 
   it('takes the keyboard back from a frame that has it as the menu opens, so a click into the frame blurs the window again', () => {
