@@ -15,6 +15,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { isFoldingOn, turnsFoldingOn } from './foldingSwitch'
 import { addHeadingFoldSetMeta, hasHeadingFoldMeta, headingCollapsedAfter, headingCollapsedPositions, headingFoldRows, headingLevel } from './headingFolding'
 import { addOutlineFoldSetMeta, hasOutlineFoldMeta, outlineCollapsedAfter, outlineCollapsedPositions, outlineFoldRows } from './outlineFolding'
 
@@ -135,8 +136,10 @@ export const createFoldLock = ({ seedLockedKeys = () => new Set(), onLockedKeysC
         },
         appendTransaction: (transactions, _oldState, state) => {
           const locked = pluginKey.getState(state)
-          if (locked === undefined || locked.size === 0) return null
-          const folds = transactions.some((tr) => tr.docChanged || hasOutlineFoldMeta(tr) || hasHeadingFoldMeta(tr) || tr.getMeta(pluginKey) !== undefined)
+          // Folding off (YAZ-4094 F1): the fold plugins ignore each request, and the saved folds wait. So does the lock,
+          // until folding is on again: then it opens the saved folds that it holds.
+          if (locked === undefined || locked.size === 0 || !isFoldingOn(state)) return null
+          const folds = transactions.some((tr) => tr.docChanged || hasOutlineFoldMeta(tr) || hasHeadingFoldMeta(tr) || tr.getMeta(pluginKey) !== undefined || turnsFoldingOn(tr))
           if (!folds) return null
           const ranges = lockRanges(state)
           const bullets = [...outlineCollapsedPositions(state)].filter((pos) => held(ranges, pos))

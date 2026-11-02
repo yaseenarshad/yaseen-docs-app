@@ -734,7 +734,8 @@ function CrepeHost({
     let lockedKeys: readonly string[] = startFolds.filter((k) => k.startsWith('lock:'))
     // One bucket, two writers (D3): each plugin reports its own keys; the union write means neither
     // can wipe the other's. Heading keys are 'h:'-prefixed by the plugin itself, so they can't collide.
-    const writeFolds = () => storage.setFolds(root, file.path, [...bulletFoldKeys, ...headingFoldKeys, ...lockedKeys])
+    // Locks first: the store keeps the first 500 keys, and a lock is a deliberate choice, a fold often is not (YAZ-4094 4A).
+    const writeFolds = () => storage.setFolds(root, file.path, [...lockedKeys, ...bulletFoldKeys, ...headingFoldKeys])
     // Each plugin reports its keys once as the editor opens. From a page view that report is the
     // seed, not a change: it is not written until a fold changes in this copy (YAZ-2951 S10).
     let bulletSeedPending = start !== undefined
@@ -909,7 +910,7 @@ function CrepeHost({
         offPageView = registerPageView(scroller, () => ({
           scrollTop: scroller.scrollTop,
           zoomKey: getZoomKeyOf(crepe),
-          folds: [...bulletFoldKeys, ...headingFoldKeys, ...lockedKeys],
+          folds: [...lockedKeys, ...bulletFoldKeys, ...headingFoldKeys],
           magnification: documentZoomRef.current,
           selection: getCaretOf(crepe),
         }))

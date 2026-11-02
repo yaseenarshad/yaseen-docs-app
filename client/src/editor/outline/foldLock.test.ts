@@ -29,7 +29,8 @@ import { foldAllRows } from './foldAllRows'
 import { nextDocumentFold, setAllDocumentFolds } from './foldAllHotkeys'
 import { FOLD_LOCK_ATTR, type FoldLockOptions, isFoldLocked, toggleFoldLock } from './foldLock'
 import { isHeadingCollapsed, setHeadingFoldSet } from './headingFolding'
-import { isOutlineItemCollapsed, OUTLINE_TOGGLE_CLASS, setOutlineFoldAtSelection, setOutlineFoldSet, undoLastFold } from './outlineFolding'
+import { setFoldingOn } from './foldingSwitch'
+import { hasOutlineFoldMeta, isOutlineItemCollapsed, outlineCollapsedPositions, OUTLINE_TOGGLE_CLASS, setOutlineFoldAtSelection, setOutlineFoldSet, undoLastFold } from './outlineFolding'
 
 const DOC = `# Plan
 
@@ -247,5 +248,20 @@ describe('a fold the lock blocks entirely never happens', () => {
     // ⌘Z goes to what the reader did before the blocked press: it opens "Yaseen" again.
     expect(undoLastFold(view.state, view.dispatch)).toBe(true)
     expect(isOutlineItemCollapsed(view.state, item(view, 'Yaseen'))).toBe(false)
+  })
+})
+
+describe('with folding off', () => {
+  it('the lock waits: an edit adds no unfold; turning folding on opens the saved folds it holds', async () => {
+    const view = await mount()
+    setOutlineFoldSet([item(view, 'Calls')], true)(view.state, view.dispatch)
+    view.dispatch(setFoldingOn(view.state.tr, false))
+    lock(view, item(view, 'Trevor'))
+    // The saved fold is kept while folding is off, as every saved fold is.
+    expect(outlineCollapsedPositions(view.state).has(item(view, 'Calls'))).toBe(true)
+    const { transactions } = view.state.applyTransaction(view.state.tr.insertText('New ', heading(view, 'Plan') + 1))
+    expect(transactions.filter(hasOutlineFoldMeta)).toHaveLength(0)
+    view.dispatch(setFoldingOn(view.state.tr, true))
+    expect(isOutlineItemCollapsed(view.state, item(view, 'Calls'))).toBe(false)
   })
 })
