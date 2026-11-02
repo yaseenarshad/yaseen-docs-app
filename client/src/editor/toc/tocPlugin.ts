@@ -174,6 +174,28 @@ export const scanNote = (doc: ProseNode, source: TocSource | null = null): Scann
   return bullets.length >= ENOUGH_ROWS ? { bullets: true, rows: bullets } : { bullets: false, rows: headings }
 }
 
+/**
+ * A bullet zoom's own rows (YAZ-4094 4D): the zoom makes the bullet a page, so its rows are what is
+ * in it. Its child bullets three levels down, or with the `headings` source every H1-H5 inside it.
+ * Null when that gives fewer than two rows: the note's own rows then stay, with the zoom's section
+ * current (4C).
+ */
+export const scanZoom = (doc: ProseNode, itemPos: number, source: TocSource | null = null): ScannedNote | null => {
+  const item = doc.nodeAt(itemPos)
+  if (!isListItem(item)) return null
+  const rows: ScannedRow[] = []
+  if (source === 'headings') {
+    item.descendants((node, offset) => {
+      const level = headingLevel(node)
+      if (level !== null && level <= DEEPEST_TOC_LEVEL) rows.push({ level: level as TocLevel, text: node.textContent.trim() || 'Untitled heading', pos: itemPos + 1 + offset })
+      return !node.isTextblock
+    })
+  } else {
+    for (const nested of findNestedLists(item)) collectBullets(nested.list, itemPos + nested.offset + 2, 1, rows)
+  }
+  return rows.length >= ENOUGH_ROWS ? { bullets: source !== 'headings', rows } : null
+}
+
 /** The list item a heading is the label of — its first block — or null for any other heading. */
 const labelledItemPos = (doc: ProseNode, headingPos: number): number | null => {
   const $heading = doc.resolve(headingPos)
@@ -244,7 +266,9 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
           const scan = (): ScannedNote => {
             if (timer !== null) clearTimeout(timer)
             timer = null
-            const note = scanNote(view.state.doc, channel.getSource())
+            // In a bullet zoom, the zoom's own rows when it has enough (YAZ-4094 4D).
+            const zoomed = getZoomedItemPos(view.state)
+            const note = (zoomed === null ? null : scanZoom(view.state.doc, zoomed, channel.getSource())) ?? scanNote(view.state.doc, channel.getSource())
             positions = note.rows.map(({ pos }) => pos)
             bullets = note.bullets
             // A row names its links as the note shows them (YAZ-3744 D6).
@@ -415,6 +439,11 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
           return {
             update: (_view, previous) => {
               channel.setHidden(getZoomedItemPos(view.state) !== null)
+              // A zoom in or out scans at once, as a change of source does: a click, not typing (YAZ-4094 4D).
+              if (getZoomedItemPos(previous) !== getZoomedItemPos(view.state)) {
+                scan()
+                return
+              }
               if (view.state.doc === previous.doc) return
               if (timer !== null) clearTimeout(timer)
               timer = setTimeout(scan, SCAN_DELAY_MS)
