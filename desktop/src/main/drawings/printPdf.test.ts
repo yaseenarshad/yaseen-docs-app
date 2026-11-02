@@ -44,12 +44,14 @@ describe('printSvgToPdf', () => {
   it('loads a small data: page, puts the SVG in, prints one page of the drawing\'s size with no margins and the background, then destroys the window', async () => {
     const win = fakeWindow()
     const svg = '<svg width="960" height="480"><text>Hi</text></svg>'
-    expect((await printSvgToPdf(svg, { width: 960, height: 480 }, () => win as unknown as PdfWindow)).toString()).toBe('%PDF')
+    expect((await printSvgToPdf(svg, { width: 960, height: 480 }, 'Board', () => win as unknown as PdfWindow)).toString()).toBe('%PDF')
     expect(win.loadURL.mock.calls[0][0]).toMatch(/^data:text\/html;charset=utf-8,/)
     expect(win.loadURL.mock.calls[0][0]).not.toContain('Hi')
     const script = win.webContents.executeJavaScript.mock.calls[0][0] as string
     expect(script).toContain(JSON.stringify(svg))
     expect(script).toContain('document.fonts.ready')
+    // YAZ-4071 7Q: the PDF's Title is the board's name, not the data: URL
+    expect(script).toContain('document.title = "Board";')
     expect(win.webContents.printToPDF).toHaveBeenCalledWith({ pageSize: { width: 10, height: 5 }, margins: { top: 0, bottom: 0, left: 0, right: 0 }, printBackground: true, pageRanges: '1' })
     expect(win.destroy).toHaveBeenCalledTimes(1)
   })
@@ -59,7 +61,7 @@ describe('printSvgToPdf', () => {
     try {
       const win = fakeWindow()
       win.webContents.executeJavaScript.mockImplementation(() => new Promise(() => undefined))
-      const done = printSvgToPdf('<svg/>', { width: 96, height: 96 }, () => win as unknown as PdfWindow)
+      const done = printSvgToPdf('<svg/>', { width: 96, height: 96 }, 'Board', () => win as unknown as PdfWindow)
       const failed = expect(done).rejects.toThrow('The PDF print did not answer in 60 s.')
       await vi.advanceTimersByTimeAsync(PDF_TIMEOUT_MS)
       await failed
@@ -72,7 +74,7 @@ describe('printSvgToPdf', () => {
 
   it.each(['load', 'script', 'print'] as const)('destroys the window when the %s step fails, and the failure reaches the caller', async (step) => {
     const win = fakeWindow(step)
-    await expect(printSvgToPdf('<svg/>', { width: 96, height: 96 }, () => win as unknown as PdfWindow)).rejects.toThrow(`${step} failed`)
+    await expect(printSvgToPdf('<svg/>', { width: 96, height: 96 }, 'Board', () => win as unknown as PdfWindow)).rejects.toThrow(`${step} failed`)
     expect(win.destroy).toHaveBeenCalledTimes(1)
   })
 })

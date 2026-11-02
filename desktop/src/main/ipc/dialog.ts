@@ -200,7 +200,8 @@ export async function savePdfFile(e: IpcMainInvokeEvent, inFlight: Set<BrowserWi
   const file = await showSave(e, inFlight, { ...SAVE_PDF_OPTIONS, defaultPath: defaultName })
   if (file === null) return { cancelled: true }
   if (path.extname(file).toLowerCase() !== '.pdf') throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'a PDF exports as .pdf', { path: file })
-  const pdf = await print(svg, { width, height })
+  // YAZ-4071 7Q: the PDF's Title is the name picked for the file
+  const pdf = await print(svg, { width, height }, path.basename(file, path.extname(file)))
   await fsCall(file, () => atomicWrite(file, pdf))
   return { path: file }
 }

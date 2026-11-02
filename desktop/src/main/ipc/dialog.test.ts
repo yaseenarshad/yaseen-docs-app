@@ -299,7 +299,7 @@ describe('dialog:save-file', () => {
 /** A drawing's PDF button (YAZ-3943 D6): the sheet, the print and the write are one door, one sheet per window. */
 describe('dialog:save-pdf', () => {
   const showSaveDialog = vi.mocked(dialog.showSaveDialog)
-  const print = vi.fn(async (_svg: string, _size: { width: number; height: number }) => Buffer.from('%PDF-1.7 fake'))
+  const print = vi.fn(async (_svg: string, _size: { width: number; height: number }, _title: string) => Buffer.from('%PDF-1.7 fake'))
   const savePdf = (req: unknown) => registered(CONTRACT.dialog.savePdf.channel)({ sender }, req)
   const REQ = { defaultName: 'Flow.pdf', svg: '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480"></svg>', width: 960, height: 480 }
   let dir = ''
@@ -317,7 +317,8 @@ describe('dialog:save-pdf', () => {
     showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: file })
     expect(await savePdf(REQ)).toEqual({ ok: true, value: { path: file } })
     expect(showSaveDialog.mock.calls[0][0]).toMatchObject({ defaultPath: 'Flow.pdf', filters: [{ name: 'PDF', extensions: ['pdf'] }] })
-    expect(print).toHaveBeenCalledWith(REQ.svg, { width: 960, height: 480 })
+    // YAZ-4071 7Q: the PDF's Title is the picked file's name
+    expect(print).toHaveBeenCalledWith(REQ.svg, { width: 960, height: 480 }, 'Flow')
     expect(await readFile(file, 'utf8')).toBe('%PDF-1.7 fake')
   })
 

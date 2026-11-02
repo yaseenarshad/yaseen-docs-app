@@ -29,9 +29,13 @@ export function pdfPageSize(size: { width: number; height: number }): { width: n
 /** The page the window loads first: no margin, and whatever SVG goes in fills it exactly. */
 const SHELL = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}svg{display:block;width:100%;height:100%}</style></head><body></body></html>'
 
-/** The script that puts the SVG in and answers once its fonts and pictures are ready to print. */
-function placeSvg(svg: string): string {
+/**
+ * The script that puts the SVG in and answers once its fonts and pictures are ready to print. The title is the PDF's
+ * Title (YAZ-4071 7Q: with none, Chromium writes the `data:` URL there).
+ */
+function placeSvg(svg: string, title: string): string {
   return `(async () => {
+    document.title = ${JSON.stringify(title)};
     document.body.innerHTML = ${JSON.stringify(svg)};
     document.body.getBoundingClientRect();
     await document.fonts.ready;
@@ -52,8 +56,8 @@ const hiddenWindow = (): PdfWindow =>
 /** YAZ-4074 6A item 10: a hidden window that never answers fails the export here, and is destroyed. */
 export const PDF_TIMEOUT_MS = 60_000
 
-/** The PDF bytes of one SVG (see the module doc). The window is destroyed whatever happens, at the latest after `PDF_TIMEOUT_MS`. */
-export async function printSvgToPdf(svg: string, size: { width: number; height: number }, makeWindow: () => PdfWindow = hiddenWindow): Promise<Buffer> {
+/** The PDF bytes of one SVG, with `title` as its Title (see the module doc). The window is destroyed whatever happens, at the latest after `PDF_TIMEOUT_MS`. */
+export async function printSvgToPdf(svg: string, size: { width: number; height: number }, title: string, makeWindow: () => PdfWindow = hiddenWindow): Promise<Buffer> {
   const pageSize = pdfPageSize(size)
   const win = makeWindow()
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -62,7 +66,7 @@ export async function printSvgToPdf(svg: string, size: { width: number; height: 
   })
   const print = async (): Promise<Buffer> => {
     await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(SHELL)}`)
-    await win.webContents.executeJavaScript(placeSvg(svg))
+    await win.webContents.executeJavaScript(placeSvg(svg, title))
     return win.webContents.printToPDF({ pageSize, margins: { top: 0, bottom: 0, left: 0, right: 0 }, printBackground: true, pageRanges: '1' })
   }
   try {
