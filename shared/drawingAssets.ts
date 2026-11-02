@@ -238,6 +238,18 @@ export function boardIdOf(block: unknown): string | undefined {
 }
 
 /**
+ * The block key of the IDs a board held before (YAZ-4071 7I): two Macs that each gave the board an ID before a sync
+ * keep the lower one (`shared/boardMerge.ts`), and the other one goes here, so a link to it still opens the board.
+ */
+export const FORMER_IDS_KEY = 'formerIds'
+
+/** The IDs a block held before, as written; none for a block without them. */
+export function formerBoardIdsOf(block: unknown): string[] {
+  const ids = isRecord(block) ? block[FORMER_IDS_KEY] : undefined
+  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []
+}
+
+/**
  * Index of the `}` that closes the `{` at `start`, or null when the text ends first. String-aware,
  * because an importer's extra value may legitimately contain a brace (`"note": "a }"`).
  */

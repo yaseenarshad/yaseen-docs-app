@@ -267,8 +267,9 @@ export interface IndexResponse {
   /**
    * Only when `ids`: each board (`.excalidraw`) whose `yaseendraw` block holds an ID of this vault (YAZ-3943 4C), sorted
    * by path, the ID with the current letters. Read off each board's head; a board is no record, so it is never in `records`.
+   * `was`: the IDs it held before a two-Mac merge (YAZ-4071 7I, `formerIds`), with the current letters; a link to one still opens it.
    */
-  boards?: { path: string; id: string }[]
+  boards?: { path: string; id: string; was?: string[] }[]
 }
 
 // ---------- coldDiff(root) (Links E1c, GRO-2242) ----------

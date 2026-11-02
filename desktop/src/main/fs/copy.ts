@@ -1,7 +1,7 @@
 import { cp, mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { BOARD_ID_KEY, BOARD_META_HEAD_BYTES, BOARD_META_KEY, boardIdOf, parseBoardMetaBlock, serializeBoard } from '@shared/drawingAssets'
+import { BOARD_ID_KEY, BOARD_META_HEAD_BYTES, BOARD_META_KEY, boardIdOf, FORMER_IDS_KEY, parseBoardMetaBlock, serializeBoard } from '@shared/drawingAssets'
 import { isDrawing } from '@shared/fileKind'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
 import { TITLE_KEY, kebabTitle, noteFileName, titleOf } from '@shared/noteName'
@@ -111,6 +111,7 @@ const copyBytes = (src: string, to: string): Promise<void> => fsCall(to, () => c
 /**
  * A copy of a board is another board (YAZ-3943 4C): the copy at `file` leaves its original's ID behind, and takes its own
  * on its first save. So a `[[ID]]` link keeps opening the original. A copy with no ID, or that is no scene, stays as it is.
+ * The IDs its original held before a merge (`formerIds`, YAZ-4071 7I) stay behind too.
  */
 async function dropBoardId(file: string): Promise<void> {
   const text = await fsCall(file, () => readFile(file, 'utf8'))
@@ -122,7 +123,7 @@ async function dropBoardId(file: string): Promise<void> {
     return
   }
   const { [BOARD_META_KEY]: block, ...rest } = scene
-  const { [BOARD_ID_KEY]: _id, ...kept } = block as Record<string, unknown>
+  const { [BOARD_ID_KEY]: _id, [FORMER_IDS_KEY]: _was, ...kept } = block as Record<string, unknown>
   await fsCall(file, () => atomicWrite(file, serializeBoard({ [BOARD_META_KEY]: kept, ...rest })))
 }
 

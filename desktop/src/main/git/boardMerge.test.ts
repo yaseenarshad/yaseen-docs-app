@@ -242,4 +242,19 @@ describe('mergeBoards — the switches of the yaseendraw block (YAZ-3943 1E): th
     expect(blockOf(base, scene({ createdAt: 1, updatedAt: 5, readonly: true }), scene({ createdAt: 1, updatedAt: 6 }))).toEqual({ createdAt: 1, updatedAt: 6, readonly: true })
     expect(blockOf(base, scene({ createdAt: 1, updatedAt: 5, pictures: 'assets' }), scene({ createdAt: 1, updatedAt: 6, cloudId: 'x' }))).toEqual({ createdAt: 1, updatedAt: 6, pictures: 'assets', cloudId: 'x' })
   })
+
+  it('YAZ-4071 7I: each Mac gave the board its own ID: the lower number wins on both sides, and the other ID is kept in `formerIds`', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    const a = scene({ createdAt: 1, updatedAt: 5, id: 'DEM-5' })
+    const b = scene({ createdAt: 1, updatedAt: 6, id: 'DEM-9' })
+    const want = { createdAt: 1, updatedAt: 6, id: 'DEM-5', formerIds: ['DEM-9'] }
+    expect(blockOf(base, a, b)).toEqual(want)
+    expect(blockOf(base, b, a)).toEqual(want)
+    // A later merge keeps what an earlier one learned, from either side, and never names the ID it keeps.
+    const later = scene({ createdAt: 1, updatedAt: 9, id: 'DEM-12', formerIds: ['DEM-30'] })
+    expect(blockOf(base, scene(want), later)).toEqual({ createdAt: 1, updatedAt: 9, id: 'DEM-5', formerIds: ['DEM-12', 'DEM-30', 'DEM-9'] })
+    // One ID on both sides, or on one side only: nothing to keep.
+    expect(blockOf(base, a, scene({ createdAt: 1, updatedAt: 6, id: 'DEM-5' }))).toEqual({ createdAt: 1, updatedAt: 6, id: 'DEM-5' })
+    expect(blockOf(base, a, scene({ createdAt: 1, updatedAt: 6 }))).toEqual({ createdAt: 1, updatedAt: 6, id: 'DEM-5' })
+  })
 })

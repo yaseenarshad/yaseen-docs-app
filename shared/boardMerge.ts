@@ -1,4 +1,5 @@
-import { BOARD_META_KEY, HOVER_LINKS_KEY, PICTURES_FOLDER_KEY, PICTURES_KEY, SWITCHED_KEY } from './drawingAssets'
+import { BOARD_ID_KEY, BOARD_META_KEY, boardIdOf, FORMER_IDS_KEY, formerBoardIdsOf, HOVER_LINKS_KEY, PICTURES_FOLDER_KEY, PICTURES_KEY, SWITCHED_KEY } from './drawingAssets'
+import { canonicalNoteId, noteIdNumber } from './noteId'
 import { READ_ONLY_KEY } from './readOnly'
 import { isFiniteNumber, isRecord } from './guards'
 
@@ -24,7 +25,8 @@ import { isFiniteNumber, isRecord } from './guards'
  * The board's own settings (`appState`) and any other top-level key merge per key the same way,
  * ours winning a clash — except the `yaseendraw` dates block (🔒 YAZ-1834), which stays the file's
  * FIRST key with the earlier `createdAt` and the later `updatedAt` of the two, and whose switches
- * (Read only, pictures) each take the newest change (YAZ-3943 1E).
+ * (Read only, pictures) each take the newest change (YAZ-3943 1E). Two board IDs (each Mac gave one before a sync): the
+ * lower number, and the other in `formerIds` (YAZ-4071 7I).
  *
  * Pure and engine-free: it runs in the main process in the middle of a rebase. Answers null for
  * anything it must not merge — a side that is not a scene — and the caller keeps both copies.
@@ -200,5 +202,23 @@ function mergeMeta(theirs: unknown, mine: unknown): Record<string, unknown> | nu
     times[key] = Math.max(t, m)
   }
   if (Object.keys(times).length > 0) meta[SWITCHED_KEY] = times
+  // YAZ-4071 7I: each Mac gave the board its own ID. One fixed rule, so both Macs keep the same one: the lower number. The
+  // other goes to `formerIds`, with every ID either side held before, so a link to any of them still opens the board.
+  const [t, m] = [boardIdOf(theirs), boardIdOf(mine)]
+  const former = new Set([...formerBoardIdsOf(theirs), ...formerBoardIdsOf(mine)])
+  if (t !== undefined && m !== undefined && canonicalNoteId(t) !== canonicalNoteId(m)) {
+    const [keep, lose] = idOrder(t, m) <= 0 ? [t, m] : [m, t]
+    meta[BOARD_ID_KEY] = keep
+    former.add(lose)
+  }
+  former.delete(meta[BOARD_ID_KEY] as string)
+  if (former.size > 0) meta[FORMER_IDS_KEY] = [...former].sort()
+  else delete meta[FORMER_IDS_KEY]
   return meta
+}
+
+/** The order of two board IDs: the lower number first; IDs with no number (another tool's), or one number, by their text. */
+function idOrder(a: string, b: string): number {
+  const [x, y] = [noteIdNumber(a) ?? Infinity, noteIdNumber(b) ?? Infinity]
+  return x !== y ? x - y : a < b ? -1 : a > b ? 1 : 0
 }
