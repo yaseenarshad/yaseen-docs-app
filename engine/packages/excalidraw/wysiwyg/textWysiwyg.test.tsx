@@ -78,6 +78,14 @@ const selectFontFamily = (title: string) => {
   fireEvent.click(screen.getByTitle(title));
 };
 
+// YAZ-4074 6A item 22: a shape's text align sits in the toolbar's align menu, as a text box's does
+const clickTextAlign = (title: string) => {
+  if (!screen.queryByTitle(title)) {
+    openTextToolbarPopover("Text align");
+  }
+  fireEvent.click(screen.getByTitle(title));
+};
+
 const exitTextEditorAndAssertSelection = async ({
   editor,
   selectedIds,
@@ -2966,7 +2974,7 @@ describe("textWysiwyg", () => {
 
       editor.select();
 
-      fireEvent.click(screen.getByTitle("Left"));
+      clickTextAlign("Left");
       fireEvent.click(screen.getByTitle("Align bottom"));
       Keyboard.exitTextEditor(editor);
 
@@ -2985,7 +2993,7 @@ describe("textWysiwyg", () => {
 
       editor.select();
 
-      fireEvent.click(screen.getByTitle("Right"));
+      clickTextAlign("Right");
       fireEvent.click(screen.getByTitle("Align top"));
 
       Keyboard.exitTextEditor(editor);
@@ -3305,7 +3313,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when top left", async () => {
-        fireEvent.click(screen.getByTitle("Left"));
+        clickTextAlign("Left");
         fireEvent.click(screen.getByTitle("Align top"));
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
           [
@@ -3316,7 +3324,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when top center", async () => {
-        fireEvent.click(screen.getByTitle("Center"));
+        clickTextAlign("Center");
         fireEvent.click(screen.getByTitle("Align top"));
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
           [
@@ -3327,7 +3335,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when top right", async () => {
-        fireEvent.click(screen.getByTitle("Right"));
+        clickTextAlign("Right");
         fireEvent.click(screen.getByTitle("Align top"));
 
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
@@ -3340,7 +3348,7 @@ describe("textWysiwyg", () => {
 
       it("when center left", async () => {
         fireEvent.click(screen.getByTitle("Center vertically"));
-        fireEvent.click(screen.getByTitle("Left"));
+        clickTextAlign("Left");
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
           [
             15,
@@ -3350,7 +3358,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when center center", async () => {
-        fireEvent.click(screen.getByTitle("Center"));
+        clickTextAlign("Center");
         fireEvent.click(screen.getByTitle("Center vertically"));
 
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
@@ -3362,7 +3370,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when center right", async () => {
-        fireEvent.click(screen.getByTitle("Right"));
+        clickTextAlign("Right");
         fireEvent.click(screen.getByTitle("Center vertically"));
 
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
@@ -3374,7 +3382,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when bottom left", async () => {
-        fireEvent.click(screen.getByTitle("Left"));
+        clickTextAlign("Left");
         fireEvent.click(screen.getByTitle("Align bottom"));
 
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
@@ -3386,7 +3394,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when bottom center", async () => {
-        fireEvent.click(screen.getByTitle("Center"));
+        clickTextAlign("Center");
         fireEvent.click(screen.getByTitle("Align bottom"));
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
           [
@@ -3397,7 +3405,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when bottom right", async () => {
-        fireEvent.click(screen.getByTitle("Right"));
+        clickTextAlign("Right");
         fireEvent.click(screen.getByTitle("Align bottom"));
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
           [
@@ -3421,7 +3429,7 @@ describe("textWysiwyg", () => {
       editor.select();
       // YAZ-3943 demo 2: the text toolbar's align is one button with a menu of the three
       openTextToolbarPopover("Text align");
-      fireEvent.click(screen.getByTitle("Left"));
+      clickTextAlign("Left");
 
       Keyboard.exitTextEditor(editor);
 

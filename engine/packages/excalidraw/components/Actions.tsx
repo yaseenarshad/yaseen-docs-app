@@ -520,6 +520,21 @@ export const ContextualPropertiesToolbar = ({
       </ToolbarPopover>
     </>
   );
+  // YAZ-3943 demo 2: one align button, its menu has the three
+  const textAlignMenu = () => (
+    <ToolbarPopover
+      label={t("labels.textAlign")}
+      icon={
+        textAlign === "center"
+          ? TextAlignCenterIcon
+          : textAlign === "right"
+          ? TextAlignRightIcon
+          : TextAlignLeftIcon
+      }
+    >
+      {renderAction("changeTextAlign", { contextToolbar: true })}
+    </ToolbarPopover>
+  );
   // YAZ-3943 demo 2: line spacing in a menu too
   const lineSpacing = () => (
     <ToolbarPopover
@@ -560,19 +575,7 @@ export const ContextualPropertiesToolbar = ({
           <ContextualToolbarDivider />
           {renderAction("changeTextStyle", { contextToolbar: true })}
           <ContextualToolbarDivider />
-          {/* YAZ-3943 demo 2: one align button, its menu has the three */}
-          <ToolbarPopover
-            label={t("labels.textAlign")}
-            icon={
-              textAlign === "center"
-                ? TextAlignCenterIcon
-                : textAlign === "right"
-                ? TextAlignRightIcon
-                : TextAlignLeftIcon
-            }
-          >
-            {renderAction("changeTextAlign", { contextToolbar: true })}
-          </ToolbarPopover>
+          {textAlignMenu()}
           {lineSpacing()}
           <ContextualSecondaryProperties
             renderAction={renderAction}
@@ -650,12 +653,11 @@ export const ContextualPropertiesToolbar = ({
           {predicates.text && (
             <>
               <ContextualToolbarDivider />
-              {/* YAZ-4074 6A item 22: the text box's group, in the order font, size, line height */}
+              {/* YAZ-4074 6A item 22: the text box's group, in its order (the approved demo: line spacing last) */}
               {fontAndSize()}
-              {lineSpacing()}
               {renderAction("changeTextStyle", { contextToolbar: true })}
-              {predicates.textAlign &&
-                renderAction("changeTextAlign", { contextToolbar: true })}
+              {predicates.textAlign && textAlignMenu()}
+              {lineSpacing()}
             </>
           )}
           {predicates.verticalAlign && (
@@ -728,12 +730,11 @@ export const ContextualPropertiesToolbar = ({
           {predicates.text && (
             <>
               <ContextualToolbarDivider />
-              {/* YAZ-4074 6A item 22: the text box's group, in the order font, size, line height */}
+              {/* YAZ-4074 6A item 22: the text box's group, in its order (the approved demo: line spacing last) */}
               {fontAndSize()}
-              {lineSpacing()}
               {renderAction("changeTextStyle", { contextToolbar: true })}
-              {predicates.textAlign &&
-                renderAction("changeTextAlign", { contextToolbar: true })}
+              {predicates.textAlign && textAlignMenu()}
+              {lineSpacing()}
             </>
           )}
           {predicates.verticalAlign && (

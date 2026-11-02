@@ -875,7 +875,7 @@ describe("element locking", () => {
       ["a shape with text", false],
       ["a mixed selection", true],
     ])(
-      "should give %s the text box's text group: font by name, the size popover with its slider, then line spacing (YAZ-4074 6A item 22)",
+      "should give %s the text box's text group in its order: font by name, the size popover with its slider, align, then line spacing (YAZ-4074 6A item 22)",
       (_, mixed) => {
         const [container, text] = API.createTextContainer();
         const other = API.createElement({ type: "ellipse", x: 300 });
@@ -888,7 +888,12 @@ describe("element locking", () => {
         ].map((node) => node.getAttribute("aria-label")!);
         const at = (start: string) =>
           labels.findIndex((label) => label.startsWith(start));
-        const order = ["Show font picker", "Font size", "Line spacing"].map(at);
+        const order = [
+          "Show font picker",
+          "Font size",
+          "Text align",
+          "Line spacing",
+        ].map(at);
         expect(order.every((index) => index >= 0)).toBe(true);
         expect([...order].sort((a, b) => a - b)).toEqual(order);
         expect(labels[at("Show font picker")]).toMatch(/^Show font picker: \S/);
