@@ -57,6 +57,16 @@
   handle click keeps a selection of whole columns (rows, without the header row)
   that holds the hovered one; Shift + click grows the selection to the hovered
   column (row). The app's menu counts the selection in its labels.
+- YAZ-4169: the handles stay on the column (row) under the pointer in a sideways
+  scroll. The handles are `position: absolute` with `.ProseMirror` as their
+  containing block, so they are outside the block's sideways scroll
+  (`div.milkdown-table-block`, `overflow-x: auto`). A scroll moved the cells under a
+  still pointer and sent no pointer move, so the handle stayed over another column.
+  Now the block's `scroll` runs the last pointer move again while the handles show
+  (`pointerReplay` in `view/pointer.ts`). The block does not clip the handles either,
+  so the column handle centres on the part of the header cell that the block shows
+  (`visibleRect` in `view/utils.ts`), not beside the table. The 8px edge zone that
+  hid both handles is already gone (YAZ-3800, above).
 
 Upstream PR: prepared, awaiting Yasin's go (the patch and PR text are in
 `client/vendor/upstream/list-item-restore/`); drop this hunk under
@@ -101,14 +111,16 @@ Only these files differ from upstream:
 - `src/table-block/view/component.tsx`
 - `src/table-block/view/operation.ts`
 - `src/table-block/view/types.ts`
+- `src/table-block/view/utils.ts`
 - `lib/table-block/index.js`
 - `lib/table-block/view/operation.d.ts`
 - `lib/table-block/view/types.d.ts`
+- `lib/table-block/view/pointer.d.ts`
 - `src/list-item-block/view.ts`
 - `lib/list-item-block/index.js`
 
 The stale table-block and list-item-block source maps and their
 `sourceMappingURL` lines are removed because the compiled runtime is patched
 directly. The package exports do not change. The declaration changes are the
-internal `operation.d.ts` and `types.d.ts` (not exported), so they match the new
-runtime.
+internal `operation.d.ts`, `types.d.ts` and `pointer.d.ts` (not exported), so they
+match the new runtime.

@@ -1,7 +1,8 @@
 /**
  * The vendored table block (`client/vendor/milkdown-components-7.22.1-yaz1410.*`) on the real editor in jsdom:
  * mouse cell select and no redraw on a decoration change (YAZ-3696 B2, B4), column resize (D2), no insert
- * line (YAZ-3800), and the handles that ask for the app's table menu (YAZ-3820).
+ * line (YAZ-3800), the handles that ask for the app's table menu (YAZ-3820), and the handles in a sideways
+ * scroll (YAZ-4169).
  * jsdom has no layout: `tableTestKit` gives each cell a 100 × 30 px box.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -299,5 +300,54 @@ describe('table block: a handle opens the app\'s table menu (YAZ-3820)', () => {
     await pause()
     clickHandle(view, 'row', 2, 0, { shiftKey: true })
     expect(new Set(selectedRect(view).map(([r]) => r))).toEqual(new Set([1, 2]))
+  })
+})
+
+/** The handles follow the pointer once each 20 ms (a throttle), and Floating UI places them a moment later. */
+const placed = () => new Promise(resolve => setTimeout(resolve, 30))
+/**
+ * A sideways scroll box for the table: it shows 0–250 px of the 400 px table. `scrollTo(x)` moves each cell's box and
+ * the pointer-to-cell lookup by `x` px, as a scroll of the block does (jsdom has no layout), then sends `scroll`.
+ */
+function sidewaysScroll(view: EditorView) {
+  const block = view.dom.querySelector<HTMLElement>('.milkdown-table-block')!
+  block.getBoundingClientRect = () => new DOMRect(0, 0, 250, 150)
+  const cells = [...view.dom.querySelectorAll<HTMLElement>('td, th')].map(cell => [cell, cell.getBoundingClientRect()] as const)
+  let scrolled = 0
+  view.posAtCoords = ({ left, top }) => {
+    const pos = cellPos(view, Math.floor(top / 30), Math.floor((left + scrolled) / 100))
+    return { pos: pos + 2, inside: pos + 1 }
+  }
+  return (x: number) => {
+    scrolled = x
+    for (const [cell, box] of cells) cell.getBoundingClientRect = () => new DOMRect(box.x - x, box.y, box.width, box.height)
+    block.dispatchEvent(new Event('scroll'))
+  }
+}
+const pointerAt = (view: EditorView, x: number, y: number) => mouseAt('pointermove', cellDOM(view, 1, 0).firstChild!, x, y)
+
+// YAZ-4169: the handles sit in the note's coordinates (their containing block is `.ProseMirror`), outside the
+// block's sideways scroll. A scroll moved the cells under a still pointer and left the handle over another column,
+// and a column that was partly scrolled out got its handle beside the table.
+describe('table block: the column handle stays on the column under the pointer in a sideways scroll (YAZ-4169)', () => {
+  it('a scroll of the block moves the shown handle to the column under the pointer, centred on the part that shows', async () => {
+    const view = await mount(WIDE)
+    const scrollTo = sidewaysScroll(view)
+    const col = handle(view, 'col')
+    // Column C is at 200–300 px, and 200–250 px shows. jsdom gives the handle no width, so `left` is its centre.
+    pointerAt(view, 240, 45)
+    await placed()
+    expect(col.style.left).toBe('225px')
+    pointerAt(view, 50, 45)
+    await placed()
+    expect(col.style.left).toBe('50px')
+    // The block scrolls 150 px, and the pointer stays still (a scroll sends no pointer move): column C is under it.
+    scrollTo(150)
+    await placed()
+    expect(col.style.left).toBe('100px')
+    // The block scrolls back: column A is under the pointer again.
+    scrollTo(0)
+    await placed()
+    expect(col.style.left).toBe('50px')
   })
 })
