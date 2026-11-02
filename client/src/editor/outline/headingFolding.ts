@@ -92,11 +92,24 @@ let nextViewId = 0
 export const headingFoldHideSelector = (viewId: string, path: readonly number[], first: number, last: number): string =>
   `.editor-instance .milkdown [${HEADING_FOLD_VIEW_ATTR}="${viewId}"] > ${path.map((i) => `:nth-child(${i}) > `).join('')}:nth-child(n+${first}):nth-child(-n+${last})`
 
-/** An element's place among its parent's element children, from 1, as `:nth-child` counts. */
-const placeOf = (el: Element): number => Array.prototype.indexOf.call(el.parentElement?.children ?? [], el) + 1
+type PlaceOf = (el: Element) => number
+
+/**
+ * An element's place among its parent's element children, from 1, as `:nth-child` counts. One walk of each parent per
+ * update, not a search per folded section: with 1,000 folded sections the search made each update O(blocks × folds).
+ */
+const placeFinder = (): PlaceOf => {
+  const places = new Map<Element, number>()
+  return (el) => {
+    // An element not met yet: walk its parent's children once, which places it and each sibling.
+    let place = 0
+    if (!places.has(el)) for (let child = el.parentElement?.firstElementChild ?? null; child !== null; child = child.nextElementSibling) places.set(child, ++place)
+    return places.get(el) ?? 0
+  }
+}
 
 /** The hide rule of one folded section, read off the DOM, or null when its blocks are not drawn as siblings under the editor. */
-const hideRule = (view: EditorView, viewId: string, entry: HeadingEntry): string | null => {
+const hideRule = (view: EditorView, viewId: string, entry: HeadingEntry, placeOf: PlaceOf): string | null => {
   const first = view.nodeDOM(entry.sectionBlockRanges[0].from)
   const last = view.nodeDOM(entry.sectionBlockRanges[entry.sectionBlockRanges.length - 1].from)
   if (!(first instanceof Element) || !(last instanceof Element) || first.parentElement !== last.parentElement) return null
@@ -564,11 +577,13 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             const foldingState = pluginKey.getState(view.state)
             if (!foldingState) return
             const rules: string[] = []
-            if (isFoldingOn(view.state))
+            if (isFoldingOn(view.state) && foldingState.collapsedHeadingPositions.size > 0) {
+              const placeOf = placeFinder()
               for (const entry of foldingState.entries) {
-                const rule = foldingState.collapsedHeadingPositions.has(entry.headingPos) ? hideRule(view, viewId, entry) : null
+                const rule = foldingState.collapsedHeadingPositions.has(entry.headingPos) ? hideRule(view, viewId, entry, placeOf) : null
                 if (rule !== null) rules.push(rule)
               }
+            }
             if (style.textContent !== rules.join('\n')) style.textContent = rules.join('\n')
             if (!onCollapsedKeysChange) return
             const keys = getCollapsedKeys(foldingState)
