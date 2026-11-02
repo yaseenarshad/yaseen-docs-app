@@ -480,12 +480,14 @@ const applyTextEdit = (
   previousEnd: number,
   nextEnd: number,
   insertStyle?: TextRunStyle,
+  /** The inserted letters get no style (an indent or a list marker). */
+  plain?: boolean,
 ) => {
   const delta = nextEnd - previousEnd;
   const map = (offset: number) =>
     offset <= start ? offset : offset >= previousEnd ? offset + delta : start;
   const style =
-    nextEnd > start
+    nextEnd > start && !plain
       ? {
           ...getInsertStyle(runs, previousText, start, previousEnd > start),
           ...insertStyle,
@@ -515,6 +517,42 @@ const applyTextEdit = (
 };
 
 /**
+ * Pairs of (previous line, next text) for an edit that is moved line by line,
+ * or null when the line count does not fit. With `insertedLine`, the line
+ * above the new line takes both lines; else each line keeps its index.
+ */
+const getLinePairs = (
+  previousText: string,
+  nextText: string,
+  insertedLine: number | undefined,
+) => {
+  const previousLines = previousText.split("\n");
+  const nextLines = nextText.split("\n");
+  if (insertedLine !== undefined && insertedLine > 0) {
+    if (nextLines.length !== previousLines.length + 1) {
+      return null;
+    }
+    return previousLines.map((line, index) =>
+      index < insertedLine - 1
+        ? { previous: line, next: nextLines[index] }
+        : index === insertedLine - 1
+        ? {
+            previous: line,
+            next: `${nextLines[index]}\n${nextLines[index + 1]}`,
+          }
+        : { previous: line, next: nextLines[index + 1] },
+    );
+  }
+  if (nextLines.length !== previousLines.length) {
+    return null;
+  }
+  return previousLines.map((line, index) => ({
+    previous: line,
+    next: nextLines[index],
+  }));
+};
+
+/**
  * The run version of a text edit in the editor (YAZ-3718 D10): an insert inside
  * or at the end of a run extends it, Enter keeps the style on both sides, and a
  * delete shrinks runs and drops empty ones.
@@ -531,6 +569,12 @@ export const remapTextRunsForTextEdit = (
      * renumbers the lines below): each line is moved on its own.
      */
     insertedLine?: number;
+    /**
+     * YAZ-4071 7C, 7D: the edit changed the start of several lines and kept
+     * their count (a list button, Tab or Shift-Tab): each line is moved on its
+     * own, and the inserted indent or marker gets no style.
+     */
+    eachLine?: boolean;
     /** A style the next typed letters get (a B, I, U, S or color with only a caret). */
     insertStyle?: TextRunStyle;
   },
@@ -543,54 +587,46 @@ export const remapTextRunsForTextEdit = (
   }
 
   const insertedLine = options?.insertedLine;
-  if (insertedLine !== undefined && insertedLine > 0) {
-    const previousLines = previousText.split("\n");
-    const nextLines = nextText.split("\n");
-    if (nextLines.length === previousLines.length + 1) {
-      // pairs of (previous line, next text): the line above the new line takes both
-      const pairs = previousLines.map((line, index) =>
-        index < insertedLine - 1
-          ? { previous: line, next: nextLines[index] }
-          : index === insertedLine - 1
-          ? {
-              previous: line,
-              next: `${nextLines[index]}\n${nextLines[index + 1]}`,
-            }
-          : { previous: line, next: nextLines[index + 1] },
-      );
-      const starts = pairs.map((_, index) =>
-        pairs
-          .slice(0, index)
-          .reduce((sum, pair) => sum + pair.previous.length + 1, 0),
-      );
-      const nextStarts = pairs.map((_, index) =>
-        pairs
-          .slice(0, index)
-          .reduce((sum, pair) => sum + pair.next.length + 1, 0),
-      );
-      let moved = runs;
-      // from the last line up: the offsets above each edit stay valid
-      for (let index = pairs.length - 1; index >= 0; index--) {
-        const pair = pairs[index];
-        if (pair.previous === pair.next) {
-          continue;
-        }
-        const caret =
-          index === insertedLine - 1 && options?.caret !== undefined
-            ? options.caret - nextStarts[index]
-            : undefined;
-        const edit = getEditWindow(pair.previous, pair.next, caret);
-        moved = applyTextEdit(
-          moved,
-          previousText,
-          starts[index] + edit.start,
-          starts[index] + edit.previousEnd,
-          starts[index] + edit.nextEnd,
-          index === insertedLine - 1 ? options?.insertStyle : undefined,
-        );
+  const pairs =
+    (insertedLine !== undefined && insertedLine > 0) || options?.eachLine
+      ? getLinePairs(previousText, nextText, insertedLine)
+      : null;
+  if (pairs) {
+    const starts = pairs.map((_, index) =>
+      pairs
+        .slice(0, index)
+        .reduce((sum, pair) => sum + pair.previous.length + 1, 0),
+    );
+    const nextStarts = pairs.map((_, index) =>
+      pairs
+        .slice(0, index)
+        .reduce((sum, pair) => sum + pair.next.length + 1, 0),
+    );
+    let moved = runs;
+    // from the last line up: the offsets above each edit stay valid
+    for (let index = pairs.length - 1; index >= 0; index--) {
+      const pair = pairs[index];
+      if (pair.previous === pair.next) {
+        continue;
       }
-      return normalizeTextRuns(moved, nextText.length);
+      const isInsertedLine =
+        insertedLine !== undefined && index === insertedLine - 1;
+      const caret =
+        isInsertedLine && options?.caret !== undefined
+          ? options.caret - nextStarts[index]
+          : undefined;
+      const edit = getEditWindow(pair.previous, pair.next, caret);
+      moved = applyTextEdit(
+        moved,
+        previousText,
+        starts[index] + edit.start,
+        starts[index] + edit.previousEnd,
+        starts[index] + edit.nextEnd,
+        isInsertedLine ? options?.insertStyle : undefined,
+        options?.eachLine,
+      );
     }
+    return normalizeTextRuns(moved, nextText.length);
   }
 
   const edit = getEditWindow(previousText, nextText, options?.caret);

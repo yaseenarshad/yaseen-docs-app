@@ -2249,6 +2249,85 @@ describe("textWysiwyg", () => {
       ]);
     });
 
+    // YAZ-4071 7C, 7D: a list button, Tab or Shift-Tab changes the start of
+    // each line; the letter styles move with their letters
+    describe("the list buttons and Tab move the letter styles with the text", () => {
+      const box = () => h.elements[0] as ExcalidrawTextElement;
+      const setList = (mode: "bullet" | "numbered" | "plain") =>
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+            property: "listMode",
+            mode,
+          });
+        });
+      /** Types `value`, then bolds each `[start, end]`. */
+      const typeAndBold = (value: string, ...ranges: [number, number][]) => {
+        fireEvent.input(textarea, { target: { value } });
+        for (const [start, end] of ranges) {
+          textarea.setSelectionRange(start, end);
+          fireEvent.keyDown(textarea, {
+            [KEYS.CTRL_OR_CMD]: true,
+            key: "b",
+            code: CODES.B,
+          });
+        }
+      };
+      const typeKey = (key: string) => {
+        const at = textarea.selectionEnd;
+        textarea.value =
+          textarea.value.slice(0, at) + key + textarea.value.slice(at);
+        textarea.setSelectionRange(at + 1, at + 1);
+        fireEvent.input(textarea);
+      };
+      const bold = (text: string, word: string) => {
+        const start = text.indexOf(word);
+        return { start, end: start + word.length, bold: true };
+      };
+
+      it("7C: the list buttons on a selected box keep the bold word bold", () => {
+        typeAndBold("Hello world", [6, 11]);
+        Keyboard.exitTextEditor(textarea);
+        API.setSelectedElements([box() as NonDeletedExcalidrawElement]);
+
+        setList("bullet");
+        expect(box().originalText).toBe("• Hello world");
+        expect(box().textRuns).toEqual([bold(box().originalText, "world")]);
+
+        setList("numbered");
+        expect(box().originalText).toBe("1. Hello world");
+        expect(box().textRuns).toEqual([bold(box().originalText, "world")]);
+
+        setList("plain");
+        expect(box().originalText).toBe("Hello world");
+        expect(box().textRuns).toEqual([{ start: 6, end: 11, bold: true }]);
+      });
+
+      it("7C: the numbered list button on a selected box moves the runs of each line by its own marker", () => {
+        typeAndBold("aa bb\ncc dd\nee ff", [3, 5], [15, 17]);
+        Keyboard.exitTextEditor(textarea);
+        API.setSelectedElements([box() as NonDeletedExcalidrawElement]);
+
+        setList("numbered");
+        const text = box().originalText;
+        expect(text).toBe("1. aa bb\n2. cc dd\n3. ee ff");
+        expect(box().textRuns).toEqual([bold(text, "bb"), bold(text, "ff")]);
+      });
+
+      it("7C: the list button in the editor keeps the bold word bold, and so does the next typed letter", () => {
+        typeAndBold("Hello world", [6, 11]);
+        textarea.setSelectionRange(0, 0);
+
+        setList("bullet");
+        expect(textarea.value).toBe("• Hello world");
+        expect(box().textRuns).toEqual([bold(textarea.value, "world")]);
+
+        textarea.setSelectionRange(2, 2);
+        typeKey("X");
+        expect(textarea.value).toBe("• XHello world");
+        expect(box().textRuns).toEqual([bold(textarea.value, "world")]);
+      });
+    });
+
     it("should add a tab at the start of the first line", () => {
       textarea.value = "Line#1\nLine#2";
       // cursor: "|Line#1\nLine#2"

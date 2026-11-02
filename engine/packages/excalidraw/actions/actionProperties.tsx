@@ -51,6 +51,7 @@ import {
   getTextRunInsertStyle,
   isNonDeletedElement,
   isTextRangeStyled,
+  remapTextRunsForTextEdit,
   setTextRunColor,
   setTextRunFlag,
   setTextRunHighlight,
@@ -2158,6 +2159,14 @@ const changeTextStyle = (
         let nextElement: ExcalidrawTextElement = newElementWith(element, {
           originalText: listChange.text,
           text: listChange.text,
+          // YAZ-4071 7C: the markers change the start of each line, so the
+          // letter styles move with their letters
+          textRuns: remapTextRunsForTextEdit(
+            element.originalText,
+            listChange.text,
+            element.textRuns,
+            { eachLine: true },
+          ),
           // YAZ-3943 demo 2: a list reads from the left
           ...(value.mode !== "plain" ? { textAlign: "left" as const } : {}),
         });

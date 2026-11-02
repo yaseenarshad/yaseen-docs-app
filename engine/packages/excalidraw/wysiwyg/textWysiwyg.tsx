@@ -2037,6 +2037,14 @@ export const textWysiwyg = ({
 
   // handle updates of textElement properties of editing element
   const unbindUpdate = app.scene.onUpdate(() => {
+    // YAZ-4071 7C: the list button sets this editor's text and moves the runs
+    // itself, so the next typed letter is an edit of that text
+    if (
+      (app.scene.getElement(element.id) as ExcalidrawTextElement | null)
+        ?.originalText === editable.value
+    ) {
+      previousEditableValue = editable.value;
+    }
     const selectionStart = editable.selectionStart;
     const selectionEnd = editable.selectionEnd;
     updateWysiwygStyle();

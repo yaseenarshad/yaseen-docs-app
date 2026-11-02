@@ -224,6 +224,35 @@ describe("YAZ-3718 D10: remapTextRunsForTextEdit", () => {
     ).toEqual(enter);
   });
 
+  it("YAZ-4071 7C, 7D: eachLine moves each line by its own prefix, and the prefix stays plain", () => {
+    const lineRuns = [
+      { start: 0, end: 3, bold: true as const },
+      { start: 8, end: 11, italic: true as const },
+    ];
+    expect(
+      remapTextRunsForTextEdit(
+        "aaa\nbbb\nccc",
+        "• aaa\n• bbb\n• ccc",
+        lineRuns,
+        {
+          eachLine: true,
+        },
+      ),
+    ).toEqual([
+      { start: 2, end: 5, bold: true },
+      { start: 14, end: 17, italic: true },
+    ]);
+    // a marker changed for another marker
+    expect(
+      remapTextRunsForTextEdit(
+        "• aaa\n• bbb",
+        "1. aaa\n2. bbb",
+        [{ start: 8, end: 11, bold: true as const }],
+        { eachLine: true },
+      ),
+    ).toEqual([{ start: 10, end: 13, bold: true }]);
+  });
+
   it("uses the caret to tell Enter at a line end from Enter at the next line start", () => {
     const lineRuns = [{ start: 0, end: 5, bold: true as const }];
     expect(
