@@ -742,6 +742,8 @@ export const textWysiwyg = ({
     textRuns: readonly ExcalidrawTextRun[];
   } | null = null;
   let pendingInsertedLine: number | null = null;
+  /** YAZ-4071 7D: Tab or Shift-Tab changed the start of each selected line. */
+  let pendingEachLine = false;
 
   function renderVisualSelection() {
     underlineOverlay
@@ -1450,6 +1452,7 @@ export const textWysiwyg = ({
       const edit = {
         caret: editable.selectionEnd,
         insertedLine: pendingInsertedLine ?? undefined,
+        eachLine: pendingEachLine,
         // YAZ-3718 D10: B, I, U, S or a color pressed with only a caret
         insertStyle: takePendingTextStyle(
           editable,
@@ -1458,6 +1461,7 @@ export const textWysiwyg = ({
         ),
       };
       pendingInsertedLine = null;
+      pendingEachLine = false;
       const remappedTextRuns = remapTextRunsForTextEdit(
         previousEditableValue,
         editable.value,
@@ -1718,6 +1722,7 @@ export const textWysiwyg = ({
       } else {
         indent();
       }
+      pendingEachLine = true;
       // We must send an input event to resize the element
       editable.dispatchEvent(new Event("input"));
     }

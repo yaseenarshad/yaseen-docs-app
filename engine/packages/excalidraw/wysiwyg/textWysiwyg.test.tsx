@@ -2326,6 +2326,42 @@ describe("textWysiwyg", () => {
         expect(textarea.value).toBe("• XHello world");
         expect(box().textRuns).toEqual([bold(textarea.value, "world")]);
       });
+
+      it("7D: Tab on three lines keeps the bold middle line bold", () => {
+        typeAndBold("aaa\nbbb\nccc", [4, 7]);
+        textarea.setSelectionRange(0, textarea.value.length);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB });
+
+        expect(textarea.value).toBe(`${tab}aaa\n${tab}bbb\n${tab}ccc`);
+        expect(box().textRuns).toEqual([bold(textarea.value, "bbb")]);
+      });
+
+      it("7D: Shift-Tab on three lines keeps the bold middle line bold", () => {
+        typeAndBold(`${tab}aaa\n${tab}bbb\n${tab}ccc`, [12, 15]);
+        textarea.setSelectionRange(0, textarea.value.length);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB, shiftKey: true });
+
+        expect(textarea.value).toBe("aaa\nbbb\nccc");
+        expect(box().textRuns).toEqual([{ start: 4, end: 7, bold: true }]);
+      });
+
+      it("7D: Tab on three lines keeps the bold of the first line on the first line", () => {
+        typeAndBold("aaa\nbbb\nccc", [0, 3]);
+        textarea.setSelectionRange(0, textarea.value.length);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB });
+
+        // the indent gets no style: it does not spread to the lines below
+        expect(box().textRuns).toEqual([bold(textarea.value, "aaa")]);
+      });
+
+      it("7D: Tab on list lines keeps the bold item bold", () => {
+        typeAndBold("1. aaa\n2. bbb\n3. ccc", [10, 13]);
+        textarea.setSelectionRange(7, textarea.value.length);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB });
+
+        expect(textarea.value).not.toBe("1. aaa\n2. bbb\n3. ccc");
+        expect(box().textRuns).toEqual([bold(textarea.value, "bbb")]);
+      });
     });
 
     it("should add a tab at the start of the first line", () => {
