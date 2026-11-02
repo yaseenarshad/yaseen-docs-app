@@ -100,6 +100,23 @@ describe("a pill's file icon (YAZ-4110 5B)", () => {
     expect(reads).toBe(66)
   })
 
+  it('YAZ-4074 6A item 20: "no icon" looks count toward the 64 too', () => {
+    before = () => ({ content: 'none' })
+    const app = document.querySelector<HTMLElement>('.app')!
+    for (let set = 0; set < 65; set++) {
+      app.dataset.sidebarIconSet = `none-${set}`
+      expect(drawingLinkIcon('/v/Plan.md', false, () => {})).toBeNull()
+    }
+    expect(reads).toBe(65)
+    app.dataset.sidebarIconSet = 'none-64'
+    drawingLinkIcon('/v/Plan.md', false, () => {})
+    expect(reads).toBe(65)
+    // the oldest went out: it is read again
+    app.dataset.sidebarIconSet = 'none-0'
+    drawingLinkIcon('/v/Plan.md', false, () => {})
+    expect(reads).toBe(66)
+  })
+
   it('outside the app (no `.app`): undefined, and nothing is read', () => {
     document.body.innerHTML = ''
     expect(drawingLinkIcon('/v/Plan.md', false, () => {})).toBeUndefined()

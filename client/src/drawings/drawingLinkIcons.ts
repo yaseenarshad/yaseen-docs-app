@@ -85,11 +85,12 @@ export function drawingLinkIcon(path: string, folder: boolean, onReady: () => vo
   const held = icons.get(key)
   if (held !== undefined) return held === 'loading' || held === 'failed' ? undefined : held
   const icon = readIcon(attrs, app)
+  // Every look counts toward the limit, "no icon" too (YAZ-4074 6A item 20).
+  if (icons.size >= MAX_ICONS) icons.delete(icons.keys().next().value!)
   if (icon === null) {
     icons.set(key, null)
     return null
   }
-  if (icons.size >= MAX_ICONS) icons.delete(icons.keys().next().value!)
   icons.set(key, 'loading')
   // A look dropped while it loaded (the 64 limit) stays dropped: the limit holds.
   void draw(icon).then(
