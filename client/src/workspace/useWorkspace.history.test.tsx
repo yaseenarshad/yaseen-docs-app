@@ -353,6 +353,17 @@ describe('a step in a new tab (YAZ-4156 D1, D4, D5): ⌘-, ⇧- or middle click 
     expect([strip(opened), opened.rightPanel.items]).toEqual([['b', 'a'], []])
   })
 
+  it('YAZ-4196 (1A): a plain Back, or a row of the menu of ‹, to a step whose page the right panel shows now: the page leaves the panel (YAZ-2940 S15)', () => {
+    const s = run(onA(), { type: 'navigate', path: B }, { type: 'navigate', path: C }, { type: 'open-right', path: A })
+    const back = run(s, { type: 'back' }, { type: 'back' })
+    expect([back.tabs.map((t) => t.path), back.rightPanel.items]).toEqual([[A], []])
+    const went = run(s, { type: 'go', id: s.history.steps[0].id })
+    expect([went.tabs.map((t) => t.path), went.rightPanel.items]).toEqual([[A], []])
+    // A step whose page the right panel does not show leaves the panel as it is.
+    const still = run(s, { type: 'back' })
+    expect([still.tabs.map((t) => t.path), still.rightPanel.items]).toEqual([[B], [A]])
+  })
+
   it('S12, S16, S18: a step that is not there, or a closed tab\'s step, or the blank tab in front: nothing changes', () => {
     const s = run(onA(), { type: 'navigate', path: B }, { type: 'open-new', path: C })
     const toC = s.history.steps[2]

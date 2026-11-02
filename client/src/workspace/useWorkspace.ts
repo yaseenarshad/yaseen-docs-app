@@ -876,12 +876,17 @@ function reduceWorkspace(s: WorkspaceState, a: WorkspaceAction): WorkspaceState 
       const main = tabsReducer(withoutRight, a)
       return main === withoutRight ? withoutRight : withMain(withoutRight, main)
     }
+    case 'back':
+    case 'forward':
+    case 'go':
     case 'open-step': {
-      // One owner per file (YAZ-2940 S15): a step's page that a right panel link opened since leaves the panel, as above.
-      const path = s.blank ? undefined : s.history.steps.find((step) => step.id === a.id)?.path
-      const withoutRight = path !== undefined && s.rightPanel.items.includes(path) ? closeRight(s, path) : s
-      const main = tabsReducer(withoutRight, a)
-      return main === withoutRight ? withoutRight : withMain(withoutRight, main)
+      // One owner per file (YAZ-2940 S15): the page that a step brings back — in its own tab, or in a new tab (YAZ-4156) —
+      // leaves the right panel when a link there opened it since, as for every open above (YAZ-4196).
+      const main = tabsReducer(s, a)
+      if (main === s) return s
+      const shown = a.type === 'open-step' ? (main.tabs.find((t) => !s.tabs.includes(t)) ?? null) : tabById(main, main.active)
+      const moved = withMain(s, main)
+      return shown !== null && s.rightPanel.items.includes(shown.path) ? closeRight(moved, shown.path) : moved
     }
     default: {
       const main = tabsReducer(s, a)

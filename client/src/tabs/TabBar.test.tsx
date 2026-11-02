@@ -958,13 +958,16 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
       press(back, 'auxclick', { button: 1 })
       press(back, 'click', { shiftKey: true })
       press(back, 'click', { metaKey: true, shiftKey: true })
-      press(btn(el, 'Forward')!, 'click', { metaKey: true })
-      expect(onOpenStep.mock.calls).toEqual([[41, false], [41, false], [41, true], [41, true], [4, false]])
+      const forward = btn(el, 'Forward')!
+      press(forward, 'click', { metaKey: true })
+      press(forward, 'auxclick', { button: 1 })
+      press(forward, 'click', { shiftKey: true })
+      expect(onOpenStep.mock.calls).toEqual([[41, false], [41, false], [41, true], [41, true], [4, false], [4, false], [4, true]])
       expect([onBack.mock.calls.length, onForward.mock.calls.length, rows().length]).toEqual([0, 0, 0])
       // A plain click is a plain Back, and a right press (no `auxclick` of button 1) opens nothing new.
       act(() => back.click())
       press(back, 'auxclick', { button: 2 })
-      expect([onBack.mock.calls.length, onOpenStep.mock.calls.length]).toEqual([1, 5])
+      expect([onBack.mock.calls.length, onOpenStep.mock.calls.length]).toEqual([1, 7])
     })
 
     it('a row of the menu takes the same clicks: ⌘ or middle behind, ⇧ in front; the menu closes, and the row does not go there (YAZ-4156 D3)', () => {
