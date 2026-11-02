@@ -126,7 +126,7 @@ describe('the Folding switch', () => {
     const target = { inside: parent } as HandleTarget
     expect(foldAllRows(view, target, {} as Ctx)).toEqual([])
     turn(view, true)
-    expect(foldAllRows(view, target, {} as Ctx).map((row) => row.label)).toEqual(['Collapse all', 'Expand all'])
+    expect(foldAllRows(view, target, {} as Ctx).map((row) => row.label)).toEqual(['Collapse all', 'Expand all', 'Lock open'])
   })
 
   it('off: a dry run (no dispatch) shows no message, and the fold-all button reads "none"; only a command that runs shows it (YAZ-4119 fix 1)', async () => {

@@ -2,7 +2,7 @@
  * The fold plugins carry their decoration set through doc edits (YAZ-2131 5C): when an edit leaves
  * every foldable bullet and heading where the mapping puts it, with the same key, label and fold,
  * the old set is mapped instead of rebuilt. An open heading whose key or label changed is carried too, with
- * only its chevron made again (YAZ-3816); a folded one is rebuilt, as its two markers name its key. These tests pin that the carried set is exactly what a
+ * only its chevron made again (YAZ-3816). These tests pin that the carried set is exactly what a
  * from-scratch build produces, after every step of a long randomized session.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -167,28 +167,24 @@ describe('fold decorations are carried through doc edits (YAZ-2131 5C)', () => {
     })
     view.dispatch(view.state.tr.insertText('!', end))
   }
-  const markers = (set: DecorationSet) => set.find().filter((d) => d.from !== d.to)
-
-  it('typing in an open heading carries the other folds’ markers, and only its chevron takes the new label and key (YAZ-3816)', async () => {
+  it('typing in an open heading carries the other chevrons, and only its own takes the new label and key; a folded section marks no block (YAZ-3816)', async () => {
     const { root, view, outline, heading } = await mount()
     root.querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[aria-label="Collapse Section"]`)!.click()
-    const before = markers(decorationsOf(heading, view.state))
-    expect(before).toHaveLength(2) // the heading and the block after its section, however long the section is
+    const before = decorationsOf(heading, view.state).find()
+    expect(before.every((d) => d.from === d.to)).toBe(true) // chevrons only: the section's blocks are hidden by a CSS rule
     typeAfter(view, 'Part one')
-    const after = markers(decorationsOf(heading, view.state))
-    expect(after).toHaveLength(2)
-    after.forEach((d, i) => expect(typeOf(d)).toBe(typeOf(before[i]))) // carried, not rebuilt
+    const after = decorationsOf(heading, view.state).find()
+    expect(typeOf(after[after.length - 1])).toBe(typeOf(before[before.length - 1])) // carried, not rebuilt
     expect(root.querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[aria-label="Collapse Part one!"]`)?.dataset.headingFoldKey).toBe(getHeadingFoldKey('Part one!', 0))
     expect(headingFoldHidden(root).map((el) => el.textContent)).toEqual(['Body text.', 'Deep', 'Deep body.'])
     const fresh = EditorState.create({ doc: view.state.doc, selection: view.state.selection, plugins: [outline, heading] })
     expect(normalise(decorationsOf(heading, view.state), view)).toEqual(normalise(decorationsOf(heading, fresh), view))
   })
 
-  it('typing in a folded heading keeps its fold: its chevron and its two markers take the new key, and it hides the same blocks (YAZ-3816)', async () => {
+  it('typing in a folded heading keeps its fold: its chevron takes the new key, and it hides the same blocks (YAZ-3816)', async () => {
     const { root, view, outline, heading } = await mount()
     root.querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[aria-label="Collapse Section"]`)!.click()
     typeAfter(view, 'Section')
-    expect(markers(decorationsOf(heading, view.state))).toHaveLength(2)
     const chevron = root.querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[aria-label="Expand Section!"]`)
     expect(chevron?.dataset.headingFoldKey).toBe(getHeadingFoldKey('Section!', 0))
     expect(root.querySelector(`.${HEADING_TOGGLE_CLASS}[aria-label="Expand Section"]`)).toBeNull()

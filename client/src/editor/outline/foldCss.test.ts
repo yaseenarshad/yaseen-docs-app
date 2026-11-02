@@ -3,13 +3,13 @@
  * selectors to the contract in words: a folded block's `display: none` must outrank Crepe's own
  * `display: block` on a table block and a code block (`.milkdown .milkdown-table-block`, 0,2,0), or
  * the table stays on screen under a folded heading or bullet. The heading fold's rule is written by the
- * plugin, one for each fold (`headingFoldHideRule`, YAZ-3816).
+ * plugin, one for each fold (`headingFoldHideSelector`, YAZ-3816).
  */
 import { describe, expect, it } from 'vitest'
 import outlineCss from './outlineFolding.css?inline'
 import crepeTableCss from '@milkdown/crepe/theme/common/table.css?inline'
 import crepeCodeCss from '@milkdown/crepe/theme/common/code-mirror.css?inline'
-import { getHeadingFoldKey, headingFoldHideRule } from './headingFolding'
+import { headingFoldHideSelector } from './headingFolding'
 
 const rules = (css: string) =>
   [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({
@@ -38,7 +38,7 @@ const crepeDisplayWeight = (css: string, cls: string) => {
 
 describe('fold CSS weight (YAZ-3696 B1, D11)', () => {
   it.each([
-    ['B1: a heading fold', headingFoldHideRule(getHeadingFoldKey('Plan', 0)), '.editor-instance .milkdown .heading-fold-start-'],
+    ['B1: a heading fold', headingFoldHideSelector('1', [], 2, 5), '.editor-instance .milkdown [data-heading-fold-view='],
     ['D11: a bullet fold', hidingSelector(outlineCss, 'data-outline-folded'), `.editor-instance .milkdown [data-outline-folded='true']`],
   ])('%s outranks Crepe’s table block and code block', (_name, selector, start) => {
     expect(selector.startsWith(start)).toBe(true)

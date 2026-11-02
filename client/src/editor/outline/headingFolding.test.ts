@@ -14,7 +14,8 @@ import {
   getHeadingFoldKey,
   HEADING_FOLD_STYLE_ATTR,
   HEADING_TOGGLE_CLASS,
-  headingFoldHideRule,
+  headingFoldHideSelector,
+  HEADING_FOLD_VIEW_ATTR,
   setHeadingFoldAtSelection,
   undoLastHeadingFold,
 } from './headingFolding'
@@ -207,7 +208,7 @@ describe('heading folding: section hiding', () => {
     expect(folded(root).map((el) => el.textContent)).toEqual(['Tail one.', 'Tail two.'])
   })
 
-  it('each editor writes one hide rule for each fold into its own style element, and removes it when it closes (YAZ-3816)', async () => {
+  it('each editor writes one hide rule for each fold, by place, into its own style element, and removes it when it closes (YAZ-3816)', async () => {
     const styles = () => [...document.head.querySelectorAll<HTMLStyleElement>(`style[${HEADING_FOLD_STYLE_ATTR}]`)]
     const before = styles().length
     const { crepe, root } = await mount({ defaultValue: DOC })
@@ -216,12 +217,9 @@ describe('heading folding: section hiding', () => {
     expect(style.textContent).toBe('')
     toggleFor(root, 'Section A').click()
     toggleFor(root, 'Part 2').click()
-    expect(style.textContent).toBe(
-      [getHeadingFoldKey('Part 2', 0), getHeadingFoldKey('Section A', 0)]
-        .sort()
-        .map((key) => `${headingFoldHideRule(key)} { display: none; }`)
-        .join('\n'),
-    )
+    const viewId = root.querySelector(`[${HEADING_FOLD_VIEW_ATTR}]`)!.getAttribute(HEADING_FOLD_VIEW_ATTR)!
+    // Section A: blocks 4-6 (Alpha body, Deep dive, Deep body); Part 2: block 10 (Closing.).
+    expect(style.textContent).toBe([headingFoldHideSelector(viewId, [], 4, 6), headingFoldHideSelector(viewId, [], 10, 10)].map((sel) => `${sel} { display: none; }`).join('\n'))
     // The real rule hides the section in the page's CSS.
     const display = (text: string) => getComputedStyle([...root.querySelectorAll('.ProseMirror > *')].find((el) => el.textContent === text)!).display
     expect(display('Alpha body.')).toBe('none')

@@ -59,4 +59,4 @@
 }
 
 /* A folded section's blocks are hidden by one rule for each fold, which the plugin writes into its own
-   `<style data-heading-folds>` (`headingFoldHideRule`, YAZ-3816). */
+   `<style data-heading-folds>` (`headingFoldHideSelector`, YAZ-3816). */
