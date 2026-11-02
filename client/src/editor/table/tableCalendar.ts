@@ -269,7 +269,11 @@ class CalendarClock {
         if (entry.target === watch.block) watch.blockOn = entry.isIntersecting
         else if (entry.target === watch.row) {
           watch.rowOn = entry.isIntersecting
-          watch.rowAbove = entry.boundingClientRect.bottom <= (entry.rootBounds?.top ?? 0)
+          // Above or below the middle of the window: a row scrolled out of the note can still be inside the window
+          // (under the tab bar, or under the note's bottom), so its edge against the window's edge says nothing.
+          const root = entry.rootBounds
+          const middle = root === null ? window.innerHeight / 2 : (root.top + root.bottom) / 2
+          watch.rowAbove = (entry.boundingClientRect.top + entry.boundingClientRect.bottom) / 2 < middle
         } else continue
         this.#draw(watch)
       }

@@ -166,10 +166,10 @@ describe('the "Now ↓" chip (D12)', () => {
         this.els.clear()
       }
     })
-    return (el: Element, visible: boolean, above = false) => {
+    return (el: Element, visible: boolean, above = false, rect?: { top: number; bottom: number }) => {
       for (const o of observers) {
         if (!o.els.has(el)) continue
-        const entry = { target: el, isIntersecting: visible, boundingClientRect: { top: above ? -100 : 900, bottom: above ? -50 : 950 }, rootBounds: { top: 0, bottom: 800 } }
+        const entry = { target: el, isIntersecting: visible, boundingClientRect: rect ?? { top: above ? -100 : 900, bottom: above ? -50 : 950 }, rootBounds: { top: 0, bottom: 800 } }
         o.cb([entry as unknown as IntersectionObserverEntry], {} as IntersectionObserver)
       }
     }
@@ -193,6 +193,13 @@ describe('the "Now ↓" chip (D12)', () => {
     expect(chip.querySelector('svg')).not.toBeNull()
     see(nowRow, false, true)
     expect([chip.dataset.dir, chip.getAttribute('aria-label')]).toEqual(['up', 'Go to now, above'])
+    // Scrolled out of the note but still under the tab bar (inside the window's top): above, so the arrow points up.
+    see(nowRow, false, false, { top: 30, bottom: 70 })
+    expect(chip.dataset.dir).toBe('up')
+    // Below the note's bottom, still inside the window: down.
+    see(nowRow, false, false, { top: 760, bottom: 800 })
+    expect(chip.dataset.dir).toBe('down')
+    see(nowRow, false, true)
     see(block, false)
     expect(chip.hidden).toBe(true)
     see(block, true)
