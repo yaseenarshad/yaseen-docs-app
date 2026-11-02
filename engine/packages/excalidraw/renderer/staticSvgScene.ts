@@ -5,7 +5,6 @@ import {
   THEME,
   DARK_THEME_FILTER,
   getFontFamilyString,
-  getFontString,
   isRTL,
   isTestEnv,
   getVerticalOffset,
@@ -13,7 +12,11 @@ import {
   MIME_TYPES,
 } from "@excalidraw/common";
 import { normalizeLink, toValidURL } from "@excalidraw/common";
-import { hashString } from "@excalidraw/element";
+import {
+  hashString,
+  isGifPaused,
+  getTextHighlightFill,
+} from "@excalidraw/element";
 import { getUncroppedWidthAndHeight } from "@excalidraw/element";
 import {
   createPlaceholderEmbeddableLabel,
@@ -26,8 +29,14 @@ import {
   getContainerElement,
   getTextBackgroundGeometry,
   getStyledVisualLineStart,
-  getStyledVisualLines,
+  getTextElementStyledLines,
   hasTextList,
+} from "@excalidraw/element";
+import {
+  getLinkPillColors,
+  getLinkPillIconOutline,
+  getLinkPillMetrics,
+  hasHostLinks,
 } from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
 import {
@@ -463,8 +472,13 @@ const renderElementToSvg = (
         isInitializedImageElement(element) && files[element.fileId];
       if (fileData) {
         const { reuseImages = true } = renderConfig;
+        // YAZ-3944 D4: a paused GIF is still: its first frame, as a PNG
+        const still = isGifPaused(element)
+          ? renderConfig.gifStills?.get(fileData.id)
+          : undefined;
+        const symbolFileId = still ? `still-${fileData.id}` : fileData.id;
 
-        let symbolId = `image-${fileData.id}`;
+        let symbolId = `image-${symbolFileId}`;
 
         let uncroppedWidth = element.width;
         let uncroppedHeight = element.height;
@@ -472,7 +486,7 @@ const renderElementToSvg = (
           ({ width: uncroppedWidth, height: uncroppedHeight } =
             getUncroppedWidthAndHeight(element));
 
-          symbolId = `image-crop-${fileData.id}-${hashString(
+          symbolId = `image-crop-${symbolFileId}-${hashString(
             `${uncroppedWidth}x${uncroppedHeight}`,
           )}`;
         }
@@ -487,7 +501,7 @@ const renderElementToSvg = (
           symbol.id = symbolId;
 
           const image = svgRoot.ownerDocument.createElementNS(SVG_NS, "image");
-          image.setAttribute("href", fileData.dataURL);
+          image.setAttribute("href", still ?? fileData.dataURL);
           image.setAttribute("preserveAspectRatio", "none");
 
           if (element.crop || !reuseImages) {
@@ -745,28 +759,12 @@ const renderElementToSvg = (
           : element.autoResize
           ? Infinity
           : element.width;
-        const shouldUseSourceLayout =
-          !!element.lineBolds?.some(Boolean) ||
-          !!element.lineUnderlines?.some(Boolean) ||
-          !!element.lineStrikethroughs?.some(Boolean) ||
-          hasTextList(element.originalText);
-        const lines = getStyledVisualLines({
-          originalText: shouldUseSourceLayout
-            ? element.originalText
-            : element.text,
-          regularFont: getFontString({
-            ...element,
-            fontWeight: "normal",
-          }),
-          boldFont: getFontString({ ...element, fontWeight: "bold" }),
-          maxWidth: shouldUseSourceLayout ? maxWidth : Infinity,
-          lineBolds: element.lineBolds,
-          lineUnderlines: element.lineUnderlines,
-          lineStrikethroughs: element.lineStrikethroughs,
-          wholeElementBold: element.fontWeight === "bold",
-          wholeElementUnderlined: element.textDecoration === "underline",
-          wholeElementStrikethrough: element.strikethrough === true,
-        });
+        const lines =
+          !!element.textRuns ||
+          hasTextList(element.originalText) ||
+          hasHostLinks(element.originalText)
+            ? getTextElementStyledLines(element, maxWidth, element.originalText)
+            : getTextElementStyledLines(element, Infinity, element.text);
         const lineHeightPx = getLineHeightInPx(
           element.fontSize,
           element.lineHeight,
@@ -789,47 +787,175 @@ const renderElementToSvg = (
             : element.textAlign === "right" || direction === "rtl"
             ? "end"
             : "start";
+        const setTextStyle = (
+          node: SVGElement,
+          style: {
+            bold: boolean;
+            italic: boolean;
+            underlined: boolean;
+            strikethrough: boolean;
+          },
+          color: string,
+        ) => {
+          if (style.bold) {
+            node.setAttribute("font-weight", "bold");
+          }
+          if (style.italic) {
+            node.setAttribute("font-style", "italic");
+          }
+          const decorations = [
+            style.underlined ? "underline" : null,
+            style.strikethrough ? "line-through" : null,
+          ].filter(Boolean);
+          if (decorations.length) {
+            node.setAttribute("text-decoration", decorations.join(" "));
+          }
+          node.setAttribute(
+            "fill",
+            applyDarkModeFilter(color, renderConfig.theme === THEME.DARK),
+          );
+        };
         for (let i = 0; i < lines.length; i++) {
           const text = svgRoot.ownerDocument.createElementNS(SVG_NS, "text");
-          text.textContent = lines[i].text;
+          const segments = lines[i].segments;
+          const lineStart = getStyledVisualLineStart(
+            lines[i],
+            element.width,
+            element.textAlign,
+          );
+          if (segments) {
+            // YAZ-3718 D1: one <tspan> for each styled segment, placed as on canvas
+            for (const segment of segments) {
+              const tspan = svgRoot.ownerDocument.createElementNS(
+                SVG_NS,
+                "tspan",
+              );
+              if (segment.highlight) {
+                // YAZ-4102 3E: the fill behind the letters, before the line's text
+                const fill = svgRoot.ownerDocument.createElementNS(
+                  SVG_NS,
+                  "rect",
+                );
+                fill.setAttribute("x", `${lineStart + segment.x}`);
+                fill.setAttribute("y", `${i * lineHeightPx}`);
+                fill.setAttribute("width", `${segment.width}`);
+                fill.setAttribute("height", `${lineHeightPx}`);
+                fill.setAttribute(
+                  "fill",
+                  getTextHighlightFill(segment.highlight),
+                );
+                node.appendChild(fill);
+              }
+              if (segment.link) {
+                // YAZ-4039 D7: the pill and its icon, then the page's name
+                const pill = getLinkPillMetrics(segment.font);
+                const colors = getLinkPillColors(
+                  renderConfig.theme === THEME.DARK,
+                  !!segment.link.missing,
+                );
+                const x = lineStart + segment.x;
+                const top = i * lineHeightPx + (lineHeightPx - pill.height) / 2;
+                if (colors.background) {
+                  const rect = svgRoot.ownerDocument.createElementNS(
+                    SVG_NS,
+                    "rect",
+                  );
+                  rect.setAttribute("x", `${x}`);
+                  rect.setAttribute("y", `${top}`);
+                  rect.setAttribute("width", `${segment.width}`);
+                  rect.setAttribute("height", `${pill.height}`);
+                  rect.setAttribute("rx", `${pill.radius}`);
+                  rect.setAttribute("fill", colors.background);
+                  node.appendChild(rect);
+                }
+                const iconX = x + pill.padding;
+                const iconY = top + (pill.height - pill.iconSize) / 2;
+                const image = segment.link.icon;
+                if (image) {
+                  // the page's own file icon, as the sidebar draws it
+                  const icon = svgRoot.ownerDocument.createElementNS(
+                    SVG_NS,
+                    "image",
+                  );
+                  icon.setAttribute("href", image.url);
+                  icon.setAttribute("x", `${iconX}`);
+                  icon.setAttribute("y", `${iconY}`);
+                  icon.setAttribute("width", `${pill.iconSize}`);
+                  icon.setAttribute("height", `${pill.iconSize}`);
+                  node.appendChild(icon);
+                }
+                const icon = svgRoot.ownerDocument.createElementNS(
+                  SVG_NS,
+                  "path",
+                );
+                icon.setAttribute(
+                  "d",
+                  `${getLinkPillIconOutline(pill.iconSize, segment.link.folder)
+                    .map(
+                      ([px, py], index) =>
+                        `${index ? "L" : "M"}${iconX + px} ${iconY + py}`,
+                    )
+                    .join(" ")} Z`,
+                );
+                icon.setAttribute("fill", "none");
+                icon.setAttribute("stroke", colors.text);
+                icon.setAttribute(
+                  "stroke-width",
+                  `${Math.max(1, pill.iconSize / 10)}`,
+                );
+                if (image === undefined) {
+                  node.appendChild(icon);
+                }
+                tspan.textContent = segment.link.label;
+                tspan.setAttribute(
+                  "x",
+                  `${
+                    image === null ? iconX : iconX + pill.iconSize + pill.gap
+                  }`,
+                );
+                setTextStyle(
+                  tspan,
+                  { ...segment, underlined: false, strikethrough: false },
+                  colors.text,
+                );
+                tspan.setAttribute("fill", colors.text);
+                text.appendChild(tspan);
+                continue;
+              }
+              tspan.textContent = segment.text;
+              // YAZ-4100 3C: a right-to-left text starts at its right edge
+              tspan.setAttribute(
+                "x",
+                `${lineStart + segment.x + (lines[i].rtl ? segment.width : 0)}`,
+              );
+              setTextStyle(
+                tspan,
+                segment,
+                segment.color ?? element.strokeColor,
+              );
+              text.appendChild(tspan);
+            }
+          } else {
+            text.textContent = lines[i].text;
+          }
           text.setAttribute(
             "x",
-            `${
-              lines[i].isListItem
-                ? getStyledVisualLineStart(
-                    lines[i],
-                    element.width,
-                    element.textAlign,
-                  )
-                : horizontalOffset
-            }`,
+            `${segments || lines[i].isListItem ? lineStart : horizontalOffset}`,
           );
           text.setAttribute("y", `${i * lineHeightPx + verticalOffset}`);
           text.setAttribute("font-family", getFontFamilyString(element));
           text.setAttribute("font-size", `${element.fontSize}px`);
-          if (lines[i].bold) {
-            text.setAttribute("font-weight", "bold");
-          }
-          const decorations = [
-            lines[i].underlined ? "underline" : null,
-            lines[i].strikethrough ? "line-through" : null,
-          ].filter(Boolean);
-          if (decorations.length) {
-            text.setAttribute("text-decoration", decorations.join(" "));
-          }
-          text.setAttribute(
-            "fill",
-            applyDarkModeFilter(
-              element.strokeColor,
-              renderConfig.theme === THEME.DARK,
-            ),
-          );
+          setTextStyle(text, lines[i], element.strokeColor);
           text.setAttribute(
             "text-anchor",
-            lines[i].isListItem ? "start" : textAnchor,
+            segments || lines[i].isListItem ? "start" : textAnchor,
           );
           text.setAttribute("style", "white-space: pre;");
-          text.setAttribute("direction", direction);
+          // YAZ-4100 3C: a styled line has its own direction, as its pieces are placed
+          text.setAttribute(
+            "direction",
+            segments ? (lines[i].rtl ? "rtl" : "ltr") : direction,
+          );
           text.setAttribute("dominant-baseline", "alphabetic");
           node.appendChild(text);
         }

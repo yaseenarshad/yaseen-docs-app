@@ -14,6 +14,7 @@ import { API } from "@excalidraw/excalidraw/tests/helpers/api";
 import { UI, Keyboard, Pointer } from "@excalidraw/excalidraw/tests/helpers/ui";
 import {
   act,
+  exactFontSizeInput,
   fireEvent,
   render,
   unmountComponent,
@@ -1500,9 +1501,7 @@ describe("multiple selection", () => {
     const topArrowLabel = await UI.editText(topArrow.get(), "lorem ipsum");
 
     UI.clickTool("text");
-    const labeledArrowFontSize = document.querySelector<HTMLInputElement>(
-      '[aria-label="Exact font size"]',
-    )!;
+    const labeledArrowFontSize = exactFontSizeInput();
     fireEvent.change(labeledArrowFontSize, { target: { value: "28" } });
     fireEvent.blur(labeledArrowFontSize);
     const bottomArrow = UI.createElement("arrow", {
@@ -1573,16 +1572,12 @@ describe("multiple selection", () => {
   it("resizes with text elements", async () => {
     const topText = UI.createElement("text", { position: 0 });
     await UI.editText(topText, "lorem ipsum");
-    const topTextFontSize = document.querySelector<HTMLInputElement>(
-      '[aria-label="Exact font size"]',
-    )!;
+    const topTextFontSize = exactFontSizeInput();
     fireEvent.change(topTextFontSize, { target: { value: "20" } });
     fireEvent.blur(topTextFontSize);
 
     UI.clickTool("text");
-    const selectionFontSize = document.querySelector<HTMLInputElement>(
-      '[aria-label="Exact font size"]',
-    )!;
+    const selectionFontSize = exactFontSizeInput();
     fireEvent.change(selectionFontSize, { target: { value: "28" } });
     fireEvent.blur(selectionFontSize);
     const bottomText = UI.createElement("text", { position: 40 });

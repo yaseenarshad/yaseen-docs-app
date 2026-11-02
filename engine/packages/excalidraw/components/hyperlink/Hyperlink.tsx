@@ -101,7 +101,11 @@ export const Hyperlink = ({
       return;
     }
 
-    const link = normalizeLink(inputRef.current.value) || null;
+    // YAZ-4039 D12: a pasted page path becomes the page's `[[ID]]` link
+    const pagePath = isEmbeddableElement(element)
+      ? null
+      : appProps.hostLinks?.pasteLink?.(inputRef.current.value.trim());
+    const link = pagePath || normalizeLink(inputRef.current.value) || null;
 
     if (!element.link && link) {
       trackEvent("hyperlink", "create");
@@ -174,6 +178,7 @@ export const Hyperlink = ({
     scene,
     setToast,
     appProps.validateEmbeddable,
+    appProps.hostLinks,
     appState.activeEmbeddable,
     setAppState,
     updateEmbedValidationStatus,

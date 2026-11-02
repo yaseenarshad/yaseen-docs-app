@@ -46,10 +46,6 @@ function idOf(inner: string, source: WikilinkResolveSource): string | null {
 
 /** The one link menu of the `[[inner]]` at `from`..`to` (YAZ-3740, YAZ-3905). */
 function menuOf(view: EditorView, from: number, to: number, inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined): LinkMenu {
-  const page = linkPageName(inner)
-  const titles = pathTitles(source.records, source.folders)
-  const titleOf = (target: string) => idLinkTitle(target, source.resolve, titles)
-  const named = () => linkIsResolved(inner, source, viewOnly)
   // The caret inside the raw `[[…]]`, its target selected: the link shows as text to type over.
   const edit = view.editable
     ? () => {
@@ -59,7 +55,20 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
       }
     : undefined
   // The text the link shows stays, as plain text: the same rule as the pill's (YAZ-3778 D2, D3, S12).
-  const remove = view.editable ? () => view.dispatch(view.state.tr.insertText(linkDisplayText(inner, titleOf, named), from, to)) : undefined
+  const remove = view.editable ? (text: string) => view.dispatch(view.state.tr.insertText(text, from, to)) : undefined
+  return linkMenuOf(inner, source, nav, follow, viewOnly, vaultsOf, edit, remove)
+}
+
+/**
+ * The link menu of a raw `[[inner]]`, wherever it is drawn: a note, or a drawing's pill (YAZ-4039 D11). `edit` and
+ * `remove` are the place's own; absent (a read-only page), their rows are left out. `remove` gets the text to leave.
+ */
+export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined, edit: (() => void) | undefined, removeWith: ((text: string) => void) | undefined): LinkMenu {
+  const page = linkPageName(inner)
+  const titles = pathTitles(source.records, source.folders)
+  const titleOf = (target: string) => idLinkTitle(target, source.resolve, titles)
+  const named = () => linkIsResolved(inner, source, viewOnly)
+  const remove = removeWith === undefined ? undefined : () => removeWith(linkDisplayText(inner, titleOf, named))
   const copyIdRow = (id: string) => () => copyText(id, 'ID', nav.onNotice, undefined, true)
   // A note that is gone (S10) and an ID of another vault (S23): what can be said, the ID to copy, and the link's own rows.
   const missing = missingId(inner, source)

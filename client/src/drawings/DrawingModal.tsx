@@ -11,8 +11,9 @@
  *
  * 🔒 CHROME ONLY. Everything about the ENGINE — the canvas, what "changed" means, how a scene
  * serializes — lives behind `ExcalidrawSurface`, and nothing in this file imports the package or
- * anything that does. Since YAZ-3028 a drawing TAB (`DrawingEditor`) shares that one surface; the
- * modal saves its `standalone()` scene (the images inside it), as it always has.
+ * anything that does. Since YAZ-3028 a drawing TAB (`DrawingEditor`) shares that one surface, and
+ * since YAZ-3943 1A1 the modal saves as the tab does: the small scene plus the pictures main lacks,
+ * through `drawing:save` (`saveDrawing.ts`), so a board past 10 MiB saves here too.
  * `DrawingModal.test.tsx` pins the boundary.
  *
  * ⚡ KEYS ARE THE OVERLAY'S, NEVER `window`'s (the YAZ-888 lesson, learned by `ConfirmRename` and
@@ -54,7 +55,12 @@ import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
 import type { DrawingSnapshot } from './ExcalidrawSurface'
-import { saveDrawing, saveErrorMessage } from './saveDrawing'
+import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing'
+import { missingPicturesNotice, picturesFolderOutside, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
+import type { NoticeKind } from '../lib/notice'
+import { CardPreviewHost } from '../tabs/cardPreview'
+import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
+import { usePicturesFolderAllow } from './usePicturesFolderAllow'
 import './drawingModal.css'
 
 /**
@@ -70,7 +76,8 @@ export const BROKEN_DRAWING_MESSAGE = "This drawing can't be opened: its file is
 /** The inline confirm's copy (an in-modal strip, not a sheet), asked only when a save failed or a conflict blocks it. */
 export const DISCARD_PROMPT = 'Changes are not saved. Discard them?'
 
-interface DrawingModalProps {
+/** Page links in the drawing's text (YAZ-4039): the props the note's own `[[links]]` get, as a drawing tab has them. */
+interface DrawingModalProps extends DrawingLinkProps {
   /** Vault root; with the target it is all `openDrawing` needs. */
   root: string
   /** The embed's raw target, exactly as the note spells it — the resolution rule is the pipe's. */
@@ -85,15 +92,21 @@ interface DrawingModalProps {
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
+  /** The note's passive notice: what a link's open or a new page says, and missing pictures (an error). */
+  onNotice?: (message: string, icon?: NoticeKind) => void
 }
 
-export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside }: DrawingModalProps) {
+export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside, onNotice, ...linkProps }: DrawingModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
+  /** The sheet: the link menu, the Edit link box and the `[[` picker go in it, so a click on them is not a click-away. */
+  const sheetRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState<LoadedDrawing | null>(null)
   const loadedRef = useRef<LoadedDrawing | null>(null)
   loadedRef.current = loaded
   /** The latest snapshot; read only when a save fires (see the module doc). */
   const snapshot = useRef<DrawingSnapshot | null>(null)
+  /** The ids main holds: the load's `stored`, grown by every save's `persisted`, or replaced by an inside save's (the tab's rule, YAZ-3943 1A1). */
+  const persisted = useRef(new Set<string>())
   /** Made by the surface's FIRST snapshot, the clean baseline; null until then and after a Reload. */
   const autosave = useRef<Autosave<number> | null>(null)
   const [status, setStatus] = useState<SaveStatus>('saved')
@@ -139,7 +152,9 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
     let live = true
     void openDrawing(root, target).then(
       (drawing) => {
-        if (live) setLoaded(drawing)
+        if (!live) return
+        persisted.current = new Set(drawing.stored)
+        setLoaded(drawing)
       },
       // Missing, unreadable, not a scene: ONE state, exactly like the preview's chip.
       () => {
@@ -167,6 +182,21 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
 
   /** The drawing's own file says read only (YAZ-3076 D2, S28): the engine's view mode, and nothing to save. */
   const readOnly = loaded?.scene.readOnly === true
+  // The drawing's page links (YAZ-4039), as in a drawing tab: pills, hover, the open gestures, the menu, the picker, paste.
+  // The hover preview: "Links in drawings" AND the board's own switch (YAZ-3943 demo 2), read from the file.
+  const hoverLinks = linkProps.hoverLinks === true && loaded?.scene.hoverLinksOff !== true
+  const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path: loaded?.path ?? root, readOnly, hotkeys, onNotice, hostRef: sheetRef, props: { ...linkProps, hoverLinks } })
+  // YAZ-3943 demo round 3: a board naming an outside pictures folder this Mac has not allowed asks once when it opens here too.
+  const outsideFolder = loaded?.scene.picturesOut === true && loaded.scene.picturesFolder !== undefined && picturesFolderOutside(loaded.scene.picturesFolder) ? loaded.scene.picturesFolder : null
+  const { sheet: allowSheet } = usePicturesFolderAllow(outsideFolder, onNotice)
+  // YAZ-4074 6A item 12: the tab's notice for pictures in neither the file nor a store, once per open: a Reload says nothing.
+  const toldMissing = useRef(false)
+  useEffect(() => {
+    if (loaded === null || toldMissing.current) return
+    toldMissing.current = true
+    const { missing } = picturesSize(loaded.scene.elements, loaded.scene.files ?? {})
+    if (missing > 0) onNotice?.(missingPicturesNotice(missing), 'error')
+  }, [loaded, onNotice])
 
   /** One guarded write of the live scene; `Autosave` calls it once per save, never once per change. */
   const write = useCallback(
@@ -175,17 +205,23 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       const drawing = loadedRef.current
       if (current === null || drawing === null) throw new Error('nothing to save')
       try {
-        const mtime = await saveDrawing({ root, target, path: drawing.path, content: current.standalone(), expectedMtime })
+        const { json, files, referenced } = current.serialize()
+        const res = await saveDrawing({ root, target, path: drawing.path, json, newFiles: unpersistedFiles(files, referenced, persisted.current), expectedMtime })
+        // An inside save names every picture the file holds now; a deleted one is not there (6A item 1). So does a
+        // save that moved them out by the 50 MB rule: the store holds exactly those (YAZ-4071 7H).
+        if (res.inside === true || res.movedOut === true) persisted.current = new Set(res.persisted)
+        else for (const id of res.persisted) persisted.current.add(id)
+        if (res.movedOut === true) onNotice?.(PICTURES_MOVED_OUT)
         stale.current = true
         setError(null)
-        return { mtime }
+        return { mtime: res.mtime }
       } catch (err) {
         // A conflict raises the bar (`onConflict`); anything else is the inline error line.
         if (!(err instanceof SaveConflict)) setError(saveErrorMessage(err))
         throw err
       }
     },
-    [root, target],
+    [root, target, onNotice],
   )
 
   const onSnapshot = useCallback(
@@ -260,6 +296,8 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   const keepMine = (): void => {
     if (conflict === null) return
     clearConflict()
+    // YAZ-4071 7H: the disk's version may lack a picture this canvas uses, so this save ships them all.
+    persisted.current = new Set()
     void autosave.current?.adopt(conflict)
   }
 
@@ -271,6 +309,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
     setError(null)
     try {
       const drawing = await openDrawing(root, target)
+      persisted.current = new Set(drawing.stored)
       clearConflict()
       generationRef.current += 1
       autosave.current?.dispose()
@@ -297,7 +336,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
 
   return (
     <div ref={overlayRef} className="drawing-modal-overlay" tabIndex={-1} onMouseDown={() => void requestClose()} onKeyDown={onKeyDown}>
-      <div className="drawing-modal" role="dialog" aria-modal="true" aria-label={`Drawing ${target}`} onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={sheetRef} className="drawing-modal" role="dialog" aria-modal="true" aria-label={`Drawing ${target}`} onMouseDown={(e) => e.stopPropagation()}>
         <header className="drawing-modal__bar">
           <span className="drawing-modal__title" title={target}>
             {target}
@@ -327,10 +366,12 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
         <div className="drawing-modal__canvas">
           {loaded !== null && (
             <Suspense fallback={null}>
-              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} />
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} />
             </Suspense>
           )}
         </div>
+        <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={linkProps.diagramDarkColors ?? 'adapt'} />
+        {allowSheet}
       </div>
     </div>
   )

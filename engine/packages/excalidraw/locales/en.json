@@ -1,6 +1,9 @@
 {
   "labels": {
     "paste": "Paste",
+    "pasteAtFullSize": "Paste at full size",
+    "pauseGif": "Pause GIF",
+    "playGif": "Play GIF",
     "pasteAsPlaintext": "Paste as plaintext",
     "pasteCharts": "Paste charts",
     "chartType_bar": "Bar chart",
@@ -288,6 +291,7 @@
   "errors": {
     "unsupportedFileType": "Unsupported file type.",
     "imageInsertError": "Couldn't insert image. Try again later...",
+    "pdfExportFailed": "The PDF couldn't be exported.",
     "fileTooBig": "File is too big. Maximum allowed size is {{maxSize}}.",
     "svgImageInsertError": "Couldn't insert SVG image. The SVG markup looks invalid.",
     "failedToFetchImage": "Failed to fetch image.",
@@ -525,11 +529,13 @@
     "title": {
       "exportToPng": "Export to PNG",
       "exportToSvg": "Export to SVG",
-      "copyPngToClipboard": "Copy PNG to clipboard"
+      "copyPngToClipboard": "Copy PNG to clipboard",
+      "exportToPdf": "Export to PDF"
     },
     "button": {
       "exportToPng": "PNG",
       "exportToSvg": "SVG",
+      "exportToPdf": "PDF",
       "copyPngToClipboard": "Copy to clipboard"
     }
   },

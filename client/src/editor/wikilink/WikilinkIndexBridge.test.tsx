@@ -13,6 +13,7 @@ import { createWikilinkResolveSource, idLinkTitle, type MutableWikilinkResolveSo
 import { pathTitles } from '../../lib/pageLabel'
 import { createViewOnlyLinkSource, type MutableViewOnlyLinkSource } from './viewOnlyLinkSource'
 import { WikilinkIndexBridge } from './WikilinkIndexBridge'
+import { drawingLinkLook, drawingPasteLink } from '../../drawings/drawingLinks'
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
@@ -483,5 +484,31 @@ describe('WikilinkIndexBridge', () => {
       expect(source.resolve?.('Later')).toBe('/trees/Later')
       expect(onSnapshot).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it('YAZ-3943 4C: a board with an ID resolves by it, in any case and by letters of before; its picker row and a pasted path write `[[ID]]`; a pill shows its name; a rename keeps the link; a name link keeps working', async () => {
+    const board = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, kind: 'drawing', size: 1, mtime: 1 })
+    indexFn.mockResolvedValue({ ...response('/vault/Note.md'), letters: ['DEM', 'OLD'], boards: [{ path: '/vault/Boards/Plan.excalidraw', id: 'DEM-5' }] })
+    treeFn.mockResolvedValue(treeResponse(dirNode('/vault/Boards', [board('/vault/Boards/Plan.excalidraw'), board('/vault/Boards/Sketch.excalidraw')])))
+    mount()
+    await flush()
+    for (const target of ['DEM-5', 'dem-5', 'OLD-5']) expect(source.resolve?.(target)).toBe('/vault/Boards/Plan.excalidraw')
+    expect(candidates.candidates.filter((c) => c.path?.endsWith('.excalidraw')).map((c) => [c.label, c.insert])).toEqual([
+      ['Plan.excalidraw', 'DEM-5'],
+      ['Sketch.excalidraw', 'Sketch.excalidraw'],
+    ])
+    expect(drawingPasteLink('/vault/Boards/Plan.excalidraw', '/vault', '/vault/Other.excalidraw', candidates)).toBe('[[DEM-5]]')
+    // A board with no ID yet is linked by its name, and that link resolves as it always did.
+    expect(drawingPasteLink('/vault/Boards/Sketch.excalidraw', '/vault', '/vault/Other.excalidraw', candidates)).toBe('[[Sketch.excalidraw]]')
+    expect(viewOnly.resolve?.('Sketch.excalidraw')).toBe('/vault/Boards/Sketch.excalidraw')
+    // A note's pill and a board's pill show the board's name.
+    expect(idLinkTitle('DEM-5', source.resolve, pathTitles(source.records, source.folders))).toBe('Plan')
+    expect(drawingLinkLook('DEM-5', source)).toEqual({ label: 'Plan' })
+
+    // A rename: the index hands the same ID out at the new path (main tells the window: `ids.onChanged`).
+    indexFn.mockResolvedValue({ ...response('/vault/Note.md'), letters: ['DEM', 'OLD'], boards: [{ path: '/vault/Boards/Renamed.excalidraw', id: 'DEM-5' }] })
+    await emitPastDebounce({ type: 'unlinkDir', path: '/vault/Gone' })
+    expect(source.resolve?.('DEM-5')).toBe('/vault/Boards/Renamed.excalidraw')
+    expect(drawingLinkLook('DEM-5', source)).toEqual({ label: 'Renamed' })
   })
 })

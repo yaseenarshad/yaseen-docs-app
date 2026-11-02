@@ -8,6 +8,7 @@ import {
   getContainerCoords,
   getBoundTextMaxWidth,
   getBoundTextMaxHeight,
+  getTextLayoutMaxWidth,
   computeBoundTextPosition,
 } from "../src/textElement";
 import { detectLineHeight, getLineHeightInPx } from "../src/textMeasurements";
@@ -108,6 +109,24 @@ describe("Test measureText", () => {
     it("should return max width when container is diamond", () => {
       const container = API.createElement({ type: "diamond", ...params });
       expect(getBoundTextMaxWidth(container, null)).toBe(79);
+    });
+  });
+
+  describe("Test getTextLayoutMaxWidth (YAZ-4074 6A item 34)", () => {
+    it("wraps a shape's text at its text width, a fixed box at its width, and never an auto-size box", () => {
+      const container = API.createElement({
+        type: "ellipse",
+        width: 178,
+        height: 194,
+      });
+      const text = API.createElement({ type: "text", width: 90 });
+      expect(getTextLayoutMaxWidth(text, container)).toBe(116);
+      expect(getTextLayoutMaxWidth({ ...text, autoResize: false }, null)).toBe(
+        90,
+      );
+      expect(getTextLayoutMaxWidth({ ...text, autoResize: true }, null)).toBe(
+        Infinity,
+      );
     });
   });
 

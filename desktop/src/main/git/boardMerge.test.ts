@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mergeBoards } from '@shared/boardMerge'
+import { hoverLinksOff, picturesOut, withHoverLinks, withPicturesOut } from '@shared/drawingAssets'
+import { isDrawingReadOnly, withDrawingReadOnly } from '@shared/readOnly'
 
 type El = Record<string, unknown> & { id: string }
 
@@ -154,5 +156,105 @@ describe('mergeBoards — the board around the shapes', () => {
     expect(mergeBoards('not json', board([]), board([]))).toBeNull()
     expect(mergeBoards(board([]), '{"elements": 3}', board([]))).toBeNull()
     expect(mergeBoards(board([]), board([]), '{"elements": [{"noId": true}]}')).toBeNull()
+  })
+})
+
+describe('mergeBoards — the switches of the yaseendraw block (YAZ-3943 1E): the newest change wins', () => {
+  /** A board as each Mac writes it: its block made by the same doors the app uses. */
+  const scene = (block: Record<string, unknown>, elements: El[] = [r1]): Record<string, unknown> => ({ yaseendraw: block, type: 'excalidraw', elements, appState: {}, files: {} })
+  const text = (doc: Record<string, unknown>) => `${JSON.stringify(doc, null, 2)}\n`
+  /** A plain edit on a Mac: a shape moves, the save stamps `updatedAt` and keeps the block's other keys. */
+  const edited = (doc: Record<string, unknown>, at: number) => ({ ...doc, yaseendraw: { ...(doc.yaseendraw as object), updatedAt: at }, elements: [edit(r1, 7, at)] })
+  const blockOf = (base: Record<string, unknown>, theirs: Record<string, unknown>, mine: Record<string, unknown>) =>
+    (JSON.parse(mergeBoards(text(base), text(theirs), text(mine))?.json ?? '{}') as { yaseendraw: Record<string, unknown> }).yaseendraw
+
+  it('Mac A turns pictures out, Mac B edits the board: the merge keeps "out", whichever side is ours', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    const macA = withPicturesOut(base, true, 1, 300)
+    const macB = edited(base, 400)
+    for (const [theirs, mine] of [[macA, macB], [macB, macA]]) {
+      const merged = blockOf(base, theirs, mine)
+      expect(picturesOut(merged)).toBe(true)
+      expect(merged).toMatchObject({ createdAt: 1, updatedAt: 400, switched: { pictures: 300 } })
+    }
+    // And back inside on one Mac, after it was out on both: "inside" (no key) wins, though the other side still holds "out".
+    const out = withPicturesOut(base, true, 1, 300)
+    const inside = withPicturesOut(out, false, 1, 500)
+    for (const [theirs, mine] of [[inside, edited(out, 600)], [edited(out, 600), inside]]) expect(picturesOut(blockOf(out, theirs, mine))).toBe(false)
+  })
+
+  it('the same for Read only: off on one Mac is never lost to the other Mac\'s untouched "on"', () => {
+    const base = withDrawingReadOnly(scene({ createdAt: 1, updatedAt: 2 }), true, 1, 100)
+    const macA = withDrawingReadOnly(base, false, 1, 300)
+    const macB = edited(base, 400)
+    for (const [theirs, mine] of [[macA, macB], [macB, macA]]) {
+      const merged = blockOf(base, theirs, mine)
+      expect(isDrawingReadOnly({ yaseendraw: merged })).toBe(false)
+      expect(merged.switched).toEqual({ readonly: 300 })
+    }
+  })
+
+  it('when both Macs changed a switch, the newer change wins; the two switches are each their own', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    const macA = withPicturesOut(withDrawingReadOnly(base, true, 1, 500), true, 1, 200)
+    const macB = withPicturesOut(withPicturesOut(withDrawingReadOnly(withDrawingReadOnly(base, true, 1, 100), false, 1, 400), true, 1, 150), false, 1, 600)
+    for (const [theirs, mine] of [[macA, macB], [macB, macA]]) {
+      const merged = blockOf(base, theirs, mine)
+      expect(isDrawingReadOnly({ yaseendraw: merged })).toBe(true)
+      expect(picturesOut(merged)).toBe(false)
+      expect(merged.switched).toEqual({ readonly: 500, pictures: 600 })
+    }
+  })
+
+  it('YAZ-3943 demo round 3: a board\'s own pictures folder rides with "pictures out": the newer switch brings its folder, or takes it away', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    const macA = withPicturesOut(base, true, 1, 300, 'Board pictures')
+    const macB = edited(base, 400)
+    for (const [theirs, mine] of [[macA, macB], [macB, macA]]) {
+      expect(blockOf(base, theirs, mine)).toMatchObject({ pictures: 'assets', picturesFolder: 'Board pictures', switched: { pictures: 300 } })
+    }
+    // Mac B later moves them to the assets folder (no folder key): the folder goes, though Mac A's side still names it.
+    const toAssets = withPicturesOut(macA, true, 1, 500, null)
+    for (const [theirs, mine] of [[toAssets, edited(macA, 600)], [edited(macA, 600), toAssets]]) {
+      const merged = blockOf(macA, theirs, mine)
+      expect(picturesOut(merged)).toBe(true)
+      expect(merged).not.toHaveProperty('picturesFolder')
+    }
+    // Both Macs picked a folder: the newer pick wins, folder and all.
+    const older = withPicturesOut(base, true, 1, 300, 'Old')
+    const newer = withPicturesOut(base, true, 1, 700, '/Users/me/Pictures/Boards')
+    for (const [theirs, mine] of [[older, newer], [newer, older]]) expect(blockOf(base, theirs, mine).picturesFolder).toBe('/Users/me/Pictures/Boards')
+  })
+
+  it('YAZ-3943 demo 2: the board\'s "Link preview on hover" is a switch too: off on one Mac is never lost to the other Mac\'s edit', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    const macA = withHoverLinks(base, false, 1, 300)
+    const macB = edited(base, 400)
+    for (const [theirs, mine] of [[macA, macB], [macB, macA]]) {
+      const merged = blockOf(base, theirs, mine)
+      expect(hoverLinksOff(merged)).toBe(true)
+      expect(merged.switched).toEqual({ hoverLinks: 300 })
+    }
+  })
+
+  it('a board whose switches have no time merges as before: ours wins, and a key only theirs holds stays', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    expect(blockOf(base, scene({ createdAt: 1, updatedAt: 5, readonly: true }), scene({ createdAt: 1, updatedAt: 6 }))).toEqual({ createdAt: 1, updatedAt: 6, readonly: true })
+    expect(blockOf(base, scene({ createdAt: 1, updatedAt: 5, pictures: 'assets' }), scene({ createdAt: 1, updatedAt: 6, cloudId: 'x' }))).toEqual({ createdAt: 1, updatedAt: 6, pictures: 'assets', cloudId: 'x' })
+  })
+
+  it('YAZ-4071 7I: each Mac gave the board its own ID: the lower number wins on both sides, and the other ID is kept in `formerIds`', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    const a = scene({ createdAt: 1, updatedAt: 5, id: 'DEM-5' })
+    const b = scene({ createdAt: 1, updatedAt: 6, id: 'DEM-9' })
+    const want = { createdAt: 1, updatedAt: 6, id: 'DEM-5', formerIds: ['DEM-9'] }
+    expect(blockOf(base, a, b)).toEqual(want)
+    expect(blockOf(base, b, a)).toEqual(want)
+    // A later merge keeps what an earlier one learned, from either side, and never names the ID it keeps.
+    const later = scene({ createdAt: 1, updatedAt: 9, id: 'DEM-12', formerIds: ['DEM-30'] })
+    expect(blockOf(base, scene(want), later)).toEqual({ createdAt: 1, updatedAt: 9, id: 'DEM-5', formerIds: ['DEM-12', 'DEM-30', 'DEM-9'] })
+    // One ID on both sides, or on one side only: nothing to keep.
+    expect(blockOf(base, a, scene({ createdAt: 1, updatedAt: 6, id: 'DEM-5' }))).toEqual({ createdAt: 1, updatedAt: 6, id: 'DEM-5' })
+    expect(blockOf(base, a, scene({ createdAt: 1, updatedAt: 6 }))).toEqual({ createdAt: 1, updatedAt: 6, id: 'DEM-5' })
   })
 })

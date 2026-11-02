@@ -54,6 +54,7 @@ import { base64ToString, decode, encode, stringToBase64 } from "../data/encode";
 import { serializeAsJSON } from "../data/json";
 
 import { Fonts } from "../fonts";
+import { getPausedGifStills } from "../gif/gifStill";
 
 import { renderStaticScene } from "../renderer/staticScene";
 import { renderSceneToSvg } from "../renderer/staticSvgScene";
@@ -475,6 +476,7 @@ export const exportToSvg = async (
   const rsvg = rough.svg(svgRoot);
 
   const renderEmbeddables = opts?.renderEmbeddables ?? false;
+  const gifStills = await getPausedGifStills(elementsForRender, files);
 
   renderSceneToSvg(
     elementsForRender,
@@ -499,6 +501,7 @@ export const exportToSvg = async (
         : new Map(),
       reuseImages: opts?.reuseImages ?? true,
       theme: exportWithDarkMode ? THEME.DARK : THEME.LIGHT,
+      gifStills,
     },
   );
 

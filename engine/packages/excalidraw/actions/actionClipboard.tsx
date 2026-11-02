@@ -9,6 +9,7 @@ import {
   copyTextToSystemClipboard,
   copyToClipboard,
   createPasteEvent,
+  fullSizePasteEvents,
   probablySupportsClipboardBlob,
   probablySupportsClipboardWriteText,
   readSystemClipboard,
@@ -53,7 +54,7 @@ export const actionCopy = register<ClipboardEvent | null>({
   keyTest: undefined,
 });
 
-export const actionPaste = register({
+export const actionPaste = register<{ fullSize?: boolean } | undefined>({
   name: "paste",
   label: "labels.paste",
   trackEvent: { category: "element" },
@@ -90,7 +91,11 @@ export const actionPaste = register({
     }
 
     try {
-      app.pasteFromClipboard(createPasteEvent({ types }));
+      const event = createPasteEvent({ types });
+      if (data?.fullSize) {
+        fullSizePasteEvents.add(event);
+      }
+      app.pasteFromClipboard(event);
     } catch (error: any) {
       console.error(error);
       return {
@@ -107,6 +112,19 @@ export const actionPaste = register({
     };
   },
   // don't supply a shortcut since we handle this conditionally via onCopy event
+  keyTest: undefined,
+});
+
+/**
+ * YAZ-3944 D16: Paste, but a picture keeps its size: a GIF skips the shrink
+ * (the 20 MB limit stays), another picture the 1440 px resize (4 MB stays).
+ */
+export const actionPasteAtFullSize = register({
+  name: "pasteAtFullSize",
+  label: "labels.pasteAtFullSize",
+  trackEvent: { category: "element" },
+  perform: (elements, appState, _, app) =>
+    actionPaste.perform(elements, appState, { fullSize: true }, app),
   keyTest: undefined,
 });
 

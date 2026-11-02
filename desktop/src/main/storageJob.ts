@@ -12,7 +12,7 @@ import type { ShrinkResult, VaultStorageStats } from '@shared/types'
  * landing while the worker is between its read and its write.
  */
 
-export type StorageJob = { kind: 'stats'; root: string } | { kind: 'shrink'; root: string; skip: readonly string[] }
+export type StorageJob = { kind: 'stats'; root: string; approved?: readonly string[] } | { kind: 'shrink'; root: string; skip: readonly string[]; approved?: readonly string[] }
 
 interface Answers {
   stats: VaultStorageStats

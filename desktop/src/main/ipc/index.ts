@@ -25,6 +25,7 @@ import { registerSecretsIpc } from './secrets'
 import { registerShareIpc, type ShareIpcPlaces } from './share'
 import { registerSoundIpc } from './sound'
 import { registerStateIpc } from './state'
+import { registerPictureFoldersIpc, rememberPick } from './pictureFolders'
 import { registerStorageIpc } from './storage'
 import { registerVaultConfigIpc } from './vaultConfig'
 import { registerWatchIpc } from './watch'
@@ -52,8 +53,11 @@ export type IpcPlaces = ShareIpcPlaces & {
 export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets; lsp: LspPool } {
   const { userData } = places
   registerFsIpc(store, windows)
-  registerBoardIpc(store, windows, userData)
-  registerDialogIpc()
+  // The folder window's pick of an outside pictures folder is what lets the app write there (YAZ-3943 demo round 3).
+  // Settings' pick is approved at once; the cog's waits here until its move is confirmed (YAZ-4074 6A item 3).
+  const pickedPictureFolders = new Set<string>()
+  registerBoardIpc(store, windows, userData, pickedPictureFolders)
+  registerDialogIpc(undefined, (folder) => store.approvePictureFolder(folder), (folder) => rememberPick(pickedPictureFolders, folder))
   registerWatchIpc()
   registerStateIpc(store, settingsFolder)
   registerVaultConfigIpc(store)
@@ -62,7 +66,8 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerFocusIpc(store)
   registerPropertiesIpc(store)
   registerWindowIpc(store, windows)
-  registerStorageIpc()
+  registerStorageIpc(store)
+  registerPictureFoldersIpc(store, pickedPictureFolders)
   registerSoundIpc()
   registerHomeIpc()
   // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).

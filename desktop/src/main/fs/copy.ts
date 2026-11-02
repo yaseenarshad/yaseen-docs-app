@@ -1,13 +1,15 @@
 import { cp, mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { BOARD_ID_KEY, BOARD_META_HEAD_BYTES, BOARD_META_KEY, boardIdOf, FORMER_IDS_KEY, parseBoardMetaBlock, serializeBoard } from '@shared/drawingAssets'
+import { isDrawing } from '@shared/fileKind'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
 import { TITLE_KEY, kebabTitle, noteFileName, titleOf } from '@shared/noteName'
 import { FOLDER_SETTINGS_FILE, folderSettingsPath, type PasteResponse, type RenameFileResponse } from '@shared/types'
 import type { FileClip } from '../fileClip'
 import { carryFolderValues } from '../vaultIndex/idSweep'
 import type { IdDoor } from '../vaultIndex/mint'
-import { BridgeFailure, createDurable, createFolderSettings, fsCall, isMarkdown, isSkipped, requireAbsPath, requireDir, toBridgeFailure } from './fsUtils'
+import { atomicWrite, BridgeFailure, createDurable, createFolderSettings, fsCall, isMarkdown, isSkipped, requireAbsPath, requireDir, toBridgeFailure } from './fsUtils'
 import { requireRequest } from './validate'
 
 /** One entry that landed: the shape `PasteResponse.pasted` carries. */
@@ -107,6 +109,31 @@ function reborn(content: string, fresh: Fresh): { properties: Record<string, unk
 const copyBytes = (src: string, to: string): Promise<void> => fsCall(to, () => cp(src, to, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true }))
 
 /**
+ * A copy of a board is another board (YAZ-3943 4C): the copy at `file` leaves its original's ID behind, and takes its own
+ * on its first save. So a `[[ID]]` link keeps opening the original. A copy with no ID, or that is no scene, stays as it is.
+ * The IDs its original held before a merge (`formerIds`, YAZ-4071 7I) stay behind too.
+ */
+async function dropBoardId(file: string): Promise<void> {
+  const text = await fsCall(file, () => readFile(file, 'utf8'))
+  if (boardIdOf(parseBoardMetaBlock(text.slice(0, BOARD_META_HEAD_BYTES))) === undefined) return
+  let scene: Record<string, unknown>
+  try {
+    scene = JSON.parse(text) as Record<string, unknown>
+  } catch {
+    return
+  }
+  const { [BOARD_META_KEY]: block, ...rest } = scene
+  const { [BOARD_ID_KEY]: _id, [FORMER_IDS_KEY]: _was, ...kept } = block as Record<string, unknown>
+  await fsCall(file, () => atomicWrite(file, serializeBoard({ [BOARD_META_KEY]: kept, ...rest })))
+}
+
+/** `copyBytes`, and a board's copy without the original's ID (`dropBoardId`). Only a vault that gives IDs calls it. */
+async function copyFile(src: string, to: string): Promise<void> {
+  await copyBytes(src, to)
+  if (isDrawing(to)) await dropBoardId(to)
+}
+
+/**
  * The note `src` born again in `dir` (YAZ-2420 🔒 D21): a fresh `id`, its title with `suffix`, and
  * the name built from both. Resolves to where it landed; undefined, and nothing written, for a
  * file that is no note or a note whose properties do not parse.
@@ -140,7 +167,8 @@ async function copyFolder(src: string, dir: string, fresh: Fresh, picked = false
     const from = path.join(src, entry.name)
     if (entry.name === FOLDER_SETTINGS_FILE && born !== undefined) continue
     if (entry.isDirectory() && !isSkipped(entry.name)) await copyFolder(from, to, fresh)
-    else if (!entry.isFile() || isSkipped(entry.name) || (await copyNote(from, to, fresh)) === undefined) await copyBytes(from, path.join(to, entry.name))
+    else if (!entry.isFile() || isSkipped(entry.name)) await copyBytes(from, path.join(to, entry.name))
+    else if ((await copyNote(from, to, fresh)) === undefined) await copyFile(from, path.join(to, entry.name))
   }
   // The values the notes hold for the original are under its id as its file holds it.
   const held = born?.properties[NOTE_ID_KEY]
@@ -187,7 +215,7 @@ export async function copyEntry(from: unknown, toDir: unknown, ids: IdDoor | nul
       if (copied !== undefined) return { from: src, to: copied, kind }
     }
     const to = path.join(dir, await freeName(dir, path.basename(src), kind))
-    await copyBytes(src, to)
+    await (ids !== null && kind === 'file' ? copyFile(src, to) : copyBytes(src, to))
     return { from: src, to, kind }
   })
 }

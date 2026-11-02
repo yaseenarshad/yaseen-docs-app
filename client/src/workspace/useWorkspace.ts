@@ -143,6 +143,19 @@ export function tabOf(s: Pick<TabsState, 'tabs' | 'active'>, path: string): Tab 
   return active !== null && active.path === path ? active : (s.tabs.find((t) => t.path === path) ?? null)
 }
 
+/**
+ * "Close duplicate tabs" (YAZ-3943 5A): the ids of every extra copy of a page. One tab of each page stays: the active
+ * one, else the leftmost. A tab zoomed into a bullet shows another view, so a copy is the same path at the same zoom.
+ */
+export function duplicateTabIds(s: { tabs: readonly Tab[]; active: string | null }): string[] {
+  const keep = new Map<string, string>()
+  const key = (t: Tab): string => `${t.path}\n${t.zoom ?? ''}`
+  for (const t of s.tabs) if (!keep.has(key(t))) keep.set(key(t), t.id)
+  const active = s.tabs.find((t) => t.id === s.active)
+  if (active !== undefined) keep.set(key(active), active.id)
+  return s.tabs.filter((t) => keep.get(key(t)) !== t.id).map((t) => t.id)
+}
+
 /** The window's paths (S25): each once, in the order of its first tab — `WindowEntry.tabs`. */
 export const storedTabs = (tabs: readonly Tab[]): string[] => [...new Set(tabs.map((t) => t.path))]
 
@@ -185,8 +198,8 @@ export type WorkspaceAction =
 export type TabsAction =
   | { type: 'open-current'; path: string; next?: boolean } // sidebar click & friends: open in the PREVIEW tab, replacing the page it showed (go to `tabOf` instead when already open); `next` (YAZ-3808 D3): a NEW preview tab opens next to the current tab
   | { type: 'navigate'; path: string } // a link inside a page: replace the ACTIVE tab in its slot, with history (go to `tabOf` instead when already open)
-  | { type: 'open-new'; path: string; next?: boolean } // the ONE door to a kept tab: at the end — or next to the current tab, `next` (YAZ-3808 D2) — + activate; a page that is open is gone to, and the preview tab that shows it is kept
-  | { type: 'open-background'; path: string; next?: boolean } // a KEPT tab at the end — or next to the current tab, after the ones opened behind it, `next` (YAZ-3808 D2, D4) — do NOT activate (no-op when already open)
+  | { type: 'open-new'; path: string; copy?: true; next?: boolean } // the ONE door to a kept tab: at the end — or next to the current tab, `next` (YAZ-3808 D2) — + activate; a page that is open is gone to (with `copy`, a new copy opens: a link's "new tab", YAZ-3943 demo), and the preview tab that shows it is kept
+  | { type: 'open-background'; path: string; next?: boolean; copy?: true } // a KEPT tab at the end — or next to the current tab, after the ones opened behind it, `next` (YAZ-3808 D2, D4) — do NOT activate (no-op when already open; with `copy`, a ⌘-click's new tab, a copy opens: YAZ-3943 5B)
   | { type: 'duplicate'; id: string } // "Duplicate tab" (YAZ-2940 D6): a copy of the tab, right after it, active
   | { type: 'open-zoom'; id: string; zoom: string | null; background?: true } // a bullet in a new tab (YAZ-3646 D11): a copy of the tab right after it, at that bullet; null the whole page (a title crumb, YAZ-3647 E2)
   | { type: 'take'; path: string; background?: boolean; at?: number } // a tab another window moved here (YAZ-3091 D5): ALWAYS a new kept tab at the end, active — a copy when the page is open; `background` (a quiet move from a tab board, YAZ-3343 D13): not active, not mounted, while a page is on show; `at` (a tab dropped on this strip, YAZ-3637 D4): at that slot instead of the end
@@ -396,12 +409,12 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
       // A kept tab is asked for (YAZ-2648 D2): the preview tab that shows the page loses its mark first.
       const kept = tabById(s, s.preview)?.path === a.path ? { ...s, preview: null } : s
       if (kept.blank) return fillBlank(kept, a.path)
-      const open = tabOf(kept, a.path)
+      const open = a.copy ? null : tabOf(kept, a.path)
       if (open !== null) return open.id === kept.active ? kept : withActive(kept, open.id)
       return appendActive(s, a.path, false, nextSlot(s, a.next))
     }
     case 'open-background': {
-      if (shows(s, a.path)) return s // already open: stay where we are, steal nothing
+      if (a.copy !== true && shows(s, a.path)) return s // already open: stay where we are, steal nothing
       // The first tab of an empty window must activate: non-empty `tabs` requires a non-null `file`.
       // Under the blank tab too (YAZ-2655 S78): the page becomes the stored file, and the blank tab still shows.
       if (s.active === null) return { ...appendActive(s, a.path, false), blank: s.blank }
@@ -903,8 +916,9 @@ export interface UseWorkspace extends WorkspaceState {
   /**
    * Rule 5, and a double click on a sidebar row (YAZ-2648 D2): the page is a KEPT tab — appended at
    * the end and activated when it is not open, and the preview tab the first click made keeps its page.
+   * `copy`: a link's "new tab" (YAZ-3943 demo): always a new tab, a copy when the page is open already, as browsers do.
    */
-  openKept: (path: string) => void
+  openKept: (path: string, copy?: boolean) => void
   /** "Duplicate tab" (YAZ-2940 D6): a copy of that tab, right after it and active; the copy's id, or null for an unknown tab. */
   duplicate: (id: string) => string | null
   /** A bullet in a new tab (YAZ-3646 D11): a copy of tab `id` right after it, zoomed into `zoom` (null: the whole page, YAZ-3647 E2), in front or behind; the copy's id, or null for an unknown tab. */
@@ -921,8 +935,11 @@ export interface UseWorkspace extends WorkspaceState {
   newTab: () => void
   /** The blank tab's ✕: it goes, and the tab that was active before is active again (S75). Never mirrored. */
   closeBlank: () => void
-  /** Rule 5: append at the end without activating (and so without stealing focus). Its Back step comes when it shows (YAZ-3647 D4). */
-  openBackground: (path: string) => void
+  /**
+   * Rule 5: append at the end without activating (and so without stealing focus). Its Back step comes when it shows (YAZ-3647 D4).
+   * An open page: nothing, unless `copy` — a ⌘-click (YAZ-3943 5B): always a new tab, a copy, as browsers do.
+   */
+  openBackground: (path: string, copy?: boolean) => void
   /** A tab, by id (YAZ-2940 D1). A sleeping tab wakes: its editor mounts again (YAZ-3737 5A). */
   activate: (id: string) => void
   /** Tab sleep (YAZ-3737 5A): these tabs' editors unmount, in ONE change; the active tab never does. Never mirrored: nothing stored changes. */
@@ -1024,9 +1041,9 @@ export function useWorkspace(root: string | null): UseWorkspace {
   // A display name is stored with the window (YAZ-3057): one write, like any other tab change.
   const setName = useCallback((id: string, name: string | null) => dispatch({ type: 'set-name', id, name }), [dispatch])
   const openKept = useCallback(
-    (path: string) => {
+    (path: string, copy = false) => {
       const s = stateRef.current
-      dispatch({ type: 'open-new', path, next: opensNext() }, { mirror: !(s.preview === s.active && activePath(s) === path) })
+      dispatch({ type: 'open-new', path, next: opensNext(), ...(copy ? { copy: true as const } : {}) }, { mirror: !(s.preview === s.active && activePath(s) === path) })
     },
     [dispatch],
   )
@@ -1052,7 +1069,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
     // The one new tab, wherever it landed (YAZ-3637 D4: at the drop slot, else the end), active or not.
     return stateRef.current.tabs.find((t) => !before.has(t.id))?.id ?? stateRef.current.tabs[stateRef.current.tabs.length - 1].id
   }, [dispatch])
-  const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path, next: opensNext() }), [dispatch])
+  const openBackground = useCallback((path: string, copy = false) => dispatch({ type: 'open-background', path, next: opensNext(), ...(copy ? { copy: true as const } : {}) }), [dispatch])
   const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
   // `mounted` is renderer-only (rule above): sleep and wake write nothing.
   const sleep = useCallback((ids: readonly string[]) => dispatch({ type: 'sleep', ids }, { mirror: false }), [dispatch])

@@ -2642,22 +2642,24 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(document.title).toBe(title)
   })
 
-  it('routes text/PDF through current and background tabs without adding duplicate paths', async () => {
+  it('routes text/PDF through current and background tabs: a plain click adds no duplicate path, a second ⌘-click a copy (YAZ-3943 5B)', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/data.json', tabs: ['/v/data.json'] })
     act(() => captured.sidebar?.onOpenFileBackground('/v/report.PDF'))
-    act(() => captured.sidebar?.onOpenFileBackground('/v/report.PDF'))
     expect(stripLabels(el)).toEqual(['data.json', 'report.PDF'])
+    act(() => captured.sidebar?.onOpenFileBackground('/v/report.PDF'))
+    expect(stripLabels(el)).toEqual(['data.json', 'report.PDF', 'report.PDF'])
     expect(activeLabel(el)).toBe('data.json')
     expect(layers(el)).toEqual([['/v/data.json', false]])
 
     act(() => captured.sidebar?.onOpenFile('/v/report.PDF'))
-    expect(stripLabels(el)).toEqual(['data.json', 'report.PDF'])
+    expect(stripLabels(el)).toEqual(['data.json', 'report.PDF', 'report.PDF'])
     expect(activeLabel(el)).toBe('report.PDF')
     expect(layers(el)).toEqual([
       ['/v/data.json', true],
       ['/v/report.PDF', false],
     ])
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/data.json', '/v/report.PDF'], '/v/report.PDF'))
+    // The strip names each copy; the window's file list each page once.
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabs: ['/v/data.json', '/v/report.PDF'], file: '/v/report.PDF' }))
     expect(document.title).toBe('v — report.PDF')
   })
 
@@ -3339,17 +3341,23 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(activeLabel(el)).toBe('c')
   })
 
-  it('a link opens where its gesture\'s action says (YAZ-3936): this tab, a new tab in front, a background tab; a page another tab shows goes to that tab', async () => {
+  it('a link opens where its gesture\'s action says (YAZ-3936): this tab, a new tab in front, a background tab; a new tab is a copy when another tab shows the page (YAZ-3943 5B)', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
     const openLink = (path: string, where: 'thisTab' | 'newTab' | 'backgroundTab') => act(() => captured.linkOpeners.filter((o) => o.path === '/v/a.md').at(-1)?.open?.(path, where))
     openLink('/v/c.md', 'backgroundTab') // next to the current tab: Open new tabs' default (YAZ-3808 D2)
     expect(stripLabels(el)).toEqual(['a', 'c', 'b'])
     expect(activeLabel(el)).toBe('a')
-    openLink('/v/b.md', 'newTab') // b has a tab: it comes to the front, no copy
-    expect(stripLabels(el)).toEqual(['a', 'c', 'b'])
+    openLink('/v/b.md', 'backgroundTab') // b has a tab: a copy behind, after c (the chain)
+    expect(stripLabels(el)).toEqual(['a', 'c', 'b', 'b'])
+    expect(activeLabel(el)).toBe('a')
+    openLink('/v/b.md', 'newTab') // a copy in front, as browsers do
+    expect(stripLabels(el)).toEqual(['a', 'c', 'b', 'b', 'b'])
     expect(activeLabel(el)).toBe('b')
-    act(() => captured.linkOpeners.filter((o) => o.path === '/v/b.md').at(-1)?.open?.('/v/d.md', 'newTab'))
-    expect(stripLabels(el)).toHaveLength(4)
+    openLink('/v/a.md', 'thisTab') // a plain click still goes to the open tab
+    expect(stripLabels(el)).toEqual(['a', 'c', 'b', 'b', 'b'])
+    expect(activeLabel(el)).toBe('a')
+    act(() => captured.linkOpeners.filter((o) => o.path === '/v/a.md').at(-1)?.open?.('/v/d.md', 'newTab'))
+    expect(stripLabels(el)).toHaveLength(6)
     expect(activeLabel(el)).toBe('d')
     const four = stripLabels(el)
     act(() => captured.linkOpeners.filter((o) => o.path === '/v/d.md').at(-1)?.open?.('/v/e.md', 'thisTab'))
@@ -5204,6 +5212,18 @@ describe('App upkeep review (YAZ-2322)', () => {
     expect(activeLabel(el)).toBe('b')
   })
 
+  it('YAZ-3943 5B: a plain link click during a review to a page a tab shows makes no copy: the strip is as it was', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x')))
+    openInbox()
+    const open = (path: string) => act(() => captured.editorOpeners.filter((o) => o.path === '/v/x.md').at(-1)!.open(path))
+    open('/v/a.md')
+    open('/v/b.md')
+    expect(el.querySelector('.review-bar')).not.toBeNull()
+    act(() => button(el, 'Close review')?.click())
+    expect(stripLabels(el)).toEqual(['a', 'b'])
+    expect(activeLabel(el)).toBe('b')
+  })
+
   it('"Review this folder" starts a session over that folder alone, named for it', async () => {
     const { el } = await mount(defaultAppState(), TABS, {}, upkeepOn(due('x'), due('p', 'Work/Projects'), due('q', 'Work/Projects/sub')))
     act(() => captured.sidebar?.onReviewFolder('/v/Work/Projects'))
@@ -6702,7 +6722,7 @@ describe('App Files window (YAZ-3357)', () => {
     expect(bridge.window.openFromFiles.mock.calls.map(([action]) => action)).toEqual([
       { kind: 'open', path: '/v/a.md', how: 'preview' },
       { kind: 'open', path: '/v/b.md', how: 'keep' },
-      { kind: 'open', path: '/v/c.md', how: 'background' },
+      { kind: 'open', path: '/v/c.md', how: 'background', copy: true },
       { kind: 'open', path: '/v/d.md', how: 'keep' },
       { kind: 'inbox', root: '/v' },
     ])
@@ -6711,7 +6731,7 @@ describe('App Files window (YAZ-3357)', () => {
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ tabs: expect.arrayContaining(['/v/a.md']) }))
   })
 
-  it('YAZ-3776: the daily note button in a Files window asks main too: ⌘-click for a background tab, a click as a row click', async () => {
+  it('YAZ-3776: the daily note button in a Files window asks main too: ⌘-click for a background tab with no copy (D2, YAZ-3943 5B), a click as a row click', async () => {
     noPopup()
     const daily = dailyNoteName(DEFAULT_SETTINGS.dailyNoteFormat, new Date()).trim()
     const state = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyNotes: true, dailyNoteFolder: 'Daily' }, windows: [entry({ ...FILES }), entry({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })] }
@@ -6790,6 +6810,12 @@ describe('App Files window (YAZ-3357)', () => {
     expect(el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent).toBe('b')
     act(() => emitFromFiles({ kind: 'open', path: '/v/c.md', how: 'background' }))
     expect(tabNames(el)).toEqual(['a', 'b', 'c'])
+    expect(el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent).toBe('b')
+    // YAZ-3943 5B: an open page again — the daily note's open (no `copy`) adds nothing, a ⌘-click's (`copy`) a copy
+    act(() => emitFromFiles({ kind: 'open', path: '/v/c.md', how: 'background' }))
+    expect(tabNames(el)).toEqual(['a', 'b', 'c'])
+    act(() => emitFromFiles({ kind: 'open', path: '/v/c.md', how: 'background', copy: true }))
+    expect(tabNames(el)).toEqual(['a', 'b', 'c', 'c'])
     expect(el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent).toBe('b')
     // History opens this window's history panel on the page; a session restores through this window's own door.
     act(() => emitFromFiles({ kind: 'history', path: '/v/b.md' }))

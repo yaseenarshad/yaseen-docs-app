@@ -6,11 +6,19 @@
  */
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { crc32, deflateSync } from 'node:zlib'
 
 const E2E_GEN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../desktop/e2e/fixtures/genVault.mjs')
+/**
+ * gifenc, from the engine package that declares it (`engine/packages/excalidraw/package.json`), not from wherever npm
+ * hoists it: the root declares no gifenc (YAZ-4071 7K). The ES module build, as the engine imports it: the package's
+ * `main` is CommonJS.
+ */
+const ENGINE_PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../engine/packages/excalidraw/package.json')
+const { GIFEncoder, applyPalette, quantize } = await import(pathToFileURL(createRequire(ENGINE_PKG).resolve('gifenc/dist/gifenc.esm.js')).href)
 const WORDS = 'alpha beta gamma delta outline bullet heading vault note sync render frame layout paint budget typing latency editor tree'.split(' ')
 const words = (i, n) => Array.from({ length: n }, (_, k) => WORDS[(i * 7 + k * 3) % WORDS.length]).join(' ')
 
@@ -107,6 +115,44 @@ export function writeDrawing(dir, name, { boxes = 12, images = 3 } = {}) {
     const fileId = `perf-image-${i}`
     files[fileId] = { id: fileId, mimeType: 'image/png', dataURL: `data:image/png;base64,${noisePng(256, i + 1).toString('base64')}`, created: 1 }
     elements.push(element(`image-${i}`, 'image', i * 280, 400, 256, 256, { fileId, status: 'saved', scale: [1, 1] }))
+  }
+  const file = path.join(dir, `${name}.excalidraw`)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(file, `${JSON.stringify({ type: 'excalidraw', version: 2, source: 'yaseen-docs-perf', elements, appState: { viewBackgroundColor: '#ffffff', gridSize: null }, files })}\n`)
+  return file
+}
+
+/**
+ * An animated GIF (YAZ-4071 7K): a bar that moves across a band of colors, `frames` frames of `delayMs` each, looping
+ * forever, encoded by gifenc (the encoder the engine's GIF shrink uses). The demo vault's "Many GIFs" are 200 × 100 and
+ * 16 frames of 80 ms.
+ */
+export function animatedGif(width = 200, height = 100, frames = 16, seed = 1, delayMs = 80) {
+  const gif = GIFEncoder()
+  for (let f = 0; f < frames; f++) {
+    const rgba = new Uint8ClampedArray(width * height * 4)
+    const bar = Math.floor((f / frames) * width)
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4
+        const on = Math.abs(x - bar) < width / 10
+        rgba.set(on ? [30, 30, 30, 255] : [Math.floor((x * 8) / width) * 32, Math.floor((y * 4) / height) * 64, (seed * 53) % 256, 255], i)
+      }
+    const palette = quantize(rgba, 256)
+    gif.writeFrame(applyPalette(rgba, palette), width, height, { palette, delay: delayMs, repeat: 0 })
+  }
+  gif.finish()
+  return Buffer.from(gif.bytes())
+}
+
+/** `<dir>/<name>.excalidraw` holding `gifs` animated GIFs inside (YAZ-3943 D5), 5 to a row (YAZ-4071 7K). Returns the absolute path. */
+export function writeGifDrawing(dir, name, gifs) {
+  const elements = []
+  const files = {}
+  for (let i = 0; i < gifs; i++) {
+    const fileId = `perf-gif-${i}`
+    files[fileId] = { id: fileId, mimeType: 'image/gif', dataURL: `data:image/gif;base64,${animatedGif(200, 100, 16, i + 1).toString('base64')}`, created: 1 }
+    elements.push(element(`gif-${i}`, 'image', (i % 5) * 220, Math.floor(i / 5) * 120, 200, 100, { fileId, status: 'saved', scale: [1, 1] }))
   }
   const file = path.join(dir, `${name}.excalidraw`)
   fs.mkdirSync(dir, { recursive: true })

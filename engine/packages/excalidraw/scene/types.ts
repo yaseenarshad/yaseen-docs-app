@@ -1,6 +1,8 @@
 import type { UserIdleState, EditorInterface } from "@excalidraw/common";
+import type { GifPlayer } from "@excalidraw/element";
 import type {
   ExcalidrawElement,
+  FileId,
   NonDeletedElementsMap,
   NonDeletedExcalidrawElement,
   NonDeletedSceneElementsMap,
@@ -11,6 +13,7 @@ import type { MakeBrand } from "@excalidraw/common/utility-types";
 import type {
   AppClassProperties,
   AppState,
+  DataURL,
   EmbedsValidationStatus,
   ElementsPendingErasure,
   InteractiveCanvasAppState,
@@ -40,6 +43,8 @@ export type StaticCanvasRenderConfig = {
   elementsPendingErasure: ElementsPendingErasure;
   pendingFlowchartNodes: PendingExcalidrawElements | null;
   theme: AppState["theme"];
+  /** YAZ-3944 D2: the board's GIF frames; absent (exports), a GIF shows its first frame */
+  gifPlayer?: GifPlayer;
 };
 
 export type SVGRenderConfig = {
@@ -59,6 +64,8 @@ export type SVGRenderConfig = {
    */
   reuseImages: boolean;
   theme: AppState["theme"];
+  /** YAZ-3944 D4: the first frame of each paused GIF file, as a PNG */
+  gifStills?: Map<FileId, DataURL>;
 };
 
 export type InteractiveCanvasRenderConfig = {

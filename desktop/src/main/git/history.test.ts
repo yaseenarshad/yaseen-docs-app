@@ -94,6 +94,16 @@ describe('Version history', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect(scene.files.abc123).toEqual({ mimeType: 'image/png', dataURL: `data:image/png;base64,${Buffer.from('png-bytes').toString('base64')}` })
   })
 
+  it('YAZ-3943 demo round 3: an old version that names its own pictures folder reads it first, then assets/', async () => {
+    const images = [shape('i1', { type: 'image', fileId: 'abc123' }), shape('i2', { type: 'image', fileId: 'def456' })]
+    const named = `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 1, pictures: 'assets', picturesFolder: 'Board pictures' }, type: 'excalidraw', version: 2, source: 'test', elements: images, appState: {}, files: {} }, null, 2)}\n`
+    const { a } = await twoMachines({ 'b.excalidraw': named, 'Board pictures/abc123.png': 'folder-bytes', 'assets/abc123.png': 'assets-bytes', 'assets/def456.png': 'only-assets' })
+    const [v] = await boardHistory(a.root, 'b.excalidraw')
+    const scene = await drawingVersion(a.root, 'b.excalidraw', v?.ref)
+    const url = (text: string) => `data:image/png;base64,${Buffer.from(text).toString('base64')}`
+    expect(scene.files).toEqual({ abc123: { mimeType: 'image/png', dataURL: url('folder-bytes') }, def456: { mimeType: 'image/png', dataURL: url('only-assets') } })
+  })
+
   it('restores a version as an ordinary edit, byte for byte', async () => {
     const { a } = await twoMachines({ 'b.excalidraw': board([r1]) })
     await a.write('b.excalidraw', board([{ ...r1, x: 9 }]))

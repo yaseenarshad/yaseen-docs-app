@@ -22,6 +22,12 @@ const ENGINE_CLASSES: Record<string, [file: string, why: string]> = {
   sidebar__header: ['drawings/drawingEditor.css', 'the docked panel header'],
   'sidebar-triggers': ['drawings/drawingEditor.css', 'the panel tab triggers'],
   sidebar__header__buttons: ['drawings/drawingEditor.css', 'the panel header buttons'],
+  // The top row in a narrow pane (YAZ-4071 7P): the toolbar's column gets what the cog and the rail leave.
+  'App-menu_top': ['drawings/drawingEditor.css', "the top row's columns"],
+  'shapes-section': ['drawings/drawingEditor.css', "the toolbar's column can be narrower than the tools"],
+  'App-toolbar-container': ['drawings/drawingEditor.css', 'the toolbar can be narrower than the tools'],
+  'App-toolbar': ['drawings/drawingEditor.css', "the tools' row scrolls under the Island"],
+  Stack_horizontal: ['drawings/drawingEditor.css', "the tools' row that scrolls"],
   sidebar: ['drawings/presentation/presentation.css', 'hides the canvas panel while presenting'],
   'layer-ui__wrapper': ['drawings/presentation/presentation.css', 'hides the toolbar, properties and footer while presenting'],
   'App-top-bar': ['drawings/presentation/presentation.css', 'hides the top bar while presenting'],

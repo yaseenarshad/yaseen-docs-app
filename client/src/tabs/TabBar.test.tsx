@@ -129,6 +129,28 @@ describe('TabBar', () => {
     expect(items()).toEqual([])
   })
 
+  it('"Close duplicate tabs" (YAZ-3943 5A): in the grid menu\'s last group, above "Kill all tabs"; it asks App; grey with no copy of a page', () => {
+    const onCloseDuplicates = vi.fn()
+    const base = { onToggleOverview: vi.fn(), onKillAll: vi.fn(), onCloseDuplicates, ...noop, ...noNav }
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', ...base })
+    const grid = () => el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')!
+    const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    const rightClick = () => act(() => void grid().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+
+    rightClick()
+    expect(items().map((item) => [item.textContent, item.disabled])).toEqual([['Close duplicate tabs', true], ['Kill all tabs', false]])
+    act(() => items()[0].click())
+    expect(onCloseDuplicates).not.toHaveBeenCalled()
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+
+    act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} windowId="w1" tabs={[{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/a.md' }]} active="t1" {...base} />))
+    rightClick()
+    expect(items().map((item) => [item.textContent, item.disabled])).toEqual([['Close duplicate tabs', false], ['Kill all tabs', false]])
+    act(() => items()[0].click())
+    expect(onCloseDuplicates).toHaveBeenCalledTimes(1)
+    expect(items()).toEqual([])
+  })
+
   it('the grid menu\'s saves (YAZ-3147 D5, S2–S4): "Save tabs as session" and "Save and close all tabs", a line, then "Kill all tabs"; each asks App; with no tab all three are grey and ask nothing', () => {
     const onKillAll = vi.fn()
     const onSaveSession = vi.fn()

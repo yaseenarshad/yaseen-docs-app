@@ -7,7 +7,7 @@
 import { MAX_DIAGRAM_BYTES, MAX_DRAWING_BYTES, type BoardKind } from '@shared/types'
 import type { BoardMetaBlock } from '@shared/drawingAssets'
 import { isDiagram, isDrawing } from '@shared/fileKind'
-import { readBoardHead } from './boardHead'
+import { readBoardHead, type BoardHead } from './boardHead'
 import { BridgeFailure, fsCall, requireAbsPath, resolveUnderRoot } from './fsUtils'
 import { requireRequest } from './validate'
 
@@ -41,10 +41,11 @@ export function boardTarget(raw: unknown, kind: BoardKind): { dir: string; file:
  * dateless board is as old as its file, a brand-new one is born now, and the bytes measured against
  * the ceiling are the bytes that will be written. A file that is GONE is not a conflict: the tab's
  * own copy is the only one left, and refusing would strand it. Only a file that is there and
- * DIFFERENT blocks the write.
+ * DIFFERENT blocks the write. `known` is that head when the caller has read the file already (a
+ * drawing's "pictures inside" save reads it whole, YAZ-3943 D5): the file is then opened once.
  */
-export async function guardedStamp(file: string, kind: BoardKind, expectedMtime: number | undefined, stamp: (at: { createdAt: number; updatedAt: number }, prior: BoardMetaBlock | null) => string): Promise<string> {
-  const prior = await fsCall(file, () => readBoardHead(file))
+export async function guardedStamp(file: string, kind: BoardKind, expectedMtime: number | undefined, stamp: (at: { createdAt: number; updatedAt: number }, prior: BoardMetaBlock | null) => string, known?: BoardHead | null): Promise<string> {
+  const prior = known !== undefined ? known : await fsCall(file, () => readBoardHead(file))
   const now = Date.now()
   const stamped = stamp({ createdAt: prior?.mtime ?? now, updatedAt: now }, prior?.block ?? null)
   if (Buffer.byteLength(stamped, 'utf8') > BOARDS[kind].max) throw new BridgeFailure('TOO_LARGE', BOARDS[kind].tooLarge, { path: file })

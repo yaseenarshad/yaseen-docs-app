@@ -40,6 +40,8 @@ import { Segmented } from './controls'
 import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
 import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
 import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
+import { AllowedPictureFoldersControl } from './AllowedPictureFoldersControl'
+import { NewBoardPicturesControl } from './NewBoardPicturesControl'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { GoToControl } from './GoToControl'
 import { DailyNoteFolderControl, DailyNoteFormatControl } from './DailyNoteControl'
@@ -334,6 +336,8 @@ const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string; hint?: stri
   { place: 'backlinks', label: 'Linked mentions', hint: 'The list under a note.', keywords: ['backlinks', 'linked mentions', 'references'] },
   { place: 'folderViews', label: 'Folder views', hint: 'Table, board, cards and list.', keywords: ['folder', 'views', 'table', 'board', 'cards', 'list', 'kanban'] },
   { place: 'links', label: 'Links in notes', hint: '[[Links]] in the text.', keywords: ['links', 'wikilinks', 'editor', 'text'] },
+  // YAZ-3943 demo round 2: a board's link pills have their own row.
+  { place: 'drawings', label: 'Links in drawings', hint: 'Link pills on a board.', keywords: ['links', 'pills', 'drawing', 'board', 'excalidraw'] },
 ]
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
@@ -849,6 +853,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             render: ({ settings, onChange }) => (
               <Segmented options={NEW_TAB_PLACE_OPTIONS} value={settings.newTabPlace} onChange={(newTabPlace) => onChange({ ...settings, newTabPlace })} ariaLabel="Open new tabs" />
             ),
+          },
+          {
+            // YAZ-3943 demo 2: new boards only; a board's own cog still moves its pictures. Demo round 3: a folder you pick.
+            id: 'newBoardPictures',
+            label: 'New boards keep pictures',
+            hint: 'For drawings the app makes from now on. A board\'s cog moves its own pictures.',
+            keywords: ['pictures', 'images', 'assets', 'drawing', 'board', 'folder', 'pictures folder'],
+            // A plain row, until the chosen folder and "Choose…" need the width (the new-note folder's rule).
+            wide: ({ settings }) => settings.newBoardPictures === 'folder',
+            render: ({ settings, onChange, places }) => <NewBoardPicturesControl settings={settings} onChange={onChange} vaults={places} />,
+          },
+          {
+            // YAZ-3943 demo round 3: this Mac's list of outside folders a board's pictures may be saved to.
+            id: 'allowedPictureFolders',
+            label: 'Allowed picture folders',
+            hint: "Folders outside a vault where the app may save a board's pictures on this Mac. Remove takes a folder off the list only; no file moves or goes.",
+            keywords: ['allowed folders', 'pictures folder', 'picture folders', 'pictures', 'outside', 'board'],
+            wide: () => true,
+            // A pick in "New boards keep pictures" on this page can add a folder: the list reads again (YAZ-4074 6A item 13).
+            render: ({ settings }) => <AllowedPictureFoldersControl picked={settings.newBoardPicturesFolder} />,
           },
           {
             id: 'newNoteLocation',

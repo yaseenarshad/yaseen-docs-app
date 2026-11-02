@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { noisePng, sentinel, writeCode, writeDrawing, writeNote } from './genVault.mjs'
+import { noisePng, sentinel, writeCode, writeDrawing, writeGifDrawing, writeNote } from './genVault.mjs'
 import { abba, loadSensitive, overCeilings, slope, summarizeRuns } from './lib/stats.mjs'
 import * as longDay from './scenarios/long-day.mjs'
 import { flowDiagram } from './scenarios/drawio.mjs'
@@ -192,23 +192,51 @@ describe('long-day (YAZ-3861, YAZ-3737 D7)', () => {
     expect(longDay.leakMetrics([40, 42])).toMatchObject({ heapCycle1Mb: 40, heapStartMb: 42, heapEndOverStartRatio: 1 })
   })
 
+  it('YAZ-4071 7N: the idle end waits until the stopped TS worker\'s heap has left the window\'s footprint', () => {
+    // 7N's runs: the last cycle held a 285.7 MB worker heap in a 561.1 MB window; 10 s after the worker stopped the
+    // window was still 522 MB, 20 s after it 247 MB.
+    const last = { windowFootprintMb: 561.1, workerHeapMb: 285.7 }
+    expect(longDay.workerReleased(last, 522)).toBe(false)
+    expect(longDay.workerReleased(last, 247.5)).toBe(true)
+    // No worker heap at the last cycle (no code tab), or no footprint read: nothing to wait for.
+    expect(longDay.workerReleased({ windowFootprintMb: 450, workerHeapMb: 0 }, 450)).toBe(true)
+    expect(longDay.workerReleased({ windowFootprintMb: null, workerHeapMb: 189 }, null)).toBe(true)
+  })
+
   it('parseFootprint reads each process of `footprint -f bytes` as MB (YAZ-3862)', () => {
     const text = '====\nElectron Helper (Renderer) [52742]: 64-bit    Footprint: 487587840 B (16384 bytes per page)\n====\n====\nElectron Helper (Renderer) [7]: 64-bit    Footprint: 1048576 B (16384 bytes per page)\n'
     expect(parseFootprint(text)).toEqual(new Map([[52742, 465], [7, 1]]))
     expect(parseFootprint('')).toEqual(new Map())
   })
 
-  it('a cycle opens 20 files of every kind the issue names, once each', () => {
+  it('a cycle opens 21 files of every kind the issue names, once each, the GIF board among them (YAZ-4071 7K)', () => {
     const dir = tmp()
     const fx = longDay.setup(dir, { cycles: 3, snapshots: path.join(dir, 'snapshots') })
-    expect(fx.files).toHaveLength(20)
-    expect(new Set(fx.files.map((f) => f.file)).size).toBe(20)
+    expect(fx.files).toHaveLength(21)
+    expect(new Set(fx.files.map((f) => f.file)).size).toBe(21)
     const count = (kind) => fx.files.filter((f) => f.kind === kind).length
-    expect([count('note'), count('diagram'), count('drawing'), count('code'), count('bigCode')]).toEqual([15, 1, 1, 2, 1])
-    expect(fx.files.map((f) => path.basename(f.file)).filter((b) => !b.endsWith('.md'))).toEqual(['Flow.drawio', 'Sketch.excalidraw', 'Small TS.ts', 'Small PY.py', 'big-5mb.ts'])
+    expect([count('note'), count('diagram'), count('drawing'), count('gifs'), count('code'), count('bigCode')]).toEqual([15, 1, 1, 1, 2, 1])
+    expect(fx.files.map((f) => path.basename(f.file)).filter((b) => !b.endsWith('.md'))).toEqual(['Flow.drawio', 'Sketch.excalidraw', 'GIFs.excalidraw', 'Small TS.ts', 'Small PY.py', 'big-5mb.ts'])
     expect(fx.files.every((f) => f.file.startsWith(fx.vault + path.sep) && fs.existsSync(f.file))).toBe(true)
     expect(fs.readdirSync(fx.emptyVault)).toEqual([])
     expect(fs.existsSync(fx.snapshots)).toBe(true)
+  })
+
+  it('YAZ-4071 7K: the GIF board holds its GIFs inside, each a real animated GIF, the same every time', () => {
+    const [a, b] = [tmp(), tmp()]
+    const text = fs.readFileSync(writeGifDrawing(a, 'GIFs', 4), 'utf8')
+    expect(fs.readFileSync(writeGifDrawing(b, 'GIFs', 4), 'utf8')).toBe(text)
+    const scene = JSON.parse(text)
+    const images = scene.elements.filter((e) => e.type === 'image')
+    expect(images).toHaveLength(4)
+    for (const { fileId } of images) {
+      expect(scene.files[fileId].mimeType).toBe('image/gif')
+      const gif = Buffer.from(scene.files[fileId].dataURL.replace('data:image/gif;base64,', ''), 'base64')
+      expect(gif.subarray(0, 6).toString()).toBe('GIF89a')
+      expect(gif.readUInt16LE(6)).toBe(200) // logical screen width
+      // 16 frames: one image descriptor each
+      expect(gif.toString('latin1').split('\x00\x2c').length - 1).toBeGreaterThanOrEqual(16)
+    }
   })
 
   it('the drawing carries its pictures in `files`: one PNG per image element, real and the same every time (D14)', () => {

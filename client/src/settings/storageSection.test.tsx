@@ -20,6 +20,9 @@ vi.mock('../api', async (importOriginal) => ({
     storage: { stats: vi.fn(async () => STATS), shrink: vi.fn() },
     // Settings opens on General (YAZ-3276 D7), whose Settings folder row asks main where the settings are.
     state: { settingsFolder: vi.fn(async () => ({ folder: null, missing: false })), setSettingsFolder: vi.fn() },
+    // A search for "pictures" also shows Files & Links' picture rows (YAZ-3943 demo 2, round 3), which ask main these.
+    app: { home: vi.fn(async () => '/Users/me') },
+    pictureFolders: { list: vi.fn(async () => []) },
   },
 }))
 
@@ -191,7 +194,7 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
     expect(el.querySelector('[role="status"]')).toBeNull()
   })
 
-  it.each(['old versions', 'too big', 'pictures', 'shrink'])('search for "%s" still reaches the page (S8)', (query) => {
+  it.each(['old versions', 'too big', 'shrink'])('search for "%s" still reaches the page (S8)', (query) => {
     const { el } = mount(STATS)
     const input = el.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!
     act(() => {
@@ -199,6 +202,18 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     expect(el.querySelector('.settings-section__title')?.textContent).toMatch(/^Storage( › |$)/)
+  })
+
+  it('search for "pictures" still reaches the page (S8), after Files & Links\' picture rows (YAZ-3943 demo 2, round 3: registry order)', () => {
+    const { el } = mount(STATS)
+    const input = el.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'pictures')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const titles = [...el.querySelectorAll('.settings-section__title')].map((t) => t.textContent ?? '')
+    expect(titles[0]).toMatch(/^Files & Links( › |$)/)
+    expect(titles.some((t) => /^Storage( › |$)/.test(t))).toBe(true)
   })
 
   it('"too big" finds the page even when no file is large (the GitHub row carries it)', () => {

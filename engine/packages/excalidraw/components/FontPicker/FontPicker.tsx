@@ -60,6 +60,8 @@ interface FontPickerProps {
   onLeave: () => void;
   onPopupChange: (open: boolean) => void;
   compactMode?: boolean;
+  /** YAZ-3943 demo 2: the trigger is the font's name, not the "A" icon (the text toolbar). */
+  label?: string;
 }
 
 export const FontPicker = React.memo(
@@ -72,6 +74,7 @@ export const FontPicker = React.memo(
     onLeave,
     onPopupChange,
     compactMode = false,
+    label,
   }: FontPickerProps) => {
     const defaultFonts = useMemo(() => DEFAULT_FONTS, []);
     const onSelectCallback = useCallback(
@@ -107,6 +110,7 @@ export const FontPicker = React.memo(
             selectedFontFamily={selectedFontFamily}
             isOpened={isOpened}
             compactMode={compactMode}
+            label={label}
           />
           {isOpened && (
             <FontPickerList

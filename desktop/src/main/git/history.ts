@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { MAX_DIAGRAM_BYTES, MAX_DRAWING_BYTES, type BoardVersion, type BoardVersionScene } from '@shared/types'
 import { diagramDocumentError } from '@shared/diagramFile'
-import { stripEmbeddedScene } from '@shared/drawingAssets'
+import { BOARD_META_KEY, picturesFolderOf, stripEmbeddedScene } from '@shared/drawingAssets'
 import { isDiagram } from '@shared/fileKind'
 import { resolveBoard } from '../fs/boardDocument'
 import { saveDiagram } from '../fs/diagram'
@@ -98,7 +98,8 @@ export async function boardVersion(root: unknown, rawPath: unknown, ref: unknown
   if (isDiagram(b.file)) return { kind: 'diagram', xml: await readDiagramVersion(b, ref) }
   const json = await readVersion(b, ref)
   const { scene, elements } = parseScene(json, b.file, 'IO_ERROR')
-  return { kind: 'drawing', json, files: (await resolveFiles(b.root, stripEmbeddedScene(scene).embedded, elements)).files }
+  // That version's own pictures folder (YAZ-3943 demo round 3) first, then `assets/`: nothing ever deletes a copy, so both are still there.
+  return { kind: 'drawing', json, files: (await resolveFiles(b.root, stripEmbeddedScene(scene).embedded, elements, picturesFolderOf(scene[BOARD_META_KEY]))).files }
 }
 
 export async function restoreBoardVersion(root: unknown, rawPath: unknown, ref: unknown): Promise<void> {

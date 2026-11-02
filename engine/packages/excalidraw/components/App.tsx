@@ -38,6 +38,7 @@ import {
   ELEMENT_TRANSLATE_AMOUNT,
   EVENT,
   FRAME_STYLE,
+  GIF_MAX_FILE_SIZE_BYTES,
   IMAGE_MIME_TYPES,
   IMAGE_RENDER_TIMEOUT,
   LINE_CONFIRM_THRESHOLD,
@@ -176,6 +177,7 @@ import {
   maybeParseEmbedSrc,
   getEmbedLink,
   getInitializedImageElements,
+  GifPlayer,
   normalizeSVG,
   updateImageCache as _updateImageCache,
   getBoundTextElement,
@@ -272,6 +274,12 @@ import {
   hasVectorStrokeWidth,
   hitTestSmartShapeHandle,
   updateSmartShapeFromHandle,
+  getTextLayoutMaxWidth,
+  getTextLinkAt,
+  hasHostLinks,
+  refreshHostLinks,
+  registerHostLinkResolver,
+  remapTextRunsForTextEdit,
 } from "@excalidraw/element";
 
 import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
@@ -356,9 +364,10 @@ import {
   actionToggleArrowBinding,
   actionToggleMidpointSnapping,
   actionToggleCropEditor,
+  actionToggleGifPlayback,
 } from "../actions";
 import { actionWrapTextInContainer } from "../actions/actionBoundText";
-import { actionPaste } from "../actions/actionClipboard";
+import { actionPaste, actionPasteAtFullSize } from "../actions/actionClipboard";
 import { actionCopyElementLink } from "../actions/actionElementLink";
 import { actionUnlockAllElements } from "../actions/actionElementLock";
 import {
@@ -382,6 +391,7 @@ import {
 } from "../appState";
 import {
   copyTextToSystemClipboard,
+  fullSizePasteEvents,
   parseClipboard,
   parseDataTransferEvent,
   type ParsedDataTransferFile,
@@ -406,6 +416,7 @@ import {
 import {
   dataURLToString,
   generateIdFromFile,
+  getShrunkFileId,
   getDataURL,
   getDataURL_sync,
   ImageURLToFile,
@@ -417,6 +428,7 @@ import {
   resizeImageFile,
   SVGStringToFile,
 } from "../data/blob";
+import { gifNeedsShrink, shrinkGifFile } from "../gif/gifFile";
 
 import { fileOpen } from "../data/filesystem";
 import {
@@ -450,6 +462,7 @@ import { LASER_STREAMLINE, LaserTrails } from "../laserTrails";
 import { withBatchedUpdates, withBatchedUpdatesThrottled } from "../reactUtils";
 import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
 import { textWysiwyg } from "../wysiwyg/textWysiwyg";
+import { getPlainPasteText, parseStyledHtml } from "../wysiwyg/styledClipboard";
 import { isOverScrollBars } from "../scene/scrollbars";
 import { isMaybeMermaidDefinition } from "../mermaid";
 import { LassoTrail } from "../lasso";
@@ -511,6 +524,7 @@ import type {
   BinaryFiles,
   Gesture,
   GestureEvent,
+  HostLinkHit,
   LibraryItems,
   PointerDownState,
   SceneData,
@@ -673,6 +687,9 @@ class App extends React.Component<AppProps, AppState> {
    * in-progress `newElement` and the edited text element) */
   private hasRenderableElements: boolean = false;
   private resizeObserver: ResizeObserver | undefined;
+  /** YAZ-3944 D4: whether the board is in view (a hidden tab layer is not) */
+  private gifViewObserver: IntersectionObserver | undefined;
+  private boardInView = true;
   public library: AppClassProperties["library"];
   public libraryItemsFromStorage: LibraryItems | undefined;
   public id: string;
@@ -685,6 +702,36 @@ class App extends React.Component<AppProps, AppState> {
 
   public files: BinaryFiles = {};
   public imageCache: AppClassProperties["imageCache"] = new Map();
+  /** YAZ-3944 D2: this board's GIF frames */
+  public gifPlayer = new GifPlayer((id) => this.files[id]);
+
+  /** YAZ-3944 D4: GIFs stop while the board's tab is not in front or the window is hidden. */
+  private updateGifsHidden = () => {
+    this.gifPlayer.setHidden(
+      document.visibilityState === "hidden" || !this.boardInView,
+    );
+  };
+
+  /** YAZ-3944 D4: a mouse or key use on the board keeps its GIFs playing. */
+  private onBoardActivity = () => this.gifPlayer.activity();
+
+  /** YAZ-3944 D4: close the decoders of deleted GIFs, a second after the scene settles. */
+  private retainGifs = debounce(() => {
+    this.gifPlayer.retain(
+      new Set(
+        getInitializedImageElements(this.scene.getNonDeletedElements()).map(
+          (element) => element.fileId,
+        ),
+      ),
+    );
+  }, 1000);
+
+  private onSceneUpdatedForGifs = () => {
+    if (this.gifPlayer.size) {
+      this.retainGifs();
+    }
+  };
+
   private iFrameRefs = new Map<ExcalidrawElement["id"], HTMLIFrameElement>();
   /**
    * Indicates whether the embeddable's url has been validated for rendering.
@@ -778,6 +825,13 @@ class App extends React.Component<AppProps, AppState> {
     null;
 
   hitLinkElement?: NonDeletedExcalidrawElement;
+  /** YAZ-4039 D11: the link pill under the pointer, as last reported. */
+  private hostLinkHover: HostLinkHit | null = null;
+  /** The scene's fonts are loaded: a pill's box can be measured. */
+  private hostLinkFontsReady = false;
+  /** YAZ-4101 3D: moves when the text editor's selection shows another style. */
+  private textEditorToolbarVersion = 0;
+  private unmountHostLinks: (() => void) | null = null;
   lastPointerDownEvent: React.PointerEvent<HTMLElement> | null = null;
   lastPointerUpEvent: React.PointerEvent<HTMLElement> | PointerEvent | null =
     null;
@@ -2485,6 +2539,11 @@ class App extends React.Component<AppProps, AppState> {
       event.type === "pointerenter" ? "none" : "auto";
   }
 
+  private handlePointerLeave = (event: React.PointerEvent) => {
+    this.setHostLinkHover(null);
+    this.toggleOverscrollBehavior(event);
+  };
+
   public render() {
     const selectedElements = this.scene.getSelectedElements(this.state);
     const { renderTopRightUI, renderTopLeftUI, renderCustomStats } = this.props;
@@ -2576,9 +2635,7 @@ class App extends React.Component<AppProps, AppState> {
             : undefined
         }
         onPointerLeave={
-          this.isInteractionEnabled()
-            ? this.toggleOverscrollBehavior
-            : undefined
+          this.isInteractionEnabled() ? this.handlePointerLeave : undefined
         }
       >
         <ExcalidrawAPIContext.Provider value={this.api}>
@@ -2634,6 +2691,9 @@ class App extends React.Component<AppProps, AppState> {
                             isCollaborating={this.props.isCollaborating}
                             generateLinkForSelection={
                               this.props.generateLinkForSelection
+                            }
+                            textEditorToolbarVersion={
+                              this.textEditorToolbarVersion
                             }
                           >
                             {this.props.children}
@@ -2770,6 +2830,7 @@ class App extends React.Component<AppProps, AppState> {
                             appState={this.state}
                             renderConfig={{
                               imageCache: this.imageCache,
+                              gifPlayer: this.gifPlayer,
                               isExporting: false,
                               renderGrid: isGridModeEnabled(this),
                               renderLinks: this.isLinksEnabled(),
@@ -3797,6 +3858,11 @@ class App extends React.Component<AppProps, AppState> {
     // manually loading the font faces seems faster even in browsers that do fire the loadingdone event
     this.fonts.loadSceneFonts().then((fontFaces) => {
       this.fonts.onLoaded(fontFaces);
+      // YAZ-4039 D7: the pills' sizes, measured with the real fonts
+      this.hostLinkFontsReady = true;
+      if (this.props.hostLinks) {
+        this.redrawHostLinks();
+      }
     });
 
     if (isElementLink(window.location.href)) {
@@ -3895,6 +3961,8 @@ class App extends React.Component<AppProps, AppState> {
 
   public async componentDidMount() {
     this.unmounted = false;
+    // before the scene loads, so its text boxes lay out with their pills
+    this.mountHostLinks();
     this.api = this.createExcalidrawAPI();
     window.addEventListener(
       ANIMATION_RUNTIME_POLICY_EVENT,
@@ -3958,6 +4026,7 @@ class App extends React.Component<AppProps, AppState> {
     }
 
     this.scene.onUpdate(this.triggerRender);
+    this.scene.onUpdate(this.onSceneUpdatedForGifs);
     this.addEventListeners();
 
     if (this.props.autoFocus && this.excalidrawContainerRef.current) {
@@ -3970,6 +4039,19 @@ class App extends React.Component<AppProps, AppState> {
         this.updateDOMRect();
       });
       this.resizeObserver?.observe(this.excalidrawContainerRef.current);
+    }
+
+    // YAZ-3944 D4: a tab layer that is not in front skips its paint
+    // (`content-visibility: hidden`), so the board leaves the view
+    if (
+      typeof IntersectionObserver !== "undefined" &&
+      this.excalidrawContainerRef.current
+    ) {
+      this.gifViewObserver = new IntersectionObserver((entries) => {
+        this.boardInView = entries.some((entry) => entry.isIntersecting);
+        this.updateGifsHidden();
+      });
+      this.gifViewObserver.observe(this.excalidrawContainerRef.current);
     }
 
     const searchParams = new URLSearchParams(window.location.search.slice(1));
@@ -3999,6 +4081,8 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   public componentWillUnmount() {
+    this.unmountHostLinks?.();
+    this.unmountHostLinks = null;
     window.removeEventListener(
       ANIMATION_RUNTIME_POLICY_EVENT,
       this.onAnimationRuntimePolicy,
@@ -4046,6 +4130,9 @@ class App extends React.Component<AppProps, AppState> {
     this.renderer = new Renderer(this.scene);
     this.files = {};
     this.imageCache.clear();
+    this.gifPlayer.dispose();
+    this.retainGifs.cancel();
+    this.gifViewObserver?.disconnect();
     this.resizeObserver?.disconnect();
     this.unmounted = true;
     this.viewport.destroy();
@@ -4116,6 +4203,21 @@ class App extends React.Component<AppProps, AppState> {
           this.fonts.onLoaded(fontFaces);
         },
         { passive: false },
+      ),
+      // YAZ-3944 D4
+      addEventListener(
+        document,
+        EVENT.VISIBILITY_CHANGE,
+        this.updateGifsHidden,
+      ),
+      ...(["pointermove", "pointerdown", "wheel", "keydown"] as const).map(
+        (type) =>
+          addEventListener(
+            this.excalidrawContainerRef.current,
+            type,
+            this.onBoardActivity,
+            { passive: true, capture: true },
+          ),
       ),
       addEventListener(
         window,
@@ -4340,6 +4442,26 @@ class App extends React.Component<AppProps, AppState> {
 
     this.handleInteractionStateChange(prevProps, prevState);
     this.handleForcedToolChange(prevProps, prevState);
+
+    // YAZ-4074 6A item 6: GIFs wait while a text box is in edit mode
+    if (prevState.editingTextElement !== this.state.editingTextElement) {
+      this.gifPlayer.setTyping(this.state.editingTextElement !== null);
+    }
+
+    if (prevProps.hostLinks !== this.props.hostLinks) {
+      this.unmountHostLinks?.();
+      this.mountHostLinks();
+      this.redrawHostLinks();
+    }
+    // YAZ-4039 D11: a pan or a zoom moves the pill from under the hover
+    if (
+      this.hostLinkHover &&
+      (prevState.scrollX !== this.state.scrollX ||
+        prevState.scrollY !== this.state.scrollY ||
+        prevState.zoom !== this.state.zoom)
+    ) {
+      this.setHostLinkHover(null);
+    }
 
     this.appStateObserver.flush(prevState);
 
@@ -4699,6 +4821,7 @@ class App extends React.Component<AppProps, AppState> {
     data: ClipboardData,
     dataTransferFiles: ParsedDataTransferFile[],
     isPlainPaste: boolean,
+    imageOptions?: InsertImagesOptions,
   ) {
     const { x: sceneX, y: sceneY } = viewportCoordsToSceneCoords(
       {
@@ -4720,6 +4843,7 @@ class App extends React.Component<AppProps, AppState> {
         isPlainPaste,
         sceneX,
         sceneY,
+        imageOptions,
       });
       return;
     }
@@ -4754,7 +4878,7 @@ class App extends React.Component<AppProps, AppState> {
 
     if (imageFiles.length > 0) {
       if (this.isToolSupported("image")) {
-        await this.insertImages(imageFiles, sceneX, sceneY);
+        await this.insertImages(imageFiles, sceneX, sceneY, imageOptions);
       } else {
         this.setState({ errorMessage: t("errors.imageToolNotSupported") });
       }
@@ -4859,7 +4983,7 @@ class App extends React.Component<AppProps, AppState> {
     }
 
     // ------------------- Text -------------------
-    this.addTextFromPaste(data.text, isPlainPaste);
+    this.addTextFromPaste(data.text, isPlainPaste, undefined, data.html);
   }
 
   public pasteFromClipboard = withBatchedUpdates(
@@ -4909,7 +5033,15 @@ class App extends React.Component<AppProps, AppState> {
         }
       }
 
-      await this.insertClipboardContent(data, filesList, isPlainPaste);
+      await this.insertClipboardContent(
+        data,
+        filesList,
+        isPlainPaste,
+        // YAZ-3944 D16
+        event && fullSizePasteEvents.has(event)
+          ? { fullSize: true }
+          : undefined,
+      );
 
       this.setActiveTool(
         { type: this.state.preferredSelectionTool.type },
@@ -5087,7 +5219,13 @@ class App extends React.Component<AppProps, AppState> {
       isPlainPaste,
       sceneX,
       sceneY,
-    }: { isPlainPaste: boolean; sceneX: number; sceneY: number },
+      imageOptions,
+    }: {
+      isPlainPaste: boolean;
+      sceneX: number;
+      sceneY: number;
+      imageOptions?: InsertImagesOptions;
+    },
   ) {
     if (
       !isPlainPaste &&
@@ -5116,7 +5254,7 @@ class App extends React.Component<AppProps, AppState> {
       const imageFiles = responses
         .filter((response): response is { file: File } => !!response.file)
         .map((response) => response.file);
-      await this.insertImages(imageFiles, sceneX, sceneY);
+      await this.insertImages(imageFiles, sceneX, sceneY, imageOptions);
       const error = responses.find((response) => !!response.errorMessage);
       if (error && error.errorMessage) {
         this.setState({ errorMessage: error.errorMessage });
@@ -5132,14 +5270,40 @@ class App extends React.Component<AppProps, AppState> {
     }
   }
 
-  private addTextFromPaste(text: string, isPlainPaste = false) {
-    const { x, y } = viewportCoordsToSceneCoords(
-      {
-        clientX: this.viewport.lastPosition.x,
-        clientY: this.viewport.lastPosition.y,
-      },
-      this.state,
-    );
+  /**
+   * `drop` (YAZ-3943 4D): `text` is the dropped pages' links, one a line, each
+   * a pill box from that scene point down.
+   */
+  /** The text boxes a drop or a plain multi-line paste made (YAZ-4074 6A item 11), else undefined. */
+  private addTextFromPaste(
+    text: string,
+    isPlainPaste = false,
+    drop?: { x: number; y: number },
+    html?: string,
+  ): ExcalidrawTextElement[] | undefined {
+    // YAZ-4039 D12: one pasted page reference (a vault path, a `yaseendocs://`
+    // link, a `[[link]]`) is its link, a pill in a box sized to it
+    const single = text.trim();
+    const link = drop
+      ? text
+      : isPlainPaste || !single || single.includes("\n")
+      ? null
+      : this.props.hostLinks?.pasteLink?.(single) ??
+        (/^\[\[[^[\]]+\]\]$/.test(single) && hasHostLinks(single)
+          ? single
+          : null);
+    if (link) {
+      text = link;
+    }
+    const { x, y } =
+      drop ??
+      viewportCoordsToSceneCoords(
+        {
+          clientX: this.viewport.lastPosition.x,
+          clientY: this.viewport.lastPosition.y,
+        },
+        this.state,
+      );
 
     const textElementProps = {
       x,
@@ -5167,6 +5331,65 @@ class App extends React.Component<AppProps, AppState> {
     const [x1, , x2] = getVisibleSceneBounds(this.state);
     // long texts should not go beyond 800 pixels in width nor should it go below 200 px
     const maxTextWidth = Math.max(Math.min((x2 - x1) * 0.5, 800), 200);
+
+    // YAZ-3943 demo 2: a paste is ONE text box with all its lines. HTML (a
+    // note, a web page, Slack, Google Docs) keeps its letter styles, links
+    // and lists; other apps' colors and fonts are dropped. The box fits its
+    // text, and wraps at `maxTextWidth` when a line is wider.
+    if (!drop && !isPlainPaste && !link) {
+      const linkOf = (href: string) => {
+        const pasted = href && this.props.hostLinks?.pasteLink?.(href);
+        return pasted && pasted.startsWith("[[") ? pasted : null;
+      };
+      const pasted = (html &&
+        parseStyledHtml(html, { keepPlain: true, linkOf })) || {
+        text: getPlainPasteText(normalizeText(text)),
+        textRuns: [],
+      };
+      if (!pasted.text.trim()) {
+        return;
+      }
+      const frame = this.getTopLayerFrameAtSceneCoords({ x, y });
+      let element = newTextElement({
+        ...textElementProps,
+        // a list or several lines read best from the left
+        textAlign: pasted.text.includes("\n") ? "left" : DEFAULT_NEW_TEXT_ALIGN,
+        text: pasted.text,
+        originalText: pasted.text,
+        textRuns: pasted.textRuns,
+        lineHeight,
+        autoResize: true,
+        frameId: frame ? frame.id : null,
+      });
+      if (element.width > maxTextWidth) {
+        const wrapped = { ...element, autoResize: false, width: maxTextWidth };
+        element = {
+          ...wrapped,
+          ...refreshTextDimensions(
+            wrapped,
+            null,
+            this.scene.getNonDeletedElementsMap(),
+            pasted.text,
+          ),
+        };
+      }
+      // centered on the pointer, as a pasted line was
+      element = {
+        ...element,
+        x: x - element.width / 2,
+        y: y - element.height / 2,
+      };
+      this.insertNewElements([element]);
+      this.store.scheduleCapture();
+      this.setState({
+        selectedElementIds: makeNextSelectedElementIds(
+          { [element.id]: true },
+          this.state,
+        ),
+      });
+      return;
+    }
+
     const LINE_GAP = 10;
     let currentY = y;
 
@@ -5181,7 +5404,8 @@ class App extends React.Component<AppProps, AppState> {
           });
 
           let metrics = measureText(originalText, fontString, lineHeight);
-          const isTextUnwrapped = metrics.width > maxTextWidth;
+          // a pill never wraps: its box is auto-sized to it
+          const isTextUnwrapped = !link && metrics.width > maxTextWidth;
 
           const text = isTextUnwrapped
             ? wrapText(originalText, fontString, maxTextWidth)
@@ -5236,6 +5460,7 @@ class App extends React.Component<AppProps, AppState> {
 
     if (
       !isPlainPaste &&
+      !drop &&
       textElements.length > 1 &&
       PLAIN_PASTE_TOAST_SHOWN === false &&
       this.editorInterface.formFactor !== "phone"
@@ -5248,6 +5473,7 @@ class App extends React.Component<AppProps, AppState> {
       });
       PLAIN_PASTE_TOAST_SHOWN = true;
     }
+    return textElements;
   }
 
   setAppState: React.Component<any, AppState>["setState"] = (
@@ -5592,6 +5818,15 @@ class App extends React.Component<AppProps, AppState> {
       informMutation,
       isDragging: false,
     });
+  };
+
+  /**
+   * YAZ-4101 3D: the toolbar draws again for the text editor's selection. The
+   * toolbar is memoized on the app state, which a selection does not change.
+   */
+  public refreshTextEditorToolbar = () => {
+    this.textEditorToolbarVersion++;
+    this.setState({});
   };
 
   public triggerRender = (
@@ -6392,8 +6627,10 @@ class App extends React.Component<AppProps, AppState> {
       const lowerCased = event.key.toLocaleLowerCase();
       const isPickingStroke =
         lowerCased === KEYS.S && event.shiftKey && !event[KEYS.CTRL_OR_CMD];
+      // YAZ-3718 D10: ⌘I is italic, never the eyedropper
       const isPickingBackground =
-        event.key === KEYS.I || (lowerCased === KEYS.G && event.shiftKey);
+        (event.key === KEYS.I && !event[KEYS.CTRL_OR_CMD]) ||
+        (lowerCased === KEYS.G && event.shiftKey);
 
       if (isPickingStroke || isPickingBackground) {
         this.openEyeDropper({
@@ -6797,9 +7034,8 @@ class App extends React.Component<AppProps, AppState> {
         fontWeight: ExcalidrawTextElement["fontWeight"];
         textDecoration: ExcalidrawTextElement["textDecoration"];
         strikethrough: ExcalidrawTextElement["strikethrough"];
-        lineBolds: ExcalidrawTextElement["lineBolds"];
-        lineUnderlines: ExcalidrawTextElement["lineUnderlines"];
-        lineStrikethroughs: ExcalidrawTextElement["lineStrikethroughs"];
+        fontStyle: ExcalidrawTextElement["fontStyle"];
+        textRuns: ExcalidrawTextElement["textRuns"];
       },
     ) => {
       this.scene.replaceAllElements([
@@ -6810,9 +7046,10 @@ class App extends React.Component<AppProps, AppState> {
               originalText: nextOriginalText,
               ...nextStyles,
               isDeleted: isDeleted ?? _element.isDeleted,
-              // returns (wrapped) text and new dimensions
+              // returns (wrapped) text and new dimensions; YAZ-3718 D1: laid
+              // out with the next runs, so the canvas reuses this layout
               ...refreshTextDimensions(
-                _element,
+                { ..._element, ...nextStyles },
                 getContainerElement(_element, elementsMap),
                 elementsMap,
                 nextOriginalText,
@@ -6845,17 +7082,15 @@ class App extends React.Component<AppProps, AppState> {
           nextFontWeight,
           nextTextDecoration,
           nextStrikethrough,
-          nextLineBolds,
-          nextLineUnderlines,
-          nextLineStrikethroughs,
+          nextFontStyle,
+          nextTextRuns,
         }) => {
           updateElement(nextOriginalText, false, {
             fontWeight: nextFontWeight,
             textDecoration: nextTextDecoration,
             strikethrough: nextStrikethrough,
-            lineBolds: nextLineBolds,
-            lineUnderlines: nextLineUnderlines,
-            lineStrikethroughs: nextLineStrikethroughs,
+            fontStyle: nextFontStyle,
+            textRuns: nextTextRuns,
           });
           if (isNonDeletedElement(element)) {
             updateBoundElements(element, this.scene);
@@ -6869,9 +7104,8 @@ class App extends React.Component<AppProps, AppState> {
           nextFontWeight,
           nextTextDecoration,
           nextStrikethrough,
-          nextLineBolds,
-          nextLineUnderlines,
-          nextLineStrikethroughs,
+          nextFontStyle,
+          nextTextRuns,
         }) => {
           this.textWysiwygSubmitHandler = null;
 
@@ -6880,9 +7114,8 @@ class App extends React.Component<AppProps, AppState> {
             fontWeight: nextFontWeight,
             textDecoration: nextTextDecoration,
             strikethrough: nextStrikethrough,
-            lineBolds: nextLineBolds,
-            lineUnderlines: nextLineUnderlines,
-            lineStrikethroughs: nextLineStrikethroughs,
+            fontStyle: nextFontStyle,
+            textRuns: nextTextRuns,
           });
 
           // keyboard-submit keeps focus on the edited object. For bound text, keep
@@ -6962,9 +7195,8 @@ class App extends React.Component<AppProps, AppState> {
       fontWeight: element.fontWeight,
       textDecoration: element.textDecoration,
       strikethrough: element.strikethrough,
-      lineBolds: element.lineBolds,
-      lineUnderlines: element.lineUnderlines,
-      lineStrikethroughs: element.lineStrikethroughs,
+      fontStyle: element.fontStyle,
+      textRuns: element.textRuns,
     });
   }
 
@@ -7972,6 +8204,204 @@ class App extends React.Component<AppProps, AppState> {
     ];
   };
 
+  /**
+   * YAZ-4039 D7: the host's link resolver joins the layout, and its changes
+   * (a rename, the index loaded) draw the pills again.
+   */
+  private mountHostLinks = () => {
+    const hostLinks = this.props.hostLinks;
+    if (!hostLinks) {
+      this.unmountHostLinks = null;
+      return;
+    }
+    const unregister = registerHostLinkResolver(hostLinks.resolve);
+    const unsubscribe = hostLinks.subscribe?.(() => {
+      refreshHostLinks();
+      this.redrawHostLinks();
+    });
+    this.unmountHostLinks = () => {
+      unregister();
+      unsubscribe?.();
+    };
+  };
+
+  /**
+   * Draws the text boxes with links again, and fits each box whose measured
+   * size moved (a label resolved, a page was renamed or made) to its pills.
+   * Only a real size change changes the scene, outside the undo steps: a
+   * board whose saved sizes match is not changed by its opening. The box in
+   * the text editor is fitted by the editor itself.
+   */
+  private redrawHostLinks = () => {
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    let changed = false;
+    const fitted = new Map<string, ExcalidrawTextElement>();
+    for (const element of this.scene.getNonDeletedElements()) {
+      if (!isTextElement(element) || !element.originalText.includes("[[")) {
+        continue;
+      }
+      changed = true;
+      ShapeCache.delete(element);
+      const container = getContainerElement(element, elementsMap);
+      if (container) {
+        ShapeCache.delete(container);
+      }
+      if (
+        !this.hostLinkFontsReady ||
+        this.state.editingTextElement?.id === element.id
+      ) {
+        continue;
+      }
+      const size = refreshTextDimensions(element, container, elementsMap);
+      if (
+        size &&
+        (size.text !== element.text ||
+          Math.abs(size.width - element.width) > 0.5 ||
+          Math.abs(size.height - element.height) > 0.5)
+      ) {
+        const next = newElementWith(element, {});
+        redrawTextBoundingBox(next, container, this.scene);
+        fitted.set(element.id, next);
+      }
+    }
+    this.setHostLinkHover(null);
+    if (fitted.size) {
+      this.updateScene({
+        elements: this.scene
+          .getElementsIncludingDeleted()
+          .map((element) => fitted.get(element.id) ?? element),
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    } else if (changed) {
+      this.scene.triggerUpdate();
+    }
+  };
+
+  /**
+   * YAZ-4039 D11: the link pill under a scene point, through the box's layout
+   * memo. Only the text box under the pointer is looked at, and only when its
+   * text has a `[[`.
+   */
+  private getHostLinkAt = (
+    scenePointer: Readonly<{ x: number; y: number }>,
+    hitElement: NonDeletedExcalidrawElement | null,
+  ): HostLinkHit | null => {
+    if (!this.props.hostLinks || !hitElement) {
+      return null;
+    }
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    const textElement = isTextElement(hitElement)
+      ? hitElement
+      : getBoundTextElement(hitElement, elementsMap);
+    if (
+      !textElement ||
+      !hasHostLinks(textElement.originalText) ||
+      this.state.editingTextElement?.id === textElement.id
+    ) {
+      return null;
+    }
+    const container = getContainerElement(textElement, elementsMap);
+    const hit = getTextLinkAt(
+      textElement,
+      getTextLayoutMaxWidth(textElement, container),
+      scenePointer,
+    );
+    if (!hit) {
+      return null;
+    }
+    const topLeft = sceneCoordsToViewportCoords(
+      { sceneX: hit.rect.x, sceneY: hit.rect.y },
+      this.state,
+    );
+    const bottomRight = sceneCoordsToViewportCoords(
+      {
+        sceneX: hit.rect.x + hit.rect.width,
+        sceneY: hit.rect.y + hit.rect.height,
+      },
+      this.state,
+    );
+    return {
+      elementId: textElement.id,
+      inner: hit.segment.link!.inner,
+      start: hit.segment.start,
+      end: hit.segment.end,
+      rect: {
+        left: topLeft.x,
+        top: topLeft.y,
+        right: bottomRight.x,
+        bottom: bottomRight.y,
+      },
+    };
+  };
+
+  /**
+   * YAZ-4039 D15: puts `text` in place of a link's raw `[[inner]]` in a text
+   * box (Edit link, Remove link, a new page's ID), as one undo step. True when
+   * the link was there. The editor of that box can
+   * have saved since the right-click, so the link is found again by its text.
+   */
+  public replaceHostLinkText = (
+    elementId: ExcalidrawElement["id"],
+    start: number,
+    end: number,
+    raw: string,
+    text: string,
+  ) => {
+    const element = this.scene.getElement(elementId);
+    if (!element || element.isDeleted || !isTextElement(element)) {
+      return false;
+    }
+    const at =
+      element.originalText.slice(start, end) === raw
+        ? start
+        : element.originalText.indexOf(raw);
+    if (at < 0) {
+      return false;
+    }
+    const originalText =
+      element.originalText.slice(0, at) +
+      text +
+      element.originalText.slice(at + raw.length);
+    const next = newElementWith(element, {
+      originalText,
+      textRuns: remapTextRunsForTextEdit(
+        element.originalText,
+        originalText,
+        element.textRuns,
+        { caret: at + text.length },
+      ),
+    });
+    redrawTextBoundingBox(
+      next,
+      this.scene.getContainerElement(element),
+      this.scene,
+    );
+    this.updateScene({
+      elements: this.scene
+        .getElementsIncludingDeleted()
+        .map((candidate) => (candidate.id === elementId ? next : candidate)),
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+    return true;
+  };
+
+  /** Reports the hovered pill to the host, only when it changed. */
+  private setHostLinkHover = (hit: HostLinkHit | null) => {
+    const last = this.hostLinkHover;
+    if (
+      last === hit ||
+      (last &&
+        hit &&
+        last.elementId === hit.elementId &&
+        last.start === hit.start &&
+        last.inner === hit.inner)
+    ) {
+      return;
+    }
+    this.hostLinkHover = hit;
+    this.props.hostLinks?.onHover?.(hit);
+  };
+
   private getElementLinkAtPosition = (
     scenePointer: Readonly<{ x: number; y: number }>,
     hitElementMightBeLocked: NonDeletedExcalidrawElement | null,
@@ -8814,6 +9244,13 @@ class App extends React.Component<AppProps, AppState> {
       hitElement = hitElementMightBeLocked;
     }
 
+    // YAZ-4039 D11: the preview of a link pill, also with the box not in edit mode
+    if (this.props.hostLinks?.onHover) {
+      this.setHostLinkHover(
+        this.getHostLinkAt(scenePointer, hitElementMightBeLocked),
+      );
+    }
+
     const hoveredArrowTextAnchor =
       this.arrowText.updateHoveredAnchor(scenePointer);
 
@@ -9264,6 +9701,27 @@ class App extends React.Component<AppProps, AppState> {
     // panning
     if (this.handleCanvasPanUsingWheelOrSpaceDrag(event)) {
       return;
+    }
+
+    // YAZ-4039 D11: an open gesture on a link pill is the host's; a plain
+    // click goes on and selects the box
+    if (
+      event.button === POINTER_BUTTON.MAIN &&
+      this.props.hostLinks?.onPointerDown &&
+      (this.state.viewModeEnabled ||
+        this.state.activeTool.type === "selection" ||
+        this.state.activeTool.type === "lasso")
+    ) {
+      const hit = this.getHostLinkAt(
+        scenePointer,
+        this.getElementAtPosition(scenePointerX, scenePointerY, {
+          includeLockedElements: true,
+        }),
+      );
+      if (hit && this.props.hostLinks.onPointerDown(hit, event.nativeEvent)) {
+        this.setHostLinkHover(null);
+        return;
+      }
     }
 
     this.setState({
@@ -13421,39 +13879,69 @@ class App extends React.Component<AppProps, AppState> {
 
     // generate image id (by default the file digest) before any
     // resizing/compression takes place to keep it more portable
-    const fileId = await ((this.props.generateIdForFile?.(
+    const originalId = await ((this.props.generateIdForFile?.(
       imageFile,
     ) as Promise<FileId>) || generateIdFromFile(imageFile));
 
-    if (!fileId) {
+    if (!originalId) {
       console.warn(
         "Couldn't generate file id or the supplied `generateIdForFile` didn't resolve to one.",
       );
       throw new Error(t("errors.imageInsertError"));
     }
 
-    const existingFileData = this.files[fileId];
-    if (!existingFileData?.dataURL) {
-      const { maxWidthOrHeight, maxFileSizeBytes } = this.props.imageOptions;
+    // YAZ-3944 D3: a resize writes one PNG frame, so a GIF shrinks in a
+    // worker instead, every frame kept, and has its own 20 MB limit.
+    // D16: "Paste at full size" skips both; the limits stay. A shrunk or
+    // resized copy has its own id (`getShrunkFileId`), known before the
+    // work: the same picture added again reuses it, and a full-size paste
+    // (the original's id) never changes it.
+    const isGif = imageFile.type === MIME_TYPES.gif;
+    const maxFileSizeBytes = isGif
+      ? GIF_MAX_FILE_SIZE_BYTES
+      : this.props.imageOptions.maxFileSizeBytes;
+    let fileId = originalId;
 
-      try {
-        imageFile = await resizeImageFile(imageFile, {
-          maxWidthOrHeight,
-        });
-      } catch (error: any) {
-        console.error(
-          "Error trying to resizing image file on insertion",
-          error,
-        );
+    if (!options?.fullSize) {
+      const shrunkId = await getShrunkFileId(originalId);
+      if (this.files[shrunkId]?.dataURL) {
+        fileId = shrunkId;
+      } else {
+        try {
+          if (isGif) {
+            if (await gifNeedsShrink(imageFile)) {
+              // YAZ-4074 6A item 5: a GIF the shrink cannot make smaller
+              // comes back as it is, and keeps its own id, as a picture does.
+              const shrunk = await shrinkGifFile(imageFile);
+              if (shrunk !== imageFile) {
+                imageFile = shrunk;
+                fileId = shrunkId;
+              }
+            }
+          } else {
+            const resized = await resizeImageFile(imageFile, {
+              maxWidthOrHeight: this.props.imageOptions.maxWidthOrHeight,
+            });
+            if (resized !== imageFile) {
+              imageFile = resized;
+              fileId = shrunkId;
+            }
+          }
+        } catch (error: any) {
+          console.error(
+            "Error trying to resizing image file on insertion",
+            error,
+          );
+        }
       }
+    }
 
-      if (imageFile.size > maxFileSizeBytes) {
-        throw new Error(
-          t("errors.fileTooBig", {
-            maxSize: `${Math.trunc(maxFileSizeBytes / 1024 / 1024)}MB`,
-          }),
-        );
-      }
+    if (!this.files[fileId]?.dataURL && imageFile.size > maxFileSizeBytes) {
+      throw new Error(
+        t("errors.fileTooBig", {
+          maxSize: `${Math.trunc(maxFileSizeBytes / 1024 / 1024)}MB`,
+        }),
+      );
     }
 
     const dataURL =
@@ -13818,12 +14306,25 @@ class App extends React.Component<AppProps, AppState> {
       sceneY = center.y;
     }
     const gridPadding = 50 / this.state.zoom.value;
+    // YAZ-4074 6A item 11: `fromTop` puts the grid's top at `sceneY`, not its middle
+    const onGrid = <T extends ExcalidrawElement>(elements: T[]) => {
+      const grid = positionElementsOnGrid(
+        elements,
+        sceneX,
+        sceneY,
+        gridPadding,
+      );
+      if (!options?.fromTop || grid.length === 0) {
+        return grid;
+      }
+      const dy = sceneY - getCommonBounds(grid)[1];
+      return grid.map((element) =>
+        newElementWith(element, { y: element.y + dy } as ElementUpdate<T>),
+      );
+    };
     // Create, position, and insert placeholders
-    const placeholders = positionElementsOnGrid(
+    const placeholders = onGrid(
       imageFiles.map(() => this.newImagePlaceholder({ sceneX, sceneY })),
-      sceneX,
-      sceneY,
-      gridPadding,
     );
     this.insertNewElements(placeholders);
 
@@ -13848,12 +14349,7 @@ class App extends React.Component<AppProps, AppState> {
     );
     const initializedMap = arrayToMap(initialized);
 
-    const positioned = positionElementsOnGrid(
-      initialized.filter((el) => !el.isDeleted),
-      sceneX,
-      sceneY,
-      gridPadding,
-    );
+    const positioned = onGrid(initialized.filter((el) => !el.isDeleted));
     const positionedMap = arrayToMap(positioned);
 
     const nextElements = this.scene
@@ -13891,6 +14387,44 @@ class App extends React.Component<AppProps, AppState> {
 
     // must be retrieved first, in the same frame
     const fileItems = dataTransferList.getFiles();
+
+    // YAZ-3943 4D: pages dragged from the sidebar are pill boxes, one each,
+    // stacked down from the drop point; a folder adds nothing. Pictures are
+    // added at the drop point as a Finder drop adds them (2D), or below the
+    // last pill box when pages came too (YAZ-4074 6A item 11).
+    const droppedFiles = fileItems
+      .map((data) => data.file)
+      .filter((file): file is File => !!file);
+    const pageFiles = droppedFiles.filter(
+      (file) => !isSupportedImageFile(file),
+    );
+    const links =
+      pageFiles.length > 0
+        ? this.props.hostLinks?.dropLinks?.(pageFiles) ?? null
+        : null;
+    if (links) {
+      const boxes =
+        links.length > 0
+          ? this.addTextFromPaste(links.join("\n"), false, {
+              x: sceneX,
+              y: sceneY,
+            }) ?? []
+          : [];
+      const pictures = droppedFiles.filter((file) =>
+        isSupportedImageFile(file),
+      );
+      if (pictures.length > 0 && this.isToolSupported("image")) {
+        if (boxes.length > 0) {
+          const bottom = getCommonBounds(boxes)[3];
+          await this.insertImages(pictures, sceneX, bottom + 10, {
+            fromTop: true,
+          });
+        } else {
+          await this.insertImages(pictures, sceneX, sceneY);
+        }
+      }
+      return;
+    }
 
     if (fileItems.length === 1) {
       const { file, fileHandle } = fileItems[0];
@@ -14114,6 +14648,37 @@ class App extends React.Component<AppProps, AppState> {
       preferSelected: true,
       includeLockedElements: true,
     });
+
+    // YAZ-4039 D11: a right-click on a link pill gives the link menu
+    if (this.props.hostLinks?.onContextMenu) {
+      const hit = this.getHostLinkAt(
+        { x, y },
+        this.getElementAtPosition(x, y, { includeLockedElements: true }),
+      );
+      const raw = hit && `[[${hit.inner}]]`;
+      if (
+        hit &&
+        this.props.hostLinks.onContextMenu(
+          {
+            ...hit,
+            replace: this.state.viewModeEnabled
+              ? undefined
+              : (text) =>
+                  this.replaceHostLinkText(
+                    hit.elementId,
+                    hit.start,
+                    hit.end,
+                    raw!,
+                    text,
+                  ),
+          },
+          event.nativeEvent,
+        )
+      ) {
+        this.setHostLinkHover(null);
+        return;
+      }
+    }
 
     const selectedElements = this.scene.getSelectedElements(this.state);
     const isHittingCommonBoundBox =
@@ -14576,6 +15141,7 @@ class App extends React.Component<AppProps, AppState> {
 
       return [
         actionPaste,
+        actionPasteAtFullSize, // YAZ-3944 D16
         CONTEXT_MENU_SEPARATOR,
         actionCopyAsPng,
         actionCopyAsSvg,
@@ -14619,12 +15185,14 @@ class App extends React.Component<AppProps, AppState> {
       actionCut,
       actionCopy,
       actionPaste,
+      actionPasteAtFullSize, // YAZ-3944 D16
       CONTEXT_MENU_SEPARATOR,
       actionSelectAllElementsInFrame,
       actionRemoveAllElementsFromFrame,
       actionWrapSelectionInFrame,
       CONTEXT_MENU_SEPARATOR,
       actionToggleCropEditor,
+      actionToggleGifPlayback, // YAZ-3944 D4
       CONTEXT_MENU_SEPARATOR,
       ...options,
       CONTEXT_MENU_SEPARATOR,

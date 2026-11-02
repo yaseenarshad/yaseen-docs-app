@@ -56,19 +56,23 @@ const StaticCanvas = (props: StaticCanvasProps) => {
       canvas.classList.add("excalidraw__canvas", "static");
     }
 
-    renderStaticScene(
-      {
-        canvas,
-        rc: props.rc,
-        scale: props.scale,
-        elementsMap: props.elementsMap,
-        allElementsMap: props.allElementsMap,
-        visibleElements: props.visibleElements,
-        appState: props.appState,
-        renderConfig: props.renderConfig,
-      },
-      isRenderThrottlingEnabled(),
-    );
+    const config = {
+      canvas,
+      rc: props.rc,
+      scale: props.scale,
+      elementsMap: props.elementsMap,
+      allElementsMap: props.allElementsMap,
+      visibleElements: props.visibleElements,
+      appState: props.appState,
+      renderConfig: props.renderConfig,
+    };
+    renderStaticScene(config, isRenderThrottlingEnabled());
+
+    // YAZ-3944 D2: a GIF tick paints this layer again, without React
+    if (props.renderConfig.gifPlayer) {
+      props.renderConfig.gifPlayer.repaint = () =>
+        renderStaticScene(config, isRenderThrottlingEnabled());
+    }
   });
 
   return <div className="excalidraw__canvas-wrapper" ref={wrapperRef} />;

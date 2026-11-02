@@ -15,7 +15,7 @@ import { getResponsiveTextFontSize } from "../textCreation";
 
 import { API } from "./helpers/api";
 import { Pointer, UI } from "./helpers/ui";
-import { fireEvent, render, waitFor } from "./test-utils";
+import { exactFontSizeInput, fireEvent, render, waitFor } from "./test-utils";
 
 const { h } = window;
 
@@ -147,9 +147,7 @@ describe("appState", () => {
     UI.clickTool("text");
 
     expect(h.state.currentItemFontSize).toBe(30);
-    const fontSizeInput = container.querySelector<HTMLInputElement>(
-      '[aria-label="Exact font size"]',
-    )!;
+    const fontSizeInput = exactFontSizeInput();
     fireEvent.change(fontSizeInput, { target: { value: "16" } });
     fireEvent.blur(fontSizeInput);
     expect(h.state.currentItemFontSize).toBe(16);

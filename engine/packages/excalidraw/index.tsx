@@ -101,6 +101,8 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
     onLibraryChange,
     autoFocus = false,
     generateIdForFile,
+    hostLinks,
+    onExportPdf,
     onLinkOpen,
     generateLinkForSelection,
     onPointerDown,
@@ -237,6 +239,8 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
           onLibraryChange={onLibraryChange}
           autoFocus={autoFocus}
           generateIdForFile={generateIdForFile}
+          hostLinks={hostLinks}
+          onExportPdf={onExportPdf}
           onLinkOpen={onLinkOpen}
           generateLinkForSelection={generateLinkForSelection}
           onPointerDown={onPointerDown}
@@ -474,6 +478,8 @@ export {
 export { actions as registeredActions } from "./actions/register";
 export { TOOLS } from "./components/Tools";
 export type { KeyBinding, KeyChord } from "./keyRemap";
+// Yaseen Docs (YAZ-4103 3F): the host's tests check the round trip with a note
+export { getStyledHtml, parseStyledHtml } from "./wysiwyg/styledClipboard";
 
 export { WelcomeScreen };
 export { LiveCollaborationTrigger };

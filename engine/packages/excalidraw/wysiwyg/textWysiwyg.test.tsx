@@ -5,8 +5,10 @@ import {
   getLineHeightInPx,
   getOriginalContainerHeightFromCache,
   getStyledVisualLineStart,
+  getStyledVisualLines,
   getTextElementStyledLayout,
   getTextBackgroundGeometry,
+  setCustomTextMetricsProvider,
 } from "@excalidraw/element";
 
 import {
@@ -18,6 +20,7 @@ import {
   THEME,
   VERTICAL_ALIGN,
   applyDarkModeFilter,
+  getFontString,
   sceneCoordsToViewportCoords,
 } from "@excalidraw/common";
 
@@ -34,6 +37,8 @@ import { getTextEditor, updateTextEditor } from "../tests/queries/dom";
 import {
   GlobalTestState,
   act,
+  exactFontSizeInput,
+  openTextToolbarPopover,
   render,
   screen,
   unmountComponent,
@@ -43,8 +48,16 @@ import {
   mockBoundingClientRect,
   restoreOriginalGetBoundingClientRect,
 } from "../tests/test-utils";
-import { actionBindText, actionChangeTextStyle } from "../actions";
+import {
+  actionBindText,
+  actionChangeStrokeColor,
+  actionChangeTextStyle,
+  actionClearSelectedTextFormatting,
+} from "../actions";
+import { activeEyeDropperAtom } from "../components/EyeDropper";
+import { editorJotaiStore } from "../editor-jotai";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
+import { setKeyBindings, textFieldKeyFor } from "../keyRemap";
 
 const { h } = window;
 
@@ -62,6 +75,14 @@ const selectFontFamily = (title: string) => {
       disconnect() {}
     };
   fireEvent.click(screen.getByTestId("font-family-show-fonts"));
+  fireEvent.click(screen.getByTitle(title));
+};
+
+// YAZ-4074 6A item 22: a shape's text align sits in the toolbar's align menu, as a text box's does
+const clickTextAlign = (title: string) => {
+  if (!screen.queryByTitle(title)) {
+    openTextToolbarPopover("Text align");
+  }
   fireEvent.click(screen.getByTitle(title));
 };
 
@@ -660,8 +681,7 @@ describe("textWysiwyg", () => {
           backgroundColor: "#000000",
         }),
         originalText,
-        lineBolds: [true],
-        lineUnderlines: [true],
+        textRuns: [{ start: 0, end: 11, bold: true, underline: true }],
       } as ExcalidrawTextElement;
       API.setElements([text]);
 
@@ -704,8 +724,8 @@ describe("textWysiwyg", () => {
     });
 
     it.each([
-      ["bold", { lineBolds: [true] }],
-      ["underlined", { lineUnderlines: [true] }],
+      ["bold", { textRuns: [{ start: 0, end: 21, bold: true }] }],
+      ["underlined", { textRuns: [{ start: 0, end: 21, underline: true }] }],
     ])(
       "keeps keyboard and drag selection visible for %s text",
       async (_styleName, lineStyles) => {
@@ -906,7 +926,7 @@ describe("textWysiwyg", () => {
           textAlign: "left",
         }),
         originalText,
-        lineBolds: [true, false],
+        textRuns: [{ start: 0, end: 12, bold: true }],
       } as ExcalidrawTextElement;
       API.setElements([text]);
 
@@ -1110,9 +1130,10 @@ describe("textWysiwyg", () => {
       restoreOriginalGetBoundingClientRect();
     });
 
-    it("should toggle line bold, underline, and strikethrough with keyboard shortcuts", () => {
+    it("toggles bold, underline, and strikethrough on the selected letters with keyboard shortcuts", () => {
       const primaryModifier = { [KEYS.CTRL_OR_CMD]: true };
       fireEvent.input(textarea, { target: { value: "Styled" } });
+      textarea.setSelectionRange(0, 6);
 
       fireEvent.keyDown(textarea, {
         ...primaryModifier,
@@ -1122,8 +1143,8 @@ describe("textWysiwyg", () => {
       expect((h.elements[0] as ExcalidrawTextElement).fontWeight).toBe(
         "normal",
       );
-      expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 6, bold: true },
       ]);
 
       fireEvent.keyDown(textarea, {
@@ -1131,8 +1152,8 @@ describe("textWysiwyg", () => {
         key: "u",
         code: CODES.U,
       });
-      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 6, bold: true, underline: true },
       ]);
       expect((h.elements[0] as ExcalidrawTextElement).textDecoration).toBe(
         "none",
@@ -1144,9 +1165,9 @@ describe("textWysiwyg", () => {
         key: "x",
         code: CODES.X,
       });
-      expect(
-        (h.elements[0] as ExcalidrawTextElement).lineStrikethroughs,
-      ).toEqual([true]);
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 6, bold: true, underline: true, strikethrough: true },
+      ]);
       expect((h.elements[0] as ExcalidrawTextElement).strikethrough).toBe(
         false,
       );
@@ -1154,7 +1175,7 @@ describe("textWysiwyg", () => {
         ".excalidraw-wysiwyg-styled-line",
       );
       expect(styledLine).not.toBeNull();
-      expect(styledLine?.style.fontWeight).toBe("bold");
+      expect(styledLine?.style.font).toContain("bold");
       expect(styledLine?.style.textDecoration).toContain("underline");
       expect(styledLine?.style.textDecoration).toContain("line-through");
 
@@ -1177,21 +1198,13 @@ describe("textWysiwyg", () => {
       expect((h.elements[0] as ExcalidrawTextElement).fontWeight).toBe(
         "normal",
       );
-      expect(
-        (h.elements[0] as ExcalidrawTextElement).lineBolds,
-      ).toBeUndefined();
       expect((h.elements[0] as ExcalidrawTextElement).textDecoration).toBe(
         "none",
       );
-      expect(
-        (h.elements[0] as ExcalidrawTextElement).lineUnderlines,
-      ).toBeUndefined();
-      expect(
-        (h.elements[0] as ExcalidrawTextElement).lineStrikethroughs,
-      ).toBeUndefined();
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toBeUndefined();
     });
 
-    it("toggles underline for only the logical lines selected in the editor", async () => {
+    it("toggles underline for only the letters selected in the editor", async () => {
       fireEvent.input(textarea, {
         target: { value: "Title\nSubtitle" },
       });
@@ -1209,13 +1222,26 @@ describe("textWysiwyg", () => {
 
       expect(h.elements[0]).toMatchObject({
         textDecoration: "none",
-        lineUnderlines: [true],
+        textRuns: [{ start: 0, end: 5, underline: true }],
       });
       expect(textarea.selectionStart).toBe(0);
       expect(textarea.selectionEnd).toBe(5);
+
+      // a part of a word
+      textarea.setSelectionRange(8, 11);
+      act(() => {
+        h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+          property: "textDecoration",
+          enabled: true,
+        });
+      });
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 5, underline: true },
+        { start: 8, end: 11, underline: true },
+      ]);
     });
 
-    it("toggles only the selected line with the underline shortcut", () => {
+    it("toggles only the selected letters with the underline shortcut", () => {
       fireEvent.input(textarea, {
         target: { value: "Title\nSubtitle" },
       });
@@ -1227,15 +1253,836 @@ describe("textWysiwyg", () => {
         code: CODES.U,
       });
 
-      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 5, underline: true },
       ]);
       expect(
         document.querySelectorAll(".excalidraw-wysiwyg-line-underline"),
       ).toHaveLength(1);
     });
 
-    it("shifts line underline state when a newline is inserted above it", () => {
+    describe("YAZ-3718 D10: styles on letters, like notes", () => {
+      const press = (
+        code: string,
+        key: string,
+        extra: { shiftKey?: boolean } = {},
+      ) =>
+        fireEvent.keyDown(textarea, {
+          [KEYS.CTRL_OR_CMD]: true,
+          key,
+          code,
+          ...extra,
+        });
+      const type = (value: string, caret = value.length) => {
+        textarea.value = value;
+        textarea.setSelectionRange(caret, caret);
+        fireEvent.input(textarea);
+      };
+      const runs = () => (h.elements[0] as ExcalidrawTextElement).textRuns;
+
+      it("gives the next typed letters the style of a key pressed with only a caret", () => {
+        type("ab");
+        press(CODES.B, "b");
+        // nothing is styled yet
+        expect(runs()).toBeUndefined();
+
+        type("abc");
+        type("abcd");
+        expect(runs()).toEqual([{ start: 2, end: 4, bold: true }]);
+      });
+
+      it("drops the style for the next letters when the caret moves", () => {
+        type("abcd");
+        textarea.setSelectionRange(1, 1);
+        press(CODES.I, "i");
+        textarea.setSelectionRange(0, 0);
+        fireEvent(document, new Event("selectionchange"));
+
+        type("Xabcd", 1);
+        expect(runs()).toBeUndefined();
+      });
+
+      it("un-styles a part of a run", () => {
+        type("Hello");
+        textarea.setSelectionRange(0, 5);
+        press(CODES.B, "b");
+        textarea.setSelectionRange(1, 3);
+        press(CODES.B, "b");
+
+        expect(runs()).toEqual([
+          { start: 0, end: 1, bold: true },
+          { start: 3, end: 5, bold: true },
+        ]);
+      });
+
+      it("toggles italic on the selected letters with ⌘I and the I button", () => {
+        type("Hello world");
+        textarea.setSelectionRange(6, 11);
+        press(CODES.I, "i");
+        expect(runs()).toEqual([{ start: 6, end: 11, italic: true }]);
+        expect(
+          (h.elements[0] as ExcalidrawTextElement).fontStyle,
+        ).toBeUndefined();
+        const segment = document.querySelectorAll<HTMLElement>(
+          ".excalidraw-wysiwyg-styled-line",
+        )[1];
+        expect(segment.textContent).toBe("world");
+        expect(segment.style.font).toContain("italic");
+
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+            property: "fontStyle",
+            enabled: false,
+          });
+        });
+        expect(runs()).toBeUndefined();
+      });
+
+      it("colors only the selected letters, and the next letters with only a caret", () => {
+        type("Hello world");
+        const boxColor = (h.elements[0] as ExcalidrawTextElement).strokeColor;
+        textarea.setSelectionRange(6, 11);
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: "#e03131",
+          });
+        });
+        expect(runs()).toEqual([{ start: 6, end: 11, color: "#e03131" }]);
+        expect((h.elements[0] as ExcalidrawTextElement).strokeColor).toBe(
+          boxColor,
+        );
+
+        textarea.setSelectionRange(5, 5);
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: "#1971c2",
+          });
+        });
+        type("Hello! world", 6);
+        expect(runs()).toEqual([
+          { start: 5, end: 6, color: "#1971c2" },
+          { start: 7, end: 12, color: "#e03131" },
+        ]);
+      });
+
+      it("YAZ-4101 3D: the Text color shows the selected letters' color, and mixed for several", () => {
+        type("Hello world");
+        const boxColor = (h.elements[0] as ExcalidrawTextElement).strokeColor;
+        textarea.setSelectionRange(6, 11);
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: "#e03131",
+          });
+        });
+        const swatch = () =>
+          document.querySelector<HTMLElement>(
+            '[data-openpopup="elementStroke"]',
+          )!;
+        const select = (start: number, end: number) =>
+          act(() => {
+            textarea.setSelectionRange(start, end);
+            fireEvent(document, new Event("selectionchange"));
+          });
+
+        // one colored word
+        select(7, 10);
+        expect(swatch().style.getPropertyValue("--swatch-color")).toBe(
+          "#e03131",
+        );
+        // letters with the box color
+        select(0, 5);
+        expect(swatch().style.getPropertyValue("--swatch-color")).toBe(
+          boxColor,
+        );
+        // both: mixed, as for other mixed values
+        select(3, 8);
+        expect(swatch().style.getPropertyValue("--swatch-color")).toBe("");
+        expect(swatch().classList).toContain("is-transparent");
+        // a caret: the color the next letter gets
+        select(11, 11);
+        expect(swatch().style.getPropertyValue("--swatch-color")).toBe(
+          "#e03131",
+        );
+      });
+
+      it("YAZ-4101: removing the last run color leaves no runs, and the word takes the box color", () => {
+        type("Hello world");
+        const boxColor = (h.elements[0] as ExcalidrawTextElement).strokeColor;
+        textarea.setSelectionRange(6, 11);
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: "#e03131",
+          });
+        });
+        expect(runs()).toEqual([{ start: 6, end: 11, color: "#e03131" }]);
+        const version = h.elements[0].version;
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: boxColor,
+          });
+        });
+        expect(h.elements[0].version).toBeGreaterThan(version);
+        expect(h.elements[0]).not.toHaveProperty("textRuns", expect.anything());
+        expect((h.elements[0] as ExcalidrawTextElement).strokeColor).toBe(
+          boxColor,
+        );
+        // typed letters after it are plain again, and so is a removed highlight
+        textarea.setSelectionRange(0, 5);
+        press(CODES.H, "H", { shiftKey: true });
+        press(CODES.H, "H", { shiftKey: true });
+        expect(runs()).toBeUndefined();
+      });
+
+      it("YAZ-4101 3D: B, I, U and S follow the selection: the toolbar draws again when they change, and only then", () => {
+        type("Hello world");
+        textarea.setSelectionRange(0, 5);
+        press(CODES.B, "b");
+        press(CODES.U, "u");
+        const renders = vi.spyOn(h.app, "refreshTextEditorToolbar");
+        const select = (start: number, end: number) =>
+          act(() => {
+            textarea.setSelectionRange(start, end);
+            fireEvent(document, new Event("selectionchange"));
+          });
+
+        // the same color everywhere: only the bold and underline state moves
+        select(6, 11);
+        expect(renders).toHaveBeenCalledTimes(1);
+        select(7, 10);
+        select(8, 8);
+        expect(renders).toHaveBeenCalledTimes(1);
+        select(1, 4);
+        expect(renders).toHaveBeenCalledTimes(2);
+        select(0, 5);
+        expect(renders).toHaveBeenCalledTimes(2);
+        // partly bold: off, as for other mixed values
+        select(3, 8);
+        expect(renders).toHaveBeenCalledTimes(3);
+        renders.mockRestore();
+      });
+
+      it("YAZ-4101 3D: a caret move in a box with no runs draws the toolbar again never", () => {
+        type("Hello world");
+        const renders = vi.spyOn(h.app, "refreshTextEditorToolbar");
+        for (let offset = 0; offset < 11; offset++) {
+          textarea.setSelectionRange(offset, offset);
+          fireEvent(document, new Event("selectionchange"));
+        }
+        expect(renders).not.toHaveBeenCalled();
+        renders.mockRestore();
+      });
+
+      it("YAZ-4100 3C: the editor draws a styled Arabic line from the right, and its selection where the letters are", () => {
+        type("مرحبا بالعالم");
+        textarea.setSelectionRange(0, 5);
+        press(CODES.B, "b");
+        const [first, second] = [
+          ...document.querySelectorAll<HTMLElement>(
+            ".excalidraw-wysiwyg-styled-line",
+          ),
+        ];
+        expect(first.textContent).toBe("مرحبا");
+        expect(first.style.direction).toBe("rtl");
+        expect(parseFloat(first.style.left)).toBeGreaterThan(
+          parseFloat(second.style.left),
+        );
+        // the bold word, selected, is on the right
+        textarea.setSelectionRange(0, 5);
+        fireEvent(document, new Event("selectionchange"));
+        const selection = document.querySelector<HTMLElement>(
+          ".excalidraw-wysiwyg-selection",
+        )!;
+        expect(selection.style.left).toBe(first.style.left);
+        expect(selection.style.width).toBe(first.style.width);
+      });
+
+      describe("YAZ-4103 3F: copy and paste keep styles with notes", () => {
+        /** What a note's copy puts on the clipboard (ProseMirror's HTML). */
+        const NOTE =
+          '<p data-pm-slice="1 1 []">a <strong>b</strong> <em>i</em> <u>u</u> <del>s</del> <mark>h</mark> <mark class="highlight-green">g</mark> [[YAS-1]]</p>';
+        const paste = (html: string, text: string) => {
+          // the editor's own handler; the canvas's paste is not under test
+          const event = new Event("paste", {
+            bubbles: false,
+            cancelable: true,
+          }) as ClipboardEvent;
+          Object.defineProperty(event, "clipboardData", {
+            value: {
+              items: [
+                { kind: "string", type: "text/plain" },
+                { kind: "string", type: "text/html" },
+              ],
+              getData: (type: string) =>
+                type === "text/html" ? html : type === "text/plain" ? text : "",
+            },
+          });
+          textarea.dispatchEvent(event);
+          return event;
+        };
+        const copy = (type: "copy" | "cut") => {
+          const data: Record<string, string> = {};
+          const event = new Event(type, {
+            bubbles: false,
+            cancelable: true,
+          }) as ClipboardEvent;
+          Object.defineProperty(event, "clipboardData", {
+            value: {
+              setData: (format: string, value: string) => {
+                data[format] = value;
+              },
+            },
+          });
+          textarea.dispatchEvent(event);
+          return { event, data };
+        };
+
+        it("note → drawing: bold, italic, underline, strike, the highlights and a link keep their style", () => {
+          type("");
+          const event = paste(NOTE, "a b i u s h g Growth plan");
+          expect(event.defaultPrevented).toBe(true);
+          expect(textarea.value).toBe("a b i u s h g [[YAS-1]]");
+          expect(runs()).toEqual([
+            { start: 2, end: 3, bold: true },
+            { start: 4, end: 5, italic: true },
+            { start: 6, end: 7, underline: true },
+            { start: 8, end: 9, strikethrough: true },
+            { start: 10, end: 11, highlight: "yellow" },
+            { start: 12, end: 13, highlight: "green" },
+          ]);
+        });
+
+        it("note → drawing: pasted letters take their own styles, not the bold around the caret", () => {
+          type("XY");
+          textarea.setSelectionRange(0, 2);
+          press(CODES.B, "b");
+          textarea.setSelectionRange(1, 1);
+          paste("<p>c<em>d</em></p>", "cd");
+          expect(textarea.value).toBe("XcdY");
+          expect(runs()).toEqual([
+            { start: 0, end: 1, bold: true },
+            { start: 2, end: 3, italic: true },
+            { start: 3, end: 4, bold: true },
+          ]);
+        });
+
+        it("note → drawing: a list and its lines", () => {
+          type("");
+          paste(
+            "<ul><li><p>one <strong>b</strong></p><ul><li><p>sub</p></li></ul></li><li><p>two</p></li></ul>",
+            "",
+          );
+          expect(textarea.value).toBe("• one b\n    ○ sub\n• two");
+          expect(runs()).toEqual([{ start: 6, end: 7, bold: true }]);
+        });
+
+        it("text with no style pastes as before; ⌘⇧V stays plain", () => {
+          type("");
+          expect(
+            paste("<p>plain words</p>", "plain words").defaultPrevented,
+          ).toBe(false);
+          fireEvent.keyDown(textarea, {
+            [KEYS.CTRL_OR_CMD]: true,
+            shiftKey: true,
+            key: "V",
+            code: CODES.V,
+          });
+          expect(paste(NOTE, "a b").defaultPrevented).toBe(false);
+          expect(runs()).toBeUndefined();
+          // the next ⌘V keeps styles again
+          fireEvent.keyDown(textarea, {
+            [KEYS.CTRL_OR_CMD]: true,
+            key: "v",
+            code: CODES.V,
+          });
+          expect(paste(NOTE, "a b").defaultPrevented).toBe(true);
+        });
+
+        it("drawing → note: the note's tags for each style; text color is dropped; links as written", () => {
+          type("ab cd ef gh ij [[YAS-1]] kl\nmn");
+          const style = (
+            start: number,
+            end: number,
+            run: { code: string; key: string; shiftKey?: boolean },
+          ) => {
+            textarea.setSelectionRange(start, end);
+            press(run.code, run.key, { shiftKey: run.shiftKey });
+          };
+          style(0, 2, { code: CODES.B, key: "b" });
+          style(3, 5, { code: CODES.I, key: "i" });
+          style(6, 8, { code: CODES.U, key: "u" });
+          style(9, 11, { code: CODES.X, key: "x", shiftKey: true });
+          style(12, 14, { code: CODES.H, key: "H", shiftKey: true });
+          textarea.setSelectionRange(26, 28);
+          act(() => {
+            h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+              currentItemStrokeColor: "#e03131",
+            });
+          });
+          textarea.setSelectionRange(0, 31);
+          const { event, data } = copy("copy");
+          expect(event.defaultPrevented).toBe(true);
+          expect(data["text/plain"]).toBe("ab cd ef gh ij [[YAS-1]] kl\nmn");
+          expect(data["text/html"]).toBe(
+            "<p><strong>ab</strong> <em>cd</em> <u>ef</u> <del>gh</del> <mark>ij</mark> [[YAS-1]] kl</p><p>mn</p>",
+          );
+        });
+
+        it("drawing → note: letters with no style, or only a color, copy as the browser does; cut removes styled letters", () => {
+          type("ab cd");
+          textarea.setSelectionRange(3, 5);
+          act(() => {
+            h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+              currentItemStrokeColor: "#e03131",
+            });
+          });
+          textarea.setSelectionRange(0, 5);
+          expect(copy("copy").event.defaultPrevented).toBe(false);
+
+          textarea.setSelectionRange(0, 2);
+          press(CODES.B, "b");
+          textarea.setSelectionRange(0, 2);
+          const cut = copy("cut");
+          expect(cut.data["text/html"]).toBe("<p><strong>ab</strong></p>");
+          expect(textarea.value).toBe(" cd");
+        });
+
+        // YAZ-4071 7L: `setRangeText` is not on the text box's undo stack, so
+        // ⌘Z did not take back a styled paste or cut. They now go through the
+        // browser's own edit (`execCommand`), as the typed list rule does.
+        // jsdom has no `execCommand` and no undo: this one does the edit as
+        // the browser does, and records each call.
+        it("YAZ-4071 7L: a styled paste, a styled cut and a paste on a list line use the browser's undoable edit, and keep their styles", async () => {
+          const calls: { command: string; text: string; at: number[] }[] = [];
+          const execCommand = vi.fn(
+            (command: string, _ui?: boolean, text = "") => {
+              const { selectionStart, selectionEnd } = textarea;
+              calls.push({ command, text, at: [selectionStart, selectionEnd] });
+              textarea.setRangeText(text, selectionStart, selectionEnd, "end");
+              textarea.dispatchEvent(new Event("input"));
+              return true;
+            },
+          );
+          Object.defineProperty(document, "execCommand", {
+            configurable: true,
+            value: execCommand,
+          });
+          try {
+            type("XY");
+            textarea.setSelectionRange(1, 1);
+            paste("<p>c<em>d</em></p>", "cd");
+            expect(calls).toEqual([
+              { command: "insertText", text: "cd", at: [1, 1] },
+            ]);
+            expect(textarea.value).toBe("XcdY");
+            expect(runs()).toEqual([{ start: 2, end: 3, italic: true }]);
+
+            textarea.setSelectionRange(2, 3);
+            copy("cut");
+            expect(calls[1]).toEqual({
+              command: "delete",
+              text: "",
+              at: [2, 3],
+            });
+            expect(textarea.value).toBe("XcY");
+            expect(runs()).toBeUndefined();
+
+            // a plain paste on a list line (the list's own markers)
+            document.elementFromPoint = () => textarea;
+            type("1. ");
+            paste("", "Alpha\nBeta");
+            await waitFor(() => {
+              expect(textarea.value).toBe("1. Alpha\n2. Beta");
+            });
+            expect(calls[2]).toEqual({
+              command: "insertText",
+              text: "Alpha\n2. Beta",
+              at: [3, 3],
+            });
+          } finally {
+            delete (document as { execCommand?: unknown }).execCommand;
+          }
+        });
+
+        // YAZ-4071 7L: the browser's undo gives back text, not runs. jsdom
+        // has no undo: `undoTo` puts the text back as the browser does, with
+        // the input event's `inputType`.
+        describe("YAZ-4071 7L: ⌘Z and ⌘⇧Z give the letters back their styles", () => {
+          beforeEach(() => {
+            Object.defineProperty(document, "execCommand", {
+              configurable: true,
+              value: (command: string, _ui?: boolean, text = "") => {
+                const { selectionStart, selectionEnd } = textarea;
+                textarea.setRangeText(
+                  command === "delete" ? "" : text,
+                  selectionStart,
+                  selectionEnd,
+                  "end",
+                );
+                textarea.dispatchEvent(new Event("input"));
+                return true;
+              },
+            });
+          });
+          afterEach(() => {
+            delete (document as { execCommand?: unknown }).execCommand;
+          });
+          const undoTo = (
+            value: string,
+            inputType: "historyUndo" | "historyRedo",
+          ) => {
+            textarea.value = value;
+            const event = new Event("input");
+            Object.defineProperty(event, "inputType", { value: inputType });
+            textarea.dispatchEvent(event);
+          };
+
+          it("⌘Z after a styled cut gives the cut letters their styles, and keeps a style made after the cut", () => {
+            type("ab cd");
+            textarea.setSelectionRange(0, 2);
+            press(CODES.B, "b");
+            textarea.setSelectionRange(0, 2);
+            copy("cut");
+            expect(textarea.value).toBe(" cd");
+            textarea.setSelectionRange(1, 3);
+            press(CODES.I, "i");
+
+            undoTo("ab cd", "historyUndo");
+            expect(runs()).toEqual([
+              { start: 0, end: 2, bold: true },
+              { start: 3, end: 5, italic: true },
+            ]);
+          });
+
+          it("⌘⇧Z after ⌘Z of a styled paste gives the pasted letters their styles", () => {
+            type("XY");
+            textarea.setSelectionRange(1, 1);
+            paste("<p>c<em>d</em></p>", "cd");
+            expect(runs()).toEqual([{ start: 2, end: 3, italic: true }]);
+
+            undoTo("XY", "historyUndo");
+            expect(runs()).toBeUndefined();
+            undoTo("XcdY", "historyRedo");
+            expect(runs()).toEqual([{ start: 2, end: 3, italic: true }]);
+          });
+
+          it("⌘Z after typing over styled letters gives them their styles", () => {
+            type("ab cd");
+            textarea.setSelectionRange(0, 1);
+            press(CODES.B, "b");
+            textarea.setSelectionRange(1, 2);
+            press(CODES.I, "i");
+            textarea.setSelectionRange(0, 2);
+            const before = new Event("beforeinput");
+            Object.defineProperty(before, "inputType", { value: "insertText" });
+            textarea.dispatchEvent(before);
+            textarea.value = "x cd";
+            textarea.setSelectionRange(1, 1);
+            fireEvent.input(textarea);
+
+            undoTo("ab cd", "historyUndo");
+            expect(runs()).toEqual([
+              { start: 0, end: 1, bold: true },
+              { start: 1, end: 2, italic: true },
+            ]);
+          });
+
+          it("letters that come back with no remembered text take today's diff update", () => {
+            type("ab");
+            textarea.setSelectionRange(0, 2);
+            press(CODES.B, "b");
+            undoTo("abc", "historyRedo");
+            expect(runs()).toEqual([{ start: 0, end: 3, bold: true }]);
+          });
+        });
+      });
+
+      describe("YAZ-4102 3E: highlight letters", () => {
+        const highlightKey = () => press(CODES.H, "H", { shiftKey: true });
+        const overlayOf = (text: string) =>
+          [
+            ...document.querySelectorAll<HTMLElement>(
+              ".excalidraw-wysiwyg-styled-line",
+            ),
+          ].find((segment) => segment.textContent === text);
+
+        it("⌘⇧H highlights the selected word yellow, and again takes it off", () => {
+          type("Hello world");
+          textarea.setSelectionRange(6, 11);
+          highlightKey();
+          expect(runs()).toEqual([{ start: 6, end: 11, highlight: "yellow" }]);
+          expect(overlayOf("world")!.style.background).toBe(
+            "rgba(255, 213, 0, 0.4)",
+          );
+          expect(overlayOf("Hello ")!.style.background).toBe("");
+          // the selection stays for the next key
+          expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([
+            6, 11,
+          ]);
+
+          highlightKey();
+          expect(runs()).toBeUndefined();
+        });
+
+        // The panel beside the canvas at this size (compact) shows all four, then None;
+        // the wide text toolbar's three and ▾ are in `actionProperties.test.tsx`.
+        const pick = (name: string) =>
+          document.querySelector<HTMLButtonElement>(
+            `.text-highlight-pick[aria-label^="Highlight ${name}"]`,
+          )!;
+
+        it("the panel has the four note colors and None; a pick colors the selection, and the pressed one or None takes it off", () => {
+          type("Hello world");
+          textarea.setSelectionRange(0, 5);
+          expect(
+            [
+              ...document.querySelectorAll<HTMLButtonElement>(
+                ".text-highlight-pick",
+              ),
+            ].map(
+              (button) => button.getAttribute("aria-label")!.split(" —")[0],
+            ),
+          ).toEqual([
+            "Highlight yellow",
+            "Highlight green",
+            "Highlight blue",
+            "Highlight pink",
+          ]);
+          for (const name of ["green", "blue", "pink", "yellow"]) {
+            act(() => pick(name).click());
+            expect(runs()).toEqual([{ start: 0, end: 5, highlight: name }]);
+          }
+          expect(pick("yellow").getAttribute("aria-pressed")).toBe("true");
+          act(() => pick("yellow").click());
+          expect(runs()).toBeUndefined();
+          act(() => pick("green").click());
+          act(() =>
+            document
+              .querySelector<HTMLButtonElement>(".text-highlight-none")!
+              .click(),
+          );
+          expect(runs()).toBeUndefined();
+        });
+
+        it("with only a caret, the next typed letters are highlighted", () => {
+          type("ab");
+          highlightKey();
+          expect(runs()).toBeUndefined();
+          type("abcd");
+          expect(runs()).toEqual([{ start: 2, end: 4, highlight: "yellow" }]);
+        });
+
+        it("keeps the highlight with other styles", () => {
+          type("Hello world");
+          textarea.setSelectionRange(6, 11);
+          press(CODES.B, "b");
+          highlightKey();
+          expect(runs()).toEqual([
+            { start: 6, end: 11, bold: true, highlight: "yellow" },
+          ]);
+        });
+
+        it("a box selected (not in the editor) has the highlight picks too (YAZ-3943 demo 2): a pick highlights all its letters, and its whole-box background is not touched", () => {
+          type("Hello world");
+          Keyboard.exitTextEditor(textarea);
+          const before = h.elements[0].backgroundColor;
+          API.setSelectedElements([
+            h.elements[0] as NonDeletedExcalidrawElement,
+          ]);
+          act(() => pick("green").click());
+          expect(runs()).toEqual([{ start: 0, end: 11, highlight: "green" }]);
+          expect(h.elements[0].backgroundColor).toBe(before);
+          expect(pick("green").getAttribute("aria-pressed")).toBe("true");
+          // one undo step
+          Keyboard.undo();
+          expect(runs()).toBeUndefined();
+        });
+
+        it("YAZ-3943 demo 2: ⌘⇧H can be changed in Settings › Hotkeys: the user's key highlights in the editor and ⌘⇧H no longer does; with no change ⌘⇧H works", () => {
+          const chord = (
+            code: string,
+            key: string,
+            mods: Partial<Record<"ctrlKey" | "shiftKey" | "altKey", boolean>>,
+          ) => ({
+            code,
+            key,
+            name: key.toUpperCase(),
+            metaKey: false,
+            ctrlKey: false,
+            altKey: false,
+            shiftKey: false,
+            ...mods,
+          });
+          setKeyBindings([
+            {
+              name: "toggleTextHighlight",
+              defaults: [
+                chord(CODES.H, "H", { ctrlKey: true, shiftKey: true }),
+              ],
+              keys: [chord("KeyY", "y", { ctrlKey: true, altKey: true })],
+            },
+          ]);
+          try {
+            type("Hello world");
+            textarea.setSelectionRange(6, 11);
+            highlightKey();
+            expect(runs()).toBeUndefined();
+            fireEvent.keyDown(textarea, {
+              ctrlKey: true,
+              altKey: true,
+              key: "y",
+              code: "KeyY",
+            });
+            expect(runs()).toEqual([
+              { start: 6, end: 11, highlight: "yellow" },
+            ]);
+            expect(
+              textFieldKeyFor("toggleTextHighlight", {
+                ctrlKey: true,
+                altKey: true,
+                shiftKey: false,
+                metaKey: false,
+                key: "y",
+                code: "KeyY",
+              } as KeyboardEvent),
+            ).toBe(true);
+          } finally {
+            setKeyBindings([]);
+          }
+          // no change: the action's own ⌘⇧H
+          expect(
+            textFieldKeyFor("toggleTextHighlight", {
+              ctrlKey: true,
+              shiftKey: true,
+              altKey: false,
+              metaKey: false,
+              key: "H",
+              code: CODES.H,
+            } as KeyboardEvent),
+          ).toBeUndefined();
+          highlightKey();
+          expect(runs()).toBeUndefined();
+        });
+      });
+
+      it("styles and colors the whole text of a selected box, and clear formatting removes every run", () => {
+        type("Hello world");
+        textarea.setSelectionRange(0, 5);
+        press(CODES.B, "b");
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: "#e03131",
+          });
+        });
+        Keyboard.exitTextEditor(textarea);
+        API.setSelectedElements([h.elements[0] as NonDeletedExcalidrawElement]);
+
+        Keyboard.withModifierKeys({ ctrl: true }, () => {
+          Keyboard.codePress(CODES.I);
+        });
+        expect(h.elements[0]).toMatchObject({ fontStyle: "italic" });
+        expect(editorJotaiStore.get(activeEyeDropperAtom)).toBeNull();
+
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeStrokeColor, "ui", {
+            currentItemStrokeColor: "#1971c2",
+          });
+        });
+        expect(h.elements[0]).toMatchObject({
+          strokeColor: "#1971c2",
+          textRuns: [{ start: 0, end: 5, bold: true }],
+        });
+
+        act(() => {
+          h.app.actionManager.executeAction(actionClearSelectedTextFormatting);
+        });
+        expect(runs()).toBeUndefined();
+      });
+
+      it("YAZ-4071 Nit: clear formatting (⌘\\) measures the box again: bold letters are wider", () => {
+        // a bold letter is 20 wide, a normal letter 10
+        setCustomTextMetricsProvider({
+          getLineWidth: (text, font) =>
+            text.length * (/bold/.test(font) ? 20 : 10),
+        });
+        try {
+          type("Hello world");
+          textarea.setSelectionRange(6, 11);
+          press(CODES.B, "b");
+          Keyboard.exitTextEditor(textarea);
+          const box = () => h.elements[0] as ExcalidrawTextElement;
+          const styledWidth = box().width;
+          API.setSelectedElements([box() as NonDeletedExcalidrawElement]);
+
+          act(() => {
+            h.app.actionManager.executeAction(
+              actionClearSelectedTextFormatting,
+            );
+          });
+          expect(box().textRuns).toBeUndefined();
+          expect(box().width).toBe(styledWidth - 50);
+        } finally {
+          setCustomTextMetricsProvider({
+            getLineWidth: (text) => text.length * 10,
+          });
+        }
+      });
+
+      it("never opens the eyedropper on ⌘I", () => {
+        Keyboard.exitTextEditor(textarea);
+        API.setSelectedElements([]);
+
+        Keyboard.withModifierKeys({ ctrl: true }, () => {
+          Keyboard.keyPress(KEYS.I);
+        });
+        expect(editorJotaiStore.get(activeEyeDropperAtom)).toBeNull();
+
+        Keyboard.keyPress(KEYS.I);
+        expect(editorJotaiStore.get(activeEyeDropperAtom)).not.toBeNull();
+      });
+
+      it("lays out a styled box once for a keystroke", () => {
+        type("Hello bold world");
+        textarea.setSelectionRange(6, 10);
+        press(CODES.B, "b");
+        let measures = 0;
+        setCustomTextMetricsProvider({
+          getLineWidth: (text) => {
+            measures++;
+            return text.length * 10;
+          },
+        });
+        try {
+          type("Hello bolder world", 12);
+          const keystroke = measures;
+          const element = h.elements[0] as ExcalidrawTextElement;
+
+          // one more layout of the same text and runs, without the memo
+          measures = 0;
+          getStyledVisualLines({
+            originalText: element.originalText,
+            getFont: ({ bold }) =>
+              getFontString({
+                ...element,
+                fontWeight: bold ? "bold" : "normal",
+              }),
+            maxWidth: Infinity,
+            textRuns: element.textRuns,
+            wholeElementBold: false,
+            wholeElementItalic: false,
+            wholeElementUnderlined: false,
+            wholeElementStrikethrough: false,
+          });
+          expect(measures).toBeGreaterThan(0);
+          expect(keystroke).toBe(measures);
+        } finally {
+          setCustomTextMetricsProvider({
+            getLineWidth: (text) => text.length * 10,
+          });
+        }
+      });
+    });
+
+    it("gives text pasted at the start of an underlined line the underline", () => {
       fireEvent.input(textarea, {
         target: { value: "Title\nBody" },
       });
@@ -1245,17 +2092,16 @@ describe("textWysiwyg", () => {
         key: "u",
         code: CODES.U,
       });
-      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 5, underline: true },
       ]);
 
       fireEvent.input(textarea, {
         target: { value: "Intro\nTitle\nBody" },
       });
 
-      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
-        true,
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 11, underline: true },
       ]);
     });
 
@@ -1294,11 +2140,9 @@ describe("textWysiwyg", () => {
         target: { value: "Ti\ntle\nNext" },
       });
 
-      expect(h.elements[0]).toMatchObject({
-        lineBolds: [true, true, true],
-        lineUnderlines: [true, true, true],
-        lineStrikethroughs: [true, true, true],
-      });
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 11, bold: true, underline: true, strikethrough: true },
+      ]);
     });
 
     it("keeps a whole-element style whole when Enter creates a line", () => {
@@ -1327,9 +2171,8 @@ describe("textWysiwyg", () => {
       textarea.setSelectionRange(6, 6);
       fireEvent.input(textarea, { inputType: "insertLineBreak" });
 
-      expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
-        true,
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 6, bold: true },
       ]);
     });
 
@@ -1340,7 +2183,7 @@ describe("textWysiwyg", () => {
       "carries the style of the %s item above when Enter is not on the last item",
       (_kind, value, lineEnd, expected) => {
         fireEvent.input(textarea, { target: { value } });
-        textarea.setSelectionRange(0, 3);
+        textarea.setSelectionRange(0, lineEnd);
         fireEvent.keyDown(textarea, {
           [KEYS.CTRL_OR_CMD]: true,
           key: "b",
@@ -1350,9 +2193,9 @@ describe("textWysiwyg", () => {
         fireEvent.keyDown(textarea, { key: KEYS.ENTER });
 
         expect(textarea.value).toBe(expected);
-        expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
-          true,
-          true,
+        // the new item's marker continues the bold, the items below stay plain
+        expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+          { start: 0, end: expected.indexOf("\n", lineEnd + 1), bold: true },
         ]);
       },
     );
@@ -1373,8 +2216,8 @@ describe("textWysiwyg", () => {
         inputType: "insertLineBreak",
       });
 
-      expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 5, bold: true },
       ]);
     });
 
@@ -1410,6 +2253,68 @@ describe("textWysiwyg", () => {
       expect((h.elements[0] as ExcalidrawTextElement).originalText).toBe(
         "First\nSecond\nThird",
       );
+    });
+
+    // YAZ-3943 demo 2: a list started by typing, as in notes; a list reads from the left
+    describe("typed list starts", () => {
+      /** One key typed at the caret, as the browser's input event gives it. */
+      const typeKeys = (keys: string) => {
+        for (const key of keys) {
+          const at = textarea.selectionEnd;
+          textarea.value =
+            textarea.value.slice(0, at) + key + textarea.value.slice(at);
+          textarea.setSelectionRange(at + 1, at + 1);
+          fireEvent.input(textarea);
+        }
+      };
+      const box = () => h.elements[0] as ExcalidrawTextElement;
+
+      it("`- ` and `* ` at a line's start become the box's bullet, and the box turns left", () => {
+        expect(box().textAlign).not.toBe("left");
+        typeKeys("- Milk");
+        expect(textarea.value).toBe("• Milk");
+        expect(box()).toMatchObject({
+          originalText: "• Milk",
+          textAlign: "left",
+        });
+        fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+        typeKeys("Oat\n* Rye");
+        expect(textarea.value).toBe("• Milk\n• Oat\n• Rye");
+        expect(textarea.selectionStart).toBe(textarea.value.length);
+      });
+
+      it("`1. ` is a numbered line already: it only turns the box left", () => {
+        typeKeys("1. First");
+        expect(textarea.value).toBe("1. First");
+        expect(box().textAlign).toBe("left");
+      });
+
+      it("a dash in the middle of a line stays a dash, and the box keeps its align", () => {
+        const align = box().textAlign;
+        typeKeys("a - b");
+        expect(textarea.value).toBe("a - b");
+        expect(box().textAlign).toBe(align);
+      });
+    });
+
+    it("the list button works in an empty box: the caret's line gets its marker, and the box turns left (YAZ-3943 demo 2)", () => {
+      expect(textarea.value).toBe("");
+      act(() => {
+        h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+          property: "listMode",
+          mode: "bullet",
+        });
+      });
+      expect(textarea.value).toBe("• ");
+      expect(textarea.selectionStart).toBe(2);
+      expect(h.elements[0]).toMatchObject({ textAlign: "left" });
+      act(() => {
+        h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+          property: "listMode",
+          mode: "numbered",
+        });
+      });
+      expect(textarea.value).toBe("1. ");
     });
 
     it("should continue bullets on Enter and exit after an empty bullet", () => {
@@ -1509,18 +2414,132 @@ describe("textWysiwyg", () => {
         key: "b",
         code: CODES.B,
       });
-      expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 8, bold: true },
       ]);
 
       textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
       fireEvent.keyDown(textarea, { key: KEYS.ENTER });
 
       expect(textarea.value).toBe("• Styled\n• ");
-      expect((h.elements[0] as ExcalidrawTextElement).lineBolds).toEqual([
-        true,
-        true,
+      expect((h.elements[0] as ExcalidrawTextElement).textRuns).toEqual([
+        { start: 0, end: 11, bold: true },
       ]);
+    });
+
+    // YAZ-4071 7C, 7D: a list button, Tab or Shift-Tab changes the start of
+    // each line; the letter styles move with their letters
+    describe("the list buttons and Tab move the letter styles with the text", () => {
+      const box = () => h.elements[0] as ExcalidrawTextElement;
+      const setList = (mode: "bullet" | "numbered" | "plain") =>
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+            property: "listMode",
+            mode,
+          });
+        });
+      /** Types `value`, then bolds each `[start, end]`. */
+      const typeAndBold = (value: string, ...ranges: [number, number][]) => {
+        fireEvent.input(textarea, { target: { value } });
+        for (const [start, end] of ranges) {
+          textarea.setSelectionRange(start, end);
+          fireEvent.keyDown(textarea, {
+            [KEYS.CTRL_OR_CMD]: true,
+            key: "b",
+            code: CODES.B,
+          });
+        }
+      };
+      const typeKey = (key: string) => {
+        const at = textarea.selectionEnd;
+        textarea.value =
+          textarea.value.slice(0, at) + key + textarea.value.slice(at);
+        textarea.setSelectionRange(at + 1, at + 1);
+        fireEvent.input(textarea);
+      };
+      const bold = (text: string, word: string) => {
+        const start = text.indexOf(word);
+        return { start, end: start + word.length, bold: true };
+      };
+
+      it("7C: the list buttons on a selected box keep the bold word bold", () => {
+        typeAndBold("Hello world", [6, 11]);
+        Keyboard.exitTextEditor(textarea);
+        API.setSelectedElements([box() as NonDeletedExcalidrawElement]);
+
+        setList("bullet");
+        expect(box().originalText).toBe("• Hello world");
+        expect(box().textRuns).toEqual([bold(box().originalText, "world")]);
+
+        setList("numbered");
+        expect(box().originalText).toBe("1. Hello world");
+        expect(box().textRuns).toEqual([bold(box().originalText, "world")]);
+
+        setList("plain");
+        expect(box().originalText).toBe("Hello world");
+        expect(box().textRuns).toEqual([{ start: 6, end: 11, bold: true }]);
+      });
+
+      it("7C: the numbered list button on a selected box moves the runs of each line by its own marker", () => {
+        typeAndBold("aa bb\ncc dd\nee ff", [3, 5], [15, 17]);
+        Keyboard.exitTextEditor(textarea);
+        API.setSelectedElements([box() as NonDeletedExcalidrawElement]);
+
+        setList("numbered");
+        const text = box().originalText;
+        expect(text).toBe("1. aa bb\n2. cc dd\n3. ee ff");
+        expect(box().textRuns).toEqual([bold(text, "bb"), bold(text, "ff")]);
+      });
+
+      it("7C: the list button in the editor keeps the bold word bold, and so does the next typed letter", () => {
+        typeAndBold("Hello world", [6, 11]);
+        textarea.setSelectionRange(0, 0);
+
+        setList("bullet");
+        expect(textarea.value).toBe("• Hello world");
+        expect(box().textRuns).toEqual([bold(textarea.value, "world")]);
+
+        textarea.setSelectionRange(2, 2);
+        typeKey("X");
+        expect(textarea.value).toBe("• XHello world");
+        expect(box().textRuns).toEqual([bold(textarea.value, "world")]);
+      });
+
+      it("7D: Tab on three lines keeps the bold middle line bold", () => {
+        typeAndBold("aaa\nbbb\nccc", [4, 7]);
+        textarea.setSelectionRange(0, textarea.value.length);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB });
+
+        expect(textarea.value).toBe(`${tab}aaa\n${tab}bbb\n${tab}ccc`);
+        expect(box().textRuns).toEqual([bold(textarea.value, "bbb")]);
+      });
+
+      it("7D: Shift-Tab on three lines keeps the bold middle line bold", () => {
+        typeAndBold(`${tab}aaa\n${tab}bbb\n${tab}ccc`, [12, 15]);
+        textarea.setSelectionRange(0, textarea.value.length);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB, shiftKey: true });
+
+        expect(textarea.value).toBe("aaa\nbbb\nccc");
+        expect(box().textRuns).toEqual([{ start: 4, end: 7, bold: true }]);
+      });
+
+      it("7D: Tab on three lines keeps the bold of the first line on the first line", () => {
+        typeAndBold("aaa\nbbb\nccc", [0, 3]);
+        textarea.setSelectionRange(0, textarea.value.length);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB });
+
+        // the indent gets no style: it does not spread to the lines below
+        expect(box().textRuns).toEqual([bold(textarea.value, "aaa")]);
+      });
+
+      it("7D: Tab on list lines keeps the bold item bold", () => {
+        typeAndBold("1. aaa\n2. bbb\n3. ccc", [10, 13]);
+        textarea.setSelectionRange(7, textarea.value.length);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB });
+
+        expect(textarea.value).not.toBe("1. aaa\n2. bbb\n3. ccc");
+        expect(box().textRuns).toEqual([bold(textarea.value, "bbb")]);
+      });
     });
 
     it("should add a tab at the start of the first line", () => {
@@ -1656,6 +2675,255 @@ describe("textWysiwyg", () => {
       });
 
       expect(textarea.value).toEqual(`Line#1\nLine#2`);
+    });
+
+    // YAZ-4071 7M: a script edit of the text is not on the browser's undo
+    // stack, and it puts the stack out of step with the text. jsdom has no
+    // undo: the fake `execCommand` edits as the browser does (and, as Blink,
+    // refuses a call inside another one), and records each call.
+    describe("YAZ-4071 7M: Tab, Enter in a list, the list buttons and the cleanup are browser edits", () => {
+      let calls: { command: string; text: string; at: number[] }[];
+      const descriptor = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )!;
+      beforeEach(() => {
+        calls = [];
+        let running = false;
+        Object.defineProperty(document, "execCommand", {
+          configurable: true,
+          value: (command: string, _ui?: boolean, text = "") => {
+            if (running) {
+              return false;
+            }
+            running = true;
+            const { selectionStart, selectionEnd } = textarea;
+            calls.push({ command, text, at: [selectionStart, selectionEnd] });
+            textarea.setRangeText(
+              command === "delete" ? "" : text,
+              selectionStart,
+              selectionEnd,
+              "end",
+            );
+            input("insertText");
+            running = false;
+            return true;
+          },
+        });
+        textarea.focus();
+      });
+      afterEach(() => {
+        delete (document as { execCommand?: unknown }).execCommand;
+      });
+      const box = () => h.elements[0] as ExcalidrawTextElement;
+      const input = (inputType: string) => {
+        const event = new Event("input");
+        Object.defineProperty(event, "inputType", { value: inputType });
+        textarea.dispatchEvent(event);
+      };
+      /** What the user's own typing leaves, as the browser gives it. */
+      const userEdit = (value: string, caret: number, inputType: string) => {
+        descriptor.set!.call(textarea, value);
+        textarea.setSelectionRange(caret, caret);
+        input(inputType);
+      };
+      const bold = (start: number, end: number) => {
+        textarea.setSelectionRange(start, end);
+        fireEvent.keyDown(textarea, {
+          [KEYS.CTRL_OR_CMD]: true,
+          key: "b",
+          code: CODES.B,
+        });
+      };
+
+      it("Tab on three lines is one browser edit, and the runs and the selection follow", () => {
+        userEdit("aaa\nbbb\nccc", 11, "insertText");
+        bold(4, 7);
+        textarea.setSelectionRange(0, 11);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB });
+
+        expect(calls).toHaveLength(1);
+        expect(textarea.value).toBe(`${tab}aaa\n${tab}bbb\n${tab}ccc`);
+        expect(box().textRuns).toEqual([{ start: 12, end: 15, bold: true }]);
+        expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([
+          4, 23,
+        ]);
+      });
+
+      // YAZ-4071 7O (checker, round 2): the browser's undo gives back the text
+      // of the whole Tab edit; the letter styles must come back with it
+      it("YAZ-4071 7O: ⌘Z after Tab on three lines gives the bold middle line its bold back, and ⌘⇧Z keeps it", () => {
+        userEdit("aaa\nbbb\nccc", 11, "insertText");
+        bold(4, 7);
+        textarea.setSelectionRange(0, 11);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB });
+        expect(box().textRuns).toEqual([{ start: 12, end: 15, bold: true }]);
+
+        userEdit("aaa\nbbb\nccc", 4, "historyUndo");
+        expect(box().textRuns).toEqual([{ start: 4, end: 7, bold: true }]);
+        userEdit(`${tab}aaa\n${tab}bbb\n${tab}ccc`, 23, "historyRedo");
+        expect(box().textRuns).toEqual([{ start: 12, end: 15, bold: true }]);
+      });
+
+      it("YAZ-4071 7O: ⌘Z after Enter in a numbered list gives the bold item its bold back", () => {
+        userEdit("1. aaa\n2. bbb\n3. ccc", 20, "insertText");
+        bold(10, 13);
+        textarea.setSelectionRange(6, 6);
+        fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+        expect(box().textRuns).toEqual([{ start: 14, end: 17, bold: true }]);
+
+        userEdit("1. aaa\n2. bbb\n3. ccc", 6, "historyUndo");
+        expect(box().textRuns).toEqual([{ start: 10, end: 13, bold: true }]);
+        userEdit("1. aaa\n2. \n3. bbb\n4. ccc", 10, "historyRedo");
+        expect(box().textRuns).toEqual([{ start: 14, end: 17, bold: true }]);
+      });
+
+      it("YAZ-4071 7O: ⌘Z after Shift-Tab on three lines gives the bold middle line its bold back", () => {
+        userEdit(`${tab}aaa\n${tab}bbb\n${tab}ccc`, 23, "insertText");
+        bold(12, 15);
+        textarea.setSelectionRange(0, 23);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB, shiftKey: true });
+        expect(box().textRuns).toEqual([{ start: 4, end: 7, bold: true }]);
+
+        userEdit(`${tab}aaa\n${tab}bbb\n${tab}ccc`, 12, "historyUndo");
+        expect(box().textRuns).toEqual([{ start: 12, end: 15, bold: true }]);
+      });
+
+      it("YAZ-4071 7O: ⌘Z after the list button on three selected lines gives the bold word its bold back", () => {
+        userEdit("aaa\nbbb\nccc", 11, "insertText");
+        bold(4, 7);
+        textarea.setSelectionRange(0, 11);
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+            property: "listMode",
+            mode: "bullet",
+          });
+        });
+        expect(textarea.value).toBe("• aaa\n• bbb\n• ccc");
+        expect(box().textRuns).toEqual([{ start: 8, end: 11, bold: true }]);
+
+        userEdit("aaa\nbbb\nccc", 0, "historyUndo");
+        expect(box().textRuns).toEqual([{ start: 4, end: 7, bold: true }]);
+        userEdit("• aaa\n• bbb\n• ccc", 17, "historyRedo");
+        expect(box().textRuns).toEqual([{ start: 8, end: 11, bold: true }]);
+      });
+
+      it("YAZ-4071 7O: ⌘Z then ⌘⇧Z after Enter at the end of a bullet item leaves the bold on its own line", () => {
+        userEdit("• aaa\nbbb", 9, "insertText");
+        bold(6, 9);
+        textarea.setSelectionRange(5, 5);
+        fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+        expect(textarea.value).toBe("• aaa\n• \nbbb");
+        expect(box().textRuns).toEqual([{ start: 9, end: 12, bold: true }]);
+
+        userEdit("• aaa\nbbb", 5, "historyUndo");
+        expect(box().textRuns).toEqual([{ start: 6, end: 9, bold: true }]);
+        userEdit("• aaa\n• \nbbb", 8, "historyRedo");
+        expect(box().textRuns).toEqual([{ start: 9, end: 12, bold: true }]);
+      });
+
+      it("Shift-Tab on three lines is one browser edit, and the runs follow", () => {
+        userEdit(`${tab}aaa\n${tab}bbb\n${tab}ccc`, 23, "insertText");
+        bold(12, 15);
+        textarea.setSelectionRange(0, 23);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB, shiftKey: true });
+
+        expect(calls).toHaveLength(1);
+        expect(textarea.value).toBe("aaa\nbbb\nccc");
+        expect(box().textRuns).toEqual([{ start: 4, end: 7, bold: true }]);
+      });
+
+      it("Tab on list lines is one browser edit", () => {
+        userEdit("1. First\n2. Second", 18, "insertText");
+        textarea.setSelectionRange(9, 18);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB });
+
+        expect(calls).toHaveLength(1);
+        expect(textarea.value).toBe("1. First\n    ○ Second");
+      });
+
+      it("Enter in a numbered list (it renumbers the items below) is one browser edit, and the caret is on the new item", () => {
+        userEdit("1. a\n2. b", 4, "insertText");
+        fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+
+        expect(calls).toHaveLength(1);
+        expect(textarea.value).toBe("1. a\n2. \n3. b");
+        expect(textarea.selectionStart).toBe(8);
+        expect(box().originalText).toBe("1. a\n2. \n3. b");
+      });
+
+      it("the list button in the editor is one browser edit, and the runs follow", () => {
+        userEdit("Hello world", 11, "insertText");
+        bold(6, 11);
+        textarea.setSelectionRange(0, 0);
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+            property: "listMode",
+            mode: "bullet",
+          });
+        });
+
+        expect(calls).toHaveLength(1);
+        expect(textarea.value).toBe("• Hello world");
+        expect(box().textRuns).toEqual([{ start: 8, end: 13, bold: true }]);
+        userEdit("• XHello world", 3, "insertText");
+        expect(box().textRuns).toEqual([{ start: 9, end: 14, bold: true }]);
+      });
+
+      it("a renumber after a typed edit is its own browser edit, after the input event", async () => {
+        userEdit("1. a\n2. b\n3. c", 14, "insertText");
+        // the user deletes the line "2. b"
+        userEdit("1. a\n3. c", 5, "deleteContentBackward");
+        await Promise.resolve();
+
+        expect(calls).toEqual([
+          { command: "insertText", text: "2", at: [5, 6] },
+        ]);
+        expect(textarea.value).toBe("1. a\n2. c");
+        expect(box().originalText).toBe("1. a\n2. c");
+      });
+
+      it("a pasted tab is cleaned up by one browser edit", async () => {
+        userEdit("a\tb", 3, "insertFromPaste");
+        await Promise.resolve();
+
+        expect(calls).toHaveLength(1);
+        expect(textarea.value).toBe(`a${tab}${tab}b`);
+        expect(box().originalText).toBe(`a${tab}${tab}b`);
+      });
+
+      it("⌘Z is not cleaned up again: the text it gives back stays, so the next ⌘Z can go on", async () => {
+        userEdit("1. a\n2. c", 9, "insertText");
+        userEdit("1. a\n3. c", 9, "historyUndo");
+        await Promise.resolve();
+
+        expect(calls).toEqual([]);
+        expect(textarea.value).toBe("1. a\n3. c");
+      });
+
+      it("a plain letter, also in a list, makes no browser edit and does not write the text", async () => {
+        let writes = 0;
+        Object.defineProperty(textarea, "value", {
+          configurable: true,
+          get() {
+            return descriptor.get!.call(this);
+          },
+          set(value: string) {
+            writes++;
+            descriptor.set!.call(this, value);
+          },
+        });
+        userEdit("Hello", 5, "insertText");
+        bold(0, 5);
+        userEdit("Hellox", 6, "insertText");
+        userEdit("1. a\n2. b", 9, "insertText");
+        userEdit("1. a\n2. bx", 10, "insertText");
+        await Promise.resolve();
+
+        expect(calls).toEqual([]);
+        expect(writes).toBe(0);
+        delete (textarea as { value?: unknown }).value;
+      });
     });
 
     it("should resize text via shortcuts while in wysiwyg", () => {
@@ -2248,7 +3516,7 @@ describe("textWysiwyg", () => {
 
       editor.select();
 
-      fireEvent.click(screen.getByTitle("Left"));
+      clickTextAlign("Left");
       fireEvent.click(screen.getByTitle("Align bottom"));
       Keyboard.exitTextEditor(editor);
 
@@ -2267,7 +3535,7 @@ describe("textWysiwyg", () => {
 
       editor.select();
 
-      fireEvent.click(screen.getByTitle("Right"));
+      clickTextAlign("Right");
       fireEvent.click(screen.getByTitle("Align top"));
 
       Keyboard.exitTextEditor(editor);
@@ -2531,7 +3799,8 @@ describe("textWysiwyg", () => {
       ).toEqual(FONT_FAMILY["Comic Shanns"]);
       expect(getOriginalContainerHeightFromCache(rectangle.id)).toBe(75);
 
-      const fontSize = screen.getByLabelText("Exact font size");
+      // YAZ-4074 6A item 22: a shape's text has the size popover
+      const fontSize = exactFontSizeInput();
       fireEvent.change(fontSize, { target: { value: "36" } });
       fireEvent.blur(fontSize);
       expect(
@@ -2586,7 +3855,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when top left", async () => {
-        fireEvent.click(screen.getByTitle("Left"));
+        clickTextAlign("Left");
         fireEvent.click(screen.getByTitle("Align top"));
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
           [
@@ -2597,7 +3866,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when top center", async () => {
-        fireEvent.click(screen.getByTitle("Center"));
+        clickTextAlign("Center");
         fireEvent.click(screen.getByTitle("Align top"));
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
           [
@@ -2608,7 +3877,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when top right", async () => {
-        fireEvent.click(screen.getByTitle("Right"));
+        clickTextAlign("Right");
         fireEvent.click(screen.getByTitle("Align top"));
 
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
@@ -2621,7 +3890,7 @@ describe("textWysiwyg", () => {
 
       it("when center left", async () => {
         fireEvent.click(screen.getByTitle("Center vertically"));
-        fireEvent.click(screen.getByTitle("Left"));
+        clickTextAlign("Left");
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
           [
             15,
@@ -2631,7 +3900,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when center center", async () => {
-        fireEvent.click(screen.getByTitle("Center"));
+        clickTextAlign("Center");
         fireEvent.click(screen.getByTitle("Center vertically"));
 
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
@@ -2643,7 +3912,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when center right", async () => {
-        fireEvent.click(screen.getByTitle("Right"));
+        clickTextAlign("Right");
         fireEvent.click(screen.getByTitle("Center vertically"));
 
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
@@ -2655,7 +3924,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when bottom left", async () => {
-        fireEvent.click(screen.getByTitle("Left"));
+        clickTextAlign("Left");
         fireEvent.click(screen.getByTitle("Align bottom"));
 
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
@@ -2667,7 +3936,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when bottom center", async () => {
-        fireEvent.click(screen.getByTitle("Center"));
+        clickTextAlign("Center");
         fireEvent.click(screen.getByTitle("Align bottom"));
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
           [
@@ -2678,7 +3947,7 @@ describe("textWysiwyg", () => {
       });
 
       it("when bottom right", async () => {
-        fireEvent.click(screen.getByTitle("Right"));
+        clickTextAlign("Right");
         fireEvent.click(screen.getByTitle("Align bottom"));
         expect([h.elements[1].x, h.elements[1].y]).toMatchInlineSnapshot(`
           [
@@ -2700,7 +3969,9 @@ describe("textWysiwyg", () => {
       );
 
       editor.select();
-      fireEvent.click(screen.getByTitle("Left"));
+      // YAZ-3943 demo 2: the text toolbar's align is one button with a menu of the three
+      openTextToolbarPopover("Text align");
+      clickTextAlign("Left");
 
       Keyboard.exitTextEditor(editor);
 

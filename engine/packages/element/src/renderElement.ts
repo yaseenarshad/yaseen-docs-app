@@ -56,8 +56,14 @@ import {
 import { getLineHeightInPx } from "./textMeasurements";
 import {
   getStyledVisualLineStart,
-  getStyledVisualLines,
+  getTextElementStyledLines,
 } from "./textLineUnderlines";
+import {
+  getLinkPillColors,
+  getLinkPillIconOutline,
+  getLinkPillMetrics,
+  hasHostLinks,
+} from "./textLinks";
 import {
   isTextElement,
   isLinearElement,
@@ -86,6 +92,9 @@ import type {
   NonDeletedSceneElementsMap,
   ElementsMap,
 } from "./types";
+import { getTextHighlightFill } from "./textRuns";
+
+import type { StyledTextSegment } from "./textLineUnderlines";
 
 import type { RoughCanvas } from "roughjs/bin/canvas";
 
@@ -148,6 +157,8 @@ export interface ExcalidrawElementWithCanvas {
   canvasOffsetY: number;
   imageCrop: ExcalidrawImageElement["crop"] | null;
   containingFrameOpacity: number;
+  /** YAZ-3944 D2: the GIF frame drawn on `canvas` (`GifPlayer.frameToken`) */
+  gifFrame?: number;
 }
 
 const cappedElementCanvasSize = (
@@ -211,8 +222,9 @@ const generateElementCanvas = (
   zoom: Zoom,
   renderConfig: StaticCanvasRenderConfig,
   appState: StaticCanvasAppState | InteractiveCanvasAppState,
+  /** YAZ-3944 D2: a GIF's next frame redraws its own canvas */
+  canvas = document.createElement("canvas"),
 ): ExcalidrawElementWithCanvas | null => {
-  const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d")!;
   const padding = getCanvasPadding(element);
 
@@ -379,8 +391,9 @@ const drawElementOnCanvas = (
         element.fileId !== null
           ? renderConfig.imageCache.get(element.fileId)
           : null;
+      // YAZ-3944 D2: the frame on show of a playing GIF, else the still image
       const img = isInitializedImageElement(element)
-        ? cacheEntry?.image
+        ? renderConfig.gifPlayer?.frameFor(element) ?? cacheEntry?.image
         : undefined;
 
       if (img != null && !(img instanceof Promise)) {
@@ -401,8 +414,8 @@ const drawElementOnCanvas = (
           : {
               x: 0,
               y: 0,
-              width: img.naturalWidth,
-              height: img.naturalHeight,
+              width: "naturalWidth" in img ? img.naturalWidth : img.width,
+              height: "naturalHeight" in img ? img.naturalHeight : img.height,
             };
 
         const shouldInvertImage =
@@ -553,10 +566,11 @@ const drawElementOnCanvas = (
         }
 
         context.font = getFontString(element);
-        context.fillStyle = applyDarkModeFilter(
+        const textColor = applyDarkModeFilter(
           element.strokeColor,
           renderConfig.theme === THEME.DARK,
         );
+        context.fillStyle = textColor;
         context.textAlign = element.textAlign as CanvasTextAlign;
 
         const container = getContainerElement(element, elementsMap);
@@ -565,28 +579,14 @@ const drawElementOnCanvas = (
           : element.autoResize
           ? Infinity
           : element.width;
-        const shouldUseSourceLayout =
-          !!element.lineBolds?.some(Boolean) ||
-          !!element.lineUnderlines?.some(Boolean) ||
-          !!element.lineStrikethroughs?.some(Boolean) ||
-          hasTextList(element.originalText);
-        const lines = getStyledVisualLines({
-          originalText: shouldUseSourceLayout
-            ? element.originalText
-            : element.text,
-          regularFont: getFontString({
-            ...element,
-            fontWeight: "normal",
-          }),
-          boldFont: getFontString({ ...element, fontWeight: "bold" }),
-          maxWidth: shouldUseSourceLayout ? maxWidth : Infinity,
-          lineBolds: element.lineBolds,
-          lineUnderlines: element.lineUnderlines,
-          lineStrikethroughs: element.lineStrikethroughs,
-          wholeElementBold: element.fontWeight === "bold",
-          wholeElementUnderlined: element.textDecoration === "underline",
-          wholeElementStrikethrough: element.strikethrough === true,
-        });
+        // YAZ-3718 D1: text with runs shares the layout memo with
+        // refreshTextDimensions and the editor overlay (YAZ-4039 D7: links too)
+        const lines =
+          !!element.textRuns ||
+          hasTextList(element.originalText) ||
+          hasHostLinks(element.originalText)
+            ? getTextElementStyledLines(element, maxWidth, element.originalText)
+            : getTextElementStyledLines(element, Infinity, element.text);
 
         const horizontalOffset =
           element.textAlign === "center"
@@ -614,6 +614,67 @@ const drawElementOnCanvas = (
             element.width,
             element.textAlign,
           );
+          const segments = lines[index].segments;
+          if (segments) {
+            // YAZ-4102 3E: the highlights first, behind every letter of the line
+            for (const segment of segments) {
+              if (segment.highlight) {
+                context.fillStyle = getTextHighlightFill(segment.highlight);
+                context.fillRect(
+                  lineStart + segment.x,
+                  index * lineHeightPx,
+                  segment.width,
+                  lineHeightPx,
+                );
+              }
+            }
+            // YAZ-3718 D1: each segment with its own font, color and lines
+            context.textAlign = "left";
+            // YAZ-4100 3C: a right-to-left segment's letters and spaces in their order
+            context.direction = lines[index].rtl ? "rtl" : "inherit";
+            for (const segment of segments) {
+              if (segment.link) {
+                drawLinkPill(
+                  context,
+                  segment,
+                  lineStart + segment.x,
+                  index * lineHeightPx,
+                  lineHeightPx,
+                  baseline,
+                  renderConfig.theme === THEME.DARK,
+                );
+                continue;
+              }
+              context.font = segment.font;
+              context.fillStyle = segment.color
+                ? applyDarkModeFilter(
+                    segment.color,
+                    renderConfig.theme === THEME.DARK,
+                  )
+                : textColor;
+              const x = lineStart + segment.x;
+              context.fillText(segment.text, x, baseline);
+              if (segment.underlined) {
+                context.fillRect(
+                  x,
+                  baseline + Math.max(1, element.fontSize * 0.08),
+                  segment.width,
+                  Math.max(1, element.fontSize / 16),
+                );
+              }
+              if (segment.strikethrough) {
+                context.fillRect(
+                  x,
+                  baseline - element.fontSize * 0.3,
+                  segment.width,
+                  Math.max(1, element.fontSize / 16),
+                );
+              }
+            }
+            context.fillStyle = textColor;
+            context.direction = "inherit";
+            continue;
+          }
           if (lines[index].isListItem) {
             context.textAlign = "left";
             context.fillText(lines[index].text, lineStart, baseline);
@@ -653,6 +714,70 @@ const drawElementOnCanvas = (
   }
 };
 
+/**
+ * YAZ-4039 D7: a link run as a note draws it: a pill with the file icon and
+ * the page's name. A missing page is a dim name with no pill.
+ */
+const drawLinkPill = (
+  context: CanvasRenderingContext2D,
+  segment: StyledTextSegment,
+  x: number,
+  lineTop: number,
+  lineHeightPx: number,
+  baseline: number,
+  dark: boolean,
+) => {
+  const link = segment.link!;
+  const pill = getLinkPillMetrics(segment.font);
+  const colors = getLinkPillColors(dark, !!link.missing);
+  const top = lineTop + (lineHeightPx - pill.height) / 2;
+  if (colors.background) {
+    context.fillStyle = colors.background;
+    context.beginPath();
+    if (context.roundRect) {
+      context.roundRect(x, top, segment.width, pill.height, pill.radius);
+    } else {
+      context.rect(x, top, segment.width, pill.height);
+    }
+    context.fill();
+  }
+  const iconX = x + pill.padding;
+  const iconY = top + (pill.height - pill.iconSize) / 2;
+  if (link.icon) {
+    // the page's own file icon, as the sidebar draws it
+    context.drawImage(
+      link.icon.image,
+      iconX,
+      iconY,
+      pill.iconSize,
+      pill.iconSize,
+    );
+  } else if (link.icon === undefined) {
+    context.strokeStyle = colors.text;
+    context.lineWidth = Math.max(1, pill.iconSize / 10);
+    context.beginPath();
+    for (const [index, [px, py]] of getLinkPillIconOutline(
+      pill.iconSize,
+      link.folder,
+    ).entries()) {
+      if (index === 0) {
+        context.moveTo(iconX + px, iconY + py);
+      } else {
+        context.lineTo(iconX + px, iconY + py);
+      }
+    }
+    context.closePath();
+    context.stroke();
+  }
+  context.font = segment.font;
+  context.fillStyle = colors.text;
+  context.fillText(
+    link.label,
+    link.icon === null ? iconX : iconX + pill.iconSize + pill.gap,
+    baseline,
+  );
+};
+
 export const elementWithCanvasCache = new WeakMap<
   ExcalidrawElement,
   ExcalidrawElementWithCanvas
@@ -678,26 +803,34 @@ const generateElementWithCanvas = (
 
   const containingFrameOpacity =
     getContainingFrame(element, elementsMap)?.opacity || 100;
-
-  if (
+  // YAZ-3944 D2: a new GIF frame rebuilds only this element's canvas
+  const gifFrame = isImageElement(element)
+    ? renderConfig.gifPlayer?.frameToken(element)
+    : undefined;
+  const changed =
     !prevElementWithCanvas ||
     shouldRegenerateBecauseZoom ||
     prevElementWithCanvas.theme !== appState.theme ||
     prevElementWithCanvas.imageCrop !== imageCrop ||
-    prevElementWithCanvas.containingFrameOpacity !== containingFrameOpacity
-  ) {
+    prevElementWithCanvas.containingFrameOpacity !== containingFrameOpacity;
+
+  if (changed || prevElementWithCanvas.gifFrame !== gifFrame) {
     const elementWithCanvas = generateElementCanvas(
       element,
       elementsMap,
       zoom,
       renderConfig,
       appState,
+      // only the GIF frame is new: the same element, at the same size,
+      // draws on its own canvas again
+      changed ? undefined : prevElementWithCanvas.canvas,
     );
 
     if (!elementWithCanvas) {
       return null;
     }
 
+    elementWithCanvas.gifFrame = gifFrame;
     elementWithCanvasCache.set(element, elementWithCanvas);
 
     return elementWithCanvas;

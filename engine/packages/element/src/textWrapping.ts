@@ -107,7 +107,7 @@ const CJK = {
    *         ↑ BREAK AFTER "」"
    */
   // eslint-disable-next-line prettier/prettier
-  OPENING:/（［｛〈《｟｢「『【〖〔〘〚＜〝/u,
+  OPENING: /（［｛〈《｟｢「『【〖〔〘〚＜〝/u,
   CLOSING: /）］｝〉》｠｣」』】〗〕〙〛＞。．，、〟‥？！：；・〜〞/u,
   /**
    * Currency symbols break before, not after
@@ -461,34 +461,107 @@ export const getWrappedTextLines = (
   }
 
   const lines: WrappedTextLine[] = [];
+  const measure = getFontTextMeasure(font);
   let offset = 0;
 
   for (const originalLine of text.split("\n")) {
-    const originalLineWidth = getLineWidth(originalLine, font);
-
-    if (originalLineWidth <= maxWidth) {
-      lines.push({
-        text: originalLine,
-        start: offset,
-        end: offset + originalLine.length,
-        horizontalOffset: 0,
-      });
-    } else {
-      const parsed = parseTextListLine(originalLine);
-      const contentStart = originalLine.length - parsed.content.length;
-      const continuationOffset =
-        parsed.markerKind === "none"
-          ? 0
-          : getLineWidth(originalLine.slice(0, contentStart), font);
-      lines.push(
-        ...wrapLine(originalLine, font, maxWidth, offset, continuationOffset),
-      );
-    }
-
+    lines.push(...wrapHardLine(originalLine, measure, maxWidth, offset));
     offset += originalLine.length + 1;
   }
 
   return lines;
+};
+
+/**
+ * Measures text for wrapping. `start` is where the text starts in the source,
+ * so a line with several fonts (YAZ-3718 D1) measures each letter with its own.
+ */
+export type TextMeasure = {
+  text: (text: string, start: number) => number;
+  char: (char: string, start: number) => number;
+};
+
+const getFontTextMeasure = (font: FontString): TextMeasure => ({
+  text: (text) => getLineWidth(text, font),
+  char: (char) => charWidth.calculate(char, font),
+});
+
+/** A range of a line that never breaks (YAZ-4039 D7: a link pill). */
+export type TextUnit = { start: number; end: number };
+
+/**
+ * Wraps one hard line (no "\n") whose letters `measure` sizes. Offsets are
+ * from the line start. YAZ-3718 D1: the layout of a line with text runs.
+ * `units` are ranges that move to the next line whole.
+ */
+export const getWrappedTextLineWithMeasure = (
+  line: string,
+  measure: TextMeasure,
+  maxWidth: number,
+  units?: readonly TextUnit[],
+): WrappedTextLine[] =>
+  !Number.isFinite(maxWidth) || maxWidth < 0
+    ? getHardLineBreaks(line)
+    : wrapHardLine(line, measure, maxWidth, 0, units);
+
+/** True when `offset` is strictly inside a unit: no break may be there. */
+const isInsideUnit = (offset: number, units: readonly TextUnit[] | undefined) =>
+  !!units?.some((unit) => unit.start < offset && offset < unit.end);
+
+/** Joins the pieces that start inside a unit to the piece before them. */
+const joinUnitPieces = (
+  pieces: string[],
+  start: number,
+  units: readonly TextUnit[] | undefined,
+) => {
+  if (!units?.length) {
+    return pieces;
+  }
+  const joined: string[] = [];
+  let offset = start;
+  for (const piece of pieces) {
+    if (joined.length && isInsideUnit(offset, units)) {
+      joined[joined.length - 1] += piece;
+    } else {
+      joined.push(piece);
+    }
+    offset += piece.length;
+  }
+  return joined;
+};
+
+const wrapHardLine = (
+  originalLine: string,
+  measure: TextMeasure,
+  maxWidth: number,
+  offset: number,
+  units?: readonly TextUnit[],
+): WrappedTextLine[] => {
+  if (measure.text(originalLine, offset) <= maxWidth) {
+    return [
+      {
+        text: originalLine,
+        start: offset,
+        end: offset + originalLine.length,
+        horizontalOffset: 0,
+      },
+    ];
+  }
+
+  const parsed = parseTextListLine(originalLine);
+  const contentStart = originalLine.length - parsed.content.length;
+  const continuationOffset =
+    parsed.markerKind === "none"
+      ? 0
+      : measure.text(originalLine.slice(0, contentStart), offset);
+  return wrapLine(
+    originalLine,
+    measure,
+    maxWidth,
+    offset,
+    continuationOffset,
+    units,
+  );
 };
 
 /**
@@ -499,13 +572,14 @@ export const getWrappedTextLines = (
  */
 const wrapLine = (
   line: string,
-  font: FontString,
+  measure: TextMeasure,
   maxWidth: number,
   lineStart: number,
   continuationOffset = 0,
+  units?: readonly TextUnit[],
 ): WrappedTextLine[] => {
   const lines: WrappedTextLine[] = [];
-  const tokens = parseTokens(line);
+  const tokens = joinUnitPieces(parseTokens(line), lineStart, units);
 
   let currentLine = "";
   let currentLineStart = lineStart;
@@ -530,8 +604,8 @@ const wrapLine = (
 
     // cache single codepoint whitespace, CJK or emoji width calc. as kerning should not apply here
     const testLineWidth = isSingleCharacter(token)
-      ? currentLineWidth + charWidth.calculate(token, font)
-      : getLineWidth(testLine, font);
+      ? currentLineWidth + measure.char(token, tokenStart)
+      : measure.text(testLine, currentLine ? currentLineStart : tokenStart);
 
     // build up the current line, skipping length check for possibly trailing whitespaces
     if (/\s/.test(token) || testLineWidth <= getCurrentMaxWidth()) {
@@ -550,9 +624,10 @@ const wrapLine = (
     if (!currentLine) {
       const wrappedWord = wrapWord(
         token,
-        font,
+        measure,
         getCurrentMaxWidth(),
         tokenStart,
+        units,
       );
       const trailingLine = wrappedWord[wrappedWord.length - 1] ?? {
         text: "",
@@ -569,7 +644,7 @@ const wrapLine = (
       currentLine = trailingLine.text;
       currentLineStart = trailingLine.start;
       currentLineEnd = trailingLine.end;
-      currentLineWidth = getLineWidth(trailingLine.text, font);
+      currentLineWidth = measure.text(trailingLine.text, trailingLine.start);
       tokenOffset = tokenEnd;
       tokenIndex++;
     } else {
@@ -594,7 +669,7 @@ const wrapLine = (
       currentLine,
       currentLineStart,
       currentLineEnd,
-      font,
+      measure,
       getCurrentMaxWidth(),
     );
     lines.push(withHorizontalOffset(trailingLine));
@@ -608,9 +683,10 @@ const wrapLine = (
  */
 const wrapWord = (
   word: string,
-  font: FontString,
+  measure: TextMeasure,
   maxWidth: number,
   wordStart: number,
+  units?: readonly TextUnit[],
 ): SourceTextLine[] => {
   // multi-codepoint emojis are already broken apart and shouldn't be broken further
   if (getEmojiRegex().test(word)) {
@@ -626,7 +702,8 @@ const wrapWord = (
   satisfiesWordInvariant(word);
 
   const lines: SourceTextLine[] = [];
-  const chars = Array.from(word);
+  // a unit is one "letter" here: it never breaks
+  const chars = joinUnitPieces(Array.from(word), wordStart, units);
 
   let currentLine = "";
   let currentLineStart = wordStart;
@@ -637,7 +714,9 @@ const wrapWord = (
   for (const char of chars) {
     const charStart = offset;
     const charEnd = charStart + char.length;
-    const _charWidth = charWidth.calculate(char, font);
+    const _charWidth = isInsideUnit(charStart + 1, units)
+      ? measure.text(char, charStart)
+      : measure.char(char, charStart);
     const testLineWidth = currentLineWidth + _charWidth;
 
     if (testLineWidth <= maxWidth) {
@@ -687,10 +766,10 @@ const trimLine = (
   line: string,
   start: number,
   end: number,
-  font: FontString,
+  measure: TextMeasure,
   maxWidth: number,
 ): SourceTextLine => {
-  const shouldTrimWhitespaces = getLineWidth(line, font) > maxWidth;
+  const shouldTrimWhitespaces = measure.text(line, start) > maxWidth;
 
   if (!shouldTrimWhitespaces) {
     return {
@@ -707,10 +786,10 @@ const trimLine = (
     "",
   ];
 
-  let trimmedLineWidth = getLineWidth(trimmedLine, font);
+  let trimmedLineWidth = measure.text(trimmedLine, start);
 
   for (const whitespace of Array.from(whitespaces)) {
-    const _charWidth = charWidth.calculate(whitespace, font);
+    const _charWidth = measure.char(whitespace, start + trimmedLine.length);
     const testLineWidth = trimmedLineWidth + _charWidth;
 
     if (testLineWidth > maxWidth) {

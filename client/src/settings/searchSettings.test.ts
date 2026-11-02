@@ -82,6 +82,9 @@ describe('settingCandidates', () => {
       'confirmDelete',
       'confirmRename',
       'newTabPlace',
+      // YAZ-3943 demo 2 and round 3: where a new board keeps its pictures, and this Mac's allowed outside folders.
+      'newBoardPictures',
+      'allowedPictureFolders',
       'newNoteLocation',
       // Settings › Files & Links › Daily notes (YAZ-3607): the switch, then the rows it shows.
       'dailyNotes',
@@ -90,7 +93,7 @@ describe('settingCandidates', () => {
       'dailyNoteDayFolder',
       // Settings › Files & Links › Preview on hover (YAZ-3403): the master switch, then one row per place.
       'hoverPreview',
-      ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links'].map((place) => `hoverPreviewIn.${place}`),
+      ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`),
       'ids',
       'duplicates',
       'idLetters',
@@ -175,7 +178,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'newTabPlace', 'newNoteLocation', 'dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'ids', 'duplicates', 'idLetters', 'oldIds'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'newNoteLocation', 'dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'ids', 'duplicates', 'idLetters', 'oldIds'])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
@@ -203,7 +206,7 @@ describe('searchSettings', () => {
     // "guide" is the hint of Bullet threading and a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['sidebarLines', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionLines', 'tocLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sidebarLines', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hotkey-code-showHover'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sidebarLines', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hotkey-code-showHover'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
   })

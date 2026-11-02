@@ -26,7 +26,6 @@ import {
   checkpointHistory,
 } from "./test-utils";
 
-import type { ShortcutName } from "../actions/shortcuts";
 import type { ActionName } from "../actions/types";
 
 const checkpoint = (name: string) => {
@@ -87,8 +86,9 @@ describe("contextMenu element", () => {
       clientY: 1,
     });
     const contextMenu = UI.queryContextMenu();
-    const expectedShortcutNames: ShortcutName[] = [
+    const expectedShortcutNames: ActionName[] = [
       "paste",
+      "pasteAtFullSize", // YAZ-3944 D16
       "selectAll",
       "gridMode",
       "objectsSnapMode",
@@ -122,6 +122,7 @@ describe("contextMenu element", () => {
       "cut",
       "copy",
       "paste",
+      "pasteAtFullSize", // YAZ-3944 D16
       "wrapSelectionInFrame",
       "copyStyles",
       "pasteStyles",
@@ -212,10 +213,11 @@ describe("contextMenu element", () => {
     const contextMenu = UI.queryContextMenu();
     const contextMenuOptions =
       contextMenu?.querySelectorAll(".context-menu li");
-    const expectedShortcutNames: ShortcutName[] = [
+    const expectedShortcutNames: ActionName[] = [
       "cut",
       "copy",
       "paste",
+      "pasteAtFullSize", // YAZ-3944 D16
       "wrapSelectionInFrame",
       "copyStyles",
       "pasteStyles",
@@ -273,6 +275,7 @@ describe("contextMenu element", () => {
       "cut",
       "copy",
       "paste",
+      "pasteAtFullSize", // YAZ-3944 D16
       "wrapSelectionInFrame",
       "copyStyles",
       "pasteStyles",

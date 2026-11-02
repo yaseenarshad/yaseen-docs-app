@@ -3,9 +3,7 @@ import { vi } from "vitest";
 
 import { getLineHeightInPx } from "@excalidraw/element";
 
-import { KEYS, arrayToMap, getLineHeight } from "@excalidraw/common";
-
-import { getElementBounds } from "@excalidraw/element";
+import { KEYS, getLineHeight } from "@excalidraw/common";
 
 import { createPasteEvent, serializeAsClipboardJSON } from "../clipboard";
 
@@ -20,6 +18,8 @@ import {
   GlobalTestState,
   unmountComponent,
 } from "./test-utils";
+
+import type { ExcalidrawTextElement } from "@excalidraw/element/types";
 
 import type { NormalizedZoomValue } from "../types";
 
@@ -43,10 +43,11 @@ vi.mock("@excalidraw/common", async (importOriginal) => {
   };
 });
 
-const sendPasteEvent = (text: string) => {
+const sendPasteEvent = (text: string, html?: string) => {
   const clipboardEvent = createPasteEvent({
     types: {
       "text/plain": text,
+      ...(html ? { "text/html": html } : {}),
     },
   });
   document.dispatchEvent(clipboardEvent);
@@ -179,7 +180,9 @@ describe("general paste behavior", () => {
   });
 });
 
-describe("paste text as single lines", () => {
+// YAZ-3943 demo 2: a canvas paste is ONE text box with all its lines (it
+// used to make a box for each line)
+describe("paste text as one box", () => {
   it("centers pasted free text on the paste coordinate", async () => {
     mouse.moveTo(100, 100);
     pasteWithCtrlCmdV("Centered paste");
@@ -195,19 +198,29 @@ describe("paste text as single lines", () => {
     });
   });
 
-  it("should create an element for each line when copying with Ctrl/Cmd+V", async () => {
+  it("should create one element with every line when copying with Ctrl/Cmd+V, read from the left", async () => {
     const text = "sajgfakfn\naaksfnknas\nakefnkasf";
     pasteWithCtrlCmdV(text);
     await waitFor(() => {
-      expect(h.elements.length).toEqual(text.split("\n").length);
+      expect(h.elements).toHaveLength(1);
+      expect(h.elements[0]).toMatchObject({
+        type: "text",
+        text,
+        originalText: text,
+        textAlign: "left",
+        autoResize: true,
+      });
     });
   });
 
-  it("should ignore empty lines when creating an element for each line", async () => {
+  it("should keep at most one blank line in a row, and none at the ends", async () => {
     const text = "\n\nsajgfakfn\n\n\naaksfnknas\n\nakefnkasf\n\n\n";
     pasteWithCtrlCmdV(text);
     await waitFor(() => {
-      expect(h.elements.length).toEqual(3);
+      expect(h.elements).toHaveLength(1);
+      expect(h.elements[0]).toMatchObject({
+        originalText: "sajgfakfn\n\naaksfnknas\n\nakefnkasf",
+      });
     });
   });
 
@@ -220,48 +233,60 @@ describe("paste text as single lines", () => {
     });
   });
 
-  it("should space items correctly", async () => {
-    const elementsMap = arrayToMap(h.elements);
-
-    const text = "hkhkjhki\njgkjhffjh\njgkjhffjh";
-    const lineHeightPx =
-      getLineHeightInPx(
-        h.app.state.currentItemFontSize,
-        getLineHeight(h.state.currentItemFontFamily),
-      ) +
-      10 / h.app.state.zoom.value;
+  it("should be as tall as its lines, a blank line included", async () => {
+    const lineHeightPx = getLineHeightInPx(
+      h.app.state.currentItemFontSize,
+      getLineHeight(h.state.currentItemFontFamily),
+    );
     mouse.moveTo(100, 100);
-    pasteWithCtrlCmdV(text);
-    await waitFor(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const [fx, firstElY] = getElementBounds(h.elements[0], elementsMap);
-      for (let i = 1; i < h.elements.length; i++) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const [fx, elY] = getElementBounds(h.elements[i], elementsMap);
-        expect(elY).toEqual(firstElY + lineHeightPx * i);
-      }
+    pasteWithCtrlCmdV("hkhkjhki\n\njgkjhffjh");
+    await waitFor(() => {
+      expect(h.elements).toHaveLength(1);
+      expect(h.elements[0].height).toBeCloseTo(lineHeightPx * 3);
     });
   });
 
-  it("should leave a space for blank new lines", async () => {
-    const elementsMap = arrayToMap(h.elements);
-    const text = "hkhkjhki\n\njgkjhffjh";
-    const lineHeightPx =
-      getLineHeightInPx(
-        h.app.state.currentItemFontSize,
-        getLineHeight(h.state.currentItemFontFamily),
-      ) +
-      10 / h.app.state.zoom.value;
-    mouse.moveTo(100, 100);
-    pasteWithCtrlCmdV(text);
-
-    await waitFor(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const [fx, firstElY] = getElementBounds(h.elements[0], elementsMap);
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const [lx, lastElY] = getElementBounds(h.elements[1], elementsMap);
-      expect(lastElY).toEqual(firstElY + lineHeightPx * 2);
+  it("should turn `-`, `*` and `+` lines into the box's bullets, with their indent", async () => {
+    pasteWithCtrlCmdV("Groceries\n- milk\n  * oat\n+ bread");
+    await waitFor(() => {
+      expect(h.elements).toHaveLength(1);
+      expect(h.elements[0]).toMatchObject({
+        originalText: "Groceries\n• milk\n    ○ oat\n• bread",
+      });
     });
+  });
+
+  it("should keep the letter styles and the list of pasted HTML (a note, Google Docs) in the one box; other apps' colors are dropped", async () => {
+    sendPasteEvent(
+      "Title Bold and done",
+      '<h2>Title</h2><p><b>Bold</b> <span style="font-style:italic;color:red">and</span> <mark class="highlight-green">done</mark> <u>u</u> <s>gone</s></p><ul><li>one</li></ul>',
+    );
+    await waitFor(() => {
+      expect(h.elements).toHaveLength(1);
+    });
+    const text = h.elements[0] as ExcalidrawTextElement;
+    expect(text.originalText).toBe("Title\nBold and done u gone\n• one");
+    expect(text.textAlign).toBe("left");
+    const at = (word: string) => text.originalText.indexOf(word);
+    expect(text.textRuns).toEqual([
+      { start: 0, end: 5, bold: true },
+      { start: at("Bold"), end: at("Bold") + 4, bold: true },
+      { start: at("and"), end: at("and") + 3, italic: true },
+      { start: at("done"), end: at("done") + 4, highlight: "green" },
+      { start: at(" u") + 1, end: at(" u") + 2, underline: true },
+      { start: at("gone"), end: at("gone") + 4, strikethrough: true },
+    ]);
+  });
+
+  it("should paste HTML as plain text with Ctrl/Cmd+Shift+V", async () => {
+    Keyboard.withModifierKeys({ ctrl: true, shift: true }, () => {
+      Keyboard.keyPress(KEYS.V);
+      sendPasteEvent("Bold", "<b>Bold</b>");
+    });
+    await waitFor(() => {
+      expect(h.elements).toHaveLength(1);
+    });
+    expect((h.elements[0] as ExcalidrawTextElement).textRuns ?? []).toEqual([]);
   });
 });
 
@@ -704,14 +729,13 @@ describe("clipboard - pasting mermaid definition", () => {
   it("should paste as normal text if invalid mermaid", async () => {
     const text = "flowchart TD xx\nA";
     pasteWithCtrlCmdV(text);
+    // YAZ-3943 demo 2: one text box with both lines
     await waitFor(() => {
-      expect(h.elements.length).toEqual(2);
-      expect(h.elements).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ type: "text", text: "flowchart TD xx" }),
-          expect.objectContaining({ type: "text", text: "A" }),
-        ]),
-      );
+      expect(h.elements.length).toEqual(1);
+      expect(h.elements[0]).toMatchObject({
+        type: "text",
+        text: "flowchart TD xx\nA",
+      });
     });
   });
 });

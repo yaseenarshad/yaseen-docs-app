@@ -35,6 +35,7 @@ import {
   getStyledVisualLineStart,
   getTextElementStyledLayout,
 } from "./textLineUnderlines";
+import { getLinkPillMetrics, hasHostLinks } from "./textLinks";
 import {
   isBoundToContainer,
   isArrowElement,
@@ -53,6 +54,7 @@ import type {
   ExcalidrawTextContainer,
   ExcalidrawTextElement,
   ExcalidrawTextElementWithContainer,
+  FontString,
   NonDeleted,
 } from "./types";
 
@@ -228,33 +230,69 @@ const getTextVisualBounds = (
   let bottom = -Infinity;
 
   for (let index = 0; index < lines.length; index++) {
-    context.font = lines[index].font;
+    const line = lines[index];
     const lineStart = getStyledVisualLineStart(
-      lines[index],
+      line,
       element.width,
       element.textAlign,
     );
-    const drawX = lines[index].isListItem ? lineStart : horizontalOffset;
-    context.textAlign = lines[index].isListItem
-      ? "left"
-      : (element.textAlign as CanvasTextAlign);
-    const metrics = context.measureText(lines[index].text || " ");
     const baseline = index * lineHeightPx + verticalOffset;
-    const values = [
-      metrics.actualBoundingBoxLeft,
-      metrics.actualBoundingBoxRight,
-      metrics.actualBoundingBoxAscent,
-      metrics.actualBoundingBoxDescent,
-    ];
-
-    if (!values.every((value) => Number.isFinite(value))) {
-      return null;
+    // YAZ-3718 D1: a line with runs draws each segment from the left
+    const pieces: {
+      text: string;
+      font: FontString;
+      x: number;
+      textAlign: CanvasTextAlign;
+    }[] = [];
+    for (const segment of line.segments ?? []) {
+      if (segment.link) {
+        // YAZ-4039 D7: a pill is its own box
+        const pill = getLinkPillMetrics(segment.font);
+        const pillTop = index * lineHeightPx + (lineHeightPx - pill.height) / 2;
+        left = Math.min(left, lineStart + segment.x);
+        right = Math.max(right, lineStart + segment.x + segment.width);
+        top = Math.min(top, pillTop);
+        bottom = Math.max(bottom, pillTop + pill.height);
+        continue;
+      }
+      pieces.push({
+        text: segment.text,
+        font: segment.font,
+        x: lineStart + segment.x,
+        textAlign: "left",
+      });
+    }
+    if (!pieces.length && !line.segments?.some((segment) => segment.link)) {
+      pieces.push({
+        text: line.text || " ",
+        font: line.font,
+        x: line.isListItem ? lineStart : horizontalOffset,
+        textAlign: line.isListItem
+          ? "left"
+          : (element.textAlign as CanvasTextAlign),
+      });
     }
 
-    left = Math.min(left, drawX - metrics.actualBoundingBoxLeft);
-    right = Math.max(right, drawX + metrics.actualBoundingBoxRight);
-    top = Math.min(top, baseline - metrics.actualBoundingBoxAscent);
-    bottom = Math.max(bottom, baseline + metrics.actualBoundingBoxDescent);
+    for (const piece of pieces) {
+      context.font = piece.font;
+      context.textAlign = piece.textAlign;
+      const metrics = context.measureText(piece.text);
+      const values = [
+        metrics.actualBoundingBoxLeft,
+        metrics.actualBoundingBoxRight,
+        metrics.actualBoundingBoxAscent,
+        metrics.actualBoundingBoxDescent,
+      ];
+
+      if (!values.every((value) => Number.isFinite(value))) {
+        return null;
+      }
+
+      left = Math.min(left, piece.x - metrics.actualBoundingBoxLeft);
+      right = Math.max(right, piece.x + metrics.actualBoundingBoxRight);
+      top = Math.min(top, baseline - metrics.actualBoundingBoxAscent);
+      bottom = Math.max(bottom, baseline + metrics.actualBoundingBoxDescent);
+    }
   }
 
   if (
@@ -451,6 +489,13 @@ export const redrawTextBoundingBox = (
 
   // Note: only update width for unwrapped text and bound texts (which always have autoResize set to true)
   if (textElement.autoResize) {
+    boundTextUpdates.width = metrics.width;
+  } else if (
+    !container &&
+    metrics.width > textElement.width &&
+    hasHostLinks(textElement.originalText)
+  ) {
+    // YAZ-4039 D7: a pill never breaks, so a wrapped box grows to hold it
     boundTextUpdates.width = metrics.width;
   }
   boundTextUpdates.height = metrics.height;
@@ -839,6 +884,21 @@ export const getBoundTextMaxWidth = (
   }
   return width - BOUND_TEXT_PADDING * 2;
 };
+
+/**
+ * YAZ-4074 6A item 34: the width a text box wraps at: its shape's text width, its own width
+ * when it has a fixed width, or no limit for an auto-size box. The canvas, the pill hit test,
+ * search and the editor overlay use this one rule, so they agree.
+ */
+export const getTextLayoutMaxWidth = (
+  textElement: ExcalidrawTextElement,
+  container: ExcalidrawElement | null,
+) =>
+  container
+    ? getBoundTextMaxWidth(container, textElement)
+    : textElement.autoResize
+    ? Infinity
+    : textElement.width;
 
 export const getBoundTextMaxHeight = (
   container: ExcalidrawElement,

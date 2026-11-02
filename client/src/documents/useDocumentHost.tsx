@@ -41,7 +41,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { isBoard } from '@shared/fileKind'
 import type { GithubSyncStatus, SaveDrawingResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { PageSettings } from '../editor/PageSettings'
+import { PageSettings, type PageSwitch } from '../editor/PageSettings'
 import { ReadOnlyChip } from '../editor/ReadOnlyChip'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { SyncIndicator } from '../editor/SyncIndicator'
@@ -74,6 +74,8 @@ export interface DocumentHostOptions extends DocumentHostProps {
    * Answers the file's read-only switch as it now reads (YAZ-3076 D1); nothing = unchanged.
    */
   reload: (autosave: Autosave<number>) => Promise<boolean | void>
+  /** "Keep mine" is about to overwrite a version this tab did not write: what the engine knows of the file is stale (YAZ-4071 7H). */
+  onKeepMine?: () => void
   /** The loaded file's read-only switch (YAZ-3076 D1): `isDrawingReadOnly` / `isDiagramReadOnly` of what the shell loaded. */
   readOnly?: boolean
   /**
@@ -113,7 +115,7 @@ export function useDocumentHost(options: DocumentHostOptions) {
   const readOnlyRef = useRef(readOnly)
   readOnlyRef.current = readOnly
   // The chips' live state, read by `<DocumentChips>` alone (YAZ-2073 5D).
-  const [chips] = useState(() => createStore<ChipState>({ status: 'saved', sync, onSyncNow, readOnly: options.readOnly === true, askingUnlock: false, readOnlyActions: options.readOnlySwitch === false ? null : NO_READ_ONLY_ACTIONS }))
+  const [chips] = useState(() => createStore<ChipState>({ status: 'saved', sync, onSyncNow, readOnly: options.readOnly === true, askingUnlock: false, readOnlyActions: options.readOnlySwitch === false ? null : NO_READ_ONLY_ACTIONS, pageRows: null }))
   useLayoutEffect(() => chips.set({ sync, onSyncNow }), [chips, sync, onSyncNow])
   useLayoutEffect(() => chips.set({ readOnly, askingUnlock }), [chips, readOnly, askingUnlock])
 
@@ -175,6 +177,7 @@ export function useDocumentHost(options: DocumentHostOptions) {
     const a = autosave.current
     if (a === null || retired.current || conflictMtime === null) return
     setConflictMtime(null)
+    engine.current.onKeepMine?.()
     void a.adopt(conflictMtime)
   }, [conflictMtime])
 
@@ -310,21 +313,23 @@ interface ChipState {
   askingUnlock: boolean
   /** null: the file has no switch (`readOnlySwitch: false`). */
   readOnlyActions: ReadOnlyActions | null
+  /** The cog's rows after "Read only", made while it is open: a drawing sets them from an effect (YAZ-3943 D5, D13); null = none. */
+  pageRows: (() => readonly PageSwitch[]) | null
 }
 
 /**
- * The page cog (YAZ-3076 D3: one row, "Read only"), the "Read only" chip while it is on (D4), the
+ * The page cog (YAZ-3076 D3: "Read only", then a drawing's own rows, YAZ-3943), the "Read only" chip while it is on (D4), the
  * sync chip (when the vault has one) and the save chip; what they say comes from the store. A file
  * with no switch (a code file) has no cog and no chip from here: the cog would have no row. Such an
  * engine hands its own chips as `lead` (the code tab's cog, text size and Read only chip, YAZ-3449),
  * drawn first; the same element across the store's renders, so a save's status moves leave it alone.
  */
 export function DocumentChips({ store, className, lead }: { store: Store<ChipState>; className: string; lead?: ReactNode }) {
-  const { status, sync, onSyncNow, readOnly, askingUnlock, readOnlyActions: actions } = useSyncExternalStore(store.subscribe, store.getState)
+  const { status, sync, onSyncNow, readOnly, askingUnlock, readOnlyActions: actions, pageRows } = useSyncExternalStore(store.subscribe, store.getState)
   return (
     <div className={className}>
       {lead}
-      {actions !== null && <PageSettings readOnly={readOnly} onToggleReadOnly={actions.toggle} />}
+      {actions !== null && <PageSettings readOnly={readOnly} onToggleReadOnly={actions.toggle} rows={pageRows ?? undefined} />}
       {actions !== null && readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={actions.ask} onAllow={actions.allow} onCancel={actions.cancel} />}
       {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
       <SaveIndicator status={status} />

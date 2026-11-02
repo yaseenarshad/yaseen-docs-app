@@ -1,10 +1,11 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { CONTRACT, type Envelope } from '@shared/ipc'
-import { registerDialogIpc } from './dialog'
+import { PICTURE_FOLDERS_FULL } from '../fs/picturesFolders'
+import { PICTURES_FOLDER_HIDDEN, PICTURES_FOLDER_ROOT, PICTURES_FOLDER_SYSTEM, registerDialogIpc } from './dialog'
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
@@ -35,8 +36,8 @@ const pick = () => registered(CONTRACT.pickFolder.channel)({ sender })
 const open = () => registered(CONTRACT.dialog.openDrawing.channel)({ sender })
 
 describe('dialog:pick-folder', () => {
-  it('registers exactly the pick-folder, the two export channels and the import (YAZ-3038)', () => {
-    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel, CONTRACT.dialog.saveDrawing.channel, CONTRACT.dialog.saveImage.channel, CONTRACT.dialog.openDrawing.channel])
+  it('registers exactly the pick-folder, the pictures folder pick, the three export channels and the import (YAZ-3038, YAZ-3943 D6, demo round 3)', () => {
+    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel, CONTRACT.pickPicturesFolder.channel, CONTRACT.dialog.saveDrawing.channel, CONTRACT.dialog.saveImage.channel, CONTRACT.dialog.savePdf.channel, CONTRACT.dialog.openDrawing.channel])
   })
 
   it('opens an openDirectory dialog parented to the calling window and answers { path }', async () => {
@@ -71,6 +72,87 @@ describe('dialog:pick-folder', () => {
   it('a dialog failure comes out as PICKER_FAILED', async () => {
     showOpenDialog.mockRejectedValue(new Error('no display'))
     expect(await pick()).toEqual({ ok: false, error: { code: 'PICKER_FAILED', message: 'no display' } })
+  })
+})
+
+/** A board's own pictures folder (YAZ-3943 demo round 3): the cog's "Choose a folder…" and Settings' "Choose…". */
+describe('dialog:pick-pictures-folder', () => {
+  const VAULT = '/Users/me/vault'
+  const approve = vi.fn((_folder: string) => true)
+  const remember = vi.fn()
+  const pickPictures = (body: unknown) => registered(CONTRACT.pickPicturesFolder.channel)({ sender }, body)
+  beforeEach(() => {
+    approve.mockClear()
+    remember.mockClear()
+    vi.mocked(ipcMain.handle).mockClear()
+    registerDialogIpc(undefined, approve, remember)
+  })
+
+  it('YAZ-4074 6A item 3: the cog\'s pick of an outside folder approves nothing yet (its confirmed move does); Settings\' pick, with no box after it, approves at once', async () => {
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/Users/me/Pictures/Boards'] })
+    expect(await pickPictures({ root: VAULT })).toEqual({ ok: true, value: { folder: '/Users/me/Pictures/Boards' } })
+    expect(approve).not.toHaveBeenCalled()
+    expect(remember).toHaveBeenCalledWith('/Users/me/Pictures/Boards')
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/Users/me/Pictures/Boards'] })
+    expect(await pickPictures({ root: VAULT, approveNow: true })).toEqual({ ok: true, value: { folder: '/Users/me/Pictures/Boards' } })
+    expect(approve).toHaveBeenCalledWith('/Users/me/Pictures/Boards')
+    expect(remember).toHaveBeenCalledTimes(1)
+  })
+
+  it('a folder in the vault answers RELATIVE with `/` separators and approves nothing; one outside answers ABSOLUTE and goes on the approved list', async () => {
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [`${VAULT}/Projects/Board pictures`] })
+    expect(await pickPictures({ root: VAULT })).toEqual({ ok: true, value: { folder: 'Projects/Board pictures' } })
+    expect(showOpenDialog).toHaveBeenLastCalledWith({ title: 'Choose a folder for the pictures', properties: ['openDirectory', 'createDirectory'], defaultPath: VAULT })
+    expect(approve).not.toHaveBeenCalled()
+
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/Users/me/Pictures/Boards/'] })
+    expect(await pickPictures({ root: VAULT, current: 'Projects/Board pictures', approveNow: true })).toEqual({ ok: true, value: { folder: '/Users/me/Pictures/Boards' } })
+    // The dialog opens on the board's current folder: a relative one under the vault, an absolute one as it is.
+    expect(showOpenDialog).toHaveBeenLastCalledWith(expect.objectContaining({ defaultPath: `${VAULT}/Projects/Board pictures` }))
+    expect(approve).toHaveBeenCalledWith('/Users/me/Pictures/Boards')
+    showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    expect(await pickPictures({ root: VAULT, current: '/Users/me/Pictures/Boards' })).toEqual({ ok: true, value: { cancelled: true } })
+    expect(showOpenDialog).toHaveBeenLastCalledWith(expect.objectContaining({ defaultPath: '/Users/me/Pictures/Boards' }))
+  })
+
+  it('refuses the vault itself, a system folder, ~/Library, a hidden folder and node_modules with the one-line reason, and approves none of them', async () => {
+    const refusals: Array<[string, string]> = [
+      [VAULT, PICTURES_FOLDER_ROOT],
+      ['/System/Library/Pictures', PICTURES_FOLDER_SYSTEM],
+      [path.join(homedir(), 'Library', 'Pictures'), PICTURES_FOLDER_SYSTEM],
+      [`${VAULT}/.git`, PICTURES_FOLDER_HIDDEN],
+      ['/Users/me/code/node_modules', PICTURES_FOLDER_HIDDEN],
+    ]
+    for (const [picked, message] of refusals) {
+      showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [picked] })
+      expect(await pickPictures({ root: VAULT })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message }) })
+    }
+    expect(approve).not.toHaveBeenCalled()
+    expect(remember).not.toHaveBeenCalled()
+    expect(await pickPictures({ root: 'relative' })).toMatchObject({ ok: false, error: { code: 'NOT_ABSOLUTE' } })
+  })
+
+  it('YAZ-4074 6A item 21: Settings\' pick of an outside folder with this Mac\'s list full says so in one line', async () => {
+    approve.mockReturnValueOnce(false)
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/Users/me/Pictures/Boards'] })
+    expect(await pickPictures({ root: VAULT, approveNow: true })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: PICTURE_FOLDERS_FULL }) })
+  })
+
+  it('YAZ-4074 6A item 4: the pick takes the real place — a symbolic link to a system folder is refused; a link in the vault that leads out is an outside folder', async () => {
+    const vault = await mkdtemp(path.join(tmpdir(), 'pick-link-vault-'))
+    const far = await mkdtemp(path.join(tmpdir(), 'pick-link-far-'))
+    try {
+      await symlink('/Library', path.join(vault, 'Lib'))
+      showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path.join(vault, 'Lib')] })
+      expect(await pickPictures({ root: vault })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: PICTURES_FOLDER_SYSTEM }) })
+      await symlink(far, path.join(vault, 'Out'))
+      showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path.join(vault, 'Out')] })
+      expect(await pickPictures({ root: vault })).toEqual({ ok: true, value: { folder: await realpath(far) } })
+      expect(remember).toHaveBeenCalledWith(await realpath(far))
+    } finally {
+      await rm(vault, { recursive: true, force: true })
+      await rm(far, { recursive: true, force: true })
+    }
   })
 })
 
@@ -211,5 +293,57 @@ describe('dialog:save-file', () => {
     expect(await image(req)).toMatchObject({ ok: false, error: { code: 'UNSUPPORTED_EXTENSION' } })
     expect(await image({ ...req, png: 'nope' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
     expect(await readdir(dir)).toEqual(['Flow.svg'])
+  })
+})
+
+/** A drawing's PDF button (YAZ-3943 D6): the sheet, the print and the write are one door, one sheet per window. */
+describe('dialog:save-pdf', () => {
+  const showSaveDialog = vi.mocked(dialog.showSaveDialog)
+  const print = vi.fn(async (_svg: string, _size: { width: number; height: number }, _title: string) => Buffer.from('%PDF-1.7 fake'))
+  const savePdf = (req: unknown) => registered(CONTRACT.dialog.savePdf.channel)({ sender }, req)
+  const REQ = { defaultName: 'Flow.pdf', svg: '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480"></svg>', width: 960, height: 480 }
+  let dir = ''
+  beforeEach(async () => {
+    showSaveDialog.mockReset()
+    print.mockClear()
+    vi.mocked(ipcMain.handle).mockClear()
+    registerDialogIpc(print)
+    dir = await mkdtemp(path.join(tmpdir(), 'yaz-3943-pdf-'))
+  })
+  afterEach(() => rm(dir, { recursive: true, force: true }))
+
+  it('opens the sheet on `<drawing name>.pdf`, prints the SVG at its size, and writes the PDF where the user picked', async () => {
+    const file = path.join(dir, 'Flow.pdf')
+    showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: file })
+    expect(await savePdf(REQ)).toEqual({ ok: true, value: { path: file } })
+    expect(showSaveDialog.mock.calls[0][0]).toMatchObject({ defaultPath: 'Flow.pdf', filters: [{ name: 'PDF', extensions: ['pdf'] }] })
+    // YAZ-4071 7Q: the PDF's Title is the picked file's name
+    expect(print).toHaveBeenCalledWith(REQ.svg, { width: 960, height: 480 }, 'Flow')
+    expect(await readFile(file, 'utf8')).toBe('%PDF-1.7 fake')
+  })
+
+  it('a dismissed sheet prints and writes nothing; another name, or a bad request, is refused', async () => {
+    showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: '' })
+    expect(await savePdf(REQ)).toEqual({ ok: true, value: { cancelled: true } })
+    showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: path.join(dir, 'Flow.png') })
+    expect(await savePdf(REQ)).toMatchObject({ ok: false, error: { code: 'UNSUPPORTED_EXTENSION' } })
+    expect(await savePdf({ ...REQ, svg: '<html/>' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    expect(await savePdf({ ...REQ, width: 0 })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    expect(print).not.toHaveBeenCalled()
+    expect(await readdir(dir)).toEqual([])
+  })
+
+  it('refuses a second sheet in the same window while the first is open ({ cancelled }), and lets one through after', async () => {
+    const win = { id: 'w' } as unknown as BrowserWindow
+    fromWebContents.mockReturnValue(win)
+    let settle!: (v: Electron.SaveDialogReturnValue) => void
+    showSaveDialog.mockReturnValueOnce(new Promise((r) => (settle = r)))
+    const first = savePdf(REQ)
+    expect(await savePdf(REQ)).toEqual({ ok: true, value: { cancelled: true } })
+    expect(showSaveDialog).toHaveBeenCalledTimes(1)
+    settle({ canceled: false, filePath: path.join(dir, 'One.pdf') })
+    expect(await first).toEqual({ ok: true, value: { path: path.join(dir, 'One.pdf') } })
+    showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: path.join(dir, 'Two.pdf') })
+    expect(await savePdf(REQ)).toEqual({ ok: true, value: { path: path.join(dir, 'Two.pdf') } })
   })
 })

@@ -9,7 +9,7 @@
  * `roughjs/bin/rough` extensionlessly), which is exactly why the seam is a component boundary.
  *
  * `api` is mocked one level down instead of `saveDrawing`, so the write the autosave actually
- * makes — bytes, path, `expectedMtime`, and the CONFLICT bar's two answers — is the thing under
+ * makes — `drawing:save`'s scene, new pictures, path, `expectedMtime` (YAZ-3943 1A1), and the CONFLICT bar's two answers — is the thing under
  * test. Timers are fake: the 500 ms quiet period is advanced by hand (`idle`). The S-numbers are
  * the approved scenarios on the YAZ-3528 working log.
  */
@@ -20,14 +20,18 @@ import { createRoot, type Root } from 'react-dom/client'
 import { api, BridgeRequestError } from '../api'
 import { placeOverTab } from '../keys/keySheetRequest'
 import { createDrawingFeed } from './drawingFeed'
+import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
+import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BROKEN_DRAWING_MESSAGE, DISCARD_PROMPT, DrawingModal } from './DrawingModal'
+import { ALLOW_FOLDER_TITLE, allowFolderBody } from './usePicturesFolderAllow'
 import type { DrawingSurfaceProps } from './ExcalidrawSurface'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('../api', async (original) => ({
   ...(await original<typeof import('../api')>()),
-  api: { readAsset: vi.fn(), writeAsset: vi.fn(), window: { onFlush: vi.fn() }, hotkeys: { drawingInFront: vi.fn(async () => undefined) } },
+  // `app.home` and `pictureFolders` (YAZ-3943 demo round 3): the popup's ask for a board's outside pictures folder.
+  api: { readAsset: vi.fn(), drawing: { save: vi.fn(), load: vi.fn() }, window: { onFlush: vi.fn() }, hotkeys: { drawingInFront: vi.fn(async () => undefined) }, app: { home: vi.fn(async () => '/Users/me') }, pictureFolders: { list: vi.fn(async () => []), allow: vi.fn(async () => []) } },
 }))
 
 /** The stand-in engine: it renders nothing and reports the props the modal handed it. */
@@ -42,7 +46,7 @@ vi.mock('./ExcalidrawSurface', () => ({
 }))
 
 const readAsset = vi.mocked(api.readAsset)
-const writeAsset = vi.mocked(api.writeAsset)
+const drawingSave = vi.mocked(api.drawing.save)
 const onFlush = vi.mocked(api.window.onFlush)
 /** The quit handshake's listener, as the modal registered it (main calls it before a window closes). */
 let quitFlush: (() => Promise<boolean | void> | boolean | void) | null = null
@@ -50,7 +54,7 @@ let quitFlush: (() => Promise<boolean | void> | boolean | void) | null = null
 const ROOT = '/v'
 const TARGET = 'Sketch.excalidraw'
 const PATH = '/v/assets/drawings/Sketch.excalidraw'
-/** What the mocked seam's `standalone()` returns — the exact bytes a save must carry. */
+/** What the mocked seam's `serialize().json` returns — the small scene a save must carry (YAZ-3943 1A1). */
 const BYTES = '{"type":"excalidraw","elements":[1]}\n'
 
 const asset = (mtime: number) => ({
@@ -70,8 +74,8 @@ beforeEach(() => {
   seam.props = null
   seam.mounts = 0
   readAsset.mockReset()
-  writeAsset.mockReset()
-  writeAsset.mockResolvedValue({ path: PATH, mtime: 999, size: BYTES.length })
+  drawingSave.mockReset()
+  drawingSave.mockResolvedValue({ path: PATH, mtime: 999, size: BYTES.length, persisted: [] })
   quitFlush = null
   onFlush.mockReset()
   onFlush.mockImplementation((listener) => {
@@ -101,7 +105,7 @@ interface Mounted {
 }
 
 /** Mounts the modal over a resolved (or rejected) read and flushes the load. */
-async function open(read: 'ok' | 'broken' = 'ok', mtime = 100): Promise<Mounted> {
+async function open(read: 'ok' | 'broken' = 'ok', mtime = 100, linkProps: Partial<Parameters<typeof DrawingModal>[0]> = {}): Promise<Mounted> {
   if (read === 'ok') readAsset.mockResolvedValue(asset(mtime))
   else readAsset.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no such asset'))
   const onClose = vi.fn()
@@ -114,7 +118,7 @@ async function open(read: 'ok' | 'broken' = 'ok', mtime = 100): Promise<Mounted>
   document.body.appendChild(outside)
   root = createRoot(container)
   await act(async () => {
-    root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" feed={feed} onClose={onClose} />)
+    root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" feed={feed} onClose={onClose} {...linkProps} />)
   })
   const overlay = container.querySelector<HTMLElement>('.drawing-modal-overlay')
   if (overlay === null) throw new Error('missing .drawing-modal-overlay')
@@ -136,7 +140,7 @@ const conflictBar = () => container?.querySelector('.conflict-bar')?.textContent
 
 /** One snapshot from the stand-in engine; the FIRST is the modal's clean baseline. */
 function emit(version: number): void {
-  act(() => seam.props?.onSnapshot({ version, serialize: () => ({ json: '', files: {}, referenced: new Set() }), standalone: () => BYTES }))
+  act(() => seam.props?.onSnapshot({ version, serialize: () => ({ json: BYTES, files: {}, referenced: new Set() }) }))
 }
 
 /** The autosave's quiet period passes (500 ms after the last change), and its write settles. */
@@ -187,7 +191,7 @@ describe('opening', () => {
     expect(label()).toBe('Saved')
     expect(byText('Save')).toBeUndefined()
     await idle(2000)
-    expect(writeAsset).not.toHaveBeenCalled()
+    expect(drawingSave).not.toHaveBeenCalled()
     await click(closeBtn())
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(poked).toEqual([])
@@ -210,7 +214,7 @@ describe('read only (YAZ-3076 S28)', () => {
     emit(8) // a version that moves anyway is never an edit
     await idle()
     await click(closeBtn())
-    expect(writeAsset).not.toHaveBeenCalled()
+    expect(drawingSave).not.toHaveBeenCalled()
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
@@ -229,10 +233,10 @@ describe('autosave (YAZ-3528 D1)', () => {
     await idle(300)
     emit(3) // a change inside the quiet period restarts it
     await idle(300)
-    expect(writeAsset).not.toHaveBeenCalled()
+    expect(drawingSave).not.toHaveBeenCalled()
     await idle(200)
-    expect(writeAsset).toHaveBeenCalledTimes(1)
-    expect(writeAsset).toHaveBeenCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 4242 })
+    expect(drawingSave).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 4242 })
     expect(label()).toBe('Saved')
     // The modal stays open, and the previews behind the scrim wait for the close.
     expect(onClose).not.toHaveBeenCalled()
@@ -246,8 +250,8 @@ describe('autosave (YAZ-3528 D1)', () => {
     await idle()
     emit(3)
     await idle()
-    expect(writeAsset).toHaveBeenCalledTimes(2)
-    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 999 })
+    expect(drawingSave).toHaveBeenCalledTimes(2)
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 999 })
   })
 
   // S17 as corrected after the checker's round 1 (YAZ-3551): the real engine's version only grows,
@@ -260,14 +264,14 @@ describe('autosave (YAZ-3528 D1)', () => {
     emit(7)
     expect(label()).toBe('Saved')
     await idle()
-    expect(writeAsset).not.toHaveBeenCalled()
+    expect(drawingSave).not.toHaveBeenCalled()
   })
 
   it('S6: a failed write is an INLINE error and the label says so; the canvas stays, and the next change tries again', async () => {
     const { onClose } = await open()
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
     await idle()
     expect(errorLine()).toContain('disk is full')
     expect(label()).toBe('Save failed')
@@ -275,7 +279,7 @@ describe('autosave (YAZ-3528 D1)', () => {
     expect(container?.querySelector('.fake-surface')).not.toBeNull()
     emit(3)
     await idle()
-    expect(writeAsset).toHaveBeenCalledTimes(2)
+    expect(drawingSave).toHaveBeenCalledTimes(2)
     expect(errorLine()).toBeNull()
     expect(label()).toBe('Saved')
   })
@@ -284,15 +288,15 @@ describe('autosave (YAZ-3528 D1)', () => {
     const { onClose, poked } = await open('ok', 100)
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
     await idle()
-    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
     expect(conflictBar()).toBe('File changed on disk.ReloadKeep mine')
     expect(errorLine()).toBeNull()
     expect(label()).toBe('Unsaved')
     emit(3)
     await idle()
-    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
     expect(poked).toEqual([])
     expect(onClose).not.toHaveBeenCalled()
     // The window's flush says not clean (YAZ-3737 D2): a reload would drop this canvas.
@@ -303,22 +307,22 @@ describe('autosave (YAZ-3528 D1)', () => {
     await open('ok', 100)
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
     await idle()
     await click(byText('Keep mine'))
-    expect(writeAsset).toHaveBeenCalledTimes(2)
-    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
+    expect(drawingSave).toHaveBeenCalledTimes(2)
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 555 })
     expect(conflictBar()).toBeNull()
     emit(3)
     await idle()
-    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 999 })
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 999 })
   })
 
   it('S11: Reload opens the disk\'s version in a fresh, clean canvas and writes nothing', async () => {
     const { onClose } = await open('ok', 100)
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
     await idle()
     readAsset.mockResolvedValue(asset(555))
     const mounts = seam.mounts
@@ -328,33 +332,33 @@ describe('autosave (YAZ-3528 D1)', () => {
     emit(9) // the new surface's mount snapshot: the new baseline
     await idle()
     expect(label()).toBe('Saved')
-    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
     expect(onClose).not.toHaveBeenCalled()
     // A save after the reload is guarded by the disk's new mtime.
     emit(10)
     await idle()
-    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 555 })
   })
 
   it('S11: a Reload whose read FAILS keeps the bar up and says why — Keep mine still writes the edits', async () => {
     await open('ok', 100)
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
     await idle()
     readAsset.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no such asset'))
     await click(byText('Reload'))
     expect(conflictBar()).not.toBeNull()
     expect(errorLine()).toBe(BROKEN_DRAWING_MESSAGE)
     await click(byText('Keep mine'))
-    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 555 })
   })
 
   it('YAZ-3552: Reload closes the strip with the bar it answers', async () => {
     await open('ok', 100)
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
     await click(closeBtn())
     expect(strip()).toContain(DISCARD_PROMPT)
     readAsset.mockResolvedValue(asset(555))
@@ -367,32 +371,32 @@ describe('autosave (YAZ-3528 D1)', () => {
     await open('ok', 100)
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
     await idle()
     const oldCanvas = seam.props?.onSnapshot
     readAsset.mockResolvedValue(asset(555))
     await click(byText('Reload'))
     // The replaced canvas reports one more change on its way out: it must not become the baseline.
-    act(() => oldCanvas?.({ version: 50, serialize: () => ({ json: '', files: {}, referenced: new Set() }), standalone: () => BYTES }))
+    act(() => oldCanvas?.({ version: 50, serialize: () => ({ json: BYTES, files: {}, referenced: new Set() }) }))
     emit(9) // the new canvas's mount snapshot: the real baseline
     await idle()
-    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
     emit(10)
     await idle()
-    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 555 })
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 555 })
   })
 
   it('Discard while a close is still retrying leaves ONCE', async () => {
     const { onClose } = await open()
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
     await idle()
     await click(closeBtn())
     expect(strip()).toContain(DISCARD_PROMPT)
     let land: (() => void) | null = null
-    writeAsset.mockImplementationOnce(() => new Promise((resolve) => (land = () => resolve({ path: PATH, mtime: 999, size: BYTES.length }))))
+    drawingSave.mockImplementationOnce(() => new Promise((resolve) => (land = () => resolve({ path: PATH, mtime: 999, size: BYTES.length, persisted: [] }))))
     await click(closeBtn()) // a retry starts
     await click(byText('Discard'))
     await act(async () => land?.())
@@ -403,22 +407,22 @@ describe('autosave (YAZ-3528 D1)', () => {
     await open('ok', 100)
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk'))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk'))
     readAsset.mockResolvedValue(asset(777))
     await idle()
     await click(byText('Keep mine'))
-    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 777 })
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 777 })
   })
 
   it('A4: a second CONFLICT on Keep mine shows the bar again — it never loops', async () => {
     const { onClose } = await open()
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValue(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 7))
+    drawingSave.mockRejectedValue(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 7))
     await idle()
     await click(byText('Keep mine'))
     await idle(2000)
-    expect(writeAsset).toHaveBeenCalledTimes(2)
+    expect(drawingSave).toHaveBeenCalledTimes(2)
     expect(conflictBar()).not.toBeNull()
     expect(onClose).not.toHaveBeenCalled()
   })
@@ -431,8 +435,8 @@ describe('autosave (YAZ-3528 D1)', () => {
     await act(async () => {
       await quitFlush?.()
     })
-    expect(writeAsset).toHaveBeenCalledTimes(1)
-    expect(writeAsset).toHaveBeenCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 100 })
+    expect(drawingSave).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 100 })
   })
 
   it('S19: an unmount for any other reason saves what is pending, then never writes again', async () => {
@@ -441,10 +445,10 @@ describe('autosave (YAZ-3528 D1)', () => {
     emit(2)
     await act(async () => root?.unmount())
     root = null
-    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
     expect(quitFlush).toBeNull()
     await idle(2000)
-    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -454,7 +458,7 @@ describe('leaving (YAZ-3528 D3)', () => {
     emit(1)
     emit(2)
     await click(closeBtn())
-    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
     expect(strip()).toBeNull()
     expect(poked).toEqual([TARGET])
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -465,12 +469,12 @@ describe('leaving (YAZ-3528 D3)', () => {
     emit(1)
     emit(2)
     let land: (() => void) | null = null
-    writeAsset.mockImplementationOnce(() => new Promise((resolve) => (land = () => resolve({ path: PATH, mtime: 999, size: BYTES.length }))))
+    drawingSave.mockImplementationOnce(() => new Promise((resolve) => (land = () => resolve({ path: PATH, mtime: 999, size: BYTES.length, persisted: [] }))))
     await click(closeBtn())
     await click(closeBtn())
     expect(onClose).not.toHaveBeenCalled()
     await act(async () => land?.())
-    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
     expect(poked).toEqual([TARGET])
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -481,7 +485,7 @@ describe('leaving (YAZ-3528 D3)', () => {
     emit(2)
     await idle()
     await escOn(overlay)
-    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
     expect(poked).toEqual([TARGET])
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -493,7 +497,7 @@ describe('leaving (YAZ-3528 D3)', () => {
     await mousedownOn(overlay.querySelector('.drawing-modal') as Node)
     expect(onClose).not.toHaveBeenCalled()
     await mousedownOn(overlay)
-    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
@@ -501,7 +505,7 @@ describe('leaving (YAZ-3528 D3)', () => {
     await open()
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
     await click(closeBtn())
     expect(strip()).toContain(DISCARD_PROMPT)
     emit(3)
@@ -510,7 +514,7 @@ describe('leaving (YAZ-3528 D3)', () => {
     expect(strip()).toBeNull()
 
     emit(4)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
     await click(closeBtn())
     expect(strip()).toContain(DISCARD_PROMPT)
     await click(byText('Keep mine'))
@@ -522,11 +526,11 @@ describe('leaving (YAZ-3528 D3)', () => {
     await open()
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk is full'))
     await idle()
     expect(errorLine()).toContain('disk is full')
     emit(3)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
     await idle()
     expect(conflictBar()).not.toBeNull()
     expect(errorLine()).toBeNull()
@@ -537,12 +541,12 @@ describe('leaving (YAZ-3528 D3)', () => {
     emit(1)
     emit(2)
     let land: (() => void) | null = null
-    writeAsset.mockImplementationOnce(() => new Promise((resolve) => (land = () => resolve({ path: PATH, mtime: 999, size: BYTES.length }))))
+    drawingSave.mockImplementationOnce(() => new Promise((resolve) => (land = () => resolve({ path: PATH, mtime: 999, size: BYTES.length, persisted: [] }))))
     await click(closeBtn())
     emit(3)
     await act(async () => land?.())
-    expect(writeAsset).toHaveBeenCalledTimes(2)
-    expect(writeAsset).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, content: BYTES, expectedMtime: 999 })
+    expect(drawingSave).toHaveBeenCalledTimes(2)
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 999 })
     expect(strip()).toBeNull()
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -551,10 +555,10 @@ describe('leaving (YAZ-3528 D3)', () => {
     const { onClose } = await open()
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    drawingSave.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk is full'))
     await idle()
     await click(closeBtn())
-    expect(writeAsset).toHaveBeenCalledTimes(2)
+    expect(drawingSave).toHaveBeenCalledTimes(2)
     expect(strip()).toContain(DISCARD_PROMPT)
     expect(onClose).not.toHaveBeenCalled()
     await click(byText('Cancel'))
@@ -567,7 +571,7 @@ describe('leaving (YAZ-3528 D3)', () => {
     const { onClose } = await open()
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    drawingSave.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk is full'))
     await click(closeBtn())
     expect(strip()).toContain(DISCARD_PROMPT)
     await click(byText('Discard'))
@@ -575,27 +579,27 @@ describe('leaving (YAZ-3528 D3)', () => {
     await act(async () => root?.unmount())
     root = null
     await idle(2000)
-    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
   })
 
   it('S13: ✕ while the conflict bar is up asks; Discard keeps the disk\'s version', async () => {
     const { onClose } = await open()
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
     await idle()
     await click(closeBtn())
     expect(strip()).toContain(DISCARD_PROMPT)
     await click(byText('Discard'))
     expect(onClose).toHaveBeenCalledTimes(1)
-    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
   })
 
   it('Esc while the strip is up answers the STRIP, not the modal', async () => {
     const { overlay, onClose } = await open()
     emit(1)
     emit(2)
-    writeAsset.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk is full'))
+    drawingSave.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk is full'))
     await escOn(overlay)
     expect(strip()).toContain(DISCARD_PROMPT)
     await escOn(overlay)
@@ -636,7 +640,7 @@ describe('a sidecar that will not open', () => {
     // Closing is all it offers, and it needs no confirm — there is nothing to discard.
     await click(closeBtn())
     expect(onClose).toHaveBeenCalledTimes(1)
-    expect(writeAsset).not.toHaveBeenCalled()
+    expect(drawingSave).not.toHaveBeenCalled()
   })
 })
 
@@ -666,5 +670,144 @@ describe('the engine seam (🔒 one file, YAZ-868 swaps it)', () => {
   it('the modal has no canvas panel (YAZ-3038): it never passes the prop that turns it on', () => {
     expect(source('./DrawingModal.tsx')).not.toMatch(/onCanvasPanelChange|canvasPanel/)
     expect(source('./ExcalidrawSurface.tsx')).toMatch(/useState\(\(\) => onCanvasPanelChange !== undefined\)/)
+  })
+})
+
+/** YAZ-4039: the note embed's popup has the page links a drawing tab has (pills, hover, clicks, menu, picker, paste). */
+describe('page links in the popup', () => {
+  const linkSource = () => {
+    const source = createWikilinkResolveSource()
+    source.update((target) => (target === 'Known' ? '/v/Known.md' : null))
+    return source
+  }
+  const hit = { elementId: 't', inner: 'Known', start: 0, end: 9, rect: { left: 10, top: 10, right: 60, bottom: 30 } }
+
+  it('has no links with no resolve source: the pills stay text', async () => {
+    await open()
+    expect(seam.props?.links).toBeUndefined()
+  })
+
+  it('draws, opens and shows the menu of a pill, inside the sheet', async () => {
+    const onOpenLinkBackground = vi.fn()
+    const candidates = createWikilinkCandidateSource()
+    candidates.update([{ name: 'Known', insert: 'V-7', label: 'Known', path: '/v/Known.md' }])
+    const { overlay, onClose } = await open('ok', 100, { wikilinks: linkSource(), wikilinkCandidates: candidates, onOpenLink: vi.fn(), onOpenLinkBackground })
+    const links = seam.props!.links!
+    expect(links.hostLinks.resolve('Known')).toEqual({ label: 'Known' })
+    expect(links.hostLinks.onPointerDown?.(hit, new PointerEvent('pointerdown', { metaKey: true }))).toBe(true)
+    expect(onOpenLinkBackground).toHaveBeenCalledWith('/v/Known.md')
+    expect(links.hostLinks.pasteLink?.('/v/Known.md')).toBe('[[V-7]]')
+    act(() => void links.hostLinks.onContextMenu?.({ ...hit, replace: vi.fn() }, new MouseEvent('contextmenu', { clientX: 40, clientY: 20 })))
+    const menu = overlay.querySelector('.drawing-modal .ctx-menu--editor')
+    expect([...menu!.querySelectorAll('.ctx-menu__item')].map((row) => row.textContent)).toContain('Remove link')
+    // a click on the menu is inside the sheet: not a click-away
+    act(() => void menu!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
+/** YAZ-3943 1A1: the popup saves as a tab does — the small scene, only the pictures main lacks, and the 50 MB notice. */
+describe('the popup saves through drawing:save (YAZ-3943 1A1)', () => {
+  const png = (b64: string) => ({ mimeType: 'image/png', dataURL: `data:image/png;base64,${b64}` })
+  const snap = (version: number, files: Record<string, { mimeType: string; dataURL: string }>) =>
+    act(() => seam.props?.onSnapshot({ version, serialize: () => ({ json: BYTES, files, referenced: new Set(Object.keys(files)) }) }))
+
+  it('ships only pictures main does not have: not the ones the board had at load, and each new one once', async () => {
+    readAsset.mockResolvedValue({ ...asset(100), data: btoa(JSON.stringify({ elements: [{ type: 'image', fileId: 'old' }], files: { old: { id: 'old', ...png('b2xk') } } })) })
+    const onNotice = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={() => undefined} onNotice={onNotice} />))
+    snap(1, { old: png('b2xk') })
+    drawingSave.mockResolvedValueOnce({ path: PATH, mtime: 200, size: 1, persisted: ['new', 'old'], movedOut: true })
+    snap(2, { old: png('b2xk'), new: png('bmV3') })
+    await idle()
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [{ fileId: 'new', ...png('bmV3') }], expectedMtime: 100 })
+    expect(onNotice).toHaveBeenCalledWith("This board's pictures moved to the assets folder, because the file passed 50 MB.")
+    snap(3, { old: png('b2xk'), new: png('bmV3') })
+    await idle()
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 200 })
+  })
+
+  it('YAZ-4071 7H: Keep mine ships every picture again: the version it overwrites may lack one', async () => {
+    readAsset.mockResolvedValue({ ...asset(100), data: btoa(JSON.stringify({ elements: [{ type: 'image', fileId: 'pic' }], files: { pic: { id: 'pic', ...png('cGlj') } } })) })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={() => undefined} />))
+    snap(1, { pic: png('cGlj') })
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    snap(2, { pic: png('cGlj') })
+    await idle()
+    expect(drawingSave).toHaveBeenLastCalledWith(expect.objectContaining({ newFiles: [] }))
+    await click(byText('Keep mine'))
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [{ fileId: 'pic', ...png('cGlj') }], expectedMtime: 555 })
+  })
+
+  it('YAZ-4071 7H: a save that moved the pictures out by the 50 MB rule replaces the set, so a picture deleted in it ships again after an undo', async () => {
+    readAsset.mockResolvedValue({ ...asset(100), data: btoa(JSON.stringify({ elements: [{ type: 'image', fileId: 'a' }, { type: 'image', fileId: 'b' }], files: { a: { id: 'a', ...png('YQ==') }, b: { id: 'b', ...png('Yg==') } } })) })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={() => undefined} />))
+    snap(1, { a: png('YQ=='), b: png('Yg==') })
+    drawingSave.mockResolvedValueOnce({ path: PATH, mtime: 200, size: 1, persisted: ['a'], movedOut: true })
+    snap(2, { a: png('YQ==') })
+    await idle()
+    snap(3, { a: png('YQ=='), b: png('Yg==') })
+    await idle()
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [{ fileId: 'b', ...png('Yg==') }], expectedMtime: 200 })
+  })
+})
+
+/** YAZ-4074 6A item 12: the popup says what a tab says when a board's pictures are missing. */
+describe('missing pictures in the popup', () => {
+  it('says so once when it opens, as a drawing tab does', async () => {
+    vi.mocked(api.drawing.load).mockRejectedValue(new Error('no store'))
+    readAsset.mockResolvedValue({ ...asset(100), data: btoa(JSON.stringify({ elements: [{ type: 'image', fileId: 'gone' }, { type: 'image', fileId: 'lost' }, { type: 'image', fileId: 'here' }], files: { here: { id: 'here', mimeType: 'image/png', dataURL: 'data:image/png;base64,aGk=' } } })) })
+    const onNotice = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={() => undefined} onNotice={onNotice} />))
+    await act(async () => undefined)
+    expect(onNotice).toHaveBeenCalledTimes(1)
+    expect(onNotice).toHaveBeenCalledWith('2 pictures of this board are missing', 'error')
+  })
+})
+
+/** YAZ-3943 demo round 3: a board naming an outside pictures folder this Mac has not allowed asks in the popup too. */
+describe('the outside pictures folder in the popup', () => {
+  const board = (block: Record<string, unknown>) => ({ ...asset(100), data: btoa(JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, ...block }, elements: [], appState: {}, files: {} })) })
+
+  it('asks once when it opens; "Not now" allows nothing; a board with its folder in the vault asks main nothing', async () => {
+    const list = vi.mocked(api.pictureFolders.list)
+    list.mockClear()
+    readAsset.mockResolvedValue(board({ pictures: 'assets', picturesFolder: '/Users/me/Pictures/Boards' }))
+    await act(async () => {
+      container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      root.render(<DrawingModal root={ROOT} target={TARGET} theme="light" feed={createDrawingFeed()} onClose={vi.fn()} />)
+    })
+    await act(async () => undefined)
+    expect(container?.querySelector('.confirm__text')?.textContent).toBe(`${ALLOW_FOLDER_TITLE}${allowFolderBody('~/Pictures/Boards')}`)
+    act(() => byText('Not now')!.click())
+    expect(container?.querySelector('.confirm__text')).toBeNull()
+    expect(api.pictureFolders.allow).not.toHaveBeenCalled()
+    act(() => root?.unmount())
+    container?.remove()
+
+    list.mockClear()
+    readAsset.mockResolvedValue(board({ pictures: 'assets', picturesFolder: 'Board pictures' }))
+    await act(async () => {
+      container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      root.render(<DrawingModal root={ROOT} target={TARGET} theme="light" feed={createDrawingFeed()} onClose={vi.fn()} />)
+    })
+    expect(list).not.toHaveBeenCalled()
+    expect(container?.querySelector('.confirm__text')).toBeNull()
   })
 })

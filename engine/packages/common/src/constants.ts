@@ -363,6 +363,12 @@ export const DEFAULT_IMAGE_OPTIONS: AppProps["imageOptions"] = {
   maxFileSizeBytes: 4 * 1024 * 1024,
 };
 
+/** YAZ-3944 D3: an added GIF over 2 MB or 800 px shrinks to 800 px on its long side, every frame kept. */
+export const GIF_SHRINK_ABOVE_BYTES = 2 * 1024 * 1024;
+export const GIF_SHRINK_MAX_SIDE = 800;
+/** YAZ-3944 D3: the GIF limit after the shrink (other pictures keep `maxFileSizeBytes`). */
+export const GIF_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+
 export const SVG_NS = "http://www.w3.org/2000/svg";
 export const SVG_DOCUMENT_PREAMBLE = `<?xml version="1.0" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
