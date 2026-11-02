@@ -37,6 +37,7 @@ import { getTextEditor, updateTextEditor } from "../tests/queries/dom";
 import {
   GlobalTestState,
   act,
+  exactFontSizeInput,
   openTextToolbarPopover,
   render,
   screen,
@@ -3248,7 +3249,8 @@ describe("textWysiwyg", () => {
       ).toEqual(FONT_FAMILY["Comic Shanns"]);
       expect(getOriginalContainerHeightFromCache(rectangle.id)).toBe(75);
 
-      const fontSize = screen.getByLabelText("Exact font size");
+      // YAZ-4074 6A item 22: a shape's text has the size popover
+      const fontSize = exactFontSizeInput();
       fireEvent.change(fontSize, { target: { value: "36" } });
       fireEvent.blur(fontSize);
       expect(

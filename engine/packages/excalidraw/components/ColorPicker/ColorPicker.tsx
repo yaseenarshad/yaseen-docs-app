@@ -62,6 +62,8 @@ interface ColorPickerProps {
   morePicks?: readonly string[];
   /** YAZ-3943 demo 2: a "None" in the ▾'s popover (the highlight). */
   onNone?: () => void;
+  /** YAZ-4074 6B: the swatches' names by color, for a screen reader (the highlight's). */
+  pickLabels?: Readonly<Record<string, string>>;
   /**
    * YAZ-3943 demo 2: the full picker's own open state, for a host whose action does not take `openPopup`
    * (the highlight). Absent: the app's `openPopup` as before.
@@ -320,6 +322,7 @@ const MoreColors = ({
   editingTextElement,
   onCustom,
   onNone,
+  pickLabels,
 }: {
   color: string | null;
   label: string;
@@ -330,6 +333,7 @@ const MoreColors = ({
   editingTextElement: boolean;
   onCustom: () => void;
   onNone?: () => void;
+  pickLabels?: Readonly<Record<string, string>>;
 }) => {
   const [open, setOpen] = useState(false);
   const other = !!color && color !== "transparent" && !topPicks.includes(color);
@@ -357,6 +361,7 @@ const MoreColors = ({
           type={type}
           topPicks={morePicks}
           titles={false}
+          labels={pickLabels}
         />
         {onNone && (
           <button
@@ -397,6 +402,7 @@ export const ColorPicker = ({
   appState,
   morePicks,
   onNone,
+  pickLabels,
   popupOpen,
   onPopupOpenChange,
 }: ColorPickerProps) => {
@@ -430,6 +436,7 @@ export const ColorPicker = ({
             topPicks={topPicks}
             // the text toolbar's swatches have no tooltip (YAZ-3943 demo 2)
             titles={!morePicks}
+            labels={pickLabels}
           />
         )}
         {!isCompactMode && !morePicks && <ButtonSeparator />}
@@ -455,6 +462,7 @@ export const ColorPicker = ({
                   editingTextElement={!!appState.editingTextElement}
                   onCustom={openPopup}
                   onNone={onNone}
+                  pickLabels={pickLabels}
                 />
               </span>
             </Popover.Anchor>

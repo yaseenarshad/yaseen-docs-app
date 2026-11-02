@@ -2654,8 +2654,15 @@ export const actionChangeTextHighlight = register<string | null>({
       const fills = names.map((name) => TEXT_HIGHLIGHT_FILLS[name]);
       const pick = (color: string) => {
         const name = names.find((name) => TEXT_HIGHLIGHT_FILLS[name] === color);
+        // YAZ-4074 6B: a click on the pressed color takes it off, as in notes
         updateData(
-          name ?? (color === COLOR_PALETTE.transparent ? null : color),
+          name
+            ? name === current
+              ? null
+              : name
+            : color === COLOR_PALETTE.transparent
+            ? null
+            : color,
         );
       };
       return (
@@ -2677,6 +2684,12 @@ export const actionChangeTextHighlight = register<string | null>({
             }
             onChange={pick}
             onNone={() => updateData(null)}
+            pickLabels={Object.fromEntries(
+              names.map((name) => [
+                TEXT_HIGHLIGHT_FILLS[name],
+                `Highlight ${name}`,
+              ]),
+            )}
             popupOpen={customOpen}
             onPopupOpenChange={setCustomOpen}
             elements={elements}

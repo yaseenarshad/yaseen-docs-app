@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Popover } from "radix-ui";
 
 import {
@@ -499,6 +499,37 @@ export const ContextualPropertiesToolbar = ({
         value === (textTarget?.fontFamily ?? appState.currentItemFontFamily),
     )?.[0] ?? "Assistant";
 
+  // YAZ-3943 demo 2: font by its name, then a tight size: the size as a value; its popover has
+  // a slider and the exact field. A shape's text and a mixed selection get the same (6A item 22).
+  // Functions: only a toolbar with text makes them.
+  const fontAndSize = () => (
+    <>
+      {renderAction("changeFontFamily", {
+        contextToolbar: true,
+        fontName: fontFamilyName,
+      })}
+      <ToolbarPopover
+        label={`${t("labels.fontSize")} ${fontSizeLabel || "mixed"}`}
+        icon={<span aria-hidden="true">{fontSizeLabel || "–"}</span>}
+        className="text-toolbar-value"
+      >
+        {renderAction("changeFontSize", {
+          contextToolbar: true,
+          sizePopover: true,
+        })}
+      </ToolbarPopover>
+    </>
+  );
+  // YAZ-3943 demo 2: line spacing in a menu too
+  const lineSpacing = () => (
+    <ToolbarPopover
+      label={`Line spacing${lineHeight ? ` ${lineHeight}` : ""}`}
+      icon={<span aria-hidden="true">↕</span>}
+    >
+      {renderAction("changeLineHeight", { contextToolbar: true })}
+    </ToolbarPopover>
+  );
+
   return (
     <Island
       className="contextual-properties-toolbar"
@@ -510,22 +541,7 @@ export const ContextualPropertiesToolbar = ({
     >
       {isTextTarget && (
         <>
-          {/* YAZ-3943 demo 2: font by its name, then a tight size */}
-          {renderAction("changeFontFamily", {
-            contextToolbar: true,
-            fontName: fontFamilyName,
-          })}
-          {/* YAZ-3943 demo 2: the size as a value; its popover has a slider and the exact field */}
-          <ContextualToolbarPopover
-            label={`${t("labels.fontSize")} ${fontSizeLabel || "mixed"}`}
-            icon={<span aria-hidden="true">{fontSizeLabel || "–"}</span>}
-            className="text-toolbar-value"
-          >
-            {renderAction("changeFontSize", {
-              contextToolbar: true,
-              sizePopover: true,
-            })}
-          </ContextualToolbarPopover>
+          {fontAndSize()}
           <ContextualToolbarDivider />
           <div
             className="contextual-properties-toolbar__group"
@@ -545,7 +561,7 @@ export const ContextualPropertiesToolbar = ({
           {renderAction("changeTextStyle", { contextToolbar: true })}
           <ContextualToolbarDivider />
           {/* YAZ-3943 demo 2: one align button, its menu has the three */}
-          <ContextualToolbarPopover
+          <ToolbarPopover
             label={t("labels.textAlign")}
             icon={
               textAlign === "center"
@@ -556,14 +572,8 @@ export const ContextualPropertiesToolbar = ({
             }
           >
             {renderAction("changeTextAlign", { contextToolbar: true })}
-          </ContextualToolbarPopover>
-          {/* YAZ-3943 demo 2: line spacing in a menu too */}
-          <ContextualToolbarPopover
-            label={`Line spacing${lineHeight ? ` ${lineHeight}` : ""}`}
-            icon={<span aria-hidden="true">↕</span>}
-          >
-            {renderAction("changeLineHeight", { contextToolbar: true })}
-          </ContextualToolbarPopover>
+          </ToolbarPopover>
+          {lineSpacing()}
           <ContextualSecondaryProperties
             renderAction={renderAction}
             showBackgroundColor={predicates.backgroundColor}
@@ -640,10 +650,10 @@ export const ContextualPropertiesToolbar = ({
           {predicates.text && (
             <>
               <ContextualToolbarDivider />
-              {renderAction("changeFontFamily", { contextToolbar: true })}
-              {renderAction("changeFontSize", { contextToolbar: true })}
+              {/* YAZ-4074 6A item 22: the text box's group, in the order font, size, line height */}
+              {fontAndSize()}
+              {lineSpacing()}
               {renderAction("changeTextStyle", { contextToolbar: true })}
-              {renderAction("changeLineHeight", { contextToolbar: true })}
               {predicates.textAlign &&
                 renderAction("changeTextAlign", { contextToolbar: true })}
             </>
@@ -718,10 +728,10 @@ export const ContextualPropertiesToolbar = ({
           {predicates.text && (
             <>
               <ContextualToolbarDivider />
-              {renderAction("changeFontFamily", { contextToolbar: true })}
-              {renderAction("changeFontSize", { contextToolbar: true })}
+              {/* YAZ-4074 6A item 22: the text box's group, in the order font, size, line height */}
+              {fontAndSize()}
+              {lineSpacing()}
               {renderAction("changeTextStyle", { contextToolbar: true })}
-              {renderAction("changeLineHeight", { contextToolbar: true })}
               {predicates.textAlign &&
                 renderAction("changeTextAlign", { contextToolbar: true })}
             </>
@@ -755,9 +765,6 @@ export const ContextualPropertiesToolbar = ({
 export const ContextualToolbarDivider = () => (
   <div className="contextual-properties-toolbar__divider" aria-hidden="true" />
 );
-
-/** The text toolbar's shared popover (YAZ-3943 demo 2): `ToolbarPopover`. */
-export const ContextualToolbarPopover = ToolbarPopover;
 
 const ContextualSecondaryProperties = ({
   renderAction,
@@ -793,10 +800,7 @@ const ContextualSecondaryProperties = ({
   return (
     <>
       <ContextualToolbarDivider />
-      <ContextualToolbarPopover
-        label="More properties"
-        icon={DotsHorizontalIcon}
-      >
+      <ToolbarPopover label="More properties" icon={DotsHorizontalIcon}>
         <div className="contextual-properties-toolbar__secondary-properties">
           {showBackgroundColor &&
             renderAction("changeBackgroundColor", { contextToolbar: true })}
@@ -818,7 +822,7 @@ const ContextualSecondaryProperties = ({
             </div>
           )}
         </div>
-      </ContextualToolbarPopover>
+      </ToolbarPopover>
     </>
   );
 };

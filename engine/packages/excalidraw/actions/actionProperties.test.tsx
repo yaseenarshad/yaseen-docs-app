@@ -832,6 +832,77 @@ describe("element locking", () => {
       );
     });
 
+    it("should take the highlight off with a click on the pressed color, and name each color for a screen reader (YAZ-4074 6B)", () => {
+      const text = API.createElement({ type: "text", text: "Hello world" });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      const group = () =>
+        document.querySelector<HTMLElement>(
+          '.contextual-properties-toolbar [role="group"][aria-label="Highlight"]',
+        )!;
+      const names = (scope: ParentNode) =>
+        Array.from(
+          scope.querySelectorAll<HTMLElement>(
+            '[data-testid^="color-top-pick-"]',
+          ),
+        ).map((swatch) => swatch.getAttribute("aria-label"));
+      expect(names(group())).toEqual([
+        "Highlight yellow",
+        "Highlight green",
+        "Highlight blue",
+      ]);
+      openTextToolbarPopover("Highlight: more");
+      expect(
+        names(document.querySelector(".color-picker__more-popover")!),
+      ).toEqual(["Highlight pink"]);
+
+      const green = () =>
+        queryByTestId(group(), `color-top-pick-${TEXT_HIGHLIGHT_FILLS.green}`)!;
+      fireEvent.click(green());
+      expect(
+        (window.h.app.scene.getElement(text.id) as ExcalidrawTextElement)
+          .textRuns,
+      ).toEqual([{ start: 0, end: 11, highlight: "green" }]);
+      expect(green()).toHaveAttribute("aria-pressed", "true");
+      fireEvent.click(green());
+      expect(
+        (window.h.app.scene.getElement(text.id) as ExcalidrawTextElement)
+          .textRuns,
+      ).toBeUndefined();
+    });
+
+    it.each([
+      ["a shape with text", false],
+      ["a mixed selection", true],
+    ])(
+      "should give %s the text box's text group: font by name, the size popover with its slider, then line spacing (YAZ-4074 6A item 22)",
+      (_, mixed) => {
+        const [container, text] = API.createTextContainer();
+        const other = API.createElement({ type: "ellipse", x: 300 });
+        API.setElements([container, text, other]);
+        API.setSelectedElements(mixed ? [container, other] : [container]);
+        const labels = [
+          ...document.querySelectorAll<HTMLElement>(
+            ".contextual-properties-toolbar [aria-label]",
+          ),
+        ].map((node) => node.getAttribute("aria-label")!);
+        const at = (start: string) =>
+          labels.findIndex((label) => label.startsWith(start));
+        const order = ["Show font picker", "Font size", "Line spacing"].map(at);
+        expect(order.every((index) => index >= 0)).toBe(true);
+        expect([...order].sort((a, b) => a - b)).toEqual(order);
+        expect(labels[at("Show font picker")]).toMatch(/^Show font picker: \S/);
+        expect(labels[at("Font size")]).toBe(
+          `Font size ${(text as ExcalidrawTextElement).fontSize}`,
+        );
+        // the old − and + buttons are gone
+        expect(labels).not.toContain("Decrease font size");
+        expect(labels).not.toContain("Increase font size");
+        openTextToolbarPopover("Font size");
+        expect(document.querySelector(".font-size-popover")).not.toBeNull();
+      },
+    );
+
     it("should use the text toolbar's three colors and its ▾ for exclusive text selections (YAZ-3943 demo 2)", () => {
       const firstText = API.createElement({ type: "text", text: "First" });
       const secondText = API.createElement({ type: "text", text: "Second" });
