@@ -17,7 +17,8 @@
  *  2. `cellSchemas` ($nodeSchema extensions): a table cell serialises its paragraph content
  *     directly. Milkdown's paragraph runner always drops a paragraph's LAST hardbreak (right for
  *     prose, wrong in a cell — a trailing `<br>` would decay one per save), and wrote `<br />` for
- *     an empty cell. Several paragraphs in one cell are joined by a break. `withCellStyle` adds
+ *     an empty cell. Several paragraphs in one cell are joined by a break. A body cell also holds
+ *     lists (YAZ-3818 D1), written as one line of HTML (`table/cellLists.ts`, D2). `withCellStyle` adds
  *     the cell's `fill` and `color` (YAZ-3758) in the same extension: `extendSchema` always derives
  *     from the ORIGINAL schema, so a second extension would drop this one.
  *  3. `cellBreakKeymap` ($shortcut): Enter and Shift-Enter inside a table cell always insert a
@@ -36,6 +37,7 @@ import type { RootContent } from 'mdast'
 import { defaultHandlers } from 'mdast-util-to-markdown'
 import type { Options as ToMarkdownOptions } from 'mdast-util-to-markdown'
 import { visit } from 'unist-util-visit'
+import { cellListsRemark, writeCellBlocks } from './table/cellLists'
 import { withCellStyle } from './table/tableStyle'
 
 const BR = /^<br\s*\/?>$/i
@@ -77,16 +79,17 @@ const cellToMarkdown = (typeName: string) => ({
   match: (node: PMNode) => node.type.name === typeName,
   runner: (state: SerializerState, node: PMNode) => {
     state.openNode('tableCell')
-    node.forEach((paragraph, _, i) => {
-      if (i > 0) state.addNode('break')
-      state.next(paragraph.content)
-    })
+    writeCellBlocks(state, node)
     state.closeNode()
   },
 })
 
+/** What a body cell holds: lines and lists (YAZ-3818 D1). Paragraph first, so `createAndFill` makes one empty line. */
+export const CELL_CONTENT = '(paragraph | bullet_list | ordered_list)+'
+
 export const cellSchemas = [
-  tableCellSchema.extendSchema((prev) => (ctx) => withCellStyle({ ...prev(ctx), toMarkdown: cellToMarkdown('table_cell') })),
+  tableCellSchema.extendSchema((prev) => (ctx) => withCellStyle({ ...prev(ctx), content: CELL_CONTENT, toMarkdown: cellToMarkdown('table_cell') })),
+  // A header cell stays one line (YAZ-3818 D7).
   tableHeaderSchema.extendSchema((prev) => (ctx) => withCellStyle({ ...prev(ctx), toMarkdown: cellToMarkdown('table_header') })),
 ]
 
@@ -115,5 +118,8 @@ export const cellBreakKeymap = $shortcut((ctx: Ctx) => ({
   InsertCellBreakShift: { key: 'Shift-Enter', priority: PRIORITY, onRun: () => insertCellBreak(ctx) },
 }))
 
-/** Register with `editor.use(inlineBreaks)` — BEFORE Milkdown's `remarkPreserveEmptyLinePlugin`. */
-export const inlineBreaks = [inlineBreaksRemark, ...cellSchemas, cellBreakKeymap].flat()
+/**
+ * Register with `editor.use(inlineBreaks)` — BEFORE Milkdown's `remarkPreserveEmptyLinePlugin`.
+ * `cellListsRemark` runs right after `inlineBreaksRemark`: it reads a cell's `<br>` as a `break`.
+ */
+export const inlineBreaks = [inlineBreaksRemark, cellListsRemark, ...cellSchemas, cellBreakKeymap].flat()
