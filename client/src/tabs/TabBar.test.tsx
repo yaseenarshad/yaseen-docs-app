@@ -195,6 +195,8 @@ describe('TabBar', () => {
     const onToggleOverview = vi.fn()
     const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', preview: '/v/b.md', onKeep, onToggleOverview, overviewOpen: true, ...noop, ...noNav })
     expect([...el.querySelectorAll('.tabbar__tab--preview [role="tab"]')].map((t) => t.textContent)).toEqual(['b'])
+    // Its tooltip says why it is italic and how to keep it (YAZ-4156 11); a kept tab's does not.
+    expect([...el.querySelectorAll<HTMLElement>('[role="tab"]')].map((t) => t.title)).toEqual(['/v/a.md', '/v/b.md\nPreview: double-click to keep'])
     act(() => void el.querySelectorAll('[role="tab"]')[1].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
     expect(onKeep).toHaveBeenCalledExactlyOnceWith('/v/b.md')
 
@@ -869,6 +871,14 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
     expect(el.querySelector('.tabbar .tabbar-nav__btn')).toBeNull()
   })
 
+  it('with a new tab to open a step in, the tooltip names the clicks that are not a step too (YAZ-4156 1)', () => {
+    const el = mount({ ...tabs, ...noNav, onOpenStep: vi.fn() })
+    expect([...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')].map((b) => b.title)).toEqual([
+      'Back (⌥⌘←)\n⌘-click: open in a new tab\nRight-click or hold: history',
+      'Forward (⌥⌘→)\n⌘-click: open in a new tab\nRight-click or hold: history',
+    ])
+  })
+
   it('with the sidebar collapsed (YAZ-1759), Show sidebar leads the row as a peer of ◀ ▶ and reopens on click', () => {
     const onShowSidebar = vi.fn()
     const el = mount({ ...tabs, ...noNav, onShowSidebar })
@@ -970,21 +980,32 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
       expect([onBack.mock.calls.length, onOpenStep.mock.calls.length]).toEqual([1, 7])
     })
 
-    it('a row of the menu takes the same clicks: ⌘ or middle behind, ⇧ in front; the menu closes, and the row does not go there (YAZ-4156 D3)', () => {
+    it('a row of the menu takes the same clicks: ⌘ or middle behind, ⇧ in front; the row does not go there (YAZ-4156 D3); a tab behind keeps the menu open, one in front closes it (YAZ-4156 3)', () => {
       const onGoToStep = vi.fn()
       const onOpenStep = vi.fn()
       const el = mount({ ...tabs, titles, canBack: true, canForward: false, onBack: vi.fn(), onForward: vi.fn(), backSteps, onGoToStep, onOpenStep, zoomLabels })
-      const open = () => press(btn(el, 'Back')!, 'contextmenu')
-      open()
+      press(btn(el, 'Back')!, 'contextmenu')
       press(rows()[1], 'click', { metaKey: true })
-      expect(rows()).toHaveLength(0)
-      open()
-      press(rows()[0], 'click', { shiftKey: true })
-      open()
+      press(rows()[2], 'auxclick', { button: 1 })
       press(rows()[2], 'auxclick', { button: 2, metaKey: true })
       expect(rows()).toHaveLength(3)
-      press(rows()[2], 'auxclick', { button: 1 })
-      expect([onOpenStep.mock.calls, rows().length, onGoToStep.mock.calls.length]).toEqual([[[17, false], [41, true], [9, false]], 0, 0])
+      press(rows()[0], 'click', { shiftKey: true })
+      expect([onOpenStep.mock.calls, rows().length, onGoToStep.mock.calls.length]).toEqual([[[17, false], [9, false], [41, true]], 0, 0])
+    })
+
+    it('each row has its page\'s icon (YAZ-4156 2); a row whose step left the list while the menu was open is grey and does nothing (YAZ-4156 4, 14)', () => {
+      const onGoToStep = vi.fn()
+      const onOpenStep = vi.fn()
+      const props = { ...tabs, titles, canBack: true, canForward: false, onBack: vi.fn(), onForward: vi.fn(), backSteps, onGoToStep, onOpenStep, zoomLabels }
+      const el = mount(props)
+      press(btn(el, 'Back')!, 'contextmenu')
+      expect(rows().map((r) => r.querySelector('.ctx-menu__label > .file-icon') !== null)).toEqual([true, true, true])
+      // A tab closes (or its page is deleted) and its step leaves the list: the open menu keeps the row, grey.
+      act(() => root?.render(<TabBar roots={['/v']} {...props} backSteps={backSteps.filter((s) => s.id !== 17)} />))
+      expect(rows().map((r) => r.disabled)).toEqual([false, true, false])
+      press(rows()[1], 'click', { metaKey: true })
+      press(rows()[1], 'click')
+      expect([onOpenStep.mock.calls.length, onGoToStep.mock.calls.length, rows().length]).toEqual([0, 0, 3])
     })
   })
 })
@@ -996,8 +1017,8 @@ describe('a zoomed tab\'s tooltip (YAZ-3647 E4)', () => {
     const tabs = [{ id: 'z', path: '/v/trip.md', zoom: 'k1:0' }, { id: 'u', path: '/v/trip.md', zoom: 'k2:0' }, { id: 'p', path: '/v/trip.md' }, { id: 'n', path: '/v/trip.md', name: 'Lisbon', zoom: 'k1:0' }]
     act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map([['/v/trip.md', 'Trip plan']])} windowId="w1" tabs={tabs} active="z" zoomLabels={new Map([['k1:0', 'Day 1: Lisbon']])} onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} {...noNav} />))
     const tab = (id: string) => container!.querySelector<HTMLButtonElement>(`[data-tab="${id}"] [role="tab"]`)!
-    expect(['z', 'u', 'p', 'n'].map((id) => tab(id).title)).toEqual(['Trip plan › Day 1: Lisbon\n/v/trip.md', '/v/trip.md', '/v/trip.md', 'Trip plan › Day 1: Lisbon\n/v/trip.md'])
-    expect(['z', 'n'].map((id) => tab(id).textContent)).toEqual(['Trip plan', 'Lisbon'])
+    expect(['z', 'u', 'p', 'n'].map((id) => tab(id).title)).toEqual(['Trip plan › Day 1: Lisbon\n/v/trip.md\n1 of 4', '/v/trip.md\n2 of 4', '/v/trip.md\n3 of 4', 'Trip plan › Day 1: Lisbon\n/v/trip.md\n4 of 4'])
+    expect(['z', 'n'].map((id) => tab(id).querySelector('.tabbar__name')?.textContent)).toEqual(['Trip plan', 'Lisbon'])
   })
 })
 
@@ -1152,7 +1173,9 @@ describe('TabBar copies (YAZ-2940 D1): two tabs of one file', () => {
     act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map()} windowId="w1" tabs={tabs} active="t3" onActivate={onActivate} onClose={onClose} onMove={vi.fn()} onMoveToNewWindow={onMoveToNewWindow} {...noNav} />))
     const el = container
     expect([...el.querySelectorAll<HTMLElement>('.tabbar__tab')].map((tab) => tab.dataset.tab)).toEqual(['t1', 't2', 't3'])
-    expect([...el.querySelectorAll('[role="tab"]')].map((tab) => [tab.textContent, tab.getAttribute('aria-selected')])).toEqual([['a', 'false'], ['b', 'false'], ['a', 'true']])
+    expect([...el.querySelectorAll('[role="tab"]')].map((tab) => [tab.querySelector('.tabbar__name')?.textContent, tab.getAttribute('aria-selected')])).toEqual([['a', 'false'], ['b', 'false'], ['a', 'true']])
+    // Each copy wears its number before the name, and its tooltip says "1 of 2", as the tab board's card (YAZ-4156 10); a page with one tab has none.
+    expect([...el.querySelectorAll('[role="tab"]')].map((tab) => [tab.querySelector('.tabbar__copy')?.textContent ?? null, (tab as HTMLElement).title])).toEqual([['1', '/v/a.md\n1 of 2'], [null, '/v/b.md'], ['2', '/v/a.md\n2 of 2']])
     act(() => el.querySelector<HTMLButtonElement>('[data-tab="t1"] [role="tab"]')?.click())
     expect(onActivate).toHaveBeenCalledWith('t1')
     act(() => el.querySelector<HTMLButtonElement>('[data-tab="t3"] .tabbar__close')?.click())
@@ -1225,8 +1248,8 @@ describe('TabBar display name (YAZ-2949 D4, D5)', () => {
 
   it('S11, S14: a named tab shows its name; the tooltip gives the page name, then the path; the ✕ names the tab by its display name', () => {
     const el = mountIds()
-    expect(tabs(el).map((t) => t.querySelector('.tabbar__label')?.textContent)).toEqual(['Plan', 'Outline'])
-    expect(tabs(el).map((t) => t.querySelector<HTMLElement>('.tabbar__btn')?.title)).toEqual([A, `Plan\n${A}`])
+    expect(tabs(el).map((t) => t.querySelector('.tabbar__name')?.textContent)).toEqual(['Plan', 'Outline'])
+    expect(tabs(el).map((t) => t.querySelector<HTMLElement>('.tabbar__btn')?.title)).toEqual([`${A}\n1 of 2`, `Plan\n${A}\n2 of 2`])
     expect(tabs(el)[1].querySelector('.tabbar__close')?.getAttribute('aria-label')).toBe('Close Outline')
   })
 

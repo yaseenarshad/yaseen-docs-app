@@ -324,6 +324,19 @@
   margin: 0 4px 0 0;
 }
 
+/* A copy's number (YAZ-4156 10): the board's "1 of 2" chip, small, before the name, so a 72px tab still shows it. */
+.tabbar__copy {
+  flex: none;
+  margin: 0 4px 0 0;
+  padding: 0 4px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 14px;
+  color: var(--fg-muted);
+  background: var(--bg-hover);
+}
+
 .taboverview__asleep {
   margin-left: 6px;
 }
