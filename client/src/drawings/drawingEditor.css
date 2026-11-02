@@ -68,6 +68,31 @@
   z-index: calc(var(--zIndex-ui-top, 100) + 1);
 }
 
+/* YAZ-4071 7P: the engine's top row is `1fr 2fr 1fr` (`1fr 1fr 1fr` from 1536 px), and an `fr` column never gets
+   smaller than its content. In a narrow pane (the sidebar open, a window under about 1,055 px) the row ran past the
+   window, and the cog, its menu and the save status went with it. Here the side columns keep their content, and the
+   toolbar's column gets the rest: its tools scroll sideways, as the engine's text toolbar does. When the row fits, the
+   toolbar stays in the middle, where the old columns put it. The scroll is on the tools' own row, under the Island:
+   the "more tools" menu and the hint are positioned on the Island, so they are not cut. */
+.editor--drawing .excalidraw .App-menu_top {
+  grid-template-columns: 1fr auto 1fr;
+}
+
+.editor--drawing .excalidraw .App-menu_top > .shapes-section,
+.editor--drawing .excalidraw .App-menu_top > .shapes-section > div {
+  min-width: 0;
+}
+
+.editor--drawing .excalidraw .App-menu_top .App-toolbar-container {
+  max-width: 100%;
+  grid-auto-columns: minmax(0, max-content);
+}
+
+.editor--drawing .excalidraw .App-menu_top .App-toolbar > .Stack_horizontal {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
 /* The surface's own element fills the frame, as the engine's does — in the tab and in the embed's
    modal alike. In the tab it is also the ⌘F / ⌘C capture host and the PRESENTATION's containing block
    (YAZ-3038): the player is a sibling of the engine, absolutely positioned over this pane rather than

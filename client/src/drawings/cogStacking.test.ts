@@ -30,3 +30,39 @@ describe('YAZ-4071 7J: the page cog menu and its panel on a drawing open over th
     }
   })
 })
+
+/**
+ * YAZ-4071 7P: the engine's top row (`.App-menu_top`, `1fr 2fr 1fr`) never got smaller than the main toolbar, so in a
+ * narrow pane the cog (in the row's right column) was off the window. jsdom has no layout: this reads the rules that let
+ * the toolbar's column take only the room that is left. The numbers on screen are on YAZ-4152.
+ */
+describe('YAZ-4071 7P: in a narrow pane the toolbar gets smaller, and the page cog stays in the window', () => {
+  /** The body of the rule whose selector list holds `selector` exactly. */
+  const rule = (selector: string) => {
+    const body = [...drawingCss.matchAll(/([^{}]+)\{([^}]*)\}/g)].find(([, list]) => list.split(',').some((s) => s.trim().replace(/\s+/g, ' ') === selector))?.[2]
+    expect(body, selector).toBeDefined()
+    return body!
+  }
+  const scope = '.editor--drawing .excalidraw .App-menu_top'
+
+  it('the side columns keep their content and the toolbar column gets the rest', () => {
+    // the engine's own rule, which this overrides
+    expect(engineCss).toMatch(/\.excalidraw \.App-menu_top\s*\{\s*grid-template-columns:\s*1fr 2fr 1fr/)
+    expect(rule(scope)).toMatch(/grid-template-columns:\s*1fr auto 1fr/)
+  })
+
+  it('each box from the column down to the toolbar can be narrower than its tools', () => {
+    expect(rule(`${scope} > .shapes-section`)).toMatch(/min-width:\s*0/)
+    expect(rule(`${scope} > .shapes-section > div`)).toMatch(/min-width:\s*0/)
+    const container = rule(`${scope} .App-toolbar-container`)
+    expect(container).toMatch(/max-width:\s*100%/)
+    expect(container).toMatch(/grid-auto-columns:\s*minmax\(0,\s*max-content\)/)
+  })
+
+  it('the tools scroll sideways in their own row, under the Island, so the "more tools" menu is not cut', () => {
+    expect(rule(`${scope} .App-toolbar > .Stack_horizontal`)).toMatch(/overflow-x:\s*auto/)
+    // the menu and the hint are positioned on the Island: it must stay the box they are placed in, and not scroll
+    expect(engineCss).toMatch(/\.excalidraw \.Island\s*\{[^}]*position:\s*relative/)
+    expect(drawingCss).not.toMatch(/\.App-toolbar\s*\{[^}]*overflow/)
+  })
+})
