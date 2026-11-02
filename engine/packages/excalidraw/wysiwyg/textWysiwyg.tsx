@@ -961,8 +961,13 @@ export const textWysiwyg = ({
 
   const replaceEditorText = (start: number, end: number, text: string) => {
     editable.focus();
-    editable.setRangeText(text, start, end, "end");
-    editable.dispatchEvent(new Event("input"));
+    editable.setSelectionRange(start, end);
+    // YAZ-4071 7L: the browser's own edit is on the text box's undo stack, so
+    // ⌘Z takes back a styled paste or cut (`setRangeText` is not)
+    if (!document.execCommand?.(text ? "insertText" : "delete", false, text)) {
+      editable.setRangeText(text, start, end, "end");
+      editable.dispatchEvent(new Event("input"));
+    }
   };
 
   /**
@@ -1324,13 +1329,8 @@ export const textWysiwyg = ({
         ).split("\n");
         const firstLine = parseTextListLine(formattedLines[0] ?? "").content;
         const insertion = [firstLine, ...formattedLines.slice(1)].join("\n");
-        editable.value =
-          editable.value.slice(0, pasteSelectionStart) +
-          insertion +
-          editable.value.slice(pasteSelectionEnd);
-        const nextCaret = pasteSelectionStart + insertion.length;
-        editable.setSelectionRange(nextCaret, nextCaret);
-        editable.dispatchEvent(new Event("input"));
+        // YAZ-4071 7L: undoable, as a plain paste
+        replaceEditorText(pasteSelectionStart, pasteSelectionEnd, insertion);
         return true;
       };
 
@@ -1360,17 +1360,12 @@ export const textWysiwyg = ({
               if (insertPastedText(text)) {
                 return;
               }
-              const { selectionStart, selectionEnd, value } = editable;
-
-              editable.value =
-                value.slice(0, selectionStart) +
-                text +
-                value.slice(selectionEnd);
-
-              const newPos = selectionStart + text.length;
-              editable.selectionStart = editable.selectionEnd = newPos;
-
-              editable.dispatchEvent(new Event("input"));
+              // YAZ-4071 7L: undoable, as a plain paste
+              replaceEditorText(
+                editable.selectionStart,
+                editable.selectionEnd,
+                text,
+              );
             }
           }
 

@@ -1645,6 +1645,63 @@ describe("textWysiwyg", () => {
           expect(cut.data["text/html"]).toBe("<p><strong>ab</strong></p>");
           expect(textarea.value).toBe(" cd");
         });
+
+        // YAZ-4071 7L: `setRangeText` is not on the text box's undo stack, so
+        // ⌘Z did not take back a styled paste or cut. They now go through the
+        // browser's own edit (`execCommand`), as the typed list rule does.
+        // jsdom has no `execCommand` and no undo: this one does the edit as
+        // the browser does, and records each call.
+        it("YAZ-4071 7L: a styled paste, a styled cut and a paste on a list line use the browser's undoable edit, and keep their styles", async () => {
+          const calls: { command: string; text: string; at: number[] }[] = [];
+          const execCommand = vi.fn(
+            (command: string, _ui?: boolean, text = "") => {
+              const { selectionStart, selectionEnd } = textarea;
+              calls.push({ command, text, at: [selectionStart, selectionEnd] });
+              textarea.setRangeText(text, selectionStart, selectionEnd, "end");
+              textarea.dispatchEvent(new Event("input"));
+              return true;
+            },
+          );
+          Object.defineProperty(document, "execCommand", {
+            configurable: true,
+            value: execCommand,
+          });
+          try {
+            type("XY");
+            textarea.setSelectionRange(1, 1);
+            paste("<p>c<em>d</em></p>", "cd");
+            expect(calls).toEqual([
+              { command: "insertText", text: "cd", at: [1, 1] },
+            ]);
+            expect(textarea.value).toBe("XcdY");
+            expect(runs()).toEqual([{ start: 2, end: 3, italic: true }]);
+
+            textarea.setSelectionRange(2, 3);
+            copy("cut");
+            expect(calls[1]).toEqual({
+              command: "delete",
+              text: "",
+              at: [2, 3],
+            });
+            expect(textarea.value).toBe("XcY");
+            expect(runs()).toBeUndefined();
+
+            // a plain paste on a list line (the list's own markers)
+            document.elementFromPoint = () => textarea;
+            type("1. ");
+            paste("", "Alpha\nBeta");
+            await waitFor(() => {
+              expect(textarea.value).toBe("1. Alpha\n2. Beta");
+            });
+            expect(calls[2]).toEqual({
+              command: "insertText",
+              text: "Alpha\n2. Beta",
+              at: [3, 3],
+            });
+          } finally {
+            delete (document as { execCommand?: unknown }).execCommand;
+          }
+        });
       });
 
       describe("YAZ-4102 3E: highlight letters", () => {
