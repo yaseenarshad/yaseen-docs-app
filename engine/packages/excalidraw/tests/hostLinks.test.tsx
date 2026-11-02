@@ -607,19 +607,40 @@ describe("YAZ-4110 5B: a page pasted on the canvas is one pill box", () => {
     expect(text.width).toBe(139);
   });
 
-  it("other text, several lines and ⌘⇧V paste as before", async () => {
+  it("other text and ⌘⇧V paste as before; several lines are ONE box (YAZ-3943 demo 2), the path in it stays text", async () => {
     expect((await paste("see the plan")).originalText).toBe("see the plan");
-    // several lines: a box for each line, as before
+    // several lines: one box with all of them, read from the left
     const count = h.elements.length;
     await paste("/vault/Growth plan.md\nmore");
     expect(
       h.elements
         .slice(count)
         .map((element) => (element as ExcalidrawTextElement).originalText),
-    ).toEqual(["/vault/Growth plan.md", "more"]);
+    ).toEqual(["/vault/Growth plan.md\nmore"]);
+    expect((h.elements.at(-1) as ExcalidrawTextElement).textAlign).toBe("left");
     expect((await paste("/vault/Growth plan.md", true)).originalText).toBe(
       "/vault/Growth plan.md",
     );
+  });
+
+  it("YAZ-3943 demo 2: a note's styled HTML pastes as ONE box with its runs; a link to a vault page becomes its [[link]] pill, another link keeps its words", async () => {
+    const count = h.elements.length;
+    Keyboard.withModifierKeys({ ctrl: true }, () => {
+      Keyboard.keyPress(KEYS.V);
+      document.dispatchEvent(
+        createPasteEvent({
+          types: {
+            "text/plain": "Plan see Growth plan and web",
+            "text/html":
+              '<p><strong>Plan</strong> see <a href="/vault/Growth plan.md">Growth plan</a> and <a href="https://example.com">web</a></p>',
+          },
+        }),
+      );
+    });
+    await waitFor(() => expect(h.elements.length).toBe(count + 1));
+    const text = h.elements.at(-1) as ExcalidrawTextElement;
+    expect(text.originalText).toBe("Plan see [[YAS-1]] and web");
+    expect(text.textRuns).toEqual([{ start: 0, end: 4, bold: true }]);
   });
 });
 

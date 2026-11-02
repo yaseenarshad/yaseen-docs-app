@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mergeBoards } from '@shared/boardMerge'
-import { picturesOut, withPicturesOut } from '@shared/drawingAssets'
+import { hoverLinksOff, picturesOut, withHoverLinks, withPicturesOut } from '@shared/drawingAssets'
 import { isDrawingReadOnly, withDrawingReadOnly } from '@shared/readOnly'
 
 type El = Record<string, unknown> & { id: string }
@@ -203,6 +203,37 @@ describe('mergeBoards — the switches of the yaseendraw block (YAZ-3943 1E): th
       expect(isDrawingReadOnly({ yaseendraw: merged })).toBe(true)
       expect(picturesOut(merged)).toBe(false)
       expect(merged.switched).toEqual({ readonly: 500, pictures: 600 })
+    }
+  })
+
+  it('YAZ-3943 demo round 3: a board\'s own pictures folder rides with "pictures out": the newer switch brings its folder, or takes it away', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    const macA = withPicturesOut(base, true, 1, 300, 'Board pictures')
+    const macB = edited(base, 400)
+    for (const [theirs, mine] of [[macA, macB], [macB, macA]]) {
+      expect(blockOf(base, theirs, mine)).toMatchObject({ pictures: 'assets', picturesFolder: 'Board pictures', switched: { pictures: 300 } })
+    }
+    // Mac B later moves them to the assets folder (no folder key): the folder goes, though Mac A's side still names it.
+    const toAssets = withPicturesOut(macA, true, 1, 500, null)
+    for (const [theirs, mine] of [[toAssets, edited(macA, 600)], [edited(macA, 600), toAssets]]) {
+      const merged = blockOf(macA, theirs, mine)
+      expect(picturesOut(merged)).toBe(true)
+      expect(merged).not.toHaveProperty('picturesFolder')
+    }
+    // Both Macs picked a folder: the newer pick wins, folder and all.
+    const older = withPicturesOut(base, true, 1, 300, 'Old')
+    const newer = withPicturesOut(base, true, 1, 700, '/Users/me/Pictures/Boards')
+    for (const [theirs, mine] of [[older, newer], [newer, older]]) expect(blockOf(base, theirs, mine).picturesFolder).toBe('/Users/me/Pictures/Boards')
+  })
+
+  it('YAZ-3943 demo 2: the board\'s "Link preview on hover" is a switch too: off on one Mac is never lost to the other Mac\'s edit', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    const macA = withHoverLinks(base, false, 1, 300)
+    const macB = edited(base, 400)
+    for (const [theirs, mine] of [[macA, macB], [macB, macA]]) {
+      const merged = blockOf(base, theirs, mine)
+      expect(hoverLinksOff(merged)).toBe(true)
+      expect(merged.switched).toEqual({ hoverLinks: 300 })
     }
   })
 

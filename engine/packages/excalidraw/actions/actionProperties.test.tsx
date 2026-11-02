@@ -15,7 +15,10 @@ import {
   STROKE_WIDTH,
   THEME,
 } from "@excalidraw/common";
-import { getTextBackgroundNominalPadding } from "@excalidraw/element";
+import {
+  getTextBackgroundNominalPadding,
+  TEXT_HIGHLIGHT_FILLS,
+} from "@excalidraw/element";
 
 import type {
   ExcalidrawTextElement,
@@ -25,9 +28,37 @@ import type {
 import { Excalidraw } from "../index";
 import { API } from "../tests/helpers/api";
 import { Keyboard, UI } from "../tests/helpers/ui";
-import { render, togglePopover } from "../tests/test-utils";
+import {
+  exactFontSizeInput,
+  openTextToolbarPopover,
+  render,
+  togglePopover,
+} from "../tests/test-utils";
 
 import { actionChangeFontFamily } from "./actionProperties";
+
+/** The text toolbar's three fixed text colors (YAZ-3943 demo 2), then its ▾'s five. */
+const TEXT_TOOLBAR_COLOR_PICKS = [
+  COLOR_PALETTE.black,
+  COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.blue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+];
+const TEXT_TOOLBAR_MORE_COLORS = [
+  COLOR_PALETTE.green[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.white,
+  COLOR_PALETTE.orange[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.violet[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.gray[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+];
+/** The color picks shown in `scope`, by color. */
+const picksIn = (scope: ParentNode) =>
+  Array.from(
+    scope.querySelectorAll<HTMLElement>('[data-testid^="color-top-pick-"]'),
+  ).map((element) => element.dataset.testid?.replace("color-top-pick-", ""));
+const textColorGroup = () =>
+  document.querySelector<HTMLElement>(
+    '.contextual-properties-toolbar [role="group"][aria-label="Text color"]',
+  )!;
 
 describe("element locking", () => {
   beforeEach(async () => {
@@ -251,6 +282,8 @@ describe("element locking", () => {
       API.setAppState({
         currentItemTextAlign: "right",
       });
+      // YAZ-3943 demo 2: align is one button with a menu of the three
+      openTextToolbarPopover("Text align");
 
       const centerTextAlign = queryByTestId(
         document.body,
@@ -601,6 +634,8 @@ describe("element locking", () => {
         originalText: "• First line\n• Second line",
       });
 
+      // YAZ-3943 demo 2: line spacing is in a menu
+      openTextToolbarPopover("Line spacing");
       const lineHeightInput = queryByTestId(
         document.body,
         "text-line-height",
@@ -649,6 +684,7 @@ describe("element locking", () => {
       });
       API.setElements([text]);
       API.setSelectedElements([text]);
+      openTextToolbarPopover("Text align");
 
       const centerButton = queryByTestId(
         document.body,
@@ -681,12 +717,13 @@ describe("element locking", () => {
         ".contextual-properties-toolbar",
       ) as HTMLElement;
       expect(toolbar).not.toBeNull();
-      expect(toolbar).toHaveTextContent("Text color");
+      // YAZ-3943 demo 2: a labelled group, no "Text color" words
+      expect(textColorGroup()).not.toBeNull();
       expect(
         document.querySelector('[data-viewport-ui-name="stylesPanel"]'),
       ).toBeNull();
 
-      const color = DEFAULT_ELEMENT_STROKE_PICKS[3];
+      const color = TEXT_TOOLBAR_COLOR_PICKS[2];
       fireEvent.click(
         queryByTestId(toolbar, `color-top-pick-${color}`) as HTMLElement,
       );
@@ -695,31 +732,137 @@ describe("element locking", () => {
       });
     });
 
-    it("should use the text stroke quick picks for exclusive text selections", () => {
+    it("should order the compact text toolbar: font by name, size, then color, highlight, the styles, align and line spacing; mixed colors mark no ▾ (YAZ-3943 demo 2)", () => {
+      const red = API.createElement({
+        type: "text",
+        text: "Red",
+        strokeColor: TEXT_TOOLBAR_COLOR_PICKS[1],
+      });
+      const blue = API.createElement({
+        type: "text",
+        text: "Blue",
+        y: 100,
+        strokeColor: TEXT_TOOLBAR_COLOR_PICKS[2],
+      });
+      API.setElements([red, blue]);
+      API.setSelectedElements([red, blue]);
+      const labels = [
+        ...document.querySelectorAll<HTMLElement>(
+          ".contextual-properties-toolbar [aria-label]",
+        ),
+      ].map((node) => node.getAttribute("aria-label")!);
+      const at = (start: string) =>
+        labels.findIndex((label) => label.startsWith(start));
+      const order = [
+        "Show font picker",
+        "Font size",
+        "Text color",
+        "Highlight",
+        "Text align",
+        "Line spacing",
+      ].map(at);
+      expect(order.every((index) => index >= 0)).toBe(true);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
+      // the font shows by its name; the size by its value (the same size on both boxes)
+      expect(labels[at("Show font picker")]).toMatch(/^Show font picker: \S/);
+      expect(labels[at("Font size")]).toBe("Font size 20");
+      // two colors: the ▾ marks nothing (the demo's dots are gone)
+      const more = document.querySelector<HTMLElement>(
+        '[aria-label="Stroke: more"]',
+      )!;
+      expect(more).not.toHaveClass("is-other");
+      expect(more.textContent).toBe("▾");
+    });
+
+    it("should show highlight on the text toolbar for a selected box: three colors, a ▾ with pink, None and Custom…; a pick highlights all its letters and leaves its background (YAZ-3943 demo 2)", () => {
+      const text = API.createElement({
+        type: "text",
+        text: "Hello world",
+        backgroundColor: DEFAULT_ELEMENT_BACKGROUND_PICKS[1],
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      const group = document.querySelector<HTMLElement>(
+        '.contextual-properties-toolbar [role="group"][aria-label="Highlight"]',
+      )!;
+      expect(picksIn(group)).toEqual(
+        ["yellow", "green", "blue"].map((name) => TEXT_HIGHLIGHT_FILLS[name]),
+      );
+      const highlighted = () =>
+        (window.h.app.scene.getElement(text.id) as ExcalidrawTextElement)
+          .textRuns;
+
+      fireEvent.click(
+        queryByTestId(group, `color-top-pick-${TEXT_HIGHLIGHT_FILLS.green}`)!,
+      );
+      expect(highlighted()).toEqual([
+        { start: 0, end: 11, highlight: "green" },
+      ]);
+      expect(window.h.app.scene.getElement(text.id)?.backgroundColor).toBe(
+        DEFAULT_ELEMENT_BACKGROUND_PICKS[1],
+      );
+
+      openTextToolbarPopover("Highlight: more");
+      const more = document.querySelector<HTMLElement>(
+        ".color-picker__more-popover",
+      )!;
+      expect(picksIn(more)).toEqual([TEXT_HIGHLIGHT_FILLS.pink]);
+      const button = (label: string) =>
+        Array.from(more.querySelectorAll("button")).find(
+          (b) => b.textContent === label,
+        )!;
+      fireEvent.click(button("None"));
+      expect(highlighted()).toBeUndefined();
+
+      // the bug fix (item 11): Custom… did nothing; it opens the highlight's own full picker
+      openTextToolbarPopover("Highlight: more");
+      fireEvent.click(
+        Array.from(
+          document.querySelectorAll(".color-picker__more-popover button"),
+        ).find((b) => b.textContent === "Custom…")!,
+      );
+      expect(document.querySelector(".color-picker-content")).not.toBeNull();
+      expect(window.h.state.openPopup).toBeNull();
+      fireEvent.click(queryByTestId(document.body, "color-red")!);
+      const [run] = highlighted()!;
+      expect(run).toMatchObject({ start: 0, end: 11 });
+      expect(run.highlight).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(window.h.app.scene.getElement(text.id)?.backgroundColor).toBe(
+        DEFAULT_ELEMENT_BACKGROUND_PICKS[1],
+      );
+    });
+
+    it("should use the text toolbar's three colors and its ▾ for exclusive text selections (YAZ-3943 demo 2)", () => {
       const firstText = API.createElement({ type: "text", text: "First" });
       const secondText = API.createElement({ type: "text", text: "Second" });
       API.setElements([firstText, secondText]);
       API.setSelectedElements([firstText, secondText]);
 
-      const toolbar = document.querySelector(
-        ".contextual-properties-toolbar",
-      ) as HTMLElement;
-      const renderedPicks = Array.from(
-        toolbar.querySelectorAll<HTMLElement>(
-          '[data-testid^="color-top-pick-"]',
-        ),
-      ).map((element) =>
-        element.dataset.testid?.replace("color-top-pick-", ""),
-      );
-
-      expect(renderedPicks).toEqual(DEFAULT_TEXT_STROKE_PICKS);
-      expect(renderedPicks).toEqual([
+      expect(picksIn(textColorGroup())).toEqual(TEXT_TOOLBAR_COLOR_PICKS);
+      expect(picksIn(textColorGroup())).toEqual([
         COLOR_PALETTE.black,
-        COLOR_PALETTE.white,
         COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-        COLOR_PALETTE.green[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
         COLOR_PALETTE.blue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
       ]);
+      // the swatches have no tooltip: it would cover the popover
+      expect(
+        queryByTestId(
+          textColorGroup(),
+          `color-top-pick-${COLOR_PALETTE.black}`,
+        ),
+      ).not.toHaveAttribute("title");
+      // the ▾ has the other text colors, then "Custom…"; the old text picks are all there
+      openTextToolbarPopover("Stroke: more");
+      const more = document.querySelector<HTMLElement>(
+        ".color-picker__more-popover",
+      )!;
+      expect(picksIn(more)).toEqual(TEXT_TOOLBAR_MORE_COLORS);
+      for (const color of DEFAULT_TEXT_STROKE_PICKS) {
+        expect([...TEXT_TOOLBAR_COLOR_PICKS, ...picksIn(more)]).toContain(
+          color,
+        );
+      }
+      expect(more).toHaveTextContent("Custom…");
     });
 
     it("should use the text stroke quick picks when editing bound text", () => {
@@ -730,6 +873,17 @@ describe("element locking", () => {
       }
       API.setAppState({ editingTextElement: text });
 
+      // YAZ-3943 demo 2: three on the toolbar, the others under its ▾
+      const toolbar = document.querySelector<HTMLElement>(
+        ".contextual-properties-toolbar",
+      )!;
+      expect(picksIn(toolbar)).toEqual(
+        expect.arrayContaining(TEXT_TOOLBAR_COLOR_PICKS),
+      );
+      expect(
+        queryByTestId(toolbar, `color-top-pick-${COLOR_PALETTE.white}`),
+      ).toBeNull();
+      openTextToolbarPopover("Stroke: more");
       DEFAULT_TEXT_STROKE_PICKS.forEach((color) => {
         expect(
           queryByTestId(document.body, `color-top-pick-${color}`),
@@ -745,6 +899,8 @@ describe("element locking", () => {
       });
       API.setElements([text]);
       API.setSelectedElements([text]);
+      // YAZ-3943 demo 2: white is under the text color ▾
+      openTextToolbarPopover("Stroke: more");
 
       const whiteSwatch = queryByTestId(
         document.body,
@@ -788,9 +944,15 @@ describe("element locking", () => {
         queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
       ).toBeNull();
 
+      // YAZ-3943 demo 2: only text: the text toolbar's three colors and its ▾
       API.setSelectedElements([boundText, freeText]);
+      for (const color of TEXT_TOOLBAR_COLOR_PICKS) {
+        expect(
+          queryByTestId(document.body, `color-top-pick-${color}`),
+        ).not.toBeNull();
+      }
       expect(
-        queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
+        document.querySelector('[aria-label="Stroke: more"]'),
       ).not.toBeNull();
 
       API.setSelectedElements([container, freeText]);
@@ -836,7 +998,19 @@ describe("element locking", () => {
         ),
       ).toBeNull();
 
-      togglePopover("Stroke");
+      // YAZ-3943 demo 2: orange is under the ▾; the full palette is its "Custom…"
+      openTextToolbarPopover("Stroke: more");
+      expect(
+        queryByTestId(
+          document.body,
+          `color-top-pick-${COLOR_PALETTE.orange[DEFAULT_ELEMENT_STROKE_COLOR_INDEX]}`,
+        ),
+      ).not.toBeNull();
+      fireEvent.click(
+        Array.from(document.querySelectorAll("button")).find(
+          (button) => button.textContent === "Custom…",
+        )!,
+      );
       expect(queryByTestId(document.body, "color-yellow")).not.toBeNull();
       expect(queryByTestId(document.body, "color-orange")).not.toBeNull();
     });
@@ -856,6 +1030,7 @@ describe("element locking", () => {
       const text = UI.createElement("text");
       await UI.editText(text, "Undo white");
       API.setSelectedElements([text.get() as any]);
+      openTextToolbarPopover("Stroke: more");
 
       fireEvent.click(
         queryByTestId(
@@ -922,6 +1097,8 @@ describe("element locking", () => {
       expect(
         document.querySelector(".contextual-properties-toolbar"),
       ).not.toBeNull();
+      expect(picksIn(textColorGroup())).toEqual(TEXT_TOOLBAR_COLOR_PICKS);
+      openTextToolbarPopover("Stroke: more");
       expect(
         queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
       ).not.toBeNull();
@@ -1611,6 +1788,53 @@ describe("element locking", () => {
       ).toBeCloseTo(0.4 / 0.245);
     });
 
+    it("should set the font size from the size popover's slider (8 to 128): a drag shows each size and is one undo step (YAZ-3943 demo 2)", async () => {
+      const text = UI.createElement("text");
+      await UI.editText(text, "Sized");
+      API.setSelectedElements([text.get() as any]);
+      const fontSize = () =>
+        (window.h.app.scene.getElement(text.id) as ExcalidrawTextElement)
+          .fontSize;
+      const before = fontSize();
+      openTextToolbarPopover("Font size");
+      const slider = document.querySelector<HTMLInputElement>(
+        '.font-size-slider[aria-label="Font size"]',
+      )!;
+      expect(slider).toHaveAttribute("min", "8");
+      expect(slider).toHaveAttribute("max", "128");
+      // past the slider's end (a new box here is 130), the slider sits at its end
+      expect(slider).toHaveValue(
+        String(Math.min(128, Math.max(8, Math.round(before)))),
+      );
+      // no "px" in the popover's exact field
+      expect(
+        document.querySelector(".font-size-popover")?.textContent,
+      ).not.toContain("px");
+
+      const undoEntriesBefore = API.getUndoStack().length;
+      fireEvent.change(slider, { target: { value: "40" } });
+      fireEvent.change(slider, { target: { value: "64" } });
+      expect(fontSize()).toBe(64);
+      expect(
+        document.querySelector('[aria-label="Font size 64"]'),
+      ).not.toBeNull();
+      expect(API.getUndoStack()).toHaveLength(undoEntriesBefore);
+      fireEvent.pointerUp(slider);
+      expect(fontSize()).toBe(64);
+      expect(API.getUndoStack()).toHaveLength(undoEntriesBefore + 1);
+      Keyboard.undo();
+      expect(fontSize()).toBe(before);
+      Keyboard.redo();
+      expect(fontSize()).toBe(64);
+
+      // a size past the slider's end shows it at its end; the exact field still takes it
+      const exact = exactFontSizeInput();
+      fireEvent.change(exact, { target: { value: "200" } });
+      fireEvent.blur(exact);
+      expect(fontSize()).toBe(200);
+      expect(slider).toHaveValue("128");
+    });
+
     it("should keep free-text background rounding proportional to font size", () => {
       const text = {
         ...API.createElement({
@@ -1624,6 +1848,8 @@ describe("element locking", () => {
       API.setElements([text]);
       API.setSelectedElements([text]);
 
+      // YAZ-3943 demo 2: the exact field is in the size popover
+      openTextToolbarPopover("Font size");
       const fontSizeInput = document.querySelector<HTMLInputElement>(
         '[aria-label="Exact font size"]',
       )!;
@@ -1657,6 +1883,8 @@ describe("element locking", () => {
       API.setSelectedElements([text]);
       const initialPadding = getTextBackgroundNominalPadding(text);
 
+      // YAZ-3943 demo 2: the exact field is in the size popover
+      openTextToolbarPopover("Font size");
       const fontSizeInput = document.querySelector<HTMLInputElement>(
         '[aria-label="Exact font size"]',
       )!;

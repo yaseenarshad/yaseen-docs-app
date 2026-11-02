@@ -669,7 +669,7 @@ describe('createStore: loading', () => {
     for (const zoom of [95, 160, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, appZoom: zoom })).toBe(false)
   })
 
-  it('hoverPreviewIn (YAZ-3403 D7, S37): a file from before reads every place on; a missing or broken place reads on and the others keep their values; the channel takes eight booleans only', async () => {
+  it('hoverPreviewIn (YAZ-3403 D7, S37): a file from before reads every place on; a missing or broken place reads on and the others keep their values; the channel takes one boolean per place only', async () => {
     const allOn = { ...DEFAULT_SETTINGS.hoverPreviewIn }
     expect(allOn).toEqual(Object.fromEntries(HOVER_PLACES.map((place) => [place, true])))
     const { hoverPreviewIn: _omitted, ...legacySettings } = DEFAULT_SETTINGS
@@ -683,6 +683,10 @@ describe('createStore: loading', () => {
     const some = createStore(file).get().settings
     expect(some.hoverPreviewIn).toEqual({ ...allOn, tabs: false, search: false }) // links missing → on, newTab broken → on
     expect(some.theme).toBe('dark') // one bad place costs that place only
+    // YAZ-3943 demo 2: a file from before "Links in drawings" reads it on, and keeps its other places.
+    const { drawings: _new, ...beforeDrawings } = { ...allOn, links: false }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, hoverPreviewIn: beforeDrawings } }))
+    expect(createStore(file).get().settings.hoverPreviewIn).toEqual({ ...allOn, links: false, drawings: true })
     for (const bad of ['off', null, 7]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, hoverPreviewIn: bad }).hoverPreviewIn).toEqual(allOn)
 
     expect(isSettings({ ...DEFAULT_SETTINGS, hoverPreviewIn: { ...allOn, links: false } })).toBe(true)
@@ -945,6 +949,33 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings.newTabPlace).toBe('end')
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, newTabPlace: 'left' } }))
     expect(createStore(file).get().settings.newTabPlace).toBe('next')
+  })
+
+  it('newBoardPictures/newBoardPicturesFolder (YAZ-3943 demo 2, round 3): a file without them reads "Inside the board" and no folder; each choice survives; junk falls back, each field alone', async () => {
+    const { newBoardPictures: _pictures, newBoardPicturesFolder: _folder, ...before } = DEFAULT_SETTINGS
+    await seed(valid({ settings: before }))
+    expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
+    expect(DEFAULT_SETTINGS).toMatchObject({ newBoardPictures: 'inside', newBoardPicturesFolder: '' })
+    for (const [newBoardPictures, newBoardPicturesFolder] of [['assets', ''], ['folder', 'Board pictures'], ['folder', '/Users/me/Pictures/Boards']]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, newBoardPictures, newBoardPicturesFolder } }))
+      expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, newBoardPictures, newBoardPicturesFolder })
+    }
+    for (const bad of ['../x', '.git', 'a//b', 'node_modules', 7]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, newBoardPictures: 'folder', newBoardPicturesFolder: bad } }))
+      expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, newBoardPictures: 'folder' })
+    }
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, newBoardPictures: 'desktop', newBoardPicturesFolder: 'pics' } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, newBoardPicturesFolder: 'pics' })
+  })
+
+  it('approvedPictureFolders (YAZ-3943 demo round 3): absent is none; absolute paths only, each once; the rest of the file loads as stored', async () => {
+    const { approvedPictureFolders: _list, ...before } = defaultAppState()
+    await seed({ ...before, sidebarWidth: 300 })
+    expect(createStore(file).get()).toMatchObject({ approvedPictureFolders: [], sidebarWidth: 300 })
+    await seed(valid({ approvedPictureFolders: ['/Users/me/a', 'relative/b', '/Users/me/a', 7, null, '/Volumes/X/c'], sidebarWidth: 300 }))
+    expect(createStore(file).get()).toMatchObject({ approvedPictureFolders: ['/Users/me/a', '/Volumes/X/c'], sidebarWidth: 300 })
+    await seed(valid({ approvedPictureFolders: 'not a list' }))
+    expect(createStore(file).get().approvedPictureFolders).toEqual([])
   })
 
   it('newNoteLocation/newNoteFolder: a pre-C2 file without the keys sanitizes to the defaults (current + "", YAZ-1643); junk falls back (GRO-2240)', async () => {
@@ -2165,6 +2196,27 @@ describe('createStore: persistence', () => {
     await store.flush()
     expect(renames()).toHaveLength(3)
     expect((await onDisk()).sidebarWidth).toBe(333)
+  })
+
+  it('approvePictureFolder / removePictureFolder (YAZ-3943 demo round 3): an absolute folder joins the list once and survives a relaunch; Remove takes it off; a no-op writes nothing', async () => {
+    const store = createStore(file)
+    store.approvePictureFolder('/Users/me/Pictures/Boards')
+    store.approvePictureFolder('/Volumes/Disk/pics')
+    store.approvePictureFolder('/Users/me/Pictures/Boards')
+    store.approvePictureFolder('relative/pics')
+    expect(store.get().approvedPictureFolders).toEqual(['/Users/me/Pictures/Boards', '/Volumes/Disk/pics'])
+    await store.flush()
+    expect(renames()).toHaveLength(1)
+    expect(createStore(file).get().approvedPictureFolders).toEqual(['/Users/me/Pictures/Boards', '/Volumes/Disk/pics'])
+    store.removePictureFolder('/Users/me/Pictures/Boards')
+    store.removePictureFolder('/never/on/it')
+    await store.flush()
+    expect((await onDisk()).approvedPictureFolders).toEqual(['/Volumes/Disk/pics'])
+    expect(renames()).toHaveLength(2)
+    store.approvePictureFolder('/Volumes/Disk/pics')
+    store.removePictureFolder('/never/on/it')
+    await store.flush()
+    expect(renames()).toHaveLength(2)
   })
 
   it('the display name is persisted and restored; a junk one reads as null (YAZ-1974 D3)', async () => {

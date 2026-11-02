@@ -37,6 +37,7 @@ import { getTextEditor, updateTextEditor } from "../tests/queries/dom";
 import {
   GlobalTestState,
   act,
+  openTextToolbarPopover,
   render,
   screen,
   unmountComponent,
@@ -55,6 +56,7 @@ import {
 import { activeEyeDropperAtom } from "../components/EyeDropper";
 import { editorJotaiStore } from "../editor-jotai";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
+import { setKeyBindings, textFieldKeyFor } from "../keyRemap";
 
 const { h } = window;
 
@@ -1663,19 +1665,24 @@ describe("textWysiwyg", () => {
           expect(runs()).toBeUndefined();
         });
 
-        it("the toolbar has the four note colors; a pick colors the selection, and the pressed one takes it off", () => {
+        // The panel beside the canvas at this size (compact) shows all four, then None;
+        // the wide text toolbar's three and ▾ are in `actionProperties.test.tsx`.
+        const pick = (name: string) =>
+          document.querySelector<HTMLButtonElement>(
+            `.text-highlight-pick[aria-label^="Highlight ${name}"]`,
+          )!;
+
+        it("the panel has the four note colors and None; a pick colors the selection, and the pressed one or None takes it off", () => {
           type("Hello world");
           textarea.setSelectionRange(0, 5);
-          const pick = (name: string) =>
-            document.querySelector<HTMLButtonElement>(
-              `[aria-label="Highlight ${name}"]`,
-            )!;
           expect(
             [
               ...document.querySelectorAll<HTMLButtonElement>(
                 ".text-highlight-pick",
               ),
-            ].map((button) => button.getAttribute("aria-label")),
+            ].map(
+              (button) => button.getAttribute("aria-label")!.split(" —")[0],
+            ),
           ).toEqual([
             "Highlight yellow",
             "Highlight green",
@@ -1688,6 +1695,13 @@ describe("textWysiwyg", () => {
           }
           expect(pick("yellow").getAttribute("aria-pressed")).toBe("true");
           act(() => pick("yellow").click());
+          expect(runs()).toBeUndefined();
+          act(() => pick("green").click());
+          act(() =>
+            document
+              .querySelector<HTMLButtonElement>(".text-highlight-none")!
+              .click(),
+          );
           expect(runs()).toBeUndefined();
         });
 
@@ -1709,13 +1723,86 @@ describe("textWysiwyg", () => {
           ]);
         });
 
-        it("a box selected (not in the editor) has no highlight picks: its background works as before", () => {
+        it("a box selected (not in the editor) has the highlight picks too (YAZ-3943 demo 2): a pick highlights all its letters, and its whole-box background is not touched", () => {
           type("Hello world");
           Keyboard.exitTextEditor(textarea);
+          const before = h.elements[0].backgroundColor;
           API.setSelectedElements([
             h.elements[0] as NonDeletedExcalidrawElement,
           ]);
-          expect(document.querySelector(".text-highlight-pick")).toBeNull();
+          act(() => pick("green").click());
+          expect(runs()).toEqual([{ start: 0, end: 11, highlight: "green" }]);
+          expect(h.elements[0].backgroundColor).toBe(before);
+          expect(pick("green").getAttribute("aria-pressed")).toBe("true");
+          // one undo step
+          Keyboard.undo();
+          expect(runs()).toBeUndefined();
+        });
+
+        it("YAZ-3943 demo 2: ⌘⇧H can be changed in Settings › Hotkeys: the user's key highlights in the editor and ⌘⇧H no longer does; with no change ⌘⇧H works", () => {
+          const chord = (
+            code: string,
+            key: string,
+            mods: Partial<Record<"ctrlKey" | "shiftKey" | "altKey", boolean>>,
+          ) => ({
+            code,
+            key,
+            name: key.toUpperCase(),
+            metaKey: false,
+            ctrlKey: false,
+            altKey: false,
+            shiftKey: false,
+            ...mods,
+          });
+          setKeyBindings([
+            {
+              name: "toggleTextHighlight",
+              defaults: [
+                chord(CODES.H, "H", { ctrlKey: true, shiftKey: true }),
+              ],
+              keys: [chord("KeyY", "y", { ctrlKey: true, altKey: true })],
+            },
+          ]);
+          try {
+            type("Hello world");
+            textarea.setSelectionRange(6, 11);
+            highlightKey();
+            expect(runs()).toBeUndefined();
+            fireEvent.keyDown(textarea, {
+              ctrlKey: true,
+              altKey: true,
+              key: "y",
+              code: "KeyY",
+            });
+            expect(runs()).toEqual([
+              { start: 6, end: 11, highlight: "yellow" },
+            ]);
+            expect(
+              textFieldKeyFor("toggleTextHighlight", {
+                ctrlKey: true,
+                altKey: true,
+                shiftKey: false,
+                metaKey: false,
+                key: "y",
+                code: "KeyY",
+              } as KeyboardEvent),
+            ).toBe(true);
+          } finally {
+            setKeyBindings([]);
+          }
+          // no change: the action's own ⌘⇧H
+          expect(
+            textFieldKeyFor("toggleTextHighlight", {
+              ctrlKey: true,
+              shiftKey: true,
+              altKey: false,
+              metaKey: false,
+              key: "H",
+              code: CODES.H,
+            } as KeyboardEvent),
+          ).toBeUndefined();
+          highlightKey();
+          expect(runs()).toBeUndefined();
         });
       });
 
@@ -1979,6 +2066,68 @@ describe("textWysiwyg", () => {
       expect((h.elements[0] as ExcalidrawTextElement).originalText).toBe(
         "First\nSecond\nThird",
       );
+    });
+
+    // YAZ-3943 demo 2: a list started by typing, as in notes; a list reads from the left
+    describe("typed list starts", () => {
+      /** One key typed at the caret, as the browser's input event gives it. */
+      const typeKeys = (keys: string) => {
+        for (const key of keys) {
+          const at = textarea.selectionEnd;
+          textarea.value =
+            textarea.value.slice(0, at) + key + textarea.value.slice(at);
+          textarea.setSelectionRange(at + 1, at + 1);
+          fireEvent.input(textarea);
+        }
+      };
+      const box = () => h.elements[0] as ExcalidrawTextElement;
+
+      it("`- ` and `* ` at a line's start become the box's bullet, and the box turns left", () => {
+        expect(box().textAlign).not.toBe("left");
+        typeKeys("- Milk");
+        expect(textarea.value).toBe("• Milk");
+        expect(box()).toMatchObject({
+          originalText: "• Milk",
+          textAlign: "left",
+        });
+        fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+        typeKeys("Oat\n* Rye");
+        expect(textarea.value).toBe("• Milk\n• Oat\n• Rye");
+        expect(textarea.selectionStart).toBe(textarea.value.length);
+      });
+
+      it("`1. ` is a numbered line already: it only turns the box left", () => {
+        typeKeys("1. First");
+        expect(textarea.value).toBe("1. First");
+        expect(box().textAlign).toBe("left");
+      });
+
+      it("a dash in the middle of a line stays a dash, and the box keeps its align", () => {
+        const align = box().textAlign;
+        typeKeys("a - b");
+        expect(textarea.value).toBe("a - b");
+        expect(box().textAlign).toBe(align);
+      });
+    });
+
+    it("the list button works in an empty box: the caret's line gets its marker, and the box turns left (YAZ-3943 demo 2)", () => {
+      expect(textarea.value).toBe("");
+      act(() => {
+        h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+          property: "listMode",
+          mode: "bullet",
+        });
+      });
+      expect(textarea.value).toBe("• ");
+      expect(textarea.selectionStart).toBe(2);
+      expect(h.elements[0]).toMatchObject({ textAlign: "left" });
+      act(() => {
+        h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+          property: "listMode",
+          mode: "numbered",
+        });
+      });
+      expect(textarea.value).toBe("1. ");
     });
 
     it("should continue bullets on Enter and exit after an empty bullet", () => {
@@ -3268,6 +3417,8 @@ describe("textWysiwyg", () => {
       );
 
       editor.select();
+      // YAZ-3943 demo 2: the text toolbar's align is one button with a menu of the three
+      openTextToolbarPopover("Text align");
       fireEvent.click(screen.getByTitle("Left"));
 
       Keyboard.exitTextEditor(editor);

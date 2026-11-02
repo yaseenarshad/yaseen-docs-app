@@ -1,10 +1,10 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { CONTRACT, type Envelope } from '@shared/ipc'
-import { registerDialogIpc } from './dialog'
+import { PICTURES_FOLDER_HIDDEN, PICTURES_FOLDER_ROOT, PICTURES_FOLDER_SYSTEM, registerDialogIpc } from './dialog'
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
@@ -35,8 +35,8 @@ const pick = () => registered(CONTRACT.pickFolder.channel)({ sender })
 const open = () => registered(CONTRACT.dialog.openDrawing.channel)({ sender })
 
 describe('dialog:pick-folder', () => {
-  it('registers exactly the pick-folder, the three export channels and the import (YAZ-3038, YAZ-3943 D6)', () => {
-    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel, CONTRACT.dialog.saveDrawing.channel, CONTRACT.dialog.saveImage.channel, CONTRACT.dialog.savePdf.channel, CONTRACT.dialog.openDrawing.channel])
+  it('registers exactly the pick-folder, the pictures folder pick, the three export channels and the import (YAZ-3038, YAZ-3943 D6, demo round 3)', () => {
+    expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch)).toEqual([CONTRACT.pickFolder.channel, CONTRACT.pickPicturesFolder.channel, CONTRACT.dialog.saveDrawing.channel, CONTRACT.dialog.saveImage.channel, CONTRACT.dialog.savePdf.channel, CONTRACT.dialog.openDrawing.channel])
   })
 
   it('opens an openDirectory dialog parented to the calling window and answers { path }', async () => {
@@ -71,6 +71,50 @@ describe('dialog:pick-folder', () => {
   it('a dialog failure comes out as PICKER_FAILED', async () => {
     showOpenDialog.mockRejectedValue(new Error('no display'))
     expect(await pick()).toEqual({ ok: false, error: { code: 'PICKER_FAILED', message: 'no display' } })
+  })
+})
+
+/** A board's own pictures folder (YAZ-3943 demo round 3): the cog's "Choose a folder…" and Settings' "Choose…". */
+describe('dialog:pick-pictures-folder', () => {
+  const VAULT = '/Users/me/vault'
+  const approve = vi.fn()
+  const pickPictures = (body: unknown) => registered(CONTRACT.pickPicturesFolder.channel)({ sender }, body)
+  beforeEach(() => {
+    approve.mockClear()
+    vi.mocked(ipcMain.handle).mockClear()
+    registerDialogIpc(undefined, approve)
+  })
+
+  it('a folder in the vault answers RELATIVE with `/` separators and approves nothing; one outside answers ABSOLUTE and goes on the approved list', async () => {
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [`${VAULT}/Projects/Board pictures`] })
+    expect(await pickPictures({ root: VAULT })).toEqual({ ok: true, value: { folder: 'Projects/Board pictures' } })
+    expect(showOpenDialog).toHaveBeenLastCalledWith({ title: 'Choose a folder for the pictures', properties: ['openDirectory', 'createDirectory'], defaultPath: VAULT })
+    expect(approve).not.toHaveBeenCalled()
+
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/Users/me/Pictures/Boards/'] })
+    expect(await pickPictures({ root: VAULT, current: 'Projects/Board pictures' })).toEqual({ ok: true, value: { folder: '/Users/me/Pictures/Boards' } })
+    // The dialog opens on the board's current folder: a relative one under the vault, an absolute one as it is.
+    expect(showOpenDialog).toHaveBeenLastCalledWith(expect.objectContaining({ defaultPath: `${VAULT}/Projects/Board pictures` }))
+    expect(approve).toHaveBeenCalledWith('/Users/me/Pictures/Boards')
+    showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    expect(await pickPictures({ root: VAULT, current: '/Users/me/Pictures/Boards' })).toEqual({ ok: true, value: { cancelled: true } })
+    expect(showOpenDialog).toHaveBeenLastCalledWith(expect.objectContaining({ defaultPath: '/Users/me/Pictures/Boards' }))
+  })
+
+  it('refuses the vault itself, a system folder, ~/Library, a hidden folder and node_modules with the one-line reason, and approves none of them', async () => {
+    const refusals: Array<[string, string]> = [
+      [VAULT, PICTURES_FOLDER_ROOT],
+      ['/System/Library/Pictures', PICTURES_FOLDER_SYSTEM],
+      [path.join(homedir(), 'Library', 'Pictures'), PICTURES_FOLDER_SYSTEM],
+      [`${VAULT}/.git`, PICTURES_FOLDER_HIDDEN],
+      ['/Users/me/code/node_modules', PICTURES_FOLDER_HIDDEN],
+    ]
+    for (const [picked, message] of refusals) {
+      showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [picked] })
+      expect(await pickPictures({ root: VAULT })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message }) })
+    }
+    expect(approve).not.toHaveBeenCalled()
+    expect(await pickPictures({ root: 'relative' })).toMatchObject({ ok: false, error: { code: 'NOT_ABSOLUTE' } })
   })
 })
 

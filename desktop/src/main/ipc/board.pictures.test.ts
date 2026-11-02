@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { copyFile, mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
 import { CONTRACT } from '@shared/ipc'
-import type { DrawingLoadResponse, DrawingSaveResponse } from '@shared/types'
-import { referencedFileIds, unpersistedFiles } from '@shared/drawingAssets'
+import { DEFAULT_SETTINGS, type DrawingLoadResponse, type DrawingSaveResponse, type SettingsState } from '@shared/types'
+import { BOARD_META_KEY, hoverLinksOff, referencedFileIds, unpersistedFiles } from '@shared/drawingAssets'
 import { registerBoardIpc } from './board'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, BrowserWindow: { getAllWindows: () => [] }, nativeImage: {} }))
@@ -31,10 +31,15 @@ const sent = (elements: unknown[]) => `${JSON.stringify({ type: 'excalidraw', ve
 
 let vault: string
 let elsewhere: string
+/** What the store holds: Settings › Files & Links and this Mac's approved pictures folders (YAZ-3943 demo 2, round 3), read at each call. */
+let settings: SettingsState
+let approved: string[]
 beforeEach(async () => {
   vault = await mkdtemp(path.join(tmpdir(), 'pictures-vault-'))
   elsewhere = await mkdtemp(path.join(tmpdir(), 'pictures-copy-'))
-  const store = { get: () => ({ windows: [{ id: 'w1', roots: [vault] }] }), addEdit: vi.fn() } as unknown as Parameters<typeof registerBoardIpc>[0]
+  settings = { ...DEFAULT_SETTINGS }
+  approved = []
+  const store = { get: () => ({ windows: [{ id: 'w1', roots: [vault] }], settings, approvedPictureFolders: approved }), addEdit: vi.fn() } as unknown as Parameters<typeof registerBoardIpc>[0]
   registerBoardIpc(store, { idFor: () => 'w1' })
 })
 afterEach(async () => {
@@ -75,5 +80,28 @@ describe('YAZ-3943 D5 end to end: a copied board keeps its pictures', () => {
     await copyFile(created.path, path.join(elsewhere, 'Out.excalidraw'))
     expect((await call<DrawingLoadResponse>(CONTRACT.drawing.load.channel, { root: elsewhere, path: 'Out.excalidraw' })).files).toEqual({})
     expect((await call<DrawingLoadResponse>(CONTRACT.drawing.load.channel, { root: vault, path: rel })).files).toEqual({ aaa: { mimeType: 'image/png', dataURL: png('A') } })
+  })
+})
+
+describe('YAZ-3943 demo 2 and round 3 through the bridge: the settings and the approved list reach the doors', () => {
+  it('"New boards keep pictures" › "In a folder you pick": a new board names the folder, and its first picture lands there', async () => {
+    settings = { ...settings, newBoardPictures: 'folder', newBoardPicturesFolder: 'Board pictures' }
+    const created = await call<{ path: string }>(CONTRACT.createBoard.channel, { root: vault, path: path.join(vault, 'New.excalidraw') })
+    const opened = await call<DrawingLoadResponse>(CONTRACT.drawing.load.channel, { root: vault, path: created.path })
+    await call(CONTRACT.drawing.save.channel, { root: vault, path: created.path, json: sent([imageEl('aaa')]), expectedMtime: opened.mtime, newFiles: [{ fileId: 'aaa', mimeType: 'image/png', dataURL: png('A') }] })
+    expect(await readdir(path.join(vault, 'Board pictures'))).toEqual(['aaa.png'])
+    expect(JSON.parse(await readFile(created.path, 'utf8'))[BOARD_META_KEY]).toMatchObject({ pictures: 'assets', picturesFolder: 'Board pictures' })
+  })
+
+  it('an outside folder: refused until this Mac approved it, then the pictures land there; the hover switch is its own door', async () => {
+    const created = await call<{ path: string }>(CONTRACT.createBoard.channel, { root: vault, path: path.join(vault, 'Far.excalidraw') })
+    const opened = await call<DrawingLoadResponse>(CONTRACT.drawing.load.channel, { root: vault, path: created.path })
+    const saved = await call<DrawingSaveResponse>(CONTRACT.drawing.save.channel, { root: vault, path: created.path, json: sent([imageEl('aaa')]), expectedMtime: opened.mtime, newFiles: [{ fileId: 'aaa', mimeType: 'image/png', dataURL: png('A') }] })
+    await expect(call(CONTRACT.setBoardPictures.channel, { root: vault, path: created.path, out: true, folder: elsewhere, expectedMtime: saved.mtime })).rejects.toThrow('BAD_REQUEST')
+    approved = [elsewhere]
+    const moved = await call<DrawingSaveResponse>(CONTRACT.setBoardPictures.channel, { root: vault, path: created.path, out: true, folder: elsewhere, expectedMtime: saved.mtime })
+    expect(await readdir(elsewhere)).toEqual(['aaa.png'])
+    await call(CONTRACT.setBoardHoverLinks.channel, { root: vault, path: created.path, on: false, expectedMtime: moved.mtime })
+    expect(hoverLinksOff(JSON.parse(await readFile(created.path, 'utf8'))[BOARD_META_KEY])).toBe(true)
   })
 })

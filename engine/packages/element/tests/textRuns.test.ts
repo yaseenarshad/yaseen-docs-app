@@ -1,5 +1,7 @@
 import {
   convertLineStylesToTextRuns,
+  getNearestNoteHighlight,
+  getTextHighlightFill,
   getTextRangeColor,
   getTextRangeHighlight,
   getTextRangeToolbarKey,
@@ -9,6 +11,7 @@ import {
   setTextRunColor,
   setTextRunFlag,
   setTextRunHighlight,
+  TEXT_HIGHLIGHT_FILLS,
 } from "../src/textRuns";
 import { mutateElement, newElementWith } from "../src/mutateElement";
 import { newTextElement } from "../src/newElement";
@@ -322,17 +325,34 @@ describe("YAZ-4102 3E: highlight runs", () => {
     ]);
   });
 
-  it("keeps only the four note colors from a file", () => {
+  it("keeps the four note colors and a custom #rrggbb from a file (YAZ-3943 demo 2); anything else goes", () => {
     expect(
       normalizeTextRuns(
         [
           { start: 0, end: 2, highlight: "green" },
           { start: 2, end: 4, highlight: "#ff0000" },
           { start: 4, end: 6, highlight: "toString" },
+          { start: 6, end: 8, highlight: "#f00" },
+          { start: 8, end: 10, highlight: "red" },
+          { start: 10, end: 12, highlight: "#gg0000" },
+          { start: 12, end: 14, highlight: 7 },
         ],
-        6,
+        14,
       ),
-    ).toEqual([{ start: 0, end: 2, highlight: "green" }]);
+    ).toEqual([
+      { start: 0, end: 2, highlight: "green" },
+      { start: 2, end: 4, highlight: "#ff0000" },
+    ]);
+  });
+
+  it("YAZ-3943 demo 2: a note color fills as it always did; a custom color is as translucent as they are; a note gets the nearest of its four", () => {
+    expect(getTextHighlightFill("yellow")).toBe(TEXT_HIGHLIGHT_FILLS.yellow);
+    expect(getTextHighlightFill("#ff8000")).toBe("rgba(255, 128, 0, 0.4)");
+    expect(getNearestNoteHighlight("pink")).toBe("pink");
+    expect(getNearestNoteHighlight("#ffd500")).toBe("yellow");
+    expect(getNearestNoteHighlight("#40c070")).toBe("green");
+    expect(getNearestNoteHighlight("#3c8cff")).toBe("blue");
+    expect(getNearestNoteHighlight("#ff70b0")).toBe("pink");
   });
 
   it("tells the one highlight of a range, else undefined", () => {

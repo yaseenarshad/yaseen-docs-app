@@ -251,6 +251,31 @@ export const togglePopover = (label: string) => {
   UI.clickLabeledElement(label);
 };
 
+/**
+ * YAZ-3943 demo 2: the text toolbar keeps the size, align, line spacing and
+ * the color ▾ in popovers; open the one whose button's label starts so
+ * ("Font size" opens "Font size 20").
+ */
+export const openTextToolbarPopover = (label: string) => {
+  const trigger = document.querySelector<HTMLElement>(
+    `.contextual-properties-toolbar__popover-trigger[aria-label^="${label}"]`,
+  );
+  if (!trigger) {
+    throw new Error(`No text toolbar popover: ${label}`);
+  }
+  togglePopover(trigger.getAttribute("aria-label")!);
+};
+
+/** The text toolbar's "Exact font size" field, its size popover opened first when it is closed. */
+export const exactFontSizeInput = () => {
+  const find = () =>
+    document.querySelector<HTMLInputElement>('[aria-label="Exact font size"]');
+  if (!find()) {
+    openTextToolbarPopover("Font size");
+  }
+  return find()!;
+};
+
 expect.extend({
   toBeNonNaNNumber(received) {
     const pass = typeof received === "number" && !isNaN(received);

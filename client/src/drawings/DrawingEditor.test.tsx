@@ -20,7 +20,26 @@ import { fakeWatch, withRevealObserver } from '../documents/boardTestKit'
 
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
-  return { ...actual, api: { ...actual.api, drawing: { load: vi.fn(), save: vi.fn() }, dialog: { saveDrawing: vi.fn(), savePdf: vi.fn() }, setBoardPictures: vi.fn() } }
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      drawing: { load: vi.fn(), save: vi.fn() },
+      dialog: { saveDrawing: vi.fn(), savePdf: vi.fn() },
+      setBoardPictures: vi.fn(),
+      // YAZ-3943 demo 2 and round 3: the cog's hover switch, its folder pick, and this Mac's allowed folders.
+      setBoardHoverLinks: vi.fn(),
+      pickPicturesFolder: vi.fn(),
+      pictureFolders: { list: vi.fn(async () => []), allow: vi.fn(async () => []) },
+      app: { ...actual.api.app, home: vi.fn(async () => '/Users/me') },
+    },
+  }
+})
+
+// The link card's dwell: a spy that calls through, so a test can read whether hover is on for this board.
+vi.mock('../tabs/cardPreview', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../tabs/cardPreview')>()
+  return { ...actual, useCardPreview: vi.fn(actual.useCardPreview) }
 })
 
 /** The engine stub: records what it was given and hands the host the two callbacks it owns. */
@@ -77,12 +96,14 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
   },
 }))
 
-import { api } from '../api'
+import { api, BridgeRequestError } from '../api'
 import { readPageView } from '../lib/pageView'
 import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
-import { BROKEN_DRAWING_DOCUMENT, DrawingEditor } from './DrawingEditor'
+import { BROKEN_DRAWING_DOCUMENT, DrawingEditor, OUTSIDE_FOLDER_WARNING, picturesMoveAsk, picturesPlaceText } from './DrawingEditor'
+import { ALLOW_FOLDER_TITLE, allowFolderBody } from './usePicturesFolderAllow'
+import { useCardPreview } from '../tabs/cardPreview'
 import { ENGINE_LOAD_FAILED } from './ExcalidrawSurface'
 
 const load = vi.mocked(api.drawing.load)
@@ -615,61 +636,180 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     act(() => cog().click())
   }
 
-  it('in this order: Read only, the count and size of the pictures in words (YAZ-4110 5B), the button, then the two exports', async () => {
+  /** A board's text with its `yaseendraw` block. */
+  const withBlock = (block: Record<string, unknown>) => `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, ...block }, elements: [], appState: {}, files: {} })}\n`
+  /** The confirm box: its words, and its two buttons. */
+  const sheet = () => container.querySelector<HTMLElement>('.confirm__text')
+  const sheetButton = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)!
+
+  it('in this order: Read only, Link preview on hover, the count and size of the pictures in words (YAZ-4110 5B), the moves to the other places, then the two exports', async () => {
     surface.pictures = { bytes: 3.3 * MB, count: 6, missing: 0 }
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', '6 pictures in this file (3.3 MB)', 'Move pictures out', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', '6 pictures in this file (3.3 MB)', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     expect(container.querySelectorAll('.page-settings__menu > .page-settings__divider')).toHaveLength(2)
     expect(row('6 pictures in this file (3.3 MB)')!.className).not.toContain('warn')
   })
 
-  it('no picture: no size row and no button; from 20 MB the size is amber; a "pictures out" board says where they are', async () => {
+  it('no picture: no size row and no move; from 20 MB the size is amber; a "pictures out" board says where they are: the assets folder, or its own folder by its last name with the whole path on hover', async () => {
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     act(() => cog().click())
     surface.pictures = { bytes: 20 * MB, count: 2, missing: 0 }
     act(() => cog().click())
     expect(row('2 pictures in this file (20.0 MB)')!.className).toContain('page-settings__warn')
+    act(() => root?.unmount())
+    root = createRoot(container)
+
+    surface.pictures = { bytes: 1000, count: 1, missing: 0 }
+    await openCog({ json: withBlock({ pictures: 'assets' }) })
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', '1 picture in the assets folder (1000 B)', 'Keep pictures inside', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    act(() => root?.unmount())
+    root = createRoot(container)
+
+    await openCog({ json: withBlock({ pictures: 'assets', picturesFolder: 'Projects/Board pictures' }) })
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', '1 picture in Board pictures (1000 B)', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(row('1 picture in Board pictures (1000 B)')!.title).toBe('Projects/Board pictures')
   })
 
-  it('"Move pictures out" writes beside the autosave, and the row turns into "Keep pictures inside"', async () => {
+  it('every move asks first in the confirm box, with the real count and size; Cancel writes nothing; the box\'s button writes beside the autosave, and the rows follow the new place', async () => {
     surface.pictures = { bytes: 1000, count: 1, missing: 0 }
     setBoardPictures.mockResolvedValue({ path: PATH, mtime: 300, size: 10 })
     await openCog()
-    await act(async () => row('Move pictures out')!.click())
+    act(() => row('Move to the assets folder')!.click())
+    expect(sheet()!.textContent).toBe(`Move pictures out of this board?${picturesMoveAsk('assets', { count: 1, bytes: 1000 }, "this board's file").body}`)
+    act(() => sheetButton('Cancel').click())
+    expect(sheet()).toBeNull()
+    expect(setBoardPictures).not.toHaveBeenCalled()
+
+    act(() => cog().click())
+    act(() => row('Move to the assets folder')!.click())
+    await act(async () => sheetButton('Move pictures').click())
     await flush()
     expect(setBoardPictures).toHaveBeenCalledWith({ root: ROOT, path: PATH, out: true, expectedMtime: 100 })
     act(() => cog().click())
     expect(rows().map((r) => r.textContent)).toContain('1 picture in the assets folder (1000 B)')
-    await act(async () => row('Keep pictures inside')!.click())
+    act(() => row('Keep pictures inside')!.click())
+    expect(sheet()!.textContent).toContain('Keep pictures inside this board?')
+    expect(sheet()!.textContent).toContain("The copies in the vault's assets folder stay.")
+    await act(async () => sheetButton('Keep inside').click())
     await flush()
     expect(setBoardPictures).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, out: false, expectedMtime: 300 })
   })
 
-  it('a "pictures out" board opens with "Keep pictures inside"', async () => {
-    surface.pictures = { bytes: 1000, count: 1, missing: 0 }
-    await openCog({ json: `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, pictures: 'assets' }, elements: [], appState: {}, files: {} })}\n` })
-    expect(row('Keep pictures inside')).toBeDefined()
-  })
+  it('"Choose a folder…" opens the folder window on the board\'s folder first; a cancel does nothing; a refusal says why; a pick asks, with the outside warning, then writes the folder', async () => {
+    const onNotice = vi.fn()
+    const pick = vi.mocked(api.pickPicturesFolder)
+    surface.pictures = { bytes: 2048, count: 2, missing: 0 }
+    setBoardPictures.mockResolvedValue({ path: PATH, mtime: 300, size: 10 })
+    load.mockResolvedValue(loaded({ json: withBlock({ pictures: 'assets', picturesFolder: 'Old pictures' }) }))
+    render({ onNotice })
+    await flush()
+    emit(1)
+    const choose = async () => {
+      act(() => cog().click())
+      await act(async () => row('Choose a folder…')!.click())
+      await flush()
+    }
+    pick.mockResolvedValueOnce({ cancelled: true })
+    await choose()
+    expect(pick).toHaveBeenLastCalledWith({ root: ROOT, current: 'Old pictures' })
+    expect(sheet()).toBeNull()
 
-  it('Read only greys the button out (it writes the file); the exports still work', async () => {
-    surface.pictures = { bytes: 1000, count: 1, missing: 0 }
-    await openCog({ json: `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, elements: [], appState: {}, files: {} })}\n` })
-    expect(row('Move pictures out')!.disabled).toBe(true)
-    expect(row('Export Image or PDF…')!.disabled).toBe(false)
-    act(() => row('Move pictures out')!.click())
+    pick.mockRejectedValueOnce(new BridgeRequestError('BAD_REQUEST', 'Pick a folder, not the vault itself.'))
+    await choose()
+    expect(onNotice).toHaveBeenLastCalledWith('Pick a folder, not the vault itself.', 'error')
+    expect(sheet()).toBeNull()
+
+    pick.mockResolvedValueOnce({ folder: '/Users/me/Pictures/Boards' })
+    await choose()
+    expect(sheet()!.textContent).toBe(`Move pictures to Boards?${picturesMoveAsk('folder', { count: 2, bytes: 2048 }, 'Old pictures', '/Users/me/Pictures/Boards', '/Users/me').body}`)
+    expect(sheet()!.textContent).toContain(OUTSIDE_FOLDER_WARNING)
+    expect(sheet()!.textContent).toContain('~/Pictures/Boards')
     expect(setBoardPictures).not.toHaveBeenCalled()
+    await act(async () => sheetButton('Move pictures').click())
+    await flush()
+    expect(setBoardPictures).toHaveBeenCalledWith({ root: ROOT, path: PATH, out: true, folder: '/Users/me/Pictures/Boards', expectedMtime: 100 })
+    act(() => cog().click())
+    expect(row('2 pictures in Boards (2.0 KB)')!.title).toBe('~/Pictures/Boards')
   })
 
-  it('YAZ-3943 1F: pictures in neither the file nor assets/ are an amber row after the size, with the button after them; all missing: the row alone', async () => {
+  it('Read only greys out every move and the hover switch (they write the file); a click does nothing; the exports still work', async () => {
+    surface.pictures = { bytes: 1000, count: 1, missing: 0 }
+    await openCog({ json: withBlock({ readonly: true }) })
+    for (const label of ['Move to the assets folder', 'Choose a folder…', 'Link preview on hover✓']) {
+      expect(row(label)!.disabled, label).toBe(true)
+      act(() => row(label)!.click())
+    }
+    expect(row('Export Image or PDF…')!.disabled).toBe(false)
+    expect(sheet()).toBeNull()
+    expect(setBoardPictures).not.toHaveBeenCalled()
+    expect(api.pickPicturesFolder).not.toHaveBeenCalled()
+    expect(api.setBoardHoverLinks).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-3943 1F: pictures in neither the file, its folder nor assets/ are an amber row after the size, with the moves after them; all missing: the row alone', async () => {
     surface.pictures = { bytes: 1000, count: 1, missing: 3 }
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', '1 picture in this file (1000 B)', '3 pictures are missing', 'Move pictures out', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', '1 picture in this file (1000 B)', '3 pictures are missing', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     expect(row('3 pictures are missing')!.className).toContain('page-settings__warn')
     act(() => cog().click())
     surface.pictures = { bytes: 0, count: 0, missing: 1 }
     act(() => cog().click())
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', '1 picture is missing', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', '1 picture is missing', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+  })
+
+  it('demo round 3: a board naming an outside folder this Mac has not allowed asks once when it opens; "Not now" allows nothing, and the cog shows the amber line with "Allow…", which asks again', async () => {
+    const list = vi.mocked(api.pictureFolders.list)
+    const allow = vi.mocked(api.pictureFolders.allow)
+    list.mockResolvedValue([])
+    surface.pictures = { bytes: 1000, count: 1, missing: 0 }
+    load.mockResolvedValue(loaded({ json: withBlock({ pictures: 'assets', picturesFolder: '/Users/me/Pictures/Boards' }) }))
+    render()
+    await flush()
+    emit(1)
+    expect(sheet()!.textContent).toBe(`${ALLOW_FOLDER_TITLE}${allowFolderBody('~/Pictures/Boards')}`)
+    act(() => sheetButton('Not now').click())
+    expect(sheet()).toBeNull()
+    expect(allow).not.toHaveBeenCalled()
+    act(() => cog().click())
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', '1 picture in Boards (1000 B)', 'Folder not allowed on this Mac', 'Allow…', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(row('Folder not allowed on this Mac')!.className).toContain('page-settings__warn')
+    act(() => row('Allow…')!.click())
+    await act(async () => sheetButton('Allow').click())
+    await flush()
+    expect(allow).toHaveBeenCalledWith('/Users/me/Pictures/Boards')
+    act(() => cog().click())
+    expect(row('Folder not allowed on this Mac')).toBeUndefined()
+  })
+
+  it('demo 2: "Link preview on hover" is the board\'s own switch: off writes beside the autosave and stops the link card; a board whose file says off opens with it off', async () => {
+    const preview = vi.mocked(useCardPreview)
+    vi.mocked(api.setBoardHoverLinks).mockResolvedValue({ path: PATH, mtime: 300, size: 10 })
+    load.mockResolvedValue(loaded())
+    render({ wikilinks: createWikilinkResolveSource(), onOpenLink: vi.fn(), onOpenLinkBackground: vi.fn(), hoverLinks: true })
+    await flush()
+    emit(1)
+    expect(preview.mock.lastCall?.[0]).toBe(true)
+    act(() => cog().click())
+    await act(async () => row('Link preview on hover✓')!.click())
+    await flush()
+    expect(api.setBoardHoverLinks).toHaveBeenCalledWith({ root: ROOT, path: PATH, on: false, expectedMtime: 100 })
+    expect(preview.mock.lastCall?.[0]).toBe(false)
+    expect(row('Link preview on hover')!.getAttribute('aria-pressed')).toBe('false')
+    act(() => root?.unmount())
+    root = createRoot(container)
+
+    load.mockResolvedValue(loaded({ json: withBlock({ hoverLinks: false }) }))
+    render({ wikilinks: createWikilinkResolveSource(), onOpenLink: vi.fn(), onOpenLinkBackground: vi.fn(), hoverLinks: true })
+    await flush()
+    expect(preview.mock.lastCall?.[0]).toBe(false)
+    // "Links in drawings" off (the app's setting) turns it off for every board, whatever the board says.
+    act(() => root?.unmount())
+    root = createRoot(container)
+    load.mockResolvedValue(loaded())
+    render({ wikilinks: createWikilinkResolveSource(), onOpenLink: vi.fn(), onOpenLinkBackground: vi.fn(), hoverLinks: false })
+    await flush()
+    expect(preview.mock.lastCall?.[0]).toBe(false)
   })
 
   it('YAZ-3943 1F: a board whose pictures are missing says so once when it opens, and not again on a reload; a board with all its pictures says nothing', async () => {
@@ -731,5 +871,33 @@ describe('YAZ-3943 1C — the PDF button of the export box (D6)', () => {
     expect(onNotice).not.toHaveBeenCalled()
     await act(async () => void (await surface.props!.onExportPdf!('<svg/>', { width: 1, height: 1 })))
     expect(onNotice).toHaveBeenCalledWith("The PDF couldn't be exported.", 'error')
+  })
+})
+
+describe('YAZ-3943 demo round 3 — what the confirm box before a picture move says (`picturesMoveAsk`)', () => {
+  it('in plain words, with the real count, size and both places; one picture is singular', () => {
+    expect(picturesMoveAsk('assets', { count: 3, bytes: 3 * 1024 * 1024 }, picturesPlaceText(false, null))).toEqual({
+      title: 'Move pictures out of this board?',
+      body: 'The 3 pictures (3.0 MB) move from this board\'s file to the vault\'s assets folder. The board file gets smaller. If you copy this board by itself, its pictures do not go with it. To bring them back, use "Keep pictures inside" in this menu.',
+      confirm: 'Move pictures',
+    })
+    expect(picturesMoveAsk('inside', { count: 1, bytes: 1000 }, picturesPlaceText(true, 'Projects/Board pictures'))).toEqual({
+      title: 'Keep pictures inside this board?',
+      body: "The 1 picture (1000 B) is copied into this board's file. The board file gets bigger. The copies in Projects/Board pictures stay. The app never deletes picture files.",
+      confirm: 'Keep inside',
+    })
+  })
+
+  it('a folder in the vault says to keep it in the vault; a folder outside adds the one warning, and shows as ~/… under the home folder', () => {
+    const inVault = picturesMoveAsk('folder', { count: 2, bytes: 2048 }, picturesPlaceText(true, null), 'Projects/Board pictures', '/Users/me')
+    expect(inVault.title).toBe('Move pictures to Board pictures?')
+    expect(inVault.body).toBe("The 2 pictures (2.0 KB) move from the vault's assets folder to Projects/Board pictures. The board file gets smaller. If you copy this board by itself, its pictures do not go with it. Keep this folder in the vault. If you rename or delete it, the board shows missing pictures.")
+    expect(inVault.body).not.toContain(OUTSIDE_FOLDER_WARNING)
+    const outside = picturesMoveAsk('folder', { count: 2, bytes: 2048 }, picturesPlaceText(true, '/Users/me/Old', '/Users/me'), '/Users/me/Pictures/Boards', '/Users/me')
+    expect(outside.title).toBe('Move pictures to Boards?')
+    expect(outside.body).toBe(`The 2 pictures (2.0 KB) move from ~/Old to ~/Pictures/Boards. The board file gets smaller. If you copy this board by itself, its pictures do not go with it. Keep this folder. If you rename or delete it, the board shows missing pictures. ${OUTSIDE_FOLDER_WARNING}`)
+    expect(OUTSIDE_FOLDER_WARNING).toBe('This folder is outside the vault. Your other Macs, Version history and copies of the vault will not have these pictures unless you sync this folder yourself.')
+    // A folder outside the home folder shows its whole path.
+    expect(picturesMoveAsk('folder', { count: 1, bytes: 1 }, 'x', '/Volumes/Disk/pics', '/Users/me').body).toContain('to /Volumes/Disk/pics.')
   })
 })

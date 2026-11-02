@@ -23,13 +23,15 @@ import { createDrawingFeed } from './drawingFeed'
 import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BROKEN_DRAWING_MESSAGE, DISCARD_PROMPT, DrawingModal } from './DrawingModal'
+import { ALLOW_FOLDER_TITLE, allowFolderBody } from './usePicturesFolderAllow'
 import type { DrawingSurfaceProps } from './ExcalidrawSurface'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('../api', async (original) => ({
   ...(await original<typeof import('../api')>()),
-  api: { readAsset: vi.fn(), drawing: { save: vi.fn(), load: vi.fn() }, window: { onFlush: vi.fn() }, hotkeys: { drawingInFront: vi.fn(async () => undefined) } },
+  // `app.home` and `pictureFolders` (YAZ-3943 demo round 3): the popup's ask for a board's outside pictures folder.
+  api: { readAsset: vi.fn(), drawing: { save: vi.fn(), load: vi.fn() }, window: { onFlush: vi.fn() }, hotkeys: { drawingInFront: vi.fn(async () => undefined) }, app: { home: vi.fn(async () => '/Users/me') }, pictureFolders: { list: vi.fn(async () => []), allow: vi.fn(async () => []) } },
 }))
 
 /** The stand-in engine: it renders nothing and reports the props the modal handed it. */
@@ -726,5 +728,40 @@ describe('the popup saves through drawing:save (YAZ-3943 1A1)', () => {
     snap(3, { old: png('b2xk'), new: png('bmV3') })
     await idle()
     expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 200 })
+  })
+})
+
+/** YAZ-3943 demo round 3: a board naming an outside pictures folder this Mac has not allowed asks in the popup too. */
+describe('the outside pictures folder in the popup', () => {
+  const board = (block: Record<string, unknown>) => ({ ...asset(100), data: btoa(JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, ...block }, elements: [], appState: {}, files: {} })) })
+
+  it('asks once when it opens; "Not now" allows nothing; a board with its folder in the vault asks main nothing', async () => {
+    const list = vi.mocked(api.pictureFolders.list)
+    list.mockClear()
+    readAsset.mockResolvedValue(board({ pictures: 'assets', picturesFolder: '/Users/me/Pictures/Boards' }))
+    await act(async () => {
+      container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      root.render(<DrawingModal root={ROOT} target={TARGET} theme="light" feed={createDrawingFeed()} onClose={vi.fn()} />)
+    })
+    await act(async () => undefined)
+    expect(container?.querySelector('.confirm__text')?.textContent).toBe(`${ALLOW_FOLDER_TITLE}${allowFolderBody('~/Pictures/Boards')}`)
+    act(() => byText('Not now')!.click())
+    expect(container?.querySelector('.confirm__text')).toBeNull()
+    expect(api.pictureFolders.allow).not.toHaveBeenCalled()
+    act(() => root?.unmount())
+    container?.remove()
+
+    list.mockClear()
+    readAsset.mockResolvedValue(board({ pictures: 'assets', picturesFolder: 'Board pictures' }))
+    await act(async () => {
+      container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      root.render(<DrawingModal root={ROOT} target={TARGET} theme="light" feed={createDrawingFeed()} onClose={vi.fn()} />)
+    })
+    expect(list).not.toHaveBeenCalled()
+    expect(container?.querySelector('.confirm__text')).toBeNull()
   })
 })

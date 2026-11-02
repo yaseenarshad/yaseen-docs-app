@@ -176,5 +176,6 @@ export const DRAWING_ACTIONS: Readonly<Record<string, string | readonly string[]
   'drawing.redo': 'redo',
   'drawing.selectAll': 'selectAll',
   'drawing.help': 'toggleShortcuts',
-  'drawing.textHighlight': ['toggleTextHighlight', 'changeTextHighlight'],
+  // YAZ-3943 demo 2: a changeable row names ONE action, the one the remap moves (the toolbar's picks have no key).
+  'drawing.textHighlight': 'toggleTextHighlight',
 }

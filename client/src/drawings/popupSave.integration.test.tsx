@@ -50,6 +50,9 @@ vi.mock('../api', async (original) => ({
     },
     window: { onFlush: () => () => undefined },
     hotkeys: { drawingInFront: async () => undefined },
+    // The popup's ask for an outside pictures folder (YAZ-3943 demo round 3): this board names none.
+    app: { home: async () => '/Users/me' },
+    pictureFolders: { list: async () => [] },
   },
 }))
 

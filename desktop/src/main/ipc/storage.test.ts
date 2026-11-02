@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
@@ -50,5 +50,19 @@ describe('storage IPC (YAZ-1801, YAZ-3039)', () => {
 
   it('shrink answers the counts', async () => {
     await expect(registered(CONTRACT.storage.shrink)(undefined, root, [])).resolves.toEqual({ ok: true, value: { shrunk: 0, skipped: 0, bytesMoved: 0 } })
+  })
+
+  it('YAZ-3943 demo round 3: shrink hands the worker this Mac\'s approved pictures folders, so a board\'s picked outside folder takes its pictures', async () => {
+    const outside = await mkdtemp(path.join(tmpdir(), 'mdapp-storage-outside-'))
+    try {
+      const png = `data:image/png;base64,${Buffer.from('A').toString('base64')}`
+      await writeFile(path.join(root, 'Far.excalidraw'), JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 1, picturesFolder: outside }, type: 'excalidraw', elements: [{ id: 'i', type: 'image', fileId: 'aaa' }], appState: {}, files: { aaa: { mimeType: 'image/png', dataURL: png } } }))
+      vi.mocked(ipcMain.handle).mockClear()
+      registerStorageIpc({ get: () => ({ approvedPictureFolders: [outside] }) } as unknown as Parameters<typeof registerStorageIpc>[0])
+      await expect(registered(CONTRACT.storage.shrink)(undefined, root, [])).resolves.toMatchObject({ ok: true, value: { shrunk: 1 } })
+      expect(await readdir(outside)).toEqual(['aaa.png'])
+    } finally {
+      await rm(outside, { recursive: true, force: true })
+    }
   })
 })

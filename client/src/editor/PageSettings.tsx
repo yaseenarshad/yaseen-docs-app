@@ -121,7 +121,7 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         setOpen(false)
         onToggle()
       }}><span>{label}</span></button>
-      : <button type="button" aria-pressed={on} onClick={onToggle}>
+      : <button type="button" aria-pressed={on} disabled={disabled} onClick={onToggle}>
         <span>{label}</span><span aria-hidden="true">{on ? '✓' : ''}</span>
       </button>}
   </Fragment>
