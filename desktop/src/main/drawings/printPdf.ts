@@ -7,8 +7,8 @@
  * printed. Chromium and the PDF format stop at 200 inches a side, so a bigger drawing scales the whole
  * page down to fit — never cut (`pdfPageSize`).
  *
- * ONE HIDDEN WINDOW FOR EACH EXPORT, destroyed in a `finally`: sandboxed, no preload, no Node, never
- * shown. It loads a small `data:` page; the SVG goes in by script, because Chromium refuses a URL over
+ * ONE HIDDEN WINDOW FOR EACH EXPORT, destroyed in a `finally`, at the latest after 60 s (YAZ-4074 6A
+ * item 10): sandboxed, no preload, no Node, never shown. It loads a small `data:` page; the SVG goes in by script, because Chromium refuses a URL over
  * 2 MB and a drawing with pictures is often more. The print waits for the fonts (`document.fonts.ready`)
  * and for each picture to decode.
  */
@@ -49,15 +49,26 @@ export type PdfWindow = Pick<BrowserWindow, 'loadURL' | 'destroy'> & { webConten
 const hiddenWindow = (): PdfWindow =>
   new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: true, backgroundThrottling: false } })
 
-/** The PDF bytes of one SVG (see the module doc). The window is destroyed whatever happens. */
+/** YAZ-4074 6A item 10: a hidden window that never answers fails the export here, and is destroyed. */
+export const PDF_TIMEOUT_MS = 60_000
+
+/** The PDF bytes of one SVG (see the module doc). The window is destroyed whatever happens, at the latest after `PDF_TIMEOUT_MS`. */
 export async function printSvgToPdf(svg: string, size: { width: number; height: number }, makeWindow: () => PdfWindow = hiddenWindow): Promise<Buffer> {
   const pageSize = pdfPageSize(size)
   const win = makeWindow()
-  try {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`The PDF print did not answer in ${PDF_TIMEOUT_MS / 1000} s.`)), PDF_TIMEOUT_MS)
+  })
+  const print = async (): Promise<Buffer> => {
     await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(SHELL)}`)
     await win.webContents.executeJavaScript(placeSvg(svg))
-    return await win.webContents.printToPDF({ pageSize, margins: { top: 0, bottom: 0, left: 0, right: 0 }, printBackground: true, pageRanges: '1' })
+    return win.webContents.printToPDF({ pageSize, margins: { top: 0, bottom: 0, left: 0, right: 0 }, printBackground: true, pageRanges: '1' })
+  }
+  try {
+    return await Promise.race([print(), timeout])
   } finally {
+    clearTimeout(timer)
     win.destroy()
   }
 }

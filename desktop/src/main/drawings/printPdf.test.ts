@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { MAX_PDF_INCHES, pdfPageSize, printSvgToPdf, type PdfWindow } from './printPdf'
+import { MAX_PDF_INCHES, PDF_TIMEOUT_MS, pdfPageSize, printSvgToPdf, type PdfWindow } from './printPdf'
 
 vi.mock('electron', () => ({ BrowserWindow: vi.fn() }))
 
@@ -52,6 +52,22 @@ describe('printSvgToPdf', () => {
     expect(script).toContain('document.fonts.ready')
     expect(win.webContents.printToPDF).toHaveBeenCalledWith({ pageSize: { width: 10, height: 5 }, margins: { top: 0, bottom: 0, left: 0, right: 0 }, printBackground: true, pageRanges: '1' })
     expect(win.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('YAZ-4074 6A item 10: a window that never answers is destroyed at the time limit, and the export fails', async () => {
+    vi.useFakeTimers()
+    try {
+      const win = fakeWindow()
+      win.webContents.executeJavaScript.mockImplementation(() => new Promise(() => undefined))
+      const done = printSvgToPdf('<svg/>', { width: 96, height: 96 }, () => win as unknown as PdfWindow)
+      const failed = expect(done).rejects.toThrow('The PDF print did not answer in 60 s.')
+      await vi.advanceTimersByTimeAsync(PDF_TIMEOUT_MS)
+      await failed
+      expect(win.destroy).toHaveBeenCalledTimes(1)
+      expect(win.webContents.printToPDF).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it.each(['load', 'script', 'print'] as const)('destroys the window when the %s step fails, and the failure reaches the caller', async (step) => {
