@@ -99,6 +99,11 @@ export class GifPlayer {
   repaint: (() => void) | null = null;
 
   private tracks = new Map<FileId, GifTrack>();
+  /**
+   * YAZ-4071: GIFs that played all their loops before the sweep closed their decoder. A new decoder
+   * shows their last frame, and they do not play again.
+   */
+  private finished = new Set<FileId>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** closes the decoders no paint drew for 30 s; set while one is open */
   private sweepTimer: ReturnType<typeof setTimeout> | null = null;
@@ -193,6 +198,11 @@ export class GifPlayer {
         this.tracks.delete(fileId);
       }
     }
+    for (const fileId of this.finished) {
+      if (!fileIds.has(fileId)) {
+        this.finished.delete(fileId);
+      }
+    }
   }
 
   get size() {
@@ -206,6 +216,7 @@ export class GifPlayer {
       track.decoder?.close();
     }
     this.tracks.clear();
+    this.finished.clear();
     this.lastRepaintAt = -Infinity;
     this.generation++;
     this.idle = false;
@@ -279,7 +290,12 @@ export class GifPlayer {
         track.decoder = null;
         return;
       }
-      await this.draw(track, 0);
+      if (this.finished.has(fileId)) {
+        await this.draw(track, frameCount - 1);
+        track.loop = repetitionCount;
+      } else {
+        await this.draw(track, 0);
+      }
       track.shownAt = performance.now();
       this.armSweep();
     } catch {
@@ -333,6 +349,9 @@ export class GifPlayer {
         continue;
       }
       if (now - track.seenAt >= GIF_DECODER_IDLE_MS) {
+        if (gifClockDone(track)) {
+          this.finished.add(fileId);
+        }
         track.decoder.close();
         this.tracks.delete(fileId);
       } else {

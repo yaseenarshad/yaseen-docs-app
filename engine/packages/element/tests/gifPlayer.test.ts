@@ -297,6 +297,27 @@ describe("YAZ-3944 D2: the GIF player", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("YAZ-4071 Nit: a GIF that played its loops stays on its last frame after the 30 s decoder sweep", async () => {
+    // no loop count in the file: it plays once
+    FakeImageDecoder.repetitionCount = 0;
+    files.a = file("a", MIME_TYPES.gif, 3);
+    player.frameToken(image("a"));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(FakeImageDecoder.made[0].decoded).toEqual([0, 1, 2]);
+
+    // no paint for 30 s: the sweep closes its decoder
+    player.repaint = () => repaints++;
+    await vi.advanceTimersByTimeAsync(GIF_DECODER_IDLE_MS * 2);
+    expect(FakeImageDecoder.made[0].closed).toBe(true);
+
+    // the next pan or zoom draws it: its last frame, and it does not play again
+    player.frameToken(image("a"));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(FakeImageDecoder.made[1].decoded).toEqual([2]);
+    expect(player.frameFor(image("a"))).toBeInstanceOf(HTMLCanvasElement);
+  });
+
   it("YAZ-3944 D4: closes the decoder of a GIF that left the board", async () => {
     files.a = file("a", MIME_TYPES.gif, 3);
     files.b = file("b", MIME_TYPES.gif, 3);

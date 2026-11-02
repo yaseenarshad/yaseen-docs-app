@@ -5,6 +5,8 @@ import { vi } from "vitest";
  * frames of 50 ms. It counts what the player asks of it.
  */
 export class FakeImageDecoder {
+  /** the loops of each next GIF, as `ImageDecoder` gives them (Infinity: forever) */
+  static repetitionCount = Infinity;
   static made: FakeImageDecoder[] = [];
   static openFrames = 0;
   decoded: number[] = [];
@@ -19,7 +21,10 @@ export class FakeImageDecoder {
     const frameCount = new Uint8Array(init.data)[0];
     this.tracks = {
       ready: Promise.resolve(),
-      selectedTrack: { frameCount, repetitionCount: Infinity },
+      selectedTrack: {
+        frameCount,
+        repetitionCount: FakeImageDecoder.repetitionCount,
+      },
     };
     FakeImageDecoder.made.push(this);
   }
@@ -47,6 +52,7 @@ export class FakeImageDecoder {
 export const stubGifDecoding = () => {
   FakeImageDecoder.made = [];
   FakeImageDecoder.openFrames = 0;
+  FakeImageDecoder.repetitionCount = Infinity;
   vi.stubGlobal("ImageDecoder", FakeImageDecoder);
   vi.stubGlobal("fetch", async (url: string) => ({
     arrayBuffer: async () =>
