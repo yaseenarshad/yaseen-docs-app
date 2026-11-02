@@ -8,6 +8,7 @@ import {
   fileIdOfAssetName,
   isValidFileId,
   mimeForAssetExt,
+  newBoardScene,
   parseDataUrl,
   parseBoardMetaBlock,
   picturesSize,
@@ -256,5 +257,16 @@ describe('picturesSize (YAZ-3943 D5, the cog size row)', () => {
     expect(picturesSize(elements, files)).toEqual({ bytes: 5 + 9, count: 2, missing: 1 })
     expect(picturesSize([], files)).toEqual({ bytes: 0, count: 0, missing: 0 })
     expect(picturesSize(elements, { ...files, gone: { mimeType: 'image/png' } }).missing).toBe(1)
+  })
+})
+
+describe('newBoardScene (YAZ-3943 demo 2 and round 3, one rule: YAZ-4074 6A item 33)', () => {
+  it('keeps the scene for "inside"; "assets" is born pictures out; "folder" names a valid folder, else the vault assets/', () => {
+    const json = serializeBoard({ type: 'excalidraw', elements: [] })
+    const block = (pictures: Parameters<typeof newBoardScene>[1], folder = '') => JSON.parse(newBoardScene(json, pictures, folder, 7))[BOARD_META_KEY]
+    expect(newBoardScene(json, 'inside', 'Pics', 7)).toBe(json)
+    expect(block('assets', 'Pics')).toEqual({ createdAt: 7, updatedAt: 7, pictures: 'assets', switched: { pictures: 7 } })
+    expect(block('folder', 'Pics')).toMatchObject({ pictures: 'assets', picturesFolder: 'Pics' })
+    expect(block('folder', '../out')).not.toHaveProperty('picturesFolder')
   })
 })

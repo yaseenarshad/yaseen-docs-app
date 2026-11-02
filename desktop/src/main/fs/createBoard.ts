@@ -15,7 +15,7 @@
  */
 import { stat } from 'node:fs/promises'
 import type { BoardKind, CreateBoardResponse, NewBoardPictures } from '@shared/types'
-import { EMPTY_SCENE_JSON, isValidPicturesFolder, serializeBoard, stampBoardMeta, withPicturesOut } from '@shared/drawingAssets'
+import { EMPTY_SCENE_JSON, newBoardScene, stampBoardMeta } from '@shared/drawingAssets'
 import { EMPTY_DIAGRAM_XML, stampDiagramMeta } from '@shared/diagramFile'
 import { fileKind } from '@shared/fileKind'
 import { resolveBoard } from './boardDocument'
@@ -23,18 +23,13 @@ import { BridgeFailure, createDurable, fsCall, requireAbsPath } from './fsUtils'
 import { requireRequest } from './validate'
 
 /**
- * The bytes a new board of `kind` is born with, stamped with `now`. YAZ-3943 demo 2: a drawing made while
- * Settings › Files & Links › "New boards keep pictures" is "In the assets folder" is born "pictures out"
- * (`withPicturesOut`, with its 1E switch time); "Inside the board" writes nothing (D5's default). "In a folder
- * you pick" (demo round 3) is born out with `picturesFolder: folder`; with no folder chosen yet it is "assets".
+ * The bytes a new board of `kind` is born with, stamped with `now`. YAZ-3943 demo 2: a drawing follows
+ * Settings › Files & Links › "New boards keep pictures" (`newBoardScene`).
  */
 export function emptyBoard(kind: BoardKind, now: number, pictures: NewBoardPictures = 'inside', folder = ''): string {
   const at = { createdAt: now, updatedAt: now }
   if (kind !== 'drawing') return stampDiagramMeta(EMPTY_DIAGRAM_XML, at)
-  const stamped = stampBoardMeta(EMPTY_SCENE_JSON, at)
-  if (pictures === 'inside') return stamped
-  const own = pictures === 'folder' && isValidPicturesFolder(folder) ? folder : null
-  return serializeBoard(withPicturesOut(JSON.parse(stamped) as Record<string, unknown>, true, now, now, own))
+  return newBoardScene(stampBoardMeta(EMPTY_SCENE_JSON, at), pictures, folder, now)
 }
 
 export async function createBoard(req: unknown, pictures: NewBoardPictures = 'inside', folder = ''): Promise<CreateBoardResponse> {

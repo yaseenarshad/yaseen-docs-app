@@ -1,4 +1,4 @@
-import { GITHUB_FILE_WARN_BYTES, type BoardMeta } from './types'
+import { GITHUB_FILE_WARN_BYTES, type BoardMeta, type NewBoardPictures } from './types'
 import { isFiniteNumber, isRecord } from './guards'
 
 /**
@@ -350,6 +350,19 @@ export function withPicturesOut(scene: Record<string, unknown>, out: boolean, bo
   const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }
   const switches = out ? { [PICTURES_KEY]: PICTURES_OUT, ...(nextFolder === null ? {} : { [PICTURES_FOLDER_KEY]: nextFolder }) } : {}
   return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...switches }, PICTURES_KEY, at), ...rest }
+}
+
+/**
+ * The scene JSON of a new board (YAZ-3943 demo 2), from Settings › Files & Links › "New boards keep pictures":
+ * "Inside the board" keeps `json` (D5's default); "In the assets folder" is born "pictures out" (`withPicturesOut`,
+ * with its 1E switch time at `now`); "In a folder you pick" (demo round 3) names that folder too, and is "assets"
+ * while no valid folder is chosen yet. One rule for the client's `createDrawing` and main's `createBoard`
+ * (YAZ-4074 6A item 33).
+ */
+export function newBoardScene(json: string, pictures: NewBoardPictures, folder: string, now: number): string {
+  if (pictures === 'inside') return json
+  const own = pictures === 'folder' && isValidPicturesFolder(folder) ? folder : null
+  return serializeBoard(withPicturesOut(JSON.parse(json) as Record<string, unknown>, true, now, now, own))
 }
 
 // ---------- Link preview on hover, per board (YAZ-3943 demo 2) ----------

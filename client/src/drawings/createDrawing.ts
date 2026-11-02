@@ -15,7 +15,7 @@
  * is enough because `readAsset`'s shortest-path rule finds it anywhere under the root — the
  * same Obsidian rule every other embed already rides.
  */
-import { EMPTY_SCENE_JSON, isValidPicturesFolder, serializeBoard, withPicturesOut } from '@shared/drawingAssets'
+import { EMPTY_SCENE_JSON, newBoardScene } from '@shared/drawingAssets'
 import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
 
@@ -37,15 +37,9 @@ export function drawingName(now: Date, suffix = 0): string {
 
 /** Writes one empty scene under `root`; resolves the new file's basename (see module doc). */
 export async function createDrawing(root: string, now: Date = new Date()): Promise<string> {
-  // YAZ-3943 demo 2: "New boards keep pictures" › "In the assets folder": the board is born "pictures out", with the
-  // dates and the switch time its block needs to be trusted; "Inside the board" writes the plain empty scene, as before.
-  // "In a folder you pick" (demo round 3) names that folder too; none chosen yet is "assets" (`fs/createBoard.ts`'s rule).
+  // YAZ-3943 demo 2: "New boards keep pictures" (`newBoardScene`); "Inside the board" writes the plain empty scene, as before.
   const { newBoardPictures, newBoardPicturesFolder } = storage.getSettings()
-  const folder = newBoardPictures === 'folder' && isValidPicturesFolder(newBoardPicturesFolder) ? newBoardPicturesFolder : null
-  const content =
-    newBoardPictures === 'inside'
-      ? EMPTY_SCENE_JSON
-      : serializeBoard(withPicturesOut(JSON.parse(EMPTY_SCENE_JSON) as Record<string, unknown>, true, now.getTime(), now.getTime(), folder))
+  const content = newBoardScene(EMPTY_SCENE_JSON, newBoardPictures, newBoardPicturesFolder, now.getTime())
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const name = drawingName(now, attempt)
     try {
