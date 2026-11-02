@@ -17,6 +17,7 @@ import { encodeShrunkGif, shrunkGifSize } from "../gif/gifShrink";
 
 import { Excalidraw } from "../index";
 
+import { API } from "./helpers/api";
 import { mockMultipleHTMLImageElements } from "./helpers/mocks";
 import { act, GlobalTestState, render, waitFor } from "./test-utils";
 
@@ -324,5 +325,84 @@ describe("YAZ-3944 D3, D16: adding a GIF, and Paste at full size", () => {
     expect(full.fileId).toBe(await blobModule.generateIdFromFile(picture));
     expect(first.fileId).not.toBe(full.fileId);
     expect([first.width, full.width]).toEqual([1440, 3000]);
+  });
+});
+
+/**
+ * YAZ-3943 2D: a picture or GIF dragged from the sidebar. The row drag is an OS
+ * file drag (YAZ-3254 D4), so it lands as a Finder drop does: a picture at the
+ * drop point with the D3 shrink. The host's page links (4D) never see it.
+ */
+describe("YAZ-3943 2D: a picture or GIF dropped from the sidebar", () => {
+  const dropLinks = vi.fn(() => null);
+  // a real 1×1 PNG: the drop first looks in a PNG for a scene, and finds none
+  const PNG = Uint8Array.from(
+    atob(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+    ),
+    (c) => c.charCodeAt(0),
+  );
+
+  beforeEach(async () => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    reseed(7);
+    vi.spyOn(blobModule, "generateIdFromFile").mockImplementation(() =>
+      Promise.resolve(randomId() as FileId),
+    );
+    // jsdom draws no picture: a resize gives the same file back
+    vi.spyOn(blobModule, "resizeImageFile").mockImplementation((file: File) =>
+      Promise.resolve(file),
+    );
+    Object.assign(document, {
+      elementFromPoint: () => GlobalTestState.canvas,
+    });
+    dropLinks.mockClear();
+    await render(
+      <Excalidraw hostLinks={{ resolve: () => null, dropLinks }} />,
+    );
+    h.state.height = 1000;
+    mockMultipleHTMLImageElements([[800, 600]]);
+  });
+
+  it("a PNG drop adds a picture at the drop point", async () => {
+    await API.drop([
+      {
+        kind: "file",
+        file: new File([PNG], "photo.png", { type: MIME_TYPES.png }),
+      },
+    ]);
+    // the placeholder first, then the picture with its file
+    await vi.waitFor(() =>
+      expect(h.app.files[(h.elements[0] as any)?.fileId]).toBeDefined(),
+    );
+    const [picture] = h.elements as any[];
+    expect(picture.type).toBe("image");
+    expect(h.app.files[picture.fileId].mimeType).toBe(MIME_TYPES.png);
+    expect(dropLinks).not.toHaveBeenCalled();
+    expect(h.state.errorMessage).toBeNull();
+  });
+
+  it("a big GIF drop shrinks in the worker and stays a GIF", async () => {
+    const original = gifFile(makeGif(40, 30, 2), "big.gif");
+    const shrunk = gifFile(makeGif(20, 15, 2), "big.gif");
+    vi.spyOn(gifModule, "gifNeedsShrink").mockResolvedValue(true);
+    const shrink = vi
+      .spyOn(gifModule, "shrinkGifFile")
+      .mockResolvedValue(shrunk);
+    const resize = vi.mocked(blobModule.resizeImageFile);
+
+    await API.drop([{ kind: "file", file: original }]);
+
+    await vi.waitFor(() =>
+      expect(h.app.files[(h.elements[0] as any)?.fileId]).toBeDefined(),
+    );
+    expect(h.elements).toHaveLength(1);
+    expect(shrink).toHaveBeenCalledTimes(1);
+    expect(resize).not.toHaveBeenCalled();
+    const file = h.app.files[(h.elements[0] as any).fileId];
+    expect(file.mimeType).toBe(MIME_TYPES.gif);
+    expect(file.dataURL).toBe(await blobModule.getDataURL(shrunk));
+    expect(dropLinks).not.toHaveBeenCalled();
   });
 });
