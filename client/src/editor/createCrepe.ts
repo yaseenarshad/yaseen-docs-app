@@ -202,6 +202,8 @@
  *  - Column resize (YAZ-3696 D2, `table/tableColumnResize.ts`): `prosemirror-tables`' `columnResizing` as
  *    installed, put just before `tableEditing` so a grip drag selects no cells, with the drag measured
  *    in layout px under document zoom. The vendored table block draws the `<colgroup>` from `colwidth`.
+ *  - Shift+arrow in a cell (YAZ-4171, `table/tableShiftArrow.ts`): also just before `tableEditing`; at the edge
+ *    of the cell's text the first press selects only that cell, and `tableEditing` grows it on the next.
  *  - Paste into cells (YAZ-3696 D4 / S2, `table/tablePaste.ts`, called from `clipboardPaste.ts`): cells
  *    and tab-separated text fill from the caret cell and grow the table; one value fills selected
  *    cells; tab-separated text outside a table makes one. One `replaceWith`, one undo step.
@@ -280,6 +282,7 @@ import { visibleFormatting } from './visibleFormatting'
 import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
 import { tableColumnResize } from './table/tableColumnResize'
+import { tableShiftArrow } from './table/tableShiftArrow'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut, copyLinkTextCtx, copyMarkdownCtx, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
@@ -596,6 +599,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(lineNumbers)
   // Column resize (YAZ-3696 D2): `columnResizing`, before `tableEditing`, zoom-aware; the table block draws the `<colgroup>`.
   crepe.editor.use(tableColumnResize)
+  // Shift+arrow at the edge of a cell's text selects that cell only (YAZ-4171), also before `tableEditing`.
+  crepe.editor.use(tableShiftArrow)
   // Fill down (YAZ-3696 S4): the corner handle of the selected cells.
   crepe.editor.use(tableFill)
   // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.

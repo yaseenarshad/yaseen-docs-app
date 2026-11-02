@@ -2,7 +2,8 @@
  * Frozen rows and columns of a note table (YAZ-3769, YAZ-3696 S3) on the real editor in jsdom: the
  * frozen cells' decorations, the columns' sticky offsets, and the rows' offset on a scroll of the
  * note (the folder page's method, `lib/pinnedHeader.ts`): it follows the scroll, stops at the
- * table's end, keeps one value at each document zoom, and its listeners go when the table unfreezes.
+ * table's end, keeps one value at each document zoom, and its listeners go when the table unfreezes; and
+ * the column handle under a pinned header (YAZ-4170).
  * jsdom has no layout, so the boxes are given by hand, and no Web Animations, so `animate` is stubbed.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -10,6 +11,8 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from '../createCrepe'
+import { TABLE_HANDLE_MENU } from '../noteMenu'
+import { cellPos } from './tableTestKit'
 
 const mounted: Array<{ crepe: Crepe; scroller: HTMLElement }> = []
 afterEach(async () => {
@@ -71,6 +74,7 @@ async function mount(comment: string, { tableTop = -80, zoom = 1 } = {}) {
     block,
     frames,
     scroller,
+    tableTop: () => top,
     setTableTop: (next: number) => {
       top = next
     },
@@ -324,5 +328,55 @@ describe('the frozen rows follow the scroll (the folder-page method)', () => {
     expect(offsets(view)).toEqual(['', '', '', ''])
     scroll()
     expect(frames).toHaveLength(0)
+  })
+})
+
+// YAZ-4170: the column handle went above the header cell (`placement: 'top'`). A pinned header sits at the note's top
+// edge, so the handle was above the note, off the screen. Now it goes inside the header's top edge, and it follows
+// the frozen rows when they move.
+describe('the column handle under a pinned header (YAZ-4170)', () => {
+  it('shows inside the pinned header\'s top edge, follows the rows on a note scroll, and a click opens the column menu', async () => {
+    const { view, block, scroll, flush, tableTop, setTableTop } = await mount('<!-- table: freeze 1 row -->')
+    scroll()
+    flush()
+    // The cells' boxes: 100 px columns, 30 px rows; the frozen header row moves by its animation's offset.
+    const rows = rowsOf(view)
+    const rowTop = (r: number) => tableTop() + 30 * r + (r === 0 ? parseFloat(moved.get(rows[0]!) ?? '0') : 0)
+    rows[0]!.getBoundingClientRect = () => box(rowTop(0), 30)
+    rows.forEach((row, r) => [...row.cells].forEach((cell, c) => {
+      cell.getBoundingClientRect = () => new DOMRect(c * 100, rowTop(r), 100, 30)
+    }))
+    view.posAtCoords = ({ left, top }) => {
+      const pos = cellPos(view, Math.floor((top - tableTop()) / 30), Math.floor(left / 100))
+      return { pos: pos + 2, inside: pos + 1 }
+    }
+    // Crepe's handle sizes (a 40 × 16 column pill and a 16 × 28 row pill; jsdom has no CSS).
+    const col = block.querySelector<HTMLElement>('[data-role="col-drag-handle"]')!
+    const row = block.querySelector<HTMLElement>('[data-role="row-drag-handle"]')!
+    for (const [el, w, h] of [[col, 40, 16], [row, 16, 28]] as const) {
+      Object.defineProperty(el, 'offsetWidth', { value: w })
+      Object.defineProperty(el, 'offsetHeight', { value: h })
+    }
+    const placed = () => new Promise((resolve) => setTimeout(resolve, 30))
+    // The note is 80 px down the table: the header is pinned at the note's top (0 px). The pointer is on B4 (10–40 px).
+    expect(rowTop(0)).toBe(0)
+    col.parentElement!.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 150, clientY: 25 }))
+    await placed()
+    // Crepe's `translateY(50%)` moves the pill down by half its height (8 px): its top edge is the header's top edge.
+    expect(col.style.top).toBe('-8px')
+    expect(row.style.top).toBe('11px')
+    // The note scrolls 5 px more, and the pointer stays still: the frozen rows move, so the handles are placed again.
+    setTableTop(-85)
+    scroll()
+    flush()
+    await placed()
+    expect(rowTop(0)).toBe(0)
+    expect(col.style.top).toBe('-8px')
+    expect(row.style.top).toBe('6px')
+    // A click on the handle opens the column menu at a cell of column B in row 1.
+    const got: Array<{ pos: number }> = []
+    view.dom.addEventListener(TABLE_HANDLE_MENU, (e) => got.push((e as CustomEvent).detail))
+    col.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 150, clientY: 0 }))
+    expect(got.map((detail) => detail.pos)).toEqual([cellPos(view, 0, 1)])
   })
 })
