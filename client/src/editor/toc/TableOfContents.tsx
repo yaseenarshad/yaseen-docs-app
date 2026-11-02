@@ -297,9 +297,13 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
    * Every fold and unfold (YAZ-3939 D2): no `channel.jump`, so the note never folds. The current
    * row moves at once to the row the reader is in, or to the folded row over it (D5): the spy reads
    * again only after the render, and the marker must not light another row first. Only the keys
-   * that a row of the note still has are saved: the fold of a renamed or deleted row goes.
+   * that a row of the note still has are saved: the fold of a renamed or deleted row goes. In a
+   * bullet zoom the list can be the zoom's own (YAZ-4094 4D): the folds of the rows it does not
+   * show stay, for the note's own list after the zoom.
    */
-  const saveFolds = (next: ReadonlySet<string>): void => {
+  const saveFolds = (chosen: ReadonlySet<string>): void => {
+    const own = new Set(keys)
+    const next: ReadonlySet<string> = hidden ? new Set([...[...folded].filter((key) => !own.has(key)), ...chosen]) : chosen
     const after = unfoldedRows(listed, keys, next)
     // The spy's own answer on the new rows (YAZ-4048): an unfold into the section the reader is in
     // lights that row now, so the spy's read after the render finds nothing new and the list holds
@@ -313,7 +317,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     setCurrent(to)
     hold.current = true
     setFolded(next)
-    onChangeFolds(keys.filter((key) => next.has(key)))
+    onChangeFolds(hidden ? [...next] : keys.filter((key) => next.has(key)))
   }
   /** Folds or opens `row`; with `open`, only toward it. */
   const toggleFold = (row: ShownRow, open?: boolean): void => {
