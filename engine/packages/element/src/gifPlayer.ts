@@ -83,8 +83,9 @@ type GifTrack = GifClock & {
  * once for all GIFs whose frame is due. A GIF that the last repaint did not draw (off screen,
  * deleted) waits until a paint draws it again.
  *
- * YAZ-3944 D4, auto-pause, never saved: nothing plays while the board is hidden (`setHidden`) or
- * after 5 min with no use (`activity`); it plays again on return. A paused GIF never opens a decoder.
+ * YAZ-3944 D4, auto-pause, never saved: nothing plays while the board is hidden (`setHidden`), while
+ * a text box is in edit mode (`setTyping`, YAZ-4074 6A item 6), or after 5 min with no use
+ * (`activity`); it plays again on return. A paused GIF never opens a decoder.
  */
 export class GifPlayer {
   /** The board layer's paint, without React. */
@@ -100,6 +101,8 @@ export class GifPlayer {
   hidden = false;
   /** no mouse or key use on the board for 5 min */
   idle = false;
+  /** a text box is in edit mode (YAZ-4074 6A item 6): no tick repaints the board while you type */
+  typing = false;
   private lastActivityAt = performance.now();
 
   constructor(
@@ -141,6 +144,19 @@ export class GifPlayer {
     }
     this.hidden = hidden;
     if (hidden) {
+      this.stop();
+    } else {
+      this.schedule();
+    }
+  }
+
+  /** A text box went into edit mode, or left it. D4 allows this pause: nothing is saved. */
+  setTyping(typing: boolean) {
+    if (this.typing === typing) {
+      return;
+    }
+    this.typing = typing;
+    if (typing) {
       this.stop();
     } else {
       this.schedule();
@@ -286,7 +302,7 @@ export class GifPlayer {
   }
 
   private schedule() {
-    if (this.timer || this.hidden || this.idle) {
+    if (this.timer || this.hidden || this.idle || this.typing) {
       return;
     }
     if (performance.now() - this.lastActivityAt >= GIF_IDLE_MS) {

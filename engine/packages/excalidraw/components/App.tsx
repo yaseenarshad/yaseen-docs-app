@@ -4443,6 +4443,11 @@ class App extends React.Component<AppProps, AppState> {
     this.handleInteractionStateChange(prevProps, prevState);
     this.handleForcedToolChange(prevProps, prevState);
 
+    // YAZ-4074 6A item 6: GIFs wait while a text box is in edit mode
+    if (prevState.editingTextElement !== this.state.editingTextElement) {
+      this.gifPlayer.setTyping(this.state.editingTextElement !== null);
+    }
+
     if (prevProps.hostLinks !== this.props.hostLinks) {
       this.unmountHostLinks?.();
       this.mountHostLinks();

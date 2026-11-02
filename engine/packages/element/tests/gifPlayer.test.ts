@@ -219,6 +219,23 @@ describe("YAZ-3944 D2: the GIF player", () => {
     expect(repaints).toBe(1);
   });
 
+  it("YAZ-4074 6A item 6: a text box in edit mode stops the timer, so no tick repaints the board while you type; the end of the edit starts it again", async () => {
+    files.a = file("a", MIME_TYPES.gif, 3);
+    player.frameToken(image("a"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    player.setTyping(true);
+    expect(vi.getTimerCount()).toBe(0);
+    // a keystroke's own paint draws the GIF: it still waits
+    player.frameToken(image("a"));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(repaints).toBe(0);
+
+    player.setTyping(false);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(repaints).toBe(1);
+  });
+
   it("YAZ-3944 D4: 5 min with no use stops the timer, and a mouse move starts it again", async () => {
     files.a = file("a", MIME_TYPES.gif, 3);
     player.frameToken(image("a"));

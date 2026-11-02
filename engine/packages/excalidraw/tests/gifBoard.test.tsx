@@ -186,6 +186,16 @@ describe("YAZ-3944 D4: Pause GIF and auto-pause", () => {
     expect(h.app.gifPlayer.hidden).toBe(false);
   });
 
+  it("YAZ-4074 6A item 6: GIFs wait while a text box is in edit mode", () => {
+    const text = API.createElement({ type: "text", text: "Hello" });
+    API.setElements([text]);
+    expect(h.app.gifPlayer.typing).toBe(false);
+    act(() => h.app.setState({ editingTextElement: text }));
+    expect(h.app.gifPlayer.typing).toBe(true);
+    act(() => h.app.setState({ editingTextElement: null }));
+    expect(h.app.gifPlayer.typing).toBe(false);
+  });
+
   it("a mouse move on the board ends the 5 min idle stop", () => {
     h.app.gifPlayer.idle = true;
     fireEvent.pointerMove(GlobalTestState.interactiveCanvas);
