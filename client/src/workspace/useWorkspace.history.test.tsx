@@ -330,9 +330,9 @@ describe('a step in a new tab (YAZ-4156 D1, D4, D5): ⌘-, ⇧- or middle click 
   it('S3, D5: in front, the copy shows and is a step; after a Back that step clears Forward, as any new step does', () => {
     const s = run(onA(), { type: 'navigate', path: B }, { type: 'navigate', path: C }, { type: 'back' })
     expect(trail(s)).toBe('a [b] c')
-    const toC = s.history.steps[2]
-    const front = run(s, { type: 'open-step', id: toC.id, front: true, next: true })
-    expect([strip(front), where(front), front.mounted.includes(front.active!), trail(front)]).toEqual([['b', 'c'], 'c', true, 'a b [c]'])
+    const toA = s.history.steps[0]
+    const front = run(s, { type: 'open-step', id: toA.id, front: true, next: true })
+    expect([strip(front), where(front), front.mounted.includes(front.active!), trail(front)]).toEqual([['b', 'a'], 'a', true, 'a b [a]'])
     expect(front.history.steps[2].tab).toBe(front.tabs[1].id)
     expect(where(run(front, { type: 'back' }))).toBe('b')
   })
@@ -346,24 +346,6 @@ describe('a step in a new tab (YAZ-4156 D1, D4, D5): ⌘-, ⇧- or middle click 
     expect(strip(run(s, { type: 'open-step', id: toA.id, front: true }))).toEqual(['b', 'a'])
   })
 
-  it('one owner per file (YAZ-2940 S15): a step\'s page that the right panel shows now leaves the panel, as for any new tab', () => {
-    const s = run(onA(), { type: 'navigate', path: B }, { type: 'open-right', path: A })
-    expect([strip(s), trail(s), s.rightPanel.items]).toEqual([['b'], 'a [b]', [A]])
-    const opened = run(s, { type: 'open-step', id: s.history.steps[0].id })
-    expect([strip(opened), opened.rightPanel.items]).toEqual([['b', 'a'], []])
-  })
-
-  it('YAZ-4196 (1A): a plain Back, or a row of the menu of ‹, to a step whose page the right panel shows now: the page leaves the panel (YAZ-2940 S15)', () => {
-    const s = run(onA(), { type: 'navigate', path: B }, { type: 'navigate', path: C }, { type: 'open-right', path: A })
-    const back = run(s, { type: 'back' }, { type: 'back' })
-    expect([back.tabs.map((t) => t.path), back.rightPanel.items]).toEqual([[A], []])
-    const went = run(s, { type: 'go', id: s.history.steps[0].id })
-    expect([went.tabs.map((t) => t.path), went.rightPanel.items]).toEqual([[A], []])
-    // A step whose page the right panel does not show leaves the panel as it is.
-    const still = run(s, { type: 'back' })
-    expect([still.tabs.map((t) => t.path), still.rightPanel.items]).toEqual([[B], [A]])
-  })
-
   it('S12, S16, S18: a step that is not there, or a closed tab\'s step, or the blank tab in front: nothing changes', () => {
     const s = run(onA(), { type: 'navigate', path: B }, { type: 'open-new', path: C })
     const toC = s.history.steps[2]
@@ -372,5 +354,20 @@ describe('a step in a new tab (YAZ-4156 D1, D4, D5): ⌘-, ⇧- or middle click 
     expect(run(closed, { type: 'open-step', id: toC.id, front: true })).toBe(closed)
     const blank = run(s, { type: 'new-tab' })
     expect(run(blank, { type: 'open-step', id: s.history.steps[0].id })).toBe(blank)
+  })
+})
+
+describe('one owner per file after a step (YAZ-2940 S15, YAZ-4196)', () => {
+  it('Back, Forward, a row of the menu of ‹ ›, and a step in a new tab: a page that the right panel shows leaves the panel; a page it does not show leaves the panel as it is', () => {
+    const s = run(onA(), { type: 'navigate', path: B }, { type: 'navigate', path: C }, { type: 'open-right', path: A })
+    const paths = (x: WorkspaceState) => [x.tabs.map((t) => t.path), x.rightPanel.items]
+    expect(paths(run(s, { type: 'back' }, { type: 'back' }))).toEqual([[A], []])
+    expect(paths(run(s, { type: 'go', id: s.history.steps[0].id }))).toEqual([[A], []])
+    expect(paths(run(s, { type: 'open-step', id: s.history.steps[0].id }))).toEqual([[C, A], []])
+    expect(paths(run(s, { type: 'back' }))).toEqual([[B], [A]])
+    // Forward: after a Back, the right panel opens the page ahead; Forward brings it back to its tab and out of the panel.
+    const ahead = run(onA(), { type: 'navigate', path: B }, { type: 'back' }, { type: 'open-right', path: B })
+    expect([trail(ahead), ...paths(ahead)]).toEqual(['[a] b', [A], [B]])
+    expect(paths(run(ahead, { type: 'forward' }))).toEqual([[B], []])
   })
 })

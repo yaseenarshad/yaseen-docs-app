@@ -276,9 +276,9 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   }, [lit])
   const isFolder = useFolderPaths(roots)
   const labelOf = (path: string): string => pageLabel(path, isFolder(path), titles)
-  /** A step in a new tab (YAZ-4156 D2): ⌘ or the middle button behind, ⇧ (with ⌘ or not) in front. False: a plain click. */
+  /** A step in a new tab (YAZ-4156 D2): ⌘ or the middle button behind, ⇧ (with ⌘ or not) in front. False: any other click. */
   const openStep = (e: ReactMouseEvent, to: NavStep | undefined): boolean => {
-    if (!(e.metaKey || e.shiftKey || e.button === 1) || to === undefined || onOpenStep === undefined) return false
+    if (!(e.button === 1 || (e.button === 0 && (e.metaKey || e.shiftKey))) || to === undefined || onOpenStep === undefined) return false
     onOpenStep(to.id, e.shiftKey)
     return true
   }
@@ -290,11 +290,12 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   /**
    * ‹ and › (YAZ-3647 E3): a click takes one step; a right-click, or a press held NAV_HOLD_MS, opens the menu of the
    * steps that way instead, under the button for a held press. A right press leaves the keyboard focus where it is.
-   * ⌘- or middle click opens the nearest step in a new tab behind, and ⇧-click in front (YAZ-4156 D2): this tab stays.
+   * ⌘- or middle click opens the nearest step in a new tab behind, and ⇧-click in front (YAZ-4156 D2): this tab stays,
+   * so those presses leave the focus where it is too (a Space after them is no Back), and ⇧ selects no text.
    */
   const navProps = (steps: readonly NavStep[], step: () => void) => ({
     onMouseDown: (e: ReactMouseEvent<HTMLButtonElement>) => {
-      if (e.button === 2) e.preventDefault()
+      if (e.button !== 0 || e.metaKey || e.shiftKey) e.preventDefault()
       if (e.button !== 0 || steps.length === 0 || onGoToStep === undefined) return
       const { left, bottom } = e.currentTarget.getBoundingClientRect()
       window.clearTimeout(hold.current.timer)
@@ -312,9 +313,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       if (hold.current.opened) hold.current.opened = false
       else if (!openStep(e, steps[0])) step()
     },
-    onAuxClick: (e: ReactMouseEvent<HTMLButtonElement>) => {
-      if (e.button === 1) openStep(e, steps[0])
-    },
+    onAuxClick: (e: ReactMouseEvent<HTMLButtonElement>) => void openStep(e, steps[0]),
     onContextMenu: (e: ReactMouseEvent<HTMLButtonElement>) => {
       e.preventDefault()
       if (steps.length > 0 && onGoToStep !== undefined) setNavMenu({ x: e.clientX, y: e.clientY, steps })
@@ -997,9 +996,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                   if (!openStep(e, step)) onGoToStep?.(step.id)
                 }}
                 onAuxClick={(e) => {
-                  if (e.button !== 1) return
-                  setNavMenu(null)
-                  openStep(e, step)
+                  if (openStep(e, step)) setNavMenu(null)
                 }}
               >
                 {atBullet(step.path, step.zoom)}

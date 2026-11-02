@@ -964,9 +964,9 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
       press(forward, 'click', { shiftKey: true })
       expect(onOpenStep.mock.calls).toEqual([[41, false], [41, false], [41, true], [41, true], [4, false], [4, false], [4, true]])
       expect([onBack.mock.calls.length, onForward.mock.calls.length, rows().length]).toEqual([0, 0, 0])
-      // A plain click is a plain Back, and a right press (no `auxclick` of button 1) opens nothing new.
+      // A plain click is a plain Back, and a ⌘ right press (an `auxclick` of button 2) opens no tab.
       act(() => back.click())
-      press(back, 'auxclick', { button: 2 })
+      press(back, 'auxclick', { button: 2, metaKey: true })
       expect([onBack.mock.calls.length, onOpenStep.mock.calls.length]).toEqual([1, 7])
     })
 
@@ -981,6 +981,8 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
       open()
       press(rows()[0], 'click', { shiftKey: true })
       open()
+      press(rows()[2], 'auxclick', { button: 2, metaKey: true })
+      expect(rows()).toHaveLength(3)
       press(rows()[2], 'auxclick', { button: 1 })
       expect([onOpenStep.mock.calls, rows().length, onGoToStep.mock.calls.length]).toEqual([[[17, false], [41, true], [9, false]], 0, 0])
     })

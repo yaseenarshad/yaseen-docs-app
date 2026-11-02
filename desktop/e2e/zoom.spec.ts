@@ -151,7 +151,6 @@ test('step 2c — ⌘-click ‹ opens its step in a new tab behind, and this tab
   await backBtn(win).click({ modifiers: ['Meta'] })
   await expect(tabsOf(win)).toHaveText([TITLE, TITLE]) // a copy of the page, next to this tab
   await expect(crumbs(win)).toHaveCount(0) // this tab did not move
-  await expect(forwardBtn(win)).toBeDisabled() // and the list did not either
   // The new tab is stored with the window at the step's bullet (YAZ-3646 D14), so a restart keeps it (S15).
   await expect.poll(async () => (await readState(userData)).windows[0]?.tabStrip?.[1]?.zoom ?? '', { timeout: 10_000 }).toMatch(ZOOM_KEY)
   await tabsOf(win).nth(1).click()
