@@ -12,20 +12,48 @@
 
 .milkdown .ProseMirror .table-now-chip {
   position: absolute;
-  bottom: 8px;
+  bottom: 10px;
   left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   transform: translateX(-50%);
-  padding: 2px 10px;
-  border: 0;
+  padding: 4px 10px 4px 9px;
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--table-text-red);
-  color: var(--crepe-color-background);
+  background: var(--bg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  color: var(--fg);
   font-size: 12px;
-  line-height: 18px;
+  font-weight: 500;
+  line-height: 16px;
   cursor: pointer;
   pointer-events: auto;
 }
 
+.milkdown .ProseMirror .table-now-chip:hover {
+  background: var(--bg-hover);
+}
+
+/* The red dot of the now line, and the arrow that points at the row (the YAZ-4163 demo's look). */
+.milkdown .ProseMirror .table-now-chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--table-text-red);
+}
+
+.milkdown .ProseMirror .table-now-chip > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--fg-muted);
+}
+
 .milkdown .ProseMirror .table-now-chip[hidden] {
+  display: none;
+}
+
+/* Settings › Calendar tables › Now button Off (the YAZ-4163 demo): no chip on any table. */
+[data-table-now-button='off'] .milkdown .ProseMirror .table-now-chip-anchor {
   display: none;
 }

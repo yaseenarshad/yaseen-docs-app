@@ -197,6 +197,8 @@ export const tableRows: RowProvider = (view, target) => {
     ),
   ]
   if (attrs.calendar > 0) {
+    // The YAZ-4163 demo: this table's "Now" chip; Settings › Calendar tables › Now button turns off every one.
+    items.push(choice('Now button', attrs.nowButton ? 'on' : 'off', 'on', [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], (on) => setTable(view, pos, { nowButton: on === 'on' })))
     items.push({ label: 'Go to now', disabled: nowPlace(table.node, minutesOf(new Date()))?.row == null, run: () => void goToNow(view, pos) })
     // The YAZ-4163 demo: the rows of Settings › Calendar tables › Calendar day that the table does not have yet.
     const { start, end } = calendarDaySetting()

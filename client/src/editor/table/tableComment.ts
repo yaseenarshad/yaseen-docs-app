@@ -63,7 +63,7 @@ export interface UnknownPart {
 }
 
 /** The words of the known parts, in the fixed order. */
-export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'fold', 'zoom', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar'] as const
+export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'fold', 'zoom', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar', 'nonow'] as const
 
 /** The slot lengths of a calendar table, in minutes (YAZ-4162, D1). */
 export const CALENDAR_SLOTS = [15, 30, 60] as const
@@ -108,6 +108,8 @@ export interface TableStyle {
   freeze?: { rows: number; cols: number }
   /** A calendar table's slot length (YAZ-4162). */
   calendar?: CalendarSlot
+  /** A calendar table with no "Now" chip (the YAZ-4163 demo); the chip shows by default. */
+  nonow?: true
   /** The parts this build does not know, in their order (YAZ-4161). */
   unknown?: UnknownPart[]
 }
@@ -261,6 +263,7 @@ function readPart(style: TableStyle, word: string, rest: string[]): boolean {
       return true
     case 'stripes':
     case 'nowrap':
+    case 'nonow':
       if (rest.length !== 0) return false
       style[word] = true
       return true
@@ -377,6 +380,7 @@ export function formatTableComment(style: TableStyle): string | null {
   const { rows = 0, cols = 0 } = style.freeze ?? {}
   if (rows > 0 || cols > 0) push('freeze', ['freeze', ...(rows > 0 ? [plural(rows, 'row')] : []), ...(cols > 0 ? [plural(cols, 'col')] : [])].join(' '))
   if (style.calendar) push('calendar', `calendar ${style.calendar}m`)
+  if (style.nonow) push('nonow', 'nonow')
   const unknown = style.unknown ?? []
   const written = new Set(known.map(([word]) => word))
   const parts = known.flatMap(([word, text]) => [text, ...unknown.filter((part) => part.after === word).map((part) => part.text)])

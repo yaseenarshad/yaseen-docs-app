@@ -75,6 +75,8 @@ export const TABLE_DEFAULTS = {
   calendar: 0 as 0 | 15 | 30 | 60,
   valign: 'top' as Valign,
   zoom: 100,
+  /** A calendar table shows its "Now" chip (the YAZ-4163 demo); `false` saves `nonow`. */
+  nowButton: true,
   unknownParts: [] as UnknownPart[],
 }
 export type TableAttrs = typeof TABLE_DEFAULTS
@@ -100,6 +102,7 @@ function tableLevel(attrs: Record<string, unknown>): TableLevel {
   if (calendar !== null) out.calendar = calendar
   if (attrs.valign === 'middle' || attrs.valign === 'bottom') out.valignTable = attrs.valign
   if (isWhole(attrs.zoom, ZOOM_MIN, ZOOM_MAX) && attrs.zoom !== 100) out.zoom = attrs.zoom
+  if (attrs.nowButton === false) out.nonow = true
   const unknown = Array.isArray(attrs.unknownParts) ? attrs.unknownParts.map(unknownPart) : []
   if (unknown.length > 0 && unknown.every((part) => part !== null)) out.unknown = unknown as UnknownPart[]
   return out
@@ -150,6 +153,7 @@ function tableDomAttrs(attrs: Record<string, unknown>): Record<string, string> |
   if (level.nowrap) out['data-table-nowrap'] = ''
   if (level.calendar) out['data-table-calendar'] = String(level.calendar)
   if (level.valignTable) out['data-table-valign'] = level.valignTable
+  if (level.nonow) out['data-table-nonow'] = ''
   return Object.keys(out).length === 0 ? null : out
 }
 
@@ -176,6 +180,7 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
     calendar: Number(dom.getAttribute('data-table-calendar')),
     valign: dom.getAttribute('data-table-valign'),
     zoom: Number(dom.getAttribute('data-table-zoom')),
+    nowButton: !dom.hasAttribute('data-table-nonow'),
     unknownParts,
   }
   return levelAttrs(tableLevel(raw))
@@ -193,6 +198,7 @@ const levelAttrs = (style: TableLevel): TableAttrs => ({
   calendar: style.calendar ?? 0,
   valign: style.valignTable ?? 'top',
   zoom: style.zoom ?? 100,
+  nowButton: style.nonow !== true,
   unknownParts: style.unknown ?? [],
 })
 

@@ -7,7 +7,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { mount, unmountAll } from '../marks/markTestKit'
-import type { MenuItem, MenuRow } from '../blockHandleMenu'
+import { getMarkdownForSave } from '../createCrepe'
+import type { MenuChoiceField, MenuItem, MenuRow } from '../blockHandleMenu'
+import tableCalendarCss from './tableCalendar.css?raw'
 import { goToNow } from './tableCalendar'
 import { onGoToNowRequest, requestGoToNow, takeGoToNow } from './goToNowRequest'
 import { tableRows } from './tableRows'
@@ -81,6 +83,22 @@ describe('goToNow (D11)', () => {
     const at = early.view.state.selection
     expect(goToNow(early.view)).toBe(false)
     expect(early.view.state.selection.eq(at)).toBe(true)
+  })
+
+  it('scrolls the now row to the middle of the screen (the YAZ-4163 demo), not just into view', async () => {
+    const seen: Array<[Element, unknown]> = []
+    const was = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function (this: Element, arg?: unknown) {
+      seen.push([this, arg])
+    }
+    try {
+      const { view } = await mountAt(9, 40, calendar(DAY))
+      expect(goToNow(view)).toBe(true)
+      const row = view.dom.querySelectorAll('tr')[2]!
+      expect(seen.filter(([el]) => el === row).map(([, arg]) => arg)).toEqual([{ block: 'center' }])
+    } finally {
+      Element.prototype.scrollIntoView = was
+    }
   })
 
   it('a given table: its own now row', async () => {
@@ -169,15 +187,38 @@ describe('the "Now ↓" chip (D12)', () => {
     see(nowRow, true)
     expect(chip.hidden).toBe(true)
     see(nowRow, false)
-    expect([chip.hidden, chip.textContent]).toEqual([false, 'Now ↓'])
+    // The YAZ-4163 demo: a pill with a red dot, "Now" and an arrow icon, which points at the row; its name says where.
+    expect([chip.hidden, chip.textContent, chip.dataset.dir, chip.getAttribute('aria-label')]).toEqual([false, 'Now', 'down', 'Go to now, below'])
+    expect(chip.querySelector('.table-now-chip__dot')).not.toBeNull()
+    expect(chip.querySelector('svg')).not.toBeNull()
     see(nowRow, false, true)
-    expect(chip.textContent).toBe('Now ↑')
+    expect([chip.dataset.dir, chip.getAttribute('aria-label')]).toEqual(['up', 'Go to now, above'])
     see(block, false)
     expect(chip.hidden).toBe(true)
     see(block, true)
     chip.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
     chip.click()
     expect(caretCell(view)).toEqual({ table: 0, row: 2, col: 2 })
+  })
+
+  it('a table with `nonow` in its comment has no chip, and the part round-trips; the six-dot "Now button" sets it (the YAZ-4163 demo)', async () => {
+    stubObserver()
+    const off = calendar(DAY, 'calendar 30m, nonow')
+    const { root, view, crepe } = await mountAt(9, 40, off, { calendarClock: true })
+    expect(root.querySelector('.table-now-chip')).toBeNull()
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: calendar 30m, nonow -->')
+    const field = () => tableRows(view, { inside: tablesOf(view.state.doc)[0]! + 3 } as Parameters<typeof tableRows>[1], undefined as never).find((item) => 'label' in item && item.label === 'Now button') as MenuChoiceField
+    expect([field().value, field().fallback, field().choices.map((c) => c.label)]).toEqual(['off', 'on', ['On', 'Off']])
+    field().run(null)
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: calendar 30m -->')
+    expect(root.querySelector('.table-now-chip')).not.toBeNull()
+  })
+
+  it('Settings › Calendar tables › Now button Off hides every chip: `data-table-now-button` on the app (the YAZ-4163 demo)', () => {
+    const rules = [...tableCalendarCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.trim(), body }))
+    const off = rules.find(({ selector }) => selector.startsWith("[data-table-now-button='off']"))
+    expect(off?.selector).toContain('.table-now-chip-anchor')
+    expect(off?.body).toMatch(/display:\s*none/)
   })
 
   it('a preview (no clock) has no chip', async () => {

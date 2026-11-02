@@ -74,6 +74,7 @@ describe('settingCandidates', () => {
       // Settings › Editor › Tables (YAZ-4167 D16, YAZ-4162 D6, D14).
       'tableRowBand',
       'tableNowMark',
+      'tableNowButton',
       'tableDimPast',
       'tableShadeDarkness',
       'tableCalendarDay',

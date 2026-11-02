@@ -43,6 +43,7 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { $prose } from '@milkdown/kit/utils'
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
 import { foldRuns, runOf, unfoldRun } from './tableFold'
+import { tablerIcon } from './tableIcons'
 import { changedTables, typingOnly } from './tableStyle'
 import { calendarDaySetting, timeFormatSetting } from './timeFormatSetting'
 import './tableCalendar.css'
@@ -92,7 +93,9 @@ function rowTimes(table: ProseNode): Array<{ row: ProseNode; time: number | null
 }
 
 /**
- * The "Now ↓" chip (YAZ-4164 D12, built for the demo): a widget right after a calendar table, in the note editor only.
+ * The "Now" chip (YAZ-4164 D12; its look, the YAZ-4163 demo: a pill with a red dot, "Now" and an arrow that points at
+ * the now row): a widget right after a calendar table, in the note editor only. A table with `nonow` has none, and
+ * Settings › Calendar tables › Now button Off hides every one (`data-table-now-button`, `tableCalendar.css`).
  * Its anchor sticks to the bottom of the note while the table is in view (`table.css`), so no position is read on a
  * scroll; the clock's observer (`CalendarClock`) shows it only while the table is on the screen and its now row is
  * not. A click is "Go to now" on that table. One key for every chip: a rebuild keeps its DOM, and its state.
@@ -104,7 +107,12 @@ function nowChip(view: EditorView, getPos: () => number | undefined): HTMLElemen
   chip.type = 'button'
   chip.className = 'table-now-chip'
   chip.hidden = true
-  chip.textContent = 'Now ↓'
+  const dot = document.createElement('span')
+  dot.className = 'table-now-chip__dot'
+  const label = document.createElement('span')
+  label.textContent = 'Now'
+  chip.append(dot, label)
+  drawChipArrow(chip, 'down')
   chip.addEventListener('mousedown', (event) => event.preventDefault())
   chip.addEventListener('click', () => {
     const end = getPos()
@@ -115,7 +123,17 @@ function nowChip(view: EditorView, getPos: () => number | undefined): HTMLElemen
   return anchor
 }
 
-/** The decorations of one calendar table at `minutes`: its past rows, its now row and, with `chip`, the chip. */
+/** The chip's arrow (`tableIcons.ts`) and name for the now row `dir` of it. */
+function drawChipArrow(chip: HTMLElement, dir: 'up' | 'down'): void {
+  if (chip.dataset.dir === dir) return
+  chip.dataset.dir = dir
+  chip.setAttribute('aria-label', `Go to now, ${dir === 'up' ? 'above' : 'below'}`)
+  chip.title = 'Go to now'
+  chip.querySelector('svg')?.remove()
+  chip.appendChild(tablerIcon(dir === 'up' ? 'arrowUp' : 'arrowDown')())
+}
+
+/** The decorations of one calendar table at `minutes`: its past rows, its now row and, with `chip`, the chip (none with `nonow`). */
 function calendarDecorations(table: ProseNode, pos: number, minutes: number, chip = false): Decoration[] {
   const place = nowPlace(table, minutes)
   if (place === null) return []
@@ -126,7 +144,7 @@ function calendarDecorations(table: ProseNode, pos: number, minutes: number, chi
   const fraction = nowRun === undefined ? place.fraction : (place.row! - nowRun.from + place.fraction) / (nowRun.to - nowRun.from + 1)
   const pastEnd = runOf(runs, place.pastEnd)?.from ?? place.pastEnd
   const out: Decoration[] = []
-  if (chip) out.push(Decoration.widget(pos + table.nodeSize, nowChip, { calendar: true, nowChip: true, key: 'table-now-chip', side: -1, stopEvent: () => true, ignoreSelection: true }))
+  if (chip && table.attrs.nowButton !== false) out.push(Decoration.widget(pos + table.nodeSize, nowChip, { calendar: true, nowChip: true, key: 'table-now-chip', side: -1, stopEvent: () => true, ignoreSelection: true }))
   table.forEach((row, offset, r) => {
     const from = pos + 1 + offset
     if (r > 0 && r < pastEnd) out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-past-row' }, { calendar: true }))
@@ -262,8 +280,7 @@ class CalendarClock {
   #draw(watch: ChipWatch): void {
     const hidden = !watch.blockOn || watch.row === null || watch.rowOn
     if (watch.chip.hidden !== hidden) watch.chip.hidden = hidden
-    const text = watch.rowAbove ? 'Now ↑' : 'Now ↓'
-    if (watch.chip.textContent !== text) watch.chip.textContent = text
+    drawChipArrow(watch.chip, watch.rowAbove ? 'up' : 'down')
   }
 
   #schedule(): void {
@@ -470,7 +487,7 @@ export function setTimeSlots(view: EditorView, pos: number, slot: number): void 
 /**
  * Go to now (YAZ-4164 D11): the caret in the first empty cell of the now row of the table at `at` (the note's first
  * calendar table when absent); a row with no empty cell takes it at the end of its first cell after the time. The row
- * scrolls into view. `false`, and no caret move, when there is no calendar table or no row holds the current minute.
+ * scrolls to the middle of the screen (the YAZ-4163 demo: "into view" left it at an edge, or under a pinned header). `false`, and no caret move, when there is no calendar table or no row holds the current minute.
  * A now row in a folded run opens the run in the same step (YAZ-4165), so the caret is never in a hidden row.
  */
 export function goToNow(view: EditorView, at?: number): boolean {
@@ -493,7 +510,10 @@ export function goToNow(view: EditorView, at?: number): boolean {
   const tr = view.state.tr
   if (runOf(foldRuns(table), place.row) !== undefined) closeHistory(unfoldRun(tr, pos!, place.row))
   // The fold's steps change attributes only: `target` holds in `tr.doc`.
-  view.dispatch(tr.setSelection(Selection.near(tr.doc.resolve(target), end ? -1 : 1)).scrollIntoView())
+  view.dispatch(tr.setSelection(Selection.near(tr.doc.resolve(target), end ? -1 : 1)))
   view.focus()
+  const dom = view.nodeDOM(rowPos)
+  // jsdom has no `scrollIntoView`.
+  if (dom instanceof Element && typeof dom.scrollIntoView === 'function') dom.scrollIntoView({ block: 'center' })
   return true
 }

@@ -134,7 +134,7 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableRowBand', 'tableNowMark', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
+const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableRowBand', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
@@ -756,6 +756,14 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(rowButtons(el, 'tableRowBand').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Off', 'false'], ['Calendar tables', 'false'], ['All tables', 'true']])
     act(() => rowButtons(el, 'tableRowBand')[1].click())
     expect(onChange.mock.calls.map((call) => call[0])).toEqual([{ ...DEFAULT_SETTINGS, tableRowBand: 'calendar' }])
+  })
+
+  it('Calendar tables › Now button (YAZ-4163 demo): On by default; Off writes only its own field', () => {
+    const { el, onChange } = mountOn('Editor')
+    expect(row(el, 'tableNowButton')?.querySelector('.setting__label')?.textContent).toBe('Now button')
+    expect(rowButtons(el, 'tableNowButton').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
+    act(() => rowButtons(el, 'tableNowButton')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableNowButton: false })
   })
 
   it('Calendar tables › Shade darkness (YAZ-4163 demo): 6% by default, a stepper in steps of 2 from 2% to 30%, and Reset off the default', () => {

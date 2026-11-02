@@ -558,6 +558,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   outsideListPinned: (v): v is boolean => typeof v === 'boolean',
   tableRowBand: (v): v is TableRowBand => typeof v === 'string' && (TABLE_ROW_BANDS as readonly string[]).includes(v),
   tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
+  tableNowButton: (v): v is boolean => typeof v === 'boolean',
   tableDimPast: (v): v is TableDimPast => typeof v === 'string' && (TABLE_DIM_PASTS as readonly string[]).includes(v),
   tableShadeDarkness: (v): v is number => isFiniteNumber(v) && v >= TABLE_SHADE_MIN && v <= TABLE_SHADE_MAX && v % TABLE_SHADE_STEP === 0,
   tableDayStart: isCalendarDayTime,

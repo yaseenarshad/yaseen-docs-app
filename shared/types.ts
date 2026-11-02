@@ -1681,6 +1681,8 @@ export interface SettingsState {
   tableRowBand: TableRowBand
   /** Settings › Editor › Tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
+  /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
+  tableNowButton: boolean
   /** Settings › Editor › Tables › Dim past rows (YAZ-4162 D14; the shade from the YAZ-4163 demo): a calendar table's rows before now show grey text, or grey text on a light grey shade. `data-table-dim-past` on `.app`. */
   tableDimPast: TableDimPast
   /** Settings › Editor › Calendar tables › Shade darkness (YAZ-4163 demo): the past rows' shade, a percent of the text colour, `TABLE_SHADE_MIN`–`MAX` in steps of `TABLE_SHADE_STEP`. `--table-past-shade` on the root. */
@@ -2080,6 +2082,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   outsideListPinned: false,
   tableRowBand: 'all',
   tableNowMark: 'line',
+  tableNowButton: true,
   tableDimPast: 'shade',
   tableShadeDarkness: 6,
   tableDayStart: DEFAULT_CALENDAR_DAY.start,

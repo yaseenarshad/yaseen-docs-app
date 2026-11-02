@@ -899,6 +899,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
+            // The YAZ-4163 demo: every table's "Now" chip; a table's 6-dot "Now button" turns off its own.
+            id: 'tableNowButton',
+            label: 'Now button',
+            hint: 'A "Now" button under a calendar table while its current row is off the screen. A table can turn off its own in its 6-dot menu.',
+            keywords: ['calendar', 'now', 'button', 'chip', 'pill', 'current time', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableNowButton} onChange={(tableNowButton) => onChange({ ...settings, tableNowButton })} ariaLabel="Now button" />
+            ),
+          },
+          {
             id: 'tableDimPast',
             label: 'Dim past rows',
             hint: 'The rows before the current time: grey text, or grey text on a light shade.',
