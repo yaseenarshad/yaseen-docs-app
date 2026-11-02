@@ -36,7 +36,10 @@ describe('a drag along the handles selects a range, as in Sheets', () => {
     layOut(view)
     let menus = 0
     view.dom.addEventListener('milkdown-table-handle-menu', () => menus++)
-    fire(handle(view, 'row'), 'mousedown', 5, 45)
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 5, clientY: 45, button: 0 })
+    handle(view, 'row').dispatchEvent(down)
+    // No text selection of the browser starts from the press.
+    expect(down.defaultPrevented).toBe(true)
     const start = new Event('dragstart', { bubbles: true, cancelable: true })
     handle(view, 'row').dispatchEvent(start)
     expect(start.defaultPrevented).toBe(true)
@@ -45,6 +48,16 @@ describe('a drag along the handles selects a range, as in Sheets', () => {
     fire(handle(view, 'row'), 'click', 5, 105)
     expect(rect(view)).toEqual([true, true, false, 9])
     expect(menus).toBe(0)
+  })
+
+  it('a drag from a body row up over the header row stops at row 2: the header row is never taken in', async () => {
+    const view = await mountTable(WIDE)
+    layOut(view)
+    fire(handle(view, 'row'), 'mousedown', 5, 75)
+    fire(document, 'mousemove', 5, 10)
+    fire(document, 'mouseup', 5, 10)
+    // Rows 2–3 (body rows 1–2), 3 columns each.
+    expect(rect(view)).toEqual([true, true, false, 6])
   })
 
   it('columns: press on column A\'s handle, move to column C: columns A–C', async () => {

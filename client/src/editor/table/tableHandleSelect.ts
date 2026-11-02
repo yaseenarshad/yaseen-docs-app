@@ -5,7 +5,9 @@
  *   every row (column) from that one to the one under the pointer, as a drag down Sheets' row numbers does. A press on
  *   a handle of a selected row keeps the vendored drag, which moves the rows. After a drag that selected, the click
  *   that follows opens no menu: right-click the selection for it. The rows are read from the table's own `<tr>`s by
- *   the pointer's y (the columns from the header row's cells by its x), so a folded (hidden) row is skipped.
+ *   the pointer's y (the columns from the header row's cells by its x), so a folded (hidden) row is skipped. The press
+ *   is ours: no text selection of the browser runs across the rows as the pointer passes (it flashed), and a drag
+ *   from a body row never takes in the header row (a pinned header sits over the rows under it).
  * - SHIFT+SPACE with cells selected selects their whole rows; CTRL+SPACE in a table selects the whole columns of the
  *   selected cells, or of the caret's cell. With only a caret, Shift+Space still types a space, so typing in capitals
  *   never selects a row.
@@ -106,7 +108,9 @@ export const tableHandleSelect: MilkdownPlugin = (ctx) => async () => {
       }
       const onMove = (e: MouseEvent) => {
         if (drag === null) return
-        const head = lineAt(drag.lines, drag.kind, drag.kind === 'row' ? e.clientY : e.clientX)
+        let head = lineAt(drag.lines, drag.kind, drag.kind === 'row' ? e.clientY : e.clientX)
+        if (drag.kind === 'row' && drag.anchor > 0) head = Math.max(head, 1)
+        e.preventDefault()
         if (head < 0 || (head === drag.anchor && !drag.moved)) return
         drag.moved = true
         select(view, drag.lines, drag.kind, drag.anchor, head)
@@ -131,6 +135,8 @@ export const tableHandleSelect: MilkdownPlugin = (ctx) => async () => {
         const anchor = lineAt(lines, kind, kind === 'row' ? e.clientY : e.clientX)
         // A selected row's handle: the vendored drag moves the rows.
         if (anchor < 0 || selected(view, lines, kind, anchor)) return
+        // Ours: no text selection of the browser (and no native drag) starts from this press.
+        e.preventDefault()
         drag = { kind, lines, anchor, moved: false }
         document.addEventListener('mousemove', onMove, true)
         document.addEventListener('mouseup', onUp, true)

@@ -570,3 +570,11 @@
   border-radius: 3px;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 20%, transparent);
 }
+
+/* The row and column handles take a press 6px around them too (the YAZ-4163 demo): a drag along them selects rows or
+   columns (`tableHandleSelect.ts`), and a press just off the small handle started a cell drag instead. */
+.milkdown .milkdown-table-block .cell-handle::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
