@@ -40,7 +40,7 @@ export type TextLinkMatch = HostLink & {
 
 /**
  * The resolvers of the mounted editors. The last one is in use. The app makes
- * one resolver for each vault, so the editors of one vault share it.
+ * one resolver for the window (`windowLinkLook`), so all its editors share it.
  */
 const resolvers: HostLinkResolver[] = [];
 let linksVersion = 0;

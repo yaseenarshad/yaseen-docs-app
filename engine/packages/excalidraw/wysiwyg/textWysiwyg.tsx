@@ -1529,7 +1529,7 @@ export const textWysiwyg = ({
       return true;
     }
     // `1. ` is a numbered line already (`parseTextListLine`): it only turns
-    // the box to the left. Yasin may not want it: remove this branch then.
+    // the box to the left (Yasin: "Yes, keep it").
     if (/^[ \t]*\d+\. $/.test(typed)) {
       startTextList();
     }
