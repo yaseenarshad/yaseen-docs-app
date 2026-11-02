@@ -33,8 +33,9 @@
  * `stored` plus what earlier saves reported back — and ships them as `newFiles`, beside the lean
  * scene. MAIN decides where the pictures go: inside the file (the default; every picture of the
  * board is `stored` at load), or out to `assets/` for a "pictures out" board, whose embedded bytes
- * come back from load as not-stored, so its next save is the shrink. The persisted set only ever
- * grows, so the same image is never shipped twice in one session. A save that moved the pictures
+ * come back from load as not-stored, so its next save is the shrink. A save adds what it stored to the
+ * persisted set, so the same image is never shipped twice in one session. An inside save REPLACES the set
+ * with the file's pictures (`inside`, 6A item 1): a deleted picture leaves the file, so an undo ships it again. A save that moved the pictures
  * out by the 50 MB rule (`movedOut`) shows the one notice.
  *
  * THE COG'S PICTURE MOVES (YAZ-3943 D5, demo round 3): a board's pictures are inside, in the vault's
@@ -239,7 +240,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
   const surface = useRef<DrawingSurfaceApi | null>(null)
   /** Set by a reload; the next snapshot is consumed as the new baseline, not as a change. */
   const reloadedTo = useRef<number | null>(null)
-  /** Ids the store holds: load's `stored`, grown by every save's `persisted` (🔒 YAZ-1775 D3). */
+  /** Ids main holds: load's `stored`, grown by every save's `persisted` (🔒 YAZ-1775 D3), or replaced by an inside save's. */
   const persisted = useRef(new Set(loaded.stored))
   /** `"pictures": "assets"` as the file last said it (YAZ-3943 D5): the load, each reload, the 50 MB rule, the cog's button. */
   const [picturesOut, setPicturesOut] = useState(loaded.scene.picturesOut === true)
@@ -268,7 +269,9 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       const { json, files, referenced } = current.serialize()
       const newFiles = unpersistedFiles(files, referenced, persisted.current)
       const res = await api.drawing.save({ root, path, json, expectedMtime, newFiles })
-      for (const id of res.persisted) persisted.current.add(id)
+      // An inside save names every picture the file holds now; a deleted one is not there (6A item 1).
+      if (res.inside === true) persisted.current = new Set(res.persisted)
+      else for (const id of res.persisted) persisted.current.add(id)
       if (res.movedOut === true) {
         setPicturesOut(true)
         setPicturesFolder(null)

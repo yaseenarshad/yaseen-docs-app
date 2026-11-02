@@ -340,6 +340,26 @@ describe('🔒 YAZ-1775 D3 — which image bytes a save ships', () => {
     expect(save.mock.calls[1][0].newFiles).toEqual([])
   })
 
+  it('YAZ-4074 6A item 1: on an inside board, delete, save, undo, save ships the picture again', async () => {
+    load.mockResolvedValue(loaded({ json: scene([{ type: 'image', fileId: 'pic' }]), files: { pic: png('cA==') }, stored: ['pic'] }))
+    render()
+    await flush()
+    emit(1)
+    // The delete's save: main drops `pic` from the file and says the file now holds no picture.
+    save.mockResolvedValueOnce({ path: PATH, mtime: 200, size: 50, persisted: [], inside: true })
+    emit(2, scene([{ type: 'image', fileId: 'pic', isDeleted: true }]), { pic: png('cA==') }, new Set())
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(save.mock.calls[0][0].newFiles).toEqual([])
+    // ⌘Z: the canvas still has the bytes in memory, and the file does not, so they travel.
+    emit(3, scene([{ type: 'image', fileId: 'pic' }]), { pic: png('cA==') }, new Set(['pic']))
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(save.mock.calls[1][0].newFiles).toEqual([{ fileId: 'pic', ...png('cA==') }])
+  })
+
   it('never ships a pasted-then-deleted image: only what the scene still references', async () => {
     render()
     await flush()

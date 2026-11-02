@@ -122,3 +122,44 @@ describe('the popup saves a board over 10 MiB (YAZ-3943 1A1)', () => {
     container.remove()
   })
 })
+
+describe('an undo after a save keeps the picture (YAZ-4074 6A item 1)', () => {
+  it('delete, save, undo, save: the file holds the picture', async () => {
+    const SMALL = `data:image/png;base64,${'QUJD'.repeat(10)}`
+    const board = { yaseendraw: { createdAt: 1600000000000, updatedAt: 1600000000001 }, type: 'excalidraw', version: 2, source: 'yaseen-docs', elements: [image], appState: {}, files: { pic: { mimeType: 'image/png', id: 'pic', dataURL: SMALL, created: 5 } } }
+    const file = `${root}/Small.excalidraw`
+    await fs.writeFile(file, `${JSON.stringify(board, null, 2)}\n`)
+    seam.props = null
+    vi.mocked(api.drawing.save).mockClear()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const view = createRoot(container)
+    const onClose = vi.fn()
+    await act(async () => view.render(<DrawingModal root={root} target="Small.excalidraw" theme="light" onClose={onClose} />))
+    await vi.waitFor(() => expect(seam.props).not.toBeNull())
+
+    // The engine keeps the bytes in memory after a delete; only `referenced` changes.
+    const snapshot = (version: number, deleted: boolean) => ({
+      version,
+      serialize: () => ({
+        json: `${JSON.stringify({ type: 'excalidraw', version: 2, source: 'yaseen-docs', elements: [{ ...image, isDeleted: deleted }], appState: {}, files: {} }, null, 2)}\n`,
+        files: { pic: { mimeType: 'image/png', dataURL: SMALL } },
+        referenced: new Set(deleted ? [] : ['pic']),
+      }),
+    })
+    act(() => seam.props!.onSnapshot(snapshot(1, false)))
+    act(() => seam.props!.onSnapshot(snapshot(2, true)))
+    // The autosave writes the delete: the file drops the picture.
+    await vi.waitFor(() => expect(vi.mocked(api.drawing.save)).toHaveBeenCalledTimes(1), { timeout: 3000 })
+    await vi.waitFor(async () => expect((JSON.parse(await fs.readFile(file, 'utf8')) as Record<string, any>).files).toEqual({}))
+    // ⌘Z, then ✕ saves what is pending.
+    act(() => seam.props!.onSnapshot(snapshot(3, false)))
+    await act(async () => container.querySelector<HTMLButtonElement>('.drawing-modal__close')!.click())
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+
+    const saved = JSON.parse(await fs.readFile(file, 'utf8')) as Record<string, any>
+    expect(saved.files.pic).toMatchObject({ id: 'pic', dataURL: SMALL })
+    act(() => view.unmount())
+    container.remove()
+  })
+})

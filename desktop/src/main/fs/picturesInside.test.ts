@@ -72,6 +72,22 @@ describe('YAZ-3943 D5 — a save keeps the pictures inside the board', () => {
     expect(await assets()).toEqual(['ccc.png'])
   })
 
+  it('YAZ-4074 6A item 1: an inside save says so, and `persisted` is the file\'s pictures now — a deleted one is not among them', async () => {
+    const file = await seed('Board.excalidraw', board(null, [imageEl('aaa'), imageEl('bbb')], { aaa: { mimeType: 'image/png', id: 'aaa', dataURL: png('A'), created: 1 }, bbb: { mimeType: 'image/png', id: 'bbb', dataURL: png('B'), created: 1 } }))
+    const res = await saveDrawing({ root, path: file, json: sent([imageEl('aaa'), imageEl('bbb', { isDeleted: true })]), newFiles: [] })
+    expect(res.inside).toBe(true)
+    expect(res.persisted).toEqual(['aaa'])
+    // The undo brings `bbb` back; the renderer must ship its bytes again, or the next save leaves it out.
+    const undo = await saveDrawing({ root, path: file, json: sent([imageEl('aaa'), imageEl('bbb')]), newFiles: [{ fileId: 'bbb', mimeType: 'image/png', dataURL: png('B') }] })
+    expect(undo.persisted).toEqual(['aaa', 'bbb'])
+    expect(Object.keys((await read(file)).files)).toEqual(['aaa', 'bbb'])
+    // A "pictures out" save answers only what landed, and no `inside`.
+    await seed('Out.excalidraw', board(OUT, []))
+    const out = await saveDrawing({ root, path: 'Out.excalidraw', json: sent([imageEl('ccc')]), newFiles: [{ fileId: 'ccc', mimeType: 'image/png', dataURL: png('C') }] })
+    expect(out.inside).toBeUndefined()
+    expect(out.persisted).toEqual(['ccc'])
+  })
+
   it('an OLD board (`files: {}`, its pictures in assets/) takes them inside on its next save; the assets/ copies stay', async () => {
     await seed('assets/aaa.png', 'A')
     const file = await seed('Old.excalidraw', board(null, [imageEl('aaa')]))

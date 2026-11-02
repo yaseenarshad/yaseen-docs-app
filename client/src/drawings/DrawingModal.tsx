@@ -104,7 +104,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   loadedRef.current = loaded
   /** The latest snapshot; read only when a save fires (see the module doc). */
   const snapshot = useRef<DrawingSnapshot | null>(null)
-  /** The ids main holds: the load's `stored`, grown by every save's `persisted` (the tab's rule, YAZ-3943 1A1). */
+  /** The ids main holds: the load's `stored`, grown by every save's `persisted`, or replaced by an inside save's (the tab's rule, YAZ-3943 1A1). */
   const persisted = useRef(new Set<string>())
   /** Made by the surface's FIRST snapshot, the clean baseline; null until then and after a Reload. */
   const autosave = useRef<Autosave<number> | null>(null)
@@ -198,7 +198,9 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       try {
         const { json, files, referenced } = current.serialize()
         const res = await saveDrawing({ root, target, path: drawing.path, json, newFiles: unpersistedFiles(files, referenced, persisted.current), expectedMtime })
-        for (const id of res.persisted) persisted.current.add(id)
+        // An inside save names every picture the file holds now; a deleted one is not there (6A item 1).
+        if (res.inside === true) persisted.current = new Set(res.persisted)
+        else for (const id of res.persisted) persisted.current.add(id)
         if (res.movedOut === true) onNotice?.(PICTURES_MOVED_OUT)
         stale.current = true
         setError(null)

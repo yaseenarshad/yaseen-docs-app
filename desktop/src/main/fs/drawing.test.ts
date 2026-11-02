@@ -284,7 +284,9 @@ describe('🔒 YAZ-1775 D3 — the image store on load', () => {
     expect(res.stored).toEqual(['dup'])
   })
 
-  it("hydrates nothing for a DELETED image element — an undo brings the id back, the bytes stay in the store", async () => {
+  // The store keeps its bytes. An "inside" board's file does not: its next save drops a deleted picture, and
+  // the renderer ships the bytes again after an undo (YAZ-4074 6A item 1, `picturesInside.test.ts`).
+  it("hydrates nothing for a DELETED image element — an undo brings the id back, and the store keeps its bytes", async () => {
     await seedAsset('ghost.png')
     await seed('Board.excalidraw', scene([imageEl('ghost', { isDeleted: true })]))
     expect((await loadDrawing({ root, path: 'Board.excalidraw' })).files).toEqual({})

@@ -505,6 +505,11 @@ export interface DrawingSaveResponse {
   size: number
   /** The ids now on disk — the renderer adds them to its persisted set so it never ships them twice. */
   persisted: string[]
+  /**
+   * YAZ-3943 D5: this save put the pictures inside the file, and `persisted` is EVERY picture the file now holds. The
+   * renderer's set becomes it, not grows by it: a deleted picture left the file, so an undo must ship it again (6A item 1).
+   */
+  inside?: true
   /** YAZ-3943 D5, the 50 MB rule: this save moved the board's pictures out to `assets/` (the block now says so). */
   movedOut?: true
   /** YAZ-3943 4C: the ID this save gave the board (its first save in a vault that gives IDs). Absent when it had one. */

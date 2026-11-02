@@ -381,7 +381,7 @@ export async function saveDrawing(req: unknown, approved: readonly string[] = []
   )
   if (!movedOut) {
     const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
-    return { path: file, mtime, size, persisted: Object.keys(pictures), ...given }
+    return { path: file, mtime, size, persisted: Object.keys(pictures), inside: true, ...given }
   }
   const persisted = await landAssets(dir, liftEmbedded(inside, elements).lifted)
   const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
