@@ -55,6 +55,7 @@ import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
 import { setTimeFormatSetting } from './editor/table/timeFormatSetting'
+import { requestGoToNow } from './editor/table/goToNowRequest'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmMove } from './sidebar/ConfirmMove'
@@ -1060,6 +1061,8 @@ export function App() {
           if (background) return openBehindSidebar.current(path)
           if (sidebarCollapsedRef.current) toggleSidebar()
           openAsSidebar.current(path)
+          // "The note at now" (YAZ-4164 D11): its editor takes the request when it shows; a background tab asks nothing.
+          if (now.dailyNoteOpens === 'now') requestGoToNow(path)
           revealInFiles(path, false)
         },
         (err: unknown) => notify(`Can't open today's daily note: ${err instanceof Error ? err.message : String(err)}`, 'error'),

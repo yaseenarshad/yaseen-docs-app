@@ -32,6 +32,8 @@ import {
   type NewTabPlace,
   OUTSIDE_CHANGE_GLOWS,
   TABLE_NOW_MARKS,
+  DAILY_NOTE_OPENS,
+  type DailyNoteOpens,
   type TableNowMark,
   RIGHT_PANEL_DEFAULT_W,
   RIGHT_PANEL_MAX_W,
@@ -582,6 +584,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   dailyNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
   dailyNoteFormat: (v): v is string => typeof v === 'string' && isValidDailyNoteFormat(v),
   dailyNoteDayFolder: (v): v is boolean => typeof v === 'boolean',
+  dailyNoteOpens: (v): v is DailyNoteOpens => typeof v === 'string' && (DAILY_NOTE_OPENS as readonly string[]).includes(v),
   tabSleepAfter: (v): v is TabSleepAfter => typeof v === 'string' && (TAB_SLEEP_AFTER as readonly string[]).includes(v),
   memoryReload: (v): v is boolean => typeof v === 'boolean',
 }

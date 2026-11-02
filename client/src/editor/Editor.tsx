@@ -54,6 +54,8 @@ import { PageSettings } from './PageSettings'
 import { ReadOnlyChip } from './ReadOnlyChip'
 import { NoteMenu } from './noteMenu'
 import { ZOOM_EVENT } from './zoomRequest'
+import { onGoToNowRequest, takeGoToNow } from './table/goToNowRequest'
+import { goToNow } from './table/tableCalendar'
 import { fileLines } from './lineNumbers/fileLines'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
 import { showSectionIndent } from './outline/sectionIndent'
@@ -1033,6 +1035,25 @@ function CrepeHost({
       cancelled = true
     }
   }, [lineNumbersOn, readyCrepe, autosave.status, diskLandings, diskParts, onNotice])
+  // "The note at now" (YAZ-4164 D11): a request for this note (the daily-note button, ⌘D) is taken once the editor is
+  // ready and its tab shows — after the mount's caret and scroll — or at once by an editor that is open and in front.
+  // A tab behind the page waits for its layer to show, so the tab in front never scrolls.
+  useEffect(() => {
+    const host = hostRef.current
+    if (readyCrepe === null || crepeRef.current !== readyCrepe || host === null) return
+    const take = () => {
+      if (host.closest('.tabstack__layer--hidden') !== null) return
+      if (takeGoToNow(file.path)) goToNow(editorViewOf(readyCrepe))
+    }
+    take()
+    const off = onGoToNowRequest(take)
+    const shown = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && take())
+    shown?.observe(host)
+    return () => {
+      off()
+      shown?.disconnect()
+    }
+  }, [readyCrepe, file.path])
   // Back and Forward move a tab to a step's level (YAZ-3647 D2): the page follows its tab. The same level is no change.
   // A key that is no longer found shows the whole page, and the tab learns that, quietly (YAZ-3676 F3).
   useEffect(() => {

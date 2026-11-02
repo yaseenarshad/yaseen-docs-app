@@ -32,12 +32,13 @@
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode, NodeType, Schema } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, Selection, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
 import { changedTables, typingOnly } from './tableStyle'
 import { timeFormatSetting } from './timeFormatSetting'
+import './tableCalendar.css'
 
 export { readTime }
 
@@ -83,17 +84,42 @@ function rowTimes(table: ProseNode): Array<{ row: ProseNode; time: number | null
   return out
 }
 
-/** The decorations of one calendar table at `minutes`: its past rows and its now row. */
-function calendarDecorations(table: ProseNode, pos: number, minutes: number): Decoration[] {
+/**
+ * The "Now ↓" chip (YAZ-4164 D12, built for the demo): a widget right after a calendar table, in the note editor only.
+ * Its anchor sticks to the bottom of the note while the table is in view (`table.css`), so no position is read on a
+ * scroll; the clock's observer (`CalendarClock`) shows it only while the table is on the screen and its now row is
+ * not. A click is "Go to now" on that table. One key for every chip: a rebuild keeps its DOM, and its state.
+ */
+function nowChip(view: EditorView, getPos: () => number | undefined): HTMLElement {
+  const anchor = document.createElement('div')
+  anchor.className = 'table-now-chip-anchor'
+  const chip = document.createElement('button')
+  chip.type = 'button'
+  chip.className = 'table-now-chip'
+  chip.hidden = true
+  chip.textContent = 'Now ↓'
+  chip.addEventListener('mousedown', (event) => event.preventDefault())
+  chip.addEventListener('click', () => {
+    const end = getPos()
+    const table = end === undefined ? null : view.state.doc.resolve(end).nodeBefore
+    if (table?.type.name === 'table') goToNow(view, end! - table.nodeSize)
+  })
+  anchor.appendChild(chip)
+  return anchor
+}
+
+/** The decorations of one calendar table at `minutes`: its past rows, its now row and, with `chip`, the chip. */
+function calendarDecorations(table: ProseNode, pos: number, minutes: number, chip = false): Decoration[] {
   const place = nowPlace(table, minutes)
   if (place === null) return []
   const out: Decoration[] = []
+  if (chip) out.push(Decoration.widget(pos + table.nodeSize, nowChip, { calendar: true, nowChip: true, key: 'table-now-chip', side: -1, stopEvent: () => true, ignoreSelection: true }))
   table.forEach((row, offset, r) => {
     const from = pos + 1 + offset
     if (r > 0 && r < place.pastEnd) out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-past-row' }, { calendar: true }))
     if (r === place.row) {
       const fraction = String(Math.round(place.fraction * 1000) / 1000)
-      out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-now-row', style: `--table-now: ${fraction}` }, { calendar: true }))
+      out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-now-row', style: `--table-now: ${fraction}` }, { calendar: true, nowRow: true }))
     }
   })
   return out
@@ -107,6 +133,8 @@ interface CalendarState {
   tables: number[]
   /** The minute the marks are for, from midnight. */
   now: number
+  /** Counts each change of the marks that is not a mapping: the chip's watch runs only when it moves. */
+  generation: number
 }
 
 export const calendarKey = new PluginKey<CalendarState>('mdapp-table-calendar')
@@ -122,8 +150,8 @@ function calendarTables(doc: ProseNode): number[] {
   return out
 }
 
-const build = (doc: ProseNode, tables: number[], now: number): DecorationSet =>
-  DecorationSet.create(doc, tables.flatMap((pos) => calendarDecorations(doc.nodeAt(pos)!, pos, now)))
+const build = (doc: ProseNode, tables: number[], now: number, chip: boolean): DecorationSet =>
+  DecorationSet.create(doc, tables.flatMap((pos) => calendarDecorations(doc.nodeAt(pos)!, pos, now, chip)))
 
 /** The tick (D2): the marks move to `minutes`, and the document does not change. */
 export function calendarTick(view: EditorView, minutes = minutesOf(new Date())): void {
@@ -133,11 +161,28 @@ export function calendarTick(view: EditorView, minutes = minutesOf(new Date())):
 /** The calendar state of `state`, for the menus (`tableRows.ts`) and the go-to-now request. */
 export const calendarStateOf = (state: EditorState): CalendarState | undefined => calendarKey.getState(state)
 
-/** One editor's clock: a timer to the next whole minute while the note has a calendar table. */
+/** One chip and what its observer last said of its table block and its now row. */
+interface ChipWatch {
+  chip: HTMLButtonElement
+  block: Element
+  row: Element | null
+  blockOn: boolean
+  rowOn: boolean
+  rowAbove: boolean
+}
+
+/**
+ * One editor's clock: a timer to the next whole minute while the note has a calendar table. It also watches the
+ * chips (D12): one `IntersectionObserver` on each calendar table's block and its now row, set again only when the
+ * marks change (`generation`), never on a key.
+ */
 class CalendarClock {
   #timer: ReturnType<typeof setTimeout> | null = null
   #onScreen = true
   #observer: IntersectionObserver | null = null
+  #chips: IntersectionObserver | null = null
+  #watches: ChipWatch[] = []
+  #generation = -1
 
   constructor(readonly view: EditorView) {
     document.addEventListener('visibilitychange', this.#shown)
@@ -148,14 +193,64 @@ class CalendarClock {
         if (this.#onScreen && !was) this.#tick()
       })
       this.#observer.observe(view.dom)
+      this.#chips = new IntersectionObserver(this.#seen)
     }
     this.update()
   }
 
   update(): void {
-    const want = (calendarKey.getState(this.view.state)?.tables.length ?? 0) > 0
+    const state = calendarKey.getState(this.view.state)
+    const want = (state?.tables.length ?? 0) > 0
     if (want && this.#timer === null) this.#schedule()
     else if (!want && this.#timer !== null) this.#stop()
+    if (state !== undefined && state.generation !== this.#generation) {
+      this.#generation = state.generation
+      this.#watchChips(state)
+    }
+  }
+
+  /** Observe each calendar table's block and now row again, after the marks changed. */
+  #watchChips(state: CalendarState): void {
+    const observer = this.#chips
+    if (observer === null) return
+    observer.disconnect()
+    const old = new Map(this.#watches.map((watch) => [watch.chip, watch]))
+    this.#watches = []
+    for (const pos of state.tables) {
+      const block = this.view.nodeDOM(pos)
+      const chip = block instanceof Element ? block.nextElementSibling?.querySelector<HTMLButtonElement>('.table-now-chip') : null
+      if (!(block instanceof Element) || chip == null) continue
+      const table = this.view.state.doc.nodeAt(pos)!
+      const now = state.set.find(pos, pos + table.nodeSize, (spec) => spec.nowRow === true)[0]
+      const row = now === undefined ? null : (this.view.nodeDOM(now.from) as Element | null)
+      const before = old.get(chip)
+      const watch: ChipWatch = { chip, block, row, blockOn: before?.block === block && before.blockOn, rowOn: before?.row === row && before.rowOn, rowAbove: before?.rowAbove ?? false }
+      this.#watches.push(watch)
+      observer.observe(block)
+      if (row !== null) observer.observe(row)
+      this.#draw(watch)
+    }
+  }
+
+  #seen = (entries: IntersectionObserverEntry[]): void => {
+    for (const entry of entries) {
+      for (const watch of this.#watches) {
+        if (entry.target === watch.block) watch.blockOn = entry.isIntersecting
+        else if (entry.target === watch.row) {
+          watch.rowOn = entry.isIntersecting
+          watch.rowAbove = entry.boundingClientRect.bottom <= (entry.rootBounds?.top ?? 0)
+        } else continue
+        this.#draw(watch)
+      }
+    }
+  }
+
+  /** The chip shows while its table is on the screen and its now row is not; its arrow points at the row. */
+  #draw(watch: ChipWatch): void {
+    const hidden = !watch.blockOn || watch.row === null || watch.rowOn
+    if (watch.chip.hidden !== hidden) watch.chip.hidden = hidden
+    const text = watch.rowAbove ? 'Now ↑' : 'Now ↓'
+    if (watch.chip.textContent !== text) watch.chip.textContent = text
   }
 
   #schedule(): void {
@@ -190,6 +285,7 @@ class CalendarClock {
   destroy(): void {
     this.#stop()
     this.#observer?.disconnect()
+    this.#chips?.disconnect()
     document.removeEventListener('visibilitychange', this.#shown)
   }
 }
@@ -204,11 +300,14 @@ export function createTableCalendar(clock: boolean) {
           init: (_, { doc }) => {
             const tables = calendarTables(doc)
             const now = minutesOf(new Date())
-            return { set: build(doc, tables, now), tables, now }
+            return { set: build(doc, tables, now, clock), tables, now, generation: 0 }
           },
           apply: (tr: Transaction, value) => {
             const tick = tr.getMeta(calendarKey) as number | undefined
-            if (!tr.docChanged) return tick === undefined || tick === value.now ? value : { ...value, set: build(tr.doc, value.tables, tick), now: tick }
+            if (!tr.docChanged) {
+              if (tick === undefined || tick === value.now) return value
+              return { set: build(tr.doc, value.tables, tick, clock), tables: value.tables, now: tick, generation: value.generation + 1 }
+            }
             let set = value.set.map(tr.mapping, tr.doc)
             const mapped = value.tables.map((pos) => tr.mapping.map(pos))
             // A key changes no table's shape, attributes or slots: the mapped set holds (YAZ-3790).
@@ -216,13 +315,14 @@ export function createTableCalendar(clock: boolean) {
             const changed = changedTables(tr)
             for (const [pos, node] of changed) {
               const end = pos + node.nodeSize
-              const stale = set.find(pos, end, (spec) => spec.calendar === true)
+              // The table's own: a chip at `pos` is the table's before it.
+              const stale = set.find(pos, end, (spec) => spec.calendar === true).filter((deco) => deco.from > pos)
               if (stale.length > 0) set = set.remove(stale)
-              const fresh = calendarDecorations(node, pos, value.now)
+              const fresh = calendarDecorations(node, pos, value.now, clock)
               if (fresh.length > 0) set = set.add(tr.doc, fresh)
             }
             const tables = [...new Set([...mapped, ...changed.keys()])].filter((pos) => isCalendar(tr.doc.nodeAt(pos))).sort((a, b) => a - b)
-            return { ...value, set, tables }
+            return { ...value, set, tables, generation: value.generation + 1 }
           },
         },
         props: { decorations: (state) => calendarKey.getState(state)!.set },
@@ -310,4 +410,32 @@ export function setTimeSlots(view: EditorView, pos: number, slot: number): void 
     tr.replaceWith(pos, pos + table.nodeSize, next)
   }
   view.dispatch(tr)
+}
+
+/**
+ * Go to now (YAZ-4164 D11): the caret in the first empty cell of the now row of the table at `at` (the note's first
+ * calendar table when absent); a row with no empty cell takes it at the end of its first cell after the time. The row
+ * scrolls into view. `false`, and no caret move, when there is no calendar table or no row holds the current minute.
+ */
+export function goToNow(view: EditorView, at?: number): boolean {
+  const { doc } = view.state
+  const pos = at ?? calendarTables(doc)[0]
+  const table = pos === undefined ? null : doc.nodeAt(pos)
+  if (!isCalendar(table)) return false
+  const place = nowPlace(table, minutesOf(new Date()))
+  if (place === null || place.row === null) return false
+  let rowPos = pos! + 1
+  for (let r = 0; r < place.row; r++) rowPos += table.child(r).nodeSize
+  const row = table.child(place.row)
+  let cell = -1
+  row.forEach((node, offset, c) => {
+    if (cell < 0 && c > 0 && !filled(node)) cell = rowPos + 1 + offset
+  })
+  const end = cell < 0
+  if (end) cell = rowPos + 1 + (row.childCount > 1 ? row.child(0).nodeSize : 0)
+  const target = end ? cell + doc.nodeAt(cell)!.nodeSize - 1 : cell + 1
+  const selection = Selection.near(doc.resolve(target), end ? -1 : 1)
+  view.dispatch(view.state.tr.setSelection(selection).scrollIntoView())
+  view.focus()
+  return true
 }

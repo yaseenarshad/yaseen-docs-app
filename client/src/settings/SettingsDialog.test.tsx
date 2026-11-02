@@ -1037,7 +1037,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 
   it('Daily notes (YAZ-3607 D8, D12): the switch alone while off; on, the folder with Change… and Open template, the style with today\'s names and Custom…, and the day folder switch', () => {
     const { el, onChange } = mountOn('Files & Links')
-    expect(['dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder'].map((id) => row(el, id) !== null)).toEqual([true, false, false, false])
+    expect(['dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'dailyNoteOpens'].map((id) => row(el, id) !== null)).toEqual([true, false, false, false, false])
     act(() => rowButtons(el, 'dailyNotes')[0].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, dailyNotes: true })
     unmount()
@@ -1051,6 +1051,10 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(row(on.el, 'dailyNoteFormat')?.querySelector('input')).toBeNull()
     act(() => rowButtons(on.el, 'dailyNoteDayFolder')[0].click())
     expect(on.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, dailyNotes: true, dailyNoteFolder: 'Journal', dailyNoteDayFolder: true })
+    // The button opens (YAZ-4164 D11): the note at now by default.
+    expect(rowButtons(on.el, 'dailyNoteOpens').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['The note', 'false'], ['The note at now', 'true']])
+    act(() => rowButtons(on.el, 'dailyNoteOpens')[0].click())
+    expect(on.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, dailyNotes: true, dailyNoteFolder: 'Journal', dailyNoteOpens: 'note' })
   })
 
   it('Daily notes › Name style › Custom… (D4): the field sits beside the dropdown; a style with no day keeps the stored one and says why; a good one is written', () => {

@@ -3,7 +3,8 @@
  * rule 41a): a right-click on a table's six dots shows "Border thickness" and "Border darkness"
  * (number fields, as `line/lineRows.ts`), "Header row", "Align all columns", "Fit columns to the
  * page" (a row), "Stripes", "Row height" and "Wrap text" (choices), and "Time slots" (Off / 15 min / 30 min /
- * 1 hour, YAZ-4163 D7: `setTimeSlots` in `tableCalendar.ts` makes any table a calendar table and keeps its text, D8).
+ * 1 hour, YAZ-4163 D7: `setTimeSlots` in `tableCalendar.ts` makes any table a calendar table and keeps its text, D8);
+ * a calendar table also has "Go to now" (a row, YAZ-4164 D11: `goToNow`), disabled while no row holds the current time.
  *
  * Each picker shows the table's current value; "Default (…)" sets the attribute's default. A value
  * that IS the default saves no part, so the picker reads "Default (…)" with ✓, and its list does not
@@ -23,7 +24,7 @@ import { TableMap } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuChoice, MenuChoiceField, MenuItem, MenuNumberField, RowProvider } from '../blockHandleMenu'
 import { setCellsAttr } from './cells'
-import { setTimeSlots } from './tableCalendar'
+import { goToNow, minutesOf, nowPlace, setTimeSlots } from './tableCalendar'
 import { capital } from './colours'
 import { CELL_ALIGNS, TABLE_DEFAULTS, type CellAlign, type TableAttrs } from './tableStyle'
 
@@ -166,5 +167,6 @@ export const tableRows: RowProvider = (view, target) => {
       (slot) => setTimeSlots(view, pos, Number(slot)),
     ),
   ]
+  if (attrs.calendar > 0) items.push({ label: 'Go to now', disabled: nowPlace(table.node, minutesOf(new Date()))?.row == null, run: () => void goToNow(view, pos) })
   return items
 }
