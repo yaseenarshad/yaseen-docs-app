@@ -591,6 +591,19 @@ describe('a bullet zoom (YAZ-4094 4C, 4D)', () => {
     expect(channel.current([0, 1], scroller)).toBe(1)
   })
 
+  it('4C1: the section that holds the zoom is current, not a heading inside an earlier bullet (YAZ-4094)', async () => {
+    const mounted = await mountToc(`# Trip\n\n## In Lisbon\n\n* Day 1\n  * ### Morning\n  * ### Afternoon\n* Day 2\n  * Walk\n`, { zoom: { title: () => 'Notes' } })
+    const { view, channel } = mounted
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOfText(view.state.doc, 'Day 2') + 1)))
+    pressZoom(view)
+    // "Day 2" has one row inside, so the note's rows stay.
+    expect(texts(channel.getState().rows)).toEqual(['1 Trip', '2 In Lisbon', '3 Morning', '3 Afternoon'])
+    const scroller = document.createElement('div')
+    scroller.getBoundingClientRect = () => new DOMRect(0, 0, 800, 500)
+    // "Afternoon" stands before "Day 2", but inside "Day 1", which does not hold the zoom.
+    expect(channel.current([0, 1, 2, 3], scroller)).toBe(1)
+  })
+
   it('4C: a jump to a row outside the zoom ends the zoom first, and lands on the row; a jump inside the zoom keeps it', async () => {
     const outside = await zoomInto('Small')
     outside.channel.jump(0)

@@ -228,6 +228,17 @@ export const scanZoom = (doc: ProseNode, itemPos: number, source: TocSource | nu
   return rows.length >= ENOUGH_ROWS ? { bullets: source !== 'headings', rows } : null
 }
 
+/** Whether every bullet around the row at `pos` — and the row itself when it is a bullet — holds the zoomed bullet at `zoomed`. */
+const holdsZoom = (doc: ProseNode, pos: number, zoomed: number): boolean => {
+  if (pos > doc.content.size) return false
+  const holds = (from: number, node: ProseNode): boolean => from <= zoomed && zoomed < from + node.nodeSize
+  const own = doc.nodeAt(pos)
+  if (own !== null && isListItem(own) && !holds(pos, own)) return false
+  const $pos = doc.resolve(pos)
+  for (let depth = $pos.depth; depth > 0; depth--) if (isListItem($pos.node(depth)) && !holds($pos.before(depth), $pos.node(depth))) return false
+  return true
+}
+
 /** The list item a heading is the label of — its first block — or null for any other heading. */
 const labelledItemPos = (doc: ProseNode, headingPos: number): number | null => {
   const $heading = doc.resolve(headingPos)
@@ -444,11 +455,13 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
                 if (top <= line) above = row
                 lastInView = row
               }
-              // In a zoom with no row on screen (YAZ-4094 4C): the last row before the zoomed bullet, the section that holds it.
+              // In a zoom with no row on screen (YAZ-4094 4C): the last row before the zoomed bullet that holds it — a
+              // row inside a bullet counts only when that bullet holds the zoom, so a heading inside an earlier
+              // bullet is passed over and the section heading wins (4C1).
               const zoomed = getZoomedItemPos(view.state)
               if (first === -1 && zoomed !== null) {
                 let holder = -1
-                for (let row = 0; row < indices.length && positions[indices[row]] <= zoomed; row++) holder = row
+                for (let row = 0; row < indices.length && positions[indices[row]] <= zoomed; row++) if (holdsZoom(view.state.doc, positions[indices[row]], zoomed)) holder = row
                 return holder
               }
               // The last rows of a note can never reach the line: at the very bottom the last one on screen is where the reader is.
