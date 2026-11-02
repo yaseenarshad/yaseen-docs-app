@@ -88,6 +88,30 @@ describe("YAZ-4103 3F: the styled clipboard", () => {
     ).toEqual({ text: "see [[YAS-1]]", textRuns: [] });
   });
 
+  // YAZ-4071 7E: VS Code, many editors and terminals copy code as HTML with
+  // `white-space: pre` on a `div`, not in a `pre` tag
+  it("YAZ-4071 7E: VS Code's HTML (white-space: pre) keeps its indent and its runs of spaces", () => {
+    const html =
+      '<meta charset=\'utf-8\'><div style="color: #d4d4d4;background-color: #1e1e1e;font-family: Menlo, Monaco, \'Courier New\', monospace;font-weight: normal;font-size: 12px;line-height: 18px;white-space: pre;"><div><span style="color: #569cd6;">function</span><span style="color: #d4d4d4;"> </span><span style="color: #dcdcaa;">foo</span><span style="color: #d4d4d4;">() {</span></div><div><span style="color: #d4d4d4;">    </span><span style="color: #c586c0;">return</span><span style="color: #d4d4d4;">  </span><span style="color: #b5cea8;">1</span><span style="color: #d4d4d4;">;</span></div><div><span style="color: #d4d4d4;">}</span></div></div>';
+    expect(parseStyledHtml(html, { keepPlain: true })?.text).toBe(
+      "function foo() {\n    return  1;\n}",
+    );
+  });
+
+  it("YAZ-4071 7E: a `pre` tag and `white-space: pre-wrap` keep a line that starts with spaces; `pre-line` and other HTML fold them", () => {
+    expect(
+      parseStyledHtml("<pre>if (a) {\n<span>  </span>b();\n}</pre>", {
+        keepPlain: true,
+      })?.text,
+    ).toBe("if (a) {\n  b();\n}");
+    expect(
+      parseStyledHtml(
+        '<p style="white-space: pre-wrap">a  b</p><p style="white-space:pre-line">c  d</p><p>e  f</p>',
+        { keepPlain: true },
+      )?.text,
+    ).toBe("a  b\nc d\ne f");
+  });
+
   it("YAZ-3943 demo 2: plain pasted text for one box keeps at most one blank line, and `-`, `*`, `+` lines are bullets by their indent", () => {
     expect(getPlainPasteText("\r\n\na\r\n\n\n\nb\n\n")).toBe("a\n\nb");
     expect(getPlainPasteText("- a\n\t* b\n        + c\nnot - a list")).toBe(

@@ -58,6 +58,17 @@ const cssStyleOf = (element: Element): TextRunStyle => {
   };
 };
 
+/**
+ * YAZ-4071 7E: the letters inside keep their white space: a `pre` tag, or
+ * inline `white-space: pre` (VS Code, many editors and terminals copy code
+ * that way), `pre-wrap` or `break-spaces`.
+ */
+const keepsWhiteSpace = (element: Element) =>
+  element.tagName === "PRE" ||
+  /white-space:\s*(pre|pre-wrap|break-spaces)\s*(;|$)/.test(
+    element.getAttribute("style") ?? "",
+  );
+
 /** The style a tag, and its inline CSS, add to the letters inside it. */
 const styleOf = (element: Element): TextRunStyle => ({
   ...tagStyleOf(element),
@@ -140,8 +151,8 @@ export const parseStyledHtml = (
           value = value.replace(/^ /, "");
         }
       }
-      // the white space between blocks is no text
-      if (!value.trim() && (!text || text.endsWith("\n"))) {
+      // the white space between blocks is no text (in code, it is an indent)
+      if (!pre && !value.trim() && (!text || text.endsWith("\n"))) {
         return;
       }
       if (Object.keys(style).length) {
@@ -201,7 +212,7 @@ export const parseStyledHtml = (
         continue;
       }
       first = false;
-      walk(child, inner, innerDepth, pre || node.tagName === "PRE");
+      walk(child, inner, innerDepth, pre || keepsWhiteSpace(node));
     }
     if (block) {
       newLine();
