@@ -91,16 +91,51 @@ const vaults: Array<DrawingVault & { boards: number; off: () => void }> = []
 const windowListeners = new Set<() => void>()
 const windowChanged = () => windowListeners.forEach((listener) => listener())
 
+/**
+ * What each link last showed (YAZ-4074 6A item 7), oldest first, at most `MAX_SHOWN`. A note's autosave gives the vault
+ * a new index, and a board's wake clears its shape cache and measures every text box with `[[`, hidden tabs too. So an
+ * index change or a vault that comes or goes wakes the boards only when the look of a link they drew changed.
+ */
+const shown = new Map<string, DrawingLink | null>()
+const MAX_SHOWN = 2000
+const sameLook = (a: DrawingLink | null | undefined, b: DrawingLink | null): boolean =>
+  a === b || (a != null && b !== null && a.label === b.label && a.missing === b.missing && a.folder === b.folder && a.icon === b.icon)
+function remember(inner: string, look: DrawingLink | null): void {
+  shown.delete(inner)
+  if (shown.size >= MAX_SHOWN) shown.delete(shown.keys().next().value!)
+  shown.set(inner, look)
+}
+function lookChanged(): void {
+  let changed = false
+  for (const [inner, before] of [...shown]) {
+    const now = lookOf(inner)
+    if (sameLook(before, now)) continue
+    shown.set(inner, now)
+    changed = true
+  }
+  if (changed) windowChanged()
+}
+
+/** Icons that finish loading in one frame wake the boards once (6A item 7). */
+let iconFrame: number | null = null
+function iconReady(): void {
+  if (iconFrame !== null) return
+  iconFrame = requestAnimationFrame(() => {
+    iconFrame = null
+    windowChanged()
+  })
+}
+
 /** A board of `root` is mounted: its vault joins the window's links. Returns the unmount. */
 export function mountDrawingVault(root: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): () => void {
   let vault = vaults.find((held) => held.source === source)
   if (vault === undefined) {
-    const off = source.subscribe(windowChanged)
-    const offViewOnly = viewOnly?.subscribe(windowChanged)
+    const off = source.subscribe(lookChanged)
+    const offViewOnly = viewOnly?.subscribe(lookChanged)
     vault = { root, source, viewOnly, boards: 0, off: () => (off(), offViewOnly?.()) }
     vaults.push(vault)
     vaults.sort((a, b) => (a.root < b.root ? -1 : a.root > b.root ? 1 : 0))
-    windowChanged()
+    lookChanged()
   }
   const held = vault
   held.boards++
@@ -111,7 +146,7 @@ export function mountDrawingVault(root: string, source: WikilinkResolveSource, v
     if (--held.boards > 0) return
     held.off()
     vaults.splice(vaults.indexOf(held), 1)
-    windowChanged()
+    lookChanged()
   }
 }
 
@@ -127,13 +162,19 @@ export function linkVault(inner: string): DrawingVault | undefined {
 
 /** The engine's one resolver for the window: what the pill of `[[inner]]` shows, with the page's file icon. */
 export function windowLinkLook(inner: string): DrawingLink | null {
+  const look = lookOf(inner)
+  remember(inner, look)
+  return look
+}
+
+function lookOf(inner: string): DrawingLink | null {
   const page = linkPageName(inner)
   const found = linkVault(inner)
   const vault = found ?? vaults.find((held) => linkNoteId(page, held.source) !== undefined) ?? vaults[0]
   const look = vault === undefined ? null : drawingLinkLook(inner, vault.source, vault.viewOnly)
   const path = found === undefined || look === null ? null : linkPath(inner, found.source, found.viewOnly)
   if (path === null) return look
-  const icon = drawingLinkIcon(path, look!.folder === true, windowChanged)
+  const icon = drawingLinkIcon(path, look!.folder === true, iconReady)
   return icon === undefined ? look : { ...look!, icon }
 }
 

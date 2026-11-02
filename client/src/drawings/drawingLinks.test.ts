@@ -174,14 +174,33 @@ describe('two vaults in one window', () => {
     expect(windowLinkLook('BBB-1')).toEqual({ label: 'Budget' })
   })
 
-  it('tells every board when a vault comes or its index changes', () => {
+  it('tells every board when a vault comes or its index changes the look of a link it drew', () => {
     const { links } = setup()
     const listener = vi.fn()
     unmounts.push(links.subscribe(listener))
-    unmounts.push(mountDrawingVault('/b', b))
+    expect(windowLinkLook('BBB-1')?.missing).toBe(true)
+    const own = vault('/b', 'BBB', { 'BBB-1': '/b/Budget.md' }, { '/b/Budget.md': 'Budget' })
+    unmounts.push(mountDrawingVault('/b', own))
     expect(listener).toHaveBeenCalledTimes(1)
-    b.update(b.resolve, b.records, [], true, ['BBB'])
+    own.update(own.resolve, [{ path: '/b/Budget.md', title: 'Budget 2026' }] as unknown as IndexRecord[], [], true, ['BBB'])
     expect(listener).toHaveBeenCalledTimes(2)
+    expect(windowLinkLook('BBB-1')).toEqual({ label: 'Budget 2026' })
+  })
+
+  it('YAZ-4074 6A item 7: a new index that changes no look of a drawn link wakes no board (a note autosave)', () => {
+    const { links } = setup()
+    const listener = vi.fn()
+    unmounts.push(links.subscribe(listener))
+    const own = vault('/b', 'BBB', { 'BBB-1': '/b/Budget.md' }, { '/b/Budget.md': 'Budget' })
+    unmounts.push(mountDrawingVault('/b', own))
+    expect(windowLinkLook('BBB-1')).toEqual({ label: 'Budget' })
+    listener.mockClear()
+    // The autosave of another note: a new records array, the same titles.
+    own.update(own.resolve, [...own.records, { path: '/b/Other.md', title: 'Other' } as unknown as IndexRecord], [], true, ['BBB'])
+    expect(listener).not.toHaveBeenCalled()
+    // A rename of the linked note does wake them.
+    own.update(own.resolve, [{ path: '/b/Budget.md', title: 'Budget Q3' }] as unknown as IndexRecord[], [], true, ['BBB'])
+    expect(listener).toHaveBeenCalledTimes(1)
   })
 
   it("a board of one vault opens a page of the other as it is, never making one in its own vault", () => {
