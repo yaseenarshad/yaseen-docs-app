@@ -97,15 +97,14 @@ export const createFoldLock = ({ seedLockedKeys = () => new Set(), onLockedKeysC
             if (transaction.docChanged && locked.size > 0) {
               const mapped = new Set<number>()
               for (const pos of locked) {
-                // The lock stays while the row's node still spans its mapped range: typing in it, and a rewrite of the
-                // node in place (Milkdown's heading id sets a heading's attributes after each edit and on load,
-                // YAZ-4131), keep it; a deleted row loses it.
+                // The lock stays while a node of the same type starts where the row maps to and the row's start was
+                // not deleted: typing in it, a rewrite of the node in place (Milkdown's heading id sets a heading's
+                // attributes after each edit and on load, YAZ-4131) and Enter at its end (YAZ-4136) keep it; a deleted
+                // row loses it.
                 const before = transaction.before.nodeAt(pos)
-                if (before === null) continue
+                if (before === null || transaction.mapping.mapResult(pos + 1).deletedAcross) continue
                 const from = transaction.mapping.map(pos, 1)
-                const to = transaction.mapping.map(pos + before.nodeSize, -1)
-                const after = transaction.doc.nodeAt(from)
-                if (after !== null && after.type === before.type && from + after.nodeSize === to) mapped.add(from)
+                if (transaction.doc.nodeAt(from)?.type === before.type) mapped.add(from)
               }
               // The same set when no lock moved: typing below every lock reports nothing (the view's `notify`).
               if (mapped.size !== locked.size || [...locked].some((pos) => !mapped.has(pos))) next = mapped

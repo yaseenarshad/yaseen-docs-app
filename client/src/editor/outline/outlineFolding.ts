@@ -275,7 +275,10 @@ export const undoLastFold: Command = (state, dispatch) => {
   if (!isFoldingOn(state)) return false
   const transaction = state.tr
   if (!addOutlineFoldUndoMeta(state, transaction)) return false
-  dispatch?.(transaction.setMeta(VIEW_ACTION_META, 'fold' satisfies ViewAction))
+  transaction.setMeta(VIEW_ACTION_META, 'fold' satisfies ViewAction)
+  // The fold lock refuses an undo that would fold only its held rows (YAZ-4135): ⌘Z then goes to the text undo.
+  if (state.applyTransaction(transaction).transactions.length === 0) return false
+  dispatch?.(transaction)
   return true
 }
 

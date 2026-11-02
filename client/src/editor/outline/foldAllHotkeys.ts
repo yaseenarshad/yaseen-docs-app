@@ -70,7 +70,10 @@ const undoCombinedDocumentFold: Command = (state, dispatch) => {
   const outlinePending = addOutlineFoldUndoMeta(state, transaction)
   const headingPending = addHeadingFoldUndoMeta(state, transaction)
   if (!outlinePending || !headingPending) return false
-  dispatch?.(transaction.setMeta(VIEW_ACTION_META, 'document-fold' satisfies ViewAction))
+  transaction.setMeta(VIEW_ACTION_META, 'document-fold' satisfies ViewAction)
+  // The fold lock refuses an undo that would fold only its held rows (YAZ-4135): ⌘Z then goes to the text undo.
+  if (state.applyTransaction(transaction).transactions.length === 0) return false
+  dispatch?.(transaction)
   return true
 }
 

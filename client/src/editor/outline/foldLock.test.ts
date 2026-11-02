@@ -13,7 +13,8 @@
  *  - the row's menu says "Lock open", then "Unlock";
  *  - a heading's lock survives a reopen and typing in the heading (YAZ-4131);
  *  - a fold the lock blocks entirely never happens: the fold-all button then offers Expand all
- *    (YAZ-4132), and ⌘Z is not spent on it (YAZ-4133).
+ *    (YAZ-4132), and ⌘Z is not spent on it (YAZ-4133), nor on undoing a fold that a lock then opened (YAZ-4135);
+ *  - a heading's lock stays when Enter splits the heading at its end (YAZ-4136).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -28,7 +29,7 @@ import type { HandleTarget } from '../blockHandleTarget'
 import { foldAllRows } from './foldAllRows'
 import { nextDocumentFold, setAllDocumentFolds } from './foldAllHotkeys'
 import { FOLD_LOCK_ATTR, type FoldLockOptions, isFoldLocked, toggleFoldLock } from './foldLock'
-import { isHeadingCollapsed, setHeadingFoldSet } from './headingFolding'
+import { isHeadingCollapsed, setHeadingFoldSet, undoLastHeadingFold } from './headingFolding'
 import { setFoldingOn } from './foldingSwitch'
 import { hasOutlineFoldMeta, isOutlineItemCollapsed, outlineCollapsedPositions, OUTLINE_TOGGLE_CLASS, setOutlineFoldAtSelection, setOutlineFoldSet, undoLastFold } from './outlineFolding'
 
@@ -248,6 +249,45 @@ describe('a fold the lock blocks entirely never happens', () => {
     // ⌘Z goes to what the reader did before the blocked press: it opens "Yaseen" again.
     expect(undoLastFold(view.state, view.dispatch)).toBe(true)
     expect(isOutlineItemCollapsed(view.state, item(view, 'Yaseen'))).toBe(false)
+  })
+
+  it('⌘Z after a fold that a lock then opened goes to the text undo, for a bullet and a heading (YAZ-4135)', async () => {
+    const view = await mount()
+    view.dispatch(view.state.tr.insertText('New ', heading(view, 'Plan') + 1))
+    const trevor = item(view, 'Trevor')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, trevor + 3)))
+    setOutlineFoldAtSelection(true)(view.state, view.dispatch)
+    expect(isOutlineItemCollapsed(view.state, trevor)).toBe(true)
+    lock(view, trevor)
+    expect(isOutlineItemCollapsed(view.state, trevor)).toBe(false)
+    // The fold's undo would fold only the locked row, which the lock refuses: ⌘Z passes on to the text undo.
+    expect(undoLastFold(view.state, view.dispatch)).toBe(false)
+    setHeadingFoldSet([heading(view, 'Other')], true)(view.state, view.dispatch)
+    lock(view, heading(view, 'Other'))
+    expect(undoLastHeadingFold(view.state, view.dispatch)).toBe(false)
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(view.state.doc.firstChild?.textContent).toBe('Plan')
+  })
+})
+
+describe('a heading lock and Enter (YAZ-4136)', () => {
+  it('stays on the heading when Enter at its end adds a paragraph under it', async () => {
+    const view = await mount()
+    const other = heading(view, 'Other')
+    lock(view, other)
+    const end = other + 1 + 'Other'.length
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, end)))
+    view.someProp('handleKeyDown', (f) => f(view, new KeyboardEvent('keydown', { key: 'Enter' })))
+    expect(view.state.doc.nodeAt(other)?.textContent).toBe('Other')
+    expect(isFoldLocked(view.state, other)).toBe(true)
+  })
+
+  it('is lost when the heading is deleted', async () => {
+    const view = await mount()
+    const other = heading(view, 'Other')
+    lock(view, other)
+    view.dispatch(view.state.tr.delete(other, other + view.state.doc.nodeAt(other)!.nodeSize))
+    expect(isFoldLocked(view.state, other)).toBe(false)
   })
 })
 
