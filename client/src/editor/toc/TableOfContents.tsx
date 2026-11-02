@@ -30,8 +30,9 @@
  * `data-reading` on the `<nav>` says the reader is moving the note with the wheel: with the setting
  * "Level lines" on "On hover", the path then shows without the mouse on the list.
  *
- * It renders nothing when the setting is off, when the note has fewer than two rows to show,
- * and while a bullet zoom is active (the channel's `hidden`). Then it also holds no listener.
+ * It renders nothing when the setting is off, or when the note has fewer than two rows to show.
+ * Then it also holds no listener. A bullet zoom does not hide it (YAZ-4094 demo, 4C): the names
+ * stay, the section that holds the zoomed bullet is current, and a jump out of the zoom ends it.
  *
  * WHERE THE READER IS: on the scroller's `scroll` (passive, one read per animation frame) the
  * channel answers which shown row is current. Lines above it are read, the line itself is the
@@ -233,7 +234,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   // THE ROWS ON SHOW (YAZ-3939 D5): the list, the rail and the scroll spy all read these. A fold
   // never hides the table of contents itself: `shows` counts every listed row.
   const rows = useMemo(() => unfoldedRows(listed, keys, folded), [listed, keys, folded])
-  const shows = mode !== 'off' && !hidden && listed.length >= ENOUGH_ROWS
+  const shows = mode !== 'off' && listed.length >= ENOUGH_ROWS
 
   const scrollerOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('.editor-host') ?? null
   const sectionOf = (): HTMLElement | null => hostRef.current?.closest<HTMLElement>('section.editor') ?? null
@@ -249,11 +250,6 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   // Read only while the names show: the saved width, or the room this note has when that is less.
   const room = namesRoom(mode, box.width, columnMax, box.gutter)
   const shownWidth = Math.min(width, room)
-  // A bullet zoom hides the table of contents, but the names column keeps its room (YAZ-4094 demo): the text does not
-  // move when the reader zooms in or out. The last look shown before the zoom decides it.
-  const heldRef = useRef({ names: false, width: 0 })
-  if (shows) heldRef.current = { names, width: shownWidth }
-  const held = hidden && mode !== 'off' && heldRef.current.names
   const at = Math.min(current, rows.length - 1)
 
   const navRef = useRef<HTMLElement>(null)
@@ -343,13 +339,11 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
 
   // The width of the names column, `--toc-width` on the section (`tocFrame.tsx`).
   useTocWidthVar(names, shownWidth, sectionOf, hostRef, endResize)
-  // The held room's width: a zoom ends a drag of the edge (the effect above), and the saved width comes back.
-  useTocWidthVar(held, heldRef.current.width, sectionOf, hostRef, endResize)
 
   // The scroll spy. At most `MAX_ROWS` rows are read per frame and nothing is written. A new
   // list of rows, a new measure (a resize moves every row), a change of look (the names column
-  // narrows the text) and a new width of that column (the text flows again) are each read once
-  // without a scroll.
+  // narrows the text), a new width of that column (the text flows again) and a zoom in or out (other
+  // rows have a box) are each read once without a scroll.
   useEffect(() => {
     if (!shows) return
     const scroller = scrollerOf()
@@ -376,7 +370,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
       scroller.removeEventListener('scroll', onScroll)
       if (frame !== 0) cancelAnimationFrame(frame)
     }
-  }, [shows, rows, box, names, shownWidth, channel, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
+  }, [shows, rows, box, names, shownWidth, hidden, channel, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
 
   // The reader's own moves in the note: each lets go of a jump's hold, and a turn of the wheel
   // shows the path in the names. It never opens the card (YAZ-2886): a reader who scrolls is
@@ -503,7 +497,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   }, [at, rows.length, pitch, fits, shows, names])
 
   // The held room (toc.css pads the note for it): no names, nothing to read or press.
-  if (!shows) return held ? <span className="toc-held" hidden /> : null
+  if (!shows) return null
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (event.key === 'Escape') {

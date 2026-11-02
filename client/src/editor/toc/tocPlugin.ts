@@ -52,7 +52,7 @@ import { $prose } from '@milkdown/kit/utils'
 import { collapsedHeadingsHiding, headingLevel, isHeadingCollapsed, isWalkableContainer, setHeadingFoldSet } from '../outline/headingFolding'
 import { findNestedLists, isListItem, itemLabelText, LIST_NODE_NAMES, UNTITLED_ITEM } from '../outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFolding'
-import { getZoomedItemPos } from '../outline/zoom'
+import { getZoomedItemPos, zoomOutFully } from '../outline/zoom'
 import { DEEPEST_TOC_LEVEL, ENOUGH_ROWS, type TocChannel, type TocController, type TocLevel, type TocRow } from './tocChannel'
 import { FLASH_FRAMES, FLASH_MS, GLIDE_MS, GLIDE_SCREENS, glideEase, LANDING_PX, reducedMotion } from './tocMotion'
 
@@ -338,6 +338,9 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
               const note = scan()
               const target = note.rows[index]
               if (target === undefined) return
+              // A row outside the zoomed bullet ends the zoom first (YAZ-4094 4C): the reader asked for a place the zoom hides.
+              const zoomed = getZoomedItemPos(view.state)
+              if (zoomed !== null && !(zoomed <= target.pos && target.pos < zoomed + (view.state.doc.nodeAt(zoomed)?.nodeSize ?? 0))) zoomOutFully(view.state, view.dispatch)
               // The reader asked for THIS section: every fold that hides its heading opens, and so
               // does its own — a folded heading is one line, and the reader asked for what is under
               // it. Declines an empty set, so a heading that nothing hides and that is open itself
@@ -384,6 +387,13 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
                 if (top >= box.bottom) break
                 if (top <= line) above = row
                 lastInView = row
+              }
+              // In a zoom with no row on screen (YAZ-4094 4C): the last row before the zoomed bullet, the section that holds it.
+              const zoomed = getZoomedItemPos(view.state)
+              if (first === -1 && zoomed !== null) {
+                let holder = -1
+                for (let row = 0; row < indices.length && positions[indices[row]] <= zoomed; row++) holder = row
+                return holder
               }
               // The last rows of a note can never reach the line: at the very bottom the last one on screen is where the reader is.
               if (atBottom && lastInView !== -1) return lastInView
