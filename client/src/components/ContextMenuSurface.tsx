@@ -27,11 +27,17 @@ export function ContextMenuSurface({ x, y, onClose, children, minWidth, classNam
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') close()
     }
+    // A click in a frame — a draw.io diagram — never reaches this page: the window's blur says it (YAZ-4156 demo round 2),
+    // as the zoom menu and the tab row panel do. A frame that has the keyboard as the menu opens lets it go first, or
+    // the window, already blurred, could not blur again.
+    if (document.activeElement instanceof HTMLIFrameElement) document.activeElement.blur()
     window.addEventListener('mousedown', close)
     window.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('blur', close)
     return () => {
       window.removeEventListener('mousedown', close)
       window.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('blur', close)
     }
   }, [])
 
