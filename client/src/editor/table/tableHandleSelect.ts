@@ -14,12 +14,11 @@
  *   never selects a row.
  * - ORDER: the keys go in just before `tableEditing`, as `tableShiftArrow.ts`.
  */
-import { SchemaReady, prosePluginsCtx } from '@milkdown/kit/core'
-import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { type Command, Plugin, TextSelection } from '@milkdown/kit/prose/state'
-import { CellSelection, tableEditingKey } from '@milkdown/kit/prose/tables'
+import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import { beforeTableEditing } from './beforeTableEditing'
 
 type Kind = 'row' | 'col'
 
@@ -103,9 +102,8 @@ const wholeLines = (kind: Kind): Command => (state, dispatch) => {
   return true
 }
 
-export const tableHandleSelect: MilkdownPlugin = (ctx) => async () => {
-  await ctx.wait(SchemaReady)
-  const plugin = new Plugin({
+export const tableHandleSelect = beforeTableEditing(() => [
+  new Plugin({
     props: {
       handleKeyDown: keydownHandler({ 'Shift-Space': wholeLines('row'), 'Ctrl-Space': wholeLines('col') }),
     },
@@ -174,12 +172,5 @@ export const tableHandleSelect: MilkdownPlugin = (ctx) => async () => {
         },
       }
     },
-  })
-  ctx.update(prosePluginsCtx, (ps) => {
-    const at = ps.findIndex((p) => p.spec.key === tableEditingKey)
-    return at < 0 ? [...ps, plugin] : [...ps.slice(0, at), plugin, ...ps.slice(at)]
-  })
-  return () => {
-    ctx.update(prosePluginsCtx, (ps) => ps.filter((p) => p !== plugin))
-  }
-}
+  }),
+])

@@ -13,12 +13,11 @@
  * - ORDER: the plugin goes in just BEFORE `tableEditing`, as `tableColumnResize.ts` does. A CellSelection is not ours:
  *   `shiftArrow` grows it.
  */
-import { SchemaReady, prosePluginsCtx } from '@milkdown/kit/core'
-import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { type Command, Plugin, TextSelection } from '@milkdown/kit/prose/state'
-import { CellSelection, tableEditingKey } from '@milkdown/kit/prose/tables'
+import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import { beforeTableEditing } from './beforeTableEditing'
 
 export type Axis = 'horiz' | 'vert'
 
@@ -48,9 +47,8 @@ const selectCell = (axis: Axis, dir: 1 | -1): Command => (state, dispatch, view)
   return true
 }
 
-export const tableShiftArrow: MilkdownPlugin = (ctx) => async () => {
-  await ctx.wait(SchemaReady)
-  const plugin = new Plugin({
+export const tableShiftArrow = beforeTableEditing(() => [
+  new Plugin({
     props: {
       handleKeyDown: keydownHandler({
         'Shift-ArrowLeft': selectCell('horiz', -1),
@@ -59,12 +57,5 @@ export const tableShiftArrow: MilkdownPlugin = (ctx) => async () => {
         'Shift-ArrowDown': selectCell('vert', 1),
       }),
     },
-  })
-  ctx.update(prosePluginsCtx, (ps) => {
-    const at = ps.findIndex((p) => p.spec.key === tableEditingKey)
-    return at < 0 ? [...ps, plugin] : [...ps.slice(0, at), plugin, ...ps.slice(at)]
-  })
-  return () => {
-    ctx.update(prosePluginsCtx, (ps) => ps.filter((p) => p !== plugin))
-  }
-}
+  }),
+])

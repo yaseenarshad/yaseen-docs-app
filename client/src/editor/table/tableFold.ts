@@ -21,15 +21,15 @@
  * would put the caret in the run's hidden cells. "Fold N rows" is in
  * the table menu (`tableMenu.ts`, `foldRows`). Fill down and a paste never write a folded row (`unfoldedRows`).
  */
-import { SchemaReady, prosePluginsCtx } from '@milkdown/kit/core'
-import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { Plugin, PluginKey, Selection, TextSelection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
-import { TableMap, selectedRect, tableEditingKey } from '@milkdown/kit/prose/tables'
+import { TableMap, selectedRect } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
+import { verticalScrollParent } from '../../lib/pinnedHeader'
+import { beforeTableEditing } from './beforeTableEditing'
 import { rowFolded, setCellsAttr } from './cells'
 import { atEndOfCell } from './tableShiftArrow'
 import { changedTables, typingOnly } from './tableStyle'
@@ -124,17 +124,12 @@ export function foldRows(state: EditorState, dispatch?: (tr: Transaction) => voi
   return true
 }
 
-/** The note's scroll box around `view`: the nearest ancestor that scrolls, else the page. */
-function scrollerOf(view: EditorView): Element {
-  for (let el = view.dom.parentElement; el !== null; el = el.parentElement) {
-    if (/(auto|scroll)/.test(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight) return el
-  }
-  return document.scrollingElement ?? document.documentElement
-}
-
-/** Run `fold` and keep the note where it was: the rows above the fold do not move, so the bar stays under the pointer. */
+/**
+ * Run `fold` and keep the note where it was: the rows above the fold do not move, so the bar stays under the pointer.
+ * The scroller is the note's, the one the frozen rows follow (`verticalScrollParent`, `tableFreeze.ts`), else the page.
+ */
 export function keepingScroll(view: EditorView, fold: () => void): void {
-  const scroller = scrollerOf(view)
+  const scroller = verticalScrollParent(view.dom) ?? document.scrollingElement ?? document.documentElement
   const top = scroller.scrollTop
   fold()
   scroller.scrollTop = top
@@ -224,14 +219,4 @@ const foldPlugin = (): Plugin<DecorationSet> =>
   })
 
 /** Register with `editor.use(tableFold)`: just before `tableEditing`, so a click on a bar starts no cell selection. */
-export const tableFold: MilkdownPlugin = (ctx) => async () => {
-  await ctx.wait(SchemaReady)
-  const plugin = foldPlugin()
-  ctx.update(prosePluginsCtx, (ps) => {
-    const at = ps.findIndex((p) => p.spec.key === tableEditingKey)
-    return at < 0 ? [...ps, plugin] : [...ps.slice(0, at), plugin, ...ps.slice(at)]
-  })
-  return () => {
-    ctx.update(prosePluginsCtx, (ps) => ps.filter((p) => p !== plugin))
-  }
-}
+export const tableFold = beforeTableEditing(() => [foldPlugin()])
