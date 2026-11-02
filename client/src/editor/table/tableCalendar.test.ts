@@ -65,8 +65,8 @@ describe('the calendar part (D1)', () => {
     expect(formatTableComment({ ...plainTable(), calendar: 30 })).toBe('<!-- table: calendar 30m -->')
   })
 
-  it('`calendar 45m` is a value the reader does not know: dropped', () => {
-    expect(parseTableComment('<!-- table: calendar 45m, stripes -->')).toEqual({ ...plainTable(), stripes: true })
+  it('`calendar 45m` is a value the reader does not know: kept as its text (YAZ-4176), and no calendar table', () => {
+    expect(parseTableComment('<!-- table: calendar 45m, stripes -->')).toEqual({ ...plainTable(), stripes: true, unknown: [{ after: null, text: 'calendar 45m' }] })
     expect(parseTableComment('<!-- table: calendar 45m -->')).toBeNull()
   })
 

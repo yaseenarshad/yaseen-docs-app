@@ -66,8 +66,8 @@ describe('the `valign` part (one part: an optional table default, then cells as 
     expect(formatTableComment(parseTableComment('<!-- table: stripes, valign middle B3 bottom, border 2px 40%, align B2 center, fill A1 blue -->')!)).toBe(comment)
   })
 
-  it.each(['valign center', 'valign A2 sideways', 'valign middle A2', 'valign middle A2 left', 'valign A2', 'valign middle top'])('%s is a value it does not know: the part is dropped', (part) => {
-    expect(parseTableComment(`<!-- table: ${part}, stripes -->`)).toEqual(style({ stripes: true }))
+  it.each(['valign center', 'valign A2 sideways', 'valign middle A2', 'valign middle A2 left', 'valign A2', 'valign middle top'])('%s is a value it does not know: the part is kept as its text (YAZ-4176)', (part) => {
+    expect(parseTableComment(`<!-- table: ${part}, stripes -->`)).toEqual(style({ stripes: true, unknown: [{ after: null, text: part }] }))
   })
 
   it('`valign top` is the default: no part', () => {

@@ -13,18 +13,19 @@
  * rows that touch as `first-last`, a run of one row as its number. It goes after `valign`. `zoom 90%` (YAZ-4091, D13) is
  * the table's own zoom, a whole percent from 50 to 400 (the page zoom pill's range); 100% is the default and writes
  * nothing. It goes after `fold`. `calendar` (YAZ-4162,
- * D1) is the slot length of a calendar table, `15m`, `30m` or `60m`; it is last, so a build that does not know it
- * keeps it in place (YAZ-4161). A column's alignment is no
+ * D1) is the slot length of a calendar table, `15m`, `30m` or `60m`, after `freeze`. `nonow` (the YAZ-4163 demo) is a
+ * calendar table with no "Now" chip; it is last. A column's alignment is no
  * part: it is the GFM `:-` row, so GitHub and Obsidian show it too ("Align all columns" sets it,
  * YAZ-3767); `align` is a cell's own, which wins over its column's (YAZ-3819). Cells are A1 addresses:
  * columns are letters (A…Z, AA…), rows are numbers, row 1 is the header row.
  *
- * The reader is tolerant: a known part with a value it does not know is ignored, and the other
- * parts are kept. A part it does not know (its first word is no part) is KEPT as its text (YAZ-4161):
- * an older or a newer build never deletes a setting it cannot read. It keeps its place after the
- * known part before it; with none before it, or when that part is no longer set, it goes after the
- * known parts, in its order. A comment with no known part is not ours (`null`), and the editor keeps
- * it as an HTML node with its text.
+ * The reader is tolerant: a part it does not know (its first word is no part, YAZ-4161), and a known
+ * part with a value it cannot read (`calendar 45m`, `zoom 500%`, a new `valign` value; YAZ-4176), are
+ * KEPT as their text: an older or a newer build never deletes a setting it cannot read. Such a part
+ * keeps its place after the known part before it that it read; with none before it, or when that part
+ * is no longer set, it goes after the known parts, in its order. A known part kept as its text goes
+ * only when this build writes that part itself. A comment with no part it reads is not ours (`null`),
+ * and the editor keeps it as an HTML node with its text.
  */
 
 /**
@@ -54,8 +55,9 @@ export type Valign = (typeof VALIGNS)[number]
 export const cellValign = (value: unknown): Valign | null => ((VALIGNS as readonly unknown[]).includes(value) ? (value as Valign) : null)
 
 /**
- * A part this build does not know (YAZ-4161): its text, and the word of the known part before it in
- * the comment (`null` for none). The save writes it right after that part.
+ * A part this build does not know (YAZ-4161), or a known part whose value it cannot read (YAZ-4176):
+ * its text, and the word of the known part before it in the comment (`null` for none). The save writes
+ * it right after that part.
  */
 export interface UnknownPart {
   after: string | null
@@ -71,14 +73,18 @@ export type CalendarSlot = (typeof CALENDAR_SLOTS)[number]
 /** A slot length, checked, or `null`. */
 export const calendarSlot = (value: unknown): CalendarSlot | null => ((CALENDAR_SLOTS as readonly unknown[]).includes(value) ? (value as CalendarSlot) : null)
 
-/** An unknown part as the save writes it: a line break is one space, and it holds no `,` and no `-->`. `null` when it cannot be one. */
+/**
+ * An unknown part as the save writes it: a line break is one space, and it holds no `,` and no `-->`. `null` when it
+ * cannot be one, and when this build reads it (a pasted `stripes` would write a setting the table does not have).
+ */
 export function unknownPart(value: unknown): UnknownPart | null {
   if (typeof value !== 'object' || value === null) return null
   const { after, text } = value as { after?: unknown; text?: unknown }
   if (after !== null && !(KNOWN_PARTS as readonly unknown[]).includes(after)) return null
   if (typeof text !== 'string') return null
   const clean = text.trim().replace(/\s*[\r\n]+\s*/g, ' ')
-  if (clean === '' || clean.includes(',') || clean.includes('-->') || (KNOWN_PARTS as readonly string[]).includes(clean.split(/\s+/)[0])) return null
+  const [word, ...rest] = clean.split(/\s+/)
+  if (clean === '' || clean.includes(',') || clean.includes('-->') || readPart(plainTable(), word!, rest)) return null
   return { after: after as string | null, text: clean }
 }
 
@@ -303,7 +309,7 @@ export function parseTableComment(value: string): TableStyle | null {
   for (const part of body.split(/\s*,\s*/)) {
     const [word, ...rest] = part.split(/\s+/)
     if (readPart(style, word, rest)) after = word
-    else if (!(KNOWN_PARTS as readonly string[]).includes(word)) {
+    else {
       const kept = unknownPart({ after, text: part })
       if (kept !== null) unknown.push(kept)
     }
@@ -381,8 +387,9 @@ export function formatTableComment(style: TableStyle): string | null {
   if (rows > 0 || cols > 0) push('freeze', ['freeze', ...(rows > 0 ? [plural(rows, 'row')] : []), ...(cols > 0 ? [plural(cols, 'col')] : [])].join(' '))
   if (style.calendar) push('calendar', `calendar ${style.calendar}m`)
   if (style.nonow) push('nonow', 'nonow')
-  const unknown = style.unknown ?? []
   const written = new Set(known.map(([word]) => word))
+  // A known part kept as its text goes when this build writes that part itself (YAZ-4176).
+  const unknown = (style.unknown ?? []).filter((part) => !written.has(part.text.split(' ')[0]!))
   const parts = known.flatMap(([word, text]) => [text, ...unknown.filter((part) => part.after === word).map((part) => part.text)])
   parts.push(...unknown.filter((part) => part.after === null || !written.has(part.after)).map((part) => part.text))
   return parts.length === 0 ? null : `<!-- table: ${parts.join(', ')} -->`

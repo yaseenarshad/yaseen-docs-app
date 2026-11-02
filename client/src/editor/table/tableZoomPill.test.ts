@@ -57,8 +57,8 @@ describe('the `zoom` part', () => {
     expect(formatTableComment(style({ zoom: 100 }))).toBeNull()
   })
 
-  it.each(['zoom 40%', 'zoom 450%', 'zoom 90', 'zoom 90.5%', 'zoom 090%', 'zoom'])('%s is a value it does not know: the part is dropped', (part) => {
-    expect(parseTableComment(`<!-- table: ${part}, stripes -->`)).toEqual(style({ stripes: true }))
+  it.each(['zoom 40%', 'zoom 450%', 'zoom 90', 'zoom 90.5%', 'zoom 090%', 'zoom'])('%s is a value it does not know: the part is kept as its text (YAZ-4176)', (part) => {
+    expect(parseTableComment(`<!-- table: ${part}, stripes -->`)).toEqual(style({ stripes: true, unknown: [{ after: null, text: part }] }))
   })
 })
 

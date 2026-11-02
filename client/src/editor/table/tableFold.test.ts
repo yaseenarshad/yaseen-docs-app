@@ -82,8 +82,8 @@ describe('the `fold` part', () => {
     expect(formatTableComment(parseTableComment('<!-- table: stripes, fold 4, valign middle, align A2 center -->')!)).toBe('<!-- table: align A2 center, valign middle, fold 4, stripes -->')
   })
 
-  it.each(['fold 1-3', 'fold 5-3', 'fold 0', 'fold a', 'fold 3-', 'fold'])('%s is a value it does not know: the part is dropped', (part) => {
-    expect(parseTableComment(`<!-- table: ${part}, stripes -->`)).toEqual(style({ stripes: true }))
+  it.each(['fold 1-3', 'fold 5-3', 'fold 0', 'fold a', 'fold 3-', 'fold'])('%s is a value it does not know: the part is kept as its text (YAZ-4176)', (part) => {
+    expect(parseTableComment(`<!-- table: ${part}, stripes -->`)).toEqual(style({ stripes: true, unknown: [{ after: null, text: part }] }))
   })
 })
 
