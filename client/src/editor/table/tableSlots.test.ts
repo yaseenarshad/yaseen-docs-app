@@ -7,17 +7,18 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { undo, undoDepth } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { DEFAULT_TIME_FORMAT, TIME_FORMAT_STYLES, detectTimeFormat, formatTime, timeFormatProblem } from '@shared/timeFormat'
+import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT, TIME_FORMAT_STYLES, detectTimeFormat, formatTime, timeFormatProblem } from '@shared/timeFormat'
 import { getMarkdownForSave } from '../createCrepe'
 import { mount, unmountAll } from '../marks/markTestKit'
 import { formatCurrentTime } from '../slashMenu'
 import type { MenuChoiceField, MenuItem } from '../blockHandleMenu'
-import { calendarTableNode, setTimeSlots, slotTimes } from './tableCalendar'
+import { calendarTableNode, fillCalendarDay, setTimeSlots, slotTimes } from './tableCalendar'
 import { tableRows } from './tableRows'
-import { setTimeFormatSetting } from './timeFormatSetting'
+import { setCalendarDaySetting, setTimeFormatSetting } from './timeFormatSetting'
 
 afterEach(async () => {
   setTimeFormatSetting(DEFAULT_TIME_FORMAT)
+  setCalendarDaySetting(DEFAULT_CALENDAR_DAY.start, DEFAULT_CALENDAR_DAY.end)
   await unmountAll()
 })
 
@@ -45,8 +46,9 @@ const cellsOf = (node: ProseNode): string[][] => {
 }
 
 describe('the time format (D15)', () => {
-  it('the ready styles are 9:00 am, 9:00am and 09:00; the default is 9:00am, as "Current time" wrote before', () => {
-    expect(TIME_FORMAT_STYLES.map((style) => formatTime(style, 540))).toEqual(['9:00 am', '9:00am', '09:00'])
+  it('the ready styles are 9:00 am, 9:00am, 9am / 9:30am and 09:00; the default is 9:00 am', () => {
+    expect(TIME_FORMAT_STYLES.map((style) => formatTime(style, 540))).toEqual(['9:00 am', '9:00am', '9am', '09:00'])
+    expect(formatTime(TIME_FORMAT_STYLES[2], 570)).toBe('9:30am')
     expect(DEFAULT_TIME_FORMAT).toBe('h:mm a')
   })
 
@@ -57,6 +59,14 @@ describe('the time format (D15)', () => {
     expect(formatTime('H:mm', 1290)).toBe('21:30')
     expect(formatTime('HH:mm', 1440 + 30)).toBe('00:30')
     expect(formatTime('[at ]h:mm a', 600)).toBe('at 10:00 am')
+  })
+
+  it('( ) holds a part shown only when the minutes are not 00 (the YAZ-4163 demo): 9am, 9:30am, 930am', () => {
+    expect([formatTime('h(:mm)a', 540), formatTime('h(:mm)a', 570), formatTime('h(:mm) a', 1260)]).toEqual(['9am', '9:30am', '9 pm'])
+    expect([formatTime('h(mm)a', 540), formatTime('h(mm)a', 570), formatTime('hmma', 540)]).toEqual(['9am', '930am', '900am'])
+    expect(formatTime('[(]h:mm a[)]', 540)).toBe('(9:00 am)')
+    for (const style of ['h(:mm)a', 'h(mm)a', 'hmma', 'h(:mm) A', 'H:mm']) expect(timeFormatProblem(style)).toBeNull()
+    expect(timeFormatProblem('HHmm')).toMatch(/cannot read/)
   })
 
   it('refuses a custom style the reader cannot read back, and says why', () => {
@@ -73,7 +83,11 @@ describe('the time format (D15)', () => {
     [['09:00', '09:30'], 'HH:mm'],
     [['21:30', '7:00'], 'H:mm'],
     [['21:30'], 'HH:mm'],
-    [['9am'], 'h:mma'],
+    [['9am', '9:30am'], 'h(:mm)a'],
+    [['9:00am', '9am'], 'h(:mm)a'],
+    [['930am', '1000am'], 'hmma'],
+    [['9am', '930am'], 'h(mm)a'],
+    [['9 pm'], 'h(:mm) a'],
     [['09:00 AM'], 'hh:mm A'],
     [['Wake', 'Gym'], null],
   ])('a table with %j has the style %j', (texts, style) => {
@@ -135,13 +149,13 @@ describe('a slot change keeps all text (D8)', () => {
     expect(cellsOf(firstTable(view.state.doc).node)).toEqual(rows)
   })
 
-  it('"On" for a table with no times adds a "Time" column, a time in each row from 7:00 am, in the setting\'s format', async () => {
+  it('"On" for a table with no times adds a "Time" column, a time in each row from the calendar day\'s start (5:00 am), in the setting\'s format', async () => {
     const { view } = await mount(table([['Plan', 'Notes'], ['Wake', ''], ['', 'x'], ['Gym', '']], ''))
     setTimeFormatSetting('h:mm a')
     setTimeSlots(view, firstTable(view.state.doc).pos, 30)
     const { node } = firstTable(view.state.doc)
     expect(node.attrs.calendar).toBe(30)
-    expect(cellsOf(node)).toEqual([['Time', 'Plan', 'Notes'], ['7:00 am', 'Wake', ''], ['7:30 am', '', 'x'], ['8:00 am', 'Gym', '']])
+    expect(cellsOf(node)).toEqual([['Time', 'Plan', 'Notes'], ['5:00 am', 'Wake', ''], ['5:30 am', '', 'x'], ['6:00 am', 'Gym', '']])
   })
 })
 
@@ -162,14 +176,67 @@ describe('"Time slots" in the six-dot menu (D7)', () => {
 })
 
 describe('"/Calendar table" makes the table (D7, D10)', () => {
-  it('Time | Plan 1, a row each 30 minutes from 7:00 am to 10:00 pm in the time format, calendar 30m, compact rows, the header row and column A frozen', async () => {
+  it('Time | Plan 1, a row each 30 minutes of the calendar day (5:00 am to 10:00 pm by default) in the time format, calendar 30m, compact rows, the header row and column A frozen', async () => {
     const { view } = await mount('x\n')
     setTimeFormatSetting('h:mm a')
     const node = calendarTableNode(view.state.schema)
     expect(node.attrs).toMatchObject({ calendar: 30, height: 'compact', freezeRows: 1, freezeCols: 1 })
     const rows = cellsOf(node)
     expect(rows[0]).toEqual(['Time', 'Plan 1'])
-    expect(rows.slice(1).map(([time]) => time)).toEqual(Array.from({ length: 31 }, (_, i) => formatTime('h:mm a', 420 + 30 * i)))
+    expect(rows.slice(1).map(([time]) => time)).toEqual(Array.from({ length: 35 }, (_, i) => formatTime('h:mm a', 300 + 30 * i)))
     expect(rows.at(-1)).toEqual(['10:00 pm', ''])
+  })
+
+  it('follows Settings › Tables › Calendar day: 6:00 am to 8:00 pm gives those rows', async () => {
+    const { view } = await mount('x\n')
+    setTimeFormatSetting('h:mm a')
+    setCalendarDaySetting(6 * 60, 20 * 60)
+    const times = cellsOf(calendarTableNode(view.state.schema)).slice(1).map(([time]) => time)
+    expect([times.length, times[0], times.at(-1)]).toEqual([29, '6:00 am', '8:00 pm'])
+  })
+
+  it('a day whose end is not after its start is the default day', async () => {
+    const { view } = await mount('x\n')
+    setTimeFormatSetting('h:mm a')
+    setCalendarDaySetting(20 * 60, 6 * 60)
+    const times = cellsOf(calendarTableNode(view.state.schema)).slice(1).map(([time]) => time)
+    expect([times[0], times.at(-1)]).toEqual(['5:00 am', '10:00 pm'])
+  })
+})
+
+describe('"Fill the calendar day" (YAZ-4163 demo): the rows of the day that a calendar table does not have yet', () => {
+  const menu = (view: EditorView): MenuItem[] => tableRows(view, { inside: firstTable(view.state.doc).pos + 3 } as Parameters<typeof tableRows>[1], undefined as never)
+  const fill = (view: EditorView) => menu(view).find((item) => 'label' in item && item.label.startsWith('Fill the calendar day')) as (MenuItem & { label: string; disabled?: boolean; run: () => void }) | undefined
+
+  it('adds an empty row for each slot of the day, before and after, in the table\'s own format; the rows and text it has stay; one undo', async () => {
+    const { view } = await mount(table([['Time', 'Plan'], ['7:00am', 'Wake'], ['7:30am', ''], ['8:00am', 'Gym']]))
+    setCalendarDaySetting(6 * 60, 9 * 60)
+    const before = view.state.doc
+    expect(fillCalendarDay(view, firstTable(view.state.doc).pos)).toBe(true)
+    expect(cellsOf(firstTable(view.state.doc).node)).toEqual([['Time', 'Plan'], ['6:00am', ''], ['6:30am', ''], ['7:00am', 'Wake'], ['7:30am', ''], ['8:00am', 'Gym'], ['8:30am', ''], ['9:00am', '']])
+    undo(view.state, view.dispatch)
+    // The table as it was (the editor keeps its empty line after a table at the end of the note).
+    expect(firstTable(view.state.doc).node.eq(firstTable(before).node)).toBe(true)
+  })
+
+  it('keeps a row outside the day and a row with no time; a 1 hour table gets hours', async () => {
+    const { view } = await mount(table([['Time', 'Plan'], ['8:00 am', 'Gym'], ['', 'note'], ['11:00 pm', 'Sleep']], 'calendar 60m'))
+    setCalendarDaySetting(7 * 60, 10 * 60)
+    fillCalendarDay(view, firstTable(view.state.doc).pos)
+    expect(cellsOf(firstTable(view.state.doc).node)).toEqual([['Time', 'Plan'], ['7:00 am', ''], ['8:00 am', 'Gym'], ['', 'note'], ['9:00 am', ''], ['10:00 am', ''], ['11:00 pm', 'Sleep']])
+  })
+
+  it('the six-dot item names the day, shows on a calendar table only, and is off when the table has the whole day', async () => {
+    setTimeFormatSetting('h:mm a')
+    setCalendarDaySetting(7 * 60, 8 * 60)
+    const { view } = await mount(table([['Time', 'Plan'], ['7:00 am', ''], ['7:30 am', '']]))
+    expect(fill(view)?.label).toBe('Fill the calendar day (7:00 am – 8:00 am)')
+    expect(fill(view)?.disabled).toBe(false)
+    fill(view)!.run()
+    expect(cellsOf(firstTable(view.state.doc).node).map(([time]) => time)).toEqual(['Time', '7:00 am', '7:30 am', '8:00 am'])
+    expect(fill(view)?.disabled).toBe(true)
+    expect(fillCalendarDay(view, firstTable(view.state.doc).pos)).toBe(false)
+    const plain = await mount(table([['Time', 'Plan'], ['7:00 am', '']], ''))
+    expect(fill(plain.view)).toBeUndefined()
   })
 })

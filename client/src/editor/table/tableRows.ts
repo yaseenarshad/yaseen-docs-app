@@ -4,7 +4,8 @@
  * (number fields, as `line/lineRows.ts`), "Header row", "Align all columns", "Vertical align" (Top / Middle /
  * Bottom, the table's default; a cell's own wins, YAZ-4166 D10), "Fit columns to the page" (a row), "Stripes", "Row height" and "Wrap text" (choices), and "Time slots" (Off / 15 min / 30 min /
  * 1 hour, YAZ-4163 D7: `setTimeSlots` in `tableCalendar.ts` makes any table a calendar table and keeps its text, D8);
- * a calendar table also has "Go to now" (a row, YAZ-4164 D11: `goToNow`), disabled while no row holds the current time.
+ * a calendar table also has "Go to now" (a row, YAZ-4164 D11: `goToNow`), disabled while no row holds the current time,
+ * and "Fill the calendar day" (the YAZ-4163 demo: `fillCalendarDay`), disabled while the table has every slot of the day.
  *
  * Each picker shows the table's current value; "Default (…)" sets the attribute's default. A value
  * that IS the default saves no part, so the picker reads "Default (…)" with ✓, and its list does not
@@ -22,9 +23,11 @@ import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { TableMap } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import { formatTime } from '@shared/timeFormat'
 import type { MenuChoice, MenuChoiceField, MenuItem, MenuNumberField, RowProvider } from '../blockHandleMenu'
 import { setCellsAttr } from './cells'
-import { goToNow, minutesOf, nowPlace, setTimeSlots } from './tableCalendar'
+import { fillCalendarDay, goToNow, minutesOf, missingDayTimes, nowPlace, setTimeSlots } from './tableCalendar'
+import { calendarDaySetting, timeFormatSetting } from './timeFormatSetting'
 import { capital } from './colours'
 import { CELL_ALIGNS, TABLE_DEFAULTS, VALIGNS, type CellAlign, type TableAttrs } from './tableStyle'
 
@@ -171,6 +174,12 @@ export const tableRows: RowProvider = (view, target) => {
       (slot) => setTimeSlots(view, pos, Number(slot)),
     ),
   ]
-  if (attrs.calendar > 0) items.push({ label: 'Go to now', disabled: nowPlace(table.node, minutesOf(new Date()))?.row == null, run: () => void goToNow(view, pos) })
+  if (attrs.calendar > 0) {
+    items.push({ label: 'Go to now', disabled: nowPlace(table.node, minutesOf(new Date()))?.row == null, run: () => void goToNow(view, pos) })
+    // The YAZ-4163 demo: the rows of Settings › Calendar tables › Calendar day that the table does not have yet.
+    const { start, end } = calendarDaySetting()
+    const format = timeFormatSetting()
+    items.push({ label: `Fill the calendar day (${formatTime(format, start)} – ${formatTime(format, end)})`, disabled: missingDayTimes(table.node).length === 0, run: () => void fillCalendarDay(view, pos) })
+  }
   return items
 }

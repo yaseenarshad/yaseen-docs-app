@@ -134,11 +134,11 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableRowBand', 'tableNowMark', 'tableDimPast', 'tableTimeFormat']
+const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableRowBand', 'tableNowMark', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
-const EDITOR_GROUPS = ['Outline', 'Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents', 'Outside changes', 'Tables']
+const EDITOR_GROUPS = ['Outline', 'Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents', 'Outside changes', 'Tables', 'Calendar tables']
 /** Settings › Excalidraw canvas (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
 const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
@@ -718,18 +718,33 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     ])
   })
 
-  it('"Tables" (YAZ-4162 D6, D14): "Mark the current time" Line · Tint · Both, Line by default; "Dim past rows" On by default; each writes only its own field', () => {
+  it('"Tables" (YAZ-4162 D6, D14): "Mark the current time" Line · Tint · Both, Line by default; "Dim past rows" Off · Grey text · Grey text and shade, the shade by default; each writes only its own field', () => {
     const { el, onChange } = mountOn('Editor')
-    expect(row(el, 'tableNowMark')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Tables')
+    expect(row(el, 'tableNowMark')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Calendar tables')
     expect(row(el, 'tableNowMark')?.querySelector('.setting__label')?.textContent).toBe('Mark the current time')
     expect(rowButtons(el, 'tableNowMark').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Line', 'true'], ['Tint', 'false'], ['Both', 'false']])
-    expect(rowButtons(el, 'tableDimPast').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
+    expect(rowButtons(el, 'tableDimPast').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Off', 'false'], ['Grey text', 'false'], ['Grey text and shade', 'true']])
     act(() => rowButtons(el, 'tableNowMark')[2].click())
     act(() => rowButtons(el, 'tableDimPast')[1].click())
     expect(onChange.mock.calls.map((call) => call[0])).toEqual([
       { ...DEFAULT_SETTINGS, tableNowMark: 'both' },
-      { ...DEFAULT_SETTINGS, tableDimPast: false },
+      { ...DEFAULT_SETTINGS, tableDimPast: 'text' },
     ])
+  })
+
+  it('"Tables" › Calendar day (YAZ-4163 demo): "from" and "to" in 30 minute steps, 5:00 am to 10:00 pm by default; "to" lists only times after "from"', () => {
+    const { el, onChange } = mountOn('Editor')
+    expect(row(el, 'tableCalendarDay')?.querySelector('.setting__label')?.textContent).toBe('Calendar day')
+    const [from, to] = Array.from(row(el, 'tableCalendarDay')!.querySelectorAll('select'))
+    const label = (select: HTMLSelectElement) => select.options[select.selectedIndex].textContent
+    expect([label(from), label(to)]).toEqual(['5:00 am', '10:00 pm'])
+    expect(from.options[0].textContent).toBe('12:00 am')
+    expect(to.options[0].textContent).toBe('5:30 am')
+    act(() => {
+      from.value = String(Array.from(from.options).findIndex((o) => o.textContent === '6:00 am'))
+      from.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([{ ...DEFAULT_SETTINGS, tableDayStart: 360 }])
   })
 
   it('"Tables" › Row band (YAZ-4167 D16): the group\'s first row, Off · Calendar tables · All tables, All tables by default; it writes only its own field', () => {
@@ -743,10 +758,19 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(onChange.mock.calls.map((call) => call[0])).toEqual([{ ...DEFAULT_SETTINGS, tableRowBand: 'calendar' }])
   })
 
-  it('Tables › Time format (YAZ-4163 D15): the ready styles as 9:00 am, 9:00am, 09:00 and Custom…; a style the app cannot read back keeps the stored one and says why; a good one is written', () => {
+  it('Calendar tables › Shade darkness (YAZ-4163 demo): 6% by default, a stepper in steps of 2 from 2% to 30%, and Reset off the default', () => {
+    const { el, onChange } = mountOn('Editor')
+    expect(row(el, 'tableShadeDarkness')?.querySelector('.setting__label')?.textContent).toBe('Shade darkness')
+    expect(row(el, 'tableShadeDarkness')?.textContent).toContain('6%')
+    const plus = row(el, 'tableShadeDarkness')!.querySelector<HTMLButtonElement>('button[aria-label="Shade darkness larger"]')!
+    act(() => plus.click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableShadeDarkness: 8 })
+  })
+
+  it('Calendar tables › Time format (YAZ-4163 D15, demo): the ready styles as 9:00 am, 9:00am, 9am / 9:30am, 09:00 and Custom…; Custom… previews the draft; a style the app cannot read back keeps the stored one and says why; a good one is written', () => {
     const { el, onChange } = mountOn('Editor')
     const select = row(el, 'tableTimeFormat')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
-    expect([...select.options].map((o) => o.textContent)).toEqual(['9:00 am', '9:00am', '09:00', 'Custom…'])
+    expect([...select.options].map((o) => o.textContent)).toEqual(['9:00 am', '9:00am', '9am / 9:30am', '09:00', 'Custom…'])
     expect(select.selectedIndex).toBe(0)
     act(() => {
       select.value = '1'
@@ -754,10 +778,12 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     })
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableTimeFormat: 'h:mma' })
     act(() => {
-      select.value = '3' // Custom…
+      select.value = '4' // Custom…
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const input = row(el, 'tableTimeFormat')?.querySelector<HTMLInputElement>('.settings__style-pick input') as HTMLInputElement
+    type(input, 'h(mm)a')
+    expect(row(el, 'tableTimeFormat')?.querySelector('.settings__preview')?.textContent).toBe('Preview: 9am · 930am · 12pm · 905pm')
     type(input, 'h:mm')
     act(() => input.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
     expect(row(el, 'tableTimeFormat')?.querySelector('.settings__error')?.textContent).toBe('With h or hh, add a or A for am and pm')
@@ -1286,9 +1312,9 @@ describe('SettingsDialog search (D6)', () => {
     const { el, onChange } = mount({ ...DEFAULT_SETTINGS }, status())
     type(searchInput(el), 'dark')
     // On Hotkeys each hit is under its key's card (YAZ-3564): draw.io's ⌘⇧6, and the canvas's no-key row.
-    // And the guide lines' darkness (YAZ-4094 G3), on the Editor page.
-    expect(headings(el)).toEqual(['Appearance', 'Appearance › draw.io diagrams', 'Editor › Outline', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
-    expect(rowIds(el)).toEqual(['theme', 'diagramDarkColors', 'guideLineDarkness', 'hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme'])
+    // And the guide lines' darkness (YAZ-4094 G3) and the calendar tables' shade darkness (YAZ-4163 demo), on the Editor page.
+    expect(headings(el)).toEqual(['Appearance', 'Appearance › draw.io diagrams', 'Editor › Outline', 'Editor › Calendar tables', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
+    expect(rowIds(el)).toEqual(['theme', 'diagramDarkColors', 'guideLineDarkness', 'tableShadeDarkness', 'hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme'])
     expect(sections(el)).toEqual([]) // the page is gone while the query stands
     act(() => rowButtons(el, 'theme')[2].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, theme: 'dark' })

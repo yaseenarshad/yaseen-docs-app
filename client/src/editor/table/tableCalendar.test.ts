@@ -88,11 +88,13 @@ describe('readTime', () => {
   it.each<[string, number]>([
     ['9:00 am', 540], ['9:00am', 540], ['9am', 540], ['9:00 AM', 540], ['09:00', 540], ['21:30', 1290],
     ['12:00 am', 0], ['12:30 pm', 750], ['11:59 pm', 1439], [' 7:05 pm ', 1145], ['0:00', 0],
+    // No colon with am / pm (the YAZ-4163 demo): `930am`, `1130 pm`, `1205am`.
+    ['930am', 570], ['1130 pm', 1410], ['1205am', 5], ['900AM', 540],
   ])('%s is %i', (text, minutes) => {
     expect(readTime(text)).toBe(minutes)
   })
 
-  it.each(['25:00', '9:60', '13pm', 'abc', '', '9', '0:30 am', '9:5', 'Time'])('%s is no time', (text) => {
+  it.each(['25:00', '9:60', '13pm', 'abc', '', '9', '0:30 am', '9:5', 'Time', '930', '0930', '1200', '960am', '1300pm'])('%s is no time', (text) => {
     expect(readTime(text)).toBeNull()
   })
 })
@@ -278,9 +280,16 @@ describe('the marker in table.css (D2, D6, D14)', () => {
     for (const { selector, body } of calendarRules) expect(body, selector).not.toMatch(/(^|[;\s])position\s*:/)
   })
 
-  it('the look follows `data-table-now`: the line by default, none of it for the tint; past rows grey only while `data-table-dim-past` is on', () => {
+  it('the look follows `data-table-now`: the line by default, none of it for the tint; past rows grey for `text` and `shade` of `data-table-dim-past`, shaded for `shade` only', () => {
     expect(calendarRules.find(({ selector }) => selector.startsWith("[data-table-now='tint']"))?.body).toMatch(/--table-now-line:\s*none/)
-    expect(calendarRules.find(({ selector }) => selector.includes('table-past-row'))?.selector).toMatch(/^\[data-table-dim-past='on'\]/)
-    expect(calendarRules.find(({ selector }) => selector.includes('table-past-row'))?.body.trim()).toBe('color: var(--fg-muted);')
+    const past = calendarRules.filter(({ selector }) => selector.includes('table-past-row'))
+    const grey = past.find(({ body }) => body.trim() === 'color: var(--fg-muted);')
+    expect(grey?.selector).toMatch(/^:is\(\[data-table-dim-past='text'\], \[data-table-dim-past='shade'\]\)/)
+    const shade = past.find(({ body }) => body.includes('--table-past:'))
+    expect(shade?.selector).toMatch(/^\[data-table-dim-past='shade'\]/)
+    // Both cell rules paint the shade as a layer, under the band and over a fill.
+    const paint = rules.filter(({ body }) => /background-image:\s*var\(--table-band, none\)/.test(body))
+    expect(paint.length).toBe(2)
+    for (const { body } of paint) expect(body).toMatch(/var\(--table-band, none\), var\(--table-past, none\)/)
   })
 })

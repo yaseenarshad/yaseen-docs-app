@@ -321,7 +321,7 @@ describe('"/Calendar table" (YAZ-4163 D7)', () => {
     expect(await openMenu(view, root, 'x', `/${query}`)).toContain('Calendar table')
   })
 
-  it('"/calendar" + Enter on a plain line: the calendar table takes the line, calendar 30m, compact, header row and column A frozen, 7:00 am to 10:00 pm', async () => {
+  it('"/calendar" + Enter on a plain line: the calendar table takes the line, calendar 30m, compact, header row and column A frozen, 5:00 am to 10:00 pm (the calendar day)', async () => {
     const { root, view } = await mount('x\n')
     await openMenu(view, root, 'x', '/calendar')
     press('Enter')
@@ -329,7 +329,7 @@ describe('"/Calendar table" (YAZ-4163 D7)', () => {
     const table = tableOf(view)
     expect(view.state.doc.firstChild).toBe(table)
     expect(table.attrs).toMatchObject({ calendar: 30, height: 'compact', freezeRows: 1, freezeCols: 1 })
-    expect([table.childCount, table.child(1).firstChild!.textContent, table.lastChild!.firstChild!.textContent]).toEqual([32, '7:00 am', '10:00 pm'])
+    expect([table.childCount, table.child(1).firstChild!.textContent, table.lastChild!.firstChild!.textContent]).toEqual([36, '5:00 am', '10:00 pm'])
     expect(view.state.doc.textContent).not.toContain('/calendar')
   })
 

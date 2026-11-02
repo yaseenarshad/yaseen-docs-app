@@ -10,7 +10,7 @@ import type { IconRule } from './vaultIcons'
 import type { ReviewEntry } from './reviews'
 import type { HotkeyOverrides } from './hotkeyBindings'
 import { DEFAULT_DAILY_NOTE_FORMAT } from './dailyNote'
-import { DEFAULT_TIME_FORMAT } from './timeFormat'
+import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
 
 // ---------- Errors ----------
 
@@ -1681,8 +1681,13 @@ export interface SettingsState {
   tableRowBand: TableRowBand
   /** Settings › Editor › Tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
-  /** Settings › Editor › Tables › Dim past rows (YAZ-4162 D14): a calendar table's rows before now show grey text. `data-table-dim-past` on `.app`. */
-  tableDimPast: boolean
+  /** Settings › Editor › Tables › Dim past rows (YAZ-4162 D14; the shade from the YAZ-4163 demo): a calendar table's rows before now show grey text, or grey text on a light grey shade. `data-table-dim-past` on `.app`. */
+  tableDimPast: TableDimPast
+  /** Settings › Editor › Calendar tables › Shade darkness (YAZ-4163 demo): the past rows' shade, a percent of the text colour, `TABLE_SHADE_MIN`–`MAX` in steps of `TABLE_SHADE_STEP`. `--table-past-shade` on the root. */
+  tableShadeDarkness: number
+  /** Settings › Editor › Tables › Calendar day (YAZ-4163 demo): the first and the last time of a new calendar table, minutes from midnight on the half hour (`isCalendarDayTime`). A start not before the end is the default day. */
+  tableDayStart: number
+  tableDayEnd: number
   /** Settings › Editor › Tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mma`, for new tables, new times in a table with none, and "Current time". */
   tableTimeFormat: string
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
@@ -1895,6 +1900,13 @@ export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all
 export type TableNowMark = 'line' | 'tint' | 'both'
 export const TABLE_NOW_MARKS: readonly TableNowMark[] = ['line', 'tint', 'both']
 
+/** Calendar tables (YAZ-4162 D14, the YAZ-4163 demo): how the rows before now look. */
+export type TableDimPast = 'off' | 'text' | 'shade'
+export const TABLE_DIM_PASTS: readonly TableDimPast[] = ['off', 'text', 'shade']
+export const TABLE_SHADE_MIN = 2
+export const TABLE_SHADE_MAX = 30
+export const TABLE_SHADE_STEP = 2
+
 /** The sidebar tree (YAZ-3309 D7, D8): the look of its level lines. */
 export type SidebarLineStyle = 'plain' | 'thread'
 export const SIDEBAR_LINE_STYLES: readonly SidebarLineStyle[] = ['plain', 'thread']
@@ -2068,7 +2080,10 @@ export const DEFAULT_SETTINGS: SettingsState = {
   outsideListPinned: false,
   tableRowBand: 'all',
   tableNowMark: 'line',
-  tableDimPast: true,
+  tableDimPast: 'shade',
+  tableShadeDarkness: 6,
+  tableDayStart: DEFAULT_CALENDAR_DAY.start,
+  tableDayEnd: DEFAULT_CALENDAR_DAY.end,
   tableTimeFormat: DEFAULT_TIME_FORMAT,
   sidebarLines: 'hover',
   sidebarLineStyle: 'plain',

@@ -1,6 +1,6 @@
 import { cleanIconRules, isIconRules } from '@shared/vaultIcons'
 import { isValidDailyNoteFormat } from '@shared/dailyNote'
-import { isValidTimeFormat } from '@shared/timeFormat'
+import { isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
@@ -32,9 +32,14 @@ import {
   type NewTabPlace,
   OUTSIDE_CHANGE_GLOWS,
   TABLE_NOW_MARKS,
+  TABLE_DIM_PASTS,
+  TABLE_SHADE_MAX,
+  TABLE_SHADE_MIN,
+  TABLE_SHADE_STEP,
   TABLE_ROW_BANDS,
   DAILY_NOTE_OPENS,
   type DailyNoteOpens,
+  type TableDimPast,
   type TableNowMark,
   type TableRowBand,
   RIGHT_PANEL_DEFAULT_W,
@@ -553,7 +558,10 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   outsideListPinned: (v): v is boolean => typeof v === 'boolean',
   tableRowBand: (v): v is TableRowBand => typeof v === 'string' && (TABLE_ROW_BANDS as readonly string[]).includes(v),
   tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
-  tableDimPast: (v): v is boolean => typeof v === 'boolean',
+  tableDimPast: (v): v is TableDimPast => typeof v === 'string' && (TABLE_DIM_PASTS as readonly string[]).includes(v),
+  tableShadeDarkness: (v): v is number => isFiniteNumber(v) && v >= TABLE_SHADE_MIN && v <= TABLE_SHADE_MAX && v % TABLE_SHADE_STEP === 0,
+  tableDayStart: isCalendarDayTime,
+  tableDayEnd: isCalendarDayTime,
   tableTimeFormat: (v): v is string => typeof v === 'string' && isValidTimeFormat(v),
   sidebarLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
   sidebarLineStyle: (v): v is SidebarLineStyle => typeof v === 'string' && (SIDEBAR_LINE_STYLES as readonly string[]).includes(v),

@@ -26,11 +26,15 @@
  *
  * STARTING ONE (YAZ-4163, D7 / D8 / D15): `calendarTableNode` is "/Calendar table"'s table. `setTimeSlots` is "Time
  * slots" in the six-dot menu (`tableRows.ts`): Off removes the part and keeps every row; a length on a table with no
- * time in column A adds a "Time" column, from 7:00 am; on a table with times it is `slotTimes`, which keeps all text:
+ * time in column A adds a "Time" column, from the start of Settings › Calendar tables › Calendar day (5:00 am by
+ * default, the YAZ-4163 demo); on a table with times it is `slotTimes`, which keeps all text:
  * a row with text keeps its time, also off the new grid, an empty row off the grid goes, and the grid times that are
  * missing come back as empty rows. The grid is each multiple of the length from the table's first time to its last
  * (after midnight counting on). New times take the table's own format (`detectTimeFormat`), or the time format setting
  * when it has none. One transaction with the history closed: one ⌘Z.
+ *
+ * FILL THE DAY (the YAZ-4163 demo): "Fill the calendar day" (`fillCalendarDay`) adds an empty row for each slot of the
+ * Calendar day setting that the table does not have, before, between and after its rows; it removes and moves nothing.
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode, NodeType, Schema } from '@milkdown/kit/prose/model'
@@ -40,7 +44,7 @@ import { $prose } from '@milkdown/kit/utils'
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
 import { foldRuns, runOf, unfoldRun } from './tableFold'
 import { changedTables, typingOnly } from './tableStyle'
-import { timeFormatSetting } from './timeFormatSetting'
+import { calendarDaySetting, timeFormatSetting } from './timeFormatSetting'
 import './tableCalendar.css'
 
 export { readTime }
@@ -348,14 +352,16 @@ const cellNode = (schema: Schema, type: NodeType, text: string, attrs: Record<st
 const filled = (cell: ProseNode): boolean => cell.childCount > 1 || (cell.firstChild?.content.size ?? 0) > 0
 
 /**
- * "/Calendar table"'s table (D7, D10): "Time | Plan 1", a row each 30 minutes from 7:00 am to 10:00 pm in `format`,
+ * "/Calendar table"'s table (D7, D10): "Time | Plan 1", a row each 30 minutes of the Calendar day setting (5:00 am to
+ * 10:00 pm by default) in `format`,
  * `calendar 30m`, compact rows, the header row and column A frozen, and column A's body cells vertically in the
  * middle (YAZ-4166), so a time sits level with a two-line plan.
  */
 export function calendarTableNode(schema: Schema, format = timeFormatSetting()): ProseNode {
   const { table, table_header_row: headerRow, table_row: row, table_header: header, table_cell: cell } = schema.nodes
   const rows = [headerRow!.create(null, [cellNode(schema, header!, 'Time'), cellNode(schema, header!, 'Plan 1')])]
-  for (let t = 7 * 60; t <= 22 * 60; t += 30) rows.push(row!.create(null, [cellNode(schema, cell!, formatTime(format, t), { valign: 'middle' }), cellNode(schema, cell!, '')]))
+  const { start, end } = calendarDaySetting()
+  for (let t = start; t <= end; t += 30) rows.push(row!.create(null, [cellNode(schema, cell!, formatTime(format, t), { valign: 'middle' }), cellNode(schema, cell!, '')]))
   return table!.create({ calendar: 30, height: 'compact', freezeRows: 1, freezeCols: 1 }, rows)
 }
 
@@ -385,15 +391,7 @@ export function slotTimes(table: ProseNode, slot: number, schema: Schema, fallba
     kept.push({ time: at, row })
     if (time !== null) have.add(time)
   }
-  const template = body[0]!.row
-  // A new row: the first body row's alignment and width, and the vertical alignment of the row above it (YAZ-4166).
-  const emptyRow = (time: number, above: ProseNode): ProseNode => {
-    const cells: ProseNode[] = []
-    template.forEach((c, _, i) =>
-      cells.push(cellNode(schema, c.type, i === 0 ? formatTime(format, time) : '', { alignment: c.attrs.alignment, colwidth: c.attrs.colwidth, valign: above.maybeChild(i)?.attrs.valign ?? null })),
-    )
-    return template.type.create(null, cells)
-  }
+  const emptyRow = (time: number, above: ProseNode): ProseNode => emptyRowAt(schema, body[0]!.row, format, time, above)
   const added = grid.filter((t) => !have.has(t)).map((time) => ({ time, row: null as ProseNode | null }))
   // Stable: a new row goes after the kept rows of an earlier time, before those of a later one.
   const sorted = [...kept, ...added].map((entry, i) => ({ ...entry, i })).sort((a, b) => a.time - b.time || a.i - b.i)
@@ -402,12 +400,54 @@ export function slotTimes(table: ProseNode, slot: number, schema: Schema, fallba
   return table.type.create(attrs, [table.firstChild!, ...rows])
 }
 
-/** The table with a "Time" column before column A, a time in each body row from 7:00 am, `slot` apart (D7). */
+/** A new row at `time`: `template`'s alignment and width, and the vertical alignment of the row `above` it (YAZ-4166). */
+function emptyRowAt(schema: Schema, template: ProseNode, format: string, time: number, above: ProseNode): ProseNode {
+  const cells: ProseNode[] = []
+  template.forEach((c, _, i) =>
+    cells.push(cellNode(schema, c.type, i === 0 ? formatTime(format, time) : '', { alignment: c.attrs.alignment, colwidth: c.attrs.colwidth, valign: above.maybeChild(i)?.attrs.valign ?? null })),
+  )
+  return template.type.create(null, cells)
+}
+
+/** The slot times of the Calendar day setting that the calendar `table` has no row for; none for another table. */
+export function missingDayTimes(table: ProseNode): number[] {
+  const slot = table.attrs.calendar as number
+  if (!(slot > 0) || table.childCount < 2) return []
+  const body = rowTimes(table)
+  const have = new Set(body.flatMap(({ time }) => (time === null ? [] : [time % 1440])))
+  const { start, end } = calendarDaySetting()
+  const out: number[] = []
+  for (let t = Math.ceil(start / slot) * slot; t <= end; t += slot) if (!have.has(t)) out.push(t)
+  return out
+}
+
+/** "Fill the calendar day": the missing rows of the day (`missingDayTimes`) in the table at `pos`, one undo step; `false` when none is missing. */
+export function fillCalendarDay(view: EditorView, pos: number): boolean {
+  const table = view.state.doc.nodeAt(pos)
+  if (table?.type.name !== 'table') return false
+  const missing = missingDayTimes(table)
+  if (missing.length === 0) return false
+  const body = rowTimes(table)
+  const format = detectTimeFormat(body.map(({ row }) => row.firstChild?.textContent ?? '')) ?? timeFormatSetting()
+  // Each row with the time it sorts by: a row with no time stays after the row above it (a stable sort).
+  let at = -Infinity
+  const kept = body.map(({ row, time }) => {
+    if (time !== null) at = time
+    return { time: at, row: row as ProseNode | null }
+  })
+  const sorted = [...kept, ...missing.map((time) => ({ time, row: null }))].map((entry, i) => ({ ...entry, i })).sort((a, b) => a.time - b.time || a.i - b.i)
+  const rows: ProseNode[] = []
+  for (const { time, row } of sorted) rows.push(row ?? emptyRowAt(view.state.schema, body[0]?.row ?? table.firstChild!, format, time, rows.at(-1) ?? table.firstChild!))
+  view.dispatch(closeHistory(view.state.tr).replaceWith(pos, pos + table.nodeSize, table.type.create(table.attrs, [table.firstChild!, ...rows])))
+  return true
+}
+
+/** The table with a "Time" column before column A, a time in each body row from the Calendar day's start, `slot` apart (D7). */
 function withTimeColumn(table: ProseNode, slot: number, schema: Schema, format: string): ProseNode {
   const rows: ProseNode[] = []
   table.forEach((row, _, r) => {
     const type = row.firstChild!.type
-    const first = cellNode(schema, type, r === 0 ? 'Time' : formatTime(format, 7 * 60 + (r - 1) * slot))
+    const first = cellNode(schema, type, r === 0 ? 'Time' : formatTime(format, calendarDaySetting().start + (r - 1) * slot))
     rows.push(row.type.create(row.attrs, [first, ...Array.from({ length: row.childCount }, (_, c) => row.child(c))]))
   })
   return table.type.create({ ...table.attrs, calendar: slot }, rows)

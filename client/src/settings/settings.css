@@ -424,6 +424,12 @@
   gap: 8px;
 }
 
+/* The custom time format's preview (YAZ-4163 demo): the draft at four times, above the tokens. */
+.settings__preview {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
 /* The custom name style's tokens (YAZ-3607 D4), muted under its input like an error is red there. */
 .settings__tokens {
   margin: 0 0 8px;

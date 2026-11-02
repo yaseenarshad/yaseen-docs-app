@@ -86,7 +86,7 @@
    (`--table-band`, YAZ-4167, below) is a layer over it, so the fill shows under the band. */
 .milkdown .ProseMirror .milkdown-table-block :is(th, td) {
   background-color: var(--table-cell-tint, transparent);
-  background-image: var(--table-band, none);
+  background-image: var(--table-band, none), var(--table-past, none);
 }
 
 /* Header row: shaded by default, plain on request. */
@@ -259,7 +259,7 @@
 
 .milkdown .ProseMirror .milkdown-table-block :is(.table-frozen-row > *, .table-frozen-col) {
   background-color: var(--bg);
-  background-image: var(--table-band, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
+  background-image: var(--table-band, none), var(--table-past, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
 }
 
 /* Calendar tables (YAZ-4162 D2, D6, D14, `tableCalendar.ts`). The now row carries `--table-now` (0–1, how far
@@ -297,9 +297,15 @@
   --table-now-under: linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
 }
 
-/* Past rows: grey text, over a cell's own text colour; marks keep theirs (D14, `data-table-dim-past`). */
-[data-table-dim-past='on'] .milkdown .ProseMirror .milkdown-table-block .table-past-row > :is(th, td) {
+/* Past rows: grey text, over a cell's own text colour; marks keep theirs (D14, `data-table-dim-past`). `shade` also
+   lays a light shade (`--table-past-shade`, Settings › Calendar tables › Shade darkness, the YAZ-4163 demo) over the
+   cell's fill and under the row band: the `--table-past` layer of the two cell rules above. */
+:is([data-table-dim-past='text'], [data-table-dim-past='shade']) .milkdown .ProseMirror .milkdown-table-block .table-past-row > :is(th, td) {
   color: var(--fg-muted);
+}
+
+[data-table-dim-past='shade'] .milkdown .ProseMirror .milkdown-table-block .table-past-row > :is(th, td) {
+  --table-past: linear-gradient(color-mix(in srgb, var(--crepe-color-on-background) var(--table-past-shade, 6%), transparent), color-mix(in srgb, var(--crepe-color-on-background) var(--table-past-shade, 6%), transparent));
 }
 
 /* The table zoom (YAZ-4091, D13, `tableZoomPill.tsx`). The table's own zoom is CSS `zoom` on the block's content

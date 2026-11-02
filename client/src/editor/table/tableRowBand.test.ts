@@ -85,6 +85,6 @@ describe('the setting', () => {
     expect(css).not.toContain("[data-table-row-band='off']")
     // The band is a background layer under the now mark's line; a frozen cell keeps its tint layer.
     expect(css).toMatch(/\.table-now-row > \* \{\s*background-image: var\(--table-now-line\), var\(--table-now-tint\), var\(--table-band, none\)/)
-    expect(css).toMatch(/:is\(\.table-frozen-row > \*, \.table-frozen-col\) \{[^}]*background-image: var\(--table-band, none\), linear-gradient/)
+    expect(css).toMatch(/:is\(\.table-frozen-row > \*, \.table-frozen-col\) \{[^}]*background-image: var\(--table-band, none\), var\(--table-past, none\), linear-gradient/)
   })
 })
