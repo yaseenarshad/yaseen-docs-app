@@ -260,3 +260,40 @@ describe('the table block shows the table settings to CSS', () => {
     expect(now.getAttribute('data-table-height')).toBe('tall')
   })
 })
+
+describe('parts this build does not know (YAZ-4161)', () => {
+  const UNKNOWN = `${SMALL}\n<!-- table: widths 140 auto, future 1 2, stripes -->\n`
+
+  it('a table comment with an unknown part loads and saves byte for byte; a plain table saves the bytes of before', async () => {
+    expect(await save(UNKNOWN)).toBe(UNKNOWN)
+    expect(await save(SMALL)).toBe(SMALL)
+    const { view } = await mount(UNKNOWN)
+    expect(tables(view.state.doc)[0].attrs.unknownParts).toEqual([{ after: 'widths', text: 'future 1 2' }])
+  })
+
+  it('a change of a known part keeps the unknown part', async () => {
+    const { crepe, view } = await mount(UNKNOWN)
+    const pos = tablePos(view)
+    view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...view.state.doc.nodeAt(pos)!.attrs, stripes: false, wrap: false }))
+    expect(getMarkdownForSave(crepe)).toBe(`${SMALL}\n<!-- table: widths 140 auto, future 1 2, nowrap -->\n`)
+  })
+
+  it('a copy inside the app keeps the unknown parts (toDOM / parseDOM)', async () => {
+    const { view } = await mount(UNKNOWN)
+    const { schema } = view.state
+    const dom = DOMSerializer.fromSchema(schema).serializeNode(tables(view.state.doc)[0]) as HTMLElement
+    const holder = document.createElement('div')
+    holder.appendChild(dom)
+    const [copy] = tables(DOMParser.fromSchema(schema).parse(holder))
+    expect(copy.attrs.unknownParts).toEqual([{ after: 'widths', text: 'future 1 2' }])
+    expect(copy.attrs.stripes).toBe(true)
+  })
+
+  it('a pasted table with wrong parts data keeps none of it', async () => {
+    const { view } = await mount(SMALL)
+    const holder = document.createElement('div')
+    holder.innerHTML = `<table data-table-parts='[{"after":"stripes","text":"a, b"},{"after":7,"text":"c"},{"after":null,"text":"x --> y"},"z"]'><tbody><tr><th>a</th></tr><tr><td>1</td></tr></tbody></table>`
+    const [copy] = tables(DOMParser.fromSchema(view.state.schema).parse(holder))
+    expect(copy.attrs.unknownParts).toEqual([])
+  })
+})

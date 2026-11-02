@@ -2,7 +2,8 @@
  * The table's settings in the file (YAZ-3758, YAZ-3696 🔒 D1 / D3 / D7 / S3; CONTRACTS rule 41a).
  * The `table` node gets seven attributes, each at its default on a plain table: `border` (`null` or
  * `{ px, darkness }`), `header` (`shaded` | `plain`), `stripes`, `height` (`compact` | `normal` |
- * `tall`), `wrap`, `freezeRows` and `freezeCols`. A column's alignment is the cells' own GFM
+ * `tall`), `wrap`, `freezeRows` and `freezeCols`; and `unknownParts`, the comment's parts this build
+ * does not know, kept as their text (YAZ-4161). A column's alignment is the cells' own GFM
  * `alignment` (the `:-` row), not ours (YAZ-3767). Each
  * cell gets `fill`, `color` and its own `align` (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
  * column's width is the cells' own `colwidth` (prosemirror-tables). Markdown has no syntax for any.
@@ -36,7 +37,7 @@ import type { NodeSchema } from '@milkdown/kit/transformer'
 import { $prose, $remark } from '@milkdown/kit/utils'
 import type { Nodes, Table } from 'mdast'
 import { joinNextComment } from '../joinComment'
-import { BORDER_PX_MAX, WIDTH_MAX, cellAddress, cellAlign, cellColor, formatTableComment, parseTableComment, plainTable, type TableStyle } from './tableComment'
+import { BORDER_PX_MAX, WIDTH_MAX, cellAddress, cellAlign, cellColor, formatTableComment, parseTableComment, plainTable, unknownPart, type TableStyle, type UnknownPart } from './tableComment'
 import './table.css'
 
 export * from './tableComment'
@@ -50,6 +51,7 @@ export const TABLE_DEFAULTS = {
   wrap: true,
   freezeRows: 0,
   freezeCols: 0,
+  unknownParts: [] as UnknownPart[],
 }
 export type TableAttrs = typeof TABLE_DEFAULTS
 
@@ -67,6 +69,8 @@ function tableLevel(attrs: Record<string, unknown>): Omit<TableStyle, 'widths' |
   const rows = isWhole(attrs.freezeRows, 1, 999) ? attrs.freezeRows : 0
   const cols = isWhole(attrs.freezeCols, 1, 999) ? attrs.freezeCols : 0
   if (rows > 0 || cols > 0) out.freeze = { rows, cols }
+  const unknown = Array.isArray(attrs.unknownParts) ? attrs.unknownParts.map(unknownPart) : []
+  if (unknown.length > 0 && unknown.every((part) => part !== null)) out.unknown = unknown as UnknownPart[]
   return out
 }
 
@@ -111,6 +115,12 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
   const px = /--table-border-width:\s*(\d+)px/.exec(style)?.[1]
   const darkness = /--table-border-darkness:\s*(\d+)%/.exec(style)?.[1]
   const [rows, cols] = (dom.getAttribute('data-table-freeze') ?? '').split(' ').map(Number)
+  let unknownParts: unknown = null
+  try {
+    unknownParts = JSON.parse(dom.getAttribute('data-table-parts') ?? 'null')
+  } catch {
+    // Not ours: no parts.
+  }
   const raw = {
     border: px !== undefined && darkness !== undefined ? { px: Number(px), darkness: Number(darkness) } : null,
     header: dom.getAttribute('data-table-header'),
@@ -119,6 +129,7 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
     wrap: !dom.hasAttribute('data-table-nowrap'),
     freezeRows: rows,
     freezeCols: cols,
+    unknownParts,
   }
   return levelAttrs(tableLevel(raw))
 }
@@ -132,6 +143,7 @@ const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align
   wrap: style.nowrap !== true,
   freezeRows: style.freeze?.rows ?? 0,
   freezeCols: style.freeze?.cols ?? 0,
+  unknownParts: style.unknown ?? [],
 })
 
 /**
@@ -246,9 +258,13 @@ const tableStyleSchema = tableSchema.extendSchema((prev) => (ctx) => {
     attrs: Object.fromEntries(Object.entries(TABLE_DEFAULTS).map(([name, value]) => [name, { default: value }])),
     parseDOM: [{ tag: 'table', getAttrs: (dom) => readTableDom(dom as HTMLElement) }],
     toDOM: (node) => {
-      // The freeze goes with a copy only: `tableFreeze.ts` draws it on the page from the attributes.
-      const { freeze } = tableLevel(node.attrs)
-      return ['table', { ...tableDomAttrs(node.attrs), ...(freeze && { 'data-table-freeze': `${freeze.rows} ${freeze.cols}` }) }, ['tbody', 0]]
+      // The freeze and the unknown parts (YAZ-4161) go with a copy only: `tableFreeze.ts` draws the freeze on the page from the attributes.
+      const { freeze, unknown } = tableLevel(node.attrs)
+      return [
+        'table',
+        { ...tableDomAttrs(node.attrs), ...(freeze && { 'data-table-freeze': `${freeze.rows} ${freeze.cols}` }), ...(unknown && { 'data-table-parts': JSON.stringify(unknown) }) },
+        ['tbody', 0],
+      ]
     },
     parseMarkdown: {
       match: base.parseMarkdown.match,

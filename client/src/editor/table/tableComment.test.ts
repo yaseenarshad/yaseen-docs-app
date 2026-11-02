@@ -132,8 +132,8 @@ describe('the fixed order', () => {
 })
 
 describe('tolerant reading', () => {
-  it('an unknown part is ignored, the known parts are kept', () => {
-    expect(parseTableComment('<!-- table: stripes, sparkle 3, nowrap -->')).toEqual(style({ stripes: true, nowrap: true }))
+  it('an unknown part is kept as its text, after the known part before it; the known parts are read (YAZ-4161)', () => {
+    expect(parseTableComment('<!-- table: stripes, sparkle 3, nowrap -->')).toEqual(style({ stripes: true, nowrap: true, unknown: [{ after: 'stripes', text: 'sparkle 3' }] }))
   })
 
   it('`align` is no part: the column alignment is the GFM `:-` row (YAZ-3767)', () => {
@@ -159,5 +159,35 @@ describe('tolerant reading', () => {
     ['stripes'],
   ])('%s is not the table comment: null', (comment) => {
     expect(parseTableComment(comment)).toBeNull()
+  })
+})
+
+describe('parts it does not know (YAZ-4161)', () => {
+  it('a comment with an unknown part between known ones saves byte for byte', () => {
+    const comment = '<!-- table: widths 140 auto, future 1 2, stripes -->'
+    const parsed = parseTableComment(comment)
+    expect(parsed).toEqual(style({ widths: [140, null], stripes: true, unknown: [{ after: 'widths', text: 'future 1 2' }] }))
+    expect(formatTableComment(parsed!)).toBe(comment)
+  })
+
+  it('an unknown part with no known part before it goes after the known parts; unknown parts keep their order', () => {
+    expect(formatTableComment(parseTableComment('<!-- table: alpha 1, beta, stripes, gamma x  y, nowrap -->')!)).toBe('<!-- table: stripes, gamma x  y, nowrap, alpha 1, beta -->')
+  })
+
+  it('an unknown part whose known part is no longer set goes after the known parts', () => {
+    const parsed = parseTableComment('<!-- table: stripes, future 1, nowrap -->')!
+    expect(formatTableComment({ ...parsed, stripes: undefined })).toBe('<!-- table: nowrap, future 1 -->')
+  })
+
+  it('a known part with a value it does not know is still dropped; it is no anchor', () => {
+    expect(formatTableComment(parseTableComment('<!-- table: stripes, header fancy, future, nowrap -->')!)).toBe('<!-- table: stripes, future, nowrap -->')
+  })
+
+  it('a line break inside an unknown part is one space', () => {
+    expect(formatTableComment(parseTableComment('<!-- table: stripes, future\n   1 -->')!)).toBe('<!-- table: stripes, future 1 -->')
+  })
+
+  it('a comment with only unknown parts is still not ours', () => {
+    expect(parseTableComment('<!-- table: future 1, later -->')).toBeNull()
   })
 })
