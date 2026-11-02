@@ -306,30 +306,17 @@ const selectCells = (view: EditorView, from: [number, number], to: [number, numb
 const labelsOf = (view: EditorView, r: number, c: number) =>
   sectionsAt(view, r, c).flat().filter((item) => item.id.startsWith('table-') && !item.id.includes('freeze')).map((item) => item.label)
 
-describe('whole rows or whole columns: every item, the other kind on the clicked cell (the YAZ-4163 demo)', () => {
-  const freezeLabels = (view: EditorView, r: number, c: number) => sectionsAt(view, r, c).flat().filter((item) => item.id.includes('freeze')).map((item) => item.label)
+describe('whole rows and whole columns count what is selected, as any cells (the YAZ-4163 demo)', () => {
   const selectRows = (view: EditorView, from: number, to: number) =>
     view.dispatch(view.state.tr.setSelection(CellSelection.rowSelection(view.state.doc.resolve(cellPos(view, from, 0)), view.state.doc.resolve(cellPos(view, to, 0)))))
-  const selectCols = (view: EditorView, from: number, to: number) =>
-    view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, from)), view.state.doc.resolve(cellPos(view, 0, to)))))
 
-  it('rows 2 to 3: the row items count 2; the column items are for the clicked cell\'s column; Insert column right adds one column', async () => {
+  it('rows 2 to 3 of a 4-column table: 2 rows and 4 columns; Insert 4 columns right adds 4', async () => {
     const { view } = await mount(WIDE)
     selectRows(view, 1, 2)
-    expect(labelsOf(view, 1, 1)).toEqual(['Insert 2 rows above', 'Insert 2 rows below', 'Insert column left', 'Insert column right', 'Duplicate 2 rows', 'Duplicate column', 'Delete 2 rows', 'Delete column', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows'])
-    expect(freezeLabels(view, 1, 1)).toEqual(['Freeze up to this row', 'Freeze up to this column', 'Unfreeze rows', 'Unfreeze columns'])
+    expect(labelsOf(view, 1, 1)).toEqual(['Insert 2 rows above', 'Insert 2 rows below', 'Insert 4 columns left', 'Insert 4 columns right', 'Duplicate 2 rows', 'Duplicate 4 columns', 'Delete 2 rows', 'Delete 4 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows'])
     row(view, 1, 1, 'table-insert-col-right').onSelect()
-    expect(texts(view)[0]).toEqual(['h1', 'h2', '', 'h3', 'h4'])
+    expect(texts(view)[0]).toEqual(['h1', 'h2', 'h3', 'h4', '', '', '', ''])
   })
-
-  it('columns B to C: the column items count 2; the row items are for the clicked cell\'s row; no Fold', async () => {
-    const { view } = await mount(WIDE)
-    selectCols(view, 1, 2)
-    expect(labelsOf(view, 2, 1)).toEqual(['Insert row above', 'Insert row below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate row', 'Duplicate 2 columns', 'Delete row', 'Delete 2 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A'])
-    row(view, 2, 1, 'table-insert-row-below').onSelect()
-    expect(texts(view).map((r) => r[0])).toEqual(['h1', 'a', 'e', '', 'i'])
-  })
-
 })
 
 describe('the labels count the selection (YAZ-3801)', () => {

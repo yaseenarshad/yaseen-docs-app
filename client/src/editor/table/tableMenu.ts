@@ -22,9 +22,8 @@
  * cell above it in each column (YAZ-4166).
  *
  * The labels count the target's rows and columns, as in Sheets (YAZ-3801): "Insert 2 rows above",
- * "Delete 3 columns"; one row or column keeps the singular label. Insert N inserts N. With whole rows selected (a row
- * handle's selection) the column items act on the right-clicked cell's column, and with whole columns the row items on
- * its row (the YAZ-4163 demo): every item is always there.
+ * "Delete 3 columns"; one row or column keeps the singular label. Insert N inserts N. Whole rows and whole columns
+ * count the same way: every item is always there, and counts what is selected (the YAZ-4163 demo).
  *
  * Freeze (S3) counts from the top and from the left: "Freeze up to this row" sets `freezeRows` to
  * the clicked row's number (row 1 is the header), the column item `freezeCols` the same way; there
@@ -77,12 +76,11 @@ function targetSelection(state: EditorState, cell: { pos: number; tableStart: nu
  * Run `command` on the target cells, in one transaction with the history closed. The command sees
  * a state whose selection is the target; the note's own selection is put back when it was not.
  */
-function runOn(view: EditorView, pointer: number, command: Command, single = false): void {
+function runOn(view: EditorView, pointer: number, command: Command): void {
   const cell = clickedCell(view.state.doc, pointer)
   if (cell === null) return
   const own = view.state.selection
-  // `single`: the clicked cell only, not the selection (a column item on whole rows, the YAZ-4163 demo).
-  const target = single ? CellSelection.create(view.state.doc, cell.pos) : targetSelection(view.state, cell)
+  const target = targetSelection(view.state, cell)
   const state = target === own ? view.state : EditorState.create({ doc: view.state.doc, selection: target })
   command(state, (tr) => {
     if (target !== own) tr.setSelection(own.map(tr.doc, tr.mapping))
@@ -259,16 +257,6 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
   const cols = right - left
   // The target's body rows: the header row never folds (YAZ-4165).
   const folds = bottom - Math.max(top, 1)
-  // The YAZ-4163 demo: whole rows selected, the column items act on the right-clicked cell's column (one column), and
-  // whole columns selected, the row items on its row; the whole table, or any other cells, act on the selection.
-  const wholeRows = target.isRowSelection() && !target.isColSelection()
-  const wholeCols = target.isColSelection() && !target.isRowSelection()
-  const runCell = (command: Command) => () => runOn(view, pointer, command, true)
-  const rowRun = wholeCols ? runCell : run
-  const colRun = wholeRows ? runCell : run
-  const rowCount = wholeCols ? 1 : rows
-  const colCount = wholeRows ? 1 : cols
-  const rowTop = wholeCols ? cell.row : top
   const { freezeRows, freezeCols } = cell.table.attrs as { freezeRows: number; freezeCols: number }
   const item = (id: string, label: string, onSelect: () => void, disabled = false): MenuAction => ({ id: `table-${id}`, label, onSelect, disabled })
   /** Fill ▸ or Text colour ▸: the cell toolbar's palette — the clear item, the ten names, Custom colour… (YAZ-3817). */
@@ -283,16 +271,16 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
   })
   return [
     [
-              item('insert-row-above', counted(rowCount, 'Insert row above', 'Insert N rows above'), rowRun(rowsAbove), rowTop === 0),
-        item('insert-row-below', counted(rowCount, 'Insert row below', 'Insert N rows below'), rowRun(rowsBelow)),
-              item('insert-col-left', counted(colCount, 'Insert column left', 'Insert N columns left'), colRun(columns('left'))),
-        item('insert-col-right', counted(colCount, 'Insert column right', 'Insert N columns right'), colRun(columns('right'))),
-      item('duplicate-rows', counted(rowCount, 'Duplicate row', 'Duplicate N rows'), rowRun(duplicateRows), rowTop === 0),
-      item('duplicate-cols', counted(colCount, 'Duplicate column', 'Duplicate N columns'), colRun(duplicateColumns)),
+              item('insert-row-above', counted(rows, 'Insert row above', 'Insert N rows above'), run(rowsAbove), top === 0),
+        item('insert-row-below', counted(rows, 'Insert row below', 'Insert N rows below'), run(rowsBelow)),
+              item('insert-col-left', counted(cols, 'Insert column left', 'Insert N columns left'), run(columns('left'))),
+        item('insert-col-right', counted(cols, 'Insert column right', 'Insert N columns right'), run(columns('right'))),
+      item('duplicate-rows', counted(rows, 'Duplicate row', 'Duplicate N rows'), run(duplicateRows), top === 0),
+      item('duplicate-cols', counted(cols, 'Duplicate column', 'Duplicate N columns'), run(duplicateColumns)),
     ],
     [
-      item('delete-row', counted(rowCount, 'Delete row', 'Delete N rows'), rowRun(deleteRow), rowTop === 0 || rowCount >= map.height - 1),
-      item('delete-col', counted(colCount, 'Delete column', 'Delete N columns'), colRun(deleteColumn), colCount >= map.width),
+      item('delete-row', counted(rows, 'Delete row', 'Delete N rows'), run(deleteRow), top === 0 || rows >= map.height - 1),
+      item('delete-col', counted(cols, 'Delete column', 'Delete N columns'), run(deleteColumn), cols >= map.width),
       item('clear', 'Clear cells', run(deleteCellSelection)),
     ],
     [
@@ -307,7 +295,7 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
     [
       item('sort-asc', 'Sort A to Z', run(sortRows(1))),
       item('sort-desc', 'Sort Z to A', run(sortRows(-1))),
-      ...(!wholeCols && folds >= 2 ? [item('fold', `Fold ${folds} rows`, () => keepingScroll(view, run(foldRows)))] : []),
+      ...(folds >= 2 ? [item('fold', `Fold ${folds} rows`, () => keepingScroll(view, run(foldRows)))] : []),
     ],
     [
               freezeRows === cell.row + 1
