@@ -2,7 +2,9 @@
  * The Table part of a note's right-click menu (YAZ-3769, YAZ-3696 🔒 D5 / S3), after the paste
  * rows, when the right-click is in a cell of an editable note (R3). It is the ONE table menu
  * (YAZ-3820): a row or column handle opens the same note menu, on the cells it selected
- * (`noteMenu.tsx`). Five groups:
+ * (`noteMenu.tsx`). Six groups:
+ * - the clicked cell's note (YAZ-3818 D8): "Add cell note" on a cell with none; "Open cell note" and
+ *   "Delete cell note" on a cell with one. Delete asks nothing; ⌘Z brings the note and its mark back;
  * - Insert row above / below, Insert column left / right, Duplicate row;
  * - Delete row, Delete column, Clear cells;
  * - Align ▸ (the cells' own alignment, YAZ-3819; the column's own value clears it), Fill ▸ and
@@ -43,6 +45,8 @@ import {
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createElement } from 'react'
 import type { MenuAction, MenuParent, MenuSection } from '../../sidebar/menuSections'
+import { openCellNote } from '../outline/zoom'
+import { cellNoteOf, removeCellNote } from './cellNotes'
 import { setCellsAlign, setCellsAttr } from './cells'
 import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
 import { CELL_ALIGNS, TABLE_COLORS, type CellAlign, type TableColor } from './tableStyle'
@@ -210,7 +214,7 @@ export const TABLE_HANDLE_MENU = 'milkdown-table-handle-menu'
 /** A colour's swatch before its label, as the cell toolbar's palette draws it. */
 const swatch = (background: string) => createElement('span', { className: 'table-menu-swatch', style: { background } })
 
-/** The Table part's five groups, or none: no cell at `pointer`, or a read-only note. */
+/** The Table part's six groups, or none: no cell at `pointer`, or a read-only note. */
 export function tableMenuSections(view: EditorView, pointer: number | null): MenuSection[] {
   if (!view.editable || pointer === null) return []
   const cell = clickedCell(view.state.doc, pointer)
@@ -234,7 +238,14 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
       [item(`${attr}-custom`, 'Custom colour…', () => customColour(view, pointer, attr))],
     ],
   })
+  const note = cellNoteOf(view.state.doc, cell.pos)
   return [
+    note === null
+      ? [item('add-note', 'Add cell note', () => openCellNote(view, cell.pos))]
+      : [
+          item('open-note', 'Open cell note', () => openCellNote(view, cell.pos)),
+          item('delete-note', 'Delete cell note', () => view.dispatch(closeHistory(removeCellNote(view.state.tr, note)))),
+        ],
     [
       item('insert-row-above', counted(rows, 'Insert row above', 'Insert N rows above'), run(rowsAbove), top === 0),
       item('insert-row-below', counted(rows, 'Insert row below', 'Insert N rows below'), run(rowsBelow)),

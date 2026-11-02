@@ -37,7 +37,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
+import { createCrepe, getMarkdownForSave, zoomPageTo, type CreateCrepeOptions } from '../createCrepe'
 import { isHeadingCollapsed, setHeadingFoldSet } from '../outline/headingFolding'
 import { isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos } from '../outline/zoom'
@@ -572,6 +572,18 @@ describe('a bullet zoom (YAZ-4094 4C, 4D)', () => {
     expect(scanZoom(view.state.doc, getZoomedItemPos(view.state)!)?.bullets).toBe(true)
     pressZoom(view, true)
     expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 Under'])
+  })
+
+  it('a cell note page (YAZ-3818 D9) lists the note’s bullets as a bullet zoom does; with under two, the note’s rows stay, still zoomed', async () => {
+    vi.useFakeTimers()
+    const table = `# Top\n\n## Under\n\n| a | b |\n| - | - |\n| x[^cell-1] | y[^cell-2] |\n\n`
+    const { crepe, view, channel } = await mountToc(`${table}[^cell-1]: * one\n    * two\n\n[^cell-2]: Only a line.\n`, { zoom: { title: () => 'Notes' } })
+    expect(zoomPageTo(crepe, 'note:cell-1')).toBe(true)
+    expect(texts(channel.getState().rows)).toEqual(['1 one', '1 two'])
+    expect(channel.getState().zoomed).toBe(true)
+    zoomPageTo(crepe, 'note:cell-2')
+    expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 Under'])
+    expect(view.state.doc.nodeAt(getZoomedItemPos(view.state)!)?.type.name).toBe('cell_note')
   })
 
   it('4D: under the Headings source, the headings inside the zoom, raised so the top one is level 1; under two rows the note’s list stays', async () => {

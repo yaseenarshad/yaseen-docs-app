@@ -24,7 +24,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
+import { createCrepe, getMarkdownForSave, zoomPageTo, type CreateCrepeOptions } from '../createCrepe'
 import { OPEN_ID_LINK } from '../wikilink/idLinkCaret'
 import { getHeadingFoldKey, isHeadingCollapsed, undoLastHeadingFold } from '../outline/headingFolding'
 import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
@@ -357,6 +357,68 @@ describe('zoom', () => {
     expect(getZoomedItemPos(view.state)).not.toBeNull()
     channel.setQuery('apple')
     expect(channel.getState().total).toBe(1)
+  })
+})
+
+describe('cell notes (YAZ-3818 D19)', () => {
+  const NOTE = `Intro apple
+
+| Day | Plan |
+| --- | --- |
+| Mon | x[^cell-1] |
+
+[^cell-1]: note apple
+
+Outro apple
+`
+  const zoomedType = (view: EditorView) => {
+    const pos = getZoomedItemPos(view.state)
+    return pos === null ? null : view.state.doc.nodeAt(pos)!.type.name
+  }
+
+  it('in the note view a match in a cell note counts; a step onto it opens the note, the next step closes it', async () => {
+    const onZoom = vi.fn()
+    const { view, channel } = await mountFind(NOTE, { zoom: { title: () => 'Notes', onZoom } })
+    channel.open()
+    channel.setQuery('apple')
+    expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 0 })
+    expect(zoomedType(view)).toBeNull()
+    channel.next()
+    expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 1 })
+    expect(zoomedType(view)).toBe('cell_note')
+    // An edit in the opened note: the count is still the whole note's.
+    view.dispatch(view.state.tr.insertText('!', posOfText(view.state.doc, 'note apple')))
+    expect(channel.getState().total).toBe(3)
+    channel.next()
+    expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 2 })
+    expect(zoomedType(view)).toBeNull()
+    // Find's own zooms are quiet: no Back step.
+    expect(onZoom).not.toHaveBeenCalled()
+  })
+
+  it('close on a match in the note: the page stays open with the caret in the note, and the tab hears of it', async () => {
+    const onZoom = vi.fn()
+    const { view, channel } = await mountFind(NOTE, { zoom: { title: () => 'Notes', onZoom } })
+    channel.open()
+    channel.setQuery('apple')
+    channel.next()
+    channel.close()
+    expect(zoomedType(view)).toBe('cell_note')
+    expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'note apple') + 5)
+    expect(view.state.selection.$from.node(1).type.name).toBe('cell_note')
+    expect(onZoom.mock.calls).toEqual([['note:cell-1', false, 'Note: Plan · Mon']])
+  })
+
+  it('on a cell note page the reader opened, find counts that note only, and never zooms out', async () => {
+    const { crepe, view, channel } = await mountFind(NOTE, { zoom: { title: () => 'Notes' } })
+    zoomPageTo(crepe, 'note:cell-1')
+    expect(zoomedType(view)).toBe('cell_note')
+    channel.open()
+    channel.setQuery('apple')
+    expect(channel.getState()).toMatchObject({ total: 1, activeIndex: 0 })
+    channel.next()
+    channel.close()
+    expect(zoomedType(view)).toBe('cell_note')
   })
 })
 

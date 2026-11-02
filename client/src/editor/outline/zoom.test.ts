@@ -197,11 +197,12 @@ describe('zoom into a bullet', () => {
     expect(zoomedPos(crepe)).toBeNull()
   })
 
-  it('Mod-. on a plain cell line of a table inside a bullet never zooms into the outer bullet (YAZ-3818)', async () => {
+  it('Mod-. on a plain cell line of a table inside a bullet never zooms into the outer bullet: it opens the cell note (YAZ-3818 D9)', async () => {
     const { crepe } = await mount('* outer\n\n  | h1 | h2 |\n  | --- | --- |\n  | plain | c2 |\n')
     caretIn(crepe, 'plain')
-    expect(press(crepe, 'Mod-.')).toBe(false)
-    expect(zoomedPos(crepe)).toBeNull()
+    expect(press(crepe, 'Mod-.')).toBe(true)
+    const zoomed = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.doc.nodeAt(zoomedPos(crepe)!))
+    expect(zoomed?.type.name).toBe('cell_note')
   })
 
   it('breadcrumb clicks zoom to that ancestor; the file crumb zooms out fully', async () => {

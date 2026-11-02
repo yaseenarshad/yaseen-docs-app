@@ -438,3 +438,125 @@
   font-size: 0.8em;
   color: var(--fg-muted);
 }
+
+/* A cell note's mark (YAZ-3818 D8): a small triangle in the cell's top-right corner, as in Google Sheets. The label
+   never shows: the `sup` keeps its place in the line at font size 0, so the caret moves as before, and its `::after`
+   is the triangle, placed in the cell (prosemirror-tables makes cells `position: relative`). A click opens the cell
+   note (`zoom.ts`), a rest of the pointer shows its first lines (`cellNotePreview.ts`). */
+:root {
+  --table-cell-note-mark: #e8a317;
+}
+
+[data-theme='dark'] {
+  --table-cell-note-mark: #f2c14e;
+}
+
+.milkdown .ProseMirror .milkdown-table-block :is(th, td) sup[data-type='footnote_reference'][data-label^='cell-'] {
+  font-size: 0;
+  cursor: pointer;
+}
+
+.milkdown .ProseMirror .milkdown-table-block :is(th, td) sup[data-type='footnote_reference'][data-label^='cell-']::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-style: solid;
+  border-width: 0 8px 8px 0;
+  border-color: transparent var(--table-cell-note-mark) transparent transparent;
+  cursor: pointer;
+}
+
+/* In a cell that starts with a list the mark is in the first bullet's line, and `li.list-item` is positioned (the fold
+   arrow): out by the cell's padding, Crepe's 4px 16px, and the row heights' 1px and 10px. */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td) li.list-item sup[data-type='footnote_reference'][data-label^='cell-']::after {
+  top: -4px;
+  right: -16px;
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-height='compact'] :is(th, td) li.list-item sup[data-type='footnote_reference'][data-label^='cell-']::after {
+  top: -1px;
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-height='tall'] :is(th, td) li.list-item sup[data-type='footnote_reference'][data-label^='cell-']::after {
+  top: -10px;
+}
+
+/* The "Add cell note" button (D8, `cellNoteButton.ts`): one widget, in the top-right corner of the cell under the
+   pointer or of the caret's cell, on a cell with no cell note. Crepe's surface, as the table's own handles. Hidden in a
+   read-only view. */
+.milkdown .ProseMirror .milkdown-table-block .cell-note-button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: var(--crepe-color-surface);
+  box-shadow: var(--crepe-shadow-1);
+  color: var(--crepe-color-outline);
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .cell-note-button:hover {
+  opacity: 1;
+  background: var(--crepe-color-hover);
+}
+
+.milkdown .ProseMirror .milkdown-table-block .cell-note-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.milkdown .ProseMirror[contenteditable='false'] .cell-note-button {
+  display: none;
+}
+
+/* A cell note's preview (D14, `cellNotePreview.ts`): the link hover card's look (`boardPreview.css` `.board-preview`),
+   on the page's body. Read-only: the pointer goes through it. */
+.cell-note-preview {
+  position: fixed;
+  z-index: 40;
+  width: 260px;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  color: var(--fg);
+  font-size: 12.5px;
+}
+
+.cell-note-preview__header {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-note-preview__hint {
+  padding: 4px 12px 0;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.cell-note-preview__body {
+  padding: 6px 12px 8px;
+}
+
+.cell-note-preview__line {
+  min-height: 1.4em;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}

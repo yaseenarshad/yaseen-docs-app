@@ -56,6 +56,7 @@ import { collapsedHeadingsHiding, headingLevel, isHeadingCollapsed, isWalkableCo
 import { findNestedLists, isListItem, itemLabelText, LIST_NODE_NAMES, UNTITLED_ITEM } from '../outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos, zoomOutFully } from '../outline/zoom'
+import { isCellNote } from '../table/cellNotes'
 import { DEEPEST_TOC_LEVEL, ENOUGH_ROWS, type TocChannel, type TocController, type TocLevel, type TocRow } from './tocChannel'
 import { FLASH_FRAMES, FLASH_MS, GLIDE_MS, GLIDE_SCREENS, glideEase, LANDING_PX, reducedMotion } from './tocMotion'
 
@@ -210,12 +211,12 @@ export const scanNote = (doc: ProseNode, source: TocSource | null = null): Scann
 /**
  * A bullet zoom's own rows (YAZ-4094 4D): the zoom makes the bullet a page, so its rows are what is
  * in it. Its child bullets three levels down, or with the `headings` source every H1-H5 inside it.
- * Null when that gives fewer than two rows: the note's own rows then stay, with the zoom's section
- * current (4C).
+ * A cell note's page the same (YAZ-3818 D9): its bullets; it holds no headings. Null when that gives
+ * fewer than two rows: the note's own rows then stay, with the zoom's section current (4C).
  */
 export const scanZoom = (doc: ProseNode, itemPos: number, source: TocSource | null = null): ScannedNote | null => {
   const item = doc.nodeAt(itemPos)
-  if (!isListItem(item)) return null
+  if (item === null || !(isListItem(item) || isCellNote(item))) return null
   const rows: ScannedRow[] = []
   if (source === 'headings') {
     // The note's rows inside the bullet, raised so the highest is level 1.

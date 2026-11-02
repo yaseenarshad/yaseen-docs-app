@@ -182,7 +182,10 @@
  *    — the SECOND exception to the images rule. A plain table stays the GFM table; one with
  *    settings is the table then the next block `<!-- table: … -->`, joined on load as the line's.
  *  - Cell notes (YAZ-3818 D4, D12, `table/cellNotes.ts`): a footnote labelled `cell-N` is a `cell_note` block, hidden
- *    in the note view; after a table, a cell note or a mark moves, each cell note goes back under its table.
+ *    in the note view; after a table, a cell note or a mark moves, each cell note goes back under its table. Its mark
+ *    is a corner triangle; the "Add cell note" button (`table/cellNoteButton.ts`), a click on the mark, ⌘. on a plain
+ *    cell line and the table menu open it as a page with the bullet zoom (D8, D9); a rest on the mark previews it
+ *    (`table/cellNotePreview.ts`, D14).
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
  *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
@@ -270,6 +273,8 @@ import { textStringify } from './textStringify'
 import { lineStyle } from './line/lineStyle'
 import { tableStyle } from './table/tableStyle'
 import { cellNotes } from './table/cellNotes'
+import { cellNoteButton } from './table/cellNoteButton'
+import { cellNotePreview } from './table/cellNotePreview'
 import { tableFill } from './table/tableFill'
 import { tableRows } from './table/tableRows'
 import { cellToolbar } from './table/cellToolbar'
@@ -612,6 +617,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableFill)
   // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.
   crepe.editor.use(cellToolbar)
+  // Cell notes (YAZ-3818 D8, D14): the "Add cell note" button in a cell's corner, and the preview on a mark.
+  crepe.editor.use(cellNoteButton)
+  crepe.editor.use(cellNotePreview)
   // A custom colour pick's target cells (YAZ-3817), kept through edits while the system picker is open.
   crepe.editor.use(customColourPick)
   // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.

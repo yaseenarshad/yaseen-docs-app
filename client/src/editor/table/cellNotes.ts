@@ -12,7 +12,7 @@
  */
 import { footnoteDefinitionSchema } from '@milkdown/kit/preset/gfm'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
-import { type Command, type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
+import { type Command, type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { ReplaceAroundStep, ReplaceStep, type Step } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { MarkdownNode } from '@milkdown/kit/transformer'
@@ -20,6 +20,7 @@ import { $nodeSchema, $prose, $remark } from '@milkdown/kit/utils'
 import type { FootnoteDefinition } from 'mdast'
 import { visit } from 'unist-util-visit'
 import { CELL_CONTENT } from '../inlineBreaks'
+import { getZoomedItemPos } from '../outline/zoom'
 
 /** A cell note's label: `cell-1`, `cell-2`, … */
 export const CELL_NOTE_LABEL = /^cell-\d+$/
@@ -203,8 +204,15 @@ function orphans(doc: ProseNode): DecorationSet {
 /** A cell note with no mark: it shows (D12). */
 const isOrphan = (state: EditorState, pos: number): boolean => (cellNotesKey.getState(state)?.find(pos, pos + 1) ?? []).some((deco) => deco.from === pos)
 
-/** Is the cell note at `pos` hidden? Yes, unless it has no mark. 4B adds: not while the zoom shows it. */
-export const isCellNoteHidden = (state: EditorState, pos: number): boolean => !isOrphan(state, pos)
+/**
+ * Is the cell note at `pos` hidden? Yes, unless it has no mark, or the zoom shows it: its page, or a bullet in it
+ * (YAZ-3818 D9).
+ */
+export const isCellNoteHidden = (state: EditorState, pos: number): boolean => {
+  if (isOrphan(state, pos)) return false
+  const zoomed = getZoomedItemPos(state)
+  return zoomed === null || zoomed < pos || zoomed >= pos + state.doc.nodeAt(pos)!.nodeSize
+}
 
 /** A node whose coming or going can move a cell note: a table, a cell note, a mark. */
 const isNoteNode = (node: ProseNode): boolean => node.type.name === 'table' || isCellNote(node) || isCellNoteMark(node)
@@ -246,8 +254,11 @@ const stepTouchesNotes = (step: Step, doc: ProseNode): boolean => {
 }
 
 const touched = new WeakMap<Transaction, boolean>()
-/** Does `tr` add or remove a table, a cell note or a mark? Asked by the state and by the placement: kept per transaction. */
-const touchesNotes = (tr: Transaction): boolean => {
+/**
+ * Does `tr` add or remove a table, a cell note or a mark? Asked by the state, by the placement and by the "Add cell note"
+ * button (`cellNoteButton.ts`): kept per transaction.
+ */
+export const touchesNotes = (tr: Transaction): boolean => {
   let answer = touched.get(tr)
   if (answer === undefined) {
     answer = tr.steps.some((step, i) => stepTouchesNotes(step, tr.docs[i]!))
@@ -316,5 +327,30 @@ const notesFollowTables = $prose(
     }),
 )
 
+/**
+ * The mark is protected (D8): Backspace right after a mark, or Delete right before one, moves the caret over it, and
+ * the key then does its own work there. So Backspace after "Flights[^cell-1]" deletes the "s". Before every keymap
+ * (Milkdown puts the keymaps after the plugins), so each of them reads the moved caret. Any other removal is allowed:
+ * the cell note then shows (D12).
+ */
+const protectMarks = $prose(
+  () =>
+    new Plugin({
+      key: new PluginKey('mdapp-cell-note-marks'),
+      props: {
+        handleKeyDown: (view, event) => {
+          const back = event.key === 'Backspace'
+          if ((!back && event.key !== 'Delete') || event.isComposing || !view.state.selection.empty) return false
+          const { doc } = view.state
+          const beside = (at: number) => (back ? doc.resolve(at).nodeBefore : doc.resolve(at).nodeAfter)
+          let pos = view.state.selection.head
+          for (let node = beside(pos); node !== null && isCellNoteMark(node); node = beside(pos)) pos += back ? -node.nodeSize : node.nodeSize
+          if (pos !== view.state.selection.head) view.dispatch(view.state.tr.setSelection(TextSelection.create(doc, pos)))
+          return false
+        },
+      },
+    }),
+)
+
 /** Register with `editor.use(cellNotes)`, next to the table and cell schemas, before `inlineBreaks`. */
-export const cellNotes = [footnoteEmptyLines, cellNoteSchema, otherFootnotes, notesFollowTables].flat()
+export const cellNotes = [footnoteEmptyLines, cellNoteSchema, otherFootnotes, notesFollowTables, protectMarks].flat()
