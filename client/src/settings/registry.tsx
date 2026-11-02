@@ -918,11 +918,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // The YAZ-4163 demo: how dark the past rows' shade is, on the grid of the stepper; it shows with "Grey text and shade".
+            // The YAZ-4163 demo: how dark the past rows' shade is, on the grid of the stepper; it shows only with "Grey text and shade" (YAZ-4176).
             id: 'tableShadeDarkness',
             label: 'Shade darkness',
             hint: 'The shade of the past rows, with "Grey text and shade".',
             keywords: ['calendar', 'past', 'shade', 'darkness', 'intensity', 'grey', 'table'],
+            available: ({ settings }) => settings.tableDimPast === 'shade',
             render: ({ settings, onChange }) => {
               const value = settings.tableShadeDarkness
               const set = (tableShadeDarkness: number) => onChange({ ...settings, tableShadeDarkness })

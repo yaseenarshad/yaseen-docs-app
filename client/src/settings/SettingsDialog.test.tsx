@@ -775,6 +775,18 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableShadeDarkness: 8 })
   })
 
+  it('Calendar tables › Shade darkness shows only with "Grey text and shade", on the page and in a search (YAZ-4176)', () => {
+    for (const tableDimPast of ['off', 'text'] as const) {
+      const { el } = mountOn('Editor', { ...DEFAULT_SETTINGS, tableDimPast })
+      expect(row(el, 'tableDimPast')).not.toBeNull()
+      expect(row(el, 'tableShadeDarkness')).toBeNull()
+      type(searchInput(el), 'shade darkness')
+      expect(rowIds(el)).not.toContain('tableShadeDarkness')
+    }
+    const { el } = mountOn('Editor', { ...DEFAULT_SETTINGS, tableDimPast: 'shade' })
+    expect(row(el, 'tableShadeDarkness')).not.toBeNull()
+  })
+
   it('Calendar tables › Time format (YAZ-4163 D15, demo): the ready styles as 9:00 am, 9:00am, 9am / 9:30am, 09:00 and Custom…; Custom… previews the draft; a style the app cannot read back keeps the stored one and says why; a good one is written', () => {
     const { el, onChange } = mountOn('Editor')
     const select = row(el, 'tableTimeFormat')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
