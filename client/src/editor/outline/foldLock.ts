@@ -2,8 +2,8 @@
  * Lock one row open (YAZ-4094 demo, 4A): a bullet or a heading that must never fold, so the reader knows they see all of
  * it. The row's menu has "Lock open" / "Unlock" (`foldAllRows.ts`); the row's chevron shows a lock (`foldLock.css`).
  *
- * A lock blocks every fold that would hide part of the row: the row itself, a row inside it, and a row that holds it
- * (folding a parent would hide the locked row too). The fold plugins know nothing of it: after any transaction that
+ * A lock blocks the row's own fold and the folds of the rows inside it. A row that holds it still folds (user, 4A): what
+ * you lock is what stays open, so to keep a parent open you lock the parent. The fold plugins know nothing of it: after any transaction that
  * folds, this plugin appends a silent unfold of each blocked fold (`appendTransaction`), so every fold path — the
  * chevron, ⌘↑, Collapse all, the guide line — obeys it. A press on a blocked chevron shows the host's message.
  *
@@ -55,7 +55,10 @@ const rowRange = (doc: ProseNode, pos: number): { from: number; to: number } | n
 
 export const isFoldLocked = (state: EditorState, pos: number): boolean => pluginKey.getState(state)?.has(pos) ?? false
 
-/** Whether a lock stops the row at `pos` from folding: it is locked, sits inside a locked row, or holds one. */
+/**
+ * Whether a lock stops the row at `pos` from folding: it is locked, or sits inside a locked row. A row that holds a
+ * locked row still folds (user, 4A): to keep a parent open, lock the parent.
+ */
 export const foldLockBlocks = (state: EditorState, pos: number): boolean => {
   const locked = pluginKey.getState(state)
   if (locked === undefined || locked.size === 0) return false
@@ -63,7 +66,7 @@ export const foldLockBlocks = (state: EditorState, pos: number): boolean => {
   if (row === null) return false
   for (const lockedPos of locked) {
     const lock = rowRange(state.doc, lockedPos)
-    if (lock !== null && ((lock.from <= row.from && row.to <= lock.to) || (row.from <= lock.from && lock.to <= row.to))) return true
+    if (lock !== null && lock.from <= row.from && row.to <= lock.to) return true
   }
   return false
 }
