@@ -12,7 +12,7 @@ import { see } from './diary'
 import { ID_WAIT_MS, restoreFolderId, sweepIds, type SweepResult } from './idSweep'
 import { loadIndexCache, schedulePersist } from './cache'
 import { changeIds, highestFrom, highestNumber, vaultIds } from './mint'
-import { reconcile, type ColdStartDiff } from './reconcile'
+import { reconcile, SCAN_CONCURRENCY, type ColdStartDiff } from './reconcile'
 import { backfill, configWithLetters, idsStateOf, planLeft, reletter, type Pass, type Renamed } from './reletter'
 import { fileTitle, scanFile, walk } from './scan'
 
@@ -106,6 +106,20 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
 
 /** A board's ID off its head (YAZ-3943 4C): only the first 1 KB is read. Undefined for none, and for a file that is gone. */
 const boardIdAt = (file: string): Promise<string | undefined> => readBoardHead(file).then((head) => boardIdOf(head?.block), () => undefined)
+
+/** The IDs of `boards`, in order, with at most SCAN_CONCURRENCY heads open (YAZ-4074 6A item 19: all at once hit EMFILE, read as "no ID"). */
+async function boardIdsAt(boards: readonly string[]): Promise<Array<string | undefined>> {
+  const ids: Array<string | undefined> = []
+  let next = 0
+  const worker = async () => {
+    while (next < boards.length) {
+      const i = next++
+      ids[i] = await boardIdAt(boards[i]!)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(SCAN_CONCURRENCY, boards.length) }, worker))
+  return ids
+}
 
 /** The board at `file` as its head says now; the windows hear of a change of its ID (`onBoardIds`). */
 async function readBoard(root: string, entry: Entry, file: string): Promise<void> {
@@ -224,7 +238,7 @@ async function build(root: string): Promise<Entry> {
   try {
     // Reuse records the D2 stat sweep validates, rescan the rest. Any cache failure comes back
     // as a non-hit load and reconcile degrades to today's full scan.
-    const [{ records, diff }, ids] = await Promise.all([reconcile(root, files, cached), Promise.all(boards.map(boardIdAt))])
+    const [{ records, diff }, ids] = await Promise.all([reconcile(root, files, cached), boardIdsAt(boards)])
     boards.forEach((file, i) => ids[i] !== undefined && entry.boards.set(file, ids[i]!))
     entry.records = records
     entry.coldDiff = diff
