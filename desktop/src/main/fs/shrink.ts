@@ -33,7 +33,8 @@ import { MAX_DRAWING_BYTES, type ShrinkResult } from '@shared/types'
 import { isDrawing } from '@shared/fileKind'
 import { BOARD_META_KEY, picturesFolderOf, picturesOut, referencedFileIds, serializeBoard, withPicturesOut } from '@shared/drawingAssets'
 import { readBoundedRegularFile } from './boundedRead'
-import { landAssets, liftEmbedded, parseScene } from './drawing'
+// The store's half only, never `drawing.ts`: this runs in Settings › Storage's worker (YAZ-4071 7B).
+import { landAssets, liftEmbedded, parseScene } from './pictureStore'
 import { atomicWrite, vaultFiles } from './fsUtils'
 import { landingFolder } from './picturesFolders'
 
