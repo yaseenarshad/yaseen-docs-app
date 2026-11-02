@@ -260,6 +260,31 @@ describe('the clock: one timer per editor, on the minute (D2, D9)', () => {
     vi.unstubAllGlobals()
   })
 
+  it('watches the chips again only when a calendar table changes: not on Enter in a paragraph or a change of a plain table (YAZ-4176)', async () => {
+    let observed = 0
+    vi.stubGlobal('IntersectionObserver', class {
+      observe() {
+        observed++
+      }
+      disconnect() {}
+    })
+    const { view } = await mount(`Text\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n${calendar(DAY)}`, { calendarClock: true })
+    const before = observed
+    // Enter in the paragraph: a split, so not typing only.
+    view.dispatch(view.state.tr.split(3))
+    const plain = firstTable(view.state.doc)
+    view.dispatch(view.state.tr.setNodeMarkup(plain.pos, undefined, { ...plain.node.attrs, stripes: true }))
+    expect(observed).toBe(before)
+    let cal: { node: ProseNode; pos: number } | null = null
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'table' && node.attrs.calendar > 0) cal = { node, pos }
+      return node.type.name !== 'table'
+    })
+    view.dispatch(view.state.tr.setNodeMarkup(cal!.pos, undefined, { ...cal!.node.attrs, stripes: true }))
+    expect(observed).toBeGreaterThan(before)
+    vi.unstubAllGlobals()
+  })
+
   it('destroy clears the timer', async () => {
     fakeClock(11, 40, 30)
     const cleared = vi.spyOn(globalThis, 'clearTimeout')

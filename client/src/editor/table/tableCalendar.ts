@@ -356,7 +356,10 @@ export function createTableCalendar(clock: boolean) {
               if (fresh.length > 0) set = set.add(tr.doc, fresh)
             }
             const tables = [...new Set([...mapped, ...changed.keys()])].filter((pos) => isCalendar(tr.doc.nodeAt(pos))).sort((a, b) => a - b)
-            return { ...value, set, tables, generation: value.generation + 1 }
+            // The chips are watched again only when a calendar table, or the list of them, changed (YAZ-4176): not on
+            // an Enter or a paste elsewhere in the note.
+            const moved = [...changed.values()].some(isCalendar) || tables.length !== mapped.length || tables.some((pos, i) => pos !== mapped[i])
+            return { ...value, set, tables, generation: value.generation + (moved ? 1 : 0) }
           },
         },
         props: { decorations: (state) => calendarKey.getState(state)!.set },

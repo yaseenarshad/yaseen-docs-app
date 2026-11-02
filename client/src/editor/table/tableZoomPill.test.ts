@@ -3,16 +3,35 @@
  * `--table-zoom`), the page zoom pill `DocumentZoom` on the table (`tableZoomPill.tsx`), one undo step per change, and
  * a column drag under a table zoom (`tableColumnResize.ts` reads the zoom at the table, not at the editor).
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { undo } from '@milkdown/kit/prose/history'
 import { DOMParser, DOMSerializer, type Node as ProseNode } from '@milkdown/kit/prose/model'
+import { TextSelection } from '@milkdown/kit/prose/state'
+import { addRowAfter } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { getMarkdownForSave } from '../createCrepe'
+import { mount, pressKey, unmountAll as unmountMarks } from '../marks/markTestKit'
 import { formatTableComment, parseTableComment, plainTable, type TableStyle } from './tableComment'
 import { cellPos, dragColumnEdge, mountNote, mountTable, unmountAll } from './tableTestKit'
 import tableCss from './table.css?inline'
 
-afterEach(unmountAll)
+/** The value of each render of a pill (`DocumentZoom`), the real component's own. */
+const renders = vi.hoisted(() => [] as number[])
+vi.mock('../DocumentZoom', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../DocumentZoom')>()
+  return {
+    ...real,
+    DocumentZoom: (props: Parameters<typeof real.DocumentZoom>[0]) => {
+      renders.push(props.value)
+      return real.DocumentZoom(props)
+    },
+  }
+})
+
+afterEach(async () => {
+  await unmountAll()
+  await unmountMarks()
+})
 
 const style = (parts: Partial<TableStyle>): TableStyle => ({ ...plainTable(), ...parts })
 const TABLE = '| h1 | h2 |\n| -- | -- |\n| a  | b  |\n'
@@ -88,6 +107,27 @@ describe('the pill on the table (the page zoom pill, `DocumentZoom`)', () => {
     undo(view.state, view.dispatch)
     expect(firstTable(view).attrs.zoom).toBe(90)
     expect(anchor(view).querySelector('.document-zoom__value')!.textContent).toBe('90%')
+  })
+
+  it('a zoom change renders only that table\'s pill; an Enter in a cell of another table renders none (YAZ-4176)', async () => {
+    const { crepe, view } = await mountNote(`${TABLE}\n<!-- table: zoom 50% -->\n\ntext\n\n${TABLE}`)
+    renders.length = 0
+    const second = [...view.dom.querySelectorAll('.table-zoom-anchor')][1]!
+    second.querySelector<HTMLButtonElement>('button[aria-label="Zoom in"]')!.click()
+    expect(renders).toEqual([125])
+    renders.length = 0
+    // Enter in a cell of the first table, then a new row: the table changes, its zoom does not.
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 1, 0) + 2)))
+    expect(pressKey(crepe, 'Enter')).toBe(true)
+    addRowAfter(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toMatch(/^\| h1 +\| h2 \|\n\| -+ \| -- \|\n\| <br>a \| b +\|\n\| +\| +\|\n/)
+    expect(renders).toEqual([])
+  })
+
+  it('only the note editor has pills: a preview or the outline view (no `tableZoomPill`) has none (YAZ-4176)', async () => {
+    const { view } = await mount(`${TABLE}\n<!-- table: zoom 50% -->\n`)
+    expect(view.dom.querySelector('.milkdown-table-block')).not.toBeNull()
+    expect(view.dom.querySelector('.table-zoom-anchor')).toBeNull()
   })
 
   it('each table has its own pill', async () => {

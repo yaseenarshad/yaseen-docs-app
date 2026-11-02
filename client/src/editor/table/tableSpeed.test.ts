@@ -8,7 +8,9 @@
  *     view (which `find`s the frozen tables) does not run.
  * The times are in `tableSpeed.perf.test.ts`. jsdom has no layout, so every read gives 0; only the count matters.
  * A calendar table (YAZ-4162) adds its now row and past rows: a key only maps that set too, and starts no clock work.
- * The row band (YAZ-4167) on the caret's row, and the table zoom pills (YAZ-4091): a key only maps their sets.
+ * The row band (YAZ-4167) on the caret's row, the table zoom pills (YAZ-4091) and the folded rows (YAZ-4165): a key
+ * only maps their sets. The calendar case has a folded run, and an Enter in a cell is one more key (YAZ-4176): it
+ * moves neither the chips' watch (`generation`) nor a pill.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -17,6 +19,7 @@ import type { EditorState } from '@milkdown/kit/prose/state'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from '../createCrepe'
+import { calendarKey } from './tableCalendar'
 import { cellPos } from './tableTestKit'
 
 const COLS = 10
@@ -24,8 +27,8 @@ const ROWS = 500
 const head = Array.from({ length: COLS }, (_, c) => `H${c + 1}`)
 const body = Array.from({ length: ROWS }, (_, r) => head.map((_, c) => `r${r + 1}c${c + 1}`))
 const BIG = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...body.map((cells) => `| ${cells.join(' | ')} |`)].join('\n') + '\n'
-/** S6's frozen, styled table. */
-const STYLED = `${BIG}\n<!-- table: fill A2:B2 blue C5 green, stripes, freeze 1 row 2 cols -->\n`
+/** S6's frozen, styled table, with a folded run away from the typed cells (YAZ-4165). */
+const STYLED = `${BIG}\n<!-- table: fill A2:B2 blue C5 green, fold 400-410, stripes, freeze 1 row 2 cols -->\n`
 const KEYS = 'typing in a cell'
 
 const mounted: Array<{ crepe: Crepe; scroller: HTMLElement }> = []
@@ -46,7 +49,7 @@ async function mount(markdown = STYLED) {
   const root = document.createElement('div')
   scroller.appendChild(root)
   document.body.appendChild(scroller)
-  const crepe = createCrepe({ root, defaultValue: markdown, calendarClock: true })
+  const crepe = createCrepe({ root, defaultValue: markdown, calendarClock: true, tableZoomPill: true })
   await crepe.create()
   mounted.push({ crepe, scroller })
   const view = crepe.editor.ctx.get(editorViewCtx)
@@ -56,6 +59,10 @@ async function mount(markdown = STYLED) {
   flush()
   return { view, scroller, block: view.dom.querySelector<HTMLElement>('.milkdown-table-block')!, flush }
 }
+
+/** Enter through ProseMirror's `handleKeyDown`, as a real key: in a cell it is a line break (YAZ-4176). */
+const pressEnter = (view: EditorView): boolean =>
+  view.someProp('handleKeyDown', (handler) => handler(view, new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))) ?? false
 
 /** Counts each layout read whose element `counts`. */
 function countLayoutReads(counts: (el: Element) => boolean): { reads: number } {
@@ -123,7 +130,7 @@ function followSets(): { work: string[]; seed: (sets: DecorationSet[]) => void; 
 describe('S6: a key in a frozen, styled 500 × 10 table adds no work (YAZ-3796)', () => {
   it('reads no layout, and the freeze and the styles only map their sets', async () => {
     const { view, scroller, block, flush } = await mount()
-    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', band: 'mdapp-table-row-band', zoom: 'mdapp-table-zoom' }
+    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', band: 'mdapp-table-row-band', zoom: 'mdapp-table-zoom', fold: 'mdapp-table-fold' }
     // The table is frozen and styled: both sets hold decorations.
     expect(pluginSet(view.state, plugins.freeze).find().length).toBeGreaterThan(ROWS)
     expect(pluginSet(view.state, plugins.style).find()).toHaveLength(1)
@@ -152,7 +159,7 @@ describe('S6: a key in a frozen, styled 500 × 10 table adds no work (YAZ-3796)'
   }, 60_000)
 })
 
-/** A calendar table of 500 half-hour rows (the times run past midnight, YAZ-4162), frozen like S6's. */
+/** A calendar table of 500 half-hour rows (the times run past midnight, YAZ-4162), frozen like S6's, with a folded run (YAZ-4165). */
 const CALENDAR = [
   '| Time | Plan |',
   '| --- | --- |',
@@ -161,23 +168,26 @@ const CALENDAR = [
     const h = Math.floor(m / 60)
     return `| ${h % 12 === 0 ? 12 : h % 12}:${String(m % 60).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'} | plan ${r} |`
   }),
-].join('\n') + '\n\n<!-- table: freeze 1 row 1 col, calendar 30m -->\n'
+].join('\n') + '\n\n<!-- table: fold 100-120, freeze 1 row 1 col, calendar 30m -->\n\nText\n'
 
 describe('a key in a calendar table adds no work (YAZ-4162)', () => {
   it('reads no layout, and the calendar marks only map their set', async () => {
     const { view, scroller, block, flush } = await mount(CALENDAR)
-    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', calendar: 'mdapp-table-calendar', band: 'mdapp-table-row-band', zoom: 'mdapp-table-zoom' }
-    // The table shows a now row or past rows: the set holds decorations.
+    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', calendar: 'mdapp-table-calendar', band: 'mdapp-table-row-band', zoom: 'mdapp-table-zoom', fold: 'mdapp-table-fold' }
+    // The table shows a now row or past rows, and a fold bar: both sets hold decorations.
     expect(pluginSet(view.state, plugins.calendar).find().length).toBeGreaterThan(0)
+    expect(pluginSet(view.state, plugins.fold).find().length).toBeGreaterThan(0)
+    const generation = calendarKey.getState(view.state)!.generation
     const layout = countLayoutReads((el) => el === scroller || block.contains(el))
     const sets = followSets()
     const reads: number[] = []
     const work: string[][] = []
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 250, 1) + 2)))
-    for (const ch of KEYS) {
+    for (const ch of [...KEYS, 'Enter']) {
       const before = layout.reads
       sets.seed(Object.values(plugins).map((key) => pluginSet(view.state, key)))
-      view.dispatch(view.state.tr.insertText(ch))
+      if (ch === 'Enter') expect(pressEnter(view)).toBe(true)
+      else view.dispatch(view.state.tr.insertText(ch))
       flush()
       reads.push(layout.reads - before)
       const rebuilt = Object.entries(plugins).filter(([, key]) => !sets.isMapped(pluginSet(view.state, key)))
@@ -185,6 +195,14 @@ describe('a key in a calendar table adds no work (YAZ-4162)', () => {
     }
     expect.soft(reads, 'layout reads per key').toEqual(reads.map(() => 0))
     expect.soft(work, 'work on the decoration sets per key').toEqual(work.map(() => []))
-    expect(view.state.doc.nodeAt(cellPos(view, 250, 1))!.textContent).toBe(`${KEYS}plan 249`)
+    // An Enter in a paragraph of the note splits a block, not typing; no calendar table changed (YAZ-4176).
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.doc.content.size - 1)))
+    expect(pressEnter(view)).toBe(true)
+    flush()
+    expect(view.state.doc.lastChild!.type.name).toBe('paragraph')
+    expect.soft(calendarKey.getState(view.state)!.generation, 'the chips\' watch').toBe(generation)
+    // The keys landed, and the Enter is a line break in the cell.
+    const cell = view.state.doc.nodeAt(cellPos(view, 250, 1))!
+    expect([cell.childCount, cell.firstChild!.childCount, cell.firstChild!.child(1).type.name]).toEqual([1, 3, 'hardbreak'])
   }, 60_000)
 })

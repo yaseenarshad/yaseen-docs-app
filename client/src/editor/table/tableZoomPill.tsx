@@ -9,8 +9,11 @@
  *   not 100% (`data-zoomed`); a read-only note shows none. The widget stops its events and ignores selection, so a key
  *   in the pill's field never reaches the note. One key for every pill: a rebuild keeps its DOM and its React root.
  * - A CHANGE is one transaction with the history closed: one ⌘Z.
- * - THE VALUE: the widget renders the table's `zoom` at its position; the plugin view renders every pill again only
- *   after a transaction that changed a table (`generation`). Typing only maps the set (`tableSpeed.test.ts`).
+ * - THE VALUE: the widget renders the table's `zoom` at its position. A transaction that changes a table's `zoom` (or
+ *   replaces a whole table) gives it a new pill decoration, which keeps the DOM (one key); the plugin view renders
+ *   again only those pills (YAZ-4176), never on an Enter or a paste. Typing only maps the set (`tableSpeed.test.ts`).
+ * - THE NOTE EDITOR ONLY (`tableZoomPill` of `createCrepe`, YAZ-4176): a hover preview, a read-only preview and the
+ *   outline view mount no plugin, so no React root for each table.
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -24,7 +27,7 @@ import { changedTables, typingOnly } from './tableStyle'
 
 interface ZoomState {
   set: DecorationSet
-  /** Counts each transaction that changed a table: the plugin view renders the pills again only when it moves. */
+  /** Counts each transaction that gave a table a new pill: the plugin view looks for them only when it moves. */
   generation: number
 }
 
@@ -60,10 +63,11 @@ function zoomAnchor(view: EditorView, getPos: () => number | undefined): HTMLEle
   return anchor
 }
 
-const pill = (pos: number): Decoration =>
+const pill = (pos: number, zoom: unknown): Decoration =>
   Decoration.widget(pos, zoomAnchor, {
     key: 'table-zoom',
     tableZoom: true,
+    zoom,
     side: 1,
     stopEvent: () => true,
     ignoreSelection: true,
@@ -75,7 +79,7 @@ function pills(doc: ProseNode): Decoration[] {
   const out: Decoration[] = []
   doc.descendants((node, pos) => {
     if (node.type.name !== 'table') return !node.isTextblock
-    out.push(pill(pos))
+    out.push(pill(pos, node.attrs.zoom))
     return false
   })
   return out
@@ -92,21 +96,31 @@ export const tableZoomPill = $prose(
           let set = value.set.map(tr.mapping, tr.doc)
           // A key changes no table: the mapped set holds.
           if (typingOnly(tr)) return { ...value, set }
-          const tables = changedTables(tr)
-          if (tables.size === 0) return { ...value, set }
-          for (const pos of tables.keys()) {
+          let fresh = false
+          for (const [pos, node] of changedTables(tr)) {
             const stale = set.find(pos, pos, (spec) => spec.tableZoom === true)
+            // Same zoom: the pill holds. A table replaced whole loses its widget, and gets a new one.
+            if (stale.length > 0 && stale.every((deco) => deco.spec.zoom === node.attrs.zoom)) continue
             if (stale.length > 0) set = set.remove(stale)
-            set = set.add(tr.doc, [pill(pos)])
+            set = set.add(tr.doc, [pill(pos, node.attrs.zoom)])
+            fresh = true
           }
-          return { set, generation: value.generation + 1 }
+          return { set, generation: value.generation + (fresh ? 1 : 0) }
         },
       },
       props: { decorations: (state) => zoomKey.getState(state)!.set },
       view: () => ({
         update: (view, prev) => {
-          if (zoomKey.getState(prev)!.generation === zoomKey.getState(view.state)!.generation) return
-          for (const anchor of view.dom.querySelectorAll<ZoomAnchor>('.table-zoom-anchor')) anchor.renderZoom?.()
+          const before = zoomKey.getState(prev)!
+          const after = zoomKey.getState(view.state)!
+          if (before.generation === after.generation) return
+          // A new pill has a new spec; a mapped one keeps its own. Its widget's DOM goes right before its table's block.
+          const kept = new Set(before.set.find().map((deco) => deco.spec))
+          for (const deco of after.set.find()) {
+            if (kept.has(deco.spec)) continue
+            const anchor = view.nodeDOM(deco.from)?.previousSibling as ZoomAnchor | null | undefined
+            if (anchor instanceof HTMLElement && anchor.classList.contains('table-zoom-anchor')) anchor.renderZoom?.()
+          }
         },
       }),
     }),
