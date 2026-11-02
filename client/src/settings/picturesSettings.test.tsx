@@ -85,7 +85,8 @@ describe('Settings › Files & Links › New boards keep pictures', () => {
     await mount(settings)
     pick.mockResolvedValueOnce({ folder: '/Users/me/Pictures/Boards' })
     await act(async () => button('newBoardPictures', 'Choose…')!.click())
-    expect(pick).toHaveBeenLastCalledWith({ root: '/Users/me/Vault' })
+    // No confirm box follows Settings' pick, so main approves an outside folder at once (YAZ-4074 6A item 3).
+    expect(pick).toHaveBeenLastCalledWith({ root: '/Users/me/Vault', approveNow: true })
     expect(onChange).toHaveBeenLastCalledWith({ ...settings, newBoardPicturesFolder: '/Users/me/Pictures/Boards' })
     await rerender({ ...settings, newBoardPicturesFolder: '/Users/me/Pictures/Boards' })
     expect(row('newBoardPictures').querySelector('[data-testid="new-board-pictures-folder"]')!.textContent).toBe('~/Pictures/Boards')
@@ -93,7 +94,7 @@ describe('Settings › Files & Links › New boards keep pictures', () => {
     onChange.mockClear()
     pick.mockRejectedValueOnce(new BridgeRequestError('BAD_REQUEST', "The app can't keep pictures in a system folder. Pick another folder."))
     await act(async () => button('newBoardPictures', 'Choose…')!.click())
-    expect(pick).toHaveBeenLastCalledWith({ root: '/Users/me/Vault', current: '/Users/me/Pictures/Boards' })
+    expect(pick).toHaveBeenLastCalledWith({ root: '/Users/me/Vault', current: '/Users/me/Pictures/Boards', approveNow: true })
     expect(row('newBoardPictures').querySelector('[role="alert"]')!.textContent).toBe("The app can't keep pictures in a system folder. Pick another folder.")
     expect(onChange).not.toHaveBeenCalled()
     pick.mockResolvedValueOnce({ cancelled: true })

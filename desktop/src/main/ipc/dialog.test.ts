@@ -78,11 +78,24 @@ describe('dialog:pick-folder', () => {
 describe('dialog:pick-pictures-folder', () => {
   const VAULT = '/Users/me/vault'
   const approve = vi.fn()
+  const remember = vi.fn()
   const pickPictures = (body: unknown) => registered(CONTRACT.pickPicturesFolder.channel)({ sender }, body)
   beforeEach(() => {
     approve.mockClear()
+    remember.mockClear()
     vi.mocked(ipcMain.handle).mockClear()
-    registerDialogIpc(undefined, approve)
+    registerDialogIpc(undefined, approve, remember)
+  })
+
+  it('YAZ-4074 6A item 3: the cog\'s pick of an outside folder approves nothing yet (its confirmed move does); Settings\' pick, with no box after it, approves at once', async () => {
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/Users/me/Pictures/Boards'] })
+    expect(await pickPictures({ root: VAULT })).toEqual({ ok: true, value: { folder: '/Users/me/Pictures/Boards' } })
+    expect(approve).not.toHaveBeenCalled()
+    expect(remember).toHaveBeenCalledWith('/Users/me/Pictures/Boards')
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/Users/me/Pictures/Boards'] })
+    expect(await pickPictures({ root: VAULT, approveNow: true })).toEqual({ ok: true, value: { folder: '/Users/me/Pictures/Boards' } })
+    expect(approve).toHaveBeenCalledWith('/Users/me/Pictures/Boards')
+    expect(remember).toHaveBeenCalledTimes(1)
   })
 
   it('a folder in the vault answers RELATIVE with `/` separators and approves nothing; one outside answers ABSOLUTE and goes on the approved list', async () => {
@@ -92,7 +105,7 @@ describe('dialog:pick-pictures-folder', () => {
     expect(approve).not.toHaveBeenCalled()
 
     showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/Users/me/Pictures/Boards/'] })
-    expect(await pickPictures({ root: VAULT, current: 'Projects/Board pictures' })).toEqual({ ok: true, value: { folder: '/Users/me/Pictures/Boards' } })
+    expect(await pickPictures({ root: VAULT, current: 'Projects/Board pictures', approveNow: true })).toEqual({ ok: true, value: { folder: '/Users/me/Pictures/Boards' } })
     // The dialog opens on the board's current folder: a relative one under the vault, an absolute one as it is.
     expect(showOpenDialog).toHaveBeenLastCalledWith(expect.objectContaining({ defaultPath: `${VAULT}/Projects/Board pictures` }))
     expect(approve).toHaveBeenCalledWith('/Users/me/Pictures/Boards')
@@ -114,6 +127,7 @@ describe('dialog:pick-pictures-folder', () => {
       expect(await pickPictures({ root: VAULT })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message }) })
     }
     expect(approve).not.toHaveBeenCalled()
+    expect(remember).not.toHaveBeenCalled()
     expect(await pickPictures({ root: 'relative' })).toMatchObject({ ok: false, error: { code: 'NOT_ABSOLUTE' } })
   })
 })

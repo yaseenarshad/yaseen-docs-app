@@ -49,12 +49,14 @@ export const PICTURES_FOLDER_HIDDEN = "A hidden folder, or node_modules, can't h
  * `window.yaseenDocs.pickPicturesFolder({ root, current? })` (YAZ-3943 demo round 3): the cog's "Choose a folder…" and
  * Settings › Files & Links › "In a folder you pick". `pickFolder`'s dialog, opened on the board's current folder or the
  * vault root, answering the pick RELATIVE to `root` with `/` separators when it is inside the vault, and ABSOLUTE when
- * it is outside — the shapes the `yaseendraw` block and the setting store. An outside pick goes to `approve` (the
- * store's approved list): the user's own pick is the one thing that lets the app write there. The vault itself, a system
+ * it is outside — the shapes the `yaseendraw` block and the setting store. The user's own pick is the one thing that
+ * lets the app write outside the vault. Settings' pick (`approveNow`) goes to `approve` (the store's approved list) at
+ * once. The cog's goes to `remember` only: its confirmed move approves it (`ipc/board.ts`), so a Cancel in the box
+ * approves nothing (YAZ-4074 6A item 3). The vault itself, a system
  * folder (`blockedPicturesFolder`) or a folder `isValidPicturesFolder` refuses is `BAD_REQUEST` with the one-line reason;
  * no picture is written here. One sheet per window, as `pickFolder`.
  */
-export async function pickPicturesFolder(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | null>, body: unknown, approve: (folder: string) => void = () => undefined): Promise<PickPicturesFolderResponse> {
+export async function pickPicturesFolder(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | null>, body: unknown, approve: (folder: string) => void = () => undefined, remember: (folder: string) => void = () => undefined): Promise<PickPicturesFolderResponse> {
   const req = requireRequest(body)
   const root = requireAbsPath(req.root, 'root')
   const { current } = req
@@ -79,7 +81,7 @@ export async function pickPicturesFolder(e: IpcMainInvokeEvent, inFlight: Set<Br
   const inside = !rel.startsWith('..') && !path.isAbsolute(rel)
   const folder = inside ? rel.split(path.sep).join('/') : abs
   if (!isValidPicturesFolder(folder)) throw new BridgeFailure('BAD_REQUEST', PICTURES_FOLDER_HIDDEN, { path: abs })
-  if (!inside) approve(abs)
+  if (!inside) (req.approveNow === true ? approve : remember)(abs)
   return { folder }
 }
 
@@ -220,11 +222,14 @@ async function showSave(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | nul
   return result.canceled || picked === undefined || picked === '' ? null : path.resolve(picked)
 }
 
-/** `print` is the PDF maker: the hidden window's, or a test's. `approve` puts a picked outside pictures folder on the store's list (YAZ-3943 demo round 3). */
-export function registerDialogIpc(print = printSvgToPdf, approve: (folder: string) => void = () => undefined): void {
+/**
+ * `print` is the PDF maker: the hidden window's, or a test's. `approve` puts a picked outside pictures folder on the store's
+ * list (YAZ-3943 demo round 3); `remember` keeps the cog's pick until its move is confirmed (YAZ-4074 6A item 3).
+ */
+export function registerDialogIpc(print = printSvgToPdf, approve: (folder: string) => void = () => undefined, remember: (folder: string) => void = () => undefined): void {
   const inFlight = new Set<BrowserWindow | null>()
   handleWithEvent(CONTRACT.pickFolder, (e) => pickFolder(e, inFlight))
-  handleWithEvent(CONTRACT.pickPicturesFolder, (e, body: unknown) => pickPicturesFolder(e, inFlight, body, approve))
+  handleWithEvent(CONTRACT.pickPicturesFolder, (e, body: unknown) => pickPicturesFolder(e, inFlight, body, approve, remember))
   handleWithEvent(CONTRACT.dialog.saveDrawing, (e, body: unknown) => saveDrawingFile(e, inFlight, body))
   handleWithEvent(CONTRACT.dialog.saveImage, (e, body: unknown) => saveImageFile(e, inFlight, body))
   handleWithEvent(CONTRACT.dialog.savePdf, (e, body: unknown) => savePdfFile(e, inFlight, body, print))

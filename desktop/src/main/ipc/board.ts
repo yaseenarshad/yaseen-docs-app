@@ -31,7 +31,7 @@ import { handle, handleWithEvent } from './envelope'
  * `<userData>/thumbs`, made with the doors (YAZ-3044 A15: `registerIpc` already has the folder).
  * Without it — in tests — a preview gets each image's own bytes.
  */
-export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit'>, windows: Pick<WindowManager, 'idFor'>, userData?: string): void {
+export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit' | 'approvePictureFolder'>, windows: Pick<WindowManager, 'idFor'>, userData?: string, picked: ReadonlySet<string> = new Set()): void {
   const thumbs: Thumbs | null = userData === undefined ? null : createThumbs(path.join(userData, THUMBS_DIR))
   // A new drawing keeps its pictures where Settings › Files & Links says (YAZ-3943 demo 2; its own folder, demo round 3), read at each create.
   handle(CONTRACT.createBoard, (req: unknown) => createBoard(req, store.get().settings.newBoardPictures, store.get().settings.newBoardPicturesFolder))
@@ -50,6 +50,13 @@ export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit'>, windows:
   handle(CONTRACT.diagram.load, loadDiagram)
   handleWithEvent(CONTRACT.diagram.save, loggedSave(store, windows, saveDiagram))
   handle(CONTRACT.setBoardReadOnly, setBoardReadOnly)
-  handle(CONTRACT.setBoardPictures, (req: unknown) => setBoardPictures(req, store.get().approvedPictureFolders))
+  // `picked`: the outside folders the cog's folder window picked (`ipc/dialog.ts`). The move is the confirm, so its
+  // folder joins the approved list only once the move landed (YAZ-4074 6A item 3).
+  handle(CONTRACT.setBoardPictures, async (req: unknown) => {
+    const res = await setBoardPictures(req, [...store.get().approvedPictureFolders, ...picked])
+    const { folder } = req as { folder?: unknown }
+    if (typeof folder === 'string' && picked.has(folder)) store.approvePictureFolder(folder)
+    return res
+  })
   handle(CONTRACT.setBoardHoverLinks, setBoardHoverLinks)
 }

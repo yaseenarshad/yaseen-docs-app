@@ -598,6 +598,11 @@ export type BoardPicturesResponse = BoardReadOnlyResponse
 export interface PickPicturesFolderRequest {
   root: string
   current?: string
+  /**
+   * Settings' "Choose…" (YAZ-4074 6A item 3): no confirm box follows, so an outside pick is approved at once. The cog
+   * leaves it out: its pick is approved only when the move is confirmed (`board:set-pictures`).
+   */
+  approveNow?: true
 }
 
 export type PickPicturesFolderResponse = { folder: string } | { cancelled: true }

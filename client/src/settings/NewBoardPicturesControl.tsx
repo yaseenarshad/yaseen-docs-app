@@ -57,7 +57,8 @@ export function NewBoardPicturesControl({ settings, onChange, vaults }: NewBoard
     setPicking(true)
     setRefused(null)
     api
-      .pickPicturesFolder({ root, ...(settings.newBoardPicturesFolder === '' ? {} : { current: settings.newBoardPicturesFolder }) })
+      // No confirm box follows this pick, so main approves an outside folder at once (YAZ-4074 6A item 3).
+      .pickPicturesFolder({ root, ...(settings.newBoardPicturesFolder === '' ? {} : { current: settings.newBoardPicturesFolder }), approveNow: true })
       .then(
         (res) => {
           if (live.current && 'folder' in res) onChange({ ...settings, newBoardPicturesFolder: res.folder })

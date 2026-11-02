@@ -34,13 +34,19 @@ let elsewhere: string
 /** What the store holds: Settings › Files & Links and this Mac's approved pictures folders (YAZ-3943 demo 2, round 3), read at each call. */
 let settings: SettingsState
 let approved: string[]
+/** The outside folders the cog's folder window picked this session, not yet approved (YAZ-4074 6A item 3). */
+const picked = new Set<string>()
 beforeEach(async () => {
   vault = await mkdtemp(path.join(tmpdir(), 'pictures-vault-'))
   elsewhere = await mkdtemp(path.join(tmpdir(), 'pictures-copy-'))
   settings = { ...DEFAULT_SETTINGS }
   approved = []
-  const store = { get: () => ({ windows: [{ id: 'w1', roots: [vault] }], settings, approvedPictureFolders: approved }), addEdit: vi.fn() } as unknown as Parameters<typeof registerBoardIpc>[0]
-  registerBoardIpc(store, { idFor: () => 'w1' })
+  picked.clear()
+  const approvePictureFolder = (folder: string) => {
+    if (!approved.includes(folder)) approved = [...approved, folder]
+  }
+  const store = { get: () => ({ windows: [{ id: 'w1', roots: [vault] }], settings, approvedPictureFolders: approved }), addEdit: vi.fn(), approvePictureFolder } as unknown as Parameters<typeof registerBoardIpc>[0]
+  registerBoardIpc(store, { idFor: () => 'w1' }, undefined, picked)
 })
 afterEach(async () => {
   await rm(vault, { recursive: true, force: true })
@@ -103,5 +109,18 @@ describe('YAZ-3943 demo 2 and round 3 through the bridge: the settings and the a
     expect(await readdir(elsewhere)).toEqual(['aaa.png'])
     await call(CONTRACT.setBoardHoverLinks.channel, { root: vault, path: created.path, on: false, expectedMtime: moved.mtime })
     expect(hoverLinksOff(JSON.parse(await readFile(created.path, 'utf8'))[BOARD_META_KEY])).toBe(true)
+  })
+
+  it('YAZ-4074 6A item 3: a folder the cog picked is approved only when its move is confirmed; a Cancel leaves the list as it was', async () => {
+    const created = await call<{ path: string }>(CONTRACT.createBoard.channel, { root: vault, path: path.join(vault, 'Far.excalidraw') })
+    const opened = await call<DrawingLoadResponse>(CONTRACT.drawing.load.channel, { root: vault, path: created.path })
+    const saved = await call<DrawingSaveResponse>(CONTRACT.drawing.save.channel, { root: vault, path: created.path, json: sent([imageEl('aaa')]), expectedMtime: opened.mtime, newFiles: [{ fileId: 'aaa', mimeType: 'image/png', dataURL: png('A') }] })
+    // The pick (`dialog:pick-pictures-folder`), then Cancel in the box: no move, and nothing approved.
+    picked.add(elsewhere)
+    expect(approved).toEqual([])
+    // Then "Move pictures": the move lands, and only now may later saves write there.
+    await call(CONTRACT.setBoardPictures.channel, { root: vault, path: created.path, out: true, folder: elsewhere, expectedMtime: saved.mtime })
+    expect(await readdir(elsewhere)).toEqual(['aaa.png'])
+    expect(approved).toEqual([elsewhere])
   })
 })
