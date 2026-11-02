@@ -21,15 +21,17 @@
  *     lists (YAZ-3818 D1), written as one line of HTML (`table/cellLists.ts`, D2). `withCellStyle` adds
  *     the cell's `fill` and `color` (YAZ-3758) in the same extension: `extendSchema` always derives
  *     from the ORIGINAL schema, so a second extension would drop this one.
- *  3. `cellBreakKeymap` ($shortcut): Enter and Shift-Enter inside a table cell always insert a
+ *  3. `cellBreakKeymap` ($shortcut): Enter and Shift-Enter inside a table cell insert a
  *     hardbreak — a new line in the cell, as in Google Docs (🔒 YAZ-1462); Mod-Enter still exits
  *     the table. Milkdown's own Shift-Enter refuses to run inside tables, and its "second
- *     Shift-Enter after a break makes a new paragraph" rule would split the table.
+ *     Shift-Enter after a break makes a new paragraph" rule would split the table. In a bullet in a
+ *     cell, Enter makes the next bullet (YAZ-3818 D6); Shift-Enter stays a line break in the bullet.
  */
 import type { Ctx } from '@milkdown/kit/ctx'
-import { hardbreakSchema } from '@milkdown/kit/preset/commonmark'
+import { hardbreakSchema, listItemSchema } from '@milkdown/kit/preset/commonmark'
 import { tableCellSchema, tableHeaderSchema } from '@milkdown/kit/preset/gfm'
 import type { Node as PMNode, ResolvedPos } from '@milkdown/kit/prose/model'
+import { splitListItem } from '@milkdown/kit/prose/schema-list'
 import type { Command } from '@milkdown/kit/prose/state'
 import type { SerializerState } from '@milkdown/kit/transformer'
 import { $remark, $shortcut } from '@milkdown/kit/utils'
@@ -37,6 +39,7 @@ import type { RootContent } from 'mdast'
 import { defaultHandlers } from 'mdast-util-to-markdown'
 import type { Options as ToMarkdownOptions } from 'mdast-util-to-markdown'
 import { visit } from 'unist-util-visit'
+import { itemInCell } from './outline/listNodes'
 import { cellListsRemark, writeCellBlocks } from './table/cellLists'
 import { withCellStyle } from './table/tableStyle'
 
@@ -113,8 +116,15 @@ export const insertCellBreak = (ctx: Ctx): Command => (state, dispatch) => {
  */
 const PRIORITY = 90
 
+/**
+ * Enter in a table cell: in a bullet in the cell, the plain split the outliner's Enter (priority 100) leaves to Crepe
+ * (YAZ-3818 D6; the outliner keeps the empty bullet and the bullet with children); elsewhere in a cell, a hardbreak.
+ */
+const cellEnter = (ctx: Ctx): Command => (state, dispatch) =>
+  itemInCell(state.selection.$from) ? splitListItem(listItemSchema.type(ctx))(state, dispatch) : insertCellBreak(ctx)(state, dispatch)
+
 export const cellBreakKeymap = $shortcut((ctx: Ctx) => ({
-  InsertCellBreak: { key: 'Enter', priority: PRIORITY, onRun: () => insertCellBreak(ctx) },
+  InsertCellBreak: { key: 'Enter', priority: PRIORITY, onRun: () => cellEnter(ctx) },
   InsertCellBreakShift: { key: 'Shift-Enter', priority: PRIORITY, onRun: () => insertCellBreak(ctx) },
 }))
 

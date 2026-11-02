@@ -17,15 +17,21 @@
  *    history `undo`, the same as ⌘Z: the line is plain `1. ` again, caret after the space. A second ⌘Z takes the typed
  *    text away.
  *
+ *  - `wrapInTaskListInputRule` ($inputRule): GFM's `[ ] ` / `[x] ` rule, which makes the nearest bullet a to-do, with a
+ *    table cell as a boundary (YAZ-3818). GFM's walked up to any list item, so `[ ] ` on a plain cell line of a table
+ *    inside a bullet made the OUTER bullet a to-do. `createCrepe` removes GFM's and uses this one.
+ *
  * The "just converted" flag lives in this plugin's state. A document change or a caret move clears it, except an
  * appended transaction (`listMarkers` relabels the new item right after the conversion) and a selection set to where it
  * already was (Crepe's list node view puts the caret back one frame after it mounts the new item).
  */
 import { bulletListSchema, listItemSchema, orderedListSchema } from '@milkdown/kit/preset/commonmark'
 import { closeHistory, undo } from '@milkdown/kit/prose/history'
+import { InputRule } from '@milkdown/kit/prose/inputrules'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { canJoin, findWrapping } from '@milkdown/kit/prose/transform'
-import { $prose, $shortcut } from '@milkdown/kit/utils'
+import { $inputRule, $prose, $shortcut } from '@milkdown/kit/utils'
+import { innermostItemPos } from './outline/listNodes'
 
 /** The whole text before the caret: `n.` (a number of 1 to 9 digits, as CommonMark reads it) or `*` / `-` / `+` (a bullet). */
 const MARKER = /^(?:(\d{1,9})\.|[-*+])$/
@@ -93,3 +99,14 @@ export const undoListMarker = $shortcut(() => ({
     onRun: () => (state, dispatch) => typingKey.getState(state) === true && undo(state, dispatch),
   },
 }))
+
+/** GFM's `[ ] ` / `[x] ` rule on the nearest bullet, which never lies past a table cell (`innermostItemPos`, YAZ-3818). */
+export const wrapInTaskListInputRule = $inputRule(
+  () =>
+    new InputRule(/^\[(?<checked>\s|x)\]\s$/, (state, match, start, end) => {
+      const itemPos = innermostItemPos(state.doc.resolve(start))
+      const item = itemPos === null ? null : state.doc.nodeAt(itemPos)
+      if (itemPos === null || item === null || item.attrs.checked != null) return null
+      return state.tr.deleteRange(start, end).setNodeMarkup(itemPos, undefined, { ...item.attrs, checked: match.groups?.checked === 'x' })
+    }),
+)

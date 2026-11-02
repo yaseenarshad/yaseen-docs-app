@@ -197,6 +197,13 @@ describe('zoom into a bullet', () => {
     expect(zoomedPos(crepe)).toBeNull()
   })
 
+  it('Mod-. on a plain cell line of a table inside a bullet never zooms into the outer bullet (YAZ-3818)', async () => {
+    const { crepe } = await mount('* outer\n\n  | h1 | h2 |\n  | --- | --- |\n  | plain | c2 |\n')
+    caretIn(crepe, 'plain')
+    expect(press(crepe, 'Mod-.')).toBe(false)
+    expect(zoomedPos(crepe)).toBeNull()
+  })
+
   it('breadcrumb clicks zoom to that ancestor; the file crumb zooms out fully', async () => {
     const { crepe, root } = await mount()
     clickGlyph(root, 'L3 a')

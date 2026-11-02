@@ -231,7 +231,7 @@ import {
   wrapInHeadingCommand,
   wrapInOrderedListInputRule,
 } from '@milkdown/kit/preset/commonmark'
-import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
+import { extendListItemSchemaForTask, wrapInTaskListInputRule as gfmTaskListInputRule } from '@milkdown/kit/preset/gfm'
 import { type Command, Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $shortcut, replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
@@ -297,7 +297,7 @@ import { obsidianHotkeys } from './outline/hotkeys'
 import { caretReveal, foldHistory } from './outline/foldReveal'
 import { enterTracker, outlinerKeymap } from './outline/listCommands'
 import { listMarkers } from './outline/listMarkers'
-import { listMarkerTyping, undoListMarker } from './listMarkerTyping'
+import { listMarkerTyping, undoListMarker, wrapInTaskListInputRule } from './listMarkerTyping'
 import { createFoldingSwitch } from './outline/foldingSwitch'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
@@ -664,9 +664,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(blockHandleGate)
   // YAZ-3727 D8, D9: Milkdown's list typing rules fire inside bullets and on Enter, and undo badly; ours
   // replace them (plain lines, a typed space, a clean undo). The toolbar's Numbered button (YAZ-3806 T2) is the click
-  // path; Mod-Alt-7 and the slash-menu row stay absent.
-  void crepe.editor.remove([wrapInOrderedListInputRule, wrapInBulletListInputRule, ...orderedListKeymap])
-  crepe.editor.use(listMarkerTyping).use(undoListMarker)
+  // path; Mod-Alt-7 and the slash-menu row stay absent. GFM's `[ ] ` rule reached past a table cell (YAZ-3818).
+  void crepe.editor.remove([wrapInOrderedListInputRule, wrapInBulletListInputRule, gfmTaskListInputRule, ...orderedListKeymap])
+  crepe.editor.use(listMarkerTyping).use(undoListMarker).use(wrapInTaskListInputRule)
   // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its kind (the toolbar's list
   // buttons and T in one strip, YAZ-3727 D13, D14), its children (Number children, when it has any), its
   // own numbered list as bullets with written numbers (YAZ-3727 D12),

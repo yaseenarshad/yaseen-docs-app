@@ -100,6 +100,33 @@ describe('arm guard', () => {
   })
 })
 
+describe('a table\'s handle (YAZ-3818 D10)', () => {
+  /** A grab on the 6-dot handle whose probe lands at `probe`. */
+  function grab(view: EditorView, probe: number) {
+    const handle = document.createElement('div')
+    handle.className = 'milkdown-block-handle'
+    const item = document.createElement('div')
+    item.className = 'operation-item'
+    handle.appendChild(item)
+    view.dom.parentElement!.appendChild(handle)
+    handle.getBoundingClientRect = () => ({ right: 0 }) as DOMRect
+    view.posAtCoords = () => ({ pos: probe, inside: probe - 1 })
+    item.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, clientY: 0 }))
+  }
+
+  it('never arms over bullets in a cell: the table moves whole, never only the bullets', async () => {
+    const { view } = await mount('| h1 | h2 |\n| --- | --- |\n| <ul><li>one</li><li>two</li></ul> | c2 |\n\nafter\n')
+    const sel = TextSelection.create(view.state.doc, posOf(view, 'one', 1), posOf(view, 'two', 1))
+    view.dispatch(view.state.tr.setSelection(sel))
+    // The probe in the header cell (YAZ-3795), then in the bullets themselves.
+    for (const probe of [posOf(view, 'h1'), posOf(view, 'one', 1)]) {
+      grab(view, probe)
+      expect(multiBlockDragKey.getState(view.state) ?? null).toBeNull()
+      expect(view.state.selection.eq(sel)).toBe(true)
+    }
+  })
+})
+
 describe('drop cleanup', () => {
   /** Arm the plugin over [start,end], then replay what ProseMirror's drop-move does. */
   function dragAndDrop(view: EditorView, start: number, end: number, targetText: string) {
@@ -133,6 +160,18 @@ describe('drop cleanup', () => {
     expect(md).not.toMatch(/^\s*[*-]\s*$/m) // no empty bullets left behind
     expect(md).toContain('L2 c')
     expect(md).toContain('L2 a')
+  })
+
+  it('the shell left in a cell goes, never the cell: it keeps one empty line (YAZ-3818)', async () => {
+    const { crepe, view } = await mount('| h1 | h2 |\n| --- | --- |\n| <ul><li>one</li></ul> | c2 |\n')
+    // Armed over the bullet's text; the drop's move-deletion leaves the bullet as an empty shell, alone in its cell.
+    const from = posOf(view, 'one')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, from + 3)).setMeta(multiBlockDragKey, { type: 'arm', from, to: from + 3 }))
+    view.dispatch(view.state.tr.delete(from, from + 3).setMeta('uiEvent', 'drop'))
+    const row = view.state.doc.firstChild!.child(1)
+    expect(row.firstChild!.toString()).toBe('table_cell(paragraph)')
+    expect(row.lastChild!.textContent).toBe('c2')
+    expect(getMarkdownForSave(crepe)).toMatch(/\n\| +\| c2 \|\n$/)
   })
 
   it('does nothing on a drop when not armed', async () => {

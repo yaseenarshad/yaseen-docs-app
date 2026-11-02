@@ -216,6 +216,77 @@ describe('inline <br> inside table cells', () => {
   })
 })
 
+describe('Enter in a bullet in a cell (YAZ-3818 D6)', () => {
+  /** The blocks of the caret's cell: a line is its text, a list its items' first lines. */
+  const cellShape = (view: EditorView): unknown[] => {
+    const { $from } = view.state.selection
+    let depth = $from.depth
+    while ($from.node(depth).type.name !== 'table_cell') depth--
+    const out: unknown[] = []
+    $from.node(depth).forEach((block) => {
+      if (block.type.name === 'paragraph') out.push(block.textContent)
+      else {
+        const items: string[] = []
+        block.forEach((item) => items.push(item.firstChild!.textContent))
+        out.push(items)
+      }
+    })
+    return out
+  }
+
+  it('in the middle and at the end of a cell bullet: a new bullet in the same cell', async () => {
+    const { crepe, close } = await open(table('<ul><li>ab</li></ul>'))
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    caretAfter(view, 'ab')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from - 1)))
+    pressEnter(view)
+    expect(savedCell(getMarkdownForSave(crepe))).toBe('<ul><li>a</li><li>b</li></ul>')
+    caretAfter(view, 'b')
+    pressEnter(view)
+    expect(cellShape(view)).toEqual([['a', 'b', '']])
+    expect(view.state.selection.$from.parent.content.size).toBe(0)
+    expect(getMarkdownForSave(crepe).split('\n').filter((l) => l.startsWith('|'))).toHaveLength(3)
+    await close()
+  })
+
+  it('on an empty cell bullet: a plain line in the cell', async () => {
+    const { crepe, close } = await open(table('<ul><li>a</li></ul>'))
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    caretAfter(view, 'a')
+    pressEnter(view)
+    pressEnter(view)
+    expect(cellShape(view)).toEqual([['a'], ''])
+    expect(view.state.selection.$from.parent.type.name).toBe('paragraph')
+    expect(view.state.selection.$from.node(-1).type.name).toBe('table_cell')
+    await close()
+  })
+
+  it('Shift-Enter in a cell bullet: a line break in the bullet, saved as <br>', async () => {
+    const { crepe, close } = await open(table('<ul><li>ab</li></ul>'))
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    caretAfter(view, 'ab')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from - 1)))
+    shiftEnter(view)
+    expect(savedCell(getMarkdownForSave(crepe))).toBe('<ul><li>a<br>b</li></ul>')
+    await close()
+  })
+
+  it('in a table inside a bullet (YAZ-3770): a cell bullet splits in its cell; a plain cell line gets a line break', async () => {
+    const { crepe, close } = await open('* outer\n\n  | h | h2 |\n  | - | - |\n  | <ul><li>ab</li></ul> | xy |\n')
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    caretAfter(view, 'ab')
+    pressEnter(view)
+    caretAfter(view, 'xy')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from - 1)))
+    pressEnter(view)
+    const out = getMarkdownForSave(crepe)
+    expect(out).toContain('<ul><li>ab</li><li></li></ul>')
+    expect(out).toContain('x<br>y')
+    expect(out.startsWith('* outer\n')).toBe(true)
+    await close()
+  })
+})
+
 describe('inline <br> elsewhere', () => {
   it('5. in a paragraph: hardbreak, saved as backslash + newline', async () => {
     expect(await inlineTypes('a<br>b', 'paragraph')).toEqual(['text', 'hardbreak', 'text'])

@@ -7,6 +7,7 @@
  * (b) each plugin only maps its decoration set: no `find`, `add` or `remove` on it, and no new set; so the freeze's
  *     view (which `find`s the frozen tables) does not run.
  * The times are in `tableSpeed.perf.test.ts`. jsdom has no layout, so every read gives 0; only the count matters.
+ * With lists in the cells (YAZ-3818 D3), a key in a cell bullet rescans the bullets of its own row only.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -15,7 +16,14 @@ import type { EditorState } from '@milkdown/kit/prose/state'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from '../createCrepe'
+import { findFoldedChildren } from '../outline/listNodes'
 import { cellPos } from './tableTestKit'
+
+// Counted, not changed: the fold scan asks it once for each bullet it scans (YAZ-3818 D3).
+vi.mock('../outline/listNodes', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../outline/listNodes')>()
+  return { ...real, findFoldedChildren: vi.fn(real.findFoldedChildren) }
+})
 
 const COLS = 10
 const ROWS = 500
@@ -25,6 +33,9 @@ const BIG = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} 
 /** S6's frozen, styled table. */
 const STYLED = `${BIG}\n<!-- table: fill A2:B2 blue C5 green, stripes, freeze 1 row 2 cols -->\n`
 const KEYS = 'typing in a cell'
+/** A 3-bullet list, one bullet with a child, in one body cell in five: 1,000 lists, 4,000 bullets. */
+const CELL_LIST = '<ul><li>one</li><li>two<ul><li>kid</li></ul></li><li>three</li></ul>'
+const LISTS = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...body.map((cells, r) => `| ${cells.map((cell, c) => ((r * COLS + c) % 5 === 0 ? cell + CELL_LIST : cell)).join(' | ')} |`)].join('\n') + '\n'
 
 const mounted: Array<{ crepe: Crepe; scroller: HTMLElement }> = []
 afterEach(async () => {
@@ -35,8 +46,8 @@ afterEach(async () => {
   }
 })
 
-/** The frozen, styled table in a note's vertical scroller; every frame is held until `flush`. */
-async function mount() {
+/** The frozen, styled table (or `markdown`) in a note's vertical scroller; every frame is held until `flush`. */
+async function mount(markdown = STYLED) {
   const frames: FrameRequestCallback[] = []
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => frames.push(callback))
   const scroller = document.createElement('div')
@@ -44,7 +55,7 @@ async function mount() {
   const root = document.createElement('div')
   scroller.appendChild(root)
   document.body.appendChild(scroller)
-  const crepe = createCrepe({ root, defaultValue: STYLED })
+  const crepe = createCrepe({ root, defaultValue: markdown })
   await crepe.create()
   mounted.push({ crepe, scroller })
   const view = crepe.editor.ctx.get(editorViewCtx)
@@ -147,5 +158,30 @@ describe('S6: a key in a frozen, styled 500 × 10 table adds no work (YAZ-3796)'
     expect.soft(work, '(b) work on the decoration sets per key').toEqual(work.map(() => []))
     // The keys landed.
     expect(view.state.doc.nodeAt(cellPos(view, 250, 3))!.textContent).toBe(`${KEYS}r250c4`)
+  }, 60_000)
+})
+
+describe('S6: a key in a cell bullet rescans its own row only (YAZ-3818 D3)', () => {
+  it('the fold scan reads the bullets of the edited row, not the other 999 lists', async () => {
+    const { view, flush } = await mount(LISTS)
+    const scans = vi.mocked(findFoldedChildren)
+    // Body row 250 holds lists in columns 1 and 6: 8 bullets.
+    const cell = cellPos(view, 250, 5)
+    let bullet = -1
+    view.state.doc.nodeAt(cell)!.descendants((node, pos) => {
+      if (bullet < 0 && node.type.name === 'list_item') bullet = cell + 1 + pos + 2
+      return bullet < 0
+    })
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, bullet)))
+    const perKey: number[] = []
+    for (const ch of KEYS) {
+      scans.mockClear()
+      view.dispatch(view.state.tr.insertText(ch))
+      flush()
+      perKey.push(scans.mock.calls.length)
+    }
+    expect(Math.max(...perKey)).toBeLessThanOrEqual(8)
+    // The keys landed in the bullet.
+    expect(view.state.doc.nodeAt(bullet - 2)!.textContent).toBe(`${KEYS}one`)
   }, 60_000)
 })

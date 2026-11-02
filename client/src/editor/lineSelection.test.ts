@@ -9,7 +9,8 @@
  * The approved scenario matrix (S-numbers) is `lineSelection.scenarios.test.ts`; this file keeps
  * only what the matrix does not pin: the D3 list variants, walking out of / into a nested list,
  * ⇧↑ over hidden kids from the sibling's start, the `Delete` key, Enter (D7), the no-hidden-line
- * control, a node selection, and the anchor never moving.
+ * control, a node selection, and the anchor never moving; and that removing a line never removes its
+ * table cell (YAZ-3818).
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -18,7 +19,7 @@ import { NodeSelection } from '@milkdown/kit/prose/state'
 import { caretIn, endOf, md, mount, nodePos, posOf, pressKey, runCommand, select, selection, typeText, unmountAll } from './marks/markTestKit'
 import { setHeadingFoldAtSelection } from './outline/headingFolding'
 import { toggleOutlineFold } from './outline/outlineFolding'
-import { deleteVisible } from './lineSelection'
+import { deleteBlockAndEmptyWrappers, deleteVisible } from './lineSelection'
 
 afterEach(unmountAll)
 
@@ -219,5 +220,20 @@ describe('the anchor never moves', () => {
     select(crepe, endOf(crepe, 'l4'), endOf(crepe, 'l3'))
     expect(shiftUp(crepe)).toBe(true)
     expect(selection(crepe)).toEqual({ anchor: endOf(crepe, 'l4'), head: endOf(crepe, 'l2') })
+  })
+})
+
+describe('a line in a table cell (YAZ-3818)', () => {
+  it('removing the only bullet line of a cell never removes the cell: it keeps one empty line', async () => {
+    const { crepe } = await mount('| h1 | h2 |\n| --- | --- |\n| <ul><li>one</li></ul> | c2 |\n')
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const tr = view.state.tr
+    deleteBlockAndEmptyWrappers(tr, tr.doc.resolve(posOf(crepe, 'one')))
+    view.dispatch(tr)
+    const row = view.state.doc.firstChild!.child(1)
+    expect(row.childCount).toBe(2)
+    expect(row.firstChild!.childCount).toBe(1)
+    expect(row.firstChild!.firstChild!.type.name).toBe('paragraph')
+    expect(md(crepe)).toMatch(/\n\| +\| c2 +\|\n$/)
   })
 })

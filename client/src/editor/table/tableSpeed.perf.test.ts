@@ -6,6 +6,7 @@
  * keys are typed in turn with the plain one's, and their ratios to it print. "No change in typing speed" is held by
  * counts, not by this ratio (YAZ-3796): `tableSpeed.test.ts` fails when a key reads layout or does work on the
  * freeze's or the styles' decorations. The measured numbers print, with a plain note of the same text for scale.
+ * Last, the same table with a list in one body cell in five, typed in a cell bullet (YAZ-3818 D3).
  */
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -23,6 +24,10 @@ const BIG = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} 
 const STYLED = `${BIG}\n<!-- table: fill A2:B2 blue C5 green, stripes, freeze 1 row 2 cols -->\n`
 /** The freeze alone (YAZ-3790): it must add no work per key either. */
 const FROZEN = `${BIG}\n<!-- table: freeze 1 row 2 cols -->\n`
+/** A 3-bullet list in a cell, one bullet with a child (YAZ-3818 D3). */
+const CELL_LIST = '<ul><li>one</li><li>two<ul><li>kid</li></ul></li><li>three</li></ul>'
+/** The same table with a list in one body cell in five. */
+const LISTS = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...body.map((cells, r) => `| ${cells.map((cell, c) => ((r * COLS + c) % 5 === 0 ? cell + CELL_LIST : cell)).join(' | ')} |`)].join('\n') + '\n'
 /** The same words as paragraphs: what typing costs in a note with no table. */
 const PLAIN = body.map((cells) => cells.join(' ')).join('\n\n') + '\n'
 const TSV = Array.from({ length: 50 }, (_, r) => Array.from({ length: 4 }, (_, c) => `p${r}-${c}`).join('\t')).join('\n')
@@ -70,6 +75,17 @@ function cellText(doc: ProseNode, row: number, col: number): number {
   return found
 }
 
+/** The text position inside the first bullet of the cell at body row `row` (1-based), column `col` (0-based). */
+function bulletText(doc: ProseNode, row: number, col: number): number {
+  const cell = cellText(doc, row, col) - 2
+  let found = -1
+  doc.nodeAt(cell)!.descendants((node, pos) => {
+    if (found < 0 && node.type.name === 'list_item') found = cell + 1 + pos + 2
+    return found < 0
+  })
+  return found
+}
+
 /** The median ms of one key, typed at `pos`: one dispatch per key, after a warm-up of three keys. */
 function typeAt(view: EditorView, pos: number): { median: number; worst: number } {
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)))
@@ -81,9 +97,9 @@ function typeAt(view: EditorView, pos: number): { median: number; worst: number 
  * Each view's ms of each key, the keys typed in turn, one in each view (YAZ-3792): a busy moment of the
  * machine slows each view alike, so their ratio holds. After a warm-up of three keys in each.
  */
-function typeInTurn(views: EditorView[]): number[][] {
-  for (const view of views) {
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellText(view.state.doc, 250, 3))))
+function typeInTurn(views: EditorView[], at: (doc: ProseNode, v: number) => number = (doc) => cellText(doc, 250, 3)): number[][] {
+  for (const [v, view] of views.entries()) {
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at(view.state.doc, v))))
     for (const ch of 'abc') view.dispatch(view.state.tr.insertText(ch))
   }
   const ms = views.map((): number[] => [])
@@ -136,5 +152,21 @@ describe('S6: a 500 × 10 table stays fast', () => {
     // loaded Mac 115 ms, so 50 failed every CI run on `main` (YAZ-3743, Yaseen's OK). 150 ms still catches a rescan of
     // the table per pasted cell, which costs seconds.
     expect(paste).toBeLessThan(150)
+  }, 120_000)
+
+  // YAZ-3818 D3: 1,000 lists in the cells give the fold scan 1,000 foldable bullets; a key in a cell bullet rescans
+  // its own row only (`entriesOfBlock`). The plain table takes its keys in turn, for scale.
+  it('perf smoke: with a list in one cell in five, a key in a cell bullet stays under 60 ms', async () => {
+    const keys = { table: [] as number[], lists: [] as number[] }
+    for (let run = 0; run < 3; run++) {
+      const tables = [await mount(BIG), await mount(LISTS)]
+      const [table, lists] = typeInTurn(tables.map((t) => t.view), (doc, v) => (v === 0 ? cellText(doc, 250, 3) : bulletText(doc, 250, 5)))
+      keys.table.push(...table!)
+      keys.lists.push(...lists!)
+      for (const t of tables) await t.close()
+    }
+    const [table, lists] = [median(keys.table), median(keys.lists)]
+    console.log(`S6 lists: type ms/key: table ${table.toFixed(2)}, cell bullet in a table with 1,000 cell lists ${lists.toFixed(2)} (medians of 48 keys, typed in turn; ratio ${(lists / table).toFixed(2)}, jsdom)`)
+    expect(lists).toBeLessThan(60)
   }, 120_000)
 })

@@ -29,7 +29,7 @@ import { type Command, type EditorState, NodeSelection, Plugin, PluginKey, Selec
 import { liftTarget } from '@milkdown/kit/prose/transform'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { collapsedSectionAround, collapsedSectionBlocks } from './outline/headingFolding'
-import { findFoldedChildren, isListItem, LIST_NODE_NAMES } from './outline/listNodes'
+import { findFoldedChildren, isListItem, isTableCell, LIST_NODE_NAMES } from './outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed } from './outline/outlineFolding'
 import { getZoomedItemPos } from './outline/zoom'
 
@@ -335,10 +335,13 @@ export const deleteBlockAndEmptyWrappers = (tr: Transaction, $tb: ResolvedPos): 
   tr.delete($tb.before(depth), $tb.after(depth))
 }
 
-/** The depth of the outermost node `deleteBlockAndEmptyWrappers` removes with the textblock at `$tb`. */
+/**
+ * The depth of the outermost node `deleteBlockAndEmptyWrappers` removes with the textblock at `$tb`. The climb stops
+ * below a table cell (YAZ-3818): a cell is never removed; the replace fills it with an empty line.
+ */
 export const emptyWrapperDepth = ($tb: ResolvedPos): number => {
   let depth = $tb.depth
-  while (depth > 1 && $tb.node(depth - 1).childCount === 1) depth--
+  while (depth > 1 && $tb.node(depth - 1).childCount === 1 && !isTableCell($tb.node(depth - 1))) depth--
   return depth
 }
 

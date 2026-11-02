@@ -210,6 +210,13 @@ describe('Align ▸, Fill ▸, Text colour ▸ and Sort (YAZ-3820)', () => {
     expect([last.child(1).attrs.color, last.child(1).attrs.align]).toEqual(['red', 'center'])
   })
 
+  it('Sort reads a cell with bullets as its words joined with a space (YAZ-3818)', async () => {
+    const { view } = await mount('| Words |\n| --- |\n| abb |\n| <ul><li>ab</li><li>c</li></ul> |\n')
+    row(view, 1, 0, 'table-sort-asc').onSelect()
+    // "ab c" before "abb"; read without the space, "abc" came after it.
+    expect(texts(view).slice(1).map((r) => r[0])).toEqual(['abc', 'abb'])
+  })
+
   it('Sort by the selected column keeps the cells selected', async () => {
     const { view } = await mount(SORT)
     view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, 0)))))

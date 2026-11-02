@@ -161,7 +161,11 @@ const sortRows =
       if (index > 0) rows.push(row)
     })
     const sorted = rows
-      .map((row, index) => ({ row, index, text: row.child(rect.left).textContent.trim() }))
+      .map((row, index) => {
+        // A cell's words, its lines and bullets joined with a space (YAZ-3818).
+        const cell = row.child(rect.left)
+        return { row, index, text: cell.textBetween(0, cell.content.size, ' ').trim() }
+      })
       .sort((a, b) => (!a.text !== !b.text ? (a.text ? -1 : 1) : direction * collator.compare(a.text, b.text) || a.index - b.index))
       .map(({ row }) => row)
     if (sorted.every((row, index) => row === rows[index])) return true

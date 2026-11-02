@@ -151,6 +151,15 @@ describe('the menu on a table', () => {
     })
   })
 
+  it('a right-click on the dot of a bullet in a cell shows that bullet\'s menu, no table settings (YAZ-3818)', async () => {
+    const { view } = await mount('| a | b |\n| - | - |\n| <ul><li>one<ul><li>kid</li></ul></li></ul> | 2 |\n')
+    const dot = view.dom.querySelector<HTMLElement>('td li.list-item > .label-wrapper')!
+    dot.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+    const popup = popupOf(view)!
+    expect([...popup.querySelectorAll('.ctx-menu__item')].map((row) => row.textContent)).toContain('Collapse all')
+    expect(popup.querySelectorAll('.block-menu-picker')).toHaveLength(0)
+  })
+
   it('a read-only note shows no rows', async () => {
     const { view, item } = await mount(SMALL)
     view.setProps({ editable: () => false })

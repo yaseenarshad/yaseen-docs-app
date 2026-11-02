@@ -295,11 +295,22 @@ describe('the cases the checker named (YAZ-3632) and the fixed bugs', () => {
     expect(document.querySelector('.path-paste-chip')).toBeNull()
   })
 
-  it('YAZ-3631 several paths in a table cell go on the line, one space apart', async () => {
+  it('YAZ-3818 D11 several paths in a body cell become bullets in the cell, after its line', async () => {
     const { crepe, view } = await mount('| A | B |\n| - | - |\n| cell | x |\n')
     select(view, 'cell', true)
+    paste(view, '/v/research\n/v/projects/roadmap-yaz-12.md\n/v/refs/My Report.pdf')
+    const cell = view.state.doc.firstChild!.child(1).firstChild!
+    expect(cell.childCount).toBe(2)
+    expect(cell.lastChild!.type.name).toBe('bullet_list')
+    expect(cell.lastChild!.childCount).toBe(3)
+    expect(saved(crepe)).toContain('| cell<ul><li>[[YAZ-7]]</li><li>[[YAZ-12]]</li><li>[[My Report.pdf]]</li></ul> | x |')
+  })
+
+  it('YAZ-3631 several paths in a header cell go on the line, one space apart (YAZ-3818 D7, D11)', async () => {
+    const { crepe, view } = await mount('| A | B |\n| - | - |\n| cell | x |\n')
+    select(view, 'A', true)
     paste(view, '/v/research\n/v/projects/roadmap-yaz-12.md')
-    expect(saved(crepe)).toContain('| cell[[YAZ-7]] [[YAZ-12]] |')
+    expect(saved(crepe)).toMatch(/^\| A\[\[YAZ-7]] \[\[YAZ-12]] \| B +\|/)
   })
 
   it('YAZ-3634 a path with other capital letters keeps the shared folders: no detour through the vault folder', async () => {
