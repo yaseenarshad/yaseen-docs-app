@@ -844,6 +844,13 @@ export type HostLinks = {
    * link it names, `[[ID]]`, or null: it pastes as text. The ⌘K link box too.
    */
   pasteLink?: (text: string) => string | null;
+  /**
+   * YAZ-3943 4D: files dropped on the board (a drag from the sidebar) as the
+   * links of the pages they are, one each; a folder gives none. Null: the
+   * host does not know them (a drop from Finder), and the drop goes on as
+   * before. Pictures are never asked: they are added as pictures (2D).
+   */
+  dropLinks?: (files: readonly File[]) => string[] | null;
   /** The text editor's text or caret changed; null: the editor closed. */
   onEditorChange?: (editor: HostTextEditor | null) => void;
   /** A key in the text editor: true when the host took it (its open picker). */

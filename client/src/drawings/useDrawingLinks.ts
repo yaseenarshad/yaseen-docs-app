@@ -8,6 +8,7 @@ import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { GestureAction } from '@shared/keys'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { DiagramDarkColors } from '@shared/types'
+import { api } from '../api'
 import { linkOpenHint } from '../editor/linkGesture'
 import { linkMenuRows, openMenuAt, type LinkActions } from '../editor/linkMenu'
 import { wikilinkFollower, type WikilinkNav } from '../editor/wikilink/wikilinkClick'
@@ -21,7 +22,7 @@ import { IconsContext, fileIconDecoration } from '../sidebar/FileIcon'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import { useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import { createDrawingLinkPicker, createLinkedPage } from './drawingLinkPicker'
-import { drawingHostLinks, drawingPasteLink, drawingVaultOf, linkVault, mountDrawingVault, openShapeLink, redrawWindowLinks, setWindowLinkIcons, windowFollow, type DrawingLinkDeps } from './drawingLinks'
+import { drawingDropLinks, drawingHostLinks, drawingPasteLink, drawingVaultOf, linkVault, mountDrawingVault, openShapeLink, redrawWindowLinks, setWindowLinkIcons, windowFollow, type DrawingLinkDeps } from './drawingLinks'
 import { openEditLinkBox } from './editLinkBox'
 import type { DrawingSurfaceLinks } from './ExcalidrawSurface'
 
@@ -113,6 +114,10 @@ export function useDrawingLinks(host: DrawingLinkHost) {
       { icon: (target, folder) => fileIconDecoration(icons.current, target, folder) },
     )
     closePicker.current = picker.close
+    const pasteLink = (text: string): string | null => {
+      const candidates = live.current.props.wikilinkCandidates
+      return candidates === undefined ? null : drawingPasteLink(text, root, live.current.path, candidates, vaultLinks.current)
+    }
     const deps = (): DrawingLinkDeps => ({
       source: wikilinks,
       viewOnly: viewOnlyLinks,
@@ -140,10 +145,9 @@ export function useDrawingLinks(host: DrawingLinkHost) {
         closeMenu.current = openMenuAt(parent, event.clientX, event.clientY, linkMenuRows(linkMenuOf(hit.inner, owner.source, nav, follow, owner.viewOnly, undefined, edit, replace)))
       },
       picker,
-      pasteLink: (text) => {
-        const candidates = live.current.props.wikilinkCandidates
-        return candidates === undefined ? null : drawingPasteLink(text, root, live.current.path, candidates, vaultLinks.current)
-      },
+      pasteLink,
+      // A drag from the sidebar (YAZ-3943 4D): each page a pill box, as a paste of its path.
+      dropLinks: (files) => drawingDropLinks(files.map((file) => api.file.pathFor(file)), vaultLinks.current?.roots ?? [root], pasteLink),
     })
     return { hostLinks: drawingHostLinks(deps), openShapeLink: (link, event) => openShapeLink(link, event, deps()) }
   })

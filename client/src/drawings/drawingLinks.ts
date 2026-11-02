@@ -25,7 +25,7 @@ import { linkClickAction } from '../editor/linkGesture'
 import type { LinkFollow, WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import { idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, missingId, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
-import { pathTitles } from '../lib/pageLabel'
+import { isFolderPath, pathTitles } from '../lib/pageLabel'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import type { VaultLinks } from '../links/vaultLinks'
 import type { IconsHere } from '../sidebar/FileIcon'
@@ -177,6 +177,8 @@ export interface DrawingLinkDeps {
   picker?: { change: (editor: PickerEditor | null) => void; keyDown: (event: KeyboardEvent) => boolean }
   /** A pasted text as a link, or null (`drawingPasteLink`). */
   pasteLink?: (text: string) => string | null
+  /** Files dropped on the board as their links, or null (`drawingDropLinks`). */
+  dropLinks?: (files: readonly File[]) => string[] | null
 }
 
 /** The engine's `hostLinks` for one board. `deps` is read at each event, so the host can keep it in a ref. */
@@ -206,6 +208,7 @@ export function drawingHostLinks(deps: () => DrawingLinkDeps) {
       return true
     },
     pasteLink: (text: string) => deps().pasteLink?.(text) ?? null,
+    dropLinks: (files: readonly File[]) => deps().dropLinks?.(files) ?? null,
     onEditorChange: (editor: PickerEditor | null) => deps().picker?.change(editor),
     onEditorKeyDown: (event: KeyboardEvent) => deps().picker?.keyDown(event) ?? false,
   }
@@ -225,6 +228,17 @@ export function drawingPasteLink(text: string, root: string, boardPath: string, 
   const other = otherRoot === null || otherRoot === root ? null : vaultLinks!.candidatesOf(path)
   const link = other === null ? linkFor(path, { root, notePath: boardPath, candidates }) : linkFor(path, { root: otherRoot!, notePath: boardPath, candidates: other })
   return link?.startsWith('[[') === true ? link : null
+}
+
+/**
+ * Files dropped on the board (YAZ-3943 4D: a drag from the sidebar), by their paths, as the links a paste of each path
+ * makes (`linkOf`, `drawingPasteLink`): one for each page — a note, a board, a code file — in the order dropped. A folder
+ * gives none, and so does a file that is no page. Null when a path is in no vault of the window (a drop from Finder): the
+ * engine goes on as before.
+ */
+export function drawingDropLinks(paths: readonly string[], roots: readonly string[], linkOf: (path: string) => string | null): string[] | null {
+  if (paths.length === 0 || paths.some((path) => rootOfPath(roots, path) === null)) return null
+  return paths.flatMap((path) => (isFolderPath(rootOfPath(roots, path), path) ? [] : (linkOf(path) ?? [])))
 }
 
 const WHOLE_LINK = /^\[\[([^[\]]+)\]\]$/

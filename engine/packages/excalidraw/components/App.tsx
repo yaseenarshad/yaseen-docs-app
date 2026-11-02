@@ -5264,27 +5264,38 @@ class App extends React.Component<AppProps, AppState> {
     }
   }
 
-  private addTextFromPaste(text: string, isPlainPaste = false) {
+  /**
+   * `drop` (YAZ-3943 4D): `text` is the dropped pages' links, one a line, each
+   * a pill box from that scene point down.
+   */
+  private addTextFromPaste(
+    text: string,
+    isPlainPaste = false,
+    drop?: { x: number; y: number },
+  ) {
     // YAZ-4039 D12: one pasted page reference (a vault path, a `yaseendocs://`
     // link, a `[[link]]`) is its link, a pill in a box sized to it
     const single = text.trim();
-    const link =
-      isPlainPaste || !single || single.includes("\n")
-        ? null
-        : this.props.hostLinks?.pasteLink?.(single) ??
-          (/^\[\[[^[\]]+\]\]$/.test(single) && hasHostLinks(single)
-            ? single
-            : null);
+    const link = drop
+      ? text
+      : isPlainPaste || !single || single.includes("\n")
+      ? null
+      : this.props.hostLinks?.pasteLink?.(single) ??
+        (/^\[\[[^[\]]+\]\]$/.test(single) && hasHostLinks(single)
+          ? single
+          : null);
     if (link) {
       text = link;
     }
-    const { x, y } = viewportCoordsToSceneCoords(
-      {
-        clientX: this.viewport.lastPosition.x,
-        clientY: this.viewport.lastPosition.y,
-      },
-      this.state,
-    );
+    const { x, y } =
+      drop ??
+      viewportCoordsToSceneCoords(
+        {
+          clientX: this.viewport.lastPosition.x,
+          clientY: this.viewport.lastPosition.y,
+        },
+        this.state,
+      );
 
     const textElementProps = {
       x,
@@ -5382,6 +5393,7 @@ class App extends React.Component<AppProps, AppState> {
 
     if (
       !isPlainPaste &&
+      !drop &&
       textElements.length > 1 &&
       PLAIN_PASTE_TOAST_SHOWN === false &&
       this.editorInterface.formFactor !== "phone"
@@ -14298,6 +14310,35 @@ class App extends React.Component<AppProps, AppState> {
 
     // must be retrieved first, in the same frame
     const fileItems = dataTransferList.getFiles();
+
+    // YAZ-3943 4D: pages dragged from the sidebar are pill boxes, one each,
+    // stacked down from the drop point; a folder adds nothing. Pictures are
+    // added at the drop point as a Finder drop adds them (2D).
+    const droppedFiles = fileItems
+      .map((data) => data.file)
+      .filter((file): file is File => !!file);
+    const pageFiles = droppedFiles.filter(
+      (file) => !isSupportedImageFile(file),
+    );
+    const links =
+      pageFiles.length > 0
+        ? this.props.hostLinks?.dropLinks?.(pageFiles) ?? null
+        : null;
+    if (links) {
+      if (links.length > 0) {
+        this.addTextFromPaste(links.join("\n"), false, {
+          x: sceneX,
+          y: sceneY,
+        });
+      }
+      const pictures = droppedFiles.filter((file) =>
+        isSupportedImageFile(file),
+      );
+      if (pictures.length > 0 && this.isToolSupported("image")) {
+        await this.insertImages(pictures, sceneX, sceneY);
+      }
+      return;
+    }
 
     if (fileItems.length === 1) {
       const { file, fileHandle } = fileItems[0];

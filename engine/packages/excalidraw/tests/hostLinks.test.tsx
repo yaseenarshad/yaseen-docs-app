@@ -622,3 +622,70 @@ describe("YAZ-4110 5B: a page pasted on the canvas is one pill box", () => {
     );
   });
 });
+
+describe("YAZ-3943 4D: pages dropped from the sidebar are pill boxes", () => {
+  // The host knows the vault's pages and folders by name; anything else is a drop from Finder (null).
+  const dropLinks = vi.fn((files: readonly File[]) => {
+    const known: Record<string, string | null> = {
+      "Growth plan.md": "[[YAS-1]]",
+      "Board.excalidraw": "[[YAS-2]]",
+      "app.ts": "[[src/app.ts]]",
+      Projects: null,
+    };
+    if (files.some((file) => !(file.name in known))) {
+      return null;
+    }
+    return files.flatMap((file) => known[file.name] ?? []);
+  });
+
+  beforeEach(async () => {
+    labels = { "YAS-1": "Growth plan", "YAS-2": "Board" };
+    dropLinks.mockClear();
+    await render(<Excalidraw hostLinks={{ ...hostLinks, dropLinks }} />);
+  });
+
+  const page = (name: string, type = "") => ({
+    kind: "file" as const,
+    file: new File(["x"], name, { type }),
+  });
+  const texts = () =>
+    h.elements.map((element) => (element as ExcalidrawTextElement).originalText);
+
+  it("one page makes one pill box at the drop point, sized to the pill, as a paste does", async () => {
+    await API.drop([page("Growth plan.md", "text/markdown")]);
+    await waitFor(() => expect(h.elements.length).toBe(1));
+    const text = h.elements[0] as ExcalidrawTextElement;
+    expect(text.originalText).toBe("[[YAS-1]]");
+    expect(text.autoResize).toBe(true);
+    expect(text.width).toBe(139);
+    // centered on the drop point, as a paste is on the pointer
+    expect(text.x + text.width / 2).toBe(0);
+  });
+
+  it("three pages make three boxes, stacked down from the drop point, all selected", async () => {
+    await API.drop([page("Growth plan.md"), page("Board.excalidraw"), page("app.ts")]);
+    await waitFor(() => expect(h.elements.length).toBe(3));
+    expect(texts()).toEqual(["[[YAS-1]]", "[[YAS-2]]", "[[src/app.ts]]"]);
+    const ys = h.elements.map((element) => element.y);
+    expect(ys[0]).toBeLessThan(ys[1]);
+    expect(ys[1]).toBeLessThan(ys[2]);
+    expect(
+      new Set(h.elements.map((element) => element.x + element.width / 2)),
+    ).toEqual(new Set([0]));
+    expect(API.getSelectedElements()).toHaveLength(3);
+  });
+
+  it("a folder makes none, and loads nothing", async () => {
+    await API.drop([page("Projects")]);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(dropLinks).toHaveBeenCalledTimes(1);
+    expect(h.elements).toEqual([]);
+    expect(h.state.errorMessage).toBeNull();
+  });
+
+  it("the host is never asked about a picture", async () => {
+    await API.drop([page("photo.png", "image/png")]);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(dropLinks).not.toHaveBeenCalled();
+  });
+});
