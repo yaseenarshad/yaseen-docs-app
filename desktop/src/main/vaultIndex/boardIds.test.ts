@@ -1,7 +1,7 @@
 // A board's ID (YAZ-3943 4C): the vault's door gives it on the board's first save in a vault that gives IDs, the
 // index reads it off the head, a move keeps it, and a copy made in the app leaves it behind.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BOARD_META_KEY } from '@shared/drawingAssets'
@@ -149,6 +149,45 @@ describe('the index reads a board\'s ID off its head', () => {
     await seed('Plan.excalidraw', boardWith('DEM-7'))
     await opened()
     expect(await boards()).toBeUndefined()
+  })
+})
+
+describe('YAZ-4129 6B3: a Finder copy of a board', () => {
+  it('gets a new ID on its next save; opening writes nothing, and links to the ID still open the first board', async () => {
+    await idVault()
+    await seed('Boards/Plan.excalidraw', boardWith('DEM-7'))
+    await opened()
+    expect(await boards()).toEqual([{ path: at('Boards/Plan.excalidraw'), id: 'DEM-7' }])
+    // Finder copies the bytes, the block and its ID included
+    heard = []
+    await copyFile(at('Boards/Plan.excalidraw'), at('Boards/Plan copy.excalidraw'))
+    await until(async () => heard.length > 0)
+    // one ID, one board: the first one keeps it, so `[[DEM-7]]` opens it
+    expect(await boards()).toEqual([{ path: at('Boards/Plan.excalidraw'), id: 'DEM-7' }])
+    const before = await read('Boards/Plan copy.excalidraw')
+    await loadDrawing({ root, path: 'Boards/Plan copy.excalidraw' })
+    expect(await read('Boards/Plan copy.excalidraw')).toBe(before)
+    const copy = await saveDrawing({ root, path: 'Boards/Plan copy.excalidraw', json: scene(), newFiles: [] })
+    expect(copy.id).toMatch(/^DEM-\d+$/)
+    expect(copy.id).not.toBe('DEM-7')
+    expect((await blockOf('Boards/Plan copy.excalidraw')).id).toBe(copy.id)
+    // the save door tells the index at once (`ipc/board.ts`)
+    indexBoard(copy.path, copy.id!)
+    // the first board's own save keeps its ID
+    expect((await saveDrawing({ root, path: 'Boards/Plan.excalidraw', json: scene(), newFiles: [] })).id).toBeUndefined()
+    expect((await blockOf('Boards/Plan.excalidraw')).id).toBe('DEM-7')
+    expect((await boards())?.map((b) => b.id).sort()).toEqual([copy.id, 'DEM-7'].sort())
+  })
+
+  it('the board with the oldest createdAt keeps the ID, wherever it is', async () => {
+    await idVault()
+    const born = (id: string, createdAt: number) => `${JSON.stringify({ [BOARD_META_KEY]: { createdAt, updatedAt: createdAt, id }, type: 'excalidraw', version: 2, elements: [], appState: {}, files: {} }, null, 2)}\n`
+    await seed('A newer.excalidraw', born('DEM-3', 500))
+    await seed('Z older.excalidraw', born('DEM-3', 100))
+    await opened()
+    expect(await boards()).toEqual([{ path: at('Z older.excalidraw'), id: 'DEM-3' }])
+    expect((await saveDrawing({ root, path: 'Z older.excalidraw', json: scene(), newFiles: [] })).id).toBeUndefined()
+    expect((await saveDrawing({ root, path: 'A newer.excalidraw', json: scene(), newFiles: [] })).id).toMatch(/^DEM-\d+$/)
   })
 })
 

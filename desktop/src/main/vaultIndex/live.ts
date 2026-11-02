@@ -2,6 +2,7 @@ import path from 'node:path'
 import { IDS_FILE, NOTE_ID_KEY, idsAnswer, isIdLetters, vaultNoteId } from '@shared/noteId'
 import { FOLDER_SETTINGS_FILE, isFolderSettingsPath, type IdsState, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
 import { boardIdOf } from '@shared/drawingAssets'
+import { isFiniteNumber, isRecord } from '@shared/guards'
 import { isDrawing } from '@shared/fileKind'
 import { readBoardHead } from '../fs/boardHead'
 import { BridgeFailure, fsCall, isMarkdown, requireAbsPath } from '../fs/fsUtils'
@@ -141,6 +142,40 @@ export function onBoardIds(listener: ((root: string) => void) | undefined): void
   boardsChanged = listener
 }
 
+/**
+ * TWO BOARDS WITH ONE ID (YAZ-4129 6B3): a Finder copy of a board keeps the board's ID. The board that keeps it is the one
+ * with the oldest `createdAt`; between equal ones (a copy has its original's block), the one the index knew first: at a
+ * cold start, the first in path order, as for notes (`idSweep.ts`). The other one gets a new ID on its next save
+ * (`fs/drawing.ts`), never on an open (4C). Only boards that share an ID cost a head read here.
+ */
+async function boardKeepers(entry: Entry): Promise<Map<string, string>> {
+  const holders = new Map<string, string[]>()
+  for (const [p, id] of entry.boards) {
+    const paths = holders.get(id)
+    if (paths === undefined) holders.set(id, [p])
+    else paths.push(p)
+  }
+  const keepers = new Map<string, string>()
+  for (const [id, paths] of holders) keepers.set(id, paths.length === 1 ? paths[0]! : await oldestBoard(paths))
+  return keepers
+}
+
+/** Of `paths` in the order the index knew them, the board with the oldest `createdAt`; the first one when they are equal. */
+async function oldestBoard(paths: readonly string[]): Promise<string> {
+  const born = await Promise.all(paths.map((p) => readBoardHead(p).then((head) => (isRecord(head?.block) && isFiniteNumber(head.block.createdAt) ? head.block.createdAt : Infinity), () => Infinity)))
+  let best = 0
+  for (let i = 1; i < paths.length; i++) if (born[i]! < born[best]!) best = i
+  return paths[best]!
+}
+
+/** The board of the live index at `root` that keeps `id` (YAZ-4129 6B3), or undefined when no index of `root` knows it. */
+export async function boardIdKeeper(root: string, id: string): Promise<string | undefined> {
+  const entry = entries.get(root)
+  if (entry === undefined) return undefined
+  const paths = [...entry.boards].flatMap(([p, held]) => (held === id ? [p] : []))
+  return paths.length <= 1 ? paths[0] : oldestBoard(paths)
+}
+
 /** The ID a save just gave the board at `file` (YAZ-3943 4C), taken by each live index AT ONCE: the watcher's echo comes later. */
 export function indexBoard(file: string, id: string): void {
   for (const [root, entry] of entries) {
@@ -238,6 +273,8 @@ async function build(root: string): Promise<Entry> {
   try {
     // Reuse records the D2 stat sweep validates, rescan the rest. Any cache failure comes back
     // as a non-hit load and reconcile degrades to today's full scan.
+    // In path order: between two boards with one ID and one `createdAt`, the first one keeps it (6B3).
+    boards.sort()
     const [{ records, diff }, ids] = await Promise.all([reconcile(root, files, cached), boardIdsAt(boards)])
     boards.forEach((file, i) => ids[i] !== undefined && entry.boards.set(file, ids[i]!))
     entry.records = records
@@ -317,10 +354,12 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   // and asks for the letters the vault's file already holds (S9).
   if (!ids) return { root, records, folders, generatedAt: Date.now(), ids, ask: { ...wouldWrite(entry.records, entry.dirs, letters), ...(saved && { letters: letters[0] }) } }
   // A board's ID goes out as a note's does (R5): with the current letters, and not at all when it is another vault's.
+  // An ID two boards hold goes out for its keeper alone (YAZ-4129 6B3), so `[[ID]]` opens that board.
+  const keepers = await boardKeepers(entry)
   const boards = [...entry.boards]
     .flatMap(([p, held]) => {
       const id = vaultNoteId(held, letters)
-      return id === undefined ? [] : [{ path: p, id }]
+      return id === undefined || keepers.get(held) !== p ? [] : [{ path: p, id }]
     })
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   return { root, records, folders, generatedAt: Date.now(), ids, letters, boards, ...((await planLeft(root)) && { unfinished: true as const }) }

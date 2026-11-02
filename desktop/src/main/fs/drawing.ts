@@ -72,6 +72,7 @@ import type { DrawingFileEntry, DrawingLoadResponse, DrawingNewFile, DrawingSave
 import { isRecord } from '@shared/guards'
 import { ASSETS_DIR, assetFileName, BOARD_META_HEAD_BYTES, createdOf, extForMime, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseBoardMetaBlock, parseDataUrl, PICTURES_INSIDE_MAX_BYTES, PICTURES_KEY, PICTURES_OUT, picturesFolderOf, picturesOut, referencedFileIds, serializeBoard, stampBoardMetaScene, BOARD_ID_KEY, boardIdOf, withSwitchTime, stripEmbeddedScene, type BoardMetaBlock, type EmbeddedFile } from '@shared/drawingAssets'
 import { vaultNoteId } from '@shared/noteId'
+import { boardIdKeeper } from '../vaultIndex/live'
 import { mintIds, vaultIds } from '../vaultIndex/mint'
 import { BOARDS, boardTarget, guardedStamp } from './boardDocument'
 import type { BoardHead } from './boardHead'
@@ -313,10 +314,16 @@ async function readCurrent(file: string): Promise<{ head: BoardHead; data: Buffe
  * The ID a save gives the board (YAZ-3943 4C), or undefined: the vault does not give IDs, or the block holds an ID of
  * this vault already. An ID of another vault, or another tool's, is none, as a note's is (YAZ-2420 D30): the vault's
  * door gives a new one. The door is the note's (`mintIds`), so a board and a note never share a number.
+ * YAZ-4129 6B3: an ID that another board keeps (a Finder copy's, `boardIdKeeper`) is none for this one either.
  */
-async function boardIdToGive(root: string, block: BoardMetaBlock | null | undefined): Promise<string | undefined> {
+async function boardIdToGive(root: string, file: string, block: BoardMetaBlock | null | undefined): Promise<string | undefined> {
   const { answer, letters } = await vaultIds(root)
-  if (answer !== true || vaultNoteId(boardIdOf(block), letters) !== undefined) return undefined
+  if (answer !== true) return undefined
+  const held = vaultNoteId(boardIdOf(block), letters)
+  if (held !== undefined) {
+    const keeper = await boardIdKeeper(root, boardIdOf(block)!)
+    if (keeper === undefined || keeper === file) return undefined
+  }
   return (await mintIds(root, 1))?.[0]
 }
 
@@ -336,7 +343,7 @@ export async function saveDrawing(req: unknown, approved: readonly string[] = []
   const known = current?.head ?? null
   // A board's ID (YAZ-3943 4C): given on its first save in a vault that gives IDs, never on a save the guard refuses.
   const conflict = expectedMtime !== undefined && known !== null && known.mtime !== expectedMtime
-  const id = conflict ? undefined : await boardIdToGive(dir, known?.block)
+  const id = conflict ? undefined : await boardIdToGive(dir, file, known?.block)
   const withId = (block: BoardMetaBlock | null): BoardMetaBlock | null => (id === undefined ? block : ({ ...block, [BOARD_ID_KEY]: id } as BoardMetaBlock))
   const given = id === undefined ? {} : { id }
 
