@@ -289,6 +289,7 @@ import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
 import { tableColumnResize } from './table/tableColumnResize'
 import { tableShiftArrow } from './table/tableShiftArrow'
+import { tableHandleSelect } from './table/tableHandleSelect'
 import { tableFold } from './table/tableFold'
 import { tableRowBand } from './table/tableRowBand'
 import { tableZoomPill } from './table/tableZoomPill'
@@ -622,6 +623,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableColumnResize)
   // Shift+arrow at the edge of a cell's text selects that cell only (YAZ-4171), also before `tableEditing`.
   crepe.editor.use(tableShiftArrow)
+  // Sheets-style selection (the YAZ-4163 demo): a drag along the handles, Shift+Space and Ctrl+Space.
+  crepe.editor.use(tableHandleSelect)
   // Folded rows (YAZ-4165): the bar and the hidden rows; a mousedown on a bar opens it, also before `tableEditing`.
   crepe.editor.use(tableFold)
   // Fill down (YAZ-3696 S4): the corner handle of the selected cells.

@@ -306,6 +306,29 @@ const selectCells = (view: EditorView, from: [number, number], to: [number, numb
 const labelsOf = (view: EditorView, r: number, c: number) =>
   sectionsAt(view, r, c).flat().filter((item) => item.id.startsWith('table-') && !item.id.includes('freeze')).map((item) => item.label)
 
+describe('whole rows or whole columns show only their own items, as in Sheets (the YAZ-4163 demo)', () => {
+  const freezeLabels = (view: EditorView, r: number, c: number) => sectionsAt(view, r, c).flat().filter((item) => item.id.includes('freeze')).map((item) => item.label)
+  const selectRows = (view: EditorView, from: number, to: number) =>
+    view.dispatch(view.state.tr.setSelection(CellSelection.rowSelection(view.state.doc.resolve(cellPos(view, from, 0)), view.state.doc.resolve(cellPos(view, to, 0)))))
+  const selectCols = (view: EditorView, from: number, to: number) =>
+    view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, from)), view.state.doc.resolve(cellPos(view, 0, to)))))
+
+  it('rows 2 to 3: the row items, Fold, and the row freeze; no column item', async () => {
+    const { view } = await mount(WIDE)
+    selectRows(view, 1, 2)
+    expect(labelsOf(view, 1, 0)).toEqual(['Insert 2 rows above', 'Insert 2 rows below', 'Duplicate 2 rows', 'Delete 2 rows', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows'])
+    expect(freezeLabels(view, 1, 0)).toEqual(['Freeze up to this row', 'Unfreeze rows'])
+  })
+
+  it('columns B to C: the column items and the column freeze; no row item', async () => {
+    const { view } = await mount(WIDE)
+    selectCols(view, 1, 2)
+    expect(labelsOf(view, 1, 1)).toEqual(['Insert 2 columns left', 'Insert 2 columns right', 'Duplicate 2 columns', 'Delete 2 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A'])
+    expect(freezeLabels(view, 1, 1)).toEqual(['Freeze up to this column', 'Unfreeze columns'])
+  })
+
+})
+
 describe('the labels count the selection (YAZ-3801)', () => {
   it('one cell: the labels as before', async () => {
     const { view } = await mount(WIDE)
@@ -371,6 +394,8 @@ describe('the labels count the selection (YAZ-3801)', () => {
     selectCells(view, [0, 0], [1, 3])
     expect(row(view, 0, 0, 'table-insert-row-above').disabled).toBe(true)
     expect(row(view, 0, 0, 'table-delete-row').disabled).toBe(true)
+    // Every column: the whole table (whole rows and whole columns at once, so every item shows).
+    selectCells(view, [0, 0], [3, 3])
     expect(row(view, 0, 0, 'table-delete-col').disabled).toBe(true)
     selectCells(view, [1, 0], [3, 0])
     expect(row(view, 1, 0, 'table-delete-row').label).toBe('Delete 3 rows')
