@@ -3478,6 +3478,12 @@ body.drag-held iframe {
   background: none;
 }
 
+/* The editor's menus above the table's column and row handles (Crepe's `.cell-handle`, z-index 50), which otherwise
+   showed over the 6-dot menu (the YAZ-4163 demo). */
+.ctx-menu--editor {
+  z-index: 60;
+}
+
 /* A captioned strip (a table's Look, Text and Rows, the YAZ-4163 demo, as the approved mockup): its name at the left,
    muted at a picker's name size, then bordered square buttons, the lit one in the accent; Tabler's icons are lines. */
 :is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip--captioned {
@@ -3500,6 +3506,11 @@ body.drag-held iframe {
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--fg-muted);
+}
+
+/* The hovered button rises over its neighbours, so its tooltip is not under the next row's buttons. */
+:is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip--captioned > .ctx-menu__strip-button:hover {
+  z-index: 1;
 }
 
 :is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip--captioned > .ctx-menu__strip-button.active {
