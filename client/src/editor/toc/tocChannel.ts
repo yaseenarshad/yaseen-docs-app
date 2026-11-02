@@ -5,8 +5,8 @@
  * `findChannel.ts`'s host-created holder idiom. The host makes ONE per editor mount and hands it
  * to `createCrepe` (the engine in `tocPlugin.ts` binds itself at view creation, unbinds on destroy)
  * and to `TableOfContents.tsx`, which subscribes and calls the commands. The channel owns only
- * what the component draws: the note's rows as (level, text) and whether the table of contents
- * is hidden. Row POSITIONS stay in the engine: they move on every edit above a row, and a
+ * what the component draws: the note's rows as (level, text) and whether a bullet zoom is
+ * active. Row POSITIONS stay in the engine: they move on every edit above a row, and a
  * snapshot that carried them would re-render the list on every one of those edits.
  *
  * A ROW is a heading of the note, or — in a note with fewer than two headings — a bullet
@@ -47,12 +47,13 @@ export interface TocRow {
 
 export interface TocSnapshot {
   /**
-   * The note's rows in document order, by the source: on Auto every H1-H5 outside lists, or the
-   * bullets of a note with fewer than two of those; else what the reader chose — every H1-H5 of
-   * the note, or its bullets. The component decides which of them it shows.
+   * The note's rows in document order, by the source: on Auto every H1-H5 of a note with two or
+   * more outside lists, the ones inside its bullets too (YAZ-4094 4E), or the bullets of a note
+   * with fewer; else what the reader chose — every H1-H5 of the note, or its bullets. In a bullet
+   * zoom, the zoom's own rows when it has two or more (4D). The component decides which it shows.
    */
   rows: readonly TocRow[]
-  /** True while a bullet zoom is active: the note shows one bullet's subtree, not its structure. */
+  /** True while a bullet zoom is active. The component still draws (YAZ-4094 4C): its scroll spy reads again. */
   hidden: boolean
 }
 

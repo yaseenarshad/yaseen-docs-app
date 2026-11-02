@@ -3,11 +3,13 @@
  * `TocChannel`.
  *
  * THE NOTE'S OWN STRUCTURE decides what the rows are, and the channel never says which:
- *  - HEADINGS, when the note has two or more of them. `headingFolding.ts`'s walk, through its own
- *    helpers — the document's blocks and every walkable container (a blockquote), never inside a
- *    list. Two differences: the rows go down to H5 (`DEEPEST_TOC_LEVEL`, YAZ-3051), where folds
- *    stop at H3; and a heading with nothing under it has no section to fold but is still a place
- *    to go, so it is listed. H6 is never a row. The bullets of such a note are not read at all.
+ *  - HEADINGS, when the note has two or more of them outside lists. They are counted by
+ *    `headingFolding.ts`'s walk, through its own helpers — the document's blocks and every
+ *    walkable container (a blockquote), never inside a list. Two differences: the rows go down to
+ *    H5 (`DEEPEST_TOC_LEVEL`, YAZ-3051), where folds stop at H3; and a heading with nothing under it
+ *    has no section to fold but is still a place to go, so it is listed. H6 is never a row. The
+ *    rows are then every heading of the note, the ones inside its bullets too, each nested by its
+ *    place (YAZ-4094 4E, `scanAllHeadings`). Its plain bullets are no rows.
  *  - BULLETS otherwise — a bullet note is one big list with no headings, and its bullets are its
  *    structure. Every item of a list that is a direct child of the document (bulleted or
  *    numbered, each such list in document order) is a row, three levels down: an item is level 1,
@@ -30,9 +32,10 @@
  * keystroke only restarts a timer. The walk visits the blocks outside lists and never descends
  * into a textblock; only when that finds fewer than two headings does it enter the top-level
  * lists, three levels of items and no further, reading of each item its label — its first block —
- * and nothing else. The `headings` source walks every block of the note, lists included, and
- * still no textblock. A caret move does nothing but one read of the zoom level. A change of
- * source is scanned at once: it is a click in a menu, not typing.
+ * and nothing else. The `headings` source, and Auto once it found two headings (YAZ-4094 4E), walks
+ * every block of the note, lists included, and still no textblock. A caret move does nothing but
+ * two reads of the zoom level. A change of source, and a zoom in or out (4D), is scanned at once:
+ * it is a click, not typing.
  *
  * Positions are remembered from the last scan only to find a row's DOM node for the scroll spy —
  * the heading's, or the list item's. For 150 ms after an edit above a row they are stale, so a
