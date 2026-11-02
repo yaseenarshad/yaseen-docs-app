@@ -26,8 +26,8 @@ export function readTime(text: string): number | null {
  * `[text]` stays as typed. The ready styles of Settings › Editor › Tables › Time format, in order; "Custom…" is any other.
  */
 export const TIME_FORMAT_STYLES = ['h:mm a', 'h:mma', 'HH:mm'] as const
-/** `9:05am`, as "Current time" wrote before the setting (YAZ-3511 D22). */
-export const DEFAULT_TIME_FORMAT = 'h:mma'
+/** `9:05 am`: Yaseen's own planning tables write times this way, and the approved settings picture shows it first (YAZ-4159 D15). */
+export const DEFAULT_TIME_FORMAT = 'h:mm a'
 
 /** The tokens, for the custom style's hint: what each one gives at 9:05 pm. */
 export const TIME_TOKENS: ReadonlyArray<{ token: string; example: string }> = [

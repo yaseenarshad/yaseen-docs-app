@@ -694,12 +694,12 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     const { el, onChange } = mountOn('Editor')
     const select = row(el, 'tableTimeFormat')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
     expect([...select.options].map((o) => o.textContent)).toEqual(['9:00 am', '9:00am', '09:00', 'Custom…'])
-    expect(select.selectedIndex).toBe(1)
+    expect(select.selectedIndex).toBe(0)
     act(() => {
-      select.value = '0'
+      select.value = '1'
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableTimeFormat: 'h:mm a' })
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableTimeFormat: 'h:mma' })
     act(() => {
       select.value = '3' // Custom…
       select.dispatchEvent(new Event('change', { bubbles: true }))

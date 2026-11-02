@@ -47,7 +47,7 @@ const cellsOf = (node: ProseNode): string[][] => {
 describe('the time format (D15)', () => {
   it('the ready styles are 9:00 am, 9:00am and 09:00; the default is 9:00am, as "Current time" wrote before', () => {
     expect(TIME_FORMAT_STYLES.map((style) => formatTime(style, 540))).toEqual(['9:00 am', '9:00am', '09:00'])
-    expect(DEFAULT_TIME_FORMAT).toBe('h:mma')
+    expect(DEFAULT_TIME_FORMAT).toBe('h:mm a')
   })
 
   it('formats every token, after midnight too, and keeps [text]', () => {
@@ -84,7 +84,7 @@ describe('the time format (D15)', () => {
 describe('"Current time" uses the setting (D15)', () => {
   it('writes the time in the time format, then " - "', () => {
     const at = new Date(2026, 10, 2, 21, 5)
-    expect(formatCurrentTime(at)).toBe('9:05pm - ')
+    expect(formatCurrentTime(at)).toBe('9:05 pm - ')
     setTimeFormatSetting('HH:mm')
     expect(formatCurrentTime(at)).toBe('21:05 - ')
     setTimeFormatSetting('h:mm a')

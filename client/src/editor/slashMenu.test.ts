@@ -94,12 +94,12 @@ const LIST_ROWS = PLAIN_ROWS.filter((row) => row !== 'Divider' && row !== 'Bulle
 
 describe('formatCurrentTime (D22, edge case 76)', () => {
   it.each([
-    [9, 5, '9:05am - '],
-    [12, 0, '12:00pm - '],
-    [0, 30, '12:30am - '],
-    [23, 59, '11:59pm - '],
-    [11, 47, '11:47am - '],
-    [13, 7, '1:07pm - '],
+    [9, 5, '9:05 am - '],
+    [12, 0, '12:00 pm - '],
+    [0, 30, '12:30 am - '],
+    [23, 59, '11:59 pm - '],
+    [11, 47, '11:47 am - '],
+    [13, 7, '1:07 pm - '],
   ])('%i:%i → %j', (hours, minutes, expected) => {
     expect(formatCurrentTime(new Date(2026, 9, 28, hours, minutes, 42))).toBe(expected)
   })
@@ -185,11 +185,11 @@ describe('Current time (D22, edge cases 70–72, 77, 78)', () => {
   })
 
   it.each([
-    ['70: a bullet', '* x\n', 'bullet_list(list_item(paragraph("11:47am - ")))'],
-    ['71: a nested bullet', '* a\n  * x\n', 'bullet_list(list_item(paragraph("11:47am - ")))))'],
-    ['71: a task item', '* [ ] x\n', 'bullet_list(list_item(paragraph("11:47am - ")))'],
-    ['72: a numbered item', '1. x\n', 'ordered_list(list_item(paragraph("11:47am - ")))'],
-    ['74: a plain line', 'x\n', 'doc(paragraph("11:47am - "))'],
+    ['70: a bullet', '* x\n', 'bullet_list(list_item(paragraph("11:47 am - ")))'],
+    ['71: a nested bullet', '* a\n  * x\n', 'bullet_list(list_item(paragraph("11:47 am - ")))))'],
+    ['71: a task item', '* [ ] x\n', 'bullet_list(list_item(paragraph("11:47 am - ")))'],
+    ['72: a numbered item', '1. x\n', 'ordered_list(list_item(paragraph("11:47 am - ")))'],
+    ['74: a plain line', 'x\n', 'doc(paragraph("11:47 am - "))'],
   ])('"/time" + Enter in %s: the time at the caret, "/time" gone, the block unchanged', async (_name, markdown, expected) => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 9, 28, 11, 47, 30))
@@ -201,7 +201,7 @@ describe('Current time (D22, edge cases 70–72, 77, 78)', () => {
     expect(view.state.doc.toString()).toContain(expected)
     expect(view.state.doc.textContent).not.toContain('/time')
     // The caret is after the inserted text, ready to type on.
-    expect(view.state.selection.$from.parent.textContent.slice(0, view.state.selection.$from.parentOffset)).toBe('11:47am - ')
+    expect(view.state.selection.$from.parent.textContent.slice(0, view.state.selection.$from.parentOffset)).toBe('11:47 am - ')
     // A task item stays a task (its `checked` attribute is untouched).
     if (markdown.startsWith('* [ ]')) {
       expect(JSON.stringify(view.state.doc.toJSON())).toContain('"checked":false')
@@ -320,7 +320,7 @@ describe('"/Calendar table" (YAZ-4163 D7)', () => {
     expect(await openMenu(view, root, 'x', `/${query}`)).toContain('Calendar table')
   })
 
-  it('"/calendar" + Enter on a plain line: the calendar table takes the line, calendar 30m, compact, header row and column A frozen, 7:00am to 10:00pm', async () => {
+  it('"/calendar" + Enter on a plain line: the calendar table takes the line, calendar 30m, compact, header row and column A frozen, 7:00 am to 10:00 pm', async () => {
     const { root, view } = await mount('x\n')
     await openMenu(view, root, 'x', '/calendar')
     press('Enter')
@@ -328,7 +328,7 @@ describe('"/Calendar table" (YAZ-4163 D7)', () => {
     const table = tableOf(view)
     expect(view.state.doc.firstChild).toBe(table)
     expect(table.attrs).toMatchObject({ calendar: 30, height: 'compact', freezeRows: 1, freezeCols: 1 })
-    expect([table.childCount, table.child(1).firstChild!.textContent, table.lastChild!.firstChild!.textContent]).toEqual([32, '7:00am', '10:00pm'])
+    expect([table.childCount, table.child(1).firstChild!.textContent, table.lastChild!.firstChild!.textContent]).toEqual([32, '7:00 am', '10:00 pm'])
     expect(view.state.doc.textContent).not.toContain('/calendar')
   })
 
