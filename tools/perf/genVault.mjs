@@ -6,13 +6,19 @@
  */
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { crc32, deflateSync } from 'node:zlib'
-// The ES module build, as the engine imports it: the package's `main` is CommonJS.
-import { GIFEncoder, applyPalette, quantize } from 'gifenc/dist/gifenc.esm.js'
 
 const E2E_GEN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../desktop/e2e/fixtures/genVault.mjs')
+/**
+ * gifenc, from the engine package that declares it (`engine/packages/excalidraw/package.json`), not from wherever npm
+ * hoists it: the root declares no gifenc (YAZ-4071 7K). The ES module build, as the engine imports it: the package's
+ * `main` is CommonJS.
+ */
+const ENGINE_PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../engine/packages/excalidraw/package.json')
+const { GIFEncoder, applyPalette, quantize } = await import(pathToFileURL(createRequire(ENGINE_PKG).resolve('gifenc/dist/gifenc.esm.js')).href)
 const WORDS = 'alpha beta gamma delta outline bullet heading vault note sync render frame layout paint budget typing latency editor tree'.split(' ')
 const words = (i, n) => Array.from({ length: n }, (_, k) => WORDS[(i * 7 + k * 3) % WORDS.length]).join(' ')
 
