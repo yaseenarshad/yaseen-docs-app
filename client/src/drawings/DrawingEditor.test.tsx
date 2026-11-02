@@ -929,11 +929,15 @@ describe('YAZ-3943 demo round 3 — what the confirm box before a picture move s
   it('a folder in the vault says to keep it in the vault; a folder outside adds the one warning, and shows as ~/… under the home folder', () => {
     const inVault = picturesMoveAsk('folder', { count: 2, bytes: 2048 }, picturesPlaceText(true, null), 'Projects/Board pictures', '/Users/me')
     expect(inVault.title).toBe('Move pictures to Board pictures?')
-    expect(inVault.body).toBe("The 2 pictures (2.0 KB) move from the vault's assets folder to Projects/Board pictures. The board file gets smaller. If you copy this board by itself, its pictures do not go with it. Keep this folder in the vault. If you rename or delete it, the board shows missing pictures.")
+    // YAZ-4074 6A item 14: from a folder, the move copies; the old copies stay, and the board file keeps its size.
+    expect(inVault.body).toBe("The 2 pictures (2.0 KB) move from the vault's assets folder to Projects/Board pictures. The copies in the vault's assets folder stay. The app never deletes picture files. If you copy this board by itself, its pictures do not go with it. Keep this folder in the vault. If you rename or delete it, the board shows missing pictures.")
     expect(inVault.body).not.toContain(OUTSIDE_FOLDER_WARNING)
     const outside = picturesMoveAsk('folder', { count: 2, bytes: 2048 }, picturesPlaceText(true, '/Users/me/Old', '/Users/me'), '/Users/me/Pictures/Boards', '/Users/me')
     expect(outside.title).toBe('Move pictures to Boards?')
-    expect(outside.body).toBe(`The 2 pictures (2.0 KB) move from ~/Old to ~/Pictures/Boards. The board file gets smaller. If you copy this board by itself, its pictures do not go with it. Keep this folder. If you rename or delete it, the board shows missing pictures. ${OUTSIDE_FOLDER_WARNING}`)
+    expect(outside.body).toBe(`The 2 pictures (2.0 KB) move from ~/Old to ~/Pictures/Boards. The copies in ~/Old stay. The app never deletes picture files. If you copy this board by itself, its pictures do not go with it. Keep this folder. If you rename or delete it, the board shows missing pictures. ${OUTSIDE_FOLDER_WARNING}`)
+    expect(picturesMoveAsk('assets', { count: 1, bytes: 1000 }, picturesPlaceText(true, 'Projects/Board pictures')).body).toBe(
+      'The 1 picture (1000 B) moves from Projects/Board pictures to the vault\'s assets folder. The copies in Projects/Board pictures stay. The app never deletes picture files. If you copy this board by itself, its pictures do not go with it. To bring them back, use "Keep pictures inside" in this menu.',
+    )
     expect(OUTSIDE_FOLDER_WARNING).toBe('This folder is outside the vault. Your other Macs, Version history and copies of the vault will not have these pictures unless you sync this folder yourself.')
     // A folder outside the home folder shows its whole path.
     expect(picturesMoveAsk('folder', { count: 1, bytes: 1 }, 'x', '/Volumes/Disk/pics', '/Users/me').body).toContain('to /Volumes/Disk/pics.')

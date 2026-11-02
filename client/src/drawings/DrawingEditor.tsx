@@ -139,8 +139,10 @@ export function drawingCogRows({ pictures, out, folder, home = '', folderAllowed
   return rows
 }
 
+const BOARD_FILE = "this board's file"
+
 /** Where the pictures are now, as the confirm box names it: "this board's file", "the vault's assets folder", or the folder's path (`~/…` outside the vault). */
-export const picturesPlaceText = (out: boolean, folder: string | null, home = ''): string => (!out ? "this board's file" : folder === null ? "the vault's assets folder" : withHomeTilde(folder, home))
+export const picturesPlaceText = (out: boolean, folder: string | null, home = ''): string => (!out ? BOARD_FILE : folder === null ? "the vault's assets folder" : withHomeTilde(folder, home))
 
 /**
  * What the confirm box before a picture move says (YAZ-3943 demo round 3), in the user's words: the real count and
@@ -150,7 +152,8 @@ export const picturesPlaceText = (out: boolean, folder: string | null, home = ''
 export function picturesMoveAsk(to: PicturesPlace, pictures: { count: number; bytes: number }, from: string, folder?: string, home = ''): { title: string; body: string; confirm: string } {
   const one = pictures.count === 1
   const what = `The ${one ? '1 picture' : `${pictures.count} pictures`} (${formatBytes(pictures.bytes)})`
-  const alone = 'The board file gets smaller. If you copy this board by itself, its pictures do not go with it.'
+  // From a folder, a move copies (YAZ-4074 6A item 14): the old copies stay, and the board file keeps its size.
+  const alone = `${from === BOARD_FILE ? 'The board file gets smaller.' : `The copies in ${from} stay. The app never deletes picture files.`} If you copy this board by itself, its pictures do not go with it.`
   if (to === 'inside') {
     return { title: 'Keep pictures inside this board?', body: `${what} ${one ? 'is' : 'are'} copied into this board's file. The board file gets bigger. The copies in ${from} stay. The app never deletes picture files.`, confirm: 'Keep inside' }
   }
