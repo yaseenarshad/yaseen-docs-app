@@ -324,10 +324,18 @@
   margin: 0 4px 0 0;
 }
 
-/* A copy's number (YAZ-4156 10): the board's "1 of 2" chip, small, before the name, so a 72px tab still shows it. */
+/* A copy's number (YAZ-4156 10): the board's "1 of 2" chip, small, at the name's end (demo round 2), left of the
+   label's room for the ✕. The name gives way to it: it is cut and fades before the chip, so a 72px tab still shows it. */
+.tabbar__name:has(+ .tabbar__copy) {
+  overflow: hidden;
+  /* As the label's own fade: only a name that runs into this room fades, so a short name stays clear. */
+  padding-right: 6px;
+  mask-image: linear-gradient(to right, #000 calc(100% - 6px), transparent);
+}
+
 .tabbar__copy {
   flex: none;
-  margin: 0 4px 0 0;
+  margin: 0;
   padding: 0 4px;
   border-radius: 6px;
   font-size: 10px;

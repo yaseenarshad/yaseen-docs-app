@@ -940,13 +940,13 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                   <FileIcon path={path} folder={isFolder(path)} />
                   {/* Asleep to save memory (YAZ-3737 D11): quiet, before the name, so no name hides it (YAZ-4003, D18). */}
                   {asleep.has(id) && <AsleepIcon className="tabbar__asleep" />}
-                  {/* A copy's number (YAZ-4156 10): before the name too, so a narrow tab still shows it. */}
-                  {copy > 0 && <span className="tabbar__copy">{copy}</span>}
                   <span className="tabbar__name">
                     {label}
                     {/* A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4). */}
                     {name === undefined && !isFolder(path) && <NameEnding path={path} />}
                   </span>
+                  {/* A copy's number (YAZ-4156 10), at the name's end (demo round 2): a long name fades before it, so a narrow tab still shows it. */}
+                  {copy > 0 && <span className="tabbar__copy">{copy}</span>}
                 </span>
               </button>
               )}
