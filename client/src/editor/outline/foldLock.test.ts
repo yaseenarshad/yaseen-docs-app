@@ -10,22 +10,26 @@
  *    `data-fold-locked`;
  *  - the keys: `onLockedKeysChange` reports `lock:` + the row's fold key, and an editor seeded with
  *    them has the same lock; a press on a blocked chevron calls `onBlocked`;
- *  - the row's menu says "Lock open", then "Unlock".
+ *  - the row's menu says "Lock open", then "Unlock";
+ *  - a heading's lock survives a reopen and typing in the heading (YAZ-4131);
+ *  - a fold the lock blocks entirely never happens: the fold-all button then offers Expand all
+ *    (YAZ-4132), and ⌘Z is not spent on it (YAZ-4133).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { undo } from '@milkdown/kit/prose/history'
+import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from '../createCrepe'
 import type { MenuRow } from '../blockHandleMenu'
 import type { HandleTarget } from '../blockHandleTarget'
 import { foldAllRows } from './foldAllRows'
-import { setAllDocumentFolds } from './foldAllHotkeys'
+import { nextDocumentFold, setAllDocumentFolds } from './foldAllHotkeys'
 import { FOLD_LOCK_ATTR, type FoldLockOptions, isFoldLocked, toggleFoldLock } from './foldLock'
 import { isHeadingCollapsed, setHeadingFoldSet } from './headingFolding'
-import { isOutlineItemCollapsed, OUTLINE_TOGGLE_CLASS, setOutlineFoldSet } from './outlineFolding'
+import { isOutlineItemCollapsed, OUTLINE_TOGGLE_CLASS, setOutlineFoldAtSelection, setOutlineFoldSet, undoLastFold } from './outlineFolding'
 
 const DOC = `# Plan
 
@@ -197,5 +201,51 @@ describe('the keys and the host', () => {
     expect(lockRow()?.label).toBe('Unlock')
     lockRow()?.run()
     expect(isFoldLocked(view.state, item(view, 'Trevor'))).toBe(false)
+  })
+})
+
+describe('a heading lock is kept (YAZ-4131)', () => {
+  it('survives a reopen: an editor seeded with the heading lock key has the lock', async () => {
+    let lockKeys: readonly string[] = []
+    const first = await mount({ onLockedKeysChange: (keys) => (lockKeys = keys) })
+    lock(first, heading(first, 'Other'))
+    expect(lockKeys).toHaveLength(1)
+    const reopened = await mount({ seedLockedKeys: () => new Set(lockKeys) })
+    expect(isFoldLocked(reopened.state, heading(reopened, 'Other'))).toBe(true)
+  })
+
+  it('stays while the reader types in the locked heading, as a bullet lock stays while its label changes', async () => {
+    const view = await mount()
+    lock(view, heading(view, 'Other'))
+    view.dispatch(view.state.tr.insertText('X', heading(view, 'Other') + 2))
+    expect(isFoldLocked(view.state, heading(view, 'OXther'))).toBe(true)
+    lock(view, item(view, 'Trevor'))
+    view.dispatch(view.state.tr.insertText('X', item(view, 'Trevor') + 3))
+    expect(isFoldLocked(view.state, item(view, 'TXrevor'))).toBe(true)
+  })
+})
+
+describe('a fold the lock blocks entirely never happens', () => {
+  it('after Collapse all, the fold-all button offers Expand all (YAZ-4132)', async () => {
+    const view = await mount()
+    lock(view, item(view, 'Trevor'))
+    setAllDocumentFolds(true)(view.state, view.dispatch)
+    // Each row that can fold is folded now; only the held rows are open.
+    expect(nextDocumentFold(view.state)).toBe('expand')
+    setAllDocumentFolds(false)(view.state, view.dispatch)
+    expect(nextDocumentFold(view.state)).toBe('collapse')
+  })
+
+  it('⌘Z is not spent on a fold the lock blocked (YAZ-4133)', async () => {
+    const view = await mount()
+    setOutlineFoldSet([item(view, 'Yaseen')], true)(view.state, view.dispatch)
+    lock(view, item(view, 'Trevor'))
+    const trevor = item(view, 'Trevor')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, trevor + 3)))
+    setOutlineFoldAtSelection(true)(view.state, view.dispatch)
+    expect(isOutlineItemCollapsed(view.state, trevor)).toBe(false)
+    // ⌘Z goes to what the reader did before the blocked press: it opens "Yaseen" again.
+    expect(undoLastFold(view.state, view.dispatch)).toBe(true)
+    expect(isOutlineItemCollapsed(view.state, item(view, 'Yaseen'))).toBe(false)
   })
 })

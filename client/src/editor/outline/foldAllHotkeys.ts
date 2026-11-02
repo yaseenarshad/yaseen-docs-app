@@ -28,7 +28,11 @@ export const setAllDocumentFolds =
     if (!outlineChanged && !headingChanged) return false
 
     const action: ViewAction = outlineChanged && headingChanged ? 'document-fold' : outlineChanged ? 'fold' : 'heading-fold'
-    dispatch?.(transaction.setMeta(VIEW_ACTION_META, action))
+    transaction.setMeta(VIEW_ACTION_META, action)
+    // A plugin may refuse it: the fold lock drops a fold that only its held rows would take (YAZ-4132). The dry run of
+    // the button asks the same. A refused transaction applies as none.
+    if (state.applyTransaction(transaction).transactions.length === 0) return false
+    dispatch?.(transaction)
     return true
   }
 

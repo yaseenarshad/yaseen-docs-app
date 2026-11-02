@@ -15,8 +15,8 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { addHeadingFoldSetMeta, hasHeadingFoldMeta, headingCollapsedPositions, headingFoldRows, headingLevel } from './headingFolding'
-import { addOutlineFoldSetMeta, hasOutlineFoldMeta, outlineCollapsedPositions, outlineFoldRows } from './outlineFolding'
+import { addHeadingFoldSetMeta, hasHeadingFoldMeta, headingCollapsedAfter, headingCollapsedPositions, headingFoldRows, headingLevel } from './headingFolding'
+import { addOutlineFoldSetMeta, hasOutlineFoldMeta, outlineCollapsedAfter, outlineCollapsedPositions, outlineFoldRows } from './outlineFolding'
 
 const pluginKey = new PluginKey<ReadonlySet<number>>('mdapp-fold-lock')
 
@@ -96,8 +96,15 @@ export const createFoldLock = ({ seedLockedKeys = () => new Set(), onLockedKeysC
             if (transaction.docChanged && locked.size > 0) {
               const mapped = new Set<number>()
               for (const pos of locked) {
-                const result = transaction.mapping.mapResult(pos, 1)
-                if (!result.deletedAfter) mapped.add(result.pos)
+                // The lock stays while the row's node still spans its mapped range: typing in it, and a rewrite of the
+                // node in place (Milkdown's heading id sets a heading's attributes after each edit and on load,
+                // YAZ-4131), keep it; a deleted row loses it.
+                const before = transaction.before.nodeAt(pos)
+                if (before === null) continue
+                const from = transaction.mapping.map(pos, 1)
+                const to = transaction.mapping.map(pos + before.nodeSize, -1)
+                const after = transaction.doc.nodeAt(from)
+                if (after !== null && after.type === before.type && from + after.nodeSize === to) mapped.add(from)
               }
               // The same set when no lock moved: typing below every lock reports nothing (the view's `notify`).
               if (mapped.size !== locked.size || [...locked].some((pos) => !mapped.has(pos))) next = mapped
@@ -111,6 +118,20 @@ export const createFoldLock = ({ seedLockedKeys = () => new Set(), onLockedKeysC
             }
             return next
           },
+        },
+        // A fold that the locks block entirely never happens (YAZ-4132, YAZ-4133): it would change nothing on screen,
+        // yet the fold-all button would count it and ⌘Z would spend itself on it. Only a transaction that changes no
+        // document, sets no selection, opens no fold, and folds only held rows. The lock's own unfold opens folds, so it passes.
+        filterTransaction: (transaction, state) => {
+          if (transaction.docChanged || transaction.selectionSet || !(hasOutlineFoldMeta(transaction) || hasHeadingFoldMeta(transaction))) return true
+          const ranges = lockRanges(state)
+          if (ranges.length === 0) return true
+          const foldsOnlyHeld = (before: ReadonlySet<number>, after: ReadonlySet<number>): boolean =>
+            [...before].every((pos) => after.has(pos)) && [...after].every((pos) => before.has(pos) || held(ranges, pos))
+          return !(
+            foldsOnlyHeld(outlineCollapsedPositions(state), outlineCollapsedAfter(state, transaction)) &&
+            foldsOnlyHeld(headingCollapsedPositions(state), headingCollapsedAfter(state, transaction))
+          )
         },
         appendTransaction: (transactions, _oldState, state) => {
           const locked = pluginKey.getState(state)

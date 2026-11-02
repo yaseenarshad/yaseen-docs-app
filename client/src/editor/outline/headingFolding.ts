@@ -260,6 +260,16 @@ export const headingFoldRows = (state: EditorState): { pos: number; foldKey: str
 /** The folded headings as kept, also while folding is off, for the fold lock (`foldLock.ts`). */
 export const headingCollapsedPositions = (state: EditorState): ReadonlySet<number> => pluginKey.getState(state)?.collapsedHeadingPositions ?? new Set()
 
+/**
+ * The folded headings that `transaction` would leave, by this plugin's own `apply`, without applying it: the fold lock's
+ * filter (`foldLock.ts`, YAZ-4132). Only for a transaction that changes no document.
+ */
+export const headingCollapsedAfter = (state: EditorState, transaction: Transaction): ReadonlySet<number> => {
+  const current = pluginKey.getState(state)
+  const apply = pluginKey.get(state)?.spec.state?.apply
+  return current === undefined || apply === undefined ? new Set() : apply(transaction, current, state, state).collapsedHeadingPositions
+}
+
 /** Whether `transaction` changes the heading folds: every fold change carries this plugin's meta, a silent one too (YAZ-4009). */
 export const hasHeadingFoldMeta = (transaction: Transaction): boolean => transaction.getMeta(pluginKey) !== undefined
 
