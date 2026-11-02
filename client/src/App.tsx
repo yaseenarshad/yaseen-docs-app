@@ -1320,6 +1320,8 @@ export function App() {
     const step = nearSteps(tabHistory, dir)[0]
     if (step !== undefined) toOpenStep(step.id, false)
   }, [tabHistory, toOpenStep])
+  const toBackNewTab = useCallback(() => toOpenNear(-1), [toOpenNear])
+  const toForwardNewTab = useCallback(() => toOpenNear(1), [toOpenNear])
   // The mouse's back and forward buttons (YAZ-3647 D7): the window's Back list, wherever the pointer is.
   useEffect(() => {
     const onMouseUp = (e: MouseEvent) => {
@@ -1941,8 +1943,8 @@ export function App() {
     onTabOverview: toggleOverview,
     onBack: toBack,
     onForward: toForward,
-    onBackNewTab: () => toOpenNear(-1),
-    onForwardNewTab: () => toOpenNear(1),
+    onBackNewTab: toBackNewTab,
+    onForwardNewTab: toForwardNewTab,
     // ⌘T in a Files window (YAZ-3357 D8) opens a new full window, as ⌘⇧N: there is no strip for a tab.
     onNewTab: filesWindow ? newWindow : newTab,
     onNewWindow: newWindow,

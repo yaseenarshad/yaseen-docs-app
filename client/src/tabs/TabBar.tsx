@@ -264,6 +264,10 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   const [gridMenu, setGridMenu] = useState<{ x: number; y: number } | null>(null)
   /** The menu of ‹ or › (YAZ-3647 E3): its rows, and where it stands. */
   const [navMenu, setNavMenu] = useState<{ x: number; y: number; steps: readonly NavStep[] } | null>(null)
+  /** How many tabs show each page (YAZ-4156 10), counted once a render; the strip numbers the copies in order with `seenOf`. */
+  const copiesOf = new Map<string, number>()
+  for (const { path } of tabs) copiesOf.set(path, (copiesOf.get(path) ?? 0) + 1)
+  const seenOf = new Map<string, number>()
   /** The steps still in the list (YAZ-4156 4): a row of an open menu whose step left it is grey. */
   const liveSteps = new Set([...backSteps, ...forwardSteps].map((step) => step.id))
   /** A held press on ‹ or ›: its timer, and whether the menu opened, so the click that ends the press takes no step. */
@@ -830,8 +834,9 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
           // The tooltip's first line: the page, and " › bullet" when the tab is zoomed (YAZ-3647 E4).
           const shownAt = atBullet(path, zoom)
           // Which copy of its page this tab is (YAZ-4156 10), as the tab board's "1 of 2" (YAZ-2940 D11): copies tell apart.
-          const copies = tabs.filter((t) => t.path === path).length
-          const copy = copies > 1 ? tabs.slice(0, i).filter((t) => t.path === path).length + 1 : 0
+          const copies = copiesOf.get(path) ?? 1
+          const copy = copies > 1 ? (seenOf.get(path) ?? 0) + 1 : 0
+          if (copy > 0) seenOf.set(path, copy)
           const tip = [name === undefined && shownAt === labelOf(path) ? path : `${shownAt}\n${path}`]
           if (copy > 0) tip.push(`${copy} of ${copies}`)
           // The preview tab says why it is italic and how to keep it (YAZ-4156 11).
