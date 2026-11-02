@@ -57,7 +57,8 @@ const zoomPaths = (state: unknown, vault: string): string[] => {
     if (v === null || typeof v !== 'object') return
     for (const [k, child] of Object.entries(v)) {
       const here = at === '' ? k : `${at}.${k}`
-      const notNote = here === 'settings.sidebarZoom' || here === 'settings.appZoom' || (/^windows\.\d+\.zoom$/.test(here) && (v as { kind?: unknown }).kind === 'files')
+      // settings.tocZoom is the table of contents' own text size (YAZ-3939 5B), a setting that is meant to stay, as the two before it.
+      const notNote = here === 'settings.sidebarZoom' || here === 'settings.appZoom' || here === 'settings.tocZoom' || (/^windows\.\d+\.zoom$/.test(here) && (v as { kind?: unknown }).kind === 'files')
       if (/zoom/i.test(k.replaceAll(vault, '')) && !notNote) out.push(here)
       walk(child, here)
     }
