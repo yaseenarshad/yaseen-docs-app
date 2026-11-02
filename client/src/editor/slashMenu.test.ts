@@ -294,8 +294,9 @@ describe('Table in a bullet (YAZ-3696 D12, option B)', () => {
     expect(toggle()?.getAttribute('aria-expanded')).toBe('true')
     // The arrow is the item's, before the table, so the fold never hides it.
     expect(toggle()?.closest('table')).toBeNull()
-    // table.css's "no top margin" rule reaches this table (jsdom has no layout to measure).
-    expect(root.querySelector('.milkdown-list-item-block > li > .children > .content-dom > .milkdown-table-block:is(:first-child, .outline-toggle + *)')).not.toBeNull()
+    // table.css's "no top margin" rule reaches this table (jsdom has no layout to measure); the table zoom pill's
+    // anchor goes right before it (YAZ-4091).
+    expect(root.querySelector('.milkdown-list-item-block > li > .children > .content-dom > .milkdown-table-block:is(:first-child, .outline-toggle + *, :is(:first-child, .outline-toggle + *).table-zoom-anchor + *)')).not.toBeNull()
     toggle()!.click()
     expect(folded().map((el) => (el.querySelector('table') !== null ? 'table' : el.textContent?.trim()))).toEqual(['table', 'Child'])
     expect(toggle()?.getAttribute('aria-expanded')).toBe('false')
