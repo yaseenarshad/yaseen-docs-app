@@ -91,6 +91,23 @@ describe('drawing:save — new pictures land in the board\'s folder', () => {
     await saveDrawing({ root, path: file, json: sent([imageEl('aaa'), imageEl('bbb')]), expectedMtime: await mtimeOf(file), newFiles: [{ fileId: 'bbb', mimeType: 'image/png', dataURL: png('B') }] }, [outside])
     expect(await list(outside)).toEqual(['bbb.png'])
   })
+
+  it('YAZ-4071 7G: a save with a new picture still saves while the approved outside folder is on a drive that is not plugged in: the picture lands in assets/', async () => {
+    const gone = `/Volumes/yaz-4071-unplugged-${process.pid}/pics`
+    const file = await seed('Board.excalidraw', board(out(gone), []))
+    const res = await saveDrawing({ root, path: file, json: sent([imageEl('bbb')]), expectedMtime: await mtimeOf(file), newFiles: [{ fileId: 'bbb', mimeType: 'image/png', dataURL: png('B') }] }, [gone])
+    expect(res.persisted).toEqual(['bbb'])
+    expect(await list(path.join(root, 'assets'))).toEqual(['bbb.png'])
+    expect((await loadDrawing({ root, path: file })).files.bbb?.dataURL).toBe(png('B'))
+  })
+
+  it('YAZ-4071 7G: an approved outside folder that was deleted is not made again: the picture lands in assets/', async () => {
+    const deleted = path.join(outside, 'deleted')
+    const file = await seed('Board.excalidraw', board(out(deleted), []))
+    await saveDrawing({ root, path: file, json: sent([imageEl('bbb')]), expectedMtime: await mtimeOf(file), newFiles: [{ fileId: 'bbb', mimeType: 'image/png', dataURL: png('B') }] }, [deleted])
+    expect(await list(outside)).toEqual([])
+    expect(await list(path.join(root, 'assets'))).toEqual(['bbb.png'])
+  })
 })
 
 describe('board:set-pictures — a move copies, never deletes', () => {
@@ -194,8 +211,11 @@ describe('the folder rules', () => {
   it('landingFolder: a vault folder and an approved outside folder as they are; an unapproved outside folder is null (assets/)', async () => {
     expect(await landingFolder(root, null, [])).toBeNull()
     expect(await landingFolder(root, 'pics', [])).toBe('pics')
-    expect(await landingFolder(root, '/Users/me/pics', [])).toBeNull()
-    expect(await landingFolder(root, '/Users/me/pics', ['/Users/me/pics'])).toBe('/Users/me/pics')
+    expect(await landingFolder(root, outside, [])).toBeNull()
+    expect(await landingFolder(root, outside, [outside])).toBe(outside)
+    // YAZ-4071 7G: an approved outside folder that is not there now (its drive is not plugged in, or it was deleted) is null.
+    expect(await landingFolder(root, '/Users/me/pics', ['/Users/me/pics'])).toBeNull()
+    expect(await landingFolder(root, '/Volumes/yaz-4071-unplugged/pics', ['/Volumes/yaz-4071-unplugged/pics'])).toBeNull()
   })
 
   it('YAZ-4074 6A item 4: landingFolder compares real places — a vault folder that is a symbolic link out of the vault is an outside folder', async () => {

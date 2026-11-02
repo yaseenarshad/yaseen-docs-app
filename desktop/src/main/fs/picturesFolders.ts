@@ -11,7 +11,7 @@
  *  - REAL PLACES (YAZ-4074 6A item 4): both rules look through symbolic links (`realFolder`). A link to `/Library` is
  *    blocked. A vault folder that links out of the vault is an outside folder, and lands only when approved.
  */
-import { realpath } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { picturesFolderOutside } from '@shared/drawingAssets'
@@ -44,13 +44,16 @@ export async function realFolder(abs: string): Promise<string> {
 /**
  * Where pictures land for a board in the vault `dir` whose block names `folder`: the folder itself, or null (the
  * vault's `assets/`). A vault folder lands while its real place is in the vault. Any other folder lands only when its
- * real place is the real place of an approved folder. Only a board with its own folder pays the `realpath` calls.
+ * real place is the real place of an approved folder, and only while it is there: YAZ-4071 7G, an outside folder on a drive
+ * that is not plugged in, or one that was deleted, gets nothing (a save would fail, or make an empty folder again). Only a
+ * board with its own folder pays the `realpath` calls.
  */
 export async function landingFolder(dir: string, folder: string | null, approved: readonly string[]): Promise<string | null> {
   if (folder === null) return null
   const outside = picturesFolderOutside(folder)
   const real = await realFolder(outside ? folder : path.join(dir, ...folder.split('/')))
   if (!outside && under(real, await realFolder(dir))) return folder
+  if (!(await stat(real).then((s) => s.isDirectory(), () => false))) return null
   const reals = await Promise.all(approved.map(realFolder))
   return reals.includes(real) ? folder : null
 }
