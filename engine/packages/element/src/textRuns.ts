@@ -444,6 +444,29 @@ const getEditWindow = (
   return { start, previousEnd, nextEnd };
 };
 
+/** YAZ-4071 7L: the letters that an edit put in, `start`..`end` of `nextText`. */
+export const getInsertedTextRange = (
+  previousText: string,
+  nextText: string,
+) => {
+  const edit = getEditWindow(previousText, nextText);
+  return { start: edit.start, end: edit.nextEnd };
+};
+
+/** YAZ-4071 7L: the runs of the letters `start`..`end`, from 0 (what a cut takes with it). */
+export const getTextRunsInRange = (
+  runs: readonly ExcalidrawTextRun[] | undefined,
+  start: number,
+  end: number,
+): ExcalidrawTextRun[] =>
+  (runs ?? [])
+    .filter((run) => run.end > start && run.start < end)
+    .map((run) => ({
+      ...run,
+      start: Math.max(run.start, start) - start,
+      end: Math.min(run.end, end) - start,
+    }));
+
 /**
  * The style that typed letters get at `offset`, like a note mark: the letter
  * before, or at a line start the first letter of the line. A replace takes the

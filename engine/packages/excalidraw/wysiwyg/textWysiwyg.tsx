@@ -49,6 +49,8 @@ import {
   getTextRangeToolbarKey,
   hasHostLinks,
   getTextHighlightFill,
+  getInsertedTextRange,
+  getTextRunsInRange,
   remapTextRunsForTextEdit,
   setPastedTextRuns,
 } from "@excalidraw/element";
@@ -742,6 +744,59 @@ export const textWysiwyg = ({
     textRuns: readonly ExcalidrawTextRun[];
   } | null = null;
   let pendingInsertedLine: number | null = null;
+  /**
+   * YAZ-4071 7L: letters that ⌘Z or ⌘⇧Z can bring back, with their runs: a
+   * cut or replaced selection, and a styled paste. The browser's undo gives
+   * back the text only. The newest are last; a few are enough.
+   */
+  const restorableTexts: {
+    text: string;
+    textRuns: readonly ExcalidrawTextRun[];
+  }[] = [];
+  const rememberText = (
+    text: string,
+    textRuns: readonly ExcalidrawTextRun[],
+  ) => {
+    restorableTexts.push({ text, textRuns });
+    if (restorableTexts.length > 20) {
+      restorableTexts.shift();
+    }
+  };
+  /** The letters `start`..`end` of the editor, with their runs. */
+  const rememberRemovedText = (start: number, end: number) => {
+    const runs = (
+      app.scene.getElement(element.id) as ExcalidrawTextElement | null
+    )?.textRuns;
+    if (runs?.length) {
+      rememberText(
+        editable.value.slice(start, end),
+        getTextRunsInRange(runs, start, end),
+      );
+    }
+  };
+  /** A typed edit over a selection (typing, Backspace, a plain cut): a caret alone costs one check. */
+  const handleBeforeInput = (event: Event) => {
+    if (
+      editable.selectionStart !== editable.selectionEnd &&
+      !(event as InputEvent).inputType?.startsWith("history")
+    ) {
+      rememberRemovedText(editable.selectionStart, editable.selectionEnd);
+    }
+  };
+  /** The letters that ⌘Z or ⌘⇧Z just brought back, if they are remembered. */
+  const getRestoredText = () => {
+    const { start, end } = getInsertedTextRange(
+      previousEditableValue,
+      editable.value,
+    );
+    const text = editable.value.slice(start, end);
+    for (let index = restorableTexts.length - 1; index >= 0; index--) {
+      if (text && restorableTexts[index].text === text) {
+        return { start, text, textRuns: restorableTexts[index].textRuns };
+      }
+    }
+    return null;
+  };
   /** YAZ-4071 7D: Tab or Shift-Tab changed the start of each selected line. */
   let pendingEachLine = false;
 
@@ -960,6 +1015,7 @@ export const textWysiwyg = ({
   };
 
   const replaceEditorText = (start: number, end: number, text: string) => {
+    rememberRemovedText(start, end);
     editable.focus();
     editable.setSelectionRange(start, end);
     // YAZ-4071 7L: the browser's own edit is on the text box's undo stack, so
@@ -1310,6 +1366,8 @@ export const textWysiwyg = ({
           text: styled.text,
           textRuns: styled.textRuns,
         };
+        // YAZ-4071 7L: ⌘⇧Z after ⌘Z pastes it again
+        rememberText(styled.text, styled.textRuns);
         replaceEditorText(pasteSelectionStart, pasteSelectionEnd, styled.text);
         return;
       }
@@ -1414,7 +1472,7 @@ export const textWysiwyg = ({
       }
     };
 
-    editable.oninput = () => {
+    editable.oninput = (event) => {
       // YAZ-3943 demo 2: `- ` or `* ` typed at a line's start is a bullet
       // line; its replacement is its own input event
       if (applyListInputRule()) {
@@ -1464,7 +1522,13 @@ export const textWysiwyg = ({
         edit,
       );
       // YAZ-4103 3F: the pasted letters take the styles they were copied with
-      const pasted = pendingPastedRuns;
+      // YAZ-4071 7L: letters that ⌘Z or ⌘⇧Z brought back take their own runs
+      const pasted =
+        pendingPastedRuns ??
+        (restorableTexts.length &&
+        (event as InputEvent).inputType?.startsWith("history")
+          ? getRestoredText()
+          : null);
       pendingPastedRuns = null;
       const nextTextRuns =
         pasted &&
@@ -1895,6 +1959,7 @@ export const textWysiwyg = ({
     editable.oninput = null;
     editable.onkeydown = null;
     editable.removeEventListener("select", renderVisualSelection);
+    editable.removeEventListener("beforeinput", handleBeforeInput);
     editable.removeEventListener("keyup", handleSelectionMoved);
     editable.removeEventListener("pointerdown", handleEditablePointerDown);
     editable.removeEventListener("click", handleEditableClick);
@@ -2085,6 +2150,7 @@ export const textWysiwyg = ({
   }
 
   editable.addEventListener("select", renderVisualSelection);
+  editable.addEventListener("beforeinput", handleBeforeInput);
   // `selectionchange` is the canonical signal, but some browser/host
   // combinations do not emit it consistently for native textarea keyboard
   // navigation. Repaint on keyup as a harmless fallback so the custom caret

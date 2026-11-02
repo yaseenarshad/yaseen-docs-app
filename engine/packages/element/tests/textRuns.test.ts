@@ -7,6 +7,8 @@ import {
   getTextRangeToolbarKey,
   isTextRangeStyled,
   normalizeTextRuns,
+  getInsertedTextRange,
+  getTextRunsInRange,
   remapTextRunsForTextEdit,
   setTextRunColor,
   setTextRunFlag,
@@ -251,6 +253,24 @@ describe("YAZ-3718 D10: remapTextRunsForTextEdit", () => {
         { eachLine: true },
       ),
     ).toEqual([{ start: 10, end: 13, bold: true }]);
+  });
+
+  it("YAZ-4071 7L: getInsertedTextRange finds the letters an undo brought back, and getTextRunsInRange gives their runs from 0", () => {
+    expect(getInsertedTextRange(" cd", "ab cd")).toEqual({ start: 0, end: 2 });
+    expect(getInsertedTextRange("XcdY", "XY")).toEqual({ start: 1, end: 1 });
+    expect(
+      getTextRunsInRange(
+        [
+          { start: 0, end: 3, bold: true },
+          { start: 4, end: 6, italic: true },
+        ],
+        2,
+        5,
+      ),
+    ).toEqual([
+      { start: 0, end: 1, bold: true },
+      { start: 2, end: 3, italic: true },
+    ]);
   });
 
   it("uses the caret to tell Enter at a line end from Enter at the next line start", () => {

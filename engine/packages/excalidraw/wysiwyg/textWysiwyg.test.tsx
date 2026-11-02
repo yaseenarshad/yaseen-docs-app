@@ -1702,6 +1702,98 @@ describe("textWysiwyg", () => {
             delete (document as { execCommand?: unknown }).execCommand;
           }
         });
+
+        // YAZ-4071 7L: the browser's undo gives back text, not runs. jsdom
+        // has no undo: `undoTo` puts the text back as the browser does, with
+        // the input event's `inputType`.
+        describe("YAZ-4071 7L: ⌘Z and ⌘⇧Z give the letters back their styles", () => {
+          beforeEach(() => {
+            Object.defineProperty(document, "execCommand", {
+              configurable: true,
+              value: (command: string, _ui?: boolean, text = "") => {
+                const { selectionStart, selectionEnd } = textarea;
+                textarea.setRangeText(
+                  command === "delete" ? "" : text,
+                  selectionStart,
+                  selectionEnd,
+                  "end",
+                );
+                textarea.dispatchEvent(new Event("input"));
+                return true;
+              },
+            });
+          });
+          afterEach(() => {
+            delete (document as { execCommand?: unknown }).execCommand;
+          });
+          const undoTo = (
+            value: string,
+            inputType: "historyUndo" | "historyRedo",
+          ) => {
+            textarea.value = value;
+            const event = new Event("input");
+            Object.defineProperty(event, "inputType", { value: inputType });
+            textarea.dispatchEvent(event);
+          };
+
+          it("⌘Z after a styled cut gives the cut letters their styles, and keeps a style made after the cut", () => {
+            type("ab cd");
+            textarea.setSelectionRange(0, 2);
+            press(CODES.B, "b");
+            textarea.setSelectionRange(0, 2);
+            copy("cut");
+            expect(textarea.value).toBe(" cd");
+            textarea.setSelectionRange(1, 3);
+            press(CODES.I, "i");
+
+            undoTo("ab cd", "historyUndo");
+            expect(runs()).toEqual([
+              { start: 0, end: 2, bold: true },
+              { start: 3, end: 5, italic: true },
+            ]);
+          });
+
+          it("⌘⇧Z after ⌘Z of a styled paste gives the pasted letters their styles", () => {
+            type("XY");
+            textarea.setSelectionRange(1, 1);
+            paste("<p>c<em>d</em></p>", "cd");
+            expect(runs()).toEqual([{ start: 2, end: 3, italic: true }]);
+
+            undoTo("XY", "historyUndo");
+            expect(runs()).toBeUndefined();
+            undoTo("XcdY", "historyRedo");
+            expect(runs()).toEqual([{ start: 2, end: 3, italic: true }]);
+          });
+
+          it("⌘Z after typing over styled letters gives them their styles", () => {
+            type("ab cd");
+            textarea.setSelectionRange(0, 1);
+            press(CODES.B, "b");
+            textarea.setSelectionRange(1, 2);
+            press(CODES.I, "i");
+            textarea.setSelectionRange(0, 2);
+            const before = new Event("beforeinput");
+            Object.defineProperty(before, "inputType", { value: "insertText" });
+            textarea.dispatchEvent(before);
+            textarea.value = "x cd";
+            textarea.setSelectionRange(1, 1);
+            fireEvent.input(textarea);
+
+            undoTo("ab cd", "historyUndo");
+            expect(runs()).toEqual([
+              { start: 0, end: 1, bold: true },
+              { start: 1, end: 2, italic: true },
+            ]);
+          });
+
+          it("letters that come back with no remembered text take today's diff update", () => {
+            type("ab");
+            textarea.setSelectionRange(0, 2);
+            press(CODES.B, "b");
+            undoTo("abc", "historyRedo");
+            expect(runs()).toEqual([{ start: 0, end: 3, bold: true }]);
+          });
+        });
       });
 
       describe("YAZ-4102 3E: highlight letters", () => {
