@@ -3,7 +3,7 @@
  * rows, when the right-click is in a cell of an editable note (R3). It is the ONE table menu
  * (YAZ-3820): a row or column handle opens the same note menu, on the cells it selected
  * (`noteMenu.tsx`). Five groups:
- * - Insert row above / below, Insert column left / right, Duplicate row;
+ * - Insert row above / below, Insert column left / right, Duplicate row, Duplicate column (YAZ-4168);
  * - Delete row, Delete column, Clear cells;
  * - Align ▸ (the cells' own alignment, YAZ-3819; the column's own value clears it), Fill ▸ and
  *   Text colour ▸ (the cell toolbar's palette: the clear item, the ten names, Custom colour…,
@@ -184,6 +184,26 @@ const duplicateRows: Command = (state, dispatch) => {
   return true
 }
 
+/**
+ * A copy of the target's columns right of the last of them (YAZ-4168): in each row, the same cell
+ * nodes again, so every attribute goes with them — text, fill, colour, own alignment, width
+ * (`colwidth`) and the GFM `alignment`. One `insert` per row, mapped through the ones before it.
+ */
+const duplicateColumns: Command = (state, dispatch) => {
+  if (dispatch) {
+    const { table, tableStart, map, left, right } = selectedRect(state)
+    const tr = state.tr
+    for (let row = 0; row < map.height; row++) {
+      const at = (col: number) => map.map[row * map.width + col]!
+      const cells = Array.from({ length: right - left }, (_, i) => table.nodeAt(at(left + i))!)
+      const last = at(right - 1)
+      tr.insert(tr.mapping.map(tableStart + last + table.nodeAt(last)!.nodeSize), cells)
+    }
+    dispatch(tr)
+  }
+  return true
+}
+
 /** One freeze count on the clicked table. */
 function setFreeze(view: EditorView, tableStart: number, attr: 'freezeRows' | 'freezeCols', count: number): void {
   const pos = tableStart - 1
@@ -237,6 +257,7 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
       item('insert-col-left', counted(cols, 'Insert column left', 'Insert N columns left'), run(columns('left'))),
       item('insert-col-right', counted(cols, 'Insert column right', 'Insert N columns right'), run(columns('right'))),
       item('duplicate-rows', counted(rows, 'Duplicate row', 'Duplicate N rows'), run(duplicateRows), top === 0),
+      item('duplicate-cols', counted(cols, 'Duplicate column', 'Duplicate N columns'), run(duplicateColumns)),
     ],
     [
       item('delete-row', counted(rows, 'Delete row', 'Delete N rows'), run(deleteRow), top === 0 || rows >= map.height - 1),
