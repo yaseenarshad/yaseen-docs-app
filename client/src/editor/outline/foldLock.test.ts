@@ -11,7 +11,8 @@
  *  - the keys: `onLockedKeysChange` reports `lock:` + the row's fold key, and an editor seeded with
  *    them has the same lock; a press on a blocked chevron calls `onBlocked`;
  *  - the row's menu says "Lock open", then "Unlock";
- *  - a heading's lock survives a reopen and typing in the heading (YAZ-4131);
+ *  - a heading's lock survives a reopen and typing in the heading (YAZ-4131); a rename by typing
+ *    reports the new key, so the lock is kept after a reopen, as a fold is (YAZ-4155);
  *  - a fold the lock blocks entirely never happens: the fold-all button then offers Expand all
  *    (YAZ-4132), and ⌘Z is not spent on it (YAZ-4133), nor on undoing a fold that a lock then opened (YAZ-4135);
  *  - a heading's lock stays when Enter splits the heading at its end (YAZ-4136).
@@ -224,6 +225,35 @@ describe('a heading lock is kept (YAZ-4131)', () => {
     lock(view, item(view, 'Trevor'))
     view.dispatch(view.state.tr.insertText('X', item(view, 'Trevor') + 3))
     expect(isFoldLocked(view.state, item(view, 'TXrevor'))).toBe(true)
+  })
+})
+
+describe('a lock follows a rename by typing, as a fold does (YAZ-4155)', () => {
+  const reopenLocked = async (lockKeys: readonly string[], markdown: string): Promise<EditorView> => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: markdown, foldLock: { seedLockedKeys: () => new Set(lockKeys) } })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    return crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+  }
+
+  it('a heading: the reopened note with the new text has the lock', async () => {
+    let lockKeys: readonly string[] = []
+    const view = await mount({ onLockedKeysChange: (keys) => (lockKeys = keys) })
+    lock(view, heading(view, 'Other'))
+    view.dispatch(view.state.tr.insertText('Y', heading(view, 'Other') + 2))
+    const reopened = await reopenLocked(lockKeys, DOC.replace('## Other', '## OYther'))
+    expect(isFoldLocked(reopened.state, heading(reopened, 'OYther'))).toBe(true)
+  })
+
+  it('a bullet: the reopened note with the new text has the lock', async () => {
+    let lockKeys: readonly string[] = []
+    const view = await mount({ onLockedKeysChange: (keys) => (lockKeys = keys) })
+    lock(view, item(view, 'Trevor'))
+    view.dispatch(view.state.tr.insertText('Y', item(view, 'Trevor') + 3))
+    const reopened = await reopenLocked(lockKeys, DOC.replace('* Trevor', '* TYrevor'))
+    expect(isFoldLocked(reopened.state, item(reopened, 'TYrevor'))).toBe(true)
   })
 })
 

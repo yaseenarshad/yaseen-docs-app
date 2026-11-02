@@ -8,7 +8,7 @@
  * chevron, ⌘↑, Collapse all, the guide line — obeys it. A press on a blocked chevron shows the host's message.
  *
  * Locks are view state like folds: positions mapped through edits, saved by key (`lock:` + the row's fold key) in the
- * same `folders[root].folds` bucket. Renaming a row loses its lock, as it loses its fold.
+ * same `folders[root].folds` bucket. Renaming a row keeps its lock, as it keeps its fold: the key follows the text (YAZ-4155).
  * Registered after both fold plugins: its `init` reads their rows.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -106,7 +106,7 @@ export const createFoldLock = ({ seedLockedKeys = () => new Set(), onLockedKeysC
                 const from = transaction.mapping.map(pos, 1)
                 if (transaction.doc.nodeAt(from)?.type === before.type) mapped.add(from)
               }
-              // The same set when no lock moved: typing below every lock reports nothing (the view's `notify`).
+              // The same set when no lock moved: the view's `notify` then only checks whether a key changed.
               if (mapped.size !== locked.size || [...locked].some((pos) => !mapped.has(pos))) next = mapped
             }
             const meta: unknown = transaction.getMeta(pluginKey)
@@ -172,12 +172,16 @@ export const createFoldLock = ({ seedLockedKeys = () => new Set(), onLockedKeysC
           }
           view.dom.addEventListener('mousedown', onMouseDown, true)
           let previous: string | null = null
-          /** The lock set of the last report: a transaction that keeps it (no lock, no edit) costs nothing. */
+          /** The lock set and the document of the last report: a transaction that keeps both (no lock, no edit) costs nothing. */
           let reported: ReadonlySet<number> | undefined
+          let reportedDoc: ProseNode | undefined
           const notify = () => {
             const locked = pluginKey.getState(view.state)
-            if (locked === undefined || onLockedKeysChange === undefined || locked === reported) return
+            if (locked === undefined || onLockedKeysChange === undefined) return
+            // An edit can rename a locked row in place, which keeps the set but changes its key (YAZ-4155).
+            if (locked === reported && (locked.size === 0 || view.state.doc === reportedDoc)) return
             reported = locked
+            reportedDoc = view.state.doc
             const keys = foldRows(view.state)
               .filter(({ pos }) => locked.has(pos))
               .map(({ foldKey }) => LOCK_PREFIX + foldKey)
