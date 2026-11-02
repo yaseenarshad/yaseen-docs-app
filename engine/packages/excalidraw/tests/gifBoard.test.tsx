@@ -14,6 +14,7 @@ import type {
 import { actionToggleGifPlayback } from "../actions";
 import { Excalidraw } from "../index";
 import { exportToSvg } from "../scene/export";
+import { GIF_STILLS_MAX_BYTES } from "../gif/gifStill";
 
 import { API } from "./helpers/api";
 import { FakeImageDecoder, stubGifDecoding } from "./helpers/gif";
@@ -263,5 +264,35 @@ describe("YAZ-3944 D4: Pause GIF and auto-pause", () => {
     expect(first).toMatch(/^data:image\/png/);
     expect(second).toBe(first);
     expect(toDataURL).toHaveBeenCalledTimes(1);
+  });
+
+  it("YAZ-4071 Nit: the still cache drops the oldest still when its bytes pass the limit", async () => {
+    mockMultipleHTMLImageElements([
+      [4, 3],
+      [4, 3],
+      [4, 3],
+    ]);
+    const a = { ...addGif("bigStillA", 3), customData: { gifPaused: true } };
+    const b = { ...addGif("bigStillB", 3), customData: { gifPaused: true } };
+    // each still is a bit more than half the byte limit
+    const toDataURL = vi
+      .spyOn(HTMLCanvasElement.prototype, "toDataURL")
+      .mockReturnValue(
+        `data:image/png;base64,${"A".repeat(GIF_STILLS_MAX_BYTES / 2)}`,
+      );
+    toDataURL.mockClear();
+    const render = (element: typeof a) =>
+      exportToSvg(
+        [element],
+        { exportBackground: false, viewBackgroundColor: "#fff" },
+        h.app.files,
+      );
+
+    await render(a);
+    await render(b);
+    // `a` was dropped for `b`: its still is made again
+    await render(a);
+    expect(toDataURL).toHaveBeenCalledTimes(3);
+    toDataURL.mockRestore();
   });
 });
