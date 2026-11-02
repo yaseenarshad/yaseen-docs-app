@@ -599,11 +599,16 @@ const getTextElementStyledLinesArgs = (
   wholeElementStrikethrough: element.strikethrough === true,
 });
 
+/** YAZ-4074 6A item 16: the most text boxes the styled-lines memo holds. */
+export const STYLED_LINES_MEMO_MAX = 1000;
+
 /**
- * YAZ-3718 D1: one layout for each text box with runs, keyed by its text, runs,
- * font and width. `refreshTextDimensions`, the canvas and the editor overlay
- * ask for the same layout on a keystroke, so only the first one measures. The
- * entry is replaced on change, so the memo does not grow.
+ * YAZ-3718 D1: one layout for each text box with runs or links, keyed by its
+ * text, runs, font and width. `refreshTextDimensions`, the canvas and the
+ * editor overlay ask for the same layout on a keystroke, so only the first one
+ * measures. The memo is for the whole window: a box that was deleted, or whose
+ * board closed, keeps its entry until the memo is full. Then the box changed
+ * longest ago goes out (YAZ-4074 6A item 16); it measures again if it comes back.
  */
 const styledLinesMemo = new Map<
   ExcalidrawTextElement["id"],
@@ -646,6 +651,11 @@ export const getTextElementStyledLines = (
     return memo.lines;
   }
   const lines = getStyledVisualLines(args);
+  // a changed box goes to the end; a full memo drops the box changed longest ago
+  styledLinesMemo.delete(element.id);
+  if (styledLinesMemo.size >= STYLED_LINES_MEMO_MAX) {
+    styledLinesMemo.delete(styledLinesMemo.keys().next().value!);
+  }
   styledLinesMemo.set(element.id, {
     originalText,
     textRuns: element.textRuns,

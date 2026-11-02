@@ -5,6 +5,7 @@ import {
   getStyledVisualSelectionGeometry,
   getTextElementStyledLayout,
   getTextElementStyledLines,
+  STYLED_LINES_MEMO_MAX,
 } from "../src/textLineUnderlines";
 import { getWrappedTextLines } from "../src/textWrapping";
 import { setCustomTextMetricsProvider } from "../src/textMeasurements";
@@ -462,6 +463,29 @@ describe("YAZ-3718 D1: text runs in the layout", () => {
       Infinity,
       typed.originalText,
     );
+    expect(measures).toBeGreaterThan(0);
+  });
+
+  it("YAZ-4074 6A item 16: the memo keeps at most STYLED_LINES_MEMO_MAX boxes, the oldest out", () => {
+    const textRuns = [{ start: 0, end: 2, bold: true }];
+    const box = (n: number) =>
+      ({
+        id: `cap-${n}`,
+        fontFamily: 999,
+        fontSize: 10,
+        lineHeight: 1.25,
+        originalText: "Hi",
+        textRuns,
+      } as unknown as ExcalidrawTextElement);
+    for (let n = 0; n <= STYLED_LINES_MEMO_MAX; n++) {
+      getTextElementStyledLines(box(n), Infinity, "Hi");
+    }
+    // the newest box is still held
+    measures = 0;
+    getTextElementStyledLines(box(STYLED_LINES_MEMO_MAX), Infinity, "Hi");
+    expect(measures).toBe(0);
+    // the first one left the memo: it measures again
+    getTextElementStyledLines(box(0), Infinity, "Hi");
     expect(measures).toBeGreaterThan(0);
   });
 });
