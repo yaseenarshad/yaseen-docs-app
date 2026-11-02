@@ -298,10 +298,13 @@ export function isValidPicturesFolder(v: unknown): v is string {
 /** A path as the app shows it: `~/…` under the user's `home` (the Welcome screen's rule); unchanged otherwise, and always for a vault-relative one. */
 export const withHomeTilde = (p: string, home: string): string => (home !== '' && p.startsWith(home) && p[home.length] === '/' ? `~${p.slice(home.length)}` : p)
 
-/** The pictures folder a `yaseendraw` block names, or null: no key, or one that is not a valid folder. */
+/** A board's own folder, or null: the vault's `assets/` itself is the default, not a second name for it (YAZ-4074 6A item 15). */
+const ownFolder = (folder: string | null): string | null => (folder === ASSETS_DIR ? null : folder)
+
+/** The pictures folder a `yaseendraw` block names, or null: no key, `assets` itself, or one that is not a valid folder. */
 export function picturesFolderOf(block: unknown): string | null {
   const folder = isRecord(block) ? block[PICTURES_FOLDER_KEY] : undefined
-  return isValidPicturesFolder(folder) ? folder : null
+  return isValidPicturesFolder(folder) ? ownFolder(folder) : null
 }
 
 /**
@@ -341,7 +344,7 @@ export function picturesOut(block: unknown): boolean {
 export function withPicturesOut(scene: Record<string, unknown>, out: boolean, bornAt: number, at = Date.now(), folder?: string | null): Record<string, unknown> {
   const { [BOARD_META_KEY]: own, ...rest } = scene
   const held = isRecord(own) ? own : {}
-  const nextFolder = out ? (folder === undefined ? picturesFolderOf(held) : folder) : null
+  const nextFolder = out ? (folder === undefined ? picturesFolderOf(held) : ownFolder(folder)) : null
   if (out === picturesOut(own) && (out || !(PICTURES_KEY in held)) && nextFolder === (PICTURES_FOLDER_KEY in held ? held[PICTURES_FOLDER_KEY] : null)) return scene
   const { [PICTURES_KEY]: _old, [PICTURES_FOLDER_KEY]: _oldFolder, createdAt, updatedAt, ...extras } = held
   const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }

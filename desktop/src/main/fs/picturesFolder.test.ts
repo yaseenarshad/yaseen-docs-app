@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { BOARD_META_KEY, isValidPicturesFolder } from '@shared/drawingAssets'
+import { BOARD_META_KEY, isValidPicturesFolder, picturesFolderOf } from '@shared/drawingAssets'
 import { FOLDER_NOT_CHOSEN, setBoardPictures } from './boardPictures'
 import { loadDrawing, saveDrawing } from './drawing'
 import { blockedPicturesFolder, landingFolder } from './picturesFolders'
@@ -179,6 +179,16 @@ describe('the folder rules', () => {
     }
     // The real temp folder, with the Mac's own defaults.
     expect(blockedPicturesFolder(outside)).toBe(false)
+  })
+
+  it('YAZ-4074 6A item 15: `picturesFolder: "assets"` is the default, not a folder of its own: it reads as none, and a move to it writes none', async () => {
+    expect(picturesFolderOf({ picturesFolder: 'assets' })).toBeNull()
+    expect(picturesFolderOf({ picturesFolder: 'assets/boards' })).toBe('assets/boards')
+    await seed('assets/aaa.png', 'A')
+    const file = await seed('Board.excalidraw', board(out(), [imageEl('aaa')]))
+    await setBoardPictures({ root, path: file, out: true, folder: 'assets', expectedMtime: (await stat(file)).mtimeMs })
+    expect((await read(file))[BOARD_META_KEY].picturesFolder).toBeUndefined()
+    expect(isValidPicturesFolder('assets')).toBe(true)
   })
 
   it('landingFolder: a vault folder and an approved outside folder as they are; an unapproved outside folder is null (assets/)', async () => {
