@@ -6,7 +6,8 @@
  * YAZ-4162); `valign` (`top` | `middle` | `bottom`, the cells' default, YAZ-4166); and `unknownParts`, the comment's parts this build
  * does not know, kept as their text (YAZ-4161). A column's alignment is the cells' own GFM
  * `alignment` (the `:-` row), not ours (YAZ-3767). Each
- * cell gets `fill`, `color`, its own `align` and its own `valign` (YAZ-4166) (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
+ * cell gets `fill`, `color`, its own `align` and its own `valign` (YAZ-4166), and `fold` (YAZ-4165: the cells of a
+ * folded row; the comment's `fold` names the rows) (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
  * column's width is the cells' own `colwidth` (prosemirror-tables). Markdown has no syntax for any.
  *
  * ON DISK a plain table is the GFM table, exactly the bytes of before (R5). A table with settings
@@ -38,6 +39,7 @@ import type { NodeSchema } from '@milkdown/kit/transformer'
 import { $prose, $remark } from '@milkdown/kit/utils'
 import type { Nodes, Table } from 'mdast'
 import { joinNextComment } from '../joinComment'
+import { rowFolded } from './cells'
 import {
   BORDER_PX_MAX,
   WIDTH_MAX,
@@ -74,7 +76,7 @@ export const TABLE_DEFAULTS = {
 export type TableAttrs = typeof TABLE_DEFAULTS
 
 /** The parts of the comment that are the cells' own, not the table's. */
-type TableLevel = Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align' | 'valign'>
+type TableLevel = Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align' | 'valign' | 'fold'>
 
 const isWhole = (n: unknown, min: number, max: number): n is number => Number.isInteger(n) && (n as number) >= min && (n as number) <= max
 
@@ -107,7 +109,9 @@ const widthOf = (cell: ProseNode): number | null => {
 /** A table node's settings, every value checked. Rows and columns are the node's own, row 1 the header row. */
 function tableStyleOf(table: ProseNode): TableStyle {
   const style: TableStyle = { ...plainTable(), ...tableLevel(table.attrs) }
+  const fold: number[] = []
   table.forEach((row, _, r) => {
+    if (r > 0 && rowFolded(row)) fold.push(r)
     row.forEach((cell, __, c) => {
       if (r === 0) style.widths.push(widthOf(cell))
       const fill = cellColor(cell.attrs.fill)
@@ -120,6 +124,7 @@ function tableStyleOf(table: ProseNode): TableStyle {
       if (valign !== null) style.valign.set(cellAddress(r, c), valign)
     })
   })
+  if (fold.length > 0) style.fold = fold
   return style
 }
 
@@ -185,7 +190,7 @@ const levelAttrs = (style: TableLevel): TableAttrs => ({
  * column's, so it wins on the page and in a copy to Docs (YAZ-3819). Then the column's goes in
  * `data-column-align`, so a paste in this app gives the column its own alignment back, not the cell's. A cell's own
  * vertical alignment (YAZ-4166) is `data-valign` and a `vertical-align` in its style, so it wins over the table's on
- * the page and goes with a copy to Docs.
+ * the page and goes with a copy to Docs. A folded row's cells carry `data-fold`, for a copy inside the app (YAZ-4165).
  */
 const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<string, string> => {
   const out = { ...base }
@@ -206,6 +211,7 @@ const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<str
     out['data-valign'] = valign
     style.push(`vertical-align: ${valign}`)
   }
+  if (node.attrs.fold === true) out['data-fold'] = ''
   if (fill?.startsWith('#')) style.push(`--table-fill-custom: ${fill}`)
   if (color?.startsWith('#')) style.push(`--table-text-custom: ${color}`)
   const joined = style.filter(Boolean).join('; ')
@@ -214,7 +220,7 @@ const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<str
 }
 
 interface CellData {
-  tableCell?: { fill: string | null; color: string | null; align: string | null; valign: string | null; colwidth: number[] | null }
+  tableCell?: { fill: string | null; color: string | null; align: string | null; valign: string | null; fold: boolean; colwidth: number[] | null }
 }
 
 /**
@@ -227,7 +233,7 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
   const toDOM = spec.toDOM!
   return {
     ...spec,
-    attrs: { ...spec.attrs, fill: { default: null }, color: { default: null }, align: { default: null }, valign: { default: null } },
+    attrs: { ...spec.attrs, fill: { default: null }, color: { default: null }, align: { default: null }, valign: { default: null }, fold: { default: false } },
     parseDOM: spec.parseDOM?.map((rule) => {
       const { getAttrs } = rule as TagParseRule
       return {
@@ -244,6 +250,7 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
             color: cellColor(dom.getAttribute('data-color')),
             align,
             valign: cellValign(dom.getAttribute('data-valign')),
+            fold: dom.hasAttribute('data-fold'),
           }
         },
       }
@@ -268,22 +275,25 @@ interface TableData {
 
 /**
  * Put the settings on the mdast table: its own on `data.tableAttrs`, each cell's on `data.tableCell`.
- * Cells out of the table are dropped, and the freeze counts are kept inside it (YAZ-3769).
+ * Cells out of the table are dropped, and the freeze counts are kept inside it (YAZ-3769). A folded row's
+ * cells get `fold` (YAZ-4165); a row out of the table is dropped.
  */
 function applyStyle(table: Table, style: TableStyle): void {
   const attrs = levelAttrs(style)
   attrs.freezeRows = Math.min(attrs.freezeRows, table.children.length)
   attrs.freezeCols = Math.min(attrs.freezeCols, table.children[0]?.children.length ?? 0)
   table.data = { ...table.data, tableAttrs: attrs } as Table['data']
+  const folded = new Set(style.fold)
   table.children.forEach((row, r) => {
+    const fold = folded.has(r)
     row.children.forEach((cell, c) => {
       const width = style.widths[c] ?? null
       const fill = style.fill.get(cellAddress(r, c)) ?? null
       const color = style.color.get(cellAddress(r, c)) ?? null
       const align = style.align.get(cellAddress(r, c)) ?? null
       const valign = style.valign.get(cellAddress(r, c)) ?? null
-      if (width === null && fill === null && color === null && align === null && valign === null) return
-      cell.data = { ...cell.data, tableCell: { fill, color, align, valign, colwidth: width === null ? null : [width] } } as typeof cell.data
+      if (width === null && fill === null && color === null && align === null && valign === null && !fold) return
+      cell.data = { ...cell.data, tableCell: { fill, color, align, valign, fold, colwidth: width === null ? null : [width] } } as typeof cell.data
     })
   })
 }

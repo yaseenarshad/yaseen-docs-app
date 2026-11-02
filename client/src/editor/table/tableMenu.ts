@@ -9,7 +9,8 @@
  *   cells' own vertical alignment, YAZ-4166 D10; the table's own value clears it), Fill ▸ and
  *   Text colour ▸ (the cell toolbar's palette: the clear item, the ten names, Custom colour…,
  *   YAZ-3817, on the target cells of the moment it opens, `colours.ts`);
- * - Sort A to Z, Sort Z to A, by the target's left column;
+ * - Sort A to Z, Sort Z to A, by the target's left column; "Fold N rows" on a target of two or more body rows
+ *   (YAZ-4165, `tableFold.ts`; the header row never folds);
  * - Freeze up to this row, Freeze up to this column, Unfreeze rows, Unfreeze columns.
  *
  * A row acts on the CellSelection when there is one in the clicked table, else on the clicked cell:
@@ -47,6 +48,7 @@ import { createElement } from 'react'
 import type { MenuAction, MenuParent, MenuSection } from '../../sidebar/menuSections'
 import { setCellsAlign, setCellsAttr, setCellsValign } from './cells'
 import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
+import { foldRows } from './tableFold'
 import { CELL_ALIGNS, TABLE_COLORS, VALIGNS, type CellAlign, type TableColor, type Valign } from './tableStyle'
 
 type Command = (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean
@@ -252,6 +254,8 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
   const run = (command: Command) => () => runOn(view, pointer, command)
   const rows = bottom - top
   const cols = right - left
+  // The target's body rows: the header row never folds (YAZ-4165).
+  const folds = bottom - Math.max(top, 1)
   const { freezeRows, freezeCols } = cell.table.attrs as { freezeRows: number; freezeCols: number }
   const item = (id: string, label: string, onSelect: () => void, disabled = false): MenuAction => ({ id: `table-${id}`, label, onSelect, disabled })
   /** Fill ▸ or Text colour ▸: the cell toolbar's palette — the clear item, the ten names, Custom colour… (YAZ-3817). */
@@ -287,7 +291,11 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
       palette('fill', 'Fill', 'No fill', fillSwatch),
       palette('color', 'Text colour', 'Default colour', textSwatch),
     ],
-    [item('sort-asc', 'Sort A to Z', run(sortRows(1))), item('sort-desc', 'Sort Z to A', run(sortRows(-1)))],
+    [
+      item('sort-asc', 'Sort A to Z', run(sortRows(1))),
+      item('sort-desc', 'Sort Z to A', run(sortRows(-1))),
+      ...(folds >= 2 ? [item('fold', `Fold ${folds} rows`, run(foldRows))] : []),
+    ],
     [
       freezeRows === cell.row + 1
         ? item('freeze-rows', '✓ Frozen up to this row', () => setFreeze(view, cell.tableStart, 'freezeRows', 0))

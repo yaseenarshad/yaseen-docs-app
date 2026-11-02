@@ -313,7 +313,7 @@ describe('the labels count the selection (YAZ-3801)', () => {
   })
 
   it.each<[[number, number], [number, number], string[]]>([
-    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate 2 rows', 'Duplicate 2 columns', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A']],
+    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate 2 rows', 'Duplicate 2 columns', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows']],
     [[1, 1], [1, 3], ['Insert row above', 'Insert row below', 'Insert 3 columns left', 'Insert 3 columns right', 'Duplicate row', 'Duplicate 3 columns', 'Delete row', 'Delete 3 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A']],
   ])('cells %j to %j', async (from, to, labels) => {
     const { view } = await mount(WIDE)

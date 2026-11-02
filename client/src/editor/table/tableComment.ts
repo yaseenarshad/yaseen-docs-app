@@ -8,7 +8,9 @@
  * `widths 140 240 auto, fill A1:C1 blue B3 #ff8800, color B2:B5 red, align B2:C3 center, valign middle A2:A40 top,
  * border 2px 40%, header plain, stripes, height compact, nowrap, freeze 2 rows 1 col, calendar 30m`. `valign` (YAZ-4166,
  * D10) is ONE part: an optional first bare value is the table's default (`middle` or `bottom`; `top` is the default
- * and writes nothing), then cell ranges and values as `align` writes them; a cell's own value wins over the table's. `calendar` (YAZ-4162,
+ * and writes nothing), then cell ranges and values as `align` writes them; a cell's own value wins over the table's.
+ * `fold 20-29 31-33` (YAZ-4165, D3) names the folded rows: 1-based, row 1 is the header (never folded), each run of
+ * rows that touch as `first-last`, a run of one row as its number. It goes after `valign`. `calendar` (YAZ-4162,
  * D1) is the slot length of a calendar table, `15m`, `30m` or `60m`; it is last, so a build that does not know it
  * keeps it in place (YAZ-4161). A column's alignment is no
  * part: it is the GFM `:-` row, so GitHub and Obsidian show it too ("Align all columns" sets it,
@@ -59,7 +61,7 @@ export interface UnknownPart {
 }
 
 /** The words of the known parts, in the fixed order. */
-export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar'] as const
+export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'fold', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar'] as const
 
 /** The slot lengths of a calendar table, in minutes (YAZ-4162, D1). */
 export const CALENDAR_SLOTS = [15, 30, 60] as const
@@ -89,6 +91,8 @@ export interface TableStyle {
   valign: Map<string, Valign>
   /** The table's vertical alignment; top is the default (YAZ-4166). */
   valignTable?: 'middle' | 'bottom'
+  /** The folded rows, 0-based, sorted, never 0 (the header row) (YAZ-4165). */
+  fold?: number[]
   /** Thickness in px and darkness in % of the outline colour. */
   border?: { px: number; darkness: number }
   /** The header row's look; shaded is the default. */
@@ -211,6 +215,19 @@ function readPart(style: TableStyle, word: string, rest: string[]): boolean {
       else delete style.valignTable
       return true
     }
+    case 'fold': {
+      if (rest.length === 0) return false
+      const folded = new Set<number>()
+      for (const word of rest) {
+        const match = /^([1-9]\d{0,5})(?:-([1-9]\d{0,5}))?$/.exec(word)
+        const from = Number(match?.[1])
+        const to = Number(match?.[2] ?? match?.[1])
+        if (match === null || from < 2 || to < from || folded.size + to - from >= RANGE_CELLS_MAX) return false
+        for (let row = from; row <= to; row++) folded.add(row - 1)
+      }
+      style.fold = [...folded].sort((a, b) => a - b)
+      return true
+    }
     case 'border': {
       const px = readWhole(/^(\d+)px$/.exec(first ?? '')?.[1], 0, BORDER_PX_MAX)
       const darkness = readWhole(/^(\d+)%$/.exec(second ?? '')?.[1], 0, 100)
@@ -309,6 +326,18 @@ function formatCells(cells: Map<string, string>): string {
   return [...groups].map(([color, ranges]) => `${ranges.join(' ')} ${color}`).join(' ')
 }
 
+/** Sorted 0-based rows as 1-based runs: `20-29 31`. */
+function formatRuns(rows: number[]): string {
+  const runs: string[] = []
+  for (let i = 0; i < rows.length; ) {
+    let j = i
+    while (j + 1 < rows.length && rows[j + 1] === rows[j]! + 1) j++
+    runs.push(j === i ? `${rows[i]! + 1}` : `${rows[i]! + 1}-${rows[j]! + 1}`)
+    i = j + 1
+  }
+  return runs.join(' ')
+}
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 /**
@@ -324,6 +353,7 @@ export function formatTableComment(style: TableStyle): string | null {
   if (style.align.size > 0) push('align', `align ${formatCells(style.align)}`)
   const valignTable = style.valignTable === 'middle' || style.valignTable === 'bottom' ? [style.valignTable] : []
   if (valignTable.length > 0 || style.valign.size > 0) push('valign', ['valign', ...valignTable, ...(style.valign.size > 0 ? [formatCells(style.valign)] : [])].join(' '))
+  if (style.fold !== undefined && style.fold.length > 0) push('fold', `fold ${formatRuns(style.fold)}`)
   if (style.border) push('border', `border ${style.border.px}px ${style.border.darkness}%`)
   if (style.header) push('header', `header ${style.header}`)
   if (style.stripes) push('stripes', 'stripes')

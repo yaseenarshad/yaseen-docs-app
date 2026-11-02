@@ -11,6 +11,8 @@
  * gets `table-now-row` and `--table-now`, how far down the slot now is (0–1); `table.css` draws the line, the tint or
  * both, by `data-table-now` on the app root (D6). Each body row before it gets `table-past-row` (D14: grey text, by
  * `data-table-dim-past`). With no now row: before the first slot no row is past, after the last every row is.
+ * A FOLDED RUN (YAZ-4165, `tableFold.ts`) that holds the now row gives the marks to its bar: the bar is the now row,
+ * `--table-now` the place of now in the whole run, and it is not past; "Go to now" opens the run first.
  * Node decorations from the attributes and the text only, as `tableFreeze.ts`: typing only maps the set (a time
  * typed in column A moves the marker at the next tick); any other transaction builds again only the calendar tables
  * it changed (`changedTables`).
@@ -36,6 +38,7 @@ import { Plugin, PluginKey, Selection, type EditorState, type Transaction } from
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
+import { foldRuns, runOf, unfoldRun } from './tableFold'
 import { changedTables, typingOnly } from './tableStyle'
 import { timeFormatSetting } from './timeFormatSetting'
 import './tableCalendar.css'
@@ -112,14 +115,20 @@ function nowChip(view: EditorView, getPos: () => number | undefined): HTMLElemen
 function calendarDecorations(table: ProseNode, pos: number, minutes: number, chip = false): Decoration[] {
   const place = nowPlace(table, minutes)
   if (place === null) return []
+  // A folded run that holds the now row (or the first row that is not past) gives the marks to its bar (YAZ-4165).
+  const runs = foldRuns(table)
+  const nowRun = runOf(runs, place.row)
+  const nowRow = nowRun?.from ?? place.row
+  const fraction = nowRun === undefined ? place.fraction : (place.row! - nowRun.from + place.fraction) / (nowRun.to - nowRun.from + 1)
+  const pastEnd = runOf(runs, place.pastEnd)?.from ?? place.pastEnd
   const out: Decoration[] = []
   if (chip) out.push(Decoration.widget(pos + table.nodeSize, nowChip, { calendar: true, nowChip: true, key: 'table-now-chip', side: -1, stopEvent: () => true, ignoreSelection: true }))
   table.forEach((row, offset, r) => {
     const from = pos + 1 + offset
-    if (r > 0 && r < place.pastEnd) out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-past-row' }, { calendar: true }))
-    if (r === place.row) {
-      const fraction = String(Math.round(place.fraction * 1000) / 1000)
-      out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-now-row', style: `--table-now: ${fraction}` }, { calendar: true, nowRow: true }))
+    if (r > 0 && r < pastEnd) out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-past-row' }, { calendar: true }))
+    if (r === nowRow) {
+      const now = String(Math.round(fraction * 1000) / 1000)
+      out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-now-row', style: `--table-now: ${now}` }, { calendar: true, nowRow: true }))
     }
   })
   return out
@@ -422,6 +431,7 @@ export function setTimeSlots(view: EditorView, pos: number, slot: number): void 
  * Go to now (YAZ-4164 D11): the caret in the first empty cell of the now row of the table at `at` (the note's first
  * calendar table when absent); a row with no empty cell takes it at the end of its first cell after the time. The row
  * scrolls into view. `false`, and no caret move, when there is no calendar table or no row holds the current minute.
+ * A now row in a folded run opens the run in the same step (YAZ-4165), so the caret is never in a hidden row.
  */
 export function goToNow(view: EditorView, at?: number): boolean {
   const { doc } = view.state
@@ -440,8 +450,10 @@ export function goToNow(view: EditorView, at?: number): boolean {
   const end = cell < 0
   if (end) cell = rowPos + 1 + (row.childCount > 1 ? row.child(0).nodeSize : 0)
   const target = end ? cell + doc.nodeAt(cell)!.nodeSize - 1 : cell + 1
-  const selection = Selection.near(doc.resolve(target), end ? -1 : 1)
-  view.dispatch(view.state.tr.setSelection(selection).scrollIntoView())
+  const tr = view.state.tr
+  if (runOf(foldRuns(table), place.row) !== undefined) closeHistory(unfoldRun(tr, pos!, place.row))
+  // The fold's steps change attributes only: `target` holds in `tr.doc`.
+  view.dispatch(tr.setSelection(Selection.near(tr.doc.resolve(target), end ? -1 : 1)).scrollIntoView())
   view.focus()
   return true
 }

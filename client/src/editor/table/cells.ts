@@ -3,6 +3,7 @@
  * attribute on every cell of a rectangle. The rectangle of the selected cells (or of the caret's
  * cell) is prosemirror-tables' own `selectedRect`.
  */
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Transaction } from '@milkdown/kit/prose/state'
 import type { TableMap, TableRect } from '@milkdown/kit/prose/tables'
 
@@ -38,4 +39,23 @@ export function setCellsAlign(tr: Transaction, rect: TableRect, align: string): 
 export function setCellsValign(tr: Transaction, rect: TableRect, valign: string): Transaction {
   const value = ((rect.table.attrs.valign as string | undefined) ?? 'top') === valign ? null : valign
   return setCellsAttr(tr, rect, 'valign', value)
+}
+
+/** A folded row (YAZ-4165, D3): one of its cells has the fold mark, so a new column's empty cells do not open it. */
+export const rowFolded = (row: ProseNode | null | undefined): boolean => {
+  let folded = false
+  row?.forEach((cell) => {
+    if (cell.attrs.fold === true) folded = true
+  })
+  return folded
+}
+
+/**
+ * The first `count` rows of `table` from row `from` that are not folded, by index (YAZ-4165): where fill down and a
+ * paste write, so a folded row is never written. An index past the table's last row is a row the paste adds.
+ */
+export function unfoldedRows(table: ProseNode, from: number, count: number): number[] {
+  const out: number[] = []
+  for (let row = from; out.length < count; row++) if (row >= table.childCount || !rowFolded(table.child(row))) out.push(row)
+  return out
 }

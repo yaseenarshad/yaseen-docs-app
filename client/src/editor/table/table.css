@@ -299,6 +299,40 @@
   color: var(--fg-muted);
 }
 
+/* Fold rows (YAZ-4165, D3, `tableFold.ts`; the demo decides the look). A run's other rows are gone; its first row is
+   the bar: a thin tinted row, its cells' content hidden, and the label from its first cell's `data-table-fold-label`
+   across it. A mousedown on the bar opens the run. The calendar marker paints on the bar as on any now row. */
+.milkdown .ProseMirror .milkdown-table-block .table-fold-hidden {
+  display: none;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-fold-bar {
+  cursor: pointer;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-fold-bar > :is(th, td) {
+  --table-cell-tint: color-mix(in srgb, var(--crepe-color-outline) 12%, transparent);
+  height: 22px;
+  padding-block: 0;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-fold-bar > :is(th, td) > * {
+  display: none;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-fold-bar > [data-table-fold-label]::before {
+  content: attr(data-table-fold-label);
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 8px;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  pointer-events: none;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
 /* The cell toolbar (YAZ-3768, D8, `cellToolbar.ts`): Crepe's selection toolbar look (toolbar.css),
    on its own class, so Crepe's rules for its own toolbar do not reach it. Crepe's variables follow
    light and dark. */

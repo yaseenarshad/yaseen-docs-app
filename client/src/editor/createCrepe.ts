@@ -204,6 +204,8 @@
  *    in layout px under document zoom. The vendored table block draws the `<colgroup>` from `colwidth`.
  *  - Shift+arrow in a cell (YAZ-4171, `table/tableShiftArrow.ts`): also just before `tableEditing`; at the edge
  *    of the cell's text the first press selects only that cell, and `tableEditing` grows it on the next.
+ *  - Fold rows (YAZ-4165, `table/tableFold.ts`): a run of folded rows is one bar, drawn by row decorations; a
+ *    mousedown on the bar opens it, also just before `tableEditing`, so it starts no cell selection.
  *  - Paste into cells (YAZ-3696 D4 / S2, `table/tablePaste.ts`, called from `clipboardPaste.ts`): cells
  *    and tab-separated text fill from the caret cell and grow the table; one value fills selected
  *    cells; tab-separated text outside a table makes one. One `replaceWith`, one undo step.
@@ -283,6 +285,7 @@ import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
 import { tableColumnResize } from './table/tableColumnResize'
 import { tableShiftArrow } from './table/tableShiftArrow'
+import { tableFold } from './table/tableFold'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut, copyLinkTextCtx, copyMarkdownCtx, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
@@ -601,6 +604,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableColumnResize)
   // Shift+arrow at the edge of a cell's text selects that cell only (YAZ-4171), also before `tableEditing`.
   crepe.editor.use(tableShiftArrow)
+  // Folded rows (YAZ-4165): the bar and the hidden rows; a mousedown on a bar opens it, also before `tableEditing`.
+  crepe.editor.use(tableFold)
   // Fill down (YAZ-3696 S4): the corner handle of the selected cells.
   crepe.editor.use(tableFill)
   // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.

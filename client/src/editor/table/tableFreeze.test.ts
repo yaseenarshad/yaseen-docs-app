@@ -59,7 +59,8 @@ async function mount(comment: string, { tableTop = -80, zoom = 1 } = {}) {
   vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
     const el = realCreate(tag, options)
     if (tag === 'table') el.getBoundingClientRect = () => box(top * zoom, 150 * zoom)
-    if (tag === 'tr') el.getBoundingClientRect = () => box((top + 30 * ((el as HTMLTableRowElement).rowIndex)) * zoom, 30 * zoom)
+    // A row of a folded run (YAZ-4165) is `display: none`: no box.
+    if (tag === 'tr') el.getBoundingClientRect = () => (el.classList.contains('table-fold-hidden') ? new DOMRect() : box((top + 30 * ((el as HTMLTableRowElement).rowIndex)) * zoom, 30 * zoom))
     if (tag === 'th' || tag === 'td') Object.defineProperty(el, 'offsetWidth', { value: 100 })
     return el
   })
@@ -284,6 +285,15 @@ describe('the frozen rows follow the scroll (the folder-page method)', () => {
     flush()
     // The table is 150 px, the two frozen rows 60 px: they stop 90 px down.
     expect(offsets(view)[0]).toBe('90px')
+  })
+
+  // YAZ-4165: the last frozen row is hidden in a folded run; the frozen rows end at the last one shown (the bar).
+  it('a folded run in the frozen rows: they stop at the table end by the rows shown', async () => {
+    const { view, scroll, flush } = await mount('<!-- table: fold 3-4, freeze 4 rows -->', { tableTop: -400 })
+    scroll()
+    flush()
+    // The table is 150 px; the rows shown of the four frozen rows are three, 90 px: they stop 60 px down.
+    expect(offsets(view)).toEqual(['60px', '60px', '60px', '60px'])
   })
 
   it.each([
