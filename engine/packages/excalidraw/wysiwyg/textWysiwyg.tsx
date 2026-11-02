@@ -763,6 +763,34 @@ export const textWysiwyg = ({
       restorableTexts.shift();
     }
   };
+  /**
+   * YAZ-4071 7O: the whole text and its runs before and after each edit the
+   * editor made itself (Tab, Enter in a list, a list button, the cleanup).
+   * Such an edit changes the text in several places, so ⌘Z and ⌘⇧Z cannot
+   * map the runs as one edit. They take the runs remembered for that text.
+   */
+  const scriptedStates: {
+    text: string;
+    textRuns: readonly ExcalidrawTextRun[] | undefined;
+  }[] = [];
+  const rememberScriptedState = (
+    text: string,
+    textRuns: readonly ExcalidrawTextRun[] | undefined,
+  ) => {
+    scriptedStates.push({ text, textRuns });
+    if (scriptedStates.length > 20) {
+      scriptedStates.shift();
+    }
+  };
+  /** The runs remembered for the editor's whole text, if any. */
+  const getScriptedState = () => {
+    for (let index = scriptedStates.length - 1; index >= 0; index--) {
+      if (scriptedStates[index].text === editable.value) {
+        return scriptedStates[index];
+      }
+    }
+    return null;
+  };
   /** The letters `start`..`end` of the editor, with their runs. */
   const rememberRemovedText = (start: number, end: number) => {
     const runs = (
@@ -1550,6 +1578,13 @@ export const textWysiwyg = ({
             (editable.value.length - previousEditableValue.length),
         ),
       };
+      const isHistory = !!(event as InputEvent).inputType?.startsWith(
+        "history",
+      );
+      const scriptedState = isHistory ? getScriptedState() : null;
+      if (!isHistory && (scripted || pendingInsertedLine !== null)) {
+        rememberScriptedState(previousEditableValue, currentElement?.textRuns);
+      }
       pendingInsertedLine = null;
       const remappedTextRuns = remapTextRunsForTextEdit(
         previousEditableValue,
@@ -1561,25 +1596,26 @@ export const textWysiwyg = ({
       // YAZ-4071 7L: letters that ⌘Z or ⌘⇧Z brought back take their own runs
       const pasted =
         pendingPastedRuns ??
-        (restorableTexts.length &&
-        (event as InputEvent).inputType?.startsWith("history")
-          ? getRestoredText()
-          : null);
+        (restorableTexts.length && isHistory ? getRestoredText() : null);
       pendingPastedRuns = null;
-      const nextTextRuns =
-        pasted &&
-        editable.value.slice(
-          pasted.start,
-          pasted.start + pasted.text.length,
-        ) === pasted.text
-          ? setPastedTextRuns(
-              remappedTextRuns,
-              editable.value.length,
-              pasted.start,
-              pasted.text.length,
-              pasted.textRuns,
-            )
-          : remappedTextRuns;
+      const nextTextRuns = scriptedState
+        ? scriptedState.textRuns
+        : pasted &&
+          editable.value.slice(
+            pasted.start,
+            pasted.start + pasted.text.length,
+          ) === pasted.text
+        ? setPastedTextRuns(
+            remappedTextRuns,
+            editable.value.length,
+            pasted.start,
+            pasted.text.length,
+            pasted.textRuns,
+          )
+        : remappedTextRuns;
+      if (!isHistory && (scripted || edit.insertedLine !== undefined)) {
+        rememberScriptedState(editable.value, nextTextRuns);
+      }
       previousEditableValue = editable.value;
       onChange({
         nextOriginalText: editable.value,

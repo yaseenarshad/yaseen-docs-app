@@ -2750,6 +2750,78 @@ describe("textWysiwyg", () => {
         ]);
       });
 
+      // YAZ-4071 7O (checker, round 2): the browser's undo gives back the text
+      // of the whole Tab edit; the letter styles must come back with it
+      it("YAZ-4071 7O: ⌘Z after Tab on three lines gives the bold middle line its bold back, and ⌘⇧Z keeps it", () => {
+        userEdit("aaa\nbbb\nccc", 11, "insertText");
+        bold(4, 7);
+        textarea.setSelectionRange(0, 11);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB });
+        expect(box().textRuns).toEqual([{ start: 12, end: 15, bold: true }]);
+
+        userEdit("aaa\nbbb\nccc", 4, "historyUndo");
+        expect(box().textRuns).toEqual([{ start: 4, end: 7, bold: true }]);
+        userEdit(`${tab}aaa\n${tab}bbb\n${tab}ccc`, 23, "historyRedo");
+        expect(box().textRuns).toEqual([{ start: 12, end: 15, bold: true }]);
+      });
+
+      it("YAZ-4071 7O: ⌘Z after Enter in a numbered list gives the bold item its bold back", () => {
+        userEdit("1. aaa\n2. bbb\n3. ccc", 20, "insertText");
+        bold(10, 13);
+        textarea.setSelectionRange(6, 6);
+        fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+        expect(box().textRuns).toEqual([{ start: 14, end: 17, bold: true }]);
+
+        userEdit("1. aaa\n2. bbb\n3. ccc", 6, "historyUndo");
+        expect(box().textRuns).toEqual([{ start: 10, end: 13, bold: true }]);
+        userEdit("1. aaa\n2. \n3. bbb\n4. ccc", 10, "historyRedo");
+        expect(box().textRuns).toEqual([{ start: 14, end: 17, bold: true }]);
+      });
+
+      it("YAZ-4071 7O: ⌘Z after Shift-Tab on three lines gives the bold middle line its bold back", () => {
+        userEdit(`${tab}aaa\n${tab}bbb\n${tab}ccc`, 23, "insertText");
+        bold(12, 15);
+        textarea.setSelectionRange(0, 23);
+        fireEvent.keyDown(textarea, { key: KEYS.TAB, shiftKey: true });
+        expect(box().textRuns).toEqual([{ start: 4, end: 7, bold: true }]);
+
+        userEdit(`${tab}aaa\n${tab}bbb\n${tab}ccc`, 12, "historyUndo");
+        expect(box().textRuns).toEqual([{ start: 12, end: 15, bold: true }]);
+      });
+
+      it("YAZ-4071 7O: ⌘Z after the list button on three selected lines gives the bold word its bold back", () => {
+        userEdit("aaa\nbbb\nccc", 11, "insertText");
+        bold(4, 7);
+        textarea.setSelectionRange(0, 11);
+        act(() => {
+          h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+            property: "listMode",
+            mode: "bullet",
+          });
+        });
+        expect(textarea.value).toBe("• aaa\n• bbb\n• ccc");
+        expect(box().textRuns).toEqual([{ start: 8, end: 11, bold: true }]);
+
+        userEdit("aaa\nbbb\nccc", 0, "historyUndo");
+        expect(box().textRuns).toEqual([{ start: 4, end: 7, bold: true }]);
+        userEdit("• aaa\n• bbb\n• ccc", 17, "historyRedo");
+        expect(box().textRuns).toEqual([{ start: 8, end: 11, bold: true }]);
+      });
+
+      it("YAZ-4071 7O: ⌘Z then ⌘⇧Z after Enter at the end of a bullet item leaves the bold on its own line", () => {
+        userEdit("• aaa\nbbb", 9, "insertText");
+        bold(6, 9);
+        textarea.setSelectionRange(5, 5);
+        fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+        expect(textarea.value).toBe("• aaa\n• \nbbb");
+        expect(box().textRuns).toEqual([{ start: 9, end: 12, bold: true }]);
+
+        userEdit("• aaa\nbbb", 5, "historyUndo");
+        expect(box().textRuns).toEqual([{ start: 6, end: 9, bold: true }]);
+        userEdit("• aaa\n• \nbbb", 8, "historyRedo");
+        expect(box().textRuns).toEqual([{ start: 9, end: 12, bold: true }]);
+      });
+
       it("Shift-Tab on three lines is one browser edit, and the runs follow", () => {
         userEdit(`${tab}aaa\n${tab}bbb\n${tab}ccc`, 23, "insertText");
         bold(12, 15);
