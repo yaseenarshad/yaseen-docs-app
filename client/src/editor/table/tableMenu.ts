@@ -49,7 +49,7 @@ import { createElement } from 'react'
 import type { MenuAction, MenuParent, MenuSection } from '../../sidebar/menuSections'
 import { setCellsAlign, setCellsAttr, setCellsValign } from './cells'
 import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
-import { foldRows } from './tableFold'
+import { foldRows, keepingScroll } from './tableFold'
 import { CELL_ALIGNS, TABLE_COLORS, VALIGNS, type CellAlign, type TableColor, type Valign } from './tableStyle'
 
 type Command = (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean
@@ -305,7 +305,7 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
     [
       item('sort-asc', 'Sort A to Z', run(sortRows(1))),
       item('sort-desc', 'Sort Z to A', run(sortRows(-1))),
-      ...rowItems(folds >= 2 ? [item('fold', `Fold ${folds} rows`, run(foldRows))] : []),
+      ...rowItems(folds >= 2 ? [item('fold', `Fold ${folds} rows`, () => keepingScroll(view, run(foldRows)))] : []),
     ],
     [
       ...rowItems([

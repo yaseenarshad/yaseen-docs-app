@@ -26,7 +26,7 @@ import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { keydownHandler } from '@milkdown/kit/prose/keymap'
-import { Plugin, PluginKey, Selection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, Selection, TextSelection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
 import { TableMap, selectedRect, tableEditingKey } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
@@ -115,9 +115,32 @@ export function foldRows(state: EditorState, dispatch?: (tr: Transaction) => voi
   if (dispatch) {
     const map = TableMap.get(rect.table)
     const tr = setCellsAttr(state.tr, { ...rect, top: Math.max(rect.top, 1), left: 0, right: map.width }, 'fold', true)
+    // The caret leaves the rows it hid (the YAZ-4163 demo): a selection in hidden rows made the browser put it, and
+    // the scroll, somewhere else. It goes to the first row below the fold, else to the last row above it.
+    const row = rect.bottom < map.height ? rect.bottom : Math.max(rect.top, 1) - 1
+    tr.setSelection(TextSelection.near(tr.doc.resolve(rect.tableStart + map.positionAt(row, 0, rect.table) + 1)))
     if (tr.docChanged) dispatch(tr)
   }
   return true
+}
+
+/** The note's scroll box around `view`: the nearest ancestor that scrolls, else the page. */
+function scrollerOf(view: EditorView): Element {
+  for (let el = view.dom.parentElement; el !== null; el = el.parentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight) return el
+  }
+  return document.scrollingElement ?? document.documentElement
+}
+
+/** Run `fold` and keep the note where it was: the rows above the fold do not move, so the bar stays under the pointer. */
+export function keepingScroll(view: EditorView, fold: () => void): void {
+  const scroller = scrollerOf(view)
+  const top = scroller.scrollTop
+  fold()
+  scroller.scrollTop = top
+  requestAnimationFrame(() => {
+    scroller.scrollTop = top
+  })
 }
 
 const foldKey = new PluginKey<DecorationSet>('mdapp-table-fold')

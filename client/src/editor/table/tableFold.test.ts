@@ -136,6 +136,18 @@ describe('"Fold N rows" and a click on the bar, one undo step each', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
+  it('after a fold the caret is in the first row below it, not in the hidden rows, and the note keeps its scroll (the YAZ-4163 demo)', async () => {
+    const { view } = await mountNote(rows(4))
+    const scroller = document.documentElement
+    scroller.scrollTop = 120
+    selectCells(view, [1, 0], [2, 1])
+    menuItem(view, 1, 0, 'table-fold')!.onSelect()
+    const { selection } = view.state
+    expect(selection).toBeInstanceOf(TextSelection)
+    expect(selection.from > cellPos(view, 3, 0) && selection.from < cellPos(view, 3, 1)).toBe(true)
+    expect(scroller.scrollTop).toBe(120)
+  })
+
   it('a click on the bar opens the run, and one undo folds it again', async () => {
     const { crepe, view } = await mountNote(rows(5, 'fold 3-5'))
     const before = getMarkdownForSave(crepe)
