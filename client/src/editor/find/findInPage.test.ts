@@ -26,7 +26,7 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { OPEN_ID_LINK } from '../wikilink/idLinkCaret'
-import { getHeadingFoldKey, HEADING_FOLDED_ATTR, isHeadingCollapsed, undoLastHeadingFold } from '../outline/headingFolding'
+import { getHeadingFoldKey, isHeadingCollapsed, undoLastHeadingFold } from '../outline/headingFolding'
 import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { getZoomedItemPos } from '../outline/zoom'
@@ -35,6 +35,7 @@ import { FIND_ACTIVE_CLASS, FIND_MATCH_CLASS, findThreadAnchor } from './findInP
 import { WIKILINK_CLASS, WIKILINK_SYNTAX_CLASS, createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { buildViewOnlyCatalogFromEntries, type ViewOnlyEntry } from '../../links/viewOnlyCatalog'
+import { headingFoldHidden } from '../outline/headingFoldTestKit'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -84,7 +85,7 @@ const posOfText = (doc: ProseNode, needle: string): number => {
 const matchEls = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(`.${FIND_MATCH_CLASS}`)]
 const activeEls = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(`.${FIND_ACTIVE_CLASS}`)]
 const foldedEls = (root: HTMLElement) => [...root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`)]
-const headingFoldedEls = (root: HTMLElement) => [...root.querySelectorAll(`[${HEADING_FOLDED_ATTR}="true"]`)]
+const headingFoldedEls = (root: HTMLElement) => headingFoldHidden(root)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** The zoom test's keydown idiom: prosemirror-keymap reads key + keyCode off a real event. */

@@ -10,8 +10,9 @@ import type { HandleTarget } from '../blockHandleTarget'
 import { foldAllRows } from './foldAllRows'
 import { nextDocumentFold, setAllDocumentFolds } from './foldAllHotkeys'
 import { isFoldingOn, setFoldingOn } from './foldingSwitch'
-import { collapsedHeadingsHiding, collapsedSectionAround, collapsedSectionBlocks, HEADING_FOLDED_ATTR, HEADING_TOGGLE_CLASS, isHeadingCollapsed, setHeadingFoldAtSelection, undoLastHeadingFold } from './headingFolding'
+import { collapsedHeadingsHiding, collapsedSectionAround, collapsedSectionBlocks, HEADING_TOGGLE_CLASS, isHeadingCollapsed, setHeadingFoldAtSelection, undoLastHeadingFold } from './headingFolding'
 import { collapsedItemsHiding, isOutlineItemCollapsed, OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS, setOutlineFoldAtSelection, setOutlineFoldSet, toggleOutlineFold, undoLastFold } from './outlineFolding'
+import { headingFoldHidden } from './headingFoldTestKit'
 
 /**
  * The page's "Folding" switch (YAZ-4094 F1–F3, fixes 1–3): off, no fold path folds and every query sees an
@@ -78,12 +79,14 @@ describe('the Folding switch', () => {
   it('off: no chevron and nothing hidden; every query sees an open page; the saved folds are kept and not reported; on again brings them back', async () => {
     const { root, view, keys } = await mount()
     foldBoth(view)
-    expect(root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"], [${HEADING_FOLDED_ATTR}="true"]`).length).toBeGreaterThan(0)
+    expect(root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`).length).toBeGreaterThan(0)
+    expect(headingFoldHidden(root).length).toBeGreaterThan(0)
     const reported = keys.length
     turn(view, false)
     expect(isFoldingOn(view.state)).toBe(false)
     expect(root.querySelectorAll(`.${OUTLINE_TOGGLE_CLASS}, .${HEADING_TOGGLE_CLASS}`)).toHaveLength(0)
-    expect(root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"], [${HEADING_FOLDED_ATTR}="true"]`)).toHaveLength(0)
+    expect(root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`)).toHaveLength(0)
+    expect(headingFoldHidden(root)).toHaveLength(0)
     const child = posOf(view, 'Child') + 1
     const under = posOf(view, 'text under the plan') + 1
     expect(isOutlineItemCollapsed(view.state, itemPos(view, 'Parent'))).toBe(false)

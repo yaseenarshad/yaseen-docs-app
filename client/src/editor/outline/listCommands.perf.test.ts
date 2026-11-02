@@ -4,15 +4,15 @@
  * jump. A fold that hides 2,000 lines, as a bullet and as a heading section. Runs in the `perf` project (YAZ-740); the
  * budget holds the median of 10 (`test-perf.ts`).
  *
- * The budget is the JOIN'S OWN WORK: the keymap, the walk to the next visible line and the transaction, with the view's
- * dispatch caught. Stepping over 2,000 hidden lines one by one cost ~14 ms here alone. The whole press (the dispatch
- * too) is logged, not gated: next to a folded heading it is ProseMirror's work for the section's one node decoration
- * per hidden block, which every doc change pays while the section is folded (~50 ms here). YAZ-3816 carries the set
- * through the heading's new text, but mapping it and the view's diff of 2,000 doc-level decorations remain. Each press
- * is undone, untimed, before the next one.
+ * Two budgets. The JOIN'S OWN WORK: the keymap, the walk to the next visible line and the transaction, with the view's
+ * dispatch caught. Stepping over 2,000 hidden lines one by one cost ~14 ms here alone. And the WHOLE PRESS, the dispatch
+ * too (YAZ-3816): a folded heading section marks only its heading and the block after it, so the press costs about the
+ * same as next to a folded bullet (~5 ms here). It cost ~50 ms when the section put one node decoration on each hidden
+ * block, because ProseMirror's work for 2,000 doc-level decorations grows with their square. The budget is about 5× the
+ * cost now (a busy machine makes both presses ~3× slower) and half the old cost, so that cost cannot come back. Each press is undone, untimed, before the next one.
  *
  * With the page's Folding off (YAZ-4094 F1) the saved heading fold stays, but no set is drawn and none is carried
- * (YAZ-4119 fix 6): a letter typed after it is logged with folding on and off, not gated.
+ * (YAZ-4119 fix 6): a letter typed after it is timed with folding on and off.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { undo } from '@milkdown/kit/prose/history'
@@ -24,6 +24,8 @@ import { endOf, mount, posOf, pressKey, select, unmountAll } from '../marks/mark
 afterEach(unmountAll)
 
 const HIDDEN = 2000
+/** The whole press, next to a fold that hides 2,000 lines (YAZ-3816). */
+const WHOLE_PRESS_BUDGET = 25
 const BULLET = `* fold\n${Array.from({ length: HIDDEN }, (_, i) => `  * kid ${i}\n`).join('')}* after\n`
 const HEADING = `## fold\n\n${Array.from({ length: HIDDEN }, (_, i) => `line ${i}`).join('\n\n')}\n\n## after\n`
 
@@ -60,10 +62,11 @@ describe('outliner joins next to a fold', () => {
     ['bullet', 'Delete', BULLET],
     ['heading', 'Backspace', HEADING],
     ['heading', 'Delete', HEADING],
-  ] as const)('perf smoke: %s fold hiding 2,000 lines, %s: the join takes under 5 ms', async (kind, key, markdown) => {
+  ] as const)('perf smoke: %s fold hiding 2,000 lines, %s: the join takes under 5 ms, the whole press under 25 ms', async (kind, key, markdown) => {
     const [own, whole] = await timeJoin(markdown, key)
     console.log(`outliner join perf: ${kind} fold, ${HIDDEN} hidden lines, ${key}: join ${own.toFixed(2)} ms, whole press ${whole.toFixed(2)} ms (medians of 10)`)
     expect(own).toBeLessThan(5)
+    expect(whole).toBeLessThan(WHOLE_PRESS_BUDGET)
   })
 })
 
@@ -85,10 +88,11 @@ async function timeTyping(folding: boolean): Promise<number> {
 }
 
 describe('typing next to a saved heading fold (YAZ-4119 fix 6)', () => {
-  it('perf log: a letter after a heading fold hiding 2,000 lines, with Folding on and off (logged, not gated)', async () => {
+  it('perf smoke: a letter after a heading fold hiding 2,000 lines takes under 25 ms, with Folding on and off', async () => {
     const on = await timeTyping(true)
     const off = await timeTyping(false)
     console.log(`heading fold typing perf: ${HIDDEN} hidden lines, one letter: folding on ${on.toFixed(2)} ms, folding off ${off.toFixed(2)} ms (medians of 10)`)
-    expect(Number.isFinite(on) && Number.isFinite(off)).toBe(true)
+    expect(on).toBeLessThan(WHOLE_PRESS_BUDGET)
+    expect(off).toBeLessThan(WHOLE_PRESS_BUDGET)
   })
 })

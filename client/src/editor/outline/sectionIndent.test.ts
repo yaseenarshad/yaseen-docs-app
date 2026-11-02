@@ -13,9 +13,10 @@ import { DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { createFindChannel } from '../find/findChannel'
 import { setFoldingOn } from './foldingSwitch'
-import { HEADING_FOLDED_ATTR, isHeadingCollapsed, setHeadingFoldSet } from './headingFolding'
+import { isHeadingCollapsed, setHeadingFoldSet } from './headingFolding'
 import sectionIndentCss from './sectionIndent.css?inline'
 import { SECTION_DEPTH_ATTR, SECTION_LINE_HOVER_CLASS, SECTION_PATH_ATTR, sectionDepths, sectionLineAtOffset, sectionLineFoldTargets, showSectionIndent } from './sectionIndent'
+import { headingFoldHidden } from './headingFoldTestKit'
 
 /**
  * Seventeen top-level blocks. The note starts at H2, skips from H2 to H4, goes down to H6, and holds
@@ -321,7 +322,7 @@ two text
       blocks(crepe)[block].dispatchEvent(event)
       return event
     }
-    const folded = () => blocks(crepe).filter((el) => el.getAttribute(HEADING_FOLDED_ATTR) === 'true').map((el) => el.textContent)
+    const folded = () => blocks(crepe).filter((el) => headingFoldHidden(el.parentElement!).includes(el)).map((el) => el.textContent)
     try {
       // Line 1 of "a text" (block 2) belongs to "One": the sections beside it are A and B.
       expect(depthsShown(crepe)[2]).toBe(2)

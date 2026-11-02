@@ -14,7 +14,8 @@ import type { Crepe } from '@milkdown/crepe'
 import { createCrepe, getMarkdownForSave, setMarkdown, type CreateCrepeOptions } from '../createCrepe'
 import { getOutlineFoldKey } from './outlineFoldKeys'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_FOLDED_IMAGE_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
-import { getHeadingFoldKey, HEADING_FOLDED_ATTR, HEADING_TOGGLE_CLASS } from './headingFolding'
+import { getHeadingFoldKey, HEADING_TOGGLE_CLASS } from './headingFolding'
+import { headingFoldHidden } from './headingFoldTestKit'
 
 const OUTLINE = `* Parent
   * Child
@@ -130,7 +131,7 @@ Agent added this.
 `)
 
     expect(getMarkdownForSave(crepe)).toContain('Section C')
-    expect(root.querySelectorAll(`[${HEADING_FOLDED_ATTR}="true"]`).length).toBeGreaterThan(0)
+    expect(headingFoldHidden(root).length).toBeGreaterThan(0)
     expect(toggleFor(root, HEADING_TOGGLE_CLASS, 'Section A').getAttribute('aria-expanded')).toBe('false')
     expect(reports.slice(sinceCollapse).every((r) => r.length > 0)).toBe(true)
     expect(reports.at(-1)).toEqual([key])

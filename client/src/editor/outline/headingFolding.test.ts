@@ -12,12 +12,14 @@ import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../cre
 import { Autosave } from '../../lib/autosave'
 import {
   getHeadingFoldKey,
-  HEADING_FOLDED_ATTR,
+  HEADING_FOLD_STYLE_ATTR,
   HEADING_TOGGLE_CLASS,
+  headingFoldHideRule,
   setHeadingFoldAtSelection,
   undoLastHeadingFold,
 } from './headingFolding'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
+import { headingFoldHidden } from './headingFoldTestKit'
 
 const DOC = `# Part 1
 
@@ -66,7 +68,7 @@ const toggleFor = (root: HTMLElement, label: string): HTMLButtonElement => {
   if (!btn) throw new Error(`no heading toggle for "${label}"`)
   return btn
 }
-const folded = (root: HTMLElement) => root.querySelectorAll(`[${HEADING_FOLDED_ATTR}="true"]`)
+const folded = (root: HTMLElement) => headingFoldHidden(root)
 const foldedText = (root: HTMLElement) => [...folded(root)].map((el) => el.textContent).join(' | ')
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -186,6 +188,49 @@ describe('heading folding: section hiding', () => {
     toggleFor(root, 'Top').click()
     expect(folded(root)).toHaveLength(0)
     expect(root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`)).toHaveLength(1)
+  })
+  it('two folds back to back: the second heading ends the first fold and starts its own (YAZ-3816)', async () => {
+    const { root } = await mount({ defaultValue: DOC })
+    toggleFor(root, 'Section A').click()
+    toggleFor(root, 'Section B').click()
+    expect(folded(root).map((el) => el.textContent)).toEqual(['Alpha body.', 'Deep dive', 'Deep body.', 'Beta body.'])
+    toggleFor(root, 'Section A').click()
+    expect(folded(root).map((el) => el.textContent)).toEqual(['Beta body.'])
+  })
+
+  it('a section that runs to the end of its parent hides to the end, and one in a quote hides only inside the quote (YAZ-3816)', async () => {
+    const { root } = await mount({ defaultValue: `# Top\n\n> ## Quoted\n>\n> quoted body\n\nAfter the quote.\n\n# Last\n\nTail one.\n\nTail two.\n` })
+    toggleFor(root, 'Quoted').click()
+    expect(folded(root).map((el) => el.textContent)).toEqual(['quoted body'])
+    toggleFor(root, 'Quoted').click()
+    toggleFor(root, 'Last').click()
+    expect(folded(root).map((el) => el.textContent)).toEqual(['Tail one.', 'Tail two.'])
+  })
+
+  it('each editor writes one hide rule for each fold into its own style element, and removes it when it closes (YAZ-3816)', async () => {
+    const styles = () => [...document.head.querySelectorAll<HTMLStyleElement>(`style[${HEADING_FOLD_STYLE_ATTR}]`)]
+    const before = styles().length
+    const { crepe, root } = await mount({ defaultValue: DOC })
+    root.classList.add('editor-instance')
+    const [style] = styles().slice(before)
+    expect(style.textContent).toBe('')
+    toggleFor(root, 'Section A').click()
+    toggleFor(root, 'Part 2').click()
+    expect(style.textContent).toBe(
+      [getHeadingFoldKey('Part 2', 0), getHeadingFoldKey('Section A', 0)]
+        .sort()
+        .map((key) => `${headingFoldHideRule(key)} { display: none; }`)
+        .join('\n'),
+    )
+    // The real rule hides the section in the page's CSS.
+    const display = (text: string) => getComputedStyle([...root.querySelectorAll('.ProseMirror > *')].find((el) => el.textContent === text)!).display
+    expect(display('Alpha body.')).toBe('none')
+    expect(display('Closing.')).toBe('none')
+    expect(display('Section B')).not.toBe('none')
+    await crepe.destroy()
+    mounted.splice(mounted.findIndex((m) => m.crepe === crepe), 1)
+    root.remove()
+    expect(styles()).toHaveLength(before)
   })
 })
 
