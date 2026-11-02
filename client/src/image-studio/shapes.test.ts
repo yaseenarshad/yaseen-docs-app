@@ -6,7 +6,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SmartShapeDefinition, SmartShapeId } from '@excalidraw/element'
 import type { LocalPoint } from '@excalidraw/math'
-import { BASIC_SHAPES, buildShapeCatalog, filterShapeCatalog, getShape, shapeDirection, smartShapeAliases, smartShapeCatalog, smartShapePreview, type SmartShapeApi } from './shapes'
+import type { StudioItem } from '@shared/types'
+import { rankItems } from './rankItems'
+import { BASIC_SHAPES, buildShapeCatalog, getShape, shapeAliases, shapeDirection, smartShapeAliases, smartShapeCatalog, smartShapePreview, type SmartShapeApi } from './shapes'
 
 const definition = (over: Partial<SmartShapeDefinition> = {}): SmartShapeDefinition => ({
   id: 'arrow-right' as SmartShapeId,
@@ -108,28 +110,35 @@ describe('the smart shapes, which need the element package', () => {
   })
 })
 
-describe('searching the catalog', () => {
+describe('searching the catalog (through the Add tab`s one ranking, YAZ-4157 D4)', () => {
   const catalog = buildShapeCatalog(fakeSmart())
+  const items: StudioItem[] = catalog.map((shape) => ({ itemKey: `shape:${shape.id}`, provider: 'shape', providerId: shape.id, kind: 'shape', title: shape.title }))
+  const byKey = new Map(catalog.map((shape) => [`shape:${shape.id}`, shape]))
+  const find = (query: string) => rankItems(items, new Map(), query, (item) => shapeAliases(byKey.get(item.itemKey)!)).map((item) => item.providerId)
 
   it('answers with everything for an empty query', () => {
-    expect(filterShapeCatalog(catalog, '   ')).toHaveLength(catalog.length)
+    expect(find('   ')).toHaveLength(catalog.length)
   })
 
   it('matches on the title, an alias, the kind and the direction', () => {
-    expect(filterShapeCatalog(catalog, 'square').map(({ id }) => id)).toEqual(['rectangle'])
-    expect(filterShapeCatalog(catalog, 'decision').map(({ id }) => id)).toEqual(['diamond'])
-    expect(filterShapeCatalog(catalog, 'pointer').map(({ id }) => id)).toEqual(['smart:arrow-right'])
-    expect(filterShapeCatalog(catalog, 'right').map(({ id }) => id)).toEqual(['smart:arrow-right'])
+    expect(find('square')[0]).toBe('rectangle')
+    expect(find('decision')).toEqual(['diamond'])
+    expect(find('pointer')).toEqual(['smart:arrow-right'])
+    expect(find('right')[0]).toBe('smart:arrow-right')
   })
 
-  it('needs EVERY token to match, not any of them', () => {
-    expect(filterShapeCatalog(catalog, 'rounded box')).toHaveLength(1)
-    expect(filterShapeCatalog(catalog, 'rounded star')).toHaveLength(0)
+  it('needs EVERY word to match, not any of them — across the names, too', () => {
+    expect(find('rounded box')).toHaveLength(1)
+    expect(find('rounded star')).toHaveLength(0)
   })
 
   it('ignores case, and answers nothing for a word no shape has', () => {
-    expect(filterShapeCatalog(catalog, 'HEXAGON')).toHaveLength(1)
-    expect(filterShapeCatalog(catalog, 'dodecahedron')).toHaveLength(0)
+    expect(find('HEXAGON')).toEqual(['hexagon'])
+    expect(find('dodecahedron')).toHaveLength(0)
+  })
+
+  it('the aliases of a shape are its id, kind, direction and alias words', () => {
+    expect(shapeAliases(getShape(catalog, 'smart:arrow-right')!)).toEqual(expect.arrayContaining(['smart:arrow-right', 'right', 'pointer']))
   })
 
   it('finds a shape by id, and answers undefined for one that is not there', () => {

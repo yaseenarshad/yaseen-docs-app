@@ -70,16 +70,31 @@ describe('createMediaStore — writing', () => {
   it('add writes the file atomically and answers the new list; the write creates the folder if it went missing', async () => {
     await rm(library, { recursive: true })
     expect(await store.favorites({ op: 'add', item: item() })).toEqual([{ ...item(), updatedAt: 1000 }])
-    expect(await onDisk()).toEqual({ version: 1, favorites: [{ ...item(), updatedAt: 1000 }], recent: [] })
+    expect(await onDisk()).toEqual({ version: 1, favorites: [{ ...item(), updatedAt: 1000 }], recent: [], used: [] })
     expect((await readdir(library)).filter((n) => n.includes('.tmp-'))).toEqual([]) // tmp + rename left no residue
   })
 
   it('remove and record each answer their own list and leave the other alone', async () => {
     await store.favorites({ op: 'add', item: item({ itemKey: 'a', providerId: 'a' }) })
     await store.favorites({ op: 'add', item: item({ itemKey: 'b', providerId: 'b' }) })
-    expect((await store.recent({ op: 'record', item: item({ itemKey: 'a', providerId: 'a' }) })).map((r) => r.itemKey)).toEqual(['a'])
+    expect((await store.used({ op: 'record', item: item({ itemKey: 'a', providerId: 'a' }), query: '' })).recent.map((r) => r.itemKey)).toEqual(['a'])
     expect((await store.favorites({ op: 'remove', itemKey: 'a' })).map((f) => f.itemKey)).toEqual(['b'])
     expect((await store.recent({ op: 'list' })).map((r) => r.itemKey)).toEqual(['a'])
+  })
+
+  it('one add is ONE write of all three lists (YAZ-4157 D1): the third add favorites it in the same file', async () => {
+    for (const query of ['tree', '', 'oak']) await store.used({ op: 'record', item: item(), query })
+    const disk = (await onDisk()) as { favorites: { itemKey: string }[]; recent: { itemKey: string }[]; used: { count: number; words: string[] }[] }
+    expect(disk.favorites.map((f) => f.itemKey)).toEqual([item().itemKey])
+    expect(disk.recent.map((r) => r.itemKey)).toEqual([item().itemKey])
+    expect(disk.used).toEqual([expect.objectContaining({ count: 3, words: ['oak', 'tree'] })])
+    expect((await readdir(library)).filter((n) => n.includes('.tmp-'))).toEqual([])
+  })
+
+  it('a word (YAZ-4157 D5) is written and answered with the whole library', async () => {
+    const out = await store.used({ op: 'add-word', item: item(), word: 'Oak' })
+    expect(out.used).toEqual([expect.objectContaining({ itemKey: item().itemKey, count: 0, words: ['oak'] })])
+    expect(await store.used({ op: 'list' })).toEqual(out)
   })
 
   it('a no-op mutation (adding a favorite twice, removing a stranger) does not touch the disk', async () => {

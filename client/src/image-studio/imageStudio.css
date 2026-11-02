@@ -1,52 +1,9 @@
 /*
- * The Images tab's own styling (YAZ-1818). What it SHARES with the other two tabs — the panel
- * shell, the tile chequerboard, the placeholder and the message boxes — is
- * `drawings/canvasPanel.css`. Every colour here is an ENGINE custom property, so the panel follows
- * the engine's light/dark theme; the only literals left are the two translucent overlays that sit
- * on a picture rather than on the panel.
+ * The Add tab's own styling (YAZ-4157; before it, YAZ-1818's Images tab and YAZ-1819's Components tab). What it
+ * SHARES with Present — the panel shell, the tile chequerboard, the placeholder and the message boxes — is
+ * `drawings/canvasPanel.css`. Every colour here is an ENGINE custom property, so the panel follows the engine's
+ * light/dark theme; the only literals left are the overlays that sit on a picture rather than on the panel.
  */
-
-/* The tile's picture is taller here than in the Components grid: an icon needs the room. */
-.image-studio__preview {
-  height: 112px;
-}
-
-.image-studio__header span {
-  color: var(--color-primary);
-  display: block;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-}
-
-.image-studio__header strong {
-  font-size: 17px;
-}
-
-.image-studio__nav {
-  background: var(--button-hover-bg);
-  border-radius: 10px;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  padding: 3px;
-}
-
-.image-studio__nav button {
-  background: transparent;
-  border: 0;
-  border-radius: 7px;
-  color: var(--text-secondary-color);
-  cursor: pointer;
-  font-size: 11px;
-  padding: 7px 3px;
-}
-
-.image-studio__nav button.is-active {
-  background: var(--island-bg-color);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
-  color: var(--text-primary-color);
-  font-weight: 700;
-}
 
 .image-studio__search {
   display: flex;
@@ -54,24 +11,31 @@
 }
 
 .image-studio__search input,
-.image-studio__search select {
+.image-studio__naming input,
+.image-studio__inline input {
   background: var(--input-bg-color);
   border: 1px solid var(--default-border-color);
   border-radius: 9px;
+  box-sizing: border-box;
   color: var(--text-primary-color);
+  font: inherit;
+  min-width: 0;
   padding: 9px 10px;
 }
 
 .image-studio__search input {
   flex: 1;
-  min-width: 0;
 }
 
-.image-studio__search select {
-  max-width: 88px;
+.image-studio__search input:focus,
+.image-studio__naming input:focus,
+.image-studio__inline input:focus {
+  border-color: var(--color-primary);
+  outline: none;
 }
 
-.image-studio__search button,
+/* The one strong button: it is there only while the board has a selection, so it may stand out. */
+.image-studio__save,
 .image-studio__retry {
   background: var(--color-primary);
   border: 0;
@@ -80,49 +44,179 @@
   cursor: pointer;
   font-weight: 700;
   padding: 8px 10px;
+  white-space: nowrap;
 }
 
-/* One-pixel tail of the grid the observer watches; `overflow-anchor` keeps the scroll from jumping
+.image-studio__retry {
+  align-self: center;
+}
+
+.image-studio__naming {
+  background: var(--island-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.image-studio__naming-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.image-studio__naming-actions button,
+.image-studio__inline button,
+.image-studio__line button {
+  background: var(--button-gray-1);
+  border: 0;
+  border-radius: 7px;
+  color: var(--text-primary-color);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 6px 9px;
+}
+
+.image-studio__naming-actions button:last-child {
+  background: var(--color-primary);
+  color: var(--island-bg-color);
+}
+
+.image-studio__naming-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* The chips (D8): one quiet row; the picked one is the only filled one. */
+.image-studio__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.image-studio__chips button {
+  background: transparent;
+  border: 1px solid var(--default-border-color);
+  border-radius: 999px;
+  color: var(--text-secondary-color);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 9px;
+}
+
+.image-studio__chips button.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--island-bg-color);
+}
+
+/* The quiet line (D9): the auto-favorite and its Undo, or a word just taught. */
+.image-studio__line {
+  align-items: center;
+  background: var(--button-hover-bg);
+  border-radius: 8px;
+  color: var(--text-secondary-color);
+  display: flex;
+  font-size: 11px;
+  gap: 8px;
+  justify-content: space-between;
+  line-height: 1.4;
+  padding: 6px 9px;
+}
+
+.image-studio__list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.image-studio__section-head {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.image-studio__section-head h3 {
+  color: var(--text-secondary-color);
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.image-studio__show-all,
+.image-studio__more-inline {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.image-studio__more-inline {
+  color: var(--text-secondary-color);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.image-studio__section-menu {
+  position: relative;
+}
+
+/* Four tiles a row (D7): a section's "one row" is exactly four, at any panel width. */
+.image-studio__grid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* One-pixel tail of the web results the observer watches; `overflow-anchor` keeps the scroll from jumping
    when the next page lands underneath it. */
 .image-studio__search-sentinel {
-  align-self: start;
-  grid-column: 1 / -1;
   height: 1px;
   min-height: 1px;
   overflow-anchor: none;
 }
 
-.image-studio__grid {
-  align-content: start;
-  display: grid;
-  flex: 1;
-  gap: 8px;
-  grid-auto-rows: max-content;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  min-height: 0;
-  overflow-y: auto;
-}
-
 .image-studio__card {
-  align-self: start;
   background: var(--button-hover-bg);
   border: 1px solid var(--default-border-color);
-  border-radius: 10px;
+  border-radius: 8px;
   min-width: 0;
-  overflow: hidden;
   overflow-anchor: auto;
   position: relative;
+}
+
+.image-studio__card:hover,
+.image-studio__card:focus-within {
+  border-color: var(--color-primary);
 }
 
 .image-studio__add {
   background: transparent;
   border: 0;
+  border-radius: 8px;
   color: inherit;
   cursor: pointer;
   display: block;
+  overflow: hidden;
   padding: 0;
-  text-align: left;
+  text-align: center;
   width: 100%;
+}
+
+.image-studio__add:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
 }
 
 .image-studio__add:disabled {
@@ -130,11 +224,15 @@
   opacity: 0.65;
 }
 
+.image-studio__preview {
+  aspect-ratio: 1;
+}
+
 /* A shape outline follows the panel's text colour, so it is visible in either theme. */
 .image-studio__preview svg {
   color: var(--text-primary-color);
-  height: 72%;
-  width: 72%;
+  height: 70%;
+  width: 70%;
 }
 
 .image-studio__shape-path--basic,
@@ -162,73 +260,151 @@
   background: rgb(0 0 0 / 72%);
   border-radius: 999px;
   color: #fff;
-  font-size: 11px;
+  font-size: 9px;
   left: 50%;
-  padding: 6px 9px;
+  padding: 3px 6px;
   position: absolute;
   top: 50%;
   transform: translate(-50%, -50%);
 }
 
-.image-studio__meta {
+.image-studio__name {
   display: block;
-  min-width: 0;
-  padding: 8px;
-}
-
-.image-studio__meta strong,
-.image-studio__meta small {
-  display: block;
+  font-size: 10px;
   overflow: hidden;
+  padding: 3px 4px 4px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.image-studio__meta strong {
-  font-size: 12px;
+/* A provider's title is often lower case ("money bag"); a name the user typed keeps its own case. */
+.image-studio__name--title {
   text-transform: capitalize;
 }
 
-.image-studio__meta small {
-  color: var(--text-secondary-color);
-  font-size: 9px;
-  margin-top: 3px;
-  text-transform: capitalize;
-}
-
-/* The star sits ON the tile's chequerboard, so its own surface is the panel's island colour. */
-.image-studio__favorite {
+/* The star and the ⋯ sit ON the picture. They show on hover and focus; a set star always shows. */
+.image-studio__favorite,
+.image-studio__more {
   background: var(--island-bg-color);
   border: 0;
   border-radius: 999px;
   color: var(--text-secondary-color);
   cursor: pointer;
-  font-size: 18px;
-  line-height: 28px;
+  font-size: 12px;
+  height: 20px;
+  line-height: 20px;
+  opacity: 0;
   padding: 0;
   position: absolute;
-  right: 7px;
   text-align: center;
-  top: 7px;
-  width: 28px;
+  top: 3px;
+  width: 20px;
+}
+
+.image-studio__favorite {
+  right: 3px;
+}
+
+.image-studio__more {
+  left: 3px;
+}
+
+.image-studio__card:hover .image-studio__favorite,
+.image-studio__card:hover .image-studio__more,
+.image-studio__card:focus-within .image-studio__favorite,
+.image-studio__card:focus-within .image-studio__more,
+.image-studio__favorite.is-active,
+.image-studio__more[aria-expanded='true'] {
+  opacity: 1;
 }
 
 .image-studio__favorite.is-active {
   color: var(--color-primary);
 }
 
-.image-studio__empty {
-  margin: auto 0;
+.image-studio__menu {
+  background: var(--island-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 8px;
+  box-shadow: var(--shadow-island);
+  display: flex;
+  flex-direction: column;
+  left: 3px;
+  min-width: 140px;
+  padding: 4px;
+  position: absolute;
+  top: 26px;
+  z-index: 3;
+}
+
+.image-studio__section-menu .image-studio__menu {
+  left: auto;
+  right: 0;
+  top: 22px;
+}
+
+.image-studio__menu button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-primary-color);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.image-studio__menu button:hover,
+.image-studio__menu button:focus-visible {
+  background: var(--button-hover-bg);
+  outline: none;
+}
+
+.image-studio__menu .is-danger {
+  color: var(--color-danger);
+}
+
+/* "Add a word…", Rename and Delete open a full-width row under the tile's row: a 4-column tile is too small for a field. */
+.image-studio__inline {
+  align-items: center;
+  background: var(--island-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  grid-column: 1 / -1;
+  padding: 6px;
+}
+
+.image-studio__inline input {
+  flex: 1;
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.image-studio__inline span {
+  flex: 1;
+  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-studio__inline .is-danger {
+  background: var(--color-danger);
+  color: white;
+}
+
+.image-studio__state {
   text-align: center;
 }
 
 .image-studio__notice,
 .image-studio__warning {
   background: var(--button-hover-bg);
-}
-
-.image-studio__retry {
-  align-self: center;
 }
 
 .image-studio__loading-more {

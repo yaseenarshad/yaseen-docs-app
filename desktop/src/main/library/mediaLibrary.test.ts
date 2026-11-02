@@ -7,8 +7,8 @@
  * it is not one at all. The FILE is lenient around that — a bad row is dropped, the rest survive.
  */
 import { describe, expect, it } from 'vitest'
-import { MAX_MEDIA_FAVORITES, RECENT_LIMIT, type MediaItem, type StoredMediaItem } from '@shared/types'
-import { EMPTY_MEDIA_LIBRARY, addFavorite, normalizeMediaItem, normalizeStoredMediaItem, recordRecent, removeFavorite, sanitizeMediaLibrary, stamp } from '@shared/mediaLibrary'
+import { AUTO_FAVORITE_USES, MAX_ITEM_WORDS, MAX_MEDIA_FAVORITES, MAX_MEDIA_USED, RECENT_LIMIT, type MediaItem, type MediaLibraryFile, type StoredMediaItem, type UsedMediaItem } from '@shared/types'
+import { EMPTY_MEDIA_LIBRARY, addFavorite, addWord, normalizeMediaItem, normalizeStoredMediaItem, normalizeWord, recordRecent, recordUse, removeFavorite, sanitizeMediaLibrary, stamp } from '@shared/mediaLibrary'
 
 /** The minimum a provider result has to carry: every required field of `mediaItemValidator`. */
 const item = (over: Partial<MediaItem> = {}): MediaItem => ({ itemKey: 'pixabay:1', provider: 'pixabay', providerId: '1', kind: 'photo', title: 'A tree', ...over })
@@ -92,7 +92,7 @@ describe('normalizeStoredMediaItem — the same, plus the stamp the file orders 
 
 describe('sanitizeMediaLibrary — lenient over the rows, strict about the file', () => {
   it('reads a well-formed file back unchanged', () => {
-    const file = { version: 1, favorites: [stored()], recent: [stored({ itemKey: 'iconify:a', provider: 'iconify', providerId: 'a', kind: 'icon' })] }
+    const file = { version: 1, favorites: [stored()], recent: [stored({ itemKey: 'iconify:a', provider: 'iconify', providerId: 'a', kind: 'icon' })], used: [] }
     expect(sanitizeMediaLibrary(file)).toEqual(file)
   })
 
@@ -165,7 +165,7 @@ describe('removeFavorite', () => {
   })
 
   it('never touches recent — the two lists are independent (unfavoriting does not forget a use)', () => {
-    const before = { version: 1 as const, favorites: [stored({ itemKey: 'a' })], recent: [stored({ itemKey: 'a' })] }
+    const before = { version: 1 as const, favorites: [stored({ itemKey: 'a' })], recent: [stored({ itemKey: 'a' })], used: [] }
     expect(removeFavorite(before, 'a').recent).toEqual(before.recent)
   })
 })
@@ -196,7 +196,140 @@ describe('recordRecent (the web app`s recordRecent) — an MRU, not a log', () =
   })
 
   it('never touches favorites — a favorite that is used stays favorited, once', () => {
-    const before = { version: 1 as const, favorites: [stored({ itemKey: 'a' })], recent: [] }
+    const before = { version: 1 as const, favorites: [stored({ itemKey: 'a' })], recent: [], used: [] }
     expect(recordRecent(before, item({ itemKey: 'a' }), 5).favorites).toEqual(before.favorites)
+  })
+})
+
+// ---------- YAZ-4157: what the Add tab learns from each add ----------
+
+const lib = (over: Partial<MediaLibraryFile> = {}): MediaLibraryFile => ({ ...EMPTY_MEDIA_LIBRARY, ...over })
+const used = (over: Partial<UsedMediaItem> = {}): UsedMediaItem => ({ ...stored(), count: 1, words: [], ...over })
+const component = item({ itemKey: 'component:pricing-card', provider: 'component', providerId: 'pricing-card', kind: 'component', title: 'Pricing card' })
+
+describe('the used list in the file (YAZ-4157 D1)', () => {
+  it('a library from before YAZ-4157 (no used) reads as none and keeps everything else', () => {
+    const before = { version: 1, favorites: [stored()], recent: [stored()] }
+    expect(sanitizeMediaLibrary(before)).toEqual({ ...before, used: [] })
+  })
+
+  it('reads a used row back, and drops a row with a bad count — the other rows survive', () => {
+    const good = used({ count: 4, words: ['tree'], noAutoFavorite: true })
+    const out = sanitizeMediaLibrary({ version: 1, favorites: [], recent: [], used: [good, { ...used({ itemKey: 'pixabay:2' }), count: -1 }, { ...used({ itemKey: 'pixabay:3' }), count: 1.5 }] })
+    expect(out?.used).toEqual([good])
+  })
+
+  it('cleans the words of a hand-edited row: case, spaces, repeats, non-strings, the cap', () => {
+    const words = ['  Big   Tree ', 'big tree', 7, '', ...Array.from({ length: MAX_ITEM_WORDS + 5 }, (_, i) => `w${i}`)]
+    const out = sanitizeMediaLibrary({ version: 1, favorites: [], recent: [], used: [{ ...used(), words }] })
+    expect(out?.used[0].words[0]).toBe('big tree')
+    expect(out?.used[0].words).toHaveLength(MAX_ITEM_WORDS)
+  })
+
+  it(`keeps ${MAX_MEDIA_USED} rows on read`, () => {
+    const many = Array.from({ length: MAX_MEDIA_USED + 3 }, (_, i) => used({ itemKey: `u${i}`, providerId: String(i) }))
+    expect(sanitizeMediaLibrary({ version: 1, favorites: [], recent: [], used: many })?.used).toHaveLength(MAX_MEDIA_USED)
+  })
+
+  it('a saved component is a media item (D2): provider and kind component, the slug as its id', () => {
+    expect(normalizeMediaItem(component)).toEqual(component)
+  })
+})
+
+describe('normalizeWord', () => {
+  it('trims, lowers and joins spaces; nothing left or too long is no word', () => {
+    expect(normalizeWord('  Rocket  Ship ')).toBe('rocket ship')
+    expect(normalizeWord('   ')).toBeNull()
+    expect(normalizeWord('x'.repeat(61))).toBeNull()
+  })
+})
+
+describe('recordUse — one add (YAZ-4157 D1, D9)', () => {
+  it('a first add: the MRU head, a used row at 1 with the search as its word', () => {
+    const out = recordUse(lib(), item(), '  Tree ', 50)
+    expect(out.recent).toEqual([stamp(item(), 50)])
+    expect(out.used).toEqual([{ ...stamp(item(), 50), count: 1, words: ['tree'] }])
+    expect(out.favorites).toEqual([])
+  })
+
+  it('an add with an empty search counts the use and learns no word; a repeat word is not stored twice', () => {
+    const once = recordUse(lib(), item(), 'tree', 1)
+    const twice = recordUse(once, item(), '', 2)
+    const thrice = recordUse(twice, item(), 'TREE', 3)
+    expect(thrice.used[0]).toMatchObject({ count: 3, words: ['tree'] })
+  })
+
+  it('the newest word goes first', () => {
+    const out = recordUse(recordUse(lib(), item(), 'tree', 1), item(), 'oak', 2)
+    expect(out.used[0].words).toEqual(['oak', 'tree'])
+  })
+
+  it(`the add number ${AUTO_FAVORITE_USES} makes the item a favorite, once`, () => {
+    let state = lib()
+    for (let i = 1; i < AUTO_FAVORITE_USES; i++) state = recordUse(state, item(), '', i)
+    expect(state.favorites).toEqual([])
+    state = recordUse(state, item(), '', 10)
+    expect(state.favorites).toEqual([stamp(item(), 10)])
+    expect(recordUse(state, item(), '', 11).favorites).toEqual([stamp(item(), 10)])
+  })
+
+  it('a favorite the user removed never comes back on its own — a star by hand still works', () => {
+    let state = lib()
+    for (let i = 1; i <= AUTO_FAVORITE_USES; i++) state = recordUse(state, item(), '', i)
+    state = removeFavorite(state, item().itemKey)
+    expect(state.used[0].noAutoFavorite).toBe(true)
+    for (let i = 0; i < 5; i++) state = recordUse(state, item(), '', 20 + i)
+    expect(state.favorites).toEqual([])
+    expect(addFavorite(state, item(), 99).favorites).toHaveLength(1)
+  })
+
+  it('removing a favorite that was never added still sticks: a row at 0 uses holds the mark', () => {
+    const state = removeFavorite(lib({ favorites: [stored()] }), stored().itemKey)
+    expect(state.used).toEqual([{ ...stored(), count: 0, words: [], noAutoFavorite: true }])
+    let after = state
+    for (let i = 0; i < AUTO_FAVORITE_USES; i++) after = recordUse(after, item(), '', i)
+    expect(after.favorites).toEqual([])
+  })
+
+  it(`moves the item to the head of used and keeps ${MAX_MEDIA_USED} rows`, () => {
+    const many = Array.from({ length: MAX_MEDIA_USED }, (_, i) => used({ itemKey: `u${i}`, providerId: String(i) }))
+    const out = recordUse(lib({ used: many }), item(), '', 5)
+    expect(out.used).toHaveLength(MAX_MEDIA_USED)
+    expect(out.used[0].itemKey).toBe(item().itemKey)
+    expect(out.used.at(-1)?.itemKey).toBe(`u${MAX_MEDIA_USED - 2}`)
+  })
+
+  it('counts a component like any item', () => {
+    let state = lib()
+    for (let i = 0; i < AUTO_FAVORITE_USES; i++) state = recordUse(state, component, 'pricing', i)
+    expect(state.favorites.map((f) => f.itemKey)).toEqual(['component:pricing-card'])
+  })
+
+  it('never touches the input', () => {
+    const before = lib({ used: [used()] })
+    const copy = structuredClone(before)
+    recordUse(before, item(), 'tree', 9)
+    expect(before).toEqual(copy)
+  })
+})
+
+describe('addWord — "Add a word…" (YAZ-4157 D5)', () => {
+  it('a known row gets the word in front and keeps its place, its stamp and its count', () => {
+    const rows = [used({ itemKey: 'other', providerId: 'o' }), used({ count: 2, words: ['tree'] })]
+    const out = addWord(lib({ used: rows }), item(), ' Oak ', 99)
+    expect(out.used[1]).toEqual({ ...rows[1], words: ['oak', 'tree'] })
+    expect(out.used[0]).toBe(rows[0])
+  })
+
+  it('an item never added starts a row at 0 uses — a word is not a use', () => {
+    const out = addWord(lib(), item(), 'oak', 7)
+    expect(out.used).toEqual([{ ...stamp(item(), 7), count: 0, words: ['oak'] }])
+    expect(out.recent).toEqual([])
+  })
+
+  it('an empty word, or the word already first, changes nothing', () => {
+    const state = lib({ used: [used({ words: ['oak'] })] })
+    expect(addWord(state, item(), '  ', 1)).toBe(state)
+    expect(addWord(state, item(), 'OAK', 1)).toBe(state)
   })
 })

@@ -19,8 +19,8 @@
  *     canvas — the tab step 5 needs in front.
  *   5 the board menu items and the canvas panel (YAZ-3037, YAZ-3038): with the drawing tab in front,
  *     File › Export Image… and View › Canvas Background are enabled; the rail's hamburger opens the
- *     panel with its three tabs, and ⌘C on an empty selection opens Components. No search is typed:
- *     the Image Studio would reach a provider.
+ *     panel with its two tabs (Add, Present), and ⌘C on an empty selection opens Add on its Components chip
+ *     (YAZ-4157 D6). No search is typed: the Add tab would reach a provider.
  *   6 the draw.io panels and an outside change (YAZ-3420 D1, D2): with draw.io's own saved state
  *     saying Format and Layers were open, a 2-page diagram with 2 layers opens with Shapes, Format
  *     and Layers closed. On Page-2, zoomed in, a write from outside shows on Page-2 at the same zoom
@@ -254,7 +254,7 @@ test('step 5 — on a drawing tab the board menu items are on, and the rail and 
   const panel = drawingTab(win).locator('.default-sidebar')
   await drawingTab(win).getByRole('button', { name: 'Open workspace panel' }).click()
   await expect(panel).toBeVisible()
-  await expect(panel.locator('.app-sidebar-tab-label')).toHaveText(['Images', 'Components', 'Present'])
+  await expect(panel.locator('.app-sidebar-tab-label')).toHaveText(['Add', 'Present'])
   await shoot(win, 'boards-07-canvas-panel')
   await panel.getByRole('button', { name: 'Close workspace panel' }).click()
   await expect(panel).toHaveCount(0)
@@ -262,7 +262,8 @@ test('step 5 — on a drawing tab the board menu items are on, and the rail and 
   await canvasFrame(win).click()
   await win.keyboard.press('Meta+c')
   await expect(panel).toBeVisible()
-  await expect(panel.getByRole('tab', { name: 'Components', selected: true })).toBeVisible()
+  await expect(panel.getByRole('tab', { name: 'Add shapes, icons and components', selected: true })).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'Components', pressed: true })).toBeVisible()
 })
 
 test('step 6 — every draw.io panel opens closed, and an outside change keeps the page and the zoom (YAZ-3420 D1, D2)', async () => {

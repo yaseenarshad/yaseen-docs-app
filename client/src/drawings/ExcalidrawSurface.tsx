@@ -57,7 +57,7 @@
  * app's cloud status sat in). THE CANVAS PANEL (YAZ-3038, ported from Draw's 🔒 YAZ-1775 D8 / D10) is the
  * TAB's only: a host that passes `onCanvasPanelChange` gets Draw's rail (`renderTopLeftUI`:
  * `LauncherRail.tsx`, the panel hamburger plus the Writing / Frames toggles), the docked panel
- * (`CanvasSidebar.tsx`, Images / Components / Present, the engine's one child), the ⌘F / ⌘C keys that
+ * (`CanvasSidebar.tsx`, Add / Present, the engine's one child), the ⌘F / ⌘C keys that
  * open it — bound on THIS component's own element in the capture phase, never `window`, because
  * several tabs each mount an engine — and the presentation player. The note embed's modal passes
  * none of it: it keeps the engine's own menu at top-left, and a note's drawing has no library
@@ -74,6 +74,7 @@ import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
 import { contentVersion } from './contentVersion'
 import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
+import { imageStudioSession, pickChip } from '../image-studio/imageStudioSession'
 import { openViewport, type DrawingScene } from './drawingScene'
 import { applyToolbarMode, loadExcalidraw, type ExcalidrawModule } from './engine'
 import { assembleExportCopy } from './exportDrawing'
@@ -428,8 +429,8 @@ export function ExcalidrawSurface({
   }, [])
 
   /**
-   * ⌘C → Components and ⌘F → Images (Draw's port of the web app's `c` / `f`, `AppSidebar.tsx:983-1078`; the keys
-   * as the user set them, YAZ-3564),
+   * ⌘F → the Add tab, ⌘C → the Add tab on its Components chip (YAZ-4157 D6; Draw's port of the web app's `c` / `f`,
+   * `AppSidebar.tsx:983-1078`; the keys as the user set them, YAZ-3564),
    * with its guards: the primary modifier alone, no repeat, no IME composition, no editable target, no
    * live text selection, and — asked of the engine itself — no element being drawn, dragged, resized,
    * rotated or cropped, no text being edited, no dialog open and nothing selected. Those gates are why
@@ -441,8 +442,8 @@ export function ExcalidrawSurface({
       const api = rawApiRef.current
       if (api === null) return
       const keys = hotkeysRef.current
-      const tab: CanvasPanelTab | null = pressed(event, 'drawing.componentsPanel', keys) ? 'components' : pressed(event, 'drawing.imagesPanel', keys) ? 'image-studio' : null
-      if (tab === null || event.repeat || event.nativeEvent.isComposing) return
+      const components = pressed(event, 'drawing.componentsPanel', keys)
+      if ((!components && !pressed(event, 'drawing.imagesPanel', keys)) || event.repeat || event.nativeEvent.isComposing) return
       const target = event.target
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
       if (target instanceof HTMLElement && (target.isContentEditable || target.closest("[contenteditable='true']") !== null)) return
@@ -453,10 +454,18 @@ export function ExcalidrawSurface({
       if (busy || appState.cursorButton === 'down' || Object.keys((appState.selectedElementIds ?? {}) as Record<string, unknown>).length > 0) return
       event.preventDefault()
       event.stopPropagation()
-      // ⌘F puts the caret in the search field too — only when this press OPENS the tab: the active
-      // tab's own shortcut closes the panel, and must leave nothing pending behind.
-      if (tab === 'image-studio' && rail.getState().activeTab !== tab) setSearchFocusPending(true)
-      rail.openTab(tab)
+      const open = rail.getState().activeTab === 'image-studio'
+      if (components) {
+        // ⌘C on the open tab moves it to the Components chip; only a second ⌘C, already there, closes the panel.
+        const there = imageStudioSession.getState().chip === 'components'
+        pickChip('components')
+        if (open && !there) return
+      } else if (!open) {
+        // ⌘F puts the caret in the search field too — only when this press OPENS the tab: the active
+        // tab's own shortcut closes the panel, and must leave nothing pending behind.
+        setSearchFocusPending(true)
+      }
+      rail.openTab('image-studio')
     },
     [rail, onHelpKey],
   )

@@ -754,12 +754,15 @@ describe('createStore: loading', () => {
     await seed(valid({ settings: legacySettings }))
     expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
     expect(DEFAULT_SETTINGS.libraryFolder).toBeNull()
-    expect(DEFAULT_SETTINGS.canvasPanel).toEqual({ tab: 'components', docked: false })
+    expect(DEFAULT_SETTINGS.canvasPanel).toEqual({ tab: 'image-studio', docked: false })
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, libraryFolder: '/Vault/Library', canvasPanel: { tab: 'presentation', docked: true } } }))
     expect(createStore(file).get().settings).toMatchObject({ libraryFolder: '/Vault/Library', canvasPanel: { tab: 'presentation', docked: true } })
     // One bad half costs that half only; '' or a relative path is never a library folder (it would resolve to the cwd).
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, libraryFolder: 'Library', canvasPanel: { tab: 'boards', docked: true } } }))
-    expect(createStore(file).get().settings).toMatchObject({ libraryFolder: null, canvasPanel: { tab: 'components', docked: true } })
+    expect(createStore(file).get().settings).toMatchObject({ libraryFolder: null, canvasPanel: { tab: 'image-studio', docked: true } })
+    // The Components tab is part of the Add tab now (YAZ-4157 D6): a file saved on it opens on Add, and keeps its dock.
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, canvasPanel: { tab: 'components', docked: true } } }))
+    expect(createStore(file).get().settings).toMatchObject({ canvasPanel: { tab: 'image-studio', docked: true } })
     for (const libraryFolder of ['', 'rel/dir', 7]) expect(isSettings({ ...DEFAULT_SETTINGS, libraryFolder })).toBe(false)
     expect(isSettings({ ...DEFAULT_SETTINGS, canvasPanel: { tab: 'image-studio' } })).toBe(false)
     expect(isSettings(legacySettings)).toBe(false)
