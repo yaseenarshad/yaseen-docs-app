@@ -60,7 +60,9 @@ function fixture(zoom: number) {
   return { content, preview, refs, yHandle, xHandle }
 }
 
-describe.each([0.5, 1, 1.25, 2])('shipped Milkdown table geometry at zoom %s', zoom => {
+// The zoom is the content's own: the page zoom, times a table zoom (YAZ-4091: 0.75 is a table at 75%, 0.375 one at 75%
+// at document zoom 0.5). The preview and the line handles are inside the zoomed content, so they are placed in its px.
+describe.each([0.5, 1, 1.25, 2, 0.75, 0.375])('shipped Milkdown table geometry at zoom %s', zoom => {
   it.each(['x', 'y'])('sizes the %s drag preview in document pixels', axis => {
     const { content, preview } = fixture(zoom)
     geometry.renderPreview(axis, preview, preview.querySelector('tbody'), content, 1)

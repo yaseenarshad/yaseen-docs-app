@@ -1,5 +1,6 @@
 import { cleanIconRules, isIconRules } from '@shared/vaultIcons'
 import { isValidDailyNoteFormat } from '@shared/dailyNote'
+import { isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
@@ -30,6 +31,17 @@ import {
   type NewBoardPictures,
   type NewTabPlace,
   OUTSIDE_CHANGE_GLOWS,
+  TABLE_NOW_MARKS,
+  TABLE_DIM_PASTS,
+  TABLE_SHADE_MAX,
+  TABLE_SHADE_MIN,
+  TABLE_SHADE_STEP,
+  TABLE_ROW_BANDS,
+  DAILY_NOTE_OPENS,
+  type DailyNoteOpens,
+  type TableDimPast,
+  type TableNowMark,
+  type TableRowBand,
   RIGHT_PANEL_DEFAULT_W,
   RIGHT_PANEL_MAX_W,
   RIGHT_PANEL_MIN_W,
@@ -544,6 +556,14 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
   outsideChangeGlow: (v): v is OutsideChangeGlow => typeof v === 'string' && (OUTSIDE_CHANGE_GLOWS as readonly string[]).includes(v),
   outsideListPinned: (v): v is boolean => typeof v === 'boolean',
+  tableRowBand: (v): v is TableRowBand => typeof v === 'string' && (TABLE_ROW_BANDS as readonly string[]).includes(v),
+  tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
+  tableNowButton: (v): v is boolean => typeof v === 'boolean',
+  tableDimPast: (v): v is TableDimPast => typeof v === 'string' && (TABLE_DIM_PASTS as readonly string[]).includes(v),
+  tableShadeDarkness: (v): v is number => isFiniteNumber(v) && v >= TABLE_SHADE_MIN && v <= TABLE_SHADE_MAX && v % TABLE_SHADE_STEP === 0,
+  tableDayStart: isCalendarDayTime,
+  tableDayEnd: isCalendarDayTime,
+  tableTimeFormat: (v): v is string => typeof v === 'string' && isValidTimeFormat(v),
   sidebarLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
   sidebarLineStyle: (v): v is SidebarLineStyle => typeof v === 'string' && (SIDEBAR_LINE_STYLES as readonly string[]).includes(v),
   sidebarThreadColor: (v): v is string | null => v === null || isHexColour(v),
@@ -585,6 +605,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   dailyNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
   dailyNoteFormat: (v): v is string => typeof v === 'string' && isValidDailyNoteFormat(v),
   dailyNoteDayFolder: (v): v is boolean => typeof v === 'boolean',
+  dailyNoteOpens: (v): v is DailyNoteOpens => typeof v === 'string' && (DAILY_NOTE_OPENS as readonly string[]).includes(v),
   tabSleepAfter: (v): v is TabSleepAfter => typeof v === 'string' && (TAB_SLEEP_AFTER as readonly string[]).includes(v),
   memoryReload: (v): v is boolean => typeof v === 'boolean',
 }

@@ -8,6 +8,8 @@
  *     view (which `find`s the frozen tables) does not run.
  * The times are in `tableSpeed.perf.test.ts`. jsdom has no layout, so every read gives 0; only the count matters.
  * With lists in the cells (YAZ-3818 D3), a key in a cell bullet rescans the bullets of its own row only.
+ * A calendar table (YAZ-4162) adds its now row and past rows: a key only maps that set too, and starts no clock work.
+ * The row band (YAZ-4167) on the caret's row, and the table zoom pills (YAZ-4091): a key only maps their sets.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -55,7 +57,7 @@ async function mount(markdown = STYLED) {
   const root = document.createElement('div')
   scroller.appendChild(root)
   document.body.appendChild(scroller)
-  const crepe = createCrepe({ root, defaultValue: markdown })
+  const crepe = createCrepe({ root, defaultValue: markdown, calendarClock: true })
   await crepe.create()
   mounted.push({ crepe, scroller })
   const view = crepe.editor.ctx.get(editorViewCtx)
@@ -132,7 +134,7 @@ function followSets(): { work: string[]; seed: (sets: DecorationSet[]) => void; 
 describe('S6: a key in a frozen, styled 500 × 10 table adds no work (YAZ-3796)', () => {
   it('reads no layout, and the freeze and the styles only map their sets', async () => {
     const { view, scroller, block, flush } = await mount()
-    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style' }
+    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', band: 'mdapp-table-row-band', zoom: 'mdapp-table-zoom' }
     // The table is frozen and styled: both sets hold decorations.
     expect(pluginSet(view.state, plugins.freeze).find().length).toBeGreaterThan(ROWS)
     expect(pluginSet(view.state, plugins.style).find()).toHaveLength(1)
@@ -183,5 +185,42 @@ describe('S6: a key in a cell bullet rescans its own row only (YAZ-3818 D3)', ()
     expect(Math.max(...perKey)).toBeLessThanOrEqual(8)
     // The keys landed in the bullet.
     expect(view.state.doc.nodeAt(bullet - 2)!.textContent).toBe(`${KEYS}one`)
+  }, 60_000)
+})
+
+/** A calendar table of 500 half-hour rows (the times run past midnight, YAZ-4162), frozen like S6's. */
+const CALENDAR = [
+  '| Time | Plan |',
+  '| --- | --- |',
+  ...Array.from({ length: ROWS }, (_, r) => {
+    const m = (r * 30) % 1440
+    const h = Math.floor(m / 60)
+    return `| ${h % 12 === 0 ? 12 : h % 12}:${String(m % 60).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'} | plan ${r} |`
+  }),
+].join('\n') + '\n\n<!-- table: freeze 1 row 1 col, calendar 30m -->\n'
+
+describe('a key in a calendar table adds no work (YAZ-4162)', () => {
+  it('reads no layout, and the calendar marks only map their set', async () => {
+    const { view, scroller, block, flush } = await mount(CALENDAR)
+    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', calendar: 'mdapp-table-calendar', band: 'mdapp-table-row-band', zoom: 'mdapp-table-zoom' }
+    // The table shows a now row or past rows: the set holds decorations.
+    expect(pluginSet(view.state, plugins.calendar).find().length).toBeGreaterThan(0)
+    const layout = countLayoutReads((el) => el === scroller || block.contains(el))
+    const sets = followSets()
+    const reads: number[] = []
+    const work: string[][] = []
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 250, 1) + 2)))
+    for (const ch of KEYS) {
+      const before = layout.reads
+      sets.seed(Object.values(plugins).map((key) => pluginSet(view.state, key)))
+      view.dispatch(view.state.tr.insertText(ch))
+      flush()
+      reads.push(layout.reads - before)
+      const rebuilt = Object.entries(plugins).filter(([, key]) => !sets.isMapped(pluginSet(view.state, key)))
+      work.push([...sets.work, ...rebuilt.map(([name]) => `new ${name} set`)])
+    }
+    expect.soft(reads, 'layout reads per key').toEqual(reads.map(() => 0))
+    expect.soft(work, 'work on the decoration sets per key').toEqual(work.map(() => []))
+    expect(view.state.doc.nodeAt(cellPos(view, 250, 1))!.textContent).toBe(`${KEYS}plan 249`)
   }, 60_000)
 })

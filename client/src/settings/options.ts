@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type TableDimPast, type TableNowMark, type TableRowBand, type DailyNoteOpens, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -131,6 +131,33 @@ export const OUTSIDE_CHANGE_GLOW_OPTIONS: readonly Option<OutsideChangeGlow>[] =
   { label: '10 seconds', value: '10s' },
   { label: '1 minute', value: '60s' },
   { label: 'Off', value: 'off' },
+]
+
+/** Daily notes (YAZ-4164 D11): what the button opens. */
+export const DAILY_NOTE_OPENS_OPTIONS: readonly Option<DailyNoteOpens>[] = [
+  { label: 'The note', value: 'note' },
+  { label: 'The note at now', value: 'now' },
+]
+
+/** Tables (YAZ-4167 D16): where the row band shows; table.css reads it as `data-table-row-band` on `.app`. */
+export const TABLE_ROW_BAND_OPTIONS: readonly Option<TableRowBand>[] = [
+  { label: 'Off', value: 'off' },
+  { label: 'Calendar tables', value: 'calendar' },
+  { label: 'All tables', value: 'all' },
+]
+
+/** Calendar tables (YAZ-4162 D6): how the now row is marked; table.css reads it as `data-table-now` on `.app`. */
+export const TABLE_NOW_MARK_OPTIONS: readonly Option<TableNowMark>[] = [
+  { label: 'Line', value: 'line' },
+  { label: 'Tint', value: 'tint' },
+  { label: 'Both', value: 'both' },
+]
+
+/** Calendar tables (YAZ-4162 D14, the YAZ-4163 demo): how the past rows look; table.css reads it as `data-table-dim-past` on `.app`. */
+export const TABLE_DIM_PAST_OPTIONS: readonly Option<TableDimPast>[] = [
+  { label: 'Off', value: 'off' },
+  { label: 'Grey text', value: 'text' },
+  { label: 'Grey text and shade', value: 'shade' },
 ]
 
 /** The table of contents (YAZ-2762): when its level lines show; toc.css reads it as `data-toc-lines` on `.app`. */

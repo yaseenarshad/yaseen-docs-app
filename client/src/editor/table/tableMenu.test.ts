@@ -53,9 +53,9 @@ describe('the Table part', () => {
     const colours = 'Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, Grey, Brown'
     expect(labels.slice(-6)).toEqual([
       ['Add cell note'],
-      ['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row'],
+      ['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column'],
       ['Delete row', 'Delete column', 'Clear cells'],
-      ['Align [Left, Center, Right]', `Fill [No fill | ${colours} | Custom colour…]`, `Text colour [Default colour | ${colours} | Custom colour…]`],
+      ['Align [Left, Center, Right | Top, Middle, Bottom]', `Fill [No fill | ${colours} | Custom colour…]`, `Text colour [Default colour | ${colours} | Custom colour…]`],
       ['Sort A to Z', 'Sort Z to A'],
       ['Freeze up to this row', 'Freeze up to this column', 'Unfreeze rows', 'Unfreeze columns'],
     ])
@@ -92,6 +92,7 @@ describe('each row, on the clicked cell, one undo step', () => {
     ['table-delete-col', [['h1'], ['a'], ['c']]],
     ['table-clear', [['h1', 'h2'], ['a', 'b'], ['c', '']]],
     ['table-duplicate-rows', [['h1', 'h2'], ['a', 'b'], ['c', 'd'], ['c', 'd']]],
+    ['table-duplicate-cols', [['h1', 'h2', 'h2'], ['a', 'b', 'b'], ['c', 'd', 'd']]],
   ])('%s', async (id, after) => {
     const { crepe, view } = await mount(TABLE)
     const before = getMarkdownForSave(crepe)
@@ -313,15 +314,41 @@ const selectCells = (view: EditorView, from: [number, number], to: [number, numb
 const labelsOf = (view: EditorView, r: number, c: number) =>
   sectionsAt(view, r, c).flat().filter((item) => item.id.startsWith('table-') && !item.id.includes('freeze') && !item.id.includes('note')).map((item) => item.label)
 
+describe('whole rows or whole columns: every item, the other kind on the clicked cell (the YAZ-4163 demo)', () => {
+  const freezeLabels = (view: EditorView, r: number, c: number) => sectionsAt(view, r, c).flat().filter((item) => item.id.includes('freeze')).map((item) => item.label)
+  const selectRows = (view: EditorView, from: number, to: number) =>
+    view.dispatch(view.state.tr.setSelection(CellSelection.rowSelection(view.state.doc.resolve(cellPos(view, from, 0)), view.state.doc.resolve(cellPos(view, to, 0)))))
+  const selectCols = (view: EditorView, from: number, to: number) =>
+    view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, from)), view.state.doc.resolve(cellPos(view, 0, to)))))
+
+  it('rows 2 to 3: the row items count 2; the column items are for the clicked cell\'s column; Insert column right adds one column', async () => {
+    const { view } = await mount(WIDE)
+    selectRows(view, 1, 2)
+    expect(labelsOf(view, 1, 1)).toEqual(['Insert 2 rows above', 'Insert 2 rows below', 'Insert column left', 'Insert column right', 'Duplicate 2 rows', 'Duplicate column', 'Delete 2 rows', 'Delete column', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows'])
+    expect(freezeLabels(view, 1, 1)).toEqual(['Freeze up to this row', 'Freeze up to this column', 'Unfreeze rows', 'Unfreeze columns'])
+    row(view, 1, 1, 'table-insert-col-right').onSelect()
+    expect(texts(view)[0]).toEqual(['h1', 'h2', '', 'h3', 'h4'])
+  })
+
+  it('columns B to C: the column items count 2; the row items are for the clicked cell\'s row; no Fold', async () => {
+    const { view } = await mount(WIDE)
+    selectCols(view, 1, 2)
+    expect(labelsOf(view, 2, 1)).toEqual(['Insert row above', 'Insert row below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate row', 'Duplicate 2 columns', 'Delete row', 'Delete 2 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A'])
+    row(view, 2, 1, 'table-insert-row-below').onSelect()
+    expect(texts(view).map((r) => r[0])).toEqual(['h1', 'a', 'e', '', 'i'])
+  })
+
+})
+
 describe('the labels count the selection (YAZ-3801)', () => {
   it('one cell: the labels as before', async () => {
     const { view } = await mount(WIDE)
-    expect(labelsOf(view, 1, 0)).toEqual(['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Delete row', 'Delete column', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A'])
+    expect(labelsOf(view, 1, 0)).toEqual(['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column', 'Delete row', 'Delete column', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A'])
   })
 
   it.each<[[number, number], [number, number], string[]]>([
-    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate 2 rows', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A']],
-    [[1, 1], [1, 3], ['Insert row above', 'Insert row below', 'Insert 3 columns left', 'Insert 3 columns right', 'Duplicate row', 'Delete row', 'Delete 3 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A']],
+    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate 2 rows', 'Duplicate 2 columns', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows']],
+    [[1, 1], [1, 3], ['Insert row above', 'Insert row below', 'Insert 3 columns left', 'Insert 3 columns right', 'Duplicate row', 'Duplicate 3 columns', 'Delete row', 'Delete 3 columns', 'Clear cells', 'Align', 'Fill', 'Text colour', 'Sort A to Z', 'Sort Z to A']],
   ])('cells %j to %j', async (from, to, labels) => {
     const { view } = await mount(WIDE)
     selectCells(view, from, to)
@@ -357,11 +384,29 @@ describe('the labels count the selection (YAZ-3801)', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
+  // YAZ-4168: the copies go right of the selected columns, with every cell attribute and the GFM alignment.
+  it('Duplicate 2 columns: the copies go right of them, with text, fill, colour, align, valign, width and the GFM alignment; one undo step', async () => {
+    const { crepe, view } = await mount(`| h1 | h2 | h3 | h4 |\n| -- | :-: | -: | -- |\n| a | b | c | d |\n| e | f | g | h |\n\n<!-- table: widths 140 auto 90 auto, fill B2 blue, color C3 red, align B3 right, valign C2 bottom -->\n`)
+    const before = getMarkdownForSave(crepe)
+    selectCells(view, [1, 1], [1, 2])
+    expect(row(view, 1, 1, 'table-duplicate-cols').label).toBe('Duplicate 2 columns')
+    row(view, 1, 1, 'table-duplicate-cols').onSelect()
+    expect(texts(view)).toEqual([['h1', 'h2', 'h3', 'h2', 'h3', 'h4'], ['a', 'b', 'c', 'b', 'c', 'd'], ['e', 'f', 'g', 'f', 'g', 'h']])
+    expect(getMarkdownForSave(crepe)).toBe(
+      '| h1 |  h2 | h3 |  h2 | h3 | h4 |\n| -- | :-: | -: | :-: | -: | -- |\n| a  |  b  |  c |  b  |  c | d  |\n| e  |  f  |  g |  f  |  g | h  |\n\n' +
+        '<!-- table: widths 140 auto 90 auto 90 auto, fill B2 D2 blue, color C3 E3 red, align B3 D3 right, valign C2 E2 bottom -->\n',
+    )
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
   it('the guards stay: the header row, every body row, every column', async () => {
     const { view } = await mount(WIDE)
     selectCells(view, [0, 0], [1, 3])
     expect(row(view, 0, 0, 'table-insert-row-above').disabled).toBe(true)
     expect(row(view, 0, 0, 'table-delete-row').disabled).toBe(true)
+    // Every column: the whole table (whole rows and whole columns at once, so every item shows).
+    selectCells(view, [0, 0], [3, 3])
     expect(row(view, 0, 0, 'table-delete-col').disabled).toBe(true)
     selectCells(view, [1, 0], [3, 0])
     expect(row(view, 1, 0, 'table-delete-row').label).toBe('Delete 3 rows')

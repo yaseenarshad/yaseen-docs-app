@@ -208,6 +208,14 @@
  *  - Column resize (YAZ-3696 D2, `table/tableColumnResize.ts`): `prosemirror-tables`' `columnResizing` as
  *    installed, put just before `tableEditing` so a grip drag selects no cells, with the drag measured
  *    in layout px under document zoom. The vendored table block draws the `<colgroup>` from `colwidth`.
+ *  - Shift+arrow in a cell (YAZ-4171, `table/tableShiftArrow.ts`): also just before `tableEditing`; at the edge
+ *    of the cell's text the first press selects only that cell, and `tableEditing` grows it on the next.
+ *  - Fold rows (YAZ-4165, `table/tableFold.ts`): a run of folded rows is one bar, drawn by row decorations; a
+ *    mousedown on the bar opens it, also just before `tableEditing`, so it starts no cell selection.
+ *  - The row band (YAZ-4167, `table/tableRowBand.ts`): one decoration on the caret's body row, the mouse's by CSS;
+ *    Settings › Editor › Tables › Row band is `data-table-row-band` on `.app`.
+ *  - The table zoom (YAZ-4091, `table/tableZoomPill.tsx`): the page zoom pill (`DocumentZoom`) in a widget before each
+ *    table sets its `zoom`; `table.css` zooms the block's content, so it multiplies with the page zoom.
  *  - Paste into cells (YAZ-3696 D4 / S2, `table/tablePaste.ts`, called from `clipboardPaste.ts`): cells
  *    and tab-separated text fill from the caret cell and grow the table; one value fills selected
  *    cells; tab-separated text outside a table makes one. One `replaceWith`, one undo step.
@@ -282,6 +290,7 @@ import { tableRows } from './table/tableRows'
 import { cellToolbar } from './table/cellToolbar'
 import { customColourPick } from './table/colours'
 import { tableFreeze } from './table/tableFreeze'
+import { createTableCalendar } from './table/tableCalendar'
 import { lineView } from './line/lineView'
 import { lineRows } from './line/lineRows'
 import { liftHeadlessItems, lineKeymap, visibleRangeHasMark, visibleTypeOver } from './lineSelection'
@@ -289,6 +298,11 @@ import { visibleFormatting } from './visibleFormatting'
 import { codeLines } from './lineNumbers/codeLines'
 import { lineNumbers } from './lineNumbers/lineNumbers'
 import { tableColumnResize } from './table/tableColumnResize'
+import { tableShiftArrow } from './table/tableShiftArrow'
+import { tableHandleSelect } from './table/tableHandleSelect'
+import { tableFold } from './table/tableFold'
+import { tableRowBand } from './table/tableRowBand'
+import { tableZoomPill } from './table/tableZoomPill'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut, copyLinkTextCtx, copyMarkdownCtx, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
@@ -393,6 +407,11 @@ export interface CreateCrepeOptions {
   hotkeys?: HotkeyOverrides
   /** Copy as › Without folded lines' toast (YAZ-3653): how many folded lines the copy left out. Absent → no toast. */
   onCopyNotice?: (text: string) => void
+  /**
+   * The note editor (YAZ-4162 D2, D9): a calendar table's current-time marker moves each minute (`table/tableCalendar.ts`).
+   * Absent on the hover preview card and the other previews: they show the marker of the time they opened and start no timer.
+   */
+  calendarClock?: boolean
 }
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
@@ -617,6 +636,12 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(lineNumbers)
   // Column resize (YAZ-3696 D2): `columnResizing`, before `tableEditing`, zoom-aware; the table block draws the `<colgroup>`.
   crepe.editor.use(tableColumnResize)
+  // Shift+arrow at the edge of a cell's text selects that cell only (YAZ-4171), also before `tableEditing`.
+  crepe.editor.use(tableShiftArrow)
+  // Sheets-style selection (the YAZ-4163 demo): a drag along the handles, Shift+Space and Ctrl+Space.
+  crepe.editor.use(tableHandleSelect)
+  // Folded rows (YAZ-4165): the bar and the hidden rows; a mousedown on a bar opens it, also before `tableEditing`.
+  crepe.editor.use(tableFold)
   // Fill down (YAZ-3696 S4): the corner handle of the selected cells.
   crepe.editor.use(tableFill)
   // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.
@@ -628,6 +653,12 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(customColourPick)
   // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.
   crepe.editor.use(tableFreeze)
+  // Calendar tables (YAZ-4162): the now row and the past rows; the minute clock in the note editor only.
+  crepe.editor.use(createTableCalendar(opts.calendarClock === true))
+  // The row band on the caret's row (YAZ-4167): one row decoration, moved only when the caret goes to another row.
+  crepe.editor.use(tableRowBand)
+  // The table zoom (YAZ-4091): the page zoom pill in a widget before each table, for the table's own `zoom`.
+  crepe.editor.use(tableZoomPill)
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook, opts.vaultsOfLetters))

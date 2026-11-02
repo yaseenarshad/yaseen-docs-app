@@ -5,15 +5,26 @@
  * page, as it does for the line comment (`line/lineComment.ts`). `tableStyle.ts` re-exports all of it.
  *
  * The parts, in their fixed order, each only when set:
- * `widths 140 240 auto, fill A1:C1 blue B3 #ff8800, color B2:B5 red, align B2:C3 center, border 2px 40%,
- * header plain, stripes, height compact, nowrap, freeze 2 rows 1 col`. A column's alignment is no
+ * `widths 140 240 auto, fill A1:C1 blue B3 #ff8800, color B2:B5 red, align B2:C3 center, valign middle A2:A40 top,
+ * border 2px 40%, header plain, stripes, height compact, nowrap, freeze 2 rows 1 col, calendar 30m`. `valign` (YAZ-4166,
+ * D10) is ONE part: an optional first bare value is the table's default (`middle` or `bottom`; `top` is the default
+ * and writes nothing), then cell ranges and values as `align` writes them; a cell's own value wins over the table's.
+ * `fold 20-29 31-33` (YAZ-4165, D3) names the folded rows: 1-based, row 1 is the header (never folded), each run of
+ * rows that touch as `first-last`, a run of one row as its number. It goes after `valign`. `zoom 90%` (YAZ-4091, D13) is
+ * the table's own zoom, a whole percent from 50 to 400 (the page zoom pill's range); 100% is the default and writes
+ * nothing. It goes after `fold`. `calendar` (YAZ-4162,
+ * D1) is the slot length of a calendar table, `15m`, `30m` or `60m`; it is last, so a build that does not know it
+ * keeps it in place (YAZ-4161). A column's alignment is no
  * part: it is the GFM `:-` row, so GitHub and Obsidian show it too ("Align all columns" sets it,
  * YAZ-3767); `align` is a cell's own, which wins over its column's (YAZ-3819). Cells are A1 addresses:
  * columns are letters (A…Z, AA…), rows are numbers, row 1 is the header row.
  *
- * The reader is tolerant: an unknown part, or a known part with a value it does not know, is
- * ignored and the other parts are kept. A comment with no known part is not ours (`null`), and the
- * editor keeps it as an HTML node with its text.
+ * The reader is tolerant: a known part with a value it does not know is ignored, and the other
+ * parts are kept. A part it does not know (its first word is no part) is KEPT as its text (YAZ-4161):
+ * an older or a newer build never deletes a setting it cannot read. It keeps its place after the
+ * known part before it; with none before it, or when that part is no longer set, it goes after the
+ * known parts, in its order. A comment with no known part is not ours (`null`), and the editor keeps
+ * it as an HTML node with its text.
  */
 
 /**
@@ -36,6 +47,41 @@ export type CellAlign = (typeof CELL_ALIGNS)[number]
 /** A cell's own alignment, checked, or `null`. */
 export const cellAlign = (value: unknown): CellAlign | null => ((CELL_ALIGNS as readonly unknown[]).includes(value) ? (value as CellAlign) : null)
 
+/** Vertical alignment (YAZ-4166, D10): the table's default and a cell's own. Top is the default. */
+export const VALIGNS = ['top', 'middle', 'bottom'] as const
+export type Valign = (typeof VALIGNS)[number]
+/** A vertical alignment, checked, or `null`. */
+export const cellValign = (value: unknown): Valign | null => ((VALIGNS as readonly unknown[]).includes(value) ? (value as Valign) : null)
+
+/**
+ * A part this build does not know (YAZ-4161): its text, and the word of the known part before it in
+ * the comment (`null` for none). The save writes it right after that part.
+ */
+export interface UnknownPart {
+  after: string | null
+  text: string
+}
+
+/** The words of the known parts, in the fixed order. */
+export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'fold', 'zoom', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar', 'nonow'] as const
+
+/** The slot lengths of a calendar table, in minutes (YAZ-4162, D1). */
+export const CALENDAR_SLOTS = [15, 30, 60] as const
+export type CalendarSlot = (typeof CALENDAR_SLOTS)[number]
+/** A slot length, checked, or `null`. */
+export const calendarSlot = (value: unknown): CalendarSlot | null => ((CALENDAR_SLOTS as readonly unknown[]).includes(value) ? (value as CalendarSlot) : null)
+
+/** An unknown part as the save writes it: a line break is one space, and it holds no `,` and no `-->`. `null` when it cannot be one. */
+export function unknownPart(value: unknown): UnknownPart | null {
+  if (typeof value !== 'object' || value === null) return null
+  const { after, text } = value as { after?: unknown; text?: unknown }
+  if (after !== null && !(KNOWN_PARTS as readonly unknown[]).includes(after)) return null
+  if (typeof text !== 'string') return null
+  const clean = text.trim().replace(/\s*[\r\n]+\s*/g, ' ')
+  if (clean === '' || clean.includes(',') || clean.includes('-->') || (KNOWN_PARTS as readonly string[]).includes(clean.split(/\s+/)[0])) return null
+  return { after: after as string | null, text: clean }
+}
+
 /** A table's settings. `fill`, `color` and `align` are keyed by A1 address (`cellAddress`). An absent part is the default. */
 export interface TableStyle {
   /** Per column, px; `null` is `auto`. */
@@ -43,6 +89,14 @@ export interface TableStyle {
   fill: Map<string, string>
   color: Map<string, string>
   align: Map<string, CellAlign>
+  /** A cell's own vertical alignment (YAZ-4166). */
+  valign: Map<string, Valign>
+  /** The table's vertical alignment; top is the default (YAZ-4166). */
+  valignTable?: 'middle' | 'bottom'
+  /** The folded rows, 0-based, sorted, never 0 (the header row) (YAZ-4165). */
+  fold?: number[]
+  /** The table's zoom in whole percent, 50–400; 100 is the default (YAZ-4091). */
+  zoom?: number
   /** Thickness in px and darkness in % of the outline colour. */
   border?: { px: number; darkness: number }
   /** The header row's look; shaded is the default. */
@@ -52,11 +106,20 @@ export interface TableStyle {
   height?: 'compact' | 'tall'
   nowrap?: true
   freeze?: { rows: number; cols: number }
+  /** A calendar table's slot length (YAZ-4162). */
+  calendar?: CalendarSlot
+  /** A calendar table with no "Now" chip (the YAZ-4163 demo); the chip shows by default. */
+  nonow?: true
+  /** The parts this build does not know, in their order (YAZ-4161). */
+  unknown?: UnknownPart[]
 }
 
-export const plainTable = (): TableStyle => ({ widths: [], fill: new Map(), color: new Map(), align: new Map() })
+export const plainTable = (): TableStyle => ({ widths: [], fill: new Map(), color: new Map(), align: new Map(), valign: new Map() })
 
 export const BORDER_PX_MAX = 10
+/** The table zoom's range, the page zoom pill's (`DocumentZoom`), in whole percent (YAZ-4091). */
+export const ZOOM_MIN = 50
+export const ZOOM_MAX = 400
 export const WIDTH_MAX = 9999
 /** The most cells one range may name: a typo like `A1:ZZ99999` must not hang the load. */
 const RANGE_CELLS_MAX = 100_000
@@ -150,6 +213,37 @@ function readPart(style: TableStyle, word: string, rest: string[]): boolean {
       style.align = cells
       return true
     }
+    case 'valign': {
+      // An optional table default first, then cells as `align` writes them; with no cells, the default alone.
+      const table = cellValign(first)
+      const words = table === null ? rest : rest.slice(1)
+      const cells = words.length === 0 ? new Map<string, Valign>() : readCells(words, cellValign)
+      if (cells === null || (table === null && cells.size === 0)) return false
+      style.valign = cells
+      if (table === 'middle' || table === 'bottom') style.valignTable = table
+      else delete style.valignTable
+      return true
+    }
+    case 'fold': {
+      if (rest.length === 0) return false
+      const folded = new Set<number>()
+      for (const word of rest) {
+        const match = /^([1-9]\d{0,5})(?:-([1-9]\d{0,5}))?$/.exec(word)
+        const from = Number(match?.[1])
+        const to = Number(match?.[2] ?? match?.[1])
+        if (match === null || from < 2 || to < from || folded.size + to - from >= RANGE_CELLS_MAX) return false
+        for (let row = from; row <= to; row++) folded.add(row - 1)
+      }
+      style.fold = [...folded].sort((a, b) => a - b)
+      return true
+    }
+    case 'zoom': {
+      const zoom = readWhole(/^(\d+)%$/.exec(first ?? '')?.[1], ZOOM_MIN, ZOOM_MAX)
+      if (rest.length !== 1 || zoom === null) return false
+      if (zoom === 100) delete style.zoom
+      else style.zoom = zoom
+      return true
+    }
     case 'border': {
       const px = readWhole(/^(\d+)px$/.exec(first ?? '')?.[1], 0, BORDER_PX_MAX)
       const darkness = readWhole(/^(\d+)%$/.exec(second ?? '')?.[1], 0, 100)
@@ -169,6 +263,7 @@ function readPart(style: TableStyle, word: string, rest: string[]): boolean {
       return true
     case 'stripes':
     case 'nowrap':
+    case 'nonow':
       if (rest.length !== 0) return false
       style[word] = true
       return true
@@ -184,6 +279,12 @@ function readPart(style: TableStyle, word: string, rest: string[]): boolean {
       style.freeze = freeze
       return true
     }
+    case 'calendar': {
+      const slot = calendarSlot(Number(/^(\d+)m$/.exec(first ?? '')?.[1]))
+      if (rest.length !== 1 || slot === null) return false
+      style.calendar = slot
+      return true
+    }
     default:
       return false
   }
@@ -197,12 +298,19 @@ export function parseTableComment(value: string): TableStyle | null {
   const body = COMMENT.exec(value.trim())?.[1]
   if (body === undefined || body === '') return null
   const style = plainTable()
-  let known = false
+  const unknown: UnknownPart[] = []
+  let after: string | null = null
   for (const part of body.split(/\s*,\s*/)) {
     const [word, ...rest] = part.split(/\s+/)
-    if (readPart(style, word, rest)) known = true
+    if (readPart(style, word, rest)) after = word
+    else if (!(KNOWN_PARTS as readonly string[]).includes(word)) {
+      const kept = unknownPart({ after, text: part })
+      if (kept !== null) unknown.push(kept)
+    }
   }
-  return known ? style : null
+  if (after === null) return null
+  if (unknown.length > 0) style.unknown = unknown
+  return style
 }
 
 /**
@@ -235,21 +343,47 @@ function formatCells(cells: Map<string, string>): string {
   return [...groups].map(([color, ranges]) => `${ranges.join(' ')} ${color}`).join(' ')
 }
 
+/** Sorted 0-based rows as 1-based runs: `20-29 31`. */
+function formatRuns(rows: number[]): string {
+  const runs: string[] = []
+  for (let i = 0; i < rows.length; ) {
+    let j = i
+    while (j + 1 < rows.length && rows[j + 1] === rows[j]! + 1) j++
+    runs.push(j === i ? `${rows[i]! + 1}` : `${rows[i]! + 1}-${rows[j]! + 1}`)
+    i = j + 1
+  }
+  return runs.join(' ')
+}
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
-/** The comment for the settings, or `null` for a plain table: the set parts, in the fixed order. */
+/**
+ * The comment for the settings, or `null` for a plain table: the set parts, in the fixed order, each
+ * unknown part right after its known part, and the rest of them at the end (YAZ-4161).
+ */
 export function formatTableComment(style: TableStyle): string | null {
-  const parts: string[] = []
-  if (style.widths.some((w) => w !== null)) parts.push(`widths ${style.widths.map((w) => w ?? 'auto').join(' ')}`)
-  if (style.fill.size > 0) parts.push(`fill ${formatCells(style.fill)}`)
-  if (style.color.size > 0) parts.push(`color ${formatCells(style.color)}`)
-  if (style.align.size > 0) parts.push(`align ${formatCells(style.align)}`)
-  if (style.border) parts.push(`border ${style.border.px}px ${style.border.darkness}%`)
-  if (style.header) parts.push(`header ${style.header}`)
-  if (style.stripes) parts.push('stripes')
-  if (style.height) parts.push(`height ${style.height}`)
-  if (style.nowrap) parts.push('nowrap')
+  const known: Array<[string, string]> = []
+  const push = (word: string, text: string) => known.push([word, text])
+  if (style.widths.some((w) => w !== null)) push('widths', `widths ${style.widths.map((w) => w ?? 'auto').join(' ')}`)
+  if (style.fill.size > 0) push('fill', `fill ${formatCells(style.fill)}`)
+  if (style.color.size > 0) push('color', `color ${formatCells(style.color)}`)
+  if (style.align.size > 0) push('align', `align ${formatCells(style.align)}`)
+  const valignTable = style.valignTable === 'middle' || style.valignTable === 'bottom' ? [style.valignTable] : []
+  if (valignTable.length > 0 || style.valign.size > 0) push('valign', ['valign', ...valignTable, ...(style.valign.size > 0 ? [formatCells(style.valign)] : [])].join(' '))
+  if (style.fold !== undefined && style.fold.length > 0) push('fold', `fold ${formatRuns(style.fold)}`)
+  if (style.zoom !== undefined && style.zoom !== 100) push('zoom', `zoom ${style.zoom}%`)
+  if (style.border) push('border', `border ${style.border.px}px ${style.border.darkness}%`)
+  if (style.header) push('header', `header ${style.header}`)
+  if (style.stripes) push('stripes', 'stripes')
+  if (style.height) push('height', `height ${style.height}`)
+  if (style.nowrap) push('nowrap', 'nowrap')
   const { rows = 0, cols = 0 } = style.freeze ?? {}
-  if (rows > 0 || cols > 0) parts.push(['freeze', ...(rows > 0 ? [plural(rows, 'row')] : []), ...(cols > 0 ? [plural(cols, 'col')] : [])].join(' '))
+  if (rows > 0 || cols > 0) push('freeze', ['freeze', ...(rows > 0 ? [plural(rows, 'row')] : []), ...(cols > 0 ? [plural(cols, 'col')] : [])].join(' '))
+  if (style.calendar) push('calendar', `calendar ${style.calendar}m`)
+  if (style.nonow) push('nonow', 'nonow')
+  const unknown = style.unknown ?? []
+  const written = new Set(known.map(([word]) => word))
+  const parts = known.flatMap(([word, text]) => [text, ...unknown.filter((part) => part.after === word).map((part) => part.text)])
+  parts.push(...unknown.filter((part) => part.after === null || !written.has(part.after)).map((part) => part.text))
   return parts.length === 0 ? null : `<!-- table: ${parts.join(', ')} -->`
 }

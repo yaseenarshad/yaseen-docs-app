@@ -2,9 +2,13 @@
  * The table's settings in the file (YAZ-3758, YAZ-3696 🔒 D1 / D3 / D7 / S3; CONTRACTS rule 41a).
  * The `table` node gets seven attributes, each at its default on a plain table: `border` (`null` or
  * `{ px, darkness }`), `header` (`shaded` | `plain`), `stripes`, `height` (`compact` | `normal` |
- * `tall`), `wrap`, `freezeRows` and `freezeCols`. A column's alignment is the cells' own GFM
+ * `tall`), `wrap`, `freezeRows` and `freezeCols`; `calendar` (the slot length in minutes, `0` for none,
+ * YAZ-4162); `valign` (`top` | `middle` | `bottom`, the cells' default, YAZ-4166); `zoom` (whole percent, 100 by
+ * default, YAZ-4091: `--table-zoom` on the block, which `table.css` puts on its content); and `unknownParts`, the comment's parts this build
+ * does not know, kept as their text (YAZ-4161). A column's alignment is the cells' own GFM
  * `alignment` (the `:-` row), not ours (YAZ-3767). Each
- * cell gets `fill`, `color` and its own `align` (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
+ * cell gets `fill`, `color`, its own `align` and its own `valign` (YAZ-4166), and `fold` (YAZ-4165: the cells of a
+ * folded row; the comment's `fold` names the rows) (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
  * column's width is the cells' own `colwidth` (prosemirror-tables). Markdown has no syntax for any.
  *
  * ON DISK a plain table is the GFM table, exactly the bytes of before (R5). A table with settings
@@ -36,7 +40,25 @@ import type { MarkdownNode, NodeSchema } from '@milkdown/kit/transformer'
 import { $prose, $remark } from '@milkdown/kit/utils'
 import type { Nodes, Table } from 'mdast'
 import { joinNextComment } from '../joinComment'
-import { BORDER_PX_MAX, WIDTH_MAX, cellAddress, cellAlign, cellColor, formatTableComment, parseTableComment, plainTable, type TableStyle } from './tableComment'
+import { rowFolded } from './cells'
+import {
+  BORDER_PX_MAX,
+  WIDTH_MAX,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  calendarSlot,
+  cellAddress,
+  cellAlign,
+  cellColor,
+  cellValign,
+  formatTableComment,
+  parseTableComment,
+  plainTable,
+  unknownPart,
+  type TableStyle,
+  type UnknownPart,
+  type Valign,
+} from './tableComment'
 import './table.css'
 
 export * from './tableComment'
@@ -50,14 +72,23 @@ export const TABLE_DEFAULTS = {
   wrap: true,
   freezeRows: 0,
   freezeCols: 0,
+  calendar: 0 as 0 | 15 | 30 | 60,
+  valign: 'top' as Valign,
+  zoom: 100,
+  /** A calendar table shows its "Now" chip (the YAZ-4163 demo); `false` saves `nonow`. */
+  nowButton: true,
+  unknownParts: [] as UnknownPart[],
 }
 export type TableAttrs = typeof TABLE_DEFAULTS
+
+/** The parts of the comment that are the cells' own, not the table's. */
+type TableLevel = Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align' | 'valign' | 'fold'>
 
 const isWhole = (n: unknown, min: number, max: number): n is number => Number.isInteger(n) && (n as number) >= min && (n as number) <= max
 
 /** The table-level parts of the node's attributes, every value checked: an unknown value is the default. */
-function tableLevel(attrs: Record<string, unknown>): Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align'> {
-  const out: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align'> = {}
+function tableLevel(attrs: Record<string, unknown>): TableLevel {
+  const out: TableLevel = {}
   const border = attrs.border as { px?: unknown; darkness?: unknown } | null
   if (border && isWhole(border.px, 0, BORDER_PX_MAX) && isWhole(border.darkness, 0, 100)) out.border = { px: border.px, darkness: border.darkness }
   if (attrs.header === 'plain') out.header = 'plain'
@@ -67,6 +98,13 @@ function tableLevel(attrs: Record<string, unknown>): Omit<TableStyle, 'widths' |
   const rows = isWhole(attrs.freezeRows, 1, 999) ? attrs.freezeRows : 0
   const cols = isWhole(attrs.freezeCols, 1, 999) ? attrs.freezeCols : 0
   if (rows > 0 || cols > 0) out.freeze = { rows, cols }
+  const calendar = calendarSlot(attrs.calendar)
+  if (calendar !== null) out.calendar = calendar
+  if (attrs.valign === 'middle' || attrs.valign === 'bottom') out.valignTable = attrs.valign
+  if (isWhole(attrs.zoom, ZOOM_MIN, ZOOM_MAX) && attrs.zoom !== 100) out.zoom = attrs.zoom
+  if (attrs.nowButton === false) out.nonow = true
+  const unknown = Array.isArray(attrs.unknownParts) ? attrs.unknownParts.map(unknownPart) : []
+  if (unknown.length > 0 && unknown.every((part) => part !== null)) out.unknown = unknown as UnknownPart[]
   return out
 }
 
@@ -79,17 +117,22 @@ const widthOf = (cell: ProseNode): number | null => {
 /** A table node's settings, every value checked. Rows and columns are the node's own, row 1 the header row. */
 function tableStyleOf(table: ProseNode): TableStyle {
   const style: TableStyle = { ...plainTable(), ...tableLevel(table.attrs) }
+  const fold: number[] = []
   table.forEach((row, _, r) => {
+    if (r > 0 && rowFolded(row)) fold.push(r)
     row.forEach((cell, __, c) => {
       if (r === 0) style.widths.push(widthOf(cell))
       const fill = cellColor(cell.attrs.fill)
       const color = cellColor(cell.attrs.color)
       const align = cellAlign(cell.attrs.align)
+      const valign = cellValign(cell.attrs.valign)
       if (fill !== null) style.fill.set(cellAddress(r, c), fill)
       if (color !== null) style.color.set(cellAddress(r, c), color)
       if (align !== null) style.align.set(cellAddress(r, c), align)
+      if (valign !== null) style.valign.set(cellAddress(r, c), valign)
     })
   })
+  if (fold.length > 0) style.fold = fold
   return style
 }
 
@@ -97,11 +140,20 @@ function tableStyleOf(table: ProseNode): TableStyle {
 function tableDomAttrs(attrs: Record<string, unknown>): Record<string, string> | null {
   const level = tableLevel(attrs)
   const out: Record<string, string> = {}
-  if (level.border) out.style = `--table-border-width: ${level.border.px}px; --table-border-darkness: ${level.border.darkness}%`
+  const style: string[] = []
+  if (level.border) style.push(`--table-border-width: ${level.border.px}px; --table-border-darkness: ${level.border.darkness}%`)
+  if (level.zoom) {
+    out['data-table-zoom'] = String(level.zoom)
+    style.push(`--table-zoom: ${level.zoom / 100}`)
+  }
+  if (style.length > 0) out.style = style.join('; ')
   if (level.header) out['data-table-header'] = level.header
   if (level.stripes) out['data-table-stripes'] = ''
   if (level.height) out['data-table-height'] = level.height
   if (level.nowrap) out['data-table-nowrap'] = ''
+  if (level.calendar) out['data-table-calendar'] = String(level.calendar)
+  if (level.valignTable) out['data-table-valign'] = level.valignTable
+  if (level.nonow) out['data-table-nonow'] = ''
   return Object.keys(out).length === 0 ? null : out
 }
 
@@ -111,6 +163,12 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
   const px = /--table-border-width:\s*(\d+)px/.exec(style)?.[1]
   const darkness = /--table-border-darkness:\s*(\d+)%/.exec(style)?.[1]
   const [rows, cols] = (dom.getAttribute('data-table-freeze') ?? '').split(' ').map(Number)
+  let unknownParts: unknown = null
+  try {
+    unknownParts = JSON.parse(dom.getAttribute('data-table-parts') ?? 'null')
+  } catch {
+    // Not ours: no parts.
+  }
   const raw = {
     border: px !== undefined && darkness !== undefined ? { px: Number(px), darkness: Number(darkness) } : null,
     header: dom.getAttribute('data-table-header'),
@@ -119,12 +177,17 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
     wrap: !dom.hasAttribute('data-table-nowrap'),
     freezeRows: rows,
     freezeCols: cols,
+    calendar: Number(dom.getAttribute('data-table-calendar')),
+    valign: dom.getAttribute('data-table-valign'),
+    zoom: Number(dom.getAttribute('data-table-zoom')),
+    nowButton: !dom.hasAttribute('data-table-nonow'),
+    unknownParts,
   }
   return levelAttrs(tableLevel(raw))
 }
 
 /** The node attributes for table-level parts. */
-const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align'>): TableAttrs => ({
+const levelAttrs = (style: TableLevel): TableAttrs => ({
   border: style.border ?? null,
   header: style.header ?? 'shaded',
   stripes: style.stripes === true,
@@ -132,6 +195,11 @@ const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align
   wrap: style.nowrap !== true,
   freezeRows: style.freeze?.rows ?? 0,
   freezeCols: style.freeze?.cols ?? 0,
+  calendar: style.calendar ?? 0,
+  valign: style.valignTable ?? 'top',
+  zoom: style.zoom ?? 100,
+  nowButton: style.nonow !== true,
+  unknownParts: style.unknown ?? [],
 })
 
 /**
@@ -139,13 +207,16 @@ const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align
  * itself, and a custom one (`#rrggbb`) also goes in `style` for `table.css` (YAZ-3817), after GFM's
  * own style. A cell's own alignment (`data-align`) is the `text-align` in GFM's style in place of its
  * column's, so it wins on the page and in a copy to Docs (YAZ-3819). Then the column's goes in
- * `data-column-align`, so a paste in this app gives the column its own alignment back, not the cell's.
+ * `data-column-align`, so a paste in this app gives the column its own alignment back, not the cell's. A cell's own
+ * vertical alignment (YAZ-4166) is `data-valign` and a `vertical-align` in its style, so it wins over the table's on
+ * the page and goes with a copy to Docs. A folded row's cells carry `data-fold`, for a copy inside the app (YAZ-4165).
  */
 const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<string, string> => {
   const out = { ...base }
   const fill = cellColor(node.attrs.fill)
   const color = cellColor(node.attrs.color)
   const align = cellAlign(node.attrs.align)
+  const valign = cellValign(node.attrs.valign)
   // GFM's own style, less its `text-align` when the cell has its own.
   const style = (base.style ?? '').split(';').map((part) => part.trim()).filter((part) => part !== '' && (align === null || !part.startsWith('text-align')))
   if (fill !== null) out['data-fill'] = fill
@@ -155,6 +226,11 @@ const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<str
     out['data-column-align'] = (node.attrs.alignment as string | null) ?? 'left'
     style.unshift(`text-align: ${align}`)
   }
+  if (valign !== null) {
+    out['data-valign'] = valign
+    style.push(`vertical-align: ${valign}`)
+  }
+  if (node.attrs.fold === true) out['data-fold'] = ''
   if (fill?.startsWith('#')) style.push(`--table-fill-custom: ${fill}`)
   if (color?.startsWith('#')) style.push(`--table-text-custom: ${color}`)
   const joined = style.filter(Boolean).join('; ')
@@ -163,7 +239,7 @@ const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<str
 }
 
 interface CellData {
-  tableCell?: { fill: string | null; color: string | null; align: string | null; colwidth: number[] | null }
+  tableCell?: { fill: string | null; color: string | null; align: string | null; valign: string | null; fold: boolean; colwidth: number[] | null }
 }
 
 /**
@@ -177,7 +253,7 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
   const toDOM = spec.toDOM!
   return {
     ...spec,
-    attrs: { ...spec.attrs, fill: { default: null }, color: { default: null }, align: { default: null } },
+    attrs: { ...spec.attrs, fill: { default: null }, color: { default: null }, align: { default: null }, valign: { default: null }, fold: { default: false } },
     parseDOM: spec.parseDOM?.map((rule) => {
       const { getAttrs } = rule as TagParseRule
       return {
@@ -193,6 +269,8 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
             fill: cellColor(dom.getAttribute('data-fill')),
             color: cellColor(dom.getAttribute('data-color')),
             align,
+            valign: cellValign(dom.getAttribute('data-valign')),
+            fold: dom.hasAttribute('data-fold'),
           }
         },
       }
@@ -236,21 +314,25 @@ interface TableData {
 
 /**
  * Put the settings on the mdast table: its own on `data.tableAttrs`, each cell's on `data.tableCell`.
- * Cells out of the table are dropped, and the freeze counts are kept inside it (YAZ-3769).
+ * Cells out of the table are dropped, and the freeze counts are kept inside it (YAZ-3769). A folded row's
+ * cells get `fold` (YAZ-4165); a row out of the table is dropped.
  */
 function applyStyle(table: Table, style: TableStyle): void {
   const attrs = levelAttrs(style)
   attrs.freezeRows = Math.min(attrs.freezeRows, table.children.length)
   attrs.freezeCols = Math.min(attrs.freezeCols, table.children[0]?.children.length ?? 0)
   table.data = { ...table.data, tableAttrs: attrs } as Table['data']
+  const folded = new Set(style.fold)
   table.children.forEach((row, r) => {
+    const fold = folded.has(r)
     row.children.forEach((cell, c) => {
       const width = style.widths[c] ?? null
       const fill = style.fill.get(cellAddress(r, c)) ?? null
       const color = style.color.get(cellAddress(r, c)) ?? null
       const align = style.align.get(cellAddress(r, c)) ?? null
-      if (width === null && fill === null && color === null && align === null) return
-      cell.data = { ...cell.data, tableCell: { fill, color, align, colwidth: width === null ? null : [width] } } as typeof cell.data
+      const valign = style.valign.get(cellAddress(r, c)) ?? null
+      if (width === null && fill === null && color === null && align === null && valign === null && !fold) return
+      cell.data = { ...cell.data, tableCell: { fill, color, align, valign, fold, colwidth: width === null ? null : [width] } } as typeof cell.data
     })
   })
 }
@@ -266,9 +348,13 @@ const tableStyleSchema = tableSchema.extendSchema((prev) => (ctx) => {
     attrs: Object.fromEntries(Object.entries(TABLE_DEFAULTS).map(([name, value]) => [name, { default: value }])),
     parseDOM: [{ tag: 'table', getAttrs: (dom) => readTableDom(dom as HTMLElement) }],
     toDOM: (node) => {
-      // The freeze goes with a copy only: `tableFreeze.ts` draws it on the page from the attributes.
-      const { freeze } = tableLevel(node.attrs)
-      return ['table', { ...tableDomAttrs(node.attrs), ...(freeze && { 'data-table-freeze': `${freeze.rows} ${freeze.cols}` }) }, ['tbody', 0]]
+      // The freeze and the unknown parts (YAZ-4161) go with a copy only: `tableFreeze.ts` draws the freeze on the page from the attributes.
+      const { freeze, unknown } = tableLevel(node.attrs)
+      return [
+        'table',
+        { ...tableDomAttrs(node.attrs), ...(freeze && { 'data-table-freeze': `${freeze.rows} ${freeze.cols}` }), ...(unknown && { 'data-table-parts': JSON.stringify(unknown) }) },
+        ['tbody', 0],
+      ]
     },
     parseMarkdown: {
       match: base.parseMarkdown.match,

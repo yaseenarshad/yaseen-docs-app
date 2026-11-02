@@ -20,6 +20,8 @@ export async function mountNote(markdown = TABLE, zoom = 1): Promise<{ crepe: Cr
   const view = crepe.editor.ctx.get(editorViewCtx)
   view.focus()
   Object.defineProperty(view.dom, 'currentCSSZoom', { value: zoom, configurable: true })
+  // A browser gives every element the zoom it inherits; jsdom gives none. The column resize reads it at the table (YAZ-4091).
+  for (const table of view.dom.querySelectorAll('table')) Object.defineProperty(table, 'currentCSSZoom', { value: zoom, configurable: true })
   view.posAtCoords = ({ left, top }) => {
     const pos = cellPos(view, Math.floor(top / (30 * zoom)), Math.floor(left / (100 * zoom)))
     return { pos: pos + 2, inside: pos + 1 }
