@@ -10,7 +10,9 @@
  * D10) is ONE part: an optional first bare value is the table's default (`middle` or `bottom`; `top` is the default
  * and writes nothing), then cell ranges and values as `align` writes them; a cell's own value wins over the table's.
  * `fold 20-29 31-33` (YAZ-4165, D3) names the folded rows: 1-based, row 1 is the header (never folded), each run of
- * rows that touch as `first-last`, a run of one row as its number. It goes after `valign`. `calendar` (YAZ-4162,
+ * rows that touch as `first-last`, a run of one row as its number. It goes after `valign`. `zoom 90%` (YAZ-4091, D13) is
+ * the table's own zoom, a whole percent from 50 to 400 (the page zoom pill's range); 100% is the default and writes
+ * nothing. It goes after `fold`. `calendar` (YAZ-4162,
  * D1) is the slot length of a calendar table, `15m`, `30m` or `60m`; it is last, so a build that does not know it
  * keeps it in place (YAZ-4161). A column's alignment is no
  * part: it is the GFM `:-` row, so GitHub and Obsidian show it too ("Align all columns" sets it,
@@ -61,7 +63,7 @@ export interface UnknownPart {
 }
 
 /** The words of the known parts, in the fixed order. */
-export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'fold', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar'] as const
+export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'fold', 'zoom', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar'] as const
 
 /** The slot lengths of a calendar table, in minutes (YAZ-4162, D1). */
 export const CALENDAR_SLOTS = [15, 30, 60] as const
@@ -93,6 +95,8 @@ export interface TableStyle {
   valignTable?: 'middle' | 'bottom'
   /** The folded rows, 0-based, sorted, never 0 (the header row) (YAZ-4165). */
   fold?: number[]
+  /** The table's zoom in whole percent, 50–400; 100 is the default (YAZ-4091). */
+  zoom?: number
   /** Thickness in px and darkness in % of the outline colour. */
   border?: { px: number; darkness: number }
   /** The header row's look; shaded is the default. */
@@ -111,6 +115,9 @@ export interface TableStyle {
 export const plainTable = (): TableStyle => ({ widths: [], fill: new Map(), color: new Map(), align: new Map(), valign: new Map() })
 
 export const BORDER_PX_MAX = 10
+/** The table zoom's range, the page zoom pill's (`DocumentZoom`), in whole percent (YAZ-4091). */
+export const ZOOM_MIN = 50
+export const ZOOM_MAX = 400
 export const WIDTH_MAX = 9999
 /** The most cells one range may name: a typo like `A1:ZZ99999` must not hang the load. */
 const RANGE_CELLS_MAX = 100_000
@@ -226,6 +233,13 @@ function readPart(style: TableStyle, word: string, rest: string[]): boolean {
         for (let row = from; row <= to; row++) folded.add(row - 1)
       }
       style.fold = [...folded].sort((a, b) => a - b)
+      return true
+    }
+    case 'zoom': {
+      const zoom = readWhole(/^(\d+)%$/.exec(first ?? '')?.[1], ZOOM_MIN, ZOOM_MAX)
+      if (rest.length !== 1 || zoom === null) return false
+      if (zoom === 100) delete style.zoom
+      else style.zoom = zoom
       return true
     }
     case 'border': {
@@ -354,6 +368,7 @@ export function formatTableComment(style: TableStyle): string | null {
   const valignTable = style.valignTable === 'middle' || style.valignTable === 'bottom' ? [style.valignTable] : []
   if (valignTable.length > 0 || style.valign.size > 0) push('valign', ['valign', ...valignTable, ...(style.valign.size > 0 ? [formatCells(style.valign)] : [])].join(' '))
   if (style.fold !== undefined && style.fold.length > 0) push('fold', `fold ${formatRuns(style.fold)}`)
+  if (style.zoom !== undefined && style.zoom !== 100) push('zoom', `zoom ${style.zoom}%`)
   if (style.border) push('border', `border ${style.border.px}px ${style.border.darkness}%`)
   if (style.header) push('header', `header ${style.header}`)
   if (style.stripes) push('stripes', 'stripes')

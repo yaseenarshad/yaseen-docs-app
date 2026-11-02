@@ -3,7 +3,8 @@
  * The `table` node gets seven attributes, each at its default on a plain table: `border` (`null` or
  * `{ px, darkness }`), `header` (`shaded` | `plain`), `stripes`, `height` (`compact` | `normal` |
  * `tall`), `wrap`, `freezeRows` and `freezeCols`; `calendar` (the slot length in minutes, `0` for none,
- * YAZ-4162); `valign` (`top` | `middle` | `bottom`, the cells' default, YAZ-4166); and `unknownParts`, the comment's parts this build
+ * YAZ-4162); `valign` (`top` | `middle` | `bottom`, the cells' default, YAZ-4166); `zoom` (whole percent, 100 by
+ * default, YAZ-4091: `--table-zoom` on the block, which `table.css` puts on its content); and `unknownParts`, the comment's parts this build
  * does not know, kept as their text (YAZ-4161). A column's alignment is the cells' own GFM
  * `alignment` (the `:-` row), not ours (YAZ-3767). Each
  * cell gets `fill`, `color`, its own `align` and its own `valign` (YAZ-4166), and `fold` (YAZ-4165: the cells of a
@@ -43,6 +44,8 @@ import { rowFolded } from './cells'
 import {
   BORDER_PX_MAX,
   WIDTH_MAX,
+  ZOOM_MAX,
+  ZOOM_MIN,
   calendarSlot,
   cellAddress,
   cellAlign,
@@ -71,6 +74,7 @@ export const TABLE_DEFAULTS = {
   freezeCols: 0,
   calendar: 0 as 0 | 15 | 30 | 60,
   valign: 'top' as Valign,
+  zoom: 100,
   unknownParts: [] as UnknownPart[],
 }
 export type TableAttrs = typeof TABLE_DEFAULTS
@@ -95,6 +99,7 @@ function tableLevel(attrs: Record<string, unknown>): TableLevel {
   const calendar = calendarSlot(attrs.calendar)
   if (calendar !== null) out.calendar = calendar
   if (attrs.valign === 'middle' || attrs.valign === 'bottom') out.valignTable = attrs.valign
+  if (isWhole(attrs.zoom, ZOOM_MIN, ZOOM_MAX) && attrs.zoom !== 100) out.zoom = attrs.zoom
   const unknown = Array.isArray(attrs.unknownParts) ? attrs.unknownParts.map(unknownPart) : []
   if (unknown.length > 0 && unknown.every((part) => part !== null)) out.unknown = unknown as UnknownPart[]
   return out
@@ -132,7 +137,13 @@ function tableStyleOf(table: ProseNode): TableStyle {
 function tableDomAttrs(attrs: Record<string, unknown>): Record<string, string> | null {
   const level = tableLevel(attrs)
   const out: Record<string, string> = {}
-  if (level.border) out.style = `--table-border-width: ${level.border.px}px; --table-border-darkness: ${level.border.darkness}%`
+  const style: string[] = []
+  if (level.border) style.push(`--table-border-width: ${level.border.px}px; --table-border-darkness: ${level.border.darkness}%`)
+  if (level.zoom) {
+    out['data-table-zoom'] = String(level.zoom)
+    style.push(`--table-zoom: ${level.zoom / 100}`)
+  }
+  if (style.length > 0) out.style = style.join('; ')
   if (level.header) out['data-table-header'] = level.header
   if (level.stripes) out['data-table-stripes'] = ''
   if (level.height) out['data-table-height'] = level.height
@@ -164,6 +175,7 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
     freezeCols: cols,
     calendar: Number(dom.getAttribute('data-table-calendar')),
     valign: dom.getAttribute('data-table-valign'),
+    zoom: Number(dom.getAttribute('data-table-zoom')),
     unknownParts,
   }
   return levelAttrs(tableLevel(raw))
@@ -180,6 +192,7 @@ const levelAttrs = (style: TableLevel): TableAttrs => ({
   freezeCols: style.freeze?.cols ?? 0,
   calendar: style.calendar ?? 0,
   valign: style.valignTable ?? 'top',
+  zoom: style.zoom ?? 100,
   unknownParts: style.unknown ?? [],
 })
 

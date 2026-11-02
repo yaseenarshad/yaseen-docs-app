@@ -39,8 +39,11 @@ const offsets = (view: EditorView) => rowsOf(view).map((row) => moved.get(row) ?
 const TABLE = '| h1 | h2 | h3 |\n| -- | -- | -- |\n| a | b | c |\n| d | e | f |\n| g | h | i |\n'
 const box = (top: number, height: number) => new DOMRect(0, top, 300, height)
 
-/** A note in a vertical scroller; every frame is held until `flush`. Rows are 30 px, the table starts at `tableTop`. */
-async function mount(comment: string, { tableTop = -80, zoom = 1 } = {}) {
+/**
+ * A note in a vertical scroller; every frame is held until `flush`. Rows are 30 px, the table starts at `tableTop`.
+ * `tableZoom` is the table's own zoom (YAZ-4091): the table and its rows are drawn at both zooms, the block at the page's.
+ */
+async function mount(comment: string, { tableTop = -80, zoom = 1, tableZoom = 1 } = {}) {
   Object.assign(HTMLElement.prototype, { animate: animateStub })
   const frames: FrameRequestCallback[] = []
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
@@ -58,9 +61,12 @@ async function mount(comment: string, { tableTop = -80, zoom = 1 } = {}) {
   const realCreate = document.createElement.bind(document)
   vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
     const el = realCreate(tag, options)
-    if (tag === 'table') el.getBoundingClientRect = () => box(top * zoom, 150 * zoom)
+    if (tag === 'table') {
+      el.getBoundingClientRect = () => box(top * zoom, 150 * zoom * tableZoom)
+      Object.defineProperty(el, 'currentCSSZoom', { value: zoom * tableZoom, configurable: true })
+    }
     // A row of a folded run (YAZ-4165) is `display: none`: no box.
-    if (tag === 'tr') el.getBoundingClientRect = () => (el.classList.contains('table-fold-hidden') ? new DOMRect() : box((top + 30 * ((el as HTMLTableRowElement).rowIndex)) * zoom, 30 * zoom))
+    if (tag === 'tr') el.getBoundingClientRect = () => (el.classList.contains('table-fold-hidden') ? new DOMRect() : box((top + 30 * tableZoom * (el as HTMLTableRowElement).rowIndex) * zoom, 30 * zoom * tableZoom))
     if (tag === 'th' || tag === 'td') Object.defineProperty(el, 'offsetWidth', { value: 100 })
     return el
   })
@@ -305,6 +311,18 @@ describe('the frozen rows follow the scroll (the folder-page method)', () => {
     scroll()
     flush()
     expect(offsets(view)[0]).toBe(offset)
+  })
+
+  // YAZ-4091: the rows are inside the table's zoomed content, so their offset is in its px: the screen offset ÷ both zooms.
+  it.each([
+    [1, 0.5],
+    [0.5, 0.5],
+  ])('at document zoom %s and table zoom %s the rows move by the same layout offset', async (zoom, tableZoom) => {
+    // The table starts 40 layout px of the note above its top: 40 × the document zoom on screen, 80 px of the table's own.
+    const { view, scroll, flush } = await mount('<!-- table: freeze 1 row, zoom 50% -->', { zoom, tableZoom, tableTop: -40 })
+    scroll()
+    flush()
+    expect(offsets(view)[0]).toBe('80px')
   })
 
   it.each([0.5, 2])('keeps the same layout offset at %× document zoom', async (zoom) => {

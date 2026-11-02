@@ -130,8 +130,9 @@
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color^='#'] { color: var(--table-text-custom); }
 
 /* A table on a bullet's marker line (YAZ-3805, `slashMenu.ts`): the item's first child, after the fold
-   arrow when there is one. No top margin, so the header row is level with the marker. */
-.milkdown .milkdown-list-item-block > li > .children > .content-dom > .milkdown-table-block:is(:first-child, .outline-toggle + *) {
+   arrow when there is one. No top margin, so the header row is level with the marker. The zoom pill's
+   zero-height anchor (YAZ-4091) goes right before it. */
+.milkdown .milkdown-list-item-block > li > .children > .content-dom > .milkdown-table-block:is(:first-child, .outline-toggle + *, :is(:first-child, .outline-toggle + *).table-zoom-anchor + *) {
   margin-top: 0;
 }
 
@@ -299,6 +300,45 @@
 /* Past rows: grey text, over a cell's own text colour; marks keep theirs (D14, `data-table-dim-past`). */
 [data-table-dim-past='on'] .milkdown .ProseMirror .milkdown-table-block .table-past-row > :is(th, td) {
   color: var(--fg-muted);
+}
+
+/* The table zoom (YAZ-4091, D13, `tableZoomPill.tsx`). The table's own zoom is CSS `zoom` on the block's content
+   (the table, the drag preview and the drop lines), not on the block, which is the sideways scroll box: so it
+   multiplies with the page zoom and the box keeps its width. `position: relative` makes the content the drag
+   preview's box, so the vendored block places it in the zoomed px, as its math expects. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-zoom] .table-wrapper {
+  position: relative;
+  zoom: var(--table-zoom, 1);
+}
+
+/* The pill: the page zoom pill, in a zero-height anchor right before the table block. It shows while the pointer is
+   over the table or the pill, while it has the focus, and always while the zoom is not 100% (`data-zoomed`). */
+.milkdown .ProseMirror .table-zoom-anchor {
+  position: relative;
+  height: 0;
+}
+
+/* The place (the demo decides it; this one rule moves it): the table block's top-right corner, just above the table. */
+.milkdown .ProseMirror .table-zoom-anchor > .document-zoom {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: -4px;
+  background: var(--bg);
+}
+
+.milkdown .ProseMirror .table-zoom-anchor > .document-zoom {
+  visibility: hidden;
+  transition: visibility 0s linear 0.2s;
+}
+
+.milkdown .ProseMirror .table-zoom-anchor:is(:hover, :focus-within, [data-zoomed], :has(+ .milkdown-table-block:hover)) > .document-zoom {
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.milkdown .ProseMirror[contenteditable='false'] .table-zoom-anchor {
+  display: none;
 }
 
 /* The row band (YAZ-4167, D16, `tableRowBand.ts`): a light accent band across the body row under the caret

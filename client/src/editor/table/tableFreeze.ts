@@ -35,7 +35,7 @@
  *   `translateY` (YAZ-3792). It writes no attribute, so ProseMirror sees no mutation, and it restyles
  *   only that row; a custom property on the block restyled every cell of the table on each scroll.
  *   Whole device pixels, rounded up the page (YAZ-3788). Layout px: divided by the document zoom, as
- *   the folder page does. The frozen rows' height ends at the last frozen row shown: a row of a folded run
+ *   the folder page does, and by the table's own zoom (YAZ-4091): the zoom at the `<table>`. The frozen rows' height ends at the last frozen row shown: a row of a folded run
  *   (`table-fold-hidden`, YAZ-4165) has no box.
  * - The table block's row and column handles sit in the note's coordinates, so they do not move with
  *   the rows. When the offset changes, the block gets `TABLE_HANDLE_PLACE` and places its shown
@@ -214,7 +214,8 @@ class Freezer {
     const scroller = this.#scroller
     const rows = parts.body.rows
     if (this.#rows === 0 || scroller === null || rows.length < this.#rows) return
-    const zoom = cssZoom(this.block)
+    // The rows are inside the block's zoomed content: their px are the table's (the page zoom times its own, YAZ-4091).
+    const zoom = cssZoom(parts.table)
     // The frozen rows end at the last one shown: a row of a folded run has no box (YAZ-4165; the header never folds).
     let last = this.#rows - 1
     while (last > 0 && rows[last]!.classList.contains('table-fold-hidden')) last--

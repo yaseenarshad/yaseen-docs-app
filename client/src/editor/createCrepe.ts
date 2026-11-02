@@ -208,6 +208,8 @@
  *    mousedown on the bar opens it, also just before `tableEditing`, so it starts no cell selection.
  *  - The row band (YAZ-4167, `table/tableRowBand.ts`): one decoration on the caret's body row, the mouse's by CSS;
  *    Settings › Editor › Tables › Row band is `data-table-row-band` on `.app`.
+ *  - The table zoom (YAZ-4091, `table/tableZoomPill.tsx`): the page zoom pill (`DocumentZoom`) in a widget before each
+ *    table sets its `zoom`; `table.css` zooms the block's content, so it multiplies with the page zoom.
  *  - Paste into cells (YAZ-3696 D4 / S2, `table/tablePaste.ts`, called from `clipboardPaste.ts`): cells
  *    and tab-separated text fill from the caret cell and grow the table; one value fills selected
  *    cells; tab-separated text outside a table makes one. One `replaceWith`, one undo step.
@@ -289,6 +291,7 @@ import { tableColumnResize } from './table/tableColumnResize'
 import { tableShiftArrow } from './table/tableShiftArrow'
 import { tableFold } from './table/tableFold'
 import { tableRowBand } from './table/tableRowBand'
+import { tableZoomPill } from './table/tableZoomPill'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut, copyLinkTextCtx, copyMarkdownCtx, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
@@ -621,6 +624,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createTableCalendar(opts.calendarClock === true))
   // The row band on the caret's row (YAZ-4167): one row decoration, moved only when the caret goes to another row.
   crepe.editor.use(tableRowBand)
+  // The table zoom (YAZ-4091): the page zoom pill in a widget before each table, for the table's own `zoom`.
+  crepe.editor.use(tableZoomPill)
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook, opts.vaultsOfLetters))
