@@ -727,21 +727,37 @@ export const actionClearSelectedTextFormatting = register({
   name: "clearSelectedTextFormatting",
   label: "Clear selected text colors",
   trackEvent: false,
-  perform: (elements, appState) => {
+  perform: (elements, appState, _, app) => {
     const updatedElements = changeProperty(
       elements,
       appState,
-      (element) =>
-        isTextElement(element)
-          ? newElementWith(element, {
-              strokeColor: COLOR_PALETTE.black,
-              backgroundColor: COLOR_PALETTE.transparent,
-              backgroundPaddingScale: undefined,
-              roundness: null,
-              // YAZ-3718 D10: clear formatting removes every run
-              textRuns: undefined,
-            })
-          : element,
+      (element) => {
+        if (!isTextElement(element)) {
+          return element;
+        }
+        let nextElement: ExcalidrawTextElement = newElementWith(element, {
+          strokeColor: COLOR_PALETTE.black,
+          backgroundColor: COLOR_PALETTE.transparent,
+          backgroundPaddingScale: undefined,
+          roundness: null,
+          // YAZ-3718 D10: clear formatting removes every run
+          textRuns: undefined,
+        });
+        // YAZ-4071: bold and italic runs change the letter widths
+        if (element.textRuns?.length) {
+          redrawTextBoundingBox(
+            nextElement,
+            app.scene.getContainerElement(element),
+            app.scene,
+          );
+          nextElement = offsetElementAfterFontResize(
+            element,
+            nextElement,
+            app.scene,
+          );
+        }
+        return nextElement;
+      },
       true,
     );
 

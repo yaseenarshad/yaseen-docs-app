@@ -1906,6 +1906,35 @@ describe("textWysiwyg", () => {
         expect(runs()).toBeUndefined();
       });
 
+      it("YAZ-4071 Nit: clear formatting (⌘\\) measures the box again: bold letters are wider", () => {
+        // a bold letter is 20 wide, a normal letter 10
+        setCustomTextMetricsProvider({
+          getLineWidth: (text, font) =>
+            text.length * (/bold/.test(font) ? 20 : 10),
+        });
+        try {
+          type("Hello world");
+          textarea.setSelectionRange(6, 11);
+          press(CODES.B, "b");
+          Keyboard.exitTextEditor(textarea);
+          const box = () => h.elements[0] as ExcalidrawTextElement;
+          const styledWidth = box().width;
+          API.setSelectedElements([box() as NonDeletedExcalidrawElement]);
+
+          act(() => {
+            h.app.actionManager.executeAction(
+              actionClearSelectedTextFormatting,
+            );
+          });
+          expect(box().textRuns).toBeUndefined();
+          expect(box().width).toBe(styledWidth - 50);
+        } finally {
+          setCustomTextMetricsProvider({
+            getLineWidth: (text) => text.length * 10,
+          });
+        }
+      });
+
       it("never opens the eyedropper on ⌘I", () => {
         Keyboard.exitTextEditor(textarea);
         API.setSelectedElements([]);
