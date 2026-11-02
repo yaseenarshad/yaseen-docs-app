@@ -146,6 +146,30 @@ test('step 2b — each zoom level is a Back step (YAZ-3647 D2): ‹ › and Wind
   expect(await readFile(notePath, 'utf8')).toBe(BODY)
 })
 
+test('step 2c — ⌘-click ‹ opens its step in a new tab behind, and this tab stays; ⇧-click on a row of its menu opens one in front (YAZ-4156 D2, D3)', async () => {
+  // Step 2b ended on the whole page, at the end of the list: the step behind is Alpha grandchild.
+  await backBtn(win).click({ modifiers: ['Meta'] })
+  await expect(tabsOf(win)).toHaveText([TITLE, TITLE]) // a copy of the page, next to this tab
+  await expect(crumbs(win)).toHaveCount(0) // this tab did not move
+  await expect(forwardBtn(win)).toBeDisabled() // and the list did not either
+  await tabsOf(win).nth(1).click()
+  await expect(crumbs(win)).toHaveText([TITLE, 'Alpha parent', 'Alpha child', 'Alpha grandchild'])
+  await shoot(win, 'zoom-01c-step-in-new-tab')
+  await tabsOf(win).nth(1).click({ button: 'middle' }) // a middle click closes a tab, and its steps leave the list
+  await expect(tabsOf(win)).toHaveText([TITLE])
+
+  // The menu of ‹ (a right-click): ⇧ on its nearest row opens that step in a new tab, in front.
+  await backBtn(win).click({ button: 'right' })
+  await win.locator('.ctx-menu .ctx-menu__item').first().click({ modifiers: ['Shift'] })
+  await expect(win.locator('.ctx-menu .ctx-menu__item')).toHaveCount(0)
+  await expect(tabsOf(win)).toHaveText([TITLE, TITLE])
+  await expect(crumbs(win)).toHaveText([TITLE, 'Alpha parent', 'Alpha child', 'Alpha grandchild'])
+  await tabsOf(win).nth(1).click({ button: 'middle' })
+  await expect(tabsOf(win)).toHaveText([TITLE])
+  await expect(crumbs(win)).toHaveCount(0)
+  expect(await readFile(notePath, 'utf8')).toBe(BODY)
+})
+
 test('step 3 — the magnification pill steps presets and takes a custom value, scaling the content', async () => {
   const trigger = pill(win).locator('.document-zoom__trigger')
   await expect(trigger).toHaveAttribute('aria-label', 'Document zoom: 100%')

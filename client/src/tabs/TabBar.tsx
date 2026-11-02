@@ -85,6 +85,8 @@ export interface TabBarProps {
   forwardSteps?: readonly NavStep[]
   /** A row of that menu: straight to the step with this id (YAZ-3678 F4); a step that is gone by then: nothing. */
   onGoToStep?: (id: number) => void
+  /** ⌘- or middle click on ‹ › or a row of their menu: the step with this id in a new tab, behind; ⇧-click: in front (YAZ-4156). */
+  onOpenStep?: (id: number, front: boolean) => void
   /** Each bullet's crumb text by zoom key (YAZ-3647 E3, E4): a row's " › bullet" and a zoomed tab's tooltip. A key not in it shows the page name alone. */
   zoomLabels?: ReadonlyMap<string, string>
   /**
@@ -247,7 +249,7 @@ export interface NavStep {
 /** How long a press on ‹ or › is held before its menu opens instead of a step (YAZ-3647 E3), as in Chrome. */
 export const NAV_HOLD_MS = 500
 
-export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, zoomLabels, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
+export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -274,6 +276,12 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   }, [lit])
   const isFolder = useFolderPaths(roots)
   const labelOf = (path: string): string => pageLabel(path, isFolder(path), titles)
+  /** A step in a new tab (YAZ-4156 D2): ⌘ or the middle button behind, ⇧ (with ⌘ or not) in front. False: a plain click. */
+  const openStep = (e: ReactMouseEvent, to: NavStep | undefined): boolean => {
+    if (!(e.metaKey || e.shiftKey || e.button === 1) || to === undefined || onOpenStep === undefined) return false
+    onOpenStep(to.id, e.shiftKey)
+    return true
+  }
   /** A page at a bullet (YAZ-3647 E3, E4): "Trip plan › Day 1: Lisbon"; the page name alone at the whole page, or when the bullet's text is not known. */
   const atBullet = (path: string, zoom: string | null | undefined): string => {
     const bullet = zoom === null || zoom === undefined ? undefined : zoomLabels?.get(zoom)
@@ -282,6 +290,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   /**
    * ‹ and › (YAZ-3647 E3): a click takes one step; a right-click, or a press held NAV_HOLD_MS, opens the menu of the
    * steps that way instead, under the button for a held press. A right press leaves the keyboard focus where it is.
+   * ⌘- or middle click opens the nearest step in a new tab behind, and ⇧-click in front (YAZ-4156 D2): this tab stays.
    */
   const navProps = (steps: readonly NavStep[], step: () => void) => ({
     onMouseDown: (e: ReactMouseEvent<HTMLButtonElement>) => {
@@ -299,9 +308,12 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     },
     onMouseUp: () => window.clearTimeout(hold.current.timer),
     onMouseLeave: () => window.clearTimeout(hold.current.timer),
-    onClick: () => {
+    onClick: (e: ReactMouseEvent<HTMLButtonElement>) => {
       if (hold.current.opened) hold.current.opened = false
-      else step()
+      else if (!openStep(e, steps[0])) step()
+    },
+    onAuxClick: (e: ReactMouseEvent<HTMLButtonElement>) => {
+      if (e.button === 1) openStep(e, steps[0])
     },
     onContextMenu: (e: ReactMouseEvent<HTMLButtonElement>) => {
       e.preventDefault()
@@ -980,9 +992,14 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                 className="ctx-menu__item"
                 role="menuitem"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
+                onClick={(e) => {
                   setNavMenu(null)
-                  onGoToStep?.(step.id)
+                  if (!openStep(e, step)) onGoToStep?.(step.id)
+                }}
+                onAuxClick={(e) => {
+                  if (e.button !== 1) return
+                  setNavMenu(null)
+                  openStep(e, step)
                 }}
               >
                 {atBullet(step.path, step.zoom)}

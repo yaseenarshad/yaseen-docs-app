@@ -313,7 +313,7 @@ export function App() {
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
     tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, sleep: sleepTabs, wake: wakeTab, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
-    closeActive, next: nextTab, prev: prevTab, back, forward, go: goToStep, canBack, canForward, history: tabHistory, reset: resetTabs,
+    closeActive, next: nextTab, prev: prevTab, back, forward, go: goToStep, openStep, canBack, canForward, history: tabHistory, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
     moveRight, transferMainToRight, transferRightToMain,
@@ -1310,6 +1310,11 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     goToStep(id)
   }, [goToStep])
+  // A step in a new tab (YAZ-4156): one in front closes the tab board, as a step does; one behind leaves it open.
+  const toOpenStep = useCallback((id: number, front: boolean) => {
+    if (front) setOverview(OVERVIEW_CLOSED)
+    openStep(id, front)
+  }, [openStep])
   // The mouse's back and forward buttons (YAZ-3647 D7): the window's Back list, wherever the pointer is.
   useEffect(() => {
     const onMouseUp = (e: MouseEvent) => {
@@ -3289,6 +3294,7 @@ export function App() {
               backSteps={nearSteps(tabHistory, -1)}
               forwardSteps={nearSteps(tabHistory, 1)}
               onGoToStep={toStep}
+              onOpenStep={toOpenStep}
               zoomLabels={zoomLabels}
               onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
               onShowInSidebar={showInSidebar}

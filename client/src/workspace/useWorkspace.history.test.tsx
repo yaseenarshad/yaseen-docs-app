@@ -292,3 +292,74 @@ describe('checker findings: YAZ-3675 F1 F2, YAZ-3678 F4, YAZ-3662 F6 F6b', () =>
     expect(trail(s)).toBe('a b c [d]')
   })
 })
+
+describe('a step in a new tab (YAZ-4156 D1, D4, D5): ⌘-, ⇧- or middle click on ‹ › or a row of their menu', () => {
+  /** The strip as text: each tab's page, and its level after `@`. */
+  const strip = (s: WorkspaceState): string[] => s.tabs.map((t) => `${name(t.path)}${t.zoom === undefined ? '' : `@${t.zoom}`}`)
+  /** Tabs A→B in one tab, then C in a second tab, then back to the first: the strip is b, c and you are on b. */
+  const twoTabs = (): WorkspaceState => {
+    const s = run(onA(), { type: 'navigate', path: B }, { type: 'open-new', path: C })
+    return run(s, { type: 'activate', id: idOf(s, B) })
+  }
+
+  it('S1, S8, S9, S14: behind, a NEW copy of the step\'s page next to this tab, also when another tab shows it; this tab, `mounted` and the list stay; the next one goes after it', () => {
+    const s = twoTabs()
+    expect([strip(s), trail(s)]).toEqual([['b', 'c'], 'a b c [b]'])
+    const toC = s.history.steps[s.history.index - 1]
+    const behind = run(s, { type: 'open-step', id: toC.id, next: true })
+    const copy = behind.tabs[1]
+    expect([strip(behind), behind.active, trail(behind), behind.mounted.includes(copy.id), behind.chain]).toEqual([['b', 'c', 'c'], s.active, 'a b c [b]', false, copy.id])
+    // A second one goes after the first (YAZ-3808 D4), and without `next` a new tab goes to the end.
+    const toA = s.history.steps[0]
+    expect(strip(run(behind, { type: 'open-step', id: toA.id, next: true }))).toEqual(['b', 'c', 'a', 'c'])
+    expect(strip(run(s, { type: 'open-step', id: toA.id }))).toEqual(['b', 'c', 'a'])
+  })
+
+  it('S10, S13: the step\'s OWN page, not the page its tab shows now; it joins the list when it shows, and Back returns to the tab you came from', () => {
+    const s = twoTabs()
+    const toA = s.history.steps[0]
+    expect(tabById(s, toA.tab)!.path).toBe(B)
+    const behind = run(s, { type: 'open-step', id: toA.id, next: true })
+    const copy = behind.tabs[1]
+    expect(copy.path).toBe(A)
+    const shown = run(behind, { type: 'activate', id: copy.id })
+    expect(trail(shown)).toBe('a b c b [a]')
+    expect([where(run(shown, { type: 'back' })), run(shown, { type: 'back' }).active]).toEqual(['b', s.active])
+  })
+
+  it('S3, D5: in front, the copy shows and is a step; after a Back that step clears Forward, as any new step does', () => {
+    const s = run(onA(), { type: 'navigate', path: B }, { type: 'navigate', path: C }, { type: 'back' })
+    expect(trail(s)).toBe('a [b] c')
+    const toC = s.history.steps[2]
+    const front = run(s, { type: 'open-step', id: toC.id, front: true, next: true })
+    expect([strip(front), where(front), front.mounted.includes(front.active!), trail(front)]).toEqual([['b', 'c'], 'c', true, 'a b [c]'])
+    expect(front.history.steps[2].tab).toBe(front.tabs[1].id)
+    expect(where(run(front, { type: 'back' }))).toBe('b')
+  })
+
+  it('S11: a step at a bullet opens at that bullet; a step on the whole page opens on the whole page', () => {
+    let s = onA()
+    s = run(s, { type: 'zoom', id: s.active!, zoom: 'k1:0' }, { type: 'navigate', path: B })
+    expect(trail(s)).toBe('a a@k1:0 [b]')
+    const [toA, toBullet] = s.history.steps
+    expect(strip(run(s, { type: 'open-step', id: toBullet.id }))).toEqual(['b', 'a@k1:0'])
+    expect(strip(run(s, { type: 'open-step', id: toA.id, front: true }))).toEqual(['b', 'a'])
+  })
+
+  it('one owner per file (YAZ-2940 S15): a step\'s page that the right panel shows now leaves the panel, as for any new tab', () => {
+    const s = run(onA(), { type: 'navigate', path: B }, { type: 'open-right', path: A })
+    expect([strip(s), trail(s), s.rightPanel.items]).toEqual([['b'], 'a [b]', [A]])
+    const opened = run(s, { type: 'open-step', id: s.history.steps[0].id })
+    expect([strip(opened), opened.rightPanel.items]).toEqual([['b', 'a'], []])
+  })
+
+  it('S12, S16, S18: a step that is not there, or a closed tab\'s step, or the blank tab in front: nothing changes', () => {
+    const s = run(onA(), { type: 'navigate', path: B }, { type: 'open-new', path: C })
+    const toC = s.history.steps[2]
+    expect(run(s, { type: 'open-step', id: -1 })).toBe(s)
+    const closed = run(s, { type: 'close', id: idOf(s, C) })
+    expect(run(closed, { type: 'open-step', id: toC.id, front: true })).toBe(closed)
+    const blank = run(s, { type: 'new-tab' })
+    expect(run(blank, { type: 'open-step', id: s.history.steps[0].id })).toBe(blank)
+  })
+})

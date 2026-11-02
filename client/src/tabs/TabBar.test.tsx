@@ -946,6 +946,41 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
       press(btn(el, 'Forward')!, 'contextmenu')
       expect(rows().map((r) => r.textContent)).toEqual(['Groceries'])
     })
+
+    it('⌘- or middle click on ‹ › opens its nearest step in a new tab behind; ⇧- and ⌘⇧-click open it in front; none of them steps (YAZ-4156 D2)', () => {
+      const onBack = vi.fn()
+      const onForward = vi.fn()
+      const onOpenStep = vi.fn()
+      const forwardSteps = [{ id: 4, path: '/v/groceries.md', zoom: null }]
+      const el = mount({ ...tabs, titles, canBack: true, canForward: true, onBack, onForward, backSteps, forwardSteps, onGoToStep: vi.fn(), onOpenStep, zoomLabels })
+      const back = btn(el, 'Back')!
+      press(back, 'click', { metaKey: true })
+      press(back, 'auxclick', { button: 1 })
+      press(back, 'click', { shiftKey: true })
+      press(back, 'click', { metaKey: true, shiftKey: true })
+      press(btn(el, 'Forward')!, 'click', { metaKey: true })
+      expect(onOpenStep.mock.calls).toEqual([[41, false], [41, false], [41, true], [41, true], [4, false]])
+      expect([onBack.mock.calls.length, onForward.mock.calls.length, rows().length]).toEqual([0, 0, 0])
+      // A plain click is a plain Back, and a right press (no `auxclick` of button 1) opens nothing new.
+      act(() => back.click())
+      press(back, 'auxclick', { button: 2 })
+      expect([onBack.mock.calls.length, onOpenStep.mock.calls.length]).toEqual([1, 5])
+    })
+
+    it('a row of the menu takes the same clicks: ⌘ or middle behind, ⇧ in front; the menu closes, and the row does not go there (YAZ-4156 D3)', () => {
+      const onGoToStep = vi.fn()
+      const onOpenStep = vi.fn()
+      const el = mount({ ...tabs, titles, canBack: true, canForward: false, onBack: vi.fn(), onForward: vi.fn(), backSteps, onGoToStep, onOpenStep, zoomLabels })
+      const open = () => press(btn(el, 'Back')!, 'contextmenu')
+      open()
+      press(rows()[1], 'click', { metaKey: true })
+      expect(rows()).toHaveLength(0)
+      open()
+      press(rows()[0], 'click', { shiftKey: true })
+      open()
+      press(rows()[2], 'auxclick', { button: 1 })
+      expect([onOpenStep.mock.calls, rows().length, onGoToStep.mock.calls.length]).toEqual([[[17, false], [41, true], [9, false]], 0, 0])
+    })
   })
 })
 
