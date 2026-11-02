@@ -4,7 +4,7 @@
  * as a pill in a note:
  *  - what it shows: `linkDisplayText` with the ID link's title (YAZ-2293) and the found page's name (YAZ-3778 D2, D3);
  *    a missing page is dim, and a missing ID of this vault says "Missing note · YAS-466" (YAZ-3905 S10),
- *  - a click: the open gestures of Settings › Hotkeys › "Links in a note" (`linkClickAction`, the #230 keys). A plain
+ *  - a click: the open gestures of Settings › Hotkeys › "Links in notes and drawings" (`linkClickAction`, the #230 keys). A plain
  *    click is the board's (it selects the box); a read-only board keeps "a click opens", as a read-only note does,
  *  - opening: the editor's one follower (`wikilinkFollower`), which also makes a missing page,
  *  - hover: the page the pill opens, for the host's card (`useCardPreview`),
