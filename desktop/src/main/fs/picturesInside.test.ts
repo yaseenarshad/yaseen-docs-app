@@ -135,6 +135,14 @@ describe('YAZ-3943 D5 — a save keeps the pictures inside the board', () => {
     expect(await readFile(path.join(root, 'assets', 'big.png'), 'utf8')).toBe(big)
   })
 
+  it('YAZ-4071 7H: the 50 MB answer names exactly the pictures the board keeps: one deleted in that save is not among them', async () => {
+    const file = await seed('Board.excalidraw', board({ createdAt: 1, updatedAt: 2 }, [imageEl('small'), imageEl('gone')], { small: { mimeType: 'image/png', id: 'small', dataURL: png('S'), created: 1 }, gone: { mimeType: 'image/png', id: 'gone', dataURL: png('G'), created: 1 } }))
+    const res = await saveDrawing({ root, path: file, json: sent([imageEl('small'), imageEl('gone', { isDeleted: true }), imageEl('big')]), newFiles: [{ fileId: 'big', mimeType: 'image/png', dataURL: png('x'.repeat(5000)) }] })
+    expect(res.movedOut).toBe(true)
+    expect(res.persisted).toEqual(['big', 'small'])
+    expect(await assets()).toEqual(['big.png', 'small.png'])
+  })
+
   it('a refused save (CONFLICT) writes nothing', async () => {
     const body = board(null, [])
     const file = await seed('Board.excalidraw', body)

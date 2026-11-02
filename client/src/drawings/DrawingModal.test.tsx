@@ -729,6 +729,36 @@ describe('the popup saves through drawing:save (YAZ-3943 1A1)', () => {
     await idle()
     expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [], expectedMtime: 200 })
   })
+
+  it('YAZ-4071 7H: Keep mine ships every picture again: the version it overwrites may lack one', async () => {
+    readAsset.mockResolvedValue({ ...asset(100), data: btoa(JSON.stringify({ elements: [{ type: 'image', fileId: 'pic' }], files: { pic: { id: 'pic', ...png('cGlj') } } })) })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={() => undefined} />))
+    snap(1, { pic: png('cGlj') })
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    snap(2, { pic: png('cGlj') })
+    await idle()
+    expect(drawingSave).toHaveBeenLastCalledWith(expect.objectContaining({ newFiles: [] }))
+    await click(byText('Keep mine'))
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [{ fileId: 'pic', ...png('cGlj') }], expectedMtime: 555 })
+  })
+
+  it('YAZ-4071 7H: a save that moved the pictures out by the 50 MB rule replaces the set, so a picture deleted in it ships again after an undo', async () => {
+    readAsset.mockResolvedValue({ ...asset(100), data: btoa(JSON.stringify({ elements: [{ type: 'image', fileId: 'a' }, { type: 'image', fileId: 'b' }], files: { a: { id: 'a', ...png('YQ==') }, b: { id: 'b', ...png('Yg==') } } })) })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={() => undefined} />))
+    snap(1, { a: png('YQ=='), b: png('Yg==') })
+    drawingSave.mockResolvedValueOnce({ path: PATH, mtime: 200, size: 1, persisted: ['a'], movedOut: true })
+    snap(2, { a: png('YQ==') })
+    await idle()
+    snap(3, { a: png('YQ=='), b: png('Yg==') })
+    await idle()
+    expect(drawingSave).toHaveBeenLastCalledWith({ root: ROOT, path: PATH, json: BYTES, newFiles: [{ fileId: 'b', ...png('Yg==') }], expectedMtime: 200 })
+  })
 })
 
 /** YAZ-4074 6A item 12: the popup says what a tab says when a board's pictures are missing. */
