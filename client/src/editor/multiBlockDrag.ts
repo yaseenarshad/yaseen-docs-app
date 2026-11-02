@@ -15,18 +15,19 @@
  *  - drop: ProseMirror's move logic deletes the dragged text range, which merges the origin
  *    blocks into one empty shell. The appendTransaction watches the drop (uiEvent meta) and
  *    removes that shell, walking up through wrappers (e.g. a list_item) it was the only child of, never a
- *    table cell (YAZ-3818).
+ *    table cell (`emptyWrapperDepth`, YAZ-3818).
  * Grabbing a block OUTSIDE the selection is untouched: the plugin never arms and Crepe's
  * single-block path runs as before. Nor does it arm over lines in a table cell (YAZ-3818 D10).
  *  - Only a left-button grab on THIS editor's own handle arms the plugin (tabs keep hidden
  *    editors mounted).
  */
-import { type ResolvedPos, Slice, type Node as ProseNode } from '@milkdown/kit/prose/model'
+import { Slice, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { handleTargetPos, isDragHandleGrab, isOwnHandleGrab } from './blockHandleTarget'
-import { isTableCell } from './outline/listNodes'
+import { emptyWrapperDepth } from './lineSelection'
+import { cellPosAround } from './outline/listNodes'
 
 interface Armed {
   from: number
@@ -36,15 +37,6 @@ interface Armed {
 type Meta = { type: 'arm'; from: number; to: number } | { type: 'disarm' }
 
 export const multiBlockDragKey = new PluginKey<Armed | null>('mdapp-multi-block-drag')
-
-/**
- * Lines in a table cell (YAZ-3818 D10): a handle there is the table's (Crepe's handle never points inside a table), so
- * it never arms, and Crepe drags the whole table.
- */
-const inTableCell = ($pos: ResolvedPos): boolean => {
-  for (let depth = $pos.depth; depth > 0; depth--) if (isTableCell($pos.node(depth))) return true
-  return false
-}
 
 /**
  * [start, end] covering whole sibling blocks at the deepest level containing both selection
@@ -93,9 +85,8 @@ export const multiBlockDrag = $prose(
         // The move-deletion collapsed the origin to armed.from, leaving one merged empty shell.
         const $p = state.doc.resolve(Math.min(armed.from, state.doc.content.size))
         if ($p.depth === 0 || !$p.parent.isTextblock || $p.parent.content.size !== 0) return tr
-        let depth = $p.depth
-        // Never the cell itself (YAZ-3818): the replace fills it with an empty line.
-        while (depth > 1 && $p.node(depth - 1).childCount === 1 && !isTableCell($p.node(depth - 1))) depth--
+        // Up through the wrappers it was the only child of, never the cell itself (YAZ-3818).
+        const depth = emptyWrapperDepth($p)
         tr.delete($p.before(depth), $p.after(depth))
         return tr
       },
@@ -106,7 +97,9 @@ export const multiBlockDrag = $prose(
           if (probe === null) return
           const sel = view.state.selection
           const range = expandedBlockRange(view.state.doc, sel.from, sel.to)
-          if (range === null || probe.pos < range.start || probe.pos > range.end || inTableCell(view.state.doc.resolve(range.start))) return
+          // Lines in a table cell (YAZ-3818 D10): a handle there is the table's (Crepe's handle never points inside a
+          // table), so it never arms, and Crepe drags the whole table.
+          if (range === null || probe.pos < range.start || probe.pos > range.end || cellPosAround(view.state.doc.resolve(range.start)) !== null) return
           e.stopImmediatePropagation()
           const expanded = TextSelection.between(view.state.doc.resolve(range.start), view.state.doc.resolve(range.end))
           view.dispatch(

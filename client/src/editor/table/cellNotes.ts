@@ -7,19 +7,21 @@
  * the hidden-line checks (`lineSelection.ts`) skip it through `isCellNoteHidden`.
  *
  * `notesFollowTables` (D12): after a change that adds or removes a table, a cell note or a cell note's mark, each cell
- * note goes right under the table that holds its mark, in the order of the marks. A cell note with no mark stays where
- * it is and shows (`cell-note--orphan`): no words are hidden for good. A typed key never runs it.
+ * note goes right under the table that holds its mark, in the order of the marks. A cell note with no mark in a table
+ * cell stays where it is and shows (`cell-note--orphan`): no words are hidden for good. A typed key never runs it. Its
+ * state also gives each cell that holds a mark the class that draws the corner triangle (`CELL_NOTE_CELL_CLASS`).
  */
 import { footnoteDefinitionSchema } from '@milkdown/kit/preset/gfm'
-import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
+import { Fragment, type Node as ProseNode, type ResolvedPos } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { ReplaceAroundStep, ReplaceStep, type Step } from '@milkdown/kit/prose/transform'
-import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import type { MarkdownNode } from '@milkdown/kit/transformer'
 import { $nodeSchema, $prose, $remark } from '@milkdown/kit/utils'
 import type { FootnoteDefinition } from 'mdast'
 import { visit } from 'unist-util-visit'
-import { CELL_CONTENT } from '../inlineBreaks'
+import { BR, CELL_CONTENT } from '../inlineBreaks'
+import { cellPosAround } from '../outline/listNodes'
 import { getZoomedItemPos } from '../outline/zoom'
 
 /** A cell note's label: `cell-1`, `cell-2`, … */
@@ -31,8 +33,6 @@ const isCellNoteDefinition = (node: MarkdownNode): boolean =>
   CELL_NOTE_LABEL.test(String(node.label ?? '')) &&
   (node.children ?? []).every((child) => child.type === 'paragraph' || child.type === 'list')
 
-const EMPTY_LINE = /^<br\s*\/?>$/i
-
 /**
  * An empty line in a footnote: Milkdown writes it `<br />`, which reads back as an HTML block, and `inlineBreaksRemark`
  * made that a break the footnote cannot hold, so the whole footnote was dropped on load. Read it as the empty line it
@@ -40,7 +40,7 @@ const EMPTY_LINE = /^<br\s*\/?>$/i
  */
 const footnoteEmptyLines = $remark('mdapp-footnote-empty-lines', () => () => (tree) => {
   visit(tree, 'footnoteDefinition', (note: FootnoteDefinition) => {
-    note.children = note.children.map((child) => (child.type === 'html' && EMPTY_LINE.test(child.value.trim()) ? { type: 'paragraph', children: [] } : child))
+    note.children = note.children.map((child) => (child.type === 'html' && BR.test(child.value.trim()) ? { type: 'paragraph', children: [] } : child))
   })
 })
 
@@ -58,6 +58,8 @@ export const cellNoteSchema = $nodeSchema('cell_note', () => ({
   group: 'block',
   content: CELL_CONTENT,
   defining: true,
+  // One label, one note (YAZ-3818 5A-2): no split, join or block insert crosses its edge, as for a table's cells.
+  isolating: true,
   attrs: { label: { default: '', validate: 'string' } },
   parseDOM: [{ tag: 'section[data-type="cell_note"]', getAttrs: (dom) => ({ label: (dom as HTMLElement).dataset.label ?? '' }) }],
   toDOM: (node) => ['section', { 'data-type': 'cell_note', 'data-label': node.attrs.label as string, class: 'cell-note' }, 0],
@@ -107,8 +109,8 @@ export function nextCellNoteLabel(doc: ProseNode): string {
 /** The label of the first mark in the cell at `cellPos`, or null. */
 export const cellNoteOf = (doc: ProseNode, cellPos: number): string | null => cellNoteLabelsIn(doc.nodeAt(cellPos)!)[0] ?? null
 
-/** The cell at `cellPos`'s table: its position, and where the node after it starts. */
-const tableAround = (doc: ProseNode, cellPos: number): { pos: number; end: number; node: ProseNode } => {
+/** The cell at `cellPos`'s table: its position, and where the node after it starts (a new cell note goes there). */
+export const tableAround = (doc: ProseNode, cellPos: number): { pos: number; end: number; node: ProseNode } => {
   const $cell = doc.resolve(cellPos)
   const depth = $cell.depth - 1
   return { pos: $cell.before(depth), end: $cell.after(depth), node: $cell.node(depth) }
@@ -117,11 +119,11 @@ const tableAround = (doc: ProseNode, cellPos: number): { pos: number; end: numbe
 /**
  * Add a cell note to the cell at `cellPos` (D4, D8): the mark at the END of the cell's first line (in a cell that
  * starts with a list, the first bullet's line), and a cell note with one empty line right under the table, among the
- * table's notes in the order of the marks. `added` gets the note's position in the new doc, for 4B to open it.
+ * table's notes in the order of the marks. Find the note by its label (`notePosOf`): `notesFollowTables` may move it.
  * Declines on a cell that already has a cell note.
  */
 export const addCellNote =
-  (cellPos: number, added?: (notePos: number) => void): Command =>
+  (cellPos: number): Command =>
   (state, dispatch) => {
     const { doc, schema } = state
     if (cellNoteOf(doc, cellPos) !== null) return false
@@ -147,7 +149,6 @@ export const addCellNote =
     }
     tr.insert(at, schema.nodes.cell_note.createAndFill({ label })!)
     dispatch(tr)
-    added?.(at)
     return true
   }
 
@@ -165,43 +166,111 @@ export function removeCellNote(tr: Transaction, label: string): Transaction {
   return tr
 }
 
+/** The position of the first node in `doc` that `match` takes, or null. A walk that stops at it. */
+const firstPos = (doc: ProseNode, match: (node: ProseNode) => boolean): number | null => {
+  let found: number | null = null
+  doc.descendants((node, pos) => {
+    if (found === null && match(node)) found = pos
+    return found === null
+  })
+  return found
+}
+
+/** The position of the first mark labelled `label`, or null. */
+export const markPosOf = (doc: ProseNode, label: string): number | null => firstPos(doc, (node) => isCellNoteMark(node) && node.attrs.label === label)
+
+/** The position of the first cell note labelled `label`, or null. */
+export const notePosOf = (doc: ProseNode, label: string): number | null => firstPos(doc, (node) => isCellNote(node) && node.attrs.label === label)
+
+/** The position of the cell note that holds `$pos`, or null. */
+export const cellNoteAround = ($pos: ResolvedPos): number | null => {
+  for (let depth = $pos.depth; depth > 0; depth--) if (isCellNote($pos.node(depth))) return $pos.before(depth)
+  return null
+}
+
+/** A cell note that holds one empty line: leaving its page removes it, and a save leaves it out (D15). */
+export const isEmptyCellNote = (note: ProseNode): boolean => note.childCount === 1 && note.firstChild!.isTextblock && note.firstChild!.content.size === 0
+
+/**
+ * The doc a save writes (D15): without each cell note that holds one empty line, and without its mark. Every route
+ * that saves (the debounced save, a tab closing, another note in the tab, quit) reads the bytes from here, so an empty
+ * note never reaches the file, whatever way its page closes. `state.doc` itself when there is none.
+ */
+export function withoutEmptyCellNotes(state: EditorState): ProseNode {
+  const labels: string[] = []
+  state.doc.descendants((node) => {
+    if (isCellNote(node) && isEmptyCellNote(node)) labels.push(node.attrs.label as string)
+    return !isCellNote(node) && !node.isTextblock
+  })
+  if (labels.length === 0) return state.doc
+  const tr = state.tr
+  for (const label of labels) removeCellNote(tr, label)
+  return tr.doc
+}
+
 /**
  * For 4B's crumb (D9): the column's header text and the row's first-cell text of the cell that holds the mark
- * `label`. Empty strings when no table holds it.
+ * `label`, a cell's lines and bullets joined with a space. No row for a cell in the header row: it names no row.
+ * Empty strings when no table holds it.
  */
 export function cellNoteCrumbParts(doc: ProseNode, label: string): { column: string; row: string } {
-  let markPos: number | null = null
-  doc.descendants((node, pos) => {
-    if (markPos === null && isCellNoteMark(node) && node.attrs.label === label) markPos = pos
-    return markPos === null
-  })
-  if (markPos === null) return { column: '', row: '' }
-  // Up from the mark to its cell: table > row > cell.
-  const $mark = doc.resolve(markPos)
-  for (let depth = $mark.depth; depth > 2; depth--) {
-    if ($mark.node(depth - 2).type.name !== 'table') continue
-    const column = $mark.node(depth - 2).firstChild!.maybeChild($mark.index(depth - 1))
-    return { column: column?.textContent ?? '', row: $mark.node(depth - 1).firstChild!.textContent }
-  }
-  return { column: '', row: '' }
+  const mark = markPosOf(doc, label)
+  const cell = mark === null ? null : cellPosAround(doc.resolve(mark))
+  if (cell === null) return { column: '', row: '' }
+  // table > row > cell.
+  const $cell = doc.resolve(cell)
+  const words = (node: ProseNode | null) => (node === null ? '' : node.textBetween(0, node.content.size, ' '))
+  const header = $cell.index(-1) === 0
+  return { column: words($cell.node(-1).firstChild!.maybeChild($cell.index())), row: header ? '' : words($cell.parent.firstChild) }
 }
 
 const cellNotesKey = new PluginKey<DecorationSet>('mdapp-cell-notes')
 
-/** The orphan decorations: a cell note whose label no mark in `doc` has (D12). */
-function orphans(doc: ProseNode): DecorationSet {
+/** The class of a cell that holds a mark: table.css draws the corner triangle on it (D8). */
+export const CELL_NOTE_CELL_CLASS = 'has-cell-note'
+
+/**
+ * The state's decorations: each cell that holds a mark gets `CELL_NOTE_CELL_CLASS`, and a cell note whose label no
+ * mark in a table cell has is an orphan (D12). A mark in a plain line or in a cell note does not count: no table
+ * places that note, and a click on that mark opens nothing.
+ */
+function noteDecorations(doc: ProseNode): DecorationSet {
   const marked = new Set<string>()
+  const cells = new Map<number, ProseNode>()
   const notes: Array<{ pos: number; node: ProseNode }> = []
   doc.descendants((node, pos) => {
-    if (isCellNoteMark(node)) marked.add(node.attrs.label as string)
-    else if (isCellNote(node)) notes.push({ pos, node })
+    if (isCellNote(node)) notes.push({ pos, node })
+    else if (isCellNoteMark(node)) {
+      const cell = cellPosAround(doc.resolve(pos))
+      if (cell !== null) {
+        marked.add(node.attrs.label as string)
+        cells.set(cell, doc.nodeAt(cell)!)
+      }
+    }
     return true
   })
-  const decorations = notes.filter(({ node }) => !marked.has(node.attrs.label as string)).map(({ pos, node }) => Decoration.node(pos, pos + node.nodeSize, { class: 'cell-note--orphan' }))
+  const decorations = [
+    ...[...cells].map(([pos, node]) => Decoration.node(pos, pos + node.nodeSize, { class: CELL_NOTE_CELL_CLASS })),
+    ...notes.filter(({ node }) => !marked.has(node.attrs.label as string)).map(({ pos, node }) => Decoration.node(pos, pos + node.nodeSize, { class: 'cell-note--orphan' })),
+  ]
   return DecorationSet.create(doc, decorations)
 }
 
-/** A cell note with no mark: it shows (D12). */
+/** The corner square that takes a click or a rest for the triangle (D8): the triangle's 8 px and a little more. */
+const CORNER_PX = 10
+
+/**
+ * The cell of this view whose corner triangle a pointer event is in, or null (D8, 5A-18): a cell with
+ * `CELL_NOTE_CELL_CLASS`, and the event in its top-right `CORNER_PX` square. Reads the cell's box only over such a cell.
+ */
+export function cellNoteCornerAt(view: EditorView, event: MouseEvent): HTMLElement | null {
+  const cell = event.target instanceof Element ? event.target.closest<HTMLElement>(`.${CELL_NOTE_CELL_CLASS}`) : null
+  if (cell === null || !view.dom.contains(cell)) return null
+  const box = cell.getBoundingClientRect()
+  return event.clientX >= box.right - CORNER_PX && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.top + CORNER_PX ? cell : null
+}
+
+/** A cell note with no mark in a cell: it shows (D12). Only an orphan's decoration starts at a cell note. */
 const isOrphan = (state: EditorState, pos: number): boolean => (cellNotesKey.getState(state)?.find(pos, pos + 1) ?? []).some((deco) => deco.from === pos)
 
 /**
@@ -308,18 +377,18 @@ function placeNotes(state: EditorState): Transaction | null {
 }
 
 /**
- * D12. The state: the orphan decorations, built again after a transaction that adds or removes a table, a cell note or
- * a mark, and mapped after any other.
+ * D12. The state: the orphan decorations and the marked cells' class (5A-18), built again after a transaction that adds
+ * or removes a table, a cell note or a mark, and mapped after any other: a typed key only maps them.
  */
 const notesFollowTables = $prose(
   () =>
     new Plugin<DecorationSet>({
       key: cellNotesKey,
       state: {
-        init: (_, { doc }) => orphans(doc),
+        init: (_, { doc }) => noteDecorations(doc),
         apply: (tr, set) => {
           if (!tr.docChanged) return set
-          return touchesNotes(tr) ? orphans(tr.doc) : set.map(tr.mapping, tr.doc)
+          return touchesNotes(tr) ? noteDecorations(tr.doc) : set.map(tr.mapping, tr.doc)
         },
       },
       appendTransaction: (trs, _old, state) => (trs.some((tr) => tr.docChanged && touchesNotes(tr)) ? placeNotes(state) : null),

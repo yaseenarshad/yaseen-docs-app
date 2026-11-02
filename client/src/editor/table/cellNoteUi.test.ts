@@ -16,7 +16,7 @@ import type { MenuAction, MenuItem } from '../../sidebar/menuSections'
 import { getMarkdownForSave, zoomPageTo } from '../createCrepe'
 import { mount, pressKey, typeText, unmountAll } from '../marks/markTestKit'
 import { noteMenuSections } from '../noteMenu'
-import { getZoomedItemPos, getZoomKey, ZOOM_CLOSE_CLASS, ZOOM_CRUMB_CLASS, ZOOM_HIDDEN_CLASS, ZOOM_NOTE_CLASS, zoomDecorationBuilds } from '../outline/zoom'
+import { canOpenCellNote, getZoomedItemPos, getZoomKey, ZOOM_CLOSE_CLASS, ZOOM_CRUMB_CLASS, ZOOM_HIDDEN_CLASS, ZOOM_NOTE_CLASS, zoomDecorationBuilds } from '../outline/zoom'
 import { cellNoteButtonPlacements } from './cellNoteButton'
 import { cellNotePreviewLines } from './cellNotePreview'
 import { isCellNoteHidden } from './cellNotes'
@@ -72,8 +72,13 @@ const caretAt = (view: EditorView, text: string, offset = text.length) => {
   })
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)))
 }
-const markEl = (root: HTMLElement, label = 'cell-1') => root.querySelector<HTMLElement>(`sup[data-type="footnote_reference"][data-label="${label}"]`)!
 const click = (el: Element) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+/** A pointer event in the cell at (row, col), at its top-right corner (the mark's triangle, 5A-18) or at `x`, `y`. */
+const inCell = (view: EditorView, type: string, row = 1, col = 1, x = 197, y = 33) => {
+  const cell = view.nodeDOM(cellPos(view, row, col)) as HTMLElement
+  cell.getBoundingClientRect = () => new DOMRect(100, 30, 100, 30)
+  return cell.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y }))
+}
 /** ⌘. and ⌘⇧.: a real keyboard shifts `.` into `>`, and prosemirror-keymap reads the keyCode then (`zoom.test.ts`). */
 const mod = (crepe: Crepe, key: '.' | '>') =>
   crepe.editor.action((ctx) => {
@@ -91,7 +96,7 @@ describe('the cell note page (D9)', () => {
     const onZoom = vi.fn()
     const { crepe, root, view } = await mount(NOTES, zoomOpts(onZoom))
     expect(shown(view)).toEqual(['Intro', 'table', 'Outro'])
-    click(markEl(root))
+    inCell(view, 'click')
     expect(zoomedNode(view)?.type.name).toBe('cell_note')
     expect(shown(view)).toEqual(['note:Book the window seat.bullet abullet b'])
     expect(view.nodeDOM(getZoomedItemPos(view.state)!)).toHaveProperty('className', expect.stringContaining(ZOOM_NOTE_CLASS))
@@ -121,7 +126,7 @@ describe('the cell note page (D9)', () => {
 
   it('leaving the page puts the caret after the mark, in the cell; ⌘⇧. from the page zooms out fully', async () => {
     const { crepe, root, view } = await mount(`* outer\n\n${NOTES.split('\n').map((line) => (line === '' ? '' : `  ${line}`)).join('\n')}`, zoomOpts())
-    click(markEl(root))
+    inCell(view, 'click')
     expect(crumbs(root)).toEqual(['Notes', 'outer', 'Note: Plan · Monday'])
     expect(mod(crepe, '>')).toBe(true)
     expect(getZoomedItemPos(view.state)).toBeNull()
@@ -131,7 +136,7 @@ describe('the cell note page (D9)', () => {
 
   it('a bullet zoomed inside the note keeps the note shown, with its crumb; ⌘⇧. goes back to the note', async () => {
     const { crepe, root, view } = await mount(NOTES, zoomOpts())
-    click(markEl(root))
+    inCell(view, 'click')
     caretAt(view, 'bullet b')
     expect(mod(crepe, '.')).toBe(true)
     expect(zoomedNode(view)?.type.name).toBe('list_item')
@@ -145,7 +150,7 @@ describe('the cell note page (D9)', () => {
 
   it('Tab in the page indents a bullet: the note is not inside the table', async () => {
     const { crepe, root, view } = await mount(NOTES, zoomOpts())
-    click(markEl(root))
+    inCell(view, 'click')
     caretAt(view, 'bullet b', 0)
     expect(pressKey(crepe, 'Tab')).toBe(true)
     expect(getMarkdownForSave(crepe)).toContain('    * bullet a\n      * bullet b')
@@ -198,7 +203,7 @@ describe('⌘. on a cell (D9) and an empty note (D15)', () => {
     // A file cannot hold it (a mark with no footnote reads as text): a mark the app put in, as a paste may.
     caretAt(view, 'x')
     view.dispatch(view.state.tr.replaceSelectionWith(view.state.schema.nodes.footnote_reference.create({ label: 'cell-1' })))
-    click(markEl(root))
+    inCell(view, 'click', 1, 0)
     expect(zoomedNode(view)?.attrs.label).toBe('cell-1')
     mod(crepe, '>')
     expect(getMarkdownForSave(crepe)).not.toContain('cell-1')
@@ -227,56 +232,102 @@ describe('the table menu (D8)', () => {
     expect(getMarkdownForSave(crepe)).toBe(NOTES)
     run(view, 0, 0, 'table-add-note')
     expect(zoomedNode(view)?.attrs.label).toBe('cell-2')
-    expect(crumbs(root)).toEqual(['Notes', 'Note: Day · Day'])
+    // A header cell names its column only: the header row names no row (5A-16).
+    expect(crumbs(root)).toEqual(['Notes', 'Note: Day'])
   })
 })
 
 describe('the mark (D8)', () => {
-  it('Backspace right after the mark and Delete right before it step over it; the mark stays', async () => {
+  it('Backspace right after the mark and Delete right before it step over it and leave the key to the browser; the mark stays', async () => {
+    // jsdom has no native delete, so the bytes cannot show which character goes: the key must be left unhandled
+    // (false) with the caret on the far side of the mark. "Backspace deletes the s" stays a demo check (5A-24).
     const { crepe, view } = await mount(NOTES, zoomOpts())
     caretAt(view, 'Flights')
+    const markPos = view.state.selection.head
     // After the mark: the end of the line.
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.head + 1)))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, markPos + 1)))
     expect(view.state.selection.$from.nodeBefore?.type.name).toBe('footnote_reference')
-    pressKey(crepe, 'Backspace')
-    expect(view.state.selection.$from.nodeAfter?.type.name).toBe('footnote_reference')
+    expect(pressKey(crepe, 'Backspace')).toBe(false)
+    expect(view.state.selection.head).toBe(markPos)
+    expect(view.state.selection.$from.nodeBefore?.isText).toBe(true)
     caretAt(view, 'Flights')
-    pressKey(crepe, 'Delete')
-    expect(view.state.selection.$from.nodeBefore?.type.name).toBe('footnote_reference')
+    expect(pressKey(crepe, 'Delete')).toBe(false)
+    expect(view.state.selection.head).toBe(markPos + 1)
     expect(getMarkdownForSave(crepe)).toBe(NOTES)
   })
 })
 
-describe('the "Add cell note" button (D8)', () => {
-  const buttons = (root: HTMLElement) => [...root.querySelectorAll<HTMLButtonElement>('.cell-note-button')]
+describe('the "Add cell note" button (D8, 5A-7)', () => {
+  const buttons = () => [...document.querySelectorAll<HTMLButtonElement>('.cell-note-button')]
+  const shownButton = () => buttons().find((button) => button.dataset.show === 'true') ?? null
   const hover = (view: EditorView, row: number, col: number) => (view.nodeDOM(cellPos(view, row, col)) as HTMLElement).dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+  /** Each cell a box: 100 × 30 px at (col, row); the editor's box at (10, 20). */
+  const boxes = (view: EditorView) => {
+    for (const cell of view.dom.querySelectorAll<HTMLElement>('td, th')) {
+      const row = (cell.parentElement as HTMLTableRowElement).rowIndex
+      const col = (cell as HTMLTableCellElement).cellIndex
+      cell.getBoundingClientRect = () => new DOMRect(col * 100, row * 30, 100, 30)
+    }
+    view.dom.parentElement!.getBoundingClientRect = () => new DOMRect(10, 20, 500, 500)
+  }
 
-  it('one instance; it moves to the hovered cell; none on a cell with a note; a click adds and opens the note', async () => {
+  it('one element, outside the editable DOM, over the hovered cell\'s corner; none on a cell with a note; a click adds and opens the note', async () => {
     const { crepe, root, view } = await mount(NOTES, zoomOpts())
+    boxes(view)
     hover(view, 3, 1)
-    expect(buttons(root)).toHaveLength(1)
-    expect(buttons(root)[0]!.closest('td')).toBe(view.nodeDOM(cellPos(view, 3, 1)))
-    expect(buttons(root)[0]!.getAttribute('aria-label')).toBe('Add cell note')
+    expect(buttons()).toHaveLength(1)
+    const button = shownButton()!
+    expect(view.dom.contains(button)).toBe(false)
+    expect(root.contains(button)).toBe(true)
+    expect(button.getAttribute('aria-label')).toBe('Add cell note')
+    // The cell (1, 3) spans x 100–200, y 90–120: the button's 18 px box ends 2 px in from its right edge.
+    expect([button.style.left, button.style.top]).toEqual([`${200 - 2 - 18 - 10}px`, `${90 + 2 - 20}px`])
     hover(view, 0, 1)
-    expect(buttons(root)).toHaveLength(1)
-    expect(buttons(root)[0]!.closest('th')).toBe(view.nodeDOM(cellPos(view, 0, 1)))
+    expect(shownButton()!.style.top).toBe(`${2 - 20}px`)
     hover(view, 1, 1)
-    expect(buttons(root)).toHaveLength(0)
+    expect(shownButton()).toBeNull()
     // Off the table: the caret's cell, while the editor has focus.
     root.querySelector('p')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    view.hasFocus = () => true
     caretAt(view, 'free')
-    view.focus()
-    expect(buttons(root)[0]!.closest('td')).toBe(view.nodeDOM(cellPos(view, 3, 1)))
-    click(buttons(root)[0]!)
+    expect(shownButton()!.style.top).toBe(`${90 + 2 - 20}px`)
+    click(shownButton()!)
     expect(zoomedNode(view)?.attrs.label).toBe('cell-2')
-    expect(getMarkdownForSave(crepe)).toContain('free[^cell-2]')
+    expect(view.state.doc.nodeAt(cellPos(view, 3, 1))!.lastChild!.lastChild?.type.name).toBe('footnote_reference')
+    // Empty, the note stays out of the file (5A-5).
+    expect(getMarkdownForSave(crepe)).toBe(NOTES)
   })
 
-  it('a typed key in the cell places nothing: the widget only rides the mapping', async () => {
-    const { crepe, root, view } = await mount(NOTES, zoomOpts())
+  it('a hover, the focus and a blur send no transaction: a table that is the last block stays the last block', async () => {
+    const { view } = await mount('| a | b |\n| - | - |\n| c | d |\n', zoomOpts())
+    boxes(view)
+    const before = view.state
+    hover(view, 1, 0)
+    hover(view, 1, 1)
+    view.dom.dispatchEvent(new FocusEvent('focus'))
+    view.dom.dispatchEvent(new FocusEvent('blur'))
+    view.dom.dispatchEvent(new MouseEvent('mouseleave'))
+    expect(view.state).toBe(before)
+    expect(view.state.doc.childCount).toBe(1)
+  })
+
+  it('the pointer can go from the cell onto the button: it stays, and leaving it for the page hides it', async () => {
+    const { view } = await mount(NOTES, zoomOpts())
+    boxes(view)
+    hover(view, 3, 1)
+    const button = shownButton()!
+    view.dom.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: button }))
+    expect(shownButton()).toBe(button)
+    button.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }))
+    expect(shownButton()).toBeNull()
+  })
+
+  it('a typed key in the cell places nothing; a read-only note shows no button', async () => {
+    const { crepe, view } = await mount(NOTES, zoomOpts())
+    boxes(view)
+    view.hasFocus = () => true
     caretAt(view, 'free')
-    view.focus()
-    expect(buttons(root)).toHaveLength(1)
+    expect(shownButton()).not.toBeNull()
     const before = cellNoteButtonPlacements.runs
     for (const ch of 'typing') {
       // As a browser's typing: the text, and the caret set after it.
@@ -285,8 +336,10 @@ describe('the "Add cell note" button (D8)', () => {
     }
     type(crepe, view, '!')
     expect(cellNoteButtonPlacements.runs - before).toBe(0)
-    expect(buttons(root)).toHaveLength(1)
     expect(view.state.doc.nodeAt(cellPos(view, 3, 1))!.textContent).toBe('freetyping!')
+    crepe.setReadonly(true)
+    hover(view, 3, 0)
+    expect(shownButton()).toBeNull()
   })
 })
 
@@ -301,30 +354,101 @@ describe('the preview (D14)', () => {
     ])
   })
 
-  it('a rest on the mark shows the box after the dwell, with the crumb; the pointer leaving or a key closes it', async () => {
+  it('a rest on the corner shows the box after the dwell, with the crumb and the hint; the pointer leaving the corner or a key closes it', async () => {
     vi.useFakeTimers()
-    const { root } = await mount(NOTES, zoomOpts())
-    const mark = markEl(root)
-    mark.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    // Crepe's block handle reads it on a `mousemove`; jsdom has none.
+    document.elementsFromPoint = () => []
+    const { view } = await mount(NOTES, zoomOpts())
+    inCell(view, 'mousemove')
     expect(document.querySelector('.cell-note-preview')).toBeNull()
     vi.advanceTimersByTime(400)
     const box = document.querySelector<HTMLElement>('.cell-note-preview')!
     expect([...box.querySelectorAll('.cell-note-preview__line')].map((el) => el.textContent)).toEqual(['Book the window seat.', '• bullet a', '• bullet b'])
     expect(box.querySelector('.cell-note-preview__header')!.textContent).toBe('Note: Plan · Monday')
+    // 5A-13: the box is read-only; the hint names the corner, which a click opens.
+    expect(box.querySelector('.cell-note-preview__hint')!.textContent).toBe('Click the corner to open')
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }))
     expect(document.querySelector('.cell-note-preview')).toBeNull()
-    mark.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    inCell(view, 'mousemove')
     vi.advanceTimersByTime(400)
     expect(document.querySelector('.cell-note-preview')).not.toBeNull()
-    mark.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: root }))
+    // Still in the corner: the same box.
+    inCell(view, 'mousemove', 1, 1, 198, 32)
+    expect(document.querySelectorAll('.cell-note-preview')).toHaveLength(1)
+    // Out of the corner, in the cell's words.
+    inCell(view, 'mousemove', 1, 1, 150, 45)
     expect(document.querySelector('.cell-note-preview')).toBeNull()
+    // A cell with no note shows none.
+    inCell(view, 'mousemove', 3, 1)
+    vi.advanceTimersByTime(400)
+    expect(document.querySelector('.cell-note-preview')).toBeNull()
+  })
+})
+
+describe('the corner opens the note (5A-18)', () => {
+  it('a click in the corner of a cell with a note opens it; a click in its words, or in the corner of a cell with none, does not', async () => {
+    const { view } = await mount(NOTES, zoomOpts())
+    inCell(view, 'click', 1, 1, 150, 45)
+    expect(getZoomedItemPos(view.state)).toBeNull()
+    inCell(view, 'click', 3, 1)
+    expect(getZoomedItemPos(view.state)).toBeNull()
+    inCell(view, 'click')
+    expect(zoomedNode(view)?.attrs.label).toBe('cell-1')
+  })
+})
+
+describe('a read-only note (5A-6, 5A-22)', () => {
+  const EMPTY = '| a          |\n| ---------- |\n| b[^cell-1] |\n\n[^cell-1]: <br />\n\nEnd\n'
+
+  it('leaving an empty cell note\'s page by the crumb, the ×, ⌘⇧. or Back changes nothing', async () => {
+    const { crepe, root, view } = await mount(EMPTY, zoomOpts())
+    crepe.setReadonly(true)
+    const doc = view.state.doc
+    inCell(view, 'click', 1, 0)
+    expect(zoomedNode(view)?.attrs.label).toBe('cell-1')
+    click(root.querySelector(`.${ZOOM_CRUMB_CLASS}`)!)
+    expect(getZoomedItemPos(view.state)).toBeNull()
+    expect(zoomPageTo(crepe, 'note:cell-1')).toBe(true)
+    click(root.querySelector(`.${ZOOM_CLOSE_CLASS}`)!)
+    zoomPageTo(crepe, 'note:cell-1')
+    mod(crepe, '>')
+    zoomPageTo(crepe, 'note:cell-1')
+    zoomPageTo(crepe, null)
+    expect(getZoomedItemPos(view.state)).toBeNull()
+    expect(view.state.doc.eq(doc)).toBe(true)
+  })
+
+  it('canOpenCellNote: a read-only note opens only a cell note that is there', async () => {
+    const { crepe, view } = await mount(NOTES, zoomOpts())
+    expect(canOpenCellNote(view, cellPos(view, 3, 1))).toBe(true)
+    crepe.setReadonly(true)
+    expect(canOpenCellNote(view, cellPos(view, 3, 1))).toBe(false)
+    expect(canOpenCellNote(view, cellPos(view, 1, 1))).toBe(true)
+  })
+})
+
+describe('an empty cell note never reaches the file (D15, 5A-5)', () => {
+  it('while its page is open, a save and the change report leave it out, and its mark; a word in it saves it', async () => {
+    const onMarkdownUpdated = vi.fn()
+    const { crepe, view } = await mount(NOTES, { ...zoomOpts(), onMarkdownUpdated })
+    caretAt(view, 'free')
+    mod(crepe, '.')
+    expect(zoomedNode(view)?.attrs.label).toBe('cell-2')
+    // The page is open: the tab can close, another note can open, the app can quit. Each saves these bytes.
+    expect(getMarkdownForSave(crepe)).toBe(NOTES)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(onMarkdownUpdated.mock.calls.flat().some((md: string) => md.includes('cell-2'))).toBe(false)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, getZoomedItemPos(view.state)! + 2)))
+    type(crepe, view, 'x')
+    expect(getMarkdownForSave(crepe)).toContain('[^cell-2]: x')
+    await vi.waitFor(() => expect(onMarkdownUpdated).toHaveBeenLastCalledWith(expect.stringContaining('[^cell-2]: x')))
   })
 })
 
 describe('zoom speed', () => {
   it('a caret move on the page builds no decorations; a typed key builds them once', async () => {
     const { crepe, root, view } = await mount(NOTES, zoomOpts())
-    click(markEl(root))
+    inCell(view, 'click')
     const before = zoomDecorationBuilds.runs
     caretAt(view, 'bullet a')
     caretAt(view, 'bullet b')

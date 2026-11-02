@@ -36,7 +36,7 @@
  * A cell note (YAZ-3818 D9) opens the same way: the zoom's level is a `list_item` or a `cell_note`. The cell note is
  * a block of its own right under its table, so the path walk hides the table with the rest. Its crumb is
  * "Note: <column> · <row>", its zoom key `note:<label>`, its page has an × at the end of the crumbs ("Close cell note"),
- * and ⌘⇧. from it zooms out fully. A click on a cell's mark and ⌘. on a plain line of a cell open the cell's note
+ * and ⌘⇧. from it zooms out fully. A click on a cell's corner triangle and ⌘. on a plain line of a cell open the cell's note
  * (`openCellNote`, made first when the cell has none). Leaving the page puts the caret back after the mark, and a cell
  * note left with one empty line goes, with its mark, in the same transaction (D15).
  *
@@ -55,8 +55,9 @@ import { $prose, $shortcut } from '@milkdown/kit/utils'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { gestureAction } from '@shared/keys'
 import { rowShortcuts } from '../noteKeys'
-import { addCellNote, CELL_NOTE_LABEL, cellNoteCrumbParts, cellNoteOf, isCellNote, removeCellNote } from '../table/cellNotes'
-import { ancestorItemPositions, innermostItemPos, isListItem, isTableCell, itemLabelText } from './listNodes'
+import { addCellNote, cellNoteAround, cellNoteCornerAt, cellNoteCrumbParts, cellNoteOf, isCellNote, isEmptyCellNote, markPosOf, notePosOf, removeCellNote, tableAround } from '../table/cellNotes'
+import { wikilinkKey } from '../wikilink/wikilinkPlugin'
+import { ancestorItemPositions, cellPosAround, innermostItemPos, isListItem, itemLabelText } from './listNodes'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
@@ -102,6 +103,8 @@ interface ZoomState {
   undoLevel: ZoomLevel | undefined
   /** How many level changes (zoom transactions) this state has seen: a mapped position is no level change (YAZ-3662 F6b). */
   changes: number
+  /** How many link index refreshes (`wikilinkKey` metas) this state has seen: the crumbs' `linkText` reads the index (5A-4). */
+  links: number
 }
 
 /** A zoom level: position of the zoomed list_item or cell note, or `null` = zoomed out. Also the plugin's transaction meta. */
@@ -173,15 +176,8 @@ export const zoomKeyAt = (doc: ProseNode, itemPos: number): string | null => {
 
 /** Position of the list_item or cell note with zoom key `key`, or null when it no longer exists. */
 export const itemPosForZoomKey = (doc: ProseNode, key: string): number | null => {
+  if (key.startsWith(NOTE_KEY)) return notePosOf(doc, key.slice(NOTE_KEY.length))
   let found: number | null = null
-  if (key.startsWith(NOTE_KEY)) {
-    const label = key.slice(NOTE_KEY.length)
-    doc.descendants((node, pos) => {
-      if (found === null && isCellNote(node) && node.attrs.label === label) found = pos
-      return found === null && !node.isTextblock
-    })
-    return found
-  }
   eachItemKey(doc, (pos, itemKey) => {
     if (itemKey !== key) return false
     found = pos
@@ -235,36 +231,23 @@ const selectionInItem = ({ doc, selection }: Pick<EditorState, 'doc' | 'selectio
 
 /** The cell note at `pos`, or the one that holds it (a bullet in a cell note), with its position; or null. */
 const noteAround = (doc: ProseNode, pos: number): { pos: number; node: ProseNode } | null => {
-  const node = doc.nodeAt(pos)
-  if (node !== null && isCellNote(node)) return { pos, node }
-  const $pos = doc.resolve(pos)
-  for (let depth = $pos.depth; depth > 0; depth--) if (isCellNote($pos.node(depth))) return { pos: $pos.before(depth), node: $pos.node(depth) }
-  return null
-}
-
-/** The position of the mark labelled `label`, or null. */
-const markPos = (doc: ProseNode, label: string): number | null => {
-  let found: number | null = null
-  doc.descendants((node, pos) => {
-    if (found === null && node.type.name === 'footnote_reference' && node.attrs.label === label) found = pos
-    return found === null
-  })
-  return found
+  const at = isCellNote(doc.nodeAt(pos)!) ? pos : cellNoteAround(doc.resolve(pos))
+  return at === null ? null : { pos: at, node: doc.nodeAt(at)! }
 }
 
 /**
  * The zoom leaves a cell note's page for `target` (YAZ-3818 D9, D15), in `tr`: a cell note that holds one empty line
- * goes, with its mark; with `moveCaret`, the caret goes back after the mark, so no key types into a hidden note.
- * Returns `target` mapped through `tr`. Nothing happens when the zoom is on no cell note, or `target` is inside it.
+ * goes, with its mark, unless the note is read-only (`removeEmpty` false, 5A-6: rule 40); with `moveCaret`, the caret
+ * goes back after the mark, so no key types into a hidden note. Returns `target` mapped through `tr`. Nothing happens
+ * when the zoom is on no cell note, or `target` is inside it.
  */
-const leaveNote = (state: EditorState, tr: Transaction, target: ZoomLevel, moveCaret: boolean): ZoomLevel => {
+const leaveNote = (state: EditorState, tr: Transaction, target: ZoomLevel, moveCaret: boolean, removeEmpty: boolean): ZoomLevel => {
   const zoomed = getZoomedItemPos(state)
   const note = zoomed === null ? null : noteAround(state.doc, zoomed)
   if (note === null || (target !== null && target >= note.pos && target < note.pos + note.node.nodeSize)) return target
   const label = note.node.attrs.label as string
-  const mark = markPos(state.doc, label)
-  const line = note.node.firstChild!
-  if (note.node.childCount === 1 && line.isTextblock && line.content.size === 0) removeCellNote(tr, label)
+  const mark = markPosOf(state.doc, label)
+  if (removeEmpty && isEmptyCellNote(note.node)) removeCellNote(tr, label)
   if (moveCaret && mark !== null) tr.setSelection(Selection.near(tr.doc.resolve(tr.mapping.map(mark + 1)), -1))
   return target === null ? null : tr.mapping.map(target)
 }
@@ -272,16 +255,17 @@ const leaveNote = (state: EditorState, tr: Transaction, target: ZoomLevel, moveC
 /**
  * Zoom into the list_item or cell note at `itemPos` (null = zoom out fully); moves the caret into it if the
  * selection was outside, unless `moveCaret` is false (find's own zoom, `zoomQuietly`). Leaving a cell note's page goes
- * through `leaveNote`. Every user-driven zoom change goes to the tab's Back list (`onZoom`, YAZ-3647 D2); `quiet`
- * (Back, Forward: `zoomToKey`) restores a level and tells no one.
+ * through `leaveNote`, which reads the view's `editable` (a run with no view counts as editable). Every user-driven
+ * zoom change goes to the tab's Back list (`onZoom`, YAZ-3647 D2); `quiet` (Back, Forward: `zoomToKey`) restores a
+ * level and tells no one.
  */
-const zoomTo = (itemPos: ZoomLevel, { quiet = false, isUndo = false, moveCaret = true } = {}): Command => (state, dispatch) => {
+const zoomTo = (itemPos: ZoomLevel, { quiet = false, isUndo = false, moveCaret = true } = {}): Command => (state, dispatch, view) => {
   const zoom = pluginKey.getState(state)
   if (!zoom || zoom.itemPos === itemPos) return false
   if (itemPos !== null && !isZoomable(state.doc.nodeAt(itemPos))) return false
   if (dispatch) {
     const tr = state.tr
-    const target = leaveNote(state, tr, itemPos, moveCaret)
+    const target = leaveNote(state, tr, itemPos, moveCaret, view?.editable !== false)
     tr.setMeta(pluginKey, target).setMeta(VIEW_ACTION_META, 'zoom' satisfies ViewAction)
     if (isUndo) tr.setMeta(UNDO_META, true)
     if (moveCaret && target !== null && !selectionInItem(tr, target)) tr.setSelection(Selection.near(tr.doc.resolve(target + 1), 1))
@@ -310,18 +294,18 @@ export const caretIntoZoom: Command = (state, dispatch) => {
  * declines otherwise so the fold undo / ProseMirror history get the key. The revert is itself a
  * zoom change (history entry pushed, so Back returns to the zoomed view) and consumes the undo.
  */
-export const undoLastZoom: Command = (state, dispatch) => {
+export const undoLastZoom: Command = (state, dispatch, view) => {
   const undoLevel = pluginKey.getState(state)?.undoLevel
   if (undoLevel === undefined) return false
-  return zoomTo(undoLevel, { isUndo: true })(state, dispatch)
+  return zoomTo(undoLevel, { isUndo: true })(state, dispatch, view)
 }
 
 /** Back and Forward (YAZ-3647 D2): the page goes to the step's level, quietly. A key that is no longer found zooms out. */
-export const zoomToKey = (key: string | null): Command => (state, dispatch) =>
-  zoomTo(key === null ? null : itemPosForZoomKey(state.doc, key), { quiet: true })(state, dispatch)
+export const zoomToKey = (key: string | null): Command => (state, dispatch, view) =>
+  zoomTo(key === null ? null : itemPosForZoomKey(state.doc, key), { quiet: true })(state, dispatch, view)
 
 /** Zoom out fully, as the title crumb does: a step in the Back list. The table of contents' jump out of a zoom (YAZ-4094 4C). */
-export const zoomOutFully: Command = (state, dispatch) => zoomTo(null)(state, dispatch)
+export const zoomOutFully: Command = (state, dispatch, view) => zoomTo(null)(state, dispatch, view)
 
 /**
  * Find's own zoom (YAZ-3818 D19): into the hidden cell note at `itemPos` that holds the current match, or back to the
@@ -339,51 +323,51 @@ export const reportZoom = (state: EditorState): void => {
 }
 
 /**
- * Open the cell note of the cell at `cellPos` as a page (YAZ-3818 D8, D9): the mark's click, the "Add cell note"
+ * Can `openCellNote` open a page for the cell at `cellPos`? An editable note always can (it makes the note); a
+ * read-only one only when the cell's mark has its cell note (5A-22).
+ */
+export function canOpenCellNote(view: EditorView, cellPos: number): boolean {
+  const label = cellNoteOf(view.state.doc, cellPos)
+  return view.editable || (label !== null && notePosOf(view.state.doc, label) !== null)
+}
+
+/**
+ * Open the cell note of the cell at `cellPos` as a page (YAZ-3818 D8, D9): the corner's click, the "Add cell note"
  * button, the table menu and ⌘.. A cell with no mark gets a cell note first (`addCellNote`); a mark with no cell note
  * gets an empty one under its table. Then the note is found by its label, as `notesFollowTables` may have moved it. A
  * read-only note only opens a cell note that is there.
  */
 export function openCellNote(view: EditorView, cellPos: number): boolean {
+  if (!canOpenCellNote(view, cellPos)) return false
   let label = cellNoteOf(view.state.doc, cellPos)
   if (label === null) {
-    if (!view.editable || !addCellNote(cellPos)(view.state, view.dispatch)) return false
+    if (!addCellNote(cellPos)(view.state, view.dispatch)) return false
     label = cellNoteOf(view.state.doc, cellPos)!
   }
-  const key = `${NOTE_KEY}${label}`
-  if (itemPosForZoomKey(view.state.doc, key) === null) {
-    if (!view.editable) return false
-    const $cell = view.state.doc.resolve(cellPos)
-    view.dispatch(view.state.tr.insert($cell.after($cell.depth - 1), view.state.schema.nodes.cell_note.createAndFill({ label })!))
+  if (notePosOf(view.state.doc, label) === null) {
+    view.dispatch(view.state.tr.insert(tableAround(view.state.doc, cellPos).end, view.state.schema.nodes.cell_note.createAndFill({ label })!))
   }
-  const notePos = itemPosForZoomKey(view.state.doc, key)
-  return notePos !== null && zoomTo(notePos)(view.state, view.dispatch)
+  const notePos = notePosOf(view.state.doc, label)
+  return notePos !== null && zoomTo(notePos)(view.state, view.dispatch, view)
 }
 
-/** The table cell around the caret when no bullet in it is: a plain line of a cell (D9), or null. */
-const cellAtSelection = (state: EditorState): number | null => {
-  const { $from } = state.selection
-  for (let depth = $from.depth; depth > 0; depth--) {
-    if (isListItem($from.node(depth))) return null
-    if (isTableCell($from.node(depth))) return $from.before(depth)
-  }
-  return null
-}
-
-/** `Mod-.`: zoom into the item at the caret; on a plain line of a cell, open the cell's note (YAZ-3818 D9). */
+/**
+ * `Mod-.`: zoom into the item at the caret; on a plain line of a cell, open the cell's note (YAZ-3818 D9). A bullet in
+ * a cell is the item (`innermostItemPos`), so the cell here is a plain line's.
+ */
 const zoomIntoSelection: Command = (state, dispatch, view) => {
   const itemPos = itemAtSelection(state)
-  if (itemPos !== null) return zoomTo(itemPos)(state, dispatch)
-  const cellPos = cellAtSelection(state)
+  if (itemPos !== null) return zoomTo(itemPos)(state, dispatch, view)
+  const cellPos = cellPosAround(state.selection.$from)
   if (cellPos === null || view === undefined) return false
-  return dispatch === undefined || openCellNote(view, cellPos)
+  return dispatch === undefined ? canOpenCellNote(view, cellPos) : openCellNote(view, cellPos)
 }
 
 /**
  * `Mod-Shift-.`: zoom out one level, to the bullet or the cell note around the zoomed bullet, or fully when there is
  * none. From a cell note's page: fully (D9).
  */
-const zoomOutOneLevel: Command = (state, dispatch) => {
+const zoomOutOneLevel: Command = (state, dispatch, view) => {
   const itemPos = getZoomedItemPos(state)
   if (itemPos === null) return false
   const $item = state.doc.resolve(itemPos)
@@ -391,7 +375,7 @@ const zoomOutOneLevel: Command = (state, dispatch) => {
   if (!isCellNote(state.doc.nodeAt(itemPos)!)) {
     for (let depth = $item.depth; depth > 0 && parent === null; depth--) if (isZoomable($item.node(depth))) parent = $item.before(depth)
   }
-  return zoomTo(parent)(state, dispatch)
+  return zoomTo(parent)(state, dispatch, view)
 }
 
 /**
@@ -427,7 +411,7 @@ const crumbButton = (view: EditorView, label: string, target: ZoomLevel, current
       const key = target === null ? null : zoomKeyAt(view.state.doc, target)
       if (target === null || key !== null) return open(key, where === 'backgroundTab', target === null ? null : zoomLabelAt(view.state, target))
     }
-    zoomTo(target)(view.state, view.dispatch)
+    zoomTo(target)(view.state, view.dispatch, view)
   })
   return button
 }
@@ -444,7 +428,7 @@ const closeButton = (view: EditorView): HTMLButtonElement => {
   button.addEventListener('click', (event) => {
     event.preventDefault()
     event.stopPropagation()
-    zoomTo(null)(view.state, view.dispatch)
+    zoomTo(null)(view.state, view.dispatch, view)
   })
   return button
 }
@@ -504,18 +488,16 @@ const buildDecorations = (state: EditorState, itemPos: number, title: string, li
   return decorations
 }
 
-/** The decorations of a doc at its level and title (YAZ-3818): a caret move or a fold builds none. Per doc, so per editor. */
-const builtSets = new WeakMap<ProseNode, { itemPos: number; title: string; set: DecorationSet }>()
+/**
+ * The decorations of a doc at its level, title and link index (YAZ-3818): a caret move or a fold builds none; a link
+ * index refresh builds them again (5A-4). Per doc, so per editor.
+ */
+const builtSets = new WeakMap<ProseNode, { itemPos: number; title: string; links: number; set: DecorationSet }>()
 
-/** The cell that holds the cell note mark that received `event` (YAZ-3818 D8), or null: a mark outside a table opens nothing. */
-const cellFromMarkClick = (view: EditorView, event: MouseEvent): number | null => {
-  const target = event.target
-  if (!(target instanceof Element)) return null
-  const mark = target.closest('sup[data-type="footnote_reference"]')
-  if (mark === null || !view.dom.contains(mark) || !CELL_NOTE_LABEL.test((mark as HTMLElement).dataset.label ?? '')) return null
-  const $mark = view.state.doc.resolve(view.posAtDOM(mark, 0))
-  for (let depth = $mark.depth; depth > 0; depth--) if (isTableCell($mark.node(depth))) return $mark.before(depth)
-  return null
+/** The cell whose corner triangle received `event` (YAZ-3818 D8, 5A-18), or null: a mark outside a table has none. */
+const cellFromCornerClick = (view: EditorView, event: MouseEvent): number | null => {
+  const cell = cellNoteCornerAt(view, event)
+  return cell === null ? null : cellPosAround(view.state.doc.resolve(view.posAtDOM(cell, 0)))
 }
 
 /** The list_item whose bullet glyph (`.label-wrapper`) received `event`, or null. */
@@ -542,9 +524,11 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
           init: (_config, state) => {
             const key = pendingStartKey
             pendingStartKey = null
-            return { itemPos: key === null ? null : itemPosForZoomKey(state.doc, key), onZoom, onOpen, hotkeys, linkText, undoLevel: undefined, changes: 0 }
+            return { itemPos: key === null ? null : itemPosForZoomKey(state.doc, key), onZoom, onOpen, hotkeys, linkText, undoLevel: undefined, changes: 0, links: 0 }
           },
           apply: (transaction, previous, _oldState, newState) => {
+            // A link index refresh is meta-only: the doc stays, but a crumb's link text may change (YAZ-3818 5A-4).
+            if (transaction.getMeta(wikilinkKey) !== undefined) previous = { ...previous, links: previous.links + 1 }
             const meta: ZoomLevel | undefined = transaction.getMeta(pluginKey)
             if (meta !== undefined) {
               // ⌘Z-revertible while it is the latest view action; the revert itself consumes it. A cell note that the
@@ -622,21 +606,23 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
         },
         props: {
           decorations: (state) => {
-            const itemPos = getZoomedItemPos(state)
+            const zoom = pluginKey.getState(state)
+            const itemPos = zoom?.itemPos ?? null
             if (itemPos === null) return DecorationSet.empty
             const name = title()
+            const links = zoom!.links
             let built = builtSets.get(state.doc)
-            if (built === undefined || built.itemPos !== itemPos || built.title !== name) {
+            if (built === undefined || built.itemPos !== itemPos || built.title !== name || built.links !== links) {
               zoomDecorationBuilds.runs++
-              built = { itemPos, title: name, set: DecorationSet.create(state.doc, buildDecorations(state, itemPos, name, linkText)) }
+              built = { itemPos, title: name, links, set: DecorationSet.create(state.doc, buildDecorations(state, itemPos, name, linkText)) }
               builtSets.set(state.doc, built)
             }
             return built.set
           },
           handleDOMEvents: {
             click: (view, event) => {
-              // A click on a cell's mark opens its cell note (YAZ-3818 D8).
-              const cellPos = cellFromMarkClick(view, event)
+              // A click on a cell's corner triangle opens its cell note (YAZ-3818 D8).
+              const cellPos = cellFromCornerClick(view, event)
               if (cellPos !== null) {
                 event.preventDefault()
                 return openCellNote(view, cellPos)
@@ -652,7 +638,7 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
               const open = plugin?.onOpen
               const key = open !== undefined && where !== 'thisTab' ? zoomKeyAt(view.state.doc, itemPos) : null
               if (key !== null) open?.(key, where === 'backgroundTab', zoomLabelAt(view.state, itemPos))
-              else zoomTo(itemPos)(view.state, view.dispatch)
+              else zoomTo(itemPos)(view.state, view.dispatch, view)
               return true
             },
           },

@@ -32,7 +32,7 @@ import { collapsedSectionAround, collapsedSectionBlocks } from './outline/headin
 import { findFoldedChildren, isListItem, isTableCell, LIST_NODE_NAMES } from './outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed } from './outline/outlineFolding'
 import { getZoomedItemPos } from './outline/zoom'
-import { isCellNote, isCellNoteHidden } from './table/cellNotes'
+import { cellNoteAround, isCellNote, isCellNoteHidden } from './table/cellNotes'
 
 /** Priority above Crepe's list/table/base keymaps (default 50). */
 const PRIORITY = 100
@@ -72,10 +72,8 @@ const hiddenRun = (state: EditorState, $pos: ResolvedPos): { from: number; to: n
   const section = collapsedSectionAround(state, pos)
   if (section !== null) return section
   // A hidden cell note and a folded item's nested list can hold each other: the one that starts first is the outer.
-  let note: { from: number; to: number } | null = null
-  for (let depth = 1; depth <= $pos.depth && note === null; depth++) {
-    if (isCellNote($pos.node(depth)) && isCellNoteHidden(state, $pos.before(depth))) note = { from: $pos.before(depth), to: $pos.after(depth) }
-  }
+  const notePos = cellNoteAround($pos)
+  const note = notePos !== null && isCellNoteHidden(state, notePos) ? { from: notePos, to: notePos + state.doc.nodeAt(notePos)!.nodeSize } : null
   const fold = collapsedItemsHiding(state, pos).find((itemPos) => zoomed === null || itemPos >= zoomed)
   if (fold === undefined) return note
   // The folded item's nested list that holds `pos`: the child one level below the item.

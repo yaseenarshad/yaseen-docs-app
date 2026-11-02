@@ -9,6 +9,7 @@ import { clipboardPlainText } from './clipboardPlainText'
 import { eachVisibleTextblock } from './lineSelection'
 import { rowShortcuts } from './noteKeys'
 import { getZoomedItemPos } from './outline/zoom'
+import { isCellNote } from './table/cellNotes'
 import { FILL_WASH } from './table/colours'
 import { cellColor, type TableColor } from './table/tableComment'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
@@ -72,25 +73,32 @@ const linesIn = (node: ProseNode): number => {
   return lines
 }
 
+/** The lines a copy left out: under folds, and in hidden cell notes (YAZ-3818 5A-15), counted apart for the toast. */
+interface LeftOut {
+  folded: number
+  notes: number
+}
+
 /**
  * Copy as › Without folded lines (YAZ-3653): the selection (or `range`) minus what folds hide — a
  * folded bullet's children and a folded heading's section, found by the walk formatting uses
- * (`eachVisibleTextblock`, YAZ-3209) — and how many lines that left out. In a zoom, only the zoomed
- * bullet. Slice position p is document position p + from - openStart, so each kept node's start is
+ * (`eachVisibleTextblock`, YAZ-3209), and a hidden cell note — and how many lines that left out. In a zoom, only the
+ * zoomed bullet. Slice position p is document position p + from - openStart, so each kept node's start is
  * known on the way down.
  */
-const visibleSlice = (state: EditorState, range: CopyRange | null): { slice: Slice; left: number } => {
+const visibleSlice = (state: EditorState, range: CopyRange | null): { slice: Slice; left: LeftOut } => {
   const { selection, doc } = state
-  if (range === null && selection.ranges.length > 1) return { slice: selection.content(), left: 0 }
+  if (range === null && selection.ranges.length > 1) return { slice: selection.content(), left: { folded: 0, notes: 0 } }
   const { from: start, to: end } = range ?? selection
   const zoomed = getZoomedItemPos(state)
   const from = zoomed === null ? start : Math.max(start, zoomed)
   const to = zoomed === null ? end : Math.min(end, zoomed + doc.nodeAt(zoomed)!.nodeSize)
   const hidden = new Set<number>()
-  let left = 0
+  const left: LeftOut = { folded: 0, notes: 0 }
   eachVisibleTextblock(state, from, to, () => {}, (pos) => {
     hidden.add(pos)
-    left += linesIn(doc.nodeAt(pos)!)
+    const node = doc.nodeAt(pos)!
+    left[isCellNote(node) ? 'notes' : 'folded'] += linesIn(node)
   })
   const slice = doc.slice(from, to, true)
   if (hidden.size === 0) return { slice, left }
@@ -119,9 +127,12 @@ export const copyLinkTextCtx = createSlice<((text: string) => string) | null, 'c
  */
 export const copyMarkdownCtx = createSlice<((markdown: string) => string) | null, 'copyMarkdown'>(null, 'copyMarkdown')
 
-/** What the toast says: the lines a copy left out, so a copy that dropped them reads as meant. */
-const copiedText = (left: number): string =>
-  left === 0 ? 'Copied. Nothing in it was folded' : `Copied, ${left} folded line${left === 1 ? '' : 's'} left out`
+/** What the toast says: the lines a copy left out, folded ones and cell note ones by name, so a copy reads as meant. */
+const copiedText = ({ folded, notes }: LeftOut): string => {
+  const lines = (count: number, kind: string) => `${count} ${kind} line${count === 1 ? '' : 's'}`
+  const parts = [...(folded > 0 ? [lines(folded, 'folded')] : []), ...(notes > 0 ? [lines(notes, 'cell note')] : [])]
+  return parts.length === 0 ? 'Copied. Nothing in it was folded' : `Copied, ${parts.join(' and ')} left out`
+}
 
 /**
  * The key for Without folded lines (YAZ-3653): the note row `note.copyVisible`, no key until the

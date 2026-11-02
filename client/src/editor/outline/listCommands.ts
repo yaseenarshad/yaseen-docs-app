@@ -61,7 +61,7 @@ import { deleteBlockAndEmptyWrappers, emptyWrapperDepth, liftHeadlessItem, nextV
 import { rowShortcuts } from '../noteKeys'
 import { type Folds, openFolds, recordOpenedFolds } from './foldReveal'
 import { headingLevel, isHeadingCollapsed } from './headingFolding'
-import { findNestedList, findNestedLists, isListItem, isTableCell, itemInCell, LIST_NODE_NAMES } from './listNodes'
+import { cellPosAround, findNestedList, findNestedLists, isListItem, itemInCell, LIST_NODE_NAMES } from './listNodes'
 import { isOutlineItemCollapsed } from './outlineFolding'
 import { blockEscapingLift, getZoomedItemPos } from './zoom'
 
@@ -304,16 +304,11 @@ export const enterTracker = $prose(
 const isLine = ($pos: ResolvedPos): boolean => $pos.depth === 1 || isListItem($pos.node(-1)) || $pos.node(-1).type.name === 'blockquote'
 
 /**
- * The start of the table cell around `$pos` at any depth, or null outside tables. Nothing joins into or out of a table
- * (YAZ-3783), nor across a cell's edge; two lines in one cell join, as in the note (YAZ-3818 D1).
+ * `$line` sits in a table cell and `$other` is not in that cell: for the joins, a cell's edge is the note's edge
+ * (YAZ-3818). Nothing joins into or out of a table (YAZ-3783), nor across a cell's edge; two lines in one cell join,
+ * as in the note (D1).
  */
-const cellAround = ($pos: ResolvedPos): number | null => {
-  for (let depth = $pos.depth; depth > 0; depth--) if (isTableCell($pos.node(depth))) return $pos.start(depth)
-  return null
-}
-
-/** `$line` sits in a table cell and `$other` is not in that cell: for the joins, a cell's edge is the note's edge (YAZ-3818). */
-const pastCellEdge = ($line: ResolvedPos, $other: ResolvedPos): boolean => cellAround($line) !== null && cellAround($other) !== cellAround($line)
+const pastCellEdge = ($line: ResolvedPos, $other: ResolvedPos): boolean => cellPosAround($line) !== null && cellPosAround($other) !== cellPosAround($line)
 
 /**
  * The item just above the line's item on screen (YAZ-3727 D5): its previous sibling, or the last item of a list that
@@ -433,7 +428,7 @@ const joinLines = (state: EditorState, dispatch: ((tr: Transaction) => void) | u
   if (isZoomLine(state, $upper)) return true
   const $empty = isEmptyLine($upper) ? $upper : isEmptyLine($lower) ? $lower : null
   if ($empty === null) {
-    if (upper.type.spec.code || lower.type.spec.code || cellAround($upper) !== cellAround($lower)) return true
+    if (upper.type.spec.code || lower.type.spec.code || cellPosAround($upper) !== cellPosAround($lower)) return true
     if (!isLine($upper) || !isLine($lower)) return false
   }
   if (!dispatch) return true
@@ -511,7 +506,8 @@ const deleteCommand: Command = (state, dispatch) => {
   const { $from, empty } = state.selection
   if (!empty || !$from.parent.isTextblock || $from.parent.type.spec.code || $from.parentOffset !== $from.parent.content.size || !isLine($from)) return false
   const $next = nextVisibleTextblock(state, $from, 1)
-  // The last line of a cell (YAZ-3818): nothing happens. Milkdown's cells are not `isolating`, so Crepe's join must not run.
+  // The last line of a cell (YAZ-3818): nothing happens. The cells are `isolating` (prosemirror-tables), so Crepe's
+  // join would not cross them; but `nextVisibleTextblock` does, and `besideLeaf` would act on a leaf in the next cell.
   if ($next !== null && pastCellEdge($from, $next instanceof NodeSelection ? $next.$from : $next)) return true
   if ($next instanceof NodeSelection) return besideLeaf(state, dispatch, $from, $next)
   if ($next === null) return getZoomedItemPos(state) !== null

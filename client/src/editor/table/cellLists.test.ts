@@ -154,6 +154,21 @@ describe('HTML that is not the exact form stays as typed', () => {
     expect(await save(table(cell))).toBe(table('<ul><li>\\[ ] A</li><li>B</ul>'))
   })
 
+  it('a plain cell bullet whose words start with `[ ] ` stays a plain bullet over two saves (5A-12)', async () => {
+    const { crepe, view } = await mount(table('<ul><li>x</li></ul>'))
+    let at = -1
+    view.state.doc.descendants((node, pos) => {
+      if (at < 0 && node.isText && node.text === 'x') at = pos
+      return at < 0
+    })
+    view.dispatch(view.state.tr.insertText('[ ] foo', at, at + 1))
+    const out = getMarkdownForSave(crepe)
+    expect(out).toBe(table('<ul><li>\\[ ] foo</li></ul>'))
+    const again = await mount(out)
+    expect(shape(cellAt(again.view, 1, 0))).toEqual({ table_cell: [{ bullet_list: [{ list_item: ['[ ] foo'] }] }] })
+    expect(getMarkdownForSave(again.crepe)).toBe(out)
+  })
+
   it('`[X] ` is a done to-do, written back `[x] `', async () => {
     const { view } = await mount(table('<ul><li>[X] A</li></ul>'))
     expect(shape(cellAt(view, 1, 0))).toEqual({ table_cell: [{ bullet_list: [{ checked: true, children: ['A'] }] }] })

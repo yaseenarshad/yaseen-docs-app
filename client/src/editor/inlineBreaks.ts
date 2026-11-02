@@ -43,7 +43,8 @@ import { itemInCell } from './outline/listNodes'
 import { cellListsRemark, writeCellBlocks } from './table/cellLists'
 import { withCellStyle } from './table/tableStyle'
 
-const BR = /^<br\s*\/?>$/i
+/** A `<br>` in any spelling: a line break, or a footnote's empty line (`table/cellNotes.ts`). */
+export const BR = /^<br\s*\/?>$/i
 const isBr = (node: RootContent): boolean => node.type === 'html' && BR.test(node.value.trim())
 /** The line ending inside a paragraph, which Milkdown has already made a break of its own (`isInline`). */
 const isSoftBreak = (node: RootContent | undefined): boolean =>

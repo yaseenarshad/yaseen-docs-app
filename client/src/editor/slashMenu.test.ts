@@ -174,6 +174,29 @@ describe('the slash menu in a list item (D21, edge cases 70–75)', () => {
   })
 })
 
+describe('the slash menu in a cell and a cell note (YAZ-3818 D1, 5A-1)', () => {
+  // A cell holds lines and lists, a header cell one line (D7); a cell note holds what a body cell holds.
+  const CELL_ROWS = ['Text', 'Current time', 'Bullet List', 'Task List']
+  it.each([
+    ['a body cell', '| h |\n| - |\n| x |\n', CELL_ROWS],
+    ['a bullet in a body cell', '| h |\n| - |\n| <ul><li>x</li></ul> |\n', CELL_ROWS.filter((row) => row !== 'Bullet List')],
+    ['a header cell', '| x |\n| - |\n| b |\n', ['Text', 'Current time']],
+    ['a cell note', '| h |\n| - |\n| b[^cell-1] |\n\n[^cell-1]: x\n', CELL_ROWS],
+    ['a bullet in a cell note', '| h |\n| - |\n| b[^cell-1] |\n\n[^cell-1]: * x\n', CELL_ROWS.filter((row) => row !== 'Bullet List')],
+  ])('%s shows only the rows it can hold', async (_name, markdown, expected) => {
+    const { root, view } = await mount(markdown)
+    expect(await openMenu(view, root, 'x')).toEqual(expected)
+  })
+
+  it('a plain line after a cell shows every row again', async () => {
+    const { root, view } = await mount('| h |\n| - |\n| x |\n\np\n')
+    expect(await openMenu(view, root, 'x')).toEqual(CELL_ROWS)
+    press('Escape')
+    await vi.waitFor(() => expect(isShown(root)).toBe(false))
+    expect(await openMenu(view, root, 'p')).toEqual(PLAIN_ROWS)
+  })
+})
+
 describe('Current time (D22, edge cases 70–72, 77, 78)', () => {
   it.each(['current', 'now', 'clock', 'time', 'TIME'])('77, 78: "/%s" finds it, as the first row', async (query) => {
     const { root, view } = await mount('x\n')

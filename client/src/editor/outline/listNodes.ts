@@ -96,6 +96,12 @@ export const ancestorItemPositions = ($pos: ResolvedPos): number[] => {
 /** A table cell, body or header. */
 export const isTableCell = (node: ProseNode): boolean => node.type.spec.tableRole === 'cell' || node.type.spec.tableRole === 'header_cell'
 
+/** The position of the innermost table cell around `$pos`, at any depth (a cell's bullet too), or null outside tables (YAZ-3818). */
+export const cellPosAround = ($pos: ResolvedPos): number | null => {
+  for (let depth = $pos.depth; depth > 0; depth--) if (isTableCell($pos.node(depth))) return $pos.before(depth)
+  return null
+}
+
 /**
  * Position of the innermost list_item containing `$pos`, or null outside lists. A table cell is a
  * boundary (YAZ-3818): on a plain line in a cell of a table inside a bullet it is null, so ⌘↑ and ⌘.

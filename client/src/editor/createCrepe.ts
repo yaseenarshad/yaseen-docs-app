@@ -185,7 +185,8 @@
  *    in the note view; after a table, a cell note or a mark moves, each cell note goes back under its table. Its mark
  *    is a corner triangle; the "Add cell note" button (`table/cellNoteButton.ts`), a click on the mark, ⌘. on a plain
  *    cell line and the table menu open it as a page with the bullet zoom (D8, D9); a rest on the mark previews it
- *    (`table/cellNotePreview.ts`, D14).
+ *    (`table/cellNotePreview.ts`, D14). A cell's and a cell note's bullets hold lines and lists only: another block put
+ *    there becomes lines, and a typed `# ` stays text (`table/cellBlocks.ts`, D1).
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
  *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
@@ -222,7 +223,7 @@ import { EditorView as CodeMirrorView } from '@codemirror/view'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { codeTheme } from './codeTheme'
 import { keymapRef, type ToolbarItem } from '@milkdown/crepe/feature/toolbar'
-import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
+import { commandsCtx, editorViewCtx, serializerCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
   hardbreakClearMarkPlugin,
@@ -272,7 +273,8 @@ import { inlineBreaks } from './inlineBreaks'
 import { textStringify } from './textStringify'
 import { lineStyle } from './line/lineStyle'
 import { tableStyle } from './table/tableStyle'
-import { cellNotes } from './table/cellNotes'
+import { cellBlocksOnly } from './table/cellBlocks'
+import { cellNotes, withoutEmptyCellNotes } from './table/cellNotes'
 import { cellNoteButton } from './table/cellNoteButton'
 import { cellNotePreview } from './table/cellNotePreview'
 import { tableFill } from './table/tableFill'
@@ -558,7 +560,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listItemRoundTrip)
   // An image read with no title gets '' as a made one does (YAZ-3704 4I2).
   crepe.editor.use(imageParseDefaults)
-  // The slash menu's "in a list" flag (YAZ-3550): which stock rows a list item hides.
+  // The slash menu's "in a list" and "in a cell" flags (YAZ-3550, YAZ-3818 D1): which rows a list item and a cell hide.
   crepe.editor.use(slashMenu.inListWatch)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
@@ -569,6 +571,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // Cell notes (YAZ-3818 D4, D12): a `cell-N` footnote is a `cell_note`, hidden, and it stays under its table. Before
   // `inlineBreaks`: its remark step reads a footnote's `<br />` line first.
   crepe.editor.use(cellNotes)
+  // A cell's and a cell note's bullets hold lines and lists only (YAZ-3818 D1): another block becomes lines.
+  crepe.editor.use(cellBlocksOnly)
   // YAZ-3209: over hidden lines, Bold, Italic, Strikethrough, code and H1-H3 / T change the visible
   // ones only, and the toolbar lights for visible lines only. After the presets, by `EditorViewReady`.
   crepe.editor.use(visibleFormatting)
@@ -718,11 +722,12 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated
     crepe.on((listener) => {
-      listener.markdownUpdated((_ctx, markdown, prev) => {
+      listener.markdownUpdated((ctx, markdown, prev) => {
         // Compared as it would be SAVED. Crepe's trailing empty paragraph (added on start-up to any
         // document ending in a list) differs raw but vanishes in `postProcessMarkdown`, and an
-        // update the file would not notice is not an update (YAZ-968's save-path contract).
-        const next = postProcessMarkdown(markdown)
+        // update the file would not notice is not an update (YAZ-968's save-path contract). An empty
+        // cell note is left out, as `getMarkdownForSave` leaves it out (YAZ-3818 D15).
+        const next = postProcessMarkdown(savedMarkdown(ctx) ?? markdown)
         if (next !== postProcessMarkdown(prev)) cb(next)
       })
     })
@@ -730,9 +735,22 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   return crepe
 }
 
-/** Markdown as it should be written to disk (frontmatter is added by the caller). */
+/**
+ * The doc's Markdown without each empty cell note and its mark (YAZ-3818 D15, `withoutEmptyCellNotes`), or null when
+ * the doc has none: then the editor's own serialization is the save.
+ */
+const savedMarkdown = (ctx: Ctx): string | null => {
+  const { state } = ctx.get(editorViewCtx)
+  const doc = withoutEmptyCellNotes(state)
+  return doc === state.doc ? null : ctx.get(serializerCtx)(doc)
+}
+
+/**
+ * Markdown as it should be written to disk (frontmatter is added by the caller). An empty cell note stays out of it,
+ * so it never reaches the file, by whatever route its page closes (YAZ-3818 D15, 5A-5).
+ */
 export function getMarkdownForSave(crepe: Crepe): string {
-  return postProcessMarkdown(crepe.getMarkdown())
+  return postProcessMarkdown(crepe.editor.action(savedMarkdown) ?? crepe.getMarkdown())
 }
 
 /**
@@ -818,7 +836,7 @@ export function getZoomLabelOf(crepe: Crepe): string | null {
 export function zoomPageTo(crepe: Crepe, key: string | null): boolean {
   return crepe.editor.action((ctx) => {
     const view = ctx.get(editorViewCtx)
-    return zoomToKey(key)(view.state, view.dispatch)
+    return zoomToKey(key)(view.state, view.dispatch, view)
   })
 }
 

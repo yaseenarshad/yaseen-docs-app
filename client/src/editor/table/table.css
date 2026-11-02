@@ -440,9 +440,11 @@
 }
 
 /* A cell note's mark (YAZ-3818 D8): a small triangle in the cell's top-right corner, as in Google Sheets. The label
-   never shows: the `sup` keeps its place in the line at font size 0, so the caret moves as before, and its `::after`
-   is the triangle, placed in the cell (prosemirror-tables makes cells `position: relative`). A click opens the cell
-   note (`zoom.ts`), a rest of the pointer shows its first lines (`cellNotePreview.ts`). */
+   never shows: the `sup` keeps its place in the line at font size 0, so the caret moves as before. The triangle is a
+   background on the cell itself (`has-cell-note`, from the cell note plugin's state, 5A-18): the same corner in every
+   cell, one that starts with a list too, at any padding. The cell's `::before` and `::after` are the fill handle's and
+   the selection's. A click on the corner opens the cell note (`zoom.ts`), a rest of the pointer there shows its first
+   lines (`cellNotePreview.ts`). */
 :root {
   --table-cell-note-mark: #e8a317;
 }
@@ -453,42 +455,30 @@
 
 .milkdown .ProseMirror .milkdown-table-block :is(th, td) sup[data-type='footnote_reference'][data-label^='cell-'] {
   font-size: 0;
-  cursor: pointer;
 }
 
-.milkdown .ProseMirror .milkdown-table-block :is(th, td) sup[data-type='footnote_reference'][data-label^='cell-']::after {
-  content: '';
+.milkdown .ProseMirror .milkdown-table-block :is(th, td).has-cell-note {
+  background-image: linear-gradient(to bottom left, var(--table-cell-note-mark) 50%, transparent 50%);
+  background-position: top right;
+  background-size: 8px 8px;
+  background-repeat: no-repeat;
+}
+
+/* A frozen cell paints its tint as a background image (above): the triangle goes over it. */
+.milkdown .ProseMirror .milkdown-table-block :is(.table-frozen-row > *, .table-frozen-col):is(th, td).has-cell-note {
+  background-image:
+    linear-gradient(to bottom left, var(--table-cell-note-mark) 50%, transparent 50%),
+    linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
+  background-position: top right, 0 0;
+  background-size: 8px 8px, auto;
+}
+
+/* The "Add cell note" button (D8, `cellNoteButton.ts`): one element in the editor's `.milkdown` box, beside the
+   editable DOM, put over the top-right corner of the cell under the pointer or of the caret's cell, on a cell with no
+   cell note (5A-7). Crepe's surface, as the table's own handles. Over a frozen cell (`z-index: 1`). */
+.milkdown > .cell-note-button {
   position: absolute;
-  top: 0;
-  right: 0;
-  border-style: solid;
-  border-width: 0 8px 8px 0;
-  border-color: transparent var(--table-cell-note-mark) transparent transparent;
-  cursor: pointer;
-}
-
-/* In a cell that starts with a list the mark is in the first bullet's line, and `li.list-item` is positioned (the fold
-   arrow): out by the cell's padding, Crepe's 4px 16px, and the row heights' 1px and 10px. */
-.milkdown .ProseMirror .milkdown-table-block :is(th, td) li.list-item sup[data-type='footnote_reference'][data-label^='cell-']::after {
-  top: -4px;
-  right: -16px;
-}
-
-.milkdown .ProseMirror .milkdown-table-block[data-table-height='compact'] :is(th, td) li.list-item sup[data-type='footnote_reference'][data-label^='cell-']::after {
-  top: -1px;
-}
-
-.milkdown .ProseMirror .milkdown-table-block[data-table-height='tall'] :is(th, td) li.list-item sup[data-type='footnote_reference'][data-label^='cell-']::after {
-  top: -10px;
-}
-
-/* The "Add cell note" button (D8, `cellNoteButton.ts`): one widget, in the top-right corner of the cell under the
-   pointer or of the caret's cell, on a cell with no cell note. Crepe's surface, as the table's own handles. Hidden in a
-   read-only view. */
-.milkdown .ProseMirror .milkdown-table-block .cell-note-button {
-  position: absolute;
-  top: 2px;
-  right: 2px;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -504,18 +494,18 @@
   cursor: pointer;
 }
 
-.milkdown .ProseMirror .milkdown-table-block .cell-note-button:hover {
+.milkdown > .cell-note-button[data-show='false'] {
+  display: none;
+}
+
+.milkdown > .cell-note-button:hover {
   opacity: 1;
   background: var(--crepe-color-hover);
 }
 
-.milkdown .ProseMirror .milkdown-table-block .cell-note-button svg {
+.milkdown > .cell-note-button svg {
   width: 14px;
   height: 14px;
-}
-
-.milkdown .ProseMirror[contenteditable='false'] .cell-note-button {
-  display: none;
 }
 
 /* A cell note's preview (D14, `cellNotePreview.ts`): the link hover card's look (`boardPreview.css` `.board-preview`),

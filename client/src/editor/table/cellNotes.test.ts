@@ -11,7 +11,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import tableCss from './table.css?inline'
 import { getMarkdownForSave } from '../createCrepe'
 import { mount, unmountAll } from '../marks/markTestKit'
-import { addCellNote, cellNoteCrumbParts, cellNoteLabelsIn, cellNoteOf, cellNotePlacements, nextCellNoteLabel, removeCellNote } from './cellNotes'
+import { addCellNote, CELL_NOTE_CELL_CLASS, cellNoteCrumbParts, cellNoteLabelsIn, cellNoteOf, cellNotePlacements, isCellNoteHidden, nextCellNoteLabel, notePosOf, removeCellNote } from './cellNotes'
 import { cellPos } from './tableTestKit'
 
 afterEach(unmountAll)
@@ -122,6 +122,12 @@ describe('the helpers', () => {
     expect(cellNoteCrumbParts(doc, 'cell-9')).toEqual({ column: '', row: '' })
   })
 
+  it('cellNoteCrumbParts reads a cell\'s bullets with spaces, and gives no row for a header cell (5A-16)', async () => {
+    const { view } = await mount('| Day | Plan[^cell-3] |\n| --- | --- |\n| <ul><li>Museum</li><li>Park</li></ul> | x[^cell-4] |\n\n[^cell-3]: a\n\n[^cell-4]: b\n')
+    expect(cellNoteCrumbParts(view.state.doc, 'cell-4')).toEqual({ column: 'Plan', row: 'Museum Park' })
+    expect(cellNoteCrumbParts(view.state.doc, 'cell-3')).toEqual({ column: 'Plan', row: '' })
+  })
+
   it('nextCellNoteLabel is the smallest free `cell-N`', async () => {
     const { view } = await mount('| a |\n| --- |\n| b[^cell-1] |\n\n[^cell-1]: x\n\nY[^cell-3].\n')
     expect(nextCellNoteLabel(view.state.doc)).toBe('cell-2')
@@ -129,18 +135,19 @@ describe('the helpers', () => {
 
   it('addCellNote on a plain cell and on a cell that starts with a list: the mark ends the first line, the notes follow the marks', async () => {
     const { crepe, view } = await mount('| Day | Plan |\n| --- | --- |\n| Monday | Flights |\n| Tuesday | <ul><li>Museum</li><li>Park</li></ul> |\n\nAfter.\n')
-    let added = -1
-    expect(addCellNote(cellPos(view, 2, 1), (pos) => (added = pos))(view.state, view.dispatch)).toBe(true)
-    expect(view.state.doc.nodeAt(added)?.attrs.label).toBe('cell-1')
+    expect(addCellNote(cellPos(view, 2, 1))(view.state, view.dispatch)).toBe(true)
+    expect(view.state.doc.nodeAt(notePosOf(view.state.doc, 'cell-1')!)?.type.name).toBe('cell_note')
     expect(addCellNote(cellPos(view, 1, 1))(view.state, view.dispatch)).toBe(true)
     // A cell holds one cell note.
     expect(addCellNote(cellPos(view, 1, 1))(view.state, view.dispatch)).toBe(false)
     // Row 1's mark comes first, so its note (cell-2) goes first.
     expect(blocks(view)).toEqual(['table', 'note:cell-2', 'note:cell-1', 'After.'])
+    // An empty note stays out of the file (D15): a word in each.
+    for (const label of ['cell-1', 'cell-2']) view.dispatch(view.state.tr.insertText(label === 'cell-1' ? 'one' : 'two', notePosOf(view.state.doc, label)! + 2))
     const out = getMarkdownForSave(crepe)
     expect(out).toContain('| Monday  | Flights[^cell-2]')
     expect(out).toContain('| <ul><li>Museum[^cell-1]</li><li>Park</li></ul> |')
-    expect(out).toContain('[^cell-2]: <br />\n\n[^cell-1]: <br />\n\nAfter.\n')
+    expect(out).toContain('[^cell-2]: two\n\n[^cell-1]: one\n\nAfter.\n')
     const again = await mount(out)
     expect(blocks(again.view)).toEqual(['table', 'note:cell-2', 'note:cell-1', 'After.'])
   })
@@ -150,6 +157,60 @@ describe('the helpers', () => {
     view.dispatch(removeCellNote(view.state.tr, 'cell-1'))
     expect(blocks(view)).toEqual(['note bullet', 'table', 'note:cell-2', 'Text with a ref.', 'footnote:1'])
     expect(getMarkdownForSave(crepe)).not.toContain('cell-1')
+  })
+})
+
+describe('a cell note is hidden only while a table cell holds its mark (5A-3)', () => {
+  const hidden = (view: EditorView): boolean[] => {
+    const out: boolean[] = []
+    view.state.doc.forEach((node, pos) => {
+      if (node.type.name === 'cell_note') out.push(isCellNoteHidden(view.state, pos))
+    })
+    return out
+  }
+
+  it('a mark in a plain line: its note shows', async () => {
+    const { root, view } = await mount('| a |\n| --- |\n| b |\n\nY[^cell-1]\n\n[^cell-1]: secret\n')
+    expect(orphanLabels(root)).toEqual(['cell-1'])
+    expect(hidden(view)).toEqual([false])
+  })
+
+  it('a mark in a cell note: that note shows; the note whose mark is in a cell stays hidden', async () => {
+    const { root, view } = await mount('| a |\n| --- |\n| b[^cell-1] |\n\n[^cell-1]: x[^cell-2]\n\n[^cell-2]: y\n')
+    expect(orphanLabels(root)).toEqual(['cell-2'])
+    expect(hidden(view)).toEqual([true, false])
+  })
+
+  it('a mark cut from a cell and pasted in a line: its note shows; back in a cell, it hides again', async () => {
+    const { root, view } = await mount('| a |\n| --- |\n| b[^cell-1] |\n\n[^cell-1]: secret\n\nEnd\n')
+    const mark = cellPos(view, 1, 0) + 3
+    expect(view.state.doc.nodeAt(mark)?.type.name).toBe('footnote_reference')
+    const end = blockPos(view, 'End') + 4
+    const tr = view.state.tr.insert(end, view.state.doc.nodeAt(mark)!).delete(mark, mark + 1)
+    view.dispatch(tr)
+    expect(orphanLabels(root)).toEqual(['cell-1'])
+    const moved = blockPos(view, 'End') + 4
+    view.dispatch(view.state.tr.insert(cellPos(view, 1, 0) + 3, view.state.doc.nodeAt(moved)!).delete(moved + 1, moved + 2))
+    expect(orphanLabels(root)).toEqual([])
+  })
+})
+
+describe('the corner mark is drawn on the cell (5A-18)', () => {
+  const marked = (root: HTMLElement): string[] => [...root.querySelectorAll<HTMLElement>(`.${CELL_NOTE_CELL_CLASS}`)].map((cell) => cell.textContent!.replace(/cell-\d+/g, '').trim())
+
+  it('a cell with a mark has the class, one that starts with a list too; it goes with the mark and comes with a new note', async () => {
+    const { root, view } = await mount(NOTES)
+    expect(marked(root)).toEqual(['Flights', 'Museum'])
+    view.dispatch(removeCellNote(view.state.tr, 'cell-1'))
+    expect(marked(root)).toEqual(['Museum'])
+    addCellNote(cellPos(view, 1, 0))(view.state, view.dispatch)
+    expect(marked(root)).toEqual(['Monday', 'Museum'])
+  })
+
+  it('table.css draws the triangle on the cell, with no offsets for a cell that starts with a list', () => {
+    expect(tableCss).toMatch(new RegExp(`:is\\(th, td\\)\\.${CELL_NOTE_CELL_CLASS} \\{[^}]*background-image: linear-gradient`))
+    expect(tableCss).not.toMatch(/li\.list-item sup\[data-type='footnote_reference'\]/)
+    expect(tableCss).not.toMatch(/sup\[data-type='footnote_reference'\]\[data-label\^='cell-'\]::after/)
   })
 })
 

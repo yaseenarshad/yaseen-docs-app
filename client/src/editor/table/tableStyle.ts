@@ -170,8 +170,8 @@ interface CellData {
  * A cell schema with `fill` and `color` (YAZ-3696 D3 / D8; a name or `#rrggbb`, YAZ-3817) and its
  * own `align` (YAZ-3819): `null` by default, carried by `data-fill` / `data-color` / `data-align` on
  * the DOM (the column's alignment in `data-column-align`), and read from the cell's `data.tableCell`
- * on load. The runner is GFM's (open the cell with its alignment, then its paragraph), with our attributes;
- * a body cell's list (YAZ-3818 D1, `cellLists.ts`) goes between its lines.
+ * on load. The runner is the app's own: it opens the cell with its alignment and our attributes, then one
+ * paragraph for each run of inline content, and each list (YAZ-3818 D1, `cellLists.ts`) to its own runner.
  */
 export function withCellStyle(spec: NodeSchema): NodeSchema {
   const toDOM = spec.toDOM!

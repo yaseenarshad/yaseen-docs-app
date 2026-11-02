@@ -15,7 +15,7 @@ import type { List, ListItem, Paragraph, PhrasingContent, RootContent, Table } f
 import { visit } from 'unist-util-visit'
 
 /** A bullet or numbered list node. */
-export const isCellList = (node: PMNode): boolean => node.type.name === 'bullet_list' || node.type.name === 'ordered_list'
+const isCellList = (node: PMNode): boolean => node.type.name === 'bullet_list' || node.type.name === 'ordered_list'
 
 /**
  * The blocks of a cell, or of an item in a cell's list, as one line: a list as HTML, a line as its
@@ -30,7 +30,7 @@ export function writeCellBlocks(state: SerializerState, parent: PMNode): void {
 }
 
 /** A list in a cell as raw `html` nodes around each item's Markdown words (D2). */
-export function writeCellList(state: SerializerState, list: PMNode): void {
+function writeCellList(state: SerializerState, list: PMNode): void {
   const html = (value: string) => state.addNode('html', undefined, value)
   const ordered = list.type.name === 'ordered_list'
   const order = list.attrs.order as number
@@ -49,13 +49,17 @@ export function writeCellList(state: SerializerState, list: PMNode): void {
 const OPEN_LIST = /^<(ul|ol)(?: start="(\d+)")?>$/
 const TASK = /^\[( |x|X)\] /
 
-/** The item's first line: made empty when the item starts with a list; a `[ ] ` / `[x] ` there sets `checked` (`[X] ` too, written back `[x] `). */
-function closeItem(item: ListItem): void {
+/**
+ * The item's first line: made empty when the item starts with a list; a `[ ] ` / `[x] ` there sets `checked` (`[X] `
+ * too, written back `[x] `). Not a `\[ ] `: the writer escapes a plain bullet's `[`, and remark reads the escape as
+ * `[` (5A-12), so the source tells the two apart.
+ */
+function closeItem(item: ListItem, source: string): void {
   if (item.children[0]?.type !== 'paragraph') item.children.unshift({ type: 'paragraph', children: [] })
   const line = item.children[0] as Paragraph
   const first = line.children[0]
   const task = first?.type === 'text' ? TASK.exec(first.value) : null
-  if (first?.type !== 'text' || task === null) return
+  if (first?.type !== 'text' || task === null || source[first.position?.start.offset ?? -1] === '\\') return
   item.checked = task[1] !== ' '
   // A new text node: the cell keeps its own children when a later tag does not balance.
   const rest = first.value.slice(task[0].length)
@@ -64,7 +68,7 @@ function closeItem(item: ListItem): void {
 }
 
 /** A cell's children with its HTML lists made mdast lists; `null` when they are not the exact form. */
-function readCellLists(children: PhrasingContent[]): RootContent[] | null {
+function readCellLists(children: PhrasingContent[], source: string): RootContent[] | null {
   const out: RootContent[] = []
   const stack: Array<List | ListItem> = []
   for (const node of children) {
@@ -86,7 +90,7 @@ function readCellLists(children: PhrasingContent[]): RootContent[] | null {
       stack.push(item)
     } else if (tag === '</li>') {
       if (top?.type !== 'listItem') return null
-      closeItem(top)
+      closeItem(top, source)
       stack.pop()
     } else if (tag === '</ul>' || tag === '</ol>') {
       if (top?.type !== 'list' || top.ordered !== (tag === '</ol>') || top.children.length === 0) return null
@@ -109,12 +113,13 @@ const hasListTag = (node: PhrasingContent): boolean => node.type === 'html' && O
  * After `inlineBreaksRemark` (a `<br>` is a `break` by then): each BODY cell's HTML list becomes an
  * mdast `list`, which `withCellStyle`'s runner passes to Milkdown's list runners.
  */
-export const cellListsRemark = $remark('mdapp-cell-lists', () => () => (tree) => {
+export const cellListsRemark = $remark('mdapp-cell-lists', () => () => (tree, file) => {
+  const source = String(file.value)
   visit(tree, 'table', (table: Table) => {
     for (const row of table.children.slice(1)) {
       for (const cell of row.children) {
         if (!cell.children.some(hasListTag)) continue
-        const children = readCellLists(cell.children)
+        const children = readCellLists(cell.children, source)
         if (children !== null) cell.children = children as PhrasingContent[]
       }
     }

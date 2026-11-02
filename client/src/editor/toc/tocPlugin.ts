@@ -408,7 +408,7 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
               if (target === undefined) return
               // A row outside the zoomed bullet ends the zoom first (YAZ-4094 4C): the reader asked for a place the zoom hides.
               const zoomed = getZoomedItemPos(view.state)
-              if (zoomed !== null && !(zoomed <= target.pos && target.pos < zoomed + (view.state.doc.nodeAt(zoomed)?.nodeSize ?? 0))) zoomOutFully(view.state, view.dispatch)
+              if (zoomed !== null && !(zoomed <= target.pos && target.pos < zoomed + (view.state.doc.nodeAt(zoomed)?.nodeSize ?? 0))) zoomOutFully(view.state, view.dispatch, view)
               // The reader asked for THIS section: every fold that hides its heading opens, and so
               // does its own — a folded heading is one line, and the reader asked for what is under
               // it. Declines an empty set, so a heading that nothing hides and that is open itself

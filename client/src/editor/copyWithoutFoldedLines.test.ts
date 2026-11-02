@@ -193,15 +193,19 @@ describe('Copy as › Without folded lines (YAZ-3653)', () => {
     expect(onCopyNotice).toHaveBeenCalledTimes(2)
   })
 
-  it('a hidden cell note stays out, and counts as a folded line; its mark stays in the cell (YAZ-3818 D4)', async () => {
+  it('a hidden cell note stays out, and the toast names it a cell note, not a fold; its mark stays in the cell (YAZ-3818 D4, 5A-15)', async () => {
     const onCopyNotice = vi.fn()
-    const { crepe } = await focused('Before.\n\n| a          |\n| ---------- |\n| b[^cell-1] |\n\n[^cell-1]: secret\n\nAfter.\n', { onCopyNotice })
-    select(crepe, posOf(crepe, 'Before.'), endOf(crepe, 'After.'))
+    const { crepe } = await focused('* A\n  * a1\n\n| a          |\n| ---------- |\n| b[^cell-1] |\n\n[^cell-1]: secret\n\n    more\n\nAfter.\n', { onCopyNotice })
+    select(crepe, posOf(crepe, 'A'), endOf(crepe, 'After.'))
     const { text, htmlText } = copyVisible()
     expect(text).toContain('After.')
     expect(text).not.toContain('secret')
     expect(htmlText).not.toContain('secret')
-    expect(onCopyNotice).toHaveBeenLastCalledWith('Copied, 1 folded line left out')
+    expect(onCopyNotice).toHaveBeenLastCalledWith('Copied, 2 cell note lines left out')
+    fold(crepe, 'A')
+    select(crepe, posOf(crepe, 'A'), endOf(crepe, 'After.'))
+    copyVisible()
+    expect(onCopyNotice).toHaveBeenLastCalledWith('Copied, 1 folded line and 2 cell note lines left out')
   })
 
   it('S23: the key, once picked in Settings › Hotkeys, asks main for the copy: the bullet at the caret, else the selection', async () => {

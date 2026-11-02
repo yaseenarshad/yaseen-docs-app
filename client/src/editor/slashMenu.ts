@@ -14,6 +14,10 @@
  * the item; Task List makes the item a task) — except Text, which runs T's command (YAZ-3806 T4):
  * the item becomes a plain line, out of every list level, as T and ⌘⌥0 make it.
  *
+ * In a table cell and a cell note (YAZ-3818 D1) the menu shows only the rows for lines and lists (`HIDDEN_IN_CELL`);
+ * a header cell holds one line, so it hides the list rows too (D7). A block put there anyway becomes lines
+ * (`table/cellBlocks.ts`).
+ *
  * "Table" (YAZ-3696 D12) is the app's own row in Crepe's place (`advancedGroup: { table: null }` in
  * `createCrepe()`), with Crepe's label, icon and position (after Code). In a list item's label line it
  * removes only the `/query`. A line with text stays and a 3×3 table goes BELOW it, inside the item.
@@ -31,7 +35,7 @@
  *
  * 🔒 Crepe keeps the rows in a Vue `computed` that reads only the filter text, so "/" on a plain
  * line and then "/" in a bullet (the same filter, "") would reuse the plain line's rows. The
- * "in a list" flag is therefore a Vue `shallowRef` (the copy Crepe itself runs on) that the
+ * "in a list" flag (and the "in a cell" one) is therefore a Vue `shallowRef` (the copy Crepe itself runs on) that the
  * computed reads through `buildMenu`, and a plugin view sets on every update — before the menu's
  * own 20 ms debounced update shows it.
  */
@@ -47,7 +51,8 @@ import { createTable } from '@milkdown/kit/preset/gfm'
 import { Plugin, type Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { shallowRef } from 'vue'
-import { isListItem } from './outline/listNodes'
+import { cellPosAround, isListItem } from './outline/listNodes'
+import { inCellOrNote } from './table/cellBlocks'
 
 /** One slash row as Crepe's builder takes it (`keywords` is the YAZ-3550 patch's field). */
 export interface SlashRow {
@@ -71,6 +76,21 @@ export interface SlashMenuGroups {
 
 /** The stock rows hidden in a list item (keys from Crepe's `menu/config.ts`); see the header. */
 export const HIDDEN_IN_LIST = ['divider', 'bullet-list'] as const
+
+/**
+ * The rows a cell and a cell note hide (YAZ-3818 D1): they hold lines and lists, so no heading, quote, rule, image,
+ * code, table, math or drawing. A header cell holds one line (D7): its list rows go too.
+ */
+export const HIDDEN_IN_CELL = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'quote', 'divider', 'image', 'code', 'table', 'math', 'drawing'] as const
+export const HIDDEN_IN_HEADER = [...HIDDEN_IN_CELL, 'bullet-list', 'ordered-list', 'task-list'] as const
+
+/** Where the caret is for the rows: a header cell, another cell or a cell note, or neither. */
+export function cellKindAt(selection: Selection): 'header' | 'cell' | null {
+  const { $from } = selection
+  if (!inCellOrNote($from)) return null
+  const cell = cellPosAround($from)
+  return cell !== null && $from.doc.nodeAt(cell)!.type.spec.tableRole === 'header_cell' ? 'header' : 'cell'
+}
 
 /** The words the filter finds "Current time" by, besides its label (D22). */
 export const CURRENT_TIME_KEYWORDS = ['current', 'now', 'clock', 'time']
@@ -175,30 +195,35 @@ export const tableRow: SlashRow = {
 /**
  * One editor's slash extension: the `buildMenu` for `featureConfigs[CrepeFeature.BlockEdit]`
  * (Current time at the end of the Text group, Table after Code, then `extend` — the Drawing row
- * when the host gives a creator — then the list rule) and the plugin that keeps the "in a list" flag current.
+ * when the host gives a creator — then the list and cell rules) and the plugin that keeps the "in a list" and "in a
+ * cell" flags current: one walk up the caret's depth.
  */
 export function createSlashMenu(extend?: (builder: SlashMenuGroups) => void): {
   buildMenu: (builder: SlashMenuGroups) => void
   inListWatch: ReturnType<typeof $prose>
 } {
   const inList = shallowRef(false)
+  const inCell = shallowRef<'header' | 'cell' | null>(null)
   const buildMenu = (builder: SlashMenuGroups) => {
     builder.getGroup('text').addItem('current-time', currentTimeRow)
     const text = builder.build().find((group) => group.key === 'text')?.items.find((item) => item.key === 'text')
     if (text !== undefined) text.onRun = textRowRun
     builder.getGroup('advanced').addItem('table', tableRow)
     extend?.(builder)
-    if (!inList.value) return
-    for (const group of builder.build()) {
-      group.items = group.items.filter((item) => !(HIDDEN_IN_LIST as readonly string[]).includes(item.key))
-    }
+    const hidden: readonly string[] = [...(inList.value ? HIDDEN_IN_LIST : []), ...(inCell.value === 'header' ? HIDDEN_IN_HEADER : inCell.value === 'cell' ? HIDDEN_IN_CELL : [])]
+    if (hidden.length === 0) return
+    for (const group of builder.build()) group.items = group.items.filter((item) => !hidden.includes(item.key))
+  }
+  const watch = (selection: Selection) => {
+    inList.value = isInListItem(selection)
+    inCell.value = cellKindAt(selection)
   }
   const inListWatch = $prose(
     () =>
       new Plugin({
         view: (view) => {
-          inList.value = isInListItem(view.state.selection)
-          return { update: (next) => void (inList.value = isInListItem(next.state.selection)) }
+          watch(view.state.selection)
+          return { update: (next) => watch(next.state.selection) }
         },
       }),
   )

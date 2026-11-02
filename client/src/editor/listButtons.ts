@@ -51,8 +51,11 @@ interface Line {
 /** The lines a button acts on: the selection's (the toolbar), or a list's item lines (the block menu, YAZ-3727 D14). */
 export type LinePick = (state: EditorState) => readonly Line[]
 
-/** The containers whose blocks are lines outside a list: the page, a quote, and an item after its first block. */
-const CONTAINERS: ReadonlySet<string> = new Set(['doc', 'blockquote', 'list_item'])
+/**
+ * The containers whose blocks are lines outside a list: the page, a quote, an item after its first block, and a body
+ * cell and a cell note, which hold lists too (YAZ-3818 D1). Not a header cell: it holds one line (D7).
+ */
+const CONTAINERS: ReadonlySet<string> = new Set(['doc', 'blockquote', 'list_item', 'table_cell', 'cell_note'])
 
 const kindOfItem = (item: ProseNode, list: ProseNode): ListKind =>
   typeof item.attrs.checked === 'boolean' ? 'checklist' : list.type.name === 'ordered_list' ? 'numberedList' : 'bulletList'

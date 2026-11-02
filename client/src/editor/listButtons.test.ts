@@ -203,6 +203,31 @@ describe('the list buttons and T (YAZ-3806 T3, T4)', () => {
   })
 })
 
+describe('a plain line of a body cell and of a cell note page (YAZ-3818 D1, 5A-14)', () => {
+  it.each([
+    ['bulletList', '<ul><li>a</li></ul>', '[^cell-1]: * a'],
+    ['numberedList', '<ol><li>a</li></ol>', '[^cell-1]: 1. a'],
+    ['checklist', '<ul><li>[ ] a</li></ul>', '[^cell-1]: * [ ] a'],
+  ] as const)('%s makes the list; a header cell holds one line (D7)', async (button, cell, note) => {
+    const inCell = await mount('| h |\n| - |\n| a |\n')
+    select(inCell.crepe, posOf(inCell.crepe, 'a'), endOf(inCell.crepe, 'a'))
+    expect(lit(inCell.crepe)).toEqual(['text'])
+    expect(press(inCell.crepe, button)).toBe(true)
+    expect(md(inCell.crepe)).toContain(`| ${cell} |`)
+    select(inCell.crepe, posOf(inCell.crepe, 'a'), endOf(inCell.crepe, 'a'))
+    expect(lit(inCell.crepe)).toEqual([button])
+    select(inCell.crepe, posOf(inCell.crepe, 'h'), endOf(inCell.crepe, 'h'))
+    expect(press(inCell.crepe, button)).toBe(false)
+
+    const onPage = await mount('| h |\n| - |\n| b[^cell-1] |\n\n[^cell-1]: a\n')
+    expect(runCommand(onPage.crepe, zoomToKey('note:cell-1'))).toBe(true)
+    select(onPage.crepe, posOf(onPage.crepe, 'a'), endOf(onPage.crepe, 'a'))
+    expect(lit(onPage.crepe)).toEqual(['text'])
+    expect(press(onPage.crepe, button)).toBe(true)
+    expect(md(onPage.crepe)).toContain(note)
+  })
+})
+
 describe('checker round 1 (PR #220)', () => {
   it.each(['checklist', 'numberedList'] as const)('4A: inside a zoom, %s on the zoomed bullet\'s own line keeps the zoom', async (kind) => {
     const { crepe, view } = await mount('* R\n  * X\n  * A\n    * B\n  * Y\n')

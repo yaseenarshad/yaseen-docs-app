@@ -42,7 +42,7 @@ import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { collapsedHeadingsHiding, setHeadingFoldSet } from '../outline/headingFolding'
 import { collapsedItemsHiding, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos, reportZoom, zoomQuietly } from '../outline/zoom'
-import { isCellNote, isCellNoteHidden } from '../table/cellNotes'
+import { cellNoteAround, isCellNoteHidden } from '../table/cellNotes'
 import { pillLinks, type PillLink, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import type { FindChannel, FindController, FindResult } from './findChannel'
@@ -243,11 +243,8 @@ const carryOpened = (transaction: Transaction, meta: FindMeta | undefined, previ
 
 /** The hidden cell note that holds `pos`, or null (D19). */
 const hiddenNoteAt = (state: EditorState, pos: number): number | null => {
-  const $pos = state.doc.resolve(pos)
-  for (let depth = $pos.depth; depth > 0; depth--) {
-    if (isCellNote($pos.node(depth))) return isCellNoteHidden(state, $pos.before(depth)) ? $pos.before(depth) : null
-  }
-  return null
+  const note = cellNoteAround(state.doc.resolve(pos))
+  return note !== null && isCellNoteHidden(state, note) ? note : null
 }
 
 /** The engine behind the channel's commands. Every step is metadata-only, and synchronous. */
@@ -314,14 +311,14 @@ const createController = (view: EditorView): FindController => {
     if (opened !== null) {
       const note = view.state.doc.nodeAt(opened.note)!
       if (match === null || match.from < opened.note || match.from >= opened.note + note.nodeSize) {
-        zoomQuietly(opened.from)(view.state, view.dispatch)
+        zoomQuietly(opened.from)(view.state, view.dispatch, view)
         opened = null
       }
     }
     const hidden = match === null ? null : hiddenNoteAt(view.state, match.from)
     if (hidden !== null) {
       const from = getZoomedItemPos(view.state)
-      if (zoomQuietly(hidden)(view.state, view.dispatch)) opened = { note: hidden, from }
+      if (zoomQuietly(hidden)(view.state, view.dispatch, view)) opened = { note: hidden, from }
     }
     if (opened !== findState().opened) dispatchMeta({ type: 'opened', opened })
   }
