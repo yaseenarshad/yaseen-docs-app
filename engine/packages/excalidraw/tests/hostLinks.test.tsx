@@ -14,7 +14,10 @@ import {
   setCustomTextMetricsProvider,
 } from "@excalidraw/element";
 
+import * as blobModule from "../data/blob";
+
 import { API } from "./helpers/api";
+import { mockMultipleHTMLImageElements } from "./helpers/mocks";
 import { Keyboard, Pointer } from "./helpers/ui";
 import { getTextEditor, updateTextEditor } from "./queries/dom";
 import {
@@ -28,6 +31,7 @@ import {
 
 import type {
   ExcalidrawTextElement,
+  FileId,
   FontString,
 } from "@excalidraw/element/types";
 
@@ -670,7 +674,9 @@ describe("YAZ-3943 4D: pages dropped from the sidebar are pill boxes", () => {
     file: new File(["x"], name, { type }),
   });
   const texts = () =>
-    h.elements.map((element) => (element as ExcalidrawTextElement).originalText);
+    h.elements.map(
+      (element) => (element as ExcalidrawTextElement).originalText,
+    );
 
   it("one page makes one pill box at the drop point, sized to the pill, as a paste does", async () => {
     await API.drop([page("Growth plan.md", "text/markdown")]);
@@ -684,7 +690,11 @@ describe("YAZ-3943 4D: pages dropped from the sidebar are pill boxes", () => {
   });
 
   it("three pages make three boxes, stacked down from the drop point, all selected", async () => {
-    await API.drop([page("Growth plan.md"), page("Board.excalidraw"), page("app.ts")]);
+    await API.drop([
+      page("Growth plan.md"),
+      page("Board.excalidraw"),
+      page("app.ts"),
+    ]);
     await waitFor(() => expect(h.elements.length).toBe(3));
     expect(texts()).toEqual(["[[YAS-1]]", "[[YAS-2]]", "[[src/app.ts]]"]);
     const ys = h.elements.map((element) => element.y);
@@ -702,6 +712,48 @@ describe("YAZ-3943 4D: pages dropped from the sidebar are pill boxes", () => {
     expect(dropLinks).toHaveBeenCalledTimes(1);
     expect(h.elements).toEqual([]);
     expect(h.state.errorMessage).toBeNull();
+  });
+
+  it("YAZ-4074 6A item 11: a drop of pages and a picture puts the picture below the last pill box", async () => {
+    vi.spyOn(blobModule, "resizeImageFile").mockImplementation((file: File) =>
+      Promise.resolve(file),
+    );
+    vi.spyOn(blobModule, "generateIdFromFile").mockResolvedValue(
+      "photo" as FileId,
+    );
+    // the test window has no size: a picture is sized to the board
+    h.state.height = 1000;
+    mockMultipleHTMLImageElements([[100, 80]]);
+    // a real 1×1 PNG: the drop first looks in a PNG for a scene, and finds none
+    const png = Uint8Array.from(
+      atob(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+      ),
+      (c) => c.charCodeAt(0),
+    );
+    await API.drop([
+      page("Growth plan.md"),
+      page("Board.excalidraw"),
+      {
+        kind: "file",
+        file: new File([png], "photo.png", { type: "image/png" }),
+      },
+    ]);
+    await waitFor(() =>
+      expect(
+        h.elements.find(
+          (element) => element.type === "image" && !element.isDeleted,
+        )?.height,
+      ).toBe(80),
+    );
+    const boxes = h.elements.filter((element) => element.type === "text");
+    const picture = h.elements.find(
+      (element) => element.type === "image" && !element.isDeleted,
+    )!;
+    expect(boxes).toHaveLength(2);
+    const bottom = Math.max(...boxes.map((box) => box.y + box.height));
+    expect(picture.y).toBeGreaterThan(bottom);
+    expect(picture.x + picture.width / 2).toBeCloseTo(0);
   });
 
   it("the host is never asked about a picture", async () => {

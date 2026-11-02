@@ -1498,6 +1498,8 @@ export type InsertImagesOptions = {
   viewportSizing?: import("./data/viewportInsertion").ViewportInsertionRequest;
   /** YAZ-3944 D16 "Paste at full size": no shrink and no resize; the size limits stay. */
   fullSize?: boolean;
+  /** YAZ-4074 6A item 11: the given scene y is the top of the pictures, not their middle. */
+  fromTop?: boolean;
 };
 
 /**

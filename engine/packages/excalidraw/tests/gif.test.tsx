@@ -312,7 +312,9 @@ describe("YAZ-3944 D3, D16: adding a GIF, and Paste at full size", () => {
     const gif = gifFile(makeGif(700, 9, 2));
     // over 2 MB and already 800 px or less: the shrink cannot make it smaller
     vi.spyOn(gifModule, "gifNeedsShrink").mockResolvedValue(true);
-    vi.spyOn(gifModule, "shrinkGifFile").mockImplementation(async (file) => file);
+    vi.spyOn(gifModule, "shrinkGifFile").mockImplementation(
+      async (file) => file,
+    );
 
     await act(() => h.app.insertImages([gif]));
     await act(() => h.app.insertImages([gif], 0, 0, { fullSize: true }));

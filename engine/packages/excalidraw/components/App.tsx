@@ -5274,12 +5274,13 @@ class App extends React.Component<AppProps, AppState> {
    * `drop` (YAZ-3943 4D): `text` is the dropped pages' links, one a line, each
    * a pill box from that scene point down.
    */
+  /** The text boxes a drop or a plain multi-line paste made (YAZ-4074 6A item 11), else undefined. */
   private addTextFromPaste(
     text: string,
     isPlainPaste = false,
     drop?: { x: number; y: number },
     html?: string,
-  ) {
+  ): ExcalidrawTextElement[] | undefined {
     // YAZ-4039 D12: one pasted page reference (a vault path, a `yaseendocs://`
     // link, a `[[link]]`) is its link, a pill in a box sized to it
     const single = text.trim();
@@ -5472,6 +5473,7 @@ class App extends React.Component<AppProps, AppState> {
       });
       PLAIN_PASTE_TOAST_SHOWN = true;
     }
+    return textElements;
   }
 
   setAppState: React.Component<any, AppState>["setState"] = (
@@ -14308,12 +14310,25 @@ class App extends React.Component<AppProps, AppState> {
       sceneY = center.y;
     }
     const gridPadding = 50 / this.state.zoom.value;
+    // YAZ-4074 6A item 11: `fromTop` puts the grid's top at `sceneY`, not its middle
+    const onGrid = <T extends ExcalidrawElement>(elements: T[]) => {
+      const grid = positionElementsOnGrid(
+        elements,
+        sceneX,
+        sceneY,
+        gridPadding,
+      );
+      if (!options?.fromTop || grid.length === 0) {
+        return grid;
+      }
+      const dy = sceneY - getCommonBounds(grid)[1];
+      return grid.map((element) =>
+        newElementWith(element, { y: element.y + dy } as ElementUpdate<T>),
+      );
+    };
     // Create, position, and insert placeholders
-    const placeholders = positionElementsOnGrid(
+    const placeholders = onGrid(
       imageFiles.map(() => this.newImagePlaceholder({ sceneX, sceneY })),
-      sceneX,
-      sceneY,
-      gridPadding,
     );
     this.insertNewElements(placeholders);
 
@@ -14338,12 +14353,7 @@ class App extends React.Component<AppProps, AppState> {
     );
     const initializedMap = arrayToMap(initialized);
 
-    const positioned = positionElementsOnGrid(
-      initialized.filter((el) => !el.isDeleted),
-      sceneX,
-      sceneY,
-      gridPadding,
-    );
+    const positioned = onGrid(initialized.filter((el) => !el.isDeleted));
     const positionedMap = arrayToMap(positioned);
 
     const nextElements = this.scene
@@ -14384,7 +14394,8 @@ class App extends React.Component<AppProps, AppState> {
 
     // YAZ-3943 4D: pages dragged from the sidebar are pill boxes, one each,
     // stacked down from the drop point; a folder adds nothing. Pictures are
-    // added at the drop point as a Finder drop adds them (2D).
+    // added at the drop point as a Finder drop adds them (2D), or below the
+    // last pill box when pages came too (YAZ-4074 6A item 11).
     const droppedFiles = fileItems
       .map((data) => data.file)
       .filter((file): file is File => !!file);
@@ -14396,17 +14407,25 @@ class App extends React.Component<AppProps, AppState> {
         ? this.props.hostLinks?.dropLinks?.(pageFiles) ?? null
         : null;
     if (links) {
-      if (links.length > 0) {
-        this.addTextFromPaste(links.join("\n"), false, {
-          x: sceneX,
-          y: sceneY,
-        });
-      }
+      const boxes =
+        links.length > 0
+          ? this.addTextFromPaste(links.join("\n"), false, {
+              x: sceneX,
+              y: sceneY,
+            }) ?? []
+          : [];
       const pictures = droppedFiles.filter((file) =>
         isSupportedImageFile(file),
       );
       if (pictures.length > 0 && this.isToolSupported("image")) {
-        await this.insertImages(pictures, sceneX, sceneY);
+        if (boxes.length > 0) {
+          const bottom = getCommonBounds(boxes)[3];
+          await this.insertImages(pictures, sceneX, bottom + 10, {
+            fromTop: true,
+          });
+        } else {
+          await this.insertImages(pictures, sceneX, sceneY);
+        }
       }
       return;
     }
