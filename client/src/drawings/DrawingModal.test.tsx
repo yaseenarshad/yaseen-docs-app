@@ -731,6 +731,22 @@ describe('the popup saves through drawing:save (YAZ-3943 1A1)', () => {
   })
 })
 
+/** YAZ-4074 6A item 12: the popup says what a tab says when a board's pictures are missing. */
+describe('missing pictures in the popup', () => {
+  it('says so once when it opens, as a drawing tab does', async () => {
+    vi.mocked(api.drawing.load).mockRejectedValue(new Error('no store'))
+    readAsset.mockResolvedValue({ ...asset(100), data: btoa(JSON.stringify({ elements: [{ type: 'image', fileId: 'gone' }, { type: 'image', fileId: 'lost' }, { type: 'image', fileId: 'here' }], files: { here: { id: 'here', mimeType: 'image/png', dataURL: 'data:image/png;base64,aGk=' } } })) })
+    const onNotice = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={() => undefined} onNotice={onNotice} />))
+    await act(async () => undefined)
+    expect(onNotice).toHaveBeenCalledTimes(1)
+    expect(onNotice).toHaveBeenCalledWith('2 pictures of this board are missing', 'error')
+  })
+})
+
 /** YAZ-3943 demo round 3: a board naming an outside pictures folder this Mac has not allowed asks in the popup too. */
 describe('the outside pictures folder in the popup', () => {
   const board = (block: Record<string, unknown>) => ({ ...asset(100), data: btoa(JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, ...block }, elements: [], appState: {}, files: {} })) })

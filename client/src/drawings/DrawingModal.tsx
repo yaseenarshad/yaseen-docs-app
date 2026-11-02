@@ -56,7 +56,8 @@ import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
 import type { DrawingSnapshot } from './ExcalidrawSurface'
 import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing'
-import { picturesFolderOutside, unpersistedFiles } from '@shared/drawingAssets'
+import { missingPicturesNotice, picturesFolderOutside, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
+import type { NoticeKind } from '../lib/notice'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
 import { usePicturesFolderAllow } from './usePicturesFolderAllow'
@@ -91,8 +92,8 @@ interface DrawingModalProps extends DrawingLinkProps {
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
-  /** The note's passive notice: what a link's open or a new page says. */
-  onNotice?: (message: string) => void
+  /** The note's passive notice: what a link's open or a new page says, and missing pictures (an error). */
+  onNotice?: (message: string, icon?: NoticeKind) => void
 }
 
 export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside, onNotice, ...linkProps }: DrawingModalProps) {
@@ -188,6 +189,14 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   // YAZ-3943 demo round 3: a board naming an outside pictures folder this Mac has not allowed asks once when it opens here too.
   const outsideFolder = loaded?.scene.picturesOut === true && loaded.scene.picturesFolder !== undefined && picturesFolderOutside(loaded.scene.picturesFolder) ? loaded.scene.picturesFolder : null
   const { sheet: allowSheet } = usePicturesFolderAllow(outsideFolder, onNotice)
+  // YAZ-4074 6A item 12: the tab's notice for pictures in neither the file nor a store, once per open: a Reload says nothing.
+  const toldMissing = useRef(false)
+  useEffect(() => {
+    if (loaded === null || toldMissing.current) return
+    toldMissing.current = true
+    const { missing } = picturesSize(loaded.scene.elements, loaded.scene.files ?? {})
+    if (missing > 0) onNotice?.(missingPicturesNotice(missing), 'error')
+  }, [loaded, onNotice])
 
   /** One guarded write of the live scene; `Autosave` calls it once per save, never once per change. */
   const write = useCallback(

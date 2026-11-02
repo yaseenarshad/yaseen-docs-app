@@ -49,7 +49,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse, PageView } from '@shared/types'
-import { missingPicturesText, picturesFolderOutside, picturesMissingRefusal, picturesSize, unpersistedFiles, withHomeTilde } from '@shared/drawingAssets'
+import { missingPicturesNotice, missingPicturesText, picturesFolderOutside, picturesMissingRefusal, picturesSize, unpersistedFiles, withHomeTilde } from '@shared/drawingAssets'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
@@ -161,9 +161,6 @@ export function picturesMoveAsk(to: PicturesPlace, pictures: { count: number; by
   const outside = picturesFolderOutside(path) ? ` ${OUTSIDE_FOLDER_WARNING}` : ''
   return { title: `Move pictures to ${lastName(path)}?`, body: `${what} ${one ? 'moves' : 'move'} from ${from} to ${withHomeTilde(path, home)}. ${alone} Keep this folder${outside === '' ? ' in the vault' : ''}. If you rename or delete it, the board shows missing pictures.${outside}`, confirm: 'Move pictures' }
 }
-
-/** What a board with missing pictures says when it opens (YAZ-3943 1F): "3 pictures of this board are missing". */
-export const missingPicturesNotice = (missing: number): string => (missing === 1 ? '1 picture of this board is missing' : `${missing} pictures of this board are missing`)
 
 /** What File › Export Drawing… says when the save sheet or the write refused (🔒 YAZ-1775 D3, YAZ-1821). */
 const EXPORT_FAILED = "The Excalidraw drawing couldn't be exported."
