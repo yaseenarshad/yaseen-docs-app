@@ -72,6 +72,7 @@ describe('settingCandidates', () => {
       // Settings › Editor › Tables (YAZ-4162 D6, D14).
       'tableNowMark',
       'tableDimPast',
+      'tableTimeFormat',
       // Settings › Code (YAZ-3449).
       'codeReadOnly',
       'codeWrap',

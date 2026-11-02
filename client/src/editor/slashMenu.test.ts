@@ -15,7 +15,7 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
-import { createSlashMenu, formatCurrentTime, tableRow, type SlashMenuGroups, type SlashRow } from './slashMenu'
+import { calendarTableRow, createSlashMenu, formatCurrentTime, tableRow, type SlashMenuGroups, type SlashRow } from './slashMenu'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
@@ -89,7 +89,7 @@ async function openMenu(view: EditorView, root: HTMLElement, blockText: string, 
 }
 
 /** The rows of the plain-line menu (D21: a list item shows these, less the two it cannot use). */
-const PLAIN_ROWS = ['Text', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4', 'Heading 5', 'Heading 6', 'Quote', 'Divider', 'Current time', 'Bullet List', 'Task List', 'Code', 'Table']
+const PLAIN_ROWS = ['Text', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4', 'Heading 5', 'Heading 6', 'Quote', 'Divider', 'Current time', 'Bullet List', 'Task List', 'Code', 'Table', 'Calendar table']
 const LIST_ROWS = PLAIN_ROWS.filter((row) => row !== 'Divider' && row !== 'Bullet List')
 
 describe('formatCurrentTime (D22, edge case 76)', () => {
@@ -126,8 +126,9 @@ describe('buildMenu (YAZ-3550)', () => {
     expect(order).toEqual(['current-time'])
     expect(groups[0].items[0]).toMatchObject({ key: 'current-time', label: 'Current time', keywords: ['current', 'now', 'clock', 'time'] })
     expect(groups[0].items[0].icon).toContain('<svg')
-    // Table (YAZ-3696 D12) takes Crepe's place after Code, before the host's Drawing.
-    expect(groups[2].items.map((item) => item.key)).toEqual(['table', 'drawing'])
+    // Table (YAZ-3696 D12) takes Crepe's place after Code; Calendar table (YAZ-4163 D7) follows it, before the host's Drawing.
+    expect(groups[2].items.map((item) => item.key)).toEqual(['table', 'calendar-table', 'drawing'])
+    expect(groups[2].items[1]).toMatchObject({ label: 'Calendar table', keywords: ['calendar', 'schedule', 'plan', 'day', 'time'] })
   })
 })
 
@@ -179,7 +180,8 @@ describe('Current time (D22, edge cases 70–72, 77, 78)', () => {
     const { root, view } = await mount('x\n')
     const found = await openMenu(view, root, 'x', `/${query}`)
     expect(found[0]).toBe('Current time')
-    if (query.toLowerCase() === 'time') expect(found).toEqual(['Current time'])
+    // "Calendar table" holds "time" too (YAZ-4163 D7), after it: "/time" + Enter still picks Current time.
+    if (query.toLowerCase() === 'time') expect(found).toEqual(['Current time', 'Calendar table'])
   })
 
   it.each([
@@ -300,5 +302,54 @@ describe('Table in a bullet (YAZ-3696 D12, option B)', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
     toggle()!.click()
     expect(folded()).toHaveLength(0)
+  })
+})
+
+describe('"/Calendar table" (YAZ-4163 D7)', () => {
+  const tableOf = (view: EditorView): ProseNode => {
+    let table: ProseNode | undefined
+    view.state.doc.descendants((node) => {
+      if (table === undefined && node.type.name === 'table') table = node
+      return table === undefined
+    })
+    return table!
+  }
+
+  it.each(['calendar', 'schedule', 'plan', 'day'])('"/%s" finds it', async (query) => {
+    const { root, view } = await mount('x\n')
+    expect(await openMenu(view, root, 'x', `/${query}`)).toContain('Calendar table')
+  })
+
+  it('"/calendar" + Enter on a plain line: the calendar table takes the line, calendar 30m, compact, header row and column A frozen, 7:00am to 10:00pm', async () => {
+    const { root, view } = await mount('x\n')
+    await openMenu(view, root, 'x', '/calendar')
+    press('Enter')
+    await vi.waitFor(() => expect(isShown(root)).toBe(false))
+    const table = tableOf(view)
+    expect(view.state.doc.firstChild).toBe(table)
+    expect(table.attrs).toMatchObject({ calendar: 30, height: 'compact', freezeRows: 1, freezeCols: 1 })
+    expect([table.childCount, table.child(1).firstChild!.textContent, table.lastChild!.firstChild!.textContent]).toEqual([32, '7:00am', '10:00pm'])
+    expect(view.state.doc.textContent).not.toContain('/calendar')
+  })
+
+  it.each([
+    ['an empty bullet', '* x\n', 'bullet_list(list_item(table('],
+    ['an empty task item', '* [ ] x\n', 'bullet_list(list_item(paragraph, table('],
+  ])('"/calendar" + Enter in %s takes the Table row\'s path (YAZ-3805)', async (_name, markdown, expected) => {
+    const { root, view } = await mount(markdown)
+    await openMenu(view, root, 'x', '/calendar')
+    press('Enter')
+    await vi.waitFor(() => expect(isShown(root)).toBe(false))
+    expect(view.state.doc.toString()).toContain(expected)
+    expect(tableOf(view).attrs.calendar).toBe(30)
+  })
+
+  it('in a bullet with text before the query, the table goes below the label line (a direct run)', async () => {
+    const { crepe, view } = await mountWithCrepe('* Plan /cal\n')
+    const end = view.state.doc.resolve(3).end()
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, end)))
+    crepe.editor.action((ctx) => calendarTableRow.onRun?.(ctx))
+    expect(view.state.doc.toString()).toContain('bullet_list(list_item(paragraph("Plan "), table(')
+    expect(tableOf(view).attrs.calendar).toBe(30)
   })
 })

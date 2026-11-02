@@ -2,7 +2,8 @@
  * The table's settings in the block handle menu (YAZ-3767, YAZ-3696 🔒 D6 / D7 option 2; CONTRACTS
  * rule 41a): a right-click on a table's six dots shows "Border thickness" and "Border darkness"
  * (number fields, as `line/lineRows.ts`), "Header row", "Align all columns", "Fit columns to the
- * page" (a row), "Stripes", "Row height" and "Wrap text" (choices).
+ * page" (a row), "Stripes", "Row height" and "Wrap text" (choices), and "Time slots" (Off / 15 min / 30 min /
+ * 1 hour, YAZ-4163 D7: `setTimeSlots` in `tableCalendar.ts` makes any table a calendar table and keeps its text, D8).
  *
  * Each picker shows the table's current value; "Default (…)" sets the attribute's default. A value
  * that IS the default saves no part, so the picker reads "Default (…)" with ✓, and its list does not
@@ -22,6 +23,7 @@ import { TableMap } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuChoice, MenuChoiceField, MenuItem, MenuNumberField, RowProvider } from '../blockHandleMenu'
 import { setCellsAttr } from './cells'
+import { setTimeSlots } from './tableCalendar'
 import { capital } from './colours'
 import { CELL_ALIGNS, TABLE_DEFAULTS, type CellAlign, type TableAttrs } from './tableStyle'
 
@@ -156,6 +158,13 @@ export const tableRows: RowProvider = (view, target) => {
       setTable(view, pos, { height: height as TableAttrs['height'] }),
     ),
     choice('Wrap text', attrs.wrap ? 'on' : 'off', 'on', [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], (on) => setTable(view, pos, { wrap: on === 'on' })),
+    choice(
+      'Time slots',
+      String(attrs.calendar),
+      '0',
+      [{ value: '0', label: 'Off' }, { value: '15', label: '15 min' }, { value: '30', label: '30 min' }, { value: '60', label: '1 hour' }],
+      (slot) => setTimeSlots(view, pos, Number(slot)),
+    ),
   ]
   return items
 }

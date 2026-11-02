@@ -1,5 +1,6 @@
 import { cleanIconRules, isIconRules } from '@shared/vaultIcons'
 import { isValidDailyNoteFormat } from '@shared/dailyNote'
+import { isValidTimeFormat } from '@shared/timeFormat'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
@@ -539,6 +540,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   outsideListPinned: (v): v is boolean => typeof v === 'boolean',
   tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
   tableDimPast: (v): v is boolean => typeof v === 'boolean',
+  tableTimeFormat: (v): v is string => typeof v === 'string' && isValidTimeFormat(v),
   sidebarLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
   sidebarLineStyle: (v): v is SidebarLineStyle => typeof v === 'string' && (SIDEBAR_LINE_STYLES as readonly string[]).includes(v),
   sidebarThreadColor: (v): v is string | null => v === null || isHexColour(v),

@@ -63,7 +63,7 @@ function pick(view: EditorView, label: string, text: string): void {
 }
 
 describe('the menu on a table', () => {
-  it('shows the eight settings, in order, and no "Number children" (B3)', async () => {
+  it('shows the nine settings, in order (Time slots last, YAZ-4163), and no "Number children" (B3)', async () => {
     const { view } = await openOnTable()
     const parts = [...popupOf(view)!.children].flatMap((el) => {
       if (el.classList.contains('ctx-menu__item')) return [`row:${el.textContent}${(el as HTMLButtonElement).disabled ? ':disabled' : ''}`]
@@ -79,6 +79,7 @@ describe('the menu on a table', () => {
       'Stripes:Default (Off) ▾',
       'Row height:Default (Normal) ▾',
       'Wrap text:Default (On) ▾',
+      'Time slots:Default (Off) ▾',
     ])
   })
 
@@ -129,7 +130,7 @@ describe('the menu on a table', () => {
     }
     const firstHeader = (view: EditorView) => view.dom.querySelector('th')!
     const labels = (view: EditorView) => [...popupOf(view)!.querySelectorAll('.ctx-menu__item, .block-menu-picker__label')].map((el) => el.textContent)
-    const SETTINGS = ['Border thickness', 'Border darkness', 'Header row', 'Align all columns', 'Fit columns to the page', 'Stripes', 'Row height', 'Wrap text']
+    const SETTINGS = ['Border thickness', 'Border darkness', 'Header row', 'Align all columns', 'Fit columns to the page', 'Stripes', 'Row height', 'Wrap text', 'Time slots']
 
     it.each([
       ['the first header cell', firstHeader],

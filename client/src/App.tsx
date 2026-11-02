@@ -54,6 +54,7 @@ import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
+import { setTimeFormatSetting } from './editor/table/timeFormatSetting'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmMove } from './sidebar/ConfirmMove'
@@ -578,6 +579,8 @@ export function App() {
   }, [])
   // "Jump across files" (YAZ-3500): every code tab of this page follows the switch (`code/languageHelpers.ts`).
   useEffect(() => setLanguageHelpers(settings.codeLanguageHelpers === true), [settings.codeLanguageHelpers])
+  // The time format (YAZ-4163 D15): "/Calendar table", "Time slots" and "Current time" read it at the click.
+  useEffect(() => setTimeFormatSetting(settings.tableTimeFormat), [settings.tableTimeFormat])
   // The selection toolbar's order and hidden buttons (YAZ-3806 T6): every open note's toolbar follows at once.
   useEffect(() => {
     toolbarPrefs.value = settings.selectionToolbar

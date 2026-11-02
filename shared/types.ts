@@ -10,6 +10,7 @@ import type { IconRule } from './vaultIcons'
 import type { ReviewEntry } from './reviews'
 import type { HotkeyOverrides } from './hotkeyBindings'
 import { DEFAULT_DAILY_NOTE_FORMAT } from './dailyNote'
+import { DEFAULT_TIME_FORMAT } from './timeFormat'
 
 // ---------- Errors ----------
 
@@ -1672,6 +1673,8 @@ export interface SettingsState {
   tableNowMark: TableNowMark
   /** Settings › Editor › Tables › Dim past rows (YAZ-4162 D14): a calendar table's rows before now show grey text. `data-table-dim-past` on `.app`. */
   tableDimPast: boolean
+  /** Settings › Editor › Tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mma`, for new tables, new times in a table with none, and "Current time". */
+  tableTimeFormat: string
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
   sidebarLines: TocLines
   /** The sidebar tree (YAZ-3309 D7, D8): how its level lines look — `plain` grey lines (the default), or `thread`: the bullet-threading path to the row under the mouse. It travels with the settings folder. */
@@ -2030,6 +2033,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   outsideListPinned: false,
   tableNowMark: 'line',
   tableDimPast: true,
+  tableTimeFormat: DEFAULT_TIME_FORMAT,
   sidebarLines: 'hover',
   sidebarLineStyle: 'plain',
   sidebarThreadColor: null,

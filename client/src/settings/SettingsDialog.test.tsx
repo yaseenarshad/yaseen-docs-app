@@ -134,7 +134,7 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableNowMark', 'tableDimPast']
+const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableNowMark', 'tableDimPast', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
@@ -688,6 +688,29 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       { ...DEFAULT_SETTINGS, tableNowMark: 'both' },
       { ...DEFAULT_SETTINGS, tableDimPast: false },
     ])
+  })
+
+  it('Tables › Time format (YAZ-4163 D15): the ready styles as 9:00 am, 9:00am, 09:00 and Custom…; a style the app cannot read back keeps the stored one and says why; a good one is written', () => {
+    const { el, onChange } = mountOn('Editor')
+    const select = row(el, 'tableTimeFormat')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
+    expect([...select.options].map((o) => o.textContent)).toEqual(['9:00 am', '9:00am', '09:00', 'Custom…'])
+    expect(select.selectedIndex).toBe(1)
+    act(() => {
+      select.value = '0'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableTimeFormat: 'h:mm a' })
+    act(() => {
+      select.value = '3' // Custom…
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const input = row(el, 'tableTimeFormat')?.querySelector<HTMLInputElement>('.settings__style-pick input') as HTMLInputElement
+    type(input, 'h:mm')
+    act(() => input.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+    expect(row(el, 'tableTimeFormat')?.querySelector('.settings__error')?.textContent).toBe('With h or hh, add a or A for am and pm')
+    type(input, 'hh:mm A')
+    act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableTimeFormat: 'hh:mm A' })
   })
 
   it('"Pin default" after "Glow" (YAZ-3704 demo, 4J): Off by default, as the table of contents\' pin; On writes only its own field; Glow says Off turns off the whole feature', () => {

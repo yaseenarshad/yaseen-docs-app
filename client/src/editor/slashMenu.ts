@@ -23,11 +23,17 @@
  * line stays and the table goes below. The caret goes in the first header cell — one transaction,
  * one undo step. Anywhere else the row runs Crepe's own three commands, as before.
  *
- * "Current time" (YAZ-3511 D22) inserts `h:mmam - ` as plain text at the caret, read at the pick.
+ * "Calendar table" (YAZ-4163, YAZ-4159 D7) comes right after "Table" and takes the Table row's own path,
+ * in a bullet too: the table is `calendarTableNode` (`table/tableCalendar.ts`), "Time | Plan 1" with a row
+ * each 30 minutes from 7:00 am to 10:00 pm in the time format setting, `calendar 30m`, compact rows,
+ * the header row and column A frozen.
+ *
+ * "Current time" (YAZ-3511 D22) inserts the time as plain text at the caret, read at the pick, in the
+ * time format setting (YAZ-4163 D15; `9:05am - ` by default), then " - ".
  * It opens the way every stock row does (`clearTextInCurrentBlockCommand` removes the `/query`),
  * then `tr.insertText` — no schema, no mark. Its `keywords` (the patch's second change: the filter
- * matches the label OR a keyword) let "now" and "clock" find it; nothing else on the menu holds
- * "time", so `/time` + Enter picks it.
+ * matches the label OR a keyword) let "now" and "clock" find it. "Calendar table" holds "time" too,
+ * after it, so `/time` + Enter still picks it.
  *
  * 🔒 Crepe keeps the rows in a Vue `computed` that reads only the filter text, so "/" on a plain
  * line and then "/" in a bullet (the same filter, "") would reuse the plain line's rows. The
@@ -44,10 +50,14 @@ import {
   turnIntoTextCommand,
 } from '@milkdown/kit/preset/commonmark'
 import { createTable } from '@milkdown/kit/preset/gfm'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, type Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
+import { formatTime } from '@shared/timeFormat'
 import { shallowRef } from 'vue'
 import { isListItem } from './outline/listNodes'
+import { calendarTableNode, minutesOf } from './table/tableCalendar'
+import { timeFormatSetting } from './table/timeFormatSetting'
 
 /** One slash row as Crepe's builder takes it (`keywords` is the YAZ-3550 patch's field). */
 export interface SlashRow {
@@ -75,12 +85,9 @@ export const HIDDEN_IN_LIST = ['divider', 'bullet-list'] as const
 /** The words the filter finds "Current time" by, besides its label (D22). */
 export const CURRENT_TIME_KEYWORDS = ['current', 'now', 'clock', 'time']
 
-/** `9:05am - `: the hour 1-12 without a leading zero, two-digit minutes, am/pm, then " - " (D22). */
+/** The time in the time format setting, then " - " (D22; YAZ-4163 D15): `9:05am - ` by default. */
 export function formatCurrentTime(date: Date): string {
-  const hours = date.getHours()
-  const hour = hours % 12 === 0 ? 12 : hours % 12
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${hour}:${minutes}${hours < 12 ? 'am' : 'pm'} - `
+  return `${formatTime(timeFormatSetting(), minutesOf(date))} - `
 }
 
 /** Crepe's own `isInList` (`utils/checker.ts`), the check the patch took out of `shouldShow`. */
@@ -142,34 +149,62 @@ const tableIcon = `
   </svg>
 `
 
-/** The "Table" row (D12, YAZ-3805): in a list item's label line, the table goes below the line or takes an empty one; see the header. */
+/** Insert `table` as the "Table" row does (D12, YAZ-3805): in a list item's label line, below the line or in an empty one; see the header. */
+function insertTable(ctx: Ctx, table: ProseNode): void {
+  const view = ctx.get(editorViewCtx)
+  const { $from } = view.state.selection
+  if (!isListItem($from.node($from.depth - 1)) || $from.index($from.depth - 1) !== 0) {
+    // Crepe's own row (`menu/config.ts`), unchanged.
+    const commands = ctx.get(commandsCtx)
+    commands.call(clearTextInCurrentBlockCommand.key)
+    const { from } = view.state.selection
+    commands.call(addBlockTypeCommand.key, { nodeType: table })
+    commands.call(selectTextNearPosCommand.key, { pos: from })
+    return
+  }
+  // The query runs from its `/` to the caret; a leaf counts as one character, as in a position.
+  const slash = $from.parent.textBetween(0, $from.parentOffset, undefined, '\uFFFC').lastIndexOf('/')
+  const tr = view.state.tr
+  if (slash >= 0) tr.delete($from.start() + slash, $from.pos)
+  const line = tr.mapping.map($from.before())
+  const lineSize = tr.doc.nodeAt(line)!.nodeSize
+  // An empty line becomes the table (YAZ-3805); a task item keeps it, see the header.
+  const onMarker = lineSize === 2 && typeof $from.node($from.depth - 1).attrs.checked !== 'boolean'
+  const at = onMarker ? line : line + lineSize
+  tr.replaceWith(at, onMarker ? line + lineSize : at, table)
+  view.dispatch(tr.setSelection(TextSelection.near(tr.doc.resolve(at + 1))).scrollIntoView())
+}
+
+/** The "Table" row (D12, YAZ-3805): a 3×3 table; see the header. */
 export const tableRow: SlashRow = {
   label: 'Table',
   icon: tableIcon,
-  onRun: (ctx) => {
-    const view = ctx.get(editorViewCtx)
-    const { $from } = view.state.selection
-    if (!isListItem($from.node($from.depth - 1)) || $from.index($from.depth - 1) !== 0) {
-      // Crepe's own row (`menu/config.ts`), unchanged.
-      const commands = ctx.get(commandsCtx)
-      commands.call(clearTextInCurrentBlockCommand.key)
-      const { from } = view.state.selection
-      commands.call(addBlockTypeCommand.key, { nodeType: createTable(ctx, 3, 3) })
-      commands.call(selectTextNearPosCommand.key, { pos: from })
-      return
-    }
-    // The query runs from its `/` to the caret; a leaf counts as one character, as in a position.
-    const slash = $from.parent.textBetween(0, $from.parentOffset, undefined, '\uFFFC').lastIndexOf('/')
-    const tr = view.state.tr
-    if (slash >= 0) tr.delete($from.start() + slash, $from.pos)
-    const line = tr.mapping.map($from.before())
-    const lineSize = tr.doc.nodeAt(line)!.nodeSize
-    // An empty line becomes the table (YAZ-3805); a task item keeps it, see the header.
-    const onMarker = lineSize === 2 && typeof $from.node($from.depth - 1).attrs.checked !== 'boolean'
-    const at = onMarker ? line : line + lineSize
-    tr.replaceWith(at, onMarker ? line + lineSize : at, createTable(ctx, 3, 3))
-    view.dispatch(tr.setSelection(TextSelection.near(tr.doc.resolve(at + 1))).scrollIntoView())
-  },
+  onRun: (ctx) => insertTable(ctx, createTable(ctx, 3, 3)),
+}
+
+/** A calendar page, drawn to match the stock 24px items. */
+const calendarIcon = `
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+  >
+    <path
+      d="M5 22C4.45 22 3.979 21.804 3.588 21.413C3.196 21.021 3 20.55 3 20V6C3 5.45 3.196 4.979 3.588 4.588C3.979 4.196 4.45 4 5 4H6V2H8V4H16V2H18V4H19C19.55 4 20.021 4.196 20.413 4.588C20.804 4.979 21 5.45 21 6V20C21 20.55 20.804 21.021 20.413 21.413C20.021 21.804 19.55 22 19 22H5ZM5 20H19V10H5V20ZM5 8H19V6H5V8ZM7 14V12H17V14H7ZM7 18V16H14V18H7Z"
+    />
+  </svg>
+`
+
+/** The words the filter finds "Calendar table" by, besides its label (YAZ-4163 D7). */
+export const CALENDAR_TABLE_KEYWORDS = ['calendar', 'schedule', 'plan', 'day', 'time']
+
+/** The "Calendar table" row (YAZ-4163 D7): the Table row's path with a calendar table; see the header. */
+export const calendarTableRow: SlashRow = {
+  label: 'Calendar table',
+  icon: calendarIcon,
+  keywords: CALENDAR_TABLE_KEYWORDS,
+  onRun: (ctx) => insertTable(ctx, calendarTableNode(ctx.get(editorViewCtx).state.schema)),
 }
 
 /**
@@ -187,6 +222,7 @@ export function createSlashMenu(extend?: (builder: SlashMenuGroups) => void): {
     const text = builder.build().find((group) => group.key === 'text')?.items.find((item) => item.key === 'text')
     if (text !== undefined) text.onRun = textRowRun
     builder.getGroup('advanced').addItem('table', tableRow)
+    builder.getGroup('advanced').addItem('calendar-table', calendarTableRow)
     extend?.(builder)
     if (!inList.value) return
     for (const group of builder.build()) {

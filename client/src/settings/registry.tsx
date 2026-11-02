@@ -46,6 +46,8 @@ import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { GoToControl } from './GoToControl'
 import { DailyNoteFolderControl, DailyNoteFormatControl } from './DailyNoteControl'
 import { dailyNoteName } from '@shared/dailyNote'
+import { formatTime } from '@shared/timeFormat'
+import { TimeFormatControl } from './TimeFormatControl'
 import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
 import { MEMORY_SECTION } from './memorySection'
@@ -831,6 +833,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.tableDimPast} onChange={(tableDimPast) => onChange({ ...settings, tableDimPast })} ariaLabel="Dim past rows" />
             ),
+          },
+          {
+            // YAZ-4163 D15: new calendar tables, new times in a table with none, and "Current time". A table with times keeps its own.
+            id: 'tableTimeFormat',
+            label: 'Time format',
+            hint: ({ settings }) => `Now: ${formatTime(settings.tableTimeFormat, new Date().getHours() * 60 + new Date().getMinutes())}. For new calendar tables and "Current time"; a table keeps the format of its times.`,
+            keywords: ['calendar', 'time', 'format', 'clock', 'am', 'pm', '24', 'hour', 'current time', 'table'],
+            // Wide always: the label keeps its width while "Custom…" adds its field beside the dropdown.
+            wide: () => true,
+            render: ({ settings, onChange }) => <TimeFormatControl settings={settings} onChange={onChange} />,
           },
         ],
       },
