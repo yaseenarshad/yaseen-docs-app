@@ -1,7 +1,8 @@
 /**
  * The fold plugins carry their decoration set through doc edits (YAZ-2131 5C): when an edit leaves
  * every foldable bullet and heading where the mapping puts it, with the same key, label and fold,
- * the old set is mapped instead of rebuilt. These tests pin that the carried set is exactly what a
+ * the old set is mapped instead of rebuilt. An open heading whose key or label changed is carried too, with
+ * only its chevron made again (YAZ-3816). These tests pin that the carried set is exactly what a
  * from-scratch build produces, after every step of a long randomized session.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -12,8 +13,10 @@ import { canSplit } from '@milkdown/kit/prose/transform'
 import type { Decoration, DecorationSet, EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from '../createCrepe'
 import { random } from '../testRandom'
-import { addHeadingFoldAllMeta, HEADING_TOGGLE_CLASS, undoLastHeadingFold } from './headingFolding'
+import { addHeadingFoldAllMeta, getHeadingFoldKey, HEADING_TOGGLE_CLASS, undoLastHeadingFold } from './headingFolding'
 import { foldAllOutline, OUTLINE_TOGGLE_CLASS, undoLastFold, unfoldAllOutline } from './outlineFolding'
+import { setFoldingOn } from './foldingSwitch'
+import { headingFoldHidden } from './headingFoldTestKit'
 
 const DOC = `# Part one
 
@@ -112,7 +115,33 @@ describe('fold decorations are carried through doc edits (YAZ-2131 5C)', () => {
     headingAfter.forEach((d, i) => expect(typeOf(d)).toBe(typeOf(headingBefore[i])))
   })
 
-  it('a label change the fold key ignores (an enumeration prefix) is still rebuilt, so a re-rendered chevron reads the new label', async () => {
+  it('folding off: an edit carries no set, so the cache is not refreshed; on again builds each set once, equal to a full rebuild (YAZ-4119 fix 6)', async () => {
+    const { root, view, outline, heading } = await mount()
+    root.querySelector<HTMLButtonElement>(`.${OUTLINE_TOGGLE_CLASS}[aria-label="Collapse Parent"]`)!.click()
+    root.querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[aria-label="Collapse Section"]`)!.click()
+    const outlineBefore = decorationsOf(outline, view.state).find()
+    const headingBefore = decorationsOf(heading, view.state).find()
+    view.dispatch(setFoldingOn(view.state.tr, false))
+    let leafEnd = -1
+    view.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === 'Leaf') leafEnd = pos + node.nodeSize
+    })
+    view.dispatch(view.state.tr.insertText('!', leafEnd))
+    expect(decorationsOf(outline, view.state).find()).toEqual([])
+    view.dispatch(setFoldingOn(view.state.tr, true))
+    const outlineAfter = decorationsOf(outline, view.state).find()
+    const headingAfter = decorationsOf(heading, view.state).find()
+    expect(outlineAfter).toHaveLength(outlineBefore.length)
+    expect(headingAfter).toHaveLength(headingBefore.length)
+    // Built anew, not carried: no decoration keeps its old type object (a carried set keeps each one, see the first test).
+    outlineAfter.forEach((d, i) => expect(typeOf(d)).not.toBe(typeOf(outlineBefore[i])))
+    headingAfter.forEach((d, i) => expect(typeOf(d)).not.toBe(typeOf(headingBefore[i])))
+    const fresh = EditorState.create({ doc: view.state.doc, selection: view.state.selection, plugins: [outline, heading] })
+    expect(normalise(decorationsOf(outline, view.state), view)).toEqual(normalise(decorationsOf(outline, fresh), view))
+    expect(normalise(decorationsOf(heading, view.state), view)).toEqual(normalise(decorationsOf(heading, fresh), view))
+  })
+
+  it('a label change the fold key ignores (an enumeration prefix) still re-renders the chevron, so it reads the new label', async () => {
     const { view, outline, heading } = await mount()
     const fresh = () => EditorState.create({ doc: view.state.doc, selection: view.state.selection, plugins: [outline, heading] })
     const textStart = (text: string) => {
@@ -128,6 +157,40 @@ describe('fold decorations are carried through doc edits (YAZ-2131 5C)', () => {
     expect(normalise(decorationsOf(heading, view.state), view)).toEqual(normalise(decorationsOf(heading, fresh()), view))
     expect(normalise(decorationsOf(outline, view.state), view).join()).toContain('Collapse 1. Parent')
     expect(normalise(decorationsOf(heading, view.state), view).join()).toContain('Collapse 12. Numbered')
+  })
+
+  /** Type `!` at the end of the heading text `label`. */
+  const typeAfter = (view: EditorView, label: string) => {
+    let end = -1
+    view.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === label) end = pos + node.nodeSize
+    })
+    view.dispatch(view.state.tr.insertText('!', end))
+  }
+  it('typing in an open heading carries the other chevrons, and only its own takes the new label and key; a folded section marks no block (YAZ-3816)', async () => {
+    const { root, view, outline, heading } = await mount()
+    root.querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[aria-label="Collapse Section"]`)!.click()
+    const before = decorationsOf(heading, view.state).find()
+    expect(before.every((d) => d.from === d.to)).toBe(true) // chevrons only: the section's blocks are hidden by a CSS rule
+    typeAfter(view, 'Part one')
+    const after = decorationsOf(heading, view.state).find()
+    expect(typeOf(after[after.length - 1])).toBe(typeOf(before[before.length - 1])) // carried, not rebuilt
+    expect(root.querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[aria-label="Collapse Part one!"]`)?.dataset.headingFoldKey).toBe(getHeadingFoldKey('Part one!', 0))
+    expect(headingFoldHidden(root).map((el) => el.textContent)).toEqual(['Body text.', 'Deep', 'Deep body.'])
+    const fresh = EditorState.create({ doc: view.state.doc, selection: view.state.selection, plugins: [outline, heading] })
+    expect(normalise(decorationsOf(heading, view.state), view)).toEqual(normalise(decorationsOf(heading, fresh), view))
+  })
+
+  it('typing in a folded heading keeps its fold: its chevron takes the new key, and it hides the same blocks (YAZ-3816)', async () => {
+    const { root, view, outline, heading } = await mount()
+    root.querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[aria-label="Collapse Section"]`)!.click()
+    typeAfter(view, 'Section')
+    const chevron = root.querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[aria-label="Expand Section!"]`)
+    expect(chevron?.dataset.headingFoldKey).toBe(getHeadingFoldKey('Section!', 0))
+    expect(root.querySelector(`.${HEADING_TOGGLE_CLASS}[aria-label="Expand Section"]`)).toBeNull()
+    expect(headingFoldHidden(root).map((el) => el.textContent)).toEqual(['Body text.', 'Deep', 'Deep body.'])
+    const fresh = EditorState.create({ doc: view.state.doc, selection: view.state.selection, plugins: [outline, heading] })
+    expect(normalise(decorationsOf(heading, view.state), view)).toEqual(normalise(decorationsOf(heading, fresh), view))
   })
 
   it('a second image in a bullet (same key and label) is still rebuilt, so both images get the foldable mark', async () => {

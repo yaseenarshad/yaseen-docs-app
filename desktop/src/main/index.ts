@@ -33,6 +33,7 @@ import { followSettingsFolder } from './settingsFolder'
 import { drawingInFront, hotkeyRecording } from './hotkeyRecording'
 import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
+import { movePageSwitches } from './movePageSwitches'
 import { runQuitSequence } from './quitSequence'
 import { stopAllLanguageServers } from './lsp/server'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
@@ -450,6 +451,9 @@ app.whenReady().then(() => {
   // drops the windows a launch does not bring back: every vault of the last session gets its copy.
   // It never holds up a window: a renderer that read no file yet hears the write as a change.
   void moveLegacyHeadingStyles(store).catch((err: unknown) => console.error(`[textFormatting] the move failed: ${String(err)}`))
+  // The page switches the app state held for notes move once into the notes (YAZ-4094 G4). The same terms: a
+  // window that has the note open hears the write as an outside change of its frontmatter.
+  void movePageSwitches(store).catch((err: unknown) => console.error(`[pageSwitches] the move failed: ${String(err)}`))
   // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
   // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
   // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.

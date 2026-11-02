@@ -21,12 +21,13 @@
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
-import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import type { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { innermostItemPos, LIST_NODE_NAMES } from './listNodes'
 import { getOutlineFoldKey } from './outlineFoldKeys'
-import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
+import { collapsedKey, widgetLands } from './foldCarry'
+import { foldingBlocked, isFoldingOn } from './foldingSwitch'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 /** H1-H3 fold; H4-H6 are in-paragraph labels here, not structure. The table of contents lists down to H5 (`DEEPEST_TOC_LEVEL`, YAZ-3051), but its H4 and H5 rows do not fold. A click on a section line (sectionIndent.ts) folds only what a chevron folds. */
@@ -38,7 +39,7 @@ interface HeadingEntry {
   /** `headingPos + nodeSize`: the caret is "on" this heading anywhere in `[headingPos, headingEnd)`. */
   headingEnd: number
   label: string
-  /** One range per sibling block in the section — node decorations must match exact node boundaries. */
+  /** One range per sibling block in the section. */
   sectionBlockRanges: readonly { from: number; to: number }[]
 }
 
@@ -67,7 +68,60 @@ export interface HeadingFoldingOptions {
 }
 
 export const HEADING_TOGGLE_CLASS = 'heading-toggle'
-export const HEADING_FOLDED_ATTR = 'data-heading-folded'
+
+/**
+ * A folded section is hidden by ONE CSS rule that names its blocks by their place among their parent's children
+ * (YAZ-3816): `:nth-child(n+FIRST):nth-child(-n+LAST)` under the editor's own `data-heading-fold-view`. The plugin view
+ * reads the places off the DOM after each update and rewrites its `<style data-heading-folds>` only when one moved.
+ * No decoration marks a hidden block: one on each made each doc change cost O(blocks²) in ProseMirror
+ * (`DecorationSet.forChild`, `map`, `buildTree` over 2,000 root decorations: ~50 ms). No sibling selector either: `~`
+ * made each restyle of the note walk back over every block before each block (~35–80 ms at 2,000 blocks in Chromium).
+ */
+export const HEADING_FOLD_STYLE_ATTR = 'data-heading-folds'
+export const HEADING_FOLD_VIEW_ATTR = 'data-heading-fold-view'
+
+/** One id for each editor, so the same note folded differently in another tab is not touched. */
+let nextViewId = 0
+
+/**
+ * The selector of one folded section's `display: none` rule: under the editor `viewId`, down `path` (the `:nth-child`
+ * of each container between the editor and the section's parent; empty at the top level), the children FIRST to LAST.
+ * Prefixed (YAZ-3696 B1) to outrank Crepe's `.milkdown .milkdown-table-block` and `.milkdown .milkdown-code-block
+ * { display: block }`; `foldCss.test.ts` holds the weight.
+ */
+export const headingFoldHideSelector = (viewId: string, path: readonly number[], first: number, last: number): string =>
+  `.editor-instance .milkdown [${HEADING_FOLD_VIEW_ATTR}="${viewId}"] > ${path.map((i) => `:nth-child(${i}) > `).join('')}:nth-child(n+${first}):nth-child(-n+${last})`
+
+type PlaceOf = (el: Element) => number
+
+/**
+ * An element's place among its parent's element children, from 1, as `:nth-child` counts. One walk of each parent per
+ * update, not a search per folded section: with 1,000 folded sections the search made each update O(blocks × folds).
+ */
+const placeFinder = (): PlaceOf => {
+  const places = new Map<Element, number>()
+  return (el) => {
+    // An element not met yet: walk its parent's children once, which places it and each sibling.
+    let place = 0
+    if (!places.has(el)) for (let child = el.parentElement?.firstElementChild ?? null; child !== null; child = child.nextElementSibling) places.set(child, ++place)
+    return places.get(el) ?? 0
+  }
+}
+
+/** The hide rule of one folded section, read off the DOM, or null when its blocks are not drawn as siblings under the editor. */
+const hideRule = (view: EditorView, viewId: string, entry: HeadingEntry, placeOf: PlaceOf): string | null => {
+  const first = view.nodeDOM(entry.sectionBlockRanges[0].from)
+  const last = view.nodeDOM(entry.sectionBlockRanges[entry.sectionBlockRanges.length - 1].from)
+  if (!(first instanceof Element) || !(last instanceof Element) || first.parentElement !== last.parentElement) return null
+  const path: number[] = []
+  let parent = first.parentElement
+  while (parent !== null && parent !== view.dom) {
+    path.unshift(placeOf(parent))
+    parent = parent.parentElement
+  }
+  if (parent === null) return null
+  return `${headingFoldHideSelector(viewId, path, placeOf(first), placeOf(last))} { display: none; }`
+}
 
 /**
  * ProseMirror asks for `decorations` on EVERY view update, caret moves included. `entries` keeps its
@@ -101,9 +155,9 @@ const foldTransaction = (state: EditorState, meta: FoldMeta) =>
  */
 export const getHeadingFoldKey = (label: string, occurrence: number): string => `h:${getOutlineFoldKey(label, occurrence)}`
 
-/** Whether the heading starting at `headingPos` is currently folded (false when the plugin is absent). */
+/** Whether the heading starting at `headingPos` is currently folded (false when the plugin is absent, or folding is off: YAZ-4094 F1). */
 export const isHeadingCollapsed = (state: EditorState, headingPos: number): boolean =>
-  pluginKey.getState(state)?.collapsedHeadingPositions.has(headingPos) ?? false
+  isFoldingOn(state) && (pluginKey.getState(state)?.collapsedHeadingPositions.has(headingPos) ?? false)
 
 /**
  * The collapsed headings whose sections contain `pos` — everything hiding that position, in
@@ -111,7 +165,7 @@ export const isHeadingCollapsed = (state: EditorState, headingPos: number): bool
  */
 export const collapsedHeadingsHiding = (state: EditorState, pos: number): number[] => {
   const foldingState = pluginKey.getState(state)
-  if (!foldingState) return []
+  if (!foldingState || !isFoldingOn(state)) return []
   return foldingState.entries
     .filter(
       ({ headingPos, sectionBlockRanges }) =>
@@ -127,6 +181,7 @@ export const collapsedHeadingsHiding = (state: EditorState, pos: number): number
  * for the next visible line next to a fold that may hide thousands).
  */
 export const collapsedSectionAround = (state: EditorState, pos: number): { from: number; to: number } | null => {
+  if (!isFoldingOn(state)) return null
   const foldingState = pluginKey.getState(state)
   const entry = foldingState?.entries.find(
     ({ headingPos, sectionBlockRanges }) =>
@@ -143,7 +198,7 @@ export const collapsedSectionAround = (state: EditorState, pos: number): { from:
 export const collapsedSectionBlocks = (state: EditorState): ReadonlySet<number> => {
   const foldingState = pluginKey.getState(state)
   const starts = new Set<number>()
-  if (!foldingState || foldingState.collapsedHeadingPositions.size === 0) return starts
+  if (!foldingState || !isFoldingOn(state) || foldingState.collapsedHeadingPositions.size === 0) return starts
   for (const { headingPos, sectionBlockRanges } of foldingState.entries) {
     if (foldingState.collapsedHeadingPositions.has(headingPos)) for (const { from } of sectionBlockRanges) starts.add(from)
   }
@@ -179,6 +234,8 @@ export const setHeadingFoldAtSelection = (collapsed: boolean): Command => (state
     if (onHeading || inSection) innermost = entry
   }
   if (innermost === null) return false
+  // Folding off (YAZ-4094 F1): still consumed inside a section, with the host's message.
+  if (foldingBlocked(state, dispatch)) return true
   if (foldingState.collapsedHeadingPositions.has(innermost.headingPos) !== collapsed) {
     dispatch?.(foldTransaction(state, innermost.headingPos))
   }
@@ -209,6 +266,23 @@ export const addHeadingFoldSetMeta = (transaction: Transaction, set: readonly nu
   if (set.length > 0) transaction.setMeta(pluginKey, { set, collapsed, silent: true } satisfies FoldSetMeta)
 }
 
+/** The foldable headings and their keys, for the fold lock (`foldLock.ts`). */
+export const headingFoldRows = (state: EditorState): { pos: number; foldKey: string }[] =>
+  pluginKey.getState(state)?.entries.map(({ headingPos, foldKey }) => ({ pos: headingPos, foldKey })) ?? []
+
+/** The folded headings as kept, also while folding is off, for the fold lock (`foldLock.ts`). */
+export const headingCollapsedPositions = (state: EditorState): ReadonlySet<number> => pluginKey.getState(state)?.collapsedHeadingPositions ?? new Set()
+
+/**
+ * The folded headings that `transaction` would leave, by this plugin's own `apply`, without applying it: the fold lock's
+ * filter (`foldLock.ts`, YAZ-4132). Only for a transaction that changes no document.
+ */
+export const headingCollapsedAfter = (state: EditorState, transaction: Transaction): ReadonlySet<number> => {
+  const current = pluginKey.getState(state)
+  const apply = pluginKey.get(state)?.spec.state?.apply
+  return current === undefined || apply === undefined ? new Set() : apply(transaction, current, state, state).collapsedHeadingPositions
+}
+
 /** Whether `transaction` changes the heading folds: every fold change carries this plugin's meta, a silent one too (YAZ-4009). */
 export const hasHeadingFoldMeta = (transaction: Transaction): boolean => transaction.getMeta(pluginKey) !== undefined
 
@@ -221,9 +295,14 @@ export const addHeadingFoldUndoMeta = (state: EditorState, transaction: Transact
 
 /** ⌘Z: revert the latest eligible heading fold, otherwise let the next undo handler run. */
 export const undoLastHeadingFold: Command = (state, dispatch) => {
+  // Folding off (YAZ-4094 F1): ⌘Z undoes text, never a fold the reader cannot see.
+  if (!isFoldingOn(state)) return false
   const transaction = state.tr
   if (!addHeadingFoldUndoMeta(state, transaction)) return false
-  dispatch?.(transaction.setMeta(VIEW_ACTION_META, 'heading-fold' satisfies ViewAction))
+  transaction.setMeta(VIEW_ACTION_META, 'heading-fold' satisfies ViewAction)
+  // The fold lock refuses an undo that would fold only its held rows (YAZ-4135): ⌘Z then goes to the text undo.
+  if (state.applyTransaction(transaction).transactions.length === 0) return false
+  dispatch?.(transaction)
   return true
 }
 
@@ -310,33 +389,79 @@ const getCollapsedKeys = ({ entries, collapsedHeadingPositions }: HeadingFolding
     .map(({ foldKey }) => foldKey)
     .sort()
 
+/** A heading's chevron widget. Both the full build and the carry (a heading whose text changed) make it here, so they match. */
+const headingToggle = (entry: HeadingEntry, collapsed: boolean): Decoration =>
+  Decoration.widget(
+    entry.headingPos + 1,
+    (view, getPos) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = HEADING_TOGGLE_CLASS
+      button.dataset.headingFoldKey = entry.foldKey
+      button.setAttribute('aria-expanded', String(!collapsed))
+      button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${entry.label}`)
+      button.replaceChildren(chevronSvg())
+      // The LIVE position, not `entry.headingPos`: ProseMirror keeps this DOM (same key) while edits above
+      // shift the heading, and a stale position folded nothing.
+      const toggle = () => {
+        const widgetPos = getPos()
+        if (widgetPos !== undefined) view.dispatch(foldTransaction(view.state, widgetPos - 1))
+      }
+      // Keep the caret where it is: the toggle must not steal focus or move the selection.
+      button.addEventListener('mousedown', (event) => event.preventDefault())
+      button.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        toggle()
+      })
+      // The widget sits inside the contenteditable, so ProseMirror's keymap would swallow
+      // Enter/Space before the button's native activation; handle them here and keep focus
+      // on the (re-rendered) toggle so keyboard users can fold/unfold repeatedly.
+      button.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        event.stopPropagation()
+        toggle()
+        view.dom
+          .querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[data-heading-fold-key="${entry.foldKey}"]`)
+          ?.focus()
+      })
+      return button
+    },
+    { key: `heading-toggle:${entry.foldKey}:${collapsed ? 'collapsed' : 'expanded'}` },
+  )
+
 /**
- * An edit that leaves every foldable heading where the mapping puts it, with the same key, label and
- * fold, needs no new decorations: the previous set, mapped, is exactly what `decorations` builds
- * (YAZ-2131 5C, pinned by foldDecorations.test.ts). Typing inside a section is that case, so a keystroke skips
- * the rebuild. A carried chevron reads its live position at click time, so it acts like a new one.
+ * An edit that leaves every foldable heading where the mapping puts it, with the same fold, needs no new
+ * chevrons: the previous set, mapped, is exactly what `decorations` builds (YAZ-2131 5C, pinned by
+ * foldDecorations.test.ts). Typing inside a section is that case, so a keystroke skips the rebuild. A carried
+ * chevron reads its live position at click time, so it acts like a new one. A heading whose key or label
+ * changed (typing in the heading itself) gets only a new chevron (YAZ-3816).
  */
 const carryDecorations = (previous: HeadingFoldingState, entries: readonly HeadingEntry[], collapsed: ReadonlySet<number>, mapping: Mapping, doc: ProseNode): void => {
   const cached = decorationCache.get(previous.entries)
   if (cached === undefined || cached.collapsedKey !== collapsedKey(previous.collapsedHeadingPositions) || entries.length !== previous.entries.length) return
+  const renamed: HeadingEntry[] = []
   const unchanged = entries.every((entry, i) => {
     const before = previous.entries[i]
     const folded = collapsed.has(entry.headingPos)
-    return (
-      entry.foldKey === before.foldKey &&
-      entry.label === before.label &&
-      folded === previous.collapsedHeadingPositions.has(before.headingPos) &&
-      widgetLands(mapping, before.headingPos + 1, entry.headingPos + 1) &&
-      (!folded || nodeRangesLand(mapping, before.sectionBlockRanges, entry.sectionBlockRanges))
-    )
+    if (entry.foldKey !== before.foldKey || entry.label !== before.label) renamed.push(entry)
+    return folded === previous.collapsedHeadingPositions.has(before.headingPos) && widgetLands(mapping, before.headingPos + 1, entry.headingPos + 1)
   })
-  if (unchanged) decorationCache.set(entries, { collapsedKey: collapsedKey(collapsed), set: cached.set.map(mapping, doc) })
+  if (!unchanged) return
+  let set = cached.set.map(mapping, doc)
+  for (const entry of renamed) {
+    const at = entry.headingPos + 1
+    const old = set.find(at, at, (spec) => String(spec.key).startsWith('heading-toggle:'))
+    set = set.remove(old).add(doc, [headingToggle(entry, collapsed.has(entry.headingPos))])
+  }
+  decorationCache.set(entries, { collapsedKey: collapsedKey(collapsed), set })
 }
 
 export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCollapsedKeysChange }: HeadingFoldingOptions = {}) =>
-  $prose(
-    () =>
-      new Plugin<HeadingFoldingState>({
+  $prose(() => {
+    const viewId = String(++nextViewId)
+    return new Plugin<HeadingFoldingState>({
         key: pluginKey,
         state: {
           init: (_config, state) => {
@@ -383,7 +508,9 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                     }
             }
 
-            const meta: FoldMeta | undefined = transaction.getMeta(pluginKey)
+            // Folding off (YAZ-4094 F1): ignore every fold request. The saved set still maps through edits and waits for the switch.
+            // No set is drawn then, so none is carried through an edit either: the first draw after "on" builds it once.
+            const meta: FoldMeta | undefined = isFoldingOn(newState) ? transaction.getMeta(pluginKey) : undefined
             if (meta === 'fold-all')
               return {
                 entries,
@@ -418,68 +545,23 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
               }
               // A silent set is not a user fold action: ⌘Z keeps whatever it was already pointing at.
               if (meta.silent !== true) lastToggle = { kind: 'set', previousCollapsed }
-            } else if (transaction.docChanged) carryDecorations(previousState, entries, collapsedHeadingPositions, transaction.mapping, newState.doc)
+            } else if (transaction.docChanged && isFoldingOn(newState)) carryDecorations(previousState, entries, collapsedHeadingPositions, transaction.mapping, newState.doc)
             return { entries, collapsedHeadingPositions, lastToggle }
           },
         },
         props: {
+          // The hide rules' anchor (`headingFoldHideSelector`).
+          attributes: { [HEADING_FOLD_VIEW_ATTR]: viewId },
           decorations: (state) => {
             const foldingState = pluginKey.getState(state)
-            if (!foldingState) return DecorationSet.empty
+            // Folding off (YAZ-4094 F1): no chevron and nothing hidden.
+            if (!foldingState || !isFoldingOn(state)) return DecorationSet.empty
             const key = collapsedKey(foldingState.collapsedHeadingPositions)
             const cached = decorationCache.get(foldingState.entries)
             if (cached?.collapsedKey === key) return cached.set
 
             const decorations: Decoration[] = []
-            foldingState.entries.forEach((entry) => {
-              const collapsed = foldingState.collapsedHeadingPositions.has(entry.headingPos)
-              decorations.push(
-                Decoration.widget(
-                  entry.headingPos + 1,
-                  (view, getPos) => {
-                    const button = document.createElement('button')
-                    button.type = 'button'
-                    button.className = HEADING_TOGGLE_CLASS
-                    button.dataset.headingFoldKey = entry.foldKey
-                    button.setAttribute('aria-expanded', String(!collapsed))
-                    button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${entry.label}`)
-                    button.replaceChildren(chevronSvg())
-                    // The LIVE position, not `entry.headingPos`: ProseMirror keeps this DOM (same key) while edits above
-                    // shift the heading, and a stale position folded nothing.
-                    const toggle = () => {
-                      const widgetPos = getPos()
-                      if (widgetPos !== undefined) view.dispatch(foldTransaction(view.state, widgetPos - 1))
-                    }
-                    // Keep the caret where it is: the toggle must not steal focus or move the selection.
-                    button.addEventListener('mousedown', (event) => event.preventDefault())
-                    button.addEventListener('click', (event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      toggle()
-                    })
-                    // The widget sits inside the contenteditable, so ProseMirror's keymap would swallow
-                    // Enter/Space before the button's native activation; handle them here and keep focus
-                    // on the (re-rendered) toggle so keyboard users can fold/unfold repeatedly.
-                    button.addEventListener('keydown', (event) => {
-                      if (event.key !== 'Enter' && event.key !== ' ') return
-                      event.preventDefault()
-                      event.stopPropagation()
-                      toggle()
-                      view.dom
-                        .querySelector<HTMLButtonElement>(`.${HEADING_TOGGLE_CLASS}[data-heading-fold-key="${entry.foldKey}"]`)
-                        ?.focus()
-                    })
-                    return button
-                  },
-                  { key: `heading-toggle:${entry.foldKey}:${collapsed ? 'collapsed' : 'expanded'}` },
-                ),
-              )
-              if (collapsed) {
-                entry.sectionBlockRanges.forEach(({ from, to }) => {
-                  decorations.push(Decoration.node(from, to, { [HEADING_FOLDED_ATTR]: 'true' }))
-                })
-              }
-            })
+            foldingState.entries.forEach((entry) => decorations.push(headingToggle(entry, foldingState.collapsedHeadingPositions.has(entry.headingPos))))
             const set = DecorationSet.create(state.doc, decorations)
             decorationCache.set(foldingState.entries, { collapsedKey: key, set })
             return set
@@ -487,9 +569,23 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
         },
         view: (view) => {
           let previousKeys: string | null = null
+          // This editor's hide rules, one for each folded section, rewritten only when a section's place moved. None while folding is off.
+          const style = view.dom.ownerDocument.createElement('style')
+          style.setAttribute(HEADING_FOLD_STYLE_ATTR, '')
+          view.dom.ownerDocument.head.appendChild(style)
           const notify = () => {
             const foldingState = pluginKey.getState(view.state)
-            if (!foldingState || !onCollapsedKeysChange) return
+            if (!foldingState) return
+            const rules: string[] = []
+            if (isFoldingOn(view.state) && foldingState.collapsedHeadingPositions.size > 0) {
+              const placeOf = placeFinder()
+              for (const entry of foldingState.entries) {
+                const rule = foldingState.collapsedHeadingPositions.has(entry.headingPos) ? hideRule(view, viewId, entry, placeOf) : null
+                if (rule !== null) rules.push(rule)
+              }
+            }
+            if (style.textContent !== rules.join('\n')) style.textContent = rules.join('\n')
+            if (!onCollapsedKeysChange) return
             const keys = getCollapsedKeys(foldingState)
             const serializedKeys = keys.join(' ')
             if (serializedKeys !== previousKeys) {
@@ -498,7 +594,7 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             }
           }
           notify()
-          return { update: notify }
+          return { update: notify, destroy: () => style.remove() }
         },
-      }),
-  )
+      })
+  })

@@ -11,6 +11,7 @@ import type { FoldNext } from '../FoldAllButton'
 import { rowShortcuts } from '../noteKeys'
 import { addHeadingFoldAllMeta, addHeadingFoldUndoMeta, hasHeadingFoldMeta } from './headingFolding'
 import { addOutlineFoldAllMeta, addOutlineFoldUndoMeta, hasOutlineFoldMeta } from './outlineFolding'
+import { foldingBlocked, isFoldingOn } from './foldingSwitch'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 const PRIORITY = 100
@@ -19,19 +20,25 @@ const PRIORITY = 100
 export const setAllDocumentFolds =
   (collapsed: boolean): Command =>
   (state, dispatch) => {
+    // Folding off (YAZ-4094 F1): ⌘⇧U / ⌘⇧I are consumed, with the host's message.
+    if (foldingBlocked(state, dispatch)) return true
     const transaction = state.tr
     const outlineChanged = addOutlineFoldAllMeta(state, transaction, collapsed)
     const headingChanged = addHeadingFoldAllMeta(state, transaction, collapsed)
     if (!outlineChanged && !headingChanged) return false
 
     const action: ViewAction = outlineChanged && headingChanged ? 'document-fold' : outlineChanged ? 'fold' : 'heading-fold'
-    dispatch?.(transaction.setMeta(VIEW_ACTION_META, action))
+    transaction.setMeta(VIEW_ACTION_META, action)
+    // A plugin may refuse it: the fold lock drops a fold that only its held rows would take (YAZ-4132). The dry run of
+    // the button asks the same. A refused transaction applies as none.
+    if (state.applyTransaction(transaction).transactions.length === 0) return false
+    dispatch?.(transaction)
     return true
   }
 
-/** What the fold-all button does now (YAZ-3938 D2): with no dispatch, each command only says if it would change a fold. */
+/** What the fold-all button does now (YAZ-3938 D2): with no dispatch, each command only says if it would change a fold. Folding off (YAZ-4094 F1): nothing. */
 export const nextDocumentFold = (state: EditorState): FoldNext =>
-  setAllDocumentFolds(true)(state) ? 'collapse' : setAllDocumentFolds(false)(state) ? 'expand' : 'none'
+  !isFoldingOn(state) ? 'none' : setAllDocumentFolds(true)(state) ? 'collapse' : setAllDocumentFolds(false)(state) ? 'expand' : 'none'
 
 /** The DOM event on the editor's `view.dom` after a transaction that changed a fold (YAZ-3938 D9): the fold-all button reads again. */
 export const FOLDS_CHANGED_EVENT = 'yaseendocs:folds-changed'
@@ -63,7 +70,10 @@ const undoCombinedDocumentFold: Command = (state, dispatch) => {
   const outlinePending = addOutlineFoldUndoMeta(state, transaction)
   const headingPending = addHeadingFoldUndoMeta(state, transaction)
   if (!outlinePending || !headingPending) return false
-  dispatch?.(transaction.setMeta(VIEW_ACTION_META, 'document-fold' satisfies ViewAction))
+  transaction.setMeta(VIEW_ACTION_META, 'document-fold' satisfies ViewAction)
+  // The fold lock refuses an undo that would fold only its held rows (YAZ-4135): ⌘Z then goes to the text undo.
+  if (state.applyTransaction(transaction).transactions.length === 0) return false
+  dispatch?.(transaction)
   return true
 }
 

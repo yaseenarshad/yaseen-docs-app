@@ -12,7 +12,7 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { OutsideChangeGlow } from '@shared/types'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
-import { getHeadingFoldKey, HEADING_FOLDED_ATTR, undoLastHeadingFold } from '../outline/headingFolding'
+import { getHeadingFoldKey, undoLastHeadingFold } from '../outline/headingFolding'
 import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { getZoomedItemPos } from '../outline/zoom'
@@ -21,6 +21,7 @@ import { MAX_CHANGES, OUTSIDE_ACTIVE_CLASS, OUTSIDE_CHANGE_CLASS, OUTSIDE_CHECKE
 import { mergeExternalMarkdown } from './mergeExternal'
 import { createOutsideChangesChannel } from './outsideChangesChannel'
 import { keepOutsideChangesOfTabs, MAX_KEPT_PAGES, readOutsideChanges, saveOutsideChanges } from './outsideChangesMemory'
+import { headingFoldHidden } from '../outline/headingFoldTestKit'
 
 const BASE = `* Parent
   * Child
@@ -651,7 +652,7 @@ describe('Next change (D9)', () => {
   it('opens the folded heading that hides a change silently, and folds it again on the next Next', async () => {
     const doc = '# Summary\n\nTop line\n\n## Details\n\nWe fly on Monday.\n'
     const { crepe, root, view, channel } = await mount(doc, { headingFolding: { seedCollapsedKeys: () => new Set([getHeadingFoldKey('Details', 0)]) } })
-    const headingFolded = () => root.querySelectorAll(`[${HEADING_FOLDED_ATTR}]`).length
+    const headingFolded = () => headingFoldHidden(root).length
     const foldedBefore = headingFolded()
     expect(foldedBefore).toBeGreaterThan(0)
     outsideEdit(crepe, (md) => md.replace('Top line', 'Top line grown').replace('Monday', 'Tuesday'))

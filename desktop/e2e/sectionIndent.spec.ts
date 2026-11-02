@@ -6,22 +6,23 @@
  *  - THE PATH: the lines on the way to the caret are purple. The mark is `data-sp`, how many of the
  *    block's lines, and it stops at the caret's block.
  *  - A CLICK ON A LINE folds the sections beside it, a second click opens them, and the caret stays.
- *  - IT IS A VIEW: the file on disk has the same bytes after all of it, proven after a real quit
- *    (the autosave flush point).
- *  - THE SWITCH IS SAVED with the note in the state file of the app (YAZ-2731,
- *    `folders[root].sectionIndents`), on AND off, and never in the note: it is on again after a
- *    restart.
+ *  - IT IS A VIEW: the note's text on disk has the same bytes after all of it, proven after a real
+ *    quit (the autosave flush point). Only the switch is added to its frontmatter.
+ *  - THE SWITCH IS SAVED IN the note since YAZ-4094 G4: `section-indent: true` or `false` in its
+ *    frontmatter (`shared/pageSwitches.ts`), on AND off, and never in the state file of the app: it
+ *    is on again after a restart.
  *
  * Same harness as every spec here: temp `--user-data-dir`, a COPY of the fixture vault with one
  * note of this spec's own in it, `section-indent-` step screenshots. Serial: each step continues
  * the last.
  */
-// Written for YAZ-2709, and step 7 for YAZ-2731. Not yet run: Playwright was off limits when this was written, so every
+// Written for YAZ-2709, step 7 for YAZ-2731, and steps 6 and 7 rewritten for YAZ-4094 G4 (YAZ-4119). Not yet run: Playwright was off limits when this was written, so every
 // selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { notePageSwitches, setNotePageSwitch } from '../../shared/pageSwitches'
 import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, quitApp, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -222,15 +223,16 @@ test('step 5 — a click on the line below the H1 folds the H2 sections, a secon
   await shoot(win, 'section-indent-04-open')
 })
 
-test('step 6 — the file on disk has the same bytes as at the start', async () => {
+test('step 6 — the file on disk has the same text as at the start, and the switch in its frontmatter', async () => {
   await quitApp(app) // the autosave flush point: a pending write would land here
-  // The note is plain ASCII, so the same text is the same bytes.
-  expect(await readFile(notePath, 'utf8')).toBe(BODY)
+  // The note is plain ASCII, so the same text is the same bytes. Step 2's click added `section-indent: true` and nothing else.
+  expect(await readFile(notePath, 'utf8')).toBe(setNotePageSwitch(BODY, 'section-indent', true))
 })
 
-test('step 7 — the switch is saved for the note in the state file of the app: on again after the restart, and off is saved too', async () => {
-  // Step 6 quit the app. The state file has the switch of this note, and of no other note.
-  expect((await readState(userData)).folders[vault]?.sectionIndents).toEqual({ [notePath]: true })
+test('step 7 — the switch is saved IN the note: on again after the restart, and off is saved too', async () => {
+  // Step 6 quit the app. The note holds the switch, and the state file holds none (YAZ-4094 G4).
+  expect(notePageSwitches(await readFile(notePath, 'utf8'))['section-indent']).toBe(true)
+  expect((await readState(userData)).folders[vault]?.sectionIndents ?? {}).toEqual({})
 
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
@@ -241,10 +243,10 @@ test('step 7 — the switch is saved for the note in the state file of the app: 
   await expect(indentSwitch(win)).toHaveAttribute('aria-pressed', 'true')
   await shoot(win, 'section-indent-05-after-restart')
 
-  // Off is a value of its own (YAZ-2711 D2): the entry stays, as `false`.
+  // Off is a value of its own (YAZ-2711 D2): the key stays, as `false`.
   await indentSwitch(win).click()
   await expect(indentSwitch(win)).toHaveAttribute('aria-pressed', 'false')
   await expect(editorOf(win).locator('[data-sd], [data-sp]')).toHaveCount(0)
-  await expect.poll(async () => (await readState(userData)).folders[vault]?.sectionIndents[notePath], { timeout: 10_000 }).toBe(false)
-  expect(await readFile(notePath, 'utf8')).toBe(BODY)
+  await expect.poll(async () => notePageSwitches(await readFile(notePath, 'utf8'))['section-indent'], { timeout: 10_000 }).toBe(false)
+  expect(await readFile(notePath, 'utf8')).toBe(setNotePageSwitch(BODY, 'section-indent', false))
 })

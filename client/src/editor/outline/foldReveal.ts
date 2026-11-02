@@ -18,6 +18,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { addHeadingFoldSetMeta, collapsedHeadingsHiding } from './headingFolding'
+import { turnsFoldingOn } from './foldingSwitch'
 import { addOutlineFoldSetMeta, collapsedItemsHiding } from './outlineFolding'
 import { getZoomedItemPos } from './zoom'
 
@@ -114,13 +115,18 @@ export const foldHistory = $prose(
     }),
 )
 
-/** The caret guard. Register with `editor.use(caretReveal)`, after `foldHistory`, so it sees the folds ⌘Z closed. */
+/**
+ * The caret guard. Register with `editor.use(caretReveal)`, after `foldHistory`, so it sees the folds ⌘Z closed.
+ * It also runs when the page's "Folding" switch turns on again (YAZ-4094 F3): the saved folds come back, and the
+ * ones that would hide the caret open. That opening is not an edit, so it records nothing for ⌘Z.
+ */
 export const caretReveal = $prose(
   () =>
     new Plugin({
       key: new PluginKey('mdapp-caret-reveal'),
       appendTransaction(trs, _old, state) {
-        if (!trs.some((tr) => tr.docChanged)) return null
+        const switchedOn = trs.some(turnsFoldingOn)
+        if (!switchedOn && !trs.some((tr) => tr.docChanged)) return null
         const { head } = state.selection
         const zoomed = getZoomedItemPos(state)
         const folds: Folds = {
@@ -129,7 +135,7 @@ export const caretReveal = $prose(
         }
         if (folds.items.length === 0 && folds.headings.length === 0) return null
         const tr = state.tr
-        recordOpenedFolds(tr, folds)
+        if (!switchedOn) recordOpenedFolds(tr, folds)
         openFolds(tr, folds)
         return tr
       },

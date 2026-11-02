@@ -12,9 +12,11 @@ import { TextSelection, type Plugin } from '@milkdown/kit/prose/state'
 import { DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { createFindChannel } from '../find/findChannel'
-import { HEADING_FOLDED_ATTR, setHeadingFoldSet } from './headingFolding'
+import { setFoldingOn } from './foldingSwitch'
+import { isHeadingCollapsed, setHeadingFoldSet } from './headingFolding'
 import sectionIndentCss from './sectionIndent.css?inline'
 import { SECTION_DEPTH_ATTR, SECTION_LINE_HOVER_CLASS, SECTION_PATH_ATTR, sectionDepths, sectionLineAtOffset, sectionLineFoldTargets, showSectionIndent } from './sectionIndent'
+import { headingFoldHidden } from './headingFoldTestKit'
 
 /**
  * Seventeen top-level blocks. The note starts at H2, skips from H2 to H4, goes down to H6, and holds
@@ -320,7 +322,7 @@ two text
       blocks(crepe)[block].dispatchEvent(event)
       return event
     }
-    const folded = () => blocks(crepe).filter((el) => el.getAttribute(HEADING_FOLDED_ATTR) === 'true').map((el) => el.textContent)
+    const folded = () => blocks(crepe).filter((el) => headingFoldHidden(el.parentElement!).includes(el)).map((el) => el.textContent)
     try {
       // Line 1 of "a text" (block 2) belongs to "One": the sections beside it are A and B.
       expect(depthsShown(crepe)[2]).toBe(2)
@@ -351,6 +353,37 @@ two text
     expect(view.state.selection.eq(selection)).toBe(true)
     await new Promise((resolve) => setTimeout(resolve, 300))
     expect(onMarkdownUpdated).not.toHaveBeenCalled()
+  })
+
+  it('with folding off (YAZ-4094 F1) a line is no button: the press is the editor\'s own, nothing folds, and no hand cursor', async () => {
+    const { crepe, root } = await mount(FOLDS)
+    const view = viewOf(crepe)
+    turnOn(crepe)
+    root.addEventListener('mousemove', (event) => event.stopPropagation())
+    const computed = vi
+      .spyOn(window, 'getComputedStyle')
+      .mockImplementation((el) => ({ borderLeftWidth: `${Number(el.getAttribute(SECTION_DEPTH_ATTR)) * 30}px` }) as CSSStyleDeclaration)
+    const pointer = (type: 'mousedown' | 'mousemove', block: number, clientX: number): MouseEvent => {
+      const event = new MouseEvent(type, { clientX, bubbles: true, cancelable: true })
+      blocks(crepe)[block].dispatchEvent(event)
+      return event
+    }
+    try {
+      // The hand shows on a line, then folding turns off: the next move takes it away.
+      pointer('mousemove', 2, 10)
+      expect(view.dom.classList.contains(SECTION_LINE_HOVER_CLASS)).toBe(true)
+      view.dispatch(setFoldingOn(view.state.tr, false))
+      pointer('mousemove', 2, 10)
+      expect(view.dom.classList.contains(SECTION_LINE_HOVER_CLASS)).toBe(false)
+      expect(pointer('mousedown', 2, 10).defaultPrevented).toBe(false)
+      view.dispatch(setFoldingOn(view.state.tr, true))
+      expect(positionsOf(crepe, ['A', 'B']).some((pos) => isHeadingCollapsed(view.state, pos))).toBe(false)
+      // On again: the line folds once more.
+      expect(pointer('mousedown', 2, 10).defaultPrevented).toBe(true)
+      expect(positionsOf(crepe, ['A', 'B']).every((pos) => isHeadingCollapsed(view.state, pos))).toBe(true)
+    } finally {
+      computed.mockRestore()
+    }
   })
 })
 

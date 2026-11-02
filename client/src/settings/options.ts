@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -105,6 +105,19 @@ export const THREADING_OPTIONS: readonly Option<boolean>[] = [
 
 /** Section indent (YAZ-2709): the width of one step; `SECTION_STEPS` validates the field, and the editor reads it as `--section-step-setting`. */
 export const SECTION_STEP_OPTIONS: readonly Option<number>[] = SECTION_STEPS.map((value) => ({ label: `${value}px`, value }))
+
+/** Guide lines (YAZ-4094 G2): when they show; guideLines.css reads it as `data-guide-lines-show` on `.app`. The same words as SECTION_LINES_OPTIONS. */
+export const GUIDE_LINES_SHOW_OPTIONS: readonly Option<GuideLinesShow>[] = [
+  { label: 'Always show', value: 'always' },
+  { label: 'Only near the mouse', value: 'near' },
+]
+
+/** Guide line darkness (YAZ-4094 G3): the presets beside the stepper; any other value is the stepper's own. */
+export const GUIDE_LINE_DARKNESS_PRESETS: readonly Option<number>[] = [
+  { label: 'Light', value: 15 },
+  { label: 'Medium', value: 25 },
+  { label: 'Strong', value: 35 },
+]
 
 /** Section indent (YAZ-2709): when the grey section lines show; the editor reads it as `data-section-lines` on `.app`. */
 export const SECTION_LINES_OPTIONS: readonly Option<SectionLines>[] = [

@@ -42,7 +42,8 @@
  * THE TABLE OF CONTENTS (YAZ-3486; called so since YAZ-3506): VS Code's Outline in the note table of
  * contents' place and frame (`outline/CodeOutline.tsx`), on the same setting and width. Its feed
  * (`outline/outlineFeed.ts`) is made with the editor and goes with it. The cog's "Table of contents" row
- * turns it off for this file only, saved with the file as a note's is (`tocSwitches`, `usePageSwitch`).
+ * turns it off for this file only, saved for the file in the app state (`tocSwitches`, `usePageSwitch`): a code file
+ * has no frontmatter, so it cannot hold the switch as a note does (`toc`, YAZ-4094 G4).
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CodeOutlineSort, type CodeSymbolKind, type PageView, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'

@@ -258,3 +258,24 @@ describe('the close/quit handshake (YAZ-2174)', () => {
     expect(onChange).toHaveBeenCalledTimes(reported)
   })
 })
+
+describe('Settings › "Folding default" (YAZ-4094 F1, YAZ-4119 fix 8)', () => {
+  const chevrons = (host: HTMLElement) => host.querySelectorAll('.outline-toggle')
+  const render = (foldingOn: boolean) => act(async () => root?.render(<OutlineEditor markdown={'- alpha\n    - beta\n'} onChange={lastOnChange} foldingOn={foldingOn} />))
+
+  it('Off at mount: no chevron; a change follows at once, on the same editor', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await render(false)
+    await waitFor(() => container?.querySelector('.ProseMirror') !== null)
+    const host = container
+    const page = host.querySelector('.ProseMirror')
+    expect(chevrons(host)).toHaveLength(0)
+    await render(true)
+    await waitFor(() => chevrons(host).length > 0)
+    await render(false)
+    expect(chevrons(host)).toHaveLength(0)
+    expect(host.querySelector('.ProseMirror')).toBe(page)
+  })
+})

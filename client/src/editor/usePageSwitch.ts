@@ -1,23 +1,19 @@
 import { useCallback, useState } from 'react'
 
 /**
- * A page switch of the cog that is saved with the note: "Section indent" (YAZ-2709 D2, off until
- * the page turns it on) and "Table of contents" (YAZ-2950; YAZ-3558 D1: Settings › "Table of contents
- * default" until the page makes its own choice, which then wins, also over Off).
- * `read` and `write` are the pair in `storage` for that switch; `read` gives `undefined` for a page
- * that made no choice, and the switch is then `fallback`.
+ * A page switch of the cog that is kept in the app state: a code file's "Table of contents" (YAZ-2950,
+ * YAZ-3506; YAZ-3558 D1: Settings › "Table of contents default" until the file makes its own choice, which
+ * then wins, also over Off). A code file has no frontmatter; a note's switches are IN the note (YAZ-4094 G4,
+ * `shared/pageSwitches.ts`). `read` and `write` are the pair in `storage` for that switch; `read` gives
+ * `undefined` for a file that made no choice, and the switch is then `fallback`.
  *
- * Each switch is in the app state, with the note (`folders[root].sectionIndents[path]` and
- * `folders[root].tocSwitches[path]`), on the terms of the table of contents source (`tocSources`).
- * It follows a rename or a move of the note, goes when the note is deleted, and is there after a
- * restart. On AND off are stored: a page the reader turned off is not a page that was never touched.
+ * The switch is in the app state, with the file (`folders[root].tocSwitches[path]`). It follows a rename
+ * or a move of the file, goes when the file is deleted, and is there after a restart. On AND off are
+ * stored: a file the reader turned off is not a file that was never touched.
  *
- * The choice is read when the editor mounts and not followed after that: an editor that opens the page
- * later starts with the stored switch, and two editors that are open on one page at the same time
- * (a tab and the right panel, or two windows) each keep what they show until they mount again.
- * `fallback` IS followed: a page with no choice changes at once when the setting does. So when a second
- * editor on the same page stores a choice, this one, which still holds no choice, keeps following the
- * setting until it mounts again (YAZ-3558 audit A9: a live read of the store would break YAZ-2950 D2).
+ * The choice is read when the editor mounts and not followed after that: two editors that are open on one
+ * file at the same time each keep what they show until they mount again. `fallback` IS followed: a file
+ * with no choice changes at once when the setting does.
  */
 export function usePageSwitch(root: string, path: string, read: (root: string, path: string) => boolean | undefined, write: (root: string, path: string, on: boolean) => void, fallback = false): [on: boolean, toggle: () => void] {
   const [held, setHeld] = useState(() => ({ root, path, choice: read(root, path) }))

@@ -19,7 +19,7 @@ import { useState, type CSSProperties } from 'react'
 import { TEXT_DEFAULT_SIZE, TEXT_SIZE_MAX, TEXT_SIZE_MIN, type TextFormatting } from '@shared/textFormatting'
 import { DARKNESS_MAX, DARKNESS_MIN, THICKNESS_MAX, THICKNESS_MIN } from '@shared/line'
 import { HEADING_HIGHLIGHTS, HEADING_KEYS, HEADING_SIZE_MAX, HEADING_SIZE_MIN, type HeadingHighlight, type HeadingKey } from '@shared/types'
-import { Select } from './controls'
+import { Select, Stepper } from './controls'
 import { defaultHeadingSize, HEADING_DEFAULT_WEIGHTS, HEADING_HIGHLIGHT_VARS, isChanged, lineDefaultsOf, withHeadingStyle, withLineDefaults, withoutHeadingStyle } from './headingStyles'
 import type { TextFormattingState } from './useTextFormatting'
 
@@ -66,21 +66,6 @@ export function TextFormattingControl({ vaults, initialRoot }: Props) {
       {/* Its own row, not a line of the grid above: its controls are wider than one column, and a
           spanning item would widen the grid's columns and squeeze the seven names (YAZ-3213). */}
       <LineDefaultsLine formatting={formatting} write={save} />
-    </div>
-  )
-}
-
-/** The size buttons of a line: "−", the size with its unit ("16 px", or "50%" for the line's darkness), "+". */
-function Stepper({ name, size, min, max, unit = 'px', onStep }: { name: string; size: number; min: number; max: number; unit?: 'px' | '%'; onStep: (delta: number) => void }) {
-  return (
-    <div className="heading-styles__stepper" role="group" aria-label={`${name} size`}>
-      <button type="button" className="settings__option heading-styles__step" aria-label={`${name} smaller`} disabled={size <= min} onClick={() => onStep(-1)}>
-        −
-      </button>
-      <span className="heading-styles__size">{unit === '%' ? `${size}%` : `${size} px`}</span>
-      <button type="button" className="settings__option heading-styles__step" aria-label={`${name} larger`} disabled={size >= max} onClick={() => onStep(1)}>
-        +
-      </button>
     </div>
   )
 }

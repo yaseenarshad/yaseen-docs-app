@@ -20,7 +20,6 @@ function installBridge(state: AppState, identity: IdentityFixture) {
       setFolder: vi.fn(async () => undefined),
       setFolds: vi.fn(async () => undefined),
       setTocSource: vi.fn(async () => undefined),
-      setSectionIndent: vi.fn(async () => undefined),
       setTocSwitch: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
       setTabCanvas: vi.fn(async () => undefined),
@@ -480,31 +479,6 @@ describe('storage', () => {
     b.emit({ ...defaultAppState(), folders: { '/r1': { ...defaultFolderState(), tocSources: { '/r1/a.md': 'bullets' } } } })
     expect(storage.getTocSource('/r1', '/r1/a.md')).toBe('bullets')
     expect(storage.getTocSource('/r1', '/r1/b.md')).toBeNull()
-  })
-
-  it('the section indent switch is keyed by root then file; a note with no entry is off; on AND off are sent, and the same value again writes nothing (YAZ-2709 D2)', () => {
-    expect(storage.getSectionIndent('/r1', '/r1/a.md')).toBe(false)
-    storage.setSectionIndent('/r1', '/r1/a.md', true)
-    storage.setSectionIndent('/r1', '/r1/b.md', true)
-    expect(storage.getSectionIndent('/r1', '/r1/a.md')).toBe(true)
-    expect(storage.getSectionIndent('/r1', '/r1/b.md')).toBe(true)
-    expect(storage.getSectionIndent('/r2', '/r1/a.md')).toBe(false)
-    expect(b.bridge.state.setSectionIndent).toHaveBeenCalledWith('/r1', '/r1/a.md', true)
-    expect(b.bridge.state.setSectionIndent).toHaveBeenCalledTimes(2)
-    // The same value again: no write.
-    storage.setSectionIndent('/r1', '/r1/a.md', true)
-    expect(b.bridge.state.setSectionIndent).toHaveBeenCalledTimes(2)
-    // Off is sent as `false`, never as a removal — and off on a note never touched is sent too: it is a choice.
-    storage.setSectionIndent('/r1', '/r1/a.md', false)
-    expect(storage.getSectionIndent('/r1', '/r1/a.md')).toBe(false)
-    expect(b.bridge.state.setSectionIndent).toHaveBeenLastCalledWith('/r1', '/r1/a.md', false)
-    storage.setSectionIndent('/r1', '/r1/never.md', false)
-    expect(b.bridge.state.setSectionIndent).toHaveBeenLastCalledWith('/r1', '/r1/never.md', false)
-    expect(b.bridge.state.setSectionIndent).toHaveBeenCalledTimes(4)
-    // Another window's switch arrives with the state broadcast, as its folds do.
-    b.emit({ ...defaultAppState(), folders: { '/r1': { ...defaultFolderState(), sectionIndents: { '/r1/a.md': true, '/r1/b.md': false } } } })
-    expect(storage.getSectionIndent('/r1', '/r1/a.md')).toBe(true)
-    expect(storage.getSectionIndent('/r1', '/r1/b.md')).toBe(false)
   })
 
   it('the table of contents switch is keyed by root then file; a note with no entry made no choice (`undefined`: the setting decides, YAZ-3558 D1); on AND off are sent, and the same value again writes nothing (YAZ-2950)', () => {

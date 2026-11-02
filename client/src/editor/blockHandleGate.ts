@@ -13,6 +13,7 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { isFoldingOn } from './outline/foldingSwitch'
 import { inStripBand, isGuideStripHit } from './outline/guideLines'
 import { HEADING_TOGGLE_CLASS } from './outline/headingFolding'
 import { OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
@@ -32,14 +33,16 @@ function overAffordance(view: EditorView, x: number, stack: readonly Element[]):
       view.dom.contains(el) &&
       el.parentElement?.classList.contains('content-dom')
     ) {
-      if (isGuideStripHit(x, el)) return true
+      // Folding off (YAZ-4094 F1): the line folds nothing, so the handle stays (fix 5).
+      if (isFoldingOn(view.state) && isGuideStripHit(x, el)) return true
     }
     // A section line (YAZ-2709): the indent is the top-level block's own border, so the block is in
     // the stack. Crepe floats the handle from 48px to 16px left of the box of the row under the
     // pointer. A paragraph's or a heading's box starts at the column edge, so its handle is clear
     // of every line; a bullet's box starts after its list's indent, so its handle lies on the
     // list's innermost line and would take the press that folds.
-    if (el.parentElement === view.dom && sectionLineAt(x, el) !== null) return true
+    // Folding off (YAZ-4094 F1): the section line folds nothing either, so the handle stays.
+    if (el.parentElement === view.dom && isFoldingOn(view.state) && sectionLineAt(x, el) !== null) return true
   }
   return false
 }

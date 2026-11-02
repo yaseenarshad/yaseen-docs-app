@@ -671,6 +671,20 @@ export function App() {
     applyCrepeTheme(theme)
   }, [theme])
 
+  // Guide lines and folding (YAZ-4094 D2, G2, G3, F1): the defaults, the show choice and the darkness go on <html>,
+  // as `data-theme` does, so they reach every editor of this page — also a hover preview, which is portalled to
+  // <body> outside `.app`, and the Files window's popup, which copies <html>'s attributes (`previewPopup.ts`).
+  // guideLines.css reads them; a note's own key on its host or preview wins. CSS only: no editor remounts.
+  useLayoutEffect(() => {
+    const html = document.documentElement
+    html.dataset.guideLines = settings.guideLinesOnByDefault ? 'on' : 'off'
+    html.dataset.guideLinesShow = settings.guideLinesShow
+    html.dataset.folding = settings.foldingOnByDefault ? 'on' : 'off'
+    // A percent of the text colour, and 20 points more on hover.
+    html.style.setProperty('--guide-line-darkness', `${settings.guideLineDarkness}%`)
+    html.style.setProperty('--guide-line-darkness-hover', `${Math.min(100, settings.guideLineDarkness + 20)}%`)
+  }, [settings.guideLinesOnByDefault, settings.guideLinesShow, settings.foldingOnByDefault, settings.guideLineDarkness])
+
   // Editor spacing settings land as CSS custom properties; app.css consumes them (GRO-2024).
   // Bullet threading and content width are CSS gates too — no editor remount. So are section
   // indent's grey lines (YAZ-2709, `data-section-lines`), and the sidebar tree's icons (YAZ-3440 D4,
@@ -2827,6 +2841,9 @@ export function App() {
       // YAZ-2700: the table of contents is a SETTING too, and whether its names fit depends on the content width.
       tableOfContents: settings.tableOfContents,
       tocOnByDefault: settings.tocOnByDefault,
+      // YAZ-4094: the defaults of the page cog's "Guide lines" and "Folding" — a page with no choice follows them.
+      guideLinesOnByDefault: settings.guideLinesOnByDefault,
+      foldingOnByDefault: settings.foldingOnByDefault,
       contentWidth: settings.contentWidth,
       onChangeTableOfContents: changeTableOfContents,
       // YAZ-2752: the width of its names column is a SETTING as well.

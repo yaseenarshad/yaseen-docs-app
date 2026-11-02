@@ -9,6 +9,9 @@
  *  - a note with fewer than two such headings is read by its BULLETS instead: every labelled item
  *    of the document's own lists (bulleted or numbered), three levels deep, the level its depth
  *    and the text its label; a note with two headings or more never has its bullets read;
+ *  - a note with two headings or more outside lists lists the headings inside its bullets too
+ *    (YAZ-4094 4E); a heading inside a bullet is one level under the nearest heading that holds
+ *    it — a heading-labelled bullet above it, or the section its list is in — at most H5's level;
  *  - the reader may choose the source for one note (D14, the channel's `setSource`): `headings` is
  *    every H1-H5 of the note, the ones inside bullets at any depth too, and no bullet; `bullets`
  *    is the bullets whatever headings there are; a chosen source with under two rows publishes
@@ -16,7 +19,9 @@
  *    exists is what the FIRST scan goes by;
  *  - it runs once at view creation and then 150 ms after the LAST document change — a keystroke
  *    only restarts the timer, a caret move starts none;
- *  - the channel says hidden while a bullet zoom is active;
+ *  - the channel says zoomed while a bullet zoom is active; the rows are then the zoom's own (4D)
+ *    when it has two or more, else the note's, with the section that holds the zoom current, and
+ *    a jump to a row outside the zoom ends the zoom first (4C);
  *  - a jump unfolds what hides its row (an H4 or H5 row too, which has no fold of its own) and the
  *    row's own fold, puts the caret at the start of its
  *    text, focuses the note, glides to the row and lands it 24px under the scroller's edge — and
@@ -38,7 +43,7 @@ import { isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFol
 import { getZoomedItemPos } from '../outline/zoom'
 import { createTocChannel, type TocChannel } from './tocChannel'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
-import { SCAN_DELAY_MS, scanAllHeadings, scanBullets, scanHeadings, scanNote } from './tocPlugin'
+import { SCAN_DELAY_MS, scanAllHeadings, scanBullets, scanHeadings, scanNote, scanZoom } from './tocPlugin'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -259,22 +264,31 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
 `
   const from = (source: TocSource | null) => (channel: TocChannel) => channel.setSource(source)
 
-  it('Headings: every H1-H5 in document order — inside a bullet at any depth, in a blockquote, outside — each at its heading level, and no plain bullet and no H6', async () => {
+  it('Headings: every H1-H5 in document order — inside a bullet at any depth, in a blockquote, outside — and no plain bullet and no H6; one inside a bullet is one level under the heading that holds it (YAZ-4094 4E)', async () => {
     const { view } = await mountToc(MIXED)
     const found = scanAllHeadings(view.state.doc)
-    // "Four" and "Five" are labels of bullets four deep: no bullet row, but rows under Headings (YAZ-3051).
-    expect(texts(found)).toEqual(['1 Top', '1 In a bullet', '2 Deeper', '3 Deepest', '4 Four', '5 Five', '2 Quoted', '2 After'])
+    // "In a bullet" is in the section of "Top"; each deeper one is under the heading-labelled bullet above it.
+    // "Four" and "Five" are labels of bullets four deep: no bullet row, but rows under Headings (YAZ-3051), at H5's level at most.
+    expect(texts(found)).toEqual(['1 Top', '2 In a bullet', '3 Deeper', '4 Deepest', '5 Four', '5 Five', '2 Quoted', '2 After'])
     for (const heading of found) expect(view.state.doc.nodeAt(heading.pos)?.type.name).toBe('heading')
     expect(scanNote(view.state.doc, 'headings')).toEqual({ bullets: false, rows: found })
-    // Auto on the same note: the headings outside lists alone.
-    expect(texts(scanNote(view.state.doc).rows)).toEqual(['1 Top', '2 Quoted', '2 After'])
+    // Auto on the same note: it has headings outside lists, so the ones in its bullets are rows too.
+    expect(scanNote(view.state.doc)).toEqual({ bullets: false, rows: found })
+  })
+
+  it('Auto (YAZ-4094 4E): the heading in a bullet that note 14 lost is a row, under the heading-labelled bullet that holds it; a note of bullets stays bullets', async () => {
+    const { view } = await mountToc(`# Weekly planning\n\n* ### Lookback\n  * What did we say last week?\n    * # test\n* Product planning\n\n## Other section\n`)
+    expect(texts(scanNote(view.state.doc).rows)).toEqual(['1 Weekly planning', '2 Lookback', '3 test', '2 Other section'])
+    const topics = await mountToc(TOPICS)
+    expect(scanNote(topics.view.state.doc).bullets).toBe(true)
   })
 
   it('Headings on a note that is all bullets: exactly the bullets the reader made into headings', async () => {
     const { channel } = await mountToc(TOPICS, {}, from('headings'))
+    // No heading holds either one, so both are top rows (YAZ-4094 4E).
     expect(channel.getState().rows).toEqual([
       { level: 1, text: 'Topic one' },
-      { level: 2, text: 'Topic two' },
+      { level: 1, text: 'Topic two' },
     ])
   })
 
@@ -311,12 +325,13 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
     const { channel } = await mountToc(MIXED)
     const publish = vi.spyOn(channel, 'publish')
     vi.useFakeTimers()
-    channel.setSource('headings')
-    expect(texts(channel.getState().rows)).toEqual(['1 Top', '1 In a bullet', '2 Deeper', '3 Deepest', '4 Four', '5 Five', '2 Quoted', '2 After'])
     channel.setSource('bullets')
     expect(texts(channel.getState().rows)).toEqual(['1 In a bullet', '2 Plain child', '2 Deeper', '3 Deepest', '1 Plain bullet'])
+    channel.setSource('headings')
+    expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 In a bullet', '3 Deeper', '4 Deepest', '5 Four', '5 Five', '2 Quoted', '2 After'])
     channel.setSource(null)
-    expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 Quoted', '2 After'])
+    expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 In a bullet', '3 Deeper', '4 Deepest', '5 Four', '5 Five', '2 Quoted', '2 After'])
+    // Auto gives this note the same rows as Headings (4E): the channel publishes them, and the rows are equal.
     expect(publish).toHaveBeenCalledTimes(3)
     channel.setSource(null)
     expect(publish).toHaveBeenCalledTimes(3)
@@ -333,7 +348,7 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
     vi.advanceTimersByTime(SCAN_DELAY_MS - 1)
     expect(publish).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
-    expect(texts(channel.getState().rows)).toEqual(['1 Topic one', '2 Topic two!'])
+    expect(texts(channel.getState().rows)).toEqual(['1 Topic one', '1 Topic two!'])
   })
 
   describe('the jump and the scroll spy under Headings', () => {
@@ -347,7 +362,7 @@ describe('the reader\'s choice of source (YAZ-2700 D14)', () => {
 `
     it('a heading inside folded bullets: every bullet above it opens, and the bullet it is the label of — and no other; the caret is in the heading', async () => {
       const { view, channel } = await mountToc(NESTED, {}, from('headings'))
-      expect(texts(channel.getState().rows)).toEqual(['2 Deep topic', '1 Beta topic'])
+      expect(texts(channel.getState().rows)).toEqual(['1 Deep topic', '1 Beta topic'])
       // "Under deep" is a fourth level and no bullet row, so the fourth row is "Beta topic".
       const [alpha, inner, deepTopic, betaTopic] = scanBullets(view.state.doc).map(({ pos }) => pos)
       setOutlineFoldSet([alpha, inner, deepTopic, betaTopic], true)(view.state, view.dispatch)
@@ -518,25 +533,87 @@ describe('when it scans', () => {
   })
 })
 
-describe('hidden while a bullet is zoomed', () => {
+describe('a bullet zoom (YAZ-4094 4C, 4D)', () => {
   /** `Mod-.` / `Mod-Shift-.` as zoom.test.ts presses them (a real keyboard shifts `.` into `>`). */
   const pressZoom = (view: EditorView, out = false): void => {
     const event = new KeyboardEvent('keydown', { key: out ? '>' : '.', code: 'Period', keyCode: 190, metaKey: true, shiftKey: out, bubbles: true, cancelable: true } as KeyboardEventInit)
     view.someProp('handleKeyDown', (handler) => handler(view, event))
   }
 
-  it('says hidden when the zoom starts and shown again when it ends', async () => {
+  it('says zoomed when the zoom starts, and not when it ends', async () => {
     const { view, channel } = await mountToc(`# Top\n\n## Under\n\n* Bullet\n  * Child\n`, { zoom: { title: () => 'Notes' } })
-    expect(channel.getState().hidden).toBe(false)
+    expect(channel.getState().zoomed).toBe(false)
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOfText(view.state.doc, 'Bullet') + 1)))
     pressZoom(view)
     expect(getZoomedItemPos(view.state)).not.toBeNull()
-    expect(channel.getState().hidden).toBe(true)
+    expect(channel.getState().zoomed).toBe(true)
     // The headings are still the note's: only the flag moved.
     expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 Under'])
     pressZoom(view, true)
     expect(getZoomedItemPos(view.state)).toBeNull()
-    expect(channel.getState().hidden).toBe(false)
+    expect(channel.getState().zoomed).toBe(false)
+  })
+
+  /** "Bullet" holds three bullet rows; "Small" holds one. */
+  const ZOOMS = `# Top\n\n## Under\n\n* Bullet\n  * Child one\n  * Child two\n    * Grand\n* Small\n  * Only child\n`
+  const zoomInto = async (label: string, opts: Parameters<typeof mountToc>[1] = {}) => {
+    const mounted = await mountToc(ZOOMS, { zoom: { title: () => 'Notes' }, ...opts })
+    const { view } = mounted
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOfText(view.state.doc, label) + 1)))
+    pressZoom(view)
+    expect(getZoomedItemPos(view.state)).not.toBeNull()
+    return mounted
+  }
+
+  it('4D: a zoom with two rows or more lists its own rows, at once; out of the zoom the note’s rows come back at once', async () => {
+    vi.useFakeTimers()
+    const { view, channel } = await zoomInto('Bullet')
+    expect(texts(channel.getState().rows)).toEqual(['1 Child one', '1 Child two', '2 Grand'])
+    expect(scanZoom(view.state.doc, getZoomedItemPos(view.state)!)?.bullets).toBe(true)
+    pressZoom(view, true)
+    expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 Under'])
+  })
+
+  it('4D: under the Headings source, the headings inside the zoom, raised so the top one is level 1; under two rows the note’s list stays', async () => {
+    const { view } = await mountToc(`# Top\n\n## Under\n\n* Bullet\n  * ## Inside one\n    * ### Inside two\n* Small\n  * ## Lone\n`)
+    const zoomAt = (label: string): number => view.state.doc.resolve(posOfText(view.state.doc, label)).before(2)
+    expect(texts(scanZoom(view.state.doc, zoomAt('Bullet'), 'headings')?.rows ?? [])).toEqual(['1 Inside one', '2 Inside two'])
+    expect(scanZoom(view.state.doc, zoomAt('Small'), 'headings')).toBeNull()
+    expect(scanZoom(view.state.doc, zoomAt('Small'))).toBeNull()
+  })
+
+  it('4C: a zoom with under two rows keeps the note’s rows; with none on screen, the section that holds the zoom is current', async () => {
+    const { channel } = await zoomInto('Small')
+    expect(texts(channel.getState().rows)).toEqual(['1 Top', '2 Under'])
+    const scroller = document.createElement('div')
+    scroller.getBoundingClientRect = () => new DOMRect(0, 0, 800, 500)
+    // jsdom lays out nothing, so no row has a box: the zoomed bullet sits in the section of "Under".
+    expect(channel.current([0, 1], scroller)).toBe(1)
+  })
+
+  it('4C1: the section that holds the zoom is current, not a heading inside an earlier bullet (YAZ-4094)', async () => {
+    const mounted = await mountToc(`# Trip\n\n## In Lisbon\n\n* Day 1\n  * ### Morning\n  * ### Afternoon\n* Day 2\n  * Walk\n`, { zoom: { title: () => 'Notes' } })
+    const { view, channel } = mounted
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOfText(view.state.doc, 'Day 2') + 1)))
+    pressZoom(view)
+    // "Day 2" has one row inside, so the note's rows stay.
+    expect(texts(channel.getState().rows)).toEqual(['1 Trip', '2 In Lisbon', '3 Morning', '3 Afternoon'])
+    const scroller = document.createElement('div')
+    scroller.getBoundingClientRect = () => new DOMRect(0, 0, 800, 500)
+    // "Afternoon" stands before "Day 2", but inside "Day 1", which does not hold the zoom.
+    expect(channel.current([0, 1, 2, 3], scroller)).toBe(1)
+  })
+
+  it('4C: a jump to a row outside the zoom ends the zoom first, and lands on the row; a jump inside the zoom keeps it', async () => {
+    const outside = await zoomInto('Small')
+    outside.channel.jump(0)
+    expect(getZoomedItemPos(outside.view.state)).toBeNull()
+    expect(outside.view.state.selection.from).toBe(posOfText(outside.view.state.doc, 'Top'))
+    const inside = await zoomInto('Bullet')
+    const zoomed = getZoomedItemPos(inside.view.state)
+    inside.channel.jump(1)
+    expect(getZoomedItemPos(inside.view.state)).toBe(zoomed)
+    expect(inside.view.state.selection.from).toBe(posOfText(inside.view.state.doc, 'Child two'))
   })
 })
 

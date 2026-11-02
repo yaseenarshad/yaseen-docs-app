@@ -9,11 +9,12 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { splitFrontmatter } from '@shared/frontmatter'
+import { notePageSwitches, type PageSwitches } from '@shared/pageSwitches'
 import { api } from '../api'
 import { useReadOnlyNote } from './useReadOnlyNote'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
-type Content = { kind: 'loading' } | { kind: 'body'; body: string } | { kind: 'empty' } | { kind: 'gone' }
+type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
 /**
  * The top of `body` (C17): at most `maxChars`, cut at the last line end before the limit, so no
@@ -46,7 +47,8 @@ export function ReadOnlyNote({ path, wikilinks, className, unreadable, maxChars 
       (file) => {
         if (!live) return
         const body = splitFrontmatter(file.content).body
-        setContent(body.trim() === '' ? { kind: 'empty' } : { kind: 'body', body: cutAtLineEnd(body, maxChars) })
+        // The note's own Guide lines and Folding (YAZ-4094 G4) come with its body: the frontmatter holds them.
+        setContent(body.trim() === '' ? { kind: 'empty' } : { kind: 'body', body: cutAtLineEnd(body, maxChars), switches: notePageSwitches(file.content) })
       },
       () => live && setContent({ kind: 'gone' }),
     )
@@ -55,7 +57,7 @@ export function ReadOnlyNote({ path, wikilinks, className, unreadable, maxChars 
     }
   }, [path, maxChars])
 
-  useReadOnlyNote(hostRef, content.kind === 'body' ? content.body : null, wikilinks)
+  useReadOnlyNote(hostRef, content.kind === 'body' ? content.body : null, wikilinks, content.kind === 'body' ? content.switches : undefined)
 
   return (
     <div className={className} ref={hostRef}>
