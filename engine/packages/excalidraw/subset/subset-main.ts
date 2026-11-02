@@ -72,16 +72,7 @@ export const subsetWoff2GlyphsByCodepoints = async (
 };
 
 // lazy-loaded and cached chunks
-let subsetWorker: Promise<typeof import("./subset-worker.chunk")> | null = null;
 let subsetShared: Promise<typeof import("./subset-shared.chunk")> | null = null;
-
-const lazyLoadWorkerSubsetChunk = async () => {
-  if (!subsetWorker) {
-    subsetWorker = import("./subset-worker.chunk");
-  }
-
-  return subsetWorker;
-};
 
 const lazyLoadSharedSubsetChunk = async () => {
   if (!subsetShared) {
@@ -109,18 +100,28 @@ let workerPool: Promise<
 /**
  * Lazy initialize or get the worker pool singleton.
  *
+ * YAZ-3943 1G: the worker runs from a blob of its own bundled source, as the GIF shrink worker does
+ * (`gif/gifFile.ts`): a worker started from an engine chunk imports the app's main chunk in the
+ * app's build, cannot run, and every subset fell back to the main thread. A worker that still
+ * cannot start or answer falls back to the main thread, as before.
+ *
  * @throws implicitly if anything goes wrong - worker pool creation, loading wasm, initializing worker, etc.
  */
 const getOrCreateWorkerPool = () => {
   if (!workerPool) {
     // immediate concurrent-friendly return, to ensure we have only one pool instance
     workerPool = promiseTry(async () => {
-      const { WorkerUrl } = await lazyLoadWorkerSubsetChunk();
+      const { default: source } = await import(
+        "./subset-worker?worker-source"
+      );
+      const url = URL.createObjectURL(
+        new Blob([source], { type: "text/javascript" }),
+      );
 
       const pool = WorkerPool.create<
         SubsetWorkerData,
         SubsetWorkerResult<SubsetWorkerData["command"]>
-      >(WorkerUrl);
+      >(new URL(url));
 
       return pool;
     });

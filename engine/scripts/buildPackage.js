@@ -7,6 +7,8 @@ const { sassPlugin } = require("esbuild-sass-plugin");
 
 const { parseEnvVariables } = require("../packages/excalidraw/env.cjs");
 
+const { bundleWorker } = require("./workerSource");
+
 const ENV_VARS = {
   development: {
     ...parseEnvVariables(`${__dirname}/../.env.development`),
@@ -73,18 +75,13 @@ const workerSourcePlugin = {
     }));
     pluginBuild.onLoad(
       { filter: /.*/, namespace: "worker-source" },
-      async (args) => {
-        const result = await build({
-          entryPoints: [args.path],
-          resolveExtensions: [".ts", ".js"],
-          bundle: true,
-          write: false,
-          format: "iife",
-          target: "es2020",
-          minify: !!pluginBuild.initialOptions.minify,
-        });
-        return { contents: result.outputFiles[0].text, loader: "text" };
-      },
+      async (args) => ({
+        contents: await bundleWorker(
+          args.path,
+          !!pluginBuild.initialOptions.minify,
+        ),
+        loader: "text",
+      }),
     );
   },
 };
