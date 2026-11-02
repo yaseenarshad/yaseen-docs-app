@@ -140,6 +140,7 @@ import {
 } from '@shared/types'
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isValidPicturesFolder } from '@shared/drawingAssets'
+import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
 import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId, keyFor, sameKey, scopedId, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -171,8 +172,12 @@ export interface Store {
    * The settings stay as they are. The same folder again is no change.
    */
   setSettingsFolder(folder: string | null, savedAt: number): void
-  /** A pictures folder outside a vault the user picked in the folder window (YAZ-3943 demo round 3): from now on the app may write pictures there. Already on the list: no commit. */
-  approvePictureFolder(folder: string): void
+  /**
+   * A pictures folder outside a vault the user picked in the folder window (YAZ-3943 demo round 3): from now on the app may write
+   * pictures there. Already on the list: no commit. False when it is not on the list: a path that is not absolute, or a list
+   * that holds `MAX_PICTURE_FOLDERS` already (YAZ-4074 6A item 21; no old folder is dropped).
+   */
+  approvePictureFolder(folder: string): boolean
   /** Settings › Files & Links › "Allowed picture folders" › Remove: off the list only; no file moves or goes. Not on it: no commit. */
   removePictureFolder(folder: string): void
   /**
@@ -1134,8 +1139,10 @@ export function createStore(filePath: string): Store {
     },
 
     approvePictureFolder(folder) {
-      if (!isAbsolute(folder) || state.approvedPictureFolders.includes(folder)) return
+      if (state.approvedPictureFolders.includes(folder)) return true
+      if (!isAbsolute(folder) || state.approvedPictureFolders.length >= MAX_PICTURE_FOLDERS) return false
       commit({ ...state, approvedPictureFolders: [...state.approvedPictureFolders, folder] })
+      return true
     },
 
     removePictureFolder(folder) {

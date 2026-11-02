@@ -8,7 +8,7 @@ import { BOARDS } from '../fs/boardDocument'
 import { readBoundedRegularFile } from '../fs/boundedRead'
 import { printSvgToPdf } from '../drawings/printPdf'
 import { atomicWrite, BridgeFailure, fsCall, requireAbsPath } from '../fs/fsUtils'
-import { blockedPicturesFolder, realFolder } from '../fs/picturesFolders'
+import { blockedPicturesFolder, PICTURE_FOLDERS_FULL, realFolder } from '../fs/picturesFolders'
 import { requireRequest, str } from '../fs/validate'
 import { handleWithEvent } from './envelope'
 
@@ -56,7 +56,7 @@ export const PICTURES_FOLDER_HIDDEN = "A hidden folder, or node_modules, can't h
  * folder (`blockedPicturesFolder`) or a folder `isValidPicturesFolder` refuses is `BAD_REQUEST` with the one-line reason;
  * no picture is written here. One sheet per window, as `pickFolder`.
  */
-export async function pickPicturesFolder(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | null>, body: unknown, approve: (folder: string) => void = () => undefined, remember: (folder: string) => void = () => undefined): Promise<PickPicturesFolderResponse> {
+export async function pickPicturesFolder(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | null>, body: unknown, approve: (folder: string) => boolean = () => true, remember: (folder: string) => void = () => undefined): Promise<PickPicturesFolderResponse> {
   const req = requireRequest(body)
   const root = requireAbsPath(req.root, 'root')
   const { current } = req
@@ -82,7 +82,10 @@ export async function pickPicturesFolder(e: IpcMainInvokeEvent, inFlight: Set<Br
   const inside = !rel.startsWith('..') && !path.isAbsolute(rel)
   const folder = inside ? rel.split(path.sep).join('/') : abs
   if (!isValidPicturesFolder(folder)) throw new BridgeFailure('BAD_REQUEST', PICTURES_FOLDER_HIDDEN, { path: abs })
-  if (!inside) (req.approveNow === true ? approve : remember)(abs)
+  if (inside) return { folder }
+  // A full list refuses the add in one line (YAZ-4074 6A item 21).
+  if (req.approveNow !== true) remember(abs)
+  else if (!approve(abs)) throw new BridgeFailure('BAD_REQUEST', PICTURE_FOLDERS_FULL, { path: abs })
   return { folder }
 }
 
@@ -227,7 +230,7 @@ async function showSave(e: IpcMainInvokeEvent, inFlight: Set<BrowserWindow | nul
  * `print` is the PDF maker: the hidden window's, or a test's. `approve` puts a picked outside pictures folder on the store's
  * list (YAZ-3943 demo round 3); `remember` keeps the cog's pick until its move is confirmed (YAZ-4074 6A item 3).
  */
-export function registerDialogIpc(print = printSvgToPdf, approve: (folder: string) => void = () => undefined, remember: (folder: string) => void = () => undefined): void {
+export function registerDialogIpc(print = printSvgToPdf, approve: (folder: string) => boolean = () => true, remember: (folder: string) => void = () => undefined): void {
   const inFlight = new Set<BrowserWindow | null>()
   handleWithEvent(CONTRACT.pickFolder, (e) => pickFolder(e, inFlight))
   handleWithEvent(CONTRACT.pickPicturesFolder, (e, body: unknown) => pickPicturesFolder(e, inFlight, body, approve, remember))

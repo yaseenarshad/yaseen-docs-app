@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
 import { CONTRACT } from '@shared/ipc'
+import { MAX_PICTURE_FOLDERS, PICTURE_FOLDERS_FULL } from '../fs/picturesFolders'
 import { FOLDER_REFUSED, registerPictureFoldersIpc } from './pictureFolders'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }))
@@ -26,6 +27,7 @@ const store = {
   get: () => ({ approvedPictureFolders: list }),
   approvePictureFolder: vi.fn((folder: string) => {
     if (!list.includes(folder)) list = [...list, folder]
+    return true
   }),
   removePictureFolder: vi.fn((folder: string) => {
     list = list.filter((f) => f !== folder)
@@ -56,6 +58,13 @@ describe('picture-folders IPC (YAZ-3943 demo round 3)', () => {
     }
     expect(store.approvePictureFolder).not.toHaveBeenCalled()
     expect(list).toEqual([])
+  })
+
+  it('YAZ-4074 6A item 21: allow past MAX_PICTURE_FOLDERS says so in one line, and drops no folder', async () => {
+    list = Array.from({ length: MAX_PICTURE_FOLDERS }, (_, n) => `/pics/${n}`)
+    vi.mocked(store.approvePictureFolder).mockImplementationOnce(() => false)
+    expect(await registered(CONTRACT.pictureFolders.allow)(undefined, OUTSIDE)).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: PICTURE_FOLDERS_FULL }) })
+    expect(list).toHaveLength(MAX_PICTURE_FOLDERS)
   })
 
   it('YAZ-4074 6A item 4: allow refuses a symbolic link to a system folder', async () => {

@@ -6,6 +6,7 @@ import { ipcMain } from 'electron'
 import { CONTRACT } from '@shared/ipc'
 import { DEFAULT_SETTINGS, type DrawingLoadResponse, type DrawingSaveResponse, type SettingsState } from '@shared/types'
 import { BOARD_META_KEY, hoverLinksOff, referencedFileIds, unpersistedFiles } from '@shared/drawingAssets'
+import { MAX_PICTURE_FOLDERS, PICTURE_FOLDERS_FULL } from '../fs/picturesFolders'
 import { registerBoardIpc } from './board'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, BrowserWindow: { getAllWindows: () => [] }, nativeImage: {} }))
@@ -44,6 +45,7 @@ beforeEach(async () => {
   picked.clear()
   const approvePictureFolder = (folder: string) => {
     if (!approved.includes(folder)) approved = [...approved, folder]
+    return true
   }
   const store = { get: () => ({ windows: [{ id: 'w1', roots: [vault] }], settings, approvedPictureFolders: approved }), addEdit: vi.fn(), approvePictureFolder } as unknown as Parameters<typeof registerBoardIpc>[0]
   registerBoardIpc(store, { idFor: () => 'w1' }, undefined, picked)
@@ -109,6 +111,19 @@ describe('YAZ-3943 demo 2 and round 3 through the bridge: the settings and the a
     expect(await readdir(elsewhere)).toEqual(['aaa.png'])
     await call(CONTRACT.setBoardHoverLinks.channel, { root: vault, path: created.path, on: false, expectedMtime: moved.mtime })
     expect(hoverLinksOff(JSON.parse(await readFile(created.path, 'utf8'))[BOARD_META_KEY])).toBe(true)
+  })
+
+  it('YAZ-4074 6A item 21: with this Mac\'s list full, a move to a newly picked folder is refused in one line and writes nothing', async () => {
+    const created = await call<{ path: string }>(CONTRACT.createBoard.channel, { root: vault, path: path.join(vault, 'Full.excalidraw') })
+    const opened = await call<DrawingLoadResponse>(CONTRACT.drawing.load.channel, { root: vault, path: created.path })
+    const saved = await call<DrawingSaveResponse>(CONTRACT.drawing.save.channel, { root: vault, path: created.path, json: sent([imageEl('aaa')]), expectedMtime: opened.mtime, newFiles: [{ fileId: 'aaa', mimeType: 'image/png', dataURL: png('A') }] })
+    approved = Array.from({ length: MAX_PICTURE_FOLDERS }, (_, n) => `/pics/${n}`)
+    picked.add(elsewhere)
+    const before = await readFile(created.path, 'utf8')
+    await expect(call(CONTRACT.setBoardPictures.channel, { root: vault, path: created.path, out: true, folder: elsewhere, expectedMtime: saved.mtime })).rejects.toThrow(PICTURE_FOLDERS_FULL)
+    expect(await readFile(created.path, 'utf8')).toBe(before)
+    expect(await readdir(elsewhere)).toEqual([])
+    expect(approved).toHaveLength(MAX_PICTURE_FOLDERS)
   })
 
   it('YAZ-4074 6A item 3: a folder the cog picked is approved only when its move is confirmed; a Cancel leaves the list as it was', async () => {

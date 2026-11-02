@@ -16,6 +16,8 @@ import { createThumbs, THUMBS_DIR, type Thumbs } from '../drawings/thumbs'
 import { boardHead } from '../fs/boardHead'
 import { setBoardHoverLinks } from '../fs/boardHoverLinks'
 import { setBoardPictures } from '../fs/boardPictures'
+import { BridgeFailure } from '../fs/fsUtils'
+import { MAX_PICTURE_FOLDERS, PICTURE_FOLDERS_FULL } from '../fs/picturesFolders'
 import { setBoardReadOnly } from '../fs/boardReadOnly'
 import { createBoard } from '../fs/createBoard'
 import { loadDiagram, saveDiagram } from '../fs/diagram'
@@ -52,10 +54,14 @@ export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit' | 'approve
   handle(CONTRACT.setBoardReadOnly, setBoardReadOnly)
   // `picked`: the outside folders the cog's folder window picked (`ipc/dialog.ts`). The move is the confirm, so its
   // folder joins the approved list only once the move landed (YAZ-4074 6A item 3).
+  // A full list refuses the move before it writes (YAZ-4074 6A item 21).
   handle(CONTRACT.setBoardPictures, async (req: unknown) => {
-    const res = await setBoardPictures(req, [...store.get().approvedPictureFolders, ...picked])
-    const { folder } = req as { folder?: unknown }
-    if (typeof folder === 'string' && picked.has(folder)) store.approvePictureFolder(folder)
+    const { folder } = (req ?? {}) as { folder?: unknown }
+    const approved = store.get().approvedPictureFolders
+    const adds = typeof folder === 'string' && picked.has(folder) && !approved.includes(folder)
+    if (adds && approved.length >= MAX_PICTURE_FOLDERS) throw new BridgeFailure('BAD_REQUEST', PICTURE_FOLDERS_FULL)
+    const res = await setBoardPictures(req, [...approved, ...picked])
+    if (adds) store.approvePictureFolder(folder)
     return res
   })
   handle(CONTRACT.setBoardHoverLinks, setBoardHoverLinks)

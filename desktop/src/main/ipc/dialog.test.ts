@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { CONTRACT, type Envelope } from '@shared/ipc'
+import { PICTURE_FOLDERS_FULL } from '../fs/picturesFolders'
 import { PICTURES_FOLDER_HIDDEN, PICTURES_FOLDER_ROOT, PICTURES_FOLDER_SYSTEM, registerDialogIpc } from './dialog'
 
 vi.mock('electron', () => ({
@@ -77,7 +78,7 @@ describe('dialog:pick-folder', () => {
 /** A board's own pictures folder (YAZ-3943 demo round 3): the cog's "Choose a folder…" and Settings' "Choose…". */
 describe('dialog:pick-pictures-folder', () => {
   const VAULT = '/Users/me/vault'
-  const approve = vi.fn()
+  const approve = vi.fn((_folder: string) => true)
   const remember = vi.fn()
   const pickPictures = (body: unknown) => registered(CONTRACT.pickPicturesFolder.channel)({ sender }, body)
   beforeEach(() => {
@@ -129,6 +130,12 @@ describe('dialog:pick-pictures-folder', () => {
     expect(approve).not.toHaveBeenCalled()
     expect(remember).not.toHaveBeenCalled()
     expect(await pickPictures({ root: 'relative' })).toMatchObject({ ok: false, error: { code: 'NOT_ABSOLUTE' } })
+  })
+
+  it('YAZ-4074 6A item 21: Settings\' pick of an outside folder with this Mac\'s list full says so in one line', async () => {
+    approve.mockReturnValueOnce(false)
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/Users/me/Pictures/Boards'] })
+    expect(await pickPictures({ root: VAULT, approveNow: true })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: PICTURE_FOLDERS_FULL }) })
   })
 
   it('YAZ-4074 6A item 4: the pick takes the real place — a symbolic link to a system folder is refused; a link in the vault that leads out is an outside folder', async () => {

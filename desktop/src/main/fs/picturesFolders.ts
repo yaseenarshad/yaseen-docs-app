@@ -16,6 +16,10 @@ import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { picturesFolderOutside } from '@shared/drawingAssets'
 
+/** YAZ-4074 6A item 21: the most outside folders this Mac's list holds. An add past it is refused; no folder is dropped on its own, because that changes where pictures land. */
+export const MAX_PICTURE_FOLDERS = 100
+export const PICTURE_FOLDERS_FULL = `This Mac allows ${MAX_PICTURE_FOLDERS} picture folders at most. Remove one in Settings › Files & Links first.`
+
 const under = (p: string, base: string): boolean => p === base || p.startsWith(base.endsWith('/') ? base : `${base}/`)
 
 /** Whether `abs` (a normalized absolute path) may never hold a board's pictures; `home` and `tmp` are seams for a test. */
