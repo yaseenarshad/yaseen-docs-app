@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, rm, symlink } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
@@ -55,5 +56,17 @@ describe('picture-folders IPC (YAZ-3943 demo round 3)', () => {
     }
     expect(store.approvePictureFolder).not.toHaveBeenCalled()
     expect(list).toEqual([])
+  })
+
+  it('YAZ-4074 6A item 4: allow refuses a symbolic link to a system folder', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'allow-link-'))
+    try {
+      await symlink('/Library', path.join(dir, 'Lib'))
+      expect(await registered(CONTRACT.pictureFolders.allow)(undefined, path.join(dir, 'Lib'))).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: FOLDER_REFUSED }) })
+      expect(await registered(CONTRACT.pictureFolders.allow)(undefined, path.join(dir, 'Lib', 'Fonts'))).toMatchObject({ ok: false })
+      expect(list).toEqual([])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

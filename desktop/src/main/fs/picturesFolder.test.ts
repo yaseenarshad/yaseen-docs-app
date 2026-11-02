@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BOARD_META_KEY, isValidPicturesFolder } from '@shared/drawingAssets'
@@ -181,10 +181,38 @@ describe('the folder rules', () => {
     expect(blockedPicturesFolder(outside)).toBe(false)
   })
 
-  it('landingFolder: a vault folder and an approved outside folder as they are; an unapproved outside folder is null (assets/)', () => {
-    expect(landingFolder(null, [])).toBeNull()
-    expect(landingFolder('pics', [])).toBe('pics')
-    expect(landingFolder('/Users/me/pics', [])).toBeNull()
-    expect(landingFolder('/Users/me/pics', ['/Users/me/pics'])).toBe('/Users/me/pics')
+  it('landingFolder: a vault folder and an approved outside folder as they are; an unapproved outside folder is null (assets/)', async () => {
+    expect(await landingFolder(root, null, [])).toBeNull()
+    expect(await landingFolder(root, 'pics', [])).toBe('pics')
+    expect(await landingFolder(root, '/Users/me/pics', [])).toBeNull()
+    expect(await landingFolder(root, '/Users/me/pics', ['/Users/me/pics'])).toBe('/Users/me/pics')
+  })
+
+  it('YAZ-4074 6A item 4: landingFolder compares real places — a vault folder that is a symbolic link out of the vault is an outside folder', async () => {
+    await symlink(outside, path.join(root, 'Linked'))
+    expect(await landingFolder(root, 'Linked', [])).toBeNull()
+    expect(await landingFolder(root, 'Linked/deeper', [])).toBeNull()
+    expect(await landingFolder(root, 'Linked', [outside])).toBe('Linked')
+    // A link inside the vault to a vault folder stays a vault folder.
+    await mkdir(path.join(root, 'Real'))
+    await symlink(path.join(root, 'Real'), path.join(root, 'Alias'))
+    expect(await landingFolder(root, 'Alias', [])).toBe('Alias')
+    // An approved folder and a link to it are one place; a link the block names lands only when its target is approved.
+    const link = path.join(root, '..', `${path.basename(outside)}-link`)
+    await symlink(outside, link)
+    try {
+      expect(await landingFolder(root, link, [outside])).toBe(link)
+      expect(await landingFolder(root, link, [])).toBeNull()
+    } finally {
+      await rm(link)
+    }
+  })
+
+  it('YAZ-4074 6A item 4: a save to a vault folder that links out of the vault writes nothing there until the folder is approved', async () => {
+    await symlink(outside, path.join(root, 'Linked'))
+    await seed('Board.excalidraw', board(out('Linked'), []))
+    await saveDrawing({ root, path: 'Board.excalidraw', json: sent([imageEl('aaa')]), newFiles: [{ fileId: 'aaa', mimeType: 'image/png', dataURL: png('A') }] })
+    expect(await readdir(outside)).toEqual([])
+    expect(await readdir(path.join(root, 'assets'))).toEqual(['aaa.png'])
   })
 })

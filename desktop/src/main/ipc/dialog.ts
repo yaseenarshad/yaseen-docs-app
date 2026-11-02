@@ -8,7 +8,7 @@ import { BOARDS } from '../fs/boardDocument'
 import { readBoundedRegularFile } from '../fs/boundedRead'
 import { printSvgToPdf } from '../drawings/printPdf'
 import { atomicWrite, BridgeFailure, fsCall, requireAbsPath } from '../fs/fsUtils'
-import { blockedPicturesFolder } from '../fs/picturesFolders'
+import { blockedPicturesFolder, realFolder } from '../fs/picturesFolders'
 import { requireRequest, str } from '../fs/validate'
 import { handleWithEvent } from './envelope'
 
@@ -74,9 +74,10 @@ export async function pickPicturesFolder(e: IpcMainInvokeEvent, inFlight: Set<Br
   }
   const picked = result.filePaths[0]
   if (result.canceled || picked === undefined) return { cancelled: true }
-  const abs = path.resolve(picked)
+  // Real places on both sides (YAZ-4074 6A item 4): a link to a system folder is that folder, and a link in the vault that leads out is outside.
+  const abs = await realFolder(path.resolve(picked))
   if (blockedPicturesFolder(abs)) throw new BridgeFailure('BAD_REQUEST', PICTURES_FOLDER_SYSTEM, { path: abs })
-  const rel = path.relative(root, abs)
+  const rel = path.relative(await realFolder(root), abs)
   if (rel === '') throw new BridgeFailure('BAD_REQUEST', PICTURES_FOLDER_ROOT, { path: abs })
   const inside = !rel.startsWith('..') && !path.isAbsolute(rel)
   const folder = inside ? rel.split(path.sep).join('/') : abs

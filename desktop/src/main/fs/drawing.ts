@@ -347,7 +347,7 @@ export async function saveDrawing(req: unknown, approved: readonly string[] = []
     const stamped = await guardedStamp(file, 'drawing', expectedMtime, (at, prior) => serializeBoard(stampBoardMetaScene(lean, at, withId(prior))), known)
     // Assets first (see the module doc), and only once the conflict guard has passed — a refused
     // save must leave the vault exactly as it found it.
-    const persisted = await landAssets(dir, pending, landingFolder(picturesFolderOf(known?.block), approved))
+    const persisted = await landAssets(dir, pending, await landingFolder(dir, picturesFolderOf(known?.block), approved))
     const { mtime, size } = await fsCall(file, () => atomicWrite(file, stamped))
     return { path: file, mtime, size, persisted, ...given }
   }

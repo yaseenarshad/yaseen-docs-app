@@ -23,12 +23,13 @@
  * vault (absolute) must be on `approved` — the folders the user picked in the folder window — or it is refused:
  * only the user's own pick may make the app write outside the vault (`fs/picturesFolders.ts`).
  */
-import { BOARD_META_KEY, isValidPicturesFolder, PICTURES_INSIDE_MAX_BYTES, picturesFolderOf, picturesFolderOutside, picturesMissingRefusal, referencedFileIds, serializeBoard, stripEmbeddedScene, withPicturesOut } from '@shared/drawingAssets'
+import { BOARD_META_KEY, isValidPicturesFolder, PICTURES_INSIDE_MAX_BYTES, picturesFolderOf, picturesMissingRefusal, referencedFileIds, serializeBoard, stripEmbeddedScene, withPicturesOut } from '@shared/drawingAssets'
 import type { BoardPicturesResponse } from '@shared/types'
 import { BOARDS, boardTarget } from './boardDocument'
 import { readBoundedRegularFile } from './boundedRead'
 import { embedPictures, landAssets, liftEmbedded, parseScene } from './drawing'
 import { atomicWrite, BridgeFailure, fsCall, requireDir } from './fsUtils'
+import { landingFolder } from './picturesFolders'
 
 /** What the refusal of "Keep pictures inside" says. */
 export const TOO_BIG_INSIDE = 'The pictures stay in the assets folder: with them inside, the file would pass 50 MB.'
@@ -40,9 +41,10 @@ export async function setBoardPictures(req: unknown, approved: readonly string[]
   const { out, folder, expectedMtime } = body
   if (typeof out !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'out' must be a boolean", { path: file })
   if (folder !== undefined && !isValidPicturesFolder(folder)) throw new BridgeFailure('BAD_REQUEST', "'folder' must be a vault-relative or absolute folder path", { path: file })
-  if (folder !== undefined && picturesFolderOutside(folder) && !approved.includes(folder)) throw new BridgeFailure('BAD_REQUEST', FOLDER_NOT_CHOSEN, { path: file })
   if (typeof expectedMtime !== 'number') throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: file })
   await requireDir(dir)
+  // An outside folder, or a vault folder whose real place is outside (6A item 4), must be one the user picked.
+  if (folder !== undefined && (await landingFolder(dir, folder, approved)) !== folder) throw new BridgeFailure('BAD_REQUEST', FOLDER_NOT_CHOSEN, { path: file })
   const snap = await readBoundedRegularFile(file, BOARDS.drawing.max, BOARDS.drawing.tooLarge)
   if (snap.mtime !== expectedMtime) throw new BridgeFailure('CONFLICT', `${BOARDS.drawing.noun} changed on disk since last read`, { path: file, mtime: snap.mtime })
   const text = snap.data.toString('utf8')

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
@@ -129,6 +129,23 @@ describe('dialog:pick-pictures-folder', () => {
     expect(approve).not.toHaveBeenCalled()
     expect(remember).not.toHaveBeenCalled()
     expect(await pickPictures({ root: 'relative' })).toMatchObject({ ok: false, error: { code: 'NOT_ABSOLUTE' } })
+  })
+
+  it('YAZ-4074 6A item 4: the pick takes the real place — a symbolic link to a system folder is refused; a link in the vault that leads out is an outside folder', async () => {
+    const vault = await mkdtemp(path.join(tmpdir(), 'pick-link-vault-'))
+    const far = await mkdtemp(path.join(tmpdir(), 'pick-link-far-'))
+    try {
+      await symlink('/Library', path.join(vault, 'Lib'))
+      showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path.join(vault, 'Lib')] })
+      expect(await pickPictures({ root: vault })).toEqual({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: PICTURES_FOLDER_SYSTEM }) })
+      await symlink(far, path.join(vault, 'Out'))
+      showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path.join(vault, 'Out')] })
+      expect(await pickPictures({ root: vault })).toEqual({ ok: true, value: { folder: await realpath(far) } })
+      expect(remember).toHaveBeenCalledWith(await realpath(far))
+    } finally {
+      await rm(vault, { recursive: true, force: true })
+      await rm(far, { recursive: true, force: true })
+    }
   })
 })
 

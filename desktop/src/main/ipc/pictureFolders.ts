@@ -9,7 +9,7 @@ import path from 'node:path'
 import { isValidPicturesFolder } from '@shared/drawingAssets'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure } from '../fs/fsUtils'
-import { blockedPicturesFolder } from '../fs/picturesFolders'
+import { blockedPicturesFolder, realFolder } from '../fs/picturesFolders'
 import type { Store } from '../store'
 import { handle } from './envelope'
 
@@ -19,7 +19,8 @@ export const FOLDER_REFUSED = "That folder can't hold a board's pictures."
 export function registerPictureFoldersIpc(store: Pick<Store, 'get' | 'approvePictureFolder' | 'removePictureFolder'>): void {
   handle(CONTRACT.pictureFolders.list, async () => store.get().approvedPictureFolders)
   handle(CONTRACT.pictureFolders.allow, async (folder: unknown) => {
-    if (!isValidPicturesFolder(folder) || !path.isAbsolute(folder) || blockedPicturesFolder(folder)) throw new BridgeFailure('BAD_REQUEST', FOLDER_REFUSED)
+    // The real place: a symbolic link to a system folder is that folder (YAZ-4074 6A item 4).
+    if (!isValidPicturesFolder(folder) || !path.isAbsolute(folder) || blockedPicturesFolder(await realFolder(folder))) throw new BridgeFailure('BAD_REQUEST', FOLDER_REFUSED)
     store.approvePictureFolder(folder)
     return store.get().approvedPictureFolders
   })

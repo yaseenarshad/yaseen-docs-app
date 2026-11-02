@@ -78,7 +78,7 @@ async function shrinkOne(root: string, file: string, skip: ReadonlySet<string>, 
   try {
     const { lean: leanScene, lifted } = liftEmbedded(record, elements)
     const lean = serializeBoard(withPicturesOut(leanScene, true, snapshot.mtime))
-    await landAssets(root, lifted, landingFolder(picturesFolderOf(record[BOARD_META_KEY]), approved))
+    await landAssets(root, lifted, await landingFolder(root, picturesFolderOf(record[BOARD_META_KEY]), approved))
     // The cheap guard against a writer that landed while we were decoding: the file must still be
     // the one we read. A tab that saved in between wins, and this board waits for the next click.
     const now = await stat(file)

@@ -8,7 +8,10 @@
  *    makes the app write outside the vault. An outside folder that is not on the store's approved list gets nothing;
  *    those pictures land in the vault's `assets/` instead, and a read (folder first, then `assets/`) still finds them.
  *    Reads are not limited: a board may read hash-named picture files from any folder its block names.
+ *  - REAL PLACES (YAZ-4074 6A item 4): both rules look through symbolic links (`realFolder`). A link to `/Library` is
+ *    blocked. A vault folder that links out of the vault is an outside folder, and lands only when approved.
  */
+import { realpath } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { picturesFolderOutside } from '@shared/drawingAssets'
@@ -24,7 +27,26 @@ export function blockedPicturesFolder(abs: string, home = homedir(), tmp = tmpdi
   return roots.some((r) => under(abs, r))
 }
 
-/** Where pictures land for a board whose block names `folder`: the folder itself, or null (the vault's `assets/`) for an outside folder the user has not picked. */
-export function landingFolder(folder: string | null, approved: readonly string[]): string | null {
-  return folder !== null && picturesFolderOutside(folder) && !approved.includes(folder) ? null : folder
+/** The real place of the absolute `abs`, symbolic links resolved. A folder not made yet: its nearest existing parent's real place, plus the rest. */
+export async function realFolder(abs: string): Promise<string> {
+  try {
+    return await realpath(abs)
+  } catch {
+    const parent = path.dirname(abs)
+    return parent === abs ? abs : path.join(await realFolder(parent), path.basename(abs))
+  }
+}
+
+/**
+ * Where pictures land for a board in the vault `dir` whose block names `folder`: the folder itself, or null (the
+ * vault's `assets/`). A vault folder lands while its real place is in the vault. Any other folder lands only when its
+ * real place is the real place of an approved folder. Only a board with its own folder pays the `realpath` calls.
+ */
+export async function landingFolder(dir: string, folder: string | null, approved: readonly string[]): Promise<string | null> {
+  if (folder === null) return null
+  const outside = picturesFolderOutside(folder)
+  const real = await realFolder(outside ? folder : path.join(dir, ...folder.split('/')))
+  if (!outside && under(real, await realFolder(dir))) return folder
+  const reals = await Promise.all(approved.map(realFolder))
+  return reals.includes(real) ? folder : null
 }
