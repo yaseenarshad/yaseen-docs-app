@@ -24,12 +24,18 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { TableMap } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { formatTime } from '@shared/timeFormat'
-import type { MenuChoice, MenuChoiceField, MenuItem, MenuNumberField, RowProvider } from '../blockHandleMenu'
+import type { MenuChoice, MenuChoiceField, MenuItem, MenuNumberField, MenuStrip, RowProvider } from '../blockHandleMenu'
+import { tablerIcon, type TablerIcon } from './tableIcons'
 import { setCellsAttr } from './cells'
 import { fillCalendarDay, goToNow, minutesOf, missingDayTimes, nowPlace, setTimeSlots } from './tableCalendar'
 import { calendarDaySetting, timeFormatSetting } from './timeFormatSetting'
 import { capital } from './colours'
-import { CELL_ALIGNS, TABLE_DEFAULTS, VALIGNS, type CellAlign, type TableAttrs } from './tableStyle'
+import { CELL_ALIGNS, VALIGNS, type TableAttrs } from './tableStyle'
+
+/** The strips' icons (the YAZ-4163 demo, `tableIcons.ts`). */
+const ALIGN_ICONS: Record<(typeof CELL_ALIGNS)[number], TablerIcon> = { left: 'alignLeft', center: 'alignCenter', right: 'alignRight' }
+const VALIGN_ICONS: Record<TableAttrs['valign'], TablerIcon> = { top: 'layoutAlignTop', middle: 'layoutAlignMiddle', bottom: 'layoutAlignBottom' }
+const HEIGHT_ICONS: Record<TableAttrs['height'], TablerIcon> = { compact: 'arrowsMinimize', normal: 'lineHeight', tall: 'arrowsMaximize' }
 
 /** Crepe's look of a border (table.css): 1px, 20% of the outline colour. */
 const BORDER_DEFAULT = { px: 1, darkness: 20 }
@@ -135,37 +141,53 @@ export const tableRows: RowProvider = (view, target) => {
     error: 'Use a whole number from 5–100%.',
     run: (value) => setTable(view, pos, { border: border(attrs.border, 'darkness', value) }),
   }
-  const fit = {
-    label: 'Fit columns to the page',
-    disabled: cells.every((cell) => cell.attrs.colwidth === null),
-    run: () => setCells(view, pos, { colwidth: null }),
+  const columnsAlign = aligns.size === 1 ? [...aligns][0]! : null
+  // The YAZ-4163 demo: the look settings as three icon strips; a click sets one and the menu stays open, lit anew.
+  const look: MenuStrip = {
+    kind: 'strip',
+    label: 'Look',
+    caption: true,
+    stay: true,
+    buttons: [
+      { label: 'Shaded header row', icon: tablerIcon('tableRow'), active: attrs.header === 'shaded', run: () => setTable(view, pos, { header: attrs.header === 'shaded' ? 'plain' : 'shaded' }) },
+      { label: 'Stripes', icon: tablerIcon('baselineDensityMedium'), active: attrs.stripes, run: () => setTable(view, pos, { stripes: !attrs.stripes }) },
+      { label: 'Fit columns to the page', icon: tablerIcon('arrowsHorizontal'), active: false, disabled: cells.every((cell) => cell.attrs.colwidth === null), run: () => setCells(view, pos, { colwidth: null }) },
+    ],
+  }
+  const text: MenuStrip = {
+    kind: 'strip',
+    label: 'Text',
+    caption: true,
+    stay: true,
+    buttons: [
+      // Left is GFM's own (`---`), so it writes no alignment, unless every column already says `:-`. A cell's own
+      // alignment makes the table "Mixed": no button is lit, and each runs. The cells' own alignment goes too (YAZ-3819).
+      ...CELL_ALIGNS.map((value) => ({
+        label: `Align ${value}`,
+        icon: tablerIcon(ALIGN_ICONS[value]),
+        active: align === value || (value === 'left' && aligns.size === 1 && aligns.has(null) && align !== 'Mixed'),
+        run: () => setCells(view, pos, { alignment: value === 'left' && columnsAlign !== 'left' ? null : value, align: null }),
+      })),
+      // The table's default only: the cells' own values stay (a calendar table's time column keeps Middle).
+      ...VALIGNS.map((value) => ({ label: `Align ${value}`, icon: tablerIcon(VALIGN_ICONS[value]), active: attrs.valign === value, run: () => setTable(view, pos, { valign: value }) })),
+    ],
+  }
+  const rowsStrip: MenuStrip = {
+    kind: 'strip',
+    label: 'Rows',
+    caption: true,
+    stay: true,
+    buttons: [
+      ...(['compact', 'normal', 'tall'] as const).map((value) => ({ label: `${capital(value)} rows`, icon: tablerIcon(HEIGHT_ICONS[value]), active: attrs.height === value, run: () => setTable(view, pos, { height: value }) })),
+      { label: 'Wrap text', icon: tablerIcon('textWrap'), active: attrs.wrap, run: () => setTable(view, pos, { wrap: !attrs.wrap }) },
+    ],
   }
   const items: MenuItem[] = [
+    look,
+    text,
+    rowsStrip,
     thickness,
     darkness,
-    choice('Header row', attrs.header, TABLE_DEFAULTS.header, [{ value: 'shaded', label: 'Shaded' }, { value: 'plain', label: 'Plain' }], (header) =>
-      setTable(view, pos, { header: header as TableAttrs['header'] }),
-    ),
-    {
-      kind: 'choice',
-      label: 'Align all columns',
-      value: align,
-      choices: CELL_ALIGNS.map((value) => ({ value, label: capital(value) })),
-      fallback: 'left',
-      // "Default" is GFM's own: no alignment (`---`).
-      // The cells' own alignment goes too (YAZ-3819), so the table shows what was picked.
-      run: (picked) => setCells(view, pos, { alignment: picked as CellAlign | null, align: null }),
-    },
-    // The table's default only: the cells' own values stay (a calendar table's time column keeps Middle).
-    choice('Vertical align', attrs.valign, TABLE_DEFAULTS.valign, VALIGNS.map((value) => ({ value, label: capital(value) })), (valign) =>
-      setTable(view, pos, { valign: valign as TableAttrs['valign'] }),
-    ),
-    fit,
-    choice('Stripes', attrs.stripes ? 'on' : 'off', 'off', [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], (on) => setTable(view, pos, { stripes: on === 'on' })),
-    choice('Row height', attrs.height, TABLE_DEFAULTS.height, [{ value: 'compact', label: 'Compact' }, { value: 'normal', label: 'Normal' }, { value: 'tall', label: 'Tall' }], (height) =>
-      setTable(view, pos, { height: height as TableAttrs['height'] }),
-    ),
-    choice('Wrap text', attrs.wrap ? 'on' : 'off', 'on', [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], (on) => setTable(view, pos, { wrap: on === 'on' })),
     choice(
       'Time slots',
       String(attrs.calendar),

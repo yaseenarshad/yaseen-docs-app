@@ -9,6 +9,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuAction, MenuItem } from '../../sidebar/menuSections'
+import type { MenuStrip } from '../blockHandleMenu'
 import { getMarkdownForSave } from '../createCrepe'
 import { noteMenuSections } from '../noteMenu'
 import { calendarTableNode, setTimeSlots } from './tableCalendar'
@@ -139,16 +140,17 @@ describe('the menus, one undo step each', () => {
     expect(valigns(view)).toEqual([[null, null], [null, null], ['bottom', 'bottom']])
   })
 
-  it('the six-dot "Vertical align" sets the table default; Top is the default and saves no part', async () => {
+  it('the six-dot Text strip\'s Align top / middle / bottom set the table default; Top is the default and saves no part', async () => {
     const { crepe, view } = await mountNote(TABLE)
     const before = getMarkdownForSave(crepe)
     const { pos } = firstTable(view)
-    const field = () => tableRows(view, { inside: pos } as never, crepe.editor.ctx).find((item) => 'label' in item && item.label === 'Vertical align') as { value: string | null; fallback: string; run: (v: string | null) => void }
-    expect(field()).toMatchObject({ value: null, fallback: 'top' })
-    field().run('middle')
+    const button = (label: string) =>
+      (tableRows(view, { inside: pos } as never, crepe.editor.ctx).find((item) => item.kind === 'strip' && item.label === 'Text') as MenuStrip).buttons.find((b) => b.label === label)!
+    expect(button('Align top').active).toBe(true)
+    button('Align middle').run()
     expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: valign middle -->\n`)
-    expect(field().value).toBe('middle')
-    field().run(null)
+    expect([button('Align top').active, button('Align middle').active]).toEqual([false, true])
+    button('Align top').run()
     expect(getMarkdownForSave(crepe)).toBe(before)
     undo(view.state, view.dispatch)
     expect(firstTable(view).node.attrs.valign).toBe('middle')
