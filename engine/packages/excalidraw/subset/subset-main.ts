@@ -3,7 +3,7 @@ import { isServerEnv, promiseTry } from "@excalidraw/common";
 import { WorkerInTheMainChunkError, WorkerUrlNotDefinedError } from "../errors";
 import { WorkerPool } from "../workers";
 
-import type { Commands } from "./subset-shared.chunk";
+import { Commands, toBase64 } from "./subset-utils";
 
 let shouldUseWorkers = typeof Worker !== "undefined";
 
@@ -22,11 +22,12 @@ export const subsetWoff2GlyphsByCodepoints = async (
   arrayBuffer: ArrayBuffer,
   codePoints: Array<number>,
 ): Promise<string> => {
-  const { Commands, subsetToBase64, toBase64 } =
-    await lazyLoadSharedSubsetChunk();
+  // YAZ-4074 6A item 30: the wasm chunk loads only for a subset on the main thread
+  const onMainThread = async () =>
+    (await lazyLoadSharedSubsetChunk()).subsetToBase64(arrayBuffer, codePoints);
 
   if (!shouldUseWorkers) {
-    return subsetToBase64(arrayBuffer, codePoints);
+    return onMainThread();
   }
 
   return promiseTry(async () => {
@@ -75,7 +76,7 @@ export const subsetWoff2GlyphsByCodepoints = async (
       }
 
       // fallback to the main thread
-      return subsetToBase64(arrayBuffer, codePoints);
+      return onMainThread();
     }
   });
 };
@@ -121,9 +122,7 @@ const getOrCreateWorkerPool = () => {
   if (!workerPool) {
     // immediate concurrent-friendly return, to ensure we have only one pool instance
     workerPool = promiseTry(async () => {
-      const { default: source } = await import(
-        "./subset-worker?worker-source"
-      );
+      const { default: source } = await import("./subset-worker?worker-source");
       const url = URL.createObjectURL(
         new Blob([source], { type: "text/javascript" }),
       );

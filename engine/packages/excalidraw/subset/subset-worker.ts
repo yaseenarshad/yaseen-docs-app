@@ -9,7 +9,8 @@
  * DON'T depend on anything from the outside like `promiseTry`: the string would carry it too.
  */
 
-import { Commands, subsetToBinary } from "./subset-shared.chunk";
+import { subsetToBinary } from "./subset-shared.chunk";
+import { Commands } from "./subset-utils";
 
 self.onmessage = async (e: {
   data: {

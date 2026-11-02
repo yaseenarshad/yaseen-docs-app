@@ -9,9 +9,13 @@ const create = vi.hoisted(() => vi.fn(() => pool));
 
 vi.mock("../workers", () => ({ WorkerPool: { create } }));
 vi.mock("../subset/subset-worker?worker-source", () => ({ default: "" }));
-vi.mock("../subset/subset-shared.chunk", () => ({
+const loads = vi.hoisted(() => ({ shared: 0 }));
+vi.mock("../subset/subset-shared.chunk", () => {
+  loads.shared++;
+  return { subsetToBase64: vi.fn(async () => "main thread") };
+});
+vi.mock("../subset/subset-utils", () => ({
   Commands: { Subset: "SUBSET" },
-  subsetToBase64: vi.fn(async () => "main thread"),
   toBase64: vi.fn(async () => "worker"),
 }));
 
@@ -28,6 +32,7 @@ describe("YAZ-4074 6A item 8: the font subset worker", () => {
     vi.stubGlobal("Worker", class {});
     URL.createObjectURL = () => "blob:subset";
     create.mockClear();
+    loads.shared = 0;
     pool.postMessage.mockReset();
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
@@ -42,6 +47,16 @@ describe("YAZ-4074 6A item 8: the font subset worker", () => {
     const run = await subset();
     expect(await run()).toBe("worker");
     expect(create).toHaveBeenCalledWith(expect.any(URL), { ttl: 30_000 });
+  });
+
+  it("a job on the worker never loads the wasm chunk on the UI thread; the fallback does (6A item 30)", async () => {
+    const run = await subset();
+    pool.postMessage.mockResolvedValueOnce(new ArrayBuffer(4));
+    expect(await run()).toBe("worker");
+    expect(loads.shared).toBe(0);
+    pool.postMessage.mockResolvedValueOnce({ error: "bad font" });
+    expect(await run()).toBe("main thread");
+    expect(loads.shared).toBe(1);
   });
 
   it("a job that fails or is slow runs on the main thread once; the next one uses the worker", async () => {
