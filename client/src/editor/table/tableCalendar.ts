@@ -340,12 +340,13 @@ const filled = (cell: ProseNode): boolean => cell.childCount > 1 || (cell.firstC
 
 /**
  * "/Calendar table"'s table (D7, D10): "Time | Plan 1", a row each 30 minutes from 7:00 am to 10:00 pm in `format`,
- * `calendar 30m`, compact rows, the header row and column A frozen.
+ * `calendar 30m`, compact rows, the header row and column A frozen, and column A's body cells vertically in the
+ * middle (YAZ-4166), so a time sits level with a two-line plan.
  */
 export function calendarTableNode(schema: Schema, format = timeFormatSetting()): ProseNode {
   const { table, table_header_row: headerRow, table_row: row, table_header: header, table_cell: cell } = schema.nodes
   const rows = [headerRow!.create(null, [cellNode(schema, header!, 'Time'), cellNode(schema, header!, 'Plan 1')])]
-  for (let t = 7 * 60; t <= 22 * 60; t += 30) rows.push(row!.create(null, [cellNode(schema, cell!, formatTime(format, t)), cellNode(schema, cell!, '')]))
+  for (let t = 7 * 60; t <= 22 * 60; t += 30) rows.push(row!.create(null, [cellNode(schema, cell!, formatTime(format, t), { valign: 'middle' }), cellNode(schema, cell!, '')]))
   return table!.create({ calendar: 30, height: 'compact', freezeRows: 1, freezeCols: 1 }, rows)
 }
 
@@ -376,15 +377,20 @@ export function slotTimes(table: ProseNode, slot: number, schema: Schema, fallba
     if (time !== null) have.add(time)
   }
   const template = body[0]!.row
-  const emptyRow = (time: number): ProseNode => {
+  // A new row: the first body row's alignment and width, and the vertical alignment of the row above it (YAZ-4166).
+  const emptyRow = (time: number, above: ProseNode): ProseNode => {
     const cells: ProseNode[] = []
-    template.forEach((c, _, i) => cells.push(cellNode(schema, c.type, i === 0 ? formatTime(format, time) : '', { alignment: c.attrs.alignment, colwidth: c.attrs.colwidth })))
+    template.forEach((c, _, i) =>
+      cells.push(cellNode(schema, c.type, i === 0 ? formatTime(format, time) : '', { alignment: c.attrs.alignment, colwidth: c.attrs.colwidth, valign: above.maybeChild(i)?.attrs.valign ?? null })),
+    )
     return template.type.create(null, cells)
   }
-  const added = grid.filter((t) => !have.has(t)).map((time) => ({ time, row: emptyRow(time) }))
+  const added = grid.filter((t) => !have.has(t)).map((time) => ({ time, row: null as ProseNode | null }))
   // Stable: a new row goes after the kept rows of an earlier time, before those of a later one.
-  const rows = [...kept, ...added].map((entry, i) => ({ ...entry, i })).sort((a, b) => a.time - b.time || a.i - b.i)
-  return table.type.create(attrs, [table.firstChild!, ...rows.map(({ row }) => row)])
+  const sorted = [...kept, ...added].map((entry, i) => ({ ...entry, i })).sort((a, b) => a.time - b.time || a.i - b.i)
+  const rows: ProseNode[] = []
+  for (const { time, row } of sorted) rows.push(row ?? emptyRow(time, rows.at(-1) ?? table.firstChild!))
+  return table.type.create(attrs, [table.firstChild!, ...rows])
 }
 
 /** The table with a "Time" column before column A, a time in each body row from 7:00 am, `slot` apart (D7). */

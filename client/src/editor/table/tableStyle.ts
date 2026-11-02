@@ -3,10 +3,10 @@
  * The `table` node gets seven attributes, each at its default on a plain table: `border` (`null` or
  * `{ px, darkness }`), `header` (`shaded` | `plain`), `stripes`, `height` (`compact` | `normal` |
  * `tall`), `wrap`, `freezeRows` and `freezeCols`; `calendar` (the slot length in minutes, `0` for none,
- * YAZ-4162); and `unknownParts`, the comment's parts this build
+ * YAZ-4162); `valign` (`top` | `middle` | `bottom`, the cells' default, YAZ-4166); and `unknownParts`, the comment's parts this build
  * does not know, kept as their text (YAZ-4161). A column's alignment is the cells' own GFM
  * `alignment` (the `:-` row), not ours (YAZ-3767). Each
- * cell gets `fill`, `color` and its own `align` (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
+ * cell gets `fill`, `color`, its own `align` and its own `valign` (YAZ-4166) (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a
  * column's width is the cells' own `colwidth` (prosemirror-tables). Markdown has no syntax for any.
  *
  * ON DISK a plain table is the GFM table, exactly the bytes of before (R5). A table with settings
@@ -38,7 +38,22 @@ import type { NodeSchema } from '@milkdown/kit/transformer'
 import { $prose, $remark } from '@milkdown/kit/utils'
 import type { Nodes, Table } from 'mdast'
 import { joinNextComment } from '../joinComment'
-import { BORDER_PX_MAX, WIDTH_MAX, calendarSlot, cellAddress, cellAlign, cellColor, formatTableComment, parseTableComment, plainTable, unknownPart, type TableStyle, type UnknownPart } from './tableComment'
+import {
+  BORDER_PX_MAX,
+  WIDTH_MAX,
+  calendarSlot,
+  cellAddress,
+  cellAlign,
+  cellColor,
+  cellValign,
+  formatTableComment,
+  parseTableComment,
+  plainTable,
+  unknownPart,
+  type TableStyle,
+  type UnknownPart,
+  type Valign,
+} from './tableComment'
 import './table.css'
 
 export * from './tableComment'
@@ -53,15 +68,19 @@ export const TABLE_DEFAULTS = {
   freezeRows: 0,
   freezeCols: 0,
   calendar: 0 as 0 | 15 | 30 | 60,
+  valign: 'top' as Valign,
   unknownParts: [] as UnknownPart[],
 }
 export type TableAttrs = typeof TABLE_DEFAULTS
 
+/** The parts of the comment that are the cells' own, not the table's. */
+type TableLevel = Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align' | 'valign'>
+
 const isWhole = (n: unknown, min: number, max: number): n is number => Number.isInteger(n) && (n as number) >= min && (n as number) <= max
 
 /** The table-level parts of the node's attributes, every value checked: an unknown value is the default. */
-function tableLevel(attrs: Record<string, unknown>): Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align'> {
-  const out: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align'> = {}
+function tableLevel(attrs: Record<string, unknown>): TableLevel {
+  const out: TableLevel = {}
   const border = attrs.border as { px?: unknown; darkness?: unknown } | null
   if (border && isWhole(border.px, 0, BORDER_PX_MAX) && isWhole(border.darkness, 0, 100)) out.border = { px: border.px, darkness: border.darkness }
   if (attrs.header === 'plain') out.header = 'plain'
@@ -73,6 +92,7 @@ function tableLevel(attrs: Record<string, unknown>): Omit<TableStyle, 'widths' |
   if (rows > 0 || cols > 0) out.freeze = { rows, cols }
   const calendar = calendarSlot(attrs.calendar)
   if (calendar !== null) out.calendar = calendar
+  if (attrs.valign === 'middle' || attrs.valign === 'bottom') out.valignTable = attrs.valign
   const unknown = Array.isArray(attrs.unknownParts) ? attrs.unknownParts.map(unknownPart) : []
   if (unknown.length > 0 && unknown.every((part) => part !== null)) out.unknown = unknown as UnknownPart[]
   return out
@@ -93,9 +113,11 @@ function tableStyleOf(table: ProseNode): TableStyle {
       const fill = cellColor(cell.attrs.fill)
       const color = cellColor(cell.attrs.color)
       const align = cellAlign(cell.attrs.align)
+      const valign = cellValign(cell.attrs.valign)
       if (fill !== null) style.fill.set(cellAddress(r, c), fill)
       if (color !== null) style.color.set(cellAddress(r, c), color)
       if (align !== null) style.align.set(cellAddress(r, c), align)
+      if (valign !== null) style.valign.set(cellAddress(r, c), valign)
     })
   })
   return style
@@ -111,6 +133,7 @@ function tableDomAttrs(attrs: Record<string, unknown>): Record<string, string> |
   if (level.height) out['data-table-height'] = level.height
   if (level.nowrap) out['data-table-nowrap'] = ''
   if (level.calendar) out['data-table-calendar'] = String(level.calendar)
+  if (level.valignTable) out['data-table-valign'] = level.valignTable
   return Object.keys(out).length === 0 ? null : out
 }
 
@@ -135,13 +158,14 @@ function readTableDom(dom: HTMLElement): Partial<TableAttrs> {
     freezeRows: rows,
     freezeCols: cols,
     calendar: Number(dom.getAttribute('data-table-calendar')),
+    valign: dom.getAttribute('data-table-valign'),
     unknownParts,
   }
   return levelAttrs(tableLevel(raw))
 }
 
 /** The node attributes for table-level parts. */
-const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align'>): TableAttrs => ({
+const levelAttrs = (style: TableLevel): TableAttrs => ({
   border: style.border ?? null,
   header: style.header ?? 'shaded',
   stripes: style.stripes === true,
@@ -150,6 +174,7 @@ const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align
   freezeRows: style.freeze?.rows ?? 0,
   freezeCols: style.freeze?.cols ?? 0,
   calendar: style.calendar ?? 0,
+  valign: style.valignTable ?? 'top',
   unknownParts: style.unknown ?? [],
 })
 
@@ -158,13 +183,16 @@ const levelAttrs = (style: Omit<TableStyle, 'widths' | 'fill' | 'color' | 'align
  * itself, and a custom one (`#rrggbb`) also goes in `style` for `table.css` (YAZ-3817), after GFM's
  * own style. A cell's own alignment (`data-align`) is the `text-align` in GFM's style in place of its
  * column's, so it wins on the page and in a copy to Docs (YAZ-3819). Then the column's goes in
- * `data-column-align`, so a paste in this app gives the column its own alignment back, not the cell's.
+ * `data-column-align`, so a paste in this app gives the column its own alignment back, not the cell's. A cell's own
+ * vertical alignment (YAZ-4166) is `data-valign` and a `vertical-align` in its style, so it wins over the table's on
+ * the page and goes with a copy to Docs.
  */
 const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<string, string> => {
   const out = { ...base }
   const fill = cellColor(node.attrs.fill)
   const color = cellColor(node.attrs.color)
   const align = cellAlign(node.attrs.align)
+  const valign = cellValign(node.attrs.valign)
   // GFM's own style, less its `text-align` when the cell has its own.
   const style = (base.style ?? '').split(';').map((part) => part.trim()).filter((part) => part !== '' && (align === null || !part.startsWith('text-align')))
   if (fill !== null) out['data-fill'] = fill
@@ -174,6 +202,10 @@ const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<str
     out['data-column-align'] = (node.attrs.alignment as string | null) ?? 'left'
     style.unshift(`text-align: ${align}`)
   }
+  if (valign !== null) {
+    out['data-valign'] = valign
+    style.push(`vertical-align: ${valign}`)
+  }
   if (fill?.startsWith('#')) style.push(`--table-fill-custom: ${fill}`)
   if (color?.startsWith('#')) style.push(`--table-text-custom: ${color}`)
   const joined = style.filter(Boolean).join('; ')
@@ -182,7 +214,7 @@ const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<str
 }
 
 interface CellData {
-  tableCell?: { fill: string | null; color: string | null; align: string | null; colwidth: number[] | null }
+  tableCell?: { fill: string | null; color: string | null; align: string | null; valign: string | null; colwidth: number[] | null }
 }
 
 /**
@@ -195,7 +227,7 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
   const toDOM = spec.toDOM!
   return {
     ...spec,
-    attrs: { ...spec.attrs, fill: { default: null }, color: { default: null }, align: { default: null } },
+    attrs: { ...spec.attrs, fill: { default: null }, color: { default: null }, align: { default: null }, valign: { default: null } },
     parseDOM: spec.parseDOM?.map((rule) => {
       const { getAttrs } = rule as TagParseRule
       return {
@@ -211,6 +243,7 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
             fill: cellColor(dom.getAttribute('data-fill')),
             color: cellColor(dom.getAttribute('data-color')),
             align,
+            valign: cellValign(dom.getAttribute('data-valign')),
           }
         },
       }
@@ -248,8 +281,9 @@ function applyStyle(table: Table, style: TableStyle): void {
       const fill = style.fill.get(cellAddress(r, c)) ?? null
       const color = style.color.get(cellAddress(r, c)) ?? null
       const align = style.align.get(cellAddress(r, c)) ?? null
-      if (width === null && fill === null && color === null && align === null) return
-      cell.data = { ...cell.data, tableCell: { fill, color, align, colwidth: width === null ? null : [width] } } as typeof cell.data
+      const valign = style.valign.get(cellAddress(r, c)) ?? null
+      if (width === null && fill === null && color === null && align === null && valign === null) return
+      cell.data = { ...cell.data, tableCell: { fill, color, align, valign, colwidth: width === null ? null : [width] } } as typeof cell.data
     })
   })
 }

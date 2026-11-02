@@ -142,6 +142,16 @@
   padding-block: 10px;
 }
 
+/* Vertical alignment (YAZ-4166, D10): the table's default on its cells (prosemirror-tables' own is top). A cell's
+   own value is a `vertical-align` in its style, so it wins. Only `vertical-align`: a frozen cell keeps `sticky`. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-valign='middle'] :is(th, td) {
+  vertical-align: middle;
+}
+
+.milkdown .ProseMirror .milkdown-table-block[data-table-valign='bottom'] :is(th, td) {
+  vertical-align: bottom;
+}
+
 /* No wrap: one line per cell paragraph, cut with an ellipsis. */
 .milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td) > p {
   overflow: hidden;

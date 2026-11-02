@@ -1,8 +1,8 @@
 /**
  * The table's settings in the block handle menu (YAZ-3767, YAZ-3696 🔒 D6 / D7 option 2; CONTRACTS
  * rule 41a): a right-click on a table's six dots shows "Border thickness" and "Border darkness"
- * (number fields, as `line/lineRows.ts`), "Header row", "Align all columns", "Fit columns to the
- * page" (a row), "Stripes", "Row height" and "Wrap text" (choices), and "Time slots" (Off / 15 min / 30 min /
+ * (number fields, as `line/lineRows.ts`), "Header row", "Align all columns", "Vertical align" (Top / Middle /
+ * Bottom, the table's default; a cell's own wins, YAZ-4166 D10), "Fit columns to the page" (a row), "Stripes", "Row height" and "Wrap text" (choices), and "Time slots" (Off / 15 min / 30 min /
  * 1 hour, YAZ-4163 D7: `setTimeSlots` in `tableCalendar.ts` makes any table a calendar table and keeps its text, D8);
  * a calendar table also has "Go to now" (a row, YAZ-4164 D11: `goToNow`), disabled while no row holds the current time.
  *
@@ -26,7 +26,7 @@ import type { MenuChoice, MenuChoiceField, MenuItem, MenuNumberField, RowProvide
 import { setCellsAttr } from './cells'
 import { goToNow, minutesOf, nowPlace, setTimeSlots } from './tableCalendar'
 import { capital } from './colours'
-import { CELL_ALIGNS, TABLE_DEFAULTS, type CellAlign, type TableAttrs } from './tableStyle'
+import { CELL_ALIGNS, TABLE_DEFAULTS, VALIGNS, type CellAlign, type TableAttrs } from './tableStyle'
 
 /** Crepe's look of a border (table.css): 1px, 20% of the outline colour. */
 const BORDER_DEFAULT = { px: 1, darkness: 20 }
@@ -153,6 +153,10 @@ export const tableRows: RowProvider = (view, target) => {
       // The cells' own alignment goes too (YAZ-3819), so the table shows what was picked.
       run: (picked) => setCells(view, pos, { alignment: picked as CellAlign | null, align: null }),
     },
+    // The table's default only: the cells' own values stay (a calendar table's time column keeps Middle).
+    choice('Vertical align', attrs.valign, TABLE_DEFAULTS.valign, VALIGNS.map((value) => ({ value, label: capital(value) })), (valign) =>
+      setTable(view, pos, { valign: valign as TableAttrs['valign'] }),
+    ),
     fit,
     choice('Stripes', attrs.stripes ? 'on' : 'off', 'off', [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], (on) => setTable(view, pos, { stripes: on === 'on' })),
     choice('Row height', attrs.height, TABLE_DEFAULTS.height, [{ value: 'compact', label: 'Compact' }, { value: 'normal', label: 'Normal' }, { value: 'tall', label: 'Tall' }], (height) =>

@@ -5,8 +5,10 @@
  * page, as it does for the line comment (`line/lineComment.ts`). `tableStyle.ts` re-exports all of it.
  *
  * The parts, in their fixed order, each only when set:
- * `widths 140 240 auto, fill A1:C1 blue B3 #ff8800, color B2:B5 red, align B2:C3 center, border 2px 40%,
- * header plain, stripes, height compact, nowrap, freeze 2 rows 1 col, calendar 30m`. `calendar` (YAZ-4162,
+ * `widths 140 240 auto, fill A1:C1 blue B3 #ff8800, color B2:B5 red, align B2:C3 center, valign middle A2:A40 top,
+ * border 2px 40%, header plain, stripes, height compact, nowrap, freeze 2 rows 1 col, calendar 30m`. `valign` (YAZ-4166,
+ * D10) is ONE part: an optional first bare value is the table's default (`middle` or `bottom`; `top` is the default
+ * and writes nothing), then cell ranges and values as `align` writes them; a cell's own value wins over the table's. `calendar` (YAZ-4162,
  * D1) is the slot length of a calendar table, `15m`, `30m` or `60m`; it is last, so a build that does not know it
  * keeps it in place (YAZ-4161). A column's alignment is no
  * part: it is the GFM `:-` row, so GitHub and Obsidian show it too ("Align all columns" sets it,
@@ -41,6 +43,12 @@ export type CellAlign = (typeof CELL_ALIGNS)[number]
 /** A cell's own alignment, checked, or `null`. */
 export const cellAlign = (value: unknown): CellAlign | null => ((CELL_ALIGNS as readonly unknown[]).includes(value) ? (value as CellAlign) : null)
 
+/** Vertical alignment (YAZ-4166, D10): the table's default and a cell's own. Top is the default. */
+export const VALIGNS = ['top', 'middle', 'bottom'] as const
+export type Valign = (typeof VALIGNS)[number]
+/** A vertical alignment, checked, or `null`. */
+export const cellValign = (value: unknown): Valign | null => ((VALIGNS as readonly unknown[]).includes(value) ? (value as Valign) : null)
+
 /**
  * A part this build does not know (YAZ-4161): its text, and the word of the known part before it in
  * the comment (`null` for none). The save writes it right after that part.
@@ -51,7 +59,7 @@ export interface UnknownPart {
 }
 
 /** The words of the known parts, in the fixed order. */
-export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar'] as const
+export const KNOWN_PARTS = ['widths', 'fill', 'color', 'align', 'valign', 'border', 'header', 'stripes', 'height', 'nowrap', 'freeze', 'calendar'] as const
 
 /** The slot lengths of a calendar table, in minutes (YAZ-4162, D1). */
 export const CALENDAR_SLOTS = [15, 30, 60] as const
@@ -77,6 +85,10 @@ export interface TableStyle {
   fill: Map<string, string>
   color: Map<string, string>
   align: Map<string, CellAlign>
+  /** A cell's own vertical alignment (YAZ-4166). */
+  valign: Map<string, Valign>
+  /** The table's vertical alignment; top is the default (YAZ-4166). */
+  valignTable?: 'middle' | 'bottom'
   /** Thickness in px and darkness in % of the outline colour. */
   border?: { px: number; darkness: number }
   /** The header row's look; shaded is the default. */
@@ -92,7 +104,7 @@ export interface TableStyle {
   unknown?: UnknownPart[]
 }
 
-export const plainTable = (): TableStyle => ({ widths: [], fill: new Map(), color: new Map(), align: new Map() })
+export const plainTable = (): TableStyle => ({ widths: [], fill: new Map(), color: new Map(), align: new Map(), valign: new Map() })
 
 export const BORDER_PX_MAX = 10
 export const WIDTH_MAX = 9999
@@ -186,6 +198,17 @@ function readPart(style: TableStyle, word: string, rest: string[]): boolean {
       const cells = readCells(rest, cellAlign)
       if (cells === null) return false
       style.align = cells
+      return true
+    }
+    case 'valign': {
+      // An optional table default first, then cells as `align` writes them; with no cells, the default alone.
+      const table = cellValign(first)
+      const words = table === null ? rest : rest.slice(1)
+      const cells = words.length === 0 ? new Map<string, Valign>() : readCells(words, cellValign)
+      if (cells === null || (table === null && cells.size === 0)) return false
+      style.valign = cells
+      if (table === 'middle' || table === 'bottom') style.valignTable = table
+      else delete style.valignTable
       return true
     }
     case 'border': {
@@ -299,6 +322,8 @@ export function formatTableComment(style: TableStyle): string | null {
   if (style.fill.size > 0) push('fill', `fill ${formatCells(style.fill)}`)
   if (style.color.size > 0) push('color', `color ${formatCells(style.color)}`)
   if (style.align.size > 0) push('align', `align ${formatCells(style.align)}`)
+  const valignTable = style.valignTable === 'middle' || style.valignTable === 'bottom' ? [style.valignTable] : []
+  if (valignTable.length > 0 || style.valign.size > 0) push('valign', ['valign', ...valignTable, ...(style.valign.size > 0 ? [formatCells(style.valign)] : [])].join(' '))
   if (style.border) push('border', `border ${style.border.px}px ${style.border.darkness}%`)
   if (style.header) push('header', `header ${style.header}`)
   if (style.stripes) push('stripes', 'stripes')

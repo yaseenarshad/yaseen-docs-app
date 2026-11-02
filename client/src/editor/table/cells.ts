@@ -30,3 +30,12 @@ export function setCellsAlign(tr: Transaction, rect: TableRect, align: string): 
   }
   return tr
 }
+
+/**
+ * Each cell of `rect` vertically aligned to `valign`, in `tr` (YAZ-4166, D10): the cell's own `valign`, or `null`
+ * where `valign` is the table's default, so the cell follows its table and the file gets no part that changes nothing.
+ */
+export function setCellsValign(tr: Transaction, rect: TableRect, valign: string): Transaction {
+  const value = ((rect.table.attrs.valign as string | undefined) ?? 'top') === valign ? null : valign
+  return setCellsAttr(tr, rect, 'valign', value)
+}
