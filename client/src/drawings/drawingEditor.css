@@ -60,6 +60,14 @@
   font-size: 12px;
 }
 
+/* YAZ-4071 7J: the cog menu, its "i" panel and the engine's text toolbar (`z-index: var(--zIndex-ui-top)`,
+   100) are in one stacking context, and the app's rules are 10: the toolbar covered the cog's rows. They open
+   above the toolbar and stay under the engine's main menu (110). */
+.editor--drawing .excalidraw .drawing-editor__chips .page-settings__menu,
+.editor--drawing .excalidraw .drawing-editor__chips .page-settings__tip {
+  z-index: calc(var(--zIndex-ui-top, 100) + 1);
+}
+
 /* The surface's own element fills the frame, as the engine's does — in the tab and in the embed's
    modal alike. In the tab it is also the ⌘F / ⌘C capture host and the PRESENTATION's containing block
    (YAZ-3038): the player is a sibling of the engine, absolutely positioned over this pane rather than
