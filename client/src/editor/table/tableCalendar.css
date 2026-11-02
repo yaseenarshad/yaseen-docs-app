@@ -53,7 +53,9 @@
   display: none;
 }
 
-/* Settings › Calendar tables › Now button Off (the YAZ-4163 demo): no chip on any table. */
-[data-table-now-button='off'] .milkdown .ProseMirror .table-now-chip-anchor {
+/* Settings › Calendar tables › Now button Off (the YAZ-4163 demo): no chip on any table. A read-only note has none
+   either, as it has no zoom pill (`table.css`; YAZ-4176). */
+[data-table-now-button='off'] .milkdown .ProseMirror .table-now-chip-anchor,
+.milkdown .ProseMirror[contenteditable='false'] .table-now-chip-anchor {
   display: none;
 }
