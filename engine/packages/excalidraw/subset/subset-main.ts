@@ -30,8 +30,10 @@ export const subsetWoff2GlyphsByCodepoints = async (
   }
 
   return promiseTry(async () => {
+    let started = false;
     try {
       const workerPool = await getOrCreateWorkerPool();
+      started = true;
       // copy the buffer to avoid working on top of the detached array buffer in the fallback
       // i.e. in case the worker throws, the array buffer does not get automatically detached, even if the worker is terminated
       const arrayBufferCopy = arrayBuffer.slice(0);
@@ -43,12 +45,19 @@ export const subsetWoff2GlyphsByCodepoints = async (
         } as const,
         { transfer: [arrayBufferCopy] },
       );
+      if ("error" in result) {
+        throw new Error(result.error);
+      }
 
       // encode on the main thread to avoid copying large binary strings (as dataurl) between threads
       return toBase64(result);
     } catch (e) {
-      // don't use workers if they are failing
-      shouldUseWorkers = false;
+      // YAZ-4074 6A item 8: only a worker that cannot start turns the workers off (the pool
+      // cannot be made, or the worker's `onerror`: an event, not an Error). A job that failed
+      // or ran past the ttl falls back for this subset only.
+      if (!started || !(e instanceof Error)) {
+        shouldUseWorkers = false;
+      }
 
       if (
         // don't log the expected errors server-side
@@ -90,8 +99,9 @@ type SubsetWorkerData = {
   codePoints: Array<number>;
 };
 
+/** YAZ-4074 6A item 8: a job that throws answers its error, so it never waits for the ttl. */
 type SubsetWorkerResult<T extends SubsetWorkerData["command"]> =
-  T extends typeof Commands.Subset ? ArrayBuffer : never;
+  T extends typeof Commands.Subset ? ArrayBuffer | { error: string } : never;
 
 let workerPool: Promise<
   WorkerPool<SubsetWorkerData, SubsetWorkerResult<SubsetWorkerData["command"]>>
@@ -121,7 +131,11 @@ const getOrCreateWorkerPool = () => {
       const pool = WorkerPool.create<
         SubsetWorkerData,
         SubsetWorkerResult<SubsetWorkerData["command"]>
-      >(new URL(url));
+      >(new URL(url), {
+        // YAZ-4074 6A item 8: the first job includes the worker start, a 1.8 MB
+        // script and two wasm compiles, which pass 1 s on a busy Mac
+        ttl: 30_000,
+      });
 
       return pool;
     });

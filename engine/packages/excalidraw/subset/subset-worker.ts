@@ -20,12 +20,17 @@ self.onmessage = async (e: {
 }) => {
   switch (e.data.command) {
     case Commands.Subset:
-      const buffer = await subsetToBinary(
-        e.data.arrayBuffer,
-        e.data.codePoints,
-      );
+      try {
+        const buffer = await subsetToBinary(
+          e.data.arrayBuffer,
+          e.data.codePoints,
+        );
 
-      self.postMessage(buffer, { transfer: [buffer] });
+        self.postMessage(buffer, { transfer: [buffer] });
+      } catch (error) {
+        // YAZ-4074 6A item 8: answer the error; the main thread falls back for this subset only
+        self.postMessage({ error: String(error) });
+      }
       break;
   }
 };

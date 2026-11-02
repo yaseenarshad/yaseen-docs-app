@@ -62,5 +62,12 @@ describe("YAZ-3943 1G: the built font subset worker", () => {
     expect(String.fromCharCode(...subset.slice(0, 4))).toBe("wOF2");
     expect(subset.byteLength).toBeGreaterThan(0);
     expect(subset.byteLength).toBeLessThan(font.byteLength / 2);
+
+    // YAZ-4074 6A item 8: a job that throws answers an error, not silence
+    await self.onmessage!({
+      data: { command: "SUBSET", arrayBuffer: null, codePoints: [65] },
+    });
+    expect(posted).toHaveLength(2);
+    expect(posted[1]).toEqual({ error: expect.any(String) });
   });
 });
