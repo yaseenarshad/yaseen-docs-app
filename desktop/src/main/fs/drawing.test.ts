@@ -3,7 +3,7 @@ import { access, link, mkdir, mkdtemp, open, readdir, readFile, rm, stat, utimes
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { MAX_DRAWING_BYTES } from '@shared/types'
-import { BOARD_META_KEY, referencedFileIds, unpersistedFiles } from '@shared/drawingAssets'
+import { BOARD_META_KEY, picturesSize, referencedFileIds, unpersistedFiles } from '@shared/drawingAssets'
 import { loadDrawing, saveDrawing } from './drawing'
 import { failure } from './testFixture'
 
@@ -209,6 +209,17 @@ describe('🔒 YAZ-1775 D3 — the image store on load', () => {
     expect(res.files).toEqual({})
     expect(res.stored).toEqual([])
     expect(res.json).toContain('gone') // the scene is untouched; only the bytes are absent
+  })
+
+  it('YAZ-3943 1F: what the load found is what the board has; a picture in neither the file nor assets/ is missing, for an "inside" and an "out" board', async () => {
+    await seedAsset('kept.png')
+    await seed('Inside.excalidraw', scene([imageEl('emb'), imageEl('kept'), imageEl('gone1'), imageEl('gone2')], { files: { emb: { mimeType: 'image/png', dataURL: dataUrl() } } }))
+    await seed('Out.excalidraw', outScene([imageEl('kept'), imageEl('gone1')]))
+    const inside = await loadDrawing({ root, path: 'Inside.excalidraw' })
+    const out = await loadDrawing({ root, path: 'Out.excalidraw' })
+    const elements = (json: string) => (JSON.parse(json) as { elements: unknown[] }).elements
+    expect(picturesSize(elements(inside.json), inside.files)).toMatchObject({ count: 2, missing: 2 })
+    expect(picturesSize(elements(out.json), out.files)).toMatchObject({ count: 1, missing: 1 })
   })
 
   it("falls back to a \"pictures out\" scene's own embedded bytes, and does NOT call them stored", async () => {

@@ -252,7 +252,9 @@ describe('picturesSize (YAZ-3943 D5, the cog size row)', () => {
       { type: 'image', fileId: 'old', isDeleted: true },
     ]
     const files = { a: { dataURL: b64('hello') }, b: { dataURL: b64('hi there!') }, old: { dataURL: b64('xxxxxxxx') } }
-    expect(picturesSize(elements, files)).toEqual({ bytes: 5 + 9, count: 2 })
-    expect(picturesSize([], files)).toEqual({ bytes: 0, count: 0 })
+    // A live element whose picture has no entry is missing (YAZ-3943 1F); a deleted one is not.
+    expect(picturesSize(elements, files)).toEqual({ bytes: 5 + 9, count: 2, missing: 1 })
+    expect(picturesSize([], files)).toEqual({ bytes: 0, count: 0, missing: 0 })
+    expect(picturesSize(elements, { ...files, gone: { mimeType: 'image/png' } }).missing).toBe(1)
   })
 })

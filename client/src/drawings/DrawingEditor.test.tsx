@@ -37,7 +37,7 @@ const surface = {
   /** What `exportScene()` answers — the standalone bytes the save sheet is offered (🔒 YAZ-1775 D3). */
   exportedScene: '{"type":"excalidraw","elements":[],"files":{}}\n',
   /** What `pictures()` answers: the cog's size row (YAZ-3943 D5). */
-  pictures: { bytes: 0, count: 0 },
+  pictures: { bytes: 0, count: 0, missing: 0 },
   /** The pan and zoom the engine is on (YAZ-3737 D13). */
   canvas: { scrollX: 0, scrollY: 0, zoom: 1 },
 }
@@ -134,7 +134,7 @@ beforeEach(() => {
   surface.refreshes = 0
   surface.nextReplaceVersion = 0
   surface.commands = []
-  surface.pictures = { bytes: 0, count: 0 }
+  surface.pictures = { bytes: 0, count: 0, missing: 0 }
   Object.defineProperty(window, 'yaseenDocs', {
     configurable: true,
     writable: true,
@@ -616,7 +616,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
   }
 
   it('in this order: Read only, the count and size of the pictures in words (YAZ-4110 5B), the button, then the two exports', async () => {
-    surface.pictures = { bytes: 3.3 * MB, count: 6 }
+    surface.pictures = { bytes: 3.3 * MB, count: 6, missing: 0 }
     await openCog()
     expect(rows().map((r) => r.textContent)).toEqual(['Read only', '6 pictures in this file (3.3 MB)', 'Move pictures out', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     expect(container.querySelectorAll('.page-settings__menu > .page-settings__divider')).toHaveLength(2)
@@ -627,13 +627,13 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     await openCog()
     expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     act(() => cog().click())
-    surface.pictures = { bytes: 20 * MB, count: 2 }
+    surface.pictures = { bytes: 20 * MB, count: 2, missing: 0 }
     act(() => cog().click())
     expect(row('2 pictures in this file (20.0 MB)')!.className).toContain('page-settings__warn')
   })
 
   it('"Move pictures out" writes beside the autosave, and the row turns into "Keep pictures inside"', async () => {
-    surface.pictures = { bytes: 1000, count: 1 }
+    surface.pictures = { bytes: 1000, count: 1, missing: 0 }
     setBoardPictures.mockResolvedValue({ path: PATH, mtime: 300, size: 10 })
     await openCog()
     await act(async () => row('Move pictures out')!.click())
@@ -647,18 +647,45 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
   })
 
   it('a "pictures out" board opens with "Keep pictures inside"', async () => {
-    surface.pictures = { bytes: 1000, count: 1 }
+    surface.pictures = { bytes: 1000, count: 1, missing: 0 }
     await openCog({ json: `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, pictures: 'assets' }, elements: [], appState: {}, files: {} })}\n` })
     expect(row('Keep pictures inside')).toBeDefined()
   })
 
   it('Read only greys the button out (it writes the file); the exports still work', async () => {
-    surface.pictures = { bytes: 1000, count: 1 }
+    surface.pictures = { bytes: 1000, count: 1, missing: 0 }
     await openCog({ json: `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, elements: [], appState: {}, files: {} })}\n` })
     expect(row('Move pictures out')!.disabled).toBe(true)
     expect(row('Export Image or PDF…')!.disabled).toBe(false)
     act(() => row('Move pictures out')!.click())
     expect(setBoardPictures).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-3943 1F: pictures in neither the file nor assets/ are an amber row after the size, with the button after them; all missing: the row alone', async () => {
+    surface.pictures = { bytes: 1000, count: 1, missing: 3 }
+    await openCog()
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', '1 picture in this file (1000 B)', '3 pictures are missing', 'Move pictures out', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(row('3 pictures are missing')!.className).toContain('page-settings__warn')
+    act(() => cog().click())
+    surface.pictures = { bytes: 0, count: 0, missing: 1 }
+    act(() => cog().click())
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', '1 picture is missing', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+  })
+
+  it('YAZ-3943 1F: a board whose pictures are missing says so once when it opens, and not again on a reload; a board with all its pictures says nothing', async () => {
+    const onNotice = vi.fn()
+    const pictures = scene([{ id: 'i1', type: 'image', fileId: 'here' }, { id: 'i2', type: 'image', fileId: 'gone1' }, { id: 'i3', type: 'image', fileId: 'gone2' }, { id: 'i4', type: 'image', fileId: 'gone3', isDeleted: true }])
+    load.mockResolvedValue(loaded({ json: pictures, files: { here: { mimeType: 'image/png', dataURL: 'data:image/png;base64,aGk=' } }, stored: ['here'] }))
+    render({ onNotice })
+    await flush()
+    expect(onNotice.mock.calls).toEqual([['2 pictures of this board are missing', 'error']])
+    // An edit made elsewhere reloads the board: no second notice.
+    emit(1)
+    load.mockResolvedValue(loaded({ json: pictures, mtime: 400 }))
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    expect(surface.replaced).toHaveLength(1)
+    expect(onNotice).toHaveBeenCalledTimes(1)
   })
 
   it('each export row calls the same handler as its key (⌘⇧E, ⌘⇧S), and closes the menu', async () => {

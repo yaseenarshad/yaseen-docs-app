@@ -111,8 +111,8 @@ export interface DrawingSurfaceApi {
   setCanvasBackground(color: string): void
   /** File › Export Drawing… (Draw's YAZ-1821): the canvas as a STANDALONE `.excalidraw`, the whole live files map embedded, in the standard fonts, measured again (YAZ-3943 D14, 1D1). */
   exportScene(): Promise<string>
-  /** The cog's size row (YAZ-3943 D5): the pictures the canvas uses now, counted when asked (`picturesSize`). */
-  pictures(): { bytes: number; count: number }
+  /** The cog's size row (YAZ-3943 D5): the pictures the canvas uses now, and those with no bytes (1F), counted when asked (`picturesSize`). */
+  pictures(): { bytes: number; count: number; missing: number }
   /**
    * Replace what the canvas shows (the file changed on disk under a clean tab). Returns the
    * version the engine will report for it — the host's new clean baseline — computed from the

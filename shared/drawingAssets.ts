@@ -318,22 +318,30 @@ export function createdOf(scene: Record<string, unknown>, id: string): number | 
 /**
  * The cog's size row (YAZ-3943 D5): how many pictures a live element uses, and their own size in bytes
  * (the base64 of each `dataURL`, decoded by its length, never by decoding it). An id with no entry,
- * or an entry with no `dataURL`, does not count.
+ * or an entry with no `dataURL`, does not count: it is `missing` (1F). The load puts in `files` every
+ * picture it found in the file or in `assets/`, so a missing one is in neither.
  */
-export function picturesSize(elements: readonly unknown[], files: Readonly<Record<string, unknown>>): { bytes: number; count: number } {
+export function picturesSize(elements: readonly unknown[], files: Readonly<Record<string, unknown>>): { bytes: number; count: number; missing: number } {
   let bytes = 0
   let count = 0
+  let missing = 0
   for (const id of referencedFileIds(elements)) {
     const entry = files[id]
     const dataURL = isRecord(entry) ? entry.dataURL : undefined
-    if (typeof dataURL !== 'string') continue
+    if (typeof dataURL !== 'string') {
+      missing += 1
+      continue
+    }
     const base64 = dataURL.length - dataURL.indexOf(',') - 1
     const padding = dataURL.endsWith('==') ? 2 : dataURL.endsWith('=') ? 1 : 0
     bytes += Math.max(0, Math.floor((base64 * 3) / 4) - padding)
     count += 1
   }
-  return { bytes, count }
+  return { bytes, count, missing }
 }
+
+/** "3 pictures are missing" (YAZ-3943 1F): the count first, as the size row says it. */
+export const missingPicturesText = (missing: number): string => (missing === 1 ? '1 picture is missing' : `${missing} pictures are missing`)
 
 // ---------- A new drawing (YAZ-877, moved here for `fs:create-board` by YAZ-3028 D9) ----------
 

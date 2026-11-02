@@ -39,7 +39,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse, PageView } from '@shared/types'
-import { unpersistedFiles } from '@shared/drawingAssets'
+import { missingPicturesText, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
 import { api, BridgeRequestError } from '../api'
@@ -72,7 +72,7 @@ export const PICTURES_WARN_BYTES = 20 * 1024 * 1024
  * button writes the file, so Read only greys it out; the exports write elsewhere and stay.
  */
 export function drawingCogRows({ pictures, out, readOnly, onMovePictures, onExportImage, onExportDrawing }: {
-  pictures: { bytes: number; count: number }
+  pictures: { bytes: number; count: number; missing?: number }
   out: boolean
   readOnly: boolean
   onMovePictures: () => void
@@ -85,11 +85,17 @@ export function drawingCogRows({ pictures, out, readOnly, onMovePictures, onExpo
     const what = pictures.count === 1 ? '1 picture' : `${pictures.count} pictures`
     const where = out ? 'in the assets folder' : 'in this file'
     rows.push({ label: `${what} ${where} (${formatBytes(pictures.bytes)})`, warn: !out && pictures.bytes >= PICTURES_WARN_BYTES, divider: true })
-    rows.push({ label: out ? 'Keep pictures inside' : 'Move pictures out', onToggle: onMovePictures, disabled: readOnly })
   }
+  // YAZ-3943 1F: pictures the board uses that are in neither the file nor `assets/`, in amber.
+  const missing = pictures.missing ?? 0
+  if (missing > 0) rows.push({ label: missingPicturesText(missing), warn: true, divider: pictures.count === 0 })
+  if (pictures.count > 0) rows.push({ label: out ? 'Keep pictures inside' : 'Move pictures out', onToggle: onMovePictures, disabled: readOnly })
   rows.push({ label: 'Export Image or PDF…', onToggle: onExportImage, divider: true }, { label: 'Export Excalidraw Drawing…', onToggle: onExportDrawing })
   return rows
 }
+
+/** What a board with missing pictures says when it opens (YAZ-3943 1F): "3 pictures of this board are missing". */
+export const missingPicturesNotice = (missing: number): string => (missing === 1 ? '1 picture of this board is missing' : `${missing} pictures of this board are missing`)
 
 /** What File › Export Drawing… says when the save sheet or the write refused (🔒 YAZ-1775 D3, YAZ-1821). */
 const EXPORT_FAILED = "The Excalidraw drawing couldn't be exported."
@@ -229,6 +235,15 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
    * version moves anyway (a door the view mode does not close) is kept off disk, and the canvas is
    * put back to the disk at "Allow edits". `lockedAt` is the version read only began on.
    */
+  // YAZ-3943 1F: a board whose pictures are in neither the file nor `assets/` says so, once per open: a reload says nothing.
+  const toldMissing = useRef(false)
+  useEffect(() => {
+    if (toldMissing.current) return
+    toldMissing.current = true
+    const { missing } = picturesSize(loaded.scene.elements, loaded.scene.files ?? {})
+    if (missing > 0) onNotice?.(missingPicturesNotice(missing), 'error')
+  }, [loaded, onNotice])
+
   const readOnlyRef = useRef(readOnly)
   readOnlyRef.current = readOnly
   const lockedAt = useRef<number | null>(null)
