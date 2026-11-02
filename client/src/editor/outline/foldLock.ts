@@ -133,17 +133,17 @@ export const createFoldLock = ({ seedLockedKeys = () => new Set(), onLockedKeysC
             }
             return DecorationSet.create(state.doc, decorations)
           },
-          handleDOMEvents: {
-            mousedown: (view, event) => {
-              const toggle = (event.target as Element | null)?.closest?.('.outline-toggle, .heading-toggle')
-              if (!toggle || !view.dom.contains(toggle)) return false
-              // The chevron widget sits at the row's position + 1.
-              if (foldLockBlocks(view.state, view.posAtDOM(toggle, 0) - 1)) onBlocked?.()
-              return false
-            },
-          },
         },
         view: (view) => {
+          // A press on a blocked chevron. A capture listener, not `handleDOMEvents`: each chevron cancels its own
+          // `mousedown`, and ProseMirror then stops at the first plugin that handles one (YAZ-4126).
+          const onMouseDown = (event: MouseEvent): void => {
+            const toggle = (event.target as Element | null)?.closest?.('.outline-toggle, .heading-toggle')
+            if (!toggle || !view.dom.contains(toggle)) return
+            // The chevron widget sits at the row's position + 1.
+            if (foldLockBlocks(view.state, view.posAtDOM(toggle, 0) - 1)) onBlocked?.()
+          }
+          view.dom.addEventListener('mousedown', onMouseDown, true)
           let previous: string | null = null
           const notify = () => {
             const locked = pluginKey.getState(view.state)
@@ -163,7 +163,7 @@ export const createFoldLock = ({ seedLockedKeys = () => new Set(), onLockedKeysC
             }
           }
           notify()
-          return { update: notify }
+          return { update: notify, destroy: () => view.dom.removeEventListener('mousedown', onMouseDown, true) }
         },
       }),
   )
