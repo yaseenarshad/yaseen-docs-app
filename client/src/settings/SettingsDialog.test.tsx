@@ -134,7 +134,7 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableNowMark', 'tableDimPast', 'tableTimeFormat']
+const EDITOR_ROWS = ['bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableRowBand', 'tableNowMark', 'tableDimPast', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Section indent sits directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
@@ -688,6 +688,17 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       { ...DEFAULT_SETTINGS, tableNowMark: 'both' },
       { ...DEFAULT_SETTINGS, tableDimPast: false },
     ])
+  })
+
+  it('"Tables" › Row band (YAZ-4167 D16): the group\'s first row, Off · Calendar tables · All tables, All tables by default; it writes only its own field', () => {
+    const { el, onChange } = mountOn('Editor')
+    const group = row(el, 'tableRowBand')?.closest('.settings-group')
+    expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Tables')
+    expect(group?.querySelector('.setting')).toBe(row(el, 'tableRowBand'))
+    expect(row(el, 'tableRowBand')?.querySelector('.setting__label')?.textContent).toBe('Row band')
+    expect(rowButtons(el, 'tableRowBand').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Off', 'false'], ['Calendar tables', 'false'], ['All tables', 'true']])
+    act(() => rowButtons(el, 'tableRowBand')[1].click())
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([{ ...DEFAULT_SETTINGS, tableRowBand: 'calendar' }])
   })
 
   it('Tables › Time format (YAZ-4163 D15): the ready styles as 9:00 am, 9:00am, 09:00 and Custom…; a style the app cannot read back keeps the stored one and says why; a good one is written', () => {

@@ -57,7 +57,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_NOW_MARK_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 /** Files & Links › Open new tabs (YAZ-3808 D2). */
 const NEW_TAB_PLACE_OPTIONS: readonly { label: string; value: SettingsState['newTabPlace'] }[] = [
@@ -816,6 +816,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         // YAZ-4162 D6, D14 (YAZ-4159 D16 names the group): how a calendar table looks, for every note. A look, never in the file.
         title: 'Tables',
         items: [
+          {
+            // YAZ-4167 D16: first in the group. The band follows the caret's row and the mouse's; a look, never in the file.
+            id: 'tableRowBand',
+            label: 'Row band',
+            hint: 'A light band across the table row under the caret or the mouse, its first cell in bold.',
+            keywords: ['row', 'band', 'highlight', 'mouse', 'caret', 'calendar', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TABLE_ROW_BAND_OPTIONS} value={settings.tableRowBand} onChange={(tableRowBand) => onChange({ ...settings, tableRowBand })} ariaLabel="Row band" />
+            ),
+          },
           {
             id: 'tableNowMark',
             label: 'Mark the current time',

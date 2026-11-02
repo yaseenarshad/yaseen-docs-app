@@ -8,6 +8,7 @@
  *     view (which `find`s the frozen tables) does not run.
  * The times are in `tableSpeed.perf.test.ts`. jsdom has no layout, so every read gives 0; only the count matters.
  * A calendar table (YAZ-4162) adds its now row and past rows: a key only maps that set too, and starts no clock work.
+ * The row band (YAZ-4167) on the caret's row: a key in that row only maps its set (and makes no new one).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -122,7 +123,7 @@ function followSets(): { work: string[]; seed: (sets: DecorationSet[]) => void; 
 describe('S6: a key in a frozen, styled 500 × 10 table adds no work (YAZ-3796)', () => {
   it('reads no layout, and the freeze and the styles only map their sets', async () => {
     const { view, scroller, block, flush } = await mount()
-    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style' }
+    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', band: 'mdapp-table-row-band' }
     // The table is frozen and styled: both sets hold decorations.
     expect(pluginSet(view.state, plugins.freeze).find().length).toBeGreaterThan(ROWS)
     expect(pluginSet(view.state, plugins.style).find()).toHaveLength(1)
@@ -165,7 +166,7 @@ const CALENDAR = [
 describe('a key in a calendar table adds no work (YAZ-4162)', () => {
   it('reads no layout, and the calendar marks only map their set', async () => {
     const { view, scroller, block, flush } = await mount(CALENDAR)
-    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', calendar: 'mdapp-table-calendar' }
+    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', calendar: 'mdapp-table-calendar', band: 'mdapp-table-row-band' }
     // The table shows a now row or past rows: the set holds decorations.
     expect(pluginSet(view.state, plugins.calendar).find().length).toBeGreaterThan(0)
     const layout = countLayoutReads((el) => el === scroller || block.contains(el))

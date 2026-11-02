@@ -680,7 +680,8 @@ export function App() {
   // indent's grey lines (YAZ-2709, `data-section-lines`), and the sidebar tree's icons (YAZ-3440 D4,
   // `data-sidebar-file-icons`, `data-sidebar-folder-icons`) and its arrows' turn (D6, `data-sidebar-arrow`): a change
   // restyles the rows and renders no tree level. A calendar table's marker look and its dim past rows (YAZ-4162 D6, D14,
-  // `data-table-now`, `data-table-dim-past`) too: a change restyles the rows and builds no decoration.
+  // `data-table-now`, `data-table-dim-past`) too, and the row band (YAZ-4167 D16, `data-table-row-band`): a change
+  // restyles the rows and builds no decoration.
   const settingsVars = {
     '--edit-line-height': settings.lineSpacing,
     '--edit-block-gap': `${settings.blockGap}px`,
@@ -3035,7 +3036,7 @@ export function App() {
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
     <VaultLinksContext.Provider value={vaultLinks}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands

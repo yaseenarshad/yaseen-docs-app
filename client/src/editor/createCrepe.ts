@@ -206,6 +206,8 @@
  *    of the cell's text the first press selects only that cell, and `tableEditing` grows it on the next.
  *  - Fold rows (YAZ-4165, `table/tableFold.ts`): a run of folded rows is one bar, drawn by row decorations; a
  *    mousedown on the bar opens it, also just before `tableEditing`, so it starts no cell selection.
+ *  - The row band (YAZ-4167, `table/tableRowBand.ts`): one decoration on the caret's body row, the mouse's by CSS;
+ *    Settings › Editor › Tables › Row band is `data-table-row-band` on `.app`.
  *  - Paste into cells (YAZ-3696 D4 / S2, `table/tablePaste.ts`, called from `clipboardPaste.ts`): cells
  *    and tab-separated text fill from the caret cell and grow the table; one value fills selected
  *    cells; tab-separated text outside a table makes one. One `replaceWith`, one undo step.
@@ -286,6 +288,7 @@ import { lineNumbers } from './lineNumbers/lineNumbers'
 import { tableColumnResize } from './table/tableColumnResize'
 import { tableShiftArrow } from './table/tableShiftArrow'
 import { tableFold } from './table/tableFold'
+import { tableRowBand } from './table/tableRowBand'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut, copyLinkTextCtx, copyMarkdownCtx, copyNoticeCtx, copyVisibleHotkey } from './clipboardCopyOut'
@@ -616,6 +619,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableFreeze)
   // Calendar tables (YAZ-4162): the now row and the past rows; the minute clock in the note editor only.
   crepe.editor.use(createTableCalendar(opts.calendarClock === true))
+  // The row band on the caret's row (YAZ-4167): one row decoration, moved only when the caret goes to another row.
+  crepe.editor.use(tableRowBand)
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook, opts.vaultsOfLetters))

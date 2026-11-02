@@ -82,9 +82,11 @@
 }
 
 /* Each cell's tint: the header shade, the stripes and the fills set `--table-cell-tint`, and this one
-   rule paints it. A frozen cell paints it over a solid page colour instead (below). */
+   rule paints it. A frozen cell paints it over a solid page colour instead (below). The row band
+   (`--table-band`, YAZ-4167, below) is a layer over it, so the fill shows under the band. */
 .milkdown .ProseMirror .milkdown-table-block :is(th, td) {
   background-color: var(--table-cell-tint, transparent);
+  background-image: var(--table-band, none);
 }
 
 /* Header row: shaded by default, plain on request. */
@@ -256,7 +258,7 @@
 
 .milkdown .ProseMirror .milkdown-table-block :is(.table-frozen-row > *, .table-frozen-col) {
   background-color: var(--bg);
-  background-image: linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
+  background-image: var(--table-band, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
 }
 
 /* Calendar tables (YAZ-4162 D2, D6, D14, `tableCalendar.ts`). The now row carries `--table-now` (0–1, how far
@@ -282,11 +284,11 @@
 }
 
 .milkdown .ProseMirror .milkdown-table-block .table-now-row > * {
-  background-image: var(--table-now-line), var(--table-now-tint), var(--table-now-under, none);
+  background-image: var(--table-now-line), var(--table-now-tint), var(--table-band, none), var(--table-now-under, none);
 }
 
 .milkdown .ProseMirror .milkdown-table-block .table-now-row > :first-child {
-  background-image: var(--table-now-dot), var(--table-now-line), var(--table-now-tint), var(--table-now-under, none);
+  background-image: var(--table-now-dot), var(--table-now-line), var(--table-now-tint), var(--table-band, none), var(--table-now-under, none);
 }
 
 /* A frozen cell paints its tint as a layer over the page colour (above): it stays under the mark. */
@@ -297,6 +299,21 @@
 /* Past rows: grey text, over a cell's own text colour; marks keep theirs (D14, `data-table-dim-past`). */
 [data-table-dim-past='on'] .milkdown .ProseMirror .milkdown-table-block .table-past-row > :is(th, td) {
   color: var(--fg-muted);
+}
+
+/* The row band (YAZ-4167, D16, `tableRowBand.ts`): a light accent band across the body row under the caret
+   (`table-band-row`, one decoration) or the mouse (`:hover`, never the header row), its first cell bold.
+   `data-table-row-band` on `.app` (Settings › Editor › Tables › Row band) picks all tables, calendar tables or
+   none (`off` has no rule). The band is `--table-band`, a background layer each cell rule paints (above): a fill
+   shows under it, a frozen cell stays sticky, and the now mark's line and tint paint over it on the same row. */
+[data-table-row-band='all'] .milkdown .ProseMirror .milkdown-table-block :is(.table-band-row, tr:not(:first-child):hover),
+[data-table-row-band='calendar'] .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] :is(.table-band-row, tr:not(:first-child):hover) {
+  --table-band: linear-gradient(color-mix(in srgb, var(--accent) 10%, transparent), color-mix(in srgb, var(--accent) 10%, transparent));
+}
+
+[data-table-row-band='all'] .milkdown .ProseMirror .milkdown-table-block :is(.table-band-row, tr:not(:first-child):hover) > :first-child,
+[data-table-row-band='calendar'] .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] :is(.table-band-row, tr:not(:first-child):hover) > :first-child {
+  font-weight: 600;
 }
 
 /* Fold rows (YAZ-4165, D3, `tableFold.ts`; the demo decides the look). A run's other rows are gone; its first row is

@@ -1669,6 +1669,8 @@ export interface SettingsState {
   outsideChangeGlow: OutsideChangeGlow
   /** Settings › Editor › Outside changes › Pin default (YAZ-3704 demo): the numbered list of the changes sits left of the note; off, it opens from the bar's count. The list's own Pin and Unpin write it. */
   outsideListPinned: boolean
+  /** Settings › Editor › Tables › Row band (YAZ-4167, YAZ-4159 D16): a light accent band on the table row under the caret or the mouse, its first cell bold — in no table, in calendar tables, or in all tables. A look, never in the file: `data-table-row-band` on `.app`. */
+  tableRowBand: TableRowBand
   /** Settings › Editor › Tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /** Settings › Editor › Tables › Dim past rows (YAZ-4162 D14): a calendar table's rows before now show grey text. `data-table-dim-past` on `.app`. */
@@ -1869,6 +1871,10 @@ export const OUTSIDE_CHANGE_GLOWS: readonly OutsideChangeGlow[] = ['until-checke
 export type DailyNoteOpens = 'note' | 'now'
 export const DAILY_NOTE_OPENS: readonly DailyNoteOpens[] = ['note', 'now']
 
+/** Tables (YAZ-4167 D16): where the row band shows. */
+export type TableRowBand = 'off' | 'calendar' | 'all'
+export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all']
+
 /** Calendar tables (YAZ-4162 D6): how the now row is marked. */
 export type TableNowMark = 'line' | 'tint' | 'both'
 export const TABLE_NOW_MARKS: readonly TableNowMark[] = ['line', 'tint', 'both']
@@ -2040,6 +2046,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tocLines: 'hover',
   outsideChangeGlow: 'until-checked',
   outsideListPinned: false,
+  tableRowBand: 'all',
   tableNowMark: 'line',
   tableDimPast: true,
   tableTimeFormat: DEFAULT_TIME_FORMAT,
