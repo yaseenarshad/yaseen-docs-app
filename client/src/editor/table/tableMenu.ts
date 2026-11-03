@@ -24,9 +24,8 @@
  * cell above it in each column (YAZ-4166).
  *
  * The labels count the target's rows and columns, as in Sheets (YAZ-3801): "Insert 2 rows above",
- * "Delete 3 columns"; one row or column keeps the singular label. Insert N inserts N. With whole rows selected (a row
- * handle's selection) the column items act on the right-clicked cell's column, and with whole columns the row items on
- * its row (the YAZ-4163 demo): every item is always there.
+ * "Delete 3 columns"; one row or column keeps the singular label. Insert N inserts N. Whole rows and whole columns
+ * count the same way: every item is always there, and counts what is selected (the YAZ-4163 demo).
  *
  * Freeze (S3) counts from the top and from the left: "Freeze up to this row" sets `freezeRows` to
  * the clicked row's number (row 1 is the header), the column item `freezeCols` the same way; there
@@ -82,12 +81,11 @@ function targetSelection(state: EditorState, cell: { pos: number; tableStart: nu
  * The transaction of `command` on the target cells of `current`, with the history closed, or null when it makes none.
  * The command sees a state whose selection is the target; the note's own selection is put back when it was not.
  */
-function buildOn(current: EditorState, pointer: number, command: Command, single = false): Transaction | null {
+function buildOn(current: EditorState, pointer: number, command: Command): Transaction | null {
   const cell = clickedCell(current.doc, pointer)
   if (cell === null) return null
   const own = current.selection
-  // `single`: the clicked cell only, not the selection (a column item on whole rows, the YAZ-4163 demo).
-  const target = single ? CellSelection.create(current.doc, cell.pos) : targetSelection(current, cell)
+  const target = targetSelection(current, cell)
   const state = target === own ? current : EditorState.create({ doc: current.doc, selection: target })
   let made: Transaction | null = null
   command(state, (tr) => {
@@ -98,8 +96,8 @@ function buildOn(current: EditorState, pointer: number, command: Command, single
 }
 
 /** Run `command` on the target cells, in one transaction with the history closed (`buildOn`). */
-function runOn(view: EditorView, pointer: number, command: Command, single = false): void {
-  const tr = buildOn(view.state, pointer, command, single)
+function runOn(view: EditorView, pointer: number, command: Command): void {
+  const tr = buildOn(view.state, pointer, command)
   if (tr !== null) view.dispatch(tr)
 }
 
@@ -107,19 +105,18 @@ function runOn(view: EditorView, pointer: number, command: Command, single = fal
  * A delete of rows, columns or cells that asks first when it would take a cell note (YAZ-4206 D16,
  * `deleteWithNotes`): the sheet names what goes and how many cell notes.
  */
-function deleteOn(view: EditorView, pointer: number, command: Command, kind: DeleteKind, count: number, single = false): void {
-  deleteWithNotes(view, (state) => buildOn(state, pointer, command, single), (gone) => deleteText(kind, count, gone))
+function deleteOn(view: EditorView, pointer: number, command: Command, kind: DeleteKind, count: number): void {
+  deleteWithNotes(view, (state) => buildOn(state, pointer, command), (gone) => deleteText(kind, count, gone))
 }
 
 /**
  * Duplicate rows or columns, with the choice for their cell notes (YAZ-4206 D17, `duplicateWithNotes`): the copied
  * cells' marks, and the table's end for the cloned cell notes.
  */
-function duplicateOn(view: EditorView, pointer: number, kind: 'rows' | 'columns', single: boolean): void {
+function duplicateOn(view: EditorView, pointer: number, kind: 'rows' | 'columns'): void {
   const cell = clickedCell(view.state.doc, pointer)
   if (cell === null) return
-  const target = single ? CellSelection.create(view.state.doc, cell.pos) : targetSelection(view.state, cell)
-  const rect = selectedRect(EditorState.create({ doc: view.state.doc, selection: target }))
+  const rect = selectedRect(EditorState.create({ doc: view.state.doc, selection: targetSelection(view.state, cell) }))
   const labels: string[] = []
   for (let row = kind === 'rows' ? rect.top : 0; row < (kind === 'rows' ? rect.bottom : rect.map.height); row++) {
     for (let col = kind === 'rows' ? 0 : rect.left; col < (kind === 'rows' ? rect.map.width : rect.right); col++) {
@@ -132,7 +129,7 @@ function duplicateOn(view: EditorView, pointer: number, kind: 'rows' | 'columns'
     view,
     labels,
     noun,
-    (state, copy) => buildOn(state, pointer, kind === 'rows' ? duplicateRows(copy) : duplicateColumns(copy), single),
+    (state, copy) => buildOn(state, pointer, kind === 'rows' ? duplicateRows(copy) : duplicateColumns(copy)),
     (doc) => tableAround(doc, cell.pos).end,
   )
 }
@@ -140,7 +137,8 @@ function duplicateOn(view: EditorView, pointer: number, kind: 'rows' | 'columns'
 /**
  * As many body rows as the rect holds, at index `at` of its table, each cell with its column's alignment:
  * a copy of Milkdown's `addRowWithAlignment`, which needs the editor's `ctx`; the note menu has the view only.
- * Each cell also takes the `valign` of the cell above it (YAZ-4166).
+ * Each cell also takes the `valign` of the cell above it (YAZ-4166); above the first body row, that row's own, not the
+ * header's (YAZ-4173 12C).
  */
 function insertRows(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, rect: TableRect, at: number): boolean {
   if (at === 0) return false
@@ -150,7 +148,7 @@ function insertRows(state: EditorState, dispatch: ((tr: Transaction) => void) | 
     for (let i = 0; i < at; i++) pos += rect.table.child(i).nodeSize
     const attr = (row: number, col: number, name: string): unknown => rect.table.nodeAt(rect.map.map[row * rect.map.width + col]!)?.attrs[name] ?? null
     const row = () =>
-      rowType.create(null, Array.from({ length: rect.map.width }, (_, col) => cellType.createAndFill({ alignment: attr(0, col, 'alignment'), valign: attr(at - 1, col, 'valign') })!))
+      rowType.create(null, Array.from({ length: rect.map.width }, (_, col) => cellType.createAndFill({ alignment: attr(0, col, 'alignment'), valign: attr(at === 1 ? 1 : at - 1, col, 'valign') })!))
     dispatch(state.tr.insert(pos, Array.from({ length: rect.bottom - rect.top }, row)))
   }
   return true
@@ -317,16 +315,6 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
   const cols = right - left
   // The target's body rows: the header row never folds (YAZ-4165).
   const folds = bottom - Math.max(top, 1)
-  // The YAZ-4163 demo: whole rows selected, the column items act on the right-clicked cell's column (one column), and
-  // whole columns selected, the row items on its row; the whole table, or any other cells, act on the selection.
-  const wholeRows = target.isRowSelection() && !target.isColSelection()
-  const wholeCols = target.isColSelection() && !target.isRowSelection()
-  const runCell = (command: Command) => () => runOn(view, pointer, command, true)
-  const rowRun = wholeCols ? runCell : run
-  const colRun = wholeRows ? runCell : run
-  const rowCount = wholeCols ? 1 : rows
-  const colCount = wholeRows ? 1 : cols
-  const rowTop = wholeCols ? cell.row : top
   const { freezeRows, freezeCols } = cell.table.attrs as { freezeRows: number; freezeCols: number }
   const item = (id: string, label: string, onSelect: () => void, disabled = false): MenuAction => ({ id: `table-${id}`, label, onSelect, disabled })
   /** Fill ▸ or Text colour ▸: the cell toolbar's palette — the clear item, the ten names, Custom colour… (YAZ-3817). */
@@ -351,17 +339,17 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
           item('delete-note', 'Delete cell note', () => view.dispatch(closeHistory(removeCellNote(view.state.tr, note)))),
         ],
     [
-              item('insert-row-above', counted(rowCount, 'Insert row above', 'Insert N rows above'), rowRun(rowsAbove), rowTop === 0),
-        item('insert-row-below', counted(rowCount, 'Insert row below', 'Insert N rows below'), rowRun(rowsBelow)),
-              item('insert-col-left', counted(colCount, 'Insert column left', 'Insert N columns left'), colRun(columns('left'))),
-        item('insert-col-right', counted(colCount, 'Insert column right', 'Insert N columns right'), colRun(columns('right'))),
-      item('duplicate-rows', counted(rowCount, 'Duplicate row', 'Duplicate N rows'), () => duplicateOn(view, pointer, 'rows', wholeCols), rowTop === 0),
-      item('duplicate-cols', counted(colCount, 'Duplicate column', 'Duplicate N columns'), () => duplicateOn(view, pointer, 'columns', wholeRows)),
+      item('insert-row-above', counted(rows, 'Insert row above', 'Insert N rows above'), run(rowsAbove), top === 0),
+      item('insert-row-below', counted(rows, 'Insert row below', 'Insert N rows below'), run(rowsBelow)),
+      item('insert-col-left', counted(cols, 'Insert column left', 'Insert N columns left'), run(columns('left'))),
+      item('insert-col-right', counted(cols, 'Insert column right', 'Insert N columns right'), run(columns('right'))),
+      item('duplicate-rows', counted(rows, 'Duplicate row', 'Duplicate N rows'), () => duplicateOn(view, pointer, 'rows'), top === 0),
+      item('duplicate-cols', counted(cols, 'Duplicate column', 'Duplicate N columns'), () => duplicateOn(view, pointer, 'columns')),
     ],
     [
       // YAZ-4206 D16: each asks first when it would take a cell note.
-      item('delete-row', counted(rowCount, 'Delete row', 'Delete N rows'), () => deleteOn(view, pointer, deleteRow, 'row', rowCount, wholeCols), rowTop === 0 || rowCount >= map.height - 1),
-      item('delete-col', counted(colCount, 'Delete column', 'Delete N columns'), () => deleteOn(view, pointer, deleteColumn, 'column', colCount, wholeRows), colCount >= map.width),
+      item('delete-row', counted(rows, 'Delete row', 'Delete N rows'), () => deleteOn(view, pointer, deleteRow, 'row', rows), top === 0 || rows >= map.height - 1),
+      item('delete-col', counted(cols, 'Delete column', 'Delete N columns'), () => deleteOn(view, pointer, deleteColumn, 'column', cols), cols >= map.width),
       item('clear', 'Clear cells', () => deleteOn(view, pointer, deleteCellSelection, 'cells', rows * cols)),
     ],
     [
@@ -376,15 +364,15 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
     [
       item('sort-asc', 'Sort A to Z', run(sortRows(1))),
       item('sort-desc', 'Sort Z to A', run(sortRows(-1))),
-      ...(!wholeCols && folds >= 2 ? [item('fold', `Fold ${folds} rows`, () => keepingScroll(view, run(foldRows)))] : []),
+      ...(folds >= 2 ? [item('fold', `Fold ${folds} rows`, () => keepingScroll(view, run(foldRows)))] : []),
     ],
     [
-              freezeRows === cell.row + 1
-          ? item('freeze-rows', '✓ Frozen up to this row', () => setFreeze(view, cell.tableStart, 'freezeRows', 0))
-          : item('freeze-rows', 'Freeze up to this row', () => setFreeze(view, cell.tableStart, 'freezeRows', cell.row + 1)),
-              freezeCols === cell.col + 1
-          ? item('freeze-cols', '✓ Frozen up to this column', () => setFreeze(view, cell.tableStart, 'freezeCols', 0))
-          : item('freeze-cols', 'Freeze up to this column', () => setFreeze(view, cell.tableStart, 'freezeCols', cell.col + 1)),
+      freezeRows === cell.row + 1
+        ? item('freeze-rows', '✓ Frozen up to this row', () => setFreeze(view, cell.tableStart, 'freezeRows', 0))
+        : item('freeze-rows', 'Freeze up to this row', () => setFreeze(view, cell.tableStart, 'freezeRows', cell.row + 1)),
+      freezeCols === cell.col + 1
+        ? item('freeze-cols', '✓ Frozen up to this column', () => setFreeze(view, cell.tableStart, 'freezeCols', 0))
+        : item('freeze-cols', 'Freeze up to this column', () => setFreeze(view, cell.tableStart, 'freezeCols', cell.col + 1)),
       item('unfreeze-rows', 'Unfreeze rows', () => setFreeze(view, cell.tableStart, 'freezeRows', 0), freezeRows === 0),
       item('unfreeze-cols', 'Unfreeze columns', () => setFreeze(view, cell.tableStart, 'freezeCols', 0), freezeCols === 0),
     ],

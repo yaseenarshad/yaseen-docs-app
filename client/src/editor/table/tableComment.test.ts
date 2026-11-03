@@ -98,8 +98,8 @@ describe('named and custom colours (YAZ-3817)', () => {
     expect(formatTableComment(parsed!)).toBe('<!-- table: fill A1:B1 #ff8800 C2 teal, color B2 #1a2b3c -->')
   })
 
-  it.each(['#ff88', '#ff88000', '#gg8800', 'ff8800', '#ff8800aa'])('%s is no colour: the part is ignored', (value) => {
-    expect(parseTableComment(`<!-- table: fill A1 ${value}, stripes -->`)).toEqual(style({ stripes: true }))
+  it.each(['#ff88', '#ff88000', '#gg8800', 'ff8800', '#ff8800aa'])('%s is no colour: the part is not read, and is kept as its text (YAZ-4176)', (value) => {
+    expect(parseTableComment(`<!-- table: fill A1 ${value}, stripes -->`)).toEqual(style({ stripes: true, unknown: [{ after: null, text: `fill A1 ${value}` }] }))
   })
 })
 
@@ -112,8 +112,8 @@ describe('a cell\'s own alignment (YAZ-3819)', () => {
     expect(formatTableComment(parseTableComment('<!-- table: align A1 left, color A1 red -->')!)).toBe('<!-- table: color A1 red, align A1 left -->')
   })
 
-  it.each(['align A1 middle', 'align A1 #ff8800', 'align A1 red', 'align center'])('%s is ignored', (part) => {
-    expect(parseTableComment(`<!-- table: ${part}, stripes -->`)).toEqual(style({ stripes: true }))
+  it.each(['align A1 middle', 'align A1 #ff8800', 'align A1 red', 'align center'])('%s is not read, and is kept as its text (YAZ-4176)', (part) => {
+    expect(parseTableComment(`<!-- table: ${part}, stripes -->`)).toEqual(style({ stripes: true, unknown: [{ after: null, text: part }] }))
   })
 })
 
@@ -136,13 +136,14 @@ describe('tolerant reading', () => {
     expect(parseTableComment('<!-- table: stripes, sparkle 3, nowrap -->')).toEqual(style({ stripes: true, nowrap: true, unknown: [{ after: 'stripes', text: 'sparkle 3' }] }))
   })
 
-  it('`align` is no part: the column alignment is the GFM `:-` row (YAZ-3767)', () => {
-    expect(parseTableComment('<!-- table: align center, stripes -->')).toEqual(style({ stripes: true }))
+  it('`align center` is no column alignment: that is the GFM `:-` row (YAZ-3767); the part is kept as its text (YAZ-4176)', () => {
+    expect(parseTableComment('<!-- table: align center, stripes -->')).toEqual(style({ stripes: true, unknown: [{ after: null, text: 'align center' }] }))
   })
 
-  it('a known part with a value it does not know is ignored', () => {
-    expect(parseTableComment('<!-- table: fill A1 magenta, header fancy, stripes -->')).toEqual(style({ stripes: true }))
-    expect(parseTableComment('<!-- table: widths 140 wide, border 2px, freeze 0 rows, nowrap -->')).toEqual(style({ nowrap: true }))
+  it('a known part with a value it does not know is not read, and is kept as its text (YAZ-4176)', () => {
+    const kept = (...texts: string[]) => texts.map((text) => ({ after: null, text }))
+    expect(parseTableComment('<!-- table: fill A1 magenta, header fancy, stripes -->')).toEqual(style({ stripes: true, unknown: kept('fill A1 magenta', 'header fancy') }))
+    expect(parseTableComment('<!-- table: widths 140 wide, border 2px, freeze 0 rows, nowrap -->')).toEqual(style({ nowrap: true, unknown: kept('widths 140 wide', 'border 2px', 'freeze 0 rows') }))
   })
 
   it('any spaces inside the delimiters', () => {
@@ -179,8 +180,10 @@ describe('parts it does not know (YAZ-4161)', () => {
     expect(formatTableComment({ ...parsed, stripes: undefined })).toBe('<!-- table: nowrap, future 1 -->')
   })
 
-  it('a known part with a value it does not know is still dropped; it is no anchor', () => {
-    expect(formatTableComment(parseTableComment('<!-- table: stripes, header fancy, future, nowrap -->')!)).toBe('<!-- table: stripes, future, nowrap -->')
+  it('a known part with a value it does not know is kept in its place (YAZ-4176); it is no anchor', () => {
+    const parsed = parseTableComment('<!-- table: stripes, header fancy, future, nowrap -->')!
+    expect(parsed.unknown).toEqual([{ after: 'stripes', text: 'header fancy' }, { after: 'stripes', text: 'future' }])
+    expect(formatTableComment(parsed)).toBe('<!-- table: stripes, header fancy, future, nowrap -->')
   })
 
   it('a line break inside an unknown part is one space', () => {
@@ -189,5 +192,30 @@ describe('parts it does not know (YAZ-4161)', () => {
 
   it('a comment with only unknown parts is still not ours', () => {
     expect(parseTableComment('<!-- table: future 1, later -->')).toBeNull()
+  })
+})
+
+describe('a known part with a value this build cannot read (YAZ-4176)', () => {
+  // A newer build can write a new slot length, a wider zoom or a new `valign` value.
+  const NEWER = '<!-- table: widths 140 auto, valign A2 justify, zoom 500%, stripes, calendar 45m -->'
+
+  it('is kept as its text, in its place, as an unknown part: the comment saves byte for byte', () => {
+    const parsed = parseTableComment(NEWER)
+    expect(parsed).toEqual(style({
+      widths: [140, null],
+      stripes: true,
+      unknown: [{ after: 'widths', text: 'valign A2 justify' }, { after: 'widths', text: 'zoom 500%' }, { after: 'stripes', text: 'calendar 45m' }],
+    }))
+    expect(formatTableComment(parsed!)).toBe(NEWER)
+  })
+
+  it('is dropped only when this build writes that part itself', () => {
+    const parsed = parseTableComment(NEWER)!
+    expect(formatTableComment({ ...parsed, calendar: 30 })).toBe('<!-- table: widths 140 auto, valign A2 justify, zoom 500%, stripes, calendar 30m -->')
+    expect(formatTableComment({ ...parsed, zoom: 90, valignTable: 'middle' })).toBe('<!-- table: widths 140 auto, valign middle, zoom 90%, stripes, calendar 45m -->')
+  })
+
+  it('a comment with only such parts is still not ours: the editor keeps it as its text', () => {
+    expect(parseTableComment('<!-- table: calendar 45m, zoom 500% -->')).toBeNull()
   })
 })

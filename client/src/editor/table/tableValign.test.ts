@@ -66,8 +66,8 @@ describe('the `valign` part (one part: an optional table default, then cells as 
     expect(formatTableComment(parseTableComment('<!-- table: stripes, valign middle B3 bottom, border 2px 40%, align B2 center, fill A1 blue -->')!)).toBe(comment)
   })
 
-  it.each(['valign center', 'valign A2 sideways', 'valign middle A2', 'valign middle A2 left', 'valign A2', 'valign middle top'])('%s is a value it does not know: the part is dropped', (part) => {
-    expect(parseTableComment(`<!-- table: ${part}, stripes -->`)).toEqual(style({ stripes: true }))
+  it.each(['valign center', 'valign A2 sideways', 'valign middle A2', 'valign middle A2 left', 'valign A2', 'valign middle top'])('%s is a value it does not know: the part is kept as its text (YAZ-4176)', (part) => {
+    expect(parseTableComment(`<!-- table: ${part}, stripes -->`)).toEqual(style({ stripes: true, unknown: [{ after: null, text: part }] }))
   })
 
   it('`valign top` is the default: no part', () => {
@@ -164,12 +164,19 @@ describe('a new row takes the valign of the cell above it, in each column', () =
     ['table-insert-row-below', 1, ['middle', null]],
     ['table-insert-row-below', 2, [null, 'bottom']],
     ['table-insert-row-above', 2, ['middle', null]],
-    ['table-insert-row-above', 1, [null, null]],
+    // Above the first body row: that row's own, not the header's (YAZ-4173 12C).
+    ['table-insert-row-above', 1, ['middle', null]],
   ])('%s on row %i', async (id, at, row) => {
     const { view } = await mountNote(SET)
     menuItem(view, at, 0, id).onSelect()
     const index = id === 'table-insert-row-below' ? at + 1 : at
     expect(valigns(view)[index]).toEqual(row)
+  })
+
+  it('Insert row above the first body row of a calendar table: the new time is Middle, as its column (YAZ-4173 12C)', async () => {
+    const { view } = await mountNote('| Time | Plan |\n| - | - |\n| 9:00 am | x |\n| 9:30 am | y |\n\n<!-- table: valign A2:A3 middle, calendar 30m -->\n')
+    menuItem(view, 1, 0, 'table-insert-row-above').onSelect()
+    expect(valigns(view)[1]).toEqual(['middle', null])
   })
 
   it('Duplicate row keeps its own', async () => {

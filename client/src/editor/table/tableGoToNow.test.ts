@@ -1,7 +1,7 @@
 /**
  * Go to now (YAZ-4164, YAZ-4159 D11 / D12): the caret in the first empty cell of the now row of a calendar table, the
  * request a host makes for a note it opens (the daily-note button, ⌘D), "Go to now" in the six-dot menu, and the
- * "Now ↓" chip.
+ * "Now" chip.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -101,6 +101,30 @@ describe('goToNow (D11)', () => {
     }
   })
 
+  it('a read-only note: the document does not change; a now row in a folded run scrolls its bar to the middle (YAZ-4176)', async () => {
+    const seen: Array<[Element, unknown]> = []
+    const was = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function (this: Element, arg?: unknown) {
+      seen.push([this, arg])
+    }
+    try {
+      // Rows 2-4 (9:00 am to 10:00 am) are folded: 9:40 is in the run, and 9:00 am is its bar.
+      const { view, crepe } = await mountAt(9, 40, calendar(DAY, 'calendar 30m, fold 2-4'))
+      crepe.setReadonly(true)
+      const { doc, selection } = view.state
+      const saved = getMarkdownForSave(crepe)
+      expect(goToNow(view)).toBe(true)
+      expect(view.state.doc).toBe(doc)
+      expect(view.state.selection.eq(selection)).toBe(true)
+      expect(getMarkdownForSave(crepe)).toBe(saved)
+      const bar = view.dom.querySelectorAll('tr')[1]!
+      expect(bar.classList.contains('table-fold-bar')).toBe(true)
+      expect(seen.filter(([el]) => el === bar).map(([, arg]) => arg)).toEqual([{ block: 'center' }])
+    } finally {
+      Element.prototype.scrollIntoView = was
+    }
+  })
+
   it('a given table: its own now row', async () => {
     const { view } = await mountAt(10, 40, `${calendar(DAY)}\n${calendar(DAY)}`)
     expect(goToNow(view, tablesOf(view.state.doc)[1])).toBe(true)
@@ -147,7 +171,7 @@ describe('"Go to now" in the six-dot menu (D11)', () => {
   })
 })
 
-describe('the "Now ↓" chip (D12)', () => {
+describe('the "Now" chip (D12, D22)', () => {
   /** An observer stub: `see(el, visible, above)` reports one element. */
   function stubObserver() {
     const observers: Array<{ cb: IntersectionObserverCallback; els: Set<Element> }> = []
@@ -225,6 +249,12 @@ describe('the "Now ↓" chip (D12)', () => {
     const rules = [...tableCalendarCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.trim(), body }))
     const off = rules.find(({ selector }) => selector.startsWith("[data-table-now-button='off']"))
     expect(off?.selector).toContain('.table-now-chip-anchor')
+    expect(off?.body).toMatch(/display:\s*none/)
+  })
+
+  it('a read-only note shows no chip, as it shows no zoom pill (YAZ-4176)', () => {
+    const rules = [...tableCalendarCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.trim(), body }))
+    const off = rules.find(({ selector }) => selector.includes(".ProseMirror[contenteditable='false'] .table-now-chip-anchor"))
     expect(off?.body).toMatch(/display:\s*none/)
   })
 

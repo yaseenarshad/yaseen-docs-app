@@ -12,7 +12,8 @@ import { Autosave } from '../../lib/autosave'
 import { getMarkdownForSave } from '../createCrepe'
 import { mount, unmountAll } from '../marks/markTestKit'
 import { formatTableComment, parseTableComment, plainTable } from './tableComment'
-import { calendarTick, readTime } from './tableCalendar'
+import { readTime } from '@shared/timeFormat'
+import { calendarTick } from './tableCalendar'
 import { cellPos } from './tableTestKit'
 import tableCss from './table.css?inline'
 
@@ -65,8 +66,8 @@ describe('the calendar part (D1)', () => {
     expect(formatTableComment({ ...plainTable(), calendar: 30 })).toBe('<!-- table: calendar 30m -->')
   })
 
-  it('`calendar 45m` is a value the reader does not know: dropped', () => {
-    expect(parseTableComment('<!-- table: calendar 45m, stripes -->')).toEqual({ ...plainTable(), stripes: true })
+  it('`calendar 45m` is a value the reader does not know: kept as its text (YAZ-4176), and no calendar table', () => {
+    expect(parseTableComment('<!-- table: calendar 45m, stripes -->')).toEqual({ ...plainTable(), stripes: true, unknown: [{ after: null, text: 'calendar 45m' }] })
     expect(parseTableComment('<!-- table: calendar 45m -->')).toBeNull()
   })
 
@@ -209,6 +210,17 @@ describe('the clock: one timer per editor, on the minute (D2, D9)', () => {
     expect(nowRows(view)).toEqual([{ i: 16, now: '0.367' }])
   })
 
+  it('a Mac waking from sleep fires the late timer, which reads the clock again: the marker goes to the minute of now (YAZ-4173)', async () => {
+    fakeClock(11, 40, 30)
+    const { view } = await mount(calendar(DAY), { calendarClock: true })
+    expect(nowRows(view)).toEqual([{ i: 16, now: '0.333' }])
+    // The Mac sleeps for 2 h 25 min: the clock moves on, and no timer fires.
+    vi.setSystemTime(new Date(2026, 10, 2, 14, 5, 10))
+    // It wakes: the late timer fires once, and the marker is at 2:05 pm (row 2:00 pm, 5 of 30 minutes down).
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(nowRows(view)).toEqual([{ i: 21, now: '0.167' }])
+  })
+
   it('the hover preview card (no clock) starts no timer: the marker stays', async () => {
     fakeClock(11, 40, 30)
     const { view } = await mount(calendar(DAY))
@@ -257,6 +269,31 @@ describe('the clock: one timer per editor, on the minute (D2, D9)', () => {
     expect(nowRows(view)).toEqual([{ i: 16, now: '0.333' }])
     observers.forEach((cb) => cb([{ isIntersecting: true }]))
     expect(nowRows(view)).toEqual([{ i: 16, now: '0.367' }])
+    vi.unstubAllGlobals()
+  })
+
+  it('watches the chips again only when a calendar table changes: not on Enter in a paragraph or a change of a plain table (YAZ-4176)', async () => {
+    let observed = 0
+    vi.stubGlobal('IntersectionObserver', class {
+      observe() {
+        observed++
+      }
+      disconnect() {}
+    })
+    const { view } = await mount(`Text\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n${calendar(DAY)}`, { calendarClock: true })
+    const before = observed
+    // Enter in the paragraph: a split, so not typing only.
+    view.dispatch(view.state.tr.split(3))
+    const plain = firstTable(view.state.doc)
+    view.dispatch(view.state.tr.setNodeMarkup(plain.pos, undefined, { ...plain.node.attrs, stripes: true }))
+    expect(observed).toBe(before)
+    let cal: { node: ProseNode; pos: number } | null = null
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'table' && node.attrs.calendar > 0) cal = { node, pos }
+      return node.type.name !== 'table'
+    })
+    view.dispatch(view.state.tr.setNodeMarkup(cal!.pos, undefined, { ...cal!.node.attrs, stripes: true }))
+    expect(observed).toBeGreaterThan(before)
     vi.unstubAllGlobals()
   })
 

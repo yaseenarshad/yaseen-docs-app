@@ -576,9 +576,19 @@ export class AppViewport {
         });
       }
       if (opts.reserve.sidebar) {
+        // Yaseen Docs (YAZ-4157 polish): the host can set the sidebar's
+        // width through `--right-sidebar-width` (a dragged panel), so a
+        // sidebar never measured yet reserves THAT width, not the default.
+        const hostWidth = excalidrawContainer
+          ? parseFloat(
+              getComputedStyle(excalidrawContainer).getPropertyValue(
+                "--right-sidebar-width",
+              ),
+            )
+          : NaN;
         reserveSurface("sidebar", {
           side: isRTL ? "right" : "left",
-          offset: RIGHT_SIDEBAR_WIDTH,
+          offset: Number.isFinite(hostWidth) ? hostWidth : RIGHT_SIDEBAR_WIDTH,
         });
       }
     }

@@ -1,9 +1,9 @@
 /**
- * Image Studio's session (YAZ-1990): the search without React. What is pinned here is what makes
+ * The Add tab's session (YAZ-1990, YAZ-4157): the search without React. What is pinned here is what makes
  * it safe to outlive the panel — a page is never asked for twice, and a response that lands after a
- * newer search started (even one started by a later mount) is dropped.
+ * newer search started (even one started by a later mount) is dropped — and the pause before the web is asked.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MediaSearchResponse, StudioItem } from '@shared/types'
 
 vi.mock('../api', async (importOriginal) => ({
@@ -12,7 +12,7 @@ vi.mock('../api', async (importOriginal) => ({
 }))
 
 import { api, BridgeRequestError } from '../api'
-import { imageStudioSession, OFFLINE_NOTICE, resetImageStudioSession, runSearch, scrollTops, wasRequested } from './imageStudioSession'
+import { imageStudioSession, OFFLINE_NOTICE, pickChip, resetImageStudioSession, runSearch, scrollTops, SEARCH_PAUSE_MS, searchNow, typeQuery, wasRequested } from './imageStudioSession'
 
 const search = vi.mocked(api.media.search)
 const state = () => imageStudioSession.getState()
@@ -33,8 +33,8 @@ beforeEach(() => {
 })
 
 describe('a fresh search', () => {
-  it('asks with the trimmed query and the source, and keeps what comes back', async () => {
-    imageStudioSession.set({ query: '  mountain ', source: 'iconify' })
+  it('asks with the trimmed query and the chip`s source, and keeps what comes back', async () => {
+    imageStudioSession.set({ query: '  mountain ', chip: 'icons' })
     search.mockResolvedValue(page(['a', 'b'], 'PAGE2'))
     await runSearch()
     expect(search).toHaveBeenCalledWith({ q: 'mountain', source: 'iconify', cursor: null })
@@ -42,11 +42,21 @@ describe('a fresh search', () => {
     expect(state().results.map(({ title }) => title)).toEqual(['a', 'b'])
   })
 
-  it('refuses a one-character query without asking', async () => {
+  it('a one-character query, or a chip that never reaches the web, asks nothing and says nothing', async () => {
     imageStudioSession.set({ query: 'a' })
     await runSearch()
+    imageStudioSession.set({ query: 'mountain', chip: 'shapes' })
+    await runSearch()
     expect(search).not.toHaveBeenCalled()
-    expect(state().error).toBe('Type at least two characters.')
+    expect(state().error).toBeNull()
+  })
+
+  it('asks every provider under All, and Pixabay alone under Photos', async () => {
+    imageStudioSession.set({ query: 'tree' })
+    await runSearch()
+    pickChip('photos')
+    await Promise.resolve()
+    expect(search.mock.calls.map(([req]) => req.source)).toEqual(['all', 'pixabay'])
   })
 
   it('is a passive offline state, not an error, when no provider can be reached', async () => {
@@ -100,13 +110,83 @@ describe('outliving the panel', () => {
   it('a reset forgets everything, including an answer still on its way', async () => {
     const slow = deferred()
     search.mockReturnValueOnce(slow.promise)
-    imageStudioSession.set({ query: 'mountain', view: 'favorites' })
-    scrollTops.search = 400
+    imageStudioSession.set({ query: 'mountain', chip: 'icons' })
+    scrollTops.icons = 400
     const pending = runSearch()
     resetImageStudioSession()
     slow.resolve(page(['mountain']))
     await pending
-    expect(state()).toMatchObject({ view: 'search', query: '', results: [], isSearching: false })
-    expect(scrollTops.search).toBe(0)
+    expect(state()).toMatchObject({ chip: 'all', query: '', results: [], isSearching: false })
+    expect(scrollTops.icons).toBe(0)
+  })
+})
+
+describe('typing (YAZ-4157 D3): the web is asked on a pause, Enter asks at once', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it(`asks once, ${SEARCH_PAUSE_MS} ms after the last key, with the last text`, async () => {
+    for (const text of ['ro', 'roc', 'rocket']) {
+      typeQuery(text)
+      await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS - 50)
+    }
+    expect(search).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(60)
+    expect(search).toHaveBeenCalledTimes(1)
+    expect(search).toHaveBeenCalledWith({ q: 'rocket', source: 'all', cursor: null })
+  })
+
+  it('a pause on two letters asks nothing and drops the old results; Enter on them still asks (demo 6E, polish)', async () => {
+    search.mockResolvedValueOnce(page(['rocket']))
+    typeQuery('rocket')
+    await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS)
+    expect(state().results).not.toEqual([])
+    search.mockClear()
+    typeQuery('ro')
+    expect(state()).toMatchObject({ results: [], searchedQuery: '' })
+    expect(state().waiting).toBe(false)
+    await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS * 2)
+    expect(search).not.toHaveBeenCalled()
+    searchNow()
+    expect(search).toHaveBeenCalledWith({ q: 'ro', source: 'all', cursor: null })
+  })
+
+  it('is `waiting` for the pause only: from the key until the search starts', async () => {
+    typeQuery('rocket')
+    expect(state().waiting).toBe(true)
+    await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS)
+    expect(state().waiting).toBe(false)
+    typeQuery('rocketship')
+    typeQuery('r')
+    expect(state().waiting).toBe(false)
+    typeQuery('rocketship')
+    searchNow()
+    expect(state().waiting).toBe(false)
+  })
+
+  it('Enter asks now, and the pause after it asks nothing again', async () => {
+    typeQuery('rocket')
+    searchNow()
+    await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS * 2)
+    expect(search).toHaveBeenCalledTimes(1)
+  })
+
+  it('the same text again is not asked again', async () => {
+    typeQuery('rocket')
+    await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS)
+    typeQuery('rocket ')
+    await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS)
+    expect(search).toHaveBeenCalledTimes(1)
+  })
+
+  it('text too short for the web drops the old results at once, and an answer still on its way', async () => {
+    const slow = deferred()
+    search.mockReturnValueOnce(slow.promise)
+    typeQuery('rocket')
+    await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS)
+    typeQuery('r')
+    slow.resolve(page(['rocket']))
+    await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS)
+    expect(state()).toMatchObject({ query: 'r', results: [], searchedQuery: '', isSearching: false })
   })
 })

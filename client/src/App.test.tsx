@@ -223,6 +223,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuTabOverview = new Set<() => void>()
   const menuBack = new Set<() => void>()
   const menuForward = new Set<() => void>()
+  // Window › Open Back / Forward in New Tab (YAZ-4156 7).
+  const menuBackNewTab = new Set<() => void>()
+  const menuForwardNewTab = new Set<() => void>()
   const menuNewTab = new Set<() => void>()
   const windowGlow = new Set<(on: boolean) => void>()
   const menuNewWindow = new Set<() => void>()
@@ -389,6 +392,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onTabOverview: menuSub(menuTabOverview),
       onBack: menuSub(menuBack),
       onForward: menuSub(menuForward),
+      onBackNewTab: menuSub(menuBackNewTab),
+      onForwardNewTab: menuSub(menuForwardNewTab),
       onNewTab: menuSub(menuNewTab),
       onNewWindow: menuSub(menuNewWindow),
       onNewItem: menuSub(menuNewItem),
@@ -557,6 +562,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitNextTab: () => menuNextTab.forEach((l) => l()),
     emitPrevTab: () => menuPrevTab.forEach((l) => l()),
     emitTabOverview: () => menuTabOverview.forEach((l) => l()),
+    emitBackNewTab: () => menuBackNewTab.forEach((l) => l()),
+    emitForwardNewTab: () => menuForwardNewTab.forEach((l) => l()),
     emitNewTab: () => menuNewTab.forEach((l) => l()),
     emitGlow: (on: boolean) => windowGlow.forEach((l) => l(on)),
     /** main's views ask before a memory reload: what the page answers. */
@@ -1647,6 +1654,24 @@ describe('App ‹ › close the tab board, as the keys do (YAZ-3647 D7, polish Y
     act(() => el.querySelector<HTMLButtonElement>('.ctx-menu .ctx-menu__item')!.click())
     expect(board(el)).toBe(false)
     expect(nav(el, 'Back').disabled).toBe(true)
+  })
+})
+
+describe('App Window › Open Back / Forward in New Tab (YAZ-4156 7)', () => {
+  const tabNames = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+  const activeName = (el: HTMLElement) => el.querySelector('.tabbar [role="tab"][aria-selected="true"]')?.textContent
+
+  it('opens the nearest step that way in a new tab behind, as a ⌘-click on ‹ ›; with no step that way it does nothing', async () => {
+    const { el, emitBackNewTab, emitForwardNewTab } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    act(() => emitBackNewTab())
+    act(() => emitForwardNewTab())
+    expect(tabNames(el)).toEqual(['a', 'b'])
+    // A step to "b": "a" is behind it now.
+    act(() => el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')[1]!.click())
+    act(() => emitForwardNewTab())
+    expect(tabNames(el)).toEqual(['a', 'b'])
+    act(() => emitBackNewTab())
+    expect([tabNames(el), activeName(el)]).toEqual([['a', 'b', 'a'], 'b'])
   })
 })
 

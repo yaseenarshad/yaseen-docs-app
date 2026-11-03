@@ -21,15 +21,16 @@
  * would put the caret in the run's hidden cells. "Fold N rows" is in
  * the table menu (`tableMenu.ts`, `foldRows`). Fill down and a paste never write a folded row (`unfoldedRows`).
  */
-import { SchemaReady, prosePluginsCtx } from '@milkdown/kit/core'
-import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { Plugin, PluginKey, Selection, TextSelection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
-import { TableMap, selectedRect, tableEditingKey } from '@milkdown/kit/prose/tables'
+import { CellSelection, TableMap, selectedRect } from '@milkdown/kit/prose/tables'
+import { Mapping } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
+import { verticalScrollParent } from '../../lib/pinnedHeader'
+import { beforeTableEditing } from './beforeTableEditing'
 import { rowFolded, setCellsAttr } from './cells'
 import { atEndOfCell } from './tableShiftArrow'
 import { changedTables, typingOnly } from './tableStyle'
@@ -124,17 +125,12 @@ export function foldRows(state: EditorState, dispatch?: (tr: Transaction) => voi
   return true
 }
 
-/** The note's scroll box around `view`: the nearest ancestor that scrolls, else the page. */
-function scrollerOf(view: EditorView): Element {
-  for (let el = view.dom.parentElement; el !== null; el = el.parentElement) {
-    if (/(auto|scroll)/.test(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight) return el
-  }
-  return document.scrollingElement ?? document.documentElement
-}
-
-/** Run `fold` and keep the note where it was: the rows above the fold do not move, so the bar stays under the pointer. */
+/**
+ * Run `fold` and keep the note where it was: the rows above the fold do not move, so the bar stays under the pointer.
+ * The scroller is the note's, the one the frozen rows follow (`verticalScrollParent`, `tableFreeze.ts`), else the page.
+ */
 export function keepingScroll(view: EditorView, fold: () => void): void {
-  const scroller = scrollerOf(view)
+  const scroller = verticalScrollParent(view.dom) ?? document.scrollingElement ?? document.documentElement
   const top = scroller.scrollTop
   fold()
   scroller.scrollTop = top
@@ -160,20 +156,27 @@ function openBar(view: EditorView, event: MouseEvent): boolean {
   return false
 }
 
-/** ↑ / ↓ at the edge of a cell's text, onto a folded row: the caret goes to the row past the run, in the same column. */
+/**
+ * ↑ / ↓ at the edge of a cell's text, onto a folded row: the caret goes to the row past the run, in the same column.
+ * The folded row comes first, from the document: with none next to the caret's row, no layout is read (YAZ-4176).
+ */
 const stepOver =
   (dir: 1 | -1): Command =>
   (state, dispatch, view) => {
-    const at = view === undefined ? null : atEndOfCell(view, 'vert', dir)
-    if (at === null) return false
-    // `at` is before the cell: its row is the parent, its table the row's parent.
-    const $cell = state.doc.resolve(at)
-    const table = $cell.node(-1)
-    const tableStart = $cell.start(-1)
+    if (view === undefined || !(state.selection instanceof TextSelection)) return false
+    const { $head } = state.selection
+    let depth = $head.depth
+    while (depth > 0 && $head.node(depth).type.spec.tableRole !== 'row') depth--
+    if (depth === 0) return false
+    const table = $head.node(depth - 1)
+    const tableStart = $head.start(depth - 1)
+    const at = $head.before(depth + 1)
     const map = TableMap.get(table)
     const { top, bottom, left } = map.findCell(at - tableStart)
     let row = dir > 0 ? bottom : top - 1
     if (row < 0 || row >= map.height || !rowFolded(table.child(row))) return false
+    if (atEndOfCell(view, 'vert', dir) === null) return false
+    const $cell = state.doc.resolve(at)
     while (row >= 0 && row < map.height && rowFolded(table.child(row))) row += dir
     // Below a run at the table's end: out of the table, as ↓ from its last row.
     const target = row >= map.height ? $cell.end(-1) + 1 : tableStart + map.map[row * map.width + left]! + 1
@@ -214,17 +217,94 @@ const foldPlugin = (): Plugin<DecorationSet> =>
       handleDOMEvents: { mousedown: openBar },
       handleKeyDown: keydownHandler({ ArrowUp: stepOver(-1), ArrowDown: stepOver(1) }),
     },
+    appendTransaction: foldGuards,
   })
 
-/** Register with `editor.use(tableFold)`: just before `tableEditing`, so a click on a bar starts no cell selection. */
-export const tableFold: MilkdownPlugin = (ctx) => async () => {
-  await ctx.wait(SchemaReady)
-  const plugin = foldPlugin()
-  ctx.update(prosePluginsCtx, (ps) => {
-    const at = ps.findIndex((p) => p.spec.key === tableEditingKey)
-    return at < 0 ? [...ps, plugin] : [...ps.slice(0, at), plugin, ...ps.slice(at)]
+/**
+ * A change never empties a folded row (YAZ-4173 12D): Backspace, Delete, "Clear cells", typed text and ⌘X on a
+ * CellSelection that holds a folded row clear every selected cell (`deleteCellSelection`, `CellSelection.replace`).
+ * The guard puts back the text of each folded cell of the old selection, in the same undo step. A cell that the change
+ * removed or moved (a delete, a sort) is not put back. Fill down and paste already skip folded rows (`unfoldedRows`).
+ */
+function keepFoldedText(transactions: readonly Transaction[], oldState: EditorState, tr: Transaction): void {
+  const old = oldState.selection
+  if (!(old instanceof CellSelection) || !transactions.some((t) => t.docChanged)) return
+  const mapping = new Mapping()
+  for (const t of transactions) mapping.appendMapping(t.mapping)
+  old.forEachCell((cell, pos) => {
+    if (cell.attrs.fold !== true) return
+    const mapped = mapping.mapResult(pos, 1)
+    if (mapped.deleted) return
+    const at = tr.mapping.map(mapped.pos, 1)
+    const now = tr.doc.nodeAt(at)
+    if (now?.type !== cell.type || now.attrs.fold !== true || now.content.eq(cell.content)) return
+    tr.replaceWith(at + 1, at + now.nodeSize - 1, cell.content)
   })
-  return () => {
-    ctx.update(prosePluginsCtx, (ps) => ps.filter((p) => p !== plugin))
-  }
 }
+
+/**
+ * The caret never stays in a folded row (YAZ-4173 12A, 12E, 12F): Tab and Shift+Tab (`goToNextCell`, also ⌘] / ⌘[),
+ * ← / → at a cell's edge (`tableEditing`), Shift+↑ / Shift+↓ (the head of a CellSelection), and any other move that
+ * lands in a run go on past it, the way the move went. Forward: to the first row after the run, or, with none, out of
+ * the table below it. Back: to the last row before the run. A CellSelection keeps its anchor, and its head goes to the
+ * same column past the run. A move that selected the cell's text (Tab) selects the text of the cell it goes to.
+ * Typing never writes a hidden row. A selection that does not land in a folded row costs one walk up from its head.
+ */
+function caretOutOfRuns(transactions: readonly Transaction[], oldState: EditorState, tr: Transaction): void {
+  if (!transactions.some((t) => t.selectionSet)) return
+  const { selection, doc } = tr
+  const cells = selection instanceof CellSelection
+  if (!cells && !(selection instanceof TextSelection)) return
+  const $head = cells ? (selection as CellSelection).$headCell : selection.$head
+  let depth = $head.depth
+  while (depth > 0 && $head.node(depth).type.spec.tableRole !== 'row') depth--
+  // A CellSelection's `$headCell` stands before its cell, in its row.
+  if (cells) depth = $head.depth
+  if (depth === 0 || !rowFolded($head.node(depth))) return
+  const table = $head.node(depth - 1)
+  const run = runOf(foldRuns(table), $head.index(depth - 1))
+  if (run === undefined) return
+  let from = oldState.selection.head
+  for (const t of transactions) from = t.mapping.map(from)
+  from = tr.mapping.map(from)
+  const forward = selection.head >= from
+  const tableStart = $head.start(depth - 1)
+  const rowStart = (r: number) => {
+    let pos = tableStart
+    for (let i = 0; i < r; i++) pos += table.child(i).nodeSize
+    return pos
+  }
+  const target = forward && run.to + 1 < table.childCount ? run.to + 1 : run.from - 1
+  if (cells) {
+    const col = $head.index(depth)
+    const row = table.child(target)
+    let cellPos = rowStart(target) + 1
+    for (let c = 0; c < Math.min(col, row.childCount - 1); c++) cellPos += row.child(c).nodeSize
+    tr.setSelection(new CellSelection((selection as CellSelection).$anchorCell, doc.resolve(cellPos)))
+    return
+  }
+  if (forward && target < run.from) {
+    // No row after the run: out of the table, below it (as ↓ goes), else back before the run.
+    const below = Selection.findFrom(doc.resolve($head.after(depth - 1)), 1, true)
+    if (below !== null) return void tr.setSelection(below)
+  }
+  const row = table.child(target)
+  const cell = forward && target > run.to ? rowStart(target) + 1 : rowStart(target) + row.nodeSize - 1 - row.lastChild!.nodeSize
+  if (!selection.empty) {
+    // Tab selected the cell's text: select the text of the cell it goes to.
+    const node = doc.nodeAt(cell)!
+    return void tr.setSelection(TextSelection.between(doc.resolve(cell + 1), doc.resolve(cell + node.nodeSize - 1)))
+  }
+  tr.setSelection(forward && target > run.to ? Selection.near(doc.resolve(cell + 1), 1) : Selection.near(doc.resolve(rowStart(target) + row.nodeSize - 1), -1))
+}
+
+/** The fold guards, in one appended step: the folded text first, then the caret. */
+function foldGuards(transactions: readonly Transaction[], oldState: EditorState, state: EditorState): Transaction | null {
+  const tr = state.tr
+  keepFoldedText(transactions, oldState, tr)
+  caretOutOfRuns(transactions, oldState, tr)
+  return tr.docChanged || tr.selectionSet ? tr : null
+}
+
+/** Register with `editor.use(tableFold)`: just before `tableEditing`, so a click on a bar starts no cell selection. */
+export const tableFold = beforeTableEditing(() => [foldPlugin()])

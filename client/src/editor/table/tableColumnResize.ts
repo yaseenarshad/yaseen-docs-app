@@ -14,12 +14,11 @@
  *   cell (`td`) the plugin's mousemove clears the grip (its own `mouseleave` code), and its mousedown does not
  *   run, so `tableEditing` starts a cell selection there.
  */
-import { SchemaReady, prosePluginsCtx } from '@milkdown/kit/core'
-import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import { Plugin } from '@milkdown/kit/prose/state'
-import { columnResizing, columnResizingPluginKey, tableEditingKey } from '@milkdown/kit/prose/tables'
+import { columnResizing, columnResizingPluginKey } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { cssZoom } from '../../lib/cssZoom'
+import { beforeTableEditing } from './beforeTableEditing'
 
 function zoomedDrag(view: EditorView) {
   const win = view.dom.ownerDocument.defaultView ?? window
@@ -64,14 +63,4 @@ function headerResizing(): Plugin {
   })
 }
 
-export const tableColumnResize: MilkdownPlugin = (ctx) => async () => {
-  await ctx.wait(SchemaReady)
-  const plugins = [headerResizing(), new Plugin({ view: zoomedDrag })]
-  ctx.update(prosePluginsCtx, (ps) => {
-    const at = ps.findIndex((plugin) => plugin.spec.key === tableEditingKey)
-    return at < 0 ? [...ps, ...plugins] : [...ps.slice(0, at), ...plugins, ...ps.slice(at)]
-  })
-  return () => {
-    ctx.update(prosePluginsCtx, (ps) => ps.filter((plugin) => !plugins.includes(plugin)))
-  }
-}
+export const tableColumnResize = beforeTableEditing(() => [headerResizing(), new Plugin({ view: zoomedDrag })])

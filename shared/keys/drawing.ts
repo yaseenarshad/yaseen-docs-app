@@ -85,8 +85,8 @@ export const DRAWING_KEYS: readonly KeyRow[] = [
   fixed('toggleTheme', 'Dark / light canvas', [], "Off in this app: the canvas follows the app's appearance"),
   // The app's own keys on a drawing tab (`DrawingEditor.tsx`, `ExcalidrawSurface.tsx`).
   key('saveNow', 'Save the drawing now', ['CmdOrCtrl+S'], 'It autosaves anyway'),
-  key('imagesPanel', 'Images tab of the canvas panel', ['CmdOrCtrl+F'], 'Press again to close the panel'),
-  key('componentsPanel', 'Components tab of the canvas panel', ['CmdOrCtrl+C'], 'With nothing selected; with a selection ⌘C copies'),
+  key('imagesPanel', 'Add tab of the canvas panel', ['CmdOrCtrl+F'], 'Puts the caret in its search field, from anywhere on the board'),
+  key('componentsPanel', 'Add tab, on its Components chip', ['CmdOrCtrl+C'], 'With nothing selected; with a selection ⌘C copies'),
   // Built in: typing, editing and pop-up keys (K6).
   fixed('escape', 'Deselect, or stop what is in progress', ['Escape'], 'Ends a line being drawn, a crop, the laser, a shape menu and a web embed'),
   fixed('enter', 'Edit the selected text, label, line or frame', ['Enter'], 'Crops a selected image; ends a crop or a line being drawn; with the laser, keeps the marks'),

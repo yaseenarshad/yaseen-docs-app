@@ -319,7 +319,7 @@ export function App() {
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
     tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, sleep: sleepTabs, wake: wakeTab, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
-    closeActive, next: nextTab, prev: prevTab, back, forward, go: goToStep, canBack, canForward, history: tabHistory, reset: resetTabs,
+    closeActive, next: nextTab, prev: prevTab, back, forward, go: goToStep, openStep, canBack, canForward, history: tabHistory, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
     moveRight, transferMainToRight, transferRightToMain,
@@ -670,7 +670,7 @@ export function App() {
   const changeCanvasPanel = useCallback(
     (canvasPanel: CanvasPanelState) => {
       const current = newNoteFolderInputs.current.settings.canvasPanel
-      if (current.tab !== canvasPanel.tab || current.docked !== canvasPanel.docked) changeSettings({ ...newNoteFolderInputs.current.settings, canvasPanel })
+      if (current.tab !== canvasPanel.tab || current.docked !== canvasPanel.docked || current.width !== canvasPanel.width) changeSettings({ ...newNoteFolderInputs.current.settings, canvasPanel })
     },
     [changeSettings],
   )
@@ -1349,6 +1349,18 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     goToStep(id)
   }, [goToStep])
+  // A step in a new tab (YAZ-4156): one in front closes the tab board, as a step does; one behind leaves it open.
+  const toOpenStep = useCallback((id: number, front: boolean) => {
+    if (front) setOverview(OVERVIEW_CLOSED)
+    openStep(id, front)
+  }, [openStep])
+  // Window › Open Back / Forward in New Tab (YAZ-4156 7): the nearest step that way, in a tab behind, as a ⌘-click on ← →.
+  const toOpenNear = useCallback((dir: -1 | 1) => {
+    const step = nearSteps(tabHistory, dir)[0]
+    if (step !== undefined) toOpenStep(step.id, false)
+  }, [tabHistory, toOpenStep])
+  const toBackNewTab = useCallback(() => toOpenNear(-1), [toOpenNear])
+  const toForwardNewTab = useCallback(() => toOpenNear(1), [toOpenNear])
   // The mouse's back and forward buttons (YAZ-3647 D7): the window's Back list, wherever the pointer is.
   useEffect(() => {
     const onMouseUp = (e: MouseEvent) => {
@@ -1970,6 +1982,8 @@ export function App() {
     onTabOverview: toggleOverview,
     onBack: toBack,
     onForward: toForward,
+    onBackNewTab: toBackNewTab,
+    onForwardNewTab: toForwardNewTab,
     // ⌘T in a Files window (YAZ-3357 D8) opens a new full window, as ⌘⇧N: there is no strip for a tab.
     onNewTab: filesWindow ? newWindow : newTab,
     onNewWindow: newWindow,
@@ -3328,6 +3342,7 @@ export function App() {
               backSteps={nearSteps(tabHistory, -1)}
               forwardSteps={nearSteps(tabHistory, 1)}
               onGoToStep={toStep}
+              onOpenStep={toOpenStep}
               zoomLabels={zoomLabels}
               onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
               onShowInSidebar={showInSidebar}

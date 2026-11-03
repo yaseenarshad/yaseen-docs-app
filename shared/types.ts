@@ -1378,9 +1378,10 @@ export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
 /**
  * The in-canvas docked panel's tabs (YAZ-3038; Draw's ⚡ YAZ-1775 D8 amended), in the order its strip shows
  * them. The tab NAMES are the engine's sidebar tab names, kept as the web app spelled them so the
- * engine's own sidebar state reads the same on both sides.
+ * engine's own sidebar state reads the same on both sides. `image-studio` is the Add tab: images, shapes and
+ * components in one search (YAZ-4157 D6). A stored `components` tab, from before, reads as it.
  */
-export const CANVAS_PANEL_TABS = ['image-studio', 'components', 'presentation'] as const
+export const CANVAS_PANEL_TABS = ['image-studio', 'presentation'] as const
 export type CanvasPanelTab = (typeof CANVAS_PANEL_TABS)[number]
 export const isCanvasPanelTab = (v: unknown): v is CanvasPanelTab => (CANVAS_PANEL_TABS as readonly string[]).includes(v as string)
 
@@ -1392,24 +1393,34 @@ export const isCanvasPanelTab = (v: unknown): v is CanvasPanelTab => (CANVAS_PAN
 export interface CanvasPanelState {
   tab: CanvasPanelTab
   docked: boolean
+  /** The width the user dragged the panel to (YAZ-4157 demo 6C); absent is the engine's own 302 px. */
+  width?: number
 }
 
-export const DEFAULT_CANVAS_PANEL: CanvasPanelState = { tab: 'components', docked: false }
+/** The canvas panel's drag range (YAZ-4157 demo 6C). The default is the engine's `RIGHT_SIDEBAR_WIDTH`. */
+export const CANVAS_PANEL_DEFAULT_W = 302
+export const CANVAS_PANEL_MIN_W = 260
+export const CANVAS_PANEL_MAX_W = 720
+export const isCanvasPanelWidth = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= CANVAS_PANEL_MIN_W && v <= CANVAS_PANEL_MAX_W
+
+export const DEFAULT_CANVAS_PANEL: CanvasPanelState = { tab: 'image-studio', docked: false }
 
 // ---------- The canvas panel's library (YAZ-3038; Draw's 🔒 YAZ-1775 D4 / D5), and the providers and secrets behind it ----------
 
 /**
  * Where the media a board can reach comes from (the web app's `ImageStudioProvider`, ported
  * verbatim): Pixabay photos and illustrations, Iconify icons and logos, and the app's own shapes.
- * `shape` needs no network and no key at all.
+ * `shape` needs no network and no key at all. `component` is a saved component of the library, its
+ * `providerId` the slug (YAZ-4157 D2): so it can be a favorite, a recent and a counted use like any item.
+ * `excalidraw` is one item of Excalidraw's public libraries (YAZ-4157 demo 6K), its `providerId` `<source>#<index>`.
  */
-type MediaProvider = 'pixabay' | 'iconify' | 'shape'
-const MEDIA_PROVIDERS: readonly MediaProvider[] = ['pixabay', 'iconify', 'shape']
+type MediaProvider = 'pixabay' | 'iconify' | 'shape' | 'component' | 'excalidraw'
+const MEDIA_PROVIDERS: readonly MediaProvider[] = ['pixabay', 'iconify', 'shape', 'component', 'excalidraw']
 export const isMediaProvider = (v: unknown): v is MediaProvider => MEDIA_PROVIDERS.includes(v as MediaProvider)
 
 /** What the item IS, independent of who served it (the web app's `ImageStudioItemKind`). */
-export type MediaItemKind = 'photo' | 'illustration' | 'icon' | 'logo' | 'shape'
-const MEDIA_ITEM_KINDS: readonly MediaItemKind[] = ['photo', 'illustration', 'icon', 'logo', 'shape']
+export type MediaItemKind = 'photo' | 'illustration' | 'icon' | 'logo' | 'shape' | 'component' | 'drawing'
+const MEDIA_ITEM_KINDS: readonly MediaItemKind[] = ['photo', 'illustration', 'icon', 'logo', 'shape', 'component', 'drawing']
 export const isMediaItemKind = (v: unknown): v is MediaItemKind => MEDIA_ITEM_KINDS.includes(v as MediaItemKind)
 
 /**
@@ -1449,14 +1460,23 @@ export interface MediaItem {
 export type StoredMediaItem = MediaItem & { updatedAt: number }
 
 /**
+ * One row of `used` (YAZ-4157 D1): an item the user added to a board, how many times, and the words that found it
+ * (newest first; a search they added it from, or one they typed in "Add a word…"). Taking it out of the favorites
+ * starts its count again (demo 6A).
+ */
+export type UsedMediaItem = StoredMediaItem & { count: number; words: string[] }
+
+/**
  * `<library>/media.json` (🔒 YAZ-1775 D5): the cross-vault media library, ONE file for the whole account.
- * Both lists are newest-first and de-duplicated by `itemKey`; `favorites` is the user's pinned
- * set, `recent` is an MRU of what they actually placed on a board.
+ * The lists are newest-first and de-duplicated by `itemKey`; `favorites` is the user's pinned
+ * set, `recent` is an MRU of what they actually placed on a board, `used` is what the Add tab learned from
+ * those adds (YAZ-4157 D1). Still version 1: a build from before drops `used` and reads the rest.
  */
 export interface MediaLibraryFile {
   version: 1
   favorites: StoredMediaItem[]
   recent: StoredMediaItem[]
+  used: UsedMediaItem[]
 }
 
 /** The library file's name inside the library folder. */
@@ -1472,11 +1492,22 @@ export const COMPONENTS_INDEX_FILE = 'components.json'
 export const MAX_MEDIA_FAVORITES = 500
 /** The MRU's length, the web app's `RECENT_LIMIT` exactly. */
 export const RECENT_LIMIT = 60
+/** The `used` rows kept; the one used longest ago falls off (YAZ-4157 D1). */
+export const MAX_MEDIA_USED = 500
+/** The words one item keeps, newest first. */
+export const MAX_ITEM_WORDS = 20
+/** A word's longest length; a longer search is not a word worth keeping. */
+export const MAX_ITEM_WORD_LENGTH = 60
+/** The add that makes an item a favorite on its own (YAZ-4157 D9). */
+export const AUTO_FAVORITE_USES = 3
 
 /** `media:favorites` — one channel, three verbs; every verb answers the resulting list. */
 export type MediaFavoritesRequest = { op: 'list' } | { op: 'add'; item: MediaItem } | { op: 'remove'; itemKey: string }
-/** `media:recent` — the same shape: read the MRU, or push an item to its head. */
-export type MediaRecentRequest = { op: 'list' } | { op: 'record'; item: MediaItem }
+/**
+ * `media:used` (YAZ-4157 D1) — every verb answers the whole library: `record` is one add (the MRU, the count, the
+ * word `query`, and the favorite at the third), `add-word` is "Add a word…" (the item, so a row can start at 0).
+ */
+export type MediaUsedRequest = { op: 'list' } | { op: 'record'; item: MediaItem; query: string } | { op: 'add-word'; item: MediaItem; word: string }
 
 // ---------- Image Studio: the provider doors (🔒 YAZ-1775 D4, YAZ-1818) ----------
 
@@ -1545,6 +1576,22 @@ export interface MediaImportResponse extends MediaPreviewResponse {
   item: StudioItem
 }
 
+/**
+ * Excalidraw's public libraries (YAZ-4157 demo 6K): hand-drawn items that go on the board as editable elements.
+ * `media.drawingIndex` answers every named item of every library (about 3,000), which the Add tab ranks itself as
+ * you type; `media.drawing` answers one item's elements. Main fetches and caches both for 24 h.
+ */
+export interface MediaDrawingIndexResponse {
+  items: StudioItem[]
+}
+/** `id` is the item's `providerId`, `<source>#<index>`. */
+export interface MediaDrawingRequest {
+  id: string
+}
+export interface MediaDrawingResponse {
+  elements: unknown[]
+}
+
 // ---------- Saved components (`<library>/components/` — 🔒 YAZ-1775 D5, YAZ-1819) ----------
 
 /**
@@ -1597,6 +1644,13 @@ export interface ComponentReadResponse {
 
 /** The longest name a component may carry — the web app's `MAX_SAVED_COMPONENT_NAME_LENGTH`. */
 export const MAX_COMPONENT_NAME_LENGTH = 120
+
+/**
+ * The biggest picture a paste or a drop saves (YAZ-4157 polish, audit 11): the 20 MB a web import may bring. A component
+ * file holds its picture as text, about a third more, so `components:save` takes a document of 32 MB at most.
+ */
+export const MAX_PASTED_PICTURE_BYTES = 20 * 1024 * 1024
+export const MAX_COMPONENT_FRAGMENT_BYTES = 32 * 1024 * 1024
 
 // ---------- Secrets (`userData/secrets.json` — 🔒 YAZ-1775 D4) ----------
 
@@ -1707,15 +1761,15 @@ export interface SettingsState {
   tableBandRows: TableBandRows
   /** Settings › Editor › Tables › Bold first cell (the YAZ-3818 demo): the band's row shows its first cell in bold. Off keeps the band. `data-table-band-bold` on `.app`. */
   tableBandBold: boolean
-  /** Settings › Editor › Tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
+  /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
   tableNowButton: boolean
-  /** Settings › Editor › Tables › Dim past rows (YAZ-4162 D14; the shade from the YAZ-4163 demo): a calendar table's rows before now show grey text, or grey text on a light grey shade. `data-table-dim-past` on `.app`. */
+  /** Settings › Editor › Calendar tables › Dim past rows (YAZ-4162 D14; the shade from the YAZ-4163 demo): a calendar table's rows before now show grey text, or grey text on a light grey shade. `data-table-dim-past` on `.app`. */
   tableDimPast: TableDimPast
   /** Settings › Editor › Calendar tables › Shade darkness (YAZ-4163 demo): the past rows' shade, a percent of the text colour, `TABLE_SHADE_MIN`–`MAX` in steps of `TABLE_SHADE_STEP`. `--table-past-shade` on the root. */
   tableShadeDarkness: number
-  /** Settings › Editor › Tables › Calendar day (YAZ-4163 demo): the first and the last time of a new calendar table, minutes from midnight on the half hour (`isCalendarDayTime`). A start not before the end is the default day. */
+  /** Settings › Editor › Calendar tables › Calendar day (YAZ-4163 demo): the first and the last time of a new calendar table, minutes from midnight on the half hour (`isCalendarDayTime`). A start not before the end is the default day. */
   tableDayStart: number
   tableDayEnd: number
   /** Settings › Editor › Tables › Bullet indent in cells (the YAZ-3818 demo): how far each child bullet steps in, in a table cell or a cell note card, px, `TABLE_CELL_BULLET_INDENT_MIN`–`MAX`; the dot's column is a fixed 16px. `--cell-bullet-indent` on `.app`. */
@@ -1736,7 +1790,7 @@ export interface SettingsState {
   newNoteTitleTemplate: string
   /** Settings › Editor › Cell notes › Keep cell notes open (round 3 of the YAZ-3818 demo): a new tab's cell note card starts pinned (a click outside does not close it). Its pin button still toggles it for that tab. */
   tableCellNotePinned: boolean
-  /** Settings › Editor › Tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mma`, for new tables, new times in a table with none, and "Current time". */
+  /** Settings › Editor › Calendar tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mm a`, for new tables, new times in a table with none, and "Current time". */
   tableTimeFormat: string
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
   sidebarLines: TocLines

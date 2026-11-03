@@ -29,11 +29,11 @@
  *
  * "Calendar table" (YAZ-4163, YAZ-4159 D7) comes right after "Table" and takes the Table row's own path,
  * in a bullet too: the table is `calendarTableNode` (`table/tableCalendar.ts`), "Time | Plan 1" with a row
- * each 30 minutes from 7:00 am to 10:00 pm in the time format setting, `calendar 30m`, compact rows,
- * the header row and column A frozen.
+ * each 30 minutes of Settings › Calendar tables › Calendar day (5:00 am to 10:00 pm by default) in the time format
+ * setting, `calendar 30m`, compact rows, the header row and column A frozen, and column A in the middle.
  *
  * "Current time" (YAZ-3511 D22) inserts the time as plain text at the caret, read at the pick, in the
- * time format setting (YAZ-4163 D15; `9:05am - ` by default), then " - ".
+ * time format setting (YAZ-4163 D15; `9:05 am - ` by default), then " - ".
  * It opens the way every stock row does (`clearTextInCurrentBlockCommand` removes the `/query`),
  * then `tr.insertText` — no schema, no mark. Its `keywords` (the patch's second change: the filter
  * matches the label OR a keyword) let "now" and "clock" find it. "Calendar table" holds "time" too,
@@ -105,7 +105,7 @@ export function cellKindAt(selection: Selection): 'header' | 'cell' | null {
 /** The words the filter finds "Current time" by, besides its label (D22). */
 export const CURRENT_TIME_KEYWORDS = ['current', 'now', 'clock', 'time']
 
-/** The time in the time format setting, then " - " (D22; YAZ-4163 D15): `9:05am - ` by default. */
+/** The time in the time format setting, then " - " (D22; YAZ-4163 D15): `9:05 am - ` by default. */
 export function formatCurrentTime(date: Date): string {
   return `${formatTime(timeFormatSetting(), minutesOf(date))} - `
 }

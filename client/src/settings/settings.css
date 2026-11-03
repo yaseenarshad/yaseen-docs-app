@@ -418,6 +418,19 @@
   overflow-wrap: anywhere;
 }
 
+/* A saved secret's yes/no (Settings › Images › Pixabay API key, YAZ-4157 demo 6F): a sentence, not a path, and green
+   once a key is saved, so a saved key never reads as a missing one. */
+.settings__key-status {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.settings__key-status.is-set {
+  color: var(--ok);
+  font-weight: 600;
+}
+
 /* A path a row names but can't use now (Settings › General › Settings folder, YAZ-3276 D5): one red line above the buttons. */
 .settings__error {
   margin: 0 0 8px;

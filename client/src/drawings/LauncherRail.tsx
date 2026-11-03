@@ -7,7 +7,7 @@
  *   gesture with the target changed. It stays visible while the panel is open, because it is the
  *   other way to close it (the panel's own header hamburger is the first);
  * - WRITING and FRAMES, two icon toggles with tooltip labels, so flipping into pen mode never
- *   costs a panel. The panel's three tabs are its own strip, so the rail launches nothing else.
+ *   costs a panel. The panel's two tabs (Add, Present) are its own strip, so the rail launches nothing else.
  *
  * THE TOGGLES WRITE A PREFERENCE, NOT THE ENGINE (🔒 YAZ-1775 D9). Both are `SettingsState.canvas` keys:
  * the rail reports the new value up, the shell stores it, the value comes back down as a prop and

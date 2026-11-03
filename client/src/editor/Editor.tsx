@@ -757,6 +757,8 @@ function CrepeHost({
       onMarkdownUpdated: (md) => controller?.update(md),
       // A calendar table's marker moves each minute here (YAZ-4162 D2, D9); a preview card starts no timer.
       calendarClock: true,
+      // The table zoom pill on each table (YAZ-4091); the previews and the outline view have none (YAZ-4176).
+      tableZoomPill: true,
       foldingOn: () => foldingOnRef.current,
       onFoldingBlocked: () => onNotice?.(FOLDING_OFF_NOTICE),
       foldLock: {

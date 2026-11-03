@@ -77,7 +77,7 @@ npm run perf:budget      # the same + the packaged .app and DMG (after desktop:b
 npm run perf -- all --runs 5 --app <after.app> --vs <before.app>   # local perf harness, A/B (tools/perf/README.md)
 ```
 
-- The drawing engine is the app's own copy of Excalidraw, in `engine/` with its history: change it there, in the same PR. How it builds, the one rule (`preserveSymlinks`), and how to take new Excalidraw changes: `engine/README-docs-app.md`.
+- The drawing engine is the app's own copy of Excalidraw, in `engine/` with its history: change it there, in the same PR. How it builds, the one rule (`preserveSymlinks`), and how to take new Excalidraw changes: `engine/README-docs-app.md`. After an engine change, a dev server that ran before it can keep serving its old pre-bundled copy: stop it, delete `client/node_modules/.vite/deps`, and start it again (YAZ-4157 demo 6L).
 - The budget gate (`tools/perf/measureBudget.mjs`) fails when a size row crosses its ceiling in `tools/perf/budget.json` or a shipped file goes missing. **The ratchet:** a change that shrinks a row lowers its ceiling in the same PR; raising one needs Yasin's OK in the PR description. `tools/perf/baseline.json` holds the frozen v0.9.27 numbers. CI (`.github/workflows/ci.yml`) runs typecheck, `npm test`, build and `perf:budget:ci` on every PR and push to main; e2e stays local and runs only when Yasin asks.
 
 - If `npm` isn't in the shell's PATH (agent shells often lack it), use its install location directly — e.g. `/opt/homebrew/bin/npm` (ARM mac), `/usr/local/bin/npm` (Intel mac), or the Volta/nvm/fnm install under `$HOME`.

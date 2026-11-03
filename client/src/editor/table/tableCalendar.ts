@@ -38,7 +38,7 @@
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode, NodeType, Schema } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey, Selection, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, Selection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
@@ -47,8 +47,6 @@ import { tablerIcon } from './tableIcons'
 import { changedTables, typingOnly } from './tableStyle'
 import { calendarDaySetting, timeFormatSetting } from './timeFormatSetting'
 import './tableCalendar.css'
-
-export { readTime }
 
 /** Minutes from midnight of `date`, local time. */
 export const minutesOf = (date: Date): number => date.getHours() * 60 + date.getMinutes()
@@ -77,9 +75,15 @@ export function nowPlace(table: ProseNode, minutes: number): NowPlace | null {
   return { row: null, fraction: 0, pastEnd: next?.row ?? table.childCount }
 }
 
+/** A body row and its time from the first day's midnight, or `null`. */
+interface BodyRow {
+  row: ProseNode
+  time: number | null
+}
+
 /** Each body row of `table` with its time from the first day's midnight (a time earlier than the one above is a day on), or `null`. */
-function rowTimes(table: ProseNode): Array<{ row: ProseNode; time: number | null }> {
-  const out: Array<{ row: ProseNode; time: number | null }> = []
+function rowTimes(table: ProseNode): BodyRow[] {
+  const out: BodyRow[] = []
   let day = 0
   let last = -1
   table.forEach((row, _, r) => {
@@ -188,9 +192,6 @@ const build = (doc: ProseNode, tables: number[], now: number, chip: boolean): De
 export function calendarTick(view: EditorView, minutes = minutesOf(new Date())): void {
   view.dispatch(view.state.tr.setMeta(calendarKey, minutes).setMeta('addToHistory', false))
 }
-
-/** The calendar state of `state`, for the menus (`tableRows.ts`) and the go-to-now request. */
-export const calendarStateOf = (state: EditorState): CalendarState | undefined => calendarKey.getState(state)
 
 /** One chip and what its observer last said of its table block and its now row. */
 interface ChipWatch {
@@ -356,7 +357,10 @@ export function createTableCalendar(clock: boolean) {
               if (fresh.length > 0) set = set.add(tr.doc, fresh)
             }
             const tables = [...new Set([...mapped, ...changed.keys()])].filter((pos) => isCalendar(tr.doc.nodeAt(pos))).sort((a, b) => a - b)
-            return { ...value, set, tables, generation: value.generation + 1 }
+            // The chips are watched again only when a calendar table, or the list of them, changed (YAZ-4176): not on
+            // an Enter or a paste elsewhere in the note.
+            const moved = [...changed.values()].some(isCalendar) || tables.length !== mapped.length || tables.some((pos, i) => pos !== mapped[i])
+            return { ...value, set, tables, generation: value.generation + (moved ? 1 : 0) }
           },
         },
         props: { decorations: (state) => calendarKey.getState(state)!.set },
@@ -389,7 +393,7 @@ export function calendarTableNode(schema: Schema, format = timeFormatSetting()):
 /** The table at slot length `slot`, its text kept (D8); see the header. A table with no time only gets the part. */
 export function slotTimes(table: ProseNode, slot: number, schema: Schema, fallback = timeFormatSetting()): ProseNode {
   const body = rowTimes(table)
-  const timed = body.filter((entry): entry is { row: ProseNode; time: number } => entry.time !== null)
+  const timed = body.filter((entry): entry is BodyRow & { time: number } => entry.time !== null)
   const attrs = { ...table.attrs, calendar: slot }
   if (timed.length === 0) return table.type.create(attrs, table.content)
   const format = detectTimeFormat(body.map(({ row }) => row.firstChild?.textContent ?? '')) ?? fallback
@@ -398,27 +402,35 @@ export function slotTimes(table: ProseNode, slot: number, schema: Schema, fallba
   const grid: number[] = []
   for (let t = Math.ceil(first / slot) * slot; t <= last; t += slot) grid.push(t)
   const onGrid = new Set(grid)
-  // Each kept row, with the time it sorts by: a row with no time stays after the row above it.
-  const kept: Array<{ time: number; row: ProseNode }> = []
-  const have = new Set<number>()
-  let at = -Infinity
-  for (const { row, time } of body) {
-    if (time !== null) at = time
+  // A row with text keeps its time, also off the grid; an empty row off the grid goes.
+  const keep = ({ row, time }: BodyRow): boolean => {
     let text = false
     row.forEach((c, _, i) => {
       if (i > 0 && filled(c)) text = true
     })
-    if (time !== null && !onGrid.has(time) && !text) continue
-    kept.push({ time: at, row })
-    if (time !== null) have.add(time)
+    return time === null || onGrid.has(time) || text
   }
-  const emptyRow = (time: number, above: ProseNode): ProseNode => emptyRowAt(schema, body[0]!.row, format, time, above)
-  const added = grid.filter((t) => !have.has(t)).map((time) => ({ time, row: null as ProseNode | null }))
-  // Stable: a new row goes after the kept rows of an earlier time, before those of a later one.
-  const sorted = [...kept, ...added].map((entry, i) => ({ ...entry, i })).sort((a, b) => a.time - b.time || a.i - b.i)
+  const have = new Set(body.flatMap((entry) => (entry.time !== null && keep(entry) ? [entry.time] : [])))
+  return table.type.create(attrs, [table.firstChild!, ...withNewRows(schema, body, keep, grid.filter((t) => !have.has(t)), format)])
+}
+
+/**
+ * The body rows that `keep` keeps and an empty row at each time of `added`, in time order (`slotTimes`, `fillCalendarDay`).
+ * A row with no time sorts with the row above it. Stable: a new row goes after the kept rows of an earlier time (and
+ * of its own), before those of a later one. A new first row takes the first body row's vertical alignment, not the
+ * header's (YAZ-4176).
+ */
+function withNewRows(schema: Schema, body: BodyRow[], keep: (entry: BodyRow) => boolean, added: number[], format: string): ProseNode[] {
+  let at = -Infinity
+  const kept: Array<{ time: number; row: ProseNode | null }> = []
+  for (const entry of body) {
+    if (entry.time !== null) at = entry.time
+    if (keep(entry)) kept.push({ time: at, row: entry.row })
+  }
+  const sorted = [...kept, ...added.map((time) => ({ time, row: null }))].map((entry, i) => ({ ...entry, i })).sort((a, b) => a.time - b.time || a.i - b.i)
   const rows: ProseNode[] = []
-  for (const { time, row } of sorted) rows.push(row ?? emptyRow(time, rows.at(-1) ?? table.firstChild!))
-  return table.type.create(attrs, [table.firstChild!, ...rows])
+  for (const { time, row } of sorted) rows.push(row ?? emptyRowAt(schema, body[0]!.row, format, time, rows.at(-1) ?? body[0]!.row))
+  return rows
 }
 
 /** A new row at `time`: `template`'s alignment and width, and the vertical alignment of the row `above` it (YAZ-4166). */
@@ -450,25 +462,21 @@ export function fillCalendarDay(view: EditorView, pos: number): boolean {
   if (missing.length === 0) return false
   const body = rowTimes(table)
   const format = detectTimeFormat(body.map(({ row }) => row.firstChild?.textContent ?? '')) ?? timeFormatSetting()
-  // Each row with the time it sorts by: a row with no time stays after the row above it (a stable sort).
-  let at = -Infinity
-  const kept = body.map(({ row, time }) => {
-    if (time !== null) at = time
-    return { time: at, row: row as ProseNode | null }
-  })
-  const sorted = [...kept, ...missing.map((time) => ({ time, row: null }))].map((entry, i) => ({ ...entry, i })).sort((a, b) => a.time - b.time || a.i - b.i)
-  const rows: ProseNode[] = []
-  for (const { time, row } of sorted) rows.push(row ?? emptyRowAt(view.state.schema, body[0]?.row ?? table.firstChild!, format, time, rows.at(-1) ?? table.firstChild!))
+  const rows = withNewRows(view.state.schema, body, () => true, missing, format)
   view.dispatch(closeHistory(view.state.tr).replaceWith(pos, pos + table.nodeSize, table.type.create(table.attrs, [table.firstChild!, ...rows])))
   return true
 }
 
-/** The table with a "Time" column before column A, a time in each body row from the Calendar day's start, `slot` apart (D7). */
+/**
+ * The table with a "Time" column before column A, a time in each body row from the Calendar day's start, `slot` apart
+ * (D7); its body cells vertically in the middle, as "/Calendar table" makes them (YAZ-4166, YAZ-4176).
+ */
 function withTimeColumn(table: ProseNode, slot: number, schema: Schema, format: string): ProseNode {
+  const { start } = calendarDaySetting()
   const rows: ProseNode[] = []
   table.forEach((row, _, r) => {
     const type = row.firstChild!.type
-    const first = cellNode(schema, type, r === 0 ? 'Time' : formatTime(format, calendarDaySetting().start + (r - 1) * slot))
+    const first = r === 0 ? cellNode(schema, type, 'Time') : cellNode(schema, type, formatTime(format, start + (r - 1) * slot), { valign: 'middle' })
     rows.push(row.type.create(row.attrs, [first, ...Array.from({ length: row.childCount }, (_, c) => row.child(c))]))
   })
   return table.type.create({ ...table.attrs, calendar: slot }, rows)
@@ -492,7 +500,8 @@ export function setTimeSlots(view: EditorView, pos: number, slot: number): void 
  * Go to now (YAZ-4164 D11): the caret in the first empty cell of the now row of the table at `at` (the note's first
  * calendar table when absent); a row with no empty cell takes it at the end of its first cell after the time. The row
  * scrolls to the middle of the screen (the YAZ-4163 demo: "into view" left it at an edge, or under a pinned header). `false`, and no caret move, when there is no calendar table or no row holds the current minute.
- * A now row in a folded run opens the run in the same step (YAZ-4165), so the caret is never in a hidden row.
+ * A now row in a folded run opens the run in the same step (YAZ-4165), so the caret is never in a hidden row. A
+ * read-only note never changes (YAZ-4176): its run stays folded, the caret does not move, and its bar scrolls to the middle.
  */
 export function goToNow(view: EditorView, at?: number): boolean {
   const { doc } = view.state
@@ -511,11 +520,16 @@ export function goToNow(view: EditorView, at?: number): boolean {
   const end = cell < 0
   if (end) cell = rowPos + 1 + (row.childCount > 1 ? row.child(0).nodeSize : 0)
   const target = end ? cell + doc.nodeAt(cell)!.nodeSize - 1 : cell + 1
-  const tr = view.state.tr
-  if (runOf(foldRuns(table), place.row) !== undefined) closeHistory(unfoldRun(tr, pos!, place.row))
-  // The fold's steps change attributes only: `target` holds in `tr.doc`.
-  view.dispatch(tr.setSelection(Selection.near(tr.doc.resolve(target), end ? -1 : 1)))
-  view.focus()
+  const run = runOf(foldRuns(table), place.row)
+  if (run !== undefined && !view.editable) {
+    for (let r = run.from; r < place.row; r++) rowPos -= table.child(r).nodeSize
+  } else {
+    const tr = view.state.tr
+    if (run !== undefined) closeHistory(unfoldRun(tr, pos!, place.row))
+    // The fold's steps change attributes only: `target` holds in `tr.doc`.
+    view.dispatch(tr.setSelection(Selection.near(tr.doc.resolve(target), end ? -1 : 1)))
+    view.focus()
+  }
   const dom = view.nodeDOM(rowPos)
   // jsdom has no `scrollIntoView`.
   if (dom instanceof Element && typeof dom.scrollIntoView === 'function') dom.scrollIntoView({ block: 'center' })

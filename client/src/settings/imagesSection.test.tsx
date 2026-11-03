@@ -99,10 +99,10 @@ describe('Settings › Images › Pixabay API key', () => {
   const statusText = () => el.querySelector('[data-testid="pixabay-key-status"]')?.textContent
   const keyInput = () => row('pixabayApiKey')?.querySelector<HTMLInputElement>('input') as HTMLInputElement
 
-  it('asks main whether a key is set: "No key", a password field, Save off until typed, Clear off with nothing to clear', async () => {
+  it('asks main whether a key is set: "No key saved", a password field, Save off until typed, Clear off with nothing to clear', async () => {
     await mountImages()
     expect(secretHas).toHaveBeenCalledExactlyOnceWith({ name: 'pixabayApiKey' })
-    expect(statusText()).toBe('No key')
+    expect(statusText()).toBe('No key saved. Photos are off.')
     expect(keyInput().type).toBe('password')
     expect(rowButtons('pixabayApiKey').map((b) => [b.textContent, b.disabled])).toEqual([
       ['Save', true],
@@ -119,21 +119,24 @@ describe('Settings › Images › Pixabay API key', () => {
     })
     expect(secretSet).toHaveBeenCalledExactlyOnceWith({ name: 'pixabayApiKey', value: 'sk-very-secret' })
     expect(onChange).not.toHaveBeenCalled()
-    expect(statusText()).toBe('Key set')
+    expect(statusText()).toBe('✓ Key saved. Photos are on.')
     expect(keyInput().value).toBe('')
+    // A saved key reads as saved (demo 6F): green, and the empty field asks for a REPLACEMENT, not a key.
+    expect(el.querySelector('[data-testid="pixabay-key-status"]')?.classList.contains('is-set')).toBe(true)
+    expect(keyInput().placeholder).toBe('Paste a new key to replace it')
     expect(el.textContent).not.toContain('sk-very-secret')
   })
 
   it('Clear writes null; a save that fails says so in the status line and the key stays unset', async () => {
     secretHas.mockResolvedValue(true)
     await mountImages()
-    expect(statusText()).toBe('Key set')
+    expect(statusText()).toBe('✓ Key saved. Photos are on.')
     await act(async () => {
       rowButtons('pixabayApiKey')[1].click()
       await Promise.resolve()
     })
     expect(secretSet).toHaveBeenCalledExactlyOnceWith({ name: 'pixabayApiKey', value: null })
-    expect(statusText()).toBe('No key')
+    expect(statusText()).toBe('No key saved. Photos are off.')
     secretSet.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk went away'))
     type(keyInput(), 'k')
     await act(async () => {

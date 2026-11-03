@@ -5,7 +5,8 @@
  *   every row (column) from that one to the one under the pointer, as a drag down Sheets' row numbers does. A press on
  *   a handle of a selected row keeps the vendored drag, which moves the rows. After a drag that selected, the click
  *   that follows opens no menu: right-click the selection for it. The rows are read from the table's own `<tr>`s by
- *   the pointer's y (the columns from the header row's cells by its x), so a folded (hidden) row is skipped. The press
+ *   the pointer's y (the columns from the header row's cells by its x), so a folded (hidden) row is skipped; their
+ *   boxes once at the press, and again after a scroll, not on each move (YAZ-4176). The press
  *   is ours: no text selection of the browser runs across the rows as the pointer passes (it flashed), and a drag
  *   from a body row never takes in the header row (a pinned header sits over the rows under it).
  * - SHIFT+SPACE with cells selected selects their whole rows; CTRL+SPACE in a table selects the whole columns of the
@@ -13,12 +14,11 @@
  *   never selects a row.
  * - ORDER: the keys go in just before `tableEditing`, as `tableShiftArrow.ts`.
  */
-import { SchemaReady, prosePluginsCtx } from '@milkdown/kit/core'
-import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { type Command, Plugin, TextSelection } from '@milkdown/kit/prose/state'
-import { CellSelection, tableEditingKey } from '@milkdown/kit/prose/tables'
+import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import { beforeTableEditing } from './beforeTableEditing'
 
 type Kind = 'row' | 'col'
 
@@ -29,15 +29,23 @@ function linesOf(block: Element, kind: Kind): HTMLElement[] {
   return kind === 'row' ? [...table.rows] : [...(table.rows[0]?.cells ?? [])]
 }
 
-/** The index of the line under `at` (y for rows, x for columns), the nearest end when outside; hidden lines are skipped. */
-function lineAt(lines: HTMLElement[], kind: Kind, at: number): number {
+/** Each line's span on the screen (y for rows, x for columns), `null` for a hidden line. */
+function spansOf(lines: HTMLElement[], kind: Kind): Array<[number, number] | null> {
+  return lines.map((line) => {
+    const r = line.getBoundingClientRect()
+    if ((kind === 'row' ? r.height : r.width) === 0) return null
+    return kind === 'row' ? [r.top, r.bottom] : [r.left, r.right]
+  })
+}
+
+/** The index of the line under `at`, the nearest end when outside; hidden lines are skipped. */
+function lineAt(spans: Array<[number, number] | null>, at: number): number {
   let best = -1
-  for (let i = 0; i < lines.length; i++) {
-    const r = lines[i]!.getBoundingClientRect()
-    if ((kind === 'row' ? r.height : r.width) === 0) continue
-    const [from, to] = kind === 'row' ? [r.top, r.bottom] : [r.left, r.right]
-    if (best < 0 || at >= from) best = i
-    if (at < to) break
+  for (let i = 0; i < spans.length; i++) {
+    const span = spans[i]
+    if (span == null) continue
+    if (best < 0 || at >= span[0]) best = i
+    if (at < span[1]) break
   }
   return best
 }
@@ -94,30 +102,35 @@ const wholeLines = (kind: Kind): Command => (state, dispatch) => {
   return true
 }
 
-export const tableHandleSelect: MilkdownPlugin = (ctx) => async () => {
-  await ctx.wait(SchemaReady)
-  const plugin = new Plugin({
+export const tableHandleSelect = beforeTableEditing(() => [
+  new Plugin({
     props: {
       handleKeyDown: keydownHandler({ 'Shift-Space': wholeLines('row'), 'Ctrl-Space': wholeLines('col') }),
     },
     view: (view) => {
-      let drag: { kind: Kind; lines: HTMLElement[]; anchor: number; moved: boolean } | null = null
+      // The lines' spans are read at the press, and again after a scroll moved them (YAZ-4176): not on each move.
+      let drag: { kind: Kind; lines: HTMLElement[]; spans: Array<[number, number] | null> | null; anchor: number; moved: boolean } | null = null
       const swallowClick = (e: MouseEvent) => {
         e.stopPropagation()
         e.preventDefault()
       }
       const onMove = (e: MouseEvent) => {
         if (drag === null) return
-        let head = lineAt(drag.lines, drag.kind, drag.kind === 'row' ? e.clientY : e.clientX)
+        drag.spans ??= spansOf(drag.lines, drag.kind)
+        let head = lineAt(drag.spans, drag.kind === 'row' ? e.clientY : e.clientX)
         if (drag.kind === 'row' && drag.anchor > 0) head = Math.max(head, 1)
         e.preventDefault()
         if (head < 0 || (head === drag.anchor && !drag.moved)) return
         drag.moved = true
         select(view, drag.lines, drag.kind, drag.anchor, head)
       }
+      const onScroll = () => {
+        if (drag !== null) drag.spans = null
+      }
       const onUp = () => {
         document.removeEventListener('mousemove', onMove, true)
         document.removeEventListener('mouseup', onUp, true)
+        document.removeEventListener('scroll', onScroll, true)
         if (drag?.moved) {
           // The click that follows this mouseup selected nothing new: no menu.
           document.addEventListener('click', swallowClick, true)
@@ -132,14 +145,16 @@ export const tableHandleSelect: MilkdownPlugin = (ctx) => async () => {
         if (handle == null || block == null) return
         const kind: Kind = handle.getAttribute('data-role') === 'row-drag-handle' ? 'row' : 'col'
         const lines = linesOf(block, kind)
-        const anchor = lineAt(lines, kind, kind === 'row' ? e.clientY : e.clientX)
+        const spans = spansOf(lines, kind)
+        const anchor = lineAt(spans, kind === 'row' ? e.clientY : e.clientX)
         // A selected row's handle: the vendored drag moves the rows.
         if (anchor < 0 || selected(view, lines, kind, anchor)) return
         // Ours: no text selection of the browser (and no native drag) starts from this press.
         e.preventDefault()
-        drag = { kind, lines, anchor, moved: false }
+        drag = { kind, lines, spans, anchor, moved: false }
         document.addEventListener('mousemove', onMove, true)
         document.addEventListener('mouseup', onUp, true)
+        document.addEventListener('scroll', onScroll, true)
       }
       // The native drag of a handle we select with is no drag.
       const onDragStart = (e: DragEvent) => {
@@ -157,12 +172,5 @@ export const tableHandleSelect: MilkdownPlugin = (ctx) => async () => {
         },
       }
     },
-  })
-  ctx.update(prosePluginsCtx, (ps) => {
-    const at = ps.findIndex((p) => p.spec.key === tableEditingKey)
-    return at < 0 ? [...ps, plugin] : [...ps.slice(0, at), plugin, ...ps.slice(at)]
-  })
-  return () => {
-    ctx.update(prosePluginsCtx, (ps) => ps.filter((p) => p !== plugin))
-  }
-}
+  }),
+])

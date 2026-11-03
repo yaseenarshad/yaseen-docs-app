@@ -1,11 +1,12 @@
 /**
  * The table's settings in the file (YAZ-3758, YAZ-3696 🔒 D1 / D3 / D7 / S3; CONTRACTS rule 41a).
- * The `table` node gets seven attributes, each at its default on a plain table: `border` (`null` or
+ * The `table` node gets these attributes, each at its default on a plain table: `border` (`null` or
  * `{ px, darkness }`), `header` (`shaded` | `plain`), `stripes`, `height` (`compact` | `normal` |
  * `tall`), `wrap`, `freezeRows` and `freezeCols`; `calendar` (the slot length in minutes, `0` for none,
  * YAZ-4162); `valign` (`top` | `middle` | `bottom`, the cells' default, YAZ-4166); `zoom` (whole percent, 100 by
- * default, YAZ-4091: `--table-zoom` on the block, which `table.css` puts on its content); and `unknownParts`, the comment's parts this build
- * does not know, kept as their text (YAZ-4161). A column's alignment is the cells' own GFM
+ * default, YAZ-4091: `--table-zoom` on the block, which `table.css` puts on its content); `nowButton` (a calendar
+ * table's "Now" chip, `true` by default; `false` saves `nonow` and is `data-table-nonow`, the YAZ-4163 demo); and
+ * `unknownParts`, the comment's parts this build does not know or cannot read, kept as their text (YAZ-4161, YAZ-4176). A column's alignment is the cells' own GFM
  * `alignment` (the `:-` row), not ours (YAZ-3767). Each
  * cell gets `fill`, `color`, its own `align` and its own `valign` (YAZ-4166), and `fold` (YAZ-4165: the cells of a
  * folded row; the comment's `fold` names the rows) (`withCellStyle`, used by `inlineBreaks.ts`'s `cellSchemas`), and a

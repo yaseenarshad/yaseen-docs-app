@@ -415,6 +415,11 @@ export interface CreateCrepeOptions {
    * Absent on the hover preview card and the other previews: they show the marker of the time they opened and start no timer.
    */
   calendarClock?: boolean
+  /**
+   * The note editor (YAZ-4091, YAZ-4176): the table zoom pill on each table (`table/tableZoomPill.tsx`). Absent on the
+   * hover preview card, the read-only previews and the outline view: they mount no React root for each table.
+   */
+  tableZoomPill?: boolean
 }
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
@@ -667,8 +672,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createTableCalendar(opts.calendarClock === true))
   // The row band on the caret's row (YAZ-4167): one row decoration, moved only when the caret goes to another row.
   crepe.editor.use(tableRowBand)
-  // The table zoom (YAZ-4091): the page zoom pill in a widget before each table, for the table's own `zoom`.
-  crepe.editor.use(tableZoomPill)
+  // The table zoom (YAZ-4091): the page zoom pill in a widget before each table, for the table's own `zoom`; the note editor only (YAZ-4176).
+  if (opts.tableZoomPill === true) crepe.editor.use(tableZoomPill)
   // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook, opts.vaultsOfLetters))
