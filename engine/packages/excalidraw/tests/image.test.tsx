@@ -83,13 +83,14 @@ describe("image insertion", () => {
   const setup = () =>
     setupImageTest([DEER_IMAGE_DIMENSIONS, SMILEY_IMAGE_DIMENSIONS]);
 
-  // YAZ-4277: the images load through several async steps (the file, its id,
-  // the <img>); on a loaded machine that took longer than waitFor's default
-  // 1 s, and the test saw them still "pending". The test's own limit is 5 s.
+  // YAZ-4277: in any order. The mock gives each new <img> the next size of
+  // its list, and the two files load at the same time: under load the second
+  // file made its <img> first and took the deer's size, so the boxes swapped.
   const assert = async () => {
-    await waitFor(
-      () => {
-        expect(h.elements).toEqual([
+    await waitFor(() => {
+      expect(h.elements).toHaveLength(2);
+      expect(h.elements).toEqual(
+        expect.arrayContaining([
           expect.objectContaining({
             ...INITIALIZED_IMAGE_PROPS,
             ...DEER_IMAGE_DIMENSIONS,
@@ -98,10 +99,9 @@ describe("image insertion", () => {
             ...INITIALIZED_IMAGE_PROPS,
             ...SMILEY_IMAGE_DIMENSIONS,
           }),
-        ]);
-      },
-      { timeout: 4000 },
-    );
+        ]),
+      );
+    });
     // Not placed on top of each other
     const dimensionsSet = new Set(h.elements.map((el) => `${el.x}-${el.y}`));
     expect(dimensionsSet.size).toEqual(h.elements.length);
