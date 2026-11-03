@@ -25,6 +25,7 @@ import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BROKEN_DRAWING_MESSAGE, DISCARD_PROMPT, DrawingModal } from './DrawingModal'
 import { ALLOW_FOLDER_TITLE, allowFolderBody } from './usePicturesFolderAllow'
 import type { DrawingSurfaceProps } from './ExcalidrawSurface'
+import { fakeWatch } from '../documents/boardTestKit'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -35,12 +36,14 @@ vi.mock('../api', async (original) => ({
 }))
 
 /** The stand-in engine: it renders nothing and reports the props the modal handed it. */
-const seam = vi.hoisted(() => ({ props: null as DrawingSurfaceProps | null, mounts: 0 }))
+const seam = vi.hoisted(() => ({ props: null as DrawingSurfaceProps | null, mounts: 0, api: null as Record<string, unknown> | null }))
 vi.mock('./ExcalidrawSurface', () => ({
   ENGINE_LOAD_FAILED: "Can't open the drawing editor.",
   ExcalidrawSurface: (props: DrawingSurfaceProps) => {
     seam.props = props
     seam.mounts += 1
+    // YAZ-4279: the handle a merge goes through, only when a test sets one; without it the modal shows the bar as before.
+    if (seam.api !== null) props.onApi?.(seam.api as never)
     return <div className="fake-surface" />
   },
 }))
@@ -73,6 +76,7 @@ let outside: HTMLElement | null = null
 beforeEach(() => {
   seam.props = null
   seam.mounts = 0
+  seam.api = null
   readAsset.mockReset()
   drawingSave.mockReset()
   drawingSave.mockResolvedValue({ path: PATH, mtime: 999, size: BYTES.length, persisted: [] })
@@ -809,5 +813,76 @@ describe('the outside pictures folder in the popup', () => {
     })
     expect(list).not.toHaveBeenCalled()
     expect(container?.querySelector('.confirm__text')).toBeNull()
+  })
+})
+
+describe('YAZ-4279 — an outside save lands on the open popup (D6, item 6)', () => {
+  const { watch, watcherSaw } = fakeWatch()
+  const handle = (merged: { version: number; added: string[]; changed: string[] } | null) => ({
+    mergeScene: vi.fn(() => merged),
+    replaceScene: vi.fn(() => 0),
+    whenIdle: vi.fn(async () => undefined),
+  })
+  const MERGED = { version: 30, added: [], changed: ['a'] }
+
+  it('a refused save merges first: no bar, and the merge saves against the mtime the file now has', async () => {
+    seam.api = handle(MERGED)
+    await open('ok', 100, { watch })
+    emit(1)
+    emit(2)
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    readAsset.mockResolvedValue(asset(555))
+    await idle()
+    expect((seam.api.mergeScene as ReturnType<typeof vi.fn>)).toHaveBeenCalledOnce()
+    expect(conflictBar()).toBeNull()
+    emit(3)
+    await idle()
+    expect(drawingSave).toHaveBeenLastCalledWith(expect.objectContaining({ expectedMtime: 555 }))
+  })
+
+  it('a clash shows the bar, as before', async () => {
+    seam.api = handle(null)
+    await open('ok', 100, { watch })
+    emit(1)
+    emit(2)
+    drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
+    readAsset.mockResolvedValue(asset(555))
+    await idle()
+    expect(conflictBar()).toBe('File changed on disk.ReloadKeep mine')
+  })
+
+  it('a clean popup takes the file in place (no remount), and writes nothing back; its own save\'s echo is ignored', async () => {
+    seam.api = handle(MERGED)
+    await open('ok', 100, { watch })
+    emit(1)
+    emit(2)
+    await idle()
+    const mounts = seam.mounts
+    watcherSaw({ type: 'change', path: PATH, mtime: 999 }) // the echo of that save
+    await idle()
+    expect((seam.api.replaceScene as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled()
+    readAsset.mockResolvedValue(asset(700))
+    watcherSaw({ type: 'change', path: PATH, mtime: 700 })
+    await idle()
+    expect((seam.api.replaceScene as ReturnType<typeof vi.fn>)).toHaveBeenCalledOnce()
+    expect(seam.mounts).toBe(mounts)
+    emit(8) // the engine's answer to the file: the new baseline
+    await idle()
+    expect(drawingSave).toHaveBeenCalledTimes(1)
+    expect(label()).toBe('Saved')
+  })
+
+  it('a popup with edits merges an outside save as it arrives', async () => {
+    seam.api = handle(MERGED)
+    await open('ok', 100, { watch })
+    emit(1)
+    emit(2)
+    readAsset.mockResolvedValue(asset(700))
+    watcherSaw({ type: 'change', path: PATH, mtime: 700 })
+    await idle(0)
+    expect((seam.api.mergeScene as ReturnType<typeof vi.fn>)).toHaveBeenCalledOnce()
+    expect(conflictBar()).toBeNull()
+    await idle()
+    expect(drawingSave).toHaveBeenLastCalledWith(expect.objectContaining({ expectedMtime: 700 }))
   })
 })

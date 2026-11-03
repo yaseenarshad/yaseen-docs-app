@@ -60,6 +60,7 @@ import { createStore, type Store } from '../lib/store'
 import { noteBoardSaved } from '../share/liveShare'
 import { BOARD_COMMAND_EVENT, type BoardCommand } from './boardCommand'
 import { ConflictBar } from './ConflictBar'
+import { oneAtATime } from './oneAtATime'
 
 /** What every document editor is handed for its document, and hands on to `useDocumentHost` as is. */
 export interface DocumentHostProps {
@@ -147,30 +148,17 @@ export function useDocumentHost(options: DocumentHostOptions) {
     [],
   )
 
-  /** The latest disk change that waits for the merge in flight; null: none (item 4). */
-  const mergeAgain = useRef<number | null>(null)
-  const merging = useRef(false)
-  /** YAZ-4279 D3: the engine merges, or the bar shows. The two doors of the module doc use it. */
-  const mergeOrConflict = useCallback(async (diskMtime: number): Promise<void> => {
-    if (engine.current.merge === undefined) return setConflictMtime(diskMtime)
-    if (merging.current) {
-      mergeAgain.current = diskMtime
-      return
-    }
-    merging.current = true
-    try {
-      for (let mtime: number | null = diskMtime; mtime !== null; mtime = mergeAgain.current) {
-        mergeAgain.current = null
-        const a = autosave.current
-        const merge = engine.current.merge
-        if (a === null || retired.current || merge === undefined) return
-        const answer = await merge(a).catch(() => 'conflict' as const)
-        setConflictMtime(answer === 'conflict' ? mtime : null)
-      }
-    } finally {
-      merging.current = false
-    }
-  }, [])
+  /** YAZ-4279 D3: the engine merges, or the bar shows. The two doors of the module doc use it, one merge at a time (item 4). */
+  const [mergeOrConflict] = useState(() =>
+    oneAtATime(async (mtime) => {
+      const a = autosave.current
+      const merge = engine.current.merge
+      if (a === null || retired.current) return
+      if (merge === undefined) return setConflictMtime(mtime)
+      const answer = await merge(a).catch(() => 'conflict' as const)
+      setConflictMtime(answer === 'conflict' ? mtime : null)
+    }),
+  )
 
   const start = useCallback(
     (content: number, mtime: number) => {

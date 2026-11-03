@@ -1249,7 +1249,7 @@ function CrepeHost({
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the
           appearance is App's already-resolved one, read once (`appliedTheme`). */}
       {openDrawing !== null && (
-        <DrawingModal key={openDrawing} root={root} target={openDrawing} theme={appliedTheme()} feed={drawingFeed} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} newNoteFolderFor={newNoteFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+        <DrawingModal key={openDrawing} root={root} target={openDrawing} theme={appliedTheme()} feed={drawingFeed} watch={watch} onClose={() => setOpenDrawing(null)} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} linkActions={linkActions} newNoteFolderFor={newNoteFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
       )}
       {/* The image lightbox (YAZ-1656) — the same modal-beside-the-editor shape as the drawing
           modal, opened by the node view's double-click with the whole gallery (every image on

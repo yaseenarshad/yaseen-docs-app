@@ -40,6 +40,10 @@
  * version here (this canvas's edits are dropped), Keep mine writes this canvas over it. The modal
  * never wins in silence.
  *
+ * ⚡ AMENDED by YAZ-4279 (D6, item 6): the modal watches its file as a tab does. An outside save lands on the canvas: a
+ * clean modal takes the file (`replaceScene`), one with edits merges it (`mergeScene`, the tab's rule), and a refused
+ * save merges too. The bar shows only for a clash, or a read-only switch the file changed.
+ *
  * FAILURES are inline and never a dialog: a sidecar that is missing, unreadable or not a scene
  * opens as the error state (message + close, nothing to save), and a failed write leaves the modal
  * open with its error line and the canvas untouched — a save that failed must not eat the drawing.
@@ -53,8 +57,11 @@ import { ConflictBar } from '../documents/ConflictBar'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 import type { MutableDrawingFeed } from './drawingFeed'
-import { openDrawing, type LoadedDrawing } from './drawingScene'
-import type { DrawingSnapshot } from './ExcalidrawSurface'
+import { oneAtATime } from '../documents/oneAtATime'
+import type { WatchSource } from '../hooks/useWatch'
+import { openDrawing, parseSceneText, type DrawingScene, type LoadedDrawing } from './drawingScene'
+import type { DrawingSnapshot, DrawingSurfaceApi } from './ExcalidrawSurface'
+import type { SceneSide } from './mergeScene'
 import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing'
 import { missingPicturesNotice, picturesFolderOutside, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
 import type { NoticeKind } from '../lib/notice'
@@ -94,9 +101,14 @@ interface DrawingModalProps extends DrawingLinkProps {
   hotkeysAside?: HotkeyAside
   /** The note's passive notice: what a link's open or a new page says, and missing pictures (an error). */
   onNotice?: (message: string, icon?: NoticeKind) => void
+  /** The window's watcher (YAZ-4279 item 6): an outside save lands on this canvas. Absent: the modal sees it only when a save is refused. */
+  watch?: WatchSource
 }
 
-export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside, onNotice, ...linkProps }: DrawingModalProps) {
+/** The shapes and the board settings alone: a merge's base never holds the pictures (YAZ-4279). */
+const sideOf = ({ elements, appState }: DrawingScene): SceneSide => ({ elements, appState })
+
+export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside, onNotice, watch, ...linkProps }: DrawingModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   /** The sheet: the link menu, the Edit link box and the `[[` picker go in it, so a click on them is not a click-away. */
   const sheetRef = useRef<HTMLDivElement>(null)
@@ -127,6 +139,12 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   const [generation, setGeneration] = useState(0)
   /** The canvas that may report: a snapshot from the canvas a Reload replaced must not become the new baseline. */
   const generationRef = useRef(0)
+  /** The surface's handle: what a merge and a take of the file go through (YAZ-4279). */
+  const surfaceApi = useRef<DrawingSurfaceApi | null>(null)
+  /** The scene as this modal last loaded or saved it: a merge's base (D6). A save keeps its text, parsed only for a merge. */
+  const base = useRef<SceneSide | string | null>(null)
+  /** Set when the file came in on a clean canvas: the next snapshot is the baseline at this mtime (the tab's rule). */
+  const tookAt = useRef<number | null>(null)
 
   /** A save's status: a save that lands answers the failed-save strip too (the label beside it says Saved). */
   const onStatus = useCallback((next: SaveStatus) => {
@@ -135,18 +153,54 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
     if (next === 'saved') setConfirming(false)
   }, [])
 
-  /** A conflict raises the bar; the bar says what is wrong now, so an older error line goes. */
-  const onConflict = useCallback((diskMtime: number) => {
-    conflictRef.current = diskMtime
-    setConflict(diskMtime)
-    setError(null)
-  }, [])
-
   const clearConflict = (): void => {
     conflictRef.current = null
     setConflict(null)
     setConfirming(false)
   }
+
+  /** A file this modal now holds as its base: its pictures as the file says them, and the previews go stale. */
+  const tookFile = (drawing: LoadedDrawing): void => {
+    base.current = sideOf(drawing.scene)
+    persisted.current = new Set(drawing.stored)
+    stale.current = true
+  }
+
+  /** YAZ-4279 D6: the file merged into this canvas's edits; 'conflict' leaves the canvas as it was. */
+  const mergeFile = async (): Promise<'merged' | 'conflict'> => {
+    const s = surfaceApi.current
+    const a = autosave.current
+    const was = base.current
+    if (s === null || a === null || was === null) return 'conflict'
+    try {
+      const drawing = await openDrawing(root, target)
+      if ((drawing.scene.readOnly === true) !== (loadedRef.current?.scene.readOnly === true)) return 'conflict'
+      await s.whenIdle()
+      if (s.mergeScene(typeof was === 'string' ? parseSceneText(was) : was, drawing.scene) === null) return 'conflict'
+      tookFile(drawing)
+      a.rebase(drawing.mtime)
+      return 'merged'
+    } catch {
+      return 'conflict'
+    }
+  }
+  const mergeRef = useRef(mergeFile)
+  mergeRef.current = mergeFile
+
+  /** A conflict merges first (D6); only a clash raises the bar, which says what is wrong now, so an older error line goes. */
+  const [settle] = useState(() =>
+    oneAtATime(async (diskMtime) => {
+      if ((await mergeRef.current()) === 'merged') {
+        conflictRef.current = null
+        setConflict(null)
+        return
+      }
+      conflictRef.current = diskMtime
+      setConflict(diskMtime)
+      setError(null)
+    }),
+  )
+  const onConflict = useCallback((diskMtime: number) => void settle(diskMtime), [settle])
 
   useEffect(() => {
     let live = true
@@ -154,6 +208,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       (drawing) => {
         if (!live) return
         persisted.current = new Set(drawing.stored)
+        base.current = sideOf(drawing.scene)
         setLoaded(drawing)
       },
       // Missing, unreadable, not a scene: ONE state, exactly like the preview's chip.
@@ -212,6 +267,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
         if (res.inside === true || res.movedOut === true) persisted.current = new Set(res.persisted)
         else for (const id of res.persisted) persisted.current.add(id)
         if (res.movedOut === true) onNotice?.(PICTURES_MOVED_OUT)
+        base.current = json
         stale.current = true
         setError(null)
         return { mtime: res.mtime }
@@ -232,8 +288,11 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       // Read only: never an edit, so there is nothing to autosave.
       if (drawing === null || drawing.scene.readOnly === true) return
       const a = autosave.current
-      // The first snapshot IS the clean baseline (the surface restored the disk scene first).
+      const took = tookAt.current
+      tookAt.current = null
+      // The first snapshot IS the clean baseline (the surface restored the disk scene first); so is the first after the file came in.
       if (a === null) autosave.current = new Autosave<number>({ content: next.version, mtime: drawing.mtime, delayMs: 500, save: write, onStatus, onConflict })
+      else if (took !== null) a.reset(next.version, took)
       else a.update(next.version)
     },
     [write, onStatus, onConflict, generation],
@@ -309,7 +368,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
     setError(null)
     try {
       const drawing = await openDrawing(root, target)
-      persisted.current = new Set(drawing.stored)
+      tookFile(drawing)
       clearConflict()
       generationRef.current += 1
       autosave.current?.dispose()
@@ -324,6 +383,42 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       setError(BROKEN_DRAWING_MESSAGE)
     }
   }
+
+  /** A clean canvas takes the file in place (item 6); a read-only switch the file changed remounts it, as Reload does. */
+  const takeFile = async (): Promise<void> => {
+    const s = surfaceApi.current
+    try {
+      const drawing = await openDrawing(root, target)
+      if (left.current) return
+      if (s === null || (drawing.scene.readOnly === true) !== (loadedRef.current?.scene.readOnly === true)) return void reload()
+      tookFile(drawing)
+      tookAt.current = drawing.mtime
+      s.replaceScene(drawing.scene)
+    } catch {
+      // The file went, or stopped being a scene: keep what is on screen, as a tab does.
+    }
+  }
+  const takeRef = useRef(takeFile)
+  takeRef.current = takeFile
+
+  // YAZ-4279 item 6: an outside save of this file, once any save in flight has settled — the tab's rule.
+  const file = loaded?.path ?? null
+  useEffect(() => {
+    if (watch === undefined || file === null) return
+    return watch.subscribe((ev) => {
+      if (ev.type !== 'change' || ev.path !== file || left.current) return
+      const a = autosave.current
+      void (a?.settled() ?? Promise.resolve()).then(() => {
+        if (a !== null && ev.mtime === a.mtime) return // the echo of our own write
+        if (a !== null && a.dirty) void settle(ev.mtime)
+        else void takeRef.current()
+      })
+    })
+  }, [watch, file, settle])
+
+  const onApi = useCallback((handle: DrawingSurfaceApi) => {
+    surfaceApi.current = handle
+  }, [])
 
   const onKeyDown = (e: ReactKeyboardEvent): void => {
     if (e.key !== 'Escape') return
@@ -366,7 +461,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
         <div className="drawing-modal__canvas">
           {loaded !== null && (
             <Suspense fallback={null}>
-              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} />
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} onApi={onApi} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} />
             </Suspense>
           )}
         </div>
