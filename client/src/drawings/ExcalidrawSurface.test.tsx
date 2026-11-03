@@ -22,7 +22,7 @@ vi.mock('./engine', () => {
     Fonts: { loadElementsFonts: async () => [] },
     restoreAppState: () => ({}),
     getSceneVersion: () => 0,
-    serializeAsJSON: vi.fn((elements: unknown) => JSON.stringify({ elements, appState: {} })),
+    serializeAsJSON: vi.fn((elements: unknown) => JSON.stringify({ elements, appState: { viewBackgroundColor: '#ffffff' } })),
   }
   return { loadExcalidraw: async () => mod, applyToolbarMode: () => undefined }
 })
@@ -281,6 +281,9 @@ describe('a reload from disk drops the images nothing shows (YAZ-3737 D14)', () 
     act(() => (last().onExcalidrawAPI as (api: unknown) => void)(raw))
     handle!.replaceScene({ elements: [box], appState: {}, files: {} })
     expect(raw.updateScene).toHaveBeenLastCalledWith(expect.objectContaining({ captureUpdate: 'NEVER' }))
+    // The board's own settings in the file come in with the reload: the next save must not write the old background back.
+    handle!.replaceScene({ elements: [box], appState: { viewBackgroundColor: '#000' }, files: {} })
+    expect(raw.updateScene).toHaveBeenLastCalledWith(expect.objectContaining({ appState: { viewBackgroundColor: '#000' } }))
     const merged = handle!.mergeScene({ elements: [box], appState: {} }, { elements: [{ ...box, strokeColor: 'red' }], appState: {}, files: {} })
     expect(merged).toMatchObject({ changed: ['b'] })
     expect(raw.updateScene).toHaveBeenLastCalledWith(expect.objectContaining({ captureUpdate: 'NEVER', elements: [expect.objectContaining({ id: 'b', strokeColor: 'red', version: 2 })] }))

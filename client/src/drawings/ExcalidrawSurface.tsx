@@ -720,8 +720,10 @@ export function ExcalidrawSurface({
         // A new scene, a new count: computed BEFORE the engine reports it, so its first `onChange` agrees.
         countVersion.current = contentVersion()
         const version = countVersion.current(restored)
+        // The board's own settings the file holds come in too (YAZ-4279): left out, the next save wrote the old background back.
+        const settings = Object.fromEntries(boardKeys.current.filter((k) => next.appState[k] !== undefined).map((k) => [k, next.appState[k]]))
         // The file's change is not the user's: the default (EVENTUALLY) folded it into the next ⌘Z step (YAZ-4279).
-        api.updateScene({ elements: restored, captureUpdate: mod.CaptureUpdateAction.NEVER })
+        api.updateScene({ elements: restored, ...(Object.keys(settings).length > 0 && { appState: settings as unknown as EngineAppState }), captureUpdate: mod.CaptureUpdateAction.NEVER })
         addNewFiles(api, next.files)
         // The engine's files only grew: drop what neither the new scene nor undo can show (YAZ-3737 D14).
         api.pruneFiles()
