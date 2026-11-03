@@ -1173,10 +1173,15 @@ describe("element locking", () => {
       expect(
         document.querySelector(".contextual-properties-toolbar"),
       ).not.toBeNull();
-      expect(picksIn(textColorGroup())).toEqual(TEXT_TOOLBAR_COLOR_PICKS);
-      openTextToolbarPopover("Stroke: more");
+      // YAZ-4277 1E (D8): in edit the bar keeps the whole-box controls; the
+      // letters' colors are in the box editor's pop-up toolbar
+      expect(textColorGroup()).toBeNull();
+      openTextToolbarPopover("Background");
       expect(
-        queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
+        queryByTestId(
+          document.body,
+          `color-top-pick-${DEFAULT_ELEMENT_BACKGROUND_PICKS[1]}`,
+        ),
       ).not.toBeNull();
     });
 
