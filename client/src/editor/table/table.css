@@ -853,6 +853,139 @@
   outline-offset: 1px;
 }
 
+/* "All notes" of a calendar table (YAZ-4276, `cellNoteCard.ts`): the column's notes show IN the page, under the table,
+   each under its time heading, and take typing as any block does. The open note is no card here. The head holds the
+   card's own buttons (the styles above) and the column buttons. */
+.milkdown .ProseMirror .cell-note.cell-note--shown {
+  display: block;
+  margin: 0 0 4px;
+  padding-left: 20px;
+}
+
+.milkdown .ProseMirror .cell-note-all-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 12px;
+  user-select: none;
+}
+
+.cell-note-all-head__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The column buttons (A2): one frame, the shown column pressed. */
+.cell-note-all-head__columns {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.cell-note-all-head__column,
+.cell-note-all-head__now,
+.cell-note-all-head__filled {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.cell-note-all-head__now,
+.cell-note-all-head__filled {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.cell-note-all-head__column + .cell-note-all-head__column {
+  border-left: 1px solid var(--border);
+}
+
+.cell-note-all-head__column:hover,
+.cell-note-all-head__now:hover,
+.cell-note-all-head__filled:hover {
+  color: var(--fg);
+}
+
+.cell-note-all-head__column[aria-pressed='true'],
+.cell-note-all-head__filled[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--fg);
+}
+
+.cell-note-all-head button:focus-visible {
+  outline: 2px solid var(--crepe-color-primary);
+  outline-offset: 1px;
+}
+
+/* A time heading: the row's time, small and muted, as the list's headers; "Now" on now's block (A1). */
+.milkdown .ProseMirror .cell-note-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 2px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.milkdown .ProseMirror .cell-note-time--now {
+  color: var(--fg);
+}
+
+.cell-note-time__now {
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--table-text-red);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+/* Past blocks dim as the table's past rows do (A4), with Settings › Calendar tables › Dim past rows. */
+:is([data-table-dim-past='text'], [data-table-dim-past='shade']) .milkdown .ProseMirror .cell-note-time--past {
+  opacity: 0.55;
+}
+
+/* An empty time block (B): a quiet line that a click turns into the block's note. */
+.milkdown .ProseMirror .cell-note-time-empty {
+  display: block;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 2px 0 2px 20px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-style: italic;
+  text-align: left;
+  cursor: text;
+}
+
+.milkdown .ProseMirror .cell-note-time-empty:hover:not(:disabled) {
+  color: var(--fg);
+}
+
 /* A cell note's mark (YAZ-3818 D8): a small triangle in the cell's top-right corner, as in Google Sheets. The label
    never shows: the `sup` keeps its place in the line at font size 0, so the caret moves as before. The triangle is a
    background on the cell itself (`has-cell-note`, from the cell note plugin's state, 5A-18): the same corner in every

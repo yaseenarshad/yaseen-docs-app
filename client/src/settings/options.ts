@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type TableBandRows, type TableDimPast, type TableNowMark, type TableRowBand, type DailyNoteOpens, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type TableBandRows, type TableDimPast, type TableNowMark, type TableRowBand, type DailyNoteOpens, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -131,6 +131,12 @@ export const OUTSIDE_CHANGE_GLOW_OPTIONS: readonly Option<OutsideChangeGlow>[] =
   { label: '10 seconds', value: '10s' },
   { label: '1 minute', value: '60s' },
   { label: 'Off', value: 'off' },
+]
+
+/** Settings › Editor › Cell notes › All notes opens at (YAZ-4276 A1). */
+export const ALL_NOTES_OPENS_AT_OPTIONS: readonly Option<AllNotesOpensAt>[] = [
+  { label: 'The cell I came from', value: 'cell' },
+  { label: 'Now', value: 'now' },
 ]
 
 /** Daily notes (YAZ-4164 D11): what the button opens. */

@@ -260,7 +260,21 @@ export interface CellNoteCardState {
   cell: number | null
   /** "All notes" (round 4 of the demo): the card shows every cell note of the page, read-only. */
   all: boolean
+  /** "All notes" of a calendar table (YAZ-4276): its column's notes, in the page under the table, editable; else null. */
+  calendar: CalendarAll | null
   set: DecorationSet
+}
+
+/** The calendar "All notes" view (YAZ-4276, `cellNoteCard.ts`): one column of one calendar table, under the table. */
+export interface CalendarAll {
+  /** The column shown, as an index in a row (D3: the open note's, until a column button picks another). */
+  column: number
+  /** The notes shown in the page, the column's notes in row order: mapped through each change. */
+  shown: readonly number[]
+  /** The notes this view made from an empty time block, by label: leaving the view removes those still empty (A9). */
+  made: readonly string[]
+  /** "Only filled" (A3): the empty time blocks do not show. */
+  onlyFilled: boolean
 }
 
 export const cellNoteCardKey = new PluginKey<CellNoteCardState>('mdapp-cell-note-card')
@@ -318,7 +332,13 @@ export function cellNoteCornerAt(view: EditorView, event: MouseEvent): HTMLEleme
 const isOrphan = (state: EditorState, pos: number): boolean => (cellNotesKey.getState(state)?.find(pos, pos + 1) ?? []).some((deco) => deco.from === pos)
 
 /** Is the cell note at `pos` hidden? Yes, unless it has no mark, or it is open as a card (the YAZ-3818 demo). */
-export const isCellNoteHidden = (state: EditorState, pos: number): boolean => !isOrphan(state, pos) && cellNoteCardKey.getState(state)?.pos !== pos
+export const isCellNoteHidden = (state: EditorState, pos: number): boolean => {
+  if (isOrphan(state, pos)) return false
+  const card = cellNoteCardKey.getState(state)
+  // A calendar's "All notes" (YAZ-4276) shows its column's notes in the page, and no card.
+  if (card?.calendar != null) return !card.calendar.shown.includes(pos)
+  return card?.pos !== pos
+}
 
 /** A node whose coming or going can move a cell note: a table, a cell note, a mark. */
 const isNoteNode = (node: ProseNode): boolean => node.type.name === 'table' || isCellNote(node) || isCellNoteMark(node)

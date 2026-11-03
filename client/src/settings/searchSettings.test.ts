@@ -83,6 +83,7 @@ describe('settingCandidates', () => {
       'tableCellBulletGap',
       'tableCellNoteTemplate',
       'tableCellNotePinned',
+      'tableAllNotesOpensAt',
       'tableNowMark',
       'tableNowButton',
       'tableDimPast',

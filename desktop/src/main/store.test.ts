@@ -489,6 +489,7 @@ describe('createStore: loading', () => {
       tableCellNoteTemplate: ['x'.repeat(2001), 3, null],
       tableCellNotePinned: ['yes', 1],
       typingArrows: ['on', 0],
+      tableAllNotesOpensAt: ['here', '', true],
       tableBandColour: ['', 'magenta', '#12345', '#12345g', 4],
       tableBandStrength: [0, 61, 10.5, '10', Infinity],
       tableBandRows: ['row', '', 2],
