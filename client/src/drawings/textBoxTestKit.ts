@@ -25,13 +25,14 @@ export function unmountAll(): void {
 }
 
 /** Mounts the editor on a box and waits until Crepe holds its document, as the engine does on a double click. */
-export async function mountBox(text: string, textRuns: TextRuns = undefined, selection = { anchor: 0, head: 0 }) {
+export async function mountBox(text: string, textRuns: TextRuns = undefined, selection = { anchor: 0, head: 0 }, foldedLines: readonly number[] = []) {
   const root = document.createElement('div')
   root.className = 'excalidraw-host-text-editor'
   document.body.appendChild(root)
   const onChange = vi.fn<(text: string, textRuns: TextRuns, selection: { anchor: number; head: number }) => void>()
   const onSelectionChange = vi.fn<(s: { anchor: number; head: number }) => void>()
-  const session = createTextBoxEditor(helpers).mount({ root, text, textRuns, selection, onChange, onSelectionChange })
+  const onFoldsChange = vi.fn<(lines: readonly number[]) => void>()
+  const session = createTextBoxEditor(helpers).mount({ root, text, textRuns, foldedLines, selection, onChange, onSelectionChange, onFoldsChange })
   mounts.push({ destroy: session.destroy, root })
   const crepe = created[created.length - 1]
   let view: EditorView | null = null
@@ -41,7 +42,7 @@ export async function mountBox(text: string, textRuns: TextRuns = undefined, sel
   })
   // one more task: the first document lands after `create()` resolves
   await new Promise((r) => setTimeout(r, 0))
-  return { root, session, onChange, onSelectionChange, crepe, view: view as unknown as EditorView }
+  return { root, session, onChange, onSelectionChange, onFoldsChange, crepe, view: view as unknown as EditorView }
 }
 
 /** Types `text` as the keyboard does: each letter through the editor's text input handlers, else inserted. */

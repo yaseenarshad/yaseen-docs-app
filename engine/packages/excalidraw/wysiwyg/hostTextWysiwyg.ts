@@ -14,6 +14,8 @@ import { pointFrom, pointRotateRads, type Radians } from "@excalidraw/math";
 
 import {
   getContainerElement,
+  getFoldedLines,
+  getHiddenLines,
   getLineHeightInPx,
   getStyledVisualLineOffsetX,
   getStyledVisualLineStart,
@@ -22,6 +24,7 @@ import {
   getTextElementStyledLines,
   getTextLayoutMaxWidth,
   getTextLinkRanges,
+  getToggledFoldedLines,
   hasTextList,
   isTextElement,
 } from "@excalidraw/element";
@@ -423,10 +426,72 @@ export const hostTextWysiwyg = ({
     return false;
   };
 
+  /**
+   * YAZ-4306: a caret or a selection end in a line a fold hides goes on to the
+   * first place shown, the way it moved: forward to the line after the fold,
+   * back to the end of the folded bullet. True when it moved the selection.
+   */
+  const keepCaretOutOfFolds = (
+    next: HostTextSelection,
+    previousHead: number,
+  ) => {
+    const current = getElement();
+    const hidden = current ? getHiddenLines(current, text) : null;
+    if (!hidden) {
+      return false;
+    }
+    const lineOf = (offset: number) => {
+      let line = 0;
+      for (
+        let i = text.indexOf("\n");
+        i !== -1 && i < offset;
+        i = text.indexOf("\n", i + 1)
+      ) {
+        line++;
+      }
+      return line;
+    };
+    const lines = text.split("\n");
+    const lineStart = (line: number) =>
+      lines.slice(0, line).reduce((sum, value) => sum + value.length + 1, 0);
+    const shown = (offset: number, forward: boolean) => {
+      let line = lineOf(offset);
+      if (!hidden.has(line)) {
+        return offset;
+      }
+      while (hidden.has(line)) {
+        line += forward ? 1 : -1;
+      }
+      if (line >= lines.length) {
+        // nothing shown after the fold: the end of the folded bullet
+        line = lineOf(offset);
+        while (hidden.has(line)) {
+          line--;
+        }
+        forward = false;
+      }
+      return forward ? lineStart(line) : lineStart(line) + lines[line].length;
+    };
+    const head = shown(next.head, next.head >= previousHead);
+    const anchor =
+      next.anchor === next.head
+        ? head
+        : shown(next.anchor, next.anchor >= next.head);
+    if (head === next.head && anchor === next.anchor) {
+      return false;
+    }
+    session.setSelection({ anchor, head });
+    return true;
+  };
+
+  /** The folds the editor knows, so a fold the engine makes is sent only once. */
+  let folds = getFoldedLines(element);
+
   const session = textEditor.mount({
     root,
     text,
     textRuns: element.textRuns,
+    foldedLines: folds,
     selection,
     onChange: (nextText, nextTextRuns, nextSelection) => {
       if (isDestroyed) {
@@ -458,9 +523,21 @@ export const hostTextWysiwyg = ({
       renderSelection();
       reportEditor(true);
     },
+    onFoldsChange: (nextFolds) => {
+      if (isDestroyed) {
+        return;
+      }
+      // D3: no undo step; the box resizes to its visible lines
+      folds = nextFolds;
+      app.setTextFolds(element.id, nextFolds);
+    },
     onSelectionChange: (next) => {
+      const previousHead = selection.head;
       selection = next;
-      if (keepCaretOutOfLinks(next)) {
+      if (
+        keepCaretOutOfLinks(next) ||
+        keepCaretOutOfFolds(next, previousHead)
+      ) {
         return;
       }
       goalX = keepGoalX ? goalX : null;
@@ -486,12 +563,35 @@ export const hostTextWysiwyg = ({
     window.removeEventListener("pointerup", stopDrag);
     window.removeEventListener("pointercancel", stopDrag);
   };
+  /**
+   * YAZ-4306, YAZ-4307: a click on this box's fold arrow folds or unfolds,
+   * keeps the edit and the caret. True when it was one.
+   */
+  const toggleFoldAt = (event: MouseEvent) => {
+    const hit = app.getFoldArrowTargetAt(
+      viewportCoordsToSceneCoords(event, app.state),
+    );
+    const current = getElement();
+    if (!hit?.onArrow || hit.elementId !== element.id || !current) {
+      return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    app.setTextFolds(element.id, getToggledFoldedLines(current, hit.line));
+    folds = getFoldedLines(getElement() ?? current);
+    session.setFolds(folds);
+    return true;
+  };
+
   const onRootPointerDown = (event: PointerEvent) => {
     event.stopPropagation();
     if (
       event.button !== POINTER_BUTTON.MAIN &&
       event.button !== POINTER_BUTTON.TOUCH
     ) {
+      return;
+    }
+    if (toggleFoldAt(event)) {
       return;
     }
     const offset = getOffsetAt(viewportCoordsToSceneCoords(event, app.state));
@@ -801,6 +901,8 @@ export const hostTextWysiwyg = ({
       !isWritableElement(target)
     ) {
       temporarilyDisableSubmit();
+    } else if (target instanceof HTMLCanvasElement && toggleFoldAt(event)) {
+      // a fold arrow of this box: the edit goes on
     } else if (target instanceof HTMLCanvasElement && !isTestEnv()) {
       // a click on the board ends the edit, the frame after
       requestAnimationFrame(handleSubmit);

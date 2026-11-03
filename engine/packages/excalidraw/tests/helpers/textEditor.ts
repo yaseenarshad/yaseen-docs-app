@@ -87,6 +87,8 @@ export const testTextEditor: HostTextEditor = {
         runs = next?.length ? next : undefined;
         onChange(value, runs, last);
       },
+      // folds live in the box editor; the tests' editor keeps none of its own
+      setFolds: () => {},
       focus: () => editable.focus(),
       destroy: () =>
         document.removeEventListener("selectionchange", onDocumentSelection),

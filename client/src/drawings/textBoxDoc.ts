@@ -128,7 +128,7 @@ export function boxToDoc(schema: Schema, text: string, runs: TextRuns, helpers: 
 }
 
 /** Each text block of the document, the box line it is, and where its letters start in the document. */
-type DocLine = { pos: number; node: ProseNode; prefix: string }
+type DocLine = { pos: number; node: ProseNode; prefix: string; item: boolean }
 
 function docLines(doc: ProseNode, helpers: BoxHelpers): DocLine[] {
   const out: DocLine[] = []
@@ -143,11 +143,11 @@ function docLines(doc: ProseNode, helpers: BoxHelpers): DocLine[] {
           const innerAt = at + 1 + innerOffset
           if (inner.isTextblock) {
             // the item's own line, then any other line of it one level in, with no marker
-            out.push({ pos: innerAt + 1, node: inner, prefix: first ? INDENT.repeat(depth) + marker + ' ' : INDENT.repeat(depth + 1) })
+            out.push({ pos: innerAt + 1, node: inner, prefix: first ? INDENT.repeat(depth) + marker + ' ' : INDENT.repeat(depth + 1), item: first })
             first = false
           } else walk(inner, innerAt + 1, depth + 1)
         })
-      } else if (child.isTextblock) out.push({ pos: at + 1, node: child, prefix: '' })
+      } else if (child.isTextblock) out.push({ pos: at + 1, node: child, prefix: '', item: false })
       else walk(child, at + 1, depth)
     })
   }
@@ -236,4 +236,21 @@ export function offsetAt(doc: ProseNode, pos: number, helpers: BoxHelpers): numb
     start += length + 1
   }
   return Math.max(0, start - 1)
+}
+
+/** YAZ-4306: the positions of the list items on box lines `lines` (a line that is no list item has none). */
+export function itemPositions(doc: ProseNode, lines: readonly number[], helpers: BoxHelpers): number[] {
+  const all = docLines(doc, helpers)
+  // an item's first line starts 2 after the item: the item, then its paragraph
+  return lines.flatMap((line) => (all[line]?.item ? [all[line].pos - 2] : []))
+}
+
+/** YAZ-4306: the box lines of the list items at `positions`, sorted. */
+export function itemLines(doc: ProseNode, positions: Iterable<number>, helpers: BoxHelpers): number[] {
+  const wanted = new Set([...positions].map((pos) => pos + 2))
+  const out: number[] = []
+  docLines(doc, helpers).forEach((line, index) => {
+    if (line.item && wanted.has(line.pos)) out.push(index)
+  })
+  return out
 }

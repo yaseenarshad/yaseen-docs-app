@@ -3,7 +3,10 @@ import { vi, type Mock } from "vitest";
 
 import { KEYS, sceneCoordsToViewportCoords } from "@excalidraw/common";
 
-import type { ExcalidrawTextElement } from "@excalidraw/element/types";
+import type {
+  ExcalidrawTextElement,
+  NonDeleted,
+} from "@excalidraw/element/types";
 
 import { Excalidraw } from "../index";
 import { setKeyBindings } from "../keyRemap";
@@ -42,6 +45,7 @@ type Mounted = Parameters<HostTextEditor["mount"]>[0] & {
   session: HostTextEditorSession & {
     setSelection: Mock<(s: HostTextSelection) => void>;
     clearLetterStyles: Mock<() => void>;
+    setFolds: Mock<(lines: readonly number[]) => void>;
     destroy: Mock<() => void>;
   };
 };
@@ -58,6 +62,7 @@ const textEditor: HostTextEditor = {
       setSelection: vi.fn<(s: HostTextSelection) => void>(),
       replaceText: vi.fn<(start: number, end: number, text: string) => void>(),
       clearLetterStyles: vi.fn<() => void>(),
+      setFolds: vi.fn<(lines: readonly number[]) => void>(),
       focus: () => input.focus(),
       destroy: vi.fn<() => void>(),
     };
@@ -322,6 +327,78 @@ describe("⌘\\ in edit (YAZ-4345, the in-edit half)", () => {
       expect(last().session.clearLetterStyles).toHaveBeenCalledTimes(1);
     } finally {
       setKeyBindings([]);
+    }
+  });
+});
+
+/** YAZ-4306: folds in edit. The editor keeps the folds; the engine writes them and keeps the caret out. */
+describe("folds in edit (YAZ-4306)", () => {
+  beforeEach(async () => {
+    mounted = [];
+    await render(
+      <Excalidraw handleKeyboardGlobally={true} textEditor={textEditor} />,
+    );
+  });
+
+  const FOLDED = "• a\n    ○ b\n    ○ c\n• d";
+
+  const editFolded = async () => {
+    const element = {
+      ...API.createElement({ type: "text", text: FOLDED, x: 30, y: 40 }),
+      foldedLines: [0],
+    } as NonDeleted<ExcalidrawTextElement>;
+    API.setElements([element]);
+    API.setSelectedElements([element]);
+    Keyboard.keyPress(KEYS.ENTER);
+    await waitFor(() => expect(mounted.length).toBe(1));
+    return element;
+  };
+
+  it("gives the editor the box's folds, and writes the folds it reports, as no undo step", async () => {
+    await editFolded();
+    expect(last().foldedLines).toEqual([0]);
+    act(() => last().onFoldsChange([]));
+    expect(box().foldedLines).toBeUndefined();
+    act(() => last().onFoldsChange([0]));
+    expect(box().foldedLines).toEqual([0]);
+    // a fold is no undo step: ⌘Z after the edit takes nothing back
+    fireEvent.keyDown(last().input, { key: KEYS.ESCAPE });
+    Keyboard.undo();
+    expect(box().foldedLines).toEqual([0]);
+  });
+
+  it("moves a caret out of a hidden line, the way it moved", async () => {
+    await editFolded();
+    // "• a" is 0..3; the hidden lines are 4..18; "• d" starts at 20
+    act(() => last().onSelectionChange({ anchor: 3, head: 3 }));
+    act(() => last().onSelectionChange({ anchor: 5, head: 5 }));
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 20,
+      head: 20,
+    });
+    act(() => last().onSelectionChange({ anchor: 20, head: 20 }));
+    act(() => last().onSelectionChange({ anchor: 18, head: 18 }));
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 3,
+      head: 3,
+    });
+  });
+
+  it("folds on a fold arrow click in edit, keeps the edit, and tells the editor", async () => {
+    const element = await editFolded();
+    const hit = vi.spyOn(h.app, "getFoldArrowTargetAt").mockReturnValue({
+      elementId: element.id,
+      line: 0,
+      onArrow: true,
+    } as any);
+    try {
+      fireEvent.pointerDown(last().root, { button: 0, clientX: 1, clientY: 1 });
+      expect(box().foldedLines).toBeUndefined();
+      expect(last().session.setFolds).toHaveBeenLastCalledWith([]);
+      expect(last().session.setSelection).not.toHaveBeenCalled();
+      expect(h.state.editingTextElement).not.toBe(null);
+    } finally {
+      hit.mockRestore();
     }
   });
 });

@@ -8539,7 +8539,7 @@ class App extends React.Component<AppProps, AppState> {
    * scene point. The topmost text box wins. A box is looked at only when the
    * point is near it, so a pointer move costs a bounds check for each box.
    */
-  private getFoldArrowTargetAt = (
+  public getFoldArrowTargetAt = (
     scenePointer: Readonly<{ x: number; y: number }>,
   ): FoldArrowHit | null => {
     const prefs = this.getFoldArrowPrefs();

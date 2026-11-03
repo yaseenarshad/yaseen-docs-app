@@ -836,6 +836,8 @@ export type HostTextEditor = {
     root: HTMLElement;
     text: string;
     textRuns: ExcalidrawTextElement["textRuns"];
+    /** YAZ-4306: the box's folds (`getFoldedLines`), line indexes in `text`. */
+    foldedLines: readonly number[];
     /** The selection at start. */
     selection: HostTextSelection;
     /** YAZ-4277 1B: the text, its letter styles as the box saves them, and the selection after the edit. */
@@ -846,6 +848,11 @@ export type HostTextEditor = {
     ) => void;
     /** The selection moved, and the text did not change. */
     onSelectionChange: (selection: HostTextSelection) => void;
+    /**
+     * YAZ-4306: the folds changed (a fold key in the editor, or an edit that
+     * moved a folded item to another line): line indexes in the text now.
+     */
+    onFoldsChange: (foldedLines: readonly number[]) => void;
   }) => HostTextEditorSession;
 };
 
@@ -864,6 +871,8 @@ export type HostTextEditorSession = {
    * letters (with only a caret, off the next letters), as one undo step.
    */
   clearLetterStyles: () => void;
+  /** YAZ-4306: the box's folds changed outside the editor (a fold arrow click in edit). */
+  setFolds: (foldedLines: readonly number[]) => void;
   focus: () => void;
   destroy: () => void;
 };

@@ -15,14 +15,16 @@
 import type { ComponentProps } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
+import { undo } from '@milkdown/kit/prose/history'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { createCrepe, type ToolbarBuilder } from '../editor/createCrepe'
 import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
+import { addOutlineFoldSetMeta, outlineCollapsedPositions } from '../editor/outline/outlineFolding'
 import { HIDDEN_IN_CELL } from '../editor/slashMenu'
 import { storage } from '../lib/storage'
 import type { ExcalidrawModule } from './engine'
-import { boxToDoc, docToBox, offsetAt, posAt, type BoxHelpers, type TextRuns } from './textBoxDoc'
+import { boxToDoc, docToBox, itemLines, itemPositions, offsetAt, posAt, type BoxHelpers, type TextRuns } from './textBoxDoc'
 import { BOX_MARKS, lockToTextBox } from './textBoxLock'
 import './textBoxEditor.css'
 
@@ -108,17 +110,24 @@ const endKeys = $shortcut(() => ({
   'Mod-Enter': () => true,
 }))
 
+/** D3: ⌘Z never undoes a fold in a box (a note's ⌘Z right after a fold does): the plain undo, before the note's key. */
+const plainUndo = $shortcut(() => ({
+  BoxUndo: { key: 'Mod-z', priority: 200, onRun: () => undo },
+}))
+
 /** Same text, same runs: nothing to tell the engine. */
 const sameRuns = (a: TextRuns, b: TextRuns) => JSON.stringify(a ?? []) === JSON.stringify(b ?? [])
 
 export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
   return {
-    mount({ root, text, textRuns, selection, onChange, onSelectionChange }) {
+    mount({ root, text, textRuns, foldedLines, selection, onChange, onSelectionChange, onFoldsChange }) {
       let destroyed = false
       let isReady = false
       let wantsFocus = false
       let pending: Selection = selection
       let reported = { text, textRuns, anchor: selection.anchor, head: selection.head }
+      /** YAZ-4306: the folds as the engine has them, line indexes. */
+      let reportedFolds: readonly number[] = foldedLines
 
       const report = $prose(
         () =>
@@ -136,8 +145,13 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
                 const changed = next.text !== reported.text || !sameRuns(next.textRuns, reported.textRuns)
                 const moved = anchor !== reported.anchor || head !== reported.head
                 reported = { ...next, anchor, head }
+                // the note's fold state, mapped through each change: the folded items' lines now (YAZ-4306)
+                const folds = itemLines(doc, outlineCollapsedPositions(view.state), helpers)
+                const foldsMoved = folds.length !== reportedFolds.length || folds.some((line, index) => line !== reportedFolds[index])
+                if (foldsMoved) reportedFolds = folds
                 if (changed) onChange(next.text, next.textRuns, { anchor, head })
                 else if (moved) onSelectionChange({ anchor, head })
+                if (foldsMoved) onFoldsChange(folds)
               },
             }),
           }),
@@ -146,7 +160,7 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
       // the note keys as the user set them (YAZ-3564 K4), read as a note reads them: once, as the edit opens
       const crepe = createCrepe({ root, defaultValue: '', features: textBoxFeatures, hidden: TEXT_BOX_HIDDEN, extendToolbar: textColorButtons, hotkeys: storage.getSettings()?.hotkeys })
       lockToTextBox(crepe)
-      crepe.editor.use(endKeys).use(report)
+      crepe.editor.use(endKeys).use(plainUndo).use(report)
 
       // The toolbar and the `/` menu draw at screen size, over the board: in a layer of their own on the page, with
       // Crepe's look (`milkdown`). Floating UI places them from the selection's box on screen, as in a note.
@@ -173,6 +187,11 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
         tr.setSelection(TextSelection.create(tr.doc, posAt(tr.doc, pending.anchor, helpers), posAt(tr.doc, pending.head, helpers)))
         // the box's text is where the edit starts: ⌘Z never goes back past it
         view.dispatch(tr.setMeta('addToHistory', false))
+        // the box's folds, in the note's own fold state (YAZ-4306): Enter, typing over a fold, ⌘↑ / ⌘↓ act as in a note
+        const fold = view.state.tr
+        addOutlineFoldSetMeta(fold, itemPositions(view.state.doc, foldedLines, helpers), true)
+        view.dispatch(fold)
+        reportedFolds = itemLines(view.state.doc, outlineCollapsedPositions(view.state), helpers)
         isReady = true
         if (wantsFocus) view.focus()
       })
@@ -185,6 +204,21 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
           const from = posAt(doc, start, helpers)
           const to = posAt(doc, end, helpers)
           view.dispatch(text ? view.state.tr.insertText(text, from, to) : view.state.tr.delete(from, to))
+        },
+        setFolds(lines) {
+          if (!isReady || destroyed) return
+          const view = crepe.editor.ctx.get(editorViewCtx)
+          const want = new Set(itemPositions(view.state.doc, lines, helpers))
+          const have = outlineCollapsedPositions(view.state)
+          reportedFolds = lines
+          const open = [...have].filter((pos) => !want.has(pos))
+          const close = [...want].filter((pos) => !have.has(pos))
+          for (const [set, collapsed] of [[open, false], [close, true]] as const) {
+            if (set.length === 0) continue
+            const tr = view.state.tr
+            addOutlineFoldSetMeta(tr, set, collapsed)
+            view.dispatch(tr)
+          }
         },
         clearLetterStyles() {
           if (!isReady || destroyed) return
