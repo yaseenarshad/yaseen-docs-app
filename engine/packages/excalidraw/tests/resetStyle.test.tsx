@@ -222,7 +222,6 @@ describe("⌘\\ resets the selection to the default style (YAZ-4277 D15)", () =>
           "fontFamily",
           "textAlign",
         ]),
-        id,
       ).toEqual(
         pick(was, [
           "strokeColor",
