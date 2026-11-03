@@ -68,7 +68,7 @@ import { requestKeySheet } from '../keys/keySheetRequest'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { picturesSize, referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
-import { CANVAS_PANEL_DEFAULT_W, CANVAS_PANEL_MAX_W, CANVAS_PANEL_MIN_W, DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type PageView } from '@shared/types'
+import { CANVAS_PANEL_DEFAULT_W, CANVAS_PANEL_MAX_W, CANVAS_PANEL_MIN_W, DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type OutsideChangeGlow, type PageView } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside, MouseMods } from '@shared/keys'
 import { holdColResize } from '../lib/colResize'
@@ -76,6 +76,8 @@ import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
 import { contentVersion } from './contentVersion'
 import { mergeLiveScene, type SceneSide } from './mergeScene'
+import { changedShapes, OutsideMarks } from './outsideMarks'
+import './outsideMarks.css'
 import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
 import { imageStudioSession, pickChip } from '../image-studio/imageStudioSession'
 import { openViewport, type DrawingScene } from './drawingScene'
@@ -122,13 +124,16 @@ export interface DrawingSurfaceApi {
    * version the engine will report for it — the host's new clean baseline — computed from the
    * RESTORED elements handed in, never read back (a read-back races the engine's own commit).
    */
-  replaceScene(scene: DrawingScene): number
+  replaceScene(scene: DrawingScene, glow?: OutsideChangeGlow): number
   /**
-   * A newer file over unsaved edits (YAZ-4279 D1, D4): `base` is the scene as the host last loaded or saved it. Null: a
-   * clash, and the canvas is as it was; otherwise the canvas holds both sides (`mergeLiveScene`), and the answer is the
-   * version the engine will report for it. Never in ⌘Z's history: the file's change is not the user's.
+   * A newer file over unsaved edits (YAZ-4279 D1, D4): `base` is the scene as the host last loaded or saved it. A clash
+   * (`conflicts`) leaves the canvas as it was and outlines the shapes red; otherwise the canvas holds both sides
+   * (`mergeLiveScene`), and the answer is the version the engine will report for it. Never in ⌘Z's history: the file's
+   * change is not the user's. With a `glow` (here and on `replaceScene`), what the file changed is outlined (D5).
    */
-  mergeScene(base: SceneSide, disk: DrawingScene): { version: number; added: string[]; changed: string[] } | null
+  mergeScene(base: SceneSide, disk: DrawingScene, glow: OutsideChangeGlow): { version: number; added: string[]; changed: string[] } | { conflicts: string[] }
+  /** The shapes the conflict bar is about, outlined red (item 8); empty: the bar went. */
+  clash(ids: readonly string[]): void
   /** Resolves when no drag, resize, drawing or text edit is in flight (YAZ-4279): a merge waits for the gesture to end. */
   whenIdle(): Promise<void>
   /** The pan and zoom now (YAZ-3737 D13): what a tab that goes to sleep, or is copied, starts on again. */
@@ -290,6 +295,9 @@ export function ExcalidrawSurface({
   const boardKeys = useRef<readonly string[]>([])
   /** `whenIdle`'s callers, answered by the first `onChange` with no gesture in flight. */
   const idleWaiters = useRef<(() => void)[]>([])
+  /** The outlines of what changed outside (YAZ-4279 D5); made with the engine's handle. */
+  const marks = useRef<OutsideMarks | null>(null)
+  useEffect(() => () => marks.current?.dispose(), [])
   /** The elements' share of the key: a version bump that moved no content is not counted (YAZ-3210). */
   const countVersion = useRef(contentVersion())
   const emitRef = useRef(onSnapshot)
@@ -662,6 +670,7 @@ export function ExcalidrawSurface({
       const edits = countEdits.current
       if (mod !== null && edits !== null) emitRef.current(snapshotOf(countVersion.current, mod, elements, appState, files, edits(appState as unknown as Record<string, unknown>)))
       if (idleWaiters.current.length > 0 && !inGesture(appState as unknown as Record<string, unknown>)) for (const done of idleWaiters.current.splice(0)) done()
+      marks.current?.seen((appState as unknown as { selectedElementIds: Record<string, unknown> }).selectedElementIds, elements)
       if (withPanel) {
         // The canvas panel's open tab: the rail's emphasis, the triggers' opacity, and the memory
         // the hamburger opens on next time; and the selection gate of "Save selection".
@@ -687,6 +696,9 @@ export function ExcalidrawSurface({
     if (api === null || engineRef.current === null) return
     const mod = engineRef.current
     rawApiRef.current = api
+    marks.current?.dispose()
+    // Out of the engine's own `onChange` turn: a mark that goes there must not update the scene inside it.
+    marks.current = new OutsideMarks((collaborators) => queueMicrotask(() => api.updateScene({ collaborators: collaborators as never, captureUpdate: mod.CaptureUpdateAction.NEVER })))
     // Frames are never appState (🔒 D9): applied the moment the engine can take them.
     applyFramesVisibility(api, appliedRef.current.framesVisible)
     if (withPanel) {
@@ -715,8 +727,9 @@ export function ExcalidrawSurface({
           files: api.getFiles() as unknown as Record<string, unknown>,
         }),
       pictures: () => picturesSize(api.getSceneElements() as readonly unknown[], api.getFiles() as unknown as Record<string, unknown>),
-      replaceScene: (next) => {
+      replaceScene: (next, glow) => {
         const restored = mod.restoreElements(next.elements as ChangeArgs[0], null)
+        const news = glow === undefined ? null : changedShapes(api.getSceneElementsIncludingDeleted() as never, restored as never)
         // A new scene, a new count: computed BEFORE the engine reports it, so its first `onChange` agrees.
         countVersion.current = contentVersion()
         const version = countVersion.current(restored)
@@ -727,17 +740,26 @@ export function ExcalidrawSurface({
         addNewFiles(api, next.files)
         // The engine's files only grew: drop what neither the new scene nor undo can show (YAZ-3737 D14).
         api.pruneFiles()
+        // The file is on the canvas: any clash is answered.
+        marks.current?.clash([])
+        if (news !== null && glow !== undefined) marks.current?.mark(news.added, news.changed, restored, glow)
         return version
       },
-      mergeScene: (base, disk) => {
+      mergeScene: (base, disk, glow) => {
         const merged = mergeLiveScene(mod, base, disk, { elements: api.getSceneElementsIncludingDeleted(), appState: api.getAppState() as unknown as Record<string, unknown> }, boardKeys.current)
-        if (merged === null) return null
+        if ('conflicts' in merged) {
+          marks.current?.clash(merged.conflicts)
+          return merged
+        }
         const elements = merged.elements as unknown as ChangeArgs[0]
         const version = countVersion.current(elements)
         api.updateScene({ elements, ...(Object.keys(merged.appState).length > 0 && { appState: merged.appState as unknown as EngineAppState }), captureUpdate: mod.CaptureUpdateAction.NEVER })
         addNewFiles(api, disk.files)
+        marks.current?.clash([])
+        marks.current?.mark(merged.added, merged.changed, merged.elements, glow)
         return { version, added: merged.added, changed: merged.changed }
       },
+      clash: (ids) => marks.current?.clash(ids),
       whenIdle: () => (inGesture(api.getAppState() as unknown as Record<string, unknown>) ? new Promise<void>((done) => idleWaiters.current.push(done)) : Promise.resolve()),
       canvas: () => {
         const { scrollX, scrollY, zoom } = api.getAppState()

@@ -59,8 +59,10 @@ const surface = {
   pictures: { bytes: 0, count: 0, missing: 0 },
   /** The pan and zoom the engine is on (YAZ-3737 D13). */
   canvas: { scrollX: 0, scrollY: 0, zoom: 1 },
-  /** What `mergeScene` answers (YAZ-4279): null, a clash, by default, so a dirty tab meets the bar as before. */
-  nextMerge: null as { version: number; added: string[]; changed: string[] } | null,
+  /** What `mergeScene` answers (YAZ-4279): a clash by default, so a dirty tab meets the bar as before. */
+  nextMerge: { conflicts: [] } as { version: number; added: string[]; changed: string[] } | { conflicts: string[] },
+  /** The red outlines the host asked for (item 8). */
+  clashes: [] as (readonly string[])[],
   merged: [] as { base: unknown; disk: unknown }[],
   /** What `whenIdle` waits on: a gesture in flight until the test resolves it. */
   idle: Promise.resolve(),
@@ -99,6 +101,9 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
         return surface.nextMerge
       },
       whenIdle: () => surface.idle,
+      clash: (ids) => {
+        surface.clashes.push(ids)
+      },
     } satisfies DrawingSurfaceApi)
     // The real engine renders this into its own top-right row; the stub just puts it on screen,
     // because WHERE the chips go is the surface's business and WHAT they say is the host's.
@@ -166,8 +171,9 @@ beforeEach(() => {
   surface.nextReplaceVersion = 0
   surface.commands = []
   surface.pictures = { bytes: 0, count: 0, missing: 0 }
-  surface.nextMerge = null
+  surface.nextMerge = { conflicts: [] }
   surface.merged = []
+  surface.clashes = []
   surface.idle = Promise.resolve()
   Object.defineProperty(window, 'yaseenDocs', {
     configurable: true,

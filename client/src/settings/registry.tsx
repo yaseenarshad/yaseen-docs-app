@@ -1005,10 +1005,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-3704 D5: the glow on text an outside save changed in an open note. The words say "outside": the app
-        // cannot tell an AI's save from a sync pull or another app.
+        // YAZ-3704 D5: the glow on text an outside save changed in an open note; YAZ-4279 D5: the outline on a shape it
+        // changed in an open drawing or diagram. The words say "outside": the app cannot tell an AI's save from a sync
+        // pull or another app.
         title: 'Outside changes',
-        hint: 'Text that an AI or another app changed in an open note.',
+        hint: 'What an AI or another app changed in an open note, drawing or diagram.',
         items: [
           {
             id: 'outsideChangeGlow',

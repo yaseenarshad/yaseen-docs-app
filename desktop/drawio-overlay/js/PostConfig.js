@@ -248,6 +248,8 @@ window.ICON_SERVICE_PATH = null;
 		// flags that one load, and the flag ends once draw.io's own handler has run.
 		if (msg != null && msg.action == 'load')
 		{
+			// YAZ-4279 D5: a new document on screen; no outline is about it.
+			clearMarks(null);
 			keepHostFocus = msg.yaseenKeepFocus === true;
 			keptView = (msg.yaseenKeepView === true) ? currentView(editorUi) : null;
 			window.setTimeout(function()
@@ -279,8 +281,15 @@ window.ICON_SERVICE_PATH = null;
 			evt.stopImmediatePropagation();
 			whenIdle(function()
 			{
-				mergeOutside(msg.base, msg.xml);
+				mergeOutside(msg.base, msg.xml, msg.glow);
 			});
+		}
+
+		// YAZ-4279 item 8: Keep mine answered the bar, so the red outlines of the clash go.
+		if (msg != null && msg.action == 'yaseenClearClash')
+		{
+			evt.stopImmediatePropagation();
+			clearMarks('clash');
 		}
 	});
 
@@ -308,7 +317,7 @@ window.ICON_SERVICE_PATH = null;
 	 * (`DrawioFile.LAST_WRITE_WINS`). The merged diagram reaches the host as draw.io's own `autosave` — the model's
 	 * change listener posts it inside the merge, so before this answer. Undo, the selection and the view stay.
 	 */
-	function mergeOutside(baseXml, xml)
+	function mergeOutside(baseXml, xml, glow)
 	{
 		var answer = function(extra)
 		{
@@ -321,9 +330,13 @@ window.ICON_SERVICE_PATH = null;
 			var file = editorUi.getCurrentFile();
 			var base = editorUi.getPagesForXml(baseXml);
 			var theirs = editorUi.diffPages(base, editorUi.getPagesForXml(xml));
+			var clash = (file != null) ? clashes(editorUi.diffPages(base, editorUi.pages), theirs) : [];
 
-			if (file == null || clashes(editorUi.diffPages(base, editorUi.pages), theirs))
+			clearMarks('clash');
+
+			if (clash != null)
 			{
+				markCells(clash, 'clash', null);
 				answer({conflict: true});
 
 				return;
@@ -332,7 +345,11 @@ window.ICON_SERVICE_PATH = null;
 			file.setShadowPages(base);
 			file.mergeFile(new LocalFile(editorUi, xml), function()
 			{
-				answer({changed: changedCells(theirs)});
+				var changed = changedCells(theirs);
+				clearMarks('outside');
+				markCells(changed.added, 'added', glow);
+				markCells(changed.changed, 'changed', glow);
+				answer({changed: changed});
 			}, function()
 			{
 				answer({conflict: true});
@@ -345,14 +362,17 @@ window.ICON_SERVICE_PATH = null;
 		}
 	}
 
-	/** Two of draw.io's diffs (`EditorUi.diffPages`) touch one thing: a page or cell removed on one side and changed on the other, or one field changed on both. */
+	/**
+	 * Two of draw.io's diffs (`EditorUi.diffPages`) touch one thing: a page or cell removed on one side and changed on the
+	 * other, or one field changed on both. Null: no clash; otherwise the cells that clash (item 8), none for a page.
+	 */
 	function clashes(mine, theirs)
 	{
-		var mu = mine.u || {}, tu = theirs.u || {};
+		var mu = mine.u || {}, tu = theirs.u || {}, ids = [], clash = false;
 
-		if (removedChanged(mine.r, tu) || removedChanged(theirs.r, mu))
+		if (removedChanged(mine.r, tu).length > 0 || removedChanged(theirs.r, mu).length > 0)
 		{
-			return true;
+			clash = true;
 		}
 
 		for (var id in tu)
@@ -366,40 +386,39 @@ window.ICON_SERVICE_PATH = null;
 
 			if ((t.name != null && m.name != null && t.name != m.name) || bothChanged(t.view, m.view))
 			{
-				return true;
+				clash = true;
 			}
 
 			var tc = t.cells || {}, mc = m.cells || {}, tcu = tc.u || {}, mcu = mc.u || {};
-
-			if (removedChanged(tc.r, mcu) || removedChanged(mc.r, tcu))
-			{
-				return true;
-			}
+			ids = ids.concat(removedChanged(tc.r, mcu), removedChanged(mc.r, tcu));
 
 			for (var cell in tcu)
 			{
 				if (bothChanged(tcu[cell], mcu[cell]))
 				{
-					return true;
+					ids.push(cell);
 				}
 			}
 
 			// One cell id added on both sides, with two contents.
 			var added = {};
 			(mc.i || []).forEach(function(c) { added[c.id] = JSON.stringify(c); });
-
-			if ((tc.i || []).some(function(c) { return added[c.id] != null && added[c.id] != JSON.stringify(c); }))
+			(tc.i || []).forEach(function(c)
 			{
-				return true;
-			}
+				if (added[c.id] != null && added[c.id] != JSON.stringify(c))
+				{
+					ids.push(c.id);
+				}
+			});
 		}
 
-		return false;
+		return (clash || ids.length > 0) ? ids : null;
 	}
 
+	/** The ids removed on one side that the other side changed. */
 	function removedChanged(removed, changed)
 	{
-		return (removed || []).some(function(id) { return changed[id] != null; });
+		return (removed || []).filter(function(id) { return changed[id] != null; });
 	}
 
 	function bothChanged(a, b)
@@ -418,6 +437,116 @@ window.ICON_SERVICE_PATH = null;
 		}
 
 		return false;
+	}
+
+	/**
+	 * YAZ-4279 D5, items 7 and 8: the outlines on the page on screen — green for a cell the outside save added, amber for one
+	 * it changed (Version history's colours), red for a clash while the bar shows. draw.io's own highlight, so they follow
+	 * the zoom and scroll; never in the model, so never in the file or undo. The Glow setting times the green and amber:
+	 * "Until I check it" — until that cell is selected or changed — 10 s, 1 min, or not at all.
+	 */
+	var MARK_COLORS = {added: '#2f9e44', changed: '#f08c00', clash: '#e03131'};
+	var marks = [];
+	var marksWatched = false;
+
+	function markCells(ids, kind, glow)
+	{
+		var graph = editorUi.editor.graph;
+
+		if (glow == 'off' || ids.length == 0)
+		{
+			return;
+		}
+
+		watchMarks(graph);
+
+		for (var i = 0; i < ids.length; i++)
+		{
+			var cell = graph.model.getCell(ids[i]);
+			var state = (cell != null) ? graph.view.getState(cell) : null;
+
+			if (state != null)
+			{
+				var highlight = new mxCellHighlight(graph, MARK_COLORS[kind], 3, false);
+				highlight.highlight(state);
+				marks.push({id: ids[i], kind: kind, glow: glow, highlight: highlight});
+			}
+		}
+
+		var ms = (glow == '10s') ? 10000 : ((glow == '60s') ? 60000 : null);
+
+		if (ms != null)
+		{
+			var timed = marks.filter(function(mark) { return mark.kind == kind; });
+
+			window.setTimeout(function()
+			{
+				dropMarks(function(mark) { return timed.indexOf(mark) >= 0; });
+			}, ms);
+		}
+	}
+
+	/** `which`: 'clash', 'outside' (green and amber), or null for all. */
+	function clearMarks(which)
+	{
+		dropMarks(function(mark)
+		{
+			return which == null || (which == 'clash') == (mark.kind == 'clash');
+		});
+	}
+
+	function dropMarks(match)
+	{
+		marks = marks.filter(function(mark)
+		{
+			if (!match(mark))
+			{
+				return true;
+			}
+
+			mark.highlight.destroy();
+
+			return false;
+		});
+	}
+
+	/** "Until I check it": a marked cell the user selects, or changes, is checked. */
+	function watchMarks(graph)
+	{
+		if (marksWatched)
+		{
+			return;
+		}
+
+		marksWatched = true;
+		var checked = function(ids)
+		{
+			dropMarks(function(mark)
+			{
+				return mark.kind != 'clash' && mark.glow == 'until-checked' && ids[mark.id] === true;
+			});
+		};
+
+		graph.getSelectionModel().addListener(mxEvent.CHANGE, function()
+		{
+			var ids = {};
+			graph.getSelectionCells().forEach(function(cell) { ids[cell.getId()] = true; });
+			checked(ids);
+		});
+		graph.model.addListener(mxEvent.CHANGE, function(sender, evt)
+		{
+			var edit = evt.getProperty('edit'), ids = {};
+			((edit != null) ? edit.changes : []).forEach(function(change)
+			{
+				var cell = change.cell || change.child;
+
+				if (cell != null)
+				{
+					ids[cell.getId()] = true;
+				}
+			});
+			checked(ids);
+		});
 	}
 
 	/** The cells of the page on screen that the outside save added and changed (D5 outlines them). */

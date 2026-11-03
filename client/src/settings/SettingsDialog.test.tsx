@@ -162,7 +162,7 @@ const THREADING_HINT = 'The coloured path from each list down to the bullet at t
 const OUTLINE_HINT = 'Lines and folding for bullets. A page can change each one in its cog.'
 const TEXT_FORMATTING_HINT = 'How text looks in every note of this vault.'
 const TOC_HINT = 'The headings or the bullets of a note, at its right edge.'
-const OUTSIDE_CHANGES_HINT = 'Text that an AI or another app changed in an open note.'
+const OUTSIDE_CHANGES_HINT = 'What an AI or another app changed in an open note, drawing or diagram.'
 const SECTION_INDENT_HINT = 'Text stands below its heading, with lines that show the sections. Turn it on for a note from the page cog. The purple path uses the Bullet threading settings above.'
 
 describe('SettingsDialog shell (D1)', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mergeLiveScene } from './mergeScene'
+import { mergeLiveScene, type SceneClash, type SceneMerge } from './mergeScene'
 
 type El = Record<string, unknown> & { id: string }
 
@@ -13,7 +13,7 @@ const restoreElements = vi.fn((elements: El[], _existing: unknown, opts?: { refr
 const engine = { restoreElements } as never
 
 const shape = (id: string, over: Partial<El> = {}): El => ({ id, type: 'rectangle', x: 0, version: 3, versionNonce: 1, updated: 1, isDeleted: false, ...over })
-const merge = (base: El[], disk: El[], live: El[], appState: { base?: object; disk?: object; live?: object } = {}) =>
+const merge = (base: El[], disk: El[], live: El[], appState: { base?: object; disk?: object; live?: object } = {}): (SceneMerge & { conflicts?: never }) | (SceneClash & { elements?: never; appState?: never; added?: never; changed?: never }) =>
   mergeLiveScene(engine, { elements: base, appState: { ...appState.base } }, { elements: disk, appState: { ...appState.disk } }, { elements: live, appState: { ...appState.live } }, ['viewBackgroundColor', 'gridSize'])
 
 describe('mergeLiveScene (YAZ-4279 D1, D4)', () => {
@@ -21,23 +21,23 @@ describe('mergeLiveScene (YAZ-4279 D1, D4)', () => {
     const [a, b] = [shape('a'), shape('b')]
     const live = [{ ...a, x: 40, version: 7 }, b]
     const out = merge([a, b], [a, { ...b, strokeColor: 'red' }], live)
-    expect(out?.elements[0]).toBe(live[0])
-    expect(out?.elements[1]).toMatchObject({ id: 'b', strokeColor: 'red', version: 4 })
+    expect(out?.elements?.[0]).toBe(live[0])
+    expect(out?.elements?.[1]).toMatchObject({ id: 'b', strokeColor: 'red', version: 4 })
     expect(out).toMatchObject({ changed: ['b'], added: [] })
   })
 
   it('both sides on one shape: the properties of both, version above the canvas; one property on both is a clash', () => {
     const a = shape('a')
     const out = merge([a], [{ ...a, strokeColor: 'red' }], [{ ...a, x: 40, version: 9 }])
-    expect(out?.elements[0]).toMatchObject({ x: 40, strokeColor: 'red', version: 10 })
-    expect(merge([a], [{ ...a, x: 7 }], [{ ...a, x: 40, version: 9 }])).toBeNull()
+    expect(out?.elements?.[0]).toMatchObject({ x: 40, strokeColor: 'red', version: 10 })
+    expect(merge([a], [{ ...a, x: 7 }], [{ ...a, x: 40, version: 9 }])).toEqual({ conflicts: ['a'] })
   })
 
   it('a shape the file added is in `added`; one it deleted is neither added nor changed', () => {
     const [a, b] = [shape('a'), shape('b')]
     const out = merge([a, b], [a, { ...b, isDeleted: true }, shape('n')], [{ ...a, x: 40 }, b])
     expect(out).toMatchObject({ added: ['n'], changed: [] })
-    expect(out?.elements.find((e) => e.id === 'b')?.isDeleted).toBe(true)
+    expect(out?.elements?.find((e) => e.id === 'b')?.isDeleted).toBe(true)
   })
 
   it('nothing taken from the file: the canvas as it is, and no restore', () => {
@@ -51,7 +51,7 @@ describe('mergeLiveScene (YAZ-4279 D1, D4)', () => {
   it('the board settings: a key the file changed is taken; a key both changed is a clash; a key the file lacks says nothing', () => {
     const els = [shape('a')]
     expect(merge(els, els, els, { base: { viewBackgroundColor: '#fff' }, disk: { viewBackgroundColor: '#000' }, live: { viewBackgroundColor: '#fff' } })?.appState).toEqual({ viewBackgroundColor: '#000' })
-    expect(merge(els, els, els, { base: { viewBackgroundColor: '#fff' }, disk: { viewBackgroundColor: '#000' }, live: { viewBackgroundColor: '#f00' } })).toBeNull()
+    expect(merge(els, els, els, { base: { viewBackgroundColor: '#fff' }, disk: { viewBackgroundColor: '#000' }, live: { viewBackgroundColor: '#f00' } })).toEqual({ conflicts: [] })
     expect(merge(els, els, els, { base: { gridSize: 20 }, disk: {}, live: { gridSize: 40 } })?.appState).toEqual({})
   })
 
@@ -61,10 +61,10 @@ describe('mergeLiveScene (YAZ-4279 D1, D4)', () => {
     const other = shape('o', { type: 'text', text: 'Same', width: 40 })
     const base = [box, label, other]
     const relabeled = merge(base, [box, { ...label, text: 'Planning' }, other], base)
-    expect(relabeled?.elements.find((e) => e.id === 't')).toMatchObject({ text: 'Planning', width: 80 })
-    expect(relabeled?.elements.find((e) => e.id === 'o')).toBe(other)
+    expect(relabeled?.elements?.find((e) => e.id === 't')).toMatchObject({ text: 'Planning', width: 80 })
+    expect(relabeled?.elements?.find((e) => e.id === 'o')).toBe(other)
     const resized = merge(base, [{ ...box, width: 300 }, label, other], base)
-    expect(resized?.elements.find((e) => e.id === 'box')).toMatchObject({ width: 300 })
-    expect(resized?.changed.sort()).toEqual(['box', 't'])
+    expect(resized?.elements?.find((e) => e.id === 'box')).toMatchObject({ width: 300 })
+    expect(resized?.changed?.sort()).toEqual(['box', 't'])
   })
 })

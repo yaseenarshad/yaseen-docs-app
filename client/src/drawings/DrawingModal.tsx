@@ -50,6 +50,7 @@
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import type { OutsideChangeGlow } from '@shared/types'
 import type { HotkeyAside } from '@shared/keys'
 import { api } from '../api'
 import { setPlaceOverTab } from '../keys/keySheetRequest'
@@ -103,12 +104,14 @@ interface DrawingModalProps extends DrawingLinkProps {
   onNotice?: (message: string, icon?: NoticeKind) => void
   /** The window's watcher (YAZ-4279 item 6): an outside save lands on this canvas. Absent: the modal sees it only when a save is refused. */
   watch?: WatchSource
+  /** Settings › Outside changes › Glow (YAZ-4279 D5): how long a shape the file changed stays outlined. Absent → until checked. */
+  outsideChangeGlow?: OutsideChangeGlow
 }
 
 /** The shapes and the board settings alone: a merge's base never holds the pictures (YAZ-4279). */
 const sideOf = ({ elements, appState }: DrawingScene): SceneSide => ({ elements, appState })
 
-export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside, onNotice, watch, ...linkProps }: DrawingModalProps) {
+export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside, onNotice, watch, outsideChangeGlow = 'until-checked', ...linkProps }: DrawingModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   /** The sheet: the link menu, the Edit link box and the `[[` picker go in it, so a click on them is not a click-away. */
   const sheetRef = useRef<HTMLDivElement>(null)
@@ -176,7 +179,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       const drawing = await openDrawing(root, target)
       if ((drawing.scene.readOnly === true) !== (loadedRef.current?.scene.readOnly === true)) return 'conflict'
       await s.whenIdle()
-      if (s.mergeScene(typeof was === 'string' ? parseSceneText(was) : was, drawing.scene) === null) return 'conflict'
+      if ('conflicts' in s.mergeScene(typeof was === 'string' ? parseSceneText(was) : was, drawing.scene, glowRef.current)) return 'conflict'
       tookFile(drawing)
       a.rebase(drawing.mtime)
       return 'merged'
@@ -184,6 +187,8 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       return 'conflict'
     }
   }
+  const glowRef = useRef(outsideChangeGlow)
+  glowRef.current = outsideChangeGlow
   const mergeRef = useRef(mergeFile)
   mergeRef.current = mergeFile
 
@@ -355,6 +360,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
   const keepMine = (): void => {
     if (conflict === null) return
     clearConflict()
+    surfaceApi.current?.clash([])
     // YAZ-4071 7H: the disk's version may lack a picture this canvas uses, so this save ships them all.
     persisted.current = new Set()
     void autosave.current?.adopt(conflict)
@@ -393,7 +399,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       if (s === null || (drawing.scene.readOnly === true) !== (loadedRef.current?.scene.readOnly === true)) return void reload()
       tookFile(drawing)
       tookAt.current = drawing.mtime
-      s.replaceScene(drawing.scene)
+      s.replaceScene(drawing.scene, glowRef.current)
     } catch {
       // The file went, or stopped being a scene: keep what is on screen, as a tab does.
     }

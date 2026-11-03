@@ -818,10 +818,11 @@ describe('the outside pictures folder in the popup', () => {
 
 describe('YAZ-4279 — an outside save lands on the open popup (D6, item 6)', () => {
   const { watch, watcherSaw } = fakeWatch()
-  const handle = (merged: { version: number; added: string[]; changed: string[] } | null) => ({
+  const handle = (merged: { version: number; added: string[]; changed: string[] } | { conflicts: string[] }) => ({
     mergeScene: vi.fn(() => merged),
     replaceScene: vi.fn(() => 0),
     whenIdle: vi.fn(async () => undefined),
+    clash: vi.fn(),
   })
   const MERGED = { version: 30, added: [], changed: ['a'] }
 
@@ -841,7 +842,7 @@ describe('YAZ-4279 — an outside save lands on the open popup (D6, item 6)', ()
   })
 
   it('a clash shows the bar, as before', async () => {
-    seam.api = handle(null)
+    seam.api = handle({ conflicts: ['a'] })
     await open('ok', 100, { watch })
     emit(1)
     emit(2)

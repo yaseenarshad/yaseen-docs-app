@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DRAWIO_ORIGIN } from '@shared/drawio'
 import { boardBaseName } from '@shared/fileKind'
 import { isDiagramReadOnly, setDiagramReadOnly } from '@shared/readOnly'
-import type { DiagramDarkColors } from '@shared/types'
+import type { DiagramDarkColors, OutsideChangeGlow } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, exportWithNotice, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
@@ -45,6 +45,8 @@ export interface DrawioEditorProps extends DocumentHostProps {
   darkColors: DiagramDarkColors
   /** The window's ONE passive notice: where an exported image landed, or why it did not. */
   onNotice?: (text: string, icon?: NoticeKind) => void
+  /** Settings › Outside changes › Glow (YAZ-4279 D5): how long a cell the file changed stays outlined. Absent → until checked. */
+  outsideChangeGlow?: OutsideChangeGlow
 }
 
 interface LoadedDiagram {
@@ -73,7 +75,7 @@ interface DiagramHostProps extends DrawioEditorProps {
 }
 
 /** Mounts exactly one draw.io iframe for `loaded`; its board document owns everything that writes. */
-function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, onNotice }: DiagramHostProps) {
+function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, onNotice, outsideChangeGlow = 'until-checked' }: DiagramHostProps) {
   const theme = useAppliedTheme()
   const frameRef = useRef<HTMLIFrameElement>(null)
   /** The URL is fixed at mount: a theme flip is a message, never a reload of the editor. */
@@ -86,6 +88,9 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
   const mergeAnswer = useRef<((answer: { conflict: boolean }) => void) | null>(null)
   /** The next reload puts the disk back over what the canvas shows (a stray change while read only), never a merge. */
   const discardOnReload = useRef(false)
+  /** The Glow setting as of now: what the overlay outlines what the file changed for (D5). */
+  const glowRef = useRef(outsideChangeGlow)
+  glowRef.current = outsideChangeGlow
   /** Bumped on every draw.io change; `Autosave` compares these, never the XML. */
   const version = useRef(0)
   /** The mtime of the document a `load` action carried, until draw.io answers `load`. */
@@ -172,7 +177,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
           done(a)
         }
         mergeAnswer.current = answer
-        post({ action: 'yaseenMerge', base: baseXml.current, xml })
+        post({ action: 'yaseenMerge', base: baseXml.current, xml, glow: glowRef.current })
       }),
     [post],
   )
@@ -236,6 +241,8 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       a.rebase(res.mtime)
       return 'merged'
     },
+    // Keep mine answers the bar: the overlay's red outlines of the clash go (item 8).
+    onKeepMine: () => post({ action: 'yaseenClearClash' }),
     // Export Image… is the one board command a diagram answers.
     onCommand: (command) => {
       if (command.kind === 'export-image') void exportImage()

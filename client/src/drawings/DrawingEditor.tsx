@@ -49,7 +49,7 @@
  * opens naming an outside folder this Mac has not approved asks once to allow it (`usePicturesFolderAllow`).
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse, PageView } from '@shared/types'
+import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse, OutsideChangeGlow, PageView } from '@shared/types'
 import { missingPicturesNotice, missingPicturesText, picturesFolderOutside, picturesMissingRefusal, picturesSize, unpersistedFiles, withHomeTilde } from '@shared/drawingAssets'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -191,6 +191,8 @@ export interface DrawingEditorProps extends DocumentHostProps, DrawingLinkProps 
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
+  /** Settings › Outside changes › Glow (YAZ-4279 D5): how long a shape the file changed stays outlined. Absent → until checked. */
+  outsideChangeGlow?: OutsideChangeGlow
   /** The page view a woken tab or a copy starts with (YAZ-3737 D13): only its `canvas`, the pan and zoom, counts here. */
   startView?: PageView
 }
@@ -239,7 +241,7 @@ interface DrawingHostProps extends DrawingEditorProps {
 const FORGET_PANEL = (): void => undefined
 
 /** Mounts exactly one canvas for `loaded`; its board document owns everything that writes. */
-function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, hotkeysAside, onFailed, startView, ...linkProps }: DrawingHostProps) {
+function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, hotkeysAside, onFailed, startView, outsideChangeGlow = 'until-checked', ...linkProps }: DrawingHostProps) {
   const theme = useAppliedTheme()
   /** The latest snapshot; read only when a save fires (see the module doc). */
   const snapshot = useRef<DrawingSnapshot | null>(null)
@@ -295,6 +297,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     // YAZ-4071 7H: the other writer's version may lack a picture this canvas uses, so the next save ships them all.
     onKeepMine: () => {
       persisted.current = new Set()
+      surface.current?.clash([])
     },
     reload: async (a) => {
       const s = surface.current
@@ -303,7 +306,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
         const doc = toDocument(await api.drawing.load({ root, path }))
         reloadedTo.current = doc.mtime
         tookFile(doc)
-        a.reset(s.replaceScene(doc.scene), doc.mtime)
+        a.reset(s.replaceScene(doc.scene, outsideChangeGlow), doc.mtime)
         return doc.scene.readOnly === true
       } catch (err) {
         reloadedTo.current = null
@@ -318,8 +321,8 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       if ((doc.scene.readOnly === true) !== readOnlyRef.current) return 'conflict'
       await s.whenIdle()
       const was = base.current
-      const merged = s.mergeScene(typeof was === 'string' ? parseSceneText(was) : was, doc.scene)
-      if (merged === null) return 'conflict'
+      const merged = s.mergeScene(typeof was === 'string' ? parseSceneText(was) : was, doc.scene, outsideChangeGlow)
+      if ('conflicts' in merged) return 'conflict'
       tookFile(doc)
       a.rebase(doc.mtime)
       return 'merged'

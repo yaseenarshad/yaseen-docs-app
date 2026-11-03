@@ -591,6 +591,30 @@ function mergeSetup({ mine = {}, theirs = {} } = {}) {
     this.xml = xml
   }
   const live = { live: true }
+  // draw.io's highlight, the cells by id, and the two listeners "Until I check it" reads.
+  const highlights = []
+  loaded.env.mxEvent.CHANGE = 'change'
+  loaded.env.mxCellHighlight = function (_graph, color) {
+    this.color = color
+    this.highlight = (state) => ((this.cell = state.cell), highlights.push(this))
+    this.destroy = () => highlights.splice(highlights.indexOf(this), 1)
+  }
+  const cells = {}
+  const cellOf = (id) => (cells[id] ??= { getId: () => id })
+  const graphListeners = {}
+  let selected = []
+  Object.assign(editor.graph, {
+    model: { getCell: cellOf, addListener: (_name, l) => (graphListeners.model = l) },
+    view: { getState: (cell) => ({ cell }) },
+    getSelectionModel: () => ({ addListener: (_name, l) => (graphListeners.selection = l) }),
+    getSelectionCells: () => selected,
+  })
+  const select = (...ids) => {
+    selected = ids.map(cellOf)
+    graphListeners.selection?.()
+  }
+  const userChanged = (...ids) => graphListeners.model?.(null, { getProperty: () => ({ changes: ids.map((id) => ({ cell: cellOf(id) })) }) })
+  const outlines = () => highlights.map((h) => `${h.cell.getId()}:${h.color}`).sort()
   Object.assign(editor.ui, {
     pages: live,
     currentPage: { getId: () => 'p1' },
@@ -599,7 +623,7 @@ function mergeSetup({ mine = {}, theirs = {} } = {}) {
     diffPages: (_base, side) => (side === live ? mine : theirs),
   })
   const answers = () => loaded.posted.filter((m) => m.event === 'yaseenMerge').map(({ origin: _o, ...m }) => m)
-  return { ...loaded, editor, file, answers }
+  return { ...loaded, editor, file, answers, outlines, select, userChanged }
 }
 
 describe('PostConfig.js yaseenMerge (YAZ-4279 D2, D4), against a stand-in draw.io', () => {
@@ -650,6 +674,49 @@ describe('PostConfig.js yaseenMerge (YAZ-4279 D2, D4), against a stand-in draw.i
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('PostConfig.js — the outlines of what changed outside (YAZ-4279 D5, items 7 and 8)', () => {
+  const THEIRS = { u: { p1: { cells: { u: { c1: { style: 's' } }, i: [{ id: 'n1' }] } } } }
+
+  it('green for an added cell, amber for a changed one; "Until I check it" ends with a select or a change of that cell', () => {
+    const { message, outlines, select, userChanged } = mergeSetup({ theirs: THEIRS })
+    message({ action: 'yaseenMerge', base: '<b/>', xml: '<d/>', glow: 'until-checked' })
+    expect(outlines()).toEqual(['c1:#f08c00', 'n1:#2f9e44'])
+    select('n1')
+    expect(outlines()).toEqual(['c1:#f08c00'])
+    userChanged('c1')
+    expect(outlines()).toEqual([])
+  })
+
+  it('10 s goes by itself; Off draws nothing; a load takes every outline away', async () => {
+    vi.useFakeTimers()
+    try {
+      const timed = mergeSetup({ theirs: THEIRS })
+      timed.message({ action: 'yaseenMerge', base: '<b/>', xml: '<d/>', glow: '10s' })
+      timed.select('n1')
+      expect(timed.outlines()).toHaveLength(2)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(timed.outlines()).toEqual([])
+      const off = mergeSetup({ theirs: THEIRS })
+      off.message({ action: 'yaseenMerge', base: '<b/>', xml: '<d/>', glow: 'off' })
+      expect(off.outlines()).toEqual([])
+      const loaded = mergeSetup({ theirs: THEIRS })
+      loaded.message({ action: 'yaseenMerge', base: '<b/>', xml: '<d/>', glow: 'until-checked' })
+      loaded.message({ action: 'load', xml: '<d/>' })
+      expect(loaded.outlines()).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a clash is red on its cells until Keep mine (yaseenClearClash) or the next merge', () => {
+    const { message, outlines } = mergeSetup({ mine: { u: { p1: { cells: { u: { c1: { style: 'a' } } } } } }, theirs: { u: { p1: { cells: { u: { c1: { style: 'b' } } } } } } })
+    message({ action: 'yaseenMerge', base: '<b/>', xml: '<d/>', glow: 'until-checked' })
+    expect(outlines()).toEqual(['c1:#e03131'])
+    expect(message({ action: 'yaseenClearClash' })).toBe(true)
+    expect(outlines()).toEqual([])
   })
 })
 
@@ -805,6 +872,10 @@ describe.skipIf(!existsSync(APP_MIN_JS))(`every draw.io action we name exists in
       'LocalFile': /LocalFile\s*=\s*function/,
       'the embed autosave is a model change listener': /this\.editor\.graph\.model\.addListener\(mxEvent\.CHANGE,d\)/,
       'mxGraph.isMouseDown': /isMouseDown\s*=\s*!1/,
+      // YAZ-4279 D5: the outlines.
+      'mxCellHighlight.highlight': /mxCellHighlight\.prototype\.highlight\s*=\s*function/,
+      'mxCellHighlight.destroy': /mxCellHighlight\.prototype\.destroy\s*=\s*function/,
+      'mxGraphModel.getCell': /mxGraphModel\.prototype\.getCell\s*=\s*function/,
     }
     for (const [name, pattern] of Object.entries(internals)) expect(app, name).toMatch(pattern)
     // YAZ-3719 D1: the strip's `visibility` is PostConfig's alone.

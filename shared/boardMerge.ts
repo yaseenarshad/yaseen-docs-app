@@ -135,19 +135,25 @@ export interface ElementsMerge {
   clashes: number
 }
 
+/** What only the user can settle (YAZ-4279 D4): the ids of the shapes that clash, for the conflict bar's red outline (item 8). */
+export interface ElementsClash {
+  conflicts: string[]
+}
+
 /**
- * The shapes alone, 3-way (YAZ-4279 D1): git sync and an open board share it. 'per-property' answers null for what only the
- * user can settle — one property changed on both sides, a delete against an edit, or one id added on both sides.
+ * The shapes alone, 3-way (YAZ-4279 D1): git sync and an open board share it. 'per-property' answers the clash for what only
+ * the user can settle — one property changed on both sides, a delete against an edit, or one id added on both sides.
  */
 export function mergeElements(base: readonly Element[], theirs: readonly Element[], mine: readonly Element[], rule: 'newest'): ElementsMerge
-export function mergeElements(base: readonly Element[], theirs: readonly Element[], mine: readonly Element[], rule: ClashRule): ElementsMerge | null
-export function mergeElements(base: readonly Element[], theirs: readonly Element[], mine: readonly Element[], rule: ClashRule): ElementsMerge | null {
+export function mergeElements(base: readonly Element[], theirs: readonly Element[], mine: readonly Element[], rule: ClashRule): ElementsMerge | ElementsClash
+export function mergeElements(base: readonly Element[], theirs: readonly Element[], mine: readonly Element[], rule: ClashRule): ElementsMerge | ElementsClash {
   const b = byId(base)
   const t = byId(theirs)
   const m = byId(mine)
   const merged = new Map<string, Element>()
   /** Shapes taken from both sides at once: they keep both sides' bindings below. */
   const both = new Set<string>()
+  const conflicts: string[] = []
   let clashes = 0
 
   for (const id of idsInOrder([...theirs], [...mine])) {
@@ -159,9 +165,11 @@ export function mergeElements(base: readonly Element[], theirs: readonly Element
     else if (sameShape(mv, was) || sameShape(tv, mv)) pick = tv
     else if (!alive(tv) && !alive(mv)) pick = tv === undefined || mv === undefined ? (tv ?? mv) : newer(tv, mv) // deleted on both
     else if (rule === 'per-property') {
-      if (!alive(tv) || !alive(mv) || was === undefined) return null
-      const shape = mergeShape(was, tv, mv)
-      if (shape === null) return null
+      const shape = alive(tv) && alive(mv) && was !== undefined ? mergeShape(was, tv, mv) : null
+      if (shape === null) {
+        conflicts.push(id)
+        continue
+      }
       pick = shape
       both.add(id)
     } else if (alive(tv) !== alive(mv)) pick = alive(tv) ? tv : mv // an edit beats a delete
@@ -172,6 +180,8 @@ export function mergeElements(base: readonly Element[], theirs: readonly Element
     }
     if (pick !== undefined) merged.set(id, pick)
   }
+
+  if (conflicts.length > 0) return { conflicts }
 
   // A shape both sides edited keeps every binding either side gave it ('newest'), or the ones `mergeShape` chose
   // ('per-property'), as long as the bound element survived.

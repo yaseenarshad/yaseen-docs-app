@@ -323,7 +323,7 @@ describe('changes on disk', () => {
     watcherSaw({ type: 'change', path: PATH, mtime: 300 })
     await settle()
     await settle()
-    expect(posted.filter((m) => m.action === 'yaseenMerge')).toEqual([{ action: 'yaseenMerge', base: XML, xml: EDITED, _origin: DRAWIO_ORIGIN }])
+    expect(posted.filter((m) => m.action === 'yaseenMerge')).toEqual([{ action: 'yaseenMerge', base: XML, xml: EDITED, glow: 'until-checked', _origin: DRAWIO_ORIGIN }])
     expect(posted.some((m) => m.action === 'load' && m.xml === EDITED)).toBe(false)
     await act(async () => {
       vi.advanceTimersByTime(600)
@@ -354,7 +354,7 @@ describe('changes on disk', () => {
     watcherSaw({ type: 'change', path: PATH, mtime: 300 })
     await settle()
     await settle()
-    expect(posted.filter((m) => m.action === 'yaseenMerge')).toEqual([{ action: 'yaseenMerge', base: XML, xml: `${XML}<!--ai-->`, _origin: DRAWIO_ORIGIN }])
+    expect(posted.filter((m) => m.action === 'yaseenMerge')).toEqual([{ action: 'yaseenMerge', base: XML, xml: `${XML}<!--ai-->`, glow: 'until-checked', _origin: DRAWIO_ORIGIN }])
     expect(text()).not.toContain('File changed on disk.')
     await act(async () => {
       vi.advanceTimersByTime(600)

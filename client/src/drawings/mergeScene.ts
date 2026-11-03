@@ -5,7 +5,7 @@ import type { ExcalidrawModule } from './engine'
  * AN OUTSIDE SAVE OVER UNSAVED EDITS, ON THE CANVAS (YAZ-4279 D1, D4). An AI or another app saved the board while this tab
  * has edits it has not written. `base` is the scene as this tab last loaded or saved it, `disk` the file now, `live` the
  * canvas: the shared 3-way merge (`mergeElements`, the one git sync uses) takes each property from the side that changed it,
- * and answers null for a clash — one property changed on both sides, a delete against an edit — which the conflict bar settles.
+ * and answers the clash — one property changed on both sides, a delete against an edit — which the conflict bar settles.
  *
  * The sides are compared as the file holds them. A shape the canvas still holds as it was keeps its very OBJECT, so the engine
  * redraws only what the file brought; each shape taken from the file goes through the engine's own restore and gets a
@@ -35,19 +35,24 @@ export interface SceneMerge {
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
 const alive = (e: Element | undefined): e is Element => e !== undefined && e.isDeleted !== true
 
-export function mergeLiveScene(engine: Pick<ExcalidrawModule, 'restoreElements'>, base: SceneSide, disk: SceneSide, live: { elements: readonly unknown[]; appState: Readonly<Record<string, unknown>> }, boardKeys: readonly string[]): SceneMerge | null {
+/** A clash (D4): the shapes that clash, outlined red while the bar shows (item 8); empty for a board setting both changed. */
+export interface SceneClash {
+  conflicts: string[]
+}
+
+export function mergeLiveScene(engine: Pick<ExcalidrawModule, 'restoreElements'>, base: SceneSide, disk: SceneSide, live: { elements: readonly unknown[]; appState: Readonly<Record<string, unknown>> }, boardKeys: readonly string[]): SceneMerge | SceneClash {
   const appState: Record<string, unknown> = {}
   for (const key of boardKeys) {
     const [was, theirs, mine] = [base.appState[key], disk.appState[key], live.appState[key]]
     // A file without the key says nothing about it (an AI writes only what it means to).
     if (theirs === undefined || same(theirs, was) || same(theirs, mine)) continue
-    if (!same(mine, was)) return null
+    if (!same(mine, was)) return { conflicts: [] }
     appState[key] = theirs
   }
 
   const liveEls = live.elements as readonly Element[]
   const merged = mergeElements(base.elements as Element[], disk.elements as Element[], liveEls, 'per-property')
-  if (merged === null) return null
+  if ('conflicts' in merged) return merged
   const onCanvas = new Map(liveEls.map((e) => [e.id, e]))
   const taken = merged.elements.filter((e) => e !== onCanvas.get(e.id))
   if (taken.length === 0) return { elements: [...liveEls], appState, added: [], changed: [] }

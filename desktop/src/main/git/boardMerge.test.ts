@@ -271,19 +271,19 @@ describe('mergeElements — an open board (YAZ-4279 D4: per property, never a si
     expect(out?.clashes).toBe(0)
   })
 
-  it('one property changed to different values on both sides is for the user: null', () => {
-    expect(open([r1], [set(r1, { x: 7 })], [edit(r1, 40)])).toBeNull()
+  it('one property changed to different values on both sides is for the user: the clash names the shape', () => {
+    expect(open([r1], [set(r1, { x: 7 })], [edit(r1, 40)])).toEqual({ conflicts: ['1'] })
   })
 
   it('a delete against an edit is for the user; a delete against no change stays deleted', () => {
-    expect(open([r1], [del(r1)], [edit(r1, 40)])).toBeNull()
-    expect(open([r1], [], [edit(r1, 40)])).toBeNull()
+    expect(open([r1], [del(r1)], [edit(r1, 40)])).toEqual({ conflicts: ['1'] })
+    expect(open([r1, r2], [r2], [edit(r1, 40), edit(r2, 9)])).toEqual({ conflicts: ['1'] })
     expect(byIdOf(open([r1, r2], [r1, del(r2)], [edit(r1, 40), r2])?.elements, '2')?.isDeleted).toBe(true)
   })
 
   it('shapes added on each side are both kept; one id added with two contents is for the user', () => {
     expect(open([r1], [r1, shape('t')], [r1, shape('m')])?.elements.map((e) => e.id).sort()).toEqual(['1', 'm', 't'])
-    expect(open([r1], [r1, shape('n', { x: 1 })], [r1, shape('n', { x: 2 })])).toBeNull()
+    expect(open([r1], [r1, shape('n', { x: 1 })], [r1, shape('n', { x: 2 })])).toEqual({ conflicts: ['n'] })
   })
 
   it('a change of the stamps alone is no change: the engine bumps them on load, an AI never does', () => {
