@@ -151,6 +151,7 @@ import {
   setFoldArrowPrefs,
   getTextCheckboxAt,
   getToggledCheckboxText,
+  getFoldedLines,
   deepCopyElement,
   duplicateElements,
   hasBoundTextElement,
@@ -3883,6 +3884,8 @@ class App extends React.Component<AppProps, AppState> {
     // manually loading the font faces seems faster even in browsers that do fire the loadingdone event
     this.fonts.loadSceneFonts().then((fontFaces) => {
       this.fonts.onLoaded(fontFaces);
+      // YAZ-4277 D6: a folded fixed-width box, measured with the real fonts
+      this.refitFoldedTextBoxes();
       // YAZ-4039 D7: the pills' sizes, measured with the real fonts
       this.hostLinkFontsReady = true;
       if (this.props.hostLinks) {
@@ -8652,6 +8655,51 @@ class App extends React.Component<AppProps, AppState> {
         .map((candidate) => (candidate.id === element.id ? next : candidate)),
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     });
+  };
+
+  /**
+   * YAZ-4277 D6: an outside edit (an AI agent) can change the lines inside a
+   * fold and leave the saved size. Restore sets an auto-size box's height
+   * again; a box with a fixed width wraps by its font, so it is measured here,
+   * once the fonts are in. Only a free box with a fold is looked at, and only
+   * a box whose size moved changes: no undo step, the board saves it.
+   */
+  private refitFoldedTextBoxes = () => {
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    const fitted = new Map<string, ExcalidrawTextElement>();
+    for (const element of this.scene.getNonDeletedElements()) {
+      if (
+        !isTextElement(element) ||
+        element.containerId ||
+        !getFoldedLines(element).length
+      ) {
+        continue;
+      }
+      const size = refreshTextDimensions(element, null, elementsMap);
+      if (
+        size &&
+        (Math.abs(size.width - element.width) > 0.5 ||
+          Math.abs(size.height - element.height) > 0.5)
+      ) {
+        const next = newElementWith(element, {});
+        redrawTextBoundingBox(next, null, this.scene);
+        fitted.set(element.id, next);
+      }
+    }
+    if (!fitted.size) {
+      return;
+    }
+    this.updateScene({
+      elements: this.scene
+        .getElementsIncludingDeleted()
+        .map((element) => fitted.get(element.id) ?? element),
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    for (const next of fitted.values()) {
+      if (isNonDeletedElement(next)) {
+        updateBoundElements(next, this.scene);
+      }
+    }
   };
 
   /** Reports the hovered pill to the host, only when it changed. */

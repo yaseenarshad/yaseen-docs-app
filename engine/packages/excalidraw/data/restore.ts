@@ -65,6 +65,7 @@ import {
 import { syncInvalidIndices } from "@excalidraw/element";
 
 import {
+  getTextElementStyledLayout,
   normalizeFoldedLines,
   refreshTextDimensions,
 } from "@excalidraw/element";
@@ -621,6 +622,21 @@ export const restoreElement = (
             targetElementsMap,
           ),
         );
+      } else if (
+        foldedLines &&
+        element.autoResize &&
+        !element.containerId &&
+        !element.isDeleted
+      ) {
+        // YAZ-4277 D6: an outside edit (an AI agent) can change the lines
+        // inside a fold and leave the saved height. An auto-size box's height
+        // is its visible lines, which needs no font, so it is set again here.
+        // Only a box with a fold pays. A fixed-width box wraps by its font:
+        // the editor sets it once the fonts load (`refitFoldedTextBoxes`).
+        const { height } = getTextElementStyledLayout(element, Infinity);
+        if (Math.abs(height - element.height) > 0.01) {
+          element = { ...element, height };
+        }
       }
       if (!textRuns) {
         delete (element as { textRuns?: unknown }).textRuns;
