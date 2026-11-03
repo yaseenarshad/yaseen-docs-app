@@ -15,8 +15,8 @@
  *   4 a `yaseendraw://` link (D7) opens its board in a tab, the same as a `yaseendocs://` one.
  *   5 File › Export Excalidraw Drawing… (D10) writes a standalone `.excalidraw` where the sheet says
  *     (the native sheet is answered in main, so no window opens).
- *   6 the canvas panel's Images tab opens the Image Studio (YAZ-3038). Nothing is typed: a search would
- *     reach a provider.
+ *   6 the canvas panel's Add tab opens with its one field and its chips (YAZ-3038, YAZ-4157). Nothing is typed: a
+ *     search would reach a provider.
  *   7 right-click a folder → hover "New drawing" → New dated Excalidraw drawing in its list (D9;
  *     YAZ-3085 D3): the box is seeded `MM_DD- `, and the drawing is born with that name and opens in a tab.
  */
@@ -197,13 +197,13 @@ test('step 5 — File › Export Excalidraw Drawing… writes a standalone .exca
   expect(await elementIds(path.join(vault, LINKED))).toEqual(['linked'])
 })
 
-test('step 6 — the canvas panel\'s Images tab opens the Image Studio', async () => {
+test('step 6 — the canvas panel\'s Add tab opens with one field and its chips', async () => {
   const panel = drawingTab(win).locator('.default-sidebar')
   await drawingTab(win).getByRole('button', { name: 'Open workspace panel' }).click()
   await expect(panel).toBeVisible()
-  await panel.getByRole('tab', { name: 'Image Studio' }).click() // the tab labelled "Images"
-  await expect(panel.getByRole('navigation', { name: 'Image Studio sections' })).toBeVisible()
-  await expect(panel.getByRole('searchbox', { name: 'Search graphics, icons, and logos' }).or(panel.getByRole('textbox', { name: 'Search graphics, icons, and logos' }))).toBeVisible()
+  await panel.getByRole('tab', { name: 'Add shapes, icons, and components' }).click() // the tab labelled "Add"
+  await expect(panel.getByRole('group', { name: 'Show' })).toBeVisible()
+  await expect(panel.getByRole('searchbox', { name: 'Search shapes, icons, and components' })).toBeVisible()
   await shoot(win, 'board-tools-05-image-studio')
   await panel.getByRole('button', { name: 'Close workspace panel' }).click()
   await expect(panel).toHaveCount(0)

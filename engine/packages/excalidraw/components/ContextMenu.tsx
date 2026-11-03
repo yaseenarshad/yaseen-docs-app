@@ -13,10 +13,17 @@ import "./ContextMenu.scss";
 import type { ActionManager } from "../actions/manager";
 import type { ShortcutName } from "../actions/shortcuts";
 import type { Action } from "../actions/types";
+import type { HostContextMenuItem } from "../types";
 
 import type { TranslationKeys } from "../i18n";
 
-export type ContextMenuItem = typeof CONTEXT_MENU_SEPARATOR | Action;
+/** Yaseen Docs (YAZ-4157 demo 6L): a host item, wrapped so it is never taken for an action. */
+export type HostContextMenuEntry = { host: HostContextMenuItem };
+
+export type ContextMenuItem =
+  | typeof CONTEXT_MENU_SEPARATOR
+  | Action
+  | HostContextMenuEntry;
 
 export type ContextMenuItems = (ContextMenuItem | false | null | undefined)[];
 
@@ -39,6 +46,7 @@ export const ContextMenu = React.memo(
       if (
         item &&
         (item === CONTEXT_MENU_SEPARATOR ||
+          "host" in item ||
           !item.predicate ||
           item.predicate(
             elements,
@@ -77,6 +85,24 @@ export const ContextMenu = React.memo(
                 return null;
               }
               return <hr key={idx} className="context-menu-item-separator" />;
+            }
+
+            if ("host" in item) {
+              const { host } = item;
+              return (
+                <li
+                  key={idx}
+                  data-testid={`host:${host.name}`}
+                  onClick={() => onClose(() => host.perform())}
+                >
+                  <button type="button" className="context-menu-item">
+                    <div className="context-menu-item__label">
+                      {host.label}
+                    </div>
+                    <kbd className="context-menu-item__shortcut" />
+                  </button>
+                </li>
+              );
             }
 
             const actionName = item.name;

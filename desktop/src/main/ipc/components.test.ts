@@ -112,6 +112,11 @@ describe('registerComponentsIpc (🔒 YAZ-1775 D5, YAZ-1819)', () => {
     expect(await readdir(path.join(userData, 'library'))).toEqual([])
   })
 
+  it('a component over 32 MB is TOO_LARGE and writes nothing (YAZ-4157 polish, audit 11)', async () => {
+    expect(await save({ name: 'Huge', fragmentJson: 'x'.repeat(32 * 1024 * 1024 + 1), previewPng: PNG })).toEqual(bad('TOO_LARGE'))
+    expect(await readdir(path.join(userData, 'library'))).toEqual([])
+  })
+
   it('a slug that could leave the components folder never reaches the filesystem', async () => {
     for (const slug of ['../../etc/passwd', 'a/b', '..', 'A-Card']) {
       expect(await read({ slug }), slug).toEqual(bad('BAD_REQUEST'))

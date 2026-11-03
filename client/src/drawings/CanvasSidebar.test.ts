@@ -16,6 +16,7 @@ describe('openCanvasTab', () => {
     ['no sidebar open (undefined)', undefined],
     ['another sidebar entirely', { name: 'library', tab: 'components' }],
     ['this sidebar on a tab the app does not have', { name: CANVAS_SIDEBAR, tab: 'boards' }],
+    ['this sidebar on the old Components tab (YAZ-4157 D6 merged it into Add)', { name: CANVAS_SIDEBAR, tab: 'components' }],
     ['this sidebar with no tab at all', { name: CANVAS_SIDEBAR }],
   ])('reads %s as closed', (_label, openSidebar) => {
     expect(openCanvasTab(openSidebar)).toBeNull()
@@ -23,9 +24,9 @@ describe('openCanvasTab', () => {
 })
 
 describe('CANVAS_SIDEBAR_TABS', () => {
-  it('is the three canvas tabs, left to right (⚡ YAZ-1775 D8 amended: Boards and Docs are the shell sidebar)', () => {
-    expect(CANVAS_SIDEBAR_TABS.map((t) => t.tab)).toEqual(['image-studio', 'components', 'presentation'])
-    expect(CANVAS_SIDEBAR_TABS.map((t) => t.shortLabel)).toEqual(['Images', 'Components', 'Present'])
+  it('is the two canvas tabs, left to right: Add (images, shapes and components, YAZ-4157 D6) and Present', () => {
+    expect(CANVAS_SIDEBAR_TABS.map((t) => t.tab)).toEqual(['image-studio', 'presentation'])
+    expect(CANVAS_SIDEBAR_TABS.map((t) => t.shortLabel)).toEqual(['Add', 'Present'])
     for (const { icon, label } of CANVAS_SIDEBAR_TABS) {
       expect(icon, label).toBeTruthy()
     }

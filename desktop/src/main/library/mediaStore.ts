@@ -1,6 +1,6 @@
 /**
  * THE LIBRARY'S MEDIA STORE (🔒 YAZ-1775 D5, YAZ-1817): `<library>/media.json`, the one file every
- * vault's windows share for media favorites and the recent MRU. The rules live in
+ * vault's windows share for media favorites, the recent MRU and what the Add tab learned (YAZ-4157). The rules live in
  * `@shared/mediaLibrary`; this module is the disk half.
  *
  * Lazy: a read never creates anything; the file appears on the first mutation. A file that is not
@@ -18,16 +18,16 @@
  */
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import { MEDIA_LIBRARY_FILE, type MediaFavoritesRequest, type MediaLibraryFile, type MediaRecentRequest, type StoredMediaItem } from '@shared/types'
-import { EMPTY_MEDIA_LIBRARY, addFavorite, recordRecent, removeFavorite, sanitizeMediaLibrary } from '@shared/mediaLibrary'
+import { MEDIA_LIBRARY_FILE, type MediaFavoritesRequest, type MediaLibraryFile, type MediaUsedRequest, type StoredMediaItem } from '@shared/types'
+import { EMPTY_MEDIA_LIBRARY, addFavorite, addWord, recordUse, removeFavorite, sanitizeMediaLibrary } from '@shared/mediaLibrary'
 import { atomicWrite, createChain, fsCall, readOrQuarantine } from '../fs/fsUtils'
 import { createWatchedFolder } from '../watchedFolder'
 
 export interface MediaStore {
   /** Every verb answers the favorites list it produced. */
   favorites(req: MediaFavoritesRequest): Promise<StoredMediaItem[]>
-  /** Every verb answers the MRU it produced. */
-  recent(req: MediaRecentRequest): Promise<StoredMediaItem[]>
+  /** List, one add, or a word (YAZ-4157); every verb answers the whole library it produced, in ONE write. */
+  used(req: MediaUsedRequest): Promise<MediaLibraryFile>
   /** Point at another library folder (the setting changed); the old one goes quiet. */
   setFolder(folder: string): void
   /** Fires after any change to `media.json` — an own write or an external one. Returns an unsubscribe. */
@@ -79,9 +79,9 @@ export function createMediaStore(initialFolder: string, deps: { now?: () => numb
       const lib = req.op === 'list' ? chain.wait(read) : mutate((l) => (req.op === 'add' ? addFavorite(l, req.item, now()) : removeFavorite(l, req.itemKey)))
       return lib.then((l) => l.favorites)
     },
-    recent(req) {
-      const lib = req.op === 'list' ? chain.wait(read) : mutate((l) => recordRecent(l, req.item, now()))
-      return lib.then((l) => l.recent)
+    used(req) {
+      if (req.op === 'list') return chain.wait(read)
+      return mutate((l) => (req.op === 'record' ? recordUse(l, req.item, req.query, now()) : addWord(l, req.item, req.word, now())))
     },
     setFolder(next) {
       if (next === folder) return

@@ -144,6 +144,7 @@ import {
   type DiagramDarkColors,
   DEFAULT_CANVAS_PANEL,
   isCanvasPanelTab,
+  isCanvasPanelWidth,
   type CanvasPanelState,
   applyTabCanvasPatch,
   defaultTabCanvas,
@@ -327,10 +328,14 @@ export const isRecentRoots = (v: unknown): v is RecentRoots =>
   Array.isArray(v) && v.every((x) => isRecord(x) && typeof x.path === 'string' && isFiniteNumber(x.lastOpened))
 
 /** The canvas panel's memory (YAZ-3038, Draw's 🔒 YAZ-1775 D10): both halves guarded; on load an unknown tab reads as the default. */
-export const isCanvasPanel = (v: unknown): v is CanvasPanelState => isRecord(v) && isCanvasPanelTab(v.tab) && typeof v.docked === 'boolean'
+export const isCanvasPanel = (v: unknown): v is CanvasPanelState =>
+  isRecord(v) && isCanvasPanelTab(v.tab) && typeof v.docked === 'boolean' && (v.width === undefined || isCanvasPanelWidth(v.width))
 const sanitizeCanvasPanel = (raw: unknown): CanvasPanelState => {
   const src = isRecord(raw) ? raw : {}
-  return { tab: isCanvasPanelTab(src.tab) ? src.tab : DEFAULT_CANVAS_PANEL.tab, docked: typeof src.docked === 'boolean' ? src.docked : DEFAULT_CANVAS_PANEL.docked }
+  const out: CanvasPanelState = { tab: isCanvasPanelTab(src.tab) ? src.tab : DEFAULT_CANVAS_PANEL.tab, docked: typeof src.docked === 'boolean' ? src.docked : DEFAULT_CANVAS_PANEL.docked }
+  // A width off the drag range (YAZ-4157 demo 6C) reads as none: the engine's own.
+  if (isCanvasPanelWidth(src.width)) out.width = src.width
+  return out
 }
 
 /**

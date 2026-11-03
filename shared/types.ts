@@ -1358,9 +1358,10 @@ export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
 /**
  * The in-canvas docked panel's tabs (YAZ-3038; Draw's ⚡ YAZ-1775 D8 amended), in the order its strip shows
  * them. The tab NAMES are the engine's sidebar tab names, kept as the web app spelled them so the
- * engine's own sidebar state reads the same on both sides.
+ * engine's own sidebar state reads the same on both sides. `image-studio` is the Add tab: images, shapes and
+ * components in one search (YAZ-4157 D6). A stored `components` tab, from before, reads as it.
  */
-export const CANVAS_PANEL_TABS = ['image-studio', 'components', 'presentation'] as const
+export const CANVAS_PANEL_TABS = ['image-studio', 'presentation'] as const
 export type CanvasPanelTab = (typeof CANVAS_PANEL_TABS)[number]
 export const isCanvasPanelTab = (v: unknown): v is CanvasPanelTab => (CANVAS_PANEL_TABS as readonly string[]).includes(v as string)
 
@@ -1372,24 +1373,34 @@ export const isCanvasPanelTab = (v: unknown): v is CanvasPanelTab => (CANVAS_PAN
 export interface CanvasPanelState {
   tab: CanvasPanelTab
   docked: boolean
+  /** The width the user dragged the panel to (YAZ-4157 demo 6C); absent is the engine's own 302 px. */
+  width?: number
 }
 
-export const DEFAULT_CANVAS_PANEL: CanvasPanelState = { tab: 'components', docked: false }
+/** The canvas panel's drag range (YAZ-4157 demo 6C). The default is the engine's `RIGHT_SIDEBAR_WIDTH`. */
+export const CANVAS_PANEL_DEFAULT_W = 302
+export const CANVAS_PANEL_MIN_W = 260
+export const CANVAS_PANEL_MAX_W = 720
+export const isCanvasPanelWidth = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= CANVAS_PANEL_MIN_W && v <= CANVAS_PANEL_MAX_W
+
+export const DEFAULT_CANVAS_PANEL: CanvasPanelState = { tab: 'image-studio', docked: false }
 
 // ---------- The canvas panel's library (YAZ-3038; Draw's 🔒 YAZ-1775 D4 / D5), and the providers and secrets behind it ----------
 
 /**
  * Where the media a board can reach comes from (the web app's `ImageStudioProvider`, ported
  * verbatim): Pixabay photos and illustrations, Iconify icons and logos, and the app's own shapes.
- * `shape` needs no network and no key at all.
+ * `shape` needs no network and no key at all. `component` is a saved component of the library, its
+ * `providerId` the slug (YAZ-4157 D2): so it can be a favorite, a recent and a counted use like any item.
+ * `excalidraw` is one item of Excalidraw's public libraries (YAZ-4157 demo 6K), its `providerId` `<source>#<index>`.
  */
-type MediaProvider = 'pixabay' | 'iconify' | 'shape'
-const MEDIA_PROVIDERS: readonly MediaProvider[] = ['pixabay', 'iconify', 'shape']
+type MediaProvider = 'pixabay' | 'iconify' | 'shape' | 'component' | 'excalidraw'
+const MEDIA_PROVIDERS: readonly MediaProvider[] = ['pixabay', 'iconify', 'shape', 'component', 'excalidraw']
 export const isMediaProvider = (v: unknown): v is MediaProvider => MEDIA_PROVIDERS.includes(v as MediaProvider)
 
 /** What the item IS, independent of who served it (the web app's `ImageStudioItemKind`). */
-export type MediaItemKind = 'photo' | 'illustration' | 'icon' | 'logo' | 'shape'
-const MEDIA_ITEM_KINDS: readonly MediaItemKind[] = ['photo', 'illustration', 'icon', 'logo', 'shape']
+export type MediaItemKind = 'photo' | 'illustration' | 'icon' | 'logo' | 'shape' | 'component' | 'drawing'
+const MEDIA_ITEM_KINDS: readonly MediaItemKind[] = ['photo', 'illustration', 'icon', 'logo', 'shape', 'component', 'drawing']
 export const isMediaItemKind = (v: unknown): v is MediaItemKind => MEDIA_ITEM_KINDS.includes(v as MediaItemKind)
 
 /**
@@ -1429,14 +1440,23 @@ export interface MediaItem {
 export type StoredMediaItem = MediaItem & { updatedAt: number }
 
 /**
+ * One row of `used` (YAZ-4157 D1): an item the user added to a board, how many times, and the words that found it
+ * (newest first; a search they added it from, or one they typed in "Add a word…"). Taking it out of the favorites
+ * starts its count again (demo 6A).
+ */
+export type UsedMediaItem = StoredMediaItem & { count: number; words: string[] }
+
+/**
  * `<library>/media.json` (🔒 YAZ-1775 D5): the cross-vault media library, ONE file for the whole account.
- * Both lists are newest-first and de-duplicated by `itemKey`; `favorites` is the user's pinned
- * set, `recent` is an MRU of what they actually placed on a board.
+ * The lists are newest-first and de-duplicated by `itemKey`; `favorites` is the user's pinned
+ * set, `recent` is an MRU of what they actually placed on a board, `used` is what the Add tab learned from
+ * those adds (YAZ-4157 D1). Still version 1: a build from before drops `used` and reads the rest.
  */
 export interface MediaLibraryFile {
   version: 1
   favorites: StoredMediaItem[]
   recent: StoredMediaItem[]
+  used: UsedMediaItem[]
 }
 
 /** The library file's name inside the library folder. */
@@ -1452,11 +1472,22 @@ export const COMPONENTS_INDEX_FILE = 'components.json'
 export const MAX_MEDIA_FAVORITES = 500
 /** The MRU's length, the web app's `RECENT_LIMIT` exactly. */
 export const RECENT_LIMIT = 60
+/** The `used` rows kept; the one used longest ago falls off (YAZ-4157 D1). */
+export const MAX_MEDIA_USED = 500
+/** The words one item keeps, newest first. */
+export const MAX_ITEM_WORDS = 20
+/** A word's longest length; a longer search is not a word worth keeping. */
+export const MAX_ITEM_WORD_LENGTH = 60
+/** The add that makes an item a favorite on its own (YAZ-4157 D9). */
+export const AUTO_FAVORITE_USES = 3
 
 /** `media:favorites` — one channel, three verbs; every verb answers the resulting list. */
 export type MediaFavoritesRequest = { op: 'list' } | { op: 'add'; item: MediaItem } | { op: 'remove'; itemKey: string }
-/** `media:recent` — the same shape: read the MRU, or push an item to its head. */
-export type MediaRecentRequest = { op: 'list' } | { op: 'record'; item: MediaItem }
+/**
+ * `media:used` (YAZ-4157 D1) — every verb answers the whole library: `record` is one add (the MRU, the count, the
+ * word `query`, and the favorite at the third), `add-word` is "Add a word…" (the item, so a row can start at 0).
+ */
+export type MediaUsedRequest = { op: 'list' } | { op: 'record'; item: MediaItem; query: string } | { op: 'add-word'; item: MediaItem; word: string }
 
 // ---------- Image Studio: the provider doors (🔒 YAZ-1775 D4, YAZ-1818) ----------
 
@@ -1525,6 +1556,22 @@ export interface MediaImportResponse extends MediaPreviewResponse {
   item: StudioItem
 }
 
+/**
+ * Excalidraw's public libraries (YAZ-4157 demo 6K): hand-drawn items that go on the board as editable elements.
+ * `media.drawingIndex` answers every named item of every library (about 3,000), which the Add tab ranks itself as
+ * you type; `media.drawing` answers one item's elements. Main fetches and caches both for 24 h.
+ */
+export interface MediaDrawingIndexResponse {
+  items: StudioItem[]
+}
+/** `id` is the item's `providerId`, `<source>#<index>`. */
+export interface MediaDrawingRequest {
+  id: string
+}
+export interface MediaDrawingResponse {
+  elements: unknown[]
+}
+
 // ---------- Saved components (`<library>/components/` — 🔒 YAZ-1775 D5, YAZ-1819) ----------
 
 /**
@@ -1577,6 +1624,13 @@ export interface ComponentReadResponse {
 
 /** The longest name a component may carry — the web app's `MAX_SAVED_COMPONENT_NAME_LENGTH`. */
 export const MAX_COMPONENT_NAME_LENGTH = 120
+
+/**
+ * The biggest picture a paste or a drop saves (YAZ-4157 polish, audit 11): the 20 MB a web import may bring. A component
+ * file holds its picture as text, about a third more, so `components:save` takes a document of 32 MB at most.
+ */
+export const MAX_PASTED_PICTURE_BYTES = 20 * 1024 * 1024
+export const MAX_COMPONENT_FRAGMENT_BYTES = 32 * 1024 * 1024
 
 // ---------- Secrets (`userData/secrets.json` — 🔒 YAZ-1775 D4) ----------
 

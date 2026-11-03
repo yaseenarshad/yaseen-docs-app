@@ -229,17 +229,9 @@ export function buildShapeCatalog(smart: SmartShapeApi | null): ShapeCatalogItem
   return smart === null ? [...BASIC_SHAPES] : [...BASIC_SHAPES, ...smartShapeCatalog(smart)]
 }
 
-/** Every token must appear somewhere in the title, id, kind, direction or aliases. */
-export function filterShapeCatalog(catalog: readonly ShapeCatalogItem[], query: string): ShapeCatalogItem[] {
-  const tokens = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
-  if (tokens.length === 0) return [...catalog]
-  return catalog.filter((shape) => {
-    const searchable = [shape.title, shape.id, shape.kind, shape.direction, ...shape.aliases]
-      .filter(Boolean)
-      .join(' ')
-      .toLocaleLowerCase()
-    return tokens.every((token) => searchable.includes(token))
-  })
+/** The names a shape answers to besides its title — `rankItems`' aliases (YAZ-4157 D4): its id, kind, direction and alias words. */
+export function shapeAliases(shape: ShapeCatalogItem): string[] {
+  return [shape.id, shape.kind, ...(shape.direction ? [shape.direction] : []), ...shape.aliases]
 }
 
 export function getShape(catalog: readonly ShapeCatalogItem[], id: string): ShapeCatalogItem | undefined {

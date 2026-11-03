@@ -1,7 +1,8 @@
 /**
  * "Pixabay API key" (Settings › Images, YAZ-3038; Draw's 🔒 YAZ-1775 D4): the one place the key is ever typed. It goes
  * straight to main through `secrets:set` and is never shown again — the row's whole read-back is
- * `secrets:has`, "Key set" or "No key". A component rather than an inline `render` because the
+ * `secrets:has`: a green "Key saved" line, or "No key saved" (YAZ-4157 demo 6F: the grey path-style "Key set" over an
+ * empty "Paste your key" field read as no key at all). A component rather than an inline `render` because the
  * row owns state no `SettingsState` field holds: the draft being typed, and main's yes/no.
  *
  * Save is disabled until something is typed; Clear until a key is set. A failed save is told in
@@ -49,14 +50,14 @@ export function PixabayKeyControl() {
     }
   }
 
-  const status = problem ?? (has === null ? '…' : has ? 'Key set' : 'No key')
+  const status = problem ?? (has === null ? '…' : has ? '✓ Key saved. Photos are on.' : 'No key saved. Photos are off.')
   return (
     <>
-      <p className="settings__path" data-testid="pixabay-key-status">
+      <p className={has === true && problem === null ? 'settings__key-status is-set' : 'settings__key-status'} role="status" data-testid="pixabay-key-status">
         {status}
       </p>
       <div className="settings__options" role="group" aria-label="Pixabay API key">
-        <input type="password" className="settings__input settings__input--fill" aria-label="Pixabay API key" autoComplete="off" spellCheck={false} placeholder="Paste your key" value={draft} onChange={(e) => setDraft(e.target.value)} disabled={busy} />
+        <input type="password" className="settings__input settings__input--fill" aria-label="Pixabay API key" autoComplete="off" spellCheck={false} placeholder={has ? 'Paste a new key to replace it' : 'Paste your key'} value={draft} onChange={(e) => setDraft(e.target.value)} disabled={busy} />
         <button type="button" className="settings__option" onClick={() => void write(draft)} disabled={busy || draft === ''}>
           Save
         </button>
