@@ -971,6 +971,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
+        // YAZ-4273 D8: text that the editor changes as you type.
+        title: 'Typing',
+        items: [
+          {
+            id: 'typingArrows',
+            label: 'Arrows',
+            hint: 'Typing -> makes →, ==> makes ⇒, <- makes ←, and <-> makes ↔. Backspace right after keeps what you typed. Never in code.',
+            keywords: ['arrow', 'arrows', 'auto', 'replace', 'typing', 'symbol', 'convert', '->', '=>', '<-', 'right arrow', 'left arrow'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.typingArrows ?? true} onChange={(typingArrows) => onChange({ ...settings, typingArrows })} ariaLabel="Arrows while typing" />
+            ),
+          },
+        ],
+      },
+      {
         // "Table of contents default" (YAZ-3558 D2) is a default: each page's cog can turn its own on or off.
         // "Pin default" (YAZ-2700, named by YAZ-3558 D2a) is the same field the table of contents' own "Pin" and "Unpin" buttons write.
         // "Level lines" (YAZ-2762) says when the lines of its names show.

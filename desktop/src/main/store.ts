@@ -592,6 +592,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableCellBulletGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= TABLE_CELL_BULLET_GAP_MIN && v <= TABLE_CELL_BULLET_GAP_MAX,
   tableCellNoteTemplate: (v): v is string => typeof v === 'string' && v.length <= CELL_NOTE_TEMPLATE_MAX,
   tableCellNotePinned: (v): v is boolean => typeof v === 'boolean',
+  typingArrows: (v): v is boolean => typeof v === 'boolean',
   newNoteTitleTemplate: (v): v is string => typeof v === 'string' && v.length <= NEW_NOTE_TITLE_MAX && !v.includes('/'),
   tableDayStart: isCalendarDayTime,
   tableDayEnd: isCalendarDayTime,

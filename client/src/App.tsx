@@ -57,6 +57,7 @@ import { setLanguageHelpers } from './code/languageHelpers'
 import { setCalendarDaySetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
+import { setTypingArrows } from './editor/typingArrows'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmMove } from './sidebar/ConfirmMove'
@@ -591,6 +592,8 @@ export function App() {
   useEffect(() => setCellNoteTemplate(settings.tableCellNoteTemplate ?? ''), [settings.tableCellNoteTemplate])
   // A new tab's cell note card starts pinned (round 3 of the demo); an open tab keeps its own pin.
   useEffect(() => setCellNotePinnedAtStart(settings.tableCellNotePinned ?? true), [settings.tableCellNotePinned])
+  // Arrows while typing (YAZ-4273 D8): an open note reads it at its next keystroke. Absent from an older main process.
+  useEffect(() => setTypingArrows(settings.typingArrows ?? true), [settings.typingArrows])
   // The past rows' shade (YAZ-4163 demo), read by table.css.
   useEffect(() => document.documentElement.style.setProperty('--table-past-shade', `${settings.tableShadeDarkness}%`), [settings.tableShadeDarkness])
   // The selection toolbar's order and hidden buttons (YAZ-3806 T6): every open note's toolbar follows at once.

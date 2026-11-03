@@ -65,6 +65,8 @@ describe('settingCandidates', () => {
       'sectionStep',
       'sectionLines',
       'selectionToolbar',
+      // Settings › Editor › Typing (YAZ-4273 D8).
+      'typingArrows',
       'tocOnByDefault',
       'tableOfContents',
       'tocLines',

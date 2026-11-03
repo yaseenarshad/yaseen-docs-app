@@ -1790,6 +1790,8 @@ export interface SettingsState {
   newNoteTitleTemplate: string
   /** Settings › Editor › Cell notes › Keep cell notes open (round 3 of the YAZ-3818 demo): a new tab's cell note card starts pinned (a click outside does not close it). Its pin button still toggles it for that tab. */
   tableCellNotePinned: boolean
+  /** Settings › Editor › Typing › Arrows (YAZ-4273 D8): `->`, `==>`, `<-`, `<->` and the rest become one arrow character as you type (`typingArrows.ts`). */
+  typingArrows: boolean
   /** Settings › Editor › Calendar tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mm a`, for new tables, new times in a table with none, and "Current time". */
   tableTimeFormat: string
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
@@ -2221,6 +2223,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableCellNoteTemplate: '',
   newNoteTitleTemplate: '{MM}_{DD}- ',
   tableCellNotePinned: true,
+  typingArrows: true,
   tableDayStart: DEFAULT_CALENDAR_DAY.start,
   tableDayEnd: DEFAULT_CALENDAR_DAY.end,
   tableTimeFormat: DEFAULT_TIME_FORMAT,
