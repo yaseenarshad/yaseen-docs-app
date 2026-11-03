@@ -1,55 +1,28 @@
-import { buildFrontmatter, parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { TITLE_KEY, kebabTitle, noteFileName } from '@shared/noteName'
+import { createNote as birth, folderPath, type NoteDisk, type Seed } from '@shared/noteBirth'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { plainEntryName } from '../sidebar/createEntry'
 import { typedFolders } from './engine'
 
-/** A template's content, or '' when there is none — existence = has-template. */
-async function readTemplate(path: string): Promise<string> {
-  try {
-    return (await api.readFile(path)).content
-  } catch (err) {
-    if (!(err instanceof BridgeRequestError && err.code === 'NOT_FOUND')) throw err
-    return ''
-  }
+export { folderPath }
+
+/** The renderer's disk for `@shared/noteBirth` (YAZ-4269 D1): the bridge. A missing template is null; any other read failure propagates. */
+export const bridgeDisk: NoteDisk = {
+  read: (path) =>
+    api.readFile(path).then(
+      (file) => file.content,
+      (err: unknown) => {
+        if (!(err instanceof BridgeRequestError && err.code === 'NOT_FOUND')) throw err
+        return null
+      },
+    ),
+  createFile: (req) => api.createFile(req),
+  createDir: (req) => api.createDir(req),
+  mintId: (path) => takeNoteId(path),
+  isThere: (err) => err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS',
 }
 
-/**
- * Birth (YAZ-2290 E1/E3), the ONE way a note is created: in `dir`, with its folder's template — the
- * hidden `.template.md` beside it, frontmatter and body — and what `seed` makes of the template's
- * properties (a folder view's "New": its seeded values, `FolderView`). Nothing else: no column is
- * ever stamped empty, a missing value is an empty cell. ONE atomic call (`CreateFileRequest.content`,
- * GRO-2202), so it never overwrites and there is no create-then-write race. Failures propagate.
- *
- * It is born titled (YAZ-2420 🔒 D20): `title` is free text and is the note's `title`, whatever the
- * template or the seed says, and its file name is built from it and the note's id (`noteFileName`).
- * The id is the vault's next number, taken from the door BEFORE the note is made (`takeNoteId`,
- * YAZ-2677 D4, R18): the name needs it. `id` is for a caller that has already taken it, and
- * written a link to the note (YAZ-2293). `templateAt` is for a caller whose template is not beside the note: a daily
- * note in its day folder takes the daily notes folder's (YAZ-3607 D6). Resolves the note's path.
- *
- * All of that where the vault uses IDs (`ids`). In a vault that does not use IDs (YAZ-2523 🔒 V3)
- * `title` is the file's name (`plainEntryName`) and nothing is written about the note inside it:
- * with no seed it is the template as it is, and with one, what the seed returns and the template's body.
- */
-export async function createNote(dir: string, title: string, ids: boolean, seed?: (template: Record<string, unknown>) => Record<string, unknown>, id?: string, templateAt = `${dir}/.template.md`): Promise<string> {
-  // A name a file cannot hold is refused before anything is read or made.
-  const plain = ids ? undefined : `${dir}/${plainEntryName(title, 'file')}`
-  const template = await readTemplate(templateAt)
-  const { frontmatter, body } = splitFrontmatter(template)
-  const { properties } = parseFrontmatter(frontmatter)
-  const seeded = seed === undefined ? properties : seed(properties)
-  if (plain !== undefined) {
-    await api.createFile({ path: plain, content: seed === undefined ? template : buildFrontmatter(seeded) + body })
-    return plain
-  }
-  // The number LAST before the create: a template that cannot be read costs none.
-  const born = id ?? (await takeNoteId(dir))
-  const path = `${dir}/${noteFileName(title, born)}`
-  await api.createFile({ path, content: buildFrontmatter({ ...seeded, [TITLE_KEY]: title }) + body, id: born })
-  return path
-}
+/** Birth of a note (`@shared/noteBirth` `createNote`, where its rules are told) over the bridge. Every caller in the app keeps this call. */
+export const createNote = (dir: string, title: string, ids: boolean, seed?: Seed, id?: string, templateAt?: string): Promise<string> => birth(bridgeDisk, dir, title, ids, seed, id, templateAt)
 
 /**
  * The next ID of the vault that holds `path`, from the door in the main process (`fs:mint-note-id`,
@@ -61,18 +34,6 @@ export async function takeNoteId(path: string): Promise<string> {
   const id = await api.mintNoteId(path)
   if (id === null) throw new Error('this vault does not use IDs')
   return id
-}
-
-/**
- * Where the folder titled `title` stands in `parent` (YAZ-2420 🔒 D6): its name is the title in
- * kebab-case. A title with no letter or digit has no such name and is refused (🔒 D25). In a
- * vault that does not use IDs its name is the title as typed (`plainEntryName`).
- */
-export function folderPath(parent: string, title: string, ids: boolean): string {
-  if (!ids) return `${parent}/${plainEntryName(title, 'dir')}`
-  const name = kebabTitle(title)
-  if (name === '') throw new Error('A folder name needs a letter or a digit')
-  return `${parent}/${name}`
 }
 
 /**
