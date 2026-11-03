@@ -66,6 +66,7 @@ import type { PageSwitch } from '../editor/PageSettings'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { exportFileName } from './exportDrawing'
 import { parseSceneText, type DrawingScene } from './drawingScene'
+import type { SceneSide } from './mergeScene'
 import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi } from './ExcalidrawSurface'
 import { pressed } from './drawingKeys'
 import { PICTURES_MOVED_OUT } from './saveDrawing'
@@ -214,6 +215,9 @@ function toDocument(res: DrawingLoadResponse): LoadedDocument {
   return { scene: { ...parsed, files }, mtime: res.mtime, stored: res.stored }
 }
 
+/** The shapes and the board settings alone: a base never holds a file's pictures (YAZ-4279). */
+const sideOf = ({ elements, appState }: DrawingScene): SceneSide => ({ elements, appState })
+
 const loadDocument = (req: { root: string; path: string }): Promise<LoadedDocument> => api.drawing.load(req).then(toDocument)
 // Missing, unreadable, not a scene: ONE readable state, never a blank pane.
 const brokenDocument = (): string => BROKEN_DRAWING_DOCUMENT
@@ -242,6 +246,11 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
   const surface = useRef<DrawingSurfaceApi | null>(null)
   /** Set by a reload; the next snapshot is consumed as the new baseline, not as a change. */
   const reloadedTo = useRef<number | null>(null)
+  /**
+   * The scene as this tab last loaded or saved it: a merge's base (YAZ-4279 D1). A save keeps its text and parses it only
+   * when a merge needs it, so a save costs no second parse.
+   */
+  const base = useRef<SceneSide | string>(sideOf(loaded.scene))
   /** Ids main holds: load's `stored`, grown by every save's `persisted` (🔒 YAZ-1775 D3), or replaced by an inside save's. */
   const persisted = useRef(new Set(loaded.stored))
   /** `"pictures": "assets"` as the file last said it (YAZ-3943 D5): the load, each reload, the 50 MB rule, the cog's button. */
@@ -271,6 +280,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       const { json, files, referenced } = current.serialize()
       const newFiles = unpersistedFiles(files, referenced, persisted.current)
       const res = await api.drawing.save({ root, path, json, expectedMtime, newFiles })
+      base.current = json
       // An inside save names every picture the file holds now; a deleted one is not there (6A item 1). So does a save
       // that moved them out by the 50 MB rule: the store holds exactly those (YAZ-4071 7H).
       if (res.inside === true || res.movedOut === true) persisted.current = new Set(res.persisted)
@@ -292,16 +302,27 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       try {
         const doc = toDocument(await api.drawing.load({ root, path }))
         reloadedTo.current = doc.mtime
-        persisted.current = new Set(doc.stored)
-        setPicturesOut(doc.scene.picturesOut === true)
-        setPicturesFolder(doc.scene.picturesFolder ?? null)
-        setHoverLinksOff(doc.scene.hoverLinksOff === true)
+        tookFile(doc)
         a.reset(s.replaceScene(doc.scene), doc.mtime)
         return doc.scene.readOnly === true
       } catch (err) {
         reloadedTo.current = null
         throw err
       }
+    },
+    // YAZ-4279: a newer file over unsaved edits. A changed read-only switch is the user's to settle: the bar.
+    merge: async (a) => {
+      const s = surface.current
+      if (s === null) return 'conflict'
+      const doc = toDocument(await api.drawing.load({ root, path }))
+      if ((doc.scene.readOnly === true) !== readOnlyRef.current) return 'conflict'
+      await s.whenIdle()
+      const was = base.current
+      const merged = s.mergeScene(typeof was === 'string' ? parseSceneText(was) : was, doc.scene)
+      if (merged === null) return 'conflict'
+      tookFile(doc)
+      a.rebase(doc.mtime)
+      return 'merged'
     },
     // The application menu's three canvas items (Draw's 🔒 YAZ-1775 D10; the items are YAZ-3037's); a
     // host whose engine has not handed its API over yet simply has nothing to do.
@@ -316,6 +337,14 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     onShown: () => surface.current?.refresh(),
     focus: () => surface.current?.focus(),
   })
+  /** A file this tab now holds as its base: its pictures and switches as the file says them (a reload, a merge). */
+  function tookFile(doc: LoadedDocument): void {
+    base.current = sideOf(doc.scene)
+    persisted.current = new Set(doc.stored)
+    setPicturesOut(doc.scene.picturesOut === true)
+    setPicturesFolder(doc.scene.picturesFolder ?? null)
+    setHoverLinksOff(doc.scene.hoverLinksOff === true)
+  }
   const { autosave, start, chips, readOnly, reload } = board
   // The hover preview: the app's "Links in drawings" AND this board's own switch (YAZ-3943 demo 2); clicks stay.
   const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: { ...linkProps, hoverLinks: linkProps.hoverLinks === true && !hoverLinksOff } })

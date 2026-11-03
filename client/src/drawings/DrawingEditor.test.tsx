@@ -59,6 +59,11 @@ const surface = {
   pictures: { bytes: 0, count: 0, missing: 0 },
   /** The pan and zoom the engine is on (YAZ-3737 D13). */
   canvas: { scrollX: 0, scrollY: 0, zoom: 1 },
+  /** What `mergeScene` answers (YAZ-4279): null, a clash, by default, so a dirty tab meets the bar as before. */
+  nextMerge: null as { version: number; added: string[]; changed: string[] } | null,
+  merged: [] as { base: unknown; disk: unknown }[],
+  /** What `whenIdle` waits on: a gesture in flight until the test resolves it. */
+  idle: Promise.resolve(),
 }
 
 vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
@@ -89,6 +94,11 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
       },
       pictures: () => surface.pictures,
       canvas: () => surface.canvas,
+      mergeScene: (base, disk) => {
+        surface.merged.push({ base, disk })
+        return surface.nextMerge
+      },
+      whenIdle: () => surface.idle,
     } satisfies DrawingSurfaceApi)
     // The real engine renders this into its own top-right row; the stub just puts it on screen,
     // because WHERE the chips go is the surface's business and WHAT they say is the host's.
@@ -156,6 +166,9 @@ beforeEach(() => {
   surface.nextReplaceVersion = 0
   surface.commands = []
   surface.pictures = { bytes: 0, count: 0, missing: 0 }
+  surface.nextMerge = null
+  surface.merged = []
+  surface.idle = Promise.resolve()
   Object.defineProperty(window, 'yaseenDocs', {
     configurable: true,
     writable: true,
@@ -313,6 +326,118 @@ describe('external changes', () => {
       vi.advanceTimersByTime(1000)
     })
     expect(save).not.toHaveBeenCalled()
+  })
+})
+
+/** A board whose file says Read only (YAZ-3076 D1). */
+const LOCKED_SCENE = `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, type: 'excalidraw', version: 2, elements: [], appState: {}, files: {} })}\n`
+
+describe('YAZ-4279 — an outside save over unsaved edits merges into the canvas', () => {
+  const MERGED = { version: 30, added: [], changed: ['a'] }
+  const bar = (): boolean => chips().includes('File changed on disk.')
+  const refused = (mtime: number) => new BridgeRequestError('CONFLICT', 'file changed on disk since last read', mtime, PATH)
+
+  it('merges the file into a dirty tab (base: the scene as loaded), shows no bar, and saves the merge against the new mtime', async () => {
+    load.mockResolvedValue(loaded({ json: scene([{ id: 'a', x: 1 }]) }))
+    render()
+    await flush()
+    emit(1)
+    emit(2)
+    load.mockResolvedValue(loaded({ json: scene([{ id: 'a', x: 1, strokeColor: 'red' }]), mtime: 400 }))
+    surface.nextMerge = MERGED
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    expect(surface.merged).toHaveLength(1)
+    expect(surface.merged[0].base).toMatchObject({ elements: [{ id: 'a', x: 1 }] })
+    expect(surface.merged[0].disk).toMatchObject({ elements: [{ id: 'a', x: 1, strokeColor: 'red' }] })
+    expect(bar()).toBe(false)
+    emit(30) // the engine's answer to the merge: still an edit
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ expectedMtime: 400 }))
+  })
+
+  it('a clash keeps the bar; a later outside save that merges takes the bar down (item 10)', async () => {
+    render()
+    await flush()
+    emit(1)
+    emit(2)
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    expect(bar()).toBe(true)
+    surface.nextMerge = MERGED
+    load.mockResolvedValue(loaded({ mtime: 500 }))
+    watcherSaw({ type: 'change', path: PATH, mtime: 500 })
+    await flush()
+    expect(surface.merged).toHaveLength(2)
+    expect(bar()).toBe(false)
+  })
+
+  it('a save the disk refuses merges too, then saves the merge against the mtime the disk answered (D3: the second door)', async () => {
+    render()
+    await flush()
+    emit(1)
+    save.mockRejectedValueOnce(refused(400))
+    load.mockResolvedValue(loaded({ mtime: 400 }))
+    surface.nextMerge = MERGED
+    emit(2)
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    await flush()
+    expect(surface.merged).toHaveLength(1)
+    expect(bar()).toBe(false)
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ expectedMtime: 400 }))
+  })
+
+  it('after a save, the base is what the save wrote', async () => {
+    render()
+    await flush()
+    emit(1)
+    emit(2, scene([{ id: 'saved' }]))
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    emit(3)
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    expect(surface.merged[0].base).toMatchObject({ elements: [{ id: 'saved' }] })
+  })
+
+  it('a read-only switch the file changed is the user\'s to settle: the bar, and no merge', async () => {
+    render()
+    await flush()
+    emit(1)
+    emit(2)
+    load.mockResolvedValue(loaded({ json: LOCKED_SCENE, mtime: 400 }))
+    surface.nextMerge = MERGED
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    expect(surface.merged).toHaveLength(0)
+    expect(bar()).toBe(true)
+  })
+
+  it('waits for a gesture to end; a burst of outside saves meanwhile is ONE more merge, of the latest file (item 4)', async () => {
+    let endGesture = (): void => undefined
+    surface.idle = new Promise<void>((done) => (endGesture = done))
+    surface.nextMerge = MERGED
+    render()
+    await flush()
+    emit(1)
+    emit(2)
+    for (const mtime of [400, 410, 420]) watcherSaw({ type: 'change', path: PATH, mtime })
+    await flush()
+    expect(surface.merged).toHaveLength(0)
+    load.mockResolvedValue(loaded({ mtime: 420 }))
+    surface.idle = Promise.resolve()
+    await act(async () => endGesture())
+    await flush()
+    await flush()
+    expect(surface.merged).toHaveLength(2)
   })
 })
 

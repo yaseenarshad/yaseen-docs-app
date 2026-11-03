@@ -75,6 +75,7 @@ import { holdColResize } from '../lib/colResize'
 import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
 import { contentVersion } from './contentVersion'
+import { mergeLiveScene, type SceneSide } from './mergeScene'
 import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
 import { imageStudioSession, pickChip } from '../image-studio/imageStudioSession'
 import { openViewport, type DrawingScene } from './drawingScene'
@@ -122,6 +123,14 @@ export interface DrawingSurfaceApi {
    * RESTORED elements handed in, never read back (a read-back races the engine's own commit).
    */
   replaceScene(scene: DrawingScene): number
+  /**
+   * A newer file over unsaved edits (YAZ-4279 D1, D4): `base` is the scene as the host last loaded or saved it. Null: a
+   * clash, and the canvas is as it was; otherwise the canvas holds both sides (`mergeLiveScene`), and the answer is the
+   * version the engine will report for it. Never in ⌘Z's history: the file's change is not the user's.
+   */
+  mergeScene(base: SceneSide, disk: DrawingScene): { version: number; added: string[]; changed: string[] } | null
+  /** Resolves when no drag, resize, drawing or text edit is in flight (YAZ-4279): a merge waits for the gesture to end. */
+  whenIdle(): Promise<void>
   /** The pan and zoom now (YAZ-3737 D13): what a tab that goes to sleep, or is copied, starts on again. */
   canvas(): NonNullable<PageView['canvas']>
 }
@@ -277,6 +286,10 @@ export function ExcalidrawSurface({
   const engineRef = useRef<ExcalidrawModule | null>(null)
   /** The board's own appState edits (see the module doc), counted from the engine's first `onChange`. */
   const countEdits = useRef<ReturnType<typeof appStateEdits> | null>(null)
+  /** The board's own appState keys (`boardAppStateKeys`), read once the engine is in: what a merge takes from the file. */
+  const boardKeys = useRef<readonly string[]>([])
+  /** `whenIdle`'s callers, answered by the first `onChange` with no gesture in flight. */
+  const idleWaiters = useRef<(() => void)[]>([])
   /** The elements' share of the key: a version bump that moved no content is not counted (YAZ-3210). */
   const countVersion = useRef(contentVersion())
   const emitRef = useRef(onSnapshot)
@@ -617,7 +630,8 @@ export function ExcalidrawSurface({
       (mod) => {
         if (!live) return
         engineRef.current = mod
-        countEdits.current = appStateEdits(boardAppStateKeys(mod))
+        boardKeys.current = boardAppStateKeys(mod)
+        countEdits.current = appStateEdits(boardKeys.current)
         setEngine(mod)
         // The baseline, before the engine has said anything — through the engine's own restore,
         // because restored elements are what it mounts (see the module doc).
@@ -647,6 +661,7 @@ export function ExcalidrawSurface({
       const mod = engineRef.current
       const edits = countEdits.current
       if (mod !== null && edits !== null) emitRef.current(snapshotOf(countVersion.current, mod, elements, appState, files, edits(appState as unknown as Record<string, unknown>)))
+      if (idleWaiters.current.length > 0 && !inGesture(appState as unknown as Record<string, unknown>)) for (const done of idleWaiters.current.splice(0)) done()
       if (withPanel) {
         // The canvas panel's open tab: the rail's emphasis, the triggers' opacity, and the memory
         // the hamburger opens on next time; and the selection gate of "Save selection".
@@ -705,13 +720,23 @@ export function ExcalidrawSurface({
         // A new scene, a new count: computed BEFORE the engine reports it, so its first `onChange` agrees.
         countVersion.current = contentVersion()
         const version = countVersion.current(restored)
-        api.updateScene({ elements: restored })
-        const entries = Object.values(next.files ?? {}) as Parameters<ImperativeApi['addFiles']>[0]
-        if (entries.length > 0) api.addFiles(entries)
+        // The file's change is not the user's: the default (EVENTUALLY) folded it into the next ⌘Z step (YAZ-4279).
+        api.updateScene({ elements: restored, captureUpdate: mod.CaptureUpdateAction.NEVER })
+        addNewFiles(api, next.files)
         // The engine's files only grew: drop what neither the new scene nor undo can show (YAZ-3737 D14).
         api.pruneFiles()
         return version
       },
+      mergeScene: (base, disk) => {
+        const merged = mergeLiveScene(mod, base, disk, { elements: api.getSceneElementsIncludingDeleted(), appState: api.getAppState() as unknown as Record<string, unknown> }, boardKeys.current)
+        if (merged === null) return null
+        const elements = merged.elements as unknown as ChangeArgs[0]
+        const version = countVersion.current(elements)
+        api.updateScene({ elements, ...(Object.keys(merged.appState).length > 0 && { appState: merged.appState as unknown as EngineAppState }), captureUpdate: mod.CaptureUpdateAction.NEVER })
+        addNewFiles(api, disk.files)
+        return { version, added: merged.added, changed: merged.changed }
+      },
+      whenIdle: () => (inGesture(api.getAppState() as unknown as Record<string, unknown>) ? new Promise<void>((done) => idleWaiters.current.push(done)) : Promise.resolve()),
       canvas: () => {
         const { scrollX, scrollY, zoom } = api.getAppState()
         return { scrollX, scrollY, zoom: zoom.value }
@@ -821,6 +846,16 @@ const BUSY_APP_STATE_KEYS = [
   'editingTextElement',
   'openDialog',
 ] as const
+
+/** A gesture a merge must not land in (YAZ-4279): the busy set less an open dialog and a selected line, which can last. */
+const inGesture = (appState: Record<string, unknown>): boolean => BUSY_APP_STATE_KEYS.some((k) => k !== 'openDialog' && k !== 'selectedLinearElement' && Boolean(appState[k]))
+
+/** Item 5: only the pictures the engine does not hold yet — a picture's id is its content's, so a held id is the same bytes. */
+function addNewFiles(api: ImperativeApi, files: Record<string, unknown> | null): void {
+  const held = api.getFiles() as unknown as Record<string, unknown>
+  const entries = Object.entries(files ?? {}).filter(([id]) => !(id in held)).map(([, entry]) => entry) as Parameters<ImperativeApi['addFiles']>[0]
+  if (entries.length > 0) api.addFiles(entries)
+}
 
 /** One snapshot from the engine's own utilities; the only place they are called. */
 function snapshotOf(

@@ -18,6 +18,11 @@
  * bar, and `Autosave` blocks further writes until one of the two buttons answers it. Two windows
  * on one document is exactly this rule seen from both sides.
  *
+ * ⚡ AMENDED by YAZ-4279 D3 (the notes' rule, YAZ-3837): an engine that can MERGE (`merge`) is asked first, at both doors —
+ * the dirty watcher change and the refused save. The bar shows only when it answers 'conflict'. One merge runs at a time;
+ * changes that arrive meanwhile get one more merge, of the latest file (item 4). With the bar up, a later change tries
+ * again, and a merge that lands takes the bar down (item 10). The code tab has no `merge`: it keeps the bar.
+ *
  * RENAME AND DELETE. The host registers the shell's rename-continuity handle for its path, so a
  * rename flushes these bytes before the file moves and a DELETE retires the controller — without
  * which closing the tab would flush on unmount and resurrect the file that was just trashed. A
@@ -74,6 +79,12 @@ export interface DocumentHostOptions extends DocumentHostProps {
    * Answers the file's read-only switch as it now reads (YAZ-3076 D1); nothing = unchanged.
    */
   reload: (autosave: Autosave<number>) => Promise<boolean | void>
+  /**
+   * Unsaved edits meet a newer file (YAZ-4279 D3): merge the file into the live document. 'merged': the engine holds both
+   * sides, and `autosave.rebase` has made the file the new base. 'conflict': nothing changed, and the bar shows.
+   * Absent (the code tab): the bar, as before.
+   */
+  merge?: (autosave: Autosave<number>) => Promise<'merged' | 'conflict'>
   /** "Keep mine" is about to overwrite a version this tab did not write: what the engine knows of the file is stale (YAZ-4071 7H). */
   onKeepMine?: () => void
   /** The loaded file's read-only switch (YAZ-3076 D1): `isDrawingReadOnly` / `isDiagramReadOnly` of what the shell loaded. */
@@ -136,11 +147,36 @@ export function useDocumentHost(options: DocumentHostOptions) {
     [],
   )
 
+  /** The latest disk change that waits for the merge in flight; null: none (item 4). */
+  const mergeAgain = useRef<number | null>(null)
+  const merging = useRef(false)
+  /** YAZ-4279 D3: the engine merges, or the bar shows. The two doors of the module doc use it. */
+  const mergeOrConflict = useCallback(async (diskMtime: number): Promise<void> => {
+    if (engine.current.merge === undefined) return setConflictMtime(diskMtime)
+    if (merging.current) {
+      mergeAgain.current = diskMtime
+      return
+    }
+    merging.current = true
+    try {
+      for (let mtime: number | null = diskMtime; mtime !== null; mtime = mergeAgain.current) {
+        mergeAgain.current = null
+        const a = autosave.current
+        const merge = engine.current.merge
+        if (a === null || retired.current || merge === undefined) return
+        const answer = await merge(a).catch(() => 'conflict' as const)
+        setConflictMtime(answer === 'conflict' ? mtime : null)
+      }
+    } finally {
+      merging.current = false
+    }
+  }, [])
+
   const start = useCallback(
     (content: number, mtime: number) => {
-      autosave.current = new Autosave<number>({ content, mtime, delayMs: 500, save, onStatus: (status) => chips.set({ status }), onConflict: setConflictMtime })
+      autosave.current = new Autosave<number>({ content, mtime, delayMs: 500, save, onStatus: (status) => chips.set({ status }), onConflict: (m) => void mergeOrConflict(m) })
     },
-    [chips, save],
+    [chips, save, mergeOrConflict],
   )
 
   /** Disk truth into the engine, then a fresh baseline: the clean editor's answer to a change. */
@@ -166,11 +202,11 @@ export function useDocumentHost(options: DocumentHostOptions) {
         if (a === null || retired.current) return
         void a.settled().then(() => {
           if (ev.mtime === a.mtime) return // the echo of our own write
-          if (a.dirty) setConflictMtime(ev.mtime)
+          if (a.dirty) void mergeOrConflict(ev.mtime)
           else void reload()
         })
       }),
-    [watch, path, reload],
+    [watch, path, reload, mergeOrConflict],
   )
 
   const keepMine = useCallback(() => {

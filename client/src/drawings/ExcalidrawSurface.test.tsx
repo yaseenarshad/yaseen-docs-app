@@ -18,6 +18,7 @@ vi.mock('./engine', () => {
   const mod = {
     Excalidraw,
     restoreElements: (elements: unknown) => elements,
+    CaptureUpdateAction: { IMMEDIATELY: 'IMMEDIATELY', NEVER: 'NEVER', EVENTUALLY: 'EVENTUALLY' },
     Fonts: { loadElementsFonts: async () => [] },
     restoreAppState: () => ({}),
     getSceneVersion: () => 0,
@@ -257,13 +258,32 @@ describe('a reload from disk drops the images nothing shows (YAZ-3737 D14)', () 
       root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onApi={(api) => (handle = api as never)} />)
     })
     const order: string[] = []
-    const raw = { getAppState: () => ({}), updateFrameRendering: () => undefined, updateScene: vi.fn(() => void order.push('scene')), addFiles: vi.fn(() => void order.push('files')), pruneFiles: vi.fn(() => void order.push('prune')) }
+    const raw = { getAppState: () => ({}), getFiles: () => ({ held: {} }), updateFrameRendering: () => undefined, updateScene: vi.fn(() => void order.push('scene')), addFiles: vi.fn(() => void order.push('files')), pruneFiles: vi.fn(() => void order.push('prune')) }
     act(() => (last().onExcalidrawAPI as (api: unknown) => void)(raw))
     const file = { id: 'img', mimeType: 'image/png', dataURL: 'data:image/png;base64,AA==', created: 1 }
-    handle!.replaceScene({ elements: [], appState: {}, files: { img: file } })
+    // YAZ-4279 item 5: a picture the engine holds is not handed again (an id is its bytes').
+    handle!.replaceScene({ elements: [], appState: {}, files: { img: file, held: { ...file, id: 'held' } } })
     expect(raw.addFiles).toHaveBeenCalledExactlyOnceWith([file])
     expect(raw.pruneFiles).toHaveBeenCalledOnce()
     expect(order).toEqual(['scene', 'files', 'prune'])
+  })
+
+  it('YAZ-4279: the file\'s scene never joins ⌘Z: a reload and a merge both go in with `captureUpdate: NEVER`', async () => {
+    let handle: { replaceScene(scene: unknown): number; mergeScene(base: unknown, disk: unknown): unknown } | null = null
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onApi={(api) => (handle = api as never)} />)
+    })
+    const box = { id: 'b', type: 'rectangle', x: 0, version: 1 }
+    const raw = { getAppState: () => ({}), getFiles: () => ({}), getSceneElementsIncludingDeleted: () => [box], updateFrameRendering: () => undefined, updateScene: vi.fn(), addFiles: vi.fn(), pruneFiles: vi.fn() }
+    act(() => (last().onExcalidrawAPI as (api: unknown) => void)(raw))
+    handle!.replaceScene({ elements: [box], appState: {}, files: {} })
+    expect(raw.updateScene).toHaveBeenLastCalledWith(expect.objectContaining({ captureUpdate: 'NEVER' }))
+    const merged = handle!.mergeScene({ elements: [box], appState: {} }, { elements: [{ ...box, strokeColor: 'red' }], appState: {}, files: {} })
+    expect(merged).toMatchObject({ changed: ['b'] })
+    expect(raw.updateScene).toHaveBeenLastCalledWith(expect.objectContaining({ captureUpdate: 'NEVER', elements: [expect.objectContaining({ id: 'b', strokeColor: 'red', version: 2 })] }))
   })
 })
 
