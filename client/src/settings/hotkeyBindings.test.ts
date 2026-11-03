@@ -91,6 +91,8 @@ describe('HOTKEY_COMMANDS (YAZ-3397 D2)', () => {
       ['prevTab', '⌃⇧Tab'],
       ['back', '⌥⌘←'],
       ['forward', '⌥⌘→'],
+      ['backNewTab', ''],
+      ['forwardNewTab', ''],
       ['keySheet', ''],
     ])
     expect(HOTKEY_COMMANDS.filter((c) => c.macStandard === true).map((c) => c.id)).toEqual(['newTab', 'newWindow', 'newItem', 'closeTab', 'switchVault', 'settings'])
