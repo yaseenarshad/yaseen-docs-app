@@ -83,19 +83,25 @@ describe("image insertion", () => {
   const setup = () =>
     setupImageTest([DEER_IMAGE_DIMENSIONS, SMILEY_IMAGE_DIMENSIONS]);
 
+  // YAZ-4277: the images load through several async steps (the file, its id,
+  // the <img>); on a loaded machine that took longer than waitFor's default
+  // 1 s, and the test saw them still "pending". The test's own limit is 5 s.
   const assert = async () => {
-    await waitFor(() => {
-      expect(h.elements).toEqual([
-        expect.objectContaining({
-          ...INITIALIZED_IMAGE_PROPS,
-          ...DEER_IMAGE_DIMENSIONS,
-        }),
-        expect.objectContaining({
-          ...INITIALIZED_IMAGE_PROPS,
-          ...SMILEY_IMAGE_DIMENSIONS,
-        }),
-      ]);
-    });
+    await waitFor(
+      () => {
+        expect(h.elements).toEqual([
+          expect.objectContaining({
+            ...INITIALIZED_IMAGE_PROPS,
+            ...DEER_IMAGE_DIMENSIONS,
+          }),
+          expect.objectContaining({
+            ...INITIALIZED_IMAGE_PROPS,
+            ...SMILEY_IMAGE_DIMENSIONS,
+          }),
+        ]);
+      },
+      { timeout: 4000 },
+    );
     // Not placed on top of each other
     const dimensionsSet = new Set(h.elements.map((el) => `${el.x}-${el.y}`));
     expect(dimensionsSet.size).toEqual(h.elements.length);
