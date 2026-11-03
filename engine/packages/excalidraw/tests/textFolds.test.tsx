@@ -18,7 +18,7 @@ import { exportToSvg } from "../scene/export";
 
 import { API } from "./helpers/api";
 import { Keyboard, Pointer } from "./helpers/ui";
-import { act, render, unmountComponent } from "./test-utils";
+import { act, render, unmountComponent, waitFor } from "./test-utils";
 
 import type { LocalPoint } from "@excalidraw/math";
 import type {
@@ -157,6 +157,44 @@ describe("text folds on the board (YAZ-4277 D3, D6)", () => {
     const [restored] = restoreElements(saved, null) as ExcalidrawTextElement[];
     expect(restored.foldedLines).toEqual([1]);
     expect(restored.height).toBe(125);
+  });
+
+  it("restore sets the height again when an outside edit changed the lines inside a fold", () => {
+    // an agent added two lines under the folded item and wrote the open height
+    const edited = MOAT.replace("    ○ ", "    ○ a\n    ○ b\n        ▪ c");
+    const text = {
+      ...createMoat(),
+      foldedLines: [1],
+      height: 200,
+      originalText: edited,
+      text: edited,
+    };
+    const [restored] = restoreElements([text], null) as ExcalidrawTextElement[];
+    expect(restored.foldedLines).toEqual([1]);
+    // the four lines outside the fold and the folded item: 5 × 25
+    expect(restored.height).toBe(125);
+    // a box with no fold is left as it was saved
+    const [plain] = restoreElements(
+      [{ ...text, foldedLines: undefined, height: 200 }],
+      null,
+    ) as ExcalidrawTextElement[];
+    expect(plain.height).toBe(200);
+  });
+
+  it("a folded fixed-width box with a wrong saved height is measured again once the fonts load", async () => {
+    const fixed = {
+      ...createMoat(),
+      autoResize: false,
+      width: 600,
+      foldedLines: [1],
+      height: 400,
+    };
+    await render(
+      <Excalidraw initialData={{ elements: [fixed] }} />,
+    );
+    await waitFor(() => expect(getText().height).toBe(125));
+    // no undo step
+    expect(h.history.isUndoStackEmpty).toBe(true);
   });
 
   it("restore drops a stale fold, and the box measures all its lines again", () => {

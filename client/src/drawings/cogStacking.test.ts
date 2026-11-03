@@ -66,3 +66,20 @@ describe('YAZ-4071 7P: in a narrow pane the toolbar gets smaller, and the page c
     expect(drawingCss).not.toMatch(/\.App-toolbar\s*\{[^}]*overflow/)
   })
 })
+
+/**
+ * YAZ-4277 (round 2): with a board's Add panel open, Settings opened over it showed the panel on top. The panel is the
+ * engine's sidebar, `z-index: var(--zIndex-ui-library)` (120), and no box between it and the page made a stacking
+ * context, so it competed with the Settings overlay (70) and won. The surface now holds every engine layer.
+ */
+describe('YAZ-4277: a board never paints over the app\'s overlays', () => {
+  const settingsCss = readFileSync(join(__dirname, '../settings/settings.css'), 'utf8')
+
+  it('the engine panel is above the Settings overlay by number, so the surface must be its own stacking context', () => {
+    const panel = /\.excalidraw \.sidebar\s*\{[^}]*?z-index:\s*([^;}]+)/.exec(engineCss)?.[1]
+    const overlay = Number(/\.settings-overlay[^{]*\{[^}]*?z-index:\s*(\d+)/.exec(settingsCss)?.[1])
+    expect(resolve(panel!)).toBeGreaterThan(overlay)
+    const surface = [...drawingCss.matchAll(/([^{}]+)\{([^}]*)\}/g)].find(([, list]) => list.trim() === '.drawing-surface')?.[2]
+    expect(surface).toMatch(/isolation:\s*isolate/)
+  })
+})
