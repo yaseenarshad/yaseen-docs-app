@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CANVAS_PREFS, LASER_COLORS, LASER_SIZES, LASER_TRAIL_MODES, type CanvasPrefs } from '@shared/types'
-import { appStateToPrefs, CANVAS_PREF_KEYS, changedPrefKeys, isCanvasPrefs, prefsEqual, prefsToAppState, sanitizeCanvasPrefs, type EngineAppStateSlice } from '@shared/canvasPrefs'
+import { appStateToPrefs, CANVAS_PREF_KEYS, changedPrefKeys, foldArrowsOf, isCanvasPrefs, prefsEqual, prefsToAppState, sanitizeCanvasPrefs, type EngineAppStateSlice } from '@shared/canvasPrefs'
 
 const prefs = (over: Partial<CanvasPrefs> = {}): CanvasPrefs => ({ ...DEFAULT_CANVAS_PREFS, ...over })
 
@@ -28,12 +28,18 @@ describe('DEFAULT_CANVAS_PREFS', () => {
       laserTrailMode: 'fade',
       laserColor: '#ff0000',
       laserSize: 'S',
+      // YAZ-4277 D5, D7: the fold arrows of text boxes.
+      foldArrowsOpen: 'hover',
+      foldArrowSize: 100,
+      foldArrowThickness: 'thick',
+      foldArrowMinSize: 14,
     })
   })
 
-  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds and the new text size and wrap margin (YAZ-4247), and no more', () => {
-    expect(CANVAS_PREF_KEYS).toHaveLength(19)
-    expect(CANVAS_PREF_KEYS.slice(-3)).toEqual(['laserTrailMode', 'laserColor', 'laserSize'])
+  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds, the new text size and wrap margin (YAZ-4247) and the four fold arrow keys (YAZ-4277), and no more', () => {
+    expect(CANVAS_PREF_KEYS).toHaveLength(23)
+    expect(CANVAS_PREF_KEYS.slice(-7, -4)).toEqual(['laserTrailMode', 'laserColor', 'laserSize'])
+    expect(CANVAS_PREF_KEYS.slice(-4)).toEqual(['foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'])
     // The round-4 amendment removed the properties-toolbar pref: the toolbar mode is a constant.
     expect(CANVAS_PREF_KEYS).not.toContain('propertiesToolbar')
   })
@@ -186,6 +192,11 @@ describe('appStateToPrefs', () => {
       laserTrailMode: 'sticky',
       laserColor: '#2979ff',
       laserSize: 'L',
+      // Not appState (YAZ-4277): the stored ones.
+      foldArrowsOpen: 'hover',
+      foldArrowSize: 100,
+      foldArrowThickness: 'thick',
+      foldArrowMinSize: 14,
     })
   })
 
@@ -228,5 +239,26 @@ describe('prefsEqual / changedPrefKeys (the anti-ping-pong rule)', () => {
   it('names only what moved, in key order', () => {
     expect(changedPrefKeys(prefs(), prefs())).toEqual([])
     expect(changedPrefKeys(prefs(), prefs({ defaultTextAlign: 'left', gridModeEnabled: true }))).toEqual(['gridModeEnabled', 'defaultTextAlign'])
+  })
+})
+
+describe('foldArrowsOf (YAZ-4277 D5, D7)', () => {
+  it('the board\'s own mode wins over the app\'s; the size rows are the app\'s', () => {
+    const app = prefs({ foldArrowsOpen: 'hover', foldArrowSize: 150, foldArrowThickness: 'thin', foldArrowMinSize: 20 })
+    expect(foldArrowsOf(app, undefined)).toEqual({ openArrows: 'hover', size: 150, thickness: 'thin', minScreenSize: 20 })
+    expect(foldArrowsOf(app, 'always')).toEqual({ openArrows: 'always', size: 150, thickness: 'thin', minScreenSize: 20 })
+    expect(foldArrowsOf(prefs({ foldArrowsOpen: 'always' }), 'hover').openArrows).toBe('hover')
+  })
+
+  it('each row saves and reloads; a bad value falls back to its default alone', () => {
+    const saved = prefs({ foldArrowsOpen: 'always', foldArrowSize: 200, foldArrowThickness: 'normal', foldArrowMinSize: 30 })
+    expect(sanitizeCanvasPrefs(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+    expect(isCanvasPrefs(saved)).toBe(true)
+    const junk = { foldArrowsOpen: ['never', 1], foldArrowSize: [40, 310, 99.5, '100'], foldArrowThickness: ['bold', null], foldArrowMinSize: [5, 49, 14.5] }
+    for (const [field, values] of Object.entries(junk)) {
+      for (const value of values) {
+        expect(sanitizeCanvasPrefs({ ...saved, [field]: value }), `${field}: ${String(value)}`).toEqual({ ...saved, [field]: DEFAULT_CANVAS_PREFS[field as keyof CanvasPrefs] })
+      }
+    }
   })
 })

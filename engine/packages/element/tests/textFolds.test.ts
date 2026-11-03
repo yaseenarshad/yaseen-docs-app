@@ -7,6 +7,10 @@ import {
   normalizeFoldedLines,
 } from "../src/textFolds";
 import { getTextElementStyledLayout } from "../src/textLineUnderlines";
+import {
+  DEFAULT_FOLD_ARROW_PREFS,
+  getFoldArrowSize,
+} from "../src/textFoldArrows";
 
 import type { ExcalidrawTextElement } from "../src/types";
 
@@ -98,5 +102,23 @@ describe("text folds: the switch point (YAZ-4277 D3)", () => {
     expect(folded.text).toBe(open.text);
     // the offsets still point into the whole text
     expect(folded.lines[2].start).toBe(MOAT.indexOf("• 2)"));
+  });
+});
+
+describe("fold arrow size (YAZ-4277 D7)", () => {
+  const text = { fontSize: 29 };
+  const prefs = { ...DEFAULT_FOLD_ARROW_PREFS, size: 150, minScreenSize: 14 };
+
+  it("on screen: max(size × text size × zoom, smallest), in scene units", () => {
+    // 29 × 150% = 43.5; at zoom 1 that is 43.5 px on screen
+    expect(getFoldArrowSize(text, prefs, 1)).toBe(43.5);
+    expect(getFoldArrowSize(text, prefs, 4) * 4).toBe(174);
+    // at 25%, 43.5 × 0.25 = 10.9 px < 14 px: it stays 14 px on screen
+    expect(getFoldArrowSize(text, prefs, 0.25) * 0.25).toBe(14);
+  });
+
+  it("an export uses the size row alone", () => {
+    expect(getFoldArrowSize(text, prefs)).toBe(43.5);
+    expect(getFoldArrowSize(text, { ...prefs, minScreenSize: 48 })).toBe(43.5);
   });
 });

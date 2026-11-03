@@ -19,7 +19,7 @@
  * toolbar in the engine is the one place they are changed.
  */
 import type { ReactNode } from 'react'
-import { DEFAULT_CANVAS_PREFS, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, type CanvasPrefs, type Roughness, type SelectOn, type SettingsState, type TextAlign } from '@shared/types'
+import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, type CanvasPrefs, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type TextAlign } from '@shared/types'
 import { Segmented, Select, Stepper } from './controls'
 import { ON_OFF_OPTIONS, type Option } from './options'
 import type { SettingDef, SettingsSection } from './registry'
@@ -39,6 +39,17 @@ const TEXT_ALIGN_OPTIONS: readonly Option<TextAlign>[] = [
   { value: 'left', label: 'Left' },
   { value: 'center', label: 'Center' },
   { value: 'right', label: 'Right' },
+]
+
+/** YAZ-4277 D5, D7: the fold arrows of text boxes. */
+const FOLD_ARROW_MODE_OPTIONS: readonly Option<FoldArrowMode>[] = [
+  { value: 'hover', label: 'On hover' },
+  { value: 'always', label: 'Always' },
+]
+const FOLD_ARROW_THICKNESS_OPTIONS: readonly Option<FoldArrowThickness>[] = [
+  { value: 'thin', label: 'Thin' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'thick', label: 'Thick' },
 ]
 
 type BoolKey = { [K in keyof CanvasPrefs]: CanvasPrefs[K] extends boolean ? K : never }[keyof CanvasPrefs]
@@ -77,11 +88,11 @@ function WidthField({ value, label, onCommit }: { value: number; label: string; 
   )
 }
 
-/** A px setting of new text (YAZ-4247): the stepper, and Reset when it is not the default. */
-function PxStepper({ name, value, fallback, min, max, step, onSet }: { name: string; value: number; fallback: number; min: number; max: number; step: number; onSet: (next: number) => void }) {
+/** A px setting of new text (YAZ-4247): the stepper, and Reset when it is not the default. A % one too (YAZ-4277 D7). */
+function PxStepper({ name, value, fallback, min, max, step, unit, onSet }: { name: string; value: number; fallback: number; min: number; max: number; step: number; unit?: 'px' | '%'; onSet: (next: number) => void }) {
   return (
     <>
-      <Stepper name={name} size={value} min={min} max={max} onStep={(delta) => onSet(Math.min(max, Math.max(min, value + delta * step)))} />
+      <Stepper name={name} size={value} min={min} max={max} unit={unit} onStep={(delta) => onSet(Math.min(max, Math.max(min, value + delta * step)))} />
       {value !== fallback && (
         <button type="button" className="settings__option" onClick={() => onSet(fallback)}>
           Reset
@@ -182,6 +193,50 @@ export const CANVAS_SECTION: SettingsSection = {
           keywords: ['text align', 'center'],
           render: ({ settings, onChange }) => (
             <Segmented options={TEXT_ALIGN_OPTIONS} value={settings.canvas.defaultTextAlign} onChange={(defaultTextAlign) => onChange(write(settings, { defaultTextAlign }))} ariaLabel="Default text alignment" />
+          ),
+        },
+      ],
+    },
+    {
+      // YAZ-4277 D5, D7: the arrows that fold the bullets of a text box. A folded bullet always shows ▸.
+      title: 'Fold arrows',
+      hint: 'The arrows left of a bullet in a text box. A folded bullet always shows its arrow.',
+      items: [
+        {
+          id: 'canvas.foldArrowsOpen',
+          label: 'Fold arrows on open bullets',
+          hint: "When an open bullet shows its arrow. A board's cog can choose its own.",
+          keywords: ['fold', 'chevron', 'arrow', 'bullet', 'collapse', 'text box'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={FOLD_ARROW_MODE_OPTIONS} value={settings.canvas.foldArrowsOpen ?? DEFAULT_CANVAS_PREFS.foldArrowsOpen} onChange={(foldArrowsOpen) => onChange(write(settings, { foldArrowsOpen }))} ariaLabel="Fold arrows on open bullets" />
+          ),
+        },
+        {
+          id: 'canvas.foldArrowSize',
+          label: 'Fold arrow size',
+          hint: 'In % of the text size.',
+          keywords: ['fold', 'chevron', 'arrow', 'size', 'bullet'],
+          render: ({ settings, onChange }) => (
+            <PxStepper name="Fold arrow size" value={settings.canvas.foldArrowSize ?? DEFAULT_CANVAS_PREFS.foldArrowSize} fallback={DEFAULT_CANVAS_PREFS.foldArrowSize}
+              min={FOLD_ARROW_SIZE_MIN} max={FOLD_ARROW_SIZE_MAX} step={10} unit="%" onSet={(foldArrowSize) => onChange(write(settings, { foldArrowSize }))} />
+          ),
+        },
+        {
+          id: 'canvas.foldArrowThickness',
+          label: 'Fold arrow thickness',
+          keywords: ['fold', 'chevron', 'arrow', 'thick', 'thin', 'line', 'bullet'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={FOLD_ARROW_THICKNESS_OPTIONS} value={settings.canvas.foldArrowThickness ?? DEFAULT_CANVAS_PREFS.foldArrowThickness} onChange={(foldArrowThickness) => onChange(write(settings, { foldArrowThickness }))} ariaLabel="Fold arrow thickness" />
+          ),
+        },
+        {
+          id: 'canvas.foldArrowMinSize',
+          label: 'Smallest fold arrow on screen',
+          hint: 'Zoomed out, an arrow stops shrinking at this size, so you see folded bullets from afar. Exports use the size alone.',
+          keywords: ['fold', 'chevron', 'arrow', 'zoom', 'minimum', 'smallest', 'bullet'],
+          render: ({ settings, onChange }) => (
+            <PxStepper name="Smallest fold arrow on screen" value={settings.canvas.foldArrowMinSize ?? DEFAULT_CANVAS_PREFS.foldArrowMinSize} fallback={DEFAULT_CANVAS_PREFS.foldArrowMinSize}
+              min={FOLD_ARROW_MIN_SIZE_MIN} max={FOLD_ARROW_MIN_SIZE_MAX} step={1} onSet={(foldArrowMinSize) => onChange(write(settings, { foldArrowMinSize }))} />
           ),
         },
       ],
