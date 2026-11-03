@@ -10,21 +10,24 @@
  *
  * The shortcuts (D2, D3) are the vault's, `.yaseendocs/new-places.json`: the vault the "Goes to" folder is in, so a
  * pick in another vault of the window shows that vault's. An empty one reads "+ Add place" and opens the picker to
- * save one; a right-click on one offers "Change place" and "Remove". Choose… (D4) opens the picker with the last places
- * used on this Mac at the top (`recentPlaces`).
+ * save one; a right-click on one offers "Change place" and "Remove". A shortcut to a folder that is no longer in its
+ * vault shows muted; its use (a click, its key, ← →) says "This folder is gone. Change place or remove it." and keeps
+ * the folder on show (the checker's round 1). Choose… (D4) opens the picker with the last places used on this Mac at
+ * the top (`recentPlaces`).
  *
  * "Make" is App's: it shows Files and opens the right-click name field in the folder (D4 of YAZ-3556), and the item
  * opens after its name. The box only says which kind and where. The sheet takes the keyboard while it shows, and gives
  * it back to where it was when it closes with no item.
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { NEW_PLACE_SLOTS } from '@shared/newPlaces'
 import { api } from '../api'
+import { findDirNode } from '../lib/treeState'
 import { ContextMenu } from './ContextMenu'
 import type { EntryKind } from './createEntry'
 import { FileIcon } from './FileIcon'
 import { placeRel } from './goToPlace'
-import { PlacePicker, type PlaceVault } from './PlacePicker'
+import { PlacePicker, usePlaceTrees, type PlaceVault } from './PlacePicker'
 
 export type NewItemKind = EntryKind
 
@@ -103,6 +106,8 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
   const [slotMenu, setSlotMenu] = useState<{ slot: number; x: number; y: number } | null>(null)
   /** "Already in shortcut N" (YAZ-4252, the demo): a pick that another shortcut holds is not saved. */
   const [already, setAlready] = useState<number | null>(null)
+  /** The shortcut last used whose folder is gone: the box says so. */
+  const [goneSlot, setGoneSlot] = useState<number | null>(null)
   const sheet = useRef<HTMLDivElement>(null)
   /** An item is on its way: the sidebar's name field takes the keyboard, not the page. */
   const made = useRef(false)
@@ -112,6 +117,13 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
   const places = useNewPlaces(vault.root)
   /** The shortcut that is the folder on show, or -1. */
   const chosenSlot = places.indexOf(dir)
+  const trees = usePlaceTrees(useMemo(() => vaults.map((v) => v.root), [vaults]))
+  /** A shortcut's folder that is no longer in its vault's tree. Not known yet (no tree): not gone. */
+  const isGone = (place: string | null | undefined): boolean => {
+    const owner = place == null ? undefined : vaultOf(place)
+    const tree = owner === undefined ? undefined : trees.get(owner.root)
+    return tree !== undefined && place !== owner!.root && findDirNode(tree, place!) === null
+  }
 
   // The keyboard comes to the sheet, and goes back to where it was when the box closes with no item.
   useEffect(() => {
@@ -148,11 +160,12 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
     next[slot] = path
     void api.newPlaces?.set(root, next).catch(() => undefined)
   }
-  /** A shortcut's click or key: its folder for this item; an empty one opens the picker to set it. */
+  /** A shortcut's click, key or arrow: its folder for this item; an empty one opens the picker to set it; a gone one says so. */
   const takeSlot = (slot: number) => {
     const place = places[slot]
+    setGoneSlot(isGone(place) ? slot : null)
     if (place === null || place === undefined) setPicking({ for: 'slot', slot })
-    else setDir(place)
+    else if (!isGone(place)) setDir(place)
   }
   const onPick = (path: string, root: string) => {
     setAlready(null)
@@ -198,7 +211,7 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
       const filled = places.flatMap((p, i) => (p === null ? [] : [i]))
       const step = (by: -1 | 1) => {
         const next = filled[filled.indexOf(chosenSlot) + by] ?? (chosenSlot < 0 ? filled[by < 0 ? filled.length - 1 : 0] : undefined)
-        if (next !== undefined) setDir(places[next]!)
+        if (next !== undefined) takeSlot(next)
       }
       if (digit !== null) {
         if (digit < NEW_PLACE_SLOTS) takeSlot(digit)
@@ -281,7 +294,7 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
                       role="radio"
                       aria-checked={i === chosenSlot}
                       tabIndex={i === chosenSlot ? 0 : -1}
-                      className={`confirm__btn new-item__slot${place === null ? ' new-item__slot--empty' : ''}${i === chosenSlot ? ' new-item__slot--active' : ''}`}
+                      className={`confirm__btn new-item__slot${place === null ? ' new-item__slot--empty' : ''}${isGone(place) ? ' new-item__slot--missing' : ''}${i === chosenSlot ? ' new-item__slot--active' : ''}`}
                       title={parts?.full ?? 'Save a folder here'}
                       data-key={i + 1}
                       onClick={() => {
@@ -318,6 +331,7 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
             </div>
           </div>
           {already !== null && <p className="confirm__status new-item__already">Already in shortcut {already + 1}</p>}
+          {goneSlot !== null && isGone(places[goneSlot]) && <p className="confirm__status new-item__gone">This folder is gone. Change place or remove it.</p>}
           {missing !== null && dir === startDir && <p className="confirm__status">“{missing}” is not in this vault, so the item goes to the vault folder.</p>}
           <div className="confirm__actions">
             <button type="button" className="confirm__btn" onClick={onClose}>

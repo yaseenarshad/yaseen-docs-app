@@ -24,7 +24,9 @@
  * keeps its spot in the visible editor area and its size for every note, until a double click on its head (`cardView`).
  * Its height only grows (round 3): a shorter note keeps the height; only a resize makes it smaller.
  * A placed card stays inside the visible editor area: clamped on every placement. A card under its cell is not clamped
- * (change AQ of the demo): it scrolls with the page and goes out of view with its cell.
+ * from top to bottom (change AQ of the demo): it scrolls with the page and goes out of view with its cell. From left
+ * to right every card stays inside the area: under its cell it is right-aligned to the cell when that fits, else
+ * left-aligned to it, then clamped (YAZ-4261), so a narrow first column never puts it under the sidebar.
  *
  * The state is meta-only (`cellNoteCardKey`, cellNotes.ts): a typed key only maps it. The card's place is set as two
  * custom properties on the editor's `.milkdown` box (outside the editable DOM, so ProseMirror's DOM observer never
@@ -261,6 +263,8 @@ const cardHead = (title: string, index: number, total: number, all: boolean) => 
   const name = document.createElement('span')
   name.className = 'cell-note-card__title'
   name.textContent = title
+  // The full title on hover when the head cuts it (the checker's round 1).
+  name.title = title
   // The pin (round 2 of the demo): pinned, a click outside the card does not close it. One for the editor.
   const pin = headButton('cell-note-card__pin', '', 'Pin cell note', () => showPin(pin, controls.get(view)?.togglePin() ?? false))
   pin.innerHTML = PIN_ICON
@@ -669,10 +673,16 @@ function cardView(view: EditorView) {
     // Layout px under a CSS zoom: the parent's box over its layout width.
     const scale = parent.offsetWidth > 0 ? base.width / parent.offsetWidth : 1
     area ??= visibleBox(scroller)
-    return { note, base, scale, area, spotLeft: (box.right - base.left) / scale - note.offsetWidth, spotTop: (box.bottom - base.top) / scale + 4 }
+    // Right-aligned to the cell when that fits in the visible area, else left-aligned to it (YAZ-4261).
+    const right = (box.right - base.left) / scale - note.offsetWidth
+    const spotLeft = right >= (area.left - base.left) / scale ? right : (box.left - base.left) / scale
+    return { note, base, scale, area, spotLeft, spotTop: (box.bottom - base.top) / scale + 4 }
   }
 
-  /** Places the card: under its cell (not clamped), or at the placed spot (clamped to the visible editor area). The grips follow it. */
+  /**
+   * Places the card: under its cell, or at the placed spot. Both stay inside the visible editor area from left to
+   * right (`inArea`, YAZ-4261); only a placed card is held inside it from top to bottom. The grips follow it.
+   */
   const place = (): { left: number; top: number } | null => {
     frameId = 0
     const m = measure()
@@ -685,19 +695,21 @@ function cardView(view: EditorView) {
     const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max))
     const minTop = (box.top - base.top) / scale
     const maxBottom = (box.bottom - base.top) / scale
+    // The left edge wins when the card is wider than the area.
+    const inArea = (left: number) => Math.max((box.left - base.left) / scale, Math.min(left, (box.right - base.left) / scale - note.offsetWidth))
     let top: number
     let left: number
     if (memory.placed !== null) {
       // A placed card keeps its top; it grows down to the area's bottom, then scrolls inside.
       top = clamp((box.top + memory.placed.y - base.top) / scale, minTop, Math.max(minTop, maxBottom - MIN_HEIGHT))
-      left = clamp((box.left + memory.placed.x - base.left) / scale, (box.left - base.left) / scale, (box.right - base.left) / scale - note.offsetWidth)
+      left = inArea((box.left + memory.placed.x - base.left) / scale)
       setCap(maxBottom - top)
     } else {
       // Under its cell (change AQ of the demo): its spot in the page, so it scrolls with the page and leaves the view
-      // with its cell. No clamp. As tall as the visible area at most.
+      // with its cell. No clamp from top to bottom. As tall as the visible area at most.
       setCap(maxBottom - minTop)
       top = m.spotTop
-      left = m.spotLeft
+      left = inArea(m.spotLeft)
     }
     host.style.setProperty('--cell-note-card-left', `${left}px`)
     host.style.setProperty('--cell-note-card-top', `${top}px`)

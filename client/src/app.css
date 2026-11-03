@@ -2505,6 +2505,15 @@ body.drag-held iframe {
   background: var(--accent-soft);
 }
 
+/* A third answer (YAZ-3818 D17's "Cells only"): on the buttons' row, at its left end; no button breaks its words. */
+.confirm__btn--other {
+  margin-right: auto;
+}
+
+.confirm__actions > .confirm__btn {
+  white-space: nowrap;
+}
+
 .confirm__btn--danger {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
@@ -4389,6 +4398,16 @@ body.drag-held iframe {
 .new-item__slot--empty {
   color: var(--fg-muted);
   border-style: dashed;
+}
+
+/* A shortcut to a folder that is gone (the checker's round 1): muted and struck through; its use says so. */
+.new-item__slot--missing {
+  color: var(--fg-muted);
+  opacity: 0.7;
+}
+
+.new-item__slot--missing .new-item__slot-name {
+  text-decoration: line-through;
 }
 
 .new-item__slot--active {

@@ -6,7 +6,8 @@
  * keys are typed in turn with the plain one's, and their ratios to it print. "No change in typing speed" is held by
  * counts, not by this ratio (YAZ-3796): `tableSpeed.test.ts` fails when a key reads layout or does work on the
  * freeze's or the styles' decorations. The measured numbers print, with a plain note of the same text for scale.
- * Last, the same table with a list in one body cell in five, typed in a cell bullet (YAZ-3818 D3).
+ * Last, the same table with a list in one body cell in five, typed in a cell bullet (YAZ-3818 D3); and with 500 cell
+ * notes too, typed in a cell bullet of a cell with a mark (YAZ-4263).
  */
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -28,6 +29,15 @@ const FROZEN = `${BIG}\n<!-- table: freeze 1 row 2 cols -->\n`
 const CELL_LIST = '<ul><li>one</li><li>two<ul><li>kid</li></ul></li><li>three</li></ul>'
 /** The same table with a list in one body cell in five. */
 const LISTS = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...body.map((cells, r) => `| ${cells.map((cell, c) => ((r * COLS + c) % 5 === 0 ? cell + CELL_LIST : cell)).join(' | ')} |`)].join('\n') + '\n'
+/**
+ * LISTS with a cell note on one cell in ten (each one a list cell): 500 marks, and 500 notes of 3 bullets under the
+ * table, as the checker's probe (YAZ-4263).
+ */
+const NOTED =
+  [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...body.map((cells, r) => `| ${cells.map((cell, c) => ((r * COLS + c) % 10 === 0 ? `${cell}[^cell-${(r * COLS + c) / 10 + 1}]${CELL_LIST}` : (r * COLS + c) % 5 === 0 ? cell + CELL_LIST : cell)).join(' | ')} |`)].join('\n') +
+  '\n\n' +
+  Array.from({ length: (ROWS * COLS) / 10 }, (_, n) => `[^cell-${n + 1}]: * one\n    * two\n    * three`).join('\n\n') +
+  '\n'
 /** The same words as paragraphs: what typing costs in a note with no table. */
 const PLAIN = body.map((cells) => cells.join(' ')).join('\n\n') + '\n'
 const TSV = Array.from({ length: 50 }, (_, r) => Array.from({ length: 4 }, (_, c) => `p${r}-${c}`).join('\t')).join('\n')
@@ -168,5 +178,27 @@ describe('S6: a 500 × 10 table stays fast', () => {
     const [table, lists] = [median(keys.table), median(keys.lists)]
     console.log(`S6 lists: type ms/key: table ${table.toFixed(2)}, cell bullet in a table with 1,000 cell lists ${lists.toFixed(2)} (medians of 48 keys, typed in turn; ratio ${(lists / table).toFixed(2)}, jsdom)`)
     expect(lists).toBeLessThan(60)
+  }, 120_000)
+
+  // YAZ-4263: the same lists and 500 cell notes. A key in a cell bullet of a cell with a mark only maps the cell note
+  // plugins' state (D12: no placement; `tableSpeed.test.ts` counts it). The plain table takes its keys in turn. The
+  // two notes open ONCE for the three runs: jsdom keeps a closed editor in memory, and three more of this size ran
+  // the file out of memory.
+  it('perf smoke: with lists and 500 cell notes, a key in a cell with a mark stays under 60 ms', async () => {
+    const keys = { table: [] as number[], notes: [] as number[] }
+    const tables = [await mount(BIG), await mount(NOTED)]
+    let count = 0
+    tables[1]!.view.state.doc.forEach((node) => void (node.type.name === 'cell_note' && count++))
+    expect(count).toBe(500)
+    for (let run = 0; run < 3; run++) {
+      // Body row 250, column 1: a list and the mark of `cell-250`.
+      const [table, notes] = typeInTurn(tables.map((t) => t.view), (doc, v) => (v === 0 ? cellText(doc, 250, 3) : bulletText(doc, 250, 0)))
+      keys.table.push(...table!)
+      keys.notes.push(...notes!)
+    }
+    for (const t of tables) await t.close()
+    const [table, notes] = [median(keys.table), median(keys.notes)]
+    console.log(`S6 cell notes: type ms/key: table ${table.toFixed(2)}, cell bullet in a cell with a mark, in a table with 1,000 cell lists and 500 cell notes ${notes.toFixed(2)} (medians of 48 keys, typed in turn; ratio ${(notes / table).toFixed(2)}, jsdom)`)
+    expect(notes).toBeLessThan(60)
   }, 120_000)
 })

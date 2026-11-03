@@ -622,10 +622,11 @@
   top: var(--cell-note-card-top, 0);
   left: var(--cell-note-card-left, 0);
   box-sizing: border-box;
-  /* Rounds 2 and 3 of the demo: the width a resize set, or 340px; the height `cellNoteCard.ts` keeps (it only grows
-     with the content, and only a resize makes it smaller), at most the visible editor area below its top. Past that
-     cap, or after a resize cut the content off, it scrolls inside. */
-  width: var(--cell-note-card-width, 340px);
+  /* Rounds 2 and 3 of the demo: the width a resize set, or 360px (340px cut the title to "Note: Day …", the checker's
+     round 1); the height `cellNoteCard.ts` keeps (it only grows with the content, and only a resize makes it
+     smaller), at most the visible editor area below its top. Past that cap, or after a resize cut the content off,
+     it scrolls inside. */
+  width: var(--cell-note-card-width, 360px);
   height: var(--cell-note-card-height, auto);
   max-width: 100%;
   max-height: var(--cell-note-card-max-height, 50vh);
@@ -647,7 +648,8 @@
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 8px;
+  /* 2px between the 22px buttons, so the title has the room up to them (the checker's round 1). */
+  gap: 2px;
   /* A title bar, as a window's (round 2 of the demo): the sidebar's grey, the card's full width; the card's rounded
      corners clip it (its overflow). */
   margin: 0 -12px 8px -20px;
@@ -696,6 +698,7 @@
 .cell-note-card__title {
   flex: 1;
   min-width: 0;
+  margin: 0 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

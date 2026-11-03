@@ -13,13 +13,14 @@ import type { NormalizedZoomValue } from "../types";
 
 const { h } = window;
 
-// YAZ-4247: a new text shows at the app's screen size (16px) at every zoom, and
-// a click-started text wraps at the right edge of the visible canvas.
+// YAZ-4247: a new text shows at the app's screen size (14px by default,
+// YAZ-4265) at every zoom, and a click-started text wraps at the right edge of
+// the visible canvas.
 describe("new text size on screen and wrap", () => {
   it.each([
-    [0.5, 32],
-    [1, 16],
-    [2, 8],
+    [0.5, 28],
+    [1, 14],
+    [2, 7],
   ])("at zoom %s a new text is %spx", async (zoom, fontSize) => {
     await render(
       <Excalidraw

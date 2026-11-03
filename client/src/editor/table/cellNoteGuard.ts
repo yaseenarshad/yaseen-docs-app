@@ -9,9 +9,9 @@
  * marks before and after. When no cell note would go it dispatches at once. Else the sheet asks ("Delete this row
  * and its 2 cell notes?", Delete in red, Cancel); Delete builds the action again and removes each gone cell note in
  * the same transaction, so one ⌘Z brings back the cells and the cell notes. The paths: the table menu's Delete row,
- * Delete column and Clear cells (`tableMenu.ts`), the cell toolbar's Clear cells (`cellToolbar.ts`), Delete and
- * Backspace on selected cells and on a selection that holds a whole table (`cellNoteDeleteGuard`, before
- * `tableEditing`). Cut never asks: its cell notes go to the clipboard (`clipboardCopyOut.ts`, D13).
+ * Delete column and Clear cells (`tableMenu.ts`), the cell toolbar's Clear cells (`cellToolbar.ts`), each delete
+ * key (Delete, Backspace, ⌘Backspace, …) on selected cells and on a selection that holds a whole table
+ * (`cellNoteDeleteGuard`, before `tableEditing`). Cut never asks: its cell notes go to the clipboard (`clipboardCopyOut.ts`, D13).
  *
  * D17, DUPLICATE: `duplicateWithNotes` asks only when the copied cells hold a mark: "Copy with notes" gives each
  * copied mark a new label and clones its cell note under the table; "Cells only" leaves the copies with no marks.
@@ -20,8 +20,9 @@
 import { SchemaReady, prosePluginsCtx } from '@milkdown/kit/core'
 import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import { closeHistory } from '@milkdown/kit/prose/history'
+import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
-import { type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
+import { type Command, type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { CellSelection, deleteCellSelection, tableEditingKey } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { cellNoteLabelsIn, isCellNote, isCellNoteMark, nextCellNoteLabel, notePosOf, removeCellNote } from './cellNotes'
@@ -195,29 +196,49 @@ function tablesWithin(doc: ProseNode, from: number, to: number): Array<{ pos: nu
 }
 
 /**
- * D16's keys: Delete and Backspace on selected cells, and on a selection that holds a whole table with cell notes,
- * ask before the notes go. Before `tableEditing`, whose own Delete clears the cells.
+ * Every key that clears a selection: `tableEditing`'s four (`deleteCellSelection`) and the base keymap's Mac ones
+ * (`deleteSelection`). A key with a modifier took the marks with no sheet (YAZ-4264), so the guard binds them all.
+ */
+const DELETE_KEYS = [
+  'Backspace',
+  'Delete',
+  'Mod-Backspace',
+  'Mod-Delete',
+  'Shift-Backspace',
+  'Alt-Backspace',
+  'Alt-Delete',
+  'Ctrl-Alt-Backspace',
+  'Ctrl-h',
+  'Ctrl-d',
+  'Alt-d',
+]
+
+/** D16 on a delete key: ask when the clear would take a cell note; `false` lets the key run as before. */
+function askDelete(view: EditorView): boolean {
+  if (!view.editable) return false
+  const { selection } = view.state
+  if (selection instanceof CellSelection) {
+    const tr = clearCells(view.state)
+    if (tr === null || goneNotes(view.state.doc, tr.doc).length === 0) return false
+    let count = 0
+    selection.forEachCell(() => count++)
+    return deleteWithNotes(view, clearCells, (gone) => deleteText('cells', count, gone))
+  }
+  if (selection.empty) return false
+  const tables = tablesWithin(view.state.doc, selection.from, selection.to)
+  if (!tables.some(({ node }) => cellNoteLabelsIn(node).some((label) => notePosOf(view.state.doc, label) !== null))) return false
+  return deleteWithNotes(view, (state) => closeHistory(state.tr).deleteSelection(), (gone) => deleteText('table', 1, gone))
+}
+
+/**
+ * D16's keys: each delete key (`DELETE_KEYS`) on selected cells, and on a selection that holds a whole table with
+ * cell notes, asks before the notes go. Before `tableEditing`, whose own keys clear the cells.
  */
 function deleteKeys(): Plugin {
+  const ask: Command = (_state, _dispatch, view) => view !== undefined && askDelete(view)
   return new Plugin({
     key: new PluginKey('mdapp-cell-note-delete'),
-    props: {
-      handleKeyDown: (view, event) => {
-        if ((event.key !== 'Backspace' && event.key !== 'Delete') || event.metaKey || event.ctrlKey || event.altKey || !view.editable) return false
-        const { selection } = view.state
-        if (selection instanceof CellSelection) {
-          const tr = clearCells(view.state)
-          if (tr === null || goneNotes(view.state.doc, tr.doc).length === 0) return false
-          let count = 0
-          selection.forEachCell(() => count++)
-          return deleteWithNotes(view, clearCells, (gone) => deleteText('cells', count, gone))
-        }
-        if (selection.empty) return false
-        const tables = tablesWithin(view.state.doc, selection.from, selection.to)
-        if (!tables.some(({ node }) => cellNoteLabelsIn(node).some((label) => notePosOf(view.state.doc, label) !== null))) return false
-        return deleteWithNotes(view, (state) => closeHistory(state.tr).deleteSelection(), (gone) => deleteText('table', 1, gone))
-      },
-    },
+    props: { handleKeyDown: keydownHandler(Object.fromEntries(DELETE_KEYS.map((key) => [key, ask]))) },
   })
 }
 

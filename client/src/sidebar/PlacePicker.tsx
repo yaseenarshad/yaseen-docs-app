@@ -57,7 +57,7 @@ const byName = (a: TreeNode, b: TreeNode): number => a.name.localeCompare(b.name
 const allFiles = (tree: readonly TreeNode[]): TreeNode[] => tree.flatMap((n) => (n.type === 'dir' ? allFiles(n.children) : [n]))
 
 /** The trees of `roots`, as the sidebar's feed has them, and each new one it delivers; a root with none yet asks for it. */
-function usePlaceTrees(roots: readonly string[]): ReadonlyMap<string, readonly TreeNode[]> {
+export function usePlaceTrees(roots: readonly string[]): ReadonlyMap<string, readonly TreeNode[]> {
   const key = roots.join('\n')
   const [trees, setTrees] = useState<ReadonlyMap<string, readonly TreeNode[]>>(() => new Map(roots.flatMap((root) => {
     const latest = latestTree(root)

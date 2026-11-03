@@ -301,13 +301,14 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
         keys="sheet"
         onConfirm={done(ask.onConfirm)}
         onCancel={done(() => undefined)}
-      >
-        {ask.other !== undefined && (
-          <button type="button" className="confirm__btn confirm__btn--other" onClick={done(ask.other.run)}>
-            {ask.other.label}
-          </button>
-        )}
-      </ConfirmSheet>
+        other={
+          ask.other !== undefined && (
+            <button type="button" className="confirm__btn confirm__btn--other" onClick={done(ask.other.run)}>
+              {ask.other.label}
+            </button>
+          )
+        }
+      />
     )
   }
   if (view === null || menu === null) return null

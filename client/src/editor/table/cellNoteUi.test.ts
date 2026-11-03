@@ -18,7 +18,7 @@ import { mount, pressKey, typeText, unmountAll } from '../marks/markTestKit'
 import { noteMenuSections } from '../noteMenu'
 import { canZoomInto, getZoomedItemPos, zoomKeyAt, ZOOM_CRUMB_CLASS, ZOOM_HIDDEN_CLASS } from '../outline/zoom'
 import { cellNoteButtonPlacements } from './cellNoteButton'
-import { CELL_NOTE_CELL_OPEN_CLASS, CELL_NOTE_OPEN_CLASS, canOpenCellNote, setCellNotePinnedAtStart, setCellNoteTemplate } from './cellNoteCard'
+import { CELL_NOTE_CELL_OPEN_CLASS, CELL_NOTE_OPEN_CLASS, canOpenCellNote, openCellNote, setCellNotePinnedAtStart, setCellNoteTemplate } from './cellNoteCard'
 import { cellNotePreviewLines } from './cellNotePreview'
 import { isCellNoteHidden, openCellNoteLabel } from './cellNotes'
 import { cellPos } from './tableTestKit'
@@ -109,6 +109,8 @@ describe('the cell note card (the demo)', () => {
     expect(onZoom).not.toHaveBeenCalled()
     expect(shown(view)).toEqual(['Intro', 'table', 'note:Book the window seat.bullet abullet b', 'Outro'])
     expect(card(root)!.querySelector('.cell-note-card__title')!.textContent).toBe('Note: Plan · Monday')
+    // The full title on hover, when the head cuts it.
+    expect(card(root)!.querySelector<HTMLElement>('.cell-note-card__title')!.title).toBe('Note: Plan · Monday')
     // The caret is at the end of the note.
     expect(view.state.selection.$from.node(1).type.name).toBe('cell_note')
     expect(view.state.selection.$from.parent.textContent).toBe('bullet b')
@@ -203,6 +205,43 @@ describe('previous and next note, and the open note\'s cell (round 2 of the demo
     expect(openCellNoteLabel(view.state)).toBe('cell-2')
     click(head(root).querySelector('.cell-note-card__close')!)
     expect(root.querySelector(`.${CELL_NOTE_CELL_OPEN_CLASS}`)).toBeNull()
+  })
+})
+
+describe('the card stays in the visible editor area (YAZ-4261)', () => {
+  const FIRST = '| Day             | Plan    |\n| --------------- | ------- |\n| Monday[^cell-1] | Flights |\n\n[^cell-1]: Book the window seat.\n\nEnd\n'
+  /** The window px of a card opened on the Monday cell: the visible area 263 to 1024 (the sidebar to its left), the editor's box from 300, at `zoom`. */
+  async function openAt(cell: [number, number], zoom = 1) {
+    const { root, view } = await mount(FIRST)
+    const host = view.dom.parentElement!
+    root.style.overflowY = 'auto'
+    root.getBoundingClientRect = () => new DOMRect(263, 0, 1024 - 263, 800)
+    host.getBoundingClientRect = () => new DOMRect(300, 0, 700 * zoom, 800)
+    Object.defineProperty(host, 'offsetWidth', { value: 700 })
+    const note = view.dom.querySelector<HTMLElement>('.cell-note')!
+    Object.defineProperty(note, 'offsetParent', { value: host })
+    Object.defineProperty(note, 'offsetWidth', { value: 340 })
+    ;(view.nodeDOM(cellPos(view, 1, 0)) as HTMLElement).getBoundingClientRect = () => new DOMRect(cell[0], 30, cell[1] - cell[0], 30)
+    openCellNote(view, cellPos(view, 1, 0))
+    const left = 300 + parseFloat(host.style.getPropertyValue('--cell-note-card-left')) * zoom
+    return { left, right: left + 340 * zoom }
+  }
+
+  it('a narrow first column (110 px, and the demo\'s 280 px): the card is left-aligned to its cell, not under the sidebar', async () => {
+    expect(await openAt([300, 410])).toEqual({ left: 300, right: 640 })
+    expect(await openAt([300, 580])).toEqual({ left: 300, right: 640 })
+  })
+
+  it('a cell where it fits: right-aligned to its cell, as before', async () => {
+    expect(await openAt([600, 800])).toEqual({ left: 460, right: 800 })
+  })
+
+  it('a cell partly under the sidebar, a last column past the window\'s edge, a 150% zoom: always inside the area', async () => {
+    expect(await openAt([200, 310])).toEqual({ left: 263, right: 603 })
+    expect(await openAt([800, 1100])).toEqual({ left: 684, right: 1024 })
+    const zoomed = await openAt([300, 465], 1.5)
+    expect(zoomed.left).toBeCloseTo(300)
+    expect(zoomed.right).toBeLessThanOrEqual(1024)
   })
 })
 

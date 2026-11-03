@@ -251,6 +251,30 @@ describe('the New… box\'s folders, place shortcuts and keys (YAZ-4252)', () =>
     expect(slotNames()).toEqual(['+ Add place', 'Work', '+ Add place'])
   })
 
+  it('a shortcut to a folder that is gone: muted; its use says so, keeps the folder on show and makes nothing there (the checker\'s round 1)', async () => {
+    stored.set('/v', ['/v/Gone', '/v/Projects', null])
+    const { onMake } = render('/v/Inbox')
+    await flush()
+    expect(slots().map((b) => b.classList.contains('new-item__slot--missing'))).toEqual([true, false, false])
+    const note = () => document.querySelector('.new-item__gone')?.textContent ?? null
+    expect(note()).toBeNull()
+    // A click, then the key `1`: the note, and the place does not change.
+    act(() => slots()[0]!.click())
+    expect(note()).toBe('This folder is gone. Change place or remove it.')
+    expect(place()).toBe('Inbox')
+    press('2')
+    expect(note()).toBeNull()
+    expect(place()).toBe('Projects')
+    press('1')
+    expect(note()).toBe('This folder is gone. Change place or remove it.')
+    expect(place()).toBe('Projects')
+    // ← from Projects steps over the gone one too.
+    press('ArrowLeft')
+    expect(place()).toBe('Projects')
+    press('Enter')
+    expect(onMake).toHaveBeenCalledExactlyOnceWith('file', '/v/Projects')
+  })
+
   it('D4: Choose… offers the last places used at the top', async () => {
     const first = render()
     await flush()

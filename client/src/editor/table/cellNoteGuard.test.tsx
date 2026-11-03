@@ -11,7 +11,7 @@ import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuAction, MenuItem } from '../../sidebar/menuSections'
 import { getMarkdownForSave } from '../createCrepe'
-import { mount, pressKey, unmountAll } from '../marks/markTestKit'
+import { IS_MAC, mount, pressKey, unmountAll } from '../marks/markTestKit'
 import { NoteMenu, noteMenuSections } from '../noteMenu'
 import { CELL_NOTES_ATTR, pasteCellsOnly } from './cellNoteClipboard'
 import { cellPos } from './tableTestKit'
@@ -117,6 +117,19 @@ describe('D16: a delete that would take a cell note asks first', () => {
     press('Delete')
     expect(labels(getMarkdownForSave(crepe))).toEqual(['cell-1', 'cell-2'])
     undo(view.state, view.dispatch)
+    // ⌘Backspace and ⌘Delete (tableEditing's), ⌥Backspace and ⌃H (the Mac base keymap's) clear too: the same sheet (YAZ-4264).
+    const before = getMarkdownForSave(crepe)
+    const mod = IS_MAC ? { metaKey: true } : { ctrlKey: true }
+    const keys: KeyboardEventInit[] = [{ key: 'Backspace', ...mod }, { key: 'Delete', ...mod }]
+    if (IS_MAC) keys.push({ key: 'Backspace', altKey: true }, { key: 'h', ctrlKey: true })
+    for (const init of keys) {
+      selectCells(view, [1, 0], [1, 1])
+      act(() => void (handled = view.someProp('handleKeyDown', (h) => h(view, new KeyboardEvent('keydown', { ...init, cancelable: true }))) ?? false))
+      expect(handled).toBe(true)
+      expect(sheetText()).toBe('Clear these cells and their 2 cell notes?')
+      press('Cancel')
+      expect(getMarkdownForSave(crepe)).toBe(before)
+    }
     // Cells with no note: the key is tableEditing's own, with no sheet.
     selectCells(view, [2, 0], [2, 1])
     act(() => void pressKey(crepe, 'Backspace'))
@@ -137,6 +150,8 @@ describe('D17: a duplicate asks how', () => {
     const before = getMarkdownForSave(crepe)
     menu(view, 1, 0, 'duplicate-rows')
     expect(sheetText()).toBe('This row has 2 cell notes.')
+    // The three answers on the one buttons' row (the checker's round 1): "Cells only" at its left end.
+    expect([...document.querySelectorAll('.confirm__actions > button')].map((b) => b.textContent)).toEqual(['Cells only', 'Cancel', 'Copy with notes'])
     press('Copy with notes')
     let saved = getMarkdownForSave(crepe)
     expect(marks(saved)).toEqual(['cell-1', 'cell-2', 'cell-4', 'cell-5', 'cell-3'])

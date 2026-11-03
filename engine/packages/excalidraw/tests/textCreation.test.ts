@@ -12,11 +12,11 @@ describe("getResponsiveTextFontSize (YAZ-4247: the same size on screen at every 
   afterEach(() => setNewTextScreenSize(DEFAULT_NEW_TEXT_SCREEN_SIZE));
 
   it.each([
-    [0.5, 32],
-    [1, 16],
-    [2, 8],
-    [3, 5.33],
-  ])("resolves zoom %s to %spx (16px on screen)", (zoom, expectedFontSize) => {
+    [0.5, 28],
+    [1, 14],
+    [2, 7],
+    [3, 4.67],
+  ])("resolves zoom %s to %spx (14px on screen)", (zoom, expectedFontSize) => {
     expect(getResponsiveTextFontSize(zoom)).toBe(expectedFontSize);
   });
 
@@ -29,7 +29,7 @@ describe("getResponsiveTextFontSize (YAZ-4247: the same size on screen at every 
   it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
     "falls back safely for invalid zoom %s",
     (zoom) => {
-      expect(getResponsiveTextFontSize(zoom)).toBe(16);
+      expect(getResponsiveTextFontSize(zoom)).toBe(14);
     },
   );
 });
@@ -46,9 +46,10 @@ describe("wrapWidthAtEdge (YAZ-4247)", () => {
 });
 
 describe("responsive text-background radius", () => {
+  // At the 14 px default (YAZ-4265): font 28, 14 and 7 px.
   it.each([
-    [0.5, 8],
-    [1, 4],
+    [0.5, 7],
+    [1, 3],
     [2, 2],
   ])("resolves zoom %s to a %spx default radius", (zoom, expectedRadius) => {
     expect(getResponsiveTextBackgroundRadius(zoom)).toBe(expectedRadius);

@@ -2376,6 +2376,18 @@ describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
     expect(el.querySelector('.new-item__tile[aria-checked="true"]')?.textContent).toBe('Note')
   })
 
+  it('⌘N › Folder: ⏎ asks the sidebar for the folder name field with the name template (YAZ-4252)', async () => {
+    const { el, v, emitNewItem } = await mountWith({ newNoteLocation: 'folder', newNoteFolder: 'Projects', newNoteTitleTemplate: 'Plan {MM}- ' })
+    act(() => emitNewItem())
+    await settle()
+    const key = (k: string) => act(() => void el.querySelector('.new-item')?.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })))
+    for (let i = 0; i < 3; i++) key('ArrowRight')
+    expect(el.querySelector('.new-item__tile[aria-checked="true"]')?.textContent).toBe('Folder')
+    key('Enter')
+    key('Enter')
+    expect(captured.sidebar?.createRequest).toEqual({ id: 1, kind: 'dir', dir: `${v}/Projects`, seed: expect.stringMatching(/^Plan \d{2}- $/) })
+  })
+
   it('⌘N with a default folder the vault does not have: the box shows the vault folder and says so (D3)', async () => {
     const { el, emitNewItem } = await mountWith({ newNoteLocation: 'folder', newNoteFolder: 'Inbox' })
     act(() => emitNewItem())

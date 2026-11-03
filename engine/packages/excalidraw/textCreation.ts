@@ -4,9 +4,10 @@ const RESPONSIVE_TEXT_BASE_SIZE = 130;
 
 /**
  * The Docs app's "New text size on screen" (YAZ-4247): the px a new text shows
- * at, whatever the zoom. The app sets it from its canvas prefs.
+ * at, whatever the zoom. The app sets it from its canvas prefs; until then, the
+ * app's default, 14 (YAZ-4265).
  */
-export const DEFAULT_NEW_TEXT_SCREEN_SIZE = 16;
+export const DEFAULT_NEW_TEXT_SCREEN_SIZE = 14;
 let newTextScreenSize = DEFAULT_NEW_TEXT_SCREEN_SIZE;
 
 export const setNewTextScreenSize = (px: number) => {

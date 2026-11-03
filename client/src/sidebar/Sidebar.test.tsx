@@ -707,6 +707,22 @@ describe('New drawing ▸: New Excalidraw drawing / New draw.io diagram (YAZ-302
     expect(onCreateConsumed).toHaveBeenLastCalledWith(2)
   })
 
+  it('YAZ-4252: a create request for a Folder opens the name field with the request\'s name template; Enter makes the folder with that name', async () => {
+    const onCreateConsumed = vi.fn()
+    const { el, bridge, rerender } = await mount({ onCreateConsumed })
+    await rerender({ createRequest: { id: 1, kind: 'dir', dir: '/v/sub', seed: '11_02- ' } })
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(input?.value).toBe('11_02- ')
+    expect(onCreateConsumed).toHaveBeenCalledExactlyOnceWith(1)
+    act(() => {
+      input!.value += 'Plans'
+      input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    await act(async () => undefined)
+    // An ID vault: the folder's slug, and the typed name as its title.
+    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/11-02-plans', title: '11_02- Plans' })
+  })
+
   it('open "New drawing ▸" → New draw.io diagram in its flyout says "New diagram" and makes a .drawio; an empty box is Untitled, then Untitled 2 past a taken one', async () => {
     const { el, bridge, props } = await mount({}, withCreateBoard(['/v/sub/Untitled.drawio']))
     expect(await newIn(el, 'New draw.io diagram', null, 'New drawing')).toBe('New diagram')

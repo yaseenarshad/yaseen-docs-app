@@ -30,6 +30,8 @@ export interface ConfirmSheetProps {
   confirmDisabled?: boolean
   /** Extra controls between the text and the buttons (the "Don't ask me again" of the delete sheet and of the rename sheet). */
   children?: ReactNode
+  /** A third answer, on the buttons' row at its left end (YAZ-3818 D17's "Cells only"), so the three stay on one row. */
+  other?: ReactNode
   /**
    * The keyboard focus is on the CONFIRM button when the sheet shows (YAZ-2690 D1), for a sheet
    * that destroys nothing: the rename sheet. Enter confirms on each button of a sheet, so the
@@ -38,7 +40,7 @@ export interface ConfirmSheetProps {
   focusConfirm?: boolean
 }
 
-export function ConfirmSheet({ labelId, text, confirmLabel, cancelLabel = 'Cancel', danger = false, keys = 'window', onConfirm, onCancel, confirmDisabled = false, children, focusConfirm = false }: ConfirmSheetProps) {
+export function ConfirmSheet({ labelId, text, confirmLabel, cancelLabel = 'Cancel', danger = false, keys = 'window', onConfirm, onCancel, confirmDisabled = false, children, other, focusConfirm = false }: ConfirmSheetProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
 
@@ -83,6 +85,7 @@ export function ConfirmSheet({ labelId, text, confirmLabel, cancelLabel = 'Cance
         </p>
         {children}
         <div className="confirm__actions">
+          {other}
           <button ref={cancelRef} type="button" className="confirm__btn" onClick={onCancel}>
             {cancelLabel}
           </button>
