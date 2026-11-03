@@ -155,6 +155,7 @@ readPdf/1: invoke fs:read-pdf ["a0"]; => "answer"; !> {"code":"NOT_FOUND","messa
 readTextHead/1: invoke fs:read-text-head ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 secrets.has/1: invoke secrets:has ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 secrets.set/1: invoke secrets:set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+setBoardFoldArrows/1: invoke board:set-fold-arrows ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardHoverLinks/1: invoke board:set-hover-links ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardPictures/1: invoke board:set-pictures ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardReadOnly/1: invoke board:set-read-only ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
