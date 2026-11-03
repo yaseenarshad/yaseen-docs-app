@@ -260,3 +260,66 @@ describe('the table block shows the table settings to CSS', () => {
     expect(now.getAttribute('data-table-height')).toBe('tall')
   })
 })
+
+describe('parts this build does not know (YAZ-4161)', () => {
+  const UNKNOWN = `${SMALL}\n<!-- table: widths 140 auto, future 1 2, stripes -->\n`
+
+  it('a table comment with an unknown part loads and saves byte for byte; a plain table saves the bytes of before', async () => {
+    expect(await save(UNKNOWN)).toBe(UNKNOWN)
+    expect(await save(SMALL)).toBe(SMALL)
+    const { view } = await mount(UNKNOWN)
+    expect(tables(view.state.doc)[0].attrs.unknownParts).toEqual([{ after: 'widths', text: 'future 1 2' }])
+  })
+
+  it('a change of a known part keeps the unknown part', async () => {
+    const { crepe, view } = await mount(UNKNOWN)
+    const pos = tablePos(view)
+    view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...view.state.doc.nodeAt(pos)!.attrs, stripes: false, wrap: false }))
+    expect(getMarkdownForSave(crepe)).toBe(`${SMALL}\n<!-- table: widths 140 auto, future 1 2, nowrap -->\n`)
+  })
+
+  it('a copy inside the app keeps the unknown parts (toDOM / parseDOM)', async () => {
+    const { view } = await mount(UNKNOWN)
+    const { schema } = view.state
+    const dom = DOMSerializer.fromSchema(schema).serializeNode(tables(view.state.doc)[0]) as HTMLElement
+    const holder = document.createElement('div')
+    holder.appendChild(dom)
+    const [copy] = tables(DOMParser.fromSchema(schema).parse(holder))
+    expect(copy.attrs.unknownParts).toEqual([{ after: 'widths', text: 'future 1 2' }])
+    expect(copy.attrs.stripes).toBe(true)
+  })
+
+  it('a known part with a value this build cannot read saves byte for byte, also after a change of another part; a copy keeps it (YAZ-4176)', async () => {
+    const NEWER = `${SMALL}\n<!-- table: widths 140 auto, zoom 500%, stripes, calendar 45m -->\n`
+    expect(await save(NEWER)).toBe(NEWER)
+    const { crepe, view } = await mount(NEWER)
+    expect(tables(view.state.doc)[0].attrs.unknownParts).toEqual([{ after: 'widths', text: 'zoom 500%' }, { after: 'stripes', text: 'calendar 45m' }])
+    const pos = tablePos(view)
+    view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...view.state.doc.nodeAt(pos)!.attrs, wrap: false }))
+    expect(getMarkdownForSave(crepe)).toBe(`${SMALL}\n<!-- table: widths 140 auto, zoom 500%, stripes, calendar 45m, nowrap -->\n`)
+    const holder = document.createElement('div')
+    holder.appendChild(DOMSerializer.fromSchema(view.state.schema).serializeNode(tables(view.state.doc)[0]))
+    expect(tables(DOMParser.fromSchema(view.state.schema).parse(holder))[0].attrs.unknownParts).toEqual([{ after: 'widths', text: 'zoom 500%' }, { after: 'stripes', text: 'calendar 45m' }])
+    // This build sets the zoom: its own part replaces the text.
+    view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...view.state.doc.nodeAt(pos)!.attrs, zoom: 90 }))
+    expect(getMarkdownForSave(crepe)).toBe(`${SMALL}\n<!-- table: widths 140 auto, zoom 90%, stripes, calendar 45m, nowrap -->\n`)
+  })
+
+  it('a pasted part that this build reads is no unknown part: it never writes a setting the table does not have (YAZ-4176)', async () => {
+    const { view } = await mount(SMALL)
+    const holder = document.createElement('div')
+    holder.innerHTML = `<table data-table-parts='[{"after":null,"text":"stripes"},{"after":null,"text":"calendar 45m"}]'><tbody><tr><th>a</th></tr><tr><td>1</td></tr></tbody></table>`
+    const [copy] = tables(DOMParser.fromSchema(view.state.schema).parse(holder))
+    expect(copy.attrs.unknownParts).toEqual([])
+    holder.innerHTML = `<table data-table-parts='[{"after":null,"text":"calendar 45m"}]'><tbody><tr><th>a</th></tr><tr><td>1</td></tr></tbody></table>`
+    expect(tables(DOMParser.fromSchema(view.state.schema).parse(holder))[0].attrs.unknownParts).toEqual([{ after: null, text: 'calendar 45m' }])
+  })
+
+  it('a pasted table with wrong parts data keeps none of it', async () => {
+    const { view } = await mount(SMALL)
+    const holder = document.createElement('div')
+    holder.innerHTML = `<table data-table-parts='[{"after":"stripes","text":"a, b"},{"after":7,"text":"c"},{"after":null,"text":"x --> y"},"z"]'><tbody><tr><th>a</th></tr><tr><td>1</td></tr></tbody></table>`
+    const [copy] = tables(DOMParser.fromSchema(view.state.schema).parse(holder))
+    expect(copy.attrs.unknownParts).toEqual([])
+  })
+})

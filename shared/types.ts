@@ -10,6 +10,7 @@ import type { IconRule } from './vaultIcons'
 import type { ReviewEntry } from './reviews'
 import type { HotkeyOverrides } from './hotkeyBindings'
 import { DEFAULT_DAILY_NOTE_FORMAT } from './dailyNote'
+import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
 
 // ---------- Errors ----------
 
@@ -1730,6 +1731,21 @@ export interface SettingsState {
   outsideChangeGlow: OutsideChangeGlow
   /** Settings › Editor › Outside changes › Pin default (YAZ-3704 demo): the numbered list of the changes sits left of the note; off, it opens from the bar's count. The list's own Pin and Unpin write it. */
   outsideListPinned: boolean
+  /** Settings › Editor › Tables › Row band (YAZ-4167, YAZ-4159 D16): a light accent band on the table row under the caret or the mouse, its first cell bold — in no table, in calendar tables, or in all tables. A look, never in the file: `data-table-row-band` on `.app`. */
+  tableRowBand: TableRowBand
+  /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
+  tableNowMark: TableNowMark
+  /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
+  tableNowButton: boolean
+  /** Settings › Editor › Calendar tables › Dim past rows (YAZ-4162 D14; the shade from the YAZ-4163 demo): a calendar table's rows before now show grey text, or grey text on a light grey shade. `data-table-dim-past` on `.app`. */
+  tableDimPast: TableDimPast
+  /** Settings › Editor › Calendar tables › Shade darkness (YAZ-4163 demo): the past rows' shade, a percent of the text colour, `TABLE_SHADE_MIN`–`MAX` in steps of `TABLE_SHADE_STEP`. `--table-past-shade` on the root. */
+  tableShadeDarkness: number
+  /** Settings › Editor › Calendar tables › Calendar day (YAZ-4163 demo): the first and the last time of a new calendar table, minutes from midnight on the half hour (`isCalendarDayTime`). A start not before the end is the default day. */
+  tableDayStart: number
+  tableDayEnd: number
+  /** Settings › Editor › Calendar tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mm a`, for new tables, new times in a table with none, and "Current time". */
+  tableTimeFormat: string
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
   sidebarLines: TocLines
   /** The sidebar tree (YAZ-3309 D7, D8): how its level lines look — `plain` grey lines (the default), or `thread`: the bullet-threading path to the row under the mouse. It travels with the settings folder. */
@@ -1859,6 +1875,11 @@ export interface SettingsState {
   /** Make a folder for each day (D9): today's note goes in a folder of the same name. */
   dailyNoteDayFolder: boolean
   /**
+   * The button opens (YAZ-4164 D11): `now` (the default) opens today's note at the now row of its first calendar table,
+   * the caret in the first empty cell; `note` opens it as before. The footer button, ⌘D and File › Open Today's Daily Note.
+   */
+  dailyNoteOpens: DailyNoteOpens
+  /**
    * Settings › Memory (YAZ-3737 D10): how long a tab stays unseen before it sleeps (tab sleep, 5A). Travels with the
    * other settings. Its row is in place before 5A reads it.
    */
@@ -1922,6 +1943,25 @@ export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
 /** Outside changes (YAZ-3704 D5): a glow stays until you check it, ends after 10 s or 1 min, or never shows. */
 export type OutsideChangeGlow = 'until-checked' | '10s' | '60s' | 'off'
 export const OUTSIDE_CHANGE_GLOWS: readonly OutsideChangeGlow[] = ['until-checked', '10s', '60s', 'off']
+
+/** Daily notes (YAZ-4164 D11): the button opens the note, or the note at the now row of its calendar table. */
+export type DailyNoteOpens = 'note' | 'now'
+export const DAILY_NOTE_OPENS: readonly DailyNoteOpens[] = ['note', 'now']
+
+/** Tables (YAZ-4167 D16): where the row band shows. */
+export type TableRowBand = 'off' | 'calendar' | 'all'
+export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all']
+
+/** Calendar tables (YAZ-4162 D6): how the now row is marked. */
+export type TableNowMark = 'line' | 'tint' | 'both'
+export const TABLE_NOW_MARKS: readonly TableNowMark[] = ['line', 'tint', 'both']
+
+/** Calendar tables (YAZ-4162 D14, the YAZ-4163 demo): how the rows before now look. */
+export type TableDimPast = 'off' | 'text' | 'shade'
+export const TABLE_DIM_PASTS: readonly TableDimPast[] = ['off', 'text', 'shade']
+export const TABLE_SHADE_MIN = 2
+export const TABLE_SHADE_MAX = 30
+export const TABLE_SHADE_STEP = 2
 
 /** The sidebar tree (YAZ-3309 D7, D8): the look of its level lines. */
 export type SidebarLineStyle = 'plain' | 'thread'
@@ -2094,6 +2134,14 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tocLines: 'hover',
   outsideChangeGlow: 'until-checked',
   outsideListPinned: false,
+  tableRowBand: 'all',
+  tableNowMark: 'line',
+  tableNowButton: true,
+  tableDimPast: 'shade',
+  tableShadeDarkness: 6,
+  tableDayStart: DEFAULT_CALENDAR_DAY.start,
+  tableDayEnd: DEFAULT_CALENDAR_DAY.end,
+  tableTimeFormat: DEFAULT_TIME_FORMAT,
   sidebarLines: 'hover',
   sidebarLineStyle: 'plain',
   sidebarThreadColor: null,
@@ -2131,6 +2179,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   dailyNoteFolder: '',
   dailyNoteFormat: DEFAULT_DAILY_NOTE_FORMAT,
   dailyNoteDayFolder: false,
+  dailyNoteOpens: 'now',
   tabSleepAfter: '30m',
   memoryReload: true,
 }

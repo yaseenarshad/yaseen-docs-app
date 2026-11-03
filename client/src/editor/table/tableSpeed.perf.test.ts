@@ -42,7 +42,7 @@ async function mount(markdown: string): Promise<{ view: EditorView; ms: number; 
   const root = document.createElement('div')
   document.body.appendChild(root)
   const start = performance.now()
-  const crepe = createCrepe({ root, defaultValue: markdown })
+  const crepe = createCrepe({ root, defaultValue: markdown, tableZoomPill: true })
   await crepe.create()
   const ms = performance.now() - start
   const close = async () => {

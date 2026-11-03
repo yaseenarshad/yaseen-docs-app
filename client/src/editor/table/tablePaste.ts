@@ -16,6 +16,8 @@
  *   body) and keeps its column's `alignment` and `colwidth`.
  * - WRITE: GFM tables have no merged cells, so the changed rows are built here and written by ONE
  *   `replaceWith` — not `insertCells`, which assumes one row type (GFM has two) and steps per row.
+ * - FOLDED ROWS (YAZ-4165) are never written: the pasted rows go to the rows that are not folded, from the start
+ *   cell down (`unfoldedRows`), and a folded row keeps its text. One value fills the selected rows that are not folded.
  * - OUTSIDE A TABLE (S2) a Sheets `<table>` already makes a table (Milkdown's `tablePasteRule`).
  *   Tab-separated text with no HTML makes one here: 2 lines or more, the same number of tabs on
  *   each. The first line is the header row.
@@ -25,7 +27,7 @@ import { Fragment, Slice, type Node as ProseNode, type Schema } from '@milkdown/
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { CellSelection, TableMap, __pastedCells, isInTable, selectedRect } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { cellPosAt } from './cells'
+import { cellPosAt, rowFolded, unfoldedRows } from './cells'
 
 /** One pasted cell: its block content, and its `fill` / `color` / `align` when it came from HTML (or the source cell, for fill down). */
 export interface Cell {
@@ -71,7 +73,8 @@ function oneValue(schema: Schema, slice: Slice): Cell | null {
 
 /**
  * Write `grid` into the table at `tableStart` from (top, left), growing it as needed, with ONE
- * `replaceWith` in `tr`. Shared with fill down (`tableFill.ts`).
+ * `replaceWith` in `tr`. Shared with fill down (`tableFill.ts`). The grid's rows go to the rows that are not
+ * folded (YAZ-4165): a folded row keeps its cells.
  */
 export function writeCells(tr: Transaction, tableStart: number, top: number, left: number, grid: Cell[][]): Transaction {
   const { schema } = tr.doc.type
@@ -79,11 +82,13 @@ export function writeCells(tr: Transaction, tableStart: number, top: number, lef
   const width = TableMap.get(table).width
   const gridWidth = Math.max(...grid.map((row) => row.length))
   const newWidth = Math.max(width, left + gridWidth)
-  const newHeight = Math.max(table.childCount, top + grid.length)
+  const at = unfoldedRows(table, top, grid.length)
+  const gridRow = new Map(at.map((row, i) => [row, i]))
+  const newHeight = Math.max(table.childCount, (at.at(-1) ?? top - 1) + 1)
   const grows = newWidth > width
   // Rows `first` up to `end` change: the pasted rows, and every row when columns are added.
   const first = grows ? 0 : top
-  const end = grows ? newHeight : top + grid.length
+  const end = grows ? newHeight : (at.at(-1) ?? top - 1) + 1
   const header = table.firstChild!
   const rows: ProseNode[] = []
   for (let r = first; r < end; r++) {
@@ -92,7 +97,7 @@ export function writeCells(tr: Transaction, tableStart: number, top: number, lef
     const cells: ProseNode[] = []
     for (let c = 0; c < newWidth; c++) {
       const oldCell = old !== null && c < old.childCount ? old.child(c) : null
-      const pasted = r >= top && c >= left ? grid[r - top]?.[c - left] : undefined
+      const pasted = gridRow.has(r) && c >= left ? grid[gridRow.get(r)!]?.[c - left] : undefined
       if (pasted === undefined && oldCell !== null) {
         cells.push(oldCell)
         continue
@@ -151,11 +156,17 @@ export function pasteIntoCells(view: EditorView, event: ClipboardEvent, slice: S
   // its own: only a real `<table>` counts as cells. Other HTML, and text with no tabs, decline.
   let grid = (/<table[\s>]/i.test(html) ? sliceCells(slice, html) : null) ?? tsvRows(text)?.map((row) => row.map((value) => textCell(schema, value))) ?? null
   const { tableStart, top, left, rect } = target(state)
+  const table = state.doc.nodeAt(tableStart - 1)!
   const one = grid === null ? oneValue(schema, slice) : grid.length === 1 && grid[0]!.length === 1 ? grid[0]![0]! : null
-  if (rect !== null && one !== null) grid = Array.from({ length: rect.height }, () => Array<Cell>(rect.width).fill(one))
-  if (grid === null) return false
+  if (rect !== null && one !== null) {
+    // One value in each selected row that is not folded (YAZ-4165).
+    const height = Array.from({ length: rect.height }, (_, i) => table.maybeChild(top + i)).filter((row) => !rowFolded(row)).length
+    grid = Array.from({ length: height }, () => Array<Cell>(rect.width).fill(one))
+  }
+  if (grid === null || grid.length === 0) return false
   const right = left + Math.max(...grid.map((row) => row.length)) - 1
-  const tr = selectCells(writeCells(closeHistory(state.tr), tableStart, top, left, grid), tableStart, top, left, top + grid.length - 1, right)
+  const bottom = unfoldedRows(table, top, grid.length).at(-1)!
+  const tr = selectCells(writeCells(closeHistory(state.tr), tableStart, top, left, grid), tableStart, top, left, bottom, right)
   view.dispatch(tr.setMeta('paste', true).setMeta('uiEvent', 'paste').scrollIntoView())
   return true
 }

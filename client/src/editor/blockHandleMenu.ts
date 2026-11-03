@@ -104,6 +104,8 @@ export interface MenuStripButton {
   label: string
   icon: () => SVGElement
   active: boolean
+  /** Greyed and not clickable (a table's "Fit columns to the page" with no widths set). */
+  disabled?: boolean
   run: () => void
 }
 
@@ -112,6 +114,13 @@ export interface MenuStrip {
   kind: 'strip'
   /** The group's accessible name. */
   label: string
+  /**
+   * Its name shown at the left of the strip, on bordered buttons with a quick tooltip each (a table's Look, Text and
+   * Rows, the YAZ-4163 demo); none by default.
+   */
+  caption?: boolean
+  /** A click keeps the menu open and draws it again from the new state, so several settings go in one visit (the YAZ-4163 demo). */
+  stay?: boolean
   group?: string
   buttons: MenuStripButton[]
 }
@@ -425,12 +434,21 @@ function renderParent(row: MenuRow, children: MenuRow[][], menu: HTMLElement, cl
   return wrap
 }
 
-/** A strip (YAZ-3727 D14): the toolbar's buttons in one menu row, icons only, each named by its tooltip. */
-function renderStrip(strip: MenuStrip, close: () => void): HTMLElement {
+/**
+ * A strip (YAZ-3727 D14): the toolbar's buttons in one menu row, icons only, each named by its tooltip. A `stay` strip's
+ * click goes through `refresh` (the menu stays and is drawn again) when the menu has one; otherwise it closes the menu.
+ */
+function renderStrip(strip: MenuStrip, close: () => void, refresh?: (run: () => void) => void): HTMLElement {
   const el = document.createElement('div')
-  el.className = 'ctx-menu__strip'
+  el.className = strip.caption === true ? 'ctx-menu__strip ctx-menu__strip--captioned' : 'ctx-menu__strip'
   el.setAttribute('role', 'group')
   el.setAttribute('aria-label', strip.label)
+  if (strip.caption === true) {
+    const caption = document.createElement('span')
+    caption.className = 'ctx-menu__strip-caption'
+    caption.textContent = strip.label
+    el.appendChild(caption)
+  }
   for (const button of strip.buttons) {
     const item = document.createElement('button')
     item.type = 'button'
@@ -438,10 +456,14 @@ function renderStrip(strip: MenuStrip, close: () => void): HTMLElement {
     item.setAttribute('role', 'menuitem')
     item.setAttribute('aria-label', button.label)
     item.setAttribute('aria-pressed', String(button.active))
-    item.title = button.label
+    // A captioned strip's tooltip is quick and drawn by CSS (`data-tip`); the others keep the system's.
+    if (strip.caption === true) item.dataset.tip = button.label
+    else item.title = button.label
+    item.disabled = button.disabled === true
     item.appendChild(button.icon())
     item.addEventListener('mousedown', (e) => e.preventDefault())
     item.addEventListener('click', () => {
+      if (strip.stay === true && refresh !== undefined) return refresh(button.run)
       button.run()
       close()
     })
@@ -457,7 +479,7 @@ function renderStrip(strip: MenuStrip, close: () => void): HTMLElement {
  * menu's (YAZ-3646 D8): a line between two groups, a glyph slot on every row once one row has a glyph,
  * and the hint at the right edge. A row with `children` is a parent with a flyout (YAZ-3901, `renderParent`).
  */
-export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close: () => void): HTMLElement {
+export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close: () => void, refresh?: (run: () => void) => void): HTMLElement {
   const el = document.createElement('div')
   el.className = items.some((row) => row.kind !== 'number' && row.kind !== 'choice' && row.kind !== 'strip' && row.icon !== undefined) ? 'ctx-menu ctx-menu--editor ctx-menu--glyphs' : 'ctx-menu ctx-menu--editor'
   el.setAttribute('role', 'menu')
@@ -475,7 +497,7 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
     if (el.childElementCount > 0 && ((row.kind !== 'strip' && row.divider === true) || (previous !== null && previous.group !== row.group))) el.appendChild(divider())
     previous = row
     if (row.kind === 'strip') {
-      el.appendChild(renderStrip(row, close))
+      el.appendChild(renderStrip(row, close, refresh))
       continue
     }
     el.appendChild(row.children === undefined ? rowButton(row, close) : renderParent(row, row.children, el, close))
@@ -505,6 +527,10 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           // Exists only while open: `.ctx-menu` means "open" everywhere (the sidebar menu is
           // mounted only while open too), so nothing lingers per mounted editor.
           let popup: HTMLElement | null = null
+          // What the open menu was opened on, so a `stay` strip's click can draw it again (the YAZ-4163 demo).
+          let openTarget: HandleTarget | null = null
+          // True while a `stay` strip's own change runs: that doc change keeps the menu.
+          let holding = false
 
           const close = () => {
             // Something in the menu had the focus: it goes back to the editor, not to the page.
@@ -512,6 +538,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             if (popup !== null) closeSubmenu(popup)
             popup?.remove()
             popup = null
+            openTarget = null
             if (hadFocus) view.focus()
           }
           const rightGrab = (e: MouseEvent) => e.button === 2 && isOwnHandleGrab(view, e.target)
@@ -542,10 +569,26 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             const items = rows(view, target, ctx)
             if (items.length === 0) return
             close()
-            popup = renderMenu(view.dom.parentElement, items, close)
+            openTarget = target
+            popup = renderMenu(view.dom.parentElement, items, close, refresh)
             const r = popup.getBoundingClientRect()
             popup.style.left = `${Math.max(0, Math.min(e.clientX, window.innerWidth - r.width))}px`
             popup.style.top = `${Math.max(0, Math.min(e.clientY, window.innerHeight - r.height))}px`
+          }
+          // A `stay` strip's click: run it, then draw the menu again in its place from the new state.
+          const refresh = (run: () => void) => {
+            holding = true
+            try {
+              run()
+            } finally {
+              holding = false
+            }
+            if (popup === null || openTarget === null) return
+            const items = rows(view, openTarget, ctx)
+            const { left, top } = popup.style
+            popup.remove()
+            popup = items.length === 0 ? null : renderMenu(view.dom.parentElement, items, close, refresh)
+            if (popup !== null) Object.assign(popup.style, { left, top })
           }
           const onKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') close()
@@ -572,7 +615,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           window.addEventListener('blur', close)
           return {
             update: (v, prevState) => {
-              if (v.state.doc !== prevState.doc) close()
+              if (v.state.doc !== prevState.doc && !holding) close()
             },
             destroy: () => {
               providers.delete(view)

@@ -10,16 +10,18 @@ import { createCrepe } from '../createCrepe'
 export const TABLE = '| h1 | h2 |\n| --- | --- |\n| a | b |\n| c | d |\n'
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-/** Mount a note; `zoom` is the document zoom on `.ProseMirror` (app.css `--document-zoom`). Undo with `unmountAll`. */
+/** Mount a note (the note editor's table zoom pills too); `zoom` is the document zoom on `.ProseMirror` (app.css `--document-zoom`). Undo with `unmountAll`. */
 export async function mountNote(markdown = TABLE, zoom = 1): Promise<{ crepe: Crepe; view: EditorView }> {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown })
+  const crepe = createCrepe({ root, defaultValue: markdown, tableZoomPill: true })
   await crepe.create()
   mounted.push({ crepe, root })
   const view = crepe.editor.ctx.get(editorViewCtx)
   view.focus()
   Object.defineProperty(view.dom, 'currentCSSZoom', { value: zoom, configurable: true })
+  // A browser gives every element the zoom it inherits; jsdom gives none. The column resize reads it at the table (YAZ-4091).
+  for (const table of view.dom.querySelectorAll('table')) Object.defineProperty(table, 'currentCSSZoom', { value: zoom, configurable: true })
   view.posAtCoords = ({ left, top }) => {
     const pos = cellPos(view, Math.floor(top / (30 * zoom)), Math.floor(left / (100 * zoom)))
     return { pos: pos + 2, inside: pos + 1 }

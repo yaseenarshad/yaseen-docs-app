@@ -520,3 +520,16 @@ describe("a bullet's own dot (YAZ-3646 D8, D9)", () => {
     expect(ticked()).toBe(false)
   })
 })
+
+describe('the editor menu over the table (the YAZ-4163 demo)', () => {
+  const css = appCss.replace(/\/\*[\s\S]*?\*\//g, '')
+  const zOf = (selector: RegExp) => Number(/z-index:\s*(\d+)/.exec(selector.exec(css)?.[1] ?? '')?.[1])
+
+  it('sits above the table\'s column and row handles (Crepe\'s `.cell-handle`, z-index 50)', () => {
+    expect(zOf(/\.ctx-menu--editor\s*\{([^}]*)\}/)).toBeGreaterThan(50)
+  })
+
+  it('a captioned strip\'s hovered button rises over its neighbours, so its tooltip is not under the next row', () => {
+    expect(zOf(/\.ctx-menu__strip--captioned > \.ctx-menu__strip-button:hover\s*\{([^}]*)\}/)).toBeGreaterThan(0)
+  })
+})

@@ -13,13 +13,15 @@
  *   the range gets `data-fill-target` with its outer edges, which table.css draws dashed.
  * - VALUES: a copied value keeps its source cell's content (marks); a new cell takes the `fill`
  *   and `color` of its source cell in the repeated pattern. Read-only: no handle (R3).
+ * - FOLDED ROWS (YAZ-4165) are never read or written: the series runs in the rows that are not folded, so a drag
+ *   across a folded run goes on below it, and the run keeps its text.
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
 import { TableMap, cellAround, isInTable, selectedRect } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { cellPosAt } from './cells'
+import { cellPosAt, rowFolded } from './cells'
 import { fillSeries } from './fillSeries'
 import { selectCells, textCell, writeCells, type Cell } from './tablePaste'
 
@@ -56,15 +58,19 @@ export function fillCells(state: EditorState, source: FillSource, axis: FillAxis
   const { tableStart, top, left, bottom, right } = source
   const table = state.doc.nodeAt(tableStart - 1)!
   const map = TableMap.get(table)
-  const n = Math.min(count, axis === 'down' ? map.height - bottom : map.width - right)
-  if (n <= 0) return null
+  // The rows that are not folded (YAZ-4165): the source rows, and down, the rows passed.
+  const open = (from: number, to: number) => Array.from({ length: Math.max(to - from, 0) }, (_, i) => from + i).filter((r) => !rowFolded(table.child(r)))
+  const rows = open(top, bottom)
+  const passed = axis === 'down' ? open(bottom, Math.min(bottom + count, map.height)) : []
+  const n = axis === 'down' ? passed.length : Math.min(count, map.width - right)
+  if (n <= 0 || rows.length === 0) return null
   const cell = (row: number, col: number) => state.doc.nodeAt(cellPosAt(map, tableStart, row, col))!
   // One series per column (down) or per row (right): `lines` of `length` source cells each.
-  const lines = axis === 'down' ? right - left : bottom - top
-  const length = axis === 'down' ? bottom - top : right - left
+  const lines = axis === 'down' ? right - left : rows.length
+  const length = axis === 'down' ? rows.length : right - left
   const grid: Cell[][] = Array.from({ length: axis === 'down' ? n : lines }, () => [])
   for (let line = 0; line < lines; line++) {
-    const sources = Array.from({ length }, (_, i) => (axis === 'down' ? cell(top + i, left + line) : cell(top + line, left + i)))
+    const sources = Array.from({ length }, (_, i) => (axis === 'down' ? cell(rows[i]!, left + line) : cell(rows[line]!, left + i)))
     const texts = sources.map((node) => node.textContent)
     fillSeries(texts, n).forEach((value, i) => {
       const from = sources[i % length]!
@@ -77,7 +83,7 @@ export function fillCells(state: EditorState, source: FillSource, axis: FillAxis
   const tr = axis === 'down'
     ? writeCells(closeHistory(state.tr), tableStart, bottom, left, grid)
     : writeCells(closeHistory(state.tr), tableStart, top, right, grid)
-  return selectCells(tr, tableStart, top, left, axis === 'down' ? bottom - 1 + n : bottom - 1, axis === 'right' ? right - 1 + n : right - 1)
+  return selectCells(tr, tableStart, top, left, axis === 'down' ? passed.at(-1)! : bottom - 1, axis === 'right' ? right - 1 + n : right - 1)
 }
 
 /** Where a drag from `source` points: down or right, the cells passed; `undefined` off the table. */

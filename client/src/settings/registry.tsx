@@ -27,7 +27,7 @@ import { scheduleInWords } from '@shared/schedule'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -46,6 +46,9 @@ import { NewNoteLocationControl } from './NewNoteLocationControl'
 import { GoToControl } from './GoToControl'
 import { DailyNoteFolderControl, DailyNoteFormatControl } from './DailyNoteControl'
 import { dailyNoteName } from '@shared/dailyNote'
+import { formatTime } from '@shared/timeFormat'
+import { CalendarDayControl } from './CalendarDayControl'
+import { TimeFormatControl } from './TimeFormatControl'
 import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
 import { MEMORY_SECTION } from './memorySection'
@@ -55,7 +58,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 /** Files & Links › Open new tabs (YAZ-3808 D2). */
 const NEW_TAB_PLACE_OPTIONS: readonly { label: string; value: SettingsState['newTabPlace'] }[] = [
@@ -866,6 +869,97 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
         ],
       },
+      {
+        // YAZ-4167 D16 (YAZ-4159 D16 names the group): every table. The calendar rows have their own group below (the YAZ-4163 demo).
+        title: 'Tables',
+        items: [
+          {
+            // YAZ-4167 D16: the band follows the caret's row and the mouse's; a look, never in the file.
+            id: 'tableRowBand',
+            label: 'Row band',
+            hint: 'A light band across the table row under the caret or the mouse, its first cell in bold.',
+            keywords: ['row', 'band', 'highlight', 'mouse', 'caret', 'calendar', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TABLE_ROW_BAND_OPTIONS} value={settings.tableRowBand} onChange={(tableRowBand) => onChange({ ...settings, tableRowBand })} ariaLabel="Row band" />
+            ),
+          },
+        ],
+      },
+      {
+        // YAZ-4162 D6, D14 and YAZ-4163 D15; a group of its own from the YAZ-4163 demo: how a calendar table looks and starts, for every note. Never in the file.
+        title: 'Calendar tables',
+        items: [
+          {
+            id: 'tableNowMark',
+            label: 'Mark the current time',
+            hint: 'In a calendar table, the row that holds the current time.',
+            keywords: ['calendar', 'now', 'time', 'line', 'tint', 'red', 'schedule', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TABLE_NOW_MARK_OPTIONS} value={settings.tableNowMark} onChange={(tableNowMark) => onChange({ ...settings, tableNowMark })} ariaLabel="Mark the current time" />
+            ),
+          },
+          {
+            // The YAZ-4163 demo: every table's "Now" chip; a table's 6-dot "Now button" turns off its own.
+            id: 'tableNowButton',
+            label: 'Now button',
+            hint: 'A "Now" button under a calendar table while its current row is off the screen. A table can turn off its own in its 6-dot menu.',
+            keywords: ['calendar', 'now', 'button', 'chip', 'pill', 'current time', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableNowButton} onChange={(tableNowButton) => onChange({ ...settings, tableNowButton })} ariaLabel="Now button" />
+            ),
+          },
+          {
+            id: 'tableDimPast',
+            label: 'Dim past rows',
+            hint: 'The rows before the current time: grey text, or grey text on a light shade.',
+            keywords: ['calendar', 'past', 'grey', 'gray', 'shade', 'dim', 'time', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TABLE_DIM_PAST_OPTIONS} value={settings.tableDimPast} onChange={(tableDimPast) => onChange({ ...settings, tableDimPast })} ariaLabel="Dim past rows" />
+            ),
+          },
+          {
+            // The YAZ-4163 demo: how dark the past rows' shade is, on the grid of the stepper; it shows only with "Grey text and shade" (YAZ-4176).
+            id: 'tableShadeDarkness',
+            label: 'Shade darkness',
+            hint: 'The shade of the past rows, with "Grey text and shade".',
+            keywords: ['calendar', 'past', 'shade', 'darkness', 'intensity', 'grey', 'table'],
+            available: ({ settings }) => settings.tableDimPast === 'shade',
+            render: ({ settings, onChange }) => {
+              const value = settings.tableShadeDarkness
+              const set = (tableShadeDarkness: number) => onChange({ ...settings, tableShadeDarkness })
+              return (
+                <>
+                  <Stepper name="Shade darkness" size={value} min={TABLE_SHADE_MIN} max={TABLE_SHADE_MAX} unit="%"
+                    onStep={(delta) => set(Math.min(TABLE_SHADE_MAX, Math.max(TABLE_SHADE_MIN, value + delta * TABLE_SHADE_STEP)))} />
+                  {value !== DEFAULT_SETTINGS.tableShadeDarkness && (
+                    <button type="button" className="settings__option" onClick={() => set(DEFAULT_SETTINGS.tableShadeDarkness)}>
+                      Reset
+                    </button>
+                  )}
+                </>
+              )
+            },
+          },
+          {
+            // The YAZ-4163 demo: the hours of a new calendar table, and of "Fill the calendar day".
+            id: 'tableCalendarDay',
+            label: 'Calendar day',
+            hint: 'The first and the last time of a new calendar table. The 6-dot menu\'s "Fill the calendar day" adds them to a table.',
+            keywords: ['calendar', 'day', 'hours', 'start', 'end', 'from', 'to', 'morning', 'table'],
+            render: ({ settings, onChange }) => <CalendarDayControl settings={settings} onChange={onChange} />,
+          },
+          {
+            // YAZ-4163 D15: new calendar tables, new times in a table with none, and "Current time". A table with times keeps its own.
+            id: 'tableTimeFormat',
+            label: 'Time format',
+            hint: ({ settings }) => `Now: ${formatTime(settings.tableTimeFormat, new Date().getHours() * 60 + new Date().getMinutes())}. For new calendar tables and "Current time"; a table keeps the format of its times.`,
+            keywords: ['calendar', 'time', 'format', 'clock', 'am', 'pm', '24', 'hour', 'current time', 'table'],
+            // Wide always: the label keeps its width while "Custom…" adds its field beside the dropdown.
+            wide: () => true,
+            render: ({ settings, onChange }) => <TimeFormatControl settings={settings} onChange={onChange} />,
+          },
+        ],
+      },
     ],
   },
   // YAZ-3449: the four switches every code tab shares (its page cog has the first three).
@@ -986,6 +1080,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['daily', 'folder', 'day'],
             available: ({ settings }) => settings.dailyNotes,
             render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.dailyNoteDayFolder} onChange={(dailyNoteDayFolder) => onChange({ ...settings, dailyNoteDayFolder })} ariaLabel="Make a folder for each day" />,
+          },
+          {
+            // YAZ-4164 D11: the footer button, ⌘D and File › Open Today's Daily Note. A ⌘-click opens a background tab, which never scrolls.
+            id: 'dailyNoteOpens',
+            label: 'The button opens',
+            hint: 'At now: the row of the current time in the note\'s first calendar table, with the caret in its first empty cell.',
+            keywords: ['daily', 'now', 'calendar', 'time', 'today', 'cmd d', 'button'],
+            available: ({ settings }) => settings.dailyNotes,
+            render: ({ settings, onChange }) => <Segmented options={DAILY_NOTE_OPENS_OPTIONS} value={settings.dailyNoteOpens} onChange={(dailyNoteOpens) => onChange({ ...settings, dailyNoteOpens })} ariaLabel="The button opens" />,
           },
         ],
       },

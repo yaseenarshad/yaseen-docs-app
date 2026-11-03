@@ -27,7 +27,8 @@ const parseZoom = (draft: string): number | null => {
   return /^\d{1,3}%?$/.test(text) && next >= 50 && next <= 400 ? next : null
 }
 
-export function DocumentZoom({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+/** `label` names the pill for a screen reader: a table's own zoom is "Table zoom" (YAZ-4091, `table/tableZoomPill.tsx`). */
+export function DocumentZoom({ value, onChange, label = 'Document zoom' }: { value: number; onChange: (value: number) => void; label?: string }) {
   const [draft, setDraft] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [error, setError] = useState(false)
@@ -102,7 +103,7 @@ export function DocumentZoom({ value, onChange }: { value: number; onChange: (va
   }, [open, draft, onChange])
 
   return (
-    <div ref={rootRef} className="document-zoom" role="group" aria-label="Document zoom"
+    <div ref={rootRef} className="document-zoom" role="group" aria-label={label}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) apply(false)
       }}
@@ -116,7 +117,7 @@ export function DocumentZoom({ value, onChange }: { value: number; onChange: (va
       <button type="button" className="document-zoom__step" aria-label="Zoom out"
         disabled={stepZoom(value, -1) === null} onClick={() => step(-1)}>−</button>
       <button ref={triggerRef} type="button" className="document-zoom__trigger"
-        aria-label={`Document zoom: ${value}%`} aria-expanded={open}
+        aria-label={`${label}: ${value}%`} aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => { if (open) close(false); else showMenu() }}>
         <span className="document-zoom__value">{value}%</span>
@@ -127,7 +128,7 @@ export function DocumentZoom({ value, onChange }: { value: number; onChange: (va
       {open && <div id={menuId} className="document-zoom__menu" role="group" aria-label="Zoom options">
         <div className="document-zoom__custom">
           <label htmlFor={inputId}>Custom</label>
-          <input ref={inputRef} id={inputId} inputMode="numeric" title="Document zoom (50–400%)"
+          <input ref={inputRef} id={inputId} inputMode="numeric" title={`${label} (50–400%)`}
             value={draft ?? `${value}%`} aria-invalid={error}
             aria-describedby={error ? errorId : undefined}
             onFocus={(event) => event.target.select()}

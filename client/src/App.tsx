@@ -54,6 +54,8 @@ import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
+import { setCalendarDaySetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
+import { requestGoToNow } from './editor/table/goToNowRequest'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmMove } from './sidebar/ConfirmMove'
@@ -578,6 +580,11 @@ export function App() {
   }, [])
   // "Jump across files" (YAZ-3500): every code tab of this page follows the switch (`code/languageHelpers.ts`).
   useEffect(() => setLanguageHelpers(settings.codeLanguageHelpers === true), [settings.codeLanguageHelpers])
+  // The time format (YAZ-4163 D15): "/Calendar table", "Time slots" and "Current time" read it at the click.
+  useEffect(() => setTimeFormatSetting(settings.tableTimeFormat), [settings.tableTimeFormat])
+  useEffect(() => setCalendarDaySetting(settings.tableDayStart, settings.tableDayEnd), [settings.tableDayStart, settings.tableDayEnd])
+  // The past rows' shade (YAZ-4163 demo), read by table.css.
+  useEffect(() => document.documentElement.style.setProperty('--table-past-shade', `${settings.tableShadeDarkness}%`), [settings.tableShadeDarkness])
   // The selection toolbar's order and hidden buttons (YAZ-3806 T6): every open note's toolbar follows at once.
   useEffect(() => {
     toolbarPrefs.value = settings.selectionToolbar
@@ -689,7 +696,9 @@ export function App() {
   // Bullet threading and content width are CSS gates too — no editor remount. So are section
   // indent's grey lines (YAZ-2709, `data-section-lines`), and the sidebar tree's icons (YAZ-3440 D4,
   // `data-sidebar-file-icons`, `data-sidebar-folder-icons`) and its arrows' turn (D6, `data-sidebar-arrow`): a change
-  // restyles the rows and renders no tree level.
+  // restyles the rows and renders no tree level. A calendar table's marker look and its dim past rows (YAZ-4162 D6, D14,
+  // `data-table-now`, `data-table-dim-past`) too, and the row band (YAZ-4167 D16, `data-table-row-band`): a change
+  // restyles the rows and builds no decoration.
   const settingsVars = {
     '--edit-line-height': settings.lineSpacing,
     '--edit-block-gap': `${settings.blockGap}px`,
@@ -1070,6 +1079,8 @@ export function App() {
           if (background) return openBehindSidebar.current(path)
           if (sidebarCollapsedRef.current) toggleSidebar()
           openAsSidebar.current(path)
+          // "The note at now" (YAZ-4164 D11): its editor takes the request when it shows; a background tab asks nothing.
+          if (now.dailyNoteOpens === 'now') requestGoToNow(path)
           revealInFiles(path, false)
         },
         (err: unknown) => notify(`Can't open today's daily note: ${err instanceof Error ? err.message : String(err)}`, 'error'),
@@ -3059,7 +3070,7 @@ export function App() {
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
     <VaultLinksContext.Provider value={vaultLinks}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands

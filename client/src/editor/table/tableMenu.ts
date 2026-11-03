@@ -3,12 +3,14 @@
  * rows, when the right-click is in a cell of an editable note (R3). It is the ONE table menu
  * (YAZ-3820): a row or column handle opens the same note menu, on the cells it selected
  * (`noteMenu.tsx`). Five groups:
- * - Insert row above / below, Insert column left / right, Duplicate row;
+ * - Insert row above / below, Insert column left / right, Duplicate row, Duplicate column (YAZ-4168);
  * - Delete row, Delete column, Clear cells;
- * - Align ▸ (the cells' own alignment, YAZ-3819; the column's own value clears it), Fill ▸ and
+ * - Align ▸ (the cells' own alignment, YAZ-3819; the column's own value clears it; then Top · Middle · Bottom, the
+ *   cells' own vertical alignment, YAZ-4166 D10; the table's own value clears it), Fill ▸ and
  *   Text colour ▸ (the cell toolbar's palette: the clear item, the ten names, Custom colour…,
  *   YAZ-3817, on the target cells of the moment it opens, `colours.ts`);
- * - Sort A to Z, Sort Z to A, by the target's left column;
+ * - Sort A to Z, Sort Z to A, by the target's left column; "Fold N rows" on a target of two or more body rows
+ *   (YAZ-4165, `tableFold.ts`; the header row never folds);
  * - Freeze up to this row, Freeze up to this column, Unfreeze rows, Unfreeze columns.
  *
  * A row acts on the CellSelection when there is one in the clicked table, else on the clicked cell:
@@ -16,10 +18,12 @@
  * its own selection. Each row is one transaction with the history closed (one undo step, R4).
  * The header row (row 1) has no row above it, and it is never deleted or duplicated. The last body
  * row or column is not deleted either (GFM needs a header row and one row, and the table one
- * column). A new row takes each column's alignment, as Milkdown's own row does.
+ * column). A new row takes each column's alignment, as Milkdown's own row does, and the vertical alignment of the
+ * cell above it in each column (YAZ-4166).
  *
  * The labels count the target's rows and columns, as in Sheets (YAZ-3801): "Insert 2 rows above",
- * "Delete 3 columns"; one row or column keeps the singular label. Insert N inserts N.
+ * "Delete 3 columns"; one row or column keeps the singular label. Insert N inserts N. Whole rows and whole columns
+ * count the same way: every item is always there, and counts what is selected (the YAZ-4163 demo).
  *
  * Freeze (S3) counts from the top and from the left: "Freeze up to this row" sets `freezeRows` to
  * the clicked row's number (row 1 is the header), the column item `freezeCols` the same way; there
@@ -43,9 +47,10 @@ import {
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createElement } from 'react'
 import type { MenuAction, MenuParent, MenuSection } from '../../sidebar/menuSections'
-import { setCellsAlign, setCellsAttr } from './cells'
+import { setCellsAlign, setCellsAttr, setCellsValign } from './cells'
 import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
-import { CELL_ALIGNS, TABLE_COLORS, type CellAlign, type TableColor } from './tableStyle'
+import { foldRows, keepingScroll } from './tableFold'
+import { CELL_ALIGNS, TABLE_COLORS, VALIGNS, type CellAlign, type TableColor, type Valign } from './tableStyle'
 
 type Command = (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean
 
@@ -86,6 +91,8 @@ function runOn(view: EditorView, pointer: number, command: Command): void {
 /**
  * As many body rows as the rect holds, at index `at` of its table, each cell with its column's alignment:
  * a copy of Milkdown's `addRowWithAlignment`, which needs the editor's `ctx`; the note menu has the view only.
+ * Each cell also takes the `valign` of the cell above it (YAZ-4166); above the first body row, that row's own, not the
+ * header's (YAZ-4173 12C).
  */
 function insertRows(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, rect: TableRect, at: number): boolean {
   if (at === 0) return false
@@ -93,7 +100,9 @@ function insertRows(state: EditorState, dispatch: ((tr: Transaction) => void) | 
     const { table_row: rowType, table_cell: cellType } = state.schema.nodes
     let pos = rect.tableStart
     for (let i = 0; i < at; i++) pos += rect.table.child(i).nodeSize
-    const row = () => rowType.create(null, Array.from({ length: rect.map.width }, (_, col) => cellType.createAndFill({ alignment: rect.table.nodeAt(rect.map.map[col])?.attrs.alignment })!))
+    const attr = (row: number, col: number, name: string): unknown => rect.table.nodeAt(rect.map.map[row * rect.map.width + col]!)?.attrs[name] ?? null
+    const row = () =>
+      rowType.create(null, Array.from({ length: rect.map.width }, (_, col) => cellType.createAndFill({ alignment: attr(0, col, 'alignment'), valign: attr(at === 1 ? 1 : at - 1, col, 'valign') })!))
     dispatch(state.tr.insert(pos, Array.from({ length: rect.bottom - rect.top }, row)))
   }
   return true
@@ -132,6 +141,15 @@ const cellsAlign =
   (align: CellAlign): Command =>
   (state, dispatch) => {
     const tr = setCellsAlign(state.tr, selectedRect(state), align)
+    if (tr.docChanged) dispatch?.(tr)
+    return true
+  }
+
+/** The target cells' own vertical alignment: `null` where it is the table's (`setCellsValign`, YAZ-4166). */
+const cellsValign =
+  (valign: Valign): Command =>
+  (state, dispatch) => {
+    const tr = setCellsValign(state.tr, selectedRect(state), valign)
     if (tr.docChanged) dispatch?.(tr)
     return true
   }
@@ -184,6 +202,26 @@ const duplicateRows: Command = (state, dispatch) => {
   return true
 }
 
+/**
+ * A copy of the target's columns right of the last of them (YAZ-4168): in each row, the same cell
+ * nodes again, so every attribute goes with them — text, fill, colour, own alignment, width
+ * (`colwidth`) and the GFM `alignment`. One `insert` per row, mapped through the ones before it.
+ */
+const duplicateColumns: Command = (state, dispatch) => {
+  if (dispatch) {
+    const { table, tableStart, map, left, right } = selectedRect(state)
+    const tr = state.tr
+    for (let row = 0; row < map.height; row++) {
+      const at = (col: number) => map.map[row * map.width + col]!
+      const cells = Array.from({ length: right - left }, (_, i) => table.nodeAt(at(left + i))!)
+      const last = at(right - 1)
+      tr.insert(tr.mapping.map(tableStart + last + table.nodeAt(last)!.nodeSize), cells)
+    }
+    dispatch(tr)
+  }
+  return true
+}
+
 /** One freeze count on the clicked table. */
 function setFreeze(view: EditorView, tableStart: number, attr: 'freezeRows' | 'freezeCols', count: number): void {
   const pos = tableStart - 1
@@ -218,6 +256,8 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
   const run = (command: Command) => () => runOn(view, pointer, command)
   const rows = bottom - top
   const cols = right - left
+  // The target's body rows: the header row never folds (YAZ-4165).
+  const folds = bottom - Math.max(top, 1)
   const { freezeRows, freezeCols } = cell.table.attrs as { freezeRows: number; freezeCols: number }
   const item = (id: string, label: string, onSelect: () => void, disabled = false): MenuAction => ({ id: `table-${id}`, label, onSelect, disabled })
   /** Fill ▸ or Text colour ▸: the cell toolbar's palette — the clear item, the ten names, Custom colour… (YAZ-3817). */
@@ -237,6 +277,7 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
       item('insert-col-left', counted(cols, 'Insert column left', 'Insert N columns left'), run(columns('left'))),
       item('insert-col-right', counted(cols, 'Insert column right', 'Insert N columns right'), run(columns('right'))),
       item('duplicate-rows', counted(rows, 'Duplicate row', 'Duplicate N rows'), run(duplicateRows), top === 0),
+      item('duplicate-cols', counted(cols, 'Duplicate column', 'Duplicate N columns'), run(duplicateColumns)),
     ],
     [
       item('delete-row', counted(rows, 'Delete row', 'Delete N rows'), run(deleteRow), top === 0 || rows >= map.height - 1),
@@ -244,11 +285,19 @@ export function tableMenuSections(view: EditorView, pointer: number | null): Men
       item('clear', 'Clear cells', run(deleteCellSelection)),
     ],
     [
-      { id: 'table-align', label: 'Align', children: [CELL_ALIGNS.map((a) => item(`align-${a}`, capital(a), run(cellsAlign(a))))] },
+      {
+        id: 'table-align',
+        label: 'Align',
+        children: [CELL_ALIGNS.map((a) => item(`align-${a}`, capital(a), run(cellsAlign(a)))), VALIGNS.map((v) => item(`align-${v}`, capital(v), run(cellsValign(v))))],
+      },
       palette('fill', 'Fill', 'No fill', fillSwatch),
       palette('color', 'Text colour', 'Default colour', textSwatch),
     ],
-    [item('sort-asc', 'Sort A to Z', run(sortRows(1))), item('sort-desc', 'Sort Z to A', run(sortRows(-1)))],
+    [
+      item('sort-asc', 'Sort A to Z', run(sortRows(1))),
+      item('sort-desc', 'Sort Z to A', run(sortRows(-1))),
+      ...(folds >= 2 ? [item('fold', `Fold ${folds} rows`, () => keepingScroll(view, run(foldRows)))] : []),
+    ],
     [
       freezeRows === cell.row + 1
         ? item('freeze-rows', '✓ Frozen up to this row', () => setFreeze(view, cell.tableStart, 'freezeRows', 0))

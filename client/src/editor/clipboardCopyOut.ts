@@ -10,7 +10,7 @@ import { eachVisibleTextblock } from './lineSelection'
 import { rowShortcuts } from './noteKeys'
 import { getZoomedItemPos } from './outline/zoom'
 import { FILL_WASH } from './table/colours'
-import { cellColor, type TableColor } from './table/tableComment'
+import { cellColor, cellValign, type TableColor } from './table/tableComment'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 
 export const CLIPBOARD_EMPTY_PARAGRAPH = 'data-mdapp-empty-paragraph'
@@ -170,6 +170,9 @@ function styleTables(dom: DocumentFragment): void {
     if (fill !== undefined) cell.style.backgroundColor = fill
     const color = copyText(cellColor(cell.dataset.color))
     if (color !== undefined) cell.style.color = color
+    // A cell's own vertical alignment is in its style already; a copied table gives the others its default (YAZ-4166).
+    const valign = cellValign(cell.closest('table')?.getAttribute('data-table-valign'))
+    if (cell.style.verticalAlign === '' && valign !== null) cell.style.verticalAlign = valign
   }
 }
 

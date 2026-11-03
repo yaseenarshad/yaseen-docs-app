@@ -7,23 +7,26 @@
  *   `tableEditing`, which keeps its own place (a plain `$prose` would land after it).
  * - DOCUMENT ZOOM (R2): the plugin adds the mouse travel in screen px to a width in layout px, so under the CSS
  *   zoom on `.ProseMirror` the edge ran ahead of (or behind) the cursor. While an edge drags, a window capture
- *   listener gives each `mousemove`/`mouseup` the travel in layout px, before the plugin reads it.
+ *   listener gives each `mousemove`/`mouseup` the travel in layout px, before the plugin reads it. The zoom is the
+ *   one at the dragged cell's `<table>`: the page zoom times the table's own (YAZ-4091, `table.css` zooms the block's
+ *   content, so the block itself has the page zoom only).
  * - HEADER ROW ONLY (YAZ-3800, 2D): as in Sheets, a column resizes only from a header cell's edge. Over a body
  *   cell (`td`) the plugin's mousemove clears the grip (its own `mouseleave` code), and its mousedown does not
  *   run, so `tableEditing` starts a cell selection there.
  */
-import { SchemaReady, prosePluginsCtx } from '@milkdown/kit/core'
-import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import { Plugin } from '@milkdown/kit/prose/state'
-import { columnResizing, columnResizingPluginKey, tableEditingKey } from '@milkdown/kit/prose/tables'
+import { columnResizing, columnResizingPluginKey } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { cssZoom } from '../../lib/cssZoom'
+import { beforeTableEditing } from './beforeTableEditing'
 
 function zoomedDrag(view: EditorView) {
   const win = view.dom.ownerDocument.defaultView ?? window
   const toLayout = (event: MouseEvent) => {
-    const dragging = columnResizingPluginKey.getState(view.state)?.dragging
-    const zoom = cssZoom(view.dom)
+    const state = columnResizingPluginKey.getState(view.state)
+    const dragging = state?.dragging
+    const cell = dragging ? view.nodeDOM(state!.activeHandle) : null
+    const zoom = cssZoom((cell instanceof Element ? cell.closest('table') : null) ?? view.dom)
     if (!dragging || zoom === 1) return
     Object.defineProperty(event, 'clientX', { value: dragging.startX + (event.clientX - dragging.startX) / zoom })
   }
@@ -60,14 +63,4 @@ function headerResizing(): Plugin {
   })
 }
 
-export const tableColumnResize: MilkdownPlugin = (ctx) => async () => {
-  await ctx.wait(SchemaReady)
-  const plugins = [headerResizing(), new Plugin({ view: zoomedDrag })]
-  ctx.update(prosePluginsCtx, (ps) => {
-    const at = ps.findIndex((plugin) => plugin.spec.key === tableEditingKey)
-    return at < 0 ? [...ps, ...plugins] : [...ps.slice(0, at), ...plugins, ...ps.slice(at)]
-  })
-  return () => {
-    ctx.update(prosePluginsCtx, (ps) => ps.filter((plugin) => !plugins.includes(plugin)))
-  }
-}
+export const tableColumnResize = beforeTableEditing(() => [headerResizing(), new Plugin({ view: zoomedDrag })])
