@@ -121,7 +121,8 @@ describe('the export copy is measured again in its new font (YAZ-3943 1D1)', () 
       if (fontsLoad === 'fail') throw new Error('offline')
       return []
     })
-    const restoreElements = vi.fn((elements: Array<Record<string, unknown>>, _existing: unknown, _opts: unknown) => elements.map((e) => (e.type === 'text' ? { ...e, width: 999 } : e)))
+    // The engine's rule (YAZ-4279 4A-7): it measures text again only inside its binding repair.
+    const restoreElements = vi.fn((elements: Array<Record<string, unknown>>, _existing: unknown, opts?: { repairBindings?: boolean; refreshDimensions?: boolean }) => elements.map((e) => (e.type === 'text' && opts?.repairBindings === true && opts.refreshDimensions === true ? { ...e, width: 999 } : e)))
     return { engine: { ...engine, Fonts: { loadElementsFonts }, restoreElements } as unknown as ExportCopyEngine, serializeAsJSON, loadElementsFonts, restoreElements }
   }
   const textEl = (id: string, fontFamily: number) => ({ id, type: 'text', fontFamily, width: 10 })
@@ -130,7 +131,7 @@ describe('the export copy is measured again in its new font (YAZ-3943 1D1)', () 
     const { engine, serializeAsJSON, loadElementsFonts, restoreElements } = copyEngine()
     await assembleExportCopy(engine, { elements: [textEl('a', 11), textEl('b', 5)], appState: {}, files: {} })
     expect(loadElementsFonts).toHaveBeenCalledWith([textEl('a', 6), textEl('b', 5)])
-    expect(restoreElements).toHaveBeenCalledWith([textEl('a', 6), textEl('b', 5)], null, { refreshDimensions: true })
+    expect(restoreElements).toHaveBeenCalledWith([textEl('a', 6), textEl('b', 5)], null, { repairBindings: true, refreshDimensions: true })
     expect((serializeAsJSON.mock.calls[0][0] as Array<Record<string, unknown>>).map((e) => [e.fontFamily, e.width])).toEqual([[6, 999], [5, 999]])
     expect(loadElementsFonts.mock.invocationCallOrder[0]).toBeLessThan(restoreElements.mock.invocationCallOrder[0])
   })

@@ -276,13 +276,37 @@ window.ICON_SERVICE_PATH = null;
 		// YAZ-4279 D2: an outside save of this diagram, merged by draw.io's own merge (the one its cloud files use). Not
 		// draw.io's embed `merge`: it diffs against the last `load`, and the host's saves since never moved that, so
 		// they would read as the other side's edits. Ours diffs against the HOST's base.
+		// Only the LATEST request runs once the gesture ends (4A-2), and one the host gave up on never runs.
 		if (msg != null && msg.action == 'yaseenMerge')
 		{
 			evt.stopImmediatePropagation();
-			whenIdle(function()
+			mergeWanted = msg;
+
+			if (!mergeWaiting)
 			{
-				mergeOutside(msg.base, msg.xml, msg.glow);
-			});
+				mergeWaiting = true;
+				whenIdle(function()
+				{
+					var wanted = mergeWanted;
+					mergeWaiting = false;
+					mergeWanted = null;
+
+					if (wanted != null)
+					{
+						mergeOutside(wanted);
+					}
+				});
+			}
+		}
+
+		if (msg != null && msg.action == 'yaseenMergeCancel')
+		{
+			evt.stopImmediatePropagation();
+
+			if (mergeWanted != null && mergeWanted.id == msg.id)
+			{
+				mergeWanted = null;
+			}
 		}
 
 		// YAZ-4279 item 8: Keep mine answered the bar, so the red outlines of the clash go.
@@ -292,6 +316,10 @@ window.ICON_SERVICE_PATH = null;
 			clearMarks('clash');
 		}
 	});
+
+	/** The one `yaseenMerge` waiting for the gesture to end, and whether a wait runs. */
+	var mergeWanted = null;
+	var mergeWaiting = false;
 
 	/** YAZ-4279 item 2: a label being typed, or a drag, ends first; a merge under it would end it for the user. */
 	function whenIdle(then)
@@ -314,23 +342,34 @@ window.ICON_SERVICE_PATH = null;
 	/**
 	 * The merge (D2, D4). A field both sides changed, or a cell one side removed and the other changed, is the user's
 	 * to settle: the answer is a conflict, and nothing changes. draw.io alone would keep ours in silence
-	 * (`DrawioFile.LAST_WRITE_WINS`). The merged diagram reaches the host as draw.io's own `autosave` — the model's
-	 * change listener posts it inside the merge, so before this answer. Undo, the selection and the view stay.
+	 * (`DrawioFile.LAST_WRITE_WINS`). Undo, the selection and the view stay. Just before the merge, `yaseenMerging` tells
+	 * the host that every edit of the user's is in (4A-1: a label typed while it waited came first). draw.io's own
+	 * `autosave` then posts the page on screen; the answer carries the whole merged file, because a change to another page
+	 * posts no `autosave` (4A-3).
 	 */
-	function mergeOutside(baseXml, xml, glow)
+	function mergeOutside(msg)
 	{
 		var answer = function(extra)
 		{
 			extra.event = 'yaseenMerge';
+			extra.id = msg.id;
 			postToHost(extra);
 		};
 
 		try
 		{
 			var file = editorUi.getCurrentFile();
-			var base = editorUi.getPagesForXml(baseXml);
-			var theirs = editorUi.diffPages(base, editorUi.getPagesForXml(xml));
-			var clash = (file != null) ? clashes(editorUi.diffPages(base, editorUi.pages), theirs) : [];
+
+			if (file == null)
+			{
+				answer({conflict: true});
+
+				return;
+			}
+
+			var base = editorUi.getPagesForXml(msg.base);
+			var theirs = editorUi.diffPages(base, editorUi.getPagesForXml(msg.xml));
+			var clash = clashes(editorUi.diffPages(base, editorUi.pages), theirs);
 
 			clearMarks('clash');
 
@@ -342,14 +381,15 @@ window.ICON_SERVICE_PATH = null;
 				return;
 			}
 
+			postToHost({event: 'yaseenMerging', id: msg.id});
 			file.setShadowPages(base);
-			file.mergeFile(new LocalFile(editorUi, xml), function()
+			file.mergeFile(new LocalFile(editorUi, msg.xml), function()
 			{
 				var changed = changedCells(theirs);
 				clearMarks('outside');
-				markCells(changed.added, 'added', glow);
-				markCells(changed.changed, 'changed', glow);
-				answer({changed: changed});
+				markCells(changed.added, 'added', msg.glow);
+				markCells(changed.changed, 'changed', msg.glow);
+				answer({xml: embedXml()});
 			}, function()
 			{
 				answer({conflict: true});
@@ -362,9 +402,17 @@ window.ICON_SERVICE_PATH = null;
 		}
 	}
 
+	/** The file as the embed's own `autosave` posts it (its `y()`): every page, or the one graph of a one-page file. */
+	function embedXml()
+	{
+		return ('0' != urlParams['pages'] || (editorUi.pages != null && editorUi.pages.length > 1)) ? editorUi.getFileData(true) : mxUtils.getXml(editorUi.editor.getGraphXml());
+	}
+
 	/**
 	 * Two of draw.io's diffs (`EditorUi.diffPages`) touch one thing: a page or cell removed on one side and changed on the
-	 * other, or one field changed on both. Null: no clash; otherwise the cells that clash (item 8), none for a page.
+	 * other, a cell added into a parent or onto an end the other side removed, one field changed on both (a label is one
+	 * field, `value` or `xmlValue`), or a page renamed or re-boxed on both (4A-9). Null: no clash; otherwise the cells
+	 * that clash (item 8), none for a page.
 	 */
 	function clashes(mine, theirs)
 	{
@@ -384,13 +432,13 @@ window.ICON_SERVICE_PATH = null;
 				continue;
 			}
 
-			if ((t.name != null && m.name != null && t.name != m.name) || bothChanged(t.view, m.view))
+			if (differs(t.name, m.name) || differs(t.viewBox, m.viewBox) || bothChanged(t.view, m.view))
 			{
 				clash = true;
 			}
 
 			var tc = t.cells || {}, mc = m.cells || {}, tcu = tc.u || {}, mcu = mc.u || {};
-			ids = ids.concat(removedChanged(tc.r, mcu), removedChanged(mc.r, tcu));
+			ids = ids.concat(removedChanged(tc.r, mcu), removedChanged(mc.r, tcu), addedOnto(tc.i, mc.r), addedOnto(mc.i, tc.r));
 
 			for (var cell in tcu)
 			{
@@ -415,6 +463,20 @@ window.ICON_SERVICE_PATH = null;
 		return (clash || ids.length > 0) ? ids : null;
 	}
 
+	function differs(a, b)
+	{
+		return a != null && b != null && a != b;
+	}
+
+	/** The cells one side added into a parent, or onto a source or target, that the other side removed. */
+	function addedOnto(inserted, removed)
+	{
+		var gone = {};
+		(removed || []).forEach(function(id) { gone[id] = true; });
+
+		return (inserted || []).filter(function(c) { return gone[c.parent] || gone[c.source] || gone[c.target]; }).map(function(c) { return c.id; });
+	}
+
 	/** The ids removed on one side that the other side changed. */
 	function removedChanged(removed, changed)
 	{
@@ -428,6 +490,9 @@ window.ICON_SERVICE_PATH = null;
 			return false;
 		}
 
+		a = oneLabel(a);
+		b = oneLabel(b);
+
 		for (var key in a)
 		{
 			if (key in b && JSON.stringify(a[key]) != JSON.stringify(b[key]))
@@ -437,6 +502,24 @@ window.ICON_SERVICE_PATH = null;
 		}
 
 		return false;
+	}
+
+	/** draw.io keeps a label as `xmlValue` once its cell has attributes: one field, whatever its name. */
+	function oneLabel(fields)
+	{
+		if (!('xmlValue' in fields))
+		{
+			return fields;
+		}
+
+		var out = {};
+
+		for (var key in fields)
+		{
+			out[(key == 'xmlValue') ? 'value' : key] = fields[key];
+		}
+
+		return out;
 	}
 
 	/**

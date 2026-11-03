@@ -71,9 +71,11 @@ function tapFrame(): void {
       if (msg.action !== 'yaseenMerge' || mergeReply === 'none') return
       const reply = mergeReply
       queueMicrotask(() => {
-        // draw.io's model listener posts the merged diagram inside the merge, before the overlay answers.
-        if (reply === 'merged') drawio({ event: 'autosave', xml: `${String(msg.xml)}<!--merged-->` })
-        drawio(reply === 'merged' ? { event: 'yaseenMerge', changed: { added: [], changed: ['c1'] } } : { event: 'yaseenMerge', conflict: true })
+        if (reply === 'conflict') return drawio({ event: 'yaseenMerge', id: msg.id, conflict: true })
+        // The overlay says the merge begins; draw.io's model listener posts the page on screen inside it; the answer has the whole file.
+        drawio({ event: 'yaseenMerging', id: msg.id })
+        drawio({ event: 'autosave', xml: `${String(msg.xml)}<!--merged-->` })
+        drawio({ event: 'yaseenMerge', id: msg.id, xml: `${String(msg.xml)}<!--merged--><!--every page-->` })
       })
     },
   })
@@ -323,7 +325,7 @@ describe('changes on disk', () => {
     watcherSaw({ type: 'change', path: PATH, mtime: 300 })
     await settle()
     await settle()
-    expect(posted.filter((m) => m.action === 'yaseenMerge')).toEqual([{ action: 'yaseenMerge', base: XML, xml: EDITED, glow: 'until-checked', _origin: DRAWIO_ORIGIN }])
+    expect(posted.filter((m) => m.action === 'yaseenMerge')).toEqual([{ action: 'yaseenMerge', id: 1, base: XML, xml: EDITED, glow: 'until-checked', _origin: DRAWIO_ORIGIN }])
     expect(posted.some((m) => m.action === 'load' && m.xml === EDITED)).toBe(false)
     await act(async () => {
       vi.advanceTimersByTime(600)
@@ -354,13 +356,14 @@ describe('changes on disk', () => {
     watcherSaw({ type: 'change', path: PATH, mtime: 300 })
     await settle()
     await settle()
-    expect(posted.filter((m) => m.action === 'yaseenMerge')).toEqual([{ action: 'yaseenMerge', base: XML, xml: `${XML}<!--ai-->`, glow: 'until-checked', _origin: DRAWIO_ORIGIN }])
+    expect(posted.filter((m) => m.action === 'yaseenMerge')).toEqual([{ action: 'yaseenMerge', id: 1, base: XML, xml: `${XML}<!--ai-->`, glow: 'until-checked', _origin: DRAWIO_ORIGIN }])
     expect(text()).not.toContain('File changed on disk.')
     await act(async () => {
       vi.advanceTimersByTime(600)
     })
     await settle()
-    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ expectedMtime: 300, xml: `${XML}<!--ai--><!--merged-->` }))
+    // 4A-3: the save writes the whole merged file the answer carried, not only draw.io's page on screen.
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ expectedMtime: 300, xml: `${XML}<!--ai--><!--merged--><!--every page-->` }))
   })
 
   it('YAZ-4279 D4: a clash in draw.io is the bar; Reload from the bar puts the disk back with a load, never a merge', async () => {
@@ -377,6 +380,66 @@ describe('changes on disk', () => {
     await settle()
     expect(posted.filter((m) => m.action === 'yaseenMerge')).toHaveLength(merges)
     expect(posted.at(-1)).toMatchObject({ action: 'load', xml: `${XML}<!--ai-->` })
+  })
+
+  it('4A-1: a label typed while draw.io waits to merge (a clean tab then) is kept: it saves with the merge', async () => {
+    await opened()
+    mergeReply = 'none'
+    load.mockResolvedValue({ path: PATH, xml: `${XML}<!--ai-->`, mtime: 300, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    await settle()
+    const ask = posted.filter((m) => m.action === 'yaseenMerge').at(-1)!
+    // The label ends: draw.io posts it, then the overlay begins the merge.
+    drawio({ event: 'autosave', xml: `${XML}<!--label-->` })
+    drawio({ event: 'yaseenMerging', id: ask.id })
+    drawio({ event: 'autosave', xml: `${XML}<!--label--><!--ai-->` })
+    drawio({ event: 'yaseenMerge', id: ask.id, xml: `${XML}<!--label--><!--ai-->` })
+    await settle()
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await settle()
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ expectedMtime: 300, xml: `${XML}<!--label--><!--ai-->` }))
+  })
+
+  it('4A-2: an answer to another request is not this one\'s; a burst asks one at a time, then once more for the latest', async () => {
+    await opened()
+    mergeReply = 'none'
+    load.mockResolvedValue({ path: PATH, xml: `${XML}<!--1-->`, mtime: 300, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    await settle()
+    load.mockResolvedValue({ path: PATH, xml: `${XML}<!--2-->`, mtime: 310, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 310 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 320 })
+    await settle()
+    expect(posted.filter((m) => m.action === 'yaseenMerge')).toHaveLength(1)
+    drawio({ event: 'yaseenMerge', id: 99, conflict: true }) // not this request's
+    await settle()
+    expect(text()).not.toContain('File changed on disk.')
+    drawio({ event: 'yaseenMerging', id: 1 })
+    drawio({ event: 'yaseenMerge', id: 1, xml: `${XML}<!--1-->` })
+    await settle()
+    await settle()
+    expect(posted.filter((m) => m.action === 'yaseenMerge').map((m) => m.xml)).toEqual([`${XML}<!--1-->`, `${XML}<!--2-->`])
+  })
+
+  it('item 10: a clash keeps the bar; a later outside save that merges takes it down', async () => {
+    await opened()
+    mergeReply = 'conflict'
+    drawio({ event: 'autosave', xml: EDITED })
+    load.mockResolvedValue({ path: PATH, xml: `${XML}<!--ai-->`, mtime: 300, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    await settle()
+    expect(text()).toContain('File changed on disk.')
+    mergeReply = 'merged'
+    load.mockResolvedValue({ path: PATH, xml: `${XML}<!--ai2-->`, mtime: 400, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await settle()
+    await settle()
+    expect(text()).not.toContain('File changed on disk.')
   })
 
   it('after a save, the merge\'s base is what the save wrote', async () => {

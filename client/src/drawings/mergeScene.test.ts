@@ -4,15 +4,23 @@ import { mergeLiveScene, type SceneClash, type SceneMerge } from './mergeScene'
 type El = Record<string, unknown> & { id: string }
 
 /**
- * The engine's restore, faked: a copy (as the real one makes), and with `refreshDimensions` a text's width from its text — the
- * one thing a real measure would change. A box handed in beside its label must not come back out.
+ * The engine's restore, faked by its real rules (4A-13): a copy that fills in a field the file may lack (`roughness`); and,
+ * only with BOTH `repairBindings` and `refreshDimensions` (the engine returns before its measure without the repair), a
+ * text measured again from its `originalText`, which becomes its `text` — the width the one thing a real measure changes.
  */
-const restoreElements = vi.fn((elements: El[], _existing: unknown, opts?: { refreshDimensions?: boolean }) =>
-  elements.map((e) => (opts?.refreshDimensions === true && e.type === 'text' ? { ...e, width: String(e.text).length * 10 } : { ...e })),
+const restoreElements = vi.fn((elements: El[], _existing: unknown, opts?: { repairBindings?: boolean; refreshDimensions?: boolean }) =>
+  elements.map((e) => {
+    const out = { roughness: 1, ...e }
+    if (opts?.repairBindings !== true || opts.refreshDimensions !== true || e.type !== 'text') return out
+    const words = String(e.originalText ?? e.text)
+    return { ...out, text: words, width: words.length * 10 }
+  }),
 )
-const engine = { restoreElements } as never
+const restoreAppState = (appState: Record<string, unknown> | null) => ({ viewBackgroundColor: '#ffffff', gridSize: null, ...appState })
+const engine = { restoreElements, restoreAppState } as never
 
-const shape = (id: string, over: Partial<El> = {}): El => ({ id, type: 'rectangle', x: 0, version: 3, versionNonce: 1, updated: 1, isDeleted: false, ...over })
+/** A shape as the canvas holds it: restored, so with every field the restore fills in. */
+const shape = (id: string, over: Partial<El> = {}): El => ({ id, type: 'rectangle', x: 0, roughness: 1, version: 3, versionNonce: 1, updated: 1, isDeleted: false, ...over })
 const merge = (base: El[], disk: El[], live: El[], appState: { base?: object; disk?: object; live?: object } = {}): (SceneMerge & { conflicts?: never }) | (SceneClash & { elements?: never; appState?: never; added?: never; changed?: never }) =>
   mergeLiveScene(engine, { elements: base, appState: { ...appState.base } }, { elements: disk, appState: { ...appState.disk } }, { elements: live, appState: { ...appState.live } }, ['viewBackgroundColor', 'gridSize'])
 
@@ -40,12 +48,13 @@ describe('mergeLiveScene (YAZ-4279 D1, D4)', () => {
     expect(out?.elements?.find((e) => e.id === 'b')?.isDeleted).toBe(true)
   })
 
-  it('nothing taken from the file: the canvas as it is, and no restore', () => {
+  it('nothing taken from the file: the canvas as it is, each shape its very object, and nothing measured', () => {
     restoreElements.mockClear()
     const a = shape('a')
     const live = [{ ...a, x: 40 }]
-    expect(merge([a], [a], live)?.elements).toEqual(live)
-    expect(restoreElements).not.toHaveBeenCalled()
+    expect(merge([a], [a], live)?.elements?.[0]).toBe(live[0])
+    // Only the base and the file go through the restore, once each.
+    expect(restoreElements).toHaveBeenCalledTimes(2)
   })
 
   it('the board settings: a key the file changed is taken; a key both changed is a clash; a key the file lacks says nothing', () => {
@@ -53,6 +62,26 @@ describe('mergeLiveScene (YAZ-4279 D1, D4)', () => {
     expect(merge(els, els, els, { base: { viewBackgroundColor: '#fff' }, disk: { viewBackgroundColor: '#000' }, live: { viewBackgroundColor: '#fff' } })?.appState).toEqual({ viewBackgroundColor: '#000' })
     expect(merge(els, els, els, { base: { viewBackgroundColor: '#fff' }, disk: { viewBackgroundColor: '#000' }, live: { viewBackgroundColor: '#f00' } })).toEqual({ conflicts: [] })
     expect(merge(els, els, els, { base: { gridSize: 20 }, disk: {}, live: { gridSize: 40 } })?.appState).toEqual({})
+    // 4A-8: a key the base lacks is the engine's default, as the canvas holds it: the file's change is taken, no clash.
+    expect(merge(els, els, els, { base: {}, disk: { viewBackgroundColor: '#000' }, live: { viewBackgroundColor: '#ffffff' } })?.appState).toEqual({ viewBackgroundColor: '#000' })
+  })
+
+  it('4A-6: the base and the file as written, the canvas restored: a shape the user never touched, deleted in the file, is deleted — no bar', () => {
+    const { roughness: _r, ...raw } = shape('a')
+    const out = merge([raw as El, shape('b')], [shape('b')], [shape('a'), { ...shape('b'), x: 40 }])
+    expect(out?.elements?.map((e) => e.id)).toEqual(['b'])
+    expect(out?.elements?.[0]).toMatchObject({ x: 40 })
+  })
+
+  it('a seed the restore made up is no edit: a shape with none in the file, changed in the file, is no clash', () => {
+    const a = shape('a')
+    expect(merge([a], [{ ...a, strokeColor: 'red', seed: 7 }], [{ ...a, x: 40, seed: 3 }])?.elements?.[0]).toMatchObject({ x: 40, strokeColor: 'red' })
+  })
+
+  it('4A-5: an AI that rewrites only `text` gets its words, though the engine measures from `originalText`', () => {
+    const label = shape('t', { type: 'text', text: 'Plan', originalText: 'Plan', width: 40 })
+    const out = merge([label], [{ ...label, text: 'Plan the release' }], [label])
+    expect(out?.elements?.[0]).toMatchObject({ text: 'Plan the release', originalText: 'Plan the release', width: 160 })
   })
 
   it('item 3: text the file changed is measured again, and so is the label of a box it changed; the box stays the merged one', () => {

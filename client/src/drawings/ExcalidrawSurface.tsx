@@ -76,7 +76,7 @@ import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
 import { contentVersion } from './contentVersion'
 import { mergeLiveScene, type SceneSide } from './mergeScene'
-import { changedShapes, OutsideMarks } from './outsideMarks'
+import { OutsideMarks } from './outsideMarks'
 import './outsideMarks.css'
 import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
 import { imageStudioSession, pickChip } from '../image-studio/imageStudioSession'
@@ -120,22 +120,22 @@ export interface DrawingSurfaceApi {
   /** The cog's size row (YAZ-3943 D5): the pictures the canvas uses now, and those with no bytes (1F), counted when asked (`picturesSize`). */
   pictures(): { bytes: number; count: number; missing: number }
   /**
-   * Replace what the canvas shows (the file changed on disk under a clean tab). Returns the
+   * Replace what the canvas shows (Reload from the bar: the disk's version, the canvas's edits dropped). Returns the
    * version the engine will report for it — the host's new clean baseline — computed from the
    * RESTORED elements handed in, never read back (a read-back races the engine's own commit).
    */
-  replaceScene(scene: DrawingScene, glow?: OutsideChangeGlow): number
+  replaceScene(scene: DrawingScene): number
   /**
-   * A newer file over unsaved edits (YAZ-4279 D1, D4): `base` is the scene as the host last loaded or saved it. A clash
-   * (`conflicts`) leaves the canvas as it was and outlines the shapes red; otherwise the canvas holds both sides
-   * (`mergeLiveScene`), and the answer is the version the engine will report for it. Never in ⌘Z's history: the file's
-   * change is not the user's. With a `glow` (here and on `replaceScene`), what the file changed is outlined (D5).
+   * An outside save, merged into the canvas (YAZ-4279 D1, D4; `mergeLiveScene`): `base` is the scene as the host last loaded
+   * or saved it. A clash (`conflicts`) leaves the canvas as it was and outlines the shapes red; otherwise the canvas holds
+   * the file and any unsaved edits, and the answer is the version the engine will report for it. Never in ⌘Z's history:
+   * the file's change is not the user's. What the file added or changed is outlined for `glow` (D5).
    */
-  mergeScene(base: SceneSide, disk: DrawingScene, glow: OutsideChangeGlow): { version: number; added: string[]; changed: string[] } | { conflicts: string[] }
+  mergeScene(base: SceneSide, disk: DrawingScene, glow: OutsideChangeGlow): { version: number } | { conflicts: string[] }
   /** The shapes the conflict bar is about, outlined red (item 8); empty: the bar went. */
   clash(ids: readonly string[]): void
-  /** Resolves when no drag, resize, drawing or text edit is in flight (YAZ-4279): a merge waits for the gesture to end. */
-  whenIdle(): Promise<void>
+  /** True when no drag, resize, drawing or text edit is in flight (YAZ-4279): a merge waits for it. False: the canvas went first. */
+  whenIdle(): Promise<boolean>
   /** The pan and zoom now (YAZ-3737 D13): what a tab that goes to sleep, or is copied, starts on again. */
   canvas(): NonNullable<PageView['canvas']>
 }
@@ -293,11 +293,17 @@ export function ExcalidrawSurface({
   const countEdits = useRef<ReturnType<typeof appStateEdits> | null>(null)
   /** The board's own appState keys (`boardAppStateKeys`), read once the engine is in: what a merge takes from the file. */
   const boardKeys = useRef<readonly string[]>([])
-  /** `whenIdle`'s callers, answered by the first `onChange` with no gesture in flight. */
-  const idleWaiters = useRef<(() => void)[]>([])
+  /** `whenIdle`'s callers, answered by the first `onChange` with no gesture in flight, and false when the canvas goes (4A-20). */
+  const idleWaiters = useRef<((idle: boolean) => void)[]>([])
   /** The outlines of what changed outside (YAZ-4279 D5); made with the engine's handle. */
   const marks = useRef<OutsideMarks | null>(null)
-  useEffect(() => () => marks.current?.dispose(), [])
+  useEffect(
+    () => () => {
+      marks.current?.dispose()
+      for (const done of idleWaiters.current.splice(0)) done(false)
+    },
+    [],
+  )
   /** The elements' share of the key: a version bump that moved no content is not counted (YAZ-3210). */
   const countVersion = useRef(contentVersion())
   const emitRef = useRef(onSnapshot)
@@ -669,8 +675,9 @@ export function ExcalidrawSurface({
       const mod = engineRef.current
       const edits = countEdits.current
       if (mod !== null && edits !== null) emitRef.current(snapshotOf(countVersion.current, mod, elements, appState, files, edits(appState as unknown as Record<string, unknown>)))
-      if (idleWaiters.current.length > 0 && !inGesture(appState as unknown as Record<string, unknown>)) for (const done of idleWaiters.current.splice(0)) done()
-      marks.current?.seen((appState as unknown as { selectedElementIds: Record<string, unknown> }).selectedElementIds, elements)
+      if (idleWaiters.current.length > 0 && !inGesture(appState as unknown as Record<string, unknown>)) for (const done of idleWaiters.current.splice(0)) done(true)
+      const selected = (appState as unknown as { selectedElementIds: Record<string, unknown> }).selectedElementIds
+      marks.current?.seen(selected, (id) => rawApiRef.current?.getSceneElementsMapIncludingDeleted().get(id as never))
       if (withPanel) {
         // The canvas panel's open tab: the rail's emphasis, the triggers' opacity, and the memory
         // the hamburger opens on next time; and the selection gate of "Save selection".
@@ -727,9 +734,8 @@ export function ExcalidrawSurface({
           files: api.getFiles() as unknown as Record<string, unknown>,
         }),
       pictures: () => picturesSize(api.getSceneElements() as readonly unknown[], api.getFiles() as unknown as Record<string, unknown>),
-      replaceScene: (next, glow) => {
+      replaceScene: (next) => {
         const restored = mod.restoreElements(next.elements as ChangeArgs[0], null)
-        const news = glow === undefined ? null : changedShapes(api.getSceneElementsIncludingDeleted() as never, restored as never)
         // A new scene, a new count: computed BEFORE the engine reports it, so its first `onChange` agrees.
         countVersion.current = contentVersion()
         const version = countVersion.current(restored)
@@ -740,9 +746,9 @@ export function ExcalidrawSurface({
         addNewFiles(api, next.files)
         // The engine's files only grew: drop what neither the new scene nor undo can show (YAZ-3737 D14).
         api.pruneFiles()
-        // The file is on the canvas: any clash is answered.
+        // The file is on the canvas: any clash is answered, and nothing on it is news.
         marks.current?.clash([])
-        if (news !== null && glow !== undefined) marks.current?.mark(news.added, news.changed, restored, glow)
+        marks.current?.clearNews()
         return version
       },
       mergeScene: (base, disk, glow) => {
@@ -757,10 +763,10 @@ export function ExcalidrawSurface({
         addNewFiles(api, disk.files)
         marks.current?.clash([])
         marks.current?.mark(merged.added, merged.changed, merged.elements, glow)
-        return { version, added: merged.added, changed: merged.changed }
+        return { version }
       },
       clash: (ids) => marks.current?.clash(ids),
-      whenIdle: () => (inGesture(api.getAppState() as unknown as Record<string, unknown>) ? new Promise<void>((done) => idleWaiters.current.push(done)) : Promise.resolve()),
+      whenIdle: () => (inGesture(api.getAppState() as unknown as Record<string, unknown>) ? new Promise<boolean>((done) => idleWaiters.current.push(done)) : Promise.resolve(true)),
       canvas: () => {
         const { scrollX, scrollY, zoom } = api.getAppState()
         return { scrollX, scrollY, zoom: zoom.value }
@@ -872,7 +878,8 @@ const BUSY_APP_STATE_KEYS = [
 ] as const
 
 /** A gesture a merge must not land in (YAZ-4279): the busy set less an open dialog and a selected line, which can last. */
-const inGesture = (appState: Record<string, unknown>): boolean => BUSY_APP_STATE_KEYS.some((k) => k !== 'openDialog' && k !== 'selectedLinearElement' && Boolean(appState[k]))
+const inGesture = (appState: Record<string, unknown>): boolean =>
+  BUSY_APP_STATE_KEYS.some((k) => k !== 'openDialog' && k !== 'selectedLinearElement' && Boolean(appState[k])) || (appState.selectedLinearElement as { isDragging?: boolean } | null | undefined)?.isDragging === true
 
 /** Item 5: only the pictures the engine does not hold yet — a picture's id is its content's, so a held id is the same bytes. */
 function addNewFiles(api: ImperativeApi, files: Record<string, unknown> | null): void {

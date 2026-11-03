@@ -83,7 +83,8 @@ const standardFontElements = (elements: readonly unknown[]): readonly unknown[] 
 /**
  * Export Excalidraw Drawing…'s copy (YAZ-3943 D14, 1D1): the standard fonts, and each text box MEASURED
  * AGAIN in its new font, so Nunito text does not spill out of a box sized for Inter. The engine's own
- * measure does it (`restoreElements` with `refreshDimensions`, what it runs on a font change), after its
+ * measure does it (`restoreElements` with `refreshDimensions`, what it runs on a font change — inside its binding repair,
+ * so `repairBindings` too: without it the restore returns before it measures, YAZ-4279 4A-7), after its
  * font loader has the new fonts in the page: a box measured in a fallback font would be as wrong as
  * before. A font that does not load leaves the boxes as they were. Only this copy is measured; the
  * board, its save and Share Link never pass here.
@@ -93,7 +94,7 @@ export async function assembleExportCopy(engine: ExportCopyEngine, scene: Export
   let elements: readonly unknown[] = swapped
   if (swapped.some((el, i) => el !== scene.elements[i])) {
     const loaded = await engine.Fonts.loadElementsFonts(swapped as never).then(() => true, () => false)
-    if (loaded) elements = engine.restoreElements(swapped as never, null, { refreshDimensions: true }) as readonly unknown[]
+    if (loaded) elements = engine.restoreElements(swapped as never, null, { repairBindings: true, refreshDimensions: true }) as readonly unknown[]
   }
   return assembleStandaloneScene(engine, { ...scene, elements }, { standardFonts: true })
 }

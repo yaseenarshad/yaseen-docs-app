@@ -8,7 +8,7 @@ import type { OutsideChangeGlow } from '@shared/types'
  * The outline is the engine's own remote-selection outline, of one stand-in collaborator per colour. The engine colours a
  * collaborator by a hash of its id (`getClientColor`), so each id below is one that hashes to its hue: 130 (green), 40
  * (amber), 0 (red). It lives in appState, never in an element, so it never reaches the file, the autosave or ⌘Z. The
- * engine's avatar list is hidden (`drawingEditor.css`): the app has no collaborators of its own.
+ * engine's avatar lists are hidden (`outsideMarks.css`): the app has no collaborators of its own.
  */
 export type MarkKind = 'added' | 'changed' | 'clash'
 
@@ -29,7 +29,7 @@ interface Shape {
 }
 
 export class OutsideMarks {
-  private readonly marks = new Map<string, { kind: MarkKind; version: number }>()
+  private readonly marks = new Map<string, { kind: MarkKind; version: number; checkable: boolean }>()
   private timer: ReturnType<typeof setTimeout> | null = null
 
   /** `show` hands the engine its collaborators: one per colour that has a shape. */
@@ -40,8 +40,10 @@ export class OutsideMarks {
     this.drop('added', 'changed')
     if (glow !== 'off' && added.length + changed.length > 0) {
       const version = new Map(shapes.map((s) => [s.id, s.version ?? 0]))
-      for (const id of added) this.marks.set(id, { kind: 'added', version: version.get(id) ?? 0 })
-      for (const id of changed) this.marks.set(id, { kind: 'changed', version: version.get(id) ?? 0 })
+      // Only "Until I check it" ends on a select or an edit; a timed glow ends by time (4A-14).
+      const checkable = glow === 'until-checked'
+      for (const id of added) this.marks.set(id, { kind: 'added', version: version.get(id) ?? 0, checkable })
+      for (const id of changed) this.marks.set(id, { kind: 'changed', version: version.get(id) ?? 0, checkable })
       const ms = GLOW_MS[glow]
       if (ms !== undefined) this.timer = setTimeout(() => this.drop('added', 'changed') && this.render(), ms)
     }
@@ -51,22 +53,26 @@ export class OutsideMarks {
   /** The shapes the conflict bar is about (item 8); empty: the bar went. */
   clash(ids: readonly string[]): void {
     this.drop('clash')
-    for (const id of ids) this.marks.set(id, { kind: 'clash', version: Infinity })
+    for (const id of ids) this.marks.set(id, { kind: 'clash', version: Infinity, checkable: false })
     this.render()
+  }
+
+  /** Reload from the bar: the canvas is the disk's now, so no green or amber outline is news. */
+  clearNews(): void {
+    if (this.drop('added', 'changed')) this.render()
   }
 
   /**
    * "Until I check it": a marked shape the user selected or edited is checked. Fed every `onChange`, so it costs nothing
-   * with no mark, and one pass over the shapes with one.
+   * with no mark, and one look-up per mark with one (4A-24); `shape` answers the canvas's shape by id.
    */
-  seen(selected: Readonly<Record<string, unknown>>, shapes: readonly Shape[]): void {
+  seen(selected: Readonly<Record<string, unknown>>, shape: (id: string) => Shape | undefined): void {
     if (this.marks.size === 0) return
     let changed = false
-    for (const shape of shapes) {
-      const mark = this.marks.get(shape.id)
-      if (mark === undefined || mark.kind === 'clash') continue
-      if (selected[shape.id] === true || (shape.version ?? 0) > mark.version) {
-        this.marks.delete(shape.id)
+    for (const [id, mark] of this.marks) {
+      if (!mark.checkable) continue
+      if (selected[id] === true || (shape(id)?.version ?? 0) > mark.version) {
+        this.marks.delete(id)
         changed = true
       }
     }
@@ -98,19 +104,3 @@ export class OutsideMarks {
     this.show(collaborators)
   }
 }
-
-/** A clean reload's news (D5): the live shapes the file added, and the ones whose content it changed (the stamps aside). */
-export function changedShapes(before: readonly Record<string, unknown>[], after: readonly Record<string, unknown>[]): { added: string[]; changed: string[] } {
-  const was = new Map(before.map((e) => [e.id as string, e]))
-  const added: string[] = []
-  const changed: string[] = []
-  for (const e of after) {
-    if (e.isDeleted === true) continue
-    const old = was.get(e.id as string)
-    if (old === undefined || old.isDeleted === true) added.push(e.id as string)
-    else if (unstamped(old) !== unstamped(e)) changed.push(e.id as string)
-  }
-  return { added, changed }
-}
-
-const unstamped = ({ version: _v, versionNonce: _n, updated: _u, ...content }: Record<string, unknown>): string => JSON.stringify(content)

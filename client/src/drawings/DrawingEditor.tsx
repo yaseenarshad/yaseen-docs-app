@@ -67,6 +67,7 @@ import { CardPreviewHost } from '../tabs/cardPreview'
 import { exportFileName } from './exportDrawing'
 import { parseSceneText, type DrawingScene } from './drawingScene'
 import type { SceneSide } from './mergeScene'
+import { sideOf, takeFromDisk } from './takeFromDisk'
 import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi } from './ExcalidrawSurface'
 import { pressed } from './drawingKeys'
 import { PICTURES_MOVED_OUT } from './saveDrawing'
@@ -217,9 +218,6 @@ function toDocument(res: DrawingLoadResponse): LoadedDocument {
   return { scene: { ...parsed, files }, mtime: res.mtime, stored: res.stored }
 }
 
-/** The shapes and the board settings alone: a base never holds a file's pictures (YAZ-4279). */
-const sideOf = ({ elements, appState }: DrawingScene): SceneSide => ({ elements, appState })
-
 const loadDocument = (req: { root: string; path: string }): Promise<LoadedDocument> => api.drawing.load(req).then(toDocument)
 // Missing, unreadable, not a scene: ONE readable state, never a blank pane.
 const brokenDocument = (): string => BROKEN_DRAWING_DOCUMENT
@@ -306,26 +304,21 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
         const doc = toDocument(await api.drawing.load({ root, path }))
         reloadedTo.current = doc.mtime
         tookFile(doc)
-        a.reset(s.replaceScene(doc.scene, outsideChangeGlow), doc.mtime)
+        a.reset(s.replaceScene(doc.scene), doc.mtime)
         return doc.scene.readOnly === true
       } catch (err) {
         reloadedTo.current = null
         throw err
       }
     },
-    // YAZ-4279: a newer file over unsaved edits. A changed read-only switch is the user's to settle: the bar.
+    // YAZ-4279: every outside save, merged into the canvas (`takeFromDisk`, the popup's too).
     merge: async (a) => {
       const s = surface.current
       if (s === null) return 'conflict'
       const doc = toDocument(await api.drawing.load({ root, path }))
-      if ((doc.scene.readOnly === true) !== readOnlyRef.current) return 'conflict'
-      await s.whenIdle()
-      const was = base.current
-      const merged = s.mergeScene(typeof was === 'string' ? parseSceneText(was) : was, doc.scene, outsideChangeGlow)
-      if ('conflicts' in merged) return 'conflict'
-      tookFile(doc)
-      a.rebase(doc.mtime)
-      return 'merged'
+      const answer = await takeFromDisk({ surface: s, autosave: a, base: base.current, disk: doc, readOnly: readOnlyRef.current, glow: outsideChangeGlow, baselineAt: (mtime) => (reloadedTo.current = mtime) })
+      if (answer === 'merged') tookFile(doc)
+      return answer
     },
     // The application menu's three canvas items (Draw's 🔒 YAZ-1775 D10; the items are YAZ-3037's); a
     // host whose engine has not handed its API over yet simply has nothing to do.

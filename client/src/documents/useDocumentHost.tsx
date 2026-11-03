@@ -18,10 +18,12 @@
  * bar, and `Autosave` blocks further writes until one of the two buttons answers it. Two windows
  * on one document is exactly this rule seen from both sides.
  *
- * ⚡ AMENDED by YAZ-4279 D3 (the notes' rule, YAZ-3837): an engine that can MERGE (`merge`) is asked first, at both doors —
- * the dirty watcher change and the refused save. The bar shows only when it answers 'conflict'. One merge runs at a time;
- * changes that arrive meanwhile get one more merge, of the latest file (item 4). With the bar up, a later change tries
- * again, and a merge that lands takes the bar down (item 10). The code tab has no `merge`: it keeps the bar.
+ * ⚡ AMENDED by YAZ-4279 D3 (the notes' rule, YAZ-3837): an engine that can MERGE (`merge`) takes EVERY outside change —
+ * with unsaved edits or none (4A-4: an edit made while a clean reload loads is never dropped), and a refused save. The bar
+ * shows only when it answers 'conflict'; 'reload' (nothing unsaved, but only a reload brings the file in) is `reload`. One
+ * merge runs at a time; changes that arrive meanwhile get one more merge, of the latest file (item 4, 4A-2). With the bar
+ * up, a later change tries again, and a merge that lands takes the bar down (item 10). `reload` is then the bar's Reload
+ * alone, which drops the edits. The code tab has no `merge`: a clean tab reloads and a dirty one shows the bar, as before.
  *
  * RENAME AND DELETE. The host registers the shell's rename-continuity handle for its path, so a
  * rename flushes these bytes before the file moves and a DELETE retires the controller — without
@@ -81,11 +83,11 @@ export interface DocumentHostOptions extends DocumentHostProps {
    */
   reload: (autosave: Autosave<number>) => Promise<boolean | void>
   /**
-   * Unsaved edits meet a newer file (YAZ-4279 D3): merge the file into the live document. 'merged': the engine holds both
-   * sides, and `autosave.rebase` has made the file the new base. 'conflict': nothing changed, and the bar shows.
-   * Absent (the code tab): the bar, as before.
+   * A newer file (YAZ-4279 D3): merge it into the live document, edits or none. 'merged': the engine holds the file and any
+   * unsaved edits; the autosave is reset (none) or rebased (edits) to it. 'conflict': nothing changed, and the bar shows.
+   * 'reload': nothing is unsaved, but only `reload` brings the file in. Absent (the code tab): the old rule.
    */
-  merge?: (autosave: Autosave<number>) => Promise<'merged' | 'conflict'>
+  merge?: (autosave: Autosave<number>) => Promise<'merged' | 'conflict' | 'reload'>
   /** "Keep mine" is about to overwrite a version this tab did not write: what the engine knows of the file is stale (YAZ-4071 7H). */
   onKeepMine?: () => void
   /** The loaded file's read-only switch (YAZ-3076 D1): `isDrawingReadOnly` / `isDiagramReadOnly` of what the shell loaded. */
@@ -155,7 +157,12 @@ export function useDocumentHost(options: DocumentHostOptions) {
       const merge = engine.current.merge
       if (a === null || retired.current) return
       if (merge === undefined) return setConflictMtime(mtime)
-      const answer = await merge(a).catch(() => 'conflict' as const)
+      const answer = await merge(a).catch((err: unknown) => {
+        // A merge that throws is a bug or a file that will not read: the bar keeps the edits, and the console says why.
+        console.error('merge', err)
+        return 'conflict' as const
+      })
+      if (answer === 'reload') return reload()
       setConflictMtime(answer === 'conflict' ? mtime : null)
     }),
   )
@@ -190,7 +197,7 @@ export function useDocumentHost(options: DocumentHostOptions) {
         if (a === null || retired.current) return
         void a.settled().then(() => {
           if (ev.mtime === a.mtime) return // the echo of our own write
-          if (a.dirty) void mergeOrConflict(ev.mtime)
+          if (a.dirty || engine.current.merge !== undefined) void mergeOrConflict(ev.mtime)
           else void reload()
         })
       }),

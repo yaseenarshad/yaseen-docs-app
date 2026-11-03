@@ -261,7 +261,7 @@ describe('mergeBoards — the switches of the yaseendraw block (YAZ-3943 1E): th
 
 /** An outside edit the way an AI makes one: a property changed, the engine's stamps left as they were. */
 const set = (e: El, over: Partial<El>): El => ({ ...e, ...over })
-const open = (base: El[], theirs: El[], mine: El[]) => mergeElements(base, theirs, mine, 'per-property')
+const open = (base: El[], theirs: El[], mine: El[]) => mergeElements(base, theirs, mine, 'per-property') as { elements?: El[]; clashes?: number; conflicts?: string[] }
 const byIdOf = (els: El[] | undefined, id: string) => els?.find((e) => e.id === id)
 
 describe('mergeElements — an open board (YAZ-4279 D4: per property, never a silent loss)', () => {
@@ -282,7 +282,7 @@ describe('mergeElements — an open board (YAZ-4279 D4: per property, never a si
   })
 
   it('shapes added on each side are both kept; one id added with two contents is for the user', () => {
-    expect(open([r1], [r1, shape('t')], [r1, shape('m')])?.elements.map((e) => e.id).sort()).toEqual(['1', 'm', 't'])
+    expect(open([r1], [r1, shape('t')], [r1, shape('m')])?.elements?.map((e) => e.id).sort()).toEqual(['1', 'm', 't'])
     expect(open([r1], [r1, shape('n', { x: 1 })], [r1, shape('n', { x: 2 })])).toEqual({ conflicts: ['n'] })
   })
 

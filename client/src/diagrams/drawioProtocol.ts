@@ -18,9 +18,12 @@
  * `{ action: 'invokeAction', actionName: 'darkMode' | 'lightMode' }` (the app's theme, live) and
  * `{ action: 'yaseenAdaptiveColors', value }` (the dark-mode colour setting, live — ours, answered
  * by our PostConfig.js, because draw.io has no embed action for it), and
- * `{ action: 'yaseenMerge', base, xml }` (YAZ-4279 D2: an outside save, merged by draw.io's own `mergeFile` against the
- * host's base — ours). draw.io posts the merged diagram as its own `autosave` first, then the overlay answers
- * `{ event: 'yaseenMerge', changed: { added, changed } }`, or `{ event: 'yaseenMerge', conflict: true }` for a clash (D4).
+ * `{ action: 'yaseenMerge', id, base, xml, glow }` (YAZ-4279 D2: an outside save, merged by draw.io's own `mergeFile`
+ * against the host's base — ours; `{ action: 'yaseenMergeCancel', id }` takes back one not begun). Once the user's
+ * gesture ends, the overlay says `{ event: 'yaseenMerging', id }`, draw.io posts the page on screen as its own
+ * `autosave`, and the overlay answers `{ event: 'yaseenMerge', id, xml }` with the whole merged file, or
+ * `{ event: 'yaseenMerge', id, conflict: true }` for a clash (D4). `{ action: 'yaseenClearClash' }` takes the red
+ * outlines of a clash away (Keep mine).
  */
 import { DRAWIO_ORIGIN } from '@shared/drawio'
 import { HOTKEY_COMMANDS, appKeyId, drawioChordFor, keyFor, parseAccelerator, toAccelerator, type DrawioChord, type HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -253,14 +256,9 @@ export type DrawioMessage =
   | { event: 'load'; xml?: string }
   | { event: 'autosave'; xml: string }
   | { event: 'save'; xml: string }
-  | { event: 'yaseenMerge'; conflict: true }
-  | { event: 'yaseenMerge'; conflict?: false; changed: OutsideCells }
-
-/** The cells of the page on screen an outside save added and changed (YAZ-4279 D5). */
-export interface OutsideCells {
-  added: string[]
-  changed: string[]
-}
+  | { event: 'yaseenMerging'; id: number }
+  | { event: 'yaseenMerge'; id: number; conflict: true }
+  | { event: 'yaseenMerge'; id: number; conflict?: false; xml?: string }
 
 /**
  * One `message` event, if it is the iframe speaking: the right window, the right origin, a JSON
@@ -276,7 +274,7 @@ export function readDrawioMessage(ev: { source: unknown; origin: string; data: u
     return null
   }
   if (typeof msg !== 'object' || msg === null) return null
-  const { event, xml, conflict, changed } = msg as Record<string, unknown>
+  const { event, xml, conflict, id } = msg as Record<string, unknown>
   switch (event) {
     case 'yaseenReady':
     case 'configure':
@@ -287,12 +285,13 @@ export function readDrawioMessage(ev: { source: unknown; origin: string; data: u
     case 'autosave':
     case 'save':
       return typeof xml === 'string' ? { event, xml } : null
+    case 'yaseenMerging':
+      return typeof id === 'number' ? { event, id } : null
     case 'yaseenMerge':
-      if (conflict === true) return { event, conflict }
-      return { event, changed: { added: idsOf((changed as Partial<OutsideCells> | undefined)?.added), changed: idsOf((changed as Partial<OutsideCells> | undefined)?.changed) } }
+      if (typeof id !== 'number') return null
+      if (conflict === true) return { event, id, conflict }
+      return typeof xml === 'string' ? { event, id, xml } : { event, id }
     default:
       return null
   }
 }
-
-const idsOf = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])

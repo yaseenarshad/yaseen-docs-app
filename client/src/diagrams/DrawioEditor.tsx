@@ -40,6 +40,9 @@ const READY_FALLBACK_MS = 3000
 /** A `yaseenMerge` the overlay never answers is a conflict (YAZ-4279). Long: the overlay first waits for a label being typed to end. */
 const MERGE_TIMEOUT_MS = 60_000
 
+/** The overlay's answer to a `yaseenMerge`, and whether the tab had unsaved edits when draw.io began it. */
+type MergeAnswer = { conflict: true; dirty: boolean } | { conflict: false; dirty: boolean; xml?: string }
+
 export interface DrawioEditorProps extends DocumentHostProps {
   /** 🔒 YAZ-1802 D16: the app's dark-mode colour setting, applied live (see the module doc). */
   darkColors: DiagramDarkColors
@@ -84,10 +87,9 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
   const latestXml = useRef(loaded.xml)
   /** The XML as this tab last loaded or saved it: a merge's base (YAZ-4279 D2). */
   const baseXml = useRef(loaded.xml)
-  /** The overlay's answer to the one `yaseenMerge` in flight (YAZ-4279). */
-  const mergeAnswer = useRef<((answer: { conflict: boolean }) => void) | null>(null)
-  /** The next reload puts the disk back over what the canvas shows (a stray change while read only), never a merge. */
-  const discardOnReload = useRef(false)
+  /** The one `yaseenMerge` in flight (YAZ-4279): its id, its answer, and whether the tab had edits as draw.io began it. */
+  const merging = useRef<{ id: number; answer: (a: MergeAnswer) => void; dirty: boolean } | null>(null)
+  const mergeIds = useRef(0)
   /** The Glow setting as of now: what the overlay outlines what the file changed for (D5). */
   const glowRef = useRef(outsideChangeGlow)
   glowRef.current = outsideChangeGlow
@@ -163,21 +165,26 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
 
   /**
    * YAZ-4279 D2: the file's `xml` merged into the canvas by our PostConfig.js's `yaseenMerge`. A clash, an overlay that
-   * does not answer in time, or one not listening yet is a conflict, and the canvas is as it was.
+   * does not answer in time (the request is then cancelled, so it never lands later), or one not listening yet is a
+   * conflict, and the canvas is as it was. The host's queue (`oneAtATime`) asks one at a time; an answer of another id is
+   * not this one's (4A-2).
    */
   const askMerge = useCallback(
-    (xml: string): Promise<{ conflict: boolean }> =>
+    (xml: string, dirty: boolean): Promise<MergeAnswer> =>
       new Promise((done) => {
-        if (!handshake.current.initialised) return done({ conflict: true })
-        mergeAnswer.current?.({ conflict: true })
-        const late = setTimeout(() => answer({ conflict: true }), MERGE_TIMEOUT_MS)
-        const answer = (a: { conflict: boolean }): void => {
+        if (!handshake.current.initialised) return done({ conflict: true, dirty: false })
+        const id = ++mergeIds.current
+        const late = setTimeout(() => {
+          post({ action: 'yaseenMergeCancel', id })
+          answer({ conflict: true, dirty: false })
+        }, MERGE_TIMEOUT_MS)
+        const answer = (a: MergeAnswer): void => {
           clearTimeout(late)
-          if (mergeAnswer.current === answer) mergeAnswer.current = null
+          if (merging.current?.id === id) merging.current = null
           done(a)
         }
-        mergeAnswer.current = answer
-        post({ action: 'yaseenMerge', base: baseXml.current, xml, glow: glowRef.current })
+        merging.current = { id, answer, dirty }
+        post({ action: 'yaseenMerge', id, base: baseXml.current, xml, glow: glowRef.current })
       }),
     [post],
   )
@@ -216,29 +223,27 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       baseXml.current = xml
       return res
     },
-    // Item 1: a clean tab MERGES the file, so its undo history, selection and view stay (draw.io's `load` clears undo).
-    // Reload from the bar, and a stray change while read only, put the disk back with a `load`.
+    // Reload from the bar, and the stray-change reload at "Allow edits": the disk back over the canvas, with a `load`.
     reload: async (a) => {
       const res = await api.diagram.load({ root, path })
-      const discard = discardOnReload.current || a.dirty
-      discardOnReload.current = false
-      if (!discard && !(await askMerge(res.xml)).conflict) {
-        baseXml.current = res.xml
-        // draw.io's own `autosave` of the merge came first: the canvas now IS the file.
-        a.reset(version.current, res.mtime)
-        return isDiagramReadOnly(res.xml)
-      }
       a.reset(version.current, res.mtime)
       sendLoad(res.xml, res.mtime, true)
       return isDiagramReadOnly(res.xml)
     },
-    // YAZ-4279 D2, D3: a newer file over unsaved edits. A changed read-only switch is the user's to settle: the bar.
+    // YAZ-4279 D2, D3, item 1: every outside save, merged in draw.io — edits or none, so a clean tab keeps its undo history,
+    // selection and view (draw.io's `load` clears undo). A read-only switch the file changed is the user's to settle under
+    // edits; with none, a reload brings it in. A clean merge draw.io refuses falls back to that reload too.
     merge: async (a) => {
       const res = await api.diagram.load({ root, path })
-      if (isDiagramReadOnly(res.xml) !== wantedReadOnly.current) return 'conflict'
-      if ((await askMerge(res.xml)).conflict) return 'conflict'
+      if (isDiagramReadOnly(res.xml) !== wantedReadOnly.current) return a.dirty ? 'conflict' : 'reload'
+      const answer = await askMerge(res.xml, a.dirty)
+      if (answer.conflict) return answer.dirty || a.dirty ? 'conflict' : 'reload'
       baseXml.current = res.xml
-      a.rebase(res.mtime)
+      // The whole merged file (4A-3): draw.io's `autosave` posts only the page on screen.
+      if (answer.xml !== undefined) latestXml.current = answer.xml
+      // Edits as draw.io began the merge (a label typed while it waited counts, 4A-1) stay pending; none: the merge is clean.
+      if (answer.dirty) a.rebase(res.mtime)
+      else a.reset(version.current, res.mtime)
       return 'merged'
     },
     // Keep mine answers the bar: the overlay's red outlines of the clash go (item 8).
@@ -300,9 +305,15 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
           if (msg.event === 'save') void a.flush()
           return
         }
-        case 'yaseenMerge':
-          mergeAnswer.current?.({ conflict: msg.conflict === true })
+        case 'yaseenMerging':
+          // draw.io begins the merge: every edit of the user's is in by now (they come before this message).
+          if (merging.current?.id === msg.id) merging.current.dirty ||= autosave.current?.dirty === true
           return
+        case 'yaseenMerge': {
+          const m = merging.current
+          if (m?.id === msg.id) m.answer(msg.conflict === true ? { conflict: true, dirty: m.dirty } : { conflict: false, dirty: m.dirty, xml: msg.xml })
+          return
+        }
       }
     }
     window.addEventListener('message', onMessage)
@@ -320,7 +331,6 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     syncReadOnly()
     if (readOnly || !strayWhileReadOnly.current) return
     strayWhileReadOnly.current = false
-    discardOnReload.current = true
     void reload()
   }, [readOnly, syncReadOnly, reload])
 

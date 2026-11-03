@@ -60,12 +60,12 @@ const surface = {
   /** The pan and zoom the engine is on (YAZ-3737 D13). */
   canvas: { scrollX: 0, scrollY: 0, zoom: 1 },
   /** What `mergeScene` answers (YAZ-4279): a clash by default, so a dirty tab meets the bar as before. */
-  nextMerge: { conflicts: [] } as { version: number; added: string[]; changed: string[] } | { conflicts: string[] },
+  nextMerge: { conflicts: [] } as { version: number } | { conflicts: string[] },
   /** The red outlines the host asked for (item 8). */
   clashes: [] as (readonly string[])[],
   merged: [] as { base: unknown; disk: unknown }[],
   /** What `whenIdle` waits on: a gesture in flight until the test resolves it. */
-  idle: Promise.resolve(),
+  idle: Promise.resolve(true),
 }
 
 vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
@@ -174,7 +174,7 @@ beforeEach(() => {
   surface.nextMerge = { conflicts: [] }
   surface.merged = []
   surface.clashes = []
-  surface.idle = Promise.resolve()
+  surface.idle = Promise.resolve(true)
   Object.defineProperty(window, 'yaseenDocs', {
     configurable: true,
     writable: true,
@@ -339,7 +339,7 @@ describe('external changes', () => {
 const LOCKED_SCENE = `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, type: 'excalidraw', version: 2, elements: [], appState: {}, files: {} })}\n`
 
 describe('YAZ-4279 — an outside save over unsaved edits merges into the canvas', () => {
-  const MERGED = { version: 30, added: [], changed: ['a'] }
+  const MERGED = { version: 30 }
   const bar = (): boolean => chips().includes('File changed on disk.')
   const refused = (mtime: number) => new BridgeRequestError('CONFLICT', 'file changed on disk since last read', mtime, PATH)
 
@@ -429,7 +429,7 @@ describe('YAZ-4279 — an outside save over unsaved edits merges into the canvas
 
   it('waits for a gesture to end; a burst of outside saves meanwhile is ONE more merge, of the latest file (item 4)', async () => {
     let endGesture = (): void => undefined
-    surface.idle = new Promise<void>((done) => (endGesture = done))
+    surface.idle = new Promise<boolean>((done) => (endGesture = () => done(true)))
     surface.nextMerge = MERGED
     render()
     await flush()
@@ -439,11 +439,62 @@ describe('YAZ-4279 — an outside save over unsaved edits merges into the canvas
     await flush()
     expect(surface.merged).toHaveLength(0)
     load.mockResolvedValue(loaded({ mtime: 420 }))
-    surface.idle = Promise.resolve()
+    surface.idle = Promise.resolve(true)
     await act(async () => endGesture())
     await flush()
     await flush()
     expect(surface.merged).toHaveLength(2)
+  })
+})
+
+describe('YAZ-4279 — a clean tab merges the file too (4A-4)', () => {
+  it('a clean tab MERGES (no replace), and the merge is the clean baseline: nothing is written back', async () => {
+    render()
+    await flush()
+    emit(1)
+    load.mockResolvedValue(loaded({ json: scene([{ id: 'a', strokeColor: 'red' }]), mtime: 400 }))
+    surface.nextMerge = { version: 11 }
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    expect(surface.merged).toHaveLength(1)
+    expect(surface.replaced).toHaveLength(0)
+    emit(11) // the engine's answer to the merge: the baseline
+    await act(async () => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('an edit made while the file loads is kept: it merges, and saves against the new mtime', async () => {
+    let read = (_v: DrawingLoadResponse): void => undefined
+    render()
+    await flush()
+    emit(1)
+    load.mockReturnValueOnce(new Promise((done) => (read = done)))
+    surface.nextMerge = { version: 31 }
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    emit(2) // the user's stroke, while the file loads
+    await act(async () => read(loaded({ mtime: 400 })))
+    await flush()
+    expect(surface.replaced).toHaveLength(0)
+    emit(31)
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ expectedMtime: 400 }))
+  })
+
+  it('a clean merge the canvas refuses reloads the file instead (no bar)', async () => {
+    render()
+    await flush()
+    emit(1)
+    load.mockResolvedValue(loaded({ mtime: 400 }))
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    await flush()
+    expect(surface.replaced).toHaveLength(1)
+    expect(chips()).not.toContain('File changed on disk.')
   })
 })
 

@@ -818,13 +818,13 @@ describe('the outside pictures folder in the popup', () => {
 
 describe('YAZ-4279 — an outside save lands on the open popup (D6, item 6)', () => {
   const { watch, watcherSaw } = fakeWatch()
-  const handle = (merged: { version: number; added: string[]; changed: string[] } | { conflicts: string[] }) => ({
+  const handle = (merged: { version: number } | { conflicts: string[] }) => ({
     mergeScene: vi.fn(() => merged),
     replaceScene: vi.fn(() => 0),
-    whenIdle: vi.fn(async () => undefined),
+    whenIdle: vi.fn(async () => true),
     clash: vi.fn(),
   })
-  const MERGED = { version: 30, added: [], changed: ['a'] }
+  const MERGED = { version: 30 }
 
   it('a refused save merges first: no bar, and the merge saves against the mtime the file now has', async () => {
     seam.api = handle(MERGED)
@@ -852,7 +852,7 @@ describe('YAZ-4279 — an outside save lands on the open popup (D6, item 6)', ()
     expect(conflictBar()).toBe('File changed on disk.ReloadKeep mine')
   })
 
-  it('a clean popup takes the file in place (no remount), and writes nothing back; its own save\'s echo is ignored', async () => {
+  it('a clean popup merges the file in place (no remount, no replace), and writes nothing back; its own save\'s echo is ignored', async () => {
     seam.api = handle(MERGED)
     await open('ok', 100, { watch })
     emit(1)
@@ -861,11 +861,12 @@ describe('YAZ-4279 — an outside save lands on the open popup (D6, item 6)', ()
     const mounts = seam.mounts
     watcherSaw({ type: 'change', path: PATH, mtime: 999 }) // the echo of that save
     await idle()
-    expect((seam.api.replaceScene as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled()
+    expect((seam.api.mergeScene as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled()
     readAsset.mockResolvedValue(asset(700))
     watcherSaw({ type: 'change', path: PATH, mtime: 700 })
     await idle()
-    expect((seam.api.replaceScene as ReturnType<typeof vi.fn>)).toHaveBeenCalledOnce()
+    expect((seam.api.mergeScene as ReturnType<typeof vi.fn>)).toHaveBeenCalledOnce()
+    expect((seam.api.replaceScene as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled()
     expect(seam.mounts).toBe(mounts)
     emit(8) // the engine's answer to the file: the new baseline
     await idle()

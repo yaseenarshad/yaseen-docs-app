@@ -30,6 +30,11 @@ import { isFiniteNumber, isRecord } from './guards'
  *
  * Pure and engine-free: it runs in the main process in the middle of a rebase. Answers null for
  * anything it must not merge — a side that is not a scene — and the caller keeps both copies.
+ *
+ * ⚡ YAZ-4279 D1, D4: the shapes' loop is `mergeElements`, which an OPEN board shares with another rule, 'per-property':
+ * a shape both sides changed takes each property from the side that changed it, and one property changed on both sides,
+ * a delete against an edit, or one id added on both sides is a clash only the user settles (the conflict bar). Both rules
+ * ignore the engine's stamps: a version bump that moved nothing is no edit.
  */
 
 interface BoardMerge {
@@ -39,7 +44,7 @@ interface BoardMerge {
   clashes: number
 }
 
-type Element = Record<string, unknown> & { id: string }
+export type Element = Record<string, unknown> & { id: string }
 type Scene = Record<string, unknown> & { elements: Element[] }
 
 function parseScene(text: string): Scene | null {
@@ -54,18 +59,32 @@ function parseScene(text: string): Scene | null {
   return raw as Scene
 }
 
-/** Structural equality for values that came out of `JSON.parse` — the app's writer keeps key order stable. */
-const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+/**
+ * Structural equality for plain data, whatever the order of its keys: the app's writer keeps its order, but a shape the
+ * engine restored and the same shape an AI wrote need not share one (YAZ-4279).
+ */
+export const same = (a: unknown, b: unknown): boolean => JSON.stringify(a, inOrder) === JSON.stringify(b, inOrder)
+
+/** A `JSON.stringify` replacer: each object's keys in one order. */
+function inOrder(_key: string, value: unknown): unknown {
+  if (!isRecord(value)) return value
+  const out: Record<string, unknown> = {}
+  for (const k of Object.keys(value).sort()) out[k] = value[k]
+  return out
+}
 
 /**
  * The engine's own stamps (YAZ-4279 D1). A version bump that moved nothing is no edit: the engine bumps them on load, and an
- * AI that writes the JSON leaves them as they were. So no side is picked by them, except as `newer`'s tie-break.
+ * AI that writes the JSON leaves them as they were. So no side is picked by them, except as `newer`'s tie-break. `seed` is
+ * the hand-drawn wobble: the engine's restore gives a shape that has none a random one, so it differs between two restores
+ * of one file and is never an edit (4A-6).
  */
-const STAMPS: ReadonlySet<string> = new Set(['version', 'versionNonce', 'updated'])
-const unstamped = (e: Element | undefined): string | undefined => (e === undefined ? undefined : JSON.stringify(e, (key, value) => (STAMPS.has(key) ? undefined : value)))
-const sameShape = (a: Element | undefined, b: Element | undefined): boolean => unstamped(a) === unstamped(b)
+const STAMPS: ReadonlySet<string> = new Set(['version', 'versionNonce', 'updated', 'seed'])
+const unstamped = (e: Element | undefined): string | undefined => (e === undefined ? undefined : JSON.stringify(e, (key, value) => (STAMPS.has(key) ? undefined : inOrder(key, value))))
+/** One shape's content on two sides is the same, the stamps aside. */
+export const sameShape = (a: Element | undefined, b: Element | undefined): boolean => unstamped(a) === unstamped(b)
 
-const alive = (e: Element | undefined): e is Element => e !== undefined && e.isDeleted !== true
+export const alive = (e: Element | undefined): e is Element => e !== undefined && e.isDeleted !== true
 
 const num = (v: unknown): number => (isFiniteNumber(v) ? v : 0)
 

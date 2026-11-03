@@ -40,9 +40,9 @@
  * version here (this canvas's edits are dropped), Keep mine writes this canvas over it. The modal
  * never wins in silence.
  *
- * ⚡ AMENDED by YAZ-4279 (D6, item 6): the modal watches its file as a tab does. An outside save lands on the canvas: a
- * clean modal takes the file (`replaceScene`), one with edits merges it (`mergeScene`, the tab's rule), and a refused
- * save merges too. The bar shows only for a clash, or a read-only switch the file changed.
+ * ⚡ AMENDED by YAZ-4279 (D6, item 6): the modal watches its file as a tab does. Every outside save, and a refused save, is
+ * merged into the canvas (`takeFromDisk`, the tab's flow), with edits or none. The bar shows only for a clash, or a
+ * read-only switch the file changed under edits.
  *
  * FAILURES are inline and never a dialog: a sidecar that is missing, unreadable or not a scene
  * opens as the error state (message + close, nothing to save), and a failed write leaves the modal
@@ -63,6 +63,7 @@ import type { WatchSource } from '../hooks/useWatch'
 import { openDrawing, parseSceneText, type DrawingScene, type LoadedDrawing } from './drawingScene'
 import type { DrawingSnapshot, DrawingSurfaceApi } from './ExcalidrawSurface'
 import type { SceneSide } from './mergeScene'
+import { sideOf, takeFromDisk, type TakeAnswer } from './takeFromDisk'
 import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing'
 import { missingPicturesNotice, picturesFolderOutside, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
 import type { NoticeKind } from '../lib/notice'
@@ -108,8 +109,6 @@ interface DrawingModalProps extends DrawingLinkProps {
   outsideChangeGlow?: OutsideChangeGlow
 }
 
-/** The shapes and the board settings alone: a merge's base never holds the pictures (YAZ-4279). */
-const sideOf = ({ elements, appState }: DrawingScene): SceneSide => ({ elements, appState })
 
 export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside, onNotice, watch, outsideChangeGlow = 'until-checked', ...linkProps }: DrawingModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -169,33 +168,34 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
     stale.current = true
   }
 
-  /** YAZ-4279 D6: the file merged into this canvas's edits; 'conflict' leaves the canvas as it was. */
-  const mergeFile = async (): Promise<'merged' | 'conflict'> => {
+  /** YAZ-4279 D6, item 6: the file merged into this canvas, edits or none (`takeFromDisk`, the tab's flow). */
+  const mergeFile = async (): Promise<TakeAnswer> => {
     const s = surfaceApi.current
-    const a = autosave.current
     const was = base.current
-    if (s === null || a === null || was === null) return 'conflict'
-    try {
-      const drawing = await openDrawing(root, target)
-      if ((drawing.scene.readOnly === true) !== (loadedRef.current?.scene.readOnly === true)) return 'conflict'
-      await s.whenIdle()
-      if ('conflicts' in s.mergeScene(typeof was === 'string' ? parseSceneText(was) : was, drawing.scene, glowRef.current)) return 'conflict'
-      tookFile(drawing)
-      a.rebase(drawing.mtime)
-      return 'merged'
-    } catch {
-      return 'conflict'
-    }
+    if (s === null || was === null) return 'conflict'
+    const drawing = await openDrawing(root, target)
+    if (left.current) return 'merged'
+    const answer = await takeFromDisk({ surface: s, autosave: autosave.current, base: was, disk: drawing, readOnly: loadedRef.current?.scene.readOnly === true, glow: glowRef.current, baselineAt: (mtime) => (tookAt.current = mtime) })
+    if (answer === 'merged') tookFile(drawing)
+    return answer
   }
   const glowRef = useRef(outsideChangeGlow)
   glowRef.current = outsideChangeGlow
   const mergeRef = useRef(mergeFile)
   mergeRef.current = mergeFile
 
-  /** A conflict merges first (D6); only a clash raises the bar, which says what is wrong now, so an older error line goes. */
+  /**
+   * Every outside save and every refused save, one at a time (item 4): only a clash raises the bar, which says what is wrong
+   * now, so an older error line goes. 'reload' remounts on the file, as Reload does: nothing is unsaved.
+   */
   const [settle] = useState(() =>
     oneAtATime(async (diskMtime) => {
-      if ((await mergeRef.current()) === 'merged') {
+      const answer = await mergeRef.current().catch((err: unknown) => {
+        console.error('merge', err)
+        return 'conflict' as const
+      })
+      if (answer === 'reload') return reloadRef.current()
+      if (answer === 'merged') {
         conflictRef.current = null
         setConflict(null)
         return
@@ -290,13 +290,14 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       if (generation !== generationRef.current) return
       snapshot.current = next
       const drawing = loadedRef.current
+      // Taken before the read-only return, so a stale one never waits for a later snapshot (4A-23).
+      const took = tookAt.current
+      tookAt.current = null
       // Read only: never an edit, so there is nothing to autosave.
       if (drawing === null || drawing.scene.readOnly === true) return
       const a = autosave.current
-      const took = tookAt.current
-      tookAt.current = null
       // The first snapshot IS the clean baseline (the surface restored the disk scene first); so is the first after the file came in.
-      if (a === null) autosave.current = new Autosave<number>({ content: next.version, mtime: drawing.mtime, delayMs: 500, save: write, onStatus, onConflict })
+      if (a === null) autosave.current = new Autosave<number>({ content: next.version, mtime: took ?? drawing.mtime, delayMs: 500, save: write, onStatus, onConflict })
       else if (took !== null) a.reset(next.version, took)
       else a.update(next.version)
     },
@@ -390,22 +391,8 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
     }
   }
 
-  /** A clean canvas takes the file in place (item 6); a read-only switch the file changed remounts it, as Reload does. */
-  const takeFile = async (): Promise<void> => {
-    const s = surfaceApi.current
-    try {
-      const drawing = await openDrawing(root, target)
-      if (left.current) return
-      if (s === null || (drawing.scene.readOnly === true) !== (loadedRef.current?.scene.readOnly === true)) return void reload()
-      tookFile(drawing)
-      tookAt.current = drawing.mtime
-      s.replaceScene(drawing.scene, glowRef.current)
-    } catch {
-      // The file went, or stopped being a scene: keep what is on screen, as a tab does.
-    }
-  }
-  const takeRef = useRef(takeFile)
-  takeRef.current = takeFile
+  const reloadRef = useRef(reload)
+  reloadRef.current = reload
 
   // YAZ-4279 item 6: an outside save of this file, once any save in flight has settled — the tab's rule.
   const file = loaded?.path ?? null
@@ -416,8 +403,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
       const a = autosave.current
       void (a?.settled() ?? Promise.resolve()).then(() => {
         if (a !== null && ev.mtime === a.mtime) return // the echo of our own write
-        if (a !== null && a.dirty) void settle(ev.mtime)
-        else void takeRef.current()
+        void settle(ev.mtime)
       })
     })
   }, [watch, file, settle])
