@@ -55,11 +55,14 @@ body.excalidraw-cursor-resize * {
 
   // YAZ-4277 D1, D10: the host's editor of a text box takes the keys and the
   // selection only; the canvas draws the letters, the overlay the caret
+  .excalidraw-host-text-editor {
+    // the letters, the list icons and anything else the editor draws: none show
+    opacity: 0;
+  }
+
   .excalidraw-host-text-editor,
   .excalidraw-host-text-editor * {
-    color: transparent !important;
     caret-color: transparent !important;
-    background: transparent !important;
     outline: none;
   }
 

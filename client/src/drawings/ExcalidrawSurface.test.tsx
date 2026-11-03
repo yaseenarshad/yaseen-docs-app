@@ -23,7 +23,12 @@ vi.mock('./engine', () => {
     getSceneVersion: () => 0,
     serializeAsJSON: vi.fn((elements: unknown) => JSON.stringify({ elements, appState: {} })),
   }
-  return { loadExcalidraw: async () => mod, applyToolbarMode: () => undefined }
+  const textEditor = { mount: () => ({ setSelection: () => undefined, focus: () => undefined, destroy: () => undefined }) }
+  return {
+    loadExcalidraw: async () => mod,
+    loadTextBoxEditor: async () => ({ createTextBoxEditor: () => textEditor }),
+    applyToolbarMode: () => undefined,
+  }
 })
 vi.mock('katex/dist/katex.min.css', () => ({}))
 
@@ -56,6 +61,14 @@ async function render(readOnly: boolean | undefined): Promise<void> {
 }
 
 const last = (): Record<string, unknown> => engine.props.at(-1) ?? {}
+
+describe('the text box editor (YAZ-4277 D1)', () => {
+  it('passes the text box editor, made with the engine, to the canvas', async () => {
+    await render(undefined)
+    expect((last().textEditor as { mount?: unknown } | undefined)?.mount).toBeTypeOf('function')
+    expect(engine.props.every((props) => props.textEditor === last().textEditor)).toBe(true)
+  })
+})
 
 describe('the board`s right-click menu: Save to library… (YAZ-4157 demo 6L)', () => {
   async function renderWithPanel(readOnly: boolean): Promise<void> {

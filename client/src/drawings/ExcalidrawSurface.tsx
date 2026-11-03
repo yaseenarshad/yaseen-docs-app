@@ -78,8 +78,7 @@ import { contentVersion } from './contentVersion'
 import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
 import { imageStudioSession, pickChip } from '../image-studio/imageStudioSession'
 import { openViewport, type DrawingScene } from './drawingScene'
-import { applyToolbarMode, loadExcalidraw, type ExcalidrawModule } from './engine'
-import { textBoxEditor } from './textBoxEditor'
+import { applyToolbarMode, loadExcalidraw, loadTextBoxEditor, type ExcalidrawModule } from './engine'
 import { assembleExportCopy } from './exportDrawing'
 import { yaseenFormFactor } from './formFactor'
 import { applyFramesVisibility } from './framesVisibility'
@@ -271,6 +270,9 @@ export function ExcalidrawSurface({
   onExportPdf,
 }: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
+  // YAZ-4277 D1: one text box editor for the surface's life, on the loaded engine's box rules (the prop-stability rule);
+  // its module loads with the engine, never in the entry chunk
+  const [textEditor, setTextEditor] = useState<ExcalidrawProps['textEditor']>(undefined)
   /** The canvas panel is the tab's (see the module doc); read once, so a surface never changes mode. */
   const [withPanel] = useState(() => onCanvasPanelChange !== undefined)
   // Callbacks change identity on every host render; the load must run ONCE and `onChange` must
@@ -614,10 +616,11 @@ export function ExcalidrawSurface({
     // ⚡ Draw's YAZ-1775 R4/R5: the engine reads its styles-panel mode out of localStorage at mount, so the
     // one mode this app ships lands there before every mount.
     applyToolbarMode()
-    loadExcalidraw().then(
-      (mod) => {
+    Promise.all([loadExcalidraw(), loadTextBoxEditor()]).then(
+      ([mod, box]) => {
         if (!live) return
         engineRef.current = mod
+        setTextEditor(box.createTextBoxEditor(mod))
         countEdits.current = appStateEdits(boardAppStateKeys(mod))
         setEngine(mod)
         // The baseline, before the engine has said anything — through the engine's own restore,
@@ -792,7 +795,7 @@ export function ExcalidrawSurface({
         keyBindings={keyBindings}
         hostLinks={links?.hostLinks}
         // YAZ-4277 D1: a text box edits with the notes engine (`textBoxEditor.ts`)
-        textEditor={textBoxEditor}
+        textEditor={textEditor}
         hostContextMenuItems={hostContextMenuItems}
         onExportPdf={exportPdf}
         onLinkOpen={onLinkOpen}

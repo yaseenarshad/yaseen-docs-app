@@ -410,6 +410,12 @@ export {
 } from "@excalidraw/element";
 
 export { getTextFromElements } from "@excalidraw/element";
+// YAZ-4277 1B: the box's letter styles and bullets, for the host's text editor
+export {
+  normalizeTextRuns,
+  remapTextRunsForTextEdit,
+  getBulletMarkerForDepth,
+} from "@excalidraw/element";
 // YAZ-4247: the Docs app's "New text size on screen".
 export {
   setNewTextScreenSize,

@@ -21,7 +21,6 @@ import {
   getTextElementStyledLines,
   getTextLayoutMaxWidth,
   isTextElement,
-  remapTextRunsForTextEdit,
 } from "@excalidraw/element";
 
 import type { StyledVisualLine } from "@excalidraw/element";
@@ -282,19 +281,13 @@ export const hostTextWysiwyg = ({
   const session = textEditor.mount({
     root,
     text,
+    textRuns: element.textRuns,
     selection,
-    onChange: (nextText) => {
-      if (isDestroyed || nextText === text) {
+    onChange: (nextText, nextTextRuns) => {
+      if (isDestroyed) {
         return;
       }
       const current = getElement();
-      // YAZ-4277 1A: the letter styles follow the text as in the textarea; 1B moves them to marks
-      const nextTextRuns = remapTextRunsForTextEdit(
-        text,
-        nextText,
-        current?.textRuns,
-        { caret: Math.max(selection.anchor, selection.head) },
-      );
       text = nextText;
       onChange?.({
         nextOriginalText: nextText,

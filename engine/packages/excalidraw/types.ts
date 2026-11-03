@@ -835,9 +835,14 @@ export type HostTextEditor = {
   mount: (options: {
     root: HTMLElement;
     text: string;
+    textRuns: ExcalidrawTextElement["textRuns"];
     /** The selection at start. */
     selection: HostTextSelection;
-    onChange: (text: string) => void;
+    /** YAZ-4277 1B: the text and its letter styles, as the box saves them. */
+    onChange: (
+      text: string,
+      textRuns: ExcalidrawTextElement["textRuns"],
+    ) => void;
     onSelectionChange: (selection: HostTextSelection) => void;
   }) => HostTextEditorSession;
 };
