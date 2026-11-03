@@ -148,7 +148,8 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     if (hit !== null) return hit
     const payload = await fetchJson<T>(url, maxBytes)
     await cache.write(key, payload)
-    await onFresh?.(payload)
+    // Not waited for (checker round 1): the answer does not depend on it, and a write that fails only costs a later read.
+    if (onFresh) void onFresh(payload).catch(() => undefined)
     return payload
   }
 
@@ -477,8 +478,12 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     async drawing(req) {
       const id = parseDrawingId(req.id)
       if (id === null) throw new BridgeFailure('BAD_REQUEST', "'id' is not an Excalidraw library item")
-      const named = (await drawingItems()).find((item) => item.providerId === req.id)
-      const file = await libraryFile(id.source)
+      // The index only checks the item's name, so an index that cannot be had (offline, past its 24 h) does not fail an
+      // item whose library file is still at hand (checker round 1).
+      const [named, file] = await Promise.all([
+        drawingItems().then((items) => items.find((item) => item.providerId === req.id), () => undefined),
+        libraryFile(id.source),
+      ])
       const elements = libraryItemElements(file, id.index, named?.title ?? null)
       if (elements === null) throw new BridgeFailure('NOT_FOUND', 'that item is no longer in its library')
       if (JSON.stringify(elements).length > MAX_DRAWING_ELEMENTS_BYTES) throw new BridgeFailure('TOO_LARGE', 'that library item is too large to add')

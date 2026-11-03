@@ -26,7 +26,6 @@ import { createWatchedFolder } from '../watchedFolder'
 export interface MediaStore {
   /** Every verb answers the favorites list it produced. */
   favorites(req: MediaFavoritesRequest): Promise<StoredMediaItem[]>
-  /** The MRU. */
   /** List, one add, or a word (YAZ-4157); every verb answers the whole library it produced, in ONE write. */
   used(req: MediaUsedRequest): Promise<MediaLibraryFile>
   /** Point at another library folder (the setting changed); the old one goes quiet. */

@@ -855,6 +855,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   )
 
   const chipTitle = CHIP_LABELS[chip]
+  /** The web half shows once the web is asked or is waiting to be: during the pause, a search, offline, a result. */
+  const webShown = webOn && (waiting || isSearching || offline || searchedQuery !== '' || pageError !== null)
   let body: ReactNode
   if (typed) {
     const mine = yours.slice(0, shownMatches)
@@ -864,7 +866,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
         {handDrawn.length > 0 &&
           section('Hand-drawn', handDrawn.slice(0, shownDrawings), handDrawn.length > shownDrawings ? { label: 'Show more', onClick: () => setShownDrawings(shownDrawings + MATCH_PAGE) } : undefined)}
         {/* The web half appears from the first key: during the pause it says the web is coming. */}
-        {webOn && (waiting || isSearching || offline || searchedQuery !== '' || pageError !== null) && (
+        {webShown && (
           <section className="image-studio__section" aria-label="From the web">
             <header className="image-studio__section-head">
               <h3>From the web</h3>
@@ -903,7 +905,12 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
             )}
           </section>
         )}
-        {mine.length === 0 && !webOn && <div className="image-studio__state">Nothing of yours matches “{query.trim()}”</div>}
+        {/* Nothing local, and no web half yet (a chip with no web, or text too short for a pause search): say so (6Q). */}
+        {mine.length === 0 && handDrawn.length === 0 && !webShown && (
+          <div className="image-studio__state">
+            Nothing of yours matches “{query.trim()}”.{webOn ? ' Press Enter to search the web.' : ''}
+          </div>
+        )}
       </>
     )
   } else if (chip === 'all') {
@@ -938,7 +945,14 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       className="image-studio"
       // Focusable, so a click anywhere in the tab makes ⌘V a paste HERE (demo 6M).
       tabIndex={-1}
-      onPaste={(event) => takeFrom(event, event.clipboardData)}
+      onPaste={(event) => {
+        // Text pasted into a text field stays text, even when the clipboard ALSO holds a picture of it (an Excel
+        // cell, a copied slide): the picture is taken only when the field is not the target or there is no text (6P).
+        const target = event.target as HTMLElement
+        const intoText = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable
+        if (intoText && event.clipboardData.types.includes('text/plain')) return
+        takeFrom(event, event.clipboardData)
+      }}
       onDragOver={(event) => {
         if ([...event.dataTransfer.items].some((item) => item.kind === 'file' && PASTE_IMAGE_TYPES.includes(item.type))) {
           event.preventDefault()

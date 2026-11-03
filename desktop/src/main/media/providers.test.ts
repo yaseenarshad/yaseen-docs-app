@@ -432,6 +432,12 @@ describe('Excalidraw`s public libraries (YAZ-4157 demo 6K)', () => {
     await expect(code(build(fetchHuge as unknown as typeof globalThis.fetch, null).drawing({ id: 'pixelass/tools.excalidrawlib#0' }))).resolves.toBe('TOO_LARGE')
   })
 
+  it('an index that cannot be had does not fail an item whose library file is at hand (checker round 1)', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => (String(input).endsWith('libraries.json') ? json({ error: 'down' }, { status: 503 }) : json(file)))
+    const providers = build(fetchMock as unknown as typeof globalThis.fetch, null)
+    expect(await providers.drawing({ id: 'pixelass/tools.excalidrawlib#1' })).toEqual({ elements: [{ id: 'h' }] })
+  })
+
   it('a bad id is BAD_REQUEST and asks nothing; an item gone from its library is NOT_FOUND', async () => {
     const fetchMock = libraries()
     const providers = build(fetchMock as unknown as typeof globalThis.fetch, null)

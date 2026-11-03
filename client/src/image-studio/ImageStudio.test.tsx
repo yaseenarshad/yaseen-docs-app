@@ -288,6 +288,13 @@ describe('typing: Best matches, then From the web (D3, D4, D7)', () => {
     expect(tileNames(section(host, 'Best matches'))).toEqual(['Diamond'])
   })
 
+  it('a typed text that matches nothing of yours, too short for a pause search, still says something (All chip) (6Q)', async () => {
+    const { host } = await mount()
+    await type(field(host), 'zq')
+    await settle()
+    expect(host.querySelector('.image-studio__list')!.textContent?.trim()).not.toBe('')
+  })
+
   it(`asks the web ${SEARCH_PAUSE_MS} ms after the last key; your items need no wait`, async () => {
     library = libraryOf({ favorites: [stored()] })
     const { host } = await mount()
@@ -735,6 +742,18 @@ describe('components in the Add tab (D2, D6)', () => {
     await click(byText(host, 'Save 1 element'))
     await settle(10)
     expect(components.save).toHaveBeenCalledWith({ name: 'Hammer and nail', fragmentJson: expect.stringContaining('"dataURL": "data:image/png;base64,AQID"'), previewPng: expect.any(String) })
+  })
+
+  it('a paste of TEXT into the search field stays a text paste even when the clipboard also holds a picture (6P)', async () => {
+    const { host } = await mount()
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', {
+      value: { files: [new File(['x'], 'image.png', { type: 'image/png' })], items: [], types: ['text/plain', 'text/html', 'Files'], getData: (t: string) => (t === 'text/plain' ? 'rocket' : '') },
+    })
+    act(() => void field(host).dispatchEvent(event))
+    await settle(5)
+    expect(event.defaultPrevented).toBe(false)
+    expect(byLabel(host, 'Component name')).toBeNull()
   })
 
   it('a picture file dropped on the tab opens the name form for it, and the board under the panel never gets it (demo 6M)', async () => {
