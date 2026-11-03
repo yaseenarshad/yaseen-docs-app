@@ -4426,6 +4426,19 @@ body.drag-held iframe {
   transform: translateY(-50%);
 }
 
+/* The chosen shortcut's ✓ keeps clear of its name, and of the pencil while that shows. */
+.new-item__slot[aria-checked='true'] {
+  padding-right: 20px;
+}
+
+.new-item__slot-wrap:is(:hover, :focus-within) > .new-item__slot[aria-checked='true'] {
+  padding-right: 44px;
+}
+
+.new-item__slot-wrap:is(:hover, :focus-within) > .new-item__slot[aria-checked='true']::after {
+  right: 28px;
+}
+
 .new-item__goes {
   flex: none;
   color: var(--fg-muted);
