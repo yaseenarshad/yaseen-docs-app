@@ -67,7 +67,7 @@
 import { requestKeySheet } from '../keys/keySheetRequest'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { picturesSize, referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
-import { appStateToPrefs, changedPrefKeys, foldArrowsOf, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
+import { appStateToPrefs, changedPrefKeys, foldArrowsOf, NEW_ELEMENT_DEFAULT_KEYS, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
 import { CANVAS_PANEL_DEFAULT_W, CANVAS_PANEL_MAX_W, CANVAS_PANEL_MIN_W, DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type FoldArrowMode, type PageView } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside, MouseMods } from '@shared/keys'
@@ -770,6 +770,13 @@ export function ExcalidrawSurface({
     [boardFoldArrows, canvasPrefs.foldArrowsOpen, canvasPrefs.foldArrowSize, canvasPrefs.foldArrowThickness, canvasPrefs.foldArrowMinSize],
   )
 
+  // YAZ-4277 D14: what a new shape starts with, from Settings › Drawings; one stable object, as above.
+  const defaultItemStyle = useMemo(
+    () => prefsToAppState(canvasPrefs, NEW_ELEMENT_DEFAULT_KEYS),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the five default rows only, not every canvas pref
+    [canvasPrefs.writingStrokeWidth, canvasPrefs.vectorStrokeWidth, canvasPrefs.defaultFontFamily, canvasPrefs.defaultRoughness, canvasPrefs.defaultTextAlign],
+  )
+
   // The frame held while the engine chunk is arriving; the host's canvas frame sizes it.
   if (engine === null) return <div className="drawing-surface__loading" />
   const { Excalidraw } = engine
@@ -802,6 +809,8 @@ export function ExcalidrawSurface({
         keyBindings={keyBindings}
         hostLinks={links?.hostLinks}
         foldArrows={foldArrows}
+        newElementStyle={canvasPrefs.newElementStyle}
+        defaultItemStyle={defaultItemStyle}
         hostContextMenuItems={hostContextMenuItems}
         onExportPdf={exportPdf}
         onLinkOpen={onLinkOpen}

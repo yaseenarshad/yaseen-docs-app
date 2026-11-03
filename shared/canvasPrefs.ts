@@ -31,7 +31,7 @@
  */
 
 import { isRecord } from './guards'
-import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_MODES, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FOLD_ARROW_THICKNESSES, LASER_COLORS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, LASER_SIZES, LASER_TRAIL_MODES, ROUGHNESS_LEVELS, SELECT_ON_MODES, TEXT_ALIGNS, type CanvasPrefs, type FoldArrowMode, type FoldArrowThickness, type LaserColor, type LaserSize, type LaserTrailMode, type Roughness, type SelectOn, type TextAlign } from './types'
+import { DEFAULT_CANVAS_PREFS, NEW_ELEMENT_STYLE_MODES, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_MODES, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FOLD_ARROW_THICKNESSES, LASER_COLORS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, LASER_SIZES, LASER_TRAIL_MODES, ROUGHNESS_LEVELS, SELECT_ON_MODES, TEXT_ALIGNS, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type LaserColor, type LaserSize, type LaserTrailMode, type Roughness, type SelectOn, type TextAlign } from './types'
 
 /** Every pref key, in declaration order — the order `changedPrefKeys` reports in. */
 export const CANVAS_PREF_KEYS = Object.keys(DEFAULT_CANVAS_PREFS) as ReadonlyArray<keyof CanvasPrefs>
@@ -68,6 +68,7 @@ const FIELD_OK: { [K in keyof CanvasPrefs]: (v: unknown) => v is CanvasPrefs[K] 
   foldArrowSize: (v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= FOLD_ARROW_SIZE_MIN && v <= FOLD_ARROW_SIZE_MAX,
   foldArrowThickness: (v): v is FoldArrowThickness => typeof v === 'string' && (FOLD_ARROW_THICKNESSES as readonly string[]).includes(v),
   foldArrowMinSize: (v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= FOLD_ARROW_MIN_SIZE_MIN && v <= FOLD_ARROW_MIN_SIZE_MAX,
+  newElementStyle: (v): v is NewElementStyleMode => typeof v === 'string' && (NEW_ELEMENT_STYLE_MODES as readonly string[]).includes(v),
 }
 
 /** Strict: every field present and valid — the IPC boundary's check. */
@@ -158,6 +159,8 @@ export function prefsToAppState(prefs: CanvasPrefs, keys: ReadonlyArray<keyof Ca
       case 'foldArrowThickness':
       case 'foldArrowMinSize':
         break // the engine's `foldArrows` prop, never appState (YAZ-4277 D5, D7)
+      case 'newElementStyle':
+        break // the engine's `newElementStyle` prop, never appState (YAZ-4277 D14)
       case 'defaultFontFamily':
         out.currentItemFontFamily = prefs.defaultFontFamily
         break
@@ -186,6 +189,9 @@ export function prefsToAppState(prefs: CanvasPrefs, keys: ReadonlyArray<keyof Ca
  */
 export function appStateToPrefs(appState: EngineAppStateSlice, fallback: CanvasPrefs): CanvasPrefs {
   const frames = appState.frameRendering
+  // YAZ-4277 D14: in "Start with the default style" the new-element defaults change only in Settings, so a pick on the
+  // board is never read back into them.
+  const fromBoard = fallback.newElementStyle === 'keep'
   return {
     gridModeEnabled: isBool(appState.gridModeEnabled) ? appState.gridModeEnabled : fallback.gridModeEnabled,
     objectsSnapModeEnabled: isBool(appState.objectsSnapModeEnabled) ? appState.objectsSnapModeEnabled : fallback.objectsSnapModeEnabled,
@@ -195,16 +201,16 @@ export function appStateToPrefs(appState: EngineAppStateSlice, fallback: CanvasP
     toolLock: isBool(appState.activeTool?.locked) ? appState.activeTool.locked : fallback.toolLock,
     zenModeEnabled: isBool(appState.zenModeEnabled) ? appState.zenModeEnabled : fallback.zenModeEnabled,
     writingMode: isBool(appState.writingMode) ? appState.writingMode : fallback.writingMode,
-    writingStrokeWidth: isWidth(appState.currentItemWritingStrokeWidth) ? appState.currentItemWritingStrokeWidth : fallback.writingStrokeWidth,
-    vectorStrokeWidth: isWidth(appState.currentItemVectorStrokeWidth) ? appState.currentItemVectorStrokeWidth : fallback.vectorStrokeWidth,
+    writingStrokeWidth: fromBoard && isWidth(appState.currentItemWritingStrokeWidth) ? appState.currentItemWritingStrokeWidth : fallback.writingStrokeWidth,
+    vectorStrokeWidth: fromBoard && isWidth(appState.currentItemVectorStrokeWidth) ? appState.currentItemVectorStrokeWidth : fallback.vectorStrokeWidth,
     // Both halves or neither: a half-applied `frameRendering` is the engine mid-update, not a preference.
     framesVisible: frames != null && isBool(frames.outline) && isBool(frames.name) ? frames.outline && frames.name : fallback.framesVisible,
-    defaultFontFamily: FIELD_OK.defaultFontFamily(appState.currentItemFontFamily) ? appState.currentItemFontFamily : fallback.defaultFontFamily,
+    defaultFontFamily: fromBoard && FIELD_OK.defaultFontFamily(appState.currentItemFontFamily) ? appState.currentItemFontFamily : fallback.defaultFontFamily,
     // Not appState (YAZ-4247): the engine never changes it.
     newTextScreenSize: fallback.newTextScreenSize,
     newTextWrapMargin: fallback.newTextWrapMargin,
-    defaultRoughness: FIELD_OK.defaultRoughness(appState.currentItemRoughness) ? appState.currentItemRoughness : fallback.defaultRoughness,
-    defaultTextAlign: FIELD_OK.defaultTextAlign(appState.currentItemTextAlign) ? appState.currentItemTextAlign : fallback.defaultTextAlign,
+    defaultRoughness: fromBoard && FIELD_OK.defaultRoughness(appState.currentItemRoughness) ? appState.currentItemRoughness : fallback.defaultRoughness,
+    defaultTextAlign: fromBoard && FIELD_OK.defaultTextAlign(appState.currentItemTextAlign) ? appState.currentItemTextAlign : fallback.defaultTextAlign,
     // An engine built before 🔒 YAZ-1989 D1 has none of the three, and so keeps the stored ones.
     laserTrailMode: FIELD_OK.laserTrailMode(appState.laserTrailMode) ? appState.laserTrailMode : fallback.laserTrailMode,
     laserColor: FIELD_OK.laserColor(appState.laserColor) ? appState.laserColor : fallback.laserColor,
@@ -214,6 +220,7 @@ export function appStateToPrefs(appState: EngineAppStateSlice, fallback: CanvasP
     foldArrowSize: fallback.foldArrowSize,
     foldArrowThickness: fallback.foldArrowThickness,
     foldArrowMinSize: fallback.foldArrowMinSize,
+    newElementStyle: fallback.newElementStyle,
   }
 }
 
@@ -234,3 +241,6 @@ export function changedPrefKeys(prev: CanvasPrefs, next: CanvasPrefs): Array<key
 export function foldArrowsOf(prefs: CanvasPrefs, board: FoldArrowMode | undefined): { openArrows: FoldArrowMode; size: number; thickness: FoldArrowThickness; minScreenSize: number } {
   return { openArrows: board ?? prefs.foldArrowsOpen, size: prefs.foldArrowSize, thickness: prefs.foldArrowThickness, minScreenSize: prefs.foldArrowMinSize }
 }
+
+/** YAZ-4277 D14: the Settings › Drawings defaults a new element starts with, as the engine's `defaultItemStyle`. */
+export const NEW_ELEMENT_DEFAULT_KEYS: ReadonlyArray<keyof CanvasPrefs> = ['writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign']

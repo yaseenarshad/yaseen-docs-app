@@ -103,6 +103,8 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
     generateIdForFile,
     hostLinks,
     foldArrows,
+    newElementStyle,
+    defaultItemStyle,
     hostContextMenuItems,
     onExportPdf,
     onLinkOpen,
@@ -243,6 +245,8 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
           generateIdForFile={generateIdForFile}
           hostLinks={hostLinks}
           foldArrows={foldArrows}
+          newElementStyle={newElementStyle}
+          defaultItemStyle={defaultItemStyle}
           hostContextMenuItems={hostContextMenuItems}
           onExportPdf={onExportPdf}
           onLinkOpen={onLinkOpen}
