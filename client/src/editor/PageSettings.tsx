@@ -207,13 +207,16 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
             ))}
           </div>
         </>}
-        {/* A native dropdown: five choices do not fit the menu's width as buttons (YAZ-4272 D5). The menu stays open after a pick. */}
+        {/* A native dropdown: five choices do not fit the menu's width as buttons (YAZ-4272 D5). The menu stays open after a pick.
+            "Default" alone: "Default (Until I check it)" ran under the dropdown's arrow at the menu's 172px. Its tooltip names the
+            glow it follows. */}
         {onChangeOutsideGlow !== undefined && <>
           <div className="page-settings__divider" aria-hidden="true" />
           <label className="page-settings__label" htmlFor={glowId}>Outside changes glow:</label>
           <select id={glowId} className="page-settings__select" value={outsideGlow ?? ''}
+            title={`Default follows Settings: ${OUTSIDE_CHANGE_GLOW_OPTIONS.find((option) => option.value === appGlow)?.label ?? 'Until I check it'}`}
             onChange={(event) => onChangeOutsideGlow(event.target.value === '' ? null : (event.target.value as OutsideChangeGlow))}>
-            <option value="">Default ({OUTSIDE_CHANGE_GLOW_OPTIONS.find((option) => option.value === appGlow)?.label ?? 'Settings'})</option>
+            <option value="">Default</option>
             {OUTSIDE_CHANGE_GLOW_OPTIONS.map(({ label, value }) => <option key={value} value={value}>{label}</option>)}
           </select>
         </>}

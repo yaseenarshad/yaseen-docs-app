@@ -877,7 +877,7 @@
   user-select: none;
 }
 
-.cell-note-all-head__title {
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__title {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -887,8 +887,9 @@
   white-space: nowrap;
 }
 
-/* The column buttons (A2): one frame, the shown column pressed. */
-.cell-note-all-head__columns {
+/* The column buttons (A2): one frame, the shown column pressed. Each rule carries the editor's prefix: Crepe's
+   `.milkdown button` reset (no border, no background) would win over a bare class. */
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__columns {
   display: inline-flex;
   flex: none;
   border: 1px solid var(--border);
@@ -896,9 +897,9 @@
   overflow: hidden;
 }
 
-.cell-note-all-head__column,
-.cell-note-all-head__now,
-.cell-note-all-head__filled {
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__column,
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__now,
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__filled {
   flex: none;
   height: 22px;
   padding: 0 8px;
@@ -910,29 +911,25 @@
   cursor: pointer;
 }
 
-.cell-note-all-head__now,
-.cell-note-all-head__filled {
+.milkdown .ProseMirror .cell-note-all-head :is(.cell-note-all-head__now, .cell-note-all-head__filled, .cell-note-card__copy) {
   border: 1px solid var(--border);
   border-radius: 4px;
 }
 
-.cell-note-all-head__column + .cell-note-all-head__column {
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__column + .cell-note-all-head__column {
   border-left: 1px solid var(--border);
 }
 
-.cell-note-all-head__column:hover,
-.cell-note-all-head__now:hover,
-.cell-note-all-head__filled:hover {
+.milkdown .ProseMirror .cell-note-all-head :is(.cell-note-all-head__column, .cell-note-all-head__now, .cell-note-all-head__filled):hover {
   color: var(--fg);
 }
 
-.cell-note-all-head__column[aria-pressed='true'],
-.cell-note-all-head__filled[aria-pressed='true'] {
+.milkdown .ProseMirror .cell-note-all-head :is(.cell-note-all-head__column, .cell-note-all-head__filled)[aria-pressed='true'] {
   background: color-mix(in srgb, var(--accent) 14%, var(--bg));
   color: var(--fg);
 }
 
-.cell-note-all-head button:focus-visible {
+.milkdown .ProseMirror .cell-note-all-head button:focus-visible {
   outline: 2px solid var(--crepe-color-primary);
   outline-offset: 1px;
 }
@@ -967,17 +964,18 @@
   opacity: 0.55;
 }
 
-/* An empty time block (B): a quiet line that a click turns into the block's note. */
+/* An empty time block (B): a small, quiet line that a click turns into the block's note. 36 to 48 of them stand in
+   one day, so they stay smaller than the notes. */
 .milkdown .ProseMirror .cell-note-time-empty {
   display: block;
   width: 100%;
-  margin: 0 0 4px;
-  padding: 2px 0 2px 20px;
+  margin: 0 0 2px;
+  padding: 1px 0 1px 20px;
   border: 0;
   background: transparent;
-  color: var(--fg-muted);
+  color: color-mix(in srgb, var(--fg-muted) 75%, transparent);
   font: inherit;
-  font-style: italic;
+  font-size: 12px;
   text-align: left;
   cursor: text;
 }
