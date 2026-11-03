@@ -232,7 +232,7 @@ export const CANVAS_SECTION: SettingsSection = {
         {
           id: 'canvas.foldArrowMinSize',
           label: 'Smallest fold arrow on screen',
-          hint: 'Zoomed out, an arrow stops shrinking at this size, so you see folded bullets from afar. Exports use the size alone.',
+          hint: 'Zoomed out, an arrow stops getting smaller at this size, so you see folded bullets from afar. Exports use the size alone.',
           keywords: ['fold', 'chevron', 'arrow', 'zoom', 'minimum', 'smallest', 'bullet'],
           render: ({ settings, onChange }) => (
             <PxStepper name="Smallest fold arrow on screen" value={settings.canvas.foldArrowMinSize ?? DEFAULT_CANVAS_PREFS.foldArrowMinSize} fallback={DEFAULT_CANVAS_PREFS.foldArrowMinSize}
