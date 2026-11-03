@@ -189,9 +189,7 @@ describe("text folds on the board (YAZ-4277 D3, D6)", () => {
       foldedLines: [1],
       height: 400,
     };
-    await render(
-      <Excalidraw initialData={{ elements: [fixed] }} />,
-    );
+    await render(<Excalidraw initialData={{ elements: [fixed] }} />);
     await waitFor(() => expect(getText().height).toBe(125));
     // no undo step
     expect(h.history.isUndoStackEmpty).toBe(true);
@@ -206,10 +204,7 @@ describe("text folds on the board (YAZ-4277 D3, D6)", () => {
       originalText: `New\n${MOAT}`,
       text: `New\n${MOAT}`,
     };
-    const [restored] = restoreElements(
-      [text],
-      null,
-    ) as ExcalidrawTextElement[];
+    const [restored] = restoreElements([text], null) as ExcalidrawTextElement[];
     expect(restored.foldedLines).toBeUndefined();
     expect(restored.height).toBe(175);
   });

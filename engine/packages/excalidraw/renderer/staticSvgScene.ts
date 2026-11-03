@@ -843,9 +843,7 @@ const renderElementToSvg = (
             }
             // the letters after the box, not the indent before it
             const doneFrom =
-              doneLine === lines[i].logicalLine
-                ? checkbox?.end ?? 0
-                : Infinity;
+              doneLine === lines[i].logicalLine ? checkbox?.end ?? 0 : Infinity;
             // YAZ-3718 D1: one <tspan> for each styled segment, placed as on canvas
             for (const segment of segments) {
               if (segment.checkbox) {
@@ -882,7 +880,9 @@ const renderElementToSvg = (
                   tick.setAttribute(
                     "d",
                     box.tick
-                      .map(([px, py], index) => `${index ? "L" : "M"}${px} ${py}`)
+                      .map(
+                        ([px, py], index) => `${index ? "L" : "M"}${px} ${py}`,
+                      )
                       .join(" "),
                   );
                   tick.setAttribute("fill", "none");

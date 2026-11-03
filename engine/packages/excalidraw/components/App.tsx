@@ -10044,10 +10044,7 @@ class App extends React.Component<AppProps, AppState> {
         ? this.scene.getNonDeletedElement(hit.elementId)
         : null;
       if (hit && element && isTextElement(element)) {
-        this.setTextFolds(
-          element.id,
-          getToggledFoldedLines(element, hit.line),
-        );
+        this.setTextFolds(element.id, getToggledFoldedLines(element, hit.line));
         this.updateFoldArrowHover(scenePointer);
         return;
       }
