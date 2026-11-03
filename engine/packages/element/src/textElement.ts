@@ -34,6 +34,7 @@ import { getCornerRadius } from "./utils";
 import {
   getStyledVisualLineStart,
   getTextElementStyledLayout,
+  getTextElementStyledLines,
 } from "./textLineUnderlines";
 import { getLinkPillMetrics, hasHostLinks } from "./textLinks";
 import {
@@ -208,7 +209,11 @@ const getTextVisualBounds = (
   }
 
   const maxWidth = element.autoResize ? Infinity : element.width;
-  const { lines } = getTextElementStyledLayout(element, maxWidth);
+  const lines = getTextElementStyledLines(
+    element,
+    maxWidth,
+    element.originalText,
+  );
   const lineHeightPx = element.fontSize * element.lineHeight;
   const verticalOffset = getVerticalOffset(
     element.fontFamily,

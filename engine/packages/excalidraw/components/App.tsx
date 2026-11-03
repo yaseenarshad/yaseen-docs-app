@@ -142,6 +142,7 @@ import {
   newLinearElement,
   newTextElement,
   refreshTextDimensions,
+  setFoldedLines,
   deepCopyElement,
   duplicateElements,
   hasBoundTextElement,
@@ -900,6 +901,7 @@ class App extends React.Component<AppProps, AppState> {
       isDestroyed: false,
       updateScene: this.updateScene,
       applyDeltas: this.applyDeltas,
+      setTextFolds: this.setTextFolds,
       mutateElement: this.mutateElement,
       updateLibrary: this.library.updateLibrary,
       addFiles: this.addFiles,
@@ -8436,6 +8438,26 @@ class App extends React.Component<AppProps, AppState> {
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     });
     return true;
+  };
+
+  /**
+   * YAZ-4277 D3: writes a box's folds through the switch point
+   * (`textFolds.ts`). The box resizes and its arrows follow. A fold is no
+   * undo step, but the board still changes and saves.
+   */
+  public setTextFolds = (
+    elementId: ExcalidrawElement["id"],
+    foldedLines: readonly number[],
+  ) => {
+    const element = this.scene.getNonDeletedElement(elementId);
+    if (!element || !isTextElement(element)) {
+      return false;
+    }
+    const changed = setFoldedLines(element, foldedLines, this.scene);
+    if (changed) {
+      this.store.scheduleAction(CaptureUpdateAction.NEVER);
+    }
+    return changed;
   };
 
   /** Reports the hovered pill to the host, only when it changed. */

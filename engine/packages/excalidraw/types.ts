@@ -1374,6 +1374,7 @@ export interface ExcalidrawImperativeAPI {
   isDestroyed: boolean;
   updateScene: InstanceType<typeof App>["updateScene"];
   applyDeltas: InstanceType<typeof App>["applyDeltas"];
+  setTextFolds: InstanceType<typeof App>["setTextFolds"];
   mutateElement: InstanceType<typeof App>["mutateElement"];
   updateLibrary: InstanceType<typeof Library>["updateLibrary"];
   resetScene: InstanceType<typeof App>["resetScene"];

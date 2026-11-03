@@ -64,7 +64,10 @@ import {
 
 import { syncInvalidIndices } from "@excalidraw/element";
 
-import { refreshTextDimensions } from "@excalidraw/element";
+import {
+  normalizeFoldedLines,
+  refreshTextDimensions,
+} from "@excalidraw/element";
 
 import { getNormalizedDimensions } from "@excalidraw/element";
 
@@ -564,6 +567,14 @@ export const restoreElement = (
         (element as { strikethrough?: unknown }).strikethrough === true
           ? true
           : undefined;
+      // YAZ-4277 D3: the stale-fold guard. An outside edit can shift the
+      // lines, so a fold that no longer points to a list item with children
+      // goes; the box then measures its lines again below
+      const savedFolds = (element as { foldedLines?: unknown }).foldedLines;
+      const foldedLines = normalizeFoldedLines(originalText, savedFolds);
+      const foldsDropped =
+        Array.isArray(savedFolds) &&
+        savedFolds.length !== (foldedLines?.length ?? 0);
       const backgroundPaddingScale = normalizeTextBackgroundPaddingScale(
         (element as { backgroundPaddingScale?: unknown })
           .backgroundPaddingScale,
@@ -596,7 +607,21 @@ export const restoreElement = (
         fontStyle,
         strikethrough,
         backgroundPaddingScale,
+        foldedLines,
       });
+      if (!foldedLines) {
+        delete (element as { foldedLines?: unknown }).foldedLines;
+      }
+      if (foldsDropped && !element.isDeleted) {
+        Object.assign(
+          element,
+          refreshTextDimensions(
+            element,
+            getContainerElement(element, targetElementsMap),
+            targetElementsMap,
+          ),
+        );
+      }
       if (!textRuns) {
         delete (element as { textRuns?: unknown }).textRuns;
       }

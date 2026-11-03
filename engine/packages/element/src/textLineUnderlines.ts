@@ -5,6 +5,7 @@ import {
   getWrappedTextLines,
 } from "./textWrapping";
 import { charWidth, getLineHeightInPx, getLineWidth } from "./textMeasurements";
+import { getHiddenLines } from "./textFolds";
 import { parseTextListLine } from "./textList";
 import {
   getHostLinksVersion,
@@ -272,6 +273,8 @@ export const getStyledVisualLines = (args: {
   wholeElementItalic: boolean;
   wholeElementUnderlined: boolean;
   wholeElementStrikethrough: boolean;
+  /** YAZ-4277 D3: the lines a fold hides (`textFolds.ts`); they get no visual line. */
+  hiddenLines?: ReadonlySet<number> | null;
 }): StyledVisualLine[] => {
   const lines: StyledVisualLine[] = [];
   const fonts: FontString[] = [];
@@ -290,6 +293,10 @@ export const getStyledVisualLines = (args: {
   for (const [logicalLine, originalLine] of args.originalText
     .split("\n")
     .entries()) {
+    if (args.hiddenLines?.has(logicalLine)) {
+      sourceOffset += originalLine.length + 1;
+      continue;
+    }
     const lineStart = sourceOffset;
     const lineEnd = lineStart + originalLine.length;
     while (runIndex < runs.length && runs[runIndex].end <= sourceOffset) {
@@ -576,6 +583,7 @@ type TextElementLayoutStyle = Pick<
   | "textDecoration"
   | "strikethrough"
   | "textRuns"
+  | "foldedLines"
 >;
 
 const getTextElementStyledLinesArgs = (
@@ -597,6 +605,7 @@ const getTextElementStyledLinesArgs = (
   wholeElementItalic: element.fontStyle === "italic",
   wholeElementUnderlined: element.textDecoration === "underline",
   wholeElementStrikethrough: element.strikethrough === true,
+  hiddenLines: getHiddenLines(element, originalText),
 });
 
 /** YAZ-4074 6A item 16: the most text boxes the styled-lines memo holds. */
@@ -604,7 +613,7 @@ export const STYLED_LINES_MEMO_MAX = 1000;
 
 /**
  * YAZ-3718 D1: one layout for each text box with runs or links, keyed by its
- * text, runs, font and width. `refreshTextDimensions`, the canvas and the
+ * text, runs, font, folds (YAZ-4277 D3) and width. `refreshTextDimensions`, the canvas and the
  * editor overlay ask for the same layout on a keystroke, so only the first one
  * measures. The memo is for the whole window: a box that was deleted, or whose
  * board closed, keeps its entry until the memo is full. Then the box changed
@@ -618,6 +627,7 @@ const styledLinesMemo = new Map<
     font: FontString;
     textDecoration: ExcalidrawTextElement["textDecoration"];
     strikethrough: ExcalidrawTextElement["strikethrough"];
+    foldedLines: ExcalidrawTextElement["foldedLines"];
     maxWidth: number;
     linksVersion: number;
     lines: StyledVisualLine[];
@@ -645,6 +655,7 @@ export const getTextElementStyledLines = (
     memo.font === font &&
     memo.textDecoration === element.textDecoration &&
     memo.strikethrough === element.strikethrough &&
+    memo.foldedLines === element.foldedLines &&
     memo.maxWidth === maxWidth &&
     memo.linksVersion === linksVersion
   ) {
@@ -662,6 +673,7 @@ export const getTextElementStyledLines = (
     font,
     textDecoration: element.textDecoration,
     strikethrough: element.strikethrough,
+    foldedLines: element.foldedLines,
     maxWidth,
     linksVersion,
     lines,
@@ -669,13 +681,27 @@ export const getTextElementStyledLines = (
   return lines;
 };
 
+/**
+ * The size of a text box comes from its visible lines (YAZ-4277 D6). Its
+ * `text`, which the box saves as `element.text`, keeps the folded lines too
+ * (D3): copy as text and other Excalidraw apps still have all of it.
+ */
 export const getTextElementStyledLayout = (
   element: TextElementLayoutStyle &
     Pick<ExcalidrawTextElement, "id" | "originalText" | "lineHeight">,
   maxWidth: number,
   originalText = element.originalText,
-) =>
-  getStyledTextLayoutFromLines(
+) => {
+  const layout = getStyledTextLayoutFromLines(
     getTextElementStyledLines(element, maxWidth, originalText),
     element,
   );
+  if (!getHiddenLines(element, originalText)) {
+    return layout;
+  }
+  const allLines = getStyledVisualLines({
+    ...getTextElementStyledLinesArgs(element, maxWidth, originalText),
+    hiddenLines: null,
+  });
+  return { ...layout, text: allLines.map((line) => line.text).join("\n") };
+};
