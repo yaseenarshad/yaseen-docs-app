@@ -6,7 +6,7 @@ import {
 } from "./textWrapping";
 import { charWidth, getLineHeightInPx, getLineWidth } from "./textMeasurements";
 import { getHiddenLines } from "./textFolds";
-import { parseTextListLine } from "./textList";
+import { parseTextListLine, TEXT_LIST_CHECK_MARKERS } from "./textList";
 import {
   getHostLinksVersion,
   getLinkPillWidth,
@@ -52,6 +52,11 @@ export type StyledTextSegment = {
    * drawn pill with the page's name.
    */
   link?: StyledTextLink;
+  /**
+   * YAZ-4277 D4: a checklist marker (`☐` or `☑` and the spaces after it).
+   * The renderers draw a box in its place; its width stays the letters'.
+   */
+  checkbox?: "open" | "done";
 };
 
 export type StyledTextLink = Omit<TextLinkMatch, "start" | "end">;
@@ -308,8 +313,21 @@ export const getStyledVisualLines = (args: {
       runs[runIndex].start < lineEnd;
     // YAZ-4039 D7: a line with a link pill takes the segment path too
     const links = getTextLinks(originalLine);
+    const parsedLine = parseTextListLine(originalLine);
+    // YAZ-4277 D4: and so does a checklist item, for its box
+    const checkbox =
+      parsedLine.markerKind === "check"
+        ? {
+            start: parsedLine.indentation.length,
+            end: originalLine.length - parsedLine.content.length,
+            state:
+              parsedLine.marker === TEXT_LIST_CHECK_MARKERS[1]
+                ? ("done" as const)
+                : ("open" as const),
+          }
+        : null;
     const pieces =
-      hasRuns || links.length
+      hasRuns || links.length || checkbox
         ? getLinePieces(
             originalLine,
             sourceOffset,
@@ -323,6 +341,7 @@ export const getStyledVisualLines = (args: {
               color: undefined,
             },
             links,
+            checkbox,
           )
         : null;
     const visualLines = pieces
@@ -333,7 +352,7 @@ export const getStyledVisualLines = (args: {
           links,
         )
       : getWrappedTextLines(originalLine, font, args.maxWidth);
-    const isListItem = parseTextListLine(originalLine).markerKind !== "none";
+    const isListItem = parsedLine.markerKind !== "none";
     // YAZ-4100 3C: a styled line in a right-to-left script draws its pieces
     // from the right; a line with no run keeps today's path
     const rtl = !!pieces && isRTL(originalLine);
@@ -393,6 +412,7 @@ type LinePiece = ResolvedTextStyle & {
   start: number;
   end: number;
   link?: StyledTextLink;
+  checkbox?: "open" | "done";
 };
 
 /**
@@ -406,13 +426,15 @@ const getLinePieces = (
   firstRun: number,
   whole: ResolvedTextStyle,
   links: readonly TextLinkMatch[],
+  checkbox: { start: number; end: number; state: "open" | "done" } | null,
 ) => {
   const pieces = getRunPieces(line, lineStart, runs, firstRun, whole);
+  const checked = checkbox ? splitCheckboxPiece(pieces, checkbox) : pieces;
   if (!links.length) {
-    return pieces;
+    return checked;
   }
   const linked: LinePiece[] = [];
-  for (const piece of pieces) {
+  for (const piece of checked) {
     let start = piece.start;
     for (const { start: linkStart, end: linkEnd, ...link } of links) {
       if (linkEnd <= start || linkStart >= piece.end) {
@@ -431,6 +453,35 @@ const getLinePieces = (
     }
   }
   return linked;
+};
+
+/** YAZ-4277 D4: the checklist marker as one piece of its own, in the style of its first letter. */
+const splitCheckboxPiece = (
+  pieces: readonly LinePiece[],
+  checkbox: { start: number; end: number; state: "open" | "done" },
+) => {
+  const split: LinePiece[] = [];
+  for (const piece of pieces) {
+    if (piece.end <= checkbox.start || piece.start >= checkbox.end) {
+      split.push(piece);
+      continue;
+    }
+    if (piece.start < checkbox.start) {
+      split.push({ ...piece, end: checkbox.start });
+    }
+    if (piece.start <= checkbox.start) {
+      split.push({
+        ...piece,
+        start: checkbox.start,
+        end: checkbox.end,
+        checkbox: checkbox.state,
+      });
+    }
+    if (piece.end > checkbox.end) {
+      split.push({ ...piece, start: Math.max(piece.start, checkbox.end) });
+    }
+  }
+  return split;
 };
 
 const getRunPieces = (
@@ -548,6 +599,7 @@ const getLineSegments = (
       color: piece.color,
       ...(piece.highlight ? { highlight: piece.highlight } : {}),
       ...(piece.link ? { link: piece.link } : {}),
+      ...(piece.checkbox ? { checkbox: piece.checkbox } : {}),
     });
     x += width;
   }

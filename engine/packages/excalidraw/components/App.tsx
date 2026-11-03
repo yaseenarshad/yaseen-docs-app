@@ -149,6 +149,8 @@ import {
   getToggledFoldedLines,
   isLineFolded,
   setFoldArrowPrefs,
+  getTextCheckboxAt,
+  getToggledCheckboxText,
   deepCopyElement,
   duplicateElements,
   hasBoundTextElement,
@@ -8059,8 +8061,15 @@ class App extends React.Component<AppProps, AppState> {
       this.state,
     );
 
-    // YAZ-4277 D5: two quick clicks on a fold arrow fold twice; no edit
-    if (this.getFoldArrowTargetAt({ x: sceneX, y: sceneY })?.onArrow) {
+    // YAZ-4277 D4, D5: two quick clicks on a fold arrow or a checklist box
+    // act twice; they start no edit
+    if (
+      this.getFoldArrowTargetAt({ x: sceneX, y: sceneY })?.onArrow ||
+      this.getTextCheckboxTargetAt(
+        { x: sceneX, y: sceneY },
+        this.getElementAtPosition(sceneX, sceneY),
+      )
+    ) {
       return;
     }
 
@@ -8579,6 +8588,55 @@ class App extends React.Component<AppProps, AppState> {
   };
 
   public getFoldArrowHover = () => this.foldArrowHover;
+
+  /** YAZ-4277 D4: the checklist box of the text box under a point, if any. */
+  private getTextCheckboxTargetAt = (
+    scenePointer: Readonly<{ x: number; y: number }>,
+    hitElement: NonDeletedExcalidrawElement | null,
+  ) => {
+    if (!hitElement || hitElement.locked) {
+      return null;
+    }
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    const textElement = isTextElement(hitElement)
+      ? hitElement
+      : getBoundTextElement(hitElement, elementsMap);
+    if (!textElement || this.state.editingTextElement?.id === textElement.id) {
+      return null;
+    }
+    const hit = getTextCheckboxAt(
+      textElement,
+      getTextLayoutMaxWidth(
+        textElement,
+        getContainerElement(textElement, elementsMap),
+      ),
+      scenePointer,
+    );
+    return hit && { element: textElement, offset: hit.offset };
+  };
+
+  /** YAZ-4277 D4: ticks or unticks a checklist item, as one undo step. */
+  private toggleTextCheckbox = (
+    element: NonDeleted<ExcalidrawTextElement>,
+    offset: number,
+  ) => {
+    const originalText = getToggledCheckboxText(element.originalText, offset);
+    if (originalText === element.originalText) {
+      return;
+    }
+    const next = newElementWith(element, { originalText });
+    redrawTextBoundingBox(
+      next,
+      this.scene.getContainerElement(element),
+      this.scene,
+    );
+    this.updateScene({
+      elements: this.scene
+        .getElementsIncludingDeleted()
+        .map((candidate) => (candidate.id === element.id ? next : candidate)),
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+  };
 
   /** Reports the hovered pill to the host, only when it changed. */
   private setHostLinkHover = (hit: HostLinkHit | null) => {
@@ -9446,8 +9504,13 @@ class App extends React.Component<AppProps, AppState> {
       );
     }
 
-    // YAZ-4277 D5: an open item's ▾ on hover; a fold arrow takes a click
-    if (this.updateFoldArrowHover(scenePointer)?.onArrow) {
+    // YAZ-4277 D4, D5: an open item's ▾ on hover; a fold arrow and a
+    // checklist box take a click
+    if (
+      this.updateFoldArrowHover(scenePointer)?.onArrow ||
+      (!this.state.viewModeEnabled &&
+        this.getTextCheckboxTargetAt(scenePointer, hitElementMightBeLocked))
+    ) {
       this.cursor.set(CURSOR_TYPE.POINTER);
       return;
     }
@@ -9922,6 +9985,15 @@ class App extends React.Component<AppProps, AppState> {
           getToggledFoldedLines(element, hit.line),
         );
         this.updateFoldArrowHover(scenePointer);
+        return;
+      }
+      // YAZ-4277 D4: a click on a checklist box ticks it, also not in edit
+      const checkbox = this.getTextCheckboxTargetAt(
+        scenePointer,
+        this.getElementAtPosition(scenePointerX, scenePointerY),
+      );
+      if (checkbox) {
+        this.toggleTextCheckbox(checkbox.element, checkbox.offset);
         return;
       }
     }

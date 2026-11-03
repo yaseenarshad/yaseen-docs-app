@@ -98,6 +98,7 @@ export * from "./store";
 export * from "./textElement";
 export * from "./textFolds";
 export * from "./textFoldArrows";
+export * from "./textCheckbox";
 export * from "./textList";
 export * from "./textLineUnderlines";
 export * from "./textLinks";

@@ -39,6 +39,8 @@ import {
   hasHostLinks,
 } from "@excalidraw/element";
 import {
+  CHECKLIST_DONE_ALPHA,
+  getCheckboxGeometry,
   getFoldArrowAnchors,
   getFoldArrowBox,
   getFoldArrowPoints,
@@ -823,6 +825,8 @@ const renderElementToSvg = (
             applyDarkModeFilter(color, renderConfig.theme === THEME.DARK),
           );
         };
+        // YAZ-4277 D4: the visual lines of a done checklist item
+        let doneLine = -1;
         for (let i = 0; i < lines.length; i++) {
           const text = svgRoot.ownerDocument.createElementNS(SVG_NS, "text");
           const segments = lines[i].segments;
@@ -832,8 +836,60 @@ const renderElementToSvg = (
             element.textAlign,
           );
           if (segments) {
+            if (segments.some((segment) => segment.checkbox === "done")) {
+              doneLine = lines[i].logicalLine;
+            }
+            const done = doneLine === lines[i].logicalLine;
             // YAZ-3718 D1: one <tspan> for each styled segment, placed as on canvas
             for (const segment of segments) {
+              if (segment.checkbox) {
+                // YAZ-4277 D4: a box in the marker's place; a done box has a tick
+                const box = getCheckboxGeometry(
+                  segment,
+                  lineStart + segment.x,
+                  i * lineHeightPx,
+                  lineHeightPx,
+                  element.fontSize,
+                );
+                const color = applyDarkModeFilter(
+                  element.strokeColor,
+                  renderConfig.theme === THEME.DARK,
+                );
+                const rect = svgRoot.ownerDocument.createElementNS(
+                  SVG_NS,
+                  "rect",
+                );
+                rect.setAttribute("x", `${box.x}`);
+                rect.setAttribute("y", `${box.y}`);
+                rect.setAttribute("width", `${box.size}`);
+                rect.setAttribute("height", `${box.size}`);
+                rect.setAttribute("rx", `${box.radius}`);
+                rect.setAttribute("fill", "none");
+                rect.setAttribute("stroke", color);
+                rect.setAttribute("stroke-width", `${box.strokeWidth}`);
+                rect.setAttribute("class", "checkbox");
+                node.appendChild(rect);
+                if (segment.checkbox === "done") {
+                  const tick = svgRoot.ownerDocument.createElementNS(
+                    SVG_NS,
+                    "path",
+                  );
+                  tick.setAttribute(
+                    "d",
+                    box.tick
+                      .map(([px, py], index) => `${index ? "L" : "M"}${px} ${py}`)
+                      .join(" "),
+                  );
+                  tick.setAttribute("fill", "none");
+                  tick.setAttribute("stroke", color);
+                  tick.setAttribute("stroke-width", `${box.strokeWidth}`);
+                  tick.setAttribute("stroke-linecap", "round");
+                  tick.setAttribute("stroke-linejoin", "round");
+                  tick.setAttribute("class", "checkbox-tick");
+                  node.appendChild(tick);
+                }
+                continue;
+              }
               const tspan = svgRoot.ownerDocument.createElementNS(
                 SVG_NS,
                 "tspan",
@@ -938,9 +994,17 @@ const renderElementToSvg = (
               );
               setTextStyle(
                 tspan,
-                segment,
+                done ? { ...segment, strikethrough: true } : segment,
                 segment.color ?? element.strokeColor,
               );
+              if (done) {
+                // YAZ-4277 D4: a done item's letters, as notes show them
+                // (a child's fill-opacity replaces the box's own, so both go in)
+                tspan.setAttribute(
+                  "fill-opacity",
+                  `${CHECKLIST_DONE_ALPHA * opacity}`,
+                );
+              }
               text.appendChild(tspan);
             }
           } else {

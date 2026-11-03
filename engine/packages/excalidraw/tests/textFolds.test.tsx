@@ -179,6 +179,13 @@ describe("text folds on the board (YAZ-4277 D3, D6)", () => {
 // y 125 to 150. Its arrow box is the text size (20) and ends 2 (0.1 × 20)
 // left of the bullet: x 78 to 98, y 127.5 to 147.5.
 const ARROW = { x: 88, y: 137.5 };
+
+const svgOf = () =>
+  exportToSvg(
+    h.app.scene.getNonDeletedElements(),
+    { exportBackground: false, viewBackgroundColor: "#ffffff" },
+    null,
+  );
 const LINE = { x: 200, y: 137.5 };
 
 describe("fold arrows (YAZ-4277 D5)", () => {
@@ -243,11 +250,11 @@ describe("fold arrows (YAZ-4277 D5)", () => {
 
   it("the SVG export draws ▸ for a folded item and no ▾", async () => {
     await renderBoard();
-    const open = await exportToSvg(h.elements, {}, null);
+    const open = await svgOf();
     expect(open.querySelectorAll("path.fold-arrow")).toHaveLength(0);
 
     act(() => h.app.setTextFolds("moat", [1]));
-    const folded = await exportToSvg(h.elements, {}, null);
+    const folded = await svgOf();
     const arrows = folded.querySelectorAll("path.fold-arrow");
     expect(arrows).toHaveLength(1);
     // ▸ in its box (x −22 to −2 of the box, line 2): top left, right point, bottom left
@@ -258,5 +265,65 @@ describe("fold arrows (YAZ-4277 D5)", () => {
     expect(Number(folded.getAttribute("width"))).toBe(
       Number(open.getAttribute("width")) + 22,
     );
+  });
+});
+
+// "Tasks:" then two items at fontSize 20: line 1 (y 125 to 150) and line 2
+// (y 150 to 175). The box (12.4 wide) is centred on the 10 px marker letter:
+// x 98.8 to 111.2, y 131.3 to 143.7 on line 1.
+const LIST = "Tasks:\n☐ open item\n☑ done item";
+const BOX = { x: 105, y: 137.5 };
+
+describe("checklists on the canvas (YAZ-4277 D4)", () => {
+  beforeEach(async () => {
+    mouse.reset();
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+    act(() =>
+      API.updateScene({
+        elements: [createMoat({ text: LIST, x: 100, y: 100 })],
+        captureUpdate: CaptureUpdateAction.NEVER,
+      }),
+    );
+  });
+
+  it("a click on the box ticks only that line, as one undo step, with no edit", () => {
+    mouse.clickAt(BOX.x, BOX.y);
+    expect(getText().originalText).toBe("Tasks:\n☑ open item\n☑ done item");
+    expect(h.state.editingTextElement).toBeNull();
+    expect(API.getSelectedElements()).toEqual([]);
+
+    mouse.clickAt(BOX.x, BOX.y + 25);
+    expect(getText().originalText).toBe("Tasks:\n☑ open item\n☐ done item");
+
+    Keyboard.undo();
+    expect(getText().originalText).toBe("Tasks:\n☑ open item\n☑ done item");
+    Keyboard.undo();
+    expect(getText().originalText).toBe(LIST);
+  });
+
+  it("a click on the item's words selects the box and ticks nothing", () => {
+    // just right of the box: the test canvas measures a styled line's
+    // letters 1 px wide, so the box's hit area ends near x 121
+    mouse.clickAt(116, BOX.y);
+    expect(getText().originalText).toBe(LIST);
+    expect(API.getSelectedElements().map((element) => element.id)).toEqual([
+      "moat",
+    ]);
+  });
+
+  it("the SVG export draws the boxes, a tick on the done one, and the done look", async () => {
+    const svg = await svgOf();
+    expect(svg.querySelectorAll("rect.checkbox")).toHaveLength(2);
+    expect(svg.querySelectorAll("path.checkbox-tick")).toHaveLength(1);
+    const words = [...svg.querySelectorAll("tspan")].map((tspan) => [
+      tspan.textContent,
+      tspan.getAttribute("text-decoration"),
+      tspan.getAttribute("fill-opacity"),
+    ]);
+    // no marker letter is drawn; the done item is struck and dimmed
+    expect(words).toEqual([
+      ["open item", null, null],
+      ["done item", "line-through", "0.55"],
+    ]);
   });
 });
