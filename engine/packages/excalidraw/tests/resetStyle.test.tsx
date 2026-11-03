@@ -111,7 +111,7 @@ describe("⌘\\ resets the selection to the default style (YAZ-4277 D15)", () =>
       x: 0,
       y: 300,
       ...STYLED,
-      startArrowhead: "dot",
+      startArrowhead: "triangle",
       endArrowhead: null,
       points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(100, 50)],
     });
@@ -167,7 +167,7 @@ describe("⌘\\ resets the selection to the default style (YAZ-4277 D15)", () =>
 
     for (const id of ["rect", "ellipse", "diamond", "arrow", "line", "pen"]) {
       const el = byId(id);
-      expect(el, id).toMatchObject({
+      expect(el).toMatchObject({
         strokeColor: "#1e1e1e",
         backgroundColor: "transparent",
         fillStyle: "solid",
@@ -176,7 +176,7 @@ describe("⌘\\ resets the selection to the default style (YAZ-4277 D15)", () =>
         roughness: 0,
         opacity: 100,
       });
-      expect(pick(el, KEPT), id).toEqual(pick(before.get(id)!, KEPT));
+      expect(pick(el, KEPT)).toEqual(pick(before.get(id)!, KEPT));
     }
     // edges round, as a new shape's
     expect(byId("rect").roundness?.type).toBe(ROUNDNESS.ADAPTIVE_RADIUS);

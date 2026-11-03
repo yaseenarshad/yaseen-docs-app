@@ -65,7 +65,10 @@ export const getDefaultNewElementStyle = (
  * style change had a target: a selection or a text in edit.
  */
 export const keepNewElementStyle = <T extends Partial<AppState>>(
-  state: Pick<AppState, NewElementStyleKey | "selectedElementIds" | "editingTextElement">,
+  state: Pick<
+    AppState,
+    NewElementStyleKey | "selectedElementIds" | "editingTextElement"
+  >,
   next: T,
 ): T => {
   const hasTarget =
@@ -107,7 +110,9 @@ export const getDefaultStyleUpdates = (
       ...shape,
       fontFamily: defaults.currentItemFontFamily,
       // a label keeps its place in its shape
-      ...(element.containerId ? {} : { textAlign: defaults.currentItemTextAlign }),
+      ...(element.containerId
+        ? {}
+        : { textAlign: defaults.currentItemTextAlign }),
       textRuns: undefined,
       fontWeight: "normal",
       fontStyle: "normal",

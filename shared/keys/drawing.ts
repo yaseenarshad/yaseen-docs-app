@@ -105,7 +105,7 @@ export const DRAWING_KEYS: readonly KeyRow[] = [
   fixed('selectAll', 'Select all', ['CmdOrCtrl+A']),
   fixed('help', 'Keyboard shortcuts', ['Shift+/']),
   fixed('toolLock', 'Keep the tool after drawing', ['Q']),
-  fixed('colors', 'Colour the selection', [], "T B W D R P A V U C E G Y O N: transparent, black, white, gray, red, pink, grape, violet, blue, cyan, teal, green, yellow, orange, bronze; with ⇧ the outline. The tool letters, while something is selected"),
+  fixed('colors', 'Colour the selection', [], "T B W D R P A V U C E G Y O N: transparent, black, white, gray, red, pink, grape, violet, blue, cyan, teal, green, yellow, orange, bronze. The letter colors the line (a shape's outline, a text's letters, an arrow or a pen line); with ⇧ the fill (a shape's fill, a text box's fill). The tool letters, while something is selected"),
   fixed('sizes', 'Size the selection', DIGITS, 'Text 12 to 128; anything else 48 to 1024 on its long side'),
   fixed('backgroundColors', 'Open the background colours', ['G'], 'With a shape tool and nothing selected'),
   fixed('strokeColors', 'Open the stroke colours', ['S'], 'With a shape tool and nothing selected'),

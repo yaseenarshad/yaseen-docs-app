@@ -629,17 +629,29 @@ export const actionChangeStrokeColor = register<
   },
 });
 
-const getSemanticColorProperty = (element: ExcalidrawElement) => {
-  if (
+/**
+ * YAZ-4277 D16: a color letter colors the line of every element (a shape's
+ * outline, a text's letters, an arrow, a line, a pen line, a picture's
+ * border); ⇧ + the letter colors the fill (a shape's fill, a free text box's
+ * fill). An element with no fill keeps today's ⇧ rule: its line.
+ */
+const getColorLetterProperty = (element: ExcalidrawElement, fill: boolean) => {
+  const isShape =
     element.type === "rectangle" ||
     element.type === "ellipse" ||
     element.type === "diamond" ||
-    isFrameLikeElement(element)
-  ) {
-    return "backgroundColor" as const;
+    isFrameLikeElement(element);
+  if (fill) {
+    if (isTextElement(element)) {
+      return element.containerId === null ? ("backgroundColor" as const) : null;
+    }
+    if (isShape) {
+      return "backgroundColor" as const;
+    }
+    return hasStrokeColor(element.type) ? ("strokeColor" as const) : null;
   }
-
   if (
+    isShape ||
     element.type === "text" ||
     element.type === "line" ||
     element.type === "arrow" ||
@@ -648,7 +660,6 @@ const getSemanticColorProperty = (element: ExcalidrawElement) => {
   ) {
     return "strokeColor" as const;
   }
-
   return null;
 };
 
@@ -667,16 +678,11 @@ export const actionApplySelectedSemanticColor = register<{
     let supportedElementCount = 0;
     const paletteValue = COLOR_PALETTE[value.colorName];
     const updatedElements = changeProperty(elements, appState, (element) => {
-      const property =
-        value.target === "stroke"
-          ? isTextElement(element)
-            ? element.containerId === null
-              ? ("backgroundColor" as const)
-              : null
-            : hasStrokeColor(element.type)
-            ? ("strokeColor" as const)
-            : null
-          : getSemanticColorProperty(element);
+      // `target: "stroke"` is the ⇧ key (the name is the old one)
+      const property = getColorLetterProperty(
+        element,
+        value.target === "stroke",
+      );
       if (!property) {
         return element;
       }
@@ -713,8 +719,8 @@ export const actionApplySelectedSemanticColor = register<{
           toast: {
             message:
               value.target === "stroke"
-                ? "The selected elements do not support alternate color shortcuts."
-                : "The selected elements do not support direct color shortcuts.",
+                ? "The selected elements have no fill for ⇧ + a color letter."
+                : "The selected elements have no line for a color letter.",
             duration: 3000,
           },
         },
