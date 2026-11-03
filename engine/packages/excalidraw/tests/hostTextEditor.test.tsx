@@ -179,6 +179,19 @@ describe("the host text editor (textEditor)", () => {
     expect(box().textRuns).toEqual([{ start: 5, end: 9, italic: true }]);
   });
 
+  // YAZ-4346 (4F): the color letters are for a selection; in edit they are typed letters
+  it("leaves letters typed in the editor to the editor: no color letter, no tool key", async () => {
+    await startEdit();
+    const before = { ...box() };
+    for (const key of ["r", "R", "g", "b", "t"]) {
+      fireEvent.keyDown(last().input, { key, code: `Key${key.toUpperCase()}` });
+    }
+    expect(box().strokeColor).toBe(before.strokeColor);
+    expect(box().backgroundColor).toBe(before.backgroundColor);
+    expect(h.state.activeTool.type).toBe("selection");
+    expect(h.state.editingTextElement).not.toBe(null);
+  });
+
   it("ends the edit on ⌘Enter", async () => {
     await startEdit();
     fireEvent.keyDown(last().input, { key: KEYS.ENTER, ctrlKey: true });
