@@ -28,9 +28,7 @@ export const getBulletMarkerForDepth = (depth: number) =>
   ];
 
 export const parseTextListLine = (line: string): ParsedTextListLine => {
-  const match = line.match(
-    /^([ \t]*)(?:(•|○|▪)|(☐|☑)|(\d+\.))[ \t]+(.*)$/u,
-  );
+  const match = line.match(/^([ \t]*)(?:(•|○|▪)|(☐|☑)|(\d+\.))[ \t]+(.*)$/u);
   const indentation = line.match(/^[ \t]*/)?.[0] ?? "";
 
   if (!match) {
