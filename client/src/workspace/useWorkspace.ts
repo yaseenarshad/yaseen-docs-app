@@ -215,6 +215,7 @@ export type TabsAction =
   | { type: 'back' } // the window steps back through its ONE list (YAZ-3647 D1)
   | { type: 'forward' } // …and forward again, as far as the list was walked back
   | { type: 'go'; id: number } // a row of the menu of ‹ or › (YAZ-3647 E3): straight to the step with that id, as that many Backs or Forwards would; a step that is gone: nothing (YAZ-3678 F4)
+  | { type: 'open-step'; id: number; front?: true; next?: boolean } // ⌘-, ⇧- or middle click on ‹ › or a row of their menu (YAZ-4156): a NEW tab of that step's page at its level, behind or in front, at the end or next to the current tab (`next`); a step that is gone: nothing
   | { type: 'open-stored'; tabs: readonly StoredTab[] } // "Restore session" (YAZ-3147 D3): the pages that are not open join the END, in ONE change; an open page opens no copy
   | { type: 'reset'; tabs: readonly StoredTab[]; active: string | null } // boot + root switch: the STORED tabs and file; replace wholesale with new ids
   | { type: 'rename'; oldPath: string; newPath: string } // in-app rename (Links E1, GRO-2194): every tab of the file follows it in place (S17)
@@ -481,6 +482,19 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
       // By id, not index (YAZ-3678 F4): a close can move the steps while the menu is open, and a row must never go to another step.
       const index = s.history.steps.findIndex((step) => step.id === a.id)
       return index === -1 || index === s.history.index ? s : walkTo(s, index)
+    }
+    case 'open-step': {
+      // Chrome's ⌘-click on Back (YAZ-4156 D1): the step's own page in a new tab, at the step's level. Always a copy, also
+      // when a tab shows the page or the step's tab shows another page now (YAZ-2940, D4). This tab and the list stay. In
+      // front, the copy adds its step (YAZ-3647 D4), which clears Forward (D5). Behind, it is not mounted and joins the
+      // chain, as a ⌘-clicked link's tab does (YAZ-3808 D4). The blank tab shows no page: the arrows are off.
+      const step = s.blank ? undefined : s.history.steps.find((x) => x.id === a.id)
+      if (step === undefined) return s
+      const tab: Tab = step.zoom === null ? newTab(step.path) : { ...newTab(step.path), zoom: step.zoom }
+      const at = nextSlot(s, a.next)
+      const tabs = at === undefined ? [...s.tabs, tab] : insertAt(s.tabs, tab, at)
+      if (a.front === true) return withActive({ ...s, tabs }, tab.id)
+      return at === undefined ? { ...s, tabs } : { ...s, tabs, chain: tab.id }
     }
     case 'close': {
       const i = s.tabs.findIndex((t) => t.id === a.id)
@@ -862,6 +876,17 @@ function reduceWorkspace(s: WorkspaceState, a: WorkspaceAction): WorkspaceState 
       const main = tabsReducer(withoutRight, a)
       return main === withoutRight ? withoutRight : withMain(withoutRight, main)
     }
+    case 'back':
+    case 'forward':
+    case 'go':
+    case 'open-step': {
+      // One owner per file (YAZ-2940 S15): the page that a step brings back — in its own tab, or in a new tab (YAZ-4156) —
+      // leaves the right panel if the panel shows it, as for every open above (YAZ-4196).
+      const main = tabsReducer(s, a)
+      if (main === s) return s
+      const both = s.rightPanel.items.find((path) => shows(main, path))
+      return both === undefined ? withMain(s, main) : closeRight(withMain(s, main), both)
+    }
     default: {
       const main = tabsReducer(s, a)
       return main === s ? s : withMain(s, main)
@@ -963,6 +988,8 @@ export interface UseWorkspace extends WorkspaceState {
   forward: () => void
   /** A row of the menu of ‹ or › (YAZ-3647 E3): straight to the step with this id (YAZ-3678 F4); an id that is gone does nothing. */
   go: (id: number) => void
+  /** A Back or Forward step in a new tab (YAZ-4156): behind, or in front with `front`. */
+  openStep: (id: number, front: boolean) => void
   /** Whether that step exists — the toolbar arrows' enabled state. */
   canBack: boolean
   canForward: boolean
@@ -1108,6 +1135,8 @@ export function useWorkspace(root: string | null): UseWorkspace {
   const back = useCallback(() => dispatch({ type: 'back' }), [dispatch])
   const forward = useCallback(() => dispatch({ type: 'forward' }), [dispatch])
   const go = useCallback((id: number) => dispatch({ type: 'go', id }), [dispatch])
+  // A step's new tab is stored with the window, at its level, like a copy (YAZ-3057, YAZ-3646 D14).
+  const openStep = useCallback((id: number, front: boolean) => dispatch({ type: 'open-step', id, next: opensNext(), ...(front ? { front: true as const } : {}) }), [dispatch])
   const reset = useCallback(
     (nextRoot: string | null, file: string | null) =>
       // An empty reset mirrors nothing: `storage.setRoot` already wrote {root, file: null,
@@ -1145,7 +1174,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   return {
     ...state,
     file: activePath(state),
-    openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, activate, sleep, wake, close, closeMany, openStored, move, closeActive, next, prev, back, forward, go, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
+    openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, activate, sleep, wake, close, closeMany, openStored, move, closeActive, next, prev, back, forward, go, openStep, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,
     navigateRight: navigateRightCallback,

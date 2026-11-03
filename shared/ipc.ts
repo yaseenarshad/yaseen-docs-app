@@ -401,6 +401,10 @@ export const CONTRACT = {
     onBack: push('menu:back'),
     /** Window › Forward (⌘⌥→): the window's Back list steps forward again (YAZ-3647 D7). */
     onForward: push('menu:forward'),
+    /** Window › Open Back in New Tab (no key by default): the nearest step behind, in a new tab behind this one (YAZ-4156 7). */
+    onBackNewTab: push('menu:back-new-tab'),
+    /** Window › Open Forward in New Tab (no key by default): the nearest step ahead, in a new tab behind this one (YAZ-4156 7). */
+    onForwardNewTab: push('menu:forward-new-tab'),
     /** File › New Tab (⌘T): show the one blank tab, with the caret in the sidebar's search bar (YAZ-2655 D10, D11). */
     onNewTab: push('menu:new-tab'),
     /** File › New Window (⌘⇧N): the focused window calls `window.duplicate`, which opens a window on its vaults with no tab (YAZ-3343 D35). */
