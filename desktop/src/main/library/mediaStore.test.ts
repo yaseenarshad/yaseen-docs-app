@@ -38,7 +38,7 @@ const onDisk = async () => JSON.parse(await readFile(file(), 'utf8')) as unknown
 describe('createMediaStore — reading (🔒 YAZ-1775 D5)', () => {
   it('a missing file reads as two empty lists and is NOT created by the read', async () => {
     expect(await store.favorites({ op: 'list' })).toEqual([])
-    expect(await store.recent({ op: 'list' })).toEqual([])
+    expect((await store.used({ op: 'list' })).recent).toEqual([])
     expect(await readdir(library)).toEqual([])
   })
 
@@ -59,7 +59,7 @@ describe('createMediaStore — reading (🔒 YAZ-1775 D5)', () => {
 
   it('a wrong-versioned file is corrupt too; a bad ROW in a good file is just dropped', async () => {
     await writeFile(file(), JSON.stringify({ version: 2, favorites: [], recent: [] }))
-    expect(await store.recent({ op: 'list' })).toEqual([])
+    expect((await store.used({ op: 'list' })).recent).toEqual([])
     expect((await readdir(library)).some((n) => n.startsWith('media.json.corrupt-'))).toBe(true)
     await writeFile(file(), JSON.stringify({ version: 1, favorites: [{ ...item(), updatedAt: 1 }, { itemKey: 'junk' }], recent: [] }))
     expect(await store.favorites({ op: 'list' })).toEqual([{ ...item(), updatedAt: 1 }])
@@ -79,7 +79,7 @@ describe('createMediaStore — writing', () => {
     await store.favorites({ op: 'add', item: item({ itemKey: 'b', providerId: 'b' }) })
     expect((await store.used({ op: 'record', item: item({ itemKey: 'a', providerId: 'a' }), query: '' })).recent.map((r) => r.itemKey)).toEqual(['a'])
     expect((await store.favorites({ op: 'remove', itemKey: 'a' })).map((f) => f.itemKey)).toEqual(['b'])
-    expect((await store.recent({ op: 'list' })).map((r) => r.itemKey)).toEqual(['a'])
+    expect((await store.used({ op: 'list' })).recent.map((r) => r.itemKey)).toEqual(['a'])
   })
 
   it('one add is ONE write of all three lists (YAZ-4157 D1): the third add favorites it in the same file', async () => {
@@ -162,7 +162,7 @@ describe('createMediaStore — watching', () => {
     await mkdir(other)
     await writeFile(path.join(other, MEDIA_LIBRARY_FILE), JSON.stringify({ version: 1, favorites: [], recent: [{ ...item({ itemKey: 'new', providerId: 'new' }), updatedAt: 9 }] }))
     store.setFolder(other)
-    expect((await store.recent({ op: 'list' })).map((r) => r.itemKey)).toEqual(['new'])
+    expect((await store.used({ op: 'list' })).recent.map((r) => r.itemKey)).toEqual(['new'])
     expect(await store.favorites({ op: 'list' })).toEqual([])
     n = 0
     await settle()

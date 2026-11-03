@@ -1,5 +1,5 @@
 /**
- * EXCALIDRAW'S PUBLIC LIBRARIES (YAZ-4157 demo 6K): about 3,000 named hand-drawn items in about 230 libraries, at
+ * EXCALIDRAW'S PUBLIC LIBRARIES (YAZ-4157 demo 6K): about 3,100 named hand-drawn items in the 160 libraries that name them (of about 230), at
  * libraries.excalidraw.com, with no key. They go on the board as editable elements, in the board's own style.
  *
  * The index (`libraries.json`, about 200 KB) names every item of a version-2 library (`itemNames`, in the order of
@@ -15,8 +15,14 @@ export const LIBRARIES_INDEX_URL = `${LIBRARIES_ORIGIN}/libraries.json`
 /** `<author>/<name>.excalidrawlib`: the only shape of `source` the index uses, and the only one fetched. */
 const SOURCE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.excalidrawlib$/
 
-/** The most elements bytes one item may bring: the size rule a saved component has (`MAX_COMPONENT_ELEMENTS_BYTES`). */
+/** The most elements bytes one item may bring: the size rule of a saved component (`MAX_COMPONENT_ELEMENTS_BYTES`, `client/src/components-library/componentData.ts`). */
 export const MAX_DRAWING_ELEMENTS_BYTES = 750_000
+
+/** The most bytes read for the index (about 200 KB today) and for one library file (most are under 1 MB). */
+export const MAX_INDEX_BYTES = 4 * 1024 * 1024
+export const MAX_LIBRARY_FILE_BYTES = 16 * 1024 * 1024
+/** How many library files main keeps parsed in memory; the disk cache holds the rest for 24 h. */
+export const MAX_LIBRARY_FILES_IN_MEMORY = 8
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 

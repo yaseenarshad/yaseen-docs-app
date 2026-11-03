@@ -55,7 +55,7 @@ describe('the drawing key list vs the vendored engine (drift)', () => {
 })
 
 describe('the drawing rows (K1, K6)', () => {
-  it('no two drawing rows share a default key, but ⌘C: Copy with a selection, the Components tab without one', () => {
+  it('no two drawing rows share a default key, but ⌘C: Copy with a selection, the Add tab’s Components chip without one', () => {
     const owners = new Map<string, string[]>()
     for (const row of DRAWING_KEYS) for (const key of row.keys) owners.set(key, [...(owners.get(key) ?? []), row.id])
     const shared = [...owners].filter(([, ids]) => ids.length > 1)

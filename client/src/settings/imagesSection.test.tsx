@@ -99,7 +99,7 @@ describe('Settings › Images › Pixabay API key', () => {
   const statusText = () => el.querySelector('[data-testid="pixabay-key-status"]')?.textContent
   const keyInput = () => row('pixabayApiKey')?.querySelector<HTMLInputElement>('input') as HTMLInputElement
 
-  it('asks main whether a key is set: "No key", a password field, Save off until typed, Clear off with nothing to clear', async () => {
+  it('asks main whether a key is set: "No key saved", a password field, Save off until typed, Clear off with nothing to clear', async () => {
     await mountImages()
     expect(secretHas).toHaveBeenCalledExactlyOnceWith({ name: 'pixabayApiKey' })
     expect(statusText()).toBe('No key saved. Photos are off.')

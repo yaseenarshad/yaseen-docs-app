@@ -18,7 +18,7 @@
  */
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import { MEDIA_LIBRARY_FILE, type MediaFavoritesRequest, type MediaLibraryFile, type MediaRecentRequest, type MediaUsedRequest, type StoredMediaItem } from '@shared/types'
+import { MEDIA_LIBRARY_FILE, type MediaFavoritesRequest, type MediaLibraryFile, type MediaUsedRequest, type StoredMediaItem } from '@shared/types'
 import { EMPTY_MEDIA_LIBRARY, addFavorite, addWord, recordUse, removeFavorite, sanitizeMediaLibrary } from '@shared/mediaLibrary'
 import { atomicWrite, createChain, fsCall, readOrQuarantine } from '../fs/fsUtils'
 import { createWatchedFolder } from '../watchedFolder'
@@ -27,7 +27,6 @@ export interface MediaStore {
   /** Every verb answers the favorites list it produced. */
   favorites(req: MediaFavoritesRequest): Promise<StoredMediaItem[]>
   /** The MRU. */
-  recent(req: MediaRecentRequest): Promise<StoredMediaItem[]>
   /** List, one add, or a word (YAZ-4157); every verb answers the whole library it produced, in ONE write. */
   used(req: MediaUsedRequest): Promise<MediaLibraryFile>
   /** Point at another library folder (the setting changed); the old one goes quiet. */
@@ -80,9 +79,6 @@ export function createMediaStore(initialFolder: string, deps: { now?: () => numb
     favorites(req) {
       const lib = req.op === 'list' ? chain.wait(read) : mutate((l) => (req.op === 'add' ? addFavorite(l, req.item, now()) : removeFavorite(l, req.itemKey)))
       return lib.then((l) => l.favorites)
-    },
-    recent() {
-      return chain.wait(read).then((l) => l.recent)
     },
     used(req) {
       if (req.op === 'list') return chain.wait(read)

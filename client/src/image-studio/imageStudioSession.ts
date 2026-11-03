@@ -55,11 +55,6 @@ export interface StudioSession {
   drawings: StudioItem[] | null
   /** The Recent section shows every row (it has no chip of its own to show them with). */
   recentOpen: boolean
-  /**
-   * The board's right-click "Save to library…" asked for the name form (demo 6L). The tab may not be mounted yet when
-   * it asks, so the request waits here until the tab can capture the selection.
-   */
-  saveRequested: boolean
   smart: SmartShapeApi | null
 }
 
@@ -82,7 +77,6 @@ const EMPTY: StudioSession = {
   components: [],
   drawings: null,
   recentOpen: false,
-  saveRequested: false,
   smart: null,
 }
 
@@ -158,20 +152,20 @@ export async function runSearch({ append = false, retry = false }: { append?: bo
 }
 
 /**
- * What the field does on each key (YAZ-4157 D3): keep the text, and ask the web after a pause. Text too short for the
- * web drops the old results at once — they belong to a query the field no longer holds.
+ * What the field does on each key (YAZ-4157 D3): keep the text, and ask the web after a pause. Text too short for a
+ * pause search (`MIN_PAUSE_QUERY`) drops the old results at once — they belong to a query the field no longer holds.
  */
 export function typeQuery(query: string) {
   clearTimeout(pauseTimer)
   const { set, getState } = imageStudioSession
   set({ query, error: null, waiting: false })
-  if (query.trim().length < MIN_QUERY) {
+  if (query.trim().length < MIN_PAUSE_QUERY) {
     searchRequestId++
     requestedCursors.clear()
     set({ results: [], cursor: null, warnings: [], searchedQuery: '', isSearching: false, pageError: null, offline: false })
     return
   }
-  if (query.trim().length < MIN_PAUSE_QUERY || query.trim() === getState().searchedQuery || chipSource(getState().chip) === null) return
+  if (query.trim() === getState().searchedQuery || chipSource(getState().chip) === null) return
   set({ waiting: true })
   pauseTimer = setTimeout(() => void runSearch(), SEARCH_PAUSE_MS)
 }

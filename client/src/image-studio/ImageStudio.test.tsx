@@ -31,7 +31,7 @@ vi.mock('../lib/storage', () => ({ storage: { getSettings: vi.fn(), subscribe: v
 import { api, BridgeRequestError } from '../api'
 import { loadExcalidrawElement } from '../drawings/engine'
 import { storage } from '../lib/storage'
-import { clearPreviewMemo, ImageStudio, type ImageStudioProps } from './ImageStudio'
+import { clearPreviewMemo, ImageStudio, READ_ONLY_NOTICE, type ImageStudioProps } from './ImageStudio'
 import { imageStudioSession, OFFLINE_NOTICE, resetImageStudioSession, SEARCH_PAUSE_MS } from './imageStudioSession'
 import type { SmartShapeApi } from './shapes'
 
@@ -567,7 +567,7 @@ describe('adding to the board, and what it teaches (D1, D9)', () => {
   })
 })
 
-describe('the star and the ⋯ menu (D5, D10)', () => {
+describe('the star and the right-click menu (D5, D10, demo 6B)', () => {
   it('the star adds the whole item, and removes it by key on a second press', async () => {
     library = libraryOf({ recent: [stored()] })
     const { host } = await mount()
@@ -699,12 +699,20 @@ describe('components in the Add tab (D2, D6)', () => {
     expect(host.querySelector('.image-studio__rest')?.hasAttribute('inert')).toBe(false)
   })
 
-  it('the board`s right-click "Save to library…" opens the name form for the selection (demo 6L)', async () => {
-    imageStudioSession.set({ saveRequested: true })
-    const { host } = await mount({ hasSelection: true })
+  it('the board`s right-click "Save to library…" opens the name form for the selection, and the request is taken once (demo 6L)', async () => {
+    const onSaveRequestTaken = vi.fn()
+    const { host } = await mount({ hasSelection: true, saveRequestPending: true, onSaveRequestTaken })
     await settle(5)
     expect(byLabel(host, 'Component name')).not.toBeNull()
-    expect(imageStudioSession.getState().saveRequested).toBe(false)
+    expect(onSaveRequestTaken).toHaveBeenCalledTimes(1)
+  })
+
+  it('on a read-only board an add puts nothing on it and counts no use (audit Must 2)', async () => {
+    const { host, canvas } = await mount({ readOnly: true })
+    await click(byLabel(host, 'Add Rectangle'))
+    expect(canvas.updateScene).not.toHaveBeenCalled()
+    expect(media.used).not.toHaveBeenCalledWith(expect.objectContaining({ op: 'record' }))
+    expect(host.querySelector('.image-studio__notice')?.textContent).toBe(READ_ONLY_NOTICE)
   })
 
   it('⌘V with a picture on the clipboard opens the name form for it, named after its file; a text paste stays a text paste (demo 6M)', async () => {
@@ -727,6 +735,20 @@ describe('components in the Add tab (D2, D6)', () => {
     await click(byText(host, 'Save 1 element'))
     await settle(10)
     expect(components.save).toHaveBeenCalledWith({ name: 'Hammer and nail', fragmentJson: expect.stringContaining('"dataURL": "data:image/png;base64,AQID"'), previewPng: expect.any(String) })
+  })
+
+  it('a picture file dropped on the tab opens the name form for it, and the board under the panel never gets it (demo 6M)', async () => {
+    const { host } = await mount()
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: { files: [new File(['x'], 'red_banner.png', { type: 'image/png' })], items: [], types: ['Files'] } })
+    const boardHeard = vi.fn()
+    document.body.addEventListener('drop', boardHeard)
+    act(() => void host.querySelector('.image-studio')!.dispatchEvent(drop))
+    await settle(5)
+    document.body.removeEventListener('drop', boardHeard)
+    expect(drop.defaultPrevented).toBe(true)
+    expect(boardHeard).not.toHaveBeenCalled()
+    expect((byLabel(host, 'Component name') as HTMLInputElement).value).toBe('red banner')
   })
 
   it('imports a file from the Components ⋯; a file that is not a component is a passive notice and nothing is saved', async () => {

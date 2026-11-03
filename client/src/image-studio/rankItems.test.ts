@@ -51,13 +51,13 @@ describe('rankItems', () => {
   })
 
   // A tripwire, not a benchmark: the bound leaves room for a slow CI runner (a key press must never wait on this).
-  it('ranks a full library fast: 2,000 items with words in under 20 ms', () => {
-    const items = Array.from({ length: 2000 }, (_, i) => item(`k${i}`, `Icon number ${i}`))
+  it('ranks a full library and the Hand-drawn index fast: 5,000 items with words in under 50 ms (the old 20 ms for 2,000, per item)', () => {
+    const items = Array.from({ length: 5000 }, (_, i) => item(`k${i}`, `Icon number ${i}`))
     const map = new Map(items.slice(0, 500).map((it, i) => used(it, { count: i, words: ['alpha', 'beta', `w${i}`] })))
     rankItems(items, map, 'icon 1', none)
     const start = performance.now()
     for (let i = 0; i < 10; i++) rankItems(items, map, 'icon 12', none)
     const each = (performance.now() - start) / 10
-    expect(each).toBeLessThan(20)
+    expect(each).toBeLessThan(50)
   })
 })

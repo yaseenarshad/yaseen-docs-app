@@ -44,7 +44,7 @@ export const CANVAS_LOADING = 'The canvas is still loading.'
 
 /** The tabs, left→right. */
 export const CANVAS_SIDEBAR_TABS: ReadonlyArray<{ tab: CanvasPanelTab; label: string; shortLabel: string; icon: ReactNode }> = [
-  { tab: 'image-studio', label: 'Add shapes, icons and components', shortLabel: 'Add', icon: imageIcon },
+  { tab: 'image-studio', label: 'Add shapes, icons, and components', shortLabel: 'Add', icon: imageIcon },
   { tab: 'presentation', label: 'Presentation', shortLabel: 'Present', icon: presentationIcon },
 ]
 
@@ -69,6 +69,13 @@ export interface CanvasSidebarProps {
   searchFocusPending: boolean
   /** The Add tab has taken the focus request; the surface clears it. */
   onSearchFocused: () => void
+  /** The board's right-click "Save to library…" (YAZ-4157 demo 6L), and its taker; per surface like the focus request. */
+  saveRequestPending: boolean
+  onSaveRequestTaken: () => void
+  /** A read-only board: the Add tab adds nothing to it and records no use (YAZ-4157 polish). */
+  readOnly: boolean
+  /** The board's theme: the Hand-drawn tile pictures are drawn in it (YAZ-4157 demo 6K). */
+  theme: 'light' | 'dark'
   /** Whether the canvas holds a selection — the Add tab's "Save selection" gate (YAZ-1819, YAZ-4157 D6). */
   hasSelection: boolean
   /** Play, from the Present tab (YAZ-1820): the SURFACE owns the player, so it outlives this panel. */
@@ -79,7 +86,7 @@ export interface CanvasSidebarProps {
   onResizeKey: (event: ReactKeyboardEvent) => void
 }
 
-export function CanvasSidebar({ engine, activeTab, onClose, onDock, excalidrawAPI, searchFocusPending, onSearchFocused, hasSelection, onStartPresentation, width, onResizeStart, onResizeKey }: CanvasSidebarProps) {
+export function CanvasSidebar({ engine, activeTab, onClose, onDock, excalidrawAPI, searchFocusPending, onSearchFocused, saveRequestPending, onSaveRequestTaken, readOnly, theme, hasSelection, onStartPresentation, width, onResizeStart, onResizeKey }: CanvasSidebarProps) {
   const { DefaultSidebar, Sidebar } = engine
   return (
     <>
@@ -109,7 +116,17 @@ export function CanvasSidebar({ engine, activeTab, onClose, onDock, excalidrawAP
                 {CANVAS_LOADING}
               </div>
             ) : tab === 'image-studio' ? (
-              <ImageStudio engine={engine} excalidrawAPI={excalidrawAPI} hasSelection={hasSelection} searchFocusPending={searchFocusPending} onSearchFocused={onSearchFocused} />
+              <ImageStudio
+                engine={engine}
+                excalidrawAPI={excalidrawAPI}
+                hasSelection={hasSelection}
+                searchFocusPending={searchFocusPending}
+                onSearchFocused={onSearchFocused}
+                saveRequestPending={saveRequestPending}
+                onSaveRequestTaken={onSaveRequestTaken}
+                readOnly={readOnly}
+                theme={theme}
+              />
             ) : (
               <PresentationSidebar engine={engine} excalidrawAPI={excalidrawAPI} onStartPresentation={onStartPresentation} />
             )}

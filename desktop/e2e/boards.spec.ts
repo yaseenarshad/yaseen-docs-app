@@ -262,7 +262,7 @@ test('step 5 — on a drawing tab the board menu items are on, and the rail and 
   await canvasFrame(win).click()
   await win.keyboard.press('Meta+c')
   await expect(panel).toBeVisible()
-  await expect(panel.getByRole('tab', { name: 'Add shapes, icons and components', selected: true })).toBeVisible()
+  await expect(panel.getByRole('tab', { name: 'Add shapes, icons, and components', selected: true })).toBeVisible()
   await expect(panel.getByRole('button', { name: 'Components', pressed: true })).toBeVisible()
 })
 

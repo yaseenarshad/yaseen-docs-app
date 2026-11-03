@@ -53,7 +53,6 @@ afterEach(async () => {
 })
 
 const favorites = (req: unknown) => registered(CONTRACT.media.favorites)({ sender }, req)
-const recent = (req: unknown) => registered(CONTRACT.media.recent)({ sender }, req)
 const used = (req: unknown) => registered(CONTRACT.media.used)({ sender }, req)
 
 describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
@@ -64,7 +63,7 @@ describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
     expect(await used({ op: 'record', item: item({ itemKey: 'iconify:a', provider: 'iconify', providerId: 'a', kind: 'icon' }), query: 'a' })).toEqual(
       ok(expect.objectContaining({ recent: [expect.objectContaining({ itemKey: 'iconify:a' })], used: [expect.objectContaining({ itemKey: 'iconify:a', count: 1, words: ['a'] })] })),
     )
-    expect(await recent({ op: 'list' })).toEqual(ok([expect.objectContaining({ itemKey: 'iconify:a' })]))
+    expect(await used({ op: 'list' })).toEqual(ok(expect.objectContaining({ recent: [expect.objectContaining({ itemKey: 'iconify:a' })] })))
     expect(await favorites({ op: 'remove', itemKey: 'pixabay:1' })).toEqual(ok([]))
     const disk = JSON.parse(await readFile(path.join(userData, 'library', MEDIA_LIBRARY_FILE), 'utf8')) as { favorites: unknown[]; recent: unknown[] }
     expect(disk.favorites).toEqual([])
@@ -77,8 +76,6 @@ describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
     expect(await favorites({ op: 'add', item: { ...item(), provider: 'unsplash' } })).toEqual(bad('BAD_REQUEST'))
     expect(await favorites({ op: 'add', item: { ...item(), width: '640' } })).toEqual(bad('BAD_REQUEST'))
     expect(await favorites({ op: 'remove', itemKey: '' })).toEqual(bad('BAD_REQUEST'))
-    expect(await recent({ op: 'add', item: item() })).toEqual(bad('BAD_REQUEST'))
-    expect(await recent({ op: 'record', item: item() })).toEqual(bad('BAD_REQUEST'))
     expect(await used({ op: 'record', item: { itemKey: 'x' }, query: '' })).toEqual(bad('BAD_REQUEST'))
     expect(await used({ op: 'record', item: item() })).toEqual(bad('BAD_REQUEST'))
     expect(await used({ op: 'add-word', item: item(), word: 7 })).toEqual(bad('BAD_REQUEST'))

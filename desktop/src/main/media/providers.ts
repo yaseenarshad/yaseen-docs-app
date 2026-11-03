@@ -28,8 +28,8 @@
 import type { MediaBytesRequest, MediaDrawingIndexResponse, MediaDrawingRequest, MediaDrawingResponse, MediaImportResponse, MediaPreviewResponse, MediaSearchRequest, MediaSearchResponse, StudioItem } from '@shared/types'
 import { BridgeFailure } from '../fs/fsUtils'
 import type { MediaCache } from './cache'
-import { pixabayItemCacheKey, pixabayPageCacheKey, previewCacheKey, searchCacheKey } from './cachePolicy'
-import { indexItems, libraryItemElements, LIBRARIES_INDEX_URL, LIBRARIES_ORIGIN, MAX_DRAWING_ELEMENTS_BYTES, parseDrawingId } from './excalidrawLibraries'
+import { CACHE_TTL_MS, pixabayItemCacheKey, pixabayPageCacheKey, previewCacheKey, searchCacheKey } from './cachePolicy'
+import { indexItems, libraryItemElements, LIBRARIES_INDEX_URL, LIBRARIES_ORIGIN, MAX_DRAWING_ELEMENTS_BYTES, MAX_INDEX_BYTES, MAX_LIBRARY_FILE_BYTES, MAX_LIBRARY_FILES_IN_MEMORY, parseDrawingId } from './excalidrawLibraries'
 import { createIconifyBatcher, type IconifySetData } from './iconifyBatch'
 import {
   decodeCursor,
@@ -118,28 +118,80 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     }
     const first = await once()
     if (first.status !== 429) return first
+    // The refused answer's body is never read: let it go before the second request.
+    await first.body?.cancel().catch(() => undefined)
     const seconds = Number(first.headers.get('Retry-After'))
     await new Promise((resolve) => setTimeout(resolve, Math.min(MAX_RETRY_WAIT_MS, (seconds > 0 ? seconds : 1) * 1000)))
     return once()
   }
 
-  async function fetchJson<T>(url: string): Promise<T> {
+  /** `maxBytes` bounds an answer whose size the app does not control (a library file): checked before it is parsed. */
+  async function fetchJson<T>(url: string, maxBytes = Infinity): Promise<T> {
     const response = await request(url)
     if (!response.ok) throw providerFailed(response.status)
+    if (Number(response.headers.get('Content-Length') ?? 0) > maxBytes) throw new BridgeFailure('TOO_LARGE', 'the provider answered with more than this app reads')
+    const text = await response.text()
+    if (Buffer.byteLength(text) > maxBytes) throw new BridgeFailure('TOO_LARGE', 'the provider answered with more than this app reads')
     try {
-      return (await response.json()) as T
+      return JSON.parse(text) as T
     } catch {
       throw new BridgeFailure('PROVIDER_FAILED', 'provider answered with something that is not JSON')
     }
   }
 
-  /** The Worker's `cachedJsonFetch`: the disk first, the network second, the disk again after. */
-  async function cachedJson<T>(key: string, url: string): Promise<T> {
+  /**
+   * The Worker's `cachedJsonFetch`: the disk first, the network second, the disk again after. `onFresh` runs only for
+   * an answer from the network, never for one from the disk.
+   */
+  async function cachedJson<T>(key: string, url: string, { maxBytes, onFresh }: { maxBytes?: number; onFresh?: (payload: T) => Promise<unknown> } = {}): Promise<T> {
     const hit = await cache.read<T>(key)
     if (hit !== null) return hit
-    const payload = await fetchJson<T>(url)
+    const payload = await fetchJson<T>(url, maxBytes)
     await cache.write(key, payload)
+    await onFresh?.(payload)
     return payload
+  }
+
+  // ---------- Excalidraw's public libraries ----------
+
+  /**
+   * In memory too (polish, audit 6): a tile picture used to read and parse the 200 KB index and its whole library file
+   * from the disk each time. The index is parsed once for each 24 h, and the last few library files are kept. Each is
+   * ONE promise, so the tiles that ask at the same time share one read; a failure is forgotten, so the next ask retries.
+   */
+  let drawingIndexMemo: { at: number; items: Promise<StudioItem[]> } | null = null
+  const libraryMemo = new Map<string, { at: number; file: Promise<unknown> }>()
+  const fresh = (at: number) => Date.now() - at < CACHE_TTL_MS
+
+  function drawingItems(): Promise<StudioItem[]> {
+    if (drawingIndexMemo !== null && fresh(drawingIndexMemo.at)) return drawingIndexMemo.items
+    const items = cachedJson<unknown>('excalidraw/index', LIBRARIES_INDEX_URL, { maxBytes: MAX_INDEX_BYTES }).then(indexItems)
+    const memo = { at: Date.now(), items }
+    drawingIndexMemo = memo
+    items.catch(() => {
+      if (drawingIndexMemo === memo) drawingIndexMemo = null
+    })
+    return items
+  }
+
+  function libraryFile(source: string): Promise<unknown> {
+    const known = libraryMemo.get(source)
+    libraryMemo.delete(source)
+    if (known !== undefined && fresh(known.at)) {
+      libraryMemo.set(source, known)
+      return known.file
+    }
+    const memo = { at: Date.now(), file: cachedJson<unknown>(`excalidraw/library/${source}`, `${LIBRARIES_ORIGIN}/libraries/${source}`, { maxBytes: MAX_LIBRARY_FILE_BYTES }) }
+    libraryMemo.set(source, memo)
+    // The least recently asked goes first.
+    for (const oldest of libraryMemo.keys()) {
+      if (libraryMemo.size <= MAX_LIBRARY_FILES_IN_MEMORY) break
+      libraryMemo.delete(oldest)
+    }
+    memo.file.catch(() => {
+      if (libraryMemo.get(source) === memo) libraryMemo.delete(source)
+    })
+    return memo.file
   }
 
   // ---------- Iconify ----------
@@ -207,11 +259,13 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
 
   async function fetchPixabayPage(query: string, imageType: PixabayImageType, page: number, key: string) {
     const url = pixabaySearchUrl(query, page, imageType, key, PIXABAY_PAGE_SIZE)
-    const payload = await cachedJson<{ hits?: PixabayHit[]; totalHits?: number }>(pixabayPageCacheKey(query, imageType, page, PIXABAY_PAGE_SIZE), url.toString())
-    const hits = payload.hits ?? []
     // Each hit is also the record a tile picture and an import read (`pixabayRecord`), so neither asks the API for it
-    // again (YAZ-4157 demo 6G): one request per tile used to count against Pixabay's 100 a minute.
-    await Promise.all(hits.map((hit) => cache.write(pixabayItemCacheKey(String(hit.id)), { hits: [hit] })))
+    // again (YAZ-4157 demo 6G): one request per tile used to count against Pixabay's 100 a minute. Written for a page
+    // fresh from the network only, so a record never outlives its page's 24 h (polish, audit 8).
+    const payload = await cachedJson<{ hits?: PixabayHit[]; totalHits?: number }>(pixabayPageCacheKey(query, imageType, page, PIXABAY_PAGE_SIZE), url.toString(), {
+      onFresh: (fresh) => Promise.all((fresh.hits ?? []).map((hit) => cache.write(pixabayItemCacheKey(String(hit.id)), { hits: [hit] }))),
+    })
+    const hits = payload.hits ?? []
     const totalHits = finiteNumber(payload.totalHits)
     return { hits, hasMore: totalHits !== undefined ? page * PIXABAY_PAGE_SIZE < totalHits : hits.length === PIXABAY_PAGE_SIZE }
   }
@@ -417,14 +471,14 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     // Excalidraw's public libraries (YAZ-4157 demo 6K, `excalidrawLibraries.ts`): the index and the library files
     // through the same 24 h disk cache. Elements are not an `assets/` file, so caching them is no import rule's concern.
     async drawingIndex() {
-      return { items: indexItems(await cachedJson<unknown>('excalidraw/index', LIBRARIES_INDEX_URL)) }
+      return { items: await drawingItems() }
     },
 
     async drawing(req) {
       const id = parseDrawingId(req.id)
       if (id === null) throw new BridgeFailure('BAD_REQUEST', "'id' is not an Excalidraw library item")
-      const named = indexItems(await cachedJson<unknown>('excalidraw/index', LIBRARIES_INDEX_URL)).find((item) => item.providerId === req.id)
-      const file = await cachedJson<unknown>(`excalidraw/library/${id.source}`, `${LIBRARIES_ORIGIN}/libraries/${id.source}`)
+      const named = (await drawingItems()).find((item) => item.providerId === req.id)
+      const file = await libraryFile(id.source)
       const elements = libraryItemElements(file, id.index, named?.title ?? null)
       if (elements === null) throw new BridgeFailure('NOT_FOUND', 'that item is no longer in its library')
       if (JSON.stringify(elements).length > MAX_DRAWING_ELEMENTS_BYTES) throw new BridgeFailure('TOO_LARGE', 'that library item is too large to add')

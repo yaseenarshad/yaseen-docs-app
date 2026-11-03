@@ -11,7 +11,9 @@
  */
 
 /* The panel's width (YAZ-4157 demo 6C). The engine sets `--right-sidebar-width` inline and reads it for the panel and
-   for the canvas beside a docked panel; the surface's `--canvas-panel-width`, the dragged width, wins over it. */
+   for the canvas beside a docked panel; the surface's `--canvas-panel-width`, the dragged width, wins over it. The surface
+   always sets it; 302 px here, `CANVAS_PANEL_DEFAULT_W` (shared/types.ts) and the engine's `RIGHT_SIDEBAR_WIDTH` are
+   the same default and change together. */
 .drawing-surface .excalidraw {
   --right-sidebar-width: var(--canvas-panel-width, 302px) !important;
 }

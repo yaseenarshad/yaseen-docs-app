@@ -368,6 +368,22 @@ describe('fewer requests per page (YAZ-4157 demo 6G)', () => {
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['https://api.iconify.design/noto.json?icons=turned', 'https://api.iconify.design/noto/turned.svg'])
   })
 
+  it('a search page from the disk does not write its records again (polish, audit 8)', async () => {
+    const hit = { id: 101, type: 'vector', previewURL: 'https://cdn.test/p.png', tags: 'money' }
+    const fetchMock = vi.fn(async () => json({ hits: [hit], totalHits: 1 }))
+    const providers = build(fetchMock as unknown as typeof globalThis.fetch)
+    const writes = vi.spyOn(cache, 'write')
+    await providers.search({ q: 'money', source: 'pixabay' })
+    const recordWrites = () => writes.mock.calls.filter(([key]) => String(key).startsWith('pixabay/item/')).length
+    const afterFresh = recordWrites()
+    expect(afterFresh).toBeGreaterThan(0)
+    // Forget the whole search answer, so the second search reads its PAGES from the disk.
+    for (const key of [...cache.store.keys()]) if (!key.startsWith('pixabay/')) cache.store.delete(key)
+    await providers.search({ q: 'money', source: 'pixabay' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(recordWrites()).toBe(afterFresh)
+  })
+
   it('a Pixabay tile reads the record its search page brought: no API call per tile', async () => {
     const hit = { id: 101, type: 'vector', previewURL: 'https://cdn.test/p.png', tags: 'money' }
     const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
@@ -394,6 +410,26 @@ describe('Excalidraw`s public libraries (YAZ-4157 demo 6K)', () => {
     expect(await providers.drawing({ id: 'pixelass/tools.excalidrawlib#1' })).toEqual({ elements: [{ id: 'h' }] })
     expect(await providers.drawing({ id: 'pixelass/tools.excalidrawlib#0' })).toEqual({ elements: [{ id: 'n' }] })
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['https://libraries.excalidraw.com/libraries.json', 'https://libraries.excalidraw.com/libraries/pixelass/tools.excalidrawlib'])
+  })
+
+  it('tiles that ask at the same time share ONE read of the library file and the index (polish, audit 6)', async () => {
+    const fetchMock = libraries()
+    const providers = build(fetchMock as unknown as typeof globalThis.fetch, null)
+    await Promise.all(Array.from({ length: 8 }, (_, i) => providers.drawing({ id: `pixelass/tools.excalidrawlib#${i % 2}` })))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const reads = cache.reads.length
+    await providers.drawing({ id: 'pixelass/tools.excalidrawlib#1' })
+    // From memory: no disk read either.
+    expect(cache.reads.length).toBe(reads)
+  })
+
+  it('an item whose elements pass 750 KB is TOO_LARGE; so is a library file over its limit (polish, audit 7)', async () => {
+    const big = { type: 'excalidrawlib', version: 2, libraryItems: [{ name: 'Nail', elements: [{ id: 'n', text: 'x'.repeat(800_000) }] }, { name: 'Hammer', elements: [] }] }
+    const fetchBig = vi.fn(async (input: RequestInfo | URL) => (String(input).endsWith('libraries.json') ? json(index) : json(big)))
+    await expect(code(build(fetchBig as unknown as typeof globalThis.fetch, null).drawing({ id: 'pixelass/tools.excalidrawlib#0' }))).resolves.toBe('TOO_LARGE')
+    cache = memoryCache()
+    const fetchHuge = vi.fn(async (input: RequestInfo | URL) => (String(input).endsWith('libraries.json') ? json(index) : json(file, { headers: { 'Content-Length': String(17 * 1024 * 1024) } })))
+    await expect(code(build(fetchHuge as unknown as typeof globalThis.fetch, null).drawing({ id: 'pixelass/tools.excalidrawlib#0' }))).resolves.toBe('TOO_LARGE')
   })
 
   it('a bad id is BAD_REQUEST and asks nothing; an item gone from its library is NOT_FOUND', async () => {

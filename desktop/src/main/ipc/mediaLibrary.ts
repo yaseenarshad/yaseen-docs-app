@@ -1,4 +1,4 @@
-import type { MediaFavoritesRequest, MediaItem, MediaRecentRequest, MediaUsedRequest } from '@shared/types'
+import type { MediaFavoritesRequest, MediaItem, MediaUsedRequest } from '@shared/types'
 import { normalizeMediaItem } from '@shared/mediaLibrary'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure } from '../fs/fsUtils'
@@ -39,11 +39,6 @@ function requireFavoritesRequest(v: unknown): MediaFavoritesRequest {
   }
 }
 
-function requireRecentRequest(v: unknown): MediaRecentRequest {
-  if (requireRequest(v).op !== 'list') throw new BridgeFailure('BAD_REQUEST', "'op' must be list")
-  return { op: 'list' }
-}
-
 /** `media:used` (YAZ-4157): the query and the word are plain strings; the rules decide what of them is a word. */
 function requireUsedRequest(v: unknown): MediaUsedRequest {
   const r = requireRequest(v)
@@ -69,7 +64,6 @@ export function registerMediaLibraryIpc(store: Store, userData: string): MediaSt
   const media = createMediaStore(folder)
   media.onChanged(() => broadcastAll(CONTRACT.media.onChanged.channel))
   handle(CONTRACT.media.favorites, async (req: unknown) => media.favorites(requireFavoritesRequest(req)))
-  handle(CONTRACT.media.recent, async (req: unknown) => media.recent(requireRecentRequest(req)))
   handle(CONTRACT.media.used, async (req: unknown) => media.used(requireUsedRequest(req)))
   return media
 }

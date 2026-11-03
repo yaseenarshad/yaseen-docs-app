@@ -1,6 +1,6 @@
 /** A picture pasted or dropped into the Add tab (YAZ-4157 demo 6M): what is taken, its name, and the component. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { captureImageFile, nameFromFile, pastedImages } from './pastedImage'
+import { captureImageFile, nameFromFile, pastedImages, PICTURE_TOO_LARGE } from './pastedImage'
 
 describe('nameFromFile (the emoji app`s title rule)', () => {
   it('the file name with no extension, - and _ as spaces, no copy mark', () => {
@@ -25,6 +25,12 @@ describe('captureImageFile', () => {
   const RealImage = globalThis.Image
   afterEach(() => {
     globalThis.Image = RealImage
+  })
+
+  it('a picture over 20 MB is refused before it is read (polish, audit 11)', async () => {
+    const huge = new File([new Uint8Array(1)], 'huge.png', { type: 'image/png' })
+    Object.defineProperty(huge, 'size', { value: 20 * 1024 * 1024 + 1 })
+    await expect(captureImageFile({ convertToExcalidrawElements: vi.fn() } as never, huge)).rejects.toThrow(PICTURE_TOO_LARGE)
   })
 
   it('one image element placed at most 400 px, its bytes UNTOUCHED, its id the hash of its bytes', async () => {

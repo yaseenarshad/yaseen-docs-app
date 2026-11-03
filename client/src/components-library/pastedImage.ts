@@ -6,11 +6,15 @@
  *
  * The component is one image element with its bytes embedded, as "Save selection" makes of a picture on the board.
  */
+import { MAX_PASTED_PICTURE_BYTES } from '@shared/types'
 import type { CapturedComponent } from './componentData'
 import type { InsertEngine } from '../image-studio/insertShape'
 
 /** The picture types the engine draws; anything else on the clipboard is not a picture to save. */
 export const PASTE_IMAGE_TYPES: readonly string[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']
+
+/** What a picture over the limit says; nothing is saved. */
+export const PICTURE_TOO_LARGE = 'That picture is over 20 MB. Copy a smaller version of it.'
 
 /** How big the picture lands on a board, at most, on its longer side; its bytes keep their full size. */
 const PLACED_MAX = 400
@@ -57,6 +61,7 @@ async function fileIdOf(file: Blob): Promise<string> {
 
 /** The picture as a component to name and save: one image element, its bytes untouched. */
 export async function captureImageFile(engine: Pick<InsertEngine, 'convertToExcalidrawElements'>, file: File): Promise<CapturedComponent> {
+  if (file.size > MAX_PASTED_PICTURE_BYTES) throw new Error(PICTURE_TOO_LARGE)
   const dataURL = await readDataUrl(file)
   const size = await naturalSize(dataURL)
   const scale = Math.min(1, PLACED_MAX / Math.max(size.width, size.height))

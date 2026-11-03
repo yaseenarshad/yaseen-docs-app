@@ -29,6 +29,7 @@ vi.mock('katex/dist/katex.min.css', () => ({}))
 
 import { ExcalidrawSurface, readOnlyHandle } from './ExcalidrawSurface'
 import { imageStudioSession, resetImageStudioSession } from '../image-studio/imageStudioSession'
+import { CANVAS_SIDEBAR } from './CanvasSidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -74,8 +75,11 @@ describe('the board`s right-click menu: Save to library… (YAZ-4157 demo 6L)', 
     expect(items('canvas')).toEqual([])
     const [save] = items('element')
     expect(save).toMatchObject({ name: 'saveToLibrary', label: 'Save to library…', replaces: 'addToLibrary' })
-    save.perform()
-    expect(imageStudioSession.getState().saveRequested).toBe(true)
+    const sidebar = () => (last().children as { props: { saveRequestPending: boolean } }).props
+    expect(sidebar().saveRequestPending).toBe(false)
+    await act(async () => save.perform())
+    // Per surface (audit Must 1): the request rides THIS board's panel, never the window's shared session.
+    expect(sidebar().saveRequestPending).toBe(true)
   })
 
   it('⌘F with the focus on no element (a click on the panel header) still puts the caret in the Add tab`s search (demo 6N)', async () => {
@@ -96,6 +100,88 @@ describe('the board`s right-click menu: Save to library… (YAZ-4157 demo 6L)', 
     const press = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
     await act(async () => void document.body.dispatchEvent(press))
     expect(press.defaultPrevented).toBe(false)
+  })
+
+  it('the panel`s edge: the arrow keys step 16 px, a drag stops at 260 and 720 px, and each stores the width (demo 6C)', async () => {
+    const onCanvasPanelChange = vi.fn()
+    container ??= document.createElement('div')
+    document.body.appendChild(container)
+    root ??= createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onCanvasPanelChange={onCanvasPanelChange} />)
+    })
+    type Edge = { onResizeKey: (e: unknown) => void; onResizeStart: (e: unknown) => void }
+    const edge = () => (last().children as { props: Edge }).props
+    act(() => edge().onResizeKey({ key: 'ArrowRight', preventDefault: () => undefined }))
+    expect(onCanvasPanelChange).toHaveBeenLastCalledWith(expect.objectContaining({ width: 318 }))
+    act(() => edge().onResizeStart({ button: 0, clientX: 100, preventDefault: () => undefined }))
+    act(() => {
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 5000 }))
+      window.dispatchEvent(new MouseEvent('mouseup', { clientX: 5000 }))
+    })
+    expect(onCanvasPanelChange).toHaveBeenLastCalledWith(expect.objectContaining({ width: 720 }))
+    act(() => edge().onResizeStart({ button: 0, clientX: 100, preventDefault: () => undefined }))
+    act(() => {
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: -5000 }))
+      window.dispatchEvent(new MouseEvent('mouseup', { clientX: -5000 }))
+    })
+    expect(onCanvasPanelChange).toHaveBeenLastCalledWith(expect.objectContaining({ width: 260 }))
+  })
+
+  describe('the keys on the board: ⌘F and ⌘C (D6, demo 6N)', () => {
+    const fakeApi = (selected: Record<string, boolean>) => ({
+      getAppState: () => ({ selectedElementIds: selected, defaultSidebarDockedPreference: false }),
+      toggleSidebar: vi.fn(),
+      updateFrameRendering: vi.fn(),
+      updateScene: vi.fn(),
+      getSceneElements: () => [],
+      refresh: vi.fn(),
+    })
+    const press = async (key: string) => {
+      const surface = container!.querySelector<HTMLElement>('.drawing-surface')!
+      await act(async () => void surface.dispatchEvent(new KeyboardEvent('keydown', { key, code: `Key${key.toUpperCase()}`, metaKey: true, bubbles: true, cancelable: true })))
+    }
+    const openOn = async (tab: string | null) => {
+      const onChange = last().onChange as (elements: unknown[], appState: unknown, files: unknown) => void
+      await act(async () => onChange([], { openSidebar: tab === null ? null : { name: CANVAS_SIDEBAR, tab } }, {}))
+    }
+    const sidebar = () => (last().children as { props: { searchFocusPending: boolean } }).props
+
+    it('⌘F with a selection on the board still goes to the Add search, and opens the tab', async () => {
+      await renderWithPanel(false)
+      const api = fakeApi({ a: true })
+      await act(async () => (last().onExcalidrawAPI as (a: unknown) => void)(api))
+      await press('f')
+      expect(sidebar().searchFocusPending).toBe(true)
+      expect(api.toggleSidebar).toHaveBeenCalledWith({ name: CANVAS_SIDEBAR, tab: 'image-studio', force: true })
+    })
+
+    it('⌘F with the Add tab already open keeps it open and asks for the caret again', async () => {
+      await renderWithPanel(false)
+      const api = fakeApi({})
+      await act(async () => (last().onExcalidrawAPI as (a: unknown) => void)(api))
+      await openOn('image-studio')
+      await press('f')
+      expect(api.toggleSidebar).not.toHaveBeenCalled()
+      expect(sidebar().searchFocusPending).toBe(true)
+    })
+
+    it('⌘C opens the Add tab on its Components chip; a second ⌘C there closes the panel; a selection keeps ⌘C as Copy', async () => {
+      resetImageStudioSession()
+      await renderWithPanel(false)
+      const api = fakeApi({})
+      await act(async () => (last().onExcalidrawAPI as (a: unknown) => void)(api))
+      await press('c')
+      expect(imageStudioSession.getState().chip).toBe('components')
+      expect(api.toggleSidebar).toHaveBeenLastCalledWith({ name: CANVAS_SIDEBAR, tab: 'image-studio', force: true })
+      await openOn('image-studio')
+      await press('c')
+      expect(api.toggleSidebar).toHaveBeenLastCalledWith({ name: CANVAS_SIDEBAR, tab: 'image-studio', force: false })
+      const copying = fakeApi({ a: true })
+      await act(async () => (last().onExcalidrawAPI as (a: unknown) => void)(copying))
+      await press('c')
+      expect(copying.toggleSidebar).not.toHaveBeenCalled()
+    })
   })
 
   it('a board with no panel, or read only, adds nothing to the menu', async () => {

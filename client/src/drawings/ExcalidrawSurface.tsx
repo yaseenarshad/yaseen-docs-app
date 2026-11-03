@@ -58,8 +58,9 @@
  * TAB's only: a host that passes `onCanvasPanelChange` gets Draw's rail (`renderTopLeftUI`:
  * `LauncherRail.tsx`, the panel hamburger plus the Writing / Frames toggles), the docked panel
  * (`CanvasSidebar.tsx`, Add / Present, the engine's one child), the ⌘F / ⌘C keys that
- * open it — bound on THIS component's own element in the capture phase, never `window`, because
- * several tabs each mount an engine — and the presentation player. The note embed's modal passes
+ * open it — bound on THIS component's own element in the capture phase, because several tabs each mount an
+ * engine; the one `window` listener takes only a ⌘F whose target is the page itself, and only while this board is on
+ * screen (YAZ-4157 demo 6N) — and the presentation player. The note embed's modal passes
  * none of it: it keeps the engine's own menu at top-left, and a note's drawing has no library
  * (rule 28). Which mode a surface is in is read ONCE, at mount.
  */
@@ -198,16 +199,15 @@ export interface DrawingSurfaceProps {
   onExportPdf?: (svg: string, size: { width: number; height: number }) => void | Promise<void>
 }
 
+/** One arrow key on the canvas panel's edge (YAZ-4157 demo 6C). */
+const PANEL_KEY_STEP = 16
+const clampPanelWidth = (width: number) => Math.round(Math.min(CANVAS_PANEL_MAX_W, Math.max(CANVAS_PANEL_MIN_W, width)))
+
 /**
  * The engine's handle with its scene-changing doors shut (YAZ-3076 D2): `insertElements`,
  * `addFiles` and `pruneFiles` do nothing, and `updateScene` passes only what is not the scene's elements (a view,
  * a dialog, a tool), so the canvas panel can still present and look but never edit a read-only drawing.
  */
-
-/** One arrow key on the canvas panel's edge (YAZ-4157 demo 6C). */
-const PANEL_KEY_STEP = 16
-const clampPanelWidth = (width: number) => Math.round(Math.min(CANVAS_PANEL_MAX_W, Math.max(CANVAS_PANEL_MIN_W, width)))
-
 export function readOnlyHandle(api: ImperativeApi): ImperativeApi {
   return {
     ...api,
@@ -289,16 +289,19 @@ export function ExcalidrawSurface({
   const rawApiRef = useRef<ImperativeApi | null>(null)
   /**
    * The same handle as STATE, because the panel's tabs are children of `<Excalidraw>` that have to
-   * re-render when it arrives (Draw's YAZ-1818) — a ref alone would leave the Images tab's insert disabled.
+   * re-render when it arrives (Draw's YAZ-1818) — a ref alone would leave the Add tab's insert disabled.
    */
   const [imperativeApi, setImperativeApi] = useState<ImperativeApi | null>(null)
   /**
-   * ⌘F's one-shot request to focus the Images tab's search field (Draw's 🔒 YAZ-1990). A flag the tab
+   * ⌘F's one-shot request to focus the Add tab's search field (Draw's 🔒 YAZ-1990). A flag the tab
    * clears; per surface, so a hidden drawing tab can never consume it.
    */
   const [searchFocusPending, setSearchFocusPending] = useState(false)
   const onSearchFocused = useCallback(() => setSearchFocusPending(false), [])
-  /** Whether the canvas holds a selection — the Components tab's "Save selection" gate (Draw's YAZ-1819). */
+  /** The right-click "Save to library…" request (demo 6L): one-shot and per surface, by the same rule as ⌘F's. */
+  const [saveRequestPending, setSaveRequestPending] = useState(false)
+  const onSaveRequestTaken = useCallback(() => setSaveRequestPending(false), [])
+  /** Whether the canvas holds a selection — the Add tab's "Save selection" gate (Draw's YAZ-1819). */
   const [hasSelection, setHasSelection] = useState(false)
   /** This seam's own element — the handle's `focus()` reaches the engine's container through it. */
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -430,7 +433,7 @@ export function ExcalidrawSurface({
       label: 'Save to library…',
       replaces: 'addToLibrary',
       perform: () => {
-        imageStudioSession.set({ saveRequested: true })
+        setSaveRequestPending(true)
         if (rail.getState().activeTab !== 'image-studio') rail.openTab('image-studio')
       },
     }
@@ -500,6 +503,12 @@ export function ExcalidrawSurface({
     return true
   }, [])
 
+  /** ⌘F's one job (demo 6N): the caret in the Add tab's search field, opening the tab if it is not open. */
+  const focusAddSearch = useCallback(() => {
+    setSearchFocusPending(true)
+    if (rail.getState().activeTab !== 'image-studio') rail.openTab('image-studio')
+  }, [rail])
+
   /**
    * ⌘F → the Add tab, ⌘C → the Add tab on its Components chip (YAZ-4157 D6; Draw's port of the web app's `c` / `f`,
    * `AppSidebar.tsx:983-1078`; the keys as the user set them, YAZ-3564),
@@ -511,12 +520,6 @@ export function ExcalidrawSurface({
    * ⌘F ALWAYS puts the caret in the Add tab's search field (demo 6N): it opens the tab when it is not open and never
    * closes it, and a selection on the board does not stop it (the engine's own ⌘F, find on the board, then lost it).
    */
-  /** ⌘F's one job (demo 6N): the caret in the Add tab's search field, opening the tab if it is not open. */
-  const focusAddSearch = useCallback(() => {
-    setSearchFocusPending(true)
-    if (rail.getState().activeTab !== 'image-studio') rail.openTab('image-studio')
-  }, [rail])
-
   const onKeyDownCapture = useCallback(
     (event: ReactKeyboardEvent) => {
       if (onHelpKey(event)) return
@@ -732,6 +735,10 @@ export function ExcalidrawSurface({
           onDock={onDock}
           excalidrawAPI={imperativeApi === null || !readOnly ? imperativeApi : readOnlyHandle(imperativeApi)}
           searchFocusPending={searchFocusPending}
+          saveRequestPending={saveRequestPending}
+          onSaveRequestTaken={onSaveRequestTaken}
+          readOnly={readOnly}
+          theme={theme}
           onSearchFocused={onSearchFocused}
           hasSelection={hasSelection}
           onStartPresentation={startPresentation}
@@ -741,7 +748,7 @@ export function ExcalidrawSurface({
         />
       ),
     // `keyBindings` too: a new child is what re-renders the engine's toolbar, so its tooltips name a changed key at once (K12).
-    [engine, withPanel, activeTab, closePanel, onDock, imperativeApi, readOnly, searchFocusPending, onSearchFocused, hasSelection, startPresentation, keyBindings, canvasPanel.width, startPanelResize, resizePanelByKey],
+    [engine, withPanel, activeTab, closePanel, onDock, imperativeApi, readOnly, theme, searchFocusPending, saveRequestPending, onSaveRequestTaken, onSearchFocused, hasSelection, startPresentation, keyBindings, canvasPanel.width, startPanelResize, resizePanelByKey],
   )
 
   // The frame held while the engine chunk is arriving; the host's canvas frame sizes it.

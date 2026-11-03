@@ -102,7 +102,6 @@ media.favorites/1: invoke media:favorites ["a0"]; => "answer"; !> {"code":"NOT_F
 media.import/1: invoke media:import ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.onChanged/1: on media:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off media:changed
 media.preview/1: invoke media:preview ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-media.recent/1: invoke media:recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.search/1: invoke media:search ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.used/1: invoke media:used ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 memory.report/0: invoke memory:report []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

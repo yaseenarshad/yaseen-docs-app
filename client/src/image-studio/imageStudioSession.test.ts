@@ -136,8 +136,14 @@ describe('typing (YAZ-4157 D3): the web is asked on a pause, Enter asks at once'
     expect(search).toHaveBeenCalledWith({ q: 'rocket', source: 'all', cursor: null })
   })
 
-  it('a pause on two letters asks nothing; Enter on them still asks (demo 6E)', async () => {
+  it('a pause on two letters asks nothing and drops the old results; Enter on them still asks (demo 6E, polish)', async () => {
+    search.mockResolvedValueOnce(page(['rocket']))
+    typeQuery('rocket')
+    await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS)
+    expect(state().results).not.toEqual([])
+    search.mockClear()
     typeQuery('ro')
+    expect(state()).toMatchObject({ results: [], searchedQuery: '' })
     expect(state().waiting).toBe(false)
     await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS * 2)
     expect(search).not.toHaveBeenCalled()

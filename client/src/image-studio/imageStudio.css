@@ -471,7 +471,7 @@
 
 .image-studio__inline .is-danger {
   background: var(--color-danger);
-  color: white;
+  color: var(--island-bg-color);
 }
 
 .image-studio__state {

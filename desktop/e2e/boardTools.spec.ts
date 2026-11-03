@@ -201,7 +201,7 @@ test('step 6 — the canvas panel\'s Add tab opens with one field and its chips'
   const panel = drawingTab(win).locator('.default-sidebar')
   await drawingTab(win).getByRole('button', { name: 'Open workspace panel' }).click()
   await expect(panel).toBeVisible()
-  await panel.getByRole('tab', { name: 'Add shapes, icons and components' }).click() // the tab labelled "Add"
+  await panel.getByRole('tab', { name: 'Add shapes, icons, and components' }).click() // the tab labelled "Add"
   await expect(panel.getByRole('group', { name: 'Show' })).toBeVisible()
   await expect(panel.getByRole('searchbox', { name: 'Search shapes, icons, and components' })).toBeVisible()
   await shoot(win, 'board-tools-05-image-studio')

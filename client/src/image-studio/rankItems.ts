@@ -10,7 +10,8 @@
  * THE ORDER, best first: a word the user taught it that IS the text (the Emoji app's "learned" pick), then the match
  * tier, then more uses, then the newer use. Input order breaks the last tie, so an empty text keeps it.
  *
- * Cost: one `matchTier` per name — about 6,000 for the 1,600 items a full library holds, well under 2 ms per key.
+ * Cost: one `matchTier` per name. A full library (1,600 items) plus the Hand-drawn index (about 3,100) measured
+ * 0.6–1.1 ms per key (YAZ-4157 polish); `rankItems.test.ts` keeps a 50 ms tripwire over 5,000 items.
  */
 import type { StudioItem, UsedMediaItem } from '@shared/types'
 import { matchTier, readNeedle } from '../links/completion'

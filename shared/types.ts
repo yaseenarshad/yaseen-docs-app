@@ -1482,8 +1482,6 @@ export const AUTO_FAVORITE_USES = 3
 
 /** `media:favorites` — one channel, three verbs; every verb answers the resulting list. */
 export type MediaFavoritesRequest = { op: 'list' } | { op: 'add'; item: MediaItem } | { op: 'remove'; itemKey: string }
-/** `media:recent` — read the MRU. An add goes through `media:used`, which pushes to it. */
-export type MediaRecentRequest = { op: 'list' }
 /**
  * `media:used` (YAZ-4157 D1) — every verb answers the whole library: `record` is one add (the MRU, the count, the
  * word `query`, and the favorite at the third), `add-word` is "Add a word…" (the item, so a row can start at 0).
@@ -1625,6 +1623,13 @@ export interface ComponentReadResponse {
 
 /** The longest name a component may carry — the web app's `MAX_SAVED_COMPONENT_NAME_LENGTH`. */
 export const MAX_COMPONENT_NAME_LENGTH = 120
+
+/**
+ * The biggest picture a paste or a drop saves (YAZ-4157 polish, audit 11): the 20 MB a web import may bring. A component
+ * file holds its picture as text, about a third more, so `components:save` takes a document of 32 MB at most.
+ */
+export const MAX_PASTED_PICTURE_BYTES = 20 * 1024 * 1024
+export const MAX_COMPONENT_FRAGMENT_BYTES = 32 * 1024 * 1024
 
 // ---------- Secrets (`userData/secrets.json` — 🔒 YAZ-1775 D4) ----------
 

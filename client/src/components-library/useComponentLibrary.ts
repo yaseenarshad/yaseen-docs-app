@@ -14,7 +14,7 @@
  * WHAT AN INSERT COSTS ON DISK: the component's images become `assets/` files in THIS vault the first time the board
  * is saved after it (🔒 YAZ-1775 D3) — see `componentData.ts`.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ComponentItem, StudioItem } from '@shared/types'
 import { api } from '../api'
 import { loadExcalidrawElement } from '../drawings/engine'
@@ -94,21 +94,18 @@ export function useComponentLibrary(engine: ComponentEngine & PreviewEngine, exc
     }
   }, [])
 
-  const run = useCallback(
-    async (slug: string, action: () => Promise<void>, fallback: string): Promise<boolean> => {
-      setBusySlug(slug)
-      try {
-        await action()
-        return true
-      } catch (cause) {
-        report('error', getErrorMessage(cause, fallback))
-        return false
-      } finally {
-        setBusySlug(null)
-      }
-    },
-    [report],
-  )
+  const run = async (slug: string, action: () => Promise<void>, fallback: string): Promise<boolean> => {
+    setBusySlug(slug)
+    try {
+      await action()
+      return true
+    } catch (cause) {
+      report('error', getErrorMessage(cause, fallback))
+      return false
+    } finally {
+      setBusySlug(null)
+    }
+  }
 
   /** The selection, captured; the name form shows while this is set. Gated on the element package being here. */
   const startSave = () => {
