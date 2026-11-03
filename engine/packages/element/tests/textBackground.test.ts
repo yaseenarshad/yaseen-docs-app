@@ -372,4 +372,32 @@ describe("native text background geometry", () => {
       height: 47.6,
     });
   });
+
+  it("YAZ-4277 D11: a fixed-width box is filled to its edges; an auto-width box is not changed", () => {
+    const fixed = {
+      ...API.createElement({
+        type: "text",
+        width: 300,
+        height: 50,
+        fontSize: 20,
+        backgroundColor: "#ffec99",
+      }),
+      autoResize: false,
+    };
+    const glyphs = { x: 2, y: 6, width: 90, height: 36 };
+    // the box plus today's padding (0.26em across, 0.23em up and down)
+    const filled = {
+      x: -5.2,
+      y: -4.6,
+      width: 310.4,
+      height: 59.2,
+    };
+    expect(getTextBackgroundGeometry(fixed)).toMatchObject(filled);
+    // measured glyphs do not shrink it
+    expect(getTextBackgroundGeometry(fixed, glyphs)).toMatchObject(filled);
+    // the same box with auto width still hugs its letters
+    expect(
+      getTextBackgroundGeometry({ ...fixed, autoResize: true }, glyphs),
+    ).toMatchObject({ x: -3.2, y: 1.4, width: 100.4, height: 45.2 });
+  });
 });
