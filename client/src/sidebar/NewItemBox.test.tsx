@@ -22,11 +22,17 @@ vi.mock('../lib/treeFeed', () => {
 /** The vaults' new-places.json files, as main keeps them (YAZ-4252 D3). */
 const stored = new Map<string, Array<string | null>>()
 const changed = new Set<(c: { root: string }) => void>()
+/** The next save fails, as a write main refuses (YAZ-4202). */
+let failNextSave = false
 vi.mock('../api', () => ({
   api: {
     newPlaces: {
       get: async (root: string) => stored.get(root) ?? [null, null, null],
       set: async (root: string, places: Array<string | null>) => {
+        if (failNextSave) {
+          failNextSave = false
+          throw new Error('EACCES')
+        }
         stored.set(root, [...places])
         for (const listener of changed) listener({ root })
       },
@@ -273,6 +279,29 @@ describe('the New… box\'s folders, place shortcuts and keys (YAZ-4252)', () =>
     expect(place()).toBe('Projects')
     press('Enter')
     expect(onMake).toHaveBeenCalledExactlyOnceWith('file', '/v/Projects')
+  })
+
+  it('a shortcut save that fails: "Could not save this place." and the slot keeps its old place (YAZ-4202)', async () => {
+    stored.set('/v', ['/v/Projects', null, null])
+    render('/v')
+    await flush()
+    const failed = () => document.querySelector('.new-item__failed')?.textContent ?? null
+    failNextSave = true
+    act(() => document.querySelector<HTMLButtonElement>('.new-item__slot-edit')!.click())
+    act(() => [...document.querySelectorAll<HTMLElement>('.place-picker__crumb')].find((c) => c.textContent === 'Notes')?.click())
+    pick('Inbox')
+    chooseHere()
+    await flush()
+    expect(failed()).toBe('Could not save this place.')
+    expect(stored.get('/v')).toEqual(['/v/Projects', null, null])
+    expect(slotNames()[0]).toBe('Projects')
+    // The next save works: the message goes.
+    act(() => slots()[1]!.click())
+    pick('Inbox')
+    chooseHere()
+    await flush()
+    expect(failed()).toBeNull()
+    expect(stored.get('/v')).toEqual(['/v/Projects', '/v/Inbox', null])
   })
 
   it('D4: Choose… offers the last places used at the top', async () => {

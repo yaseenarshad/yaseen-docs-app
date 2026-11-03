@@ -1153,6 +1153,32 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(row(folder.el, 'newNoteLocation')?.querySelector<HTMLInputElement>('.settings__input')?.value).toBe('Inbox')
   })
 
+  it('New item name starts with: a "/" types, says "Name cannot contain "/"" and is not kept; the cell note template keeps a "/" (YAZ-4202)', () => {
+    const { el, onChange } = mountOn('Files & Links')
+    const input = row(el, 'newNoteTitleTemplate')!.querySelector<HTMLInputElement>('input[aria-label="New item name starts with"]')!
+    const error = () => row(el, 'newNoteTitleTemplate')?.querySelector('.settings__error')?.textContent ?? null
+    expect(error()).toBeNull()
+    type(input, '{MM}/{DD} ')
+    expect(input.value).toBe('{MM}/{DD} ')
+    expect(error()).toBe('Name cannot contain "/"')
+    blur(input)
+    pressEnter(input)
+    expect(onChange).not.toHaveBeenCalled()
+    type(input, '{MM}-{DD} ')
+    expect(error()).toBeNull()
+    pressEnter(input)
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, newNoteTitleTemplate: '{MM}-{DD} ' })
+    unmount()
+    const editor = mountOn('Editor')
+    const box = row(editor.el, 'tableCellNoteTemplate')!.querySelector<HTMLTextAreaElement>('textarea')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set?.call(box, '- see a/b')
+      box.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => void box.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+    expect(editor.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableCellNoteTemplate: '- see a/b' })
+  })
+
   it('Daily notes (YAZ-3607 D8, D12): the switch alone while off; on, the folder with Change… and Open template, the style with today\'s names and Custom…, and the day folder switch', () => {
     const { el, onChange } = mountOn('Files & Links')
     expect(['dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'dailyNoteOpens'].map((id) => row(el, id) !== null)).toEqual([true, false, false, false, false])

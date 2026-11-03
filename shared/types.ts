@@ -2019,17 +2019,19 @@ export const TABLE_SHADE_MIN = 2
 export const TABLE_SHADE_MAX = 30
 export const TABLE_SHADE_STEP = 2
 
-/** Tables (the YAZ-3818 demo): the bullets in a cell, in px; whole px. */
 /** Bullets in notes (the YAZ-3818 demo), in px. */
 export const NOTE_BULLET_INDENT_MIN = 8
 export const NOTE_BULLET_INDENT_MAX = 48
 export const NOTE_BULLET_GAP_MIN = 2
 export const NOTE_BULLET_GAP_MAX = 20
+/** Tables (the YAZ-3818 demo): the bullets in a cell, in px; whole px. */
 export const TABLE_CELL_BULLET_INDENT_MIN = 8
 export const TABLE_CELL_BULLET_INDENT_MAX = 32
 export const TABLE_CELL_BULLET_GAP_MIN = 2
 export const TABLE_CELL_BULLET_GAP_MAX = 12
+/** The longest new cell note template (the YAZ-3818 demo), in characters. */
 export const CELL_NOTE_TEMPLATE_MAX = 2000
+/** The longest "New item name starts with" (YAZ-4246), in characters. */
 export const NEW_NOTE_TITLE_MAX = 200
 
 /** The sidebar tree (YAZ-3309 D7, D8): the look of its level lines. */

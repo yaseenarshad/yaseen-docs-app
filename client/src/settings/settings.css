@@ -438,6 +438,11 @@
   color: var(--danger);
 }
 
+/* Beside its field on a label-left row (New item name starts with, YAZ-4202): no line gap under it. */
+.settings__error--inline {
+  margin: 0;
+}
+
 /* The name style's dropdown and, for "Custom…", its field beside it (YAZ-3607 D4): one line in the wide row. */
 .settings__style-pick {
   display: flex;

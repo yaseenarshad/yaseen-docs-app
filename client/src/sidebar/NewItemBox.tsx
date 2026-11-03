@@ -12,7 +12,8 @@
  * pick in another vault of the window shows that vault's. An empty one reads "+ Add place" and opens the picker to
  * save one; a right-click on one offers "Change place" and "Remove". A shortcut to a folder that is no longer in its
  * vault shows muted; its use (a click, its key, ← →) says "This folder is gone. Change place or remove it." and keeps
- * the folder on show (the checker's round 1). Choose… (D4) opens the picker with the last places used on this Mac at
+ * the folder on show (the checker's round 1). A shortcut save that fails says "Could not save this place." and the
+ * slot keeps its old place. Choose… (D4) opens the picker with the last places used on this Mac at
  * the top (`recentPlaces`).
  *
  * "Make" is App's: it shows Files and opens the right-click name field in the folder (D4 of YAZ-3556), and the item
@@ -108,6 +109,8 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
   const [already, setAlready] = useState<number | null>(null)
   /** The shortcut last used whose folder is gone: the box says so. */
   const [goneSlot, setGoneSlot] = useState<number | null>(null)
+  /** A shortcut save that failed (YAZ-4202, the checker's nit): the box says so, and the slot keeps its old place. */
+  const [saveFailed, setSaveFailed] = useState(false)
   const sheet = useRef<HTMLDivElement>(null)
   /** An item is on its way: the sidebar's name field takes the keyboard, not the page. */
   const made = useRef(false)
@@ -158,7 +161,8 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
   const saveSlot = (slot: number, path: string | null, root = vault.root) => {
     const next = [...(root === vault.root ? places : EMPTY_PLACES)]
     next[slot] = path
-    void api.newPlaces?.set(root, next).catch(() => undefined)
+    setSaveFailed(false)
+    void api.newPlaces?.set(root, next).catch(() => setSaveFailed(true))
   }
   /** A shortcut's click, key or arrow: its folder for this item; an empty one opens the picker to set it; a gone one says so. */
   const takeSlot = (slot: number) => {
@@ -178,12 +182,13 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
         else saveSlot(slot, path)
       } else {
         // Read the picked vault's shortcuts first, so the others of that vault stay.
+        setSaveFailed(false)
         void api.newPlaces?.get(root).then((got) => {
           if (holder(got) >= 0) return setAlready(holder(got))
           const next = [...got]
           next[slot] = path
           return api.newPlaces?.set(root, next)
-        }).catch(() => undefined)
+        }).catch(() => setSaveFailed(true))
       }
     }
     setDir(path)
@@ -331,6 +336,7 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
             </div>
           </div>
           {already !== null && <p className="confirm__status new-item__already">Already in shortcut {already + 1}</p>}
+          {saveFailed && <p className="confirm__status new-item__failed">Could not save this place.</p>}
           {goneSlot !== null && isGone(places[goneSlot]) && <p className="confirm__status new-item__gone">This folder is gone. Change place or remove it.</p>}
           {missing !== null && dir === startDir && <p className="confirm__status">“{missing}” is not in this vault, so the item goes to the vault folder.</p>}
           <div className="confirm__actions">

@@ -480,6 +480,36 @@ describe('createStore: loading', () => {
     }
   })
 
+  it('the YAZ-3818 keys (bullets, cell notes, the row band, new item names, new drawing text): a bad value falls back to its default, field by field (YAZ-4202)', async () => {
+    const junk: Record<string, unknown[]> = {
+      tableCellBulletIndent: [7, 33, 20.5, '20', NaN],
+      tableCellBulletGap: [1, 13, 4.5, null],
+      noteBulletIndent: [7, 49, 34.5, '34'],
+      noteBulletGap: [1, 21, 10.5, true],
+      tableCellNoteTemplate: ['x'.repeat(2001), 3, null],
+      tableCellNotePinned: ['yes', 1],
+      tableBandColour: ['', 'magenta', '#12345', '#12345g', 4],
+      tableBandStrength: [0, 61, 10.5, '10', Infinity],
+      tableBandRows: ['row', '', 2],
+      tableBandBold: ['true', 0],
+      newNoteTitleTemplate: ['{MM}/{DD}', 'x'.repeat(201), 5],
+    }
+    for (const [field, values] of Object.entries(junk)) {
+      for (const value of values) {
+        await seed(valid({ settings: { ...DEFAULT_SETTINGS, threadWidth: 3, [field]: value } }))
+        expect(createStore(file).get().settings, `${field}: ${String(value).slice(0, 12)}`).toEqual({ ...DEFAULT_SETTINGS, threadWidth: 3 })
+      }
+    }
+    // The canvas keys repair inside `canvas`: the bad one falls back, the others stay.
+    const canvasJunk: Record<string, unknown[]> = { newTextScreenSize: [7, 49, 14.5, '14'], newTextWrapMargin: [-1, 601, 12.5, null] }
+    for (const [field, values] of Object.entries(canvasJunk)) {
+      for (const value of values) {
+        await seed(valid({ settings: { ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, gridModeEnabled: true, [field]: value } } }))
+        expect(createStore(file).get().settings.canvas, `${field}: ${String(value)}`).toEqual({ ...DEFAULT_SETTINGS.canvas, gridModeEnabled: true })
+      }
+    }
+  })
+
   it('section indent: a file from before YAZ-2709 sanitizes to 30px, always; every listed value survives; junk falls back', async () => {
     const { sectionStep: _step, sectionLines: _lines, ...legacySettings } = DEFAULT_SETTINGS
     const defaults = { sectionStep: 30, sectionLines: 'always' }

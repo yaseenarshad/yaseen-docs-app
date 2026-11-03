@@ -155,21 +155,26 @@ function BandColourControl({ value, onChange }: { value: string; onChange: (next
   )
 }
 
-/** "New item name starts with" (YAZ-4246, YAZ-4252): a text field, kept on blur or ⏎; Reset brings the Dated note's format back. */
+/**
+ * "New item name starts with" (YAZ-4246, YAZ-4252): a text field, kept on blur or ⏎; Reset brings the Dated note's format
+ * back. A name cannot hold a "/", so a draft with one is not kept and says why (YAZ-4202, the checker's nit).
+ */
 function NewNoteTitleControl({ settings, onChange }: { settings: SettingsState; onChange: (next: SettingsState) => void }) {
   const stored = settings.newNoteTitleTemplate ?? DEFAULT_NEW_NOTE_TITLE
   const [draft, setDraft] = useState(stored)
   useEffect(() => setDraft(stored), [stored])
+  const slash = draft.includes('/')
   const keep = (value: string) => {
     if (value !== stored && !value.includes('/')) onChange({ ...settings, newNoteTitleTemplate: value })
   }
   return (
     <>
-      <input className="settings__input" aria-label="New item name starts with" placeholder="Blank" maxLength={NEW_NOTE_TITLE_MAX} spellCheck={false}
+      <input className={`settings__input${slash ? ' settings__input--error' : ''}`} aria-label="New item name starts with" aria-invalid={slash} placeholder="Blank" maxLength={NEW_NOTE_TITLE_MAX} spellCheck={false}
         value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => keep(draft)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') keep(draft)
         }} />
+      {slash && <span className="settings__error settings__error--inline">Name cannot contain "/"</span>}
       {stored !== DEFAULT_NEW_NOTE_TITLE && (
         <button type="button" className="settings__option" onClick={() => onChange({ ...settings, newNoteTitleTemplate: DEFAULT_NEW_NOTE_TITLE })}>
           Reset
