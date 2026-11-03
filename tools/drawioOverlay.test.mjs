@@ -582,6 +582,77 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
   })
 })
 
+/** The stand-in for draw.io's merge (YAZ-4279 D2): `diffPages` answers the two diffs as given, `mergeFile` merges at once. */
+function mergeSetup({ mine = {}, theirs = {} } = {}) {
+  const loaded = loadPostConfig()
+  const editor = openEditor(loaded.env)
+  const file = { setShadowPages: vi.fn(), mergeFile: vi.fn((_remote, ok) => ok()) }
+  loaded.env.LocalFile = function (_ui, xml) {
+    this.xml = xml
+  }
+  const live = { live: true }
+  Object.assign(editor.ui, {
+    pages: live,
+    currentPage: { getId: () => 'p1' },
+    getCurrentFile: () => file,
+    getPagesForXml: (xml) => ({ xml }),
+    diffPages: (_base, side) => (side === live ? mine : theirs),
+  })
+  const answers = () => loaded.posted.filter((m) => m.event === 'yaseenMerge').map(({ origin: _o, ...m }) => m)
+  return { ...loaded, editor, file, answers }
+}
+
+describe('PostConfig.js yaseenMerge (YAZ-4279 D2, D4), against a stand-in draw.io', () => {
+  it('merges with draw.io\'s own mergeFile against the HOST\'s base, and answers the cells of the page on screen it changed', () => {
+    const { message, file, answers } = mergeSetup({ theirs: { u: { p1: { cells: { u: { c1: { style: 'fillColor=red' } }, i: [{ id: 'n1' }] } } } } })
+    expect(message({ action: 'yaseenMerge', base: '<base/>', xml: '<disk/>' })).toBe(true)
+    expect(file.setShadowPages).toHaveBeenCalledWith({ xml: '<base/>' })
+    expect(file.mergeFile.mock.calls[0][0]).toMatchObject({ xml: '<disk/>' })
+    expect(answers()).toEqual([{ event: 'yaseenMerge', changed: { added: ['n1'], changed: ['c1'] } }])
+  })
+
+  it('both sides on different fields of one cell, or different cells, merge', () => {
+    const { message, file } = mergeSetup({ mine: { u: { p1: { cells: { u: { c1: { geometry: 'g2' }, c2: { value: 'x' } } } } } }, theirs: { u: { p1: { cells: { u: { c1: { style: 's2' } } } } } } })
+    message({ action: 'yaseenMerge', base: '<b/>', xml: '<d/>' })
+    expect(file.mergeFile).toHaveBeenCalledOnce()
+  })
+
+  it('one field of one cell changed on both sides, a cell removed on one side and changed on the other, or a page likewise: a conflict, and nothing is merged', () => {
+    const cases = [
+      { mine: { u: { p1: { cells: { u: { c1: { style: 'a' } } } } } }, theirs: { u: { p1: { cells: { u: { c1: { style: 'b' } } } } } } },
+      { mine: { u: { p1: { cells: { r: ['c1'] } } } }, theirs: { u: { p1: { cells: { u: { c1: { style: 'b' } } } } } } },
+      { mine: { u: { p1: { cells: { u: { c1: { value: 'v' } } } } } }, theirs: { u: { p1: { cells: { r: ['c1'] } } } } },
+      { mine: { r: ['p1'] }, theirs: { u: { p1: { name: 'Renamed' } } } },
+      { mine: { u: { p1: { name: 'Mine' } } }, theirs: { u: { p1: { name: 'Theirs' } } } },
+    ]
+    for (const sides of cases) {
+      const { message, file, answers } = mergeSetup(sides)
+      message({ action: 'yaseenMerge', base: '<b/>', xml: '<d/>' })
+      expect(file.mergeFile).not.toHaveBeenCalled()
+      expect(answers()).toEqual([{ event: 'yaseenMerge', conflict: true }])
+    }
+  })
+
+  it('item 2: a label being typed ends first; draw.io\'s own merge failing is a conflict too', async () => {
+    vi.useFakeTimers()
+    try {
+      const { message, file, editor, answers } = mergeSetup()
+      editor.graph.editing = true
+      message({ action: 'yaseenMerge', base: '<b/>', xml: '<d/>' })
+      await vi.advanceTimersByTimeAsync(400)
+      expect(file.mergeFile).not.toHaveBeenCalled()
+      editor.graph.editing = false
+      await vi.advanceTimersByTimeAsync(200)
+      expect(file.mergeFile).toHaveBeenCalledOnce()
+      file.mergeFile.mockImplementation((_r, _ok, fail) => fail(new Error('checksum')))
+      message({ action: 'yaseenMerge', base: '<b/>', xml: '<d/>' })
+      expect(answers().at(-1)).toEqual({ event: 'yaseenMerge', conflict: true })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe.skipIf(!existsSync(APP_MIN_JS))(`every draw.io action we name exists in the pinned ${DRAWIO_TAG}`, () => {
   it('the configure reply’s keyboard shortcuts, every diagram row’s action, the Grid menu item and the live theme', () => {
     const app = readFileSync(APP_MIN_JS, 'utf8')
@@ -724,6 +795,16 @@ describe.skipIf(!existsSync(APP_MIN_JS))(`every draw.io action we name exists in
       'EditorUi.selectPage': /EditorUi\.prototype\.selectPage\s*=\s*function/,
       'EditorUi.saveScrollState': /EditorUi\.prototype\.saveScrollState\s*=\s*function/,
       'EditorUi.restoreScrollState': /EditorUi\.prototype\.restoreScrollState\s*=\s*function/,
+      // YAZ-4279 D2: the merge the overlay's yaseenMerge leans on, and the shape of draw.io's diffs it reads.
+      'EditorUi.getCurrentFile': /EditorUi\.prototype\.getCurrentFile\s*=\s*function/,
+      'EditorUi.getPagesForXml': /EditorUi\.prototype\.getPagesForXml\s*=\s*function/,
+      'EditorUi.diffPages': /EditorUi\.prototype\.diffPages\s*=\s*function/,
+      'DrawioFile.setShadowPages': /DrawioFile\.prototype\.setShadowPages\s*=\s*function/,
+      'DrawioFile.mergeFile diffs the shadow against the remote': /DrawioFile\.prototype\.mergeFile=function\(b,g,m,f,p\)\{try\{var r=b\.getShadowPages\(\);if\(null!=r&&0<r\.length\)\{var u=this\.getShadowPages\(\),x=\[this\.ui\.diffPages\(null!=f\?f:u,r\)\]/,
+      'the diff keys': /EditorUi\.DIFF_INSERT="i";EditorUi\.DIFF_REMOVE="r";EditorUi\.DIFF_UPDATE="u"/,
+      'LocalFile': /LocalFile\s*=\s*function/,
+      'the embed autosave is a model change listener': /this\.editor\.graph\.model\.addListener\(mxEvent\.CHANGE,d\)/,
+      'mxGraph.isMouseDown': /isMouseDown\s*=\s*!1/,
     }
     for (const [name, pattern] of Object.entries(internals)) expect(app, name).toMatch(pattern)
     // YAZ-3719 D1: the strip's `visibility` is PostConfig's alone.

@@ -270,7 +270,167 @@ window.ICON_SERVICE_PATH = null;
 			editorUi.setAdaptiveColors((graph.adaptiveColors != null) ? graph.adaptiveColors : 'default');
 			graph.refresh();
 		}
+
+		// YAZ-4279 D2: an outside save of this diagram, merged by draw.io's own merge (the one its cloud files use). Not
+		// draw.io's embed `merge`: it diffs against the last `load`, and the host's saves since never moved that, so
+		// they would read as the other side's edits. Ours diffs against the HOST's base.
+		if (msg != null && msg.action == 'yaseenMerge')
+		{
+			evt.stopImmediatePropagation();
+			whenIdle(function()
+			{
+				mergeOutside(msg.base, msg.xml);
+			});
+		}
 	});
+
+	/** YAZ-4279 item 2: a label being typed, or a drag, ends first; a merge under it would end it for the user. */
+	function whenIdle(then)
+	{
+		var graph = editorUi.editor.graph;
+
+		if (!graph.isEditing() && !graph.isMouseDown)
+		{
+			then();
+		}
+		else
+		{
+			window.setTimeout(function()
+			{
+				whenIdle(then);
+			}, 150);
+		}
+	}
+
+	/**
+	 * The merge (D2, D4). A field both sides changed, or a cell one side removed and the other changed, is the user's
+	 * to settle: the answer is a conflict, and nothing changes. draw.io alone would keep ours in silence
+	 * (`DrawioFile.LAST_WRITE_WINS`). The merged diagram reaches the host as draw.io's own `autosave` — the model's
+	 * change listener posts it inside the merge, so before this answer. Undo, the selection and the view stay.
+	 */
+	function mergeOutside(baseXml, xml)
+	{
+		var answer = function(extra)
+		{
+			extra.event = 'yaseenMerge';
+			postToHost(extra);
+		};
+
+		try
+		{
+			var file = editorUi.getCurrentFile();
+			var base = editorUi.getPagesForXml(baseXml);
+			var theirs = editorUi.diffPages(base, editorUi.getPagesForXml(xml));
+
+			if (file == null || clashes(editorUi.diffPages(base, editorUi.pages), theirs))
+			{
+				answer({conflict: true});
+
+				return;
+			}
+
+			file.setShadowPages(base);
+			file.mergeFile(new LocalFile(editorUi, xml), function()
+			{
+				answer({changed: changedCells(theirs)});
+			}, function()
+			{
+				answer({conflict: true});
+			});
+		}
+		catch (e)
+		{
+			console.error('yaseenMerge', e);
+			answer({conflict: true});
+		}
+	}
+
+	/** Two of draw.io's diffs (`EditorUi.diffPages`) touch one thing: a page or cell removed on one side and changed on the other, or one field changed on both. */
+	function clashes(mine, theirs)
+	{
+		var mu = mine.u || {}, tu = theirs.u || {};
+
+		if (removedChanged(mine.r, tu) || removedChanged(theirs.r, mu))
+		{
+			return true;
+		}
+
+		for (var id in tu)
+		{
+			var m = mu[id], t = tu[id];
+
+			if (m == null)
+			{
+				continue;
+			}
+
+			if ((t.name != null && m.name != null && t.name != m.name) || bothChanged(t.view, m.view))
+			{
+				return true;
+			}
+
+			var tc = t.cells || {}, mc = m.cells || {}, tcu = tc.u || {}, mcu = mc.u || {};
+
+			if (removedChanged(tc.r, mcu) || removedChanged(mc.r, tcu))
+			{
+				return true;
+			}
+
+			for (var cell in tcu)
+			{
+				if (bothChanged(tcu[cell], mcu[cell]))
+				{
+					return true;
+				}
+			}
+
+			// One cell id added on both sides, with two contents.
+			var added = {};
+			(mc.i || []).forEach(function(c) { added[c.id] = JSON.stringify(c); });
+
+			if ((tc.i || []).some(function(c) { return added[c.id] != null && added[c.id] != JSON.stringify(c); }))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	function removedChanged(removed, changed)
+	{
+		return (removed || []).some(function(id) { return changed[id] != null; });
+	}
+
+	function bothChanged(a, b)
+	{
+		if (a == null || b == null)
+		{
+			return false;
+		}
+
+		for (var key in a)
+		{
+			if (key in b && JSON.stringify(a[key]) != JSON.stringify(b[key]))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/** The cells of the page on screen that the outside save added and changed (D5 outlines them). */
+	function changedCells(theirs)
+	{
+		var page = (theirs.u || {})[editorUi.currentPage.getId()];
+		var cells = (page != null && page.cells != null) ? page.cells : {};
+
+		return {
+			added: (cells.i || []).map(function(c) { return c.id; }),
+			changed: Object.keys(cells.u || {})
+		};
+	}
 
 	// 🔒 YAZ-1802 D12a: right-clicking EMPTY canvas offers draw.io's own Grid toggle (with its check
 	// mark), beside the menu's zoom items. Wrapped last, so it lands at the end of the menu.

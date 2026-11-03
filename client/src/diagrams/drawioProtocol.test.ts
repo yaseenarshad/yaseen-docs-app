@@ -167,6 +167,12 @@ describe('readDrawioMessage — only THAT iframe, only the drawio origin (🔒 Y
     expect(msg('{"event":"shortcut"}')).toBeNull()
   })
 
+  it('YAZ-4279: the overlay\'s yaseenMerge answer: a conflict, or the cells it changed (strings only)', () => {
+    expect(msg(JSON.stringify({ event: 'yaseenMerge', conflict: true }))).toEqual({ event: 'yaseenMerge', conflict: true })
+    expect(msg(JSON.stringify({ event: 'yaseenMerge', changed: { added: ['a', 3], changed: ['b'] } }))).toEqual({ event: 'yaseenMerge', changed: { added: ['a'], changed: ['b'] } })
+    expect(msg(JSON.stringify({ event: 'yaseenMerge' }))).toEqual({ event: 'yaseenMerge', changed: { added: [], changed: [] } })
+  })
+
   it('ignores another window, another origin, a missing frame, non-strings, junk and unknown events', () => {
     expect(msg('{"event":"init"}', { source: {} })).toBeNull()
     expect(msg('{"event":"init"}', { origin: 'app://yaseen' })).toBeNull()

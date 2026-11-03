@@ -37,6 +37,8 @@ const EXPORT_EMPTY = 'This draw.io diagram is empty, so there is no image to exp
  * anyway — a missing overlay must cost the keymap, never the document.
  */
 const READY_FALLBACK_MS = 3000
+/** A `yaseenMerge` the overlay never answers is a conflict (YAZ-4279). Long: the overlay first waits for a label being typed to end. */
+const MERGE_TIMEOUT_MS = 60_000
 
 export interface DrawioEditorProps extends DocumentHostProps {
   /** 🔒 YAZ-1802 D16: the app's dark-mode colour setting, applied live (see the module doc). */
@@ -78,6 +80,12 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
   const [src] = useState(() => drawioFrameUrl(theme))
   /** The XML draw.io last posted — what the next save writes. */
   const latestXml = useRef(loaded.xml)
+  /** The XML as this tab last loaded or saved it: a merge's base (YAZ-4279 D2). */
+  const baseXml = useRef(loaded.xml)
+  /** The overlay's answer to the one `yaseenMerge` in flight (YAZ-4279). */
+  const mergeAnswer = useRef<((answer: { conflict: boolean }) => void) | null>(null)
+  /** The next reload puts the disk back over what the canvas shows (a stray change while read only), never a merge. */
+  const discardOnReload = useRef(false)
   /** Bumped on every draw.io change; `Autosave` compares these, never the XML. */
   const version = useRef(0)
   /** The mtime of the document a `load` action carried, until draw.io answers `load`. */
@@ -111,6 +119,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     (xml: string, mtime: number, keepView = false) => {
       pendingLoad.current = mtime
       latestXml.current = xml
+      baseXml.current = xml
       post({ action: 'load', xml, autosave: 1, title: boardBaseName(basename(path)), yaseenKeepFocus: namingTab(document.activeElement), yaseenKeepView: keepView })
     },
     [post, path],
@@ -147,6 +156,27 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     post({ action: 'yaseenReadOnly', value: wantedReadOnly.current })
   }, [post])
 
+  /**
+   * YAZ-4279 D2: the file's `xml` merged into the canvas by our PostConfig.js's `yaseenMerge`. A clash, an overlay that
+   * does not answer in time, or one not listening yet is a conflict, and the canvas is as it was.
+   */
+  const askMerge = useCallback(
+    (xml: string): Promise<{ conflict: boolean }> =>
+      new Promise((done) => {
+        if (!handshake.current.initialised) return done({ conflict: true })
+        mergeAnswer.current?.({ conflict: true })
+        const late = setTimeout(() => answer({ conflict: true }), MERGE_TIMEOUT_MS)
+        const answer = (a: { conflict: boolean }): void => {
+          clearTimeout(late)
+          if (mergeAnswer.current === answer) mergeAnswer.current = null
+          done(a)
+        }
+        mergeAnswer.current = answer
+        post({ action: 'yaseenMerge', base: baseXml.current, xml })
+      }),
+    [post],
+  )
+
   /** File › Export Image… (🔒 D9): the XML draw.io last posted, unsaved edits included, drawn before the sheet opens because the pick decides the format. */
   const exportImage = (): Promise<void> =>
     exportWithNotice(
@@ -175,12 +205,36 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     onNotice,
     // A change draw.io queued before "on" landed saves after it: it keeps the switch, which draw.io's
     // XML never carries (it drops attributes it does not know — YAZ-3116 A3).
-    write: (expectedMtime) => api.diagram.save({ root, path, xml: wantedReadOnly.current ? setDiagramReadOnly(latestXml.current, true) : latestXml.current, expectedMtime }),
+    write: async (expectedMtime) => {
+      const xml = latestXml.current
+      const res = await api.diagram.save({ root, path, xml: wantedReadOnly.current ? setDiagramReadOnly(xml, true) : xml, expectedMtime })
+      baseXml.current = xml
+      return res
+    },
+    // Item 1: a clean tab MERGES the file, so its undo history, selection and view stay (draw.io's `load` clears undo).
+    // Reload from the bar, and a stray change while read only, put the disk back with a `load`.
     reload: async (a) => {
       const res = await api.diagram.load({ root, path })
+      const discard = discardOnReload.current || a.dirty
+      discardOnReload.current = false
+      if (!discard && !(await askMerge(res.xml)).conflict) {
+        baseXml.current = res.xml
+        // draw.io's own `autosave` of the merge came first: the canvas now IS the file.
+        a.reset(version.current, res.mtime)
+        return isDiagramReadOnly(res.xml)
+      }
       a.reset(version.current, res.mtime)
       sendLoad(res.xml, res.mtime, true)
       return isDiagramReadOnly(res.xml)
+    },
+    // YAZ-4279 D2, D3: a newer file over unsaved edits. A changed read-only switch is the user's to settle: the bar.
+    merge: async (a) => {
+      const res = await api.diagram.load({ root, path })
+      if (isDiagramReadOnly(res.xml) !== wantedReadOnly.current) return 'conflict'
+      if ((await askMerge(res.xml)).conflict) return 'conflict'
+      baseXml.current = res.xml
+      a.rebase(res.mtime)
+      return 'merged'
     },
     // Export Image… is the one board command a diagram answers.
     onCommand: (command) => {
@@ -239,6 +293,9 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
           if (msg.event === 'save') void a.flush()
           return
         }
+        case 'yaseenMerge':
+          mergeAnswer.current?.({ conflict: msg.conflict === true })
+          return
       }
     }
     window.addEventListener('message', onMessage)
@@ -256,6 +313,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     syncReadOnly()
     if (readOnly || !strayWhileReadOnly.current) return
     strayWhileReadOnly.current = false
+    discardOnReload.current = true
     void reload()
   }, [readOnly, syncReadOnly, reload])
 
