@@ -193,6 +193,10 @@ button {
      still ends 64px above the bottom — each block used to carry this itself, so every pair of
      blocks sat 64px apart. */
   padding-bottom: 64px;
+  /* Nothing in the note paints over the bar above it (YAZ-4271): a frozen table row (z-index 2) and the calendar's
+     "Now" chip (3) shared one stacking level with `.status-chips` (2), and, later in the page, rose over the cog's
+     menu. Its own level puts the whole note under the bar. */
+  isolation: isolate;
 }
 
 .editor-host::after {
