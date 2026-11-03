@@ -8548,11 +8548,9 @@ class App extends React.Component<AppProps, AppState> {
     const elements = this.scene.getNonDeletedElements();
     for (let index = elements.length - 1; index >= 0; index--) {
       const element = elements[index];
-      if (
-        !isTextElement(element) ||
-        element.locked ||
-        this.state.editingTextElement?.id === element.id
-      ) {
+      // YAZ-4306: a box in edit too: the canvas draws it, and a click on its
+      // arrow folds and keeps the edit (`hostTextWysiwyg.ts`)
+      if (!isTextElement(element) || element.locked) {
         continue;
       }
       const reach =
