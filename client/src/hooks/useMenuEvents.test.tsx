@@ -23,6 +23,9 @@ function installBridge() {
   const tabOverviewListeners = new Set<() => void>()
   const backListeners = new Set<() => void>()
   const forwardListeners = new Set<() => void>()
+  // Window › Open Back / Forward in New Tab (YAZ-4156 7).
+  const backNewTabListeners = new Set<() => void>()
+  const forwardNewTabListeners = new Set<() => void>()
   const newTabListeners = new Set<() => void>()
   const newWindowListeners = new Set<() => void>()
   // ⌘N and ⌘D (YAZ-3556 D1).
@@ -57,6 +60,8 @@ function installBridge() {
       onTabOverview: sub(tabOverviewListeners),
       onBack: sub(backListeners),
       onForward: sub(forwardListeners),
+      onBackNewTab: sub(backNewTabListeners),
+      onForwardNewTab: sub(forwardNewTabListeners),
       onNewTab: sub(newTabListeners),
       onNewWindow: sub(newWindowListeners),
       onNewItem: sub(newItemListeners),
@@ -85,6 +90,8 @@ function installBridge() {
     emitTabOverview: () => tabOverviewListeners.forEach((l) => l()),
     emitBack: () => backListeners.forEach((l) => l()),
     emitForward: () => forwardListeners.forEach((l) => l()),
+    emitBackNewTab: () => backNewTabListeners.forEach((l) => l()),
+    emitForwardNewTab: () => forwardNewTabListeners.forEach((l) => l()),
     emitNewTab: () => newTabListeners.forEach((l) => l()),
     emitNewWindow: () => newWindowListeners.forEach((l) => l()),
     emitNewItem: () => newItemListeners.forEach((l) => l()),
@@ -110,6 +117,8 @@ function installBridge() {
       tabOverviewListeners.size +
       backListeners.size +
       forwardListeners.size +
+      backNewTabListeners.size +
+      forwardNewTabListeners.size +
       newTabListeners.size +
       newWindowListeners.size +
       newItemListeners.size +
@@ -138,6 +147,8 @@ interface ProbeProps {
   onTabOverview: () => void
   onBack: () => void
   onForward: () => void
+  onBackNewTab: () => void
+  onForwardNewTab: () => void
   onNewTab: () => void
   onNewWindow: () => void
   onNewItem: () => void
@@ -167,7 +178,7 @@ afterEach(() => {
 describe('useMenuEvents', () => {
   it('routes menu gestures to the callbacks and unsubscribes on unmount', () => {
     const b = installBridge()
-    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onTabOverview: vi.fn(), onBack: vi.fn(), onForward: vi.fn(), onNewTab: vi.fn(), onNewWindow: vi.fn(), onNewItem: vi.fn(), onGoTo: vi.fn(), onDailyNote: vi.fn(), onZoom: vi.fn(), onWhatsNew: vi.fn(), onKeySheet: vi.fn(), onExportImage: vi.fn(), onExportDrawing: vi.fn(), onShareLink: vi.fn(), onCanvasBackground: vi.fn() }
+    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onSwitchVault: vi.fn(), onSettings: vi.fn(), onToggleSidebar: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn(), onTabOverview: vi.fn(), onBack: vi.fn(), onForward: vi.fn(), onBackNewTab: vi.fn(), onForwardNewTab: vi.fn(), onNewTab: vi.fn(), onNewWindow: vi.fn(), onNewItem: vi.fn(), onGoTo: vi.fn(), onDailyNote: vi.fn(), onZoom: vi.fn(), onWhatsNew: vi.fn(), onKeySheet: vi.fn(), onExportImage: vi.fn(), onExportDrawing: vi.fn(), onShareLink: vi.fn(), onCanvasBackground: vi.fn() }
     root = createRoot(document.createElement('div'))
     act(() => root?.render(<Probe {...handlers} />))
 
@@ -195,6 +206,10 @@ describe('useMenuEvents', () => {
     expect(handlers.onBack).toHaveBeenCalledTimes(1)
     act(() => b.emitForward())
     expect(handlers.onForward).toHaveBeenCalledTimes(1)
+    act(() => b.emitBackNewTab())
+    expect(handlers.onBackNewTab).toHaveBeenCalledTimes(1)
+    act(() => b.emitForwardNewTab())
+    expect(handlers.onForwardNewTab).toHaveBeenCalledTimes(1)
     act(() => b.emitNewTab())
     expect(handlers.onNewTab).toHaveBeenCalledTimes(1)
     act(() => b.emitNewWindow())

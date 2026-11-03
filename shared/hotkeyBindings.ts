@@ -34,6 +34,8 @@ export type HotkeyId =
   | 'prevTab'
   | 'back'
   | 'forward'
+  | 'backNewTab'
+  | 'forwardNewTab'
   | 'keySheet'
 
 export interface HotkeyCommand {
@@ -81,6 +83,9 @@ export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
   // YAZ-3647 D7: the window's one Back list. ⌘[ / ⌘] are outdent and indent, ⌘⇧[ / ⌘⇧] switch tabs.
   { id: 'back', label: 'Back', hint: 'The page or the zoom level you were on before', key: 'CmdOrCtrl+Alt+Left' },
   { id: 'forward', label: 'Forward', hint: 'Again, after Back', key: 'CmdOrCtrl+Alt+Right' },
+  // YAZ-4156 7: a ⌘-click on ← or → as a key, for the keyboard. No key by default; Window › Open Back in New Tab reaches it.
+  { id: 'backNewTab', label: 'Open Back in a new tab', hint: 'The page before, in a tab behind this one, as a ⌘-click on ←', key: null },
+  { id: 'forwardNewTab', label: 'Open Forward in a new tab', hint: 'The page after, in a tab behind this one, as a ⌘-click on →', key: null },
   // YAZ-3564 K11: no key by default, since every free key is some editor's; Help › Keys of This Tab… and ? on a drawing open it too.
   { id: 'keySheet', label: 'Keys of this tab', hint: 'The keys of the note, drawing, diagram or code in front, with your changes', key: null },
 ]

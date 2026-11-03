@@ -10,6 +10,10 @@
  */
 import { canvasCardKey, rootOfPath, stripSlash, type CanvasCard, type CanvasFrame, type CanvasLayout, type TabCanvasPatch, type TabRef } from '@shared/types'
 import { dirname, relTo } from '../lib/paths'
+import { copiesOf } from './copies'
+
+// The strip counts its copies with the same function, from its own small module, so the eager bundle does not take this one (YAZ-4156 3F1).
+export { copiesOf }
 
 /**
  * Every length is in px at zoom 1. A page is a short, wide CARD (D15): its title, a "Page: …" line when named, and
@@ -84,17 +88,6 @@ export interface VaultIslands {
   /** The vault's name, said above its islands where the window has two or more. */
   name: string
   islands: Island[]
-}
-
-/** Each tab's copy number (its place among the tabs of its path, strip order) and the count of each path (YAZ-3343 D1, D11). */
-export function copiesOf(tabs: readonly { path: string }[]): { copy: number[]; count: Map<string, number> } {
-  const count = new Map<string, number>()
-  const copy = tabs.map(({ path }) => {
-    const n = count.get(path) ?? 0
-    count.set(path, n + 1)
-    return n
-  })
-  return { copy, count }
 }
 
 /** Each tab's ref in its window (YAZ-3343 D1): its path and its copy number, in strip order. */

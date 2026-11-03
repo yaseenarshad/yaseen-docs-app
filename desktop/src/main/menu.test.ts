@@ -33,6 +33,8 @@ const noopHandlers = (): MenuHandlers => ({
   nextTab: vi.fn(),
   back: vi.fn(),
   forward: vi.fn(),
+  backNewTab: vi.fn(),
+  forwardNewTab: vi.fn(),
   prevTab: vi.fn(),
   tabOverview: vi.fn(),
   toggleSidebar: vi.fn(),
@@ -251,6 +253,8 @@ describe('buildMenuTemplate', () => {
       'menu.window.tab-overview',
       'menu.window.back',
       'menu.window.forward',
+      'menu.window.back-new-tab',
+      'menu.window.forward-new-tab',
       'separator',
       'front',
     ])
@@ -302,6 +306,15 @@ describe('buildMenuTemplate', () => {
     click(forward)
     expect(handlers.back).toHaveBeenCalledTimes(1)
     expect(handlers.forward).toHaveBeenCalledTimes(1)
+
+    // …and a ⌘-click on them as keys (YAZ-4156 7): no key until the user gives one.
+    const backNew = byId('menu.window.back-new-tab')
+    const forwardNew = byId('menu.window.forward-new-tab')
+    expect([backNew?.label, backNew?.accelerator, forwardNew?.label, forwardNew?.accelerator]).toEqual(['Open Back in New Tab', undefined, 'Open Forward in New Tab', undefined])
+    click(backNew)
+    click(forwardNew)
+    expect(handlers.backNewTab).toHaveBeenCalledTimes(1)
+    expect(handlers.forwardNewTab).toHaveBeenCalledTimes(1)
   })
 
   it('Window menu lists the numbered vaults above front (YAZ-2555 D3, S32): one row each, by name, ⌘<its number>, then one separator; a click hands the path and the name to goToVault; a `&` in a label is written `&&`', () => {
@@ -312,7 +325,7 @@ describe('buildMenuTemplate', () => {
     ]
     const items = menuOf(build(RECENTS, false, handlers, keyed), 'Window')
     // The rows stand in the order they were given (number order is `menuKeyedVaults`' job).
-    expect(items.slice(items.findIndex((i) => i.id === 'menu.window.forward') + 1).map((i) => [i.role ?? i.id ?? i.type, i.label, i.accelerator])).toEqual([
+    expect(items.slice(items.findIndex((i) => i.id === 'menu.window.forward-new-tab') + 1).map((i) => [i.role ?? i.id ?? i.type, i.label, i.accelerator])).toEqual([
       ['separator', undefined, undefined],
       ['menu.window.vault.2', 'Work', 'CmdOrCtrl+2'],
       ['menu.window.vault.9', 'notes', 'CmdOrCtrl+9'],
