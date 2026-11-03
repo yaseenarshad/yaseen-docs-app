@@ -35,7 +35,7 @@ import type {
   FontString,
 } from "@excalidraw/element/types";
 
-import type { HostLinkHit, HostTextEditor } from "../types";
+import type { HostLinkHit, HostTextEditorState } from "../types";
 
 /**
  * YAZ-4039 D7, D11: `[[inner]]` in a text box is a pill. Hover reports it,
@@ -62,7 +62,7 @@ const hostLinks = {
   onContextMenu: vi.fn<(hit: HostLinkHit, event: MouseEvent) => boolean>(),
   pasteLink: (text: string) =>
     text === "/vault/Growth plan.md" ? "[[YAS-1]]" : null,
-  onEditorChange: vi.fn<(editor: HostTextEditor | null) => void>(),
+  onEditorChange: vi.fn<(editor: HostTextEditorState | null) => void>(),
   onEditorKeyDown: vi.fn<(event: KeyboardEvent) => boolean>(),
 };
 

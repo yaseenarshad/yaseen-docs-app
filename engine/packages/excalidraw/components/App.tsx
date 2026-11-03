@@ -465,6 +465,7 @@ import { ElementCanvasButtons } from "../components/ElementCanvasButtons";
 import { LASER_STREAMLINE, LaserTrails } from "../laserTrails";
 import { withBatchedUpdates, withBatchedUpdatesThrottled } from "../reactUtils";
 import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
+import { hostTextWysiwyg } from "../wysiwyg/hostTextWysiwyg";
 import { textWysiwyg } from "../wysiwyg/textWysiwyg";
 import { getPlainPasteText, parseStyledHtml } from "../wysiwyg/styledClipboard";
 import { isOverScrollBars } from "../scene/scrollbars";
@@ -2569,7 +2570,11 @@ class App extends React.Component<AppProps, AppState> {
       scrollY: this.state.scrollY,
       height: this.state.height,
       width: this.state.width,
-      editingTextElement: this.state.editingTextElement,
+      // YAZ-4277 D1: the host's editor is invisible, so the canvas keeps
+      // drawing the box in edit
+      editingTextElement: this.props.textEditor
+        ? null
+        : this.state.editingTextElement,
       newElement: this.state.newElement,
       selectedElements,
       selectedElementsAreBeingDragged:
@@ -7050,6 +7055,7 @@ class App extends React.Component<AppProps, AppState> {
     },
   ) {
     const elementsMap = this.scene.getElementsMapIncludingDeleted();
+    const startedEmpty = !element.originalText;
 
     const updateElement = (
       nextOriginalText: string,
@@ -7078,8 +7084,10 @@ class App extends React.Component<AppProps, AppState> {
             );
             // YAZ-4247: a click-started text that grows past the right edge of
             // the visible canvas takes the room left as its width and wraps.
+            // YAZ-4277: only a text that started empty in this edit, so a wide
+            // box keeps its lines when its edit starts and ends.
             const wrapAt =
-              !container && next.autoResize && dimensions
+              startedEmpty && !container && next.autoResize && dimensions
                 ? wrapWidthAtEdge(
                     dimensions.x,
                     dimensions.width,
@@ -7109,7 +7117,11 @@ class App extends React.Component<AppProps, AppState> {
       ]);
     };
 
-    this.textWysiwygSubmitHandler = textWysiwyg({
+    const { textEditor } = this.props;
+    const openEditor: typeof textWysiwyg = textEditor
+      ? (options) => hostTextWysiwyg({ ...options, textEditor })
+      : textWysiwyg;
+    this.textWysiwygSubmitHandler = openEditor({
       canvas: this.canvas,
       getViewportCoords: (x, y) => {
         const { x: viewportX, y: viewportY } = sceneCoordsToViewportCoords(

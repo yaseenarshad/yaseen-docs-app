@@ -809,7 +809,7 @@ export type HostLinkHit = {
  * Yaseen Docs (YAZ-4039 D12): the text editor, for the host's `[[` picker.
  * `typed`: the change is typing, not a caret move.
  */
-export type HostTextEditor = {
+export type HostTextEditorState = {
   text: string;
   caret: number;
   typed: boolean;
@@ -822,6 +822,33 @@ export type HostTextEditor = {
    * (the saved box). True when `raw` was there.
    */
   replaceLink: (raw: string, text: string) => boolean;
+};
+
+/**
+ * Yaseen Docs (YAZ-4277 D1): the host's text editor for a text box. The engine
+ * places `root` over the box (position, zoom, rotation), and the canvas keeps
+ * drawing the box: the editor in `root` is invisible. The engine draws the
+ * caret and the selection from the canvas layout. Offsets are in the box's
+ * `originalText`.
+ */
+export type HostTextEditor = {
+  mount: (options: {
+    root: HTMLElement;
+    text: string;
+    /** The selection at start. */
+    selection: HostTextSelection;
+    onChange: (text: string) => void;
+    onSelectionChange: (selection: HostTextSelection) => void;
+  }) => HostTextEditorSession;
+};
+
+export type HostTextSelection = { anchor: number; head: number };
+
+export type HostTextEditorSession = {
+  /** A click or a drag on the box put the selection. */
+  setSelection: (selection: HostTextSelection) => void;
+  focus: () => void;
+  destroy: () => void;
 };
 
 /**
@@ -865,7 +892,7 @@ export type HostLinks = {
    */
   dropLinks?: (files: readonly File[]) => string[] | null;
   /** The text editor's text or caret changed; null: the editor closed. */
-  onEditorChange?: (editor: HostTextEditor | null) => void;
+  onEditorChange?: (editor: HostTextEditorState | null) => void;
   /** A key in the text editor: true when the host took it (its open picker). */
   onEditorKeyDown?: (event: KeyboardEvent) => boolean;
 };
@@ -1046,6 +1073,8 @@ export interface ExcalidrawProps {
   generateLinkForSelection?: (id: string, type: "element" | "group") => string;
   /** Yaseen Docs (YAZ-4039 D7, D11): page links in text boxes. Keep it stable. */
   hostLinks?: HostLinks;
+  /** Yaseen Docs (YAZ-4277 D1): the editor of a text box. Keep it stable. Absent: the textarea. */
+  textEditor?: HostTextEditor;
   /**
    * Yaseen Docs (YAZ-4157 demo 6L): the host's own items in the board's
    * right-click menu, asked each time the menu opens on the canvas or on a

@@ -15,25 +15,13 @@ import {
 } from "@excalidraw/common";
 import { pointFrom, pointRotateRads, type Radians } from "@excalidraw/math";
 
-import {
-  getTextFromElements,
-  originalContainerCache,
-  updateBoundElements,
-  updateOriginalContainerCache,
-} from "@excalidraw/element";
+import { getTextFromElements } from "@excalidraw/element";
 
-import { LinearElementEditor } from "@excalidraw/element";
-import { bumpVersion } from "@excalidraw/element";
 import {
-  getBoundTextElementId,
   getContainerElement,
   getTextElementAngle,
-  redrawTextBoundingBox,
-  getBoundTextMaxHeight,
   getBoundTextMaxWidth,
   getTextLayoutMaxWidth,
-  computeContainerDimensionForBoundText,
-  computeBoundTextPosition,
   getBoundTextElement,
 } from "@excalidraw/element";
 import { getTextWidth } from "@excalidraw/element";
@@ -57,17 +45,11 @@ import {
 
 import { normalizeText } from "@excalidraw/element";
 import { wrapText } from "@excalidraw/element";
-import {
-  isArrowElement,
-  isBoundToContainer,
-  isTextElement,
-} from "@excalidraw/element";
+import { isBoundToContainer, isTextElement } from "@excalidraw/element";
 
 import type { StyledVisualLine } from "@excalidraw/element";
 
 import type {
-  ExcalidrawLinearElement,
-  ExcalidrawTextElementWithContainer,
   ExcalidrawTextElement,
   NonDeleted,
   ExcalidrawTextContainer,
@@ -107,6 +89,10 @@ import {
 } from "../textList";
 
 import { editEditableText, takeEditableEdit } from "./editableEdit";
+import {
+  fitEditedTextContainer,
+  submitEditedTextContainer,
+} from "./editedTextContainer";
 import { getPendingTextStyle, takePendingTextStyle } from "./pendingTextStyle";
 import { textFieldKeyFor } from "../keyRemap";
 
@@ -122,7 +108,7 @@ import type { ParsedDataTranferList } from "../clipboard";
 import type App from "../components/App";
 import type { AppState } from "../types";
 
-const getTransform = (
+export const getTransform = (
   width: number,
   height: number,
   angle: number,
@@ -339,7 +325,6 @@ export const textWysiwyg = ({
       return;
     }
     const { textAlign, verticalAlign } = updatedTextElement;
-    const elementsMap = app.scene.getNonDeletedElementsMap();
     if (updatedTextElement && isTextElement(updatedTextElement)) {
       let coordX = updatedTextElement.x;
       let coordY = updatedTextElement.y;
@@ -355,78 +340,20 @@ export const textWysiwyg = ({
       let height = updatedTextElement.height;
 
       let maxWidth = updatedTextElement.width;
-      let maxHeight = updatedTextElement.height;
 
       if (container && updatedTextElement.containerId) {
-        if (isArrowElement(container)) {
-          const boundTextCoords =
-            LinearElementEditor.getBoundTextElementPosition(
-              container,
-              updatedTextElement as ExcalidrawTextElementWithContainer,
-              elementsMap,
-            );
-          coordX = boundTextCoords.x;
-          coordY = boundTextCoords.y;
-        }
-        const propertiesUpdated = textPropertiesUpdated(
+        const fit = fitEditedTextContainer(
+          app,
           updatedTextElement,
-          editable,
-        );
-
-        let originalContainerData;
-        if (propertiesUpdated) {
-          originalContainerData = updateOriginalContainerCache(
-            container.id,
-            container.height,
-          );
-        } else {
-          originalContainerData = originalContainerCache[container.id];
-          if (!originalContainerData) {
-            originalContainerData = updateOriginalContainerCache(
-              container.id,
-              container.height,
-            );
-          }
-        }
-
-        maxWidth = getBoundTextMaxWidth(container, updatedTextElement);
-        maxHeight = getBoundTextMaxHeight(
           container,
-          updatedTextElement as ExcalidrawTextElementWithContainer,
+          textPropertiesUpdated(updatedTextElement, editable),
         );
-
-        // autogrow container height if text exceeds
-        if (!isArrowElement(container) && height > maxHeight) {
-          const targetContainerHeight = computeContainerDimensionForBoundText(
-            height,
-            container.type,
-          );
-
-          app.scene.mutateElement(container, { height: targetContainerHeight });
-          updateBoundElements(container, app.scene);
+        if (!fit) {
           return;
-        } else if (
-          // autoshrink container height until original container height
-          // is reached when text is removed
-          !isArrowElement(container) &&
-          container.height > originalContainerData.height &&
-          height < maxHeight
-        ) {
-          const targetContainerHeight = computeContainerDimensionForBoundText(
-            height,
-            container.type,
-          );
-          app.scene.mutateElement(container, { height: targetContainerHeight });
-          updateBoundElements(container, app.scene);
-        } else {
-          const { x, y } = computeBoundTextPosition(
-            container,
-            updatedTextElement as ExcalidrawTextElementWithContainer,
-            elementsMap,
-          );
-          coordX = x;
-          coordY = y;
         }
+        coordX = fit.x;
+        coordY = fit.y;
+        maxWidth = fit.maxWidth;
       }
       const [viewportX, viewportY] = getViewportCoords(coordX, coordY);
 
@@ -1990,38 +1917,7 @@ export const textWysiwyg = ({
     if (!updateElement) {
       return;
     }
-    const container = getContainerElement(
-      updateElement,
-      app.scene.getNonDeletedElementsMap(),
-    );
-
-    if (container) {
-      if (editable.value.trim()) {
-        const boundTextElementId = getBoundTextElementId(container);
-        if (!boundTextElementId || boundTextElementId !== element.id) {
-          app.scene.mutateElement(container, {
-            boundElements: (container.boundElements || []).concat({
-              type: "text",
-              id: element.id,
-            }),
-          });
-        } else if (isArrowElement(container)) {
-          // updating an arrow label may change bounds, prevent stale cache:
-          bumpVersion(container);
-        }
-      } else {
-        app.scene.mutateElement(container, {
-          boundElements: container.boundElements?.filter(
-            (ele) =>
-              !isTextElement(
-                ele as ExcalidrawTextElement | ExcalidrawLinearElement,
-              ),
-          ),
-        });
-      }
-
-      redrawTextBoundingBox(updateElement, container, app.scene);
-    }
+    submitEditedTextContainer(app, updateElement, editable.value);
 
     onSubmit({
       viaKeyboard: submittedViaKeyboard,

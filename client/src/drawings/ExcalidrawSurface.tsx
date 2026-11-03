@@ -79,6 +79,7 @@ import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
 import { imageStudioSession, pickChip } from '../image-studio/imageStudioSession'
 import { openViewport, type DrawingScene } from './drawingScene'
 import { applyToolbarMode, loadExcalidraw, type ExcalidrawModule } from './engine'
+import { textBoxEditor } from './textBoxEditor'
 import { assembleExportCopy } from './exportDrawing'
 import { yaseenFormFactor } from './formFactor'
 import { applyFramesVisibility } from './framesVisibility'
@@ -790,6 +791,8 @@ export function ExcalidrawSurface({
         viewModeEnabled={readOnly ? true : undefined}
         keyBindings={keyBindings}
         hostLinks={links?.hostLinks}
+        // YAZ-4277 D1: a text box edits with the notes engine (`textBoxEditor.ts`)
+        textEditor={textBoxEditor}
         hostContextMenuItems={hostContextMenuItems}
         onExportPdf={exportPdf}
         onLinkOpen={onLinkOpen}

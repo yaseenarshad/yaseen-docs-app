@@ -18,7 +18,7 @@ import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import { linkPageName, type LinkLook, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { WIKILINK_PICKER_CLASS, WIKILINK_PICKER_CREATE_CLASS, WIKILINK_PICKER_ITEM_CLASS, addRowIcon, rowsFor, type PickerRow } from '../editor/wikilink/wikilinkPicker'
 
-/** The engine's `HostTextEditor`. */
+/** The engine's `HostTextEditorState`. */
 export interface PickerEditor {
   text: string
   caret: number
