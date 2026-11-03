@@ -10,6 +10,7 @@
 import { applyDarkModeFilter } from "@excalidraw/common";
 import { pointFrom, pointRotateRads } from "@excalidraw/math";
 
+import { getListMarkerMiddle } from "./textCheckbox";
 import { getFoldableLines, getFoldedLines } from "./textFolds";
 import { getLineHeightInPx, getLineWidth } from "./textMeasurements";
 import {
@@ -77,6 +78,8 @@ export type FoldArrowAnchor = Readonly<{
   /** The top of the item's first visual line. */
   top: number;
   lineHeight: number;
+  /** The height of its marker's middle (`getListMarkerMiddle`): the arrow centres on it. */
+  middle: number;
 }>;
 
 const NO_ANCHORS: readonly FoldArrowAnchor[] = [];
@@ -131,6 +134,7 @@ export const getFoldArrowAnchors = (
           (indentation ? getLineWidth(indentation, line.font) : 0),
         top: index * lineHeight,
         lineHeight,
+        middle: getListMarkerMiddle(element, index * lineHeight, lineHeight),
       });
     }
     anchors = found;
@@ -161,7 +165,7 @@ export const getFoldArrowBox = (
   size: number,
 ) => ({
   x: anchor.markerX - element.fontSize * FOLD_ARROW_GAP - size,
-  y: anchor.top + anchor.lineHeight / 2 - size / 2,
+  y: anchor.middle - size / 2,
   size,
 });
 

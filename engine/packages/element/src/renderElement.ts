@@ -93,7 +93,11 @@ import type {
   ElementsMap,
 } from "./types";
 import { getTextHighlightFill } from "./textRuns";
-import { CHECKLIST_DONE_ALPHA, getCheckboxGeometry } from "./textCheckbox";
+import {
+  CHECKLIST_DONE_ALPHA,
+  getCheckboxGeometry,
+  getListMarkerMiddle,
+} from "./textCheckbox";
 
 import type { StyledTextSegment } from "./textLineUnderlines";
 
@@ -635,20 +639,29 @@ const drawElementOnCanvas = (
             context.textAlign = "left";
             // YAZ-4100 3C: a right-to-left segment's letters and spaces in their order
             context.direction = lines[index].rtl ? "rtl" : "inherit";
-            if (segments.some((segment) => segment.checkbox === "done")) {
+            const box = segments.find((segment) => segment.checkbox);
+            if (box?.checkbox === "done") {
               doneLine = lines[index].logicalLine;
             }
-            const done = doneLine === lines[index].logicalLine;
+            // the letters after the box, not the indent before it
+            const doneFrom =
+              doneLine === lines[index].logicalLine ? box?.end ?? 0 : Infinity;
             const alpha = context.globalAlpha;
             for (const segment of segments) {
               if (segment.checkbox) {
                 drawCheckbox(
                   context,
-                  segment,
-                  lineStart + segment.x,
-                  index * lineHeightPx,
-                  lineHeightPx,
-                  element.fontSize,
+                  getCheckboxGeometry(
+                    segment,
+                    lineStart + segment.x,
+                    getListMarkerMiddle(
+                      element,
+                      index * lineHeightPx,
+                      lineHeightPx,
+                    ),
+                    element.fontSize,
+                  ),
+                  segment.checkbox === "done",
                   textColor,
                 );
                 continue;
@@ -674,6 +687,7 @@ const drawElementOnCanvas = (
                 : textColor;
               const x = lineStart + segment.x;
               // YAZ-4277 D4: a done item's letters, as notes show them
+              const done = segment.start >= doneFrom;
               context.globalAlpha = done ? alpha * CHECKLIST_DONE_ALPHA : alpha;
               context.fillText(segment.text, x, baseline);
               if (segment.underlined) {
@@ -740,14 +754,10 @@ const drawElementOnCanvas = (
 /** YAZ-4277 D4: a checklist marker drawn as a box; a done box has a tick. */
 const drawCheckbox = (
   context: CanvasRenderingContext2D,
-  segment: StyledTextSegment,
-  x: number,
-  lineTop: number,
-  lineHeightPx: number,
-  fontSize: number,
+  box: ReturnType<typeof getCheckboxGeometry>,
+  done: boolean,
   color: string,
 ) => {
-  const box = getCheckboxGeometry(segment, x, lineTop, lineHeightPx, fontSize);
   context.save();
   context.strokeStyle = color;
   context.lineWidth = box.strokeWidth;
@@ -760,7 +770,7 @@ const drawCheckbox = (
     context.rect(box.x, box.y, box.size, box.size);
   }
   context.stroke();
-  if (segment.checkbox === "done") {
+  if (done) {
     context.beginPath();
     context.moveTo(box.tick[0][0], box.tick[0][1]);
     context.lineTo(box.tick[1][0], box.tick[1][1]);

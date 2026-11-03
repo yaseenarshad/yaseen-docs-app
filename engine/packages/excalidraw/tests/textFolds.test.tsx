@@ -259,9 +259,9 @@ describe("fold arrows (YAZ-4277 D5)", () => {
     const folded = await svgOf();
     const arrows = folded.querySelectorAll("path.fold-arrow");
     expect(arrows).toHaveLength(1);
-    // ▸ in its box (x −22 to −2 of the box, line 2): top left, right point, bottom left
+    // ▸ in its box (x −22 to −2 of the box, centred on line 2's bullet): top left, right point, bottom left
     expect(arrows[0].getAttribute("d")).toBe(
-      "M-14.8 32.5 L-9.2 37.5 L-14.8 42.5",
+      "M-14.8 31.22 L-9.2 36.22 L-14.8 41.22",
     );
     // the export grows to the left to hold the arrow
     expect(Number(folded.getAttribute("width"))).toBe(
@@ -273,7 +273,7 @@ describe("fold arrows (YAZ-4277 D5)", () => {
 // "Tasks:" then two items at fontSize 20: line 1 (y 125 to 150) and line 2
 // (y 150 to 175). The box (12.4 wide) is centred on the 10 px marker letter:
 // x 98.8 to 111.2, y 131.3 to 143.7 on line 1.
-const LIST = "Tasks:\n☐ open item\n☑ done item";
+const LIST = "Tasks:\n☐ open item\n☑ done item\n    ☑ sub";
 const BOX = { x: 105, y: 137.5 };
 
 describe("checklists on the canvas (YAZ-4277 D4)", () => {
@@ -290,15 +290,21 @@ describe("checklists on the canvas (YAZ-4277 D4)", () => {
 
   it("a click on the box ticks only that line, as one undo step, with no edit", () => {
     mouse.clickAt(BOX.x, BOX.y);
-    expect(getText().originalText).toBe("Tasks:\n☑ open item\n☑ done item");
+    expect(getText().originalText).toBe(
+      "Tasks:\n☑ open item\n☑ done item\n    ☑ sub",
+    );
     expect(h.state.editingTextElement).toBeNull();
     expect(API.getSelectedElements()).toEqual([]);
 
     mouse.clickAt(BOX.x, BOX.y + 25);
-    expect(getText().originalText).toBe("Tasks:\n☑ open item\n☐ done item");
+    expect(getText().originalText).toBe(
+      "Tasks:\n☑ open item\n☐ done item\n    ☑ sub",
+    );
 
     Keyboard.undo();
-    expect(getText().originalText).toBe("Tasks:\n☑ open item\n☑ done item");
+    expect(getText().originalText).toBe(
+      "Tasks:\n☑ open item\n☑ done item\n    ☑ sub",
+    );
     Keyboard.undo();
     expect(getText().originalText).toBe(LIST);
   });
@@ -315,17 +321,20 @@ describe("checklists on the canvas (YAZ-4277 D4)", () => {
 
   it("the SVG export draws the boxes, a tick on the done one, and the done look", async () => {
     const svg = await svgOf();
-    expect(svg.querySelectorAll("rect.checkbox")).toHaveLength(2);
-    expect(svg.querySelectorAll("path.checkbox-tick")).toHaveLength(1);
+    expect(svg.querySelectorAll("rect.checkbox")).toHaveLength(3);
+    expect(svg.querySelectorAll("path.checkbox-tick")).toHaveLength(2);
     const words = [...svg.querySelectorAll("tspan")].map((tspan) => [
       tspan.textContent,
       tspan.getAttribute("text-decoration"),
       tspan.getAttribute("fill-opacity"),
     ]);
-    // no marker letter is drawn; the done item is struck and dimmed
+    // no marker letter is drawn; the done items are struck and dimmed, but
+    // not the indent before a nested item's box
     expect(words).toEqual([
       ["open item", null, null],
       ["done item", "line-through", "0.55"],
+      ["    ", null, null],
+      ["sub", "line-through", "0.55"],
     ]);
   });
 });

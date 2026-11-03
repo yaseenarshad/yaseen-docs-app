@@ -5,6 +5,7 @@
  * the notes' done look: its letters at 55% (`--list-done-color` in the notes'
  * `bullets.css`) with a strike line. A click on the box ticks it.
  */
+import { getVerticalOffset } from "@excalidraw/common";
 import { pointFrom, pointRotateRads } from "@excalidraw/math";
 
 import { getLineHeightInPx, getLineWidth } from "./textMeasurements";
@@ -25,20 +26,34 @@ export const CHECKLIST_DONE_ALPHA = 0.55;
 const CHECKBOX_SIZE = 0.62;
 
 /**
- * The drawn box of a checklist segment that starts at `x` on a line that
- * starts at `lineTop`: centred on the marker letter, and on the line.
+ * The height of a list marker's middle in a line that starts at `lineTop`:
+ * a third of the text size above the baseline, where `•` and `○` sit. The
+ * checklist boxes and the fold arrows centre on it, so they line up with the
+ * letters, not with the line's box.
+ */
+export const getListMarkerMiddle = (
+  element: Pick<ExcalidrawTextElement, "fontFamily" | "fontSize">,
+  lineTop: number,
+  lineHeightPx: number,
+) =>
+  lineTop +
+  getVerticalOffset(element.fontFamily, element.fontSize, lineHeightPx) -
+  element.fontSize * 0.32;
+
+/**
+ * The drawn box of a checklist segment that starts at `x`, centred on the
+ * marker letter and on `middle` (`getListMarkerMiddle`).
  */
 export const getCheckboxGeometry = (
   segment: Pick<StyledTextSegment, "text" | "font">,
   x: number,
-  lineTop: number,
-  lineHeightPx: number,
+  middle: number,
   fontSize: number,
 ) => {
   const size = fontSize * CHECKBOX_SIZE;
   const markerWidth = getLineWidth(segment.text.trimEnd(), segment.font);
   const left = x + Math.max(0, (markerWidth - size) / 2);
-  const top = lineTop + (lineHeightPx - size) / 2;
+  const top = middle - size / 2;
   return {
     x: left,
     y: top,
@@ -100,8 +115,7 @@ export const getTextCheckboxAt = (
     segment,
     getStyledVisualLineStart(line, element.width, element.textAlign) +
       segment.x,
-    lineIndex * lineHeightPx,
-    lineHeightPx,
+    getListMarkerMiddle(element, lineIndex * lineHeightPx, lineHeightPx),
     element.fontSize,
   );
   // a little more than the box, so a quick click lands

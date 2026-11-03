@@ -41,6 +41,7 @@ import {
 import {
   CHECKLIST_DONE_ALPHA,
   getCheckboxGeometry,
+  getListMarkerMiddle,
   getFoldArrowAnchors,
   getFoldArrowBox,
   getFoldArrowPoints,
@@ -836,10 +837,15 @@ const renderElementToSvg = (
             element.textAlign,
           );
           if (segments) {
-            if (segments.some((segment) => segment.checkbox === "done")) {
+            const checkbox = segments.find((segment) => segment.checkbox);
+            if (checkbox?.checkbox === "done") {
               doneLine = lines[i].logicalLine;
             }
-            const done = doneLine === lines[i].logicalLine;
+            // the letters after the box, not the indent before it
+            const doneFrom =
+              doneLine === lines[i].logicalLine
+                ? checkbox?.end ?? 0
+                : Infinity;
             // YAZ-3718 D1: one <tspan> for each styled segment, placed as on canvas
             for (const segment of segments) {
               if (segment.checkbox) {
@@ -847,8 +853,7 @@ const renderElementToSvg = (
                 const box = getCheckboxGeometry(
                   segment,
                   lineStart + segment.x,
-                  i * lineHeightPx,
-                  lineHeightPx,
+                  getListMarkerMiddle(element, i * lineHeightPx, lineHeightPx),
                   element.fontSize,
                 );
                 const color = applyDarkModeFilter(
@@ -986,6 +991,7 @@ const renderElementToSvg = (
                 text.appendChild(tspan);
                 continue;
               }
+              const done = segment.start >= doneFrom;
               tspan.textContent = segment.text;
               // YAZ-4100 3C: a right-to-left text starts at its right edge
               tspan.setAttribute(
