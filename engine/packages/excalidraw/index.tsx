@@ -406,6 +406,12 @@ export {
 } from "@excalidraw/element";
 
 export { getTextFromElements } from "@excalidraw/element";
+// YAZ-4247: the Docs app's "New text size on screen".
+export {
+  setNewTextScreenSize,
+  setNewTextWrapMargin,
+  DEFAULT_NEW_TEXT_SCREEN_SIZE,
+} from "./textCreation";
 export { isInvisiblySmallElement } from "@excalidraw/element";
 
 export { defaultLang, useI18n, languages } from "./i18n";

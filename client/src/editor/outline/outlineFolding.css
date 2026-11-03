@@ -8,9 +8,10 @@
 
 .outline-toggle {
   position: absolute;
-  left: -18px;
+  /* At most one level wide (the YAZ-3818 demo: Bullet indent can be 8px), so it stays in the parent's gutter. */
+  left: calc(-1 * min(18px, var(--list-indent, 18px)));
   top: var(--list-label-offset, 0px);
-  width: 18px;
+  width: min(18px, var(--list-indent, 18px));
   height: var(--list-label-height, 32px);
   padding: 0;
   border: 0;

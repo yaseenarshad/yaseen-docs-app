@@ -377,7 +377,11 @@ import {
 } from "../actions/actionFrame";
 import { createRedoAction, createUndoAction } from "../actions/actionHistory";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
-import { getResponsiveTextFontSize } from "../textCreation";
+import {
+  getNewTextWrapMargin,
+  getResponsiveTextFontSize,
+  wrapWidthAtEdge,
+} from "../textCreation";
 import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 import { ActionManager } from "../actions/manager";
 import { actions } from "../actions/register";
@@ -5882,6 +5886,26 @@ class App extends React.Component<AppProps, AppState> {
     },
   );
 
+  /**
+   * Where a click-started text starts to wrap, in scene units (YAZ-4247): the
+   * right edge of the visible canvas (past the side panels), less the app's
+   * "Wrap new text before the edge" margin in screen px.
+   */
+  private getVisibleSceneRight = () => {
+    const right = this.viewport.getOffsets({ padding: 0 }).right ?? 0;
+    return viewportCoordsToSceneCoords(
+      {
+        clientX:
+          this.state.offsetLeft +
+          this.state.width -
+          right -
+          getNewTextWrapMargin(),
+        clientY: this.state.offsetTop,
+      },
+      this.state,
+    ).x;
+  };
+
   private startTextEditingFromHotkey = () => {
     const viewportOffsets = this.viewport.getOffsets({ padding: 0 });
     const left = viewportOffsets.left ?? 0;
@@ -7042,18 +7066,42 @@ class App extends React.Component<AppProps, AppState> {
         // Not sure why we include deleted elements as well hence using deleted elements map
         ...this.scene.getElementsIncludingDeleted().map((_element) => {
           if (_element.id === element.id && isTextElement(_element)) {
+            const container = getContainerElement(_element, elementsMap);
+            // returns (wrapped) text and new dimensions; YAZ-3718 D1: laid
+            // out with the next runs, so the canvas reuses this layout
+            let next: ExcalidrawTextElement = { ..._element, ...nextStyles };
+            let dimensions = refreshTextDimensions(
+              next,
+              container,
+              elementsMap,
+              nextOriginalText,
+            );
+            // YAZ-4247: a click-started text that grows past the right edge of
+            // the visible canvas takes the room left as its width and wraps.
+            const wrapAt =
+              !container && next.autoResize && dimensions
+                ? wrapWidthAtEdge(
+                    dimensions.x,
+                    dimensions.width,
+                    this.getVisibleSceneRight(),
+                    next.fontSize,
+                  )
+                : null;
+            if (wrapAt !== null) {
+              next = { ...next, x: dimensions!.x, autoResize: false, width: wrapAt };
+              dimensions = refreshTextDimensions(
+                next,
+                container,
+                elementsMap,
+                nextOriginalText,
+              );
+            }
             return newElementWith(_element, {
               originalText: nextOriginalText,
               ...nextStyles,
+              ...(wrapAt === null ? {} : { autoResize: false }),
               isDeleted: isDeleted ?? _element.isDeleted,
-              // returns (wrapped) text and new dimensions; YAZ-3718 D1: laid
-              // out with the next runs, so the canvas reuses this layout
-              ...refreshTextDimensions(
-                { ..._element, ...nextStyles },
-                getContainerElement(_element, elementsMap),
-                elementsMap,
-                nextOriginalText,
-              ),
+              ...dimensions,
             });
           }
           return _element;
@@ -8181,6 +8229,11 @@ class App extends React.Component<AppProps, AppState> {
           sceneY,
           insertAtParentCenter: !event.altKey,
           container: container || null,
+          // YAZ-4247: a new free text from a double click is sized by the zoom
+          // too, as from the text tool and its key
+          newTextFontSize: container
+            ? undefined
+            : getResponsiveTextFontSize(this.state.zoom.value),
         });
       }
     }

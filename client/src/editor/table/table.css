@@ -86,7 +86,7 @@
    (`--table-band`, YAZ-4167, below) is a layer over it, so the fill shows under the band. */
 .milkdown .ProseMirror .milkdown-table-block :is(th, td) {
   background-color: var(--table-cell-tint, transparent);
-  background-image: var(--table-band, none), var(--table-past, none);
+  background-image: var(--table-note-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none);
 }
 
 /* Header row: shaded by default, plain on request. */
@@ -134,6 +134,22 @@
    zero-height anchor (YAZ-4091) goes right before it. */
 .milkdown .milkdown-list-item-block > li > .children > .content-dom > .milkdown-table-block:is(:first-child, .outline-toggle + *, :is(:first-child, .outline-toggle + *).table-zoom-anchor + *) {
   margin-top: 0;
+}
+
+/* Bullets in a cell and in an open cell note card are compact (the YAZ-3818 demo): space is short there. Each setting
+   moves one thing (Settings › Editor › Tables, set on `.app`): `--cell-bullet-indent` is the step from a level to its
+   child (20px), `--cell-bullet-gap` the space from the dot's column to the text (4px); the dot's column is a fixed
+   16px. bullets.css, guideLines.css and bulletThreading.css read `--list-indent`, `--list-label-gap` and
+   `--list-gutter`, so the dots, the guide lines and the thread move together; Crepe's li gap is a fixed 10px, so it
+   reads the gap here too. */
+.milkdown .ProseMirror :is(.milkdown-table-block :is(th, td), .cell-note--open) {
+  --list-label-gap: var(--cell-bullet-gap, 4px);
+  --list-indent: var(--cell-bullet-indent, 20px);
+  --list-gutter: 16px;
+}
+
+.milkdown .ProseMirror :is(.milkdown-table-block :is(th, td), .cell-note--open) .milkdown-list-item-block > li {
+  gap: var(--list-label-gap);
 }
 
 /* Row height: Crepe's cells are 4px top and bottom (normal). */
@@ -259,7 +275,7 @@
 
 .milkdown .ProseMirror .milkdown-table-block :is(.table-frozen-row > *, .table-frozen-col) {
   background-color: var(--bg);
-  background-image: var(--table-band, none), var(--table-past, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
+  background-image: var(--table-note-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
 }
 
 /* Calendar tables (YAZ-4162 D2, D6, D14, `tableCalendar.ts`). The now row carries `--table-now` (0–1, how far
@@ -285,11 +301,11 @@
 }
 
 .milkdown .ProseMirror .milkdown-table-block .table-now-row > * {
-  background-image: var(--table-now-line), var(--table-now-tint), var(--table-band, none), var(--table-now-under, none);
+  background-image: var(--table-note-mark, none), var(--table-open-ring, none), var(--table-now-line), var(--table-now-tint), var(--table-band, none), var(--table-now-under, none);
 }
 
 .milkdown .ProseMirror .milkdown-table-block .table-now-row > :first-child {
-  background-image: var(--table-now-dot), var(--table-now-line), var(--table-now-tint), var(--table-band, none), var(--table-now-under, none);
+  background-image: var(--table-note-mark, none), var(--table-open-ring, none), var(--table-now-dot), var(--table-now-line), var(--table-now-tint), var(--table-band, none), var(--table-now-under, none);
 }
 
 /* A frozen cell paints its tint as a layer over the page colour (above): it stays under the mark. */
@@ -353,14 +369,22 @@
    (`table-band-row`, one decoration) or the mouse (`:hover`, never the header row), its first cell bold.
    `data-table-row-band` on `.app` (Settings › Editor › Tables › Row band) picks all tables, calendar tables or
    none (`off` has no rule). The band is `--table-band`, a background layer each cell rule paints (above): a fill
-   shows under it, a frozen cell stays sticky, and the now mark's line and tint paint over it on the same row. */
-[data-table-row-band='all'] .milkdown .ProseMirror .milkdown-table-block :is(.table-band-row, tr:not(:first-child):hover),
-[data-table-row-band='calendar'] .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] :is(.table-band-row, tr:not(:first-child):hover) {
-  --table-band: linear-gradient(color-mix(in srgb, var(--accent) 10%, transparent), color-mix(in srgb, var(--accent) 10%, transparent));
+   shows under it, a frozen cell stays sticky, and the now mark's line and tint paint over it on the same row.
+   The YAZ-3818 demo: its colour (`--table-band-colour`, the accent by default) and strength (`--table-band-strength`,
+   10%) are settings on `.app`, and `data-table-band-rows` there leaves out the caret's row (`mouse`) or the mouse's
+   (`caret`). */
+[data-table-row-band='all']:not([data-table-band-rows='mouse']) .milkdown .ProseMirror .milkdown-table-block .table-band-row,
+[data-table-row-band='all']:not([data-table-band-rows='caret']) .milkdown .ProseMirror .milkdown-table-block tr:not(:first-child):hover,
+[data-table-row-band='calendar']:not([data-table-band-rows='mouse']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] .table-band-row,
+[data-table-row-band='calendar']:not([data-table-band-rows='caret']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] tr:not(:first-child):hover {
+  --table-band: linear-gradient(color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent), color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent));
 }
 
-[data-table-row-band='all'] .milkdown .ProseMirror .milkdown-table-block :is(.table-band-row, tr:not(:first-child):hover) > :first-child,
-[data-table-row-band='calendar'] .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] :is(.table-band-row, tr:not(:first-child):hover) > :first-child {
+/* Bold first cell (the YAZ-3818 demo): off keeps the band, with no bold first cell. */
+[data-table-row-band='all']:not([data-table-band-rows='mouse']):not([data-table-band-bold='off']) .milkdown .ProseMirror .milkdown-table-block .table-band-row > :first-child,
+[data-table-row-band='all']:not([data-table-band-rows='caret']):not([data-table-band-bold='off']) .milkdown .ProseMirror .milkdown-table-block tr:not(:first-child):hover > :first-child,
+[data-table-row-band='calendar']:not([data-table-band-rows='mouse']):not([data-table-band-bold='off']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] .table-band-row > :first-child,
+[data-table-row-band='calendar']:not([data-table-band-rows='caret']):not([data-table-band-bold='off']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] tr:not(:first-child):hover > :first-child {
   font-weight: 600;
 }
 
@@ -588,12 +612,253 @@
   color: var(--fg-muted);
 }
 
+/* The open cell note: a card just under its cell, right-aligned to it (the YAZ-3818 demo, `cellNoteCard.ts`). The note
+   block itself, taken out of the flow, so nothing on the page moves; `cellNoteCard.ts` sets its place on the editor's
+   `.milkdown` box. The link hover card's look (`.cell-note-preview` below). */
+.milkdown .ProseMirror .cell-note.cell-note--open {
+  display: block;
+  position: absolute;
+  z-index: 5;
+  top: var(--cell-note-card-top, 0);
+  left: var(--cell-note-card-left, 0);
+  box-sizing: border-box;
+  /* Rounds 2 and 3 of the demo: the width a resize set, or 340px; the height `cellNoteCard.ts` keeps (it only grows
+     with the content, and only a resize makes it smaller), at most the visible editor area below its top. Past that
+     cap, or after a resize cut the content off, it scrolls inside. */
+  width: var(--cell-note-card-width, 340px);
+  height: var(--cell-note-card-height, auto);
+  max-width: 100%;
+  max-height: var(--cell-note-card-max-height, 50vh);
+  overflow: auto;
+  margin: 0;
+  /* The body's inset (round 2 of the demo): 20px on the left holds a top-level bullet's fold arrow (18px, left of the
+     dot, `outlineFolding.css`), so the arrows, dots and guide lines sit inside the card. */
+  padding: 0 12px 8px 20px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  color: var(--fg);
+}
+
+.milkdown .ProseMirror .cell-note--open > .cell-note-card__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* A title bar, as a window's (round 2 of the demo): the sidebar's grey, the card's full width; the card's rounded
+     corners clip it (its overflow). */
+  margin: 0 -12px 8px -20px;
+  padding: 5px 6px 5px 12px;
+  background: var(--bg-side);
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  user-select: none;
+  cursor: grab;
+}
+
+/* A drag of the card's head or of a grip (round 2 of the demo): its cursor everywhere until the drop. */
+.milkdown.cell-note-card-tracking,
+.milkdown.cell-note-card-tracking * {
+  cursor: var(--cell-note-card-cursor) !important;
+}
+
+/* The card's resize grips (round 2 of the demo, `cellNoteCard.ts`): a frame over the card, beside the editable DOM;
+   only its thin edges and corner squares take the pointer. */
+.milkdown > .cell-note-card-grips {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.milkdown > .cell-note-card-grips[data-show='false'] {
+  display: none;
+}
+
+.cell-note-card-grips > [data-grip] {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.cell-note-card-grips > [data-grip='n'] { top: -3px; left: 6px; right: 6px; height: 6px; cursor: ns-resize; }
+.cell-note-card-grips > [data-grip='s'] { bottom: -3px; left: 6px; right: 6px; height: 6px; cursor: ns-resize; }
+.cell-note-card-grips > [data-grip='e'] { right: -3px; top: 6px; bottom: 6px; width: 6px; cursor: ew-resize; }
+.cell-note-card-grips > [data-grip='w'] { left: -3px; top: 6px; bottom: 6px; width: 6px; cursor: ew-resize; }
+.cell-note-card-grips > [data-grip='nw'] { top: -6px; left: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
+.cell-note-card-grips > [data-grip='se'] { bottom: -6px; right: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
+.cell-note-card-grips > [data-grip='ne'] { top: -6px; right: -6px; width: 12px; height: 12px; cursor: nesw-resize; }
+.cell-note-card-grips > [data-grip='sw'] { bottom: -6px; left: -6px; width: 12px; height: 12px; cursor: nesw-resize; }
+
+.cell-note-card__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "All notes" (round 4 of the demo): the note itself hides; the list of every note shows, read-only, selectable. */
+.milkdown .ProseMirror .cell-note--open.cell-note--all > :not(.cell-note-card__head, .cell-note-card__all) {
+  display: none;
+}
+
+.cell-note-card__all {
+  user-select: text;
+  font-size: 0.92em;
+  line-height: 1.45;
+}
+
+.cell-note-card__all-header {
+  display: block;
+  width: 100%;
+  margin: 10px 0 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cell-note-card__all-header:first-child {
+  margin-top: 2px;
+}
+
+.cell-note-card__all-header:hover {
+  color: var(--accent);
+}
+
+.cell-note-card__all-line {
+  min-height: 1.45em;
+  white-space: pre-wrap;
+}
+
+.cell-note-card__copy {
+  flex: none;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.cell-note-card__copy:hover {
+  color: var(--fg);
+}
+
+/* The pin (round 2 of the demo): the accent colour and filled while pinned. */
+.cell-note-card__pin,
+.cell-note-card__all-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cell-note-card__pin svg,
+.cell-note-card__all-toggle svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+}
+
+.cell-note-card__pin[aria-pressed='true'],
+.cell-note-card__all-toggle[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.cell-note-card__pin[aria-pressed='true'] svg {
+  fill: currentColor;
+}
+
+/* The pin, and previous and next note around "2 of 5" (round 2 of the demo). */
+.cell-note-card__pin,
+.cell-note-card__all-toggle,
+.cell-note-card__step {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cell-note-card__pin:hover,
+.cell-note-card__all-toggle:hover,
+.cell-note-card__step:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: var(--fg);
+}
+
+.cell-note-card__step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.cell-note-card__pin:focus-visible,
+.cell-note-card__all-toggle:focus-visible,
+.cell-note-card__step:focus-visible {
+  outline: 2px solid var(--crepe-color-primary);
+  outline-offset: 1px;
+}
+
+.cell-note-card__count {
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cell-note-card__close {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cell-note-card__close:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: var(--fg);
+}
+
+.cell-note-card__close:focus-visible {
+  outline: 2px solid var(--crepe-color-primary);
+  outline-offset: 1px;
+}
+
 /* A cell note's mark (YAZ-3818 D8): a small triangle in the cell's top-right corner, as in Google Sheets. The label
    never shows: the `sup` keeps its place in the line at font size 0, so the caret moves as before. The triangle is a
    background on the cell itself (`has-cell-note`, from the cell note plugin's state, 5A-18): the same corner in every
    cell, one that starts with a list too, at any padding. The cell's `::before` and `::after` are the fill handle's and
-   the selection's. A click on the corner opens the cell note (`zoom.ts`), a rest of the pointer there shows its first
-   lines (`cellNotePreview.ts`). */
+   the selection's. It is ONE MORE LAYER of the cells' background lists (`--table-note-mark`, the top one in each rule
+   above), so the row band, past rows, the now mark and a frozen cell's tint still show under it (the YAZ-3818 demo):
+   a full-size gradient at 225° that paints only the corner's 8 px triangle (5.66 px = 8 / √2 along the gradient line),
+   so no rule needs a size or position list. A click on the corner opens the cell note (`cellNoteCard.ts`), a rest of
+   the pointer on the cell shows its first lines (`cellNotePreview.ts`). */
 :root {
   --table-cell-note-mark: #e8a317;
 }
@@ -606,41 +871,59 @@
   font-size: 0;
 }
 
+/* Quiet at rest (round 3 of the demo): a 6px triangle (4.24px = 6 / √2) in the muted text colour at 35%; full, 8px and
+   the mark colour, while the pointer is over the cell or its note is open. The click still takes the 10px corner. */
 .milkdown .ProseMirror .milkdown-table-block :is(th, td).has-cell-note {
-  background-image: linear-gradient(to bottom left, var(--table-cell-note-mark) 50%, transparent 50%);
-  background-position: top right;
-  background-size: 8px 8px;
-  background-repeat: no-repeat;
+  --table-note-mark: linear-gradient(225deg, color-mix(in srgb, var(--fg-muted) 35%, transparent) 4.24px, transparent 4.24px);
 }
 
-/* A frozen cell paints its tint as a background image (above): the triangle goes over it. */
-.milkdown .ProseMirror .milkdown-table-block :is(.table-frozen-row > *, .table-frozen-col):is(th, td).has-cell-note {
-  background-image:
-    linear-gradient(to bottom left, var(--table-cell-note-mark) 50%, transparent 50%),
-    linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
-  background-position: top right, 0 0;
-  background-size: 8px 8px, auto;
+.milkdown .ProseMirror .milkdown-table-block :is(th, td).has-cell-note:is(:hover, .cell-note-cell--open) {
+  --table-note-mark: linear-gradient(225deg, var(--table-cell-note-mark) 5.66px, transparent 5.66px);
+}
+
+/* The cell whose note is open as a card (round 2 of the demo, `cellNoteCard.ts`): a 2px ring in the accent colour. A
+   background layer, as the triangle is, right under it: over the fill, the row band, past rows, the now mark and a
+   frozen cell's tint, under the triangle. Four full-size gradients, each painting one 2px edge, so no rule needs a
+   size list. */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td).cell-note-cell--open {
+  --table-open-ring:
+    linear-gradient(to bottom, var(--accent) 2px, transparent 2px),
+    linear-gradient(to top, var(--accent) 2px, transparent 2px),
+    linear-gradient(to right, var(--accent) 2px, transparent 2px),
+    linear-gradient(to left, var(--accent) 2px, transparent 2px);
 }
 
 /* The "Add cell note" button (D8, `cellNoteButton.ts`): one element in the editor's `.milkdown` box, beside the
-   editable DOM, put over the top-right corner of the cell under the pointer or of the caret's cell, on a cell with no
-   cell note (5A-7). Crepe's surface, as the table's own handles. Over a frozen cell (`z-index: 1`). */
+   editable DOM, put over the top-right corner of the cell under the pointer or of the caret's cell (5A-7); "Edit cell
+   note" with a pencil on a cell with a note, under the pointer only (round 2 of the demo). Over a frozen cell
+   (`z-index: 1`). A light 18px box (Crepe's surface, a 1px border) with a 12px icon in a 22px target (the YAZ-3818
+   demo); the column handle sits centred over the top edge, the row handle on the left edge, so the top-right corner is
+   free. */
 .milkdown > .cell-note-button {
   position: absolute;
   z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 0;
+  background: transparent;
+  color: var(--crepe-color-outline);
+  opacity: 0.85;
+  cursor: pointer;
+}
+
+/* The drawn box: 18px, Crepe's surface and a 1px border, inside the 22px target. */
+.milkdown > .cell-note-button::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--crepe-color-surface);
-  box-shadow: var(--crepe-shadow-1);
-  color: var(--crepe-color-outline);
-  opacity: 0.7;
-  cursor: pointer;
 }
 
 .milkdown > .cell-note-button[data-show='false'] {
@@ -649,12 +932,16 @@
 
 .milkdown > .cell-note-button:hover {
   opacity: 1;
+}
+
+.milkdown > .cell-note-button:hover::before {
   background: var(--crepe-color-hover);
 }
 
 .milkdown > .cell-note-button svg {
-  width: 14px;
-  height: 14px;
+  position: relative;
+  width: 12px;
+  height: 12px;
 }
 
 /* A cell note's preview (D14, `cellNotePreview.ts`): the link hover card's look (`boardPreview.css` `.board-preview`),

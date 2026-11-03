@@ -567,6 +567,15 @@ export const CONTRACT = {
     onChanged: push<{ root: string }>('favorites:changed'),
   },
   /** A vault's one-row icon picks over `.yaseendocs/icons.json` (YAZ-3440 D8), by absolute path (`shared/vaultIcons.ts`); the name rules are `settings.sidebarIconRules`. */
+  /** The New… box's three place shortcuts over `.yaseendocs/new-places.json` (YAZ-4252 D3): absolute folders, null for an empty one. */
+  newPlaces: {
+    /** Three places; all null when the file is absent or malformed. Never creates anything. */
+    get: invoke<[root: string], Array<string | null>>('newPlaces:get', 1),
+    /** Replace the three; each must be inside `root` or null (→ `BAD_REQUEST`), a malformed file refuses (→ `INVALID_CONFIG`). Creates the dotfolder and file on the first write. */
+    set: invoke<[root: string, places: ReadonlyArray<string | null>], void>('newPlaces:set', 2),
+    /** Fired in every window after any change to a vault's new-places.json, own or external; filter by `root`. */
+    onChanged: push<{ root: string }>('newPlaces:changed'),
+  },
   icons: {
     /** The picks; none when the file is absent or malformed. Never creates anything. */
     get: invoke<[root: string], VaultIcons>('icons:get', 1),

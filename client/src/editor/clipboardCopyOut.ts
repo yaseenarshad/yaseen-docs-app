@@ -1,4 +1,4 @@
-import { editorViewOptionsCtx, prosePluginsCtx, schemaCtx } from '@milkdown/kit/core'
+import { editorViewCtx, editorViewOptionsCtx, prosePluginsCtx, schemaCtx } from '@milkdown/kit/core'
 import { createSlice } from '@milkdown/kit/ctx'
 import { DOMSerializer, Fragment, type Node as ProseNode, Slice } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, type Selection } from '@milkdown/kit/prose/state'
@@ -9,6 +9,7 @@ import { clipboardPlainText } from './clipboardPlainText'
 import { eachVisibleTextblock } from './lineSelection'
 import { rowShortcuts } from './noteKeys'
 import { getZoomedItemPos } from './outline/zoom'
+import { CELL_NOTES_ATTR, cellNotesMarkdown, copySerializer } from './table/cellNoteClipboard'
 import { isCellNote } from './table/cellNotes'
 import { FILL_WASH } from './table/colours'
 import { cellColor, cellValign, type TableColor } from './table/tableComment'
@@ -237,6 +238,9 @@ export const clipboardCopyOut = $prose((ctx) => {
     clipboardSerializer.serializeFragment = (fragment, options, target) => {
       const dom = serializeFragment(fragment, options, target)
       dom.firstElementChild?.setAttribute(APP_CLIPBOARD, 'true')
+      // The copied cells' cell notes, as Markdown in one attribute (YAZ-4206 D13): a paste in the app adds them.
+      const notes = ctx.isInjected(editorViewCtx) ? cellNotesMarkdown(fragment, ctx.get(editorViewCtx).state.doc, copySerializer(ctx)) : null
+      if (notes !== null) dom.firstElementChild?.setAttribute(CELL_NOTES_ATTR, notes)
       if (dom instanceof DocumentFragment) styleTables(dom)
       collapseTablesOf(options?.document)
       return dom

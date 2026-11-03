@@ -11,6 +11,8 @@ export interface SidebarRevealRequest {
    * row that shows does not move. It acts one time: a folder above it that opens again later scrolls nothing.
    */
   quiet?: boolean
+  /** "Rename file" from a tab's menu (YAZ-4248): once the row shows and flashes, the sidebar's own rename starts on it. */
+  rename?: boolean
 }
 
 export const SIDEBAR_REVEAL_MS = 3000

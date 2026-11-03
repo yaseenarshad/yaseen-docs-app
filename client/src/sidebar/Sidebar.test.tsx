@@ -1774,6 +1774,16 @@ describe('Show in sidebar — Files reveal (YAZ-1063)', () => {
     expect(dirRow(el, 'deep')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('"Rename file" from a tab (YAZ-4248): the row shows, as for "Show in sidebar", then its own rename field takes it, the name selected', async () => {
+    const { el } = await mount({ revealRequest: { id: 1, path: TARGET, rename: true } }, withDeepTree)
+    expect(dirRow(el, 'deep')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true')
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')!
+    expect(input.value).toBe('Note')
+    expect(document.activeElement).toBe(input)
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, 4])
+    expect(input.closest('.create-inline')?.classList.contains('create-inline--revealed')).toBe(true)
+  })
+
   it('reports one passive notice when the loaded Files tree cannot show the path (YAZ-2638 S32, S37: "Show in sidebar" on a row asks through this door)', async () => {
     const { props } = await mount({ revealRequest: { id: 1, path: '/v/Missing.md' } }, withDeepTree)
     expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t show "Missing" in Files — it is no longer there', 'error')

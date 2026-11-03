@@ -49,7 +49,7 @@ import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
 import type { VaultListsHere } from '../lists/useVaultListsHere'
 import { outermost, useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
-import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
+import { flashTreeRows, revealMissingMessage, SIDEBAR_REVEAL_MS, type SidebarRevealRequest } from './revealRow'
 import { HoverPreviewHost, useHoverPreview } from './HoverPreviewHost'
 import type { PreviewPopup } from './previewPlacement'
 import { useShareBadges } from '../share/useShareBadges'
@@ -325,9 +325,12 @@ export interface SidebarMenuRequest {
 /** One "open the name field for a new item in this folder" gesture (YAZ-3556 D4): the menu request's idiom. */
 export interface SidebarCreateRequest {
   id: number
-  kind: Exclude<EntryKind, 'dir'>
+  /** The New… box's kind (YAZ-4252 D1: a folder too). */
+  kind: EntryKind
   /** The folder, absolute: a vault's root or a folder of it. */
   dir: string
+  /** What the name field starts with (YAZ-4246): the rendered "New item name starts with" (YAZ-4252: a folder too). */
+  seed?: string
 }
 
 /** What App's ⌘C / ⌘X / ⌘V / ⌘⌫ listener may ask of the mounted sidebar (D6 amended, YAZ-1674; YAZ-3272 D20); each answers whether it acted. */
@@ -1080,8 +1083,16 @@ export function Sidebar({
     focusedRevealId.current = pendingReveal.id
     // A quiet reveal (YAZ-3440 D13) scrolls one time: a folder above it that opens again later moves nothing.
     if (pendingReveal.quiet === true && again) return
-    return flashTreeRows(bodyRef.current, pendingReveal.path, focus, { quiet: pendingReveal.quiet === true }) ?? undefined
+    const flashed = flashTreeRows(bodyRef.current, pendingReveal.path, focus, { quiet: pendingReveal.quiet === true }) ?? undefined
+    // "Rename file" from a tab's menu (YAZ-4248): the row's own rename, one time, as its right-click › Rename starts it.
+    if (pendingReveal.rename === true && !again) {
+      renameFlash.current = true
+      setRenamingEntry({ path: pendingReveal.path, kind: revealIsDir ? 'dir' : 'file', top: null })
+    }
+    return flashed
   }, [filesRevealReady, pendingReveal])
+  /** A rename that a tab's menu started (YAZ-4248): its field flashes as the row did (below, once `renaming` is known). */
+  const renameFlash = useRef(false)
 
   // ---- New note / new folder (GRO-2022): right-click menu → inline name input ----
 
@@ -1321,6 +1332,15 @@ export function Sidebar({
   }, [onOpenSetHere, onOpenVaultHere, onNotice])
 
   const { setRenamingEntry, startCreate, startCreateAt, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo)
+  // "Rename file" from a tab's menu (YAZ-4248): the rename field takes the row's place, so it flashes as the row did.
+  useEffect(() => {
+    if (!renameFlash.current || renaming === null || bodyRef.current === null) return
+    renameFlash.current = false
+    const field = bodyRef.current.querySelector<HTMLElement>('.create-inline')
+    field?.classList.add('create-inline--revealed')
+    const timer = setTimeout(() => field?.classList.remove('create-inline--revealed'), SIDEBAR_REVEAL_MS)
+    return () => clearTimeout(timer)
+  }, [renaming])
   // A create request (YAZ-3556 D4) is acted on one time, on Files, when the tree of its vault has landed: the field
   // mounts inside the folder's rows. App asks only for a folder it saw in that tree.
   const seenCreateId = useRef<number | null>(null)
@@ -1329,7 +1349,7 @@ export function Sidebar({
     if (forest === null || !trees.has(rootOf(createRequest.dir))) return
     seenCreateId.current = createRequest.id
     onCreateConsumed?.(createRequest.id)
-    startCreateAt(createRequest.kind, '', { targetDir: createRequest.dir, lens: 'files', top: null })
+    startCreateAt(createRequest.kind, createRequest.seed ?? '', { targetDir: createRequest.dir, lens: 'files', top: null })
   }, [createRequest, lens, forest, trees, rootOf, onCreateConsumed, startCreateAt])
 
   // The row goes when the index says so, as it came; only a refusal is said.

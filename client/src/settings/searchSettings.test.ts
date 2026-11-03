@@ -58,7 +58,7 @@ describe('settingCandidates', () => {
       // Settings › Notifications (YAZ-3303), under Appearance.
       ...['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds'],
       // Settings › Editor › Outline (YAZ-4094).
-      ...['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault'],
+      ...['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap'],
       'bulletThreading',
       'threadWidth',
       'threadColor',
@@ -73,6 +73,14 @@ describe('settingCandidates', () => {
       'outsideListPinned',
       // Settings › Editor › Tables (YAZ-4167 D16, YAZ-4162 D6, D14).
       'tableRowBand',
+      'tableBandColour',
+      'tableBandStrength',
+      'tableBandRows',
+      'tableBandBold',
+      'tableCellBulletIndent',
+      'tableCellBulletGap',
+      'tableCellNoteTemplate',
+      'tableCellNotePinned',
       'tableNowMark',
       'tableNowButton',
       'tableDimPast',
@@ -84,18 +92,20 @@ describe('settingCandidates', () => {
       'codeWrap',
       'codeMinimap',
       'codeLanguageHelpers',
-      // Settings › Excalidraw canvas (YAZ-3037).
-      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`),
+      // Settings › Drawings (YAZ-3037; "Excalidraw canvas" before the YAZ-3818 demo).
+      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`),
       // Settings › Images (YAZ-3038).
       'pixabayApiKey',
       'libraryFolder',
+      // Settings › Files & Links › New notes (YAZ-4246), its first group.
+      'newNoteLocation',
+      'newNoteTitleTemplate',
       'confirmDelete',
       'confirmRename',
       'newTabPlace',
       // YAZ-3943 demo 2 and round 3: where a new board keeps its pictures, and this Mac's allowed outside folders.
       'newBoardPictures',
       'allowedPictureFolders',
-      'newNoteLocation',
       // Settings › Files & Links › Daily notes (YAZ-3607): the switch, then the rows it shows.
       'dailyNotes',
       'dailyNoteFolder',
@@ -141,7 +151,7 @@ describe('settingCandidates', () => {
     expect(ids(settingCandidates(ctx())).filter((id) => REVIEW_ROWS.includes(id))).toEqual([])
   })
 
-  it('includes Storage and Sharing only with their hooks, after Sync and before Hotkeys; Excalidraw canvas and Images sit between Editor and Files & Links (YAZ-3028 merge)', () => {
+  it('includes Storage and Sharing only with their hooks, after Sync and before Hotkeys; Drawings and Images sit between Editor and Files & Links (YAZ-3028 merge)', () => {
     const storage: SettingsCtx['storage'] = { stats: null, failed: false, refresh: () => undefined, shrink: async () => ({ shrunk: 0, skipped: 0, bytesMoved: 0 }), lastShrink: null }
     const sharing: SettingsCtx['sharing'] = { root: '/v', status: null, rows: null, listError: null, now: 0, refresh: () => undefined, show: () => undefined }
     const sectionsOf = (c: SettingsCtx) => [...new Set(settingCandidates(c).map((h) => h.section.id))]
@@ -189,8 +199,14 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'trash'))).toEqual(['gestureSounds', 'hearSounds', 'confirmDelete', 'hotkey-app-trash'])
   })
 
+  it('"bold" and "row band" find Bold first cell (the YAZ-3818 demo)', () => {
+    expect(ids(searchSettings(settingCandidates(ctx()), 'bold first cell'))[0]).toBe('tableBandBold')
+    expect(ids(searchSettings(settingCandidates(ctx()), 'bold'))).toContain('tableBandBold')
+    expect(ids(searchSettings(settingCandidates(ctx()), 'row band'))).toContain('tableBandBold')
+  })
+
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'newNoteLocation', 'dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'dailyNoteOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'ids', 'duplicates', 'idLetters', 'oldIds'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'dailyNoteOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'ids', 'duplicates', 'idLetters', 'oldIds'])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
@@ -215,7 +231,7 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'hierarchy'))).toEqual(['sidebarLines', 'tocLines'])
     // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
     // Settings › Editor › Outline (YAZ-4094) names its four rows.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['hotkey-diagram-outline', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-diagram-colourOther', 'hotkey-drawing-colors'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['hotkey-diagram-outline', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-diagram-colourOther', 'hotkey-drawing-colors'])
     // "guide" names the guide lines' rows (YAZ-4094; Bullet threading's hint no longer says it: one name for one thing) and is a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'sidebarLines', 'sectionLines', 'tocLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403).
@@ -237,7 +253,8 @@ describe('searchSettings', () => {
 
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'section indent'))).toEqual(['sectionStep', 'sectionLines'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['lineSpacing', 'blockGap'])
+    // The note's bullet spacing (the YAZ-3818 demo) says "spacing" too.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['lineSpacing', 'blockGap', 'noteBulletIndent', 'noteBulletGap'])
   })
 
   it('matches on the group hint too: "guide lines" finds the three guide line rows of Outline (YAZ-4094); "threading" finds the three threading rows and the two Section indent rows, whose hint names Bullet threading (and the line style of the sidebar, whose hint does too, YAZ-3309 D7)', () => {

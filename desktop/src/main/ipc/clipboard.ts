@@ -21,6 +21,8 @@ export interface ClipboardHost {
   write(data: { text: string; html: string }): void
   /** The clipboard's text, for the note menu's Paste as (YAZ-3653). */
   readText(): string
+  /** The clipboard's HTML, for Paste as › Cells only (YAZ-4206 D18). */
+  readHTML(): string
   /** The note menu's Reveal in Finder for an image (YAZ-3727 D22): the native menu's row (`revealVaultImage`). */
   revealImage(src: string): Promise<void>
   rendererUrl: string
@@ -71,6 +73,9 @@ export function registerClipboardIpc(windows: Pick<WindowManagerIpc, 'idFor'>, h
       case 'paste-plain':
       case 'paste-markdown':
         return sender.send(SPECIAL.menuPasteAs, { mode: action.slice('paste-'.length), text: host.readText() })
+      // Cells only (YAZ-4206 D18): the cells are the HTML's table, so the HTML goes too.
+      case 'paste-cells':
+        return sender.send(SPECIAL.menuPasteAs, { mode: 'cells', text: host.readText(), html: host.readHTML() })
       // An image's rows (YAZ-3727 D22), as the native image menu's: Chromium copies the decoded pixels at the point
       // right-clicked, in the window's px (the page's px times the App size); Reveal takes only a vault image's `src`.
       case 'copy-image':

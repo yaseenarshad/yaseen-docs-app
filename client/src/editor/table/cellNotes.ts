@@ -3,8 +3,9 @@
  * GFM footnote labelled `cell-N` right under its table, `[^cell-1]: …`, with the mark `[^cell-1]` in the cell. GitHub
  * shows the mark in the cell and the note at the bottom of the page. A cell note holds what a body cell holds
  * (`CELL_CONTENT`, D1): a `cell-N` footnote with a heading, a quote, code or a table is no cell note and stays
- * Milkdown's `footnote_definition`, as does every other footnote. In the note view a cell note is hidden (`table.css`);
- * the hidden-line checks (`lineSelection.ts`) skip it through `isCellNoteHidden`.
+ * Milkdown's `footnote_definition`, as does every other footnote. In the note view a cell note is hidden (`table.css`),
+ * except the one open as a card beside its cell (`cellNoteCard.ts`, the YAZ-3818 demo); the hidden-line checks
+ * (`lineSelection.ts`) skip it through `isCellNoteHidden`.
  *
  * `notesFollowTables` (D12): after a change that adds or removes a table, a cell note or a cell note's mark, each cell
  * note goes right under the table that holds its mark, in the order of the marks. A cell note with no mark in a table
@@ -22,7 +23,6 @@ import type { FootnoteDefinition } from 'mdast'
 import { visit } from 'unist-util-visit'
 import { BR, CELL_CONTENT } from '../inlineBreaks'
 import { cellPosAround } from '../outline/listNodes'
-import { getZoomedItemPos } from '../outline/zoom'
 
 /** A cell note's label: `cell-1`, `cell-2`, … */
 export const CELL_NOTE_LABEL = /^cell-\d+$/
@@ -51,7 +51,7 @@ export const isCellNote = (node: ProseNode): boolean => node.type.name === 'cell
 export const isCellNoteMark = (node: ProseNode): boolean => node.type.name === 'footnote_reference' && CELL_NOTE_LABEL.test(node.attrs.label as string)
 
 /**
- * The cell note (D4): hidden in the note view, opened as a page by the bullet zoom (YAZ-3818 4B). It holds what a body
+ * The cell note (D4): hidden in the note view, opened as a card beside its cell (`cellNoteCard.ts`). It holds what a body
  * cell holds. Read from a `footnoteDefinition` labelled `cell-N`, written back as one.
  */
 export const cellNoteSchema = $nodeSchema('cell_note', () => ({
@@ -120,37 +120,42 @@ export const tableAround = (doc: ProseNode, cellPos: number): { pos: number; end
  * Add a cell note to the cell at `cellPos` (D4, D8): the mark at the END of the cell's first line (in a cell that
  * starts with a list, the first bullet's line), and a cell note with one empty line right under the table, among the
  * table's notes in the order of the marks. Find the note by its label (`notePosOf`): `notesFollowTables` may move it.
- * Declines on a cell that already has a cell note.
+ * Declines on a cell that already has a cell note. `blocks`: what the new note holds instead (the template, round 3 of
+ * the demo).
  */
 export const addCellNote =
-  (cellPos: number): Command =>
+  (cellPos: number, blocks?: readonly ProseNode[]): Command =>
   (state, dispatch) => {
-    const { doc, schema } = state
-    if (cellNoteOf(doc, cellPos) !== null) return false
-    let line = doc.nodeAt(cellPos)!
-    let linePos = cellPos
-    while (!line.isTextblock) {
-      line = line.firstChild!
-      linePos++
-    }
-    if (!dispatch) return true
-    const label = nextCellNoteLabel(doc)
-    const tr = state.tr.insert(linePos + line.nodeSize - 1, schema.nodes.footnote_reference.create({ label }))
-    const table = tableAround(tr.doc, cellPos)
-    const order = cellNoteLabelsIn(table.node)
-    const $end = tr.doc.resolve(table.end)
-    // Past the table's notes whose marks come first.
-    let at = table.end
-    for (let index = $end.index(); index < $end.parent.childCount; index++) {
-      const next = $end.parent.child(index)
-      const rank = isCellNote(next) ? order.indexOf(next.attrs.label as string) : -1
-      if (rank < 0 || rank > order.indexOf(label)) break
-      at += next.nodeSize
-    }
-    tr.insert(at, schema.nodes.cell_note.createAndFill({ label })!)
-    dispatch(tr)
+    if (cellNoteOf(state.doc, cellPos) !== null) return false
+    if (dispatch) dispatch(insertCellNote(state.tr, cellPos, blocks))
     return true
   }
+
+/** `addCellNote`'s steps, in `tr` (on its doc): the mark, and the note under the table. Returns `tr`. */
+export function insertCellNote(tr: Transaction, cellPos: number, blocks?: readonly ProseNode[]): Transaction {
+  const { schema } = tr.doc.type
+  let line = tr.doc.nodeAt(cellPos)!
+  let linePos = cellPos
+  while (!line.isTextblock) {
+    line = line.firstChild!
+    linePos++
+  }
+  const label = nextCellNoteLabel(tr.doc)
+  tr.insert(linePos + line.nodeSize - 1, schema.nodes.footnote_reference.create({ label }))
+  const table = tableAround(tr.doc, cellPos)
+  const order = cellNoteLabelsIn(table.node)
+  const $end = tr.doc.resolve(table.end)
+  // Past the table's notes whose marks come first.
+  let at = table.end
+  for (let index = $end.index(); index < $end.parent.childCount; index++) {
+    const next = $end.parent.child(index)
+    const rank = isCellNote(next) ? order.indexOf(next.attrs.label as string) : -1
+    if (rank < 0 || rank > order.indexOf(label)) break
+    at += next.nodeSize
+  }
+  tr.insert(at, (blocks === undefined ? null : schema.nodes.cell_note.createAndFill({ label }, blocks)) ?? schema.nodes.cell_note.createAndFill({ label })!)
+  return tr
+}
 
 /** Delete every mark labelled `label` and its cell note (4C calls it). Returns `tr`. */
 export function removeCellNote(tr: Transaction, label: string): Transaction {
@@ -188,8 +193,21 @@ export const cellNoteAround = ($pos: ResolvedPos): number | null => {
   return null
 }
 
-/** A cell note that holds one empty line: leaving its page removes it, and a save leaves it out (D15). */
-export const isEmptyCellNote = (note: ProseNode): boolean => note.childCount === 1 && note.firstChild!.isTextblock && note.firstChild!.content.size === 0
+/** The new cell note template's content as JSON (`cellNoteCard.ts`), or null when there is none: a note just so is empty. */
+let templateJson: string | null = null
+
+/** Set by the card when it makes a note from the template, cleared when the template changes (round 3 of the demo). */
+export function setCellNoteTemplateJson(json: string | null): void {
+  templateJson = json
+}
+
+/**
+ * A cell note that holds one empty line, or exactly the new note template (round 3 of the demo): closing its card
+ * removes it, and a save leaves it out (D15).
+ */
+export const isEmptyCellNote = (note: ProseNode): boolean =>
+  (note.childCount === 1 && note.firstChild!.isTextblock && note.firstChild!.content.size === 0) ||
+  (templateJson !== null && JSON.stringify(note.content.toJSON()) === templateJson)
 
 /**
  * The doc a save writes (D15): without each cell note that holds one empty line, and without its mark. Every route
@@ -223,6 +241,32 @@ export function cellNoteCrumbParts(doc: ProseNode, label: string): { column: str
   const header = $cell.index(-1) === 0
   return { column: words($cell.node(-1).firstChild!.maybeChild($cell.index())), row: header ? '' : words($cell.parent.firstChild) }
 }
+
+/** A cell note's title (D9), for its card and its preview: "Note: <column> · <row>", or "Note" when neither has words. */
+export function cellNoteTitle(doc: ProseNode, label: string): string {
+  const { column, row } = cellNoteCrumbParts(doc, label)
+  const parts = [column, row].map((text) => text.trim()).filter((text) => text !== '')
+  const title = parts.length === 0 ? 'Note' : `Note: ${parts.join(' · ')}`
+  return title.length > 60 ? `${title.slice(0, 59).trimEnd()}…` : title
+}
+
+/**
+ * The open cell note card (the YAZ-3818 demo, `cellNoteCard.ts`): the open note's label, its position and its cell's
+ * position (mapped), and the card's decorations. All null when no card is open. Here so `isCellNoteHidden` reads it.
+ */
+export interface CellNoteCardState {
+  label: string | null
+  pos: number | null
+  cell: number | null
+  /** "All notes" (round 4 of the demo): the card shows every cell note of the page, read-only. */
+  all: boolean
+  set: DecorationSet
+}
+
+export const cellNoteCardKey = new PluginKey<CellNoteCardState>('mdapp-cell-note-card')
+
+/** The label of the cell note open as a card, or null. */
+export const openCellNoteLabel = (state: EditorState): string | null => cellNoteCardKey.getState(state)?.label ?? null
 
 const cellNotesKey = new PluginKey<DecorationSet>('mdapp-cell-notes')
 
@@ -273,15 +317,8 @@ export function cellNoteCornerAt(view: EditorView, event: MouseEvent): HTMLEleme
 /** A cell note with no mark in a cell: it shows (D12). Only an orphan's decoration starts at a cell note. */
 const isOrphan = (state: EditorState, pos: number): boolean => (cellNotesKey.getState(state)?.find(pos, pos + 1) ?? []).some((deco) => deco.from === pos)
 
-/**
- * Is the cell note at `pos` hidden? Yes, unless it has no mark, or the zoom shows it: its page, or a bullet in it
- * (YAZ-3818 D9).
- */
-export const isCellNoteHidden = (state: EditorState, pos: number): boolean => {
-  if (isOrphan(state, pos)) return false
-  const zoomed = getZoomedItemPos(state)
-  return zoomed === null || zoomed < pos || zoomed >= pos + state.doc.nodeAt(pos)!.nodeSize
-}
+/** Is the cell note at `pos` hidden? Yes, unless it has no mark, or it is open as a card (the YAZ-3818 demo). */
+export const isCellNoteHidden = (state: EditorState, pos: number): boolean => !isOrphan(state, pos) && cellNoteCardKey.getState(state)?.pos !== pos
 
 /** A node whose coming or going can move a cell note: a table, a cell note, a mark. */
 const isNoteNode = (node: ProseNode): boolean => node.type.name === 'table' || isCellNote(node) || isCellNoteMark(node)

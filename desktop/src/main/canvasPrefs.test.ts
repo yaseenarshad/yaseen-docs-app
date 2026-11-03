@@ -19,6 +19,9 @@ describe('DEFAULT_CANVAS_PREFS', () => {
       vectorStrokeWidth: 2,
       framesVisible: true,
       defaultFontFamily: 10,
+      // YAZ-4247: the app's own, not the engine's: new text's size on screen and where it wraps.
+      newTextScreenSize: 14,
+      newTextWrapMargin: 120,
       defaultRoughness: 0,
       defaultTextAlign: 'center',
       // 🔒 YAZ-1989 D1: the stock laser — a red fading trail, small.
@@ -28,8 +31,8 @@ describe('DEFAULT_CANVAS_PREFS', () => {
     })
   })
 
-  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds, and no more', () => {
-    expect(CANVAS_PREF_KEYS).toHaveLength(17)
+  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds and the new text size and wrap margin (YAZ-4247), and no more', () => {
+    expect(CANVAS_PREF_KEYS).toHaveLength(19)
     expect(CANVAS_PREF_KEYS.slice(-3)).toEqual(['laserTrailMode', 'laserColor', 'laserSize'])
     // The round-4 amendment removed the properties-toolbar pref: the toolbar mode is a constant.
     expect(CANVAS_PREF_KEYS).not.toContain('propertiesToolbar')
@@ -175,6 +178,9 @@ describe('appStateToPrefs', () => {
       vectorStrokeWidth: 4,
       framesVisible: false,
       defaultFontFamily: 5,
+      // Not appState (YAZ-4247): the stored ones.
+      newTextScreenSize: 14,
+      newTextWrapMargin: 120,
       defaultRoughness: 2,
       defaultTextAlign: 'left',
       laserTrailMode: 'sticky',

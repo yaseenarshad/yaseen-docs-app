@@ -184,8 +184,8 @@
  *  - Cell notes (YAZ-3818 D4, D12, `table/cellNotes.ts`): a footnote labelled `cell-N` is a `cell_note` block, hidden
  *    in the note view; after a table, a cell note or a mark moves, each cell note goes back under its table. Its mark
  *    is a corner triangle; the "Add cell note" button (`table/cellNoteButton.ts`), a click on the mark, ⌘. on a plain
- *    cell line and the table menu open it as a page with the bullet zoom (D8, D9); a rest on the mark previews it
- *    (`table/cellNotePreview.ts`, D14). A cell's and a cell note's bullets hold lines and lists only: another block put
+ *    cell line and the table menu open it as a card beside its cell (`table/cellNoteCard.ts`, the YAZ-3818 demo); a
+ *    rest on the cell previews it (`table/cellNotePreview.ts`, D14). A cell's and a cell note's bullets hold lines and lists only: another block put
  *    there becomes lines, and a typed `# ` stays text (`table/cellBlocks.ts`, D1).
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
@@ -284,6 +284,9 @@ import { tableStyle } from './table/tableStyle'
 import { cellBlocksOnly } from './table/cellBlocks'
 import { cellNotes, withoutEmptyCellNotes } from './table/cellNotes'
 import { cellNoteButton } from './table/cellNoteButton'
+import { cellNoteCard, cellNoteCardKeymap } from './table/cellNoteCard'
+import { cellNoteDeleteGuard } from './table/cellNoteGuard'
+import { cellNoteClipboard } from './table/cellNoteClipboard'
 import { cellNotePreview } from './table/cellNotePreview'
 import { tableFill } from './table/tableFill'
 import { tableRows } from './table/tableRows'
@@ -638,6 +641,10 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableColumnResize)
   // Shift+arrow at the edge of a cell's text selects that cell only (YAZ-4171), also before `tableEditing`.
   crepe.editor.use(tableShiftArrow)
+  // Delete and Backspace that would take a cell note ask first (YAZ-4206 D16), also before `tableEditing`.
+  crepe.editor.use(cellNoteDeleteGuard)
+  // Copy, cut and paste carry cell notes (YAZ-4206 D13); Paste as › Cells only leaves them out (D18).
+  crepe.editor.use(cellNoteClipboard)
   // Sheets-style selection (the YAZ-4163 demo): a drag along the handles, Shift+Space and Ctrl+Space.
   crepe.editor.use(tableHandleSelect)
   // Folded rows (YAZ-4165): the bar and the hidden rows; a mousedown on a bar opens it, also before `tableEditing`.
@@ -646,9 +653,12 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableFill)
   // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.
   crepe.editor.use(cellToolbar)
-  // Cell notes (YAZ-3818 D8, D14): the "Add cell note" button in a cell's corner, and the preview on a mark.
+  // Cell notes (YAZ-3818 D8, D14): the "Add cell note" button in a cell's corner, the preview on a cell with a note,
+  // and the open note's card beside its cell (the demo): Esc and the arrows at its edges at priority 90.
   crepe.editor.use(cellNoteButton)
   crepe.editor.use(cellNotePreview)
+  crepe.editor.use(cellNoteCard)
+  crepe.editor.use(cellNoteCardKeymap)
   // A custom colour pick's target cells (YAZ-3817), kept through edits while the system picker is open.
   crepe.editor.use(customColourPick)
   // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.

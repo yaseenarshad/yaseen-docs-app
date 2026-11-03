@@ -1,49 +1,55 @@
 import {
+  DEFAULT_NEW_TEXT_SCREEN_SIZE,
   getResponsiveTextBackgroundRadius,
   getResponsiveTextFontSize,
   getTextBackgroundRadiusForFontSize,
   scaleTextBackgroundRadiusForFontSize,
+  setNewTextScreenSize,
+  wrapWidthAtEdge,
 } from "../textCreation";
 
-describe("getResponsiveTextFontSize", () => {
+describe("getResponsiveTextFontSize (YAZ-4247: the same size on screen at every zoom)", () => {
+  afterEach(() => setNewTextScreenSize(DEFAULT_NEW_TEXT_SCREEN_SIZE));
+
   it.each([
-    [0.1, 440],
-    [0.25, 299],
-    [0.5, 197],
-    [1, 130],
-    [1.5, 75],
-    [2, 51],
-    [3, 32],
-    [4, 32],
-  ])("resolves zoom %s to %spx", (zoom, expectedFontSize) => {
+    [0.5, 32],
+    [1, 16],
+    [2, 8],
+    [3, 5.33],
+  ])("resolves zoom %s to %spx (16px on screen)", (zoom, expectedFontSize) => {
     expect(getResponsiveTextFontSize(zoom)).toBe(expectedFontSize);
   });
 
-  it.each([0.001, Number.MIN_VALUE])(
-    "clamps extreme zoom-out %s to the maximum",
-    (zoom) => {
-      expect(getResponsiveTextFontSize(zoom)).toBe(440);
-    },
-  );
+  it("follows the app's screen size", () => {
+    setNewTextScreenSize(24);
+    expect(getResponsiveTextFontSize(0.5)).toBe(48);
+    expect(getResponsiveTextFontSize(2)).toBe(12);
+  });
 
   it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
     "falls back safely for invalid zoom %s",
     (zoom) => {
-      expect(getResponsiveTextFontSize(zoom)).toBe(130);
+      expect(getResponsiveTextFontSize(zoom)).toBe(16);
     },
   );
 });
 
+describe("wrapWidthAtEdge (YAZ-4247)", () => {
+  it("is null while the text fits, the room left once it passes the edge", () => {
+    expect(wrapWidthAtEdge(100, 200, 400, 16)).toBeNull();
+    expect(wrapWidthAtEdge(100, 320, 400, 16)).toBe(300);
+  });
+
+  it("keeps growing when under two font sizes of room are left", () => {
+    expect(wrapWidthAtEdge(380, 50, 400, 16)).toBeNull();
+  });
+});
+
 describe("responsive text-background radius", () => {
   it.each([
-    [0.1, 100],
-    [0.25, 74],
-    [0.5, 48],
-    [1, 32],
-    [1.5, 18],
-    [2, 13],
-    [3, 8],
-    [4, 8],
+    [0.5, 8],
+    [1, 4],
+    [2, 2],
   ])("resolves zoom %s to a %spx default radius", (zoom, expectedRadius) => {
     expect(getResponsiveTextBackgroundRadius(zoom)).toBe(expectedRadius);
   });

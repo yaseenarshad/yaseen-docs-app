@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { boardPath, datedSeed, plainEntryName, renamedPath, targetDirFor, untitledNames, validateEntryName } from './createEntry'
+import { boardPath, datedSeed, DEFAULT_NEW_NOTE_TITLE, plainEntryName, renamedPath, renderTitleTemplate, targetDirFor, untitledNames, validateEntryName } from './createEntry'
 
 const dir = (path: string): TreeNode => ({ type: 'dir', name: path.split('/').pop()!, path, children: [] })
 const file = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 0, mtime: 1, kind: 'markdown' })
@@ -15,6 +15,20 @@ describe('validateEntryName', () => {
     expect(validateEntryName('a/b')).toMatch(/\//)
     expect(validateEntryName('.hidden')).toMatch(/hidden/i)
     expect(validateEntryName('a\0b')).not.toBeNull()
+  })
+})
+
+describe('renderTitleTemplate (YAZ-4246)', () => {
+  const at = new Date(2026, 6, 4, 9, 5)
+  it('each token', () => {
+    expect(renderTitleTemplate('{YYYY}|{YY}|{MM}|{DD}|{HH}|{mm}', at)).toBe('2026|26|07|04|09|05')
+  })
+  it('the default is the Dated note seed', () => {
+    expect(renderTitleTemplate(DEFAULT_NEW_NOTE_TITLE, at)).toBe(datedSeed(at))
+  })
+  it('other text and unknown braces stay as typed; an empty template is an empty title', () => {
+    expect(renderTitleTemplate('Meeting {DD}.{MM} {Q} {mm', at)).toBe('Meeting 04.07 {Q} {mm')
+    expect(renderTitleTemplate('', at)).toBe('')
   })
 })
 

@@ -12,6 +12,8 @@ import { endOf, md, mount, posOf, pressKey, runCommand, select, unmountAll } fro
 import { allLinesAre, LIST_KINDS, type ListKind, toggleListKind } from './listButtons'
 import { toggleOutlineFold } from './outline/outlineFolding'
 import { getZoomedItemPos, zoomKeyAt, zoomToKey } from './outline/zoom'
+import { openCellNote } from './table/cellNoteCard'
+import { cellPos } from './table/tableTestKit'
 
 afterEach(unmountAll)
 
@@ -203,7 +205,7 @@ describe('the list buttons and T (YAZ-3806 T3, T4)', () => {
   })
 })
 
-describe('a plain line of a body cell and of a cell note page (YAZ-3818 D1, 5A-14)', () => {
+describe('a plain line of a body cell and of a cell note card (YAZ-3818 D1, 5A-14)', () => {
   it.each([
     ['bulletList', '<ul><li>a</li></ul>', '[^cell-1]: * a'],
     ['numberedList', '<ol><li>a</li></ol>', '[^cell-1]: 1. a'],
@@ -220,7 +222,8 @@ describe('a plain line of a body cell and of a cell note page (YAZ-3818 D1, 5A-1
     expect(press(inCell.crepe, button)).toBe(false)
 
     const onPage = await mount('| h |\n| - |\n| b[^cell-1] |\n\n[^cell-1]: a\n')
-    expect(runCommand(onPage.crepe, zoomToKey('note:cell-1'))).toBe(true)
+    // The card (the YAZ-3818 demo): a click on the mark's corner opens it.
+    expect(onPage.crepe.editor.action((ctx) => openCellNote(ctx.get(editorViewCtx), cellPos(ctx.get(editorViewCtx), 1, 0)))).toBe(true)
     select(onPage.crepe, posOf(onPage.crepe, 'a'), endOf(onPage.crepe, 'a'))
     expect(lit(onPage.crepe)).toEqual(['text'])
     expect(press(onPage.crepe, button)).toBe(true)

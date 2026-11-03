@@ -52,7 +52,7 @@ describe('the Table part', () => {
     const labels = sections.map((s) => s.map((item) => (item.children === undefined ? item.label : `${item.label} [${item.children.map((g) => g.map((c) => c.label).join(', ')).join(' | ')}]`)))
     const colours = 'Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, Grey, Brown'
     expect(labels.slice(-6)).toEqual([
-      ['Add cell note'],
+      ['Add cell note', 'Move to cell note'],
       ['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column'],
       ['Delete row', 'Delete column', 'Clear cells'],
       ['Align [Left, Center, Right | Top, Middle, Bottom]', `Fill [No fill | ${colours} | Custom colour…]`, `Text colour [Default colour | ${colours} | Custom colour…]`],

@@ -2,7 +2,7 @@ import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo,
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -56,6 +56,7 @@ import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
 import { setCalendarDaySetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
 import { requestGoToNow } from './editor/table/goToNowRequest'
+import { setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmMove } from './sidebar/ConfirmMove'
@@ -64,7 +65,7 @@ import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { textVars } from './settings/headingStyles'
-import { plainEntryName } from './sidebar/createEntry'
+import { DEFAULT_NEW_NOTE_TITLE, plainEntryName, renderTitleTemplate } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
 import { dailyNoteName } from '@shared/dailyNote'
@@ -288,6 +289,9 @@ function keyPlaceOf(file: string | null): KeyScope | null {
   const kind = fileKind(file)
   return kind === 'markdown' ? 'note' : kind === 'drawing' ? 'drawing' : kind === 'diagram' ? 'diagram' : kind === 'text' ? 'code' : null
 }
+/** A band colour setting as CSS (the YAZ-3818 demo): the accent, a table colour's swatch, or the picked colour. */
+const bandColour = (value: string): string => (value === 'accent' ? 'var(--accent)' : value.startsWith('#') ? value : `var(--table-fill-solid-${value})`)
+
 export function App() {
   /**
    * A Files window (YAZ-3357 D1): only the sidebar. Its clicks go to a full window (`askFromFiles`), it has no tab
@@ -583,6 +587,10 @@ export function App() {
   // The time format (YAZ-4163 D15): "/Calendar table", "Time slots" and "Current time" read it at the click.
   useEffect(() => setTimeFormatSetting(settings.tableTimeFormat), [settings.tableTimeFormat])
   useEffect(() => setCalendarDaySetting(settings.tableDayStart, settings.tableDayEnd), [settings.tableDayStart, settings.tableDayEnd])
+  // The new cell note template (round 3 of the YAZ-3818 demo): read when a note is made. Absent from an older main process.
+  useEffect(() => setCellNoteTemplate(settings.tableCellNoteTemplate ?? ''), [settings.tableCellNoteTemplate])
+  // A new tab's cell note card starts pinned (round 3 of the demo); an open tab keeps its own pin.
+  useEffect(() => setCellNotePinnedAtStart(settings.tableCellNotePinned ?? true), [settings.tableCellNotePinned])
   // The past rows' shade (YAZ-4163 demo), read by table.css.
   useEffect(() => document.documentElement.style.setProperty('--table-past-shade', `${settings.tableShadeDarkness}%`), [settings.tableShadeDarkness])
   // The selection toolbar's order and hidden buttons (YAZ-3806 T6): every open note's toolbar follows at once.
@@ -703,6 +711,17 @@ export function App() {
     '--edit-line-height': settings.lineSpacing,
     '--edit-block-gap': `${settings.blockGap}px`,
     '--thread-width': `${settings.threadWidth}px`,
+    // Bullets in notes (the YAZ-3818 demo, bullets.css): only a changed value, so the default stays the note's 2.15em.
+    ...((settings.noteBulletIndent ?? DEFAULT_SETTINGS.noteBulletIndent) !== DEFAULT_SETTINGS.noteBulletIndent ? { '--note-bullet-indent': `${settings.noteBulletIndent}px` } : {}),
+    ...((settings.noteBulletGap ?? DEFAULT_SETTINGS.noteBulletGap) !== DEFAULT_SETTINGS.noteBulletGap ? { '--note-bullet-gap': `${settings.noteBulletGap}px` } : {}),
+    // Bullets in table cells and cell note cards (the YAZ-3818 demo, table.css). Absent from settings a main process
+    // older than these fields sent: the defaults.
+    '--cell-bullet-indent': `${settings.tableCellBulletIndent ?? DEFAULT_SETTINGS.tableCellBulletIndent}px`,
+    '--cell-bullet-gap': `${settings.tableCellBulletGap ?? DEFAULT_SETTINGS.tableCellBulletGap}px`,
+    // The row band's colour and strength (the YAZ-3818 demo, table.css): the accent, a table colour (its full
+    // strength, as a fill swatch), or a picked one.
+    '--table-band-colour': bandColour(settings.tableBandColour ?? DEFAULT_SETTINGS.tableBandColour),
+    '--table-band-strength': `${settings.tableBandStrength ?? DEFAULT_SETTINGS.tableBandStrength}%`,
     // Section indent (YAZ-2709): a plain number, sectionIndent.css needs it as one (`border-image-slice`).
     '--section-step-setting': settings.sectionStep,
     // Absent → bulletThreading.css falls back to the app accent.
@@ -921,6 +940,12 @@ export function App() {
     if (sidebarLens !== 'files') changeLens('files')
     setSidebarRevealRequest({ id: ++sidebarRevealId.current, path })
   }, [sidebarCollapsed, sidebarLens, toggleSidebar, changeLens])
+  // "Rename file" in a tab's menu (YAZ-4248): "Show in sidebar", then the sidebar's own rename on the row.
+  const renameInSidebar = useCallback((path: string) => {
+    if (sidebarCollapsed) toggleSidebar()
+    if (sidebarLens !== 'files') changeLens('files')
+    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, rename: true })
+  }, [sidebarCollapsed, sidebarLens, toggleSidebar, changeLens])
 
   /**
    * What a link's menu does with the page it opens (YAZ-3740): Show in sidebar, Focus and Favorites (the tab menu's
@@ -1016,12 +1041,15 @@ export function App() {
   }, [treeOf, notify])
   const closeNewItem = useCallback(() => setNewItem(null), [])
   // ⏎ in the box (D4): Files shows — the sidebar first, if it is hidden — and opens the right-click name field in the folder.
+  const newNoteTitleTemplate = settings.newNoteTitleTemplate as string | undefined
   const makeNewItem = useCallback((kind: NewItemKind, dir: string) => {
     setNewItem(null)
     if (sidebarCollapsedRef.current) toggleSidebar()
     changeLens('files')
-    setSidebarCreateRequest({ id: ++sidebarCreateId.current, kind, dir })
-  }, [toggleSidebar, changeLens])
+    // The title starts with "New item name starts with" (YAZ-4246, YAZ-4252); absent from an older main process: the default.
+    const seed = renderTitleTemplate(newNoteTitleTemplate ?? DEFAULT_NEW_NOTE_TITLE)
+    setSidebarCreateRequest({ id: ++sidebarCreateId.current, kind, dir, seed })
+  }, [toggleSidebar, changeLens, newNoteTitleTemplate])
   const consumeSidebarCreate = useCallback((id: number) => {
     setSidebarCreateRequest((request) => request?.id === id ? null : request)
   }, [])
@@ -3056,7 +3084,7 @@ export function App() {
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
     <VaultLinksContext.Provider value={vaultLinks}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands
@@ -3303,6 +3331,7 @@ export function App() {
               zoomLabels={zoomLabels}
               onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
               onShowInSidebar={showInSidebar}
+              onRenameFile={renameInSidebar}
               onToggleOverview={toggleOverview}
               overviewOpen={overviewOpen}
               onKillAll={askKillAll}

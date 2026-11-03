@@ -1,15 +1,15 @@
 /**
- * A cell note's preview (YAZ-3818 D14), as a note's link hover (`wikilink/wikilinkHover.ts`): rest the pointer on a
- * cell's corner triangle for the hover dwell (`HOVER_PREVIEW_DWELL_MS`) and a small read-only box shows beside the
- * cell, with the note's crumb ("Note: <column> · <row>"), the hint "Click the corner to open", and its first 6 lines as
- * plain text (a bullet as `• `). A click on the corner opens the note's page (`zoom.ts`); the box takes no click, as the
- * pointer that leaves the corner closes it (5A-13).
+ * A cell note's preview (YAZ-3818 D14), as a note's link hover (`wikilink/wikilinkHover.ts`): rest the pointer anywhere
+ * on a cell that has a note (the YAZ-3818 demo) for the hover dwell (`HOVER_PREVIEW_DWELL_MS`) and a small read-only
+ * box shows beside the cell, with the note's title ("Note: <column> · <row>"), the hint "Click the corner to open", and
+ * its first 6 lines as plain text (a bullet as `• `). A click in the cell puts the caret there as always; a click on the
+ * corner opens the note's card (`cellNoteCard.ts`). The box takes no click (5A-13), and never shows while that note's
+ * card is open.
  *
- * Dismissed as the link's card is (`tabs/cardPreview.tsx`): the pointer leaving the corner, and a key, a click, the
- * wheel or a scroll anywhere, listened to only while a dwell or a box is live. Built on the pointer only: the view's own
- * `mousemove` (the triangle is the cell's background, 5A-18: `cellNoteCornerAt` reads the cell's box only over a cell
- * with a note), nothing on a key or a caret move. The box goes on the page's body (table.css draws it), not in the
- * editor's DOM.
+ * Dismissed as the link's card is (`tabs/cardPreview.tsx`): the pointer leaving the cell, and a key, a click, the wheel
+ * or a scroll anywhere, listened to only while a dwell or a box is live. Built on the pointer only: the view's own
+ * `mousemove` (one `closest` for the cell with a note), nothing on a key or a caret move. The box goes on the page's
+ * body (table.css draws it), not in the editor's DOM.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
@@ -17,8 +17,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { HOVER_PREVIEW_DWELL_MS } from '../../sidebar/HoverPreviewHost'
 import { cellPosAround } from '../outline/listNodes'
-import { zoomLabelAt } from '../outline/zoom'
-import { cellNoteCornerAt, cellNoteOf, notePosOf } from './cellNotes'
+import { CELL_NOTE_CELL_CLASS, cellNoteOf, cellNoteTitle, notePosOf, openCellNoteLabel } from './cellNotes'
 
 /** How many lines the box shows. */
 export const PREVIEW_LINES = 6
@@ -46,14 +45,14 @@ function previewBox(view: EditorView, cell: Element): HTMLElement | null {
   const { doc } = view.state
   const cellPos = cellPosAround(doc.resolve(view.posAtDOM(cell, 0)))
   const label = cellPos === null ? null : cellNoteOf(doc, cellPos)
-  const pos = label === null ? null : notePosOf(doc, label)
+  const pos = label === null || label === openCellNoteLabel(view.state) ? null : notePosOf(doc, label)
   if (pos === null) return null
   const box = document.createElement('div')
   box.className = 'cell-note-preview'
   box.setAttribute('role', 'status')
   const header = document.createElement('div')
   header.className = 'cell-note-preview__header'
-  header.textContent = zoomLabelAt(view.state, pos)
+  header.textContent = cellNoteTitle(doc, label!)
   const hint = document.createElement('div')
   hint.className = 'cell-note-preview__hint'
   hint.textContent = 'Click the corner to open'
@@ -74,7 +73,7 @@ function previewBox(view: EditorView, cell: Element): HTMLElement | null {
 }
 
 export const cellNotePreview = $prose(() => {
-  /** The cell whose corner the pointer rests on, its dwell, and its box. */
+  /** The cell with a note the pointer rests on, its dwell, and its box. */
   let corner: HTMLElement | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let box: HTMLElement | null = null
@@ -92,7 +91,8 @@ export const cellNotePreview = $prose(() => {
     props: {
       handleDOMEvents: {
         mousemove: (view, event) => {
-          const over = cellNoteCornerAt(view, event)
+          const cell = event.target instanceof Element ? event.target.closest<HTMLElement>(`.${CELL_NOTE_CELL_CLASS}`) : null
+          const over = cell !== null && view.dom.contains(cell) ? cell : null
           if (over === corner) return false
           close()
           if (over === null) return false
@@ -105,7 +105,7 @@ export const cellNotePreview = $prose(() => {
           }, HOVER_PREVIEW_DWELL_MS)
           return false
         },
-        // Out of the cell: the corner is left. Inside it, the next `mousemove` tells.
+        // Out of the cell. Inside it, the next `mousemove` tells.
         mouseout: (_view, event) => {
           if (corner !== null && !(event.relatedTarget instanceof Node && corner.contains(event.relatedTarget))) close()
           return false

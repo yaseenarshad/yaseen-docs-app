@@ -56,7 +56,6 @@ import { collapsedHeadingsHiding, headingLevel, isHeadingCollapsed, isWalkableCo
 import { findNestedLists, isListItem, itemLabelText, LIST_NODE_NAMES, UNTITLED_ITEM } from '../outline/listNodes'
 import { collapsedItemsHiding, isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos, zoomOutFully } from '../outline/zoom'
-import { isCellNote } from '../table/cellNotes'
 import { DEEPEST_TOC_LEVEL, ENOUGH_ROWS, type TocChannel, type TocController, type TocLevel, type TocRow } from './tocChannel'
 import { FLASH_FRAMES, FLASH_MS, GLIDE_MS, GLIDE_SCREENS, glideEase, LANDING_PX, reducedMotion } from './tocMotion'
 
@@ -211,12 +210,12 @@ export const scanNote = (doc: ProseNode, source: TocSource | null = null): Scann
 /**
  * A bullet zoom's own rows (YAZ-4094 4D): the zoom makes the bullet a page, so its rows are what is
  * in it. Its child bullets three levels down, or with the `headings` source every H1-H5 inside it.
- * A cell note's page the same (YAZ-3818 D9): its bullets; it holds no headings. Null when that gives
- * fewer than two rows: the note's own rows then stay, with the zoom's section current (4C).
+ * Null when that gives fewer than two rows: the note's own rows then stay, with the zoom's section
+ * current (4C).
  */
 export const scanZoom = (doc: ProseNode, itemPos: number, source: TocSource | null = null): ScannedNote | null => {
   const item = doc.nodeAt(itemPos)
-  if (item === null || !(isListItem(item) || isCellNote(item))) return null
+  if (!isListItem(item)) return null
   const rows: ScannedRow[] = []
   if (source === 'headings') {
     // The note's rows inside the bullet, raised so the highest is level 1.
@@ -408,7 +407,7 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
               if (target === undefined) return
               // A row outside the zoomed bullet ends the zoom first (YAZ-4094 4C): the reader asked for a place the zoom hides.
               const zoomed = getZoomedItemPos(view.state)
-              if (zoomed !== null && !(zoomed <= target.pos && target.pos < zoomed + (view.state.doc.nodeAt(zoomed)?.nodeSize ?? 0))) zoomOutFully(view.state, view.dispatch, view)
+              if (zoomed !== null && !(zoomed <= target.pos && target.pos < zoomed + (view.state.doc.nodeAt(zoomed)?.nodeSize ?? 0))) zoomOutFully(view.state, view.dispatch)
               // The reader asked for THIS section: every fold that hides its heading opens, and so
               // does its own — a folded heading is one line, and the reader asked for what is under
               // it. Declines an empty set, so a heading that nothing hides and that is open itself

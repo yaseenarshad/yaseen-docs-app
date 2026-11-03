@@ -21,13 +21,13 @@
  * "Duplicate IDs" (YAZ-2677 🔒 D7) is beside it while the vault uses IDs, and calls `ids.check`.
  * "ID letters" (🔒 D5) and "Old IDs" (🔒 D6) follow it (`IdLettersControl.tsx`): `ids.reletter`, `ids.backfill`.
  */
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, NOTE_BULLET_GAP_MAX, NOTE_BULLET_GAP_MIN, NOTE_BULLET_INDENT_MAX, NOTE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_NOTE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -49,6 +49,9 @@ import { dailyNoteName } from '@shared/dailyNote'
 import { formatTime } from '@shared/timeFormat'
 import { CalendarDayControl } from './CalendarDayControl'
 import { TimeFormatControl } from './TimeFormatControl'
+import { DEFAULT_NEW_NOTE_TITLE, renderTitleTemplate } from '../sidebar/createEntry'
+import { capital, fillSwatch } from '../editor/table/colours'
+import { TABLE_COLORS } from '../editor/table/tableComment'
 import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
 import { MEMORY_SECTION } from './memorySection'
@@ -58,7 +61,137 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, THREADING_OPTIONS, TOC_LINES_OPTIONS } from './options'
+
+/** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
+function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
+  const value = settings[field]
+  const set = (next: number) => onChange({ ...settings, [field]: next })
+  return (
+    <>
+      <Stepper name={name} size={value} min={min} max={max} onStep={(delta) => set(Math.min(max, Math.max(min, value + delta * step)))} />
+      {value !== DEFAULT_SETTINGS[field] && (
+        <button type="button" className="settings__option" onClick={() => set(DEFAULT_SETTINGS[field])}>
+          Reset
+        </button>
+      )}
+    </>
+  )
+}
+
+/**
+ * A whole percent you can type (the YAZ-3818 demo, "Band strength"): − and + step by 1 as the stepper does, the field
+ * takes an exact number, kept on blur or ⏎ and clamped to `min`–`max`; Reset when it is not the default.
+ */
+function PercentField({ name, value, fallback, min, max, onSet }: { name: string; value: number; fallback: number; min: number; max: number; onSet: (next: number) => void }) {
+  const [draft, setDraft] = useState(String(value))
+  useEffect(() => setDraft(String(value)), [value])
+  const clamp = (n: number) => Math.min(max, Math.max(min, Math.round(n)))
+  const keep = () => {
+    const n = Number.parseFloat(draft)
+    const next = Number.isFinite(n) ? clamp(n) : value
+    setDraft(String(next))
+    if (next !== value) onSet(next)
+  }
+  return (
+    <>
+      <div className="heading-styles__stepper" role="group" aria-label={name}>
+        <button type="button" className="settings__option heading-styles__step" aria-label={`${name} smaller`} disabled={value <= min} onClick={() => onSet(clamp(value - 1))}>
+          −
+        </button>
+        <span className="settings__percent">
+          <input className="settings__input settings__input--number" aria-label={name} inputMode="numeric" value={draft} spellCheck={false}
+            onChange={(event) => setDraft(event.target.value.replace(/[^0-9.]/g, ''))} onBlur={keep}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') keep()
+            }} />
+          %
+        </span>
+        <button type="button" className="settings__option heading-styles__step" aria-label={`${name} larger`} disabled={value >= max} onClick={() => onSet(clamp(value + 1))}>
+          +
+        </button>
+      </div>
+      {value !== fallback && (
+        <button type="button" className="settings__option" onClick={() => onSet(fallback)}>
+          Reset
+        </button>
+      )}
+    </>
+  )
+}
+
+/** A px setting: the stepper, and Reset when it is not the default (the YAZ-3818 demo). */
+function PxSetting({ name, value, fallback, min, max, step, onSet }: { name: string; value: number; fallback: number; min: number; max: number; step: number; onSet: (next: number) => void }) {
+  return (
+    <>
+      <Stepper name={name} size={value} min={min} max={max} onStep={(delta) => onSet(Math.min(max, Math.max(min, value + delta * step)))} />
+      {value !== fallback && (
+        <button type="button" className="settings__option" onClick={() => onSet(fallback)}>
+          Reset
+        </button>
+      )}
+    </>
+  )
+}
+
+/** "Band colour" (the YAZ-3818 demo): the accent, the cell toolbar's ten Fill colours (their swatches), and Custom…. */
+function BandColourControl({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const swatch = (colour: string) => <span className="settings__band-swatch" style={{ background: colour }} aria-hidden />
+  return (
+    <span className="settings__band-colours" role="radiogroup" aria-label="Band colour">
+      <button type="button" role="radio" aria-checked={value === 'accent'} title="Accent" className="settings__band-colour" onClick={() => onChange('accent')}>
+        {swatch('var(--accent)')}
+      </button>
+      {TABLE_COLORS.map((c) => (
+        <button key={c} type="button" role="radio" aria-checked={value === c} title={capital(c)} className="settings__band-colour" onClick={() => onChange(c)}>
+          {swatch(fillSwatch(c))}
+        </button>
+      ))}
+      <label className={`settings__band-colour settings__band-custom${value.startsWith('#') ? ' settings__band-colour--on' : ''}`} title="Custom colour…">
+        {value.startsWith('#') ? swatch(value) : 'Custom…'}
+        <input type="color" aria-label="Custom band colour" value={value.startsWith('#') ? value : '#3b82f6'} onChange={(event) => onChange(event.target.value)} />
+      </label>
+    </span>
+  )
+}
+
+/** "New item name starts with" (YAZ-4246, YAZ-4252): a text field, kept on blur or ⏎; Reset brings the Dated note's format back. */
+function NewNoteTitleControl({ settings, onChange }: { settings: SettingsState; onChange: (next: SettingsState) => void }) {
+  const stored = settings.newNoteTitleTemplate ?? DEFAULT_NEW_NOTE_TITLE
+  const [draft, setDraft] = useState(stored)
+  useEffect(() => setDraft(stored), [stored])
+  const keep = (value: string) => {
+    if (value !== stored && !value.includes('/')) onChange({ ...settings, newNoteTitleTemplate: value })
+  }
+  return (
+    <>
+      <input className="settings__input" aria-label="New item name starts with" placeholder="Blank" maxLength={NEW_NOTE_TITLE_MAX} spellCheck={false}
+        value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => keep(draft)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') keep(draft)
+        }} />
+      {stored !== DEFAULT_NEW_NOTE_TITLE && (
+        <button type="button" className="settings__option" onClick={() => onChange({ ...settings, newNoteTitleTemplate: DEFAULT_NEW_NOTE_TITLE })}>
+          Reset
+        </button>
+      )}
+    </>
+  )
+}
+
+/** The new cell note template (round 3 of the YAZ-3818 demo): a Markdown box, kept on blur. */
+function CellNoteTemplateControl({ settings, onChange }: { settings: SettingsState; onChange: (next: SettingsState) => void }) {
+  const stored = settings.tableCellNoteTemplate ?? ''
+  const [draft, setDraft] = useState(stored)
+  useEffect(() => setDraft(stored), [stored])
+  return (
+    <textarea className="settings__input settings__textarea" aria-label="New cell note starts with" placeholder="- " rows={3} maxLength={CELL_NOTE_TEMPLATE_MAX} spellCheck={false}
+      value={draft} onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        if (draft !== stored) onChange({ ...settings, tableCellNoteTemplate: draft })
+      }} />
+  )
+}
 
 /** Files & Links › Open new tabs (YAZ-3808 D2). */
 const NEW_TAB_PLACE_OPTIONS: readonly { label: string; value: SettingsState['newTabPlace'] }[] = [
@@ -164,6 +297,8 @@ export interface SettingsGroup {
 export interface SettingsSection {
   id: SettingsSectionId
   title: string
+  /** More words that find the section's rows in the search: an older name ("Excalidraw canvas" is "Drawings"). */
+  keywords?: readonly string[]
   /** A section that only exists in some contexts (sync needs the engine); absent = always. */
   available?: (ctx: SettingsCtx) => boolean
   /** One line under the section title: for the section whose settings do not live where the rest do, or one that says what the page is for (Memory, YAZ-3977). */
@@ -718,6 +853,27 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={ON_OFF_OPTIONS} value={settings.foldingOnByDefault} onChange={(foldingOnByDefault) => onChange({ ...settings, foldingOnByDefault })} ariaLabel="Folding default" />
             ),
           },
+          {
+            // The YAZ-3818 demo: the note's bullets, as the cells' have their own (Settings › Editor › Tables).
+            id: 'noteBulletIndent',
+            label: 'Bullet indent',
+            hint: 'How far each child level steps in.',
+            keywords: ['bullet', 'indent', 'spacing', 'list', 'nested', 'child', 'outline'],
+            render: ({ settings, onChange }) => (
+              <PxSetting name="Bullet indent" value={settings.noteBulletIndent ?? DEFAULT_SETTINGS.noteBulletIndent} fallback={DEFAULT_SETTINGS.noteBulletIndent}
+                min={NOTE_BULLET_INDENT_MIN} max={NOTE_BULLET_INDENT_MAX} step={2} onSet={(noteBulletIndent) => onChange({ ...settings, noteBulletIndent })} />
+            ),
+          },
+          {
+            id: 'noteBulletGap',
+            label: 'Bullet gap',
+            hint: 'The space between a bullet and its text; a bigger gap moves the text, not the bullet.',
+            keywords: ['bullet', 'gap', 'spacing', 'list', 'text', 'outline'],
+            render: ({ settings, onChange }) => (
+              <PxSetting name="Bullet gap" value={settings.noteBulletGap ?? DEFAULT_SETTINGS.noteBulletGap} fallback={DEFAULT_SETTINGS.noteBulletGap}
+                min={NOTE_BULLET_GAP_MIN} max={NOTE_BULLET_GAP_MAX} step={1} onSet={(noteBulletGap) => onChange({ ...settings, noteBulletGap })} />
+            ),
+          },
         ],
       },
       {
@@ -883,6 +1039,91 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={TABLE_ROW_BAND_OPTIONS} value={settings.tableRowBand} onChange={(tableRowBand) => onChange({ ...settings, tableRowBand })} ariaLabel="Row band" />
             ),
           },
+          {
+            // The YAZ-3818 demo: the band's colour, from the cell toolbar's Fill palette (its ten colours) or picked.
+            id: 'tableBandColour',
+            label: 'Band colour',
+            hint: 'The app\'s own colour (the first), a table colour, or one you pick.',
+            keywords: ['row band', 'band colour', 'band color', 'highlight row', 'colour', 'color', 'table'],
+            wide: () => true,
+            render: ({ settings, onChange }) => <BandColourControl value={settings.tableBandColour ?? DEFAULT_SETTINGS.tableBandColour} onChange={(tableBandColour) => onChange({ ...settings, tableBandColour })} />,
+          },
+          {
+            // The YAZ-3818 demo: how strong the band's colour is.
+            id: 'tableBandStrength',
+            label: 'Band strength',
+            hint: 'How strong the band\'s colour is.',
+            keywords: ['row band', 'band', 'strength', 'transparency', 'opacity', 'highlight row', 'table'],
+            // The demo: an exact % can be typed (1–60), − and + step by 1.
+            render: ({ settings, onChange }) => (
+              <PercentField name="Band strength" value={settings.tableBandStrength ?? DEFAULT_SETTINGS.tableBandStrength} fallback={DEFAULT_SETTINGS.tableBandStrength}
+                min={TABLE_BAND_STRENGTH_MIN} max={TABLE_BAND_STRENGTH_MAX} onSet={(tableBandStrength) => onChange({ ...settings, tableBandStrength })} />
+            ),
+          },
+          {
+            // The YAZ-3818 demo: the caret's row and the mouse's, or one of them.
+            id: 'tableBandRows',
+            label: 'Rows it marks',
+            hint: 'The row band follows the caret, the mouse, or both.',
+            keywords: ['row band', 'band', 'caret', 'mouse', 'highlight row', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TABLE_BAND_ROWS_OPTIONS} value={settings.tableBandRows ?? 'both'} onChange={(tableBandRows) => onChange({ ...settings, tableBandRows })} ariaLabel="Rows it marks" />
+            ),
+          },
+          {
+            // The YAZ-3818 demo: the band's row shows its first cell in bold; off keeps the band alone.
+            id: 'tableBandBold',
+            label: 'Bold first cell',
+            hint: 'The row band shows the row\'s first cell in bold.',
+            keywords: ['bold', 'row band', 'band', 'first cell', 'first column', 'highlight row', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableBandBold ?? true} onChange={(tableBandBold) => onChange({ ...settings, tableBandBold })} ariaLabel="Bold first cell" />
+            ),
+          },
+          {
+            // The YAZ-3818 demo: space is short in a cell. The step from a level to its child; the dot's column stays 16px.
+            id: 'tableCellBulletIndent',
+            label: 'Bullet indent in cells',
+            hint: 'How far each child level steps in, in a table cell or a cell note.',
+            keywords: ['bullet', 'indent', 'list', 'compact', 'tight', 'cell', 'cell note', 'table'],
+            render: ({ settings, onChange }) => (
+              <CellBulletStepper settings={settings} onChange={onChange} field="tableCellBulletIndent" name="Bullet indent in cells" min={TABLE_CELL_BULLET_INDENT_MIN} max={TABLE_CELL_BULLET_INDENT_MAX} step={2} />
+            ),
+          },
+          {
+            // The YAZ-3818 demo: the gap between a cell bullet's marker and its text.
+            id: 'tableCellBulletGap',
+            label: 'Bullet gap in cells',
+            hint: 'The space between a bullet and its text in a table cell or a cell note; a bigger gap moves the text, not the bullet.',
+            keywords: ['bullet', 'gap', 'indent', 'list', 'compact', 'tight', 'cell', 'cell note', 'table'],
+            render: ({ settings, onChange }) => (
+              <CellBulletStepper settings={settings} onChange={onChange} field="tableCellBulletGap" name="Bullet gap in cells" min={TABLE_CELL_BULLET_GAP_MIN} max={TABLE_CELL_BULLET_GAP_MAX} step={1} />
+            ),
+          },
+        ],
+      },
+      {
+        // Round 3 of the YAZ-3818 demo: what a new cell note starts with. In the app's settings, never in the file.
+        title: 'Cell notes',
+        items: [
+          {
+            id: 'tableCellNoteTemplate',
+            label: 'New cell note starts with',
+            hint: 'Lines and lists only.',
+            keywords: ['template', 'cell note', 'new note', 'note', 'start', 'bullet', 'default', 'table', 'cell'],
+            wide: () => true,
+            render: ({ settings, onChange }) => <CellNoteTemplateControl settings={settings} onChange={onChange} />,
+          },
+          {
+            // Round 3 of the YAZ-3818 demo: the start state of a new tab's card; its pin button still toggles it.
+            id: 'tableCellNotePinned',
+            label: 'Keep cell notes open (pinned)',
+            hint: 'A click outside a cell note does not close it. The pin in its title bar turns this off for that tab.',
+            keywords: ['pin', 'pinned', 'cell note', 'keep open', 'sticky', 'close', 'click outside', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableCellNotePinned ?? true} onChange={(tableCellNotePinned) => onChange({ ...settings, tableCellNotePinned })} ariaLabel="Keep cell notes open (pinned)" />
+            ),
+          },
         ],
       },
       {
@@ -963,7 +1204,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   // YAZ-3449: the four switches every code tab shares (its page cog has the first three).
   CODE_SECTION,
-  // YAZ-3037 (YAZ-3028 D10): the user-level Excalidraw canvas preferences, declared in their own module
+  // YAZ-3037 (YAZ-3028 D10): the user-level Excalidraw canvas preferences ("Drawings" in the nav), declared in their own module
   // because there are fourteen of them and they are the one section with a mapping behind it (`shared/canvasPrefs.ts`).
   CANVAS_SECTION,
   // YAZ-3038 (YAZ-3028 D10): the canvas panel's Pixabay key and its library folder.
@@ -972,6 +1213,34 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     id: 'files',
     title: 'Files & Links',
     groups: [
+      {
+        // YAZ-4246: what ⌘N's New… box makes, at the top of Files & Links: "Default location for new notes" (unchanged) and the title.
+        title: 'New notes',
+        items: [
+          {
+            id: 'newNoteLocation',
+            label: 'Default location for new notes',
+            // YAZ-3556 D3: the New… box uses it too, for notes, drawings and diagrams.
+            hint: ({ settings }) => {
+              const key = menuKey('newItem', settings)
+              return `Where the New… box${key === null ? '' : ` (${key})`} and a new [[link]] make a page.`
+            },
+            keywords: ['folder', 'wikilink', 'new', 'cmd n', 'drawing', 'diagram'],
+            // A plain label-left / dropdown-right row, until the folder input needs the width.
+            wide: ({ settings }) => settings.newNoteLocation === 'folder',
+            render: ({ settings, onChange, places }) => <NewNoteLocationControl settings={settings} onChange={onChange} vaults={places} />,
+          },
+          {
+            // YAZ-4246: the title the New… box starts with; the Dated items and a new [[link]] keep their own.
+            id: 'newNoteTitleTemplate',
+            // YAZ-4252 D1: one template for the four kinds of the New… box; the key keeps its name.
+            label: 'New item name starts with',
+            hint: ({ settings }) => `For the New… box: notes, drawings, diagrams and folders. {YYYY} {YY} {MM} {DD} {HH} {mm} are the date and time. Now: "${renderTitleTemplate(settings.newNoteTitleTemplate ?? DEFAULT_NEW_NOTE_TITLE)}".`,
+            keywords: ['title', 'template', 'new note', 'cmd n', 'name', 'date', 'dated', 'format', 'drawing', 'diagram'],
+            render: ({ settings, onChange }) => <NewNoteTitleControl settings={settings} onChange={onChange} />,
+          },
+        ],
+      },
       {
         items: [
           {
@@ -1022,19 +1291,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             wide: () => true,
             // A pick in "New boards keep pictures" on this page can add a folder: the list reads again (YAZ-4074 6A item 13).
             render: ({ settings }) => <AllowedPictureFoldersControl picked={settings.newBoardPicturesFolder} />,
-          },
-          {
-            id: 'newNoteLocation',
-            label: 'Default location for new notes',
-            // YAZ-3556 D3: the New… box uses it too, for notes, drawings and diagrams.
-            hint: ({ settings }) => {
-              const key = menuKey('newItem', settings)
-              return `Where the New… box${key === null ? '' : ` (${key})`} and a new [[link]] make a page.`
-            },
-            keywords: ['folder', 'wikilink', 'new', 'cmd n', 'drawing', 'diagram'],
-            // A plain label-left / dropdown-right row, until the folder input needs the width.
-            wide: ({ settings }) => settings.newNoteLocation === 'folder',
-            render: ({ settings, onChange, places }) => <NewNoteLocationControl settings={settings} onChange={onChange} vaults={places} />,
           },
         ],
       },

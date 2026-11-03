@@ -63,33 +63,3 @@
 .outline-zoom-crumb-separator {
   opacity: 0.6;
 }
-
-/* A cell note's page (YAZ-3818 D9): the zoomed cell note, or the one that holds the zoomed bullet, shows over
-   table.css's `.cell-note { display: none }`. */
-.editor-instance .milkdown .ProseMirror .cell-note.outline-zoom-note {
-  display: block;
-}
-
-/* The × at the right end of a cell note page's crumbs ("Close cell note"): it zooms out fully. */
-.outline-zoom-close {
-  margin-left: auto;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 1.3em;
-  line-height: 1.2;
-  cursor: pointer;
-}
-
-.outline-zoom-close:hover {
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  color: var(--crepe-color-on-background);
-}
-
-.outline-zoom-close:focus-visible {
-  outline: 2px solid var(--crepe-color-primary);
-  outline-offset: 1px;
-}

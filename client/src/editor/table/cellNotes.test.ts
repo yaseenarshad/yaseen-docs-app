@@ -208,7 +208,7 @@ describe('the corner mark is drawn on the cell (5A-18)', () => {
   })
 
   it('table.css draws the triangle on the cell, with no offsets for a cell that starts with a list', () => {
-    expect(tableCss).toMatch(new RegExp(`:is\\(th, td\\)\\.${CELL_NOTE_CELL_CLASS} \\{[^}]*background-image: linear-gradient`))
+    expect(tableCss).toMatch(new RegExp(`:is\\(th, td\\)\\.${CELL_NOTE_CELL_CLASS} \\{[^}]*--table-note-mark: linear-gradient`))
     expect(tableCss).not.toMatch(/li\.list-item sup\[data-type='footnote_reference'\]/)
     expect(tableCss).not.toMatch(/sup\[data-type='footnote_reference'\]\[data-label\^='cell-'\]::after/)
   })

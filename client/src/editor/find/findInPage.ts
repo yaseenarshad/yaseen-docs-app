@@ -23,11 +23,9 @@
  * active match instead of the caret (`findThreadAnchor`); a caret move or an edit gives them back.
  *
  * Cell notes (YAZ-3818 D19): in the note view, the matches in the hidden cell notes count. When the active match is in
- * one, find opens that note as a page, quietly (`zoomQuietly`: no Back step, the caret stays), and keeps a record of
- * it, as it does of the folds it opened. When the active match moves out of that note, the zoom goes back to the level
- * find came from. Matches are still counted at that level, not in the opened note alone. `close()` on a match in the
- * note leaves the page open with the caret in it, and the tab hears of it then (`reportZoom`), as a Back step. A cell
- * note page the reader opened is a zoom like a bullet's: find searches that note only.
+ * one, find opens that note as a card beside its cell (`table/cellNoteCard.ts`; the caret stays), and keeps a record
+ * of it, as it does of the folds it opened. When the active match moves out of that note, find closes the card.
+ * `close()` on a match in the note leaves the card open with the caret in it.
  *
  * Pills (YAZ-3744 S9): a `[[link]]` the note draws as a pill (`pillLinks`, the wikilink plugin's own drawing) hides
  * text. The matches that touch its hidden text (an ID, `.drawio`, folders, the brackets) are together ONE match, and each
@@ -40,9 +38,11 @@ import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } 
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { collapsedHeadingsHiding, setHeadingFoldSet } from '../outline/headingFolding'
+import { cellPosAround } from '../outline/listNodes'
 import { collapsedItemsHiding, setOutlineFoldSet } from '../outline/outlineFolding'
-import { getZoomedItemPos, reportZoom, zoomQuietly } from '../outline/zoom'
-import { cellNoteAround, isCellNoteHidden } from '../table/cellNotes'
+import { getZoomedItemPos } from '../outline/zoom'
+import { closeCellNote, openCellNote, revealOpenCell, showInCard } from '../table/cellNoteCard'
+import { cellNoteAround, cellNoteCardKey, isCellNoteHidden, markPosOf } from '../table/cellNotes'
 import { pillLinks, type PillLink, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import type { FindChannel, FindController, FindResult } from './findChannel'
@@ -51,11 +51,8 @@ export const FIND_MATCH_CLASS = 'find-match'
 /** The active match carries this IN ADDITION to `FIND_MATCH_CLASS`. */
 export const FIND_ACTIVE_CLASS = 'find-match--active'
 
-/** The cell note find opened (D19): its position, and the zoom level before it, both mapped through every change. */
-interface OpenedNote {
-  note: number
-  from: number | null
-}
+/** The cell note find opened as a card (D19): its position, mapped through every change. */
+type OpenedNote = number
 
 /** An absolute document range: one match, or the zoomed subtree. */
 interface Match {
@@ -207,12 +204,10 @@ const titleWidgets = (view: EditorView): Map<number, HTMLElement> => {
 /**
  * The zoomed subtree in the NEW document. Zoom's own plugin state is not applied yet when this
  * plugin's field runs first (createCrepe registers find before `createOutlineZoom`), so the level
- * is read from the old state and mapped the way zoom.ts maps it. On a cell note find opened, the
- * level find came from (D19).
+ * is read from the old state and mapped the way zoom.ts maps it.
  */
-const zoomedRange = (transaction: Transaction, oldState: EditorState, newState: EditorState, opened: OpenedNote | null): Match | null => {
-  const zoomed = getZoomedItemPos(oldState)
-  const itemPos = opened !== null && zoomed === opened.note ? opened.from : zoomed
+const zoomedRange = (transaction: Transaction, oldState: EditorState, newState: EditorState): Match | null => {
+  const itemPos = getZoomedItemPos(oldState)
   if (itemPos === null) return null
   const pos = transaction.mapping.map(itemPos, 1)
   const item = newState.doc.nodeAt(pos)
@@ -236,9 +231,8 @@ const carryRevealed = (transaction: Transaction, reported: ReadonlySet<number> |
 const carryOpened = (transaction: Transaction, meta: FindMeta | undefined, previous: OpenedNote | null): OpenedNote | null => {
   if (meta?.type === 'opened') return meta.opened
   if (previous === null || !transaction.docChanged) return previous
-  const note = transaction.mapping.mapResult(previous.note, 1)
-  const from = previous.from === null ? null : transaction.mapping.mapResult(previous.from, 1)
-  return note.deleted || from?.deleted ? null : { note: note.pos, from: from?.pos ?? null }
+  const note = transaction.mapping.mapResult(previous, 1)
+  return note.deleted ? null : note.pos
 }
 
 /** The hidden cell note that holds `pos`, or null (D19). */
@@ -301,24 +295,26 @@ const createController = (view: EditorView): FindController => {
     followNotes()
   }
   /**
-   * D19: out of the cell note find opened when the active match is not in it, back to the level find came from; into
-   * the hidden cell note that holds the active match. A note the reader moved off meanwhile is no longer find's.
+   * D19: the card find opened closes when the active match is not in it; the hidden cell note that holds the active
+   * match opens as a card. A card the reader closed meanwhile is no longer find's.
    */
   const followNotes = (): void => {
     let { opened } = findState()
     const match = activeMatch()
-    if (opened !== null && getZoomedItemPos(view.state) !== opened.note) opened = null
+    if (opened !== null && cellNoteCardKey.getState(view.state)?.pos !== opened) opened = null
     if (opened !== null) {
-      const note = view.state.doc.nodeAt(opened.note)!
-      if (match === null || match.from < opened.note || match.from >= opened.note + note.nodeSize) {
-        zoomQuietly(opened.from)(view.state, view.dispatch, view)
+      const note = view.state.doc.nodeAt(opened)!
+      if (match === null || match.from < opened || match.from >= opened + note.nodeSize) {
+        closeCellNote(view, false)
         opened = null
       }
     }
     const hidden = match === null ? null : hiddenNoteAt(view.state, match.from)
     if (hidden !== null) {
-      const from = getZoomedItemPos(view.state)
-      if (zoomQuietly(hidden)(view.state, view.dispatch, view)) opened = { note: hidden, from }
+      // The note's cell: the one that holds its mark.
+      const mark = markPosOf(view.state.doc, view.state.doc.nodeAt(hidden)!.attrs.label as string)
+      const cell = mark === null ? null : cellPosAround(view.state.doc.resolve(mark))
+      if (cell !== null && openCellNote(view, cell, false)) opened = cellNoteCardKey.getState(view.state)?.pos ?? null
     }
     if (opened !== findState().opened) dispatchMeta({ type: 'opened', opened })
   }
@@ -333,6 +329,13 @@ const createController = (view: EditorView): FindController => {
     if (match === null) return
     const { node } = view.domAtPos(match.from)
     const element = view.dom.querySelector(`.${FIND_ACTIVE_CLASS}`) ?? (node instanceof Element ? node : node.parentElement)
+    // A match in the open cell note card (YAZ-3818, round 4 of the demo): its cell shows, the least scroll, and the
+    // card scrolls to the match; the page never centres on a card.
+    if (element?.closest('.cell-note--open') != null) {
+      revealOpenCell(view)
+      showInCard(view, element.getBoundingClientRect())
+      return
+    }
     element?.scrollIntoView?.({ block: 'center' })
   }
   return {
@@ -349,7 +352,7 @@ const createController = (view: EditorView): FindController => {
       return result()
     },
     close: () => {
-      const { revealed, revealedHeadings, opened } = findState()
+      const { revealed, revealedHeadings } = findState()
       const match = activeMatch()
       fold([...revealed], true)
       foldHeadings([...revealedHeadings], true)
@@ -361,8 +364,6 @@ const createController = (view: EditorView): FindController => {
       const transaction = view.state.tr.setMeta(findKey, { type: 'clear' } satisfies FindMeta)
       if (match !== null) transaction.setSelection(TextSelection.create(transaction.doc, match.from))
       view.dispatch(transaction)
-      // The landing is in the cell note find opened (D19): the page stays, and is now the tab's level too.
-      if (opened !== null && getZoomedItemPos(view.state) === opened.note) reportZoom(view.state)
       view.focus()
     },
   }
@@ -419,7 +420,7 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
               opened === previous.opened
             )
               return previous
-            const matches = recompute ? findMatches(newState, query, zoomedRange(transaction, oldState, newState, previous.opened), links) : previous.matches
+            const matches = recompute ? findMatches(newState, query, zoomedRange(transaction, oldState, newState), links) : previous.matches
             return { query, matches, activeIndex: nextActive(previous, meta, matches, newState.selection.from), revealed, revealedHeadings, opened, onMatch }
           },
         },

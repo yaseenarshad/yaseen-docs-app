@@ -59,6 +59,8 @@ import { ReadOnlyChip } from './ReadOnlyChip'
 import { NoteMenu } from './noteMenu'
 import { ZOOM_EVENT } from './zoomRequest'
 import { onGoToNowRequest, takeGoToNow } from './table/goToNowRequest'
+import { openCellNoteByLabel } from './table/cellNoteCard'
+import { onCellNoteRequest, takeCellNoteRequest } from './table/cellNoteRequest'
 import { goToNow } from './table/tableCalendar'
 import { fileLines } from './lineNumbers/fileLines'
 import { requestBlockLines, showLineNumbers } from './lineNumbers/lineNumbers'
@@ -1077,20 +1079,25 @@ function CrepeHost({
   }, [lineNumbersOn, readyCrepe, autosave.status, diskLandings, diskParts, onNotice])
   // "The note at now" (YAZ-4164 D11): a request for this note (the daily-note button, ⌘D) is taken once the editor is
   // ready and its tab shows — after the mount's caret and scroll — or at once by an editor that is open and in front.
-  // A tab behind the page waits for its layer to show, so the tab in front never scrolls.
+  // A tab behind the page waits for its layer to show, so the tab in front never scrolls. A Linked mentions line in a
+  // cell note asks the same way for that note's card (YAZ-3818, `cellNoteRequest.ts`).
   useEffect(() => {
     const host = hostRef.current
     if (readyCrepe === null || crepeRef.current !== readyCrepe || host === null) return
     const take = () => {
       if (host.closest('.tabstack__layer--hidden') !== null) return
       if (takeGoToNow(file.path)) goToNow(editorViewOf(readyCrepe))
+      const label = takeCellNoteRequest(file.path)
+      if (label !== null) openCellNoteByLabel(editorViewOf(readyCrepe), label)
     }
     take()
     const off = onGoToNowRequest(take)
+    const offNote = onCellNoteRequest(take)
     const shown = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && take())
     shown?.observe(host)
     return () => {
       off()
+      offNote()
       shown?.disconnect()
     }
   }, [readyCrepe, file.path])

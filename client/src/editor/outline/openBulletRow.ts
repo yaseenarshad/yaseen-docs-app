@@ -9,12 +9,13 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuRow } from '../blockHandleMenu'
 import type { HandleTarget } from '../blockHandleTarget'
 import { nearestListItem } from './numberChildren'
-import { zoomKeyAt, zoomLabelAt, type ZoomOptions } from './zoom'
+import { canZoomInto, zoomKeyAt, zoomLabelAt, type ZoomOptions } from './zoom'
 
 export function openBulletRow(view: EditorView, target: HandleTarget, open: ZoomOptions['onOpen']): MenuRow[] {
   if (open === undefined || target.inside < 0) return []
   const item = nearestListItem(view.state.doc, target.inside)
-  const key = item === null ? null : zoomKeyAt(view.state.doc, item.pos)
+  // A bullet in a table cell or a cell note is no zoom level (YAZ-3818, the demo): no row.
+  const key = item === null || !canZoomInto(view.state.doc, item.pos) ? null : zoomKeyAt(view.state.doc, item.pos)
   if (item === null || key === null) return []
   return [{ label: 'Open in new tab', group: 'open', run: () => open(key, false, zoomLabelAt(view.state, item.pos)) }]
 }

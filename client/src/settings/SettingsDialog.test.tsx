@@ -134,19 +134,19 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableRowBand', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
+const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
-const EDITOR_GROUPS = ['Outline', 'Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents', 'Outside changes', 'Tables', 'Calendar tables']
-/** Settings › Excalidraw canvas (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
-const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
+const EDITOR_GROUPS = ['Outline', 'Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents', 'Outside changes', 'Tables', 'Cell notes', 'Calendar tables']
+/** Settings › Drawings (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
+const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
 // Daily notes (YAZ-3607 D12): off by default, so its group shows the switch alone.
 // New boards keep pictures and Allowed picture folders (YAZ-3943 demo 2, round 3); Links in drawings (demo 2).
-const FILES_ROWS = ['confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'newNoteLocation', 'dailyNotes', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`)]
+const FILES_ROWS = ['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'hoverPreview', ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`)]
 const REVIEW_ROWS = ['enabled', 'baseDays', 'growth', 'maxDays', 'reviewByDefault']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
@@ -280,13 +280,13 @@ describe('SettingsDialog shell (D1)', () => {
 describe('SettingsDialog: a page for each section (YAZ-2709, amending the one long page)', () => {
   it('the nav: the settings pages (Review only with a vault, Sync only with the engine), a divider, then the Hotkeys reference page', () => {
     const { el } = mount()
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', '—', 'Memory', 'Hotkeys'])
     unmount()
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
-    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Sync', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', 'Sync', '—', 'Memory', 'Hotkeys'])
     unmount()
     const withVault = mount({ ...DEFAULT_SETTINGS }, status(), DEFAULT_REVIEW_SETTINGS)
-    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Memory', 'Hotkeys'])
   })
 
   it('the registry order once both YAZ-3028 halves land: canvas and images after Editor (YAZ-3037, YAZ-3038), storage and sharing after Sync (YAZ-3039, YAZ-3040), Hotkeys last', () => {
@@ -323,7 +323,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       page('Notifications', 'settings-notifications', NOTIFICATIONS_ROWS),
       page('Editor', 'settings-editor', EDITOR_ROWS),
       page('Code', 'settings-code', CODE_ROWS),
-      page('Excalidraw canvas', 'settings-canvas', CANVAS_ROWS),
+      page('Drawings', 'settings-canvas', CANVAS_ROWS),
       page('Images', 'settings-images', IMAGES_ROWS),
       page('Files & Links', 'settings-files', FILES_ROWS),
       page('Review', 'settings-review', REVIEW_ROWS),
@@ -364,11 +364,11 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
 
     clickNav(el, 'Files & Links')
     // "When the app starts" moved to General (YAZ-3276 D7): with no vault, Files & Links' one titled group is Preview on hover (YAZ-3403).
-    expect(groupTitles(el)).toEqual(['Daily notes', 'Preview on hover'])
+    expect(groupTitles(el)).toEqual(['New notes', 'Daily notes', 'Preview on hover'])
     expect(hints()).toEqual([])
-    // Files & Links starts with an untitled group too.
-    expect(el.querySelector('#settings-files .settings-group')).not.toBeNull()
-    expect(el.querySelector('#settings-files .settings-group')?.querySelector('.settings-group__title')).toBeNull()
+    // Files & Links starts with "New notes" (YAZ-4246), then its untitled group.
+    expect(el.querySelector('#settings-files .settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('New notes')
+    expect(el.querySelectorAll('#settings-files .settings-group')[1]?.querySelector('.settings-group__title')).toBeNull()
   })
 
   it('the two per-vault sections, Review and Sync, and Memory (YAZ-3977) carry a note under their titles; no other page does', () => {
@@ -381,7 +381,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Notifications', []],
       ['Editor', []],
       ['Code', []],
-      ['Excalidraw canvas', []],
+      ['Drawings', []],
       ['Images', []],
       ['Files & Links', []],
       ['Review', [['settings-review', "These settings are saved in this vault's .yaseendocs folder and sync with it."]]],
@@ -406,7 +406,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Notifications', []],
       ['Editor', []],
       ['Code', []],
-      ['Excalidraw canvas', []],
+      ['Drawings', []],
       ['Images', []],
       ['Files & Links', [{ text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' }]],
       ['Review', [{ text: 'Vault: Work', under: 'Review', className: 'settings-section__note' }]],
@@ -449,7 +449,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Sync')
     expect(currentNav(el)).toBe('Sync')
     act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange }} onClose={onClose} />))
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', '—', 'Memory', 'Hotkeys'])
     expect(headings(el)).toEqual(['General'])
     expect(currentNav(el)).toBe('General')
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
@@ -510,8 +510,8 @@ describe('Settings › Code (YAZ-3449)', () => {
   })
 })
 
-describe('Settings › Excalidraw canvas (YAZ-3037; ported from Draw\'s 🔒 YAZ-1775 D9)', () => {
-  const mountCanvas = () => mountOn('Excalidraw canvas', { ...DEFAULT_SETTINGS })
+describe('Settings › Drawings (YAZ-3037; ported from Draw\'s 🔒 YAZ-1775 D9)', () => {
+  const mountCanvas = () => mountOn('Drawings', { ...DEFAULT_SETTINGS })
 
   it('writes the whole SettingsState with only the one canvas key changed', () => {
     const { el, onChange } = mountCanvas()
@@ -657,11 +657,11 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     ])
   })
 
-  it('Outline: the first group of the Editor page, four rows; each writes the whole object with only its field changed; the darkness presets set the stepper, the stepper steps by 5 inside 5–100, and Reset shows only off the default (YAZ-4094 D2, F1, G2, G3)', () => {
+  it('Outline: the first group of the Editor page, four rows (and the bullet spacing, the YAZ-3818 demo); each writes the whole object with only its field changed; the darkness presets set the stepper, the stepper steps by 5 inside 5–100, and Reset shows only off the default (YAZ-4094 D2, F1, G2, G3)', () => {
     const { el, onChange } = mountOn('Editor')
     const rows = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault']
     const groupOf = (id: string) => row(el, id)?.closest('.settings-group')
-    expect([...(groupOf('guideLinesOnByDefault')?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual(rows)
+    expect([...(groupOf('guideLinesOnByDefault')?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)).toEqual([...rows, 'noteBulletIndent', 'noteBulletGap'])
     expect(groupOf('guideLinesOnByDefault')?.querySelector('.settings-group__title')?.textContent).toBe('Outline')
     expect(groupOf('guideLinesOnByDefault')?.querySelector('.settings-group__hint')?.textContent).toBe(OUTLINE_HINT)
     expect(rows.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Guide lines default', 'Guide lines show', 'Guide line darkness', 'Folding default'])
@@ -773,6 +773,25 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     const plus = row(el, 'tableShadeDarkness')!.querySelector<HTMLButtonElement>('button[aria-label="Shade darkness larger"]')!
     act(() => plus.click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableShadeDarkness: 8 })
+  })
+
+  it('Tables › Band strength (the YAZ-3818 demo): a % you type, kept on ⏎ and clamped to 1–60; − and + step by 1', () => {
+    const { el, onChange } = mountOn('Editor')
+    const input = row(el, 'tableBandStrength')!.querySelector<HTMLInputElement>('input[aria-label="Band strength"]')!
+    expect(input.value).toBe('10')
+    const set = (text: string) => {
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    }
+    set('23')
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableBandStrength: 23 })
+    set('99')
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableBandStrength: 60 })
+    act(() => row(el, 'tableBandStrength')!.querySelector<HTMLButtonElement>('button[aria-label="Band strength larger"]')!.click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableBandStrength: 11 })
   })
 
   it('Calendar tables › Time format (YAZ-4163 D15, demo): the ready styles as 9:00 am, 9:00am, 9am / 9:30am, 09:00 and Custom…; Custom… previews the draft; a style the app cannot read back keeps the stored one and says why; a good one is written', () => {
@@ -1205,7 +1224,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-2322)'
     const { el } = mount()
     expect(navByTitle(el, 'Review')).toBeUndefined()
     const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'baseDays')])
-    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Excalidraw canvas', 'Images', 'Files & Links', 'Memory', 'Hotkeys'])
+    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', 'Memory', 'Hotkeys'])
     for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 
@@ -1354,15 +1373,20 @@ describe('SettingsDialog search (D6)', () => {
     // The sidebar's line style (YAZ-3309 D7) names bullet threading: it leads, on Appearance.
     // The Selection toolbar row has "bullet" among its words (YAZ-3806 T7). Outline's hint names bullets (YAZ-4094): its four rows.
     type(searchInput(el), 'bullet')
-    const settingsHits = ['Sidebar › Level lines', 'Editor › Outline', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Selection toolbar', 'Editor › Table of contents']
-    expect(headings(el).slice(0, 6)).toEqual(settingsHits)
+    // The bullets in cells (YAZ-3818 demo): Tables and Cell notes too.
+    const settingsHits = ['Sidebar › Level lines', 'Editor › Outline', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Selection toolbar', 'Editor › Table of contents', 'Editor › Tables', 'Editor › Cell notes']
+    expect(headings(el).slice(0, 8)).toEqual(settingsHits)
     // On Hotkeys a hit is the ONE row that names a bullet, not its whole table (YAZ-3397 D5), under its key's card (YAZ-3564).
     // The clicks follow the keys (YAZ-3936): the three "Bullet dots" rows, and the built-in clicks of bullet lines and fold arrows.
     expect(headings(el).slice(-3)).toEqual(['Hotkeys › Click', 'Hotkeys › ⌘-click', 'Hotkeys › ⇧-click'])
-    expect(headings(el).slice(6).every((h) => h?.startsWith('Hotkeys › '))).toBe(true)
-    expect(rowIds(el).slice(0, 14)).toEqual(['sidebarLineStyle', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines'])
-    expect(new Set(rowIds(el).slice(14))).toEqual(
+    expect(headings(el).slice(8).every((h) => h?.startsWith('Hotkeys › '))).toBe(true)
+    expect(rowIds(el).slice(0, 16)).toEqual(['sidebarLineStyle', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines'])
+    expect(new Set(rowIds(el).slice(16))).toEqual(
       new Set([
+        // The cell notes' rows (YAZ-3818 demo): the bullets in cells and the template.
+        'tableCellBulletIndent',
+        'tableCellBulletGap',
+        'tableCellNoteTemplate',
         ...['bulletList', 'cycleTask', 'indent', 'outdent', 'foldHere', 'unfoldHere', 'foldAll', 'unfoldAll', 'zoomIn', 'copyVisible', 'enter', 'tab'].map((r) => `hotkey-note-${r}`),
         ...['thisTab', 'newTab', 'backgroundTab'].map((r) => `hotkey-bullets-${r}`),
         // A built-in click is found by its place too: "Bullet lines".
@@ -1370,8 +1394,9 @@ describe('SettingsDialog search (D6)', () => {
       ]),
     )
     type(searchInput(el), 'spacing')
-    expect(headings(el)).toEqual(['Appearance › Spacing'])
-    expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap'])
+    // The note's bullet spacing (the YAZ-3818 demo) too, under Outline.
+    expect(headings(el)).toEqual(['Appearance › Spacing', 'Editor › Outline'])
+    expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap', 'noteBulletIndent', 'noteBulletGap'])
     // Comments is a group of Appearance now, so its breadcrumb says so.
     type(searchInput(el), 'comments')
     // A code key's row says "comment" too (YAZ-3564): the Appearance group leads.
@@ -1404,6 +1429,29 @@ describe('SettingsDialog search (D6)', () => {
     type(searchInput(el), 'zzzz')
     expect(el.querySelector('.settings-empty')?.textContent).toBe('No settings match “zzzz”.')
     expect(rowIds(el)).toEqual([])
+  })
+
+  it('"Show in settings" (the YAZ-3818 demo): the arrow after a hit\'s heading clears the search, opens its page and flashes its group; the heading does the same', () => {
+    vi.useFakeTimers()
+    try {
+      const { el } = mount()
+      type(searchInput(el), 'spacing')
+      const arrows = [...el.querySelectorAll<HTMLButtonElement>('.settings-search__goto')]
+      expect(arrows.map((b) => b.getAttribute('aria-label'))).toEqual(['Show in settings', 'Show in settings'])
+      act(() => arrows[1]!.click())
+      expect(searchInput(el).value).toBe('')
+      expect(headings(el)).toEqual(['Editor'])
+      const outline = row(el, 'noteBulletGap')?.closest('.settings-group')
+      expect(outline?.classList.contains('settings-group--revealed')).toBe(true)
+      act(() => vi.advanceTimersByTime(3000))
+      expect(outline?.classList.contains('settings-group--revealed')).toBe(false)
+      type(searchInput(el), 'spacing')
+      act(() => el.querySelector<HTMLElement>('.settings-search__goto-text')!.click())
+      expect(headings(el)).toEqual(['Appearance'])
+      expect(row(el, 'lineSpacing')?.closest('.settings-group')?.classList.contains('settings-group--revealed')).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('Escape with a query clears it and brings back the page that was showing; the × button does the same', () => {

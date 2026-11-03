@@ -339,6 +339,9 @@ function pasteAsMenu(pasteAs: MenuHandlers['pasteAs'], accelerator = false): Men
     submenu: [
       { id: 'menu.edit.paste-plain', label: 'Plain text', ...(accelerator ? { accelerator: 'CmdOrCtrl+Shift+V' } : {}), click: () => pasteAs('plain') },
       { id: 'menu.edit.paste-markdown', label: 'Markdown', click: () => pasteAs('markdown') },
+      // YAZ-4206 D18: a table's cells with no cell notes. No key. A group of its own, as in the editor's menu.
+      { type: 'separator' },
+      { id: 'menu.edit.paste-cells', label: 'Cells only', click: () => pasteAs('cells') },
     ],
   }
 }
@@ -431,6 +434,8 @@ export interface MenuHost {
    */
   focusedWebContents(): { id: number; send(channel: string, ...args: unknown[]): void } | undefined
   readClipboardText(): string
+  /** The clipboard's HTML, for Paste as › Cells only (YAZ-4206 D18). */
+  readClipboardHTML(): string
   openExternal(url: string): void
   /** Check for Updates… (YAZ-2976): `index.ts` runs the check and answers for each state (S4–S6). */
   checkForUpdates(): void
@@ -453,7 +458,7 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     },
     pasteAs(mode) {
       const target = host.focusedWebContents()
-      if (target !== undefined) target.send(SPECIAL.menuPasteAs, { mode, text: host.readClipboardText() } satisfies ClipboardPasteRequest)
+      if (target !== undefined) target.send(SPECIAL.menuPasteAs, { mode, text: host.readClipboardText(), ...(mode === 'cells' ? { html: host.readClipboardHTML() } : {}) } satisfies ClipboardPasteRequest)
     },
     newItem() {
       host.focusedWebContents()?.send(CONTRACT.menu.onNewItem.channel)

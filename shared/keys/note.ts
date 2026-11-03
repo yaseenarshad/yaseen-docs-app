@@ -44,6 +44,12 @@ export const NOTE_KEYS: readonly KeyRow[] = [
   note('unfoldAll', 'Unfold all bullets and headings', ['CmdOrCtrl+Shift+I']),
   note('zoomIn', 'Zoom into the bullet at the caret', ['CmdOrCtrl+.']),
   note('zoomOut', 'Zoom out one level', ['CmdOrCtrl+Shift+.']),
+  // Cell notes (YAZ-3818, round 4 of the demo): the card beside a table cell.
+  note('openCellNote', 'Open the cell note of the cell at the caret', ['CmdOrCtrl+Alt+M'], { hint: 'Makes one if the cell has none. ⌘. on a plain line of a cell opens it too' }),
+  note('nextCellNote', 'Next cell note', ['CmdOrCtrl+Alt+Down'], { hint: 'While a cell note is open: the next one of the page' }),
+  note('previousCellNote', 'Previous cell note', ['CmdOrCtrl+Alt+Up'], { hint: 'While a cell note is open: the one before' }),
+  note('cellNoteBack', 'Back in the cell note', ['CmdOrCtrl+Alt+['], { hint: 'While a cell note is open: the note you opened before it' }),
+  note('cellNoteForward', 'Forward in the cell note', ['CmdOrCtrl+Alt+]'], { hint: 'Again, after Back' }),
   // YAZ-3653: Edit › Copy as › Without folded lines; no key by default, every free one is some editor's.
   note('copyVisible', 'Copy without folded lines', [], { hint: 'With nothing selected: the bullet at the caret' }),
   // The note's panels.

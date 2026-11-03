@@ -23,6 +23,9 @@ import { bulletToCopy, copyVisibleNext, forgetCopyVisible } from './clipboardCop
 import { addLinkOn } from './markdownLink'
 import { HEADING_TOGGLE_CLASS } from './outline/headingFolding'
 import { OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
+import { isInTable } from '@milkdown/kit/prose/tables'
+import { ConfirmSheet } from '../components/ConfirmSheet'
+import { CELL_NOTE_ASK, type CellNoteAsk } from './table/cellNoteGuard'
 import { TABLE_HANDLE_MENU, tableMenuSections } from './table/tableMenu'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuEntry, MenuSection } from '../sidebar/menuSections'
@@ -126,6 +129,8 @@ export function noteMenuSections(view: EditorView, misspelling: Misspelling | nu
   const editable = view.editable
   const empty = nothingSelected(view)
   const inBullet = pointer !== null && bulletToCopy(view.state, pointer) !== null
+  // Paste as › Cells only (YAZ-4206 D18) pastes at the selection: only in a table.
+  const inTable = isInTable(view.state)
   // The words the menu opened on: Add link… links them, wherever the selection is after the menu closes.
   const words = selectedWords(view)
   const replace = (from: number, to: number, word: string) => () => {
@@ -169,6 +174,8 @@ export function noteMenuSections(view: EditorView, misspelling: Misspelling | nu
             { id: 'paste-plain', label: 'Plain text', hint: '⇧⌘V', disabled: !editable, onSelect: () => run('paste-plain') },
             { id: 'paste-markdown', label: 'Markdown', disabled: !editable, onSelect: () => run('paste-markdown') },
           ],
+          // YAZ-4206 D18: a table's cells with no cell notes; only in a table.
+          [{ id: 'paste-cells', label: 'Cells only', disabled: !editable || !inTable, onSelect: () => run('paste-cells') }],
         ],
       },
     ],
@@ -221,9 +228,22 @@ function pointerPos(view: EditorView, target: Element, x: number, y: number): nu
   return view.posAtCoords({ left: x, top: y })?.pos ?? null
 }
 
-/** The menu for `view`'s note: a right-click in the note, or a table handle, opens it; nothing renders while it is shut. */
+/**
+ * The menu for `view`'s note: a right-click in the note, or a table handle, opens it; nothing renders while it is shut.
+ * It also answers the editor's asks about cell notes (YAZ-4206 D16, D17; `cellNoteGuard.ts`) with the app's sheet.
+ */
 export function NoteMenu({ view }: { view: EditorView | null }) {
   const [menu, setMenu] = useState<OpenMenu | null>(null)
+  const [ask, setAsk] = useState<CellNoteAsk | null>(null)
+  useEffect(() => {
+    if (view === null) return
+    const onAsk = (event: Event) => {
+      event.preventDefault()
+      setAsk((event as CustomEvent<CellNoteAsk>).detail)
+    }
+    view.dom.addEventListener(CELL_NOTE_ASK, onAsk)
+    return () => view.dom.removeEventListener(CELL_NOTE_ASK, onAsk)
+  }, [view])
   useEffect(() => {
     if (view === null) return
     // The selection before a right press (D15): the press can select the word under the pointer before the menu opens.
@@ -266,6 +286,30 @@ export function NoteMenu({ view }: { view: EditorView | null }) {
       view.dom.removeEventListener(TABLE_HANDLE_MENU, onHandleMenu)
     }
   }, [view])
+  if (ask !== null && view !== null) {
+    const done = (answer: () => void) => () => {
+      setAsk(null)
+      view.focus()
+      answer()
+    }
+    return (
+      <ConfirmSheet
+        labelId="cell-note-ask"
+        text={ask.text}
+        confirmLabel={ask.confirm}
+        danger={ask.danger === true}
+        keys="sheet"
+        onConfirm={done(ask.onConfirm)}
+        onCancel={done(() => undefined)}
+      >
+        {ask.other !== undefined && (
+          <button type="button" className="confirm__btn confirm__btn--other" onClick={done(ask.other.run)}>
+            {ask.other.label}
+          </button>
+        )}
+      </ConfirmSheet>
+    )
+  }
   if (view === null || menu === null) return null
   const pointer = menu.doc === view.state.doc ? menu.pointer : null
   const refocus = () => (menu.focused ?? view.dom).focus()

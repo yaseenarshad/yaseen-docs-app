@@ -13,6 +13,7 @@ import { getZoomedItemPos, itemPosForZoomKey, KEY_SETTLE_MS, ZOOM_ANCESTOR_CLASS
 import { defaultRightPanelIdentity } from '@shared/types'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { NO_STEPS, tabById, workspaceReducer, type WorkspaceAction, type WorkspaceState } from '../../workspace/useWorkspace'
+import { openCellNoteLabel } from '../table/cellNotes'
 
 const OUTLINE = `Intro paragraph
 
@@ -197,12 +198,12 @@ describe('zoom into a bullet', () => {
     expect(zoomedPos(crepe)).toBeNull()
   })
 
-  it('Mod-. on a plain cell line of a table inside a bullet never zooms into the outer bullet: it opens the cell note (YAZ-3818 D9)', async () => {
+  it('Mod-. on a plain cell line of a table inside a bullet never zooms into the outer bullet: it opens the cell note as a card (YAZ-3818)', async () => {
     const { crepe } = await mount('* outer\n\n  | h1 | h2 |\n  | --- | --- |\n  | plain | c2 |\n')
     caretIn(crepe, 'plain')
     expect(press(crepe, 'Mod-.')).toBe(true)
-    const zoomed = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.doc.nodeAt(zoomedPos(crepe)!))
-    expect(zoomed?.type.name).toBe('cell_note')
+    expect(zoomedPos(crepe)).toBeNull()
+    expect(crepe.editor.action((ctx) => openCellNoteLabel(ctx.get(editorViewCtx).state))).toBe('cell-1')
   })
 
   it('breadcrumb clicks zoom to that ancestor; the file crumb zooms out fully', async () => {
@@ -680,7 +681,8 @@ describe('the crumbs and the labels name a bullet\'s links as the note shows the
     expect(getZoomKeyOf(crepe)).not.toContain('AR v2 plan')
   })
 
-  it('a link renamed while zoomed: the crumb shows the new title, on a bullet\'s page and a cell note\'s (YAZ-3818 5A-4)', async () => {
+  // A cell note is no page since the YAZ-3818 demo (it opens as a card): the bullet's page alone.
+  it('a link renamed while zoomed: the crumb shows the new title (YAZ-3818 5A-4)', async () => {
     const wikilinks = createWikilinkResolveSource()
     wikilinks.update((target) => (target === ID ? '/v/AR v2 plan.md' : null))
     const { root } = await mount(md, { wikilinks, zoom: { title: () => '10_30- Fri' } })
@@ -688,10 +690,5 @@ describe('the crumbs and the labels name a bullet\'s links as the note shows the
     expect(crumbLabels(root)).toEqual(['10_30- Fri', 'AR v2 plan', 'AR'])
     wikilinks.update((target) => (target === ID ? '/v/AR v3 plan.md' : null))
     expect(crumbLabels(root)).toEqual(['10_30- Fri', 'AR v3 plan', 'AR'])
-    const note = await mount(`| [[${ID}]] |\n| --- |\n| b[^cell-1] |\n\n[^cell-1]: x\n`, { wikilinks, zoom: { title: () => 'T' } })
-    expect(zoomPageTo(note.crepe, 'note:cell-1')).toBe(true)
-    expect(crumbLabels(note.root)).toEqual(['T', 'Note: AR v3 plan · b'])
-    wikilinks.update((target) => (target === ID ? '/v/AR v4 plan.md' : null))
-    expect(crumbLabels(note.root)).toEqual(['T', 'Note: AR v4 plan · b'])
   })
 })

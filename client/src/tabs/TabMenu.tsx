@@ -1,3 +1,4 @@
+import { isSupportedFile } from '@shared/fileKind'
 import { osVerbs } from '../lib/osVerbs'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
@@ -52,6 +53,8 @@ export interface TabMenuProps {
   onResetName?: (id: string) => void
   /** Reveal this exact tab in the sidebar without activating it. */
   onShowInSidebar?: (path: string) => void
+  /** "Rename file" (YAZ-4248): the file shows in the sidebar, as "Show in sidebar" does, and its own rename starts there. */
+  onRenameFile?: (path: string) => void
   onSetReview?: (path: string, on: boolean) => void
   /** "Add to focus" / "Remove from focus" (YAZ-3264 D2): App's lists (D1), with the state the menu read. No jump to the Focus tab (D3). */
   onToggleFocus?: (paths: string[], isOn: boolean) => void
@@ -72,7 +75,7 @@ export interface TabMenuProps {
  * display name (YAZ-2949), the review toggle (YAZ-2322), and Focus and Favorites (YAZ-3264). Drawn as data by the sidebar's own
  * `ContextMenu` (YAZ-2949 D6), so its groups have the same lines as every other menu of the app.
  */
-export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onSetReview, onToggleFocus, onToggleFavorite, onNotice, leading = [], trailing = [] }: TabMenuProps) {
+export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onRenameFile, onSetReview, onToggleFocus, onToggleFavorite, onNotice, leading = [], trailing = [] }: TabMenuProps) {
   /** The menu's OS actions (YAZ-963): the sidebar's verbs and notices (`lib/osVerbs.ts`), a stale tab named by its label. */
   const os = osVerbs((message) => onNotice?.(message), () => label)
   // "Move to ▸" (YAZ-3091 D3): the other windows, a line, then "Right panel". An empty group is left out, and with no group there is no item.
@@ -105,6 +108,9 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
       // The review toggle (YAZ-2322): a tab that is not a note — or any tab while upkeep is off — has no state and no item.
       ...(menu.review === null ? [] : [{ id: 'review', label: menu.review ? 'Turn review off' : 'Turn review on', onSelect: () => onSetReview?.(menu.path, !menu.review) }]),
     ],
+    // "Rename file" (YAZ-4248), a group of its own after the tab's name, so the file's name and the tab's are apart.
+    // Grey on a tab that shows no file (a folder page, Settings).
+    onRenameFile === undefined ? [] : [{ id: 'rename-file', label: 'Rename file', disabled: !isSupportedFile(menu.path), onSelect: () => onRenameFile(menu.path) }],
     [
       ...(lists === null || onToggleFavorite === undefined ? [] : [{ id: 'toggle-favorite', label: lists.favorite ? 'Remove from favorites' : 'Add to favorites', icon: <HeartIcon />, onSelect: () => onToggleFavorite([menu.path], lists.favorite) }]),
       { id: 'reveal', label: 'Reveal in Finder', onSelect: () => os.reveal(menu.path) },

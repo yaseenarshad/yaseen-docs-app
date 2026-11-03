@@ -128,6 +128,9 @@ function splitNotes(doc: ProseNode, ranges: Inserted[]): Array<{ from: number; t
   return runs
 }
 
+/** Blocks for a cell or a cell note (D1): lines and lists stay, any other block becomes lines (the template, round 3 of the demo). */
+export const cellBlocksOf = (nodes: readonly ProseNode[], schema: Schema): ProseNode[] => nodes.flatMap((node) => (ALLOWED.has(node.type.name) ? [node] : linesOf(node, schema)))
+
 /** One cell note of a split run: the halves' blocks, and the blocks between as lines (or as they are: a line, a list). */
 function joinedNote(nodes: ProseNode[], schema: Schema): ProseNode {
   const blocks = nodes.flatMap((node) => (isCellNote(node) ? node.children : ALLOWED.has(node.type.name) ? [node] : linesOf(node, schema)))
