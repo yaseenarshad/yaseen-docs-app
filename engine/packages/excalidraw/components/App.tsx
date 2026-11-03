@@ -387,6 +387,8 @@ import {
 } from "../actions/actionFrame";
 import { createRedoAction, createUndoAction } from "../actions/actionHistory";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
+// YAZ-4277 D9: registers ⌘↑ / ⌘↓ on selected text boxes
+import "../actions/actionTextFolds";
 import {
   getNewTextWrapMargin,
   getResponsiveTextFontSize,
@@ -6277,6 +6279,20 @@ class App extends React.Component<AppProps, AppState> {
               type: "panel",
             });
           }
+        }
+
+        // YAZ-4277 D9: ⌘↑ / ⌘↓ with text boxes selected fold them; the
+        // flowchart takes every other ⌘ + arrow, so they go first
+        if (
+          canMutateSelection &&
+          event[KEYS.CTRL_OR_CMD] &&
+          isArrowKey(event.key) &&
+          selectedElements.some(
+            (element) => isTextElement(element) && !element.containerId,
+          ) &&
+          this.actionManager.handleKeyDown(event)
+        ) {
+          return;
         }
 
         if (canMutateSelection && this.flowchart.handleKeyEvent(event)) {

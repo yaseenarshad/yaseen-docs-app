@@ -1,4 +1,6 @@
 import React from "react";
+
+import { KEYS } from "@excalidraw/common";
 import { vi } from "vitest";
 
 import {
@@ -325,5 +327,121 @@ describe("checklists on the canvas (YAZ-4277 D4)", () => {
       ["open item", null, null],
       ["done item", "line-through", "0.55"],
     ]);
+  });
+});
+
+// LEVELS has two items with children: lines 0 and 1
+const LEVELS = "• a\n    ○ a1\n        ▪ a1x\n• b";
+
+describe("⌘↑ / ⌘↓ on selected text boxes (YAZ-4277 D9)", () => {
+  const press = (key: string, mods: { shift?: boolean; alt?: boolean } = {}) =>
+    Keyboard.withModifierKeys({ ctrl: true, ...mods }, () => {
+      Keyboard.keyPress(key);
+    });
+
+  const renderWith = async (
+    keyBindings?: React.ComponentProps<typeof Excalidraw>["keyBindings"],
+  ) => {
+    await render(
+      <Excalidraw handleKeyboardGlobally={true} keyBindings={keyBindings} />,
+    );
+    const second = { ...createMoat({ text: LEVELS, y: 300 }), id: "levels" };
+    const rect = API.createElement({
+      type: "rectangle",
+      id: "rect",
+      x: 600,
+      y: 0,
+      width: 100,
+      height: 100,
+    });
+    act(() =>
+      API.updateScene({
+        elements: [createMoat(), second, rect],
+        captureUpdate: CaptureUpdateAction.NEVER,
+      }),
+    );
+  };
+  const folds = (id: string) =>
+    (h.elements.find((element) => element.id === id) as ExcalidrawTextElement)
+      .foldedLines;
+
+  it("⌘↑ folds all and ⌘↓ unfolds all in every selected box, as no undo step", async () => {
+    await renderWith();
+    API.setAppState({ selectedElementIds: { moat: true, levels: true } });
+    press(KEYS.ARROW_UP);
+    expect(folds("moat")).toEqual([1]);
+    expect(folds("levels")).toEqual([0, 1]);
+    expect(h.history.isUndoStackEmpty).toBe(true);
+    press(KEYS.ARROW_DOWN);
+    expect(folds("moat")).toBeUndefined();
+    expect(folds("levels")).toBeUndefined();
+  });
+
+  it("a mixed selection folds the text boxes, and no flowchart shape is made", async () => {
+    await renderWith();
+    API.setAppState({ selectedElementIds: { moat: true, rect: true } });
+    press(KEYS.ARROW_UP);
+    expect(folds("moat")).toEqual([1]);
+    expect(h.app.flowchart.pendingNodes).toBeNull();
+    expect(h.elements).toHaveLength(3);
+  });
+
+  it("a rectangle alone keeps the flowchart key; ⌘⇧↑ aligns and folds nothing", async () => {
+    await renderWith();
+    API.setAppState({ selectedElementIds: { rect: true } });
+    press(KEYS.ARROW_UP);
+    expect(h.app.flowchart.pendingNodes?.length).toBeGreaterThan(0);
+    expect(folds("moat")).toBeUndefined();
+
+    API.setAppState({ selectedElementIds: { moat: true, levels: true } });
+    press(KEYS.ARROW_UP, { shift: true });
+    expect(folds("moat")).toBeUndefined();
+  });
+
+  it("a rebinding of the notes' fold key applies: the new key folds, the old key no longer does", async () => {
+    const chord = (code: string, key: string, alt = false) => ({
+      code,
+      key,
+      name: key,
+      metaKey: false,
+      ctrlKey: true,
+      altKey: alt,
+      shiftKey: false,
+    });
+    await renderWith([
+      {
+        name: "foldTextBoxes",
+        defaults: [chord("ArrowUp", "ArrowUp")],
+        keys: [chord("KeyF", "f", true)],
+      },
+    ]);
+    API.setAppState({ selectedElementIds: { moat: true } });
+    press(KEYS.ARROW_UP);
+    expect(folds("moat")).toBeUndefined();
+    Keyboard.withModifierKeys({ ctrl: true, alt: true }, () => {
+      Keyboard.keyPress("f");
+    });
+    expect(folds("moat")).toEqual([1]);
+  });
+});
+
+describe("box fill of a fixed-width box (YAZ-4284, YAZ-4277 D11)", () => {
+  it("the SVG fill covers the whole box plus its padding, and shrinks with a fold", async () => {
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+    const fixed = {
+      ...createMoat({ backgroundColor: "#ffec99" }),
+      autoResize: false,
+      width: 600,
+    };
+    API.setElements([fixed]);
+    const fill = async () =>
+      (await svgOf()).querySelector("g rect:not(.checkbox)")!;
+    // 600 × 150 plus 0.26em (5.2) across and 0.23em (4.6) up and down
+    expect((await fill()).getAttribute("width")).toBe("610.4");
+    expect((await fill()).getAttribute("height")).toBe("159.2");
+
+    act(() => h.app.setTextFolds("moat", [1]));
+    expect((await fill()).getAttribute("height")).toBe("134.2");
+    expect((await fill()).getAttribute("width")).toBe("610.4");
   });
 });
