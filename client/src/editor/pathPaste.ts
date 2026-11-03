@@ -223,9 +223,10 @@ export function pastePathLinks(view: EditorView, ctx: Ctx, options: PathPasteOpt
   }
   if (links.length > 1) {
     const tr = closeHistory(view.state.tr).deleteSelection()
-    // A table cell or a heading holds no list (YAZ-3631): there the links go on the line, one space apart.
+    // A header cell or a heading holds no list (YAZ-3631, YAZ-3818 D7): there the links go on the line, one space
+    // apart. A body cell holds lists (YAZ-3818 D1), so there they are bullets, as in the note (D11).
     const $at = tr.selection.$from
-    const noList = $at.parent.type.name === 'heading' || Array.from({ length: $at.depth }, (_, d) => $at.node(d).type.name).some((name) => name === 'table_cell' || name === 'table_header')
+    const noList = $at.parent.type.name === 'heading' || Array.from({ length: $at.depth }, (_, d) => $at.node(d).type.name).includes('table_header')
     if (noList) {
       view.dispatch(tr.replaceSelection(Slice.maxOpen(ctx.get(parserCtx)(links.join(' ')).content)).setMeta('paste', true).scrollIntoView())
       return true

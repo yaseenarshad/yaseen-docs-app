@@ -19,8 +19,10 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(-1 * (var(--list-indent) / 2 + var(--list-label-gap)));
-  width: var(--list-label-gap);
+  /* Centred under the parent's dot (the YAZ-3818 demo geometry: the list starts one indent from the parent's dot
+     column, whose centre is half the gutter in); at least 10px wide to take a click. Unchanged at the defaults. */
+  left: calc(var(--list-gutter) / 2 - var(--list-indent) - max(var(--list-label-gap), 10px) / 2);
+  width: max(var(--list-label-gap), 10px);
   background: linear-gradient(
       color-mix(in srgb, currentColor var(--guide-line-darkness, 15%), transparent),
       color-mix(in srgb, currentColor var(--guide-line-darkness, 15%), transparent)

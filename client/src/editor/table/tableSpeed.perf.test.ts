@@ -6,96 +6,15 @@
  * keys are typed in turn with the plain one's, and their ratios to it print. "No change in typing speed" is held by
  * counts, not by this ratio (YAZ-3796): `tableSpeed.test.ts` fails when a key reads layout or does work on the
  * freeze's or the styles' decorations. The measured numbers print, with a plain note of the same text for scale.
+ * Last, the same table with a list in one body cell in five, typed in a cell bullet (YAZ-3818 D3); and with 500 cell
+ * notes too, typed in a cell bullet of a cell with a mark (YAZ-4263).
  */
-import { editorViewCtx } from '@milkdown/kit/core'
-import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { TextSelection } from '@milkdown/kit/prose/state'
-import type { EditorView } from '@milkdown/kit/prose/view'
 import { afterEach, describe, expect, it } from 'vitest'
-import { median, timeMedian } from '../../test-perf'
-import { createCrepe } from '../createCrepe'
+import { median } from '../../test-perf'
+import { BIG, FROZEN, PLAIN, STYLED, TSV, cellText, clipboard, closeAll, mount, typeAt, typeInTurn } from './tableSpeedKit'
 
-const COLS = 10
-const ROWS = 500
-const head = Array.from({ length: COLS }, (_, c) => `H${c + 1}`)
-const body = Array.from({ length: ROWS }, (_, r) => head.map((_, c) => `r${r + 1}c${c + 1}`))
-const BIG = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...body.map((cells) => `| ${cells.join(' | ')} |`)].join('\n') + '\n'
-const STYLED = `${BIG}\n<!-- table: fill A2:B2 blue C5 green, stripes, freeze 1 row 2 cols -->\n`
-/** The freeze alone (YAZ-3790): it must add no work per key either. */
-const FROZEN = `${BIG}\n<!-- table: freeze 1 row 2 cols -->\n`
-/** The same words as paragraphs: what typing costs in a note with no table. */
-const PLAIN = body.map((cells) => cells.join(' ')).join('\n\n') + '\n'
-const TSV = Array.from({ length: 50 }, (_, r) => Array.from({ length: 4 }, (_, c) => `p${r}-${c}`).join('\t')).join('\n')
-const KEYS = 'typing in a cell'
-
-/** What a Sheets copy puts on the clipboard as plain text: tab-separated cells. */
-const clipboard = (text: string) =>
-  ({ clipboardData: { getData: (t: string) => (t === 'text/plain' ? text : '') }, preventDefault() {} }) as unknown as ClipboardEvent
-
-const open = new Set<() => Promise<void>>()
-afterEach(async () => {
-  for (const close of open) await close()
-})
-
-/** A note, the ms it took to open, and `close`. */
-async function mount(markdown: string): Promise<{ view: EditorView; ms: number; close: () => Promise<void> }> {
-  const root = document.createElement('div')
-  document.body.appendChild(root)
-  const start = performance.now()
-  const crepe = createCrepe({ root, defaultValue: markdown, tableZoomPill: true })
-  await crepe.create()
-  const ms = performance.now() - start
-  const close = async () => {
-    open.delete(close)
-    await crepe.destroy()
-    root.remove()
-  }
-  open.add(close)
-  return { view: crepe.editor.ctx.get(editorViewCtx), ms, close }
-}
-
-/** The text position inside body row `row` (1-based), column `col` (0-based), of the first table. */
-function cellText(doc: ProseNode, row: number, col: number): number {
-  let found = -1
-  doc.descendants((node, pos) => {
-    if (found >= 0) return false
-    if (node.type.name !== 'table') return true
-    let offset = pos + 1
-    for (let i = 0; i < row; i++) offset += node.child(i).nodeSize
-    offset += 1
-    for (let i = 0; i < col; i++) offset += node.child(row).child(i).nodeSize
-    found = offset + 2
-    return false
-  })
-  return found
-}
-
-/** The median ms of one key, typed at `pos`: one dispatch per key, after a warm-up of three keys. */
-function typeAt(view: EditorView, pos: number): { median: number; worst: number } {
-  view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)))
-  for (const ch of 'abc') view.dispatch(view.state.tr.insertText(ch))
-  return timeMedian(KEYS.length, (i) => view.dispatch(view.state.tr.insertText(KEYS[i]!)))
-}
-
-/**
- * Each view's ms of each key, the keys typed in turn, one in each view (YAZ-3792): a busy moment of the
- * machine slows each view alike, so their ratio holds. After a warm-up of three keys in each.
- */
-function typeInTurn(views: EditorView[]): number[][] {
-  for (const view of views) {
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellText(view.state.doc, 250, 3))))
-    for (const ch of 'abc') view.dispatch(view.state.tr.insertText(ch))
-  }
-  const ms = views.map((): number[] => [])
-  for (const ch of KEYS) {
-    views.forEach((view, v) => {
-      const start = performance.now()
-      view.dispatch(view.state.tr.insertText(ch))
-      ms[v]!.push(performance.now() - start)
-    })
-  }
-  return ms
-}
+afterEach(closeAll)
 
 describe('S6: a 500 × 10 table stays fast', () => {
   it('perf smoke: opens, types, and pastes 50 × 4 in under 150 ms; frozen and styled, it types as fast', async () => {

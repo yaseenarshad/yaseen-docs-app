@@ -19,6 +19,8 @@
  *    of either kind, taking its kind; else a new sublist of the kind of the nearest sibling's sublist, above first,
  *    then below; else bullets. `sinkListItem` alone wrapped the line in its parent's kind (a number under a number)
  *    and made a second sublist beside one of the other kind.
+ *  - Tab and Mod-] in a bullet in a table cell indent it (YAZ-3818 D5), before the table's own keys move to the next
+ *    cell; on a plain cell line they still move cells.
  *  - Tab, Shift-Tab, Mod-] and Mod-[ act on the lines the selection COVERS (YAZ-3003): a keyboard
  *    line selection touches the parent or the next sibling at zero width, and that line stays put.
  *    So Shift-Tab and Mod-[ are ours now: the zoom guard first, then Crepe's own lift. A text
@@ -41,8 +43,9 @@
  *    bullet's children keep their place on screen; a fold the lines would move into opens, and ⌘Z
  *    closes it again (`foldReveal.ts`). Into a code block or a table, or at the top of a zoom, nothing
  *    happens; a rule next to the caret is selected; at the top of the note an empty line goes, a bullet
- *    lifts and a heading becomes text. Crepe's `joinBackward` produced stray `* * child` lists, second paragraphs and bigger
- *    headings, and joined text into hidden lines. The item above is the one above on screen, also the last item of
+ *    lifts and a heading becomes text. A table cell is a small note (YAZ-3818): its lines join, and at its
+ *    edge a bullet lifts (Backspace) or nothing happens (Delete). Crepe's `joinBackward` produced stray
+ *    `* * child` lists, second paragraphs and bigger headings, and joined text into hidden lines. The item above is the one above on screen, also the last item of
  *    a list that ends right above the line's own list (YAZ-3727 D5).
  */
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -58,12 +61,15 @@ import { deleteBlockAndEmptyWrappers, emptyWrapperDepth, liftHeadlessItem, nextV
 import { rowShortcuts } from '../noteKeys'
 import { type Folds, openFolds, recordOpenedFolds } from './foldReveal'
 import { headingLevel, isHeadingCollapsed } from './headingFolding'
-import { findNestedList, findNestedLists, isListItem, LIST_NODE_NAMES } from './listNodes'
+import { cellPosAround, findNestedList, findNestedLists, isListItem, itemInCell, LIST_NODE_NAMES } from './listNodes'
 import { isOutlineItemCollapsed } from './outlineFolding'
 import { blockEscapingLift, getZoomedItemPos } from './zoom'
 
 /** Priority above Crepe's list/indent/base keymaps (default 50). */
 const PRIORITY = 100
+
+/** Above the table's Tab and ⌘] at 100 (`NextCell`), which Crepe adds first, so it runs before ours at 100 (YAZ-3818 D5). */
+const CELL_PRIORITY = 110
 
 /** Both selection ends sit in a textblock that is a direct child of a list_item. */
 const selectionInListItems = (state: EditorState, itemType: NodeType): boolean => {
@@ -180,6 +186,13 @@ const indentCommand = (itemType: NodeType, bulletType: NodeType): Command =>
     return true
   })
 
+/**
+ * Tab and ⌘] in a bullet in a table cell indent it, as in the note (YAZ-3818 D5); on a plain cell line they decline, so
+ * the table's `NextCell` runs. Shift-Tab and ⌘[ need no twin: the outliner's run before `PrevCell` (50).
+ */
+const cellIndentCommand = (itemType: NodeType, bulletType: NodeType): Command => (state, dispatch, view) =>
+  itemInCell(state.selection.$from) && indentCommand(itemType, bulletType)(state, dispatch, view)
+
 const outdentCommand = (itemType: NodeType): Command =>
   onCoveredLines((state, dispatch) => {
     if (!selectionInListItems(state, itemType)) return spansLines(state)
@@ -290,8 +303,12 @@ export const enterTracker = $prose(
 /** A line the joins act on: a textblock straight in the note, in a list item or in a quote (YAZ-3783). */
 const isLine = ($pos: ResolvedPos): boolean => $pos.depth === 1 || isListItem($pos.node(-1)) || $pos.node(-1).type.name === 'blockquote'
 
-/** A line in a table cell: nothing joins into or out of a table (YAZ-3783). */
-const inTable = ($pos: ResolvedPos): boolean => $pos.node(-1).type.spec.tableRole !== undefined
+/**
+ * `$line` sits in a table cell and `$other` is not in that cell: for the joins, a cell's edge is the note's edge
+ * (YAZ-3818). Nothing joins into or out of a table (YAZ-3783), nor across a cell's edge; two lines in one cell join,
+ * as in the note (D1).
+ */
+const pastCellEdge = ($line: ResolvedPos, $other: ResolvedPos): boolean => cellPosAround($line) !== null && cellPosAround($other) !== cellPosAround($line)
 
 /**
  * The item just above the line's item on screen (YAZ-3727 D5): its previous sibling, or the last item of a list that
@@ -402,8 +419,8 @@ const startRemoval = (state: EditorState, $line: ResolvedPos, alsoOpen: Folds = 
  * line's text moves to the end of the upper line, whose format wins, and the lower line goes. With `space`, one space
  * goes between two words (D7), but not between two quote lines (YAZ-3787); the caret goes after it. A join never hides
  * a line: a fold that the moved lines would go into opens (the caret guard covers the caret's line). ⌘Z gives the text
- * and the folds back (`recordOpenedFolds`, YAZ-3781). Text into or out of a code block or a table, and anything at the
- * top of a zoom: nothing happens (true, no dispatch).
+ * and the folds back (`recordOpenedFolds`, YAZ-3781). Text into or out of a code block, a table or a table cell
+ * (YAZ-3818), and anything at the top of a zoom: nothing happens (true, no dispatch).
  */
 const joinLines = (state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, $upper: ResolvedPos, $lower: ResolvedPos, space: boolean): boolean => {
   const upper = $upper.parent
@@ -411,7 +428,7 @@ const joinLines = (state: EditorState, dispatch: ((tr: Transaction) => void) | u
   if (isZoomLine(state, $upper)) return true
   const $empty = isEmptyLine($upper) ? $upper : isEmptyLine($lower) ? $lower : null
   if ($empty === null) {
-    if (upper.type.spec.code || lower.type.spec.code || inTable($upper) || inTable($lower)) return true
+    if (upper.type.spec.code || lower.type.spec.code || cellPosAround($upper) !== cellPosAround($lower)) return true
     if (!isLine($upper) || !isLine($lower)) return false
   }
   if (!dispatch) return true
@@ -456,7 +473,7 @@ const besideLeaf = (state: EditorState, dispatch: ((tr: Transaction) => void) | 
  * paragraph (D5, D6, YAZ-3780): join into the previous VISIBLE line, never a hidden one. No space right after an Enter,
  * so undoing a slip gives the word back (D7). A rule above is selected (an empty caret line goes first). At the top of the note an item lifts to a
  * paragraph (GRO-2012), an empty line goes and the next line moves up (YAZ-3798), a heading becomes a paragraph and a
- * paragraph declines; at the top of a zoom nothing happens.
+ * paragraph declines; at the top of a zoom nothing happens. The first line of a table cell is at the top (YAZ-3818).
  * Mid-line it declines: native deletion.
  */
 const backspaceCommand = (itemType: NodeType, paragraphType: NodeType): Command => (state, dispatch, view) => {
@@ -464,7 +481,9 @@ const backspaceCommand = (itemType: NodeType, paragraphType: NodeType): Command 
   const inItem = caretInFirstBlock(state, itemType) !== null
   const topLevel = $from.depth === 1 && ($from.parent.type.name === 'heading' || $from.parent.type === paragraphType)
   if (!empty || $from.parentOffset !== 0 || !(inItem || topLevel)) return false
-  const $prev = nextVisibleTextblock(state, $from, -1)
+  const $above = nextVisibleTextblock(state, $from, -1)
+  // The first line of a cell: as at the top of the note (YAZ-3818), the bullet lifts.
+  const $prev = $above !== null && pastCellEdge($from, $above instanceof NodeSelection ? $above.$from : $above) ? null : $above
   if ($prev instanceof NodeSelection) return besideLeaf(state, dispatch, $from, $prev)
   if ($prev === null) {
     if (getZoomedItemPos(state) !== null) return true
@@ -481,12 +500,15 @@ const backspaceCommand = (itemType: NodeType, paragraphType: NodeType): Command 
 /**
  * Delete (and ⌃D, ⌥⌦, ⌘⌦, ⌃⌥⌫, ⌥D) at the END of a line (D4): the next VISIBLE line joins here; a rule there is
  * selected (an empty caret line goes first). Anywhere else it declines (D3: the next character, natively). At the end of the note it declines; at the
- * end of a zoom nothing happens.
+ * end of a zoom and of a table cell (YAZ-3818) nothing happens.
  */
 const deleteCommand: Command = (state, dispatch) => {
   const { $from, empty } = state.selection
   if (!empty || !$from.parent.isTextblock || $from.parent.type.spec.code || $from.parentOffset !== $from.parent.content.size || !isLine($from)) return false
   const $next = nextVisibleTextblock(state, $from, 1)
+  // The last line of a cell (YAZ-3818): nothing happens. The cells are `isolating` (prosemirror-tables), so Crepe's
+  // join would not cross them; but `nextVisibleTextblock` does, and `besideLeaf` would act on a leaf in the next cell.
+  if ($next !== null && pastCellEdge($from, $next instanceof NodeSelection ? $next.$from : $next)) return true
   if ($next instanceof NodeSelection) return besideLeaf(state, dispatch, $from, $next)
   if ($next === null) return getZoomedItemPos(state) !== null
   return joinLines(state, dispatch, $from, $next, true)
@@ -495,12 +517,17 @@ const deleteCommand: Command = (state, dispatch) => {
 const BACKSPACE_KEYS = ['Backspace', 'Shift-Backspace', 'Ctrl-h', 'Alt-Backspace', 'Mod-Backspace']
 const DELETE_KEYS = ['Delete', 'Ctrl-d', 'Alt-Delete', 'Mod-Delete', 'Ctrl-Alt-Backspace', 'Alt-d']
 
-/** Keymap plugin; register with `editor.use(outlinerKeymap)`. Tab, Enter, Backspace and Delete are built in; ⌘] / ⌘[ are the rows' (YAZ-3564 K4). */
+/**
+ * Keymap plugin; register with `editor.use(outlinerKeymap)`. Tab, Enter, Backspace and Delete are built in; ⌘] / ⌘[ are the rows' (YAZ-3564 K4).
+ * In a bullet in a table cell, Tab and ⌘] run first (`CELL_PRIORITY`, YAZ-3818 D5).
+ */
 export const outlinerKeymap = $shortcut((ctx: Ctx) => {
   const itemType = listItemSchema.type(ctx)
   const paragraphType = paragraphSchema.type(ctx)
   const bulletType = bulletListSchema.type(ctx)
   return {
+    CellTab: { key: 'Tab', priority: CELL_PRIORITY, onRun: () => cellIndentCommand(itemType, bulletType) },
+    ...rowShortcuts(ctx, 'note.indent', 'CellIndentBracket', { priority: CELL_PRIORITY, onRun: () => cellIndentCommand(itemType, bulletType) }),
     Tab: { key: 'Tab', priority: PRIORITY, onRun: () => indentCommand(itemType, bulletType) },
     ...rowShortcuts(ctx, 'note.indent', 'IndentBracket', { priority: PRIORITY, onRun: () => indentCommand(itemType, bulletType) }),
     Outdent: { key: 'Shift-Tab', priority: PRIORITY, onRun: () => outdentCommand(itemType) },

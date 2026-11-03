@@ -71,7 +71,8 @@ export function fillCells(state: EditorState, source: FillSource, axis: FillAxis
   const grid: Cell[][] = Array.from({ length: axis === 'down' ? n : lines }, () => [])
   for (let line = 0; line < lines; line++) {
     const sources = Array.from({ length }, (_, i) => (axis === 'down' ? cell(rows[i]!, left + line) : cell(rows[line]!, left + i)))
-    const texts = sources.map((node) => node.textContent)
+    // A cell's words, its lines and bullets joined with a space (YAZ-3818).
+    const texts = sources.map((node) => node.textBetween(0, node.content.size, ' '))
     fillSeries(texts, n).forEach((value, i) => {
       const from = sources[i % length]!
       const content = value === texts[i % length] ? from.content : textCell(state.schema, value).content

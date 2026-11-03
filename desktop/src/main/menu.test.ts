@@ -193,10 +193,11 @@ describe('buildMenuTemplate', () => {
     click(copyModes[3])
     expect(vi.mocked(handlers.copyAs).mock.calls).toEqual([['plain'], ['markdown'], ['visible']])
     const modes = items.find((i) => i.label === 'Paste as')?.submenu as MenuItemConstructorOptions[]
-    expect(modes.map((i) => [i.label, i.accelerator])).toEqual([['Plain text', 'CmdOrCtrl+Shift+V'], ['Markdown', undefined]])
+    expect(modes.map((i) => i.type === 'separator' ? 'separator' : [i.label, i.accelerator])).toEqual([['Plain text', 'CmdOrCtrl+Shift+V'], ['Markdown', undefined], 'separator', ['Cells only', undefined]])
     click(modes[0])
     click(modes[1])
-    expect(vi.mocked(handlers.pasteAs).mock.calls).toEqual([['plain'], ['markdown']])
+    click(modes[3])
+    expect(vi.mocked(handlers.pasteAs).mock.calls).toEqual([['plain'], ['markdown'], ['cells']])
   })
 
   it('View menu: Toggle Sidebar, our own Reload and zoom items (not the roles); Toggle DevTools only in dev', () => {
@@ -614,6 +615,7 @@ function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, 
   const host: MenuHost = {
     focusedWebContents: () => focused,
     readClipboardText: vi.fn(() => '# Clipboard\n\nText'),
+    readClipboardHTML: vi.fn(() => '<table><tr><td>a</td></tr></table>'),
     openExternal: vi.fn(),
     checkForUpdates: vi.fn(),
     saveHeapSnapshot: vi.fn(async () => true),

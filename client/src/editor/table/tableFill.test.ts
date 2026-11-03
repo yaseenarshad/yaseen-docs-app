@@ -77,6 +77,13 @@ describe('fill command', () => {
     view.dispatch(fillCells(view.state, fillSource(view.state)!, 'down', 1)!)
     expect(cellAt(view, 2, 0).firstChild!.firstChild!.marks.map((mark) => mark.type.name)).toEqual(['strong'])
   })
+  it('a cell with bullets is read as its words joined with a space (YAZ-3818)', async () => {
+    const view = await mountTable('| a |\n| --- |\n| <ul><li>Week</li><li>1</li></ul> |\n| |\n')
+    selectCells(view, [1, 0], [1, 0])
+    view.dispatch(fillCells(view.state, fillSource(view.state)!, 'down', 1)!)
+    expect(texts(view)[2]).toEqual(['Week 2'])
+  })
+
   it('down from one date cell: the next days (YAZ-3789)', async () => {
     const { view } = await mountNote('| d |\n| --- |\n| 2026-10-30 |\n|  |\n|  |\n')
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 1, 0) + 2)))

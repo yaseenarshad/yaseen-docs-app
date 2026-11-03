@@ -366,3 +366,31 @@ describe('right below a plain line with a written label, the marker stays text (
     expect(caretLine(view)).toBe('paragraph')
   })
 })
+
+describe('`[ ] ` makes a to-do of the nearest bullet, never across a table cell (YAZ-3818)', () => {
+  const IN_BULLET = '* outer\n\n  | h1 | h2 |\n  | --- | --- |\n  | x | c2 |\n'
+
+  it('on a plain cell line of a table inside a bullet: the text stays, the outer bullet is no to-do', async () => {
+    const { crepe, view } = await mount(IN_BULLET, 'x')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from - 1)))
+    type(view, '[ ] ')
+    expect(view.state.doc.firstChild!.firstChild!.attrs.checked).toBeNull()
+    expect(getMarkdownForSave(crepe)).toMatch(/^\* outer\n/)
+    expect(view.state.selection.$from.parent.textContent).toBe('[ ] x')
+  })
+
+  it('in a cell bullet of that table: the cell bullet becomes a to-do', async () => {
+    const { crepe, view } = await mount('* outer\n\n  | h1 | h2 |\n  | --- | --- |\n  | <ul><li>x</li></ul> | c2 |\n', 'x')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from - 1)))
+    type(view, '[x] ')
+    expect(getMarkdownForSave(crepe)).toMatch(/^\* outer\n/)
+    expect(getMarkdownForSave(crepe)).toContain('<ul><li>[x] x</li></ul>')
+  })
+
+  it('in a plain bullet: a to-do, as before', async () => {
+    const { crepe, view } = await mount('* x\n', 'x')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from - 1)))
+    type(view, '[ ] ')
+    expect(getMarkdownForSave(crepe)).toBe('* [ ] x\n')
+  })
+})

@@ -777,6 +777,19 @@ describe('wikilink picker: a closed picker never swallows keys', () => {
   })
 })
 
+describe('wikilink picker: in a bullet in a table cell (YAZ-3818 D6)', () => {
+  it('an OPEN picker takes Enter; closed, Enter makes the next bullet in the cell', async () => {
+    const { crepe } = await mount('| h |\n| - |\n| <ul><li>item</li></ul> |\n', source('Alpha'))
+    caret(crepe, posOf(crepe, 'item', 'item'.length))
+    type(crepe, ' [[alp')
+    expect(rows()).toEqual(['Alpha', 'Create "alp"'])
+    expect(press(crepe, 'Enter')).toBe(true)
+    expect(getMarkdownForSave(crepe)).toContain('| <ul><li>item [[Alpha]]</li></ul> |')
+    expect(press(crepe, 'Enter')).toBe(true)
+    expect(getMarkdownForSave(crepe)).toContain('<ul><li>item [[Alpha]]</li><li></li></ul>')
+  })
+})
+
 describe('wikilink picker: walking never opens (YAZ-908)', () => {
   it('moving the caret into the middle of a closed [[Alpha]] never opens the picker', async () => {
     const { crepe } = await mount('before [[Alpha]] after\n', source('Alpha'))

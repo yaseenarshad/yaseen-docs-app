@@ -26,6 +26,7 @@ import { TableMap } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { formatTime } from '@shared/timeFormat'
 import type { MenuChoice, MenuChoiceField, MenuItem, MenuNumberField, MenuStrip, RowProvider } from '../blockHandleMenu'
+import { isListItem } from '../outline/listNodes'
 import { tablerIcon, type TablerIcon } from './tableIcons'
 import { setCellsAttr } from './cells'
 import { fillCalendarDay, goToNow, minutesOf, missingDayTimes, nowPlace, setTimeSlots } from './tableCalendar'
@@ -45,14 +46,17 @@ const BORDER_DEFAULT = { px: 1, darkness: 20 }
  * The table the handle points at, and where it starts; null when it points at anything else. Below the
  * table's top edge the handle's probe lands in its first cell (YAZ-3795), so the nearest table ancestor
  * counts too: Crepe's handle never belongs to a block inside a table. A bullet's handle probes its own
- * line, which no table holds.
+ * line, which no table holds; a bullet in a cell (YAZ-3818) is a list item inside the table, so the
+ * walk stops there: its dot, or a probe in it, is the bullet's, with the bullet's menu.
  */
 function targetTable(doc: ProseNode, inside: number): { node: ProseNode; pos: number } | null {
   if (inside < 0 || inside >= doc.content.size) return null
   const node = doc.nodeAt(inside)
   if (node?.type.name === 'table') return { node, pos: inside }
+  if (node !== null && isListItem(node)) return null
   const $pos = doc.resolve(inside)
   for (let depth = $pos.depth; depth > 0; depth--) {
+    if (isListItem($pos.node(depth))) return null
     if ($pos.node(depth).type.name === 'table') return { node: $pos.node(depth), pos: $pos.before(depth) }
   }
   return null

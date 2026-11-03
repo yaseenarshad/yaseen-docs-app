@@ -342,3 +342,31 @@ describe('id links (YAZ-2293): a mention by id, read as the title', () => {
     expect(marked(snippet)).toEqual(['Road Map'])
   })
 })
+
+describe('the cell notes\' syntax reads as text (YAZ-3818, round 3 of the demo)', () => {
+  const B = '/v/B.md'
+  const resolve: ResolveLink = (page) => (page === 'B' ? B : null)
+  const NO = NO_TITLES
+  const shown = (snippet: MentionSnippet) => snippet.ranges.map(({ from, to }) => snippet.text.slice(from, to))
+
+  it('a cell\'s list as items, a numbered list and to-dos; the mark gone; the mention still highlighted', () => {
+    const [list] = mentionSnippets('| Monday | <ul><li>Read [[B]]</li><li>Pack<ul><li>Bag</li></ul></li></ul>[^cell-2] |\n', B, resolve, NO)
+    expect(list!.text).toBe('| Monday | • Read B • Pack • Bag |')
+    expect(shown(list!)).toEqual(['B'])
+    expect(list!.cellNote).toBeUndefined()
+    const [ordered] = mentionSnippets('| x | <ol start="3"><li>[ ] one</li><li>[x] [[B]]</li><li>two</li></ol> |\n', B, resolve, NO)
+    expect(ordered!.text).toBe('| x | ☐ one ☑ B 5. two |')
+    expect(shown(ordered!)).toEqual(['B'])
+  })
+
+  it('a cell note\'s first line reads "Cell note: …", its next lines know their note; a hand-written footnote and other HTML stay', () => {
+    const file = '| a |\n| - |\n| x[^cell-13] |\n\n[^cell-13]: see [[B]]\n\n    * and [[B]]\n\n[^1]: <b>[[B]]</b>\n'
+    const snippets = mentionSnippets(file, B, resolve, NO)
+    expect(snippets.map((s) => [s.text, s.cellNote])).toEqual([
+      ['Cell note: see B', 'cell-13'],
+      ['* and B', 'cell-13'],
+      ['[^1]: <b>B</b>', undefined],
+    ])
+    expect(snippets.map(shown)).toEqual([['B'], ['B'], ['B']])
+  })
+})

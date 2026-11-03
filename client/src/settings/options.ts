@@ -4,7 +4,7 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type TableDimPast, type TableNowMark, type TableRowBand, type DailyNoteOpens, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type TableBandRows, type TableDimPast, type TableNowMark, type TableRowBand, type DailyNoteOpens, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -144,6 +144,13 @@ export const TABLE_ROW_BAND_OPTIONS: readonly Option<TableRowBand>[] = [
   { label: 'Off', value: 'off' },
   { label: 'Calendar tables', value: 'calendar' },
   { label: 'All tables', value: 'all' },
+]
+
+/** Tables (the YAZ-3818 demo): the rows the band marks; table.css reads it as `data-table-band-rows` on `.app`. */
+export const TABLE_BAND_ROWS_OPTIONS: readonly Option<TableBandRows>[] = [
+  { label: 'Caret and mouse', value: 'both' },
+  { label: 'Caret row only', value: 'caret' },
+  { label: 'Mouse row only', value: 'mouse' },
 ]
 
 /** Calendar tables (YAZ-4162 D6): how the now row is marked; table.css reads it as `data-table-now` on `.app`. */

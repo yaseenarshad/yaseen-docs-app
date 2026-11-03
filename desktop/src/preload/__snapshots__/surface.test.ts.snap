@@ -135,6 +135,9 @@ menu.onToggleSidebar/1: on menu:toggle-sidebar -> listener[[{"id":"0-0-0-0-0","e
 menu.onWhatsNew/1: on menu:whats-new -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:whats-new
 menu.onZoom/1: on menu:zoom -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:zoom
 mintNoteId/1: invoke fs:mint-note-id ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+newPlaces.get/1: invoke newPlaces:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+newPlaces.onChanged/1: on newPlaces:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off newPlaces:changed
+newPlaces.set/2: invoke newPlaces:set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 pickFolder/0: invoke dialog:pick-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 pickPicturesFolder/1: invoke dialog:pick-pictures-folder ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 pictureFolders.allow/1: invoke picture-folders:allow ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

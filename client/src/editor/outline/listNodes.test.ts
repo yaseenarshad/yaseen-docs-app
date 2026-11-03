@@ -4,13 +4,15 @@
  * "Untitled item"; and `findOwnImages` yields item-relative offsets that resolve straight to the
  * image nodes (`doc.nodeAt(itemPos + 1 + offset)`), ignoring images inside nested lists — those
  * belong to the child items. Real parser through `createCrepe`, so the offsets are the schema's.
+ * A table cell is a boundary for the item helpers (YAZ-3818): `itemInCell`, `innermostItemPos`, and
+ * `findOwnImages` skips a table the item holds.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { createCrepe } from '../createCrepe'
-import { findOwnImages, itemLabelText } from './listNodes'
+import { findOwnImages, innermostItemPos, itemInCell, itemLabelText } from './listNodes'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -77,5 +79,44 @@ describe('findOwnImages', () => {
     expect(srcsOf(doc, parent.itemPos, findOwnImages(parent.item))).toEqual(['p.png'])
     expect(srcsOf(doc, child.itemPos, findOwnImages(child.item))).toEqual(['n.png'])
     expect(findOwnImages(leaf.item)).toEqual([])
+  })
+
+  it('ignores images in a table the item holds (YAZ-3818): they sit in its cells', async () => {
+    const doc = await docOf('* ![P](p.png)\n\n  | h |\n  | --- |\n  | ![C](c.png) |\n')
+    const [bullet] = items(doc)
+    expect(srcsOf(doc, bullet.itemPos, findOwnImages(bullet.item))).toEqual(['p.png'])
+  })
+})
+
+/** The resolved position inside the first text node that holds `text`. */
+const at = (doc: ProseNode, text: string) => {
+  let pos = -1
+  doc.descendants((node, nodePos) => {
+    if (pos < 0 && node.isText && node.text!.includes(text)) pos = nodePos + node.text!.indexOf(text)
+    return pos < 0
+  })
+  return doc.resolve(pos)
+}
+
+describe('a table cell is a boundary (YAZ-3818)', () => {
+  // A bullet holding a table (YAZ-3770) whose body cells hold a plain line and a bullet with a child.
+  const NOTE = '* outer\n\n  | h1 | h2 |\n  | --- | --- |\n  | plain | <ul><li>cell<ul><li>kid</li></ul></li></ul> |\n\ntext\n'
+
+  it('itemInCell: true in a cell bullet at any depth; false on a plain cell line, in the outer bullet and outside lists', async () => {
+    const doc = await docOf(NOTE)
+    expect(itemInCell(at(doc, 'cell'))).toBe(true)
+    expect(itemInCell(at(doc, 'kid'))).toBe(true)
+    expect(itemInCell(at(doc, 'plain'))).toBe(false)
+    expect(itemInCell(at(doc, 'outer'))).toBe(false)
+    expect(itemInCell(at(doc, 'text'))).toBe(false)
+  })
+
+  it('innermostItemPos: the cell bullet in a cell; null on a plain cell line, never the outer bullet', async () => {
+    const doc = await docOf(NOTE)
+    const [outer, cell, kid] = items(doc)
+    expect(innermostItemPos(at(doc, 'outer'))).toBe(outer.itemPos)
+    expect(innermostItemPos(at(doc, 'cell'))).toBe(cell.itemPos)
+    expect(innermostItemPos(at(doc, 'kid'))).toBe(kid.itemPos)
+    expect(innermostItemPos(at(doc, 'plain'))).toBeNull()
   })
 })

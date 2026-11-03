@@ -12,7 +12,8 @@ import { CODE_LINE_ATTR, syncCodeLines } from './codeLines'
 export type ShownLines = Omit<BlockLines, 'ends'> & Partial<Pick<BlockLines, 'ends'>>
 
 const pluginKey = new PluginKey<DecorationSet>('mdapp-line-numbers')
-const CONTAINERS = new Set(['bullet_list', 'ordered_list', 'list_item', 'blockquote'])
+/** Blocks that hold blocks: their own blocks pair. A footnote and a cell note too (YAZ-3818 D4): the file numbers their lines. */
+const CONTAINERS = new Set(['bullet_list', 'ordered_list', 'list_item', 'blockquote', 'footnote_definition', 'cell_note'])
 const KIND: Record<string, string> = { paragraph: 'p', heading: 'h', code_block: 'c', hr: 'r', table: 't' }
 /** The file's two kinds of code block, both the page's `code_block`: the fence lines above the first code line. */
 const FENCE: Record<string, number> = { c: 1, i: 0 }

@@ -43,12 +43,14 @@ test('⌘D shows the set folder in Files: open, with the keyboard on its row', a
   await expect(fileRow(win, 'Waiting')).toBeVisible()
 })
 
-test('⌘N, ⏎, a name, ⏎: the note is made in the default folder and opens', async () => {
+test('⌘N, ⏎, ⏎, a name, ⏎: the note is made in the default folder and opens', async () => {
   await clickMenuItemQuietly(app, 'menu.file.new-item')
   const box = win.locator('.new-item')
   await expect(box).toBeVisible()
   await expect(box.locator('.new-item__tile[aria-checked="true"]')).toHaveText('Note')
   await expect(box.locator('.new-item__place')).toHaveText('Inbox')
+  // ⏎ moves to the place row, ⏎ there makes it (YAZ-4252).
+  await win.keyboard.press('Enter')
   await win.keyboard.press('Enter')
   await expect(box).toHaveCount(0)
   const field = win.locator('.create-inline__input')

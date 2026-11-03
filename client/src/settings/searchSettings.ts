@@ -31,7 +31,7 @@ export function settingCandidates(ctx: SettingsCtx): SettingHit[] {
   return availableSections(ctx).flatMap((section) =>
     groupsOf(section, ctx).flatMap((group) =>
       group.items.map((item) => {
-        const name = [item.label, resolveHint(item, ctx), ...(item.keywords ?? []), group.title, group.hint, section.title].filter((part) => part !== undefined).join(' ')
+        const name = [item.label, resolveHint(item, ctx), ...(item.keywords ?? []), group.title, group.hint, section.title, ...(section.keywords ?? [])].filter((part) => part !== undefined).join(' ')
         const lower = name.toLowerCase()
         return { section, group, item, name, lower, words: lower.split(/[^\p{L}\p{N}]+/u).filter((w) => w !== '') }
       }),

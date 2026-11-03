@@ -13,6 +13,7 @@ import { registerDialogIpc } from './dialog'
 import { handle } from './envelope'
 import { registerFavoritesIpc } from './favorites'
 import { registerIconsIpc } from './icons'
+import { registerNewPlacesIpc } from './newPlaces'
 import { registerFocusIpc } from './focus'
 import { registerFsIpc } from './fs'
 import { registerGithubIpc } from './github'
@@ -63,6 +64,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerVaultConfigIpc(store)
   registerFavoritesIpc(store)
   registerIconsIpc(store)
+  registerNewPlacesIpc(store)
   registerFocusIpc(store)
   registerPropertiesIpc(store)
   registerWindowIpc(store, windows)

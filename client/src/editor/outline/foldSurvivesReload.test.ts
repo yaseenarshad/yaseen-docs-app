@@ -115,6 +115,31 @@ describe('folds survive setMarkdown (the external/AI-edit reload path)', () => {
     expect(reports.at(-1)).toEqual([key])
   })
 
+  it('a collapsed bullet in a table cell (YAZ-3818) folds, unfolds, and stays collapsed through the reload', async () => {
+    const { reports, options } = liveWiring()
+    const TABLE = '| h1 | h2 |\n| --- | --- |\n| <ul><li>Cell parent<ul><li>Cell child</li></ul></li></ul> | x |\n'
+    const { crepe, root } = await mount({ defaultValue: TABLE, folding: options })
+    const key = getOutlineFoldKey('Cell parent', 0)
+    const folded = () => root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`).length
+
+    toggleFor(root, OUTLINE_TOGGLE_CLASS, 'Cell parent').click()
+    expect(reports.at(-1)).toEqual([key])
+    expect(folded()).toBe(1)
+    toggleFor(root, OUTLINE_TOGGLE_CLASS, 'Cell parent').click()
+    expect(reports.at(-1)).toEqual([])
+    expect(folded()).toBe(0)
+    toggleFor(root, OUTLINE_TOGGLE_CLASS, 'Cell parent').click()
+    const sinceCollapse = reports.length
+
+    setMarkdown(crepe, `${TABLE}| more | rows |\n\nAgent added this.\n`)
+
+    expect(getMarkdownForSave(crepe)).toContain('Agent added this')
+    expect(toggleFor(root, OUTLINE_TOGGLE_CLASS, 'Cell parent').getAttribute('aria-expanded')).toBe('false')
+    expect(folded()).toBe(1)
+    expect(reports.slice(sinceCollapse).every((r) => r.length > 0)).toBe(true)
+    expect(reports.at(-1)).toEqual([key])
+  })
+
   it('a collapsed heading stays collapsed through the same reload', async () => {
     const { reports, options } = liveWiring()
     const { crepe, root } = await mount({ defaultValue: DOC, headingFolding: options })

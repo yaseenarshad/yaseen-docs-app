@@ -707,6 +707,22 @@ describe('New drawing ▸: New Excalidraw drawing / New draw.io diagram (YAZ-302
     expect(onCreateConsumed).toHaveBeenLastCalledWith(2)
   })
 
+  it('YAZ-4252: a create request for a Folder opens the name field with the request\'s name template; Enter makes the folder with that name', async () => {
+    const onCreateConsumed = vi.fn()
+    const { el, bridge, rerender } = await mount({ onCreateConsumed })
+    await rerender({ createRequest: { id: 1, kind: 'dir', dir: '/v/sub', seed: '11_02- ' } })
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(input?.value).toBe('11_02- ')
+    expect(onCreateConsumed).toHaveBeenCalledExactlyOnceWith(1)
+    act(() => {
+      input!.value += 'Plans'
+      input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    await act(async () => undefined)
+    // An ID vault: the folder's slug, and the typed name as its title.
+    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/11-02-plans', title: '11_02- Plans' })
+  })
+
   it('open "New drawing ▸" → New draw.io diagram in its flyout says "New diagram" and makes a .drawio; an empty box is Untitled, then Untitled 2 past a taken one', async () => {
     const { el, bridge, props } = await mount({}, withCreateBoard(['/v/sub/Untitled.drawio']))
     expect(await newIn(el, 'New draw.io diagram', null, 'New drawing')).toBe('New diagram')
@@ -1772,6 +1788,16 @@ describe('Show in sidebar — Files reveal (YAZ-1063)', () => {
     expect(dirRow(el, 'other')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true')
     expect(dirRow(el, 'target')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true')
     expect(dirRow(el, 'deep')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('"Rename file" from a tab (YAZ-4248): the row shows, as for "Show in sidebar", then its own rename field takes it, the name selected', async () => {
+    const { el } = await mount({ revealRequest: { id: 1, path: TARGET, rename: true } }, withDeepTree)
+    expect(dirRow(el, 'deep')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true')
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')!
+    expect(input.value).toBe('Note')
+    expect(document.activeElement).toBe(input)
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, 4])
+    expect(input.closest('.create-inline')?.classList.contains('create-inline--revealed')).toBe(true)
   })
 
   it('reports one passive notice when the loaded Files tree cannot show the path (YAZ-2638 S32, S37: "Show in sidebar" on a row asks through this door)', async () => {

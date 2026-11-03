@@ -37,7 +37,7 @@ import type { Node as ProseNode, TagParseRule } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { AttrStep, ReplaceStep } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
-import type { NodeSchema } from '@milkdown/kit/transformer'
+import type { MarkdownNode, NodeSchema } from '@milkdown/kit/transformer'
 import { $prose, $remark } from '@milkdown/kit/utils'
 import type { Nodes, Table } from 'mdast'
 import { joinNextComment } from '../joinComment'
@@ -247,7 +247,8 @@ interface CellData {
  * A cell schema with `fill` and `color` (YAZ-3696 D3 / D8; a name or `#rrggbb`, YAZ-3817) and its
  * own `align` (YAZ-3819): `null` by default, carried by `data-fill` / `data-color` / `data-align` on
  * the DOM (the column's alignment in `data-column-align`), and read from the cell's `data.tableCell`
- * on load. The runner is GFM's (open the cell with its alignment, then its paragraph), with our attributes.
+ * on load. The runner is the app's own: it opens the cell with its alignment and our attributes, then one
+ * paragraph for each run of inline content, and each list (YAZ-3818 D1, `cellLists.ts`) to its own runner.
  */
 export function withCellStyle(spec: NodeSchema): NodeSchema {
   const toDOM = spec.toDOM!
@@ -283,7 +284,26 @@ export function withCellStyle(spec: NodeSchema): NodeSchema {
       match: spec.parseMarkdown.match,
       runner: (state, node, type) => {
         const attrs = { alignment: node.align, ...(node.data as CellData | undefined)?.tableCell }
-        state.openNode(type, attrs).openNode(state.schema.nodes.paragraph).next(node.children).closeNode().closeNode()
+        state.openNode(type, attrs)
+        // One line for each run of inline content; a list (YAZ-3818 D1, body cells only) goes to its own runner.
+        // An empty cell is one empty line.
+        let run: MarkdownNode[] = []
+        let blocks = 0
+        const line = () => {
+          state.openNode(state.schema.nodes.paragraph).next(run).closeNode()
+          run = []
+        }
+        for (const child of node.children ?? []) {
+          if (child.type !== 'list') {
+            run.push(child)
+            continue
+          }
+          if (run.length > 0) line()
+          state.next(child)
+          blocks++
+        }
+        if (run.length > 0 || blocks === 0) line()
+        state.closeNode()
       },
     },
   }

@@ -22,6 +22,11 @@
  * The thread (YAZ-3166): after a query or a step, bullet threading and section indent point at the
  * active match instead of the caret (`findThreadAnchor`); a caret move or an edit gives them back.
  *
+ * Cell notes (YAZ-3818 D19): in the note view, the matches in the hidden cell notes count. When the active match is in
+ * one, find opens that note as a card beside its cell (`table/cellNoteCard.ts`; the caret stays), and keeps a record
+ * of it, as it does of the folds it opened. When the active match moves out of that note, find closes the card.
+ * `close()` on a match in the note leaves the card open with the caret in it.
+ *
  * Pills (YAZ-3744 S9): a `[[link]]` the note draws as a pill (`pillLinks`, the wikilink plugin's own drawing) hides
  * text. The matches that touch its hidden text (an ID, `.drawio`, folders, the brackets) are together ONE match, and each
  * match in the title an ID link shows is one. Each marks the whole pill: its shown text, and its title widget (a widget takes no
@@ -33,8 +38,11 @@ import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } 
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { collapsedHeadingsHiding, setHeadingFoldSet } from '../outline/headingFolding'
+import { cellPosAround } from '../outline/listNodes'
 import { collapsedItemsHiding, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos } from '../outline/zoom'
+import { closeCellNote, openCellNote, revealOpenCell, showInCard } from '../table/cellNoteCard'
+import { cellNoteAround, cellNoteCardKey, isCellNoteHidden, markPosOf } from '../table/cellNotes'
 import { pillLinks, type PillLink, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import type { FindChannel, FindController, FindResult } from './findChannel'
@@ -42,6 +50,9 @@ import type { FindChannel, FindController, FindResult } from './findChannel'
 export const FIND_MATCH_CLASS = 'find-match'
 /** The active match carries this IN ADDITION to `FIND_MATCH_CLASS`. */
 export const FIND_ACTIVE_CLASS = 'find-match--active'
+
+/** The cell note find opened as a card (D19): its position, mapped through every change. */
+type OpenedNote = number
 
 /** An absolute document range: one match, or the zoomed subtree. */
 interface Match {
@@ -66,6 +77,8 @@ interface FindState {
   revealed: ReadonlySet<number>
   /** The same, for heading sections (YAZ-1140) — kept apart: the two plugins own different positions. */
   revealedHeadings: ReadonlySet<number>
+  /** The cell note THIS search opened, or null (D19). */
+  opened: OpenedNote | null
   /**
    * The thread points at the active match (YAZ-3166): true after a query or a step. False once the
    * caret moves, the doc is edited, or a click or a key lands in the note (YAZ-3200). A doc change
@@ -78,6 +91,7 @@ type FindMeta =
   | { type: 'query'; query: string }
   | { type: 'step'; delta: 1 | -1 }
   | { type: 'revealed'; revealed: ReadonlySet<number>; revealedHeadings: ReadonlySet<number> }
+  | { type: 'opened'; opened: OpenedNote | null }
   | { type: 'clear' }
   /** A click or a key in the note that sent no transaction of its own: the thread goes back to the caret (YAZ-3200). */
   | { type: 'release' }
@@ -85,7 +99,7 @@ type FindMeta =
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const findKey = new PluginKey<FindState>('mdapp-find-in-page')
 
-const EMPTY: FindState = { query: '', matches: [], activeIndex: -1, revealed: new Set(), revealedHeadings: new Set(), onMatch: false }
+const EMPTY: FindState = { query: '', matches: [], activeIndex: -1, revealed: new Set(), revealedHeadings: new Set(), opened: null, onMatch: false }
 
 /** Where the thread points while you step through the matches (YAZ-3166): the active match's start, else null (the caret). */
 export const findThreadAnchor = (state: EditorState): number | null => {
@@ -213,6 +227,20 @@ const nextActive = (previous: FindState, meta: FindMeta | undefined, matches: re
 const carryRevealed = (transaction: Transaction, reported: ReadonlySet<number> | undefined, previous: ReadonlySet<number>): ReadonlySet<number> =>
   reported ?? (transaction.docChanged ? new Set([...previous].map((pos) => transaction.mapping.map(pos, 1))) : previous)
 
+/** The opened note across a transaction: the freshly reported one, else the old one mapped; null once the note is gone. */
+const carryOpened = (transaction: Transaction, meta: FindMeta | undefined, previous: OpenedNote | null): OpenedNote | null => {
+  if (meta?.type === 'opened') return meta.opened
+  if (previous === null || !transaction.docChanged) return previous
+  const note = transaction.mapping.mapResult(previous, 1)
+  return note.deleted ? null : note.pos
+}
+
+/** The hidden cell note that holds `pos`, or null (D19). */
+const hiddenNoteAt = (state: EditorState, pos: number): number | null => {
+  const note = cellNoteAround(state.doc.resolve(pos))
+  return note !== null && isCellNoteHidden(state, note) ? note : null
+}
+
 /** The engine behind the channel's commands. Every step is metadata-only, and synchronous. */
 const createController = (view: EditorView): FindController => {
   const findState = (): FindState => findKey.getState(view.state) ?? EMPTY
@@ -264,6 +292,31 @@ const createController = (view: EditorView): FindController => {
     foldHeadings([...revealedHeadings], false)
     if (differs(revealed, previous.revealed) || differs(revealedHeadings, previous.revealedHeadings))
       dispatchMeta({ type: 'revealed', revealed, revealedHeadings })
+    followNotes()
+  }
+  /**
+   * D19: the card find opened closes when the active match is not in it; the hidden cell note that holds the active
+   * match opens as a card. A card the reader closed meanwhile is no longer find's.
+   */
+  const followNotes = (): void => {
+    let { opened } = findState()
+    const match = activeMatch()
+    if (opened !== null && cellNoteCardKey.getState(view.state)?.pos !== opened) opened = null
+    if (opened !== null) {
+      const note = view.state.doc.nodeAt(opened)!
+      if (match === null || match.from < opened || match.from >= opened + note.nodeSize) {
+        closeCellNote(view, false)
+        opened = null
+      }
+    }
+    const hidden = match === null ? null : hiddenNoteAt(view.state, match.from)
+    if (hidden !== null) {
+      // The note's cell: the one that holds its mark.
+      const mark = markPosOf(view.state.doc, view.state.doc.nodeAt(hidden)!.attrs.label as string)
+      const cell = mark === null ? null : cellPosAround(view.state.doc.resolve(mark))
+      if (cell !== null && openCellNote(view, cell, false)) opened = cellNoteCardKey.getState(view.state)?.pos ?? null
+    }
+    if (opened !== findState().opened) dispatchMeta({ type: 'opened', opened })
   }
   /**
    * Centres the active HIGHLIGHT, not its block: a block can be many windows tall (one 4.5k-line
@@ -276,6 +329,13 @@ const createController = (view: EditorView): FindController => {
     if (match === null) return
     const { node } = view.domAtPos(match.from)
     const element = view.dom.querySelector(`.${FIND_ACTIVE_CLASS}`) ?? (node instanceof Element ? node : node.parentElement)
+    // A match in the open cell note card (YAZ-3818, round 4 of the demo): its cell shows, the least scroll, and the
+    // card scrolls to the match; the page never centres on a card.
+    if (element?.closest('.cell-note--open') != null) {
+      revealOpenCell(view)
+      showInCard(view, element.getBoundingClientRect())
+      return
+    }
     element?.scrollIntoView?.({ block: 'center' })
   }
   return {
@@ -341,6 +401,7 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
               meta?.type === 'revealed' ? meta.revealedHeadings : undefined,
               previous.revealedHeadings,
             )
+            const opened = carryOpened(transaction, meta, previous.opened)
             // A reveal (fold) transaction is metadata-only and keeps it; `close()` lands the caret on the match.
             // An APPENDED doc change keeps it too: a real edit is the root transaction and clears it first, but
             // Milkdown's trailing paragraph can ride on find's own query, the first transaction after mount.
@@ -355,11 +416,12 @@ const findPlugin = (channel: FindChannel, links?: FindLinks) =>
               !recompute &&
               onMatch === previous.onMatch &&
               revealed === previous.revealed &&
-              revealedHeadings === previous.revealedHeadings
+              revealedHeadings === previous.revealedHeadings &&
+              opened === previous.opened
             )
               return previous
             const matches = recompute ? findMatches(newState, query, zoomedRange(transaction, oldState, newState), links) : previous.matches
-            return { query, matches, activeIndex: nextActive(previous, meta, matches, newState.selection.from), revealed, revealedHeadings, onMatch }
+            return { query, matches, activeIndex: nextActive(previous, meta, matches, newState.selection.from), revealed, revealedHeadings, opened, onMatch }
           },
         },
         props: {

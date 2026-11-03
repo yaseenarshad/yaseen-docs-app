@@ -30,6 +30,7 @@ import { getHeadingFoldKey, isHeadingCollapsed, undoLastHeadingFold } from '../o
 import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { getZoomedItemPos } from '../outline/zoom'
+import { openCellNoteLabel } from '../table/cellNotes'
 import { createFindChannel, type FindChannel } from './findChannel'
 import { FIND_ACTIVE_CLASS, FIND_MATCH_CLASS, findThreadAnchor } from './findInPage'
 import { WIKILINK_CLASS, WIKILINK_SYNTAX_CLASS, createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
@@ -357,6 +358,54 @@ describe('zoom', () => {
     expect(getZoomedItemPos(view.state)).not.toBeNull()
     channel.setQuery('apple')
     expect(channel.getState().total).toBe(1)
+  })
+})
+
+describe('cell notes (YAZ-3818 D19)', () => {
+  const NOTE = `Intro apple
+
+| Day | Plan |
+| --- | --- |
+| Mon | x[^cell-1] |
+
+[^cell-1]: note apple
+
+Outro apple
+`
+  const openType = (view: EditorView) => (openCellNoteLabel(view.state) === null ? null : 'cell_note')
+
+  it('in the note view a match in a cell note counts; a step onto it opens the note\'s card, the next step closes it', async () => {
+    const onZoom = vi.fn()
+    const { view, channel } = await mountFind(NOTE, { zoom: { title: () => 'Notes', onZoom } })
+    channel.open()
+    channel.setQuery('apple')
+    expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 0 })
+    expect(openType(view)).toBeNull()
+    channel.next()
+    expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 1 })
+    expect(openType(view)).toBe('cell_note')
+    expect(getZoomedItemPos(view.state)).toBeNull()
+    // An edit in the opened note: the count is still the whole note's.
+    view.dispatch(view.state.tr.insertText('!', posOfText(view.state.doc, 'note apple')))
+    expect(channel.getState().total).toBe(3)
+    channel.next()
+    expect(channel.getState()).toMatchObject({ total: 3, activeIndex: 2 })
+    expect(openType(view)).toBeNull()
+    // The card is no zoom: no Back step.
+    expect(onZoom).not.toHaveBeenCalled()
+  })
+
+  it('close on a match in the note: the card stays open with the caret in the note', async () => {
+    const onZoom = vi.fn()
+    const { view, channel } = await mountFind(NOTE, { zoom: { title: () => 'Notes', onZoom } })
+    channel.open()
+    channel.setQuery('apple')
+    channel.next()
+    channel.close()
+    expect(openType(view)).toBe('cell_note')
+    expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'note apple') + 5)
+    expect(view.state.selection.$from.node(1).type.name).toBe('cell_note')
+    expect(onZoom).not.toHaveBeenCalled()
   })
 })
 

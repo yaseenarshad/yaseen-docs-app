@@ -1,20 +1,58 @@
 import { CORNER_RADIUS } from "@excalidraw/common";
 
 const RESPONSIVE_TEXT_BASE_SIZE = 130;
-const RESPONSIVE_TEXT_MIN_SIZE = 32;
-const RESPONSIVE_TEXT_MAX_SIZE = 440;
 
+/**
+ * The Docs app's "New text size on screen" (YAZ-4247): the px a new text shows
+ * at, whatever the zoom. The app sets it from its canvas prefs; until then, the
+ * app's default, 14 (YAZ-4265).
+ */
+export const DEFAULT_NEW_TEXT_SCREEN_SIZE = 14;
+let newTextScreenSize = DEFAULT_NEW_TEXT_SCREEN_SIZE;
+
+export const setNewTextScreenSize = (px: number) => {
+  newTextScreenSize =
+    Number.isFinite(px) && px > 0 ? px : DEFAULT_NEW_TEXT_SCREEN_SIZE;
+};
+
+/**
+ * The Docs app's "Wrap new text before the edge" (YAZ-4247): how many screen px
+ * before the right edge of the visible canvas a click-started text starts to
+ * wrap. 0 = at the edge (the default here; the app sets its own).
+ */
+let newTextWrapMargin = 0;
+
+export const setNewTextWrapMargin = (px: number) => {
+  newTextWrapMargin = Number.isFinite(px) && px >= 0 ? px : 0;
+};
+
+export const getNewTextWrapMargin = () => newTextWrapMargin;
+
+/**
+ * A new text's font size (YAZ-4247): the screen size over the zoom at the
+ * moment the text is made, so it shows at the same px at every zoom. Old text
+ * keeps its size. Two decimals.
+ */
 export const getResponsiveTextFontSize = (zoom: number) => {
   const safeZoom = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
-  const exponent = safeZoom <= 1 ? -0.6 : -1.35;
-  const fontSize = Math.round(
-    RESPONSIVE_TEXT_BASE_SIZE * Math.pow(safeZoom, exponent),
-  );
+  return Math.round((newTextScreenSize / safeZoom) * 100) / 100;
+};
 
-  return Math.min(
-    RESPONSIVE_TEXT_MAX_SIZE,
-    Math.max(RESPONSIVE_TEXT_MIN_SIZE, fontSize),
-  );
+/**
+ * The width a click-started text (auto-resizing) takes when it grows past the
+ * right edge of the visible canvas (YAZ-4247): the room left to that edge, in
+ * scene units; from then on it wraps. Null while it fits, or when less than
+ * about eight characters (four font sizes) of room are left: it then keeps
+ * growing, as before.
+ */
+export const wrapWidthAtEdge = (
+  x: number,
+  width: number,
+  sceneRight: number,
+  fontSize: number,
+): number | null => {
+  const room = sceneRight - x;
+  return x + width > sceneRight && room >= fontSize * 4 ? room : null;
 };
 
 export const getTextBackgroundRadiusForFontSize = (fontSize: number) => {

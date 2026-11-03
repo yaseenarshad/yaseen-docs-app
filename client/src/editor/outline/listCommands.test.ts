@@ -1376,3 +1376,113 @@ describe('YAZ-3727 6B. Tab makes a sublist in its siblings\' kind, else bullets 
     expect(md(crepe)).toMatch(/^1\. a\n2\. b\n/)
   })
 })
+
+describe('YAZ-3818 D5: Tab and Shift-Tab in a table cell', () => {
+  /** A table whose first body cell holds `cell`; the other cells hold plain lines. */
+  const table = (cell: string) => `| h1 | h2 |\n| --- | --- |\n| ${cell} | c2 |\n| d1 | d2 |\n`
+  /** The text of the cell that holds the caret. */
+  const caretCell = (crepe: Crepe) => {
+    const { $from } = viewOf(crepe).state.selection
+    for (let depth = $from.depth; depth > 0; depth--) if ($from.node(depth).type.spec.tableRole === 'cell') return $from.node(depth).textContent
+    return null
+  }
+
+  it('Tab in a cell bullet indents it under the bullet above; Shift-Tab outdents it again', async () => {
+    const { crepe } = await mount(table('<ul><li>a</li><li>b</li></ul>'))
+    caretIn(crepe, 'b')
+    expect(press(crepe, 'Tab')).toBe(true)
+    expect(md(crepe)).toContain('| <ul><li>a<ul><li>b</li></ul></li></ul> |')
+    expect(caretCell(crepe)).toBe('ab')
+    expect(press(crepe, 'Shift-Tab')).toBe(true)
+    expect(md(crepe)).toContain('| <ul><li>a</li><li>b</li></ul> |')
+  })
+
+  it('⌘] in a cell bullet indents it too; ⌘[ outdents it', async () => {
+    const { crepe } = await mount(table('<ul><li>a</li><li>b</li></ul>'))
+    caretIn(crepe, 'b')
+    expect(press(crepe, 'Mod-]')).toBe(true)
+    expect(md(crepe)).toContain('| <ul><li>a<ul><li>b</li></ul></li></ul> |')
+    expect(press(crepe, 'Mod-[')).toBe(true)
+    expect(md(crepe)).toContain('| <ul><li>a</li><li>b</li></ul> |')
+  })
+
+  it('Shift-Tab on a top-level cell bullet makes it a plain line in the same cell', async () => {
+    const { crepe } = await mount(table('x<ul><li>a</li></ul>'))
+    caretIn(crepe, 'a')
+    expect(press(crepe, 'Shift-Tab')).toBe(true)
+    expect(md(crepe)).toContain('| x<br>a |')
+    expect(caretCell(crepe)).toBe('xa')
+  })
+
+  it('Tab on a plain cell line moves to the next cell; Shift-Tab to the previous cell; the first bullet in a cell stays', async () => {
+    const { crepe } = await mount(table('<ul><li>a</li></ul>'))
+    caretIn(crepe, 'c2')
+    press(crepe, 'Tab')
+    expect(caretCell(crepe)).toBe('d1')
+    press(crepe, 'Shift-Tab')
+    expect(caretCell(crepe)).toBe('c2')
+    // A first bullet cannot indent, as in the note: the key is taken and the caret stays in its cell.
+    caretIn(crepe, 'a')
+    expect(press(crepe, 'Tab')).toBe(true)
+    expect(md(crepe)).toContain('| <ul><li>a</li></ul> |')
+    expect(viewOf(crepe).state.selection.$from.parent.textContent).toBe('a')
+  })
+})
+
+describe('YAZ-3818: nothing joins across a cell edge; lines in one cell still join', () => {
+  const table = (a: string, b: string) => `| h1 | h2 |\n| --- | --- |\n| ${a} | ${b} |\n`
+  /** The text of each body cell, in order. */
+  const caretCell = (crepe: Crepe) => {
+    const { $from } = viewOf(crepe).state.selection
+    let depth = $from.depth
+    while ($from.node(depth).type.name !== 'table_cell') depth--
+    return $from.index(depth - 1)
+  }
+  const cells = (crepe: Crepe) => {
+    const out: string[] = []
+    viewOf(crepe).state.doc.descendants((node) => {
+      if (node.type.name === 'table_cell') out.push(node.textContent)
+      return node.type.name !== 'table_cell'
+    })
+    return out
+  }
+
+  it('Backspace at the start of the first bullet in a cell never joins the previous cell: the bullet becomes a plain line', async () => {
+    const { crepe } = await mount(table('<ul><li>left</li></ul>', '<ul><li>right</li></ul>'))
+    caretIn(crepe, 'right', 0)
+    expect(press(crepe, 'Backspace')).toBe(true)
+    expect(cells(crepe)).toEqual(['left', 'right'])
+    expect(md(crepe)).toContain('| <ul><li>left</li></ul> | right |')
+    expect(caretCell(crepe)).toBe(1)
+  })
+
+  it('Backspace at the start of an empty first bullet in a cell: a plain empty line, the cell stays', async () => {
+    const { crepe } = await mount(table('<ul><li>left</li></ul>', '<ul><li>right</li></ul>'))
+    caretIn(crepe, 'right', 0)
+    const view = viewOf(crepe)
+    view.dispatch(view.state.tr.delete(view.state.selection.from, view.state.selection.from + 'right'.length))
+    expect(press(crepe, 'Backspace')).toBe(true)
+    expect(cells(crepe)).toEqual(['left', ''])
+    expect(viewOf(crepe).state.selection.$from.node(-1).type.name).toBe('table_cell')
+    expect(caretCell(crepe)).toBe(1)
+  })
+
+  it('Delete at the end of the last bullet in a cell never joins the next cell', async () => {
+    const { crepe } = await mount(table('<ul><li>left</li></ul>', '<ul><li>right</li></ul>'))
+    caretIn(crepe, 'left')
+    expect(press(crepe, 'Delete')).toBe(true)
+    expect(cells(crepe)).toEqual(['left', 'right'])
+    expect(md(crepe)).toContain('| <ul><li>left</li></ul> | <ul><li>right</li></ul> |')
+  })
+
+  it('in one cell, Backspace at the start of a bullet joins the bullet above, and Delete at the end joins the next', async () => {
+    const { crepe } = await mount(table('<ul><li>one</li><li>two</li><li>three</li></ul>', 'right'))
+    caretIn(crepe, 'two', 0)
+    expect(press(crepe, 'Backspace')).toBe(true)
+    expect(md(crepe)).toContain('<ul><li>one two</li><li>three</li></ul>')
+    caretIn(crepe, 'one two')
+    expect(press(crepe, 'Delete')).toBe(true)
+    expect(md(crepe)).toContain('<ul><li>one two three</li></ul>')
+    expect(cells(crepe)).toEqual(['one two three', 'right'])
+  })
+})

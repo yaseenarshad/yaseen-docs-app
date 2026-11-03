@@ -48,7 +48,8 @@ describe('a frozen table draws its borders cell by cell (YAZ-3788)', () => {
 describe('a frozen column sticks only while its block scrolls sideways (YAZ-3790)', () => {
   it('one sticky rule, under `data-table-scrolls`: 1,000 sticky cells cost ~2 ms a key', () => {
     const sticky = rules(tableCss).filter(({ body }) => /position:\s*sticky/.test(body)).flatMap(({ selectors }) => selectors)
-    expect(sticky).toEqual(['.milkdown .ProseMirror .milkdown-table-block[data-table-scrolls] :is(th, td).table-frozen-col'])
+    // The open cell note card's title bar is one element, not a cell (YAZ-3818).
+    expect(sticky.filter((s) => !s.includes('.cell-note--open'))).toEqual(['.milkdown .ProseMirror .milkdown-table-block[data-table-scrolls] :is(th, td).table-frozen-col'])
   })
 
   it('a frozen column cell stacks (`z-index`) only while it sticks: 1,000 stacked cells cost ~4 ms of paint work a scroll (YAZ-3792)', () => {

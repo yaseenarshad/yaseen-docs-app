@@ -383,3 +383,50 @@ describe('Mod-ArrowUp / Mod-ArrowDown (fold / unfold the caret item, GRO-2092)',
     expect(folded(root)).toBe(0)
   })
 })
+
+describe('in a table cell (YAZ-3818)', () => {
+  const TABLE = '| h1 | h2 |\n| --- | --- |\n| <ul><li>task<ul><li>kid</li></ul></li></ul> | plain |\n'
+  /** A bullet holding a table (YAZ-3770) with a plain cell line. */
+  const IN_BULLET = '* outer\n\n  | h1 | h2 |\n  | --- | --- |\n  | plain | c2 |\n'
+
+  it('Mod-Enter in a cell bullet cycles bullet → to-do → done → bullet (D6)', async () => {
+    const { crepe } = await mount(TABLE)
+    caretIn(crepe, 'task')
+    expect(press(crepe, 'Mod-Enter')).toBe(true)
+    expect(md(crepe)).toContain('<ul><li>[ ] task<ul><li>kid</li></ul></li></ul>')
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toContain('<ul><li>[x] task<ul><li>kid</li></ul></li></ul>')
+    press(crepe, 'Mod-Enter')
+    expect(md(crepe)).toContain('<ul><li>task<ul><li>kid</li></ul></li></ul>')
+  })
+
+  it('Mod-Enter on a plain cell line leaves the table (Crepe\'s exitTable), and nothing is struck', async () => {
+    const { crepe } = await mount(TABLE)
+    caretIn(crepe, 'plain')
+    expect(press(crepe, 'Mod-Enter')).toBe(true)
+    const { $from } = crepe.editor.ctx.get(editorViewCtx).state.selection
+    expect($from.depth).toBe(1)
+    expect($from.parent.type.name).toBe('paragraph')
+    expect(md(crepe)).not.toContain('~~')
+  })
+
+  it('Mod-ArrowUp / Mod-ArrowDown fold and unfold a cell bullet with a child', async () => {
+    const { crepe, root } = await mount(TABLE)
+    caretIn(crepe, 'task')
+    expect(press(crepe, 'Mod-ArrowUp')).toBe(true)
+    expect(folded(root)).toBe(1)
+    expect(press(crepe, 'Mod-ArrowDown')).toBe(true)
+    expect(folded(root)).toBe(0)
+  })
+
+  it('Mod-ArrowUp on a plain cell line of a table inside a bullet never folds the outer bullet', async () => {
+    const { crepe, root } = await mount(IN_BULLET)
+    caretIn(crepe, 'plain')
+    press(crepe, 'Mod-ArrowUp')
+    expect(folded(root)).toBe(0)
+    // The outer bullet still folds from its own line.
+    caretIn(crepe, 'outer')
+    expect(press(crepe, 'Mod-ArrowUp')).toBe(true)
+    expect(folded(root)).toBe(1)
+  })
+})

@@ -9,7 +9,8 @@
  * The approved scenario matrix (S-numbers) is `lineSelection.scenarios.test.ts`; this file keeps
  * only what the matrix does not pin: the D3 list variants, walking out of / into a nested list,
  * ⇧↑ over hidden kids from the sibling's start, the `Delete` key, Enter (D7), the no-hidden-line
- * control, a node selection, and the anchor never moving.
+ * control, a node selection, and the anchor never moving; that removing a line never removes its
+ * table cell (YAZ-3818); and that a hidden cell note is a hidden line (YAZ-3818 D4).
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -18,7 +19,8 @@ import { NodeSelection } from '@milkdown/kit/prose/state'
 import { caretIn, endOf, md, mount, nodePos, posOf, pressKey, runCommand, select, selection, typeText, unmountAll } from './marks/markTestKit'
 import { setHeadingFoldAtSelection } from './outline/headingFolding'
 import { toggleOutlineFold } from './outline/outlineFolding'
-import { deleteVisible } from './lineSelection'
+import { deleteBlockAndEmptyWrappers, deleteVisible } from './lineSelection'
+import { toggleListKind } from './listButtons'
 
 afterEach(unmountAll)
 
@@ -219,5 +221,49 @@ describe('the anchor never moves', () => {
     select(crepe, endOf(crepe, 'l4'), endOf(crepe, 'l3'))
     expect(shiftUp(crepe)).toBe(true)
     expect(selection(crepe)).toEqual({ anchor: endOf(crepe, 'l4'), head: endOf(crepe, 'l2') })
+  })
+})
+
+describe('a line in a table cell (YAZ-3818)', () => {
+  it('removing the only bullet line of a cell never removes the cell: it keeps one empty line', async () => {
+    const { crepe } = await mount('| h1 | h2 |\n| --- | --- |\n| <ul><li>one</li></ul> | c2 |\n')
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const tr = view.state.tr
+    deleteBlockAndEmptyWrappers(tr, tr.doc.resolve(posOf(crepe, 'one')))
+    view.dispatch(tr)
+    const row = view.state.doc.firstChild!.child(1)
+    expect(row.childCount).toBe(2)
+    expect(row.firstChild!.childCount).toBe(1)
+    expect(row.firstChild!.firstChild!.type.name).toBe('paragraph')
+    expect(md(crepe)).toMatch(/\n\| +\| c2 +\|\n$/)
+  })
+})
+
+describe('a hidden cell note (YAZ-3818 D4)', () => {
+  /** A note the file holds away from its table: the load leaves it where it is, between two lines. */
+  const BETWEEN = '| a          |\n| ---------- |\n| b[^cell-1] |\n\nOne.\n\n[^cell-1]: secret\n\nTwo.\n'
+
+  it('⇧↓ and ⇧↑ step over it; with no mark it shows, and ⇧↓ lands in it', async () => {
+    const { crepe } = await mount(BETWEEN)
+    select(crepe, endOf(crepe, 'One.'))
+    expect(shiftDown(crepe)).toBe(true)
+    expect(selection(crepe)).toEqual({ anchor: endOf(crepe, 'One.'), head: endOf(crepe, 'Two.') })
+    select(crepe, posOf(crepe, 'Two.'))
+    expect(shiftUp(crepe)).toBe(true)
+    expect(selection(crepe)).toEqual({ anchor: posOf(crepe, 'Two.'), head: posOf(crepe, 'One.') })
+    const orphan = await mount('One.\n\n[^cell-1]: shown\n\nTwo.\n')
+    select(orphan.crepe, endOf(orphan.crepe, 'One.'))
+    expect(shiftDown(orphan.crepe)).toBe(true)
+    expect(selection(orphan.crepe).head).toBe(endOf(orphan.crepe, 'shown'))
+  })
+
+  it('Bold and the Bullet button change the visible lines only', async () => {
+    const { crepe } = await mount(BETWEEN)
+    select(crepe, posOf(crepe, 'One.'), endOf(crepe, 'Two.'))
+    expect(pressKey(crepe, 'b', { mod: true })).toBe(true)
+    expect(md(crepe)).toContain('**One.**\n\n[^cell-1]: secret\n\n**Two.**')
+    select(crepe, posOf(crepe, 'One.'), endOf(crepe, 'Two.'))
+    expect(runCommand(crepe, toggleListKind('bulletList'))).toBe(true)
+    expect(md(crepe)).toContain('* **One.**\n\n[^cell-1]: secret\n\n* **Two.**')
   })
 })

@@ -65,6 +65,26 @@ describe('TabMenu (YAZ-2949 D6)', () => {
   })
 })
 
+describe('TabMenu "Rename file" (YAZ-4248)', () => {
+  it('its own group right after the display name; a click asks for the path; grey on a tab that shows no file', () => {
+    const props = all({ onRenameFile: vi.fn() })
+    let el = mount(props)
+    expect(groups(el)).toEqual([
+      ['Move to new window', 'Duplicate tab', 'Move to'],
+      ['Show in sidebar', 'Copy path'],
+      ['Set display name', 'Turn review on'],
+      ['Rename file'],
+      ['Reveal in Finder', 'Open in VS Code'],
+    ])
+    act(() => item(el, 'Rename file')?.click())
+    expect(props.onRenameFile).toHaveBeenCalledWith('/v/a.md')
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+    act(() => root?.unmount())
+    el = mount(all({ onRenameFile: vi.fn(), menu: at({ path: '/v/Folder', review: null }) }))
+    expect(item(el, 'Rename file')?.disabled).toBe(true)
+  })
+})
+
 describe('TabMenu "Move to ▸" (YAZ-3091 D3)', () => {
   const TARGETS = [{ id: 'w2', label: 'Work — Meeting notes · 2 tabs' }, { id: 'w3', label: 'Work · 0 tabs' }]
   /** The flyout's groups, after a click on "Move to" opens it. */

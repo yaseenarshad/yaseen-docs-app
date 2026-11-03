@@ -537,6 +537,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     app: { sound: vi.fn(async (_kind: 'land' | 'trash') => undefined), home: vi.fn(async () => '/Users/me') },
     // Focus and Favorites of each vault (YAZ-3264 D1): App reads them now, the sidebar draws them. Empty here.
     favorites: { get: vi.fn(async (_root: string): Promise<string[]> => []), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
+    newPlaces: { get: vi.fn(async (_root: string) => [null, null, null]), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     icons: { get: vi.fn(async (_root: string) => ({ paths: {} })), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     focus: { get: vi.fn(async (_root: string): Promise<string[]> => []), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     // No update (YAZ-2976): App reads the state once and follows its pushes; nothing to show here.
@@ -2359,17 +2360,32 @@ describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
     expect(el.querySelector('.new-item__place')?.textContent).toBe('Projects')
     expect(el.querySelector('.new-item__tile[aria-checked="true"]')?.textContent).toBe('Note')
     act(() => void el.querySelector('.new-item')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    // ⏎ moves to the place row, ⏎ there makes it (YAZ-4252).
+    act(() => void el.querySelector('.new-item')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
     act(() => void el.querySelector('.new-item')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
     expect(el.querySelector('.new-item')).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
     expect(captured.sidebar?.lens).toBe('files')
-    expect(captured.sidebar?.createRequest).toEqual({ id: 1, kind: 'drawing', dir: `${v}/Projects` })
+    // The name field starts with "New item name starts with" (YAZ-4246): the Dated note's MM_DD- by default.
+    expect(captured.sidebar?.createRequest).toEqual({ id: 1, kind: 'drawing', dir: `${v}/Projects`, seed: expect.stringMatching(/^\d{2}_\d{2}- $/) })
     act(() => captured.sidebar?.onCreateConsumed?.(1))
     expect(captured.sidebar?.createRequest).toBeNull()
     // The box opens again on Note (D7).
     act(() => emitNewItem())
     await settle()
     expect(el.querySelector('.new-item__tile[aria-checked="true"]')?.textContent).toBe('Note')
+  })
+
+  it('⌘N › Folder: ⏎ asks the sidebar for the folder name field with the name template (YAZ-4252)', async () => {
+    const { el, v, emitNewItem } = await mountWith({ newNoteLocation: 'folder', newNoteFolder: 'Projects', newNoteTitleTemplate: 'Plan {MM}- ' })
+    act(() => emitNewItem())
+    await settle()
+    const key = (k: string) => act(() => void el.querySelector('.new-item')?.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })))
+    for (let i = 0; i < 3; i++) key('ArrowRight')
+    expect(el.querySelector('.new-item__tile[aria-checked="true"]')?.textContent).toBe('Folder')
+    key('Enter')
+    key('Enter')
+    expect(captured.sidebar?.createRequest).toEqual({ id: 1, kind: 'dir', dir: `${v}/Projects`, seed: expect.stringMatching(/^Plan \d{2}- $/) })
   })
 
   it('⌘N with a default folder the vault does not have: the box shows the vault folder and says so (D3)', async () => {

@@ -9,6 +9,7 @@ import { imageOptionsOf } from './image/imageOptions'
 import { imageFile, insertPastedImage } from './image/insertImage'
 import { normalizeEmptyItems } from './listItemRoundTrip'
 import { closePathChip, pastePathLinks, pasteUrlOverWords, pathPasteCtx } from './pathPaste'
+import { pasteCellsOnly } from './table/cellNoteClipboard'
 import { pasteIntoCells } from './table/tablePaste'
 
 /** A bullet or numbered line anywhere in the text: only then does our parser take a plain-text paste over from Milkdown's. */
@@ -118,9 +119,14 @@ export const clipboardPaste = $prose((ctx) => {
   return new Plugin({
     key: new PluginKey('mdapp-clipboard-paste'),
     view: (view) => {
-      const unsubscribe = window.yaseenDocs?.menu?.onPasteAs?.(({ mode, text }) => {
+      const unsubscribe = window.yaseenDocs?.menu?.onPasteAs?.(({ mode, text, html }) => {
         // CodeMirror and ordinary inputs keep native text insertion at their own caret.
         if (!view.hasFocus()) return false
+        // Paste as › Cells only (YAZ-4206 D18): the HTML's cells, no cell notes; nothing outside a table.
+        if (mode === 'cells') {
+          if (view.editable) pasteCellsOnly(view, html ?? '', text)
+          return true
+        }
         if (!view.editable || !text) return true
         text = text.replace(/\r\n?/g, '\n')
         const { schema, selection } = view.state

@@ -34,7 +34,8 @@ import { TooltipProvider } from '@milkdown/kit/plugin/tooltip'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { MarkType } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
-import { CellSelection, deleteCellSelection, selectedRect } from '@milkdown/kit/prose/tables'
+import { CellSelection, selectedRect } from '@milkdown/kit/prose/tables'
+import { clearCells as clearSelected, deleteText, deleteWithNotes } from './cellNoteGuard'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { setCellsAlign, setCellsAttr } from './cells'
@@ -95,8 +96,12 @@ function toggleMark(view: EditorView, name: string): void {
   if (tr.docChanged) view.dispatch(tr)
 }
 
+/** Clear cells, asking first when a cell note would go (YAZ-4206 D16). */
 function clearCells(view: EditorView): void {
-  deleteCellSelection(view.state, (tr: Transaction) => view.dispatch(closeHistory(tr)))
+  const { selection } = view.state
+  let count = 0
+  if (selection instanceof CellSelection) selection.forEachCell(() => count++)
+  deleteWithNotes(view, clearSelected, (gone) => deleteText('cells', count, gone))
 }
 
 type Part = { name: string; icon: string; run: (view: EditorView) => void } | 'divider' | 'colours'

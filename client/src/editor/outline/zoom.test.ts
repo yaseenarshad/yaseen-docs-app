@@ -13,6 +13,7 @@ import { getZoomedItemPos, itemPosForZoomKey, KEY_SETTLE_MS, ZOOM_ANCESTOR_CLASS
 import { defaultRightPanelIdentity } from '@shared/types'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { NO_STEPS, tabById, workspaceReducer, type WorkspaceAction, type WorkspaceState } from '../../workspace/useWorkspace'
+import { openCellNoteLabel } from '../table/cellNotes'
 
 const OUTLINE = `Intro paragraph
 
@@ -195,6 +196,14 @@ describe('zoom into a bullet', () => {
     caretIn(crepe, 'Intro')
     expect(press(crepe, 'Mod-.')).toBe(false)
     expect(zoomedPos(crepe)).toBeNull()
+  })
+
+  it('Mod-. on a plain cell line of a table inside a bullet never zooms into the outer bullet: it opens the cell note as a card (YAZ-3818)', async () => {
+    const { crepe } = await mount('* outer\n\n  | h1 | h2 |\n  | --- | --- |\n  | plain | c2 |\n')
+    caretIn(crepe, 'plain')
+    expect(press(crepe, 'Mod-.')).toBe(true)
+    expect(zoomedPos(crepe)).toBeNull()
+    expect(crepe.editor.action((ctx) => openCellNoteLabel(ctx.get(editorViewCtx).state))).toBe('cell-1')
   })
 
   it('breadcrumb clicks zoom to that ancestor; the file crumb zooms out fully', async () => {
@@ -670,5 +679,15 @@ describe('the crumbs and the labels name a bullet\'s links as the note shows the
     clickCrumb(root, 'AR v2 plan')
     expect(onZoom.mock.calls.at(-1)?.[2]).toBe('AR v2 plan')
     expect(getZoomKeyOf(crepe)).not.toContain('AR v2 plan')
+  })
+
+  it('a link renamed while zoomed: the crumb shows the new title (YAZ-3818 5A-4)', async () => {
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update((target) => (target === ID ? '/v/AR v2 plan.md' : null))
+    const { root } = await mount(md, { wikilinks, zoom: { title: () => '10_30- Fri' } })
+    clickGlyph(root, 'AR')
+    expect(crumbLabels(root)).toEqual(['10_30- Fri', 'AR v2 plan', 'AR'])
+    wikilinks.update((target) => (target === ID ? '/v/AR v3 plan.md' : null))
+    expect(crumbLabels(root)).toEqual(['10_30- Fri', 'AR v3 plan', 'AR'])
   })
 })

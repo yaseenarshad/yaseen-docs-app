@@ -28,6 +28,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isFolderSettingsPath, type DiagramDarkColors, type IndexRecord } from '@shared/types'
 import { api } from '../api'
+import { requestCellNote } from '../editor/table/cellNoteRequest'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pageLabel, pathTitles, type PathTitles } from '../lib/pageLabel'
@@ -166,7 +167,11 @@ function BacklinkEntry({
         <div className="backlinks__skeleton" aria-hidden />
       ) : (
         lines.map((snippet, i) => (
-          <button key={i} type="button" className="backlinks__snippet" title={page} onClick={open} {...hoverOf(`${page}\n${i}`, page)}>
+          <button key={i} type="button" className="backlinks__snippet" title={page} onClick={(event) => {
+            // A line in a cell note (YAZ-3818): the note opens with that cell note's card.
+            if (snippet.cellNote !== undefined && !event.metaKey) requestCellNote(page, snippet.cellNote)
+            open(event)
+          }} {...hoverOf(`${page}\n${i}`, page)}>
             {snippetRuns(snippet)}
           </button>
         ))

@@ -317,6 +317,8 @@ interface BlockEntry {
  * Per top-level block, its foldable items (YAZ-2236). Nodes are immutable and an edit leaves every
  * untouched block the SAME object, so a keystroke scans only the block it changed; the rest come
  * from here. Only the occurrence numbering spans blocks, and `getOutlineEntries` redoes that.
+ * A table is one block, so it is built from its ROWS, each cached here too (YAZ-3818 D3): a key in a
+ * cell rescans its own row, and the other rows' entries are only shifted to the table's positions.
  */
 const blockEntries = new WeakMap<ProseNode, readonly BlockEntry[]>()
 
@@ -324,6 +326,17 @@ const entriesOfBlock = (block: ProseNode): readonly BlockEntry[] => {
   const cached = blockEntries.get(block)
   if (cached !== undefined) return cached
   const entries: BlockEntry[] = []
+  if (block.type.name === 'table') {
+    block.forEach((row, offset) => {
+      const base = offset + 1
+      const shift = ({ from, to }: { from: number; to: number }) => ({ from: base + from, to: base + to })
+      for (const entry of entriesOfBlock(row)) {
+        entries.push({ ...entry, itemPos: base + entry.itemPos, foldedRanges: entry.foldedRanges.map(shift), imageRanges: entry.imageRanges.map(shift) })
+      }
+    })
+    blockEntries.set(block, entries)
+    return entries
+  }
   block.descendants((node, itemPos) => {
     if (node.type.name !== 'list_item') return true
     const foldedChildren = findFoldedChildren(node)

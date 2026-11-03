@@ -376,6 +376,14 @@
   outline: none;
 }
 
+/* A multi-line setting (the new cell note template, round 3 of the YAZ-3818 demo): Markdown, so a fixed-width font. */
+.settings__textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+}
+
 .settings__input:focus {
   border-color: var(--accent);
 }
@@ -428,6 +436,11 @@
   margin: 0 0 8px;
   font-size: 13px;
   color: var(--danger);
+}
+
+/* Beside its field on a label-left row (New item name starts with, YAZ-4202): no line gap under it. */
+.settings__error--inline {
+  margin: 0;
 }
 
 /* The name style's dropdown and, for "Custom…", its field beside it (YAZ-3607 D4): one line in the wide row. */
@@ -1606,4 +1619,127 @@
 
 .toolbar-arrange__reset {
   align-self: flex-start;
+}
+
+/* "Band colour" (the YAZ-3818 demo): the accent, the ten table colours and Custom…, as the cell toolbar's Fill. */
+.settings__band-colours {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings__band-colour {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings__band-colour:is([aria-checked='true'], .settings__band-colour--on) {
+  border-color: var(--accent);
+}
+
+.settings__band-swatch {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 20%, transparent);
+}
+
+.settings__band-custom input[type='color'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* "Show in settings" (the YAZ-3818 demo): a search hit's heading and a small arrow after it open the group on its
+   page; quiet at rest, the text colour on hover and focus. The group then flashes as a revealed sidebar row does. */
+.settings-search__goto-text:hover {
+  cursor: pointer;
+}
+
+.settings-search__goto {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  opacity: 0.6;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.settings-search__goto:is(:hover, :focus-visible) {
+  opacity: 1;
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.settings-search__goto:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* "Show in settings" flash (the demo): a soft tint and a 1px outline in the reveal yellow over the card's own
+   background (an inset shadow, so the card keeps its colour after), the text keeps its colour, and it fades out over
+   1.5s. Not the sidebar row's solid flash: a group is big, and solid yellow buried its text. */
+.settings-group--revealed > .settings-group__card {
+  --settings-reveal-tint: 15%;
+  animation: settings-reveal 1.5s ease-out;
+}
+
+[data-theme='dark'] .settings-group--revealed > .settings-group__card {
+  --settings-reveal-tint: 18%;
+}
+
+@keyframes settings-reveal {
+  from {
+    box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--reveal-bg) var(--settings-reveal-tint), transparent), 0 0 0 1px var(--reveal-bg);
+  }
+  to {
+    box-shadow: inset 0 0 0 100vmax transparent, 0 0 0 1px transparent;
+  }
+}
+
+/* Reduced motion: no fade; a short still highlight, gone when the flash ends (the class leaves after 3s). */
+@media (prefers-reduced-motion: reduce) {
+  .settings-group--revealed > .settings-group__card {
+    animation: none;
+    box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--reveal-bg) var(--settings-reveal-tint), transparent), 0 0 0 1px var(--reveal-bg);
+  }
+}
+
+/* A typed percent between − and + (the YAZ-3818 demo, "Band strength"). */
+.settings__percent {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.settings__percent > .settings__input--number {
+  width: 44px;
+  margin: 0;
+  padding: 3px 6px;
+  text-align: right;
 }

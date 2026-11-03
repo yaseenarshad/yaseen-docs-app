@@ -1322,6 +1322,18 @@ export interface CanvasPrefs {
   framesVisible: boolean
   /** New text's font (`currentItemFontFamily`, a `FONT_FAMILY_OPTIONS` id): Assistant (10). */
   defaultFontFamily: number
+  /**
+   * New text's size on screen, in px (YAZ-4247): a new text's font size is this over the zoom when it is made, so it
+   * shows at this size at every zoom. `NEW_TEXT_SCREEN_SIZE_MIN`–`MAX`. Never appState: the engine's
+   * `setNewTextScreenSize`.
+   */
+  newTextScreenSize: number
+  /**
+   * Wrap new text before the edge, in screen px (YAZ-4247): a click-started text starts to wrap this far before the
+   * right edge of the visible canvas; 0 = at the edge. `NEW_TEXT_WRAP_MARGIN_MAX` at most. The engine's
+   * `setNewTextWrapMargin`, never appState.
+   */
+  newTextWrapMargin: number
   /** New shapes' sloppiness (`currentItemRoughness`): architect (0). */
   defaultRoughness: Roughness
   /** New text's alignment (`currentItemTextAlign`): the engine's `DEFAULT_NEW_TEXT_ALIGN`. */
@@ -1333,6 +1345,12 @@ export interface CanvasPrefs {
   /** The laser's size (`laserSize`): `S` (🔒 YAZ-1989 D1). */
   laserSize: LaserSize
 }
+
+/** New text's size on screen (YAZ-4247), px. */
+export const NEW_TEXT_SCREEN_SIZE_MIN = 8
+export const NEW_TEXT_SCREEN_SIZE_MAX = 48
+/** Wrap new text before the edge (YAZ-4247), px on screen. */
+export const NEW_TEXT_WRAP_MARGIN_MAX = 600
 
 /** The engine's own defaults (`appState.ts` `getDefaultAppState()` + `constants.ts`). */
 export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
@@ -1348,6 +1366,8 @@ export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
   vectorStrokeWidth: 2,
   framesVisible: true,
   defaultFontFamily: 10,
+  newTextScreenSize: 14,
+  newTextWrapMargin: 120,
   defaultRoughness: 0,
   defaultTextAlign: 'center',
   laserTrailMode: 'fade',
@@ -1733,6 +1753,14 @@ export interface SettingsState {
   outsideListPinned: boolean
   /** Settings › Editor › Tables › Row band (YAZ-4167, YAZ-4159 D16): a light accent band on the table row under the caret or the mouse, its first cell bold — in no table, in calendar tables, or in all tables. A look, never in the file: `data-table-row-band` on `.app`. */
   tableRowBand: TableRowBand
+  /** Settings › Editor › Tables › Band colour (the YAZ-3818 demo): `accent`, a table colour (`red` … `brown`), or a `#rrggbb`. `--table-band-colour` on `.app`. */
+  tableBandColour: string
+  /** Settings › Editor › Tables › Band strength (the YAZ-3818 demo): how strong the band's colour is, a percent, `TABLE_BAND_STRENGTH_MIN`–`MAX` in steps of `TABLE_BAND_STRENGTH_STEP`. `--table-band-strength` on `.app`. */
+  tableBandStrength: number
+  /** Settings › Editor › Tables › Rows it marks (the YAZ-3818 demo): the caret's row and the mouse's, or one of them. `data-table-band-rows` on `.app`. */
+  tableBandRows: TableBandRows
+  /** Settings › Editor › Tables › Bold first cell (the YAZ-3818 demo): the band's row shows its first cell in bold. Off keeps the band. `data-table-band-bold` on `.app`. */
+  tableBandBold: boolean
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
@@ -1744,6 +1772,24 @@ export interface SettingsState {
   /** Settings › Editor › Calendar tables › Calendar day (YAZ-4163 demo): the first and the last time of a new calendar table, minutes from midnight on the half hour (`isCalendarDayTime`). A start not before the end is the default day. */
   tableDayStart: number
   tableDayEnd: number
+  /** Settings › Editor › Tables › Bullet indent in cells (the YAZ-3818 demo): how far each child bullet steps in, in a table cell or a cell note card, px, `TABLE_CELL_BULLET_INDENT_MIN`–`MAX`; the dot's column is a fixed 16px. `--cell-bullet-indent` on `.app`. */
+  tableCellBulletIndent: number
+  /**
+   * Settings › Editor › Outline › Bullet indent (the YAZ-3818 demo): how far each child bullet steps in, px,
+   * `NOTE_BULLET_INDENT_MIN`–`MAX`. The default is the note's own 2.15em (34px at 16px): `--note-bullet-indent` on
+   * `.app` only when it differs, so nothing moves until it is changed.
+   */
+  noteBulletIndent: number
+  /** Settings › Editor › Outline › Bullet gap (the YAZ-3818 demo): the space between a bullet and its text, px, `NOTE_BULLET_GAP_MIN`–`MAX`. `--note-bullet-gap` on `.app` when it differs from 10. */
+  noteBulletGap: number
+  /** Settings › Editor › Tables › Bullet gap in cells (the YAZ-3818 demo): the gap between a cell bullet's marker and its text, px, `TABLE_CELL_BULLET_GAP_MIN`–`MAX`. `--cell-bullet-gap` on `.app`. */
+  tableCellBulletGap: number
+  /** Settings › Editor › Cell notes › New cell note starts with (round 3 of the YAZ-3818 demo): Markdown a new cell note starts with, lines and lists only; '' for one empty line. At most `CELL_NOTE_TEMPLATE_MAX` characters. */
+  tableCellNoteTemplate: string
+  /** Settings › Files & Links › New notes › New item name starts with (YAZ-4246, YAZ-4252): the name the New… box (⌘N) starts a note, drawing, diagram or folder with; `{YYYY}`, `{YY}`, `{MM}`, `{DD}`, `{HH}`, `{mm}` are the date and time (`renderTitleTemplate`). '' for a blank title. At most `NEW_NOTE_TITLE_MAX` characters. */
+  newNoteTitleTemplate: string
+  /** Settings › Editor › Cell notes › Keep cell notes open (round 3 of the YAZ-3818 demo): a new tab's cell note card starts pinned (a click outside does not close it). Its pin button still toggles it for that tab. */
+  tableCellNotePinned: boolean
   /** Settings › Editor › Calendar tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mm a`, for new tables, new times in a table with none, and "Current time". */
   tableTimeFormat: string
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
@@ -1952,6 +1998,16 @@ export const DAILY_NOTE_OPENS: readonly DailyNoteOpens[] = ['note', 'now']
 export type TableRowBand = 'off' | 'calendar' | 'all'
 export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all']
 
+/** Tables (the YAZ-3818 demo): the rows the band marks. */
+export type TableBandRows = 'both' | 'caret' | 'mouse'
+export const TABLE_BAND_ROWS: readonly TableBandRows[] = ['both', 'caret', 'mouse']
+export const TABLE_BAND_STRENGTH_MIN = 1
+export const TABLE_BAND_STRENGTH_MAX = 60
+export const TABLE_BAND_STRENGTH_STEP = 1
+/** A band colour: the accent, a table colour, or a `#rrggbb`. */
+export const isBandColour = (v: unknown): v is string =>
+  typeof v === 'string' && (v === 'accent' || ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey', 'brown'].includes(v) || /^#[0-9a-f]{6}$/i.test(v))
+
 /** Calendar tables (YAZ-4162 D6): how the now row is marked. */
 export type TableNowMark = 'line' | 'tint' | 'both'
 export const TABLE_NOW_MARKS: readonly TableNowMark[] = ['line', 'tint', 'both']
@@ -1962,6 +2018,21 @@ export const TABLE_DIM_PASTS: readonly TableDimPast[] = ['off', 'text', 'shade']
 export const TABLE_SHADE_MIN = 2
 export const TABLE_SHADE_MAX = 30
 export const TABLE_SHADE_STEP = 2
+
+/** Bullets in notes (the YAZ-3818 demo), in px. */
+export const NOTE_BULLET_INDENT_MIN = 8
+export const NOTE_BULLET_INDENT_MAX = 48
+export const NOTE_BULLET_GAP_MIN = 2
+export const NOTE_BULLET_GAP_MAX = 20
+/** Tables (the YAZ-3818 demo): the bullets in a cell, in px; whole px. */
+export const TABLE_CELL_BULLET_INDENT_MIN = 8
+export const TABLE_CELL_BULLET_INDENT_MAX = 32
+export const TABLE_CELL_BULLET_GAP_MIN = 2
+export const TABLE_CELL_BULLET_GAP_MAX = 12
+/** The longest new cell note template (the YAZ-3818 demo), in characters. */
+export const CELL_NOTE_TEMPLATE_MAX = 2000
+/** The longest "New item name starts with" (YAZ-4246), in characters. */
+export const NEW_NOTE_TITLE_MAX = 200
 
 /** The sidebar tree (YAZ-3309 D7, D8): the look of its level lines. */
 export type SidebarLineStyle = 'plain' | 'thread'
@@ -2135,10 +2206,21 @@ export const DEFAULT_SETTINGS: SettingsState = {
   outsideChangeGlow: 'until-checked',
   outsideListPinned: false,
   tableRowBand: 'all',
+  tableBandColour: 'accent',
+  tableBandStrength: 10,
+  tableBandRows: 'both',
+  tableBandBold: true,
   tableNowMark: 'line',
   tableNowButton: true,
   tableDimPast: 'shade',
   tableShadeDarkness: 6,
+  tableCellBulletIndent: 20,
+  noteBulletIndent: 34,
+  noteBulletGap: 10,
+  tableCellBulletGap: 4,
+  tableCellNoteTemplate: '',
+  newNoteTitleTemplate: '{MM}_{DD}- ',
+  tableCellNotePinned: true,
   tableDayStart: DEFAULT_CALENDAR_DAY.start,
   tableDayEnd: DEFAULT_CALENDAR_DAY.end,
   tableTimeFormat: DEFAULT_TIME_FORMAT,
@@ -3260,8 +3342,11 @@ export interface OpenWindowOptions {
 
 /** Clipboard text captured when the user chooses an explicit paste mode. */
 export interface ClipboardPasteRequest {
-  mode: 'plain' | 'markdown'
+  /** `cells`: Paste as › Cells only (YAZ-4206 D18): the clipboard's cells with no cell notes. */
+  mode: 'plain' | 'markdown' | 'cells'
   text: string
+  /** The clipboard's HTML, for `cells` only. */
+  html?: string
 }
 
 /** Edit › Copy as and the right-click Copy as: `visible` is Without folded lines (YAZ-3653). */

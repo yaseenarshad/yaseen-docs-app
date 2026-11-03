@@ -31,3 +31,11 @@ describe('Settings › Canvas "Default font" vs the vendored engine (YAZ-3037)',
     expect(FONT_FAMILY_OPTIONS.map(({ id }) => id)).toContain(DEFAULT_CANVAS_PREFS.defaultFontFamily)
   })
 })
+
+describe('Settings › Drawings "New text size" vs the vendored engine (YAZ-4247, YAZ-4265)', () => {
+  it('the engine’s own fallback, before the app sets the pref, is the app’s default (14 px)', async () => {
+    const engine = await import('@excalidraw/excalidraw')
+    expect(DEFAULT_CANVAS_PREFS.newTextScreenSize).toBe(14)
+    expect(engine.DEFAULT_NEW_TEXT_SCREEN_SIZE).toBe(DEFAULT_CANVAS_PREFS.newTextScreenSize)
+  })
+})

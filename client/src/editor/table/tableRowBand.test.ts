@@ -80,11 +80,19 @@ describe('the setting', () => {
     const css = tableCss.replace(/\/\*[\s\S]*?\*\//g, '')
     // Each selector of the rules that set the band, one a line (a comma inside `:is(…)` does not split the list).
     const selectors = [...css.matchAll(/([^{}]+)\{[^{}]*--table-band:[^{}]*\}/g)].flatMap(([, sel]) => sel!.split(/,\s*\n/).map((one) => one.trim()))
-    expect(selectors.some((s) => s.startsWith("[data-table-row-band='all']") && s.includes('.table-band-row') && s.includes('tr:not(:first-child):hover'))).toBe(true)
+    // The caret's row and the mouse's, each unless "Rows it marks" leaves it out (the YAZ-3818 demo).
+    expect(selectors.some((s) => s.startsWith("[data-table-row-band='all']:not([data-table-band-rows='mouse'])") && s.includes('.table-band-row'))).toBe(true)
+    expect(selectors.some((s) => s.startsWith("[data-table-row-band='all']:not([data-table-band-rows='caret'])") && s.includes('tr:not(:first-child):hover'))).toBe(true)
     expect(selectors.some((s) => s.startsWith("[data-table-row-band='calendar']") && s.includes('[data-table-calendar]') && s.includes('.table-band-row'))).toBe(true)
     expect(css).not.toContain("[data-table-row-band='off']")
+    // Bold first cell (the YAZ-3818 demo): each bold rule is off under `data-table-band-bold='off'`; the band is not.
+    const bold = [...css.matchAll(/([^{}]+)\{[^{}]*font-weight: 600;[^{}]*\}/g)].flatMap(([, sel]) => sel!.split(/,\s*\n/).map((one) => one.trim())).filter((s) => s.startsWith('[data-table-row-band'))
+    expect(bold).toHaveLength(4)
+    for (const s of bold) expect(s).toContain(":not([data-table-band-bold='off'])")
+    expect(selectors.some((s) => s.includes('data-table-band-bold'))).toBe(false)
     // The band is a background layer under the now mark's line; a frozen cell keeps its tint layer.
-    expect(css).toMatch(/\.table-now-row > \* \{\s*background-image: var\(--table-now-line\), var\(--table-now-tint\), var\(--table-band, none\)/)
-    expect(css).toMatch(/:is\(\.table-frozen-row > \*, \.table-frozen-col\) \{[^}]*background-image: var\(--table-band, none\), var\(--table-past, none\), linear-gradient/)
+    // The cell note's corner triangle is the top layer of each list (the YAZ-3818 demo).
+    expect(css).toMatch(/\.table-now-row > \* \{\s*background-image: var\(--table-note-mark, none\), var\(--table-open-ring, none\), var\(--table-now-line\), var\(--table-now-tint\), var\(--table-band, none\)/)
+    expect(css).toMatch(/:is\(\.table-frozen-row > \*, \.table-frozen-col\) \{[^}]*background-image: var\(--table-note-mark, none\), var\(--table-open-ring, none\), var\(--table-band, none\), var\(--table-past, none\), linear-gradient/)
   })
 })

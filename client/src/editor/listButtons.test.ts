@@ -12,6 +12,8 @@ import { endOf, md, mount, posOf, pressKey, runCommand, select, unmountAll } fro
 import { allLinesAre, LIST_KINDS, type ListKind, toggleListKind } from './listButtons'
 import { toggleOutlineFold } from './outline/outlineFolding'
 import { getZoomedItemPos, zoomKeyAt, zoomToKey } from './outline/zoom'
+import { openCellNote } from './table/cellNoteCard'
+import { cellPos } from './table/tableTestKit'
 
 afterEach(unmountAll)
 
@@ -200,6 +202,32 @@ describe('the list buttons and T (YAZ-3806 T3, T4)', () => {
     expect(press(crepe, 'bulletList')).toBe(true)
     expect(md(crepe)).toBe('* R\n  * A\n\n    B\n')
     expect(getZoomedItemPos(view.state)).toBe(itemPos)
+  })
+})
+
+describe('a plain line of a body cell and of a cell note card (YAZ-3818 D1, 5A-14)', () => {
+  it.each([
+    ['bulletList', '<ul><li>a</li></ul>', '[^cell-1]: * a'],
+    ['numberedList', '<ol><li>a</li></ol>', '[^cell-1]: 1. a'],
+    ['checklist', '<ul><li>[ ] a</li></ul>', '[^cell-1]: * [ ] a'],
+  ] as const)('%s makes the list; a header cell holds one line (D7)', async (button, cell, note) => {
+    const inCell = await mount('| h |\n| - |\n| a |\n')
+    select(inCell.crepe, posOf(inCell.crepe, 'a'), endOf(inCell.crepe, 'a'))
+    expect(lit(inCell.crepe)).toEqual(['text'])
+    expect(press(inCell.crepe, button)).toBe(true)
+    expect(md(inCell.crepe)).toContain(`| ${cell} |`)
+    select(inCell.crepe, posOf(inCell.crepe, 'a'), endOf(inCell.crepe, 'a'))
+    expect(lit(inCell.crepe)).toEqual([button])
+    select(inCell.crepe, posOf(inCell.crepe, 'h'), endOf(inCell.crepe, 'h'))
+    expect(press(inCell.crepe, button)).toBe(false)
+
+    const onPage = await mount('| h |\n| - |\n| b[^cell-1] |\n\n[^cell-1]: a\n')
+    // The card (the YAZ-3818 demo): a click on the mark's corner opens it.
+    expect(onPage.crepe.editor.action((ctx) => openCellNote(ctx.get(editorViewCtx), cellPos(ctx.get(editorViewCtx), 1, 0)))).toBe(true)
+    select(onPage.crepe, posOf(onPage.crepe, 'a'), endOf(onPage.crepe, 'a'))
+    expect(lit(onPage.crepe)).toEqual(['text'])
+    expect(press(onPage.crepe, button)).toBe(true)
+    expect(md(onPage.crepe)).toContain(note)
   })
 })
 

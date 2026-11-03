@@ -576,6 +576,14 @@ export function ExcalidrawSurface({
   // Shell → engine (🔒 D9): a prop that differs from what was last applied is pushed, changed keys
   // only. `framesVisible` goes through `updateFrameRendering`; `toolLock` is merged into the tool
   // the engine is HOLDING, because a partial `activeTool` would wipe it.
+  // New text's size on screen and where it wraps (YAZ-4247): values of the engine module, read when a text is made and
+  // as it grows. An engine built before them has no setters (and keeps its own).
+  useEffect(() => {
+    const mod = engine as { setNewTextScreenSize?: (px: number) => void; setNewTextWrapMargin?: (px: number) => void } | null
+    mod?.setNewTextScreenSize?.(canvasPrefs.newTextScreenSize)
+    mod?.setNewTextWrapMargin?.(canvasPrefs.newTextWrapMargin)
+  }, [engine, canvasPrefs.newTextScreenSize, canvasPrefs.newTextWrapMargin])
+
   useEffect(() => {
     rail.set({ writingMode: canvasPrefs.writingMode, framesVisible: canvasPrefs.framesVisible })
     if (prefsEqual(canvasPrefs, appliedRef.current)) return

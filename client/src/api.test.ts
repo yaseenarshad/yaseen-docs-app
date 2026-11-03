@@ -45,6 +45,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     ids: vi.fn(),
     properties: vi.fn(),
     favorites: vi.fn(),
+    newPlaces: vi.fn(),
     icons: vi.fn(),
     focus: vi.fn(),
     github: vi.fn(),

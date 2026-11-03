@@ -33,6 +33,9 @@
  * The host then moves the caret into that bullet (`caretIntoZoom`), once the editor is made: never
  * from the plugin view, which ProseMirror builds inside the EditorView constructor.
  *
+ * A cell note (YAZ-3818) is no zoom level: it opens as a card beside its cell (`table/cellNoteCard.ts`). ⌘. on a plain
+ * line of a cell opens the cell's note there, and a bullet in an open card is never zoomed into (for now).
+ *
  * Triggers: click on the bullet glyph (`.label-wrapper`; task checkboxes keep toggling instead), by the gestures of
  * Settings › Hotkeys › "Bullet dots" (YAZ-3936, read at the click): by default a click zooms in ("Open in this tab"),
  * ⇧-click opens the bullet in a new tab and ⌘-click in a background tab (YAZ-3646 D10); a crumb follows them too,
@@ -48,7 +51,9 @@ import { $prose, $shortcut } from '@milkdown/kit/utils'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { gestureAction } from '@shared/keys'
 import { rowShortcuts } from '../noteKeys'
-import { ancestorItemPositions, innermostItemPos, isListItem, itemLabelText } from './listNodes'
+import { openCellNote, canOpenCellNote } from '../table/cellNoteCard'
+import { cellNoteAround } from '../table/cellNotes'
+import { ancestorItemPositions, cellPosAround, innermostItemPos, isListItem, itemLabelText } from './listNodes'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
@@ -113,6 +118,17 @@ export const KEY_SETTLE_MS = 1000
 const PRIORITY = 100
 
 const pluginKey = new PluginKey<ZoomState>('mdapp-outline-zoom')
+
+/**
+ * Can the zoom open the item at `itemPos` as a page? A list item, not in a table cell and not in a cell note (YAZ-3818,
+ * the demo: a cell's bullets and a card's are never a zoom level). The one check of every route: ⌘., a dot's gestures,
+ * a crumb, Back and Forward, a copied tab's start level, the menu's "Open in new tab".
+ */
+export const canZoomInto = (doc: ProseNode, itemPos: number): boolean => {
+  if (!isListItem(doc.nodeAt(itemPos))) return false
+  const $pos = doc.resolve(itemPos)
+  return cellPosAround($pos) === null && cellNoteAround($pos) === null
+}
 
 /** Position of the zoomed list_item (null when not zoomed or when the plugin is absent). */
 export const getZoomedItemPos = (state: EditorState): number | null => pluginKey.getState(state)?.itemPos ?? null
@@ -202,7 +218,7 @@ const selectionInItem = (state: EditorState, itemPos: number): boolean => {
 const zoomTo = (itemPos: ZoomLevel, { quiet = false, isUndo = false } = {}): Command => (state, dispatch) => {
   const zoom = pluginKey.getState(state)
   if (!zoom || zoom.itemPos === itemPos) return false
-  if (itemPos !== null && !isListItem(state.doc.nodeAt(itemPos))) return false
+  if (itemPos !== null && !canZoomInto(state.doc, itemPos)) return false
   if (dispatch) {
     const tr = state.tr.setMeta(pluginKey, itemPos).setMeta(VIEW_ACTION_META, 'zoom' satisfies ViewAction)
     if (isUndo) tr.setMeta(UNDO_META, true)
@@ -238,15 +254,28 @@ export const undoLastZoom: Command = (state, dispatch) => {
   return zoomTo(undoLevel, { isUndo: true })(state, dispatch)
 }
 
-/** Back and Forward (YAZ-3647 D2): the page goes to the step's level, quietly. A key that is no longer found zooms out. */
-export const zoomToKey = (key: string | null): Command => (state, dispatch) =>
-  zoomTo(key === null ? null : itemPosForZoomKey(state.doc, key), { quiet: true })(state, dispatch)
+/**
+ * Back and Forward (YAZ-3647 D2): the page goes to the step's level, quietly. A key that is no longer found zooms
+ * out, and so does one of a bullet that is no zoom level (`canZoomInto`: one in a table cell or a cell note).
+ */
+export const zoomToKey = (key: string | null): Command => (state, dispatch) => {
+  const pos = key === null ? null : itemPosForZoomKey(state.doc, key)
+  return zoomTo(pos !== null && canZoomInto(state.doc, pos) ? pos : null, { quiet: true })(state, dispatch)
+}
 
 /** Zoom out fully, as the title crumb does: a step in the Back list. The table of contents' jump out of a zoom (YAZ-4094 4C). */
 export const zoomOutFully: Command = (state, dispatch) => zoomTo(null)(state, dispatch)
 
-/** `Mod-.`: zoom into the item at the caret. */
-const zoomIntoSelection: Command = (state, dispatch) => {
+/**
+ * `Mod-.`: zoom into the item at the caret; anywhere in a table cell, a plain line or a bullet, open the cell's note
+ * as a card (YAZ-3818, the demo): a cell's bullet is no zoom level.
+ */
+const zoomIntoSelection: Command = (state, dispatch, view) => {
+  const cellPos = cellPosAround(state.selection.$from)
+  if (cellPos !== null) {
+    if (view === undefined) return false
+    return dispatch === undefined ? canOpenCellNote(view, cellPos) : openCellNote(view, cellPos)
+  }
   const itemPos = itemAtSelection(state)
   return itemPos === null ? false : zoomTo(itemPos)(state, dispatch)
 }
@@ -356,7 +385,8 @@ const itemPosFromGlyphClick = (view: EditorView, event: MouseEvent): number | nu
   // Task checkboxes toggle on click (Crepe); only plain bullets / ordered labels zoom.
   if (wrapper.querySelector('.label.checked, .label.unchecked') !== null) return null
   const $pos = view.state.doc.resolve(view.posAtDOM(wrapper, 0))
-  return isListItem($pos.parent) ? $pos.before() : null
+  // A bullet in a table cell or a cell note is no zoom level (the demo): its dot takes no gesture.
+  return isListItem($pos.parent) && canZoomInto(view.state.doc, $pos.before()) ? $pos.before() : null
 }
 
 export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, linkText, hotkeys }: ZoomOptions) => {
@@ -371,7 +401,8 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
           init: (_config, state) => {
             const key = pendingStartKey
             pendingStartKey = null
-            return { itemPos: key === null ? null : itemPosForZoomKey(state.doc, key), onZoom, onOpen, hotkeys, linkText, undoLevel: undefined, changes: 0 }
+            const start = key === null ? null : itemPosForZoomKey(state.doc, key)
+            return { itemPos: start !== null && canZoomInto(state.doc, start) ? start : null, onZoom, onOpen, hotkeys, linkText, undoLevel: undefined, changes: 0 }
           },
           apply: (transaction, previous, _oldState, newState) => {
             const meta: ZoomLevel | undefined = transaction.getMeta(pluginKey)

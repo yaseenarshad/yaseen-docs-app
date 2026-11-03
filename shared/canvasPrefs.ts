@@ -13,7 +13,9 @@
  * `client/src/drawings/engine.ts`). The types and the defaults themselves live in `shared/types.ts`
  * — this file is the behaviour.
  *
- * TWO KEYS ARE NOT PLAIN appState:
+ * FOUR KEYS ARE NOT PLAIN appState (the last two, `newTextScreenSize` and `newTextWrapMargin`, YAZ-4247: the engine's
+ * `setNewTextScreenSize` and `setNewTextWrapMargin`, set by the surface; `prefsToAppState` emits nothing for them and
+ * `appStateToPrefs` keeps the stored ones):
  * - `toolLock` lives inside `activeTool`, and a partial `activeTool` handed to `updateScene` would
  *   wipe the tool the user is holding. `prefsToAppState` emits the DEFAULT tool shape with the
  *   lock set, which is right at MOUNT and wrong for a live update — the surface merges with the
@@ -29,7 +31,7 @@
  */
 
 import { isRecord } from './guards'
-import { DEFAULT_CANVAS_PREFS, LASER_COLORS, LASER_SIZES, LASER_TRAIL_MODES, ROUGHNESS_LEVELS, SELECT_ON_MODES, TEXT_ALIGNS, type CanvasPrefs, type LaserColor, type LaserSize, type LaserTrailMode, type Roughness, type SelectOn, type TextAlign } from './types'
+import { DEFAULT_CANVAS_PREFS, LASER_COLORS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, LASER_SIZES, LASER_TRAIL_MODES, ROUGHNESS_LEVELS, SELECT_ON_MODES, TEXT_ALIGNS, type CanvasPrefs, type LaserColor, type LaserSize, type LaserTrailMode, type Roughness, type SelectOn, type TextAlign } from './types'
 
 /** Every pref key, in declaration order — the order `changedPrefKeys` reports in. */
 export const CANVAS_PREF_KEYS = Object.keys(DEFAULT_CANVAS_PREFS) as ReadonlyArray<keyof CanvasPrefs>
@@ -51,6 +53,8 @@ const FIELD_OK: { [K in keyof CanvasPrefs]: (v: unknown) => v is CanvasPrefs[K] 
   vectorStrokeWidth: isWidth,
   framesVisible: isBool,
   defaultFontFamily: (v): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0,
+  newTextScreenSize: (v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= NEW_TEXT_SCREEN_SIZE_MIN && v <= NEW_TEXT_SCREEN_SIZE_MAX,
+  newTextWrapMargin: (v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= NEW_TEXT_WRAP_MARGIN_MAX,
   // The web app's roughness sanitation (`data/localStorage.ts`: delete unless exactly 0|1|2),
   // ported as validation rather than as a migration — nothing here ever wrote a bad one.
   defaultRoughness: (v): v is Roughness => typeof v === 'number' && (ROUGHNESS_LEVELS as readonly number[]).includes(v),
@@ -142,6 +146,9 @@ export function prefsToAppState(prefs: CanvasPrefs, keys: ReadonlyArray<keyof Ca
         break
       case 'framesVisible':
         break // `updateFrameRendering`'s, never appState (see the module doc)
+      case 'newTextScreenSize':
+      case 'newTextWrapMargin':
+        break // the engine's `setNewTextScreenSize` and `setNewTextWrapMargin`, never appState (YAZ-4247)
       case 'defaultFontFamily':
         out.currentItemFontFamily = prefs.defaultFontFamily
         break
@@ -184,6 +191,9 @@ export function appStateToPrefs(appState: EngineAppStateSlice, fallback: CanvasP
     // Both halves or neither: a half-applied `frameRendering` is the engine mid-update, not a preference.
     framesVisible: frames != null && isBool(frames.outline) && isBool(frames.name) ? frames.outline && frames.name : fallback.framesVisible,
     defaultFontFamily: FIELD_OK.defaultFontFamily(appState.currentItemFontFamily) ? appState.currentItemFontFamily : fallback.defaultFontFamily,
+    // Not appState (YAZ-4247): the engine never changes it.
+    newTextScreenSize: fallback.newTextScreenSize,
+    newTextWrapMargin: fallback.newTextWrapMargin,
     defaultRoughness: FIELD_OK.defaultRoughness(appState.currentItemRoughness) ? appState.currentItemRoughness : fallback.defaultRoughness,
     defaultTextAlign: FIELD_OK.defaultTextAlign(appState.currentItemTextAlign) ? appState.currentItemTextAlign : fallback.defaultTextAlign,
     // An engine built before 🔒 YAZ-1989 D1 has none of the three, and so keeps the stored ones.

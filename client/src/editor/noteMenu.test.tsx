@@ -41,7 +41,7 @@ describe('the note menu rows (YAZ-3653)', () => {
     const sections = noteMenuSections(view, null, run)
     expect(shape(sections)).toEqual([
       ['Cut', 'Copy', 'Copy as [Plain text, Markdown | Without folded lines]'],
-      ['Paste', 'Paste as [Plain text, Markdown]'],
+      ['Paste', 'Paste as [Plain text, Markdown | Cells only*]'],
       ['Add link…'],
     ])
     expect(sections.flat().map((item) => item.hint)).toEqual(['⌘X', '⌘C', undefined, '⌘V', undefined, undefined])
@@ -54,13 +54,13 @@ describe('the note menu rows (YAZ-3653)', () => {
     caretIn(crepe, 'one')
     expect(shape(noteMenuSections(view, null, vi.fn()))).toEqual([
       ['Cut*', 'Copy*', 'Copy as [Plain text*, Markdown* | Without folded lines*]'],
-      ['Paste', 'Paste as [Plain text, Markdown]'],
+      ['Paste', 'Paste as [Plain text, Markdown | Cells only*]'],
     ])
     select(crepe, posOf(crepe, 'one'), endOf(crepe, 'one'))
     crepe.setReadonly(true)
     expect(shape(noteMenuSections(view, null, vi.fn()))).toEqual([
       ['Cut*', 'Copy', 'Copy as [Plain text, Markdown | Without folded lines]'],
-      ['Paste*', 'Paste as [Plain text*, Markdown*]'],
+      ['Paste*', 'Paste as [Plain text*, Markdown* | Cells only*]'],
     ])
   })
 

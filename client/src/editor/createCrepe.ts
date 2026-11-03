@@ -181,6 +181,12 @@
  *    header, stripes, height, wrap and freeze attributes, and each cell `fill` and `color`
  *    — the SECOND exception to the images rule. A plain table stays the GFM table; one with
  *    settings is the table then the next block `<!-- table: … -->`, joined on load as the line's.
+ *  - Cell notes (YAZ-3818 D4, D12, `table/cellNotes.ts`): a footnote labelled `cell-N` is a `cell_note` block, hidden
+ *    in the note view; after a table, a cell note or a mark moves, each cell note goes back under its table. Its mark
+ *    is a corner triangle; the "Add cell note" button (`table/cellNoteButton.ts`), a click on the mark, ⌘. on a plain
+ *    cell line and the table menu open it as a card beside its cell (`table/cellNoteCard.ts`, the YAZ-3818 demo); a
+ *    rest on the cell previews it (`table/cellNotePreview.ts`, D14). A cell's and a cell note's bullets hold lines and lists only: another block put
+ *    there becomes lines, and a typed `# ` stays text (`table/cellBlocks.ts`, D1).
  *  - Line numbers (YAZ-2643, `lineNumbers/lineNumbers.ts`): the line of the file ON DISK where each
  *    block starts, as a `data-line` node decoration that app.css draws in a lane left of the page;
  *    a block of two or more lines also carries `data-line-end` and shows its range (D7). View
@@ -225,7 +231,7 @@ import { EditorView as CodeMirrorView } from '@codemirror/view'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { codeTheme } from './codeTheme'
 import { keymapRef, type ToolbarItem } from '@milkdown/crepe/feature/toolbar'
-import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
+import { commandsCtx, editorViewCtx, serializerCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
   hardbreakClearMarkPlugin,
@@ -239,7 +245,7 @@ import {
   wrapInHeadingCommand,
   wrapInOrderedListInputRule,
 } from '@milkdown/kit/preset/commonmark'
-import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
+import { extendListItemSchemaForTask, wrapInTaskListInputRule as gfmTaskListInputRule } from '@milkdown/kit/preset/gfm'
 import { type Command, Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $shortcut, replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
@@ -275,6 +281,13 @@ import { inlineBreaks } from './inlineBreaks'
 import { textStringify } from './textStringify'
 import { lineStyle } from './line/lineStyle'
 import { tableStyle } from './table/tableStyle'
+import { cellBlocksOnly } from './table/cellBlocks'
+import { cellNotes, withoutEmptyCellNotes } from './table/cellNotes'
+import { cellNoteButton } from './table/cellNoteButton'
+import { cellNoteCard, cellNoteCardKeymap } from './table/cellNoteCard'
+import { cellNoteDeleteGuard } from './table/cellNoteGuard'
+import { cellNoteClipboard } from './table/cellNoteClipboard'
+import { cellNotePreview } from './table/cellNotePreview'
 import { tableFill } from './table/tableFill'
 import { tableRows } from './table/tableRows'
 import { cellToolbar } from './table/cellToolbar'
@@ -311,7 +324,7 @@ import { obsidianHotkeys } from './outline/hotkeys'
 import { caretReveal, foldHistory } from './outline/foldReveal'
 import { enterTracker, outlinerKeymap } from './outline/listCommands'
 import { listMarkers } from './outline/listMarkers'
-import { listMarkerTyping, undoListMarker } from './listMarkerTyping'
+import { listMarkerTyping, undoListMarker, wrapInTaskListInputRule } from './listMarkerTyping'
 import { createFoldingSwitch } from './outline/foldingSwitch'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
@@ -574,7 +587,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listItemRoundTrip)
   // An image read with no title gets '' as a made one does (YAZ-3704 4I2).
   crepe.editor.use(imageParseDefaults)
-  // The slash menu's "in a list" flag (YAZ-3550): which stock rows a list item hides.
+  // The slash menu's "in a list" and "in a cell" flags (YAZ-3550, YAZ-3818 D1): which rows a list item and a cell hide.
   crepe.editor.use(slashMenu.inListWatch)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
@@ -582,6 +595,11 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(lineStyle)
   // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment.
   crepe.editor.use(tableStyle)
+  // Cell notes (YAZ-3818 D4, D12): a `cell-N` footnote is a `cell_note`, hidden, and it stays under its table. Before
+  // `inlineBreaks`: its remark step reads a footnote's `<br />` line first.
+  crepe.editor.use(cellNotes)
+  // A cell's and a cell note's bullets hold lines and lists only (YAZ-3818 D1): another block becomes lines.
+  crepe.editor.use(cellBlocksOnly)
   // YAZ-3209: over hidden lines, Bold, Italic, Strikethrough, code and H1-H3 / T change the visible
   // ones only, and the toolbar lights for visible lines only. After the presets, by `EditorViewReady`.
   crepe.editor.use(visibleFormatting)
@@ -628,6 +646,10 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableColumnResize)
   // Shift+arrow at the edge of a cell's text selects that cell only (YAZ-4171), also before `tableEditing`.
   crepe.editor.use(tableShiftArrow)
+  // Delete and Backspace that would take a cell note ask first (YAZ-4206 D16), also before `tableEditing`.
+  crepe.editor.use(cellNoteDeleteGuard)
+  // Copy, cut and paste carry cell notes (YAZ-4206 D13); Paste as › Cells only leaves them out (D18).
+  crepe.editor.use(cellNoteClipboard)
   // Sheets-style selection (the YAZ-4163 demo): a drag along the handles, Shift+Space and Ctrl+Space.
   crepe.editor.use(tableHandleSelect)
   // Folded rows (YAZ-4165): the bar and the hidden rows; a mousedown on a bar opens it, also before `tableEditing`.
@@ -636,6 +658,12 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(tableFill)
   // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.
   crepe.editor.use(cellToolbar)
+  // Cell notes (YAZ-3818 D8, D14): the "Add cell note" button in a cell's corner, the preview on a cell with a note,
+  // and the open note's card beside its cell (the demo): Esc and the arrows at its edges at priority 90.
+  crepe.editor.use(cellNoteButton)
+  crepe.editor.use(cellNotePreview)
+  crepe.editor.use(cellNoteCard)
+  crepe.editor.use(cellNoteCardKeymap)
   // A custom colour pick's target cells (YAZ-3817), kept through edits while the system picker is open.
   crepe.editor.use(customColourPick)
   // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.
@@ -700,9 +728,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(blockHandleGate)
   // YAZ-3727 D8, D9: Milkdown's list typing rules fire inside bullets and on Enter, and undo badly; ours
   // replace them (plain lines, a typed space, a clean undo). The toolbar's Numbered button (YAZ-3806 T2) is the click
-  // path; Mod-Alt-7 and the slash-menu row stay absent.
-  void crepe.editor.remove([wrapInOrderedListInputRule, wrapInBulletListInputRule, ...orderedListKeymap])
-  crepe.editor.use(listMarkerTyping).use(undoListMarker)
+  // path; Mod-Alt-7 and the slash-menu row stay absent. GFM's `[ ] ` rule reached past a table cell (YAZ-3818).
+  void crepe.editor.remove([wrapInOrderedListInputRule, wrapInBulletListInputRule, gfmTaskListInputRule, ...orderedListKeymap])
+  crepe.editor.use(listMarkerTyping).use(undoListMarker).use(wrapInTaskListInputRule)
   // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its kind (the toolbar's list
   // buttons and T in one strip, YAZ-3727 D13, D14), its children (Number children, when it has any), its
   // own numbered list as bullets with written numbers (YAZ-3727 D12),
@@ -740,11 +768,12 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated
     crepe.on((listener) => {
-      listener.markdownUpdated((_ctx, markdown, prev) => {
+      listener.markdownUpdated((ctx, markdown, prev) => {
         // Compared as it would be SAVED. Crepe's trailing empty paragraph (added on start-up to any
         // document ending in a list) differs raw but vanishes in `postProcessMarkdown`, and an
-        // update the file would not notice is not an update (YAZ-968's save-path contract).
-        const next = postProcessMarkdown(markdown)
+        // update the file would not notice is not an update (YAZ-968's save-path contract). An empty
+        // cell note is left out, as `getMarkdownForSave` leaves it out (YAZ-3818 D15).
+        const next = postProcessMarkdown(savedMarkdown(ctx) ?? markdown)
         if (next !== postProcessMarkdown(prev)) cb(next)
       })
     })
@@ -752,9 +781,22 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   return crepe
 }
 
-/** Markdown as it should be written to disk (frontmatter is added by the caller). */
+/**
+ * The doc's Markdown without each empty cell note and its mark (YAZ-3818 D15, `withoutEmptyCellNotes`), or null when
+ * the doc has none: then the editor's own serialization is the save.
+ */
+const savedMarkdown = (ctx: Ctx): string | null => {
+  const { state } = ctx.get(editorViewCtx)
+  const doc = withoutEmptyCellNotes(state)
+  return doc === state.doc ? null : ctx.get(serializerCtx)(doc)
+}
+
+/**
+ * Markdown as it should be written to disk (frontmatter is added by the caller). An empty cell note stays out of it,
+ * so it never reaches the file, by whatever route its page closes (YAZ-3818 D15, 5A-5).
+ */
 export function getMarkdownForSave(crepe: Crepe): string {
-  return postProcessMarkdown(crepe.getMarkdown())
+  return postProcessMarkdown(crepe.editor.action(savedMarkdown) ?? crepe.getMarkdown())
 }
 
 /**

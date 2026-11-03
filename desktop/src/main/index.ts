@@ -173,7 +173,7 @@ const manager = createWindowManager(store, {
     win.webContents.on('context-menu', (_event, params) =>
       Menu.buildFromTemplate(buildContextMenuTemplate(params, {
         copyAs: (mode) => win.webContents.send(SPECIAL.menuCopyAs, mode),
-        pasteAs: (mode) => win.webContents.send(SPECIAL.menuPasteAs, { mode, text: clipboard.readText() } satisfies ClipboardPasteRequest),
+        pasteAs: (mode) => win.webContents.send(SPECIAL.menuPasteAs, { mode, text: clipboard.readText(), ...(mode === 'cells' ? { html: clipboard.readHTML() } : {}) } satisfies ClipboardPasteRequest),
         replace: (s) => win.webContents.replaceMisspelling(s),
         addToDictionary: (w) => win.webContents.session.addWordToSpellCheckerDictionary(w),
         // Image rows (YAZ-1666): Chromium copies the decoded pixels at the click point; reveal
@@ -319,12 +319,14 @@ app.whenReady().then(() => {
     writeText: (text) => clipboard.writeText(text),
     write: (data) => clipboard.write(data),
     readText: () => clipboard.readText(),
+    readHTML: () => clipboard.readHTML(),
     revealImage: (src) => revealVaultImage(src, (file) => revealItem({ path: file })),
     rendererUrl: process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html',
   })
   const handlers = createMenuHandlers(manager, {
     focusedWebContents: menuTarget,
     readClipboardText: () => clipboard.readText(),
+    readClipboardHTML: () => clipboard.readHTML(),
     openExternal: (url) => void shell.openExternal(url),
     // S4–S6: the answer shows in the window in front, with or without a sidebar (the Welcome screen,
     // a collapsed one): a notice, or for a staged or manual update the "What's new" sheet and its button.

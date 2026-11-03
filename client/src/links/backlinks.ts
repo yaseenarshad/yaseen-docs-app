@@ -89,6 +89,71 @@ export interface MentionSnippet {
    * Never empty; a range the window cut off is dropped, the first one never is.
    */
   ranges: MentionRange[]
+  /** The label of the cell note (YAZ-3818) the line is in, `cell-N`, or absent: a click opens that note's card. */
+  cellNote?: string
+}
+
+/** A cell note's first line (YAZ-3818 D4): `[^cell-N]: …`. */
+const CELL_NOTE_LINE = /^\[\^(cell-\d+)\]:/
+
+/**
+ * The cell note that the line at `lineStart` of `content` is in, or null (YAZ-3818): its own `[^cell-N]:` line, or an
+ * indented or empty line under one (a footnote's next lines are indented).
+ */
+function cellNoteOfLine(content: string, lineStart: number): string | null {
+  let start = lineStart
+  for (;;) {
+    const end = content.indexOf('\n', start)
+    const line = content.slice(start, end === -1 ? content.length : end)
+    const label = CELL_NOTE_LINE.exec(line)?.[1]
+    if (label !== undefined) return label
+    if (start === 0 || !(line.trim() === '' || /^( {4}|\t)/.test(line))) return null
+    start = content.lastIndexOf('\n', start - 2) + 1
+  }
+}
+
+/** The syntax of a cell's list and of a cell note (YAZ-3818 D2, D4), each form exactly as the app writes it. */
+const CELL_SYNTAX = /\[\^cell-\d+\]: ?|\[\^cell-\d+\]|<ol(?: start="(\d+)")?>|<\/?ul>|<\/ol>|<li>(\[[ x]\] )?|<\/li>/g
+
+/**
+ * A snippet line with the syntax the cell notes brought (YAZ-3818) read as text, its mention ranges moved with it: a
+ * cell's HTML list as "• " items ("1. " in a numbered one, "☐ " / "☑ " for a to-do) joined by a space, a cell note's
+ * first line `[^cell-N]: …` as "Cell note: …", and a mark `[^cell-N]` gone. Any other HTML or footnote stays.
+ */
+export function cellSyntaxAsText(text: string, ranges: readonly MentionRange[]): { text: string; ranges: MentionRange[] } {
+  let out = ''
+  let cursor = 0
+  /** Where each kept stretch of `text` starts: in `text`, and in `out`. */
+  const stretches: Array<{ from: number; to: number }> = []
+  const lists: Array<number | null> = []
+  for (const m of text.matchAll(CELL_SYNTAX)) {
+    const token = m[0]
+    const at = m.index
+    stretches.push({ from: cursor, to: out.length })
+    out += text.slice(cursor, at)
+    cursor = at + token.length
+    let shown = ''
+    if (token.startsWith('[^')) shown = token.includes(':') && text.slice(0, at).trim() === '' ? 'Cell note: ' : ''
+    else if (token.startsWith('<ol')) lists.push(m[1] === undefined ? 1 : Number(m[1]))
+    else if (token === '<ul>') lists.push(null)
+    else if (token === '</ul>' || token === '</ol>') lists.pop()
+    else if (token.startsWith('<li>')) {
+      const top = lists.length === 0 ? null : lists[lists.length - 1]!
+      const marker = m[2] === '[x] ' ? '☑ ' : m[2] === '[ ] ' ? '☐ ' : top === null ? '• ' : `${top}. `
+      if (top !== null) lists[lists.length - 1] = top + 1
+      shown = (out === '' || /\s$/.test(out) ? '' : ' ') + marker
+    }
+    out += shown
+  }
+  stretches.push({ from: cursor, to: out.length })
+  out += text.slice(cursor)
+  // A mention is never inside a token: it moves with the stretch it is in.
+  const map = (pos: number): number => {
+    let k = stretches.length - 1
+    while (k > 0 && stretches[k]!.from > pos) k--
+    return stretches[k]!.to + pos - stretches[k]!.from
+  }
+  return { text: out, ranges: ranges.map(({ from, to }) => ({ from: map(from), to: map(to) })) }
 }
 
 /**
@@ -137,6 +202,11 @@ function lineSnippet(
     cursor = matchEnd
   }
   text += content.slice(cursor, lineEnd)
+  // The cell notes' syntax as text (YAZ-3818), before the window is cut.
+  const cell = cellSyntaxAsText(text, ranges)
+  text = cell.text
+  ranges.splice(0, ranges.length, ...cell.ranges)
+  const cellNote = cellNoteOfLine(content, lineStart)
   // Trim surrounding whitespace, never into a mention (a mention is never trimmed away).
   const matchFrom = ranges[0].from
   const matchTo = ranges[0].to
@@ -158,6 +228,7 @@ function lineSnippet(
       // Every range shifted into window coords; one the window cut off is dropped (the first
       // never can be — the window always contains it whole).
       ranges: ranges.filter((r) => r.from >= windowStart && r.to <= windowEnd).map((r) => ({ from: r.from + shift, to: r.to + shift })),
+      ...(cellNote === null ? {} : { cellNote }),
     },
     lineEnd,
   }

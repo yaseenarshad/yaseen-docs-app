@@ -46,19 +46,20 @@ const tableAttrs = (view: EditorView) => {
 }
 
 describe('the Table part', () => {
-  it('shows after the paste rows when the right-click is in a cell, in five groups (YAZ-3820)', async () => {
+  it('shows after the paste rows when the right-click is in a cell, in six groups (YAZ-3820, YAZ-3818 D8)', async () => {
     const { view } = await mount(TABLE)
     const sections = sectionsAt(view, 1, 0).filter((s) => s.length > 0)
     const labels = sections.map((s) => s.map((item) => (item.children === undefined ? item.label : `${item.label} [${item.children.map((g) => g.map((c) => c.label).join(', ')).join(' | ')}]`)))
     const colours = 'Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, Grey, Brown'
-    expect(labels.slice(-5)).toEqual([
+    expect(labels.slice(-6)).toEqual([
+      ['Add cell note', 'Move to cell note'],
       ['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column'],
       ['Delete row', 'Delete column', 'Clear cells'],
       ['Align [Left, Center, Right | Top, Middle, Bottom]', `Fill [No fill | ${colours} | Custom colour…]`, `Text colour [Default colour | ${colours} | Custom colour…]`],
       ['Sort A to Z', 'Sort Z to A'],
       ['Freeze up to this row', 'Freeze up to this column', 'Unfreeze rows', 'Unfreeze columns'],
     ])
-    expect(labels.at(-6)?.[0]).toBe('Paste')
+    expect(labels.at(-7)?.[0]).toBe('Paste')
     // The palettes' swatches, as the cell toolbar's.
     const teal = row(view, 1, 0, 'table-fill-teal').icon as { props: { style: { background: string } } }
     expect(teal.props.style.background).toBe('var(--table-fill-solid-teal)')
@@ -211,6 +212,13 @@ describe('Align ▸, Fill ▸, Text colour ▸ and Sort (YAZ-3820)', () => {
     expect([last.child(1).attrs.color, last.child(1).attrs.align]).toEqual(['red', 'center'])
   })
 
+  it('Sort reads a cell with bullets as its words joined with a space (YAZ-3818)', async () => {
+    const { view } = await mount('| Words |\n| --- |\n| abb |\n| <ul><li>ab</li><li>c</li></ul> |\n')
+    row(view, 1, 0, 'table-sort-asc').onSelect()
+    // "ab c" before "abb"; read without the space, "abc" came after it.
+    expect(texts(view).slice(1).map((r) => r[0])).toEqual(['abc', 'abb'])
+  })
+
   it('Sort by the selected column keeps the cells selected', async () => {
     const { view } = await mount(SORT)
     view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, 0)))))
@@ -302,9 +310,9 @@ describe('freeze (S3)', () => {
 const WIDE = '| h1 | h2 | h3 | h4 |\n| -- | -- | -- | -- |\n| a | b | c | d |\n| e | f | g | h |\n| i | j | k | l |\n'
 const selectCells = (view: EditorView, from: [number, number], to: [number, number]) =>
   view.dispatch(view.state.tr.setSelection(CellSelection.create(view.state.doc, cellPos(view, ...from), cellPos(view, ...to))))
-/** The Table part's insert, delete, clear and fill rows. */
+/** The Table part's insert, delete, clear and fill rows: not its cell note rows. */
 const labelsOf = (view: EditorView, r: number, c: number) =>
-  sectionsAt(view, r, c).flat().filter((item) => item.id.startsWith('table-') && !item.id.includes('freeze')).map((item) => item.label)
+  sectionsAt(view, r, c).flat().filter((item) => item.id.startsWith('table-') && !item.id.includes('freeze') && !item.id.includes('note')).map((item) => item.label)
 
 describe('whole rows and whole columns count what is selected, as any cells (the YAZ-4163 demo)', () => {
   const selectRows = (view: EditorView, from: number, to: number) =>

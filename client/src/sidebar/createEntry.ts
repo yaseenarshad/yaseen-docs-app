@@ -50,6 +50,27 @@ export function datedSeed(now: Date = new Date()): string {
   return `${p(now.getMonth() + 1)}_${p(now.getDate())}- `
 }
 
+/** The default of "New item name starts with" (YAZ-4246, YAZ-4252): the Dated note's `MM_DD- ` (`datedSeed`). */
+export const DEFAULT_NEW_NOTE_TITLE = '{MM}_{DD}- '
+
+/**
+ * A new note's title from the template of Settings › Files & Links › New notes › "New item name starts with" (YAZ-4246):
+ * `{YYYY}`, `{YY}`, `{MM}`, `{DD}`, `{HH}` and `{mm}` as `now` gives them, two digits each but the year; any other text,
+ * other braces too, as typed. An empty template gives an empty title.
+ */
+export function renderTitleTemplate(template: string, now: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  const tokens: Record<string, string> = {
+    YYYY: String(now.getFullYear()),
+    YY: p(now.getFullYear() % 100),
+    MM: p(now.getMonth() + 1),
+    DD: p(now.getDate()),
+    HH: p(now.getHours()),
+    mm: p(now.getMinutes()),
+  }
+  return template.replace(/\{(YYYY|YY|MM|DD|HH|mm)\}/g, (_match, token: string) => tokens[token]!)
+}
+
 /**
  * The least a right-clicked row has to say for the menu to target it: its KIND and its path.
  * A `TreeNode` satisfies it structurally, and so does a search row (YAZ-2050), which is

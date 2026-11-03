@@ -40,8 +40,21 @@ export function inStripBand(x: number, ulLeft: number, fontPx: number, zoom = 1)
   return Math.abs(x - centre) <= STRIP_HALF_WIDTH * zoom
 }
 
-/** Shared by the guide action and the block-handle gate so both hit the same rendered strip. */
+/**
+ * Shared by the guide action and the block-handle gate so both hit the same rendered strip. The strip is centred under
+ * the parent bullet's glyph and is `--list-label-gap` wide, so it is read off the parent's label and the list's left
+ * edge (both on screen, zoom included): it follows Bullet indent and Bullet gap (the YAZ-3818 demo) and a cell's own.
+ * With no parent label on screen (jsdom), the default geometry.
+ */
 export function isGuideStripHit(x: number, list: Element): boolean {
+  const parent = list.parentElement?.closest('li')
+  const box = parent?.querySelector(':scope > .label-wrapper')?.getBoundingClientRect()
+  const text = parent?.querySelector(':scope > .children')?.getBoundingClientRect()
+  if (box !== undefined && text !== undefined && box.width > 0) {
+    // The strip is the gap wide, at least 10px (guideLines.css): half of it on each side of the parent's dot.
+    const gap = text.left - box.right
+    return Math.abs(x - (box.left + box.width / 2)) <= Math.max(gap, 10 * cssZoom(list)) / 2
+  }
   const fontPx = Number.parseFloat(getComputedStyle(list).fontSize) || FALLBACK_FONT_PX
   return inStripBand(x, list.getBoundingClientRect().left, fontPx, cssZoom(list))
 }

@@ -38,6 +38,8 @@ interface PlacePickerProps {
   start?: string
   /** The sheet's name: "Choose a folder", "Choose a file". */
   label: string
+  /** Folders to offer first, under "Recent" (the New… box's last places, YAZ-4252 D4): a click picks one. */
+  recent?: readonly string[]
   /** The chosen folder or file (absolute) and its vault. The caller closes the sheet. */
   onPick: (path: string, vault: string) => void
   onClose: () => void
@@ -45,6 +47,7 @@ interface PlacePickerProps {
 
 type Row =
   | { kind: 'choose'; path: string }
+  | { kind: 'recent'; path: string; name: string; where: string }
   | { kind: 'vault'; root: string; name: string }
   | { kind: 'dir' | 'file'; path: string; name: string; where?: string }
 
@@ -54,7 +57,7 @@ const byName = (a: TreeNode, b: TreeNode): number => a.name.localeCompare(b.name
 const allFiles = (tree: readonly TreeNode[]): TreeNode[] => tree.flatMap((n) => (n.type === 'dir' ? allFiles(n.children) : [n]))
 
 /** The trees of `roots`, as the sidebar's feed has them, and each new one it delivers; a root with none yet asks for it. */
-function usePlaceTrees(roots: readonly string[]): ReadonlyMap<string, readonly TreeNode[]> {
+export function usePlaceTrees(roots: readonly string[]): ReadonlyMap<string, readonly TreeNode[]> {
   const key = roots.join('\n')
   const [trees, setTrees] = useState<ReadonlyMap<string, readonly TreeNode[]>>(() => new Map(roots.flatMap((root) => {
     const latest = latestTree(root)
@@ -71,7 +74,7 @@ function usePlaceTrees(roots: readonly string[]): ReadonlyMap<string, readonly T
   return trees
 }
 
-export function PlacePicker({ vaults, mode = 'folders', start, label, onPick, onClose }: PlacePickerProps) {
+export function PlacePicker({ vaults, mode = 'folders', start, label, recent = [], onPick, onClose }: PlacePickerProps) {
   const roots = useMemo(() => vaults.map((v) => v.root), [vaults])
   const trees = usePlaceTrees(roots)
   const multi = vaults.length > 1
@@ -108,14 +111,24 @@ export function PlacePicker({ vaults, mode = 'folders', start, label, onPick, on
       // A stable sort: in rank, the tree's order (outer before inner) stays.
       return hits.sort((a, b) => a.rank - b.rank).map((h) => h.row)
     }
-    if (shown === null) return vaults.map((v) => ({ kind: 'vault', root: v.root, name: v.name }))
-    if (tree === undefined || vault === null) return []
+    // The recent places (YAZ-4252 D4) lead the list until a folder is entered or a word is typed.
+    const recentRows = at === (start !== undefined && vaultOf(start) !== undefined ? start : vaults[0].root)
+      ? recent.flatMap((path): Row[] => {
+          const v = vaultOf(path)
+          if (v === undefined) return []
+          const r = placeRel(v.root, path)
+          return [{ kind: 'recent', path, name: r === '' ? v.name : r.slice(r.lastIndexOf('/') + 1), where: multi ? (r === '' ? '' : `${v.name}/${r}`) : r }]
+        })
+      : []
+    if (shown === null) return [...recentRows, ...vaults.map((v): Row => ({ kind: 'vault', root: v.root, name: v.name }))]
+    if (tree === undefined || vault === null) return recentRows
     const node = shown === vault.root ? null : findDirNode(tree, shown)
     const children = [...(node === null ? tree : node.type === 'dir' ? node.children : [])].sort(byName)
     const dirs = children.filter((n) => n.type === 'dir').map((n): Row => ({ kind: 'dir', path: n.path, name: n.name }))
     if (mode === 'files') return [...dirs, ...children.filter((n) => n.type === 'file').map((n): Row => ({ kind: 'file', path: n.path, name: n.name }))]
-    return [{ kind: 'choose', path: shown }, ...dirs]
-  }, [query, vault, vaults, trees, mode, multi, shown, tree])
+    return [...recentRows, { kind: 'choose', path: shown }, ...dirs]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `recent` and `start` are the sheet's opening values
+  }, [query, vault, vaults, trees, mode, multi, shown, tree, at])
   const drawn = rows.slice(0, PLACE_ROWS)
   const cur = Math.min(sel, Math.max(0, drawn.length - 1))
 
@@ -168,6 +181,14 @@ export function PlacePicker({ vaults, mode = 'folders', start, label, onPick, on
 
   const rowLabel = (row: Row) => {
     if (row.kind === 'choose') return <span className="place-picker__name">Choose this folder</span>
+    if (row.kind === 'recent')
+      return (
+        <>
+          <FileIcon path={row.path} folder />
+          <span className="place-picker__name">{row.name}</span>
+          <span className="place-picker__where">{row.where === '' ? 'Recent' : `Recent · ${row.where}`}</span>
+        </>
+      )
     if (row.kind === 'vault') return <span className="place-picker__name">{row.name}</span>
     return (
       <>

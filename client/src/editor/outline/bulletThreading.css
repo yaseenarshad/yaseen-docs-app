@@ -11,7 +11,8 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(-1 * (var(--list-indent) / 2 + var(--list-label-gap) / 2) - var(--thread-width, 2px) / 2);
+  /* Under the parent's dot: half the gutter in from the parent's edge, one indent left of this item (the YAZ-3818 demo). */
+  left: calc(var(--list-gutter) / 2 - var(--list-indent) - var(--thread-width, 2px) / 2);
   width: 0;
   border-left: var(--thread-width, 2px) solid var(--thread-color, var(--accent));
   pointer-events: none;
@@ -23,9 +24,9 @@
   box-sizing: border-box;
   /* Row centre + half the border: the bottom border's centre then sits exactly on the glyph centre. */
   height: calc(var(--list-label-offset, 0px) + var(--list-label-height, 32px) / 2 + var(--thread-width, 2px) / 2);
-  /* Line → glyph: half indent + half gap (to the item edge) + half the gutter − half the glyph,
-     minus a 2px breathing gap so the elbow does not touch the bullet. */
-  width: calc(var(--list-indent) / 2 + var(--list-label-gap) / 2 + (var(--list-indent) - var(--list-label-gap)) / 2 - var(--list-bullet-size) / 2 - 2px);
+  /* Line → glyph: one indent (the parent's dot centre to this one's) − half the glyph, minus a 2px breathing gap so the
+     elbow does not touch the bullet. */
+  width: calc(var(--list-indent) - var(--list-bullet-size) / 2 - 2px);
   border-bottom: var(--thread-width, 2px) solid var(--thread-color, var(--accent));
   border-bottom-left-radius: 6px;
 }

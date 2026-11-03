@@ -19,8 +19,8 @@
  * toolbar in the engine is the one place they are changed.
  */
 import type { ReactNode } from 'react'
-import { DEFAULT_CANVAS_PREFS, FONT_FAMILY_OPTIONS, type CanvasPrefs, type Roughness, type SelectOn, type SettingsState, type TextAlign } from '@shared/types'
-import { Segmented, Select } from './controls'
+import { DEFAULT_CANVAS_PREFS, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, type CanvasPrefs, type Roughness, type SelectOn, type SettingsState, type TextAlign } from '@shared/types'
+import { Segmented, Select, Stepper } from './controls'
 import { ON_OFF_OPTIONS, type Option } from './options'
 import type { SettingDef, SettingsSection } from './registry'
 
@@ -77,6 +77,20 @@ function WidthField({ value, label, onCommit }: { value: number; label: string; 
   )
 }
 
+/** A px setting of new text (YAZ-4247): the stepper, and Reset when it is not the default. */
+function PxStepper({ name, value, fallback, min, max, step, onSet }: { name: string; value: number; fallback: number; min: number; max: number; step: number; onSet: (next: number) => void }) {
+  return (
+    <>
+      <Stepper name={name} size={value} min={min} max={max} onStep={(delta) => onSet(Math.min(max, Math.max(min, value + delta * step)))} />
+      {value !== fallback && (
+        <button type="button" className="settings__option" onClick={() => onSet(fallback)}>
+          Reset
+        </button>
+      )}
+    </>
+  )
+}
+
 const width = (key: WidthKey, label: string, hint: string): SettingDef => ({
   id: `canvas.${key}`,
   label,
@@ -88,7 +102,9 @@ const width = (key: WidthKey, label: string, hint: string): SettingDef => ({
 export const CANVAS_SECTION: SettingsSection = {
   id: 'canvas',
   // Draw's 🔒 YAZ-1802 D12 / D13: these preferences are Excalidraw's alone; a draw.io diagram has fixed defaults.
-  title: 'Excalidraw canvas',
+  // "Drawings", as the app names them (the YAZ-3818 demo); the old words still find it.
+  title: 'Drawings',
+  keywords: ['excalidraw', 'canvas', 'board'],
   groups: [
     {
       title: 'Drawing aids',
@@ -128,6 +144,28 @@ export const CANVAS_SECTION: SettingsSection = {
           hint: 'The font new text is born with.',
           keywords: ['font family', 'assistant', 'excalifont'],
           render: ({ settings, onChange }) => <Select options={FONT_OPTIONS} value={settings.canvas.defaultFontFamily} onChange={(defaultFontFamily) => onChange(write(settings, { defaultFontFamily }))} ariaLabel="Default font" />,
+        },
+        {
+          // YAZ-4247: the same size on screen at every zoom; old text keeps its size.
+          id: 'canvas.newTextScreenSize',
+          label: 'New text size',
+          hint: 'How big new text looks on screen, at any zoom. 16 is the size of note text.',
+          keywords: ['text size', 'font size', 'drawing', 'zoom', 'new text', 'big', 'small'],
+          render: ({ settings, onChange }) => (
+            <PxStepper name="New text size" value={settings.canvas.newTextScreenSize ?? DEFAULT_CANVAS_PREFS.newTextScreenSize} fallback={DEFAULT_CANVAS_PREFS.newTextScreenSize}
+              min={NEW_TEXT_SCREEN_SIZE_MIN} max={NEW_TEXT_SCREEN_SIZE_MAX} step={1} onSet={(newTextScreenSize) => onChange(write(settings, { newTextScreenSize }))} />
+          ),
+        },
+        {
+          // YAZ-4247: how far before the right edge of the view a click-started text starts to wrap.
+          id: 'canvas.newTextWrapMargin',
+          label: 'Wrap new text before the edge',
+          hint: 'How far from the right edge of the screen new text starts a new line. 0 wraps at the edge.',
+          keywords: ['wrap', 'text', 'edge', 'margin', 'line', 'drawing', 'new text'],
+          render: ({ settings, onChange }) => (
+            <PxStepper name="Wrap new text before the edge" value={settings.canvas.newTextWrapMargin ?? DEFAULT_CANVAS_PREFS.newTextWrapMargin} fallback={DEFAULT_CANVAS_PREFS.newTextWrapMargin}
+              min={0} max={NEW_TEXT_WRAP_MARGIN_MAX} step={20} onSet={(newTextWrapMargin) => onChange(write(settings, { newTextWrapMargin }))} />
+          ),
         },
         {
           id: 'canvas.defaultRoughness',

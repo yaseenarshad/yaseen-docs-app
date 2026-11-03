@@ -31,6 +31,7 @@ beforeEach(() => {
     writeText,
     write,
     readText: () => 'clip',
+    readHTML: () => '<table><tr><td>c</td></tr></table>',
     revealImage,
     rendererUrl: 'app://yaseen/index.html',
   })
@@ -71,7 +72,7 @@ describe('private explicit copy IPC', () => {
 
   it('accepts the exact configured development renderer, including its window query', async () => {
     vi.mocked(ipcMain.handle).mockClear()
-    registerClipboardIpc({ idFor: () => 'w1' }, { target: () => sender, writeText, write, readText: () => 'clip', revealImage, rendererUrl: 'http://localhost:5173/' })
+    registerClipboardIpc({ idFor: () => 'w1' }, { target: () => sender, writeText, write, readText: () => 'clip', readHTML: () => '', revealImage, rendererUrl: 'http://localhost:5173/' })
     const devFrame = { url: 'http://localhost:5173/?win=w1' }
     expect(await invoke({ sender: { ...sender, mainFrame: devFrame }, senderFrame: devFrame }, 'text')).toEqual({ ok: true, value: undefined })
   })
@@ -121,6 +122,12 @@ describe('the note menu runs its row on the window that sent it (YAZ-3653)', () 
       [SPECIAL.menuCopyAs, 'plain'], [SPECIAL.menuCopyAs, 'markdown'], [SPECIAL.menuCopyAs, 'visible'],
       [SPECIAL.menuPasteAs, { mode: 'plain', text: 'clip' }], [SPECIAL.menuPasteAs, { mode: 'markdown', text: 'clip' }],
     ])
+  })
+
+  it('Paste as › Cells only (YAZ-4206 D18): the clipboard\'s text and its HTML go to the window', async () => {
+    const { wc, ev } = window()
+    expect(await edit(ev, 'paste-cells')).toEqual({ ok: true, value: undefined })
+    expect(wc.send.mock.calls).toEqual([[SPECIAL.menuPasteAs, { mode: 'cells', text: 'clip', html: '<table><tr><td>c</td></tr></table>' }]])
   })
 
   it('an image\'s rows (YAZ-3727 D22): Copy image at the point in the window\'s px; Reveal a vault image only', async () => {

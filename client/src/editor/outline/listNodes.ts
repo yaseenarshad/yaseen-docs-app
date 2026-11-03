@@ -64,11 +64,11 @@ export interface OwnImage {
   offset: number
 }
 
-/** Every image in the item's OWN blocks (nested lists excluded), in order (YAZ-1709). */
+/** Every image in the item's OWN blocks (nested lists and tables excluded, YAZ-3818), in order (YAZ-1709). */
 export const findOwnImages = (item: ProseNode): OwnImage[] => {
   const found: OwnImage[] = []
   item.forEach((block, blockOffset) => {
-    if (LIST_NODE_NAMES.has(block.type.name)) return
+    if (LIST_NODE_NAMES.has(block.type.name) || block.type.name === 'table') return
     block.descendants((node, pos) => {
       if (node.type.name === 'image') found.push({ node, offset: blockOffset + 1 + pos })
       return true
@@ -93,8 +93,39 @@ export const ancestorItemPositions = ($pos: ResolvedPos): number[] => {
   return positions
 }
 
-/** Position of the innermost list_item containing `$pos`, or null outside lists. */
+/** A table cell, body or header. */
+export const isTableCell = (node: ProseNode): boolean => node.type.spec.tableRole === 'cell' || node.type.spec.tableRole === 'header_cell'
+
+/** The position of the innermost table cell around `$pos`, at any depth (a cell's bullet too), or null outside tables (YAZ-3818). */
+export const cellPosAround = ($pos: ResolvedPos): number | null => {
+  for (let depth = $pos.depth; depth > 0; depth--) if (isTableCell($pos.node(depth))) return $pos.before(depth)
+  return null
+}
+
+/**
+ * Position of the innermost list_item containing `$pos`, or null outside lists. A table cell is a
+ * boundary (YAZ-3818): on a plain line in a cell of a table inside a bullet it is null, so ⌘↑ and ⌘.
+ * never act on the outer bullet.
+ */
 export const innermostItemPos = ($pos: ResolvedPos): number | null => {
-  const positions = ancestorItemPositions($pos)
-  return positions.length > 0 ? positions[positions.length - 1] : null
+  for (let depth = $pos.depth; depth > 0; depth--) {
+    const node = $pos.node(depth)
+    if (isListItem(node)) return $pos.before(depth)
+    if (isTableCell(node)) return null
+  }
+  return null
+}
+
+/**
+ * The NEAREST list item around `$pos` lies inside a table cell (YAZ-3818 D5, D6): a bullet in a cell.
+ * False on a plain cell line, also in a table inside a bullet (YAZ-3770), and outside tables.
+ */
+export const itemInCell = ($pos: ResolvedPos): boolean => {
+  let item = false
+  for (let depth = $pos.depth; depth > 0; depth--) {
+    const node = $pos.node(depth)
+    if (isTableCell(node)) return item
+    if (isListItem(node)) item = true
+  }
+  return false
 }
