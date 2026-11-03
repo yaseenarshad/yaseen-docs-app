@@ -62,6 +62,7 @@ import {
   TextSizeIcon,
   adjustmentsIcon,
   DotsHorizontalIcon,
+  bucketFillIcon,
   pencilIcon,
   TextAlignCenterIcon,
   TextAlignLeftIcon,
@@ -554,7 +555,27 @@ export const ContextualPropertiesToolbar = ({
       role="toolbar"
       aria-label="Element properties"
     >
-      {isTextTarget && (
+      {/* YAZ-4277 D8: in edit, the whole-box controls only; the letters'
+          styles are in the box editor's pop-up toolbar */}
+      {isTextTarget && appState.editingTextElement && (
+        <>
+          {fontAndSize()}
+          <ContextualToolbarDivider />
+          {textAlignMenu()}
+          {lineSpacing()}
+          {predicates.backgroundColor && (
+            <>
+              <ContextualToolbarDivider />
+              <ToolbarPopover label="Background" icon={bucketFillIcon}>
+                {renderAction("changeBackgroundColor", {
+                  contextToolbar: true,
+                })}
+              </ToolbarPopover>
+            </>
+          )}
+        </>
+      )}
+      {isTextTarget && !appState.editingTextElement && (
         <>
           {fontAndSize()}
           <ContextualToolbarDivider />

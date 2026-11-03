@@ -14,9 +14,9 @@
  */
 import type { ComponentProps } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
+import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
-import { createCrepe } from '../editor/createCrepe'
+import { createCrepe, type ToolbarBuilder } from '../editor/createCrepe'
 import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
 import { HIDDEN_IN_CELL } from '../editor/slashMenu'
@@ -43,6 +43,61 @@ export const TEXT_BOX_HIDDEN = {
   toolbar: ['h1', 'h2', 'h3', 'numberedList', 'code', 'link'],
   slash: [...HIDDEN_IN_CELL, 'ordered-list'],
 } as const
+
+/**
+ * The letter colors of the pop-up toolbar (YAZ-4277 1E, D8): the top bar's three, then the box color (no run color).
+ * They set the box's `text_color` mark, `textRuns[].color` on the box.
+ */
+export const TEXT_BOX_COLORS = [
+  { key: 'text-color-black', label: 'Text color: black', color: '#1e1e1e' },
+  { key: 'text-color-red', label: 'Text color: red', color: '#e03131' },
+  { key: 'text-color-blue', label: 'Text color: blue', color: '#1971c2' },
+  { key: 'text-color-box', label: 'Text color: the box color', color: null },
+] as const
+
+const swatch = (color: string | null) =>
+  color
+    ? `<svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="7" fill="${color}"/></svg>`
+    : '<svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 17 17 7" stroke="currentColor" stroke-width="1.5"/></svg>'
+
+/** The selection's letters all have `color` (null: none has a color). */
+const rangeHasColor = (state: EditorState, color: string | null) => {
+  const { from, to, empty } = state.selection
+  const type = state.schema.marks.text_color
+  if (empty) return (type.isInSet(state.storedMarks ?? state.selection.$from.marks())?.attrs.color ?? null) === color
+  let all = true
+  state.doc.nodesBetween(from, to, (node) => {
+    if (node.isText && (type.isInSet(node.marks)?.attrs.color ?? null) !== color) all = false
+  })
+  return all
+}
+
+/** Colors the selected letters, or the next ones at a caret; null takes the color off. */
+const setTextColor = (color: string | null) => (state: EditorState, dispatch: (tr: Transaction) => void) => {
+  const type = state.schema.marks.text_color
+  const { from, to, empty } = state.selection
+  if (empty) {
+    dispatch(color ? state.tr.addStoredMark(type.create({ color })) : state.tr.removeStoredMark(type))
+    return
+  }
+  const tr = state.tr.removeMark(from, to, type)
+  dispatch(color ? tr.addMark(from, to, type.create({ color })) : tr)
+}
+
+const textColorButtons = (builder: ToolbarBuilder) => {
+  const group = builder.addGroup('textColor', 'Text color')
+  for (const { key, label, color } of TEXT_BOX_COLORS) {
+    group.addItem(key, {
+      icon: swatch(color),
+      label,
+      active: (ctx) => rangeHasColor(ctx.get(editorViewCtx).state, color),
+      onRun: (ctx) => {
+        const view = ctx.get(editorViewCtx)
+        setTextColor(color)(view.state, view.dispatch)
+      },
+    })
+  }
+}
 
 /** The pop-ups Crepe puts beside its view; they move out of the root, which is invisible and zoomed (1C). */
 const POPUPS = '.milkdown-toolbar, .milkdown-slash-menu'
@@ -89,7 +144,7 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
       )
 
       // the note keys as the user set them (YAZ-3564 K4), read as a note reads them: once, as the edit opens
-      const crepe = createCrepe({ root, defaultValue: '', features: textBoxFeatures, hidden: TEXT_BOX_HIDDEN, hotkeys: storage.getSettings()?.hotkeys })
+      const crepe = createCrepe({ root, defaultValue: '', features: textBoxFeatures, hidden: TEXT_BOX_HIDDEN, extendToolbar: textColorButtons, hotkeys: storage.getSettings()?.hotkeys })
       lockToTextBox(crepe)
       crepe.editor.use(endKeys).use(report)
 

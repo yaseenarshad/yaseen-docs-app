@@ -22,7 +22,7 @@ const settle = () => new Promise((r) => setTimeout(r, 80))
 const boxText = (view: Awaited<ReturnType<typeof mountBox>>['view']) => docToBox(view.state.doc, { text: '', textRuns: undefined }, helpers).text
 
 describe('the pop-up toolbar and the / menu of a text box (YAZ-4277 1C, D4, D8)', () => {
-  it('shows the toolbar on a letter selection, outside the zoomed root, with the checklist and no heading', async () => {
+  it('shows the toolbar on a letter selection, outside the zoomed root, with the checklist, the letter colors and no heading', async () => {
     const { view, root } = await mountBox('pick these words')
     view.focus()
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 5)))
@@ -34,7 +34,14 @@ describe('the pop-up toolbar and the / menu of a text box (YAZ-4277 1C, D4, D8)'
     const buttons = [...toolbar!.querySelectorAll<HTMLElement>('[data-toolbar-item]')]
     expect(buttons.map((button) => button.dataset.toolbarItem)).toEqual([
       'text', 'checklist', 'bulletList', 'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink',
+      'text-color-black', 'text-color-red', 'text-color-blue', 'text-color-box',
     ])
+    // 1E: a color button colors the selected letters, and the box color takes it off
+    const color = (key: string) => buttons.find((button) => button.dataset.toolbarItem === key)!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
+    color('text-color-red')
+    expect(docToBox(view.state.doc, { text: '', textRuns: undefined }, helpers).textRuns).toEqual([{ start: 0, end: 4, color: '#e03131' }])
+    color('text-color-box')
+    expect(docToBox(view.state.doc, { text: '', textRuns: undefined }, helpers).textRuns).toBeUndefined()
     // the Checklist button makes the line a checklist item
     const checklist = buttons.find((button) => button.dataset.toolbarItem === 'checklist')!
     checklist.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))

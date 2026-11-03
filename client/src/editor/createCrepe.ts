@@ -425,13 +425,15 @@ export interface CreateCrepeOptions {
    * key. Absent → every row, as a note.
    */
   hidden?: { toolbar?: readonly string[]; slash?: readonly string[] }
+  /** A NON-note instance's own toolbar buttons (YAZ-4277 1E: a drawing text box's letter colors), added before the build. */
+  extendToolbar?: (builder: ToolbarBuilder) => void
 }
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
-interface ToolbarGroup {
+export interface ToolbarGroup {
   addItem: (key: string, item: ToolbarItem & { onRun: (ctx: Ctx) => void }) => unknown
 }
-interface ToolbarBuilder {
+export interface ToolbarBuilder {
   addGroup: (key: string, label: string) => ToolbarGroup
   getGroup: (key: string) => ToolbarGroup
   /** The builder's OWN list of groups, in strip order (Crepe's `GroupBuilder.build` hands back the array itself, not a copy). */
@@ -483,7 +485,7 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  * would keep Crepe's order and raise nothing; `headingToolbar.test.ts` reads the strip of a real
  * editor and fails on it.
  */
-function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = []): void {
+function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = [], extend?: (builder: ToolbarBuilder) => void): void {
   const formatting = builder.getGroup('formatting')
   for (const color of [null, ...HIGHLIGHT_COLORS] as HighlightColor[]) {
     const id = color === null ? 'highlight' : (`highlight-${color}` as const)
@@ -531,6 +533,7 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       onRun: (ctx) => runOnView(ctx, toggleListKind(kind)),
     })
   }
+  extend?.(builder)
   // The default order leads with the Heading group (YAZ-2700): the toolbar opens over the start of
   // the selection, so its first buttons are the ones under the hand after a double click.
   const groups = builder.build()
@@ -577,7 +580,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // active button is the answer to "what is this?", and whose click is the switch. The
       // markdown stays the source of truth; these call the same commands typing `##` does.
       // YAZ-1480 adds Highlight into Crepe's own Formatting group from the same builder.
-      [CrepeFeature.Toolbar]: { buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys, opts.hidden?.toolbar) },
+      [CrepeFeature.Toolbar]: { buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys, opts.hidden?.toolbar, opts.extendToolbar) },
       // Native text carets track document zoom without a second painted overlay.
       [CrepeFeature.Cursor]: { virtual: false },
       // YAZ-2270: long lines wrap like prose instead of scrolling sideways, and colours come from
