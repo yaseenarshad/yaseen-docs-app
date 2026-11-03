@@ -12,6 +12,8 @@ export const LOCK_DIR = 'locks'
 const STALE_MS = 30_000
 /** No maker holds a lock this long: an older file's id is a process that took a dead maker's number. */
 const HELD_MAX_MS = 10 * 60_000
+/** A take-over guard lives a few milliseconds; one this old is a maker's that died in that moment. */
+const GUARD_MAX_MS = 5_000
 const WAIT_MS = 50
 const GIVE_UP_MS = 10_000
 
@@ -32,10 +34,36 @@ async function deadHolder(file: string): Promise<boolean> {
 }
 
 /**
- * `work`, while no other maker of this Mac holds `key`; `dir` is `<app data>/locks` of that Mac. A maker that was killed (Ctrl-C, a timeout) leaves its file:
- * the next one sees that its process is gone and takes over at once. A live holder is never taken over; after
- * `GIVE_UP_MS` the wait fails with a reason. (Two makers that both see one dead holder at the same moment can each
- * take over; the second `wx` of them still fails, so one of them waits again.)
+ * Removes the lock `file` when its holder is dead, as ONE maker at a time (YAZ-4269 5C): the remover holds the guard
+ * `<file>.takeover` (made with `wx`) and reads the lock again under it. Without the guard, two makers that both saw
+ * the dead holder could each remove a file, and the later remove took away the live lock of a third maker that had
+ * come in between. Under the guard the lock file cannot change hands: only a guard holder removes a dead one, and a
+ * live one is never dead. A guard older than `GUARD_MAX_MS` is a maker's that died while it held it. True when this
+ * maker removed the lock.
+ */
+async function takeOver(file: string): Promise<boolean> {
+  const guard = `${file}.takeover`
+  try {
+    await (await open(guard, 'wx')).close()
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+    const held = await stat(guard).catch(() => null)
+    if (held !== null && Date.now() - held.mtimeMs > GUARD_MAX_MS) await rm(guard, { force: true })
+    return false // another maker removes it; the caller waits and tries again
+  }
+  try {
+    if (!(await deadHolder(file))) return false
+    await rm(file, { force: true })
+    return true
+  } finally {
+    await rm(guard, { force: true })
+  }
+}
+
+/**
+ * `work`, while no other maker of this Mac holds `key`; `dir` is `<app data>/locks` of that Mac. A maker that was
+ * killed (Ctrl-C, a timeout) leaves its file: the next one sees that its process is gone and takes over at once
+ * (`takeOver`). A live holder is not taken over before `HELD_MAX_MS`; after `GIVE_UP_MS` the wait fails with a reason.
  */
 export async function onlyOne<T>(dir: string, key: string, work: () => Promise<T>): Promise<T> {
   const file = path.join(dir, `${createHash('sha1').update(key).digest('hex')}.lock`)
@@ -47,8 +75,8 @@ export async function onlyOne<T>(dir: string, key: string, work: () => Promise<T
       break
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
-      if (await deadHolder(file)) await rm(file, { force: true })
-      else if (Date.now() - start > GIVE_UP_MS) throw new Error('another maker of this note did not finish — try again')
+      if ((await deadHolder(file)) && (await takeOver(file))) continue
+      if (Date.now() - start > GIVE_UP_MS) throw new Error('another maker on this Mac did not finish — try again')
       else await new Promise((resolve) => setTimeout(resolve, WAIT_MS))
     }
   }
