@@ -19,7 +19,7 @@
  * toolbar in the engine is the one place they are changed.
  */
 import type { ReactNode } from 'react'
-import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, type CanvasPrefs, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type TextAlign } from '@shared/types'
+import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type TextAlign } from '@shared/types'
 import { Segmented, Select, Stepper } from './controls'
 import { ON_OFF_OPTIONS, type Option } from './options'
 import type { SettingDef, SettingsSection } from './registry'
@@ -39,6 +39,12 @@ const TEXT_ALIGN_OPTIONS: readonly Option<TextAlign>[] = [
   { value: 'left', label: 'Left' },
   { value: 'center', label: 'Center' },
   { value: 'right', label: 'Right' },
+]
+
+/** YAZ-4277 D14: what a new shape or text starts with. */
+const NEW_ELEMENT_STYLE_OPTIONS: readonly Option<NewElementStyleMode>[] = [
+  { value: 'default', label: 'Start with the default style' },
+  { value: 'keep', label: 'Keep the last style' },
 ]
 
 /** YAZ-4277 D5, D7: the fold arrows of text boxes. */
@@ -147,6 +153,16 @@ export const CANVAS_SECTION: SettingsSection = {
       title: 'New elements',
       hint: 'What a shape or a line is born with; the toolbar still changes anything you have selected.',
       items: [
+        {
+          // YAZ-4277 D14: a red fill on one box no longer leaks into every later box.
+          id: 'canvas.newElementStyle',
+          label: 'New shapes and text',
+          hint: 'Default style: a style you change on a selected shape stays on it, and the rows below change only here. A style you pick for a tool lasts until you choose the selection tool.',
+          keywords: ['default style', 'last style', 'reset', 'new shape', 'color', 'fill'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={NEW_ELEMENT_STYLE_OPTIONS} value={settings.canvas.newElementStyle ?? DEFAULT_CANVAS_PREFS.newElementStyle} onChange={(newElementStyle) => onChange(write(settings, { newElementStyle }))} ariaLabel="New shapes and text" />
+          ),
+        },
         width('writingStrokeWidth', 'Writing pen width', `Default ${DEFAULT_CANVAS_PREFS.writingStrokeWidth}.`),
         width('vectorStrokeWidth', 'Vector stroke width', `Default ${DEFAULT_CANVAS_PREFS.vectorStrokeWidth}.`),
         {

@@ -1974,7 +1974,7 @@ describe("element locking", () => {
       );
     });
 
-    it("should clear selected text colors with Cmd-or-Ctrl+backslash", () => {
+    it("should reset the selection to the default style with Cmd-or-Ctrl+backslash (YAZ-4277 D15)", () => {
       const text = {
         ...API.createElement({
           type: "text",
@@ -2006,15 +2006,17 @@ describe("element locking", () => {
         backgroundColor: COLOR_PALETTE.transparent,
         roundness: null,
         fontSize: 65,
-        fontWeight: "bold",
+        // YAZ-4277 D15: whole-box letter styles go too; the size stays
+        fontWeight: "normal",
       });
       expect(
         (window.h.app.scene.getElement(text.id) as ExcalidrawTextElement)
           .backgroundPaddingScale,
       ).toBeUndefined();
+      // YAZ-4277 D15: every selected element, not only text
       expect(window.h.app.scene.getElement(rectangle.id)).toMatchObject({
-        strokeColor: "#00ff00",
-        backgroundColor: "#0000ff",
+        strokeColor: COLOR_PALETTE.black,
+        backgroundColor: COLOR_PALETTE.transparent,
       });
     });
 

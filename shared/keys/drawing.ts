@@ -64,7 +64,7 @@ export const DRAWING_KEYS: readonly KeyRow[] = [
   key('textStrikethrough', 'Strikethrough', ['CmdOrCtrl+Shift+X'], 'A selected text; while you type, ⌘⇧X stays'),
   // YAZ-4102 3E: highlight letters, as in a note (the note's ⌘⇧H); the text editor hears the changed key too.
   key('textHighlight', 'Highlight the selected letters', ['CmdOrCtrl+Shift+H'], 'While you type a text, as in a note; the toolbar has the other colours'),
-  key('clearTextFormatting', 'Clear text formatting', ['CmdOrCtrl+\\']),
+  key('clearTextFormatting', 'Reset to default style', ['CmdOrCtrl+\\'], 'Every selected shape and text: black line, no fill, the Settings › Drawings defaults; keeps place, size and words'),
   key('decreaseFontSize', 'Smaller text', ['CmdOrCtrl+Shift+,'], 'While you type, ⌘⇧< stays'),
   key('increaseFontSize', 'Larger text', ['CmdOrCtrl+Shift+.'], 'While you type, ⌘⇧> stays'),
   key('zoomIn', 'Zoom in', ['CmdOrCtrl+=', 'Shift+=']),
@@ -105,7 +105,7 @@ export const DRAWING_KEYS: readonly KeyRow[] = [
   fixed('selectAll', 'Select all', ['CmdOrCtrl+A']),
   fixed('help', 'Keyboard shortcuts', ['Shift+/']),
   fixed('toolLock', 'Keep the tool after drawing', ['Q']),
-  fixed('colors', 'Colour the selection', [], "T B W D R P A V U C E G Y O N: transparent, black, white, gray, red, pink, grape, violet, blue, cyan, teal, green, yellow, orange, bronze; with ⇧ the outline. The tool letters, while something is selected"),
+  fixed('colors', 'Colour the selection', [], "T B W D R P A V U C E G Y O N: transparent, black, white, gray, red, pink, grape, violet, blue, cyan, teal, green, yellow, orange, bronze. The letter colors the line (a shape's outline, a text's letters, an arrow or a pen line); with ⇧ the fill (a shape's fill, a text box's fill). The tool letters, while something is selected"),
   fixed('sizes', 'Size the selection', DIGITS, 'Text 12 to 128; anything else 48 to 1024 on its long side'),
   fixed('backgroundColors', 'Open the background colours', ['G'], 'With a shape tool and nothing selected'),
   fixed('strokeColors', 'Open the stroke colours', ['S'], 'With a shape tool and nothing selected'),

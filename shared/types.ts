@@ -1371,7 +1371,18 @@ export interface CanvasPrefs {
    * shows from afar. Screen only: exports use the size alone. `FOLD_ARROW_MIN_SIZE_MIN`–`MAX`.
    */
   foldArrowMinSize: number
+  /**
+   * YAZ-4277 D14: "New shapes and text". `default`: a style changed on a selection stays on it, a style picked for a
+   * tool lasts until the selection tool, and the defaults above change only here. `keep`: the last style carries to the
+   * next shape, and a pick writes the font, sloppiness, align and line widths back here (the behaviour before D14).
+   * Never appState: the engine's `newElementStyle` prop.
+   */
+  newElementStyle: NewElementStyleMode
 }
+
+/** YAZ-4277 D14: "Start with the default style" or "Keep the last style". */
+export const NEW_ELEMENT_STYLE_MODES = ['default', 'keep'] as const
+export type NewElementStyleMode = (typeof NEW_ELEMENT_STYLE_MODES)[number]
 
 /** YAZ-4277 D5: when an open bullet shows its fold arrow. */
 export const FOLD_ARROW_MODES = ['hover', 'always'] as const
@@ -1417,6 +1428,7 @@ export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
   foldArrowSize: 100,
   foldArrowThickness: 'thick',
   foldArrowMinSize: 14,
+  newElementStyle: 'default',
 }
 
 /**

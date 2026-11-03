@@ -93,7 +93,7 @@ describe('settingCandidates', () => {
       'codeMinimap',
       'codeLanguageHelpers',
       // Settings › Drawings (YAZ-3037; "Excalidraw canvas" before the YAZ-3818 demo).
-      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
+      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
       // Settings › Images (YAZ-3038).
       'pixabayApiKey',
       'libraryFolder',

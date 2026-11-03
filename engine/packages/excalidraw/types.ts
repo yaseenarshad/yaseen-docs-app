@@ -56,6 +56,7 @@ import type {
 } from "@excalidraw/element";
 import type { GlobalPoint } from "@excalidraw/math";
 import type { FoldArrowPrefs, HostLinkResolver } from "@excalidraw/element";
+import type { NewElementStyle } from "./newElementStyle";
 
 import type { Action } from "./actions/types";
 import type { Spreadsheet } from "./charts";
@@ -1107,6 +1108,14 @@ export interface ExcalidrawProps {
    * Keep it stable. Absent: `DEFAULT_FOLD_ARROW_PREFS`.
    */
   foldArrows?: FoldArrowPrefs;
+  /**
+   * Yaseen Docs (YAZ-4277 D14): "default": a style changed on a selection
+   * stays on it, and the selection tool brings back `defaultItemStyle`.
+   * Absent or "keep": the last style carries to the next shape (upstream).
+   */
+  newElementStyle?: "default" | "keep";
+  /** Yaseen Docs (YAZ-4277 D14): the host's defaults for a new element's style. Keep it stable. */
+  defaultItemStyle?: Partial<NewElementStyle>;
   /**
    * Yaseen Docs (YAZ-4157 demo 6L): the host's own items in the board's
    * right-click menu, asked each time the menu opens on the canvas or on a

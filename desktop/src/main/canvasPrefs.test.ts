@@ -33,13 +33,15 @@ describe('DEFAULT_CANVAS_PREFS', () => {
       foldArrowSize: 100,
       foldArrowThickness: 'thick',
       foldArrowMinSize: 14,
+      // YAZ-4277 D14: new shapes start with the default style.
+      newElementStyle: 'default',
     })
   })
 
-  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds, the new text size and wrap margin (YAZ-4247) and the four fold arrow keys (YAZ-4277), and no more', () => {
-    expect(CANVAS_PREF_KEYS).toHaveLength(23)
-    expect(CANVAS_PREF_KEYS.slice(-7, -4)).toEqual(['laserTrailMode', 'laserColor', 'laserSize'])
-    expect(CANVAS_PREF_KEYS.slice(-4)).toEqual(['foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'])
+  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds, the new text size and wrap margin (YAZ-4247) and the four fold arrow keys and "New shapes and text" (YAZ-4277), and no more', () => {
+    expect(CANVAS_PREF_KEYS).toHaveLength(24)
+    expect(CANVAS_PREF_KEYS.slice(-8, -5)).toEqual(['laserTrailMode', 'laserColor', 'laserSize'])
+    expect(CANVAS_PREF_KEYS.slice(-5)).toEqual(['foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize', 'newElementStyle'])
     // The round-4 amendment removed the properties-toolbar pref: the toolbar mode is a constant.
     expect(CANVAS_PREF_KEYS).not.toContain('propertiesToolbar')
   })
@@ -170,8 +172,11 @@ describe('appStateToPrefs', () => {
     laserSize: 'L',
   }
 
+  // "Keep the last style" (YAZ-4277 D14): a pick on the board writes the new-element defaults back, as before D14.
+  const keep = prefs({ newElementStyle: 'keep' })
+
   it('reads every key back off the engine', () => {
-    expect(appStateToPrefs(full, DEFAULT_CANVAS_PREFS)).toEqual({
+    expect(appStateToPrefs(full, keep)).toEqual({
       gridModeEnabled: true,
       objectsSnapModeEnabled: true,
       snapToMidpoints: false,
@@ -197,12 +202,21 @@ describe('appStateToPrefs', () => {
       foldArrowSize: 100,
       foldArrowThickness: 'thick',
       foldArrowMinSize: 14,
+      newElementStyle: 'keep',
     })
   })
 
+  it('YAZ-4277 D14: in "Start with the default style" a pick never writes the new-element defaults back', () => {
+    const seen = appStateToPrefs(full, DEFAULT_CANVAS_PREFS)
+    for (const k of ['writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'] as const) expect(seen[k], k).toBe(DEFAULT_CANVAS_PREFS[k])
+    // the other keys still follow the board
+    expect(seen.gridModeEnabled).toBe(true)
+    expect(seen.laserSize).toBe('L')
+  })
+
   it('round-trips through prefsToAppState', () => {
-    const start = prefs({ gridModeEnabled: true, selectOn: 'overlap', toolLock: true, writingStrokeWidth: 0.75, defaultFontFamily: 5, defaultRoughness: 1, defaultTextAlign: 'right', laserTrailMode: 'hold', laserColor: '#d500f9', laserSize: 'M' })
-    const back = appStateToPrefs({ ...(prefsToAppState(start) as EngineAppStateSlice), frameRendering: { outline: start.framesVisible, name: start.framesVisible } }, DEFAULT_CANVAS_PREFS)
+    const start = prefs({ newElementStyle: 'keep', gridModeEnabled: true, selectOn: 'overlap', toolLock: true, writingStrokeWidth: 0.75, defaultFontFamily: 5, defaultRoughness: 1, defaultTextAlign: 'right', laserTrailMode: 'hold', laserColor: '#d500f9', laserSize: 'M' })
+    const back = appStateToPrefs({ ...(prefsToAppState(start) as EngineAppStateSlice), frameRendering: { outline: start.framesVisible, name: start.framesVisible } }, keep)
     expect(back).toEqual(start)
   })
 

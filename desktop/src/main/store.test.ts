@@ -501,7 +501,7 @@ describe('createStore: loading', () => {
       }
     }
     // The canvas keys repair inside `canvas`: the bad one falls back, the others stay.
-    const canvasJunk: Record<string, unknown[]> = { newTextScreenSize: [7, 49, 14.5, '14'], newTextWrapMargin: [-1, 601, 12.5, null], foldArrowsOpen: ['never'], foldArrowSize: [40, 310], foldArrowThickness: ['bold'], foldArrowMinSize: [5, 49] }
+    const canvasJunk: Record<string, unknown[]> = { newTextScreenSize: [7, 49, 14.5, '14'], newTextWrapMargin: [-1, 601, 12.5, null], foldArrowsOpen: ['never'], foldArrowSize: [40, 310], foldArrowThickness: ['bold'], foldArrowMinSize: [5, 49], newElementStyle: ['last', 1] }
     for (const [field, values] of Object.entries(canvasJunk)) {
       for (const value of values) {
         await seed(valid({ settings: { ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, gridModeEnabled: true, [field]: value } } }))

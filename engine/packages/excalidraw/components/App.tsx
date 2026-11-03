@@ -391,6 +391,11 @@ import { actionTextAutoResize } from "../actions/actionTextAutoResize";
 // YAZ-4277 D9: registers ⌘↑ / ⌘↓ on selected text boxes
 import "../actions/actionTextFolds";
 import {
+  getDefaultNewElementStyle,
+  isSelectTool,
+  keepNewElementStyle,
+} from "../newElementStyle";
+import {
   getNewTextWrapMargin,
   getResponsiveTextFontSize,
   wrapWidthAtEdge,
@@ -3373,7 +3378,11 @@ class App extends React.Component<AppProps, AppState> {
       }
 
       this.setState((prevAppState) => {
-        const actionAppState = actionResult.appState || {};
+        // YAZ-4277 D14: a style changed on a selection stays on it
+        const actionAppState =
+          this.props.newElementStyle === "default"
+            ? keepNewElementStyle(prevAppState, actionResult.appState || {})
+            : actionResult.appState || {};
 
         return {
           ...prevAppState,
@@ -6937,6 +6946,12 @@ class App extends React.Component<AppProps, AppState> {
         // only the text tool offers arrow-endpoint binding, and the highlight
         // is refreshed on pointermove — don't leave a stale one behind
         hoveredArrowTextAnchor: null,
+        // YAZ-4277 D14: choosing the selection tool ends a style picked for
+        // a tool; the tool's own return after a shape keeps it
+        ...(this.props.newElementStyle === "default" &&
+        isSelectTool(nextActiveTool.type)
+          ? getDefaultNewElementStyle(this.props.defaultItemStyle)
+          : {}),
       } as const;
 
       if (nextActiveTool.type === "freedraw") {

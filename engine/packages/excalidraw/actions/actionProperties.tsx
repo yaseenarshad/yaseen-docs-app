@@ -121,6 +121,11 @@ import type {
 
 import type { ElementUpdate, Scene, TextRunFlag } from "@excalidraw/element";
 
+import {
+  getDefaultNewElementStyle,
+  getDefaultStyleUpdates,
+} from "../newElementStyle";
+
 import type { CaptureUpdateActionType } from "@excalidraw/element";
 
 import { trackEvent } from "../analytics";
@@ -547,17 +552,29 @@ export const actionChangeStrokeColor = register<
   },
 });
 
-const getSemanticColorProperty = (element: ExcalidrawElement) => {
-  if (
+/**
+ * YAZ-4277 D16: a color letter colors the line of every element (a shape's
+ * outline, a text's letters, an arrow, a line, a pen line, a picture's
+ * border); ⇧ + the letter colors the fill (a shape's fill, a free text box's
+ * fill). An element with no fill keeps today's ⇧ rule: its line.
+ */
+const getColorLetterProperty = (element: ExcalidrawElement, fill: boolean) => {
+  const isShape =
     element.type === "rectangle" ||
     element.type === "ellipse" ||
     element.type === "diamond" ||
-    isFrameLikeElement(element)
-  ) {
-    return "backgroundColor" as const;
+    isFrameLikeElement(element);
+  if (fill) {
+    if (isTextElement(element)) {
+      return element.containerId === null ? ("backgroundColor" as const) : null;
+    }
+    if (isShape) {
+      return "backgroundColor" as const;
+    }
+    return hasStrokeColor(element.type) ? ("strokeColor" as const) : null;
   }
-
   if (
+    isShape ||
     element.type === "text" ||
     element.type === "line" ||
     element.type === "arrow" ||
@@ -566,7 +583,6 @@ const getSemanticColorProperty = (element: ExcalidrawElement) => {
   ) {
     return "strokeColor" as const;
   }
-
   return null;
 };
 
@@ -585,16 +601,11 @@ export const actionApplySelectedSemanticColor = register<{
     let supportedElementCount = 0;
     const paletteValue = COLOR_PALETTE[value.colorName];
     const updatedElements = changeProperty(elements, appState, (element) => {
-      const property =
-        value.target === "stroke"
-          ? isTextElement(element)
-            ? element.containerId === null
-              ? ("backgroundColor" as const)
-              : null
-            : hasStrokeColor(element.type)
-            ? ("strokeColor" as const)
-            : null
-          : getSemanticColorProperty(element);
+      // `target: "stroke"` is the ⇧ key (the name is the old one)
+      const property = getColorLetterProperty(
+        element,
+        value.target === "stroke",
+      );
       if (!property) {
         return element;
       }
@@ -631,8 +642,8 @@ export const actionApplySelectedSemanticColor = register<{
           toast: {
             message:
               value.target === "stroke"
-                ? "The selected elements do not support alternate color shortcuts."
-                : "The selected elements do not support direct color shortcuts.",
+                ? "The selected elements have no fill for ⇧ + a color letter."
+                : "The selected elements have no line for a color letter.",
             duration: 3000,
           },
         },
@@ -647,28 +658,53 @@ export const actionApplySelectedSemanticColor = register<{
   },
 });
 
+/**
+ * YAZ-4277 D15: ⌘\ sets every selected element back to the default style
+ * (`getDefaultStyleUpdates`, the defaults of D14). It keeps the place, size,
+ * rotation, text, font size, link, lock, groups, bindings, folds and checkbox
+ * letters. One undo step. In edit, the key is the editor's: the old textarea
+ * clears the edited box as before, and the notes editor clears the styles of
+ * the selected letters (agent A's seam).
+ */
 export const actionClearSelectedTextFormatting = register({
   name: "clearSelectedTextFormatting",
-  label: "Clear selected text colors",
+  label: "Reset to default style",
   trackEvent: false,
   perform: (elements, appState, _, app) => {
+    const defaults = getDefaultNewElementStyle(app.props.defaultItemStyle);
+    const editing = !!appState.editingTextElement;
     const updatedElements = changeProperty(
       elements,
       appState,
       (element) => {
-        if (!isTextElement(element)) {
+        const updates = editing
+          ? isTextElement(element)
+            ? {
+                strokeColor: COLOR_PALETTE.black,
+                backgroundColor: COLOR_PALETTE.transparent,
+                backgroundPaddingScale: undefined,
+                roundness: null,
+                // YAZ-3718 D10: clear formatting removes every run
+                textRuns: undefined,
+              }
+            : null
+          : getDefaultStyleUpdates(element, defaults);
+        if (!updates) {
           return element;
         }
-        let nextElement: ExcalidrawTextElement = newElementWith(element, {
-          strokeColor: COLOR_PALETTE.black,
-          backgroundColor: COLOR_PALETTE.transparent,
-          backgroundPaddingScale: undefined,
-          roundness: null,
-          // YAZ-3718 D10: clear formatting removes every run
-          textRuns: undefined,
-        });
-        // YAZ-4071: bold and italic runs change the letter widths
-        if (element.textRuns?.length) {
+        let nextElement: ExcalidrawElement = newElementWith(
+          element,
+          updates as ElementUpdate<typeof element>,
+        );
+        // YAZ-4071: bold and italic runs (and a new font) change the letter widths
+        if (
+          isTextElement(element) &&
+          isTextElement(nextElement) &&
+          (element.textRuns?.length ||
+            element.fontFamily !== nextElement.fontFamily ||
+            element.fontWeight !== nextElement.fontWeight ||
+            element.fontStyle !== nextElement.fontStyle)
+        ) {
           redrawTextBoundingBox(
             nextElement,
             app.scene.getContainerElement(element),
@@ -697,9 +733,7 @@ export const actionClearSelectedTextFormatting = register({
     !event.shiftKey &&
     event.key === "\\" &&
     (isTextElement(appState.editingTextElement) ||
-      getSelectedElements(elements, appState, {
-        includeBoundTextElement: true,
-      }).some(isTextElement)),
+      getSelectedElements(elements, appState).length > 0),
 });
 
 export const actionChangeBackgroundColor = register<
