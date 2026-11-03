@@ -17,11 +17,12 @@ import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { getZoomedItemPos } from '../outline/zoom'
 import { applyExternalMarkdown, EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, type OutsideRange } from './applyExternalMarkdown'
-import { MAX_CHANGES, OUTSIDE_ACTIVE_CLASS, OUTSIDE_CHANGE_CLASS, OUTSIDE_CHECKED_CLASS, OUTSIDE_REMOVED_CLASS, OUTSIDE_TIP_ATTR, OUTSIDE_TIP_CLASS } from './outsideChanges'
+import { MAX_CHANGES, OUTSIDE_ACTIVE_CLASS, OUTSIDE_CELL_CLASS, OUTSIDE_CHANGE_CLASS, OUTSIDE_CHECKED_CLASS, OUTSIDE_REMOVED_CLASS, OUTSIDE_TIP_ATTR, OUTSIDE_TIP_CLASS } from './outsideChanges'
 import { mergeExternalMarkdown } from './mergeExternal'
 import { createOutsideChangesChannel } from './outsideChangesChannel'
 import { keepOutsideChangesOfTabs, MAX_KEPT_PAGES, readOutsideChanges, saveOutsideChanges } from './outsideChangesMemory'
 import { headingFoldHidden } from '../outline/headingFoldTestKit'
+import { cellNoteCardKey } from '../table/cellNotes'
 
 const BASE = `* Parent
   * Child
@@ -684,5 +685,47 @@ describe('Next change (D9)', () => {
     expect(getZoomedItemPos(view.state)).toBeNull()
     expect(zoomedOut).toHaveBeenCalledTimes(1)
     expect(root.querySelector(`.${OUTSIDE_ACTIVE_CLASS}`)?.closest('p')?.textContent).toContain('Outside grown')
+  })
+})
+
+/**
+ * YAZ-4272 C (B11): an outside edit inside a hidden cell note. The note's block is hidden until its card opens, so the
+ * glow alone would show nowhere: the cell's note mark glows too, and Next opens the note as a card beside its cell, as
+ * find does (YAZ-3818 D19). Next closes the card it opened when it moves on.
+ */
+describe('a change inside a hidden cell note (YAZ-4319)', () => {
+  const TABLE = '| Time | Plan |\n| --- | --- |\n| 9:00 | gym[^cell-1] |\n| 9:30 | read |\n\n[^cell-1]: warm up\n\nafter the table\n'
+  const cellOf = (root: HTMLElement, text: string) => [...root.querySelectorAll<HTMLElement>('td')].find((td) => td.textContent?.includes(text))!
+  const openLabel = (view: EditorView) => cellNoteCardKey.getState(view.state)?.label ?? null
+
+  it('the cell of the note glows; a change outside any note marks no cell', async () => {
+    const { crepe, root, view } = await mount(TABLE)
+    outsideEdit(crepe, (md) => md.replace('warm up', 'warm up, then squats'))
+    expect(openLabel(view)).toBeNull()
+    expect(cellOf(root, 'gym').classList.contains(OUTSIDE_CELL_CLASS)).toBe(true)
+    expect(cellOf(root, 'read').classList.contains(OUTSIDE_CELL_CLASS)).toBe(false)
+    outsideEdit(crepe, (md) => md.replace('after the table', 'after the table, edited'))
+    expect(root.querySelectorAll(`.${OUTSIDE_CELL_CLASS}`)).toHaveLength(1)
+  })
+
+  it('Next opens the hidden note as a card on the change, the caret stays; moving on closes the card Next opened', async () => {
+    const { crepe, root, view, channel } = await mount(TABLE)
+    const caret = view.state.selection.head
+    outsideEdit(crepe, (md) => md.replace('warm up', 'warm up, then squats').replace('after the table', 'after the table, edited'))
+    channel.next()
+    expect(openLabel(view)).toBe('cell-1')
+    expect(activeTexts(root).join('')).toContain('then squats')
+    expect(view.state.selection.head).toBe(caret)
+    channel.next()
+    expect(openLabel(view)).toBeNull()
+    expect(activeTexts(root).join('')).toContain('edited')
+  })
+
+  it('checking the change in the note off (Mark all checked) leaves the card open: the landing', async () => {
+    const { crepe, view, channel } = await mount(TABLE)
+    outsideEdit(crepe, (md) => md.replace('warm up', 'warm up, then squats'))
+    channel.next()
+    channel.clear()
+    expect(openLabel(view)).toBe('cell-1')
   })
 })
