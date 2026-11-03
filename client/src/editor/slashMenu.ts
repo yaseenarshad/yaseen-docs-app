@@ -233,7 +233,11 @@ export const calendarTableRow: SlashRow = {
  * when the host gives a creator — then the list and cell rules) and the plugin that keeps the "in a list" and "in a
  * cell" flags current: one walk up the caret's depth.
  */
-export function createSlashMenu(extend?: (builder: SlashMenuGroups) => void): {
+export function createSlashMenu(
+  extend?: (builder: SlashMenuGroups) => void,
+  /** Rows this editor never shows (YAZ-4277 D4: a drawing text box). */
+  alwaysHidden: readonly string[] = [],
+): {
   buildMenu: (builder: SlashMenuGroups) => void
   inListWatch: ReturnType<typeof $prose>
 } {
@@ -246,9 +250,14 @@ export function createSlashMenu(extend?: (builder: SlashMenuGroups) => void): {
     builder.getGroup('advanced').addItem('table', tableRow)
     builder.getGroup('advanced').addItem('calendar-table', calendarTableRow)
     extend?.(builder)
-    const hidden: readonly string[] = [...(inList.value ? HIDDEN_IN_LIST : []), ...(inCell.value === 'header' ? HIDDEN_IN_HEADER : inCell.value === 'cell' ? HIDDEN_IN_CELL : [])]
+    const hidden: readonly string[] = [...alwaysHidden, ...(inList.value ? HIDDEN_IN_LIST : []), ...(inCell.value === 'header' ? HIDDEN_IN_HEADER : inCell.value === 'cell' ? HIDDEN_IN_CELL : [])]
     if (hidden.length === 0) return
     for (const group of builder.build()) group.items = group.items.filter((item) => !hidden.includes(item.key))
+    // an editor that never shows a whole group (a box's Advanced) leaves no empty tab
+    if (alwaysHidden.length > 0) {
+      const groups = builder.build()
+      groups.splice(0, groups.length, ...groups.filter((group) => group.items.length > 0))
+    }
   }
   const watch = (selection: Selection) => {
     inList.value = isInListItem(selection)

@@ -4,7 +4,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { getBulletMarkerForDepth, normalizeTextRuns, remapTextRunsForTextEdit } from '@excalidraw/element'
-import type { BoxHelpers, TextRuns } from './textBoxDoc'
+import { docToBox, type BoxHelpers, type TextRuns } from './textBoxDoc'
 import { createTextBoxEditor } from './textBoxEditor'
 
 export const helpers = { getBulletMarkerForDepth, normalizeTextRuns, remapTextRunsForTextEdit } as unknown as BoxHelpers
@@ -37,7 +37,7 @@ export async function mountBox(text: string, textRuns: TextRuns = undefined, sel
   let view: EditorView | null = null
   await vi.waitFor(() => {
     view = crepe.editor.ctx.get(editorViewCtx)
-    if (root.querySelector('.ProseMirror') === null || view.state.doc.textContent === '' && text.replace(/\n/g, '') !== '') throw new Error('not ready')
+    if (root.querySelector('.ProseMirror') === null || docToBox(view.state.doc, { text, textRuns }, helpers).text !== text) throw new Error('not ready')
   })
   // one more task: the first document lands after `create()` resolves
   await new Promise((r) => setTimeout(r, 0))

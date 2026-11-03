@@ -41,7 +41,8 @@ describe('the block lock of a text box (YAZ-4277 1B, D4)', () => {
       String(/(?<![\w:/])(?:\*\*|__)([^*_]+?)(?:\*\*|__)(?![\w/])$/), // **bold**
       String(/(?<![\w:/])(~{1,2})(.+?)\1(?!\w|\/)$/), // ~~strike~~
       String(/(?<![\w=])==(\S(?:[^=]*\S)?)==$/), // ==highlight==
-      String(/^\[(?<checked>\s|x)\]\s$/), // [ ] checklist (1C)
+      String(/^\[(?<checked>\s|x)\]\s$/), // [ ] in a bullet (the note's rule)
+      String(/^\[(?<checked>\s|x)\]\s$/), // [ ] on a plain line (the box's rule, 1C)
     ])
   })
 
@@ -79,6 +80,19 @@ describe('the block lock of a text box (YAZ-4277 1B, D4)', () => {
     const { view } = await mountBox('')
     typeText(view, '- a')
     expect(boxText(view)).toBe('• a')
+  })
+
+  it.each([
+    ['[ ] on a plain line', '', '[ ] a', '☐ a'],
+    ['[x] on a plain line', '', '[x] a', '☑ a'],
+    ['[ ] in a bullet', '• ', '[ ] a', '☐ a'],
+    ['[ ] under a checklist joins it', '☐ one\n', '[ ] two', '☐ one\n☐ two'],
+    ['[ ] in the middle of a line stays letters', 'x', '[ ] a', 'x[ ] a'],
+  ])('makes a checklist item of a typed %s (1C)', async (_name, start, typed, box) => {
+    const { view } = await mountBox(start)
+    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)))
+    typeText(view, typed)
+    expect(boxText(view)).toBe(box)
   })
 
   it('turns a heading made by a key back into a line with the same letters', async () => {

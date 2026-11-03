@@ -10,7 +10,7 @@
  * NO MARKDOWN (D1): the document is built from the box's text and letter styles after `create()`, and walked back to
  * them on each change (`textBoxDoc.ts`, 1B). `textBoxLock.ts` keeps it to what a box draws (D4). Made from the loaded
  * engine module (`createTextBoxEditor(engine)`), whose run rules and bullet glyphs it uses: the box format has one
- * source. The toolbar and the `/` menu stay off until they can live outside the zoomed root (1C, 1E).
+ * source. The pop-up toolbar and the `/` menu move to a layer of their own, at screen size (1C).
  */
 import type { ComponentProps } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -19,6 +19,7 @@ import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { createCrepe } from '../editor/createCrepe'
 import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
+import { HIDDEN_IN_CELL } from '../editor/slashMenu'
 import type { ExcalidrawModule } from './engine'
 import { boxToDoc, docToBox, offsetAt, posAt, type BoxHelpers, type TextRuns } from './textBoxDoc'
 import { lockToTextBox } from './textBoxLock'
@@ -27,16 +28,23 @@ import './textBoxEditor.css'
 type HostTextEditor = NonNullable<ComponentProps<ExcalidrawModule['Excalidraw']>['textEditor']>
 type Selection = Parameters<HostTextEditor['mount']>[0]['selection']
 
-/** The note features minus the UI that draws in the zoomed root, and the blocks a box cannot hold. */
+/** The note features minus the blocks a box cannot hold. The pop-up toolbar and the `/` menu (BlockEdit) stay (D4, D8). */
 export const textBoxFeatures: Record<CrepeFeature, boolean> = {
   ...features,
-  [CrepeFeature.BlockEdit]: false,
-  [CrepeFeature.Toolbar]: false,
   [CrepeFeature.Table]: false,
   [CrepeFeature.CodeMirror]: false,
   [CrepeFeature.LinkTooltip]: false,
   [CrepeFeature.Cursor]: false,
 }
+
+/** The toolbar buttons and the `/` rows of what a box cannot hold (D4): headings, numbered lists, code, quotes, … */
+export const TEXT_BOX_HIDDEN = {
+  toolbar: ['h1', 'h2', 'h3', 'numberedList', 'code', 'link'],
+  slash: [...HIDDEN_IN_CELL, 'ordered-list'],
+} as const
+
+/** The pop-ups Crepe puts beside its view; they move out of the root, which is invisible and zoomed (1C). */
+const POPUPS = '.milkdown-toolbar, .milkdown-slash-menu'
 
 /** Escape and ⌘Enter end the edit in the engine; here they only keep the note keys (Escape to the sidebar) off. */
 const endKeys = $shortcut(() => ({
@@ -79,9 +87,20 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
           }),
       )
 
-      const crepe = createCrepe({ root, defaultValue: '', features: textBoxFeatures })
+      const crepe = createCrepe({ root, defaultValue: '', features: textBoxFeatures, hidden: TEXT_BOX_HIDDEN })
       lockToTextBox(crepe)
       crepe.editor.use(endKeys).use(report)
+
+      // The toolbar and the `/` menu draw at screen size, over the board: in a layer of their own on the page, with
+      // Crepe's look (`milkdown`). Floating UI places them from the selection's box on screen, as in a note.
+      const popups = document.createElement('div')
+      popups.className = 'milkdown excalidraw-text-box-popups'
+      document.body.appendChild(popups)
+      const movePopups = () => {
+        for (const popup of root.querySelectorAll(POPUPS)) popups.appendChild(popup)
+      }
+      const popupWatch = new MutationObserver(movePopups)
+      popupWatch.observe(root, { childList: true, subtree: true })
 
       const select = (sel: Selection) => {
         const view = crepe.editor.ctx.get(editorViewCtx)
@@ -112,6 +131,8 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
         },
         destroy() {
           destroyed = true
+          popupWatch.disconnect()
+          popups.remove()
           void ready.then(() => crepe.destroy())
         },
       }

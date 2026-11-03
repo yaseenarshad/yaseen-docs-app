@@ -420,6 +420,11 @@ export interface CreateCrepeOptions {
    * hover preview card, the read-only previews and the outline view: they mount no React root for each table.
    */
   tableZoomPill?: boolean
+  /**
+   * A NON-note instance's rows that never show (YAZ-4277 D4, a drawing text box): toolbar buttons and slash rows by
+   * key. Absent → every row, as a note.
+   */
+  hidden?: { toolbar?: readonly string[]; slash?: readonly string[] }
 }
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
@@ -478,7 +483,7 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  * would keep Crepe's order and raise nothing; `headingToolbar.test.ts` reads the strip of a real
  * editor and fails on it.
  */
-function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined): void {
+function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = []): void {
   const formatting = builder.getGroup('formatting')
   for (const color of [null, ...HIGHLIGHT_COLORS] as HighlightColor[]) {
     const id = color === null ? 'highlight' : (`highlight-${color}` as const)
@@ -531,6 +536,9 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
   const groups = builder.build()
   noteCrepeIcons(groups)
   arrangeToolbar(groups, toolbarPrefs.value)
+  if (hidden.length === 0) return
+  for (const group of groups) group.items = group.items.filter((item) => !hidden.includes(item.key))
+  groups.splice(0, groups.length, ...groups.filter((group) => group.items.length > 0))
 }
 
 /**
@@ -549,7 +557,7 @@ const escapeToSidebar = $shortcut(() => ({
 }))
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
-  const slashMenu = createSlashMenu(opts.drawing === undefined ? undefined : drawingMenu(opts.drawing))
+  const slashMenu = createSlashMenu(opts.drawing === undefined ? undefined : drawingMenu(opts.drawing), opts.hidden?.slash)
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
@@ -569,7 +577,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // active button is the answer to "what is this?", and whose click is the switch. The
       // markdown stays the source of truth; these call the same commands typing `##` does.
       // YAZ-1480 adds Highlight into Crepe's own Formatting group from the same builder.
-      [CrepeFeature.Toolbar]: { buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys) },
+      [CrepeFeature.Toolbar]: { buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys, opts.hidden?.toolbar) },
       // Native text carets track document zoom without a second painted overlay.
       [CrepeFeature.Cursor]: { virtual: false },
       // YAZ-2270: long lines wrap like prose instead of scrolling sideways, and colours come from

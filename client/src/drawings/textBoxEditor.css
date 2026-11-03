@@ -12,3 +12,21 @@
   white-space: inherit;
   min-height: 0;
 }
+
+/* YAZ-4277 1C: the block handle has no place in a box (its rows are a note's). */
+.excalidraw-host-text-editor .milkdown-block-handle {
+  display: none;
+}
+
+/* The pop-up toolbar and the `/` menu, moved out of the zoomed, invisible root: screen size, over the board. */
+.milkdown.excalidraw-text-box-popups {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  background: none;
+}
+
+.milkdown.excalidraw-text-box-popups > * {
+  pointer-events: auto;
+}

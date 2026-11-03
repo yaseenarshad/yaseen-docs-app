@@ -26,8 +26,10 @@ import {
 } from '@milkdown/kit/preset/commonmark'
 import { extendListItemSchemaForTask, insertTableInputRule } from '@milkdown/kit/preset/gfm'
 import { Fragment, type Node as ProseNode, type Schema, Slice } from '@milkdown/kit/prose/model'
+import { InputRule } from '@milkdown/kit/prose/inputrules'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
-import { $markSchema, $pasteRule, $prose } from '@milkdown/kit/utils'
+import { canJoin } from '@milkdown/kit/prose/transform'
+import { $inputRule, $markSchema, $pasteRule, $prose } from '@milkdown/kit/utils'
 
 /** The marks a box draws (`textBoxDoc.ts` maps each to a run style). */
 export const BOX_MARKS = new Set(['strong', 'emphasis', 'underline', 'strike_through', 'highlight', 'text_color'])
@@ -174,6 +176,28 @@ const boxBlocks = $prose(
     }),
 )
 
+/**
+ * `[ ] ` / `[x] ` at the start of a plain line makes it a checklist item (YAZ-4302, D4). In a bullet the note's own
+ * rule does it; a note's plain line has no such rule, a box's line does. The item joins a list right above or below.
+ */
+const plainLineChecklist = $inputRule(
+  () =>
+    new InputRule(/^\[(?<checked>\s|x)\]\s$/, (state, match, start, end) => {
+      const $start = state.doc.resolve(start)
+      if ($start.depth !== 1 || $start.parent.type.name !== 'paragraph') return null
+      const { bullet_list: list, list_item: item } = state.schema.nodes
+      const tr = state.tr.deleteRange(start, end)
+      const range = tr.doc.resolve(start).blockRange()
+      if (!range) return null
+      tr.wrap(range, [{ type: list }, { type: item, attrs: { listType: 'bullet', spread: false, checked: match.groups?.checked === 'x' } }])
+      const listStart = range.start
+      const listEnd = tr.mapping.map(range.end)
+      if (canJoin(tr.doc, listEnd) && tr.doc.resolve(listEnd).nodeAfter?.type === list) tr.join(listEnd)
+      if (canJoin(tr.doc, listStart) && tr.doc.resolve(listStart).nodeBefore?.type === list) tr.join(listStart)
+      return tr
+    }),
+)
+
 /** Locks a Crepe made by `createCrepe({ features: textBoxFeatures })` to a box, BEFORE `create()`. */
 export function lockToTextBox(crepe: Crepe): void {
   for (const rule of [
@@ -193,6 +217,7 @@ export function lockToTextBox(crepe: Crepe): void {
     })
     .use(extendListItemSchemaForTask.extendSchema((prev) => (ctx) => ({ ...prev(ctx), content: 'paragraph bullet_list?' })))
     .use(textColorSchema)
+    .use(plainLineChecklist)
     .use(boxPaste)
     .use(boxBlocks)
 }
