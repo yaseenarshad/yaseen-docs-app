@@ -4,7 +4,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, utimes, writeFile } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { IDS_FILE } from '@shared/noteId'
@@ -83,11 +84,12 @@ describe('dailyNote (D2)', () => {
     const root = await vault(false)
 
     const made = await dailyNote(root, FLAT, TUE, true)
-    await writeFile(made!.path, '---\ntitle: something else\n---\n')
+    // Another tool's `id` is no ID of a vault without IDs: the answer has none.
+    await writeFile(made!.path, '---\ntitle: something else\nid: XY-9\n---\n')
     const found = await dailyNote(root, FLAT, TUE, true)
 
     expect(made).toEqual({ path: path.join(root, 'daily', `${TITLE}.md`), title: TITLE, id: null, created: true, others: [] })
-    expect(found).toMatchObject({ path: made!.path, created: false })
+    expect(found).toMatchObject({ path: made!.path, id: null, created: false })
   })
 
   it('D8: two notes of the day’s title: the first is the note, the other is in `others`', async () => {
@@ -105,16 +107,72 @@ describe('dailyNote (D2)', () => {
     expect(await notesIn(path.join(root, 'daily'))).toEqual([])
   })
 
-  it('a lock that a dead maker left is taken over once it is old', async () => {
-    const root = await vault(true)
+  /** The lock file of the day's note in `root`, with `text` in it. */
+  const lockWith = async (root: string, text: string): Promise<string> => {
     const locks = path.join(appDataDir(), LOCK_DIR)
-    const lock = path.join(locks, `${createHash('sha1').update(`${root}\ndaily\n${TITLE}`).digest('hex')}.lock`)
+    const lock = path.join(locks, `${createHash('sha1').update(`${path.join(root, 'daily')}\n${TITLE}`).digest('hex')}.lock`)
     await mkdir(locks, { recursive: true })
-    await writeFile(lock, '')
+    await writeFile(lock, text)
+    return lock
+  }
+
+  it('a lock that a killed maker left is taken over at once: its process is gone', async () => {
+    const root = await vault(true)
+    const dead = spawnSync('true').pid!
+    await lockWith(root, String(dead))
+    const start = Date.now()
+
+    await expect(dailyNote(root, FLAT, TUE, true)).resolves.toMatchObject({ created: true })
+    expect(Date.now() - start).toBeLessThan(2_000)
+  })
+
+  it('a lock that a live maker holds is waited for, never taken over', async () => {
+    const root = await vault(true)
+    const lock = await lockWith(root, String(process.pid))
+    const made = dailyNote(root, FLAT, TUE, true)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(await notesIn(path.join(root, 'daily'))).toEqual([])
+
+    await rm(lock)
+    await expect(made).resolves.toMatchObject({ created: true })
+  })
+
+  it('a lock file with no process id in it is a dead maker’s once it is old', async () => {
+    const root = await vault(true)
+    const lock = await lockWith(root, '')
     const old = new Date(Date.now() - 60_000)
     await utimes(lock, old, old)
 
     await expect(dailyNote(root, FLAT, TUE, true)).resolves.toMatchObject({ created: true })
+  })
+
+  it('a vault reached by a symlink and by its real path is one lock: one note', async () => {
+    const root = await vault(true)
+    const link = path.join(dir, 'link')
+    await symlink(root, link)
+
+    const all = await Promise.all([root, link, root, link, link].map((at) => dailyNote(at, FLAT, TUE, true)))
+
+    expect(all.filter((note) => note!.created)).toHaveLength(1)
+    expect(await notesIn(path.join(root, 'daily'))).toHaveLength(1)
+  })
+
+  it('two notes of the day in one folder: the first by path is the note, every time', async () => {
+    const note = `---\ntitle: ${TITLE}\n---\n`
+    const root = await vault(true, { 'daily/b-yaz-2.md': note, 'daily/a-yaz-1.md': note, 'daily/c-yaz-3.md': note })
+
+    for (let i = 0; i < 5; i++) {
+      expect(await dailyNote(root, FLAT, TUE, true)).toMatchObject({ path: path.join(root, 'daily', 'a-yaz-1.md'), others: [path.join(root, 'daily', 'b-yaz-2.md'), path.join(root, 'daily', 'c-yaz-3.md')] })
+    }
+  })
+
+  it('the vault’s own answer about IDs decides, as the app’s index takes it: a vault that has not answered, inside one that said yes, gets a plain note', async () => {
+    const outer = await vault(true)
+    const inner = path.join(outer, 'inner')
+    await mkdir(path.join(inner, 'daily'), { recursive: true })
+
+    await expect(dailyNote(inner, FLAT, TUE, true)).resolves.toEqual({ path: path.join(inner, 'daily', `${TITLE}.md`), title: TITLE, id: null, created: true, others: [] })
+    expect(await readFile(path.join(inner, 'daily', `${TITLE}.md`), 'utf8')).toBe('')
   })
 
   it('refused, with the setting to change: Daily notes off, or no daily notes folder', async () => {

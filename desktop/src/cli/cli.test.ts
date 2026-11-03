@@ -850,7 +850,7 @@ describe('daily and new (YAZ-4269)', () => {
     expect(dayOf('2026-12-31', TUE)).toEqual(new Date(2026, 11, 31))
     await settings()
     const root = await vault('v', { 'daily/.keep.md': '' })
-    for (const bad of ['2026-02-30', '11/03', 'next week']) expect((await run(['daily', root, '--date', bad])).code).toBe(2)
+    for (const bad of ['2026-02-30', '0099-01-01', '11/03', 'next week']) expect((await run(['daily', root, '--date', bad])).code).toBe(2)
   })
 
   it('--find only finds: no note is exit 1 with the title it looked for, and nothing is made (D6)', async () => {

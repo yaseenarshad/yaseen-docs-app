@@ -1,7 +1,8 @@
 /**
  * `yaseendocs` (YAZ-1617 🔒 D1, D4, D5): the door an agent uses to work with a page from the
- * shell — its comments, and its id and the ids it points at (YAZ-2293) — and to read the app's
- * list of vaults (YAZ-2556 🔒 D2). Plain Node — this module and its entry never import
+ * shell — its comments, and its id and the ids it points at (YAZ-2293) — to read the app's
+ * list of vaults (YAZ-2556 🔒 D2), and to make a note or find the day's daily note by the app's own
+ * rules (YAZ-4269: `main/notes/`). Plain Node — this module and its entry never import
  * `electron`; the packaged shim runs it under `ELECTRON_RUN_AS_NODE=1` with the app's own binary
  * (VS Code's `code` pattern).
  *
@@ -41,7 +42,7 @@ import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { readFile, writeFile } from '../main/fs/file'
 import { dailyNote } from '../main/notes/daily'
 import { newNote } from '../main/notes/note'
-import { otherMacFiles } from '../main/settingsFolder'
+import { otherMacFiles } from '../main/settingsFiles'
 import { mergeFolderSettings, parseState } from '../main/store'
 import { STATE_FILE, userDataDir } from '../main/userData'
 import { giveId, nextId, readPage } from '../main/vaultIndex/idSweep'
@@ -117,17 +118,19 @@ null), \`open\` and \`lastUsed\` (epoch ms, or null). It reads the app's state f
 writes it: with the app closed, \`open\` is a window the app opens again at its start.
 
 \`daily\` finds the daily note of a day in a vault, and makes it when there is none. The day is
-today on your Mac's own clock and calendar, or \`--date\`. It uses the app's Daily notes settings
+today, your Mac's own day, or \`--date\`. It uses the app's Daily notes settings
 (Settings › Files & Links › Daily notes): the folder, the name style, a folder for each day, and the
 daily notes folder's template. A note that is there is never changed. Two runs at one moment, here or
 in the app, give one note. \`--find\` only finds: no note is an error, and nothing is made. \`--open\`
-then opens the note in the app, as the daily note button does; the app starts if it is closed.
+then opens the note in the app, as a \`yaseendocs://\` link to it does: the window of its vault comes
+to the front, and the app starts if it is closed.
 
 \`new\` makes a note in a folder, as the app's New note does: the folder's \`.template.md\`, the title,
 and in a vault with IDs a new id and the file name \`<kebab-title>-<id>.md\`. When that folder (not a
 folder in it) already has a note with the title, that note is the answer and nothing is made, so a
-run again after a timeout is safe. \`--body\` (\`--body -\` for stdin) takes the place of the template's
-body; a properties block at its top goes over the template's properties, and \`--title\` always wins.
+run again after a timeout is safe; a \`--body\` is then not written, and stderr says so. \`--body\`
+(\`--body -\` for stdin) takes the place of the template's body; a properties block at its top goes
+over the template's properties, and \`--title\` always wins.
 
 Both print \`made <path>\` or \`found <path>\`. When another note has the same title, each one is named
 on stderr (\`warning: also <path>\`). \`--json\` gives \`path\`, \`title\`, \`id\` (null in a vault
@@ -328,7 +331,7 @@ export function dayOf(text: string | undefined, now = new Date()): Date {
   if (shift !== undefined) return new Date(today.getFullYear(), today.getMonth(), today.getDate() + shift)
   const [, y, m, d] = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text ?? '') ?? []
   const day = new Date(Number(y), Number(m) - 1, Number(d))
-  if (y === undefined || day.getMonth() !== Number(m) - 1 || day.getDate() !== Number(d)) throw new Usage('--date takes today, tomorrow, yesterday or a day as YYYY-MM-DD')
+  if (y === undefined || day.getFullYear() !== Number(y) || day.getMonth() !== Number(m) - 1 || day.getDate() !== Number(d)) throw new Usage('--date takes today, tomorrow, yesterday or a day as YYYY-MM-DD')
   return day
 }
 
@@ -338,11 +341,16 @@ function report(io: Io, flags: Map<string, string | true>, note: FoundNote): voi
   io.stdout(flags.has('--json') ? `${JSON.stringify(note, null, 2)}\n` : `${note.created ? 'made' : 'found'} ${note.path}\n`)
 }
 
-/** macOS `open`, Windows `start`: the link goes to the app as a click on it would. */
+/**
+ * macOS `open`, Windows `explorer.exe` (no shell, so a `&` in a path is a letter): the link goes to the app as a click
+ * on it would. `explorer.exe` answers 1 also when it opened the link, so on Windows only a failed start counts.
+ */
 const openLink = (link: string): Promise<void> =>
   new Promise((done, fail) => {
-    const [cmd, args] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', link]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [link]]
-    execFile(cmd, args, (err) => (err === null ? done() : fail(new Error(`the note is ready, but the app could not be asked to open it: ${err.message}`))))
+    const win = process.platform === 'win32'
+    execFile(win ? 'explorer.exe' : 'open', [link], (err) =>
+      err === null || (win && typeof err.code === 'number') ? done() : fail(new Error(`the note is ready, but the app could not be asked to open it: ${err.message}`)),
+    )
   })
 
 /** `daily` (YAZ-4269 D2, D5, D6, D9, D10): a day's daily note of a vault, found or made by the app's own rules. */

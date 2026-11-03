@@ -114,13 +114,16 @@ export function findDailyNote(records: readonly IndexRecord[], folder: string, t
   return dailyNotes(records, folder, title, dayFolder)[0] ?? null
 }
 
+/** The daily notes folder `folder` (vault-relative; '' is the vault folder itself) of the vault at `vault`, as a path. */
+export const dailyNotesFolder = (vault: string, folder: string): string => (folder === '' ? vault : `${vault}/${folder}`)
+
 /**
  * Makes the note titled `title` (YAZ-3607 D5) in the daily notes folder of `vault`. A day folder (D9) is made when it
  * is missing, or used when it stands. The template is the daily notes folder's `.template.md`, in a day folder too
  * (D6). Never over a file: `createFile` refuses one (`isThere`).
  */
 export async function makeDailyNote(disk: NoteDisk, vault: string, settings: DailyNoteSettings, title: string, ids: boolean): Promise<string> {
-  const root = settings.dailyNoteFolder === '' ? vault : `${vault}/${settings.dailyNoteFolder}`
+  const root = dailyNotesFolder(vault, settings.dailyNoteFolder)
   let dir = root
   if (settings.dailyNoteDayFolder) {
     dir = folderPath(root, title, ids)

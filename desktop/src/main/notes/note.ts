@@ -3,7 +3,7 @@
  * note of that title already in the folder is the answer, and nothing is made. One maker at a time on this Mac for a
  * folder and a title (`onlyOne`), and the folder is read again INSIDE that turn.
  */
-import { readdir, stat } from 'node:fs/promises'
+import { readdir, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { createNote, type FoundNote } from '@shared/noteBirth'
@@ -28,10 +28,11 @@ export async function newNote(dir: string, title: string, body?: string): Promis
   const seed = extra === undefined || Object.keys(extra.properties).length === 0 ? undefined : (template: Record<string, unknown>) => ({ ...template, ...extra.properties })
   const root = await idVault(dir)
   const { disk, ids } = await noteDisk(root)
-  return onlyOne(`${dir}\n${title}`, async () => {
-    // The notes of this folder as the index hands them out: in a vault without IDs the file name is the title (YAZ-2523 V12).
+  // The real path: a symlink and its target are one lock (and the same lock as `daily`'s for a note of that folder).
+  return onlyOne(`${await realpath(dir)}\n${title}`, async () => {
+    // The notes of this folder as the index hands them out: in path order, and in a vault without IDs the file name is the title (YAZ-2523 V12).
     const names = (await readdir(dir, { withFileTypes: true })).filter((e) => e.isFile() && !e.name.startsWith('.') && isMarkdown(e.name)).map((e) => path.join(dir, e.name))
-    const records = [...(await scanAll(dir, names.sort())).values()]
+    const records = [...(await scanAll(dir, names)).values()].sort((a, b) => (a.path < b.path ? -1 : 1))
     const [found, ...others] = records.filter((r) => (ids ? r.title : fileTitle(r)) === title).map((r) => r.path)
     if (found !== undefined) return { path: found, title, id: ids ? (records.find((r) => r.path === found)?.id ?? null) : null, created: false, others }
     const made = await createNote(disk, dir, title, ids, seed, undefined, undefined, given?.body)

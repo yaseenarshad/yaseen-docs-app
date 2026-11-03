@@ -5,12 +5,12 @@
  * The note is found by its TITLE, not by its file name: a vault that uses IDs builds the file name from the title and
  * the id (`2026-10-28-yaz-41.md`). In a vault that does not use IDs the title is the file name, so one rule serves both.
  */
-import { findDailyNote, type DailyNoteSettings } from '@shared/noteBirth'
+import { findDailyNote } from '@shared/noteBirth'
 import type { IndexRecord, TreeNode } from '@shared/types'
 import { findDirNode, findNode } from '../lib/treeState'
 import { placePath } from './goToPlace'
 
-export { findDailyNote, type DailyNoteSettings }
+export { findDailyNote }
 
 /**
  * Today's note, or null when it must be made (D5). The vault index is the only place that knows a note's title, but
