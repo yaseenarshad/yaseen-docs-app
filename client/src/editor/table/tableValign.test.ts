@@ -164,12 +164,19 @@ describe('a new row takes the valign of the cell above it, in each column', () =
     ['table-insert-row-below', 1, ['middle', null]],
     ['table-insert-row-below', 2, [null, 'bottom']],
     ['table-insert-row-above', 2, ['middle', null]],
-    ['table-insert-row-above', 1, [null, null]],
+    // Above the first body row: that row's own, not the header's (YAZ-4173 12C).
+    ['table-insert-row-above', 1, ['middle', null]],
   ])('%s on row %i', async (id, at, row) => {
     const { view } = await mountNote(SET)
     menuItem(view, at, 0, id).onSelect()
     const index = id === 'table-insert-row-below' ? at + 1 : at
     expect(valigns(view)[index]).toEqual(row)
+  })
+
+  it('Insert row above the first body row of a calendar table: the new time is Middle, as its column (YAZ-4173 12C)', async () => {
+    const { view } = await mountNote('| Time | Plan |\n| - | - |\n| 9:00 am | x |\n| 9:30 am | y |\n\n<!-- table: valign A2:A3 middle, calendar 30m -->\n')
+    menuItem(view, 1, 0, 'table-insert-row-above').onSelect()
+    expect(valigns(view)[1]).toEqual(['middle', null])
   })
 
   it('Duplicate row keeps its own', async () => {

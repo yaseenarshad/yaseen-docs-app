@@ -254,6 +254,45 @@ describe('the caret steps over a folded run', () => {
   })
 })
 
+describe('Tab, Shift+Tab and ← / → never put the caret in a folded row (YAZ-4173 12A)', () => {
+  /** The column A text of the caret's row, and whether that row is folded. */
+  const caretRow = (view: EditorView): [string, boolean] => {
+    const { $head } = view.state.selection
+    for (let d = $head.depth; d > 0; d--) {
+      const node = $head.node(d)
+      if (node.type.spec.tableRole !== 'row') continue
+      let fold = false
+      node.forEach((cell) => {
+        fold ||= cell.attrs.fold === true
+      })
+      return [node.firstChild!.textContent, fold]
+    }
+    return ['', false]
+  }
+
+  it.each<[string, string, number, number, number, boolean, string]>([
+    ['Tab', 'Tab', 1, 1, 2, false, 'r4'],
+    ['Shift+Tab', 'Tab', 4, 0, 0, true, 'r1'],
+    ['→ at the end of a cell', 'ArrowRight', 1, 1, 2, false, 'r4'],
+    ['← at the start of a cell', 'ArrowLeft', 4, 0, 0, false, 'r1'],
+  ])('%s next to a run steps over it', async (_, key, row, col, offset, shift, want) => {
+    const { crepe, view } = await mountNote(rows(5, 'fold 3-4'))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, row, col) + 2 + offset)))
+    pressKey(crepe, key, { shift })
+    expect(caretRow(view)).toEqual([want, false])
+  })
+
+  it('a Tab and typed text never change a folded row', async () => {
+    const markdown = rows(5, 'fold 3-4')
+    const { crepe, view } = await mountNote(markdown)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 1, 1) + 4)))
+    pressKey(crepe, 'Tab')
+    view.dispatch(view.state.tr.insertText('typed'))
+    // The folded rows keep their text: r2 | n2 and r3 | n3.
+    expect(getMarkdownForSave(crepe)).toMatch(/\| r2 +\| n2 +\|\n\| r3 +\| n3 +\|/)
+  })
+})
+
 describe('↑ / ↓ with no folded row next to the caret\'s row', () => {
   it('ask the fold for no layout: it checks the rows in the document first (YAZ-4176)', async () => {
     const counts: number[] = []

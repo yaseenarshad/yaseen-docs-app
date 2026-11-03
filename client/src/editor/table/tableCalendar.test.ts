@@ -210,6 +210,17 @@ describe('the clock: one timer per editor, on the minute (D2, D9)', () => {
     expect(nowRows(view)).toEqual([{ i: 16, now: '0.367' }])
   })
 
+  it('a Mac waking from sleep fires the late timer, which reads the clock again: the marker goes to the minute of now (YAZ-4173)', async () => {
+    fakeClock(11, 40, 30)
+    const { view } = await mount(calendar(DAY), { calendarClock: true })
+    expect(nowRows(view)).toEqual([{ i: 16, now: '0.333' }])
+    // The Mac sleeps for 2 h 25 min: the clock moves on, and no timer fires.
+    vi.setSystemTime(new Date(2026, 10, 2, 14, 5, 10))
+    // It wakes: the late timer fires once, and the marker is at 2:05 pm (row 2:00 pm, 5 of 30 minutes down).
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(nowRows(view)).toEqual([{ i: 21, now: '0.167' }])
+  })
+
   it('the hover preview card (no clock) starts no timer: the marker stays', async () => {
     fakeClock(11, 40, 30)
     const { view } = await mount(calendar(DAY))

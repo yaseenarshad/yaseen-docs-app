@@ -216,7 +216,38 @@ const foldPlugin = (): Plugin<DecorationSet> =>
       handleDOMEvents: { mousedown: openBar },
       handleKeyDown: keydownHandler({ ArrowUp: stepOver(-1), ArrowDown: stepOver(1) }),
     },
+    appendTransaction: caretOutOfRuns,
   })
+
+/**
+ * The caret never stays in a folded row (YAZ-4173 12A): Tab and Shift+Tab (`goToNextCell`, also ⌘] / ⌘[), ← / → at a
+ * cell's edge (`tableEditing`), and any other move that lands in a run go on past it, the way the move went: forward to
+ * the start of the first row after the run, back to the end of the last row before it (else the other side). Typing
+ * never writes a hidden row. A selection that does not land in a folded row costs one walk up from the caret.
+ */
+function caretOutOfRuns(transactions: readonly Transaction[], oldState: EditorState, state: EditorState): Transaction | null {
+  if (!transactions.some((tr) => tr.selectionSet) || !(state.selection instanceof TextSelection)) return null
+  const { $head } = state.selection
+  let depth = $head.depth
+  while (depth > 0 && $head.node(depth).type.spec.tableRole !== 'row') depth--
+  if (depth === 0 || !rowFolded($head.node(depth))) return null
+  const table = $head.node(depth - 1)
+  const run = runOf(foldRuns(table), $head.index(depth - 1))
+  if (run === undefined) return null
+  let from = oldState.selection.head
+  for (const tr of transactions) from = tr.mapping.map(from)
+  const forward = $head.pos >= from
+  const tableStart = $head.start(depth - 1)
+  const rowStart = (r: number) => {
+    let pos = tableStart
+    for (let i = 0; i < r; i++) pos += table.child(i).nodeSize
+    return pos
+  }
+  const after = run.to + 1 < table.childCount ? Selection.near(state.doc.resolve(rowStart(run.to + 1) + 1), 1) : null
+  // The row before a run is a body row or the header row: a run never starts at row 0.
+  const before = Selection.near(state.doc.resolve(rowStart(run.from) - 1), -1)
+  return state.tr.setSelection(forward ? (after ?? before) : before)
+}
 
 /** Register with `editor.use(tableFold)`: just before `tableEditing`, so a click on a bar starts no cell selection. */
 export const tableFold = beforeTableEditing(() => [foldPlugin()])

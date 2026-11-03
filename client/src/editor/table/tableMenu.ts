@@ -91,7 +91,8 @@ function runOn(view: EditorView, pointer: number, command: Command): void {
 /**
  * As many body rows as the rect holds, at index `at` of its table, each cell with its column's alignment:
  * a copy of Milkdown's `addRowWithAlignment`, which needs the editor's `ctx`; the note menu has the view only.
- * Each cell also takes the `valign` of the cell above it (YAZ-4166).
+ * Each cell also takes the `valign` of the cell above it (YAZ-4166); above the first body row, that row's own, not the
+ * header's (YAZ-4173 12C).
  */
 function insertRows(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, rect: TableRect, at: number): boolean {
   if (at === 0) return false
@@ -101,7 +102,7 @@ function insertRows(state: EditorState, dispatch: ((tr: Transaction) => void) | 
     for (let i = 0; i < at; i++) pos += rect.table.child(i).nodeSize
     const attr = (row: number, col: number, name: string): unknown => rect.table.nodeAt(rect.map.map[row * rect.map.width + col]!)?.attrs[name] ?? null
     const row = () =>
-      rowType.create(null, Array.from({ length: rect.map.width }, (_, col) => cellType.createAndFill({ alignment: attr(0, col, 'alignment'), valign: attr(at - 1, col, 'valign') })!))
+      rowType.create(null, Array.from({ length: rect.map.width }, (_, col) => cellType.createAndFill({ alignment: attr(0, col, 'alignment'), valign: attr(at === 1 ? 1 : at - 1, col, 'valign') })!))
     dispatch(state.tr.insert(pos, Array.from({ length: rect.bottom - rect.top }, row)))
   }
   return true
