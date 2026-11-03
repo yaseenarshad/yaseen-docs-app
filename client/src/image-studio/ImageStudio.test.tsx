@@ -295,6 +295,14 @@ describe('typing: Best matches, then From the web (D3, D4, D7)', () => {
     expect(host.querySelector('.image-studio__list')!.textContent?.trim()).not.toBe('')
   })
 
+  it('one typed letter that matches nothing does not say Press Enter: Enter needs 2 letters (6S)', async () => {
+    const { host } = await mount()
+    await type(field(host), 'z')
+    await settle()
+    expect(host.querySelector('.image-studio__list')!.textContent).toContain('Nothing of yours matches “z”.')
+    expect(host.querySelector('.image-studio__list')!.textContent).not.toContain('Press Enter to search the web')
+  })
+
   it(`asks the web ${SEARCH_PAUSE_MS} ms after the last key; your items need no wait`, async () => {
     library = libraryOf({ favorites: [stored()] })
     const { host } = await mount()
@@ -754,6 +762,18 @@ describe('components in the Add tab (D2, D6)', () => {
     await settle(5)
     expect(event.defaultPrevented).toBe(false)
     expect(byLabel(host, 'Component name')).toBeNull()
+  })
+
+  it('a picture file copied in Finder (its name as text/plain too) and pasted into the search field still opens the save step (6R)', async () => {
+    const { host } = await mount()
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', {
+      value: { files: [new File(['x'], 'hammer-and-nail.png', { type: 'image/png' })], items: [], types: ['text/plain', 'Files'], getData: (t: string) => (t === 'text/plain' ? 'hammer-and-nail.png' : '') },
+    })
+    act(() => void field(host).dispatchEvent(event))
+    await settle(5)
+    expect(event.defaultPrevented).toBe(true)
+    expect(byLabel(host, 'Component name')).not.toBeNull()
   })
 
   it('a picture file dropped on the tab opens the name form for it, and the board under the panel never gets it (demo 6M)', async () => {

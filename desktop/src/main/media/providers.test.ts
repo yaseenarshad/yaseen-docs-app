@@ -384,6 +384,16 @@ describe('fewer requests per page (YAZ-4157 demo 6G)', () => {
     expect(recordWrites()).toBe(afterFresh)
   })
 
+  it('a search does not wait for its Pixabay record writes (checker round 2)', async () => {
+    const hit = { id: 101, type: 'vector', previewURL: 'https://cdn.test/p.png', tags: 'money' }
+    const providers = build(vi.fn(async () => json({ hits: [hit], totalHits: 1 })) as unknown as typeof globalThis.fetch)
+    const write = cache.write.bind(cache)
+    // A record write that never ends: the search must answer anyway.
+    vi.spyOn(cache, 'write').mockImplementation((key, value) => (String(key).startsWith('pixabay/item/') ? new Promise(() => undefined) : write(key, value)))
+    const page = await Promise.race([providers.search({ q: 'money', source: 'pixabay' }), new Promise((resolve) => setTimeout(() => resolve('timed out'), 1000))])
+    expect(page).not.toBe('timed out')
+  })
+
   it('a Pixabay tile reads the record its search page brought: no API call per tile', async () => {
     const hit = { id: 101, type: 'vector', previewURL: 'https://cdn.test/p.png', tags: 'money' }
     const fetchMock = vi.fn(async (input: RequestInfo | URL) =>

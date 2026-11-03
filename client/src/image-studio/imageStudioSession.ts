@@ -105,7 +105,7 @@ const dedupeItems = (items: StudioItem[]) => [...new Map(items.map((item) => [it
 export const getErrorMessage = (error: unknown, fallback: string): string => (error instanceof Error && error.message ? error.message : fallback)
 
 /** Fewer letters than this is no web search: the providers answer two letters with noise. */
-const MIN_QUERY = 2
+export const MIN_QUERY = 2
 /**
  * Fewer letters than this is no web search ON A PAUSE (YAZ-4157 demo 6E): each search costs the providers about twenty
  * requests with its tile pictures, and a two-letter stop on the way to a word is the one most often thrown away. Enter

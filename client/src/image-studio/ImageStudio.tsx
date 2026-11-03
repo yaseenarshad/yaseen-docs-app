@@ -37,13 +37,14 @@ import { createScenePreviewPng, type PreviewBounds, type PreviewEngine } from '.
 import { loadExcalidrawElement } from '../drawings/engine'
 import type { ComponentEngine, ComponentTarget } from '../components-library/componentData'
 import { componentFragmentJson, insertComponent } from '../components-library/componentData'
-import { captureImageFile, nameFromFile, PASTE_IMAGE_TYPES, pastedImages } from '../components-library/pastedImage'
+import { captureImageFile, isTextPaste, nameFromFile, PASTE_IMAGE_TYPES, pastedImages } from '../components-library/pastedImage'
 import { componentItem, componentPreviews, useComponentLibrary } from '../components-library/useComponentLibrary'
 import { insertImage, insertShape, fileFromImport, type InsertEngine, type InsertTarget } from './insertShape'
 import { buildShapeCatalog, getShape, shapeAliases, type ShapeCatalogItem, type ShapePreview, type SmartShapeApi } from './shapes'
 import { groupResults } from './groupResults'
 import { rankItems } from './rankItems'
 import {
+  MIN_QUERY,
   chipSource,
   getErrorMessage,
   imageStudioSession,
@@ -908,7 +909,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
         {/* Nothing local, and no web half yet (a chip with no web, or text too short for a pause search): say so (6Q). */}
         {mine.length === 0 && handDrawn.length === 0 && !webShown && (
           <div className="image-studio__state">
-            Nothing of yours matches “{query.trim()}”.{webOn ? ' Press Enter to search the web.' : ''}
+            {/* Enter searches the web from 2 letters only (6S). */}
+            Nothing of yours matches “{query.trim()}”.{webOn && query.trim().length >= MIN_QUERY ? ' Press Enter to search the web.' : ''}
           </div>
         )}
       </>
@@ -947,10 +949,10 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       tabIndex={-1}
       onPaste={(event) => {
         // Text pasted into a text field stays text, even when the clipboard ALSO holds a picture of it (an Excel
-        // cell, a copied slide): the picture is taken only when the field is not the target or there is no text (6P).
+        // cell, a copied slide); a Finder file's name is no text to type (6P, 6R, `isTextPaste`).
         const target = event.target as HTMLElement
         const intoText = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable
-        if (intoText && event.clipboardData.types.includes('text/plain')) return
+        if (intoText && isTextPaste(event.clipboardData)) return
         takeFrom(event, event.clipboardData)
       }}
       onDragOver={(event) => {

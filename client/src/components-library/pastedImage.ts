@@ -25,6 +25,18 @@ export function pastedImages(data: DataTransfer | null): File[] {
 }
 
 /**
+ * Whether a paste into a text field is TEXT (6P, 6R). An Excel cell or a slide brings its text with a picture of
+ * itself: the text wins. A file copied in Finder brings its NAME as text next to the file: that is no text to type,
+ * so the picture wins. So the paste is text when the clipboard has text that is not just the names of its files.
+ */
+export function isTextPaste(data: DataTransfer | null): boolean {
+  const text = data?.getData('text/plain').trim() ?? ''
+  if (text === '') return false
+  const names = new Set([...(data?.files ?? [])].map((file) => file.name))
+  return !text.split(/\r?\n/).every((line) => names.has(line.trim().split('/').pop() ?? ''))
+}
+
+/**
  * The name box's start (the emoji app's `AddSource.title(fromName:)`): the file name with no extension, `-` and `_`
  * as spaces, no copy mark. A name that says nothing — a paste's "image.png", digits, a code, a camera or screenshot
  * name — starts the box empty.
