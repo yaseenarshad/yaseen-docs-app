@@ -57,6 +57,14 @@ function parseScene(text: string): Scene | null {
 /** Structural equality for values that came out of `JSON.parse` — the app's writer keeps key order stable. */
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
 
+/**
+ * The engine's own stamps (YAZ-4279 D1). A version bump that moved nothing is no edit: the engine bumps them on load, and an
+ * AI that writes the JSON leaves them as they were. So no side is picked by them, except as `newer`'s tie-break.
+ */
+const STAMPS: ReadonlySet<string> = new Set(['version', 'versionNonce', 'updated'])
+const unstamped = (e: Element | undefined): string | undefined => (e === undefined ? undefined : JSON.stringify(e, (key, value) => (STAMPS.has(key) ? undefined : value)))
+const sameShape = (a: Element | undefined, b: Element | undefined): boolean => unstamped(a) === unstamped(b)
+
 const alive = (e: Element | undefined): e is Element => e !== undefined && e.isDeleted !== true
 
 const num = (v: unknown): number => (isFiniteNumber(v) ? v : 0)
@@ -101,38 +109,76 @@ function mergeRecord(base: Record<string, unknown>, theirs: Record<string, unkno
 
 const recordOf = (v: unknown): Record<string, unknown> => (isRecord(v) ? v : {})
 
-export function mergeBoards(baseText: string, theirsText: string, mineText: string): BoardMerge | null {
-  const base = parseScene(baseText)
-  const theirs = parseScene(theirsText)
-  const mine = parseScene(mineText)
-  if (base === null || theirs === null || mine === null) return null
+/**
+ * One shape both sides changed, for an open board (YAZ-4279 D4): each property from the side that changed it, the bindings of
+ * both. Null when both changed one property to different values — only the user can settle that (the conflict bar).
+ */
+function mergeShape(was: Element, theirs: Element, mine: Element): Element | null {
+  const out: Element = { ...mine }
+  for (const key of new Set([...Object.keys(was), ...Object.keys(theirs), ...Object.keys(mine)])) {
+    if (STAMPS.has(key) || same(theirs[key], was[key]) || same(theirs[key], mine[key])) continue
+    if (same(mine[key], was[key])) {
+      if (theirs[key] === undefined) delete out[key]
+      else out[key] = theirs[key]
+    } else if (key === 'boundElements') out[key] = unionBindings(theirs[key], mine[key])
+    else return null
+  }
+  return out
+}
 
-  const b = byId(base.elements)
-  const t = byId(theirs.elements)
-  const m = byId(mine.elements)
+/** Git sync keeps the newest of a shape both sides edited; an open board merges it per property or refuses (YAZ-4279 D4). */
+export type ClashRule = 'newest' | 'per-property'
+
+export interface ElementsMerge {
+  elements: Element[]
+  /** Shapes BOTH sides edited (a delete is not an edit) whose newest version was kept: always 0 for 'per-property'. */
+  clashes: number
+}
+
+/**
+ * The shapes alone, 3-way (YAZ-4279 D1): git sync and an open board share it. 'per-property' answers null for what only the
+ * user can settle — one property changed on both sides, a delete against an edit, or one id added on both sides.
+ */
+export function mergeElements(base: readonly Element[], theirs: readonly Element[], mine: readonly Element[], rule: 'newest'): ElementsMerge
+export function mergeElements(base: readonly Element[], theirs: readonly Element[], mine: readonly Element[], rule: ClashRule): ElementsMerge | null
+export function mergeElements(base: readonly Element[], theirs: readonly Element[], mine: readonly Element[], rule: ClashRule): ElementsMerge | null {
+  const b = byId(base)
+  const t = byId(theirs)
+  const m = byId(mine)
   const merged = new Map<string, Element>()
-  const clashed = new Set<string>()
+  /** Shapes taken from both sides at once: they keep both sides' bindings below. */
+  const both = new Set<string>()
+  let clashes = 0
 
-  for (const id of idsInOrder(theirs.elements, mine.elements)) {
+  for (const id of idsInOrder([...theirs], [...mine])) {
     const was = b.get(id)
     const tv = t.get(id)
     const mv = m.get(id)
     let pick: Element | undefined
-    if (same(tv, was)) pick = mv
-    else if (same(mv, was) || same(tv, mv)) pick = tv
-    else if (alive(tv) !== alive(mv)) pick = alive(tv) ? tv : mv // an edit beats a delete
-    else if (tv === undefined || mv === undefined) pick = tv ?? mv // gone on one side, a tombstone on the other
+    if (sameShape(tv, was)) pick = mv
+    else if (sameShape(mv, was) || sameShape(tv, mv)) pick = tv
+    else if (!alive(tv) && !alive(mv)) pick = tv === undefined || mv === undefined ? (tv ?? mv) : newer(tv, mv) // deleted on both
+    else if (rule === 'per-property') {
+      if (!alive(tv) || !alive(mv) || was === undefined) return null
+      const shape = mergeShape(was, tv, mv)
+      if (shape === null) return null
+      pick = shape
+      both.add(id)
+    } else if (alive(tv) !== alive(mv)) pick = alive(tv) ? tv : mv // an edit beats a delete
     else {
-      pick = newer(tv, mv)
-      if (alive(tv)) clashed.add(id)
+      pick = newer(tv as Element, mv as Element)
+      both.add(id)
+      clashes++
     }
     if (pick !== undefined) merged.set(id, pick)
   }
 
-  // A clashing shape keeps every binding either side gave it, as long as the bound element survived.
-  for (const id of clashed) {
+  // A shape both sides edited keeps every binding either side gave it ('newest'), or the ones `mergeShape` chose
+  // ('per-property'), as long as the bound element survived.
+  for (const id of both) {
     const pick = merged.get(id) as Element
-    const bindings = unionBindings(t.get(id)?.boundElements, m.get(id)?.boundElements).filter((x) => alive(merged.get(x.id as string)))
+    const kept = rule === 'newest' ? unionBindings(t.get(id)?.boundElements, m.get(id)?.boundElements) : unionBindings(pick.boundElements, null)
+    const bindings = kept.filter((x) => alive(merged.get(x.id as string)))
     merged.set(id, { ...pick, boundElements: bindings.length > 0 ? bindings : null })
   }
 
@@ -157,6 +203,15 @@ export function mergeBoards(baseText: string, theirsText: string, mineText: stri
   if (elements.every((e) => typeof e.index === 'string')) {
     elements = elements.sort((x, y) => (x.index === y.index ? (x.id < y.id ? -1 : 1) : (x.index as string) < (y.index as string) ? -1 : 1))
   }
+  return { elements, clashes }
+}
+
+export function mergeBoards(baseText: string, theirsText: string, mineText: string): BoardMerge | null {
+  const base = parseScene(baseText)
+  const theirs = parseScene(theirsText)
+  const mine = parseScene(mineText)
+  if (base === null || theirs === null || mine === null) return null
+  const { elements, clashes } = mergeElements(base.elements, theirs.elements, mine.elements, 'newest')
 
   // The rest of the top level, per key — without the parts merged on their own (and without stringifying every shape again).
   const rest = ({ elements: _e, appState: _a, files: _f, [BOARD_META_KEY]: _m, ...other }: Scene): Record<string, unknown> => other
@@ -165,7 +220,7 @@ export function mergeBoards(baseText: string, theirsText: string, mineText: stri
   const doc: Record<string, unknown> = { ...(meta === null ? {} : { [BOARD_META_KEY]: meta }), ...top, elements }
   if ('appState' in mine || 'appState' in theirs) doc.appState = mergeRecord(recordOf(base.appState), recordOf(theirs.appState), recordOf(mine.appState))
   if ('files' in mine || 'files' in theirs) doc.files = { ...recordOf(theirs.files), ...recordOf(mine.files) }
-  return { json: `${JSON.stringify(doc, null, 2)}\n`, clashes: clashed.size }
+  return { json: `${JSON.stringify(doc, null, 2)}\n`, clashes }
 }
 
 /**
