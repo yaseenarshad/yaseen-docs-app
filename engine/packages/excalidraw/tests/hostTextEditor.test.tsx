@@ -6,6 +6,7 @@ import { KEYS, sceneCoordsToViewportCoords } from "@excalidraw/common";
 import type { ExcalidrawTextElement } from "@excalidraw/element/types";
 
 import { Excalidraw } from "../index";
+import { setKeyBindings } from "../keyRemap";
 import { CARET_SCREEN_PX, getCaretWidth } from "../wysiwyg/hostTextWysiwyg";
 
 import { API } from "./helpers/api";
@@ -18,6 +19,7 @@ import {
   waitFor,
 } from "./test-utils";
 
+import type { KeyChord } from "../keyRemap";
 import type {
   HostTextEditor,
   HostTextEditorSession,
@@ -39,6 +41,7 @@ type Mounted = Parameters<HostTextEditor["mount"]>[0] & {
   input: HTMLDivElement;
   session: HostTextEditorSession & {
     setSelection: Mock<(s: HostTextSelection) => void>;
+    clearLetterStyles: Mock<() => void>;
     destroy: Mock<() => void>;
   };
 };
@@ -54,6 +57,7 @@ const textEditor: HostTextEditor = {
     const session = {
       setSelection: vi.fn<(s: HostTextSelection) => void>(),
       replaceText: vi.fn<(start: number, end: number, text: string) => void>(),
+      clearLetterStyles: vi.fn<() => void>(),
       focus: () => input.focus(),
       destroy: vi.fn<() => void>(),
     };
@@ -258,5 +262,66 @@ describe("the host text editor (textEditor)", () => {
       anchor: 3,
       head: 3,
     });
+  });
+});
+
+/** YAZ-4345 (D15): ⌘\ in edit resets the selected letters, the box editor's job. */
+describe("⌘\\ in edit (YAZ-4345, the in-edit half)", () => {
+  beforeEach(async () => {
+    mounted = [];
+    await render(
+      <Excalidraw handleKeyboardGlobally={true} textEditor={textEditor} />,
+    );
+  });
+
+  it("asks the editor to clear the letter styles, and the board sees no key", async () => {
+    await startEdit();
+    const event = fireEvent.keyDown(last().input, {
+      key: "\\",
+      code: "Backslash",
+      ctrlKey: true,
+    });
+    expect(event).toBe(false);
+    expect(last().session.clearLetterStyles).toHaveBeenCalledTimes(1);
+    // the edit stays open
+    expect(h.state.editingTextElement).not.toBe(null);
+  });
+
+  it("takes the user's key for it from Settings › Hotkeys, and ⌘\\ then does nothing", async () => {
+    const chord = (code: string, key: string, mods: Partial<KeyChord>) => ({
+      code,
+      key,
+      name: key.toUpperCase(),
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+      ...mods,
+    });
+    setKeyBindings([
+      {
+        name: "clearSelectedTextFormatting",
+        defaults: [chord("Backslash", "\\", { ctrlKey: true })],
+        keys: [chord("KeyK", "k", { ctrlKey: true, altKey: true })],
+      },
+    ]);
+    try {
+      await startEdit();
+      fireEvent.keyDown(last().input, {
+        key: "\\",
+        code: "Backslash",
+        ctrlKey: true,
+      });
+      expect(last().session.clearLetterStyles).not.toHaveBeenCalled();
+      fireEvent.keyDown(last().input, {
+        key: "k",
+        code: "KeyK",
+        ctrlKey: true,
+        altKey: true,
+      });
+      expect(last().session.clearLetterStyles).toHaveBeenCalledTimes(1);
+    } finally {
+      setKeyBindings([]);
+    }
   });
 });

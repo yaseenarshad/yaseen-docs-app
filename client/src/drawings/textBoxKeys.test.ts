@@ -187,4 +187,20 @@ describe('the keys of a text box (YAZ-4277 1D)', () => {
       spy.mockRestore()
     }
   })
+
+  it('resets the selected letters to the box style as one undo step, and only them (⌘\\, YAZ-4345)', async () => {
+    const runs: TextRuns = [{ start: 0, end: 11, bold: true, italic: true, color: '#e03131', highlight: 'green' }]
+    const { view, session } = await mountBox('Hello world\n• item', runs)
+    select(view, 6, 11)
+    session.clearLetterStyles()
+    expect(box(view)).toEqual({ text: 'Hello world\n• item', textRuns: [{ start: 0, end: 6, bold: true, italic: true, color: '#e03131', highlight: 'green' }] })
+    const { undo } = await import('@milkdown/kit/prose/history')
+    undo(view.state, view.dispatch)
+    expect(box(view).textRuns).toEqual(runs)
+    // with only a caret, the next letters have no style
+    select(view, 11)
+    session.clearLetterStyles()
+    typeText(view, 'X')
+    expect(box(view).textRuns).toEqual(runs)
+  })
 })

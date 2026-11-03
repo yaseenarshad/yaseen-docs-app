@@ -71,6 +71,22 @@ export const testTextEditor: HostTextEditor = {
         editable.setRangeText(next, start, end, "end");
         editable.dispatchEvent(new Event("input"));
       },
+      // the tests' editor has no letter styles of its own: it takes off every run
+      // over the selection, as the box editor takes off its marks
+      clearLetterStyles: () => {
+        const start = Math.min(last.anchor, last.head);
+        const end = Math.max(last.anchor, last.head);
+        const next = runs?.flatMap((run) =>
+          run.end <= start || run.start >= end
+            ? [run]
+            : [
+                ...(run.start < start ? [{ ...run, end: start }] : []),
+                ...(run.end > end ? [{ ...run, start: end }] : []),
+              ],
+        );
+        runs = next?.length ? next : undefined;
+        onChange(value, runs, last);
+      },
       focus: () => editable.focus(),
       destroy: () =>
         document.removeEventListener("selectionchange", onDocumentSelection),

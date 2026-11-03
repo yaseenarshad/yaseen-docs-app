@@ -859,6 +859,11 @@ export type HostTextEditorSession = {
    * (a picked `[[link]]`, a pasted page path). Offsets in `originalText`.
    */
   replaceText: (start: number, end: number, text: string) => void;
+  /**
+   * YAZ-4345 (D15): ⌘\ in edit takes every letter style off the selected
+   * letters (with only a caret, off the next letters), as one undo step.
+   */
+  clearLetterStyles: () => void;
   focus: () => void;
   destroy: () => void;
 };

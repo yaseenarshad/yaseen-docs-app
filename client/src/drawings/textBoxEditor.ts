@@ -23,7 +23,7 @@ import { HIDDEN_IN_CELL } from '../editor/slashMenu'
 import { storage } from '../lib/storage'
 import type { ExcalidrawModule } from './engine'
 import { boxToDoc, docToBox, offsetAt, posAt, type BoxHelpers, type TextRuns } from './textBoxDoc'
-import { lockToTextBox } from './textBoxLock'
+import { BOX_MARKS, lockToTextBox } from './textBoxLock'
 import './textBoxEditor.css'
 
 type HostTextEditor = NonNullable<ComponentProps<ExcalidrawModule['Excalidraw']>['textEditor']>
@@ -185,6 +185,20 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
           const from = posAt(doc, start, helpers)
           const to = posAt(doc, end, helpers)
           view.dispatch(text ? view.state.tr.insertText(text, from, to) : view.state.tr.delete(from, to))
+        },
+        clearLetterStyles() {
+          if (!isReady || destroyed) return
+          const view = crepe.editor.ctx.get(editorViewCtx)
+          const { state } = view
+          const { from, to, empty } = state.selection
+          // YAZ-4345 (D15): the letters' styles, as Google Docs' ⌘\; the lines and bullets stay
+          if (empty) {
+            view.dispatch(state.tr.setStoredMarks([]))
+            return
+          }
+          const tr = state.tr
+          for (const name of BOX_MARKS) tr.removeMark(from, to, state.schema.marks[name])
+          view.dispatch(tr)
         },
         setSelection(sel) {
           pending = sel

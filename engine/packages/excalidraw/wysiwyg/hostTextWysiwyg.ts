@@ -36,9 +36,11 @@ import type {
 
 import { actionSaveToActiveFile } from "../actions";
 import {
+  actionClearSelectedTextFormatting,
   actionDecreaseFontSize,
   actionIncreaseFontSize,
 } from "../actions/actionProperties";
+import { textFieldKeyFor } from "../keyRemap";
 import {
   actionResetZoom,
   actionZoomIn,
@@ -676,6 +678,21 @@ export const hostTextWysiwyg = ({
         lastSelection = { start: link.start, end: link.end };
         session.setSelection({ anchor: link.start, head: link.end });
       }
+      return;
+    }
+    // YAZ-4345 (D15): ⌘\ (or the user's key for it) resets the selected
+    // letters to the box's own style
+    if (
+      textFieldKeyFor(actionClearSelectedTextFormatting.name, event) ??
+      actionClearSelectedTextFormatting.keyTest?.(
+        event,
+        app.state,
+        app.scene.getElementsIncludingDeleted(),
+      )
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      session.clearLetterStyles();
       return;
     }
     const action =
