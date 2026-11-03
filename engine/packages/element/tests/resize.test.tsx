@@ -2,6 +2,10 @@ import { pointFrom } from "@excalidraw/math";
 
 import { Excalidraw, restoreElements } from "@excalidraw/excalidraw";
 import {
+  DEFAULT_NEW_TEXT_SCREEN_SIZE,
+  setNewTextScreenSize,
+} from "@excalidraw/excalidraw/textCreation";
+import {
   type Bounds,
   KEYS,
   ROUNDNESS,
@@ -862,6 +866,17 @@ describe("arrow element", () => {
 });
 
 describe("text element", () => {
+  // YAZ-4247: a new text is 14 px on screen (it was 130 at zoom 1). A
+  // two-line 14 px text is 35 px tall, under the 40 px (5 × the 8 px handle)
+  // that the side handles need, and the font size keys round 14 × 1.1 to 15.
+  // So these tests make their text at 20 px.
+  beforeEach(() => {
+    setNewTextScreenSize(20);
+  });
+  afterEach(() => {
+    setNewTextScreenSize(DEFAULT_NEW_TEXT_SCREEN_SIZE);
+  });
+
   it("does not jump when resizing starts from a glyph-hugging handle", async () => {
     const text = UI.createElement("text");
     await UI.editText(text, "hello");
