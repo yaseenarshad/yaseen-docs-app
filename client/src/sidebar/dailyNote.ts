@@ -1,13 +1,13 @@
 /**
- * Today's daily note in one vault (YAZ-3607): found in the vault index (D3), else made (D5, D6, D9). App opens it.
+ * Today's daily note in one vault (YAZ-3607): found in the vault index (D3), else made (D5, D6, D9) in the main process
+ * (`fs:make-daily-note`, YAZ-4269 D2). App opens it.
  *
  * The note is found by its TITLE, not by its file name: a vault that uses IDs builds the file name from the title and
  * the id (`2026-10-28-yaz-41.md`). In a vault that does not use IDs the title is the file name, so one rule serves both.
  */
-import { findDailyNote, makeDailyNote as birth, type DailyNoteSettings } from '@shared/noteBirth'
+import { findDailyNote, type DailyNoteSettings } from '@shared/noteBirth'
 import type { IndexRecord, TreeNode } from '@shared/types'
 import { findDirNode, findNode } from '../lib/treeState'
-import { bridgeDisk } from '../views/scaffold'
 import { placePath } from './goToPlace'
 
 export { findDailyNote, type DailyNoteSettings }
@@ -36,6 +36,3 @@ export function todaysNote({ records, tree, folder, title, dayFolder, made }: { 
 export function dailyNoteVault(vaults: ReadonlyArray<{ root: string; tree: readonly TreeNode[] }>, folder: string): string | null {
   return vaults.find(({ root, tree }) => folder === '' || findDirNode(tree, placePath(root, folder)) !== null)?.root ?? null
 }
-
-/** Makes today's note (`@shared/noteBirth` `makeDailyNote`, where its rules are told) over the bridge, in the vault that `dailyNoteVault` found. */
-export const makeDailyNote = (vault: string, settings: DailyNoteSettings, title: string, ids: boolean): Promise<string> => birth(bridgeDisk, vault, settings, title, ids)

@@ -85,13 +85,7 @@ export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'ap
       },
     ))
 
-  async function others(dir: string): Promise<SettingsFile[]> {
-    const own = settingsFileName(await deps.macId())
-    const names = (await readdir(dir)).filter((name) => SETTINGS_FILE_RE.test(name) && name !== own)
-    // A file that can't be read or parsed (half-synced) is skipped; its next change reads it again.
-    const files = await Promise.all(names.map((name) => readFile(path.join(dir, name), 'utf8').then(parseSettingsFile, () => null)))
-    return files.filter((file): file is SettingsFile => file !== null)
-  }
+  const others = async (dir: string): Promise<SettingsFile[]> => otherMacFiles(dir, await deps.macId())
 
   async function push(): Promise<void> {
     const dir = folder
@@ -179,4 +173,16 @@ export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'ap
       watcher = null
     },
   }
+}
+
+/**
+ * The settings files of the OTHER Macs in the settings folder `dir`, never `macId`'s own: what the app pulls, and what
+ * `yaseendocs` reads to use the settings the app would use now (YAZ-4269 D3). A file that can't be read or parsed
+ * (half-synced) is skipped; its next change reads it again.
+ */
+export async function otherMacFiles(dir: string, macId: string): Promise<SettingsFile[]> {
+  const own = settingsFileName(macId)
+  const names = (await readdir(dir)).filter((name) => SETTINGS_FILE_RE.test(name) && name !== own)
+  const files = await Promise.all(names.map((name) => readFile(path.join(dir, name), 'utf8').then(parseSettingsFile, () => null)))
+  return files.filter((file): file is SettingsFile => file !== null)
 }

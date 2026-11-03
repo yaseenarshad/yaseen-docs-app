@@ -69,7 +69,7 @@ import { DEFAULT_NEW_NOTE_TITLE, plainEntryName, renderTitleTemplate } from './s
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
 import { dailyNoteName } from '@shared/dailyNote'
-import { dailyNoteVault, makeDailyNote, todaysNote } from './sidebar/dailyNote'
+import { dailyNoteVault, todaysNote } from './sidebar/dailyNote'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
@@ -1089,7 +1089,7 @@ export function App() {
         // One note at a time for a key: a press while it is made waits for it. Made but gone from the tree: made again (D16).
         if (held === null || held.path !== undefined) {
           // A fresh tree before the row is shown: the sidebar hears it (`onTree`), so the new note's row is there to show.
-          const note = makeDailyNote(vault, now, title, index.ids).then(async (path) => {
+          const note = api.makeDailyNote(vault).then(async ({ path }) => {
             await fetchTree(vault)
             if (dailyMaking.current?.note === note) dailyMaking.current.path = path
             return path

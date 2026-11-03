@@ -26,6 +26,15 @@ export type Seed = (template: Record<string, unknown>) => Record<string, unknown
 
 export type DailyNoteSettings = Pick<SettingsState, 'dailyNoteFolder' | 'dailyNoteDayFolder'>
 
+/** A note found or made (YAZ-4269 D2, D5, D7, D8): a day's daily note, or `yaseendocs new`'s. `id` is null in a vault without IDs; `others` are the other notes of that title. */
+export interface FoundNote {
+  path: string
+  title: string
+  id: string | null
+  created: boolean
+  others: string[]
+}
+
 /**
  * Birth (YAZ-2290 E1/E3), the ONE way a note is created: in `dir`, with its folder's template — the
  * hidden `.template.md` beside it, frontmatter and body — and what `seed` makes of the template's

@@ -372,6 +372,19 @@ function inTurn<T>(root: string, ask: (door: Door) => Promise<T>): Promise<T> {
   return mine
 }
 
+/**
+ * The vault whose IDs a page is in (YAZ-2523 🔒 V10): the nearest folder at or above it that has
+ * ANSWERED, when that answer is yes. A folder that only holds app settings is not asked. Null
+ * when the nearest answer is no, or nothing above has answered: "no" means no for agents too.
+ */
+export async function idVault(from: string): Promise<string | null> {
+  for (let dir = from; ; dir = path.dirname(dir)) {
+    const { answer } = await vaultIds(dir)
+    if (answer !== undefined) return answer ? dir : null
+    if (dir === path.dirname(dir)) return null
+  }
+}
+
 /** A vault that gives IDs, as a create or a copy holds it for one request. */
 export interface IdDoor {
   /** The vault's next `count` IDs (`mintIds`). Refused when the vault stopped giving IDs after this door was asked for. */

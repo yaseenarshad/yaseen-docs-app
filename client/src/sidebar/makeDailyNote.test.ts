@@ -1,12 +1,14 @@
 /**
  * How today's daily note is MADE (YAZ-3607 D5, D6, D9), pinned before the rules move to `@shared/noteBirth`
- * (YAZ-4269 D1): the calls to the disk and the path that comes back. `api` mocked like scaffold.test.ts.
+ * (YAZ-4269 D1): the calls to the disk and the path that comes back. `api` mocked like scaffold.test.ts; the rules run
+ * over the bridge (`bridgeDisk`), as they did when the renderer made the note.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildFrontmatter } from '@shared/frontmatter'
 import type { CreateFileRequest } from '@shared/types'
 import { testDoor } from '../testNoteIds'
-import { makeDailyNote } from './dailyNote'
+import { makeDailyNote as birth, type DailyNoteSettings } from '@shared/noteBirth'
+import { bridgeDisk } from '../views/scaffold'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -30,6 +32,9 @@ const DAY = { dailyNoteFolder: 'daily', dailyNoteDayFolder: true }
 
 /** The template at `at`, and nothing else on disk. */
 const templateAt = (at: string) => readFile.mockImplementation(async (path) => (path === at ? { path, content: TEMPLATE, mtime: 1 } as never : Promise.reject(notFound())))
+
+/** The rules over the bridge, as the renderer ran them until the main process made the note (YAZ-4269 D2). */
+const makeDailyNote = (vault: string, settings: DailyNoteSettings, title: string, ids: boolean) => birth(bridgeDisk, vault, settings, title, ids)
 
 beforeEach(() => {
   vi.resetAllMocks()

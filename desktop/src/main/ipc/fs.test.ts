@@ -5,6 +5,7 @@ import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
 import type { IndexResponse } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
+import { dailyNoteName } from '@shared/dailyNote'
 import { loadDrawing } from '../fs/drawing'
 import { makeFixture, removeVault, sleep, vaultFiles } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
@@ -85,7 +86,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.putBack.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readTextHead.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
+    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.makeDailyNote.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.putBack.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readTextHead.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -464,6 +465,27 @@ describe('registerFsIpc', () => {
         expect(new Set(given).size).toBe(given.length)
       } finally {
         await close(vault)
+      }
+    })
+
+    it('`fs:make-daily-note` finds or makes today\'s note of a vault of the calling window, by the app\'s settings, one note for many asks (YAZ-4269 D2)', async () => {
+      const yes = await open(true)
+      const before = store.get().settings
+      try {
+        store.setSettings({ ...before, dailyNotes: true, dailyNoteFolder: 'Plans', dailyNoteFormat: 'YYYY-MM-DD', dailyNoteDayFolder: false })
+        const title = dailyNoteName('YYYY-MM-DD', new Date())
+        const asked = await Promise.all(Array.from({ length: 4 }, () => call(CONTRACT.makeDailyNote, yes)))
+        const notes = asked.map((answer) => (answer as { ok: true; value: { path: string; title: string; created: boolean } }).value)
+        expect(notes.filter((note) => note.created)).toHaveLength(1)
+        expect(new Set(notes.map((note) => note.path)).size).toBe(1)
+        expect(notes[0]).toMatchObject({ title, path: expect.stringMatching(new RegExp(`^${yes}/Plans/${title}-yaz-\\d+\\.md$`)) })
+        // Not a vault of this window, or no window: refused, and nothing is made.
+        expect(await call(CONTRACT.makeDailyNote, path.join(yes, 'Plans'))).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        senderWinId = undefined
+        expect(await call(CONTRACT.makeDailyNote, yes)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+      } finally {
+        store.setSettings(before)
+        await close(yes)
       }
     })
 

@@ -34,6 +34,7 @@ import type { Store } from '../store'
 import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
+import { dailyNote } from '../notes/daily'
 import type { WindowManager } from '../windows'
 import { broadcastAll, loggedSave, rootsOf, senderRoots } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
@@ -87,6 +88,13 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // holds it, and so does a link the `[[` picker writes — and hands it back in `createFile`'s `id`.
   // Null where no vault of the window holds the path, or that vault does not use IDs.
   handleWithEvent(CONTRACT.mintNoteId, async (e, p: unknown) => (await (await doorFor(e, requireAbsPath(p, 'path')))?.mint(1))?.[0] ?? null)
+  // Today's daily note (YAZ-4269 D2): found on disk or made, by the same code and the same lock as `yaseendocs daily`.
+  // Only for a vault of the calling window, by the settings the app has now.
+  handleWithEvent(CONTRACT.makeDailyNote, async (e, raw: unknown) => {
+    const vault = requireAbsPath(raw, 'path')
+    if (!rootsOfSender(e).includes(vault)) throw new BridgeFailure('BAD_REQUEST', 'not a vault of this window', { path: vault })
+    return (await dailyNote(vault, store.get().settings, new Date(), true))!
+  })
   handle(CONTRACT.index, getIndex)
   // The cold-start reconcile diff (Links E1c, GRO-2242): the client's rename detector reads it
   // AFTER the first fs:index for the root. Null before the first build (and again once idle

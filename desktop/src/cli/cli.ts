@@ -12,6 +12,7 @@
  *
  * `HELP` IS the contract: it is the only documentation an agent reads, so its wording is UI copy.
  */
+import { execFile } from 'node:child_process'
 import { readFile as readRaw, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -26,18 +27,25 @@ import {
   type PageComment,
 } from '@shared/comments'
 import { alsoIn } from '@shared/alsoIn'
+import { dailyNoteName } from '@shared/dailyNote'
+import { fileLink } from '@shared/links'
+import type { FoundNote } from '@shared/noteBirth'
+import { newestFile } from '@shared/settingsSync'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
 import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { dueAt, isInReview, reviewQueue } from '@shared/schedule'
-import { VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults } from '@shared/types'
+import { VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults, type AppState, type SettingsState } from '@shared/types'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { readFile, writeFile } from '../main/fs/file'
-import { parseState } from '../main/store'
+import { dailyNote } from '../main/notes/daily'
+import { newNote } from '../main/notes/note'
+import { otherMacFiles } from '../main/settingsFolder'
+import { mergeFolderSettings, parseState } from '../main/store'
 import { STATE_FILE, userDataDir } from '../main/userData'
 import { giveId, nextId, readPage } from '../main/vaultIndex/idSweep'
-import { vaultIds } from '../main/vaultIndex/mint'
+import { idVault, macId, vaultIds } from '../main/vaultIndex/mint'
 import { scanAll } from '../main/vaultIndex/reconcile'
 import { scanFile, walk } from '../main/vaultIndex/scan'
 
@@ -46,6 +54,8 @@ export interface Io {
   stdin(): Promise<string>
   stdout(text: string): void
   stderr(text: string): void
+  /** Hands a `yaseendocs://` link to the system, as a click on it would (D10). */
+  open?(link: string): Promise<void>
 }
 
 export const USAGE = `usage:
@@ -57,9 +67,11 @@ export const USAGE = `usage:
   yaseendocs links    <page.md> [--json]
   yaseendocs due      <page.md | folder> [--json]
   yaseendocs vaults   [--json]
+  yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
+  yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
   yaseendocs --help`
 
-export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, when it is next due for review, and the app's list of vaults, from the shell.
+export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, when it is next due for review, the app's list of vaults, and a new note or the day's daily note, from the shell.
 
 ${USAGE}
 
@@ -104,17 +116,41 @@ a window on it. \`--json\` gives \`path\`, \`name\` (display name, else folder n
 null), \`open\` and \`lastUsed\` (epoch ms, or null). It reads the app's state file and never
 writes it: with the app closed, \`open\` is a window the app opens again at its start.
 
+\`daily\` finds the daily note of a day in a vault, and makes it when there is none. The day is
+today on your Mac's own clock and calendar, or \`--date\`. It uses the app's Daily notes settings
+(Settings › Files & Links › Daily notes): the folder, the name style, a folder for each day, and the
+daily notes folder's template. A note that is there is never changed. Two runs at one moment, here or
+in the app, give one note. \`--find\` only finds: no note is an error, and nothing is made. \`--open\`
+then opens the note in the app, as the daily note button does; the app starts if it is closed.
+
+\`new\` makes a note in a folder, as the app's New note does: the folder's \`.template.md\`, the title,
+and in a vault with IDs a new id and the file name \`<kebab-title>-<id>.md\`. When that folder (not a
+folder in it) already has a note with the title, that note is the answer and nothing is made, so a
+run again after a timeout is safe. \`--body\` (\`--body -\` for stdin) takes the place of the template's
+body; a properties block at its top goes over the template's properties, and \`--title\` always wins.
+
+Both print \`made <path>\` or \`found <path>\`. When another note has the same title, each one is named
+on stderr (\`warning: also <path>\`). \`--json\` gives \`path\`, \`title\`, \`id\` (null in a vault
+without IDs), \`created\` and \`others\`. A note made while the app is open shows in it at once.
+
 Exit codes: 0 done · 1 refused or failed (the reason is on stderr) · 2 usage.
 
 Example:
   yaseendocs comment "/vault/Weekly review.md" --title "Numbers check" --body "The Q3 figure is off by one row."
   → #3 added to /vault/Weekly review.md
+
+Plan a day:
+  yaseendocs daily /vault --date tomorrow --json        → the note to plan in, made when it is missing
+  yaseendocs daily /vault --date 2026-11-02 --find      → that day's note, or exit 1 and nothing made
+
+Make a note with its first text:
+  printf '## Plan\\n- Gym' | yaseendocs new "/vault/projects" --title "Gym plan" --body -
 `
 
 /** Every flag the contract names; anything else is refused, because `--help` IS the contract (🔒 D1) and a typo must not be absorbed. */
-const FLAGS = new Set(['--body', '--title', '--reply-to', '--by'])
+const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date'])
 /** Flags that take no value. */
-const SWITCHES = new Set(['--json', '--help', '-h'])
+const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open'])
 
 class Usage extends Error {}
 
@@ -204,19 +240,6 @@ async function vaultRoot(from: string): Promise<string | null> {
   }
 }
 
-/**
- * The vault whose IDs a page is in (YAZ-2523 🔒 V10): the nearest folder at or above it that has
- * ANSWERED, when that answer is yes. A folder that only holds app settings is not asked. Null
- * when the nearest answer is no, or nothing above has answered: "no" means no for agents too.
- */
-async function idVault(from: string): Promise<string | null> {
-  for (let dir = from; ; dir = dirname(dir)) {
-    const { answer } = await vaultIds(dir)
-    if (answer !== undefined) return answer ? dir : null
-    if (dir === dirname(dir)) return null
-  }
-}
-
 async function bodyOf(flags: Map<string, string | true>, io: Io): Promise<string> {
   const body = flags.get('--body')
   if (typeof body !== 'string') throw new Usage('--body is required')
@@ -260,6 +283,31 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
   else io.stdout(queue.length === 0 ? `nothing is due under ${target}\n` : queue.map((q) => `${day(q.due)}  ${q.title}  ${q.path}\n`).join(''))
 }
 
+/** The app's state file as the store itself reads it (`parseState`); only READ. No file yet is the default state; a damaged one is refused and left for the app to move aside. */
+async function readState(): Promise<AppState> {
+  const file = join(userDataDir(process.env, process.platform, homedir()), STATE_FILE)
+  const text = await readRaw(file, 'utf8').catch((err: NodeJS.ErrnoException) => {
+    if (err.code === 'ENOENT') return null
+    throw err
+  })
+  const state = text === null ? defaultAppState() : parseState(text)
+  if (state === null) throw new Error(`${file} is not a valid app state`)
+  return state
+}
+
+/**
+ * The settings the app would start with now (YAZ-4269 D3): the state file's, then the newest file of another Mac in
+ * the settings folder (YAZ-3276), merged as the app merges it at its start. On a Mac whose app has not run since a
+ * change made on another one, that change still counts. A folder that can't be read is skipped. Nothing is written.
+ */
+async function settingsNow(): Promise<SettingsState> {
+  const state = await readState()
+  if (state.settingsFolder === null) return state.settings
+  const files = await otherMacFiles(state.settingsFolder, await macId()).catch(() => [])
+  const newer = newestFile(files, state.settingsSavedAt)
+  return newer === null ? state.settings : mergeFolderSettings(state.settings, newer.settings)
+}
+
 /**
  * `vaults` (YAZ-2556 🔒 D2): the vaults the app knows — `listVaults`, over the app's state file as
  * the store itself reads it (`parseState`) — in that function's order: the recents, last used first,
@@ -268,16 +316,56 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
  * for the app to move aside.
  */
 async function vaults(json: boolean, io: Io): Promise<void> {
-  const file = join(userDataDir(process.env, process.platform, homedir()), STATE_FILE)
-  const text = await readRaw(file, 'utf8').catch((err: NodeJS.ErrnoException) => {
-    if (err.code === 'ENOENT') return null
-    throw err
-  })
-  const state = text === null ? defaultAppState() : parseState(text)
-  if (state === null) throw new Error(`${file} is not a valid app state`)
-  const rows = listVaults(state)
+  const rows = listVaults(await readState())
   if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
   else io.stdout(rows.length === 0 ? 'no vaults\n' : rows.map((v) => `${v.name}  ${v.path}${v.key === null ? '' : `  ⌘${v.key}`}${v.open ? '  (open)' : ''}\n`).join(''))
+}
+
+/** The day `--date` names, on this Mac's own calendar: today, tomorrow, yesterday or `YYYY-MM-DD` (D9); today when it is not given. */
+export function dayOf(text: string | undefined, now = new Date()): Date {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const shift = { today: 0, tomorrow: 1, yesterday: -1 }[text ?? 'today']
+  if (shift !== undefined) return new Date(today.getFullYear(), today.getMonth(), today.getDate() + shift)
+  const [, y, m, d] = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text ?? '') ?? []
+  const day = new Date(Number(y), Number(m) - 1, Number(d))
+  if (y === undefined || day.getMonth() !== Number(m) - 1 || day.getDate() !== Number(d)) throw new Usage('--date takes today, tomorrow, yesterday or a day as YYYY-MM-DD')
+  return day
+}
+
+/** `made <path>` or `found <path>`, each other note of the title on stderr (D8); `--json` the whole answer. */
+function report(io: Io, flags: Map<string, string | true>, note: FoundNote): void {
+  for (const other of note.others) io.stderr(`warning: also ${other}\n`)
+  io.stdout(flags.has('--json') ? `${JSON.stringify(note, null, 2)}\n` : `${note.created ? 'made' : 'found'} ${note.path}\n`)
+}
+
+/** macOS `open`, Windows `start`: the link goes to the app as a click on it would. */
+const openLink = (link: string): Promise<void> =>
+  new Promise((done, fail) => {
+    const [cmd, args] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', link]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [link]]
+    execFile(cmd, args, (err) => (err === null ? done() : fail(new Error(`the note is ready, but the app could not be asked to open it: ${err.message}`))))
+  })
+
+/** `daily` (YAZ-4269 D2, D5, D6, D9, D10): a day's daily note of a vault, found or made by the app's own rules. */
+async function daily(target: string | undefined, flags: Map<string, string | true>, io: Io): Promise<void> {
+  if (target === undefined) throw new Usage('daily needs a vault')
+  const day = dayOf(str(flags, '--date'))
+  const settings = await settingsNow()
+  const root = resolve(target)
+  const note = await dailyNote(root, settings, day, !flags.has('--find'))
+  if (note === null) throw new Error(`no daily note "${dailyNoteName(settings.dailyNoteFormat, day).trim()}" in ${root}`)
+  report(io, flags, note)
+  if (flags.has('--open')) await (io.open ?? openLink)(fileLink(note.path))
+}
+
+/** `new` (YAZ-4269 D4, D7): a note in a folder by the app's own rules; the one of that title when the folder has it. */
+async function newCommand(target: string | undefined, flags: Map<string, string | true>, io: Io): Promise<void> {
+  if (target === undefined) throw new Usage('new needs a folder')
+  const title = str(flags, '--title')?.trim()
+  if (title === undefined || title === '') throw new Usage('new needs --title')
+  const body = flags.has('--body') ? await bodyOf(flags, io) : undefined
+  const note = await newNote(resolve(target), title, body)
+  if (!note.created && body !== undefined) io.stderr(`warning: --body was not written: ${note.path} was already there\n`)
+  report(io, flags, note)
 }
 
 async function run(argv: readonly string[], io: Io): Promise<void> {
@@ -287,6 +375,8 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
     return
   }
   if (verb === 'vaults') return vaults(flags.has('--json'), io)
+  if (verb === 'daily') return daily(args[0], flags, io)
+  if (verb === 'new') return newCommand(args[0], flags, io)
   if (verb === 'due') {
     if (args[0] === undefined) throw new Usage('due needs a page or a folder')
     return due(resolve(args[0]), flags.has('--json'), io)
