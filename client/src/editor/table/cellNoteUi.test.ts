@@ -558,6 +558,15 @@ describe('the "Add cell note" button (D8, 5A-7)', () => {
     expect(shownButton()).toBeNull()
   })
 
+  it('the pointer can go from the cell straight onto the button\'s icon: it stays', async () => {
+    const { view } = await mount(NOTES, zoomOpts())
+    boxes(view)
+    hover(view, 3, 1)
+    const button = shownButton()!
+    view.dom.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: button.querySelector('svg') }))
+    expect(shownButton()).toBe(button)
+  })
+
   it('a typed key in the cell places nothing; a read-only note shows no button', async () => {
     const { crepe, view } = await mount(NOTES, zoomOpts())
     boxes(view)

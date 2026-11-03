@@ -115,7 +115,8 @@ function buttonView(view: EditorView) {
       follow()
     },
     leave: (event: MouseEvent) => {
-      if (event.relatedTarget === button) return
+      // Onto the button or its icon: the pointer is still on the cell's corner.
+      if (event.relatedTarget instanceof Node && button.contains(event.relatedTarget)) return
       hovered = null
       follow()
     },
