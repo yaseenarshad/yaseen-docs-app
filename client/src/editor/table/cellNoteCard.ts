@@ -44,7 +44,7 @@ import {
   cellNoteCardKey,
   type CellNoteCardState,
   cellNoteCornerAt,
-  cellNoteCrumbParts,
+  cellNoteNameParts,
   cellNoteOf,
   cellNoteTitle,
   insertCellNote,
@@ -95,7 +95,7 @@ const serializers = new WeakMap<EditorView, (doc: ProseNode) => string>()
 /** Every cell note of the page, in `cellNoteOrder`: its label, position and "<column> · <row>". */
 const allNotes = (doc: ProseNode): Array<{ label: string; pos: number; name: string }> =>
   cellNoteOrder(doc).map((label) => {
-    const { column, row } = cellNoteCrumbParts(doc, label)
+    const { column, row } = cellNoteNameParts(doc, label)
     return { label, pos: notePosOf(doc, label)!, name: [column, row].map((text) => text.trim()).filter((text) => text !== '').join(' · ') || 'Note' }
   })
 

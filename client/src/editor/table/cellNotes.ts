@@ -212,7 +212,7 @@ export const isEmptyCellNote = (note: ProseNode): boolean =>
 /**
  * The doc a save writes (D15): without each cell note that holds one empty line, and without its mark. Every route
  * that saves (the debounced save, a tab closing, another note in the tab, quit) reads the bytes from here, so an empty
- * note never reaches the file, whatever way its page closes. `state.doc` itself when there is none.
+ * note never reaches the file, whatever way its card closes. `state.doc` itself when there is none.
  */
 export function withoutEmptyCellNotes(state: EditorState): ProseNode {
   const labels: string[] = []
@@ -227,11 +227,11 @@ export function withoutEmptyCellNotes(state: EditorState): ProseNode {
 }
 
 /**
- * For 4B's crumb (D9): the column's header text and the row's first-cell text of the cell that holds the mark
- * `label`, a cell's lines and bullets joined with a space. No row for a cell in the header row: it names no row.
- * Empty strings when no table holds it.
+ * For the card's title and "All notes" (D9): the column's header text and the row's first-cell text of the cell that
+ * holds the mark `label`, a cell's lines and bullets joined with a space. No row for a cell in the header row: it names
+ * no row. Empty strings when no table holds it.
  */
-export function cellNoteCrumbParts(doc: ProseNode, label: string): { column: string; row: string } {
+export function cellNoteNameParts(doc: ProseNode, label: string): { column: string; row: string } {
   const mark = markPosOf(doc, label)
   const cell = mark === null ? null : cellPosAround(doc.resolve(mark))
   if (cell === null) return { column: '', row: '' }
@@ -244,7 +244,7 @@ export function cellNoteCrumbParts(doc: ProseNode, label: string): { column: str
 
 /** A cell note's title (D9), for its card and its preview: "Note: <column> · <row>", or "Note" when neither has words. */
 export function cellNoteTitle(doc: ProseNode, label: string): string {
-  const { column, row } = cellNoteCrumbParts(doc, label)
+  const { column, row } = cellNoteNameParts(doc, label)
   const parts = [column, row].map((text) => text.trim()).filter((text) => text !== '')
   const title = parts.length === 0 ? 'Note' : `Note: ${parts.join(' · ')}`
   return title.length > 60 ? `${title.slice(0, 59).trimEnd()}…` : title

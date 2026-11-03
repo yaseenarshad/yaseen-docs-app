@@ -579,7 +579,7 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
     foldHeadings(state.revealedHeadings, true)
     const zoomed = getZoomedItemPos(view.state)
     const item = zoomed === null ? null : view.state.doc.nodeAt(zoomed)
-    if (zoomed !== null && item !== null && (target.pos < zoomed || target.pos >= zoomed + item.nodeSize) && zoomToKey(null)(view.state, view.dispatch, view))
+    if (zoomed !== null && item !== null && (target.pos < zoomed || target.pos >= zoomed + item.nodeSize) && zoomToKey(null)(view.state, view.dispatch))
       channel.zoomedOut()
     const inside = target.pos + 1
     const revealed = new Set(collapsedItemsHiding(view.state, inside))

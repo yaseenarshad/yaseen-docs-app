@@ -53,7 +53,6 @@ import { gestureAction } from '@shared/keys'
 import { rowShortcuts } from '../noteKeys'
 import { openCellNote, canOpenCellNote } from '../table/cellNoteCard'
 import { cellNoteAround } from '../table/cellNotes'
-import { wikilinkKey } from '../wikilink/wikilinkPlugin'
 import { ancestorItemPositions, cellPosAround, innermostItemPos, isListItem, itemLabelText } from './listNodes'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
@@ -100,8 +99,6 @@ interface ZoomState {
   undoLevel: ZoomLevel | undefined
   /** How many level changes (zoom transactions) this state has seen: a mapped position is no level change (YAZ-3662 F6b). */
   changes: number
-  /** How many link index refreshes (`wikilinkKey` metas) this state has seen: the crumbs' `linkText` reads the index (5A-4). */
-  links: number
 }
 
 /** A zoom level: position of the zoomed list_item, or `null` = zoomed out. Also the plugin's transaction meta. */
@@ -132,9 +129,6 @@ export const canZoomInto = (doc: ProseNode, itemPos: number): boolean => {
   const $pos = doc.resolve(itemPos)
   return cellPosAround($pos) === null && cellNoteAround($pos) === null
 }
-
-/** How many times the zoom built its decorations: a test proves that a caret move builds none (YAZ-3818). */
-export const zoomDecorationBuilds = { runs: 0 }
 
 /** Position of the zoomed list_item (null when not zoomed or when the plugin is absent). */
 export const getZoomedItemPos = (state: EditorState): number | null => pluginKey.getState(state)?.itemPos ?? null
@@ -382,12 +376,6 @@ const buildDecorations = (state: EditorState, itemPos: number, title: string, li
   return decorations
 }
 
-/**
- * The decorations of a doc at its level, title and link index (YAZ-3818): a caret move or a fold builds none; a link
- * index refresh builds them again (5A-4). Per doc, so per editor.
- */
-const builtSets = new WeakMap<ProseNode, { itemPos: number; title: string; links: number; set: DecorationSet }>()
-
 /** The list_item whose bullet glyph (`.label-wrapper`) received `event`, or null. */
 const itemPosFromGlyphClick = (view: EditorView, event: MouseEvent): number | null => {
   const target = event.target
@@ -414,11 +402,9 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
             const key = pendingStartKey
             pendingStartKey = null
             const start = key === null ? null : itemPosForZoomKey(state.doc, key)
-            return { itemPos: start !== null && canZoomInto(state.doc, start) ? start : null, onZoom, onOpen, hotkeys, linkText, undoLevel: undefined, changes: 0, links: 0 }
+            return { itemPos: start !== null && canZoomInto(state.doc, start) ? start : null, onZoom, onOpen, hotkeys, linkText, undoLevel: undefined, changes: 0 }
           },
           apply: (transaction, previous, _oldState, newState) => {
-            // A link index refresh is meta-only: the doc stays, but a crumb's link text may change (YAZ-3818 5A-4).
-            if (transaction.getMeta(wikilinkKey) !== undefined) previous = { ...previous, links: previous.links + 1 }
             const meta: ZoomLevel | undefined = transaction.getMeta(pluginKey)
             if (meta !== undefined) {
               // ⌘Z-revertible while it is the latest view action; the revert itself consumes it.
@@ -493,18 +479,9 @@ export const createOutlineZoom = ({ title, startKey = null, onZoom, onOpen, link
         },
         props: {
           decorations: (state) => {
-            const zoom = pluginKey.getState(state)
-            const itemPos = zoom?.itemPos ?? null
+            const itemPos = getZoomedItemPos(state)
             if (itemPos === null) return DecorationSet.empty
-            const name = title()
-            const links = zoom!.links
-            let built = builtSets.get(state.doc)
-            if (built === undefined || built.itemPos !== itemPos || built.title !== name || built.links !== links) {
-              zoomDecorationBuilds.runs++
-              built = { itemPos, title: name, links, set: DecorationSet.create(state.doc, buildDecorations(state, itemPos, name, linkText)) }
-              builtSets.set(state.doc, built)
-            }
-            return built.set
+            return DecorationSet.create(state.doc, buildDecorations(state, itemPos, title(), linkText))
           },
           handleDOMEvents: {
             click: (view, event) => {

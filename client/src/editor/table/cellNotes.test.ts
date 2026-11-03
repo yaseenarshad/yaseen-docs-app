@@ -11,7 +11,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import tableCss from './table.css?inline'
 import { getMarkdownForSave } from '../createCrepe'
 import { mount, unmountAll } from '../marks/markTestKit'
-import { addCellNote, CELL_NOTE_CELL_CLASS, cellNoteCrumbParts, cellNoteLabelsIn, cellNoteOf, cellNotePlacements, isCellNoteHidden, nextCellNoteLabel, notePosOf, removeCellNote } from './cellNotes'
+import { addCellNote, CELL_NOTE_CELL_CLASS, cellNoteNameParts, cellNoteLabelsIn, cellNoteOf, cellNotePlacements, isCellNoteHidden, nextCellNoteLabel, notePosOf, removeCellNote } from './cellNotes'
 import { cellPos } from './tableTestKit'
 
 afterEach(unmountAll)
@@ -111,21 +111,21 @@ describe('the file form (D4)', () => {
 })
 
 describe('the helpers', () => {
-  it('cellNoteLabelsIn, cellNoteOf and cellNoteCrumbParts read the marks', async () => {
+  it('cellNoteLabelsIn, cellNoteOf and cellNoteNameParts read the marks', async () => {
     const { view } = await mount(NOTES)
     const { doc } = view.state
     expect(cellNoteLabelsIn(tableOf(view).node)).toEqual(['cell-1', 'cell-2'])
     expect(cellNoteOf(doc, cellPos(view, 1, 1))).toBe('cell-1')
     expect(cellNoteOf(doc, cellPos(view, 2, 1))).toBe('cell-2')
     expect(cellNoteOf(doc, cellPos(view, 1, 0))).toBeNull()
-    expect(cellNoteCrumbParts(doc, 'cell-2')).toEqual({ column: 'Plan', row: 'Tuesday' })
-    expect(cellNoteCrumbParts(doc, 'cell-9')).toEqual({ column: '', row: '' })
+    expect(cellNoteNameParts(doc, 'cell-2')).toEqual({ column: 'Plan', row: 'Tuesday' })
+    expect(cellNoteNameParts(doc, 'cell-9')).toEqual({ column: '', row: '' })
   })
 
-  it('cellNoteCrumbParts reads a cell\'s bullets with spaces, and gives no row for a header cell (5A-16)', async () => {
+  it('cellNoteNameParts reads a cell\'s bullets with spaces, and gives no row for a header cell (5A-16)', async () => {
     const { view } = await mount('| Day | Plan[^cell-3] |\n| --- | --- |\n| <ul><li>Museum</li><li>Park</li></ul> | x[^cell-4] |\n\n[^cell-3]: a\n\n[^cell-4]: b\n')
-    expect(cellNoteCrumbParts(view.state.doc, 'cell-4')).toEqual({ column: 'Plan', row: 'Museum Park' })
-    expect(cellNoteCrumbParts(view.state.doc, 'cell-3')).toEqual({ column: 'Plan', row: '' })
+    expect(cellNoteNameParts(view.state.doc, 'cell-4')).toEqual({ column: 'Plan', row: 'Museum Park' })
+    expect(cellNoteNameParts(view.state.doc, 'cell-3')).toEqual({ column: 'Plan', row: '' })
   })
 
   it('nextCellNoteLabel is the smallest free `cell-N`', async () => {

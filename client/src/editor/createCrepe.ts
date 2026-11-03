@@ -882,7 +882,7 @@ export function getZoomLabelOf(crepe: Crepe): string | null {
 export function zoomPageTo(crepe: Crepe, key: string | null): boolean {
   return crepe.editor.action((ctx) => {
     const view = ctx.get(editorViewCtx)
-    return zoomToKey(key)(view.state, view.dispatch, view)
+    return zoomToKey(key)(view.state, view.dispatch)
   })
 }
 

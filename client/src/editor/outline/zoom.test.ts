@@ -681,7 +681,6 @@ describe('the crumbs and the labels name a bullet\'s links as the note shows the
     expect(getZoomKeyOf(crepe)).not.toContain('AR v2 plan')
   })
 
-  // A cell note is no page since the YAZ-3818 demo (it opens as a card): the bullet's page alone.
   it('a link renamed while zoomed: the crumb shows the new title (YAZ-3818 5A-4)', async () => {
     const wikilinks = createWikilinkResolveSource()
     wikilinks.update((target) => (target === ID ? '/v/AR v2 plan.md' : null))
