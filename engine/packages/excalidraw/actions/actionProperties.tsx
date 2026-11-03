@@ -48,12 +48,8 @@ import {
   DEFAULT_TEXT_HIGHLIGHT,
   getTextRangeColor,
   getTextRangeHighlight,
-  getTextRunInsertStyle,
   isNonDeletedElement,
-  isTextRangeStyled,
   remapTextRunsForTextEdit,
-  setTextRunColor,
-  setTextRunFlag,
   setTextRunHighlight,
   TEXT_HIGHLIGHT_FILLS,
 } from "@excalidraw/element";
@@ -201,12 +197,6 @@ import {
   withCaretPositionPreservation,
   restoreCaretPosition,
 } from "../hooks/useTextEditorFocus";
-
-import {
-  getPendingTextStyle,
-  setPendingTextStyle,
-} from "../wysiwyg/pendingTextStyle";
-import { editEditableText } from "../wysiwyg/editableEdit";
 
 import { getShortcutKey } from "../shortcut";
 
@@ -388,78 +378,18 @@ export const changeFontSize = (
 // -----------------------------------------------------------------------------
 
 /**
- * YAZ-3718 D10: in the editor, a text color colors only the selected letters,
- * and with only a caret the next typed letters. A selected box gets the color
- * on all its text, so its runs lose their colors.
+ * A text box gets the color on all its text, so its runs lose their colors
+ * (YAZ-4277 D8: letters are colored in the box editor's pop-up toolbar).
  */
-const changeTextColor = (
-  element: ExcalidrawTextElement,
-  appState: AppState,
-  color: string,
-) => {
-  const editable =
-    element.id === appState.editingTextElement?.id
-      ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-      : null;
-  // the box color needs no run color
-  const runColor = color === element.strokeColor ? undefined : color;
-  if (!editable) {
-    return newElementWith(element, {
-      strokeColor: color,
-      textRuns: clearTextRunStyle(
-        element.textRuns,
-        element.originalText.length,
-        "color",
-      ),
-    });
-  }
-  if (editable.selectionStart === editable.selectionEnd) {
-    setPendingTextStyle(editable, { color: runColor ?? null });
-    return element;
-  }
-  return newElementWith(element, {
-    textRuns: setTextRunColor(
+const changeTextColor = (element: ExcalidrawTextElement, color: string) =>
+  newElementWith(element, {
+    strokeColor: color,
+    textRuns: clearTextRunStyle(
       element.textRuns,
-      editable.value.length,
-      editable.selectionStart,
-      editable.selectionEnd,
-      runColor,
+      element.originalText.length,
+      "color",
     ),
   });
-};
-
-/**
- * YAZ-4101 3D: the Text color in the editor shows the selected letters' color,
- * null (mixed) when they have several, and with only a caret the color the
- * next typed letter gets. Undefined: no text editor is open.
- */
-const getEditorTextColor = (app: AppClassProperties) => {
-  const editing = app.state.editingTextElement;
-  const editable = editing
-    ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-    : null;
-  if (!editing || !editable) {
-    return undefined;
-  }
-  const element = app.scene.getElement(editing.id) ?? editing;
-  if (!isTextElement(element)) {
-    return element.strokeColor;
-  }
-  const pending =
-    editable.selectionStart === editable.selectionEnd
-      ? getPendingTextStyle(editable)?.color
-      : undefined;
-  const color =
-    pending !== undefined
-      ? pending ?? undefined
-      : getTextRangeColor(
-          element.textRuns,
-          editable.value,
-          editable.selectionStart,
-          editable.selectionEnd,
-        );
-  return color === null ? null : color ?? element.strokeColor;
-};
 
 /** YAZ-3943 demo 2: the text toolbar's three fixed colors (black is the box default), and the ▾'s two. */
 const TEXT_TOOLBAR_COLOR_PICKS = [
@@ -526,11 +456,7 @@ export const actionChangeStrokeColor = register<
               return el;
             }
             if (isTextElement(el)) {
-              return changeTextColor(
-                el,
-                appState,
-                value.currentItemStrokeColor,
-              );
+              return changeTextColor(el, value.currentItemStrokeColor);
             }
             // First activation of an image border: size the width relative
             // to the image (GRO-1545). Re-coloring a visible border keeps it.
@@ -570,11 +496,8 @@ export const actionChangeStrokeColor = register<
     const targetElements = getTargetElements(elements, appState);
     const hasExclusiveTextTarget =
       targetElements.length > 0 && targetElements.every(isTextElement);
-    // YAZ-4101 3D: the letters' color in the editor; a selected box with
-    // letters of several colors shows mixed too
-    const editorColor = appState.editingTextElement
-      ? getEditorTextColor(app)
-      : hasExclusiveTextTarget
+    // YAZ-4101 3D: a box with letters of several colors shows mixed
+    const editorColor = hasExclusiveTextTarget
       ? getTextBoxesColor(targetElements as ExcalidrawTextElement[])
       : undefined;
     // YAZ-3943 demo 2: the text toolbar has three fixed colors and a ▾ with
@@ -2044,42 +1967,6 @@ const getWholeTextStyle = (
     ? { textDecoration: enabled ? "underline" : "none" }
     : { strikethrough: enabled };
 
-/**
- * YAZ-3718 D10: in the editor, a style changes only the selected letters, and
- * with only a caret the next typed letters get it. The whole-box flag first
- * becomes a run over all the text, so a part can lose it. Null: no change.
- */
-const setSelectedTextStyle = (
-  element: ExcalidrawTextElement,
-  property: BooleanTextStyleProperty,
-  enabled: boolean,
-  editable: HTMLTextAreaElement,
-): ElementUpdate<ExcalidrawTextElement> | null => {
-  const { value: text, selectionStart, selectionEnd } = editable;
-  const flag = TEXT_RUN_FLAG_OF[property];
-  const whole = isWholeTextStyled(element, property);
-  if (selectionStart === selectionEnd) {
-    setPendingTextStyle(editable, { [flag]: enabled });
-    if (!whole) {
-      return null;
-    }
-  }
-  const runs = whole
-    ? setTextRunFlag(element.textRuns, text.length, 0, text.length, flag, true)
-    : element.textRuns;
-  return {
-    ...getWholeTextStyle(property, false),
-    textRuns: setTextRunFlag(
-      runs,
-      text.length,
-      selectionStart,
-      selectionEnd,
-      flag,
-      enabled,
-    ),
-  };
-};
-
 const getTextStyle = (
   element: ExcalidrawElement,
   property: TextStyleChange["property"],
@@ -2095,38 +1982,9 @@ const getTextStyle = (
   if (!textElement) {
     return false;
   }
-  const editable =
-    app.state.editingTextElement?.id === textElement.id
-      ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-      : null;
-  if (property !== "listMode") {
-    const whole = isWholeTextStyled(textElement, property);
-    if (!editable || whole) {
-      return whole;
-    }
-    const flag = TEXT_RUN_FLAG_OF[property];
-    // a caret shows the style the next typed letter gets
-    return editable.selectionStart === editable.selectionEnd
-      ? getPendingTextStyle(editable)?.[flag] ??
-          getTextRunInsertStyle(
-            textElement.textRuns,
-            editable.value,
-            editable.selectionStart,
-          )[flag] === true
-      : isTextRangeStyled(
-          textElement.textRuns,
-          editable.selectionStart,
-          editable.selectionEnd,
-          flag,
-        );
-  }
-
-  return editable
-    ? getTextListMode(
-        editable.value,
-        editable.selectionStart,
-        editable.selectionEnd,
-      )
+  // YAZ-4277 D8: the whole box; letters are styled in the box editor
+  return property !== "listMode"
+    ? isWholeTextStyled(textElement, property)
     : getTextListMode(textElement.originalText);
 };
 
@@ -2136,39 +1994,6 @@ const changeTextStyle = (
   value: TextStyleChange,
   app: AppClassProperties,
 ) => {
-  const editable = appState.editingTextElement
-    ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-    : null;
-  const editableList = editable
-    ? value.property === "listMode"
-      ? setTextListMode(
-          editable.value,
-          editable.selectionStart,
-          editable.selectionEnd,
-          value.mode,
-        )
-      : null
-    : null;
-  const editableSelection = editable
-    ? {
-        start: editable.selectionStart,
-        end: editable.selectionEnd,
-      }
-    : null;
-  // YAZ-4071 7M: in the editor, the markers go in through the editor's own
-  // edit, so ⌘Z takes them back in one step. Its input event sets the box's
-  // text and moves the runs line by line (YAZ-4071 7C).
-  if (editable && editableList) {
-    editable.focus();
-    editEditableText(
-      editable,
-      editableList.text,
-      editableList.selectionStart,
-      editableList.selectionEnd,
-      true,
-    );
-  }
-
   const updatedElements = changeProperty(
     elements,
     appState,
@@ -2177,18 +2002,14 @@ const changeTextStyle = (
         return element;
       }
       if (value.property === "listMode") {
-        // the box in the editor has its markers and runs already (above)
-        const box =
-          editableList && element.id === appState.editingTextElement?.id
-            ? (app.scene.getElement(element.id) as ExcalidrawTextElement)
-            : element;
+        const box = element;
         const listChange = setTextListMode(
           box.originalText,
           0,
           box.originalText.length,
           value.mode,
         );
-        const text = box === element ? listChange.text : box.originalText;
+        const text = listChange.text;
         let nextElement: ExcalidrawTextElement = newElementWith(box, {
           originalText: text,
           text,
@@ -2211,27 +2032,16 @@ const changeTextStyle = (
         nextElement = offsetElementAfterFontResize(box, nextElement, app.scene);
         return nextElement;
       }
-      // YAZ-3718 D10: the editor styles the selected letters, a selected box
-      // styles all its text and drops that style from its runs
-      const styles =
-        editable && element.id === appState.editingTextElement?.id
-          ? setSelectedTextStyle(
-              element,
-              value.property,
-              value.enabled,
-              editable,
-            )
-          : {
-              ...getWholeTextStyle(value.property, value.enabled),
-              textRuns: clearTextRunStyle(
-                element.textRuns,
-                element.originalText.length,
-                TEXT_RUN_FLAG_OF[value.property],
-              ),
-            };
-      if (!styles) {
-        return element;
-      }
+      // a box styles all its text and drops that style from its runs
+      // (YAZ-4277 D8: letters are styled in the box editor)
+      const styles: ElementUpdate<ExcalidrawTextElement> = {
+        ...getWholeTextStyle(value.property, value.enabled),
+        textRuns: clearTextRunStyle(
+          element.textRuns,
+          element.originalText.length,
+          TEXT_RUN_FLAG_OF[value.property],
+        ),
+      };
       // bold and italic change the letter widths
       if (value.property === "fontWeight" || value.property === "fontStyle") {
         let nextElement: ExcalidrawTextElement = newElementWith(
@@ -2255,21 +2065,6 @@ const changeTextStyle = (
     },
     true,
   );
-
-  if (editable && editableSelection && value.property !== "listMode") {
-    editable.setSelectionRange(editableSelection.start, editableSelection.end);
-    editable.focus();
-    queueMicrotask(() => {
-      if (editable.isConnected) {
-        editable.setSelectionRange(
-          editableSelection.start,
-          editableSelection.end,
-        );
-        editable.focus();
-      }
-    });
-    restoreCaretPosition(editableSelection);
-  }
 
   return {
     elements: updatedElements,
@@ -2529,94 +2324,47 @@ const changeTextHighlight = (
   highlight: string | undefined,
   app: AppClassProperties,
 ) => {
-  const editing = appState.editingTextElement;
-  const editable = editing
-    ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-    : null;
-  if (!editing) {
-    return {
-      elements: changeProperty(
-        elements,
-        appState,
-        (element) =>
-          isTextElement(element)
-            ? newElementWith(element, {
-                textRuns: setTextRunHighlight(
-                  element.textRuns,
-                  element.originalText.length,
-                  0,
-                  element.originalText.length,
-                  highlight,
-                ),
-              })
-            : element,
-        true,
-      ),
-      appState,
-      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-    };
-  }
-  if (!editable) {
-    return false;
-  }
-  const start = editable.selectionStart;
-  const end = editable.selectionEnd;
-  if (start === end) {
-    setPendingTextStyle(editable, { highlight: highlight ?? null });
-    return { appState, captureUpdate: CaptureUpdateAction.EVENTUALLY };
-  }
-  const updatedElements = changeProperty(
-    elements,
-    appState,
-    (element) =>
-      isTextElement(element) && element.id === editing.id
-        ? newElementWith(element, {
-            textRuns: setTextRunHighlight(
-              element.textRuns,
-              editable.value.length,
-              start,
-              end,
-              highlight,
-            ),
-          })
-        : element,
-    true,
-  );
-  editable.setSelectionRange(start, end);
-  editable.focus();
-  restoreCaretPosition({ start, end });
   return {
-    elements: updatedElements,
+    elements: changeProperty(
+      elements,
+      appState,
+      (element) =>
+        isTextElement(element)
+          ? newElementWith(element, {
+              textRuns: setTextRunHighlight(
+                element.textRuns,
+                element.originalText.length,
+                0,
+                element.originalText.length,
+                highlight,
+              ),
+            })
+          : element,
+      true,
+    ),
     appState,
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   };
 };
 
-/** YAZ-4102 3E: the highlight of the editor's selected letters, or of its caret. */
-const getEditorTextHighlight = (app: AppClassProperties) => {
-  const editing = app.state.editingTextElement;
-  const editable = editing
-    ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-    : null;
-  const element = editing ? app.scene.getElement(editing.id) : null;
-  if (!editable || !element || !isTextElement(element)) {
-    return undefined;
-  }
-  if (editable.selectionStart !== editable.selectionEnd) {
-    return getTextRangeHighlight(
-      element.textRuns,
-      editable.selectionStart,
-      editable.selectionEnd,
-    );
-  }
-  const pending = getPendingTextStyle(editable)?.highlight;
-  return pending !== undefined
-    ? pending ?? undefined
-    : getTextRunInsertStyle(
-        element.textRuns,
-        editable.value,
-        editable.selectionStart,
-      ).highlight;
+/** The one highlight of every letter of the boxes the action changes, if they share one. */
+const getBoxesHighlight = (
+  elements: readonly ExcalidrawElement[],
+  appState: AppState,
+) => {
+  const boxes = (
+    appState.editingTextElement
+      ? [appState.editingTextElement]
+      : getSelectedElements(elements, appState, {
+          includeBoundTextElement: true,
+        })
+  ).filter(isTextElement);
+  const highlights = new Set(
+    boxes.map((box) =>
+      getTextRangeHighlight(box.textRuns, 0, box.originalText.length),
+    ),
+  );
+  return highlights.size === 1 ? [...highlights][0] : undefined;
 };
 
 /** YAZ-4102 3E: ⌘⇧H toggles the default highlight (yellow), as in notes. */
@@ -2628,7 +2376,7 @@ export const actionToggleTextHighlight = register({
     changeTextHighlight(
       elements,
       appState,
-      getEditorTextHighlight(app) === DEFAULT_TEXT_HIGHLIGHT
+      getBoxesHighlight(elements, appState) === DEFAULT_TEXT_HIGHLIGHT
         ? undefined
         : DEFAULT_TEXT_HIGHLIGHT,
       app,
@@ -2672,11 +2420,7 @@ export const actionChangeTextHighlight = register<string | null>({
         getTextRangeHighlight(box.textRuns, 0, box.originalText.length),
       ),
     );
-    const current = appState.editingTextElement
-      ? getEditorTextHighlight(app)
-      : highlights.size === 1
-      ? [...highlights][0]
-      : undefined;
+    const current = highlights.size === 1 ? [...highlights][0] : undefined;
     const names = Object.keys(TEXT_HIGHLIGHT_FILLS);
     // YAZ-3943 demo 2: the text toolbar's highlight is a color group like
     // Text color: yellow, green, blue, then a ▾ with pink, None and Custom…

@@ -838,11 +838,13 @@ export type HostTextEditor = {
     textRuns: ExcalidrawTextElement["textRuns"];
     /** The selection at start. */
     selection: HostTextSelection;
-    /** YAZ-4277 1B: the text and its letter styles, as the box saves them. */
+    /** YAZ-4277 1B: the text, its letter styles as the box saves them, and the selection after the edit. */
     onChange: (
       text: string,
       textRuns: ExcalidrawTextElement["textRuns"],
+      selection: HostTextSelection,
     ) => void;
+    /** The selection moved, and the text did not change. */
     onSelectionChange: (selection: HostTextSelection) => void;
   }) => HostTextEditorSession;
 };
@@ -852,6 +854,11 @@ export type HostTextSelection = { anchor: number; head: number };
 export type HostTextEditorSession = {
   /** A click or a drag on the box put the selection. */
   setSelection: (selection: HostTextSelection) => void;
+  /**
+   * Puts `text` in place of `start`..`end` as one edit, the caret after it
+   * (a picked `[[link]]`, a pasted page path). Offsets in `originalText`.
+   */
+  replaceText: (start: number, end: number, text: string) => void;
   focus: () => void;
   destroy: () => void;
 };

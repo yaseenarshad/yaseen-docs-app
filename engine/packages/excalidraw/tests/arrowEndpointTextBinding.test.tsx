@@ -671,7 +671,7 @@ describe("binding text to an arrow endpoint", () => {
   });
 
   describe("history", () => {
-    // generic text-creation history behaviour lives in textWysiwyg.test.tsx;
+    // generic text-creation history behaviour lives in textEditing.test.tsx;
     // these cover what the endpoint binding adds on top
     it("removes the text and its binding in a single undo", async () => {
       UI.createElement("arrow", { x: 100, y: 300, width: 0, height: -200 });

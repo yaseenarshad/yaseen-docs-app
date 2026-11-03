@@ -41,10 +41,6 @@ body.excalidraw-cursor-resize * {
     Roboto, Helvetica, Arial, sans-serif;
   font-family: var(--ui-font);
 
-  .excalidraw-wysiwyg-visual-selection::selection {
-    background: transparent;
-  }
-
   .excalidraw-wysiwyg-selection {
     background: color-mix(in srgb, var(--color-selection) 35%, transparent);
   }
@@ -1589,7 +1585,7 @@ body.excalidraw-cursor-resize * {
   }
 
   input[type="text"],
-  textarea:not(.excalidraw-wysiwyg) {
+  textarea {
     color: var(--text-primary-color);
     border: 1.5px solid var(--input-border-color);
     padding: 0.75rem;

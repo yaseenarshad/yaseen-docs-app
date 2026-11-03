@@ -20,6 +20,7 @@ import { createCrepe } from '../editor/createCrepe'
 import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
 import { HIDDEN_IN_CELL } from '../editor/slashMenu'
+import { storage } from '../lib/storage'
 import type { ExcalidrawModule } from './engine'
 import { boxToDoc, docToBox, offsetAt, posAt, type BoxHelpers, type TextRuns } from './textBoxDoc'
 import { lockToTextBox } from './textBoxLock'
@@ -74,20 +75,21 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
                 const { doc, selection: sel } = view.state
                 const anchor = offsetAt(doc, sel.anchor, helpers)
                 const head = offsetAt(doc, sel.head, helpers)
-                // the selection first: a caret move alone costs no walk of the document
-                if (anchor !== reported.anchor || head !== reported.head) onSelectionChange({ anchor, head })
                 let next = { text: reported.text, textRuns: reported.textRuns }
-                if (doc !== prev.doc) {
-                  next = docToBox(doc, { text: reported.text, textRuns: reported.textRuns, caret: Math.max(anchor, head) }, helpers)
-                  if (next.text !== reported.text || !sameRuns(next.textRuns, reported.textRuns)) onChange(next.text, next.textRuns)
-                }
+                // a caret move alone costs no walk of the document
+                if (doc !== prev.doc) next = docToBox(doc, { text: reported.text, textRuns: reported.textRuns, caret: Math.max(anchor, head) }, helpers)
+                const changed = next.text !== reported.text || !sameRuns(next.textRuns, reported.textRuns)
+                const moved = anchor !== reported.anchor || head !== reported.head
                 reported = { ...next, anchor, head }
+                if (changed) onChange(next.text, next.textRuns, { anchor, head })
+                else if (moved) onSelectionChange({ anchor, head })
               },
             }),
           }),
       )
 
-      const crepe = createCrepe({ root, defaultValue: '', features: textBoxFeatures, hidden: TEXT_BOX_HIDDEN })
+      // the note keys as the user set them (YAZ-3564 K4), read as a note reads them: once, as the edit opens
+      const crepe = createCrepe({ root, defaultValue: '', features: textBoxFeatures, hidden: TEXT_BOX_HIDDEN, hotkeys: storage.getSettings()?.hotkeys })
       lockToTextBox(crepe)
       crepe.editor.use(endKeys).use(report)
 
@@ -121,6 +123,14 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
       })
 
       return {
+        replaceText(start, end, text) {
+          if (!isReady || destroyed) return
+          const view = crepe.editor.ctx.get(editorViewCtx)
+          const { doc } = view.state
+          const from = posAt(doc, start, helpers)
+          const to = posAt(doc, end, helpers)
+          view.dispatch(text ? view.state.tr.insertText(text, from, to) : view.state.tr.delete(from, to))
+        },
         setSelection(sel) {
           pending = sel
           if (isReady && !destroyed) select(sel)

@@ -27,9 +27,9 @@ import {
 import { extendListItemSchemaForTask, insertTableInputRule } from '@milkdown/kit/preset/gfm'
 import { Fragment, type Node as ProseNode, type Schema, Slice } from '@milkdown/kit/prose/model'
 import { InputRule } from '@milkdown/kit/prose/inputrules'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { type Command, Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import { canJoin } from '@milkdown/kit/prose/transform'
-import { $inputRule, $markSchema, $pasteRule, $prose } from '@milkdown/kit/utils'
+import { $inputRule, $markSchema, $pasteRule, $prose, $shortcut } from '@milkdown/kit/utils'
 
 /** The marks a box draws (`textBoxDoc.ts` maps each to a run style). */
 export const BOX_MARKS = new Set(['strong', 'emphasis', 'underline', 'strike_through', 'highlight', 'text_color'])
@@ -198,6 +198,38 @@ const plainLineChecklist = $inputRule(
     }),
 )
 
+/**
+ * Tab / Shift-Tab on plain lines (YAZ-4277 1D, the textarea's rule): 4 spaces at the start of each line the selection
+ * covers, or up to 4 taken away. In a bullet the note's outliner indents the bullet (its keys run first).
+ */
+const plainLineIndent = (direction: 1 | -1): Command => (state, dispatch) => {
+  const { from, to } = state.selection
+  const lines: Array<{ pos: number; lead: number }> = []
+  let inList = false
+  state.doc.nodesBetween(from, to, (node, pos, parent) => {
+    if (node.type.name === 'list_item') inList = true
+    if (!node.isTextblock) return true
+    if (parent?.type.name === 'doc') lines.push({ pos: pos + 1, lead: /^ {0,4}/.exec(node.textContent)![0].length })
+    return false
+  })
+  if (inList || lines.length === 0) return false
+  if (dispatch) {
+    const tr = state.tr
+    for (const { pos, lead } of lines.reverse()) {
+      if (direction > 0) tr.insertText('    ', pos)
+      else if (lead > 0) tr.delete(pos, pos + lead)
+    }
+    dispatch(tr.setSelection(TextSelection.create(tr.doc, tr.mapping.map(from), tr.mapping.map(to))).scrollIntoView())
+  }
+  return true
+}
+
+// before the note's Tab keys, which take Tab on a plain line too; in a bullet they decline, and the outliner runs
+const boxKeys = $shortcut(() => ({
+  PlainLineIndent: { key: 'Tab', priority: 150, onRun: () => plainLineIndent(1) },
+  PlainLineOutdent: { key: 'Shift-Tab', priority: 150, onRun: () => plainLineIndent(-1) },
+}))
+
 /** Locks a Crepe made by `createCrepe({ features: textBoxFeatures })` to a box, BEFORE `create()`. */
 export function lockToTextBox(crepe: Crepe): void {
   for (const rule of [
@@ -218,6 +250,7 @@ export function lockToTextBox(crepe: Crepe): void {
     .use(extendListItemSchemaForTask.extendSchema((prev) => (ctx) => ({ ...prev(ctx), content: 'paragraph bullet_list?' })))
     .use(textColorSchema)
     .use(plainLineChecklist)
+    .use(boxKeys)
     .use(boxPaste)
     .use(boxBlocks)
 }

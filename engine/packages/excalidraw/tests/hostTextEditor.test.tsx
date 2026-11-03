@@ -53,6 +53,7 @@ const textEditor: HostTextEditor = {
     options.root.appendChild(input);
     const session = {
       setSelection: vi.fn<(s: HostTextSelection) => void>(),
+      replaceText: vi.fn<(start: number, end: number, text: string) => void>(),
       focus: () => input.focus(),
       destroy: vi.fn<() => void>(),
     };
@@ -125,7 +126,12 @@ describe("the host text editor (textEditor)", () => {
 
   it("edits the box and keeps the text when Escape ends the edit", async () => {
     await startEdit();
-    act(() => last().onChange("Our main Moat:\n• one\n• two", undefined));
+    act(() =>
+      last().onChange("Our main Moat:\n• one\n• two", undefined, {
+        anchor: 0,
+        head: 0,
+      }),
+    );
     expect(box().originalText).toBe("Our main Moat:\n• one\n• two");
 
     fireEvent.keyDown(last().input, { key: KEYS.ESCAPE });
@@ -156,7 +162,10 @@ describe("the host text editor (textEditor)", () => {
     await waitFor(() => expect(mounted.length).toBe(1));
     expect(last().textRuns).toEqual([{ start: 0, end: 4, bold: true }]);
     act(() =>
-      last().onChange("bold here", [{ start: 5, end: 9, italic: true }]),
+      last().onChange("bold here", [{ start: 5, end: 9, italic: true }], {
+        anchor: 9,
+        head: 9,
+      }),
     );
     expect(box().textRuns).toEqual([{ start: 5, end: 9, italic: true }]);
   });
@@ -171,7 +180,7 @@ describe("the host text editor (textEditor)", () => {
     await startEdit();
     await nextFrame();
     expect(document.activeElement).toBe(last().input);
-    act(() => last().onChange("changed", undefined));
+    act(() => last().onChange("changed", undefined, { anchor: 0, head: 0 }));
 
     const outside = document.createElement("button");
     document.body.appendChild(outside);
@@ -196,7 +205,7 @@ describe("the host text editor (textEditor)", () => {
 
   it("deletes an empty box when the edit ends", async () => {
     await startEdit("x");
-    act(() => last().onChange("", undefined));
+    act(() => last().onChange("", undefined, { anchor: 0, head: 0 }));
     fireEvent.keyDown(last().input, { key: KEYS.ESCAPE });
     expect(box().isDeleted).toBe(true);
   });

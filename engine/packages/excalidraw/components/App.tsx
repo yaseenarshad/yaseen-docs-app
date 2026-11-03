@@ -479,7 +479,6 @@ import { LASER_STREAMLINE, LaserTrails } from "../laserTrails";
 import { withBatchedUpdates, withBatchedUpdatesThrottled } from "../reactUtils";
 import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
 import { hostTextWysiwyg } from "../wysiwyg/hostTextWysiwyg";
-import { textWysiwyg } from "../wysiwyg/textWysiwyg";
 import { getPlainPasteText, parseStyledHtml } from "../wysiwyg/styledClipboard";
 import { isOverScrollBars } from "../scene/scrollbars";
 import { isMaybeMermaidDefinition } from "../mermaid";
@@ -839,7 +838,7 @@ class App extends React.Component<AppProps, AppState> {
   });
 
   bindModeHandler: ReturnType<typeof setTimeout> | null = null;
-  private textWysiwygSubmitHandler: ReturnType<typeof textWysiwyg> | null =
+  private textWysiwygSubmitHandler: ReturnType<typeof hostTextWysiwyg> | null =
     null;
 
   hitLinkElement?: NonDeletedExcalidrawElement;
@@ -2589,11 +2588,6 @@ class App extends React.Component<AppProps, AppState> {
       scrollY: this.state.scrollY,
       height: this.state.height,
       width: this.state.width,
-      // YAZ-4277 D1: the host's editor is invisible, so the canvas keeps
-      // drawing the box in edit
-      editingTextElement: this.props.textEditor
-        ? null
-        : this.state.editingTextElement,
       newElement: this.state.newElement,
       selectedElements,
       selectedElementsAreBeingDragged:
@@ -3531,7 +3525,7 @@ class App extends React.Component<AppProps, AppState> {
       this.resetEditingFrame(frame && isFrameLikeElement(frame) ? frame : null);
     }
 
-    // textWysiwyg's submit path uses flushSync. Defer until after the current
+    // the text editor's submit path uses flushSync. Defer until after the current
     // componentDidUpdate lifecycle, then submit whichever text-editing session
     // is active if editing is still disabled.
     queueMicrotask(() => {
@@ -7099,6 +7093,18 @@ class App extends React.Component<AppProps, AppState> {
       initialCaretSceneCoords?: { x: number; y: number } | null;
     },
   ) {
+    const { textEditor } = this.props;
+    if (!textEditor) {
+      // YAZ-4277 1D: text edits in the host's editor; a host with none shows
+      // the text and does not edit it (a new text that never got letters goes)
+      if (!element.originalText) {
+        this.scene.mutateElement(element as ExcalidrawTextElement, {
+          isDeleted: true,
+        });
+      }
+      this.setState({ editingTextElement: null });
+      return;
+    }
     const elementsMap = this.scene.getElementsMapIncludingDeleted();
     const startedEmpty = !element.originalText;
 
@@ -7162,11 +7168,8 @@ class App extends React.Component<AppProps, AppState> {
       ]);
     };
 
-    const { textEditor } = this.props;
-    const openEditor: typeof textWysiwyg = textEditor
-      ? (options) => hostTextWysiwyg({ ...options, textEditor })
-      : textWysiwyg;
-    this.textWysiwygSubmitHandler = openEditor({
+    this.textWysiwygSubmitHandler = hostTextWysiwyg({
+      textEditor,
       canvas: this.canvas,
       getViewportCoords: (x, y) => {
         const { x: viewportX, y: viewportY } = sceneCoordsToViewportCoords(

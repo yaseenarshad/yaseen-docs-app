@@ -159,14 +159,7 @@ const ColorPickerPopupContent = ({
 
         // Refocus text editor when popover closes if we were editing text
         if (appState.editingTextElement) {
-          setTimeout(() => {
-            const textEditor = document.querySelector(
-              ".excalidraw-wysiwyg",
-            ) as HTMLTextAreaElement;
-            if (textEditor) {
-              textEditor.focus();
-            }
-          }, 0);
+          restoreCaretPosition();
         }
       }}
     >

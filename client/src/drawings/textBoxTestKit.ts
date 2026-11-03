@@ -29,7 +29,7 @@ export async function mountBox(text: string, textRuns: TextRuns = undefined, sel
   const root = document.createElement('div')
   root.className = 'excalidraw-host-text-editor'
   document.body.appendChild(root)
-  const onChange = vi.fn<(text: string, textRuns: TextRuns) => void>()
+  const onChange = vi.fn<(text: string, textRuns: TextRuns, selection: { anchor: number; head: number }) => void>()
   const onSelectionChange = vi.fn<(s: { anchor: number; head: number }) => void>()
   const session = createTextBoxEditor(helpers).mount({ root, text, textRuns, selection, onChange, onSelectionChange })
   mounts.push({ destroy: session.destroy, root })

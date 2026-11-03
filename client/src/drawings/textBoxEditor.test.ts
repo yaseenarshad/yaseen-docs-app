@@ -89,7 +89,7 @@ describe('textBoxEditor: box ↔ editor with no loss (YAZ-4277 1B)', () => {
     // the end of "1) Automated Pipeline"
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posAt(view.state.doc, 38, helpers))))
     typeText(view, '!')
-    expect(onChange).toHaveBeenLastCalledWith(MOAT.replace('Pipeline', 'Pipeline!'), MOAT_RUNS)
+    expect(onChange).toHaveBeenLastCalledWith(MOAT.replace('Pipeline', 'Pipeline!'), MOAT_RUNS, { anchor: 39, head: 39 })
   })
 
   it('writes a new sub-bullet with the marker of its level', async () => {
@@ -100,25 +100,32 @@ describe('textBoxEditor: box ↔ editor with no loss (YAZ-4277 1B)', () => {
     splitListItem(item)(view.state, view.dispatch)
     sinkListItem(item)(view.state, view.dispatch)
     typeText(view, 'b')
-    expect(onChange).toHaveBeenLastCalledWith('• a\n    ○ b', undefined)
+    expect(onChange).toHaveBeenLastCalledWith('• a\n    ○ b', undefined, { anchor: 11, head: 11 })
   })
 
   it('reports a style change with the same letters', async () => {
     const { view, onChange } = await mountBox('make bold')
     const { state } = view
     view.dispatch(state.tr.addMark(posAt(state.doc, 5, helpers), posAt(state.doc, 9, helpers), state.schema.marks.strong.create()))
-    expect(onChange).toHaveBeenLastCalledWith('make bold', [{ start: 5, end: 9, bold: true }])
+    expect(onChange).toHaveBeenLastCalledWith('make bold', [{ start: 5, end: 9, bold: true }], expect.anything())
   })
 
-  it('reports the selection, as offsets in the box text, before the text', async () => {
+  it('reports an edit with its selection, as offsets in the box text; a caret move alone as a selection', async () => {
     const { view, onChange, onSelectionChange } = await mountBox('ab\n• cd', undefined, { anchor: 7, head: 7 })
-    const calls: string[] = []
-    onChange.mockImplementation(() => calls.push('text'))
-    onSelectionChange.mockImplementation(() => calls.push('selection'))
     typeText(view, 'X')
-    expect(onChange).toHaveBeenLastCalledWith('ab\n• cdX', undefined)
-    expect(onSelectionChange).toHaveBeenLastCalledWith({ anchor: 8, head: 8 })
-    expect(calls).toEqual(['selection', 'text'])
+    expect(onChange).toHaveBeenLastCalledWith('ab\n• cdX', undefined, { anchor: 8, head: 8 })
+    expect(onSelectionChange).not.toHaveBeenCalled()
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1)))
+    expect(onSelectionChange).toHaveBeenLastCalledWith({ anchor: 0, head: 0 })
+  })
+
+  it('puts a text in place of a range as one edit, the caret after it (a picked link)', async () => {
+    const { view, session, onChange } = await mountBox('see [[Gro', undefined, { anchor: 9, head: 9 })
+    session.replaceText(4, 9, '[[YAS-1]]')
+    expect(onChange).toHaveBeenLastCalledWith('see [[YAS-1]]', undefined, { anchor: 13, head: 13 })
+    const { undo } = await import('@milkdown/kit/prose/history')
+    undo(view.state, view.dispatch)
+    expect(onChange).toHaveBeenLastCalledWith('see [[Gro', undefined, expect.anything())
   })
 
   it('starts on the selection it is given, and takes a new one from a click', async () => {

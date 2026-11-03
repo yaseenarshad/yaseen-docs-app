@@ -1145,7 +1145,11 @@ describe("Test Linear Elements", () => {
       createTwoPointerLinearElement("arrow");
       Keyboard.keyPress(KEYS.ENTER);
       const editor = await getTextEditor();
-      expect(editor).toMatchSnapshot();
+      // YAZ-4277 1D: the engine's root over the label: its place, size and zoom
+      expect(
+        (editor.closest(".excalidraw-host-text-editor") as HTMLElement).style
+          .cssText,
+      ).toMatchSnapshot();
     });
 
     it("should bind text to arrow when double clicked", async () => {
