@@ -43,6 +43,9 @@ type InteractiveCanvasProps = {
   scale: number;
   appState: InteractiveCanvasAppState;
   renderScrollbars: boolean;
+  /** YAZ-4277 D5: the open item whose ▾ shows on hover. */
+  foldArrowHover: InteractiveCanvasRenderConfig["foldArrowHover"];
+  foldArrows: InteractiveCanvasRenderConfig["foldArrows"];
   editorInterface: EditorInterface;
   app: AppClassProperties;
   interactionEnabled: boolean;
@@ -160,6 +163,8 @@ const InteractiveCanvas = (props: InteractiveCanvasProps) => {
         remotePointerUserStates,
         selectionColor,
         renderScrollbars: props.renderScrollbars,
+        foldArrowHover: props.foldArrowHover,
+        foldArrows: props.foldArrows,
         // NOTE not memoized on so we don't rerender on cursor move
         lastViewportPosition: props.app.viewport.lastPosition,
       },
@@ -293,6 +298,8 @@ const areEqual = (
     prevProps.visibleElements !== nextProps.visibleElements ||
     prevProps.selectedElements !== nextProps.selectedElements ||
     prevProps.renderScrollbars !== nextProps.renderScrollbars ||
+    prevProps.foldArrowHover !== nextProps.foldArrowHover ||
+    prevProps.foldArrows !== nextProps.foldArrows ||
     prevProps.interactionEnabled !== nextProps.interactionEnabled ||
     prevProps.navigationEnabled !== nextProps.navigationEnabled
   ) {

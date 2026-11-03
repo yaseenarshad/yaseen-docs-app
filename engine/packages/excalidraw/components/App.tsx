@@ -143,6 +143,12 @@ import {
   newTextElement,
   refreshTextDimensions,
   setFoldedLines,
+  DEFAULT_FOLD_ARROW_PREFS,
+  getFoldArrowAt,
+  getFoldArrowSize,
+  getToggledFoldedLines,
+  isLineFolded,
+  setFoldArrowPrefs,
   deepCopyElement,
   duplicateElements,
   hasBoundTextElement,
@@ -283,6 +289,7 @@ import {
   remapTextRunsForTextEdit,
 } from "@excalidraw/element";
 
+import type { FoldArrowHit } from "@excalidraw/element";
 import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
 
 import type {
@@ -832,6 +839,11 @@ class App extends React.Component<AppProps, AppState> {
   hitLinkElement?: NonDeletedExcalidrawElement;
   /** YAZ-4039 D11: the link pill under the pointer, as last reported. */
   private hostLinkHover: HostLinkHit | null = null;
+  /** YAZ-4277 D5: the open item whose ▾ shows on hover. */
+  private foldArrowHover: Readonly<{
+    elementId: ExcalidrawElement["id"];
+    line: number;
+  }> | null = null;
   /** The scene's fonts are loaded: a pill's box can be measured. */
   private hostLinkFontsReady = false;
   /** YAZ-4101 3D: moves when the text editor's selection shows another style. */
@@ -2849,6 +2861,7 @@ class App extends React.Component<AppProps, AppState> {
                               pendingFlowchartNodes:
                                 this.flowchart.pendingNodes,
                               theme: this.state.theme,
+                              foldArrows: this.getFoldArrowPrefs(),
                             }}
                           />
                           {newElementCanvasElement && (
@@ -2891,6 +2904,8 @@ class App extends React.Component<AppProps, AppState> {
                             renderScrollbars={
                               this.props.renderScrollbars === true
                             }
+                            foldArrowHover={this.foldArrowHover}
+                            foldArrows={this.getFoldArrowPrefs()}
                             editorInterface={this.editorInterface}
                             interactionEnabled={this.isInteractionEnabled()}
                             navigationEnabled={this.isNavigationEnabled()}
@@ -3969,6 +3984,8 @@ class App extends React.Component<AppProps, AppState> {
     this.unmounted = false;
     // before the scene loads, so its text boxes lay out with their pills
     this.mountHostLinks();
+    // YAZ-4277 D7: exports read the board's fold arrow size and thickness
+    setFoldArrowPrefs(this.getFoldArrowPrefs());
     this.api = this.createExcalidrawAPI();
     window.addEventListener(
       ANIMATION_RUNTIME_POLICY_EVENT,
@@ -4452,6 +4469,11 @@ class App extends React.Component<AppProps, AppState> {
     // YAZ-4074 6A item 6: GIFs wait while a text box is in edit mode
     if (prevState.editingTextElement !== this.state.editingTextElement) {
       this.gifPlayer.setTyping(this.state.editingTextElement !== null);
+    }
+
+    if (prevProps.foldArrows !== this.props.foldArrows) {
+      setFoldArrowPrefs(this.getFoldArrowPrefs());
+      this.foldArrowHover = null;
     }
 
     if (prevProps.hostLinks !== this.props.hostLinks) {
@@ -8037,6 +8059,11 @@ class App extends React.Component<AppProps, AppState> {
       this.state,
     );
 
+    // YAZ-4277 D5: two quick clicks on a fold arrow fold twice; no edit
+    if (this.getFoldArrowTargetAt({ x: sceneX, y: sceneY })?.onArrow) {
+      return;
+    }
+
     if (selectedElements.length === 1 && isLinearElement(selectedElements[0])) {
       const selectedLinearElement: ExcalidrawLinearElement =
         selectedElements[0];
@@ -8459,6 +8486,99 @@ class App extends React.Component<AppProps, AppState> {
     }
     return changed;
   };
+
+  /** YAZ-4277 D5, D7: the board's fold arrows (the host's `foldArrows`). */
+  public getFoldArrowPrefs = () =>
+    this.props.foldArrows ?? DEFAULT_FOLD_ARROW_PREFS;
+
+  /**
+   * YAZ-4277 D5: the fold arrow, or the rest of an item's line, under a
+   * scene point. The topmost text box wins. A box is looked at only when the
+   * point is near it, so a pointer move costs a bounds check for each box.
+   */
+  private getFoldArrowTargetAt = (
+    scenePointer: Readonly<{ x: number; y: number }>,
+  ): FoldArrowHit | null => {
+    const prefs = this.getFoldArrowPrefs();
+    const zoom = this.state.zoom.value;
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    const elements = this.scene.getNonDeletedElements();
+    for (let index = elements.length - 1; index >= 0; index--) {
+      const element = elements[index];
+      if (
+        !isTextElement(element) ||
+        element.locked ||
+        this.state.editingTextElement?.id === element.id
+      ) {
+        continue;
+      }
+      const reach =
+        getFoldArrowSize(element, prefs, zoom) + element.fontSize * 0.2;
+      const near =
+        element.angle !== 0 ||
+        (scenePointer.y >= element.y - reach &&
+          scenePointer.y <= element.y + element.height + reach &&
+          scenePointer.x >= element.x - reach &&
+          scenePointer.x <= element.x + element.width);
+      if (!near) {
+        continue;
+      }
+      const hit = getFoldArrowAt(
+        element,
+        getTextLayoutMaxWidth(
+          element,
+          getContainerElement(element, elementsMap),
+        ),
+        prefs,
+        zoom,
+        scenePointer,
+      );
+      if (hit) {
+        return hit;
+      }
+    }
+    return null;
+  };
+
+  /**
+   * YAZ-4277 D5: the hovered item's ▾ (in "hover" mode) draws on the
+   * interactive canvas; a change of item renders once, a move inside it
+   * renders nothing. Returns the hit, for the cursor.
+   */
+  private updateFoldArrowHover = (
+    scenePointer: Readonly<{ x: number; y: number }> | null,
+  ) => {
+    const hit =
+      scenePointer &&
+      (this.state.activeTool.type === "selection" ||
+        this.state.activeTool.type === "lasso") &&
+      !this.state.viewModeEnabled
+        ? this.getFoldArrowTargetAt(scenePointer)
+        : null;
+    const element = hit && this.scene.getNonDeletedElement(hit.elementId);
+    const next =
+      hit &&
+      element &&
+      isTextElement(element) &&
+      this.getFoldArrowPrefs().openArrows === "hover" &&
+      !isLineFolded(element, hit.line)
+        ? hit
+        : null;
+    const last = this.foldArrowHover;
+    if (
+      last !== next &&
+      (last?.elementId !== next?.elementId || last?.line !== next?.line)
+    ) {
+      this.foldArrowHover = next && {
+        elementId: next.elementId,
+        line: next.line,
+      };
+      this.triggerRender();
+    }
+    return hit;
+  };
+
+  public getFoldArrowHover = () => this.foldArrowHover;
 
   /** Reports the hovered pill to the host, only when it changed. */
   private setHostLinkHover = (hit: HostLinkHit | null) => {
@@ -9326,6 +9446,12 @@ class App extends React.Component<AppProps, AppState> {
       );
     }
 
+    // YAZ-4277 D5: an open item's ▾ on hover; a fold arrow takes a click
+    if (this.updateFoldArrowHover(scenePointer)?.onArrow) {
+      this.cursor.set(CURSOR_TYPE.POINTER);
+      return;
+    }
+
     const hoveredArrowTextAnchor =
       this.arrowText.updateHoveredAnchor(scenePointer);
 
@@ -9776,6 +9902,28 @@ class App extends React.Component<AppProps, AppState> {
     // panning
     if (this.handleCanvasPanUsingWheelOrSpaceDrag(event)) {
       return;
+    }
+
+    // YAZ-4277 D5: a click on a fold arrow folds or unfolds its item. It
+    // starts no edit and leaves the selection as it is
+    if (
+      event.button === POINTER_BUTTON.MAIN &&
+      !this.state.viewModeEnabled &&
+      (this.state.activeTool.type === "selection" ||
+        this.state.activeTool.type === "lasso")
+    ) {
+      const hit = this.getFoldArrowTargetAt(scenePointer);
+      const element = hit?.onArrow
+        ? this.scene.getNonDeletedElement(hit.elementId)
+        : null;
+      if (hit && element && isTextElement(element)) {
+        this.setTextFolds(
+          element.id,
+          getToggledFoldedLines(element, hit.line),
+        );
+        this.updateFoldArrowHover(scenePointer);
+        return;
+      }
     }
 
     // YAZ-4039 D11: an open gesture on a link pill is the host's; a plain

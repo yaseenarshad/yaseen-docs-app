@@ -38,7 +38,15 @@ import {
   getLinkPillMetrics,
   hasHostLinks,
 } from "@excalidraw/element";
-import { getLineHeightInPx } from "@excalidraw/element";
+import {
+  getFoldArrowAnchors,
+  getFoldArrowBox,
+  getFoldArrowPoints,
+  getFoldArrowPrefs,
+  getFoldArrowSize,
+  getFoldArrowStrokeWidth,
+  getLineHeightInPx,
+} from "@excalidraw/element";
 import {
   isArrowElement,
   isIframeLikeElement,
@@ -958,6 +966,43 @@ const renderElementToSvg = (
           );
           text.setAttribute("dominant-baseline", "alphabetic");
           node.appendChild(text);
+        }
+
+        // YAZ-4277 D5, D7: a folded item's ▸ exports, at the size row alone;
+        // an open item's ▾ never does
+        const foldPrefs = getFoldArrowPrefs();
+        const foldSize = getFoldArrowSize(element, foldPrefs);
+        for (const anchor of getFoldArrowAnchors(element, maxWidth)) {
+          if (!anchor.folded) {
+            continue;
+          }
+          const points = getFoldArrowPoints(
+            getFoldArrowBox(element, anchor, foldSize),
+            true,
+          );
+          const arrow = svgRoot.ownerDocument.createElementNS(SVG_NS, "path");
+          arrow.setAttribute(
+            "d",
+            points
+              .map(([px, py], index) => `${index ? "L" : "M"}${px} ${py}`)
+              .join(" "),
+          );
+          arrow.setAttribute("fill", "none");
+          arrow.setAttribute(
+            "stroke",
+            applyDarkModeFilter(
+              element.strokeColor,
+              renderConfig.theme === THEME.DARK,
+            ),
+          );
+          arrow.setAttribute(
+            "stroke-width",
+            `${getFoldArrowStrokeWidth(foldSize, foldPrefs)}`,
+          );
+          arrow.setAttribute("stroke-linecap", "round");
+          arrow.setAttribute("stroke-linejoin", "round");
+          arrow.setAttribute("class", "fold-arrow");
+          node.appendChild(arrow);
         }
 
         const g = maybeWrapNodesInFrameClipPath(

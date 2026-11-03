@@ -55,7 +55,7 @@ import type {
   EphemeralIncrement,
 } from "@excalidraw/element";
 import type { GlobalPoint } from "@excalidraw/math";
-import type { HostLinkResolver } from "@excalidraw/element";
+import type { FoldArrowPrefs, HostLinkResolver } from "@excalidraw/element";
 
 import type { Action } from "./actions/types";
 import type { Spreadsheet } from "./charts";
@@ -1046,6 +1046,12 @@ export interface ExcalidrawProps {
   generateLinkForSelection?: (id: string, type: "element" | "group") => string;
   /** Yaseen Docs (YAZ-4039 D7, D11): page links in text boxes. Keep it stable. */
   hostLinks?: HostLinks;
+  /**
+   * Yaseen Docs (YAZ-4277 D5, D7): the fold arrows of text boxes: when open
+   * items show ▾, the size, the thickness and the smallest size on screen.
+   * Keep it stable. Absent: `DEFAULT_FOLD_ARROW_PREFS`.
+   */
+  foldArrows?: FoldArrowPrefs;
   /**
    * Yaseen Docs (YAZ-4157 demo 6L): the host's own items in the board's
    * right-click menu, asked each time the menu opens on the canvas or on a
