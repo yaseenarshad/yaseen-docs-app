@@ -12,7 +12,7 @@ import { IDS_FILE } from '@shared/noteId'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { appDataDir } from '../vaultIndex/mint'
 import { dailyNote, type DailySettings } from './daily'
-import { LOCK_DIR } from './lock'
+import { LOCK_DIR } from '../fs/lock'
 
 const TUE = new Date(2026, 10, 3)
 const TITLE = '11_03- Tue'

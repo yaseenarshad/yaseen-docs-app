@@ -8,12 +8,11 @@ import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { createNote, type FoundNote } from '@shared/noteBirth'
 import { isMarkdown } from '@shared/fileKind'
-import { fsCall } from '../fs/fsUtils'
-import { idVault } from '../vaultIndex/mint'
+import { appDataDir, idVault } from '../vaultIndex/mint'
 import { scanAll } from '../vaultIndex/reconcile'
 import { fileTitle, scanFile } from '../vaultIndex/scan'
 import { noteDisk } from './disk'
-import { onlyOne } from './lock'
+import { LOCK_DIR, onlyOne } from '../fs/lock'
 
 /**
  * The note titled `title` in the folder `dir` (that folder only, not the ones in it), found or made. `body`, when given,
@@ -21,7 +20,9 @@ import { onlyOne } from './lock'
  * does not parse is refused, and nothing is made.
  */
 export async function newNote(dir: string, title: string, body?: string): Promise<FoundNote> {
-  if (!(await fsCall(dir, () => stat(dir))).isDirectory()) throw new Error(`${dir} is not a folder`)
+  const at = await stat(dir).catch(() => null)
+  if (at === null) throw new Error(`no folder ${dir}`)
+  if (!at.isDirectory()) throw new Error(`${dir} is not a folder`)
   const given = body === undefined ? undefined : splitFrontmatter(body)
   const extra = given === undefined ? undefined : parseFrontmatter(given.frontmatter)
   if (extra?.error !== undefined) throw new Error('the properties block of --body does not parse')
@@ -29,7 +30,7 @@ export async function newNote(dir: string, title: string, body?: string): Promis
   const root = await idVault(dir)
   const { disk, ids } = await noteDisk(root)
   // The real path: a symlink and its target are one lock (and the same lock as `daily`'s for a note of that folder).
-  return onlyOne(`${await realpath(dir)}\n${title}`, async () => {
+  return onlyOne(path.join(appDataDir(), LOCK_DIR), `${await realpath(dir)}\n${title}`, async () => {
     // The notes of this folder as the index hands them out: in path order, and in a vault without IDs the file name is the title (YAZ-2523 V12).
     const names = (await readdir(dir, { withFileTypes: true })).filter((e) => e.isFile() && !e.name.startsWith('.') && isMarkdown(e.name)).map((e) => path.join(dir, e.name))
     const records = [...(await scanAll(dir, names)).values()].sort((a, b) => (a.path < b.path ? -1 : 1))

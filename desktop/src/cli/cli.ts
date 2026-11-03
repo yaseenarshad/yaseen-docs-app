@@ -353,8 +353,15 @@ const openLink = (link: string): Promise<void> =>
     )
   })
 
+/** A flag that `verb` does not take is refused, not ignored: an agent that passed it meant something by it. */
+function onlyFlags(verb: string, flags: Map<string, string | true>, takes: readonly string[]): void {
+  const other = [...flags.keys()].find((flag) => !takes.includes(flag))
+  if (other !== undefined) throw new Usage(`${verb} does not take ${other}`)
+}
+
 /** `daily` (YAZ-4269 D2, D5, D6, D9, D10): a day's daily note of a vault, found or made by the app's own rules. */
 async function daily(target: string | undefined, flags: Map<string, string | true>, io: Io): Promise<void> {
+  onlyFlags('daily', flags, ['--date', '--find', '--open', '--json'])
   if (target === undefined) throw new Usage('daily needs a vault')
   const day = dayOf(str(flags, '--date'))
   const settings = await settingsNow()
@@ -367,6 +374,7 @@ async function daily(target: string | undefined, flags: Map<string, string | tru
 
 /** `new` (YAZ-4269 D4, D7): a note in a folder by the app's own rules; the one of that title when the folder has it. */
 async function newCommand(target: string | undefined, flags: Map<string, string | true>, io: Io): Promise<void> {
+  onlyFlags('new', flags, ['--title', '--body', '--json'])
   if (target === undefined) throw new Usage('new needs a folder')
   const title = str(flags, '--title')?.trim()
   if (title === undefined || title === '') throw new Usage('new needs --title')

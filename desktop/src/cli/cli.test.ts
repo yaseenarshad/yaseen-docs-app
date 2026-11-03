@@ -881,6 +881,10 @@ describe('daily and new (YAZ-4269)', () => {
     await settings()
     expect((await run(['daily', root])).err).toMatch(/has no folder "daily"/)
     expect((await run(['daily'])).code).toBe(2)
+    expect(await run(['daily', path.join(dir, 'gone')])).toMatchObject({ code: 1, err: `no vault folder ${path.join(dir, 'gone')}\n` })
+    // A flag the verb does not take is refused, never ignored.
+    expect(await run(['daily', root, '--body', 'x'])).toMatchObject({ code: 2, err: expect.stringMatching(/^daily does not take --body\n/) })
+    expect(await run(['new', root, '--title', 'X', '--find'])).toMatchObject({ code: 2, err: expect.stringMatching(/^new does not take --find\n/) })
   })
 
   it('D3: the newest settings of another Mac in the settings folder win over an older state file', async () => {
@@ -940,5 +944,6 @@ describe('daily and new (YAZ-4269)', () => {
     expect(await notes(path.join(root, 'projects'))).toEqual(['Gym plan.md'])
     expect((await run(['new', path.join(root, 'projects')])).code).toBe(2)
     expect((await run(['new', path.join(root, 'projects', 'Gym plan.md'), '--title', 'X'])).err).toMatch(/is not a folder/)
+    expect((await run(['new', path.join(root, 'gone'), '--title', 'X'])).err).toBe(`no folder ${path.join(root, 'gone')}\n`)
   })
 })

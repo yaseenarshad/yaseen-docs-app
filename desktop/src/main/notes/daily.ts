@@ -4,17 +4,17 @@
  * (`onlyOne`), and the daily notes folder is read again INSIDE that turn. A note another process made a moment ago is
  * found, never made again.
  */
-import { readdir, realpath } from 'node:fs/promises'
+import { readdir, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { dailyNoteName } from '@shared/dailyNote'
 import { isMarkdown } from '@shared/fileKind'
 import { dailyNotes, dailyNotesFolder, makeDailyNote, type FoundNote } from '@shared/noteBirth'
 import type { IndexRecord, SettingsState } from '@shared/types'
-import { vaultIds } from '../vaultIndex/mint'
+import { appDataDir, vaultIds } from '../vaultIndex/mint'
 import { scanAll } from '../vaultIndex/reconcile'
 import { fileTitle, scanFile } from '../vaultIndex/scan'
 import { noteDisk } from './disk'
-import { onlyOne } from './lock'
+import { LOCK_DIR, onlyOne } from '../fs/lock'
 
 export type DailySettings = Pick<SettingsState, 'dailyNotes' | 'dailyNoteFolder' | 'dailyNoteFormat' | 'dailyNoteDayFolder'>
 
@@ -43,13 +43,14 @@ async function notesIn(root: string, folder: string, ids: boolean): Promise<Inde
  */
 export async function dailyNote(root: string, settings: DailySettings, day: Date, make: boolean): Promise<FoundNote | null> {
   if (!settings.dailyNotes) throw new Error('Daily notes are off. Turn them on in Settings › Files & Links › Daily notes')
+  if (!(await stat(root).catch(() => null))?.isDirectory()) throw new Error(`no vault folder ${root}`)
   const folder = dailyNotesFolder(root, settings.dailyNoteFolder)
   // The real path: a symlink and its target are one lock, for the app and the command alike.
   const real = await realpath(folder).catch(() => null)
   if (real === null || !(await readdir(real).then(() => true, () => false))) throw new Error(`${root} has no folder "${settings.dailyNoteFolder}". Make it, or change the daily notes folder in Settings › Files & Links`)
   const title = dailyNoteName(settings.dailyNoteFormat, day).trim()
   const ids = (await vaultIds(root)).answer === true
-  return onlyOne(`${real}\n${title}`, async () => {
+  return onlyOne(path.join(appDataDir(), LOCK_DIR), `${real}\n${title}`, async () => {
     const records = await notesIn(root, folder, ids)
     const [found, ...others] = dailyNotes(records, settings.dailyNoteFolder, title, settings.dailyNoteDayFolder)
     if (found !== undefined) return { path: found, title, id: ids ? (records.find((r) => r.path === found)?.id ?? null) : null, created: false, others }
