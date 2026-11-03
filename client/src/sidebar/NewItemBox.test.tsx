@@ -274,11 +274,41 @@ describe('the New… box\'s folders, place shortcuts and keys (YAZ-4252)', () =>
     press('1')
     expect(note()).toBe('This folder is gone. Change place or remove it.')
     expect(place()).toBe('Projects')
-    // ← from Projects steps over the gone one too.
+    // ← from Projects lands on the gone one (YAZ-4266): it takes the focus, with no note, and the place stays.
     press('ArrowLeft')
+    expect(document.activeElement).toBe(slots()[0])
+    expect(note()).toBeNull()
     expect(place()).toBe('Projects')
+    // ⏎ there says it is gone and makes nothing.
+    press('Enter')
+    expect(note()).toBe('This folder is gone. Change place or remove it.')
+    expect(onMake).not.toHaveBeenCalled()
+    // → goes back to Projects, and ⏎ makes the item there.
+    press('ArrowRight')
+    expect(note()).toBeNull()
+    expect(document.activeElement).toBe(slots()[1])
     press('Enter')
     expect(onMake).toHaveBeenCalledExactlyOnceWith('file', '/v/Projects')
+  })
+
+  it('← → land on a gone shortcut and step on past it, so the shortcut after it is in reach (YAZ-4266)', async () => {
+    stored.set('/v', ['/v/Projects', '/v/Gone', '/v/Inbox'])
+    render('/v/Projects')
+    await flush()
+    expect(place()).toBe('Projects')
+    // ↓ to the place row. → lands on the gone one: Projects stays on show. The next → goes on to Inbox.
+    press('ArrowDown')
+    press('ArrowRight')
+    expect(document.activeElement).toBe(slots()[1])
+    const first = place()
+    press('ArrowRight')
+    expect([first, place()]).toEqual(['Projects', 'Inbox'])
+    // ← ← go back the same way.
+    press('ArrowLeft')
+    expect(document.activeElement).toBe(slots()[1])
+    expect(place()).toBe('Inbox')
+    press('ArrowLeft')
+    expect(place()).toBe('Projects')
   })
 
   it('a shortcut save that fails: "Could not save this place." and the slot keeps its old place (YAZ-4202)', async () => {

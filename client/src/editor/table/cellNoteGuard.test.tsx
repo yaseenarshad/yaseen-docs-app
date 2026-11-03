@@ -117,11 +117,11 @@ describe('D16: a delete that would take a cell note asks first', () => {
     press('Delete')
     expect(labels(getMarkdownForSave(crepe))).toEqual(['cell-1', 'cell-2'])
     undo(view.state, view.dispatch)
-    // ⌘Backspace and ⌘Delete (tableEditing's), ⌥Backspace and ⌃H (the Mac base keymap's) clear too: the same sheet (YAZ-4264).
+    // ⌘Backspace and ⌘Delete (tableEditing's), ⌥Backspace, ⌃H and ⌃D (the Mac base keymap's) clear too: the same sheet (YAZ-4264).
     const before = getMarkdownForSave(crepe)
     const mod = IS_MAC ? { metaKey: true } : { ctrlKey: true }
     const keys: KeyboardEventInit[] = [{ key: 'Backspace', ...mod }, { key: 'Delete', ...mod }]
-    if (IS_MAC) keys.push({ key: 'Backspace', altKey: true }, { key: 'h', ctrlKey: true })
+    if (IS_MAC) keys.push({ key: 'Backspace', altKey: true }, { key: 'h', ctrlKey: true }, { key: 'd', ctrlKey: true })
     for (const init of keys) {
       selectCells(view, [1, 0], [1, 1])
       act(() => void (handled = view.someProp('handleKeyDown', (h) => h(view, new KeyboardEvent('keydown', { ...init, cancelable: true }))) ?? false))
@@ -141,6 +141,28 @@ describe('D16: a delete that would take a cell note asks first', () => {
     expect(sheetText()).toBe('Delete this table and its 3 cell notes?')
     press('Delete')
     expect(getMarkdownForSave(crepe)).toBe('End\n')
+  })
+
+  it('off a Mac the guard binds no Mac-only key: Ctrl+D (Windows\' "Show in sidebar") on selected cells with a note shows no sheet (YAZ-4264, the checker\'s round 2 nit)', async () => {
+    // The guard reads the platform when the editor mounts; `test-setup.ts` pins a Mac, so this test pins Windows.
+    const platform = Object.getOwnPropertyDescriptor(navigator, 'platform')
+    Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Win32' })
+    try {
+      const { view } = await open()
+      const key = (init: KeyboardEventInit) => view.someProp('handleKeyDown', (h) => h(view, new KeyboardEvent('keydown', { ...init, cancelable: true })))
+      // Backspace is a delete key on each platform: the guard is there, and asks.
+      selectCells(view, [1, 0], [1, 1])
+      act(() => void key({ key: 'Backspace' }))
+      expect(sheetText()).toBe('Clear these cells and their 2 cell notes?')
+      press('Cancel')
+      // Ctrl+D is not a delete key off a Mac: no sheet.
+      selectCells(view, [1, 0], [1, 1])
+      act(() => void key({ key: 'd', ctrlKey: true }))
+      expect(sheet()).toBeNull()
+    } finally {
+      if (platform === undefined) delete (navigator as unknown as Record<string, unknown>).platform
+      else Object.defineProperty(navigator, 'platform', platform)
+    }
   })
 })
 

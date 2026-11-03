@@ -11,10 +11,10 @@
  * The shortcuts (D2, D3) are the vault's, `.yaseendocs/new-places.json`: the vault the "Goes to" folder is in, so a
  * pick in another vault of the window shows that vault's. An empty one reads "+ Add place" and opens the picker to
  * save one; a right-click on one offers "Change place" and "Remove". A shortcut to a folder that is no longer in its
- * vault shows muted; its use (a click, its key, ← →) says "This folder is gone. Change place or remove it." and keeps
- * the folder on show (the checker's round 1). A shortcut save that fails says "Could not save this place." and the
- * slot keeps its old place. Choose… (D4) opens the picker with the last places used on this Mac at
- * the top (`recentPlaces`).
+ * vault shows muted; its use (a click, its key, ⏎) says "This folder is gone. Change place or remove it." and keeps
+ * the folder on show (the checker's round 1). ← → land on it with no note and step on past it (YAZ-4266). A shortcut
+ * save that fails says "Could not save this place." and the slot keeps its old place. Choose… (D4) opens the picker
+ * with the last places used on this Mac at the top (`recentPlaces`).
  *
  * "Make" is App's: it shows Files and opens the right-click name field in the folder (D4 of YAZ-3556), and the item
  * opens after its name. The box only says which kind and where. The sheet takes the keyboard while it shows, and gives
@@ -109,6 +109,8 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
   const [already, setAlready] = useState<number | null>(null)
   /** The shortcut last used whose folder is gone: the box says so. */
   const [goneSlot, setGoneSlot] = useState<number | null>(null)
+  /** A gone shortcut that ← → stand on (YAZ-4266): it is the row's choice, but the folder on show stays. */
+  const [goneAt, setGoneAt] = useState<number | null>(null)
   /** A shortcut save that failed (YAZ-4202, the checker's nit): the box says so, and the slot keeps its old place. */
   const [saveFailed, setSaveFailed] = useState(false)
   const sheet = useRef<HTMLDivElement>(null)
@@ -118,8 +120,6 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
   const vault = vaultOf(dir) ?? vaults[0]
   const rel = placeRel(vault.root, dir)
   const places = useNewPlaces(vault.root)
-  /** The shortcut that is the folder on show, or -1. */
-  const chosenSlot = places.indexOf(dir)
   const trees = usePlaceTrees(useMemo(() => vaults.map((v) => v.root), [vaults]))
   /** A shortcut's folder that is no longer in its vault's tree. Not known yet (no tree): not gone. */
   const isGone = (place: string | null | undefined): boolean => {
@@ -127,6 +127,8 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
     const tree = owner === undefined ? undefined : trees.get(owner.root)
     return tree !== undefined && place !== owner!.root && findDirNode(tree, place!) === null
   }
+  /** The row's choice: the gone shortcut the arrows stand on, else the shortcut that is the folder on show, or -1. */
+  const chosenSlot = goneAt !== null && isGone(places[goneAt]) ? goneAt : places.indexOf(dir)
 
   // The keyboard comes to the sheet, and goes back to where it was when the box closes with no item.
   useEffect(() => {
@@ -167,6 +169,7 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
   /** A shortcut's click, key or arrow: its folder for this item; an empty one opens the picker to set it; a gone one says so. */
   const takeSlot = (slot: number) => {
     const place = places[slot]
+    setGoneAt(null)
     setGoneSlot(isGone(place) ? slot : null)
     if (place === null || place === undefined) setPicking({ for: 'slot', slot })
     else if (!isGone(place)) setDir(place)
@@ -191,6 +194,7 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
         }).catch(() => setSaveFailed(true))
       }
     }
+    setGoneAt(null)
     setDir(path)
     setPicking(null)
   }
@@ -212,16 +216,23 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
       else if (e.key === 'ArrowRight') setAt((i) => Math.min(NEW_ITEM_KINDS.length - 1, i + 1))
       else return
     } else {
-      // The filled shortcuts, in order: ← → step through them.
+      // The filled shortcuts, in order: ← → step through them. A gone one is a step too: the arrows stand on it with
+      // no note, so the next arrow goes on past it (YAZ-4266); ⏎ on it says it is gone.
       const filled = places.flatMap((p, i) => (p === null ? [] : [i]))
       const step = (by: -1 | 1) => {
         const next = filled[filled.indexOf(chosenSlot) + by] ?? (chosenSlot < 0 ? filled[by < 0 ? filled.length - 1 : 0] : undefined)
-        if (next !== undefined) takeSlot(next)
+        if (next === undefined) return
+        if (!isGone(places[next])) return takeSlot(next)
+        setGoneSlot(null)
+        setGoneAt(next)
       }
       if (digit !== null) {
         if (digit < NEW_PLACE_SLOTS) takeSlot(digit)
         else setPicking({ for: 'choose' })
-      } else if (e.key === 'Enter') make()
+      } else if (e.key === 'Enter') {
+        if (goneAt !== null && chosenSlot === goneAt) setGoneSlot(goneAt)
+        else make()
+      }
       else if (e.key === 'ArrowUp') setRow(0)
       else if (e.key === 'ArrowLeft') step(-1)
       else if (e.key === 'ArrowRight') step(1)

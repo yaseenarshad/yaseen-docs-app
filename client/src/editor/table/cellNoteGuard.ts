@@ -196,22 +196,16 @@ function tablesWithin(doc: ProseNode, from: number, to: number): Array<{ pos: nu
 }
 
 /**
- * Every key that clears a selection: `tableEditing`'s four (`deleteCellSelection`) and the base keymap's Mac ones
- * (`deleteSelection`). A key with a modifier took the marks with no sheet (YAZ-4264), so the guard binds them all.
+ * Every key that clears a selection on this platform: `tableEditing`'s four (`deleteCellSelection`), and the base
+ * keymap's (`deleteSelection`): `pcBaseKeymap`'s, plus `macBaseKeymap`'s own on a Mac. A key with a modifier took the
+ * marks with no sheet (YAZ-4264), so the guard binds them all. Off a Mac, `Ctrl-d` and the others are other commands
+ * (Ctrl+D is "Show in sidebar"; the checker's round 2 nit), so it binds none of the Mac ones there. `deleteKeys` reads
+ * the platform as the base keymap does, when the editor mounts.
  */
-const DELETE_KEYS = [
-  'Backspace',
-  'Delete',
-  'Mod-Backspace',
-  'Mod-Delete',
-  'Shift-Backspace',
-  'Alt-Backspace',
-  'Alt-Delete',
-  'Ctrl-Alt-Backspace',
-  'Ctrl-h',
-  'Ctrl-d',
-  'Alt-d',
-]
+function deleteKeysOf(mac: boolean): string[] {
+  const keys = ['Backspace', 'Delete', 'Mod-Backspace', 'Mod-Delete', 'Shift-Backspace']
+  return mac ? [...keys, 'Alt-Backspace', 'Alt-Delete', 'Ctrl-Alt-Backspace', 'Ctrl-h', 'Ctrl-d', 'Alt-d'] : keys
+}
 
 /** D16 on a delete key: ask when the clear would take a cell note; `false` lets the key run as before. */
 function askDelete(view: EditorView): boolean {
@@ -231,14 +225,15 @@ function askDelete(view: EditorView): boolean {
 }
 
 /**
- * D16's keys: each delete key (`DELETE_KEYS`) on selected cells, and on a selection that holds a whole table with
- * cell notes, asks before the notes go. Before `tableEditing`, whose own keys clear the cells.
+ * D16's keys: each delete key of this platform (`deleteKeysOf`) on selected cells, and on a selection that holds a
+ * whole table with cell notes, asks before the notes go. Before `tableEditing`, whose own keys clear the cells.
  */
 function deleteKeys(): Plugin {
   const ask: Command = (_state, _dispatch, view) => view !== undefined && askDelete(view)
+  const keys = deleteKeysOf(/Mac|iP(hone|[oa]d)/.test(navigator.platform))
   return new Plugin({
     key: new PluginKey('mdapp-cell-note-delete'),
-    props: { handleKeyDown: keydownHandler(Object.fromEntries(DELETE_KEYS.map((key) => [key, ask]))) },
+    props: { handleKeyDown: keydownHandler(Object.fromEntries(keys.map((key) => [key, ask]))) },
   })
 }
 
