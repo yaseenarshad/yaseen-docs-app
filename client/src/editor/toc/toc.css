@@ -39,7 +39,7 @@
   right: 0;
   bottom: 0;
   left: 0;
-  /* Above the note, BELOW the status chips (app.css: z-index 2): their menus — the page cog's, the
+  /* Above the note, BELOW the status chips (app.css `.status-chips`): their menus — the page cog's, the
      zoom pill's — drop down over this corner. At the same level this element, the later sibling,
      would be drawn over an open menu. */
   z-index: 1;

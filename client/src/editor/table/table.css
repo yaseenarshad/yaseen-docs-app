@@ -959,8 +959,13 @@
   line-height: 16px;
 }
 
+/* The dark theme's red is light (#ff7b72): dark text keeps the tag readable (white on it was 2.5:1). */
+[data-theme='dark'] .cell-note-time__now {
+  color: #1f1f1f;
+}
+
 /* Past blocks dim as the table's past rows do (A4), with Settings › Calendar tables › Dim past rows. */
-:is([data-table-dim-past='text'], [data-table-dim-past='shade']) .milkdown .ProseMirror .cell-note-time--past {
+:is([data-table-dim-past='text'], [data-table-dim-past='shade']) .milkdown .ProseMirror :is(.cell-note-time--past, .cell-note--shown.cell-note--past) {
   opacity: 0.55;
 }
 
@@ -980,8 +985,14 @@
   cursor: text;
 }
 
-.milkdown .ProseMirror .cell-note-time-empty:hover:not(:disabled) {
+.milkdown .ProseMirror .cell-note-time-empty:hover {
   color: var(--fg);
+}
+
+/* A read-only note: the block makes no note (`writeTimeBlock` declines), so it shows no invitation. */
+.milkdown .ProseMirror[contenteditable='false'] .cell-note-time-empty {
+  color: color-mix(in srgb, var(--fg-muted) 75%, transparent);
+  cursor: default;
 }
 
 /* A cell note's mark (YAZ-3818 D8): a small triangle in the cell's top-right corner, as in Google Sheets. The label

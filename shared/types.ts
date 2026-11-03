@@ -1992,10 +1992,10 @@ export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
 
 /** Outside changes (YAZ-3704 D5): a glow stays until you check it, ends after 10 s or 1 min, or never shows. */
 export type OutsideChangeGlow = 'until-checked' | '10s' | '60s' | 'off'
+export const OUTSIDE_CHANGE_GLOWS: readonly OutsideChangeGlow[] = ['until-checked', '10s', '60s', 'off']
 /** Where a calendar table's "All notes" opens (YAZ-4276 A1): the time block of the cell you came from, or now's. */
 export type AllNotesOpensAt = 'cell' | 'now'
 export const ALL_NOTES_OPENS_AT: readonly AllNotesOpensAt[] = ['cell', 'now']
-export const OUTSIDE_CHANGE_GLOWS: readonly OutsideChangeGlow[] = ['until-checked', '10s', '60s', 'off']
 
 /** Daily notes (YAZ-4164 D11): the button opens the note, or the note at the now row of its calendar table. */
 export type DailyNoteOpens = 'note' | 'now'

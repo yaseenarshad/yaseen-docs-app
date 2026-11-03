@@ -9,10 +9,11 @@ import type { Crepe } from '@milkdown/crepe'
 import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { getMarkdownForSave } from '../createCrepe'
+import { getMarkdownForSave, setMarkdown } from '../createCrepe'
+import { NOTE_KEYS } from '@shared/keys/note'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { mount, pressKey, unmountAll } from '../marks/markTestKit'
-import { CELL_NOTE_OPEN_CLASS, CELL_NOTE_SHOWN_CLASS, openCellNote, setAllCellNotes, setAllNotesOpensAt, setCellNotePinnedAtStart } from './cellNoteCard'
+import { calendarBuilds, CELL_NOTE_OPEN_CLASS, CELL_NOTE_SHOWN_CLASS, openCellNote, setAllCellNotes, setAllNotesOpensAt, setCellNotePinnedAtStart } from './cellNoteCard'
 import { cellNoteCardKey, isCellNoteHidden, notePosOf, openCellNoteLabel } from './cellNotes'
 import { cellPos } from './tableTestKit'
 
@@ -59,6 +60,14 @@ const view_ = (root: HTMLElement): string[] =>
     el.classList.contains('cell-note-time') ? `@${el.textContent}${el.classList.contains('cell-note-time--past') ? ' (past)' : ''}` : el.classList.contains(CELL_NOTE_SHOWN_CLASS) ? el.textContent! : '(empty)',
   )
 const saved = (crepe: Crepe) => getMarkdownForSave(crepe)
+/** ⌘⌥ and a key, through the editor's keymaps. */
+const altMod = (crepe: Crepe, key: string): boolean =>
+  crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx)
+    const event = new KeyboardEvent('keydown', { key, code: `Key${key.toUpperCase()}`, metaKey: true, altKey: true, bubbles: true, cancelable: true })
+    return view.someProp('handleKeyDown', (handler) => handler(view, event)) ?? false
+  })
+
 /** ⌥ and an arrow, through the editor's keymaps. */
 const alt = (crepe: Crepe, key: 'ArrowDown' | 'ArrowUp'): boolean =>
   crepe.editor.action((ctx) => {
@@ -96,14 +105,28 @@ describe('the view: the column\'s notes in the page, each under its time (A)', (
     expect(caretText(view)).toBe('warm up')
   })
 
-  it('typing in a shown note writes to that note, and maps the view: no rebuild on a keystroke', async () => {
+  it('typing in a shown note or a Plan cell only maps the view; typing a time builds it again (the heading follows)', async () => {
     const { crepe, root, view } = await openAll()
-    const before = head(root)
+    const builds = calendarBuilds.count
     caretIn(view, 'email')
     view.dispatch(view.state.tr.insertText(' and calls'))
+    caretIn(view, 'read')
+    view.dispatch(view.state.tr.insertText('ing'))
+    expect(calendarBuilds.count).toBe(builds)
     expect(saved(crepe)).toContain('[^cell-3]: email and calls')
-    expect(head(root)).toBe(before)
     expect(view_(root)).toContain('email and calls')
+    caretIn(view, '7:30 am')
+    view.dispatch(view.state.tr.insertText(' (gym)'))
+    expect(calendarBuilds.count).toBe(builds + 1)
+    expect(view_(root)).toContain('@7:30 am (gym)')
+  })
+
+  it('A10: a whole-note rebuild (the file read again) closes the view cleanly', async () => {
+    const { crepe, root, view } = await openAll()
+    setMarkdown(crepe, DAY)
+    expect(openCellNoteLabel(view.state)).toBeNull()
+    expect(head(root)).toBeNull()
+    expect(root.querySelectorAll('.cell-note-time')).toHaveLength(0)
   })
 
   it('a table that is no calendar table keeps the read-only list of every note (D4)', async () => {
@@ -147,6 +170,22 @@ describe('an empty block makes its note (B)', () => {
   })
 })
 
+describe('a view that closes by any route removes the empty notes it made (A9)', () => {
+  it('its table stops being a calendar table: the view closes, and the empty note it made goes with its mark', async () => {
+    const { crepe, root, view } = await openAll()
+    const before = saved(crepe)
+    click(root.querySelectorAll('.cell-note-time-empty')[0]!)
+    let table = -1
+    view.state.doc.descendants((node, pos) => {
+      if (table < 0 && node.type.name === 'table') table = pos
+      return table < 0
+    })
+    view.dispatch(view.state.tr.setNodeMarkup(table, undefined, { ...view.state.doc.nodeAt(table)!.attrs, calendar: 0 }))
+    expect(cellNoteCardKey.getState(view.state)?.calendar ?? null).toBeNull()
+    expect(saved(crepe)).toBe(before.replace('<!-- table: calendar 30m -->', '').replace(/\n{3,}/g, '\n\n'))
+  })
+})
+
 describe('the head (C)', () => {
   it('a column button shows that column; Only filled hides the empty blocks and shows them again', async () => {
     const { root } = await openAll()
@@ -158,6 +197,15 @@ describe('the head (C)', () => {
     expect(view_(root)).toEqual(['@6:30 am (past)', 'tired'])
     click(button(root, 'Only filled'))
     expect(view_(root)).toHaveLength(8)
+  })
+
+  it('"Only filled" stays for the tab: back to the card and into "All notes" again, it is still on (A3)', async () => {
+    const { root, view } = await openAll()
+    click(button(root, 'Only filled'))
+    setAllCellNotes(view, false)
+    click(root.querySelector('.cell-note-card__all-toggle')!)
+    expect(button(root, 'Only filled').getAttribute('aria-pressed')).toBe('true')
+    expect(view_(root)).toEqual(['@6:00 am (past)', 'warm up', '@7:00 amNow', 'email'])
   })
 
   it('Copy all: each filled block, its time on a line, its note under it, as Markdown (A7)', async () => {
@@ -184,6 +232,18 @@ describe('the head (C)', () => {
 })
 
 describe('where it opens, and its keys (D)', () => {
+  it('A6: "All notes of a calendar table" has no key by default; given one, it opens the view from a cell with no note, and again goes back to the card', async () => {
+    expect(NOTE_KEYS.find((row) => row.id === 'note.allCellNotes')?.keys).toEqual([])
+    const { crepe, root, view } = await mount(DAY, { hotkeys: { 'note.allCellNotes': 'CmdOrCtrl+Alt+A' } })
+    caretIn(view, 'read')
+    expect(altMod(crepe, 'a')).toBe(true)
+    expect(head(root)).not.toBeNull()
+    expect(cellNoteCardKey.getState(view.state)?.calendar).not.toBeNull()
+    expect(altMod(crepe, 'a')).toBe(true)
+    expect(cellNoteCardKey.getState(view.state)?.calendar ?? null).toBeNull()
+    expect(openCellNoteLabel(view.state)).not.toBeNull()
+  })
+
   it('"All notes opens at": the cell you came from (the caret stays), or now (the caret in now\'s note)', async () => {
     const first = await openAll(1)
     expect(caretText(first.view)).toBe('warm up')
