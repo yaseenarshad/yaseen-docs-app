@@ -25,7 +25,8 @@ import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { Plugin, PluginKey, Selection, TextSelection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
-import { TableMap, selectedRect } from '@milkdown/kit/prose/tables'
+import { CellSelection, TableMap, selectedRect } from '@milkdown/kit/prose/tables'
+import { Mapping } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
 import { verticalScrollParent } from '../../lib/pinnedHeader'
@@ -216,37 +217,93 @@ const foldPlugin = (): Plugin<DecorationSet> =>
       handleDOMEvents: { mousedown: openBar },
       handleKeyDown: keydownHandler({ ArrowUp: stepOver(-1), ArrowDown: stepOver(1) }),
     },
-    appendTransaction: caretOutOfRuns,
+    appendTransaction: foldGuards,
   })
 
 /**
- * The caret never stays in a folded row (YAZ-4173 12A): Tab and Shift+Tab (`goToNextCell`, also ⌘] / ⌘[), ← / → at a
- * cell's edge (`tableEditing`), and any other move that lands in a run go on past it, the way the move went: forward to
- * the start of the first row after the run, back to the end of the last row before it (else the other side). Typing
- * never writes a hidden row. A selection that does not land in a folded row costs one walk up from the caret.
+ * A change never empties a folded row (YAZ-4173 12D): Backspace, Delete, "Clear cells", typed text and ⌘X on a
+ * CellSelection that holds a folded row clear every selected cell (`deleteCellSelection`, `CellSelection.replace`).
+ * The guard puts back the text of each folded cell of the old selection, in the same undo step. A cell that the change
+ * removed or moved (a delete, a sort) is not put back. Fill down and paste already skip folded rows (`unfoldedRows`).
  */
-function caretOutOfRuns(transactions: readonly Transaction[], oldState: EditorState, state: EditorState): Transaction | null {
-  if (!transactions.some((tr) => tr.selectionSet) || !(state.selection instanceof TextSelection)) return null
-  const { $head } = state.selection
+function keepFoldedText(transactions: readonly Transaction[], oldState: EditorState, tr: Transaction): void {
+  const old = oldState.selection
+  if (!(old instanceof CellSelection) || !transactions.some((t) => t.docChanged)) return
+  const mapping = new Mapping()
+  for (const t of transactions) mapping.appendMapping(t.mapping)
+  old.forEachCell((cell, pos) => {
+    if (cell.attrs.fold !== true) return
+    const mapped = mapping.mapResult(pos, 1)
+    if (mapped.deleted) return
+    const at = tr.mapping.map(mapped.pos, 1)
+    const now = tr.doc.nodeAt(at)
+    if (now?.type !== cell.type || now.attrs.fold !== true || now.content.eq(cell.content)) return
+    tr.replaceWith(at + 1, at + now.nodeSize - 1, cell.content)
+  })
+}
+
+/**
+ * The caret never stays in a folded row (YAZ-4173 12A, 12E, 12F): Tab and Shift+Tab (`goToNextCell`, also ⌘] / ⌘[),
+ * ← / → at a cell's edge (`tableEditing`), Shift+↑ / Shift+↓ (the head of a CellSelection), and any other move that
+ * lands in a run go on past it, the way the move went. Forward: to the first row after the run, or, with none, out of
+ * the table below it. Back: to the last row before the run. A CellSelection keeps its anchor, and its head goes to the
+ * same column past the run. A move that selected the cell's text (Tab) selects the text of the cell it goes to.
+ * Typing never writes a hidden row. A selection that does not land in a folded row costs one walk up from its head.
+ */
+function caretOutOfRuns(transactions: readonly Transaction[], oldState: EditorState, tr: Transaction): void {
+  if (!transactions.some((t) => t.selectionSet)) return
+  const { selection, doc } = tr
+  const cells = selection instanceof CellSelection
+  if (!cells && !(selection instanceof TextSelection)) return
+  const $head = cells ? (selection as CellSelection).$headCell : selection.$head
   let depth = $head.depth
   while (depth > 0 && $head.node(depth).type.spec.tableRole !== 'row') depth--
-  if (depth === 0 || !rowFolded($head.node(depth))) return null
+  // A CellSelection's `$headCell` stands before its cell, in its row.
+  if (cells) depth = $head.depth
+  if (depth === 0 || !rowFolded($head.node(depth))) return
   const table = $head.node(depth - 1)
   const run = runOf(foldRuns(table), $head.index(depth - 1))
-  if (run === undefined) return null
+  if (run === undefined) return
   let from = oldState.selection.head
-  for (const tr of transactions) from = tr.mapping.map(from)
-  const forward = $head.pos >= from
+  for (const t of transactions) from = t.mapping.map(from)
+  from = tr.mapping.map(from)
+  const forward = selection.head >= from
   const tableStart = $head.start(depth - 1)
   const rowStart = (r: number) => {
     let pos = tableStart
     for (let i = 0; i < r; i++) pos += table.child(i).nodeSize
     return pos
   }
-  const after = run.to + 1 < table.childCount ? Selection.near(state.doc.resolve(rowStart(run.to + 1) + 1), 1) : null
-  // The row before a run is a body row or the header row: a run never starts at row 0.
-  const before = Selection.near(state.doc.resolve(rowStart(run.from) - 1), -1)
-  return state.tr.setSelection(forward ? (after ?? before) : before)
+  const target = forward && run.to + 1 < table.childCount ? run.to + 1 : run.from - 1
+  if (cells) {
+    const col = $head.index(depth)
+    const row = table.child(target)
+    let cellPos = rowStart(target) + 1
+    for (let c = 0; c < Math.min(col, row.childCount - 1); c++) cellPos += row.child(c).nodeSize
+    tr.setSelection(new CellSelection((selection as CellSelection).$anchorCell, doc.resolve(cellPos)))
+    return
+  }
+  if (forward && target < run.from) {
+    // No row after the run: out of the table, below it (as ↓ goes), else back before the run.
+    const below = Selection.findFrom(doc.resolve($head.after(depth - 1)), 1, true)
+    if (below !== null) return void tr.setSelection(below)
+  }
+  const row = table.child(target)
+  const cell = forward && target > run.to ? rowStart(target) + 1 : rowStart(target) + row.nodeSize - 1 - row.lastChild!.nodeSize
+  if (!selection.empty) {
+    // Tab selected the cell's text: select the text of the cell it goes to.
+    const node = doc.nodeAt(cell)!
+    return void tr.setSelection(TextSelection.between(doc.resolve(cell + 1), doc.resolve(cell + node.nodeSize - 1)))
+  }
+  tr.setSelection(forward && target > run.to ? Selection.near(doc.resolve(cell + 1), 1) : Selection.near(doc.resolve(rowStart(target) + row.nodeSize - 1), -1))
+}
+
+/** The fold guards, in one appended step: the folded text first, then the caret. */
+function foldGuards(transactions: readonly Transaction[], oldState: EditorState, state: EditorState): Transaction | null {
+  const tr = state.tr
+  keepFoldedText(transactions, oldState, tr)
+  caretOutOfRuns(transactions, oldState, tr)
+  return tr.docChanged || tr.selectionSet ? tr : null
 }
 
 /** Register with `editor.use(tableFold)`: just before `tableEditing`, so a click on a bar starts no cell selection. */

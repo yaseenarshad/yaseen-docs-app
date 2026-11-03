@@ -293,6 +293,76 @@ describe('Tab, Shift+Tab and ← / → never put the caret in a folded row (YAZ-
   })
 })
 
+describe('a clear never empties a folded row (YAZ-4173 12D)', () => {
+  it.each(['Backspace', 'Delete', 'table-clear'])('%s on a CellSelection across a run keeps the folded rows\' text', async (how) => {
+    const { crepe, view } = await mountNote(rows(5, 'fold 3-4'))
+    selectCells(view, [1, 0], [4, 1])
+    if (how.startsWith('table-')) menuItem(view, 1, 0, how)!.onSelect()
+    else pressKey(crepe, how)
+    // The rows that show, r1 and r4, are empty; the folded rows r2 and r3 keep their text.
+    expect(getMarkdownForSave(crepe)).toMatch(/\| +\| +\|\n\| r2 +\| n2 +\|\n\| r3 +\| n3 +\|\n\| +\| +\|/)
+  })
+
+  it('Shift+↓ twice from the row above a run, then Backspace: the folded row keeps its text', async () => {
+    const { crepe, view } = await mountNote(rows(5, 'fold 3-4'))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 1, 0) + 2)))
+    pressKey(crepe, 'ArrowDown', { shift: true })
+    pressKey(crepe, 'ArrowDown', { shift: true })
+    pressKey(crepe, 'Backspace')
+    expect(getMarkdownForSave(crepe)).toMatch(/\| r2 +\| n2 +\|\n\| r3 +\| n3 +\|/)
+  })
+
+  it('typed text over a CellSelection across a run keeps the folded rows\' text, and one undo gives all back', async () => {
+    const { crepe, view } = await mountNote(rows(5, 'fold 3-4'))
+    const before = getMarkdownForSave(crepe)
+    selectCells(view, [1, 0], [4, 1])
+    view.dispatch(view.state.tr.insertText('x'))
+    expect(getMarkdownForSave(crepe)).toMatch(/\| r2 +\| n2 +\|\n\| r3 +\| n3 +\|/)
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+})
+
+describe('Shift+↑ / Shift+↓ step over a folded run, as ↑ / ↓ do (YAZ-4173 12E)', () => {
+  /** The column A text of the CellSelection's head row, and whether that row is folded. */
+  const headRow = (view: EditorView): [string, boolean] => {
+    const row = (view.state.selection as CellSelection).$headCell.parent
+    let fold = false
+    row.forEach((cell) => {
+      fold ||= cell.attrs.fold === true
+    })
+    return [row.firstChild!.textContent, fold]
+  }
+
+  it.each<[string, number, string]>([
+    ['ArrowDown', 1, 'r4'],
+    ['ArrowUp', 4, 'r1'],
+  ])('Shift+%s from row %i: the selection goes past the run', async (key, row, want) => {
+    const { crepe, view } = await mountNote(rows(5, 'fold 3-4'))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, row, 0) + 2)))
+    pressKey(crepe, key, { shift: true }) // the first Shift+arrow selects the cell (B3)
+    pressKey(crepe, key, { shift: true })
+    expect(view.state.selection).toBeInstanceOf(CellSelection)
+    expect(headRow(view)).toEqual([want, false])
+  })
+})
+
+describe('→ above a run at the table end leaves the table, as ↓ does (YAZ-4173 12F)', () => {
+  it('→ at the end of the last cell that shows goes to the paragraph below the table', async () => {
+    const { crepe, view } = await mountNote(`${rows(4, 'fold 4-5')}\nafter\n`)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 2, 1) + 4)))
+    pressKey(crepe, 'ArrowRight')
+    expect(view.state.selection.$from.parent.textContent).toBe('after')
+  })
+
+  it('Tab over a run selects the text of the cell it goes to, as Tab does elsewhere', async () => {
+    const { crepe, view } = await mountNote(rows(5, 'fold 3-4'))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 1, 1) + 4)))
+    pressKey(crepe, 'Tab')
+    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe('r4')
+  })
+})
+
 describe('↑ / ↓ with no folded row next to the caret\'s row', () => {
   it('ask the fold for no layout: it checks the rows in the document first (YAZ-4176)', async () => {
     const counts: number[] = []
