@@ -4,6 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildFrontmatter } from '@shared/frontmatter'
+import type { CreateFileRequest } from '@shared/types'
 import { testDoor } from '../testNoteIds'
 import { makeDailyNote } from './dailyNote'
 
@@ -67,7 +68,7 @@ describe('makeDailyNote in a vault with IDs', () => {
 
     await makeDailyNote('/v', FLAT, TITLE, true)
 
-    expect(createFile.mock.calls[0][0].content).toBe(`---\ntitle: ${TITLE}\n---\n`)
+    expect((createFile.mock.calls[0][0] as CreateFileRequest).content).toBe(`---\ntitle: ${TITLE}\n---\n`)
   })
 
   it('the vault folder as the daily notes folder: the note and the template are at the vault’s top', async () => {
@@ -75,7 +76,7 @@ describe('makeDailyNote in a vault with IDs', () => {
 
     await expect(makeDailyNote('/v', { dailyNoteFolder: '', dailyNoteDayFolder: false }, TITLE, true)).resolves.toBe('/v/11-03-tue-yaz-1.md')
 
-    expect(createFile.mock.calls[0][0].content).toBe(buildFrontmatter({ tags: ['daily'], title: TITLE }) + 'PLAN\n')
+    expect((createFile.mock.calls[0][0] as CreateFileRequest).content).toBe(buildFrontmatter({ tags: ['daily'], title: TITLE }) + 'PLAN\n')
   })
 
   it('a create that is refused because the file is there is not swallowed: the name holds a new id, so it is a real failure', async () => {
@@ -86,7 +87,7 @@ describe('makeDailyNote in a vault with IDs', () => {
   })
 
   it('a day folder that cannot be made for another reason: the failure propagates, and no note is made', async () => {
-    createDir.mockRejectedValue(new BridgeRequestError('PERMISSION_DENIED', 'no'))
+    createDir.mockRejectedValue(new BridgeRequestError('FORBIDDEN', 'no'))
 
     await expect(makeDailyNote('/v', DAY, TITLE, true)).rejects.toThrow('no')
     expect(createFile).not.toHaveBeenCalled()
