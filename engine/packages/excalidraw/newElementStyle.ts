@@ -11,6 +11,16 @@
  * Without the prop, or with "keep", the engine keeps the last style, as
  * upstream Excalidraw does.
  */
+import { getStrokeWidthByKey, ROUNDNESS } from "@excalidraw/common";
+import {
+  getDefaultCornerRadiusForElementType,
+  hasVectorStrokeWidth,
+  isTextElement,
+  isUsingAdaptiveRadius,
+} from "@excalidraw/element";
+
+import type { ExcalidrawElement } from "@excalidraw/element/types";
+
 import { getDefaultAppState } from "./appState";
 
 import type { AppState } from "./types";
@@ -76,3 +86,77 @@ export const keepNewElementStyle = <T extends Partial<AppState>>(
 /** True for the tools that select: going back to one ends a picked style. */
 export const isSelectTool = (type: string) =>
   type === "selection" || type === "lasso";
+
+/**
+ * YAZ-4277 D15: the style fields ⌘\ sets back to the default style on one
+ * element, or null for an element it leaves alone (a picture, a frame, an
+ * embed). It never touches the place, size, rotation, text, font size, link,
+ * lock, groups, bindings, folds or checkbox letters.
+ */
+export const getDefaultStyleUpdates = (
+  element: ExcalidrawElement,
+  defaults: NewElementStyle,
+): Record<string, unknown> | null => {
+  const shape = {
+    strokeColor: defaults.currentItemStrokeColor,
+    backgroundColor: defaults.currentItemBackgroundColor,
+    opacity: defaults.currentItemOpacity,
+  };
+  if (isTextElement(element)) {
+    return {
+      ...shape,
+      fontFamily: defaults.currentItemFontFamily,
+      // a label keeps its place in its shape
+      ...(element.containerId ? {} : { textAlign: defaults.currentItemTextAlign }),
+      textRuns: undefined,
+      fontWeight: "normal",
+      fontStyle: "normal",
+      textDecoration: "none",
+      strikethrough: false,
+      backgroundPaddingScale: undefined,
+      roundness: null,
+    };
+  }
+  if (
+    element.type !== "rectangle" &&
+    element.type !== "ellipse" &&
+    element.type !== "diamond" &&
+    element.type !== "arrow" &&
+    element.type !== "line" &&
+    element.type !== "freedraw"
+  ) {
+    return null;
+  }
+  const round = defaults.currentItemRoundness === "round";
+  return {
+    ...shape,
+    fillStyle: defaults.currentItemFillStyle,
+    strokeWidth: hasVectorStrokeWidth(element.type)
+      ? defaults.currentItemVectorStrokeWidth
+      : getStrokeWidthByKey(element.type, defaults.currentItemStrokeWidthKey),
+    strokeStyle: defaults.currentItemStrokeStyle,
+    roughness: defaults.currentItemRoughness,
+    ...(element.type === "freedraw"
+      ? {}
+      : {
+          roundness: !round
+            ? null
+            : element.type === "rectangle"
+            ? {
+                type: ROUNDNESS.ADAPTIVE_RADIUS,
+                value: getDefaultCornerRadiusForElementType("rectangle"),
+              }
+            : {
+                type: isUsingAdaptiveRadius(element.type)
+                  ? ROUNDNESS.ADAPTIVE_RADIUS
+                  : ROUNDNESS.PROPORTIONAL_RADIUS,
+              },
+        }),
+    ...(element.type === "arrow"
+      ? {
+          startArrowhead: defaults.currentItemStartArrowhead,
+          endArrowhead: defaults.currentItemEndArrowhead,
+        }
+      : {}),
+  };
+};

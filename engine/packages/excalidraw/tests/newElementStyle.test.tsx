@@ -29,6 +29,7 @@ const fill = (color: string) =>
   act(() => {
     h.app.actionManager.executeAction(actionChangeBackgroundColor, "ui", {
       currentItemBackgroundColor: color,
+      viewBackgroundColor: h.state.viewBackgroundColor,
     });
   });
 
