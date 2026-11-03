@@ -2934,7 +2934,9 @@ describe("textWysiwyg", () => {
         ctrlKey: true,
         shiftKey: true,
       });
-      expect(textElement.fontSize).toBe(origFontSize * 1.1);
+      // YAZ-4247: a new text is 14 px; one step up is Math.round(14 × 1.1) = 15
+      expect(origFontSize).toBe(14);
+      expect(textElement.fontSize).toBe(15);
 
       fireEvent.keyDown(textarea, {
         key: KEYS.CHEVRON_LEFT,
@@ -3959,29 +3961,21 @@ describe("textWysiwyg", () => {
     });
 
     it("should wrap text in a container when wrap text in container triggered from context menu", async () => {
-      UI.clickTool("text");
-      mouse.clickAt(20, 30);
-      const editor = await getTextEditor();
-
-      updateTextEditor(
-        editor,
-        "Excalidraw is an opensource virtual collaborative whiteboard",
-      );
-
-      editor.select();
-      // YAZ-3943 demo 2: the text toolbar's align is one button with a menu of the three
-      openTextToolbarPopover("Text align");
-      clickTextAlign("Left");
-
-      Keyboard.exitTextEditor(editor);
-
-      const textElement = h.elements[1] as ExcalidrawTextElement;
-      expect(textElement.width).toBe(600);
-      expect(textElement.height).toBe(25);
-      expect(textElement.textAlign).toBe(TEXT_ALIGN.LEFT);
-      expect((textElement as ExcalidrawTextElement).text).toBe(
-        "Excalidraw is an opensource virtual collaborative whiteboard",
-      );
+      // YAZ-4247: a text typed after a click now wraps at the canvas edge and
+      // is 14 px; this test is about the context menu, so the text is made
+      // at 20 px with no wrap, as the typed text was before
+      const textElement = API.createElement({
+        type: "text",
+        text: "Excalidraw is an opensource virtual collaborative whiteboard",
+        x: -280,
+        y: 17.5,
+        fontSize: 20,
+        textAlign: TEXT_ALIGN.LEFT,
+        // the size the typed text measured at 20 px
+        width: 600,
+        height: 25,
+      });
+      API.setElements([...h.elements, textElement]);
 
       API.setSelectedElements([textElement] as NonDeletedExcalidrawElement[]);
 
