@@ -5,7 +5,8 @@ import {
   getWrappedTextLines,
 } from "./textWrapping";
 import { charWidth, getLineHeightInPx, getLineWidth } from "./textMeasurements";
-import { parseTextListLine } from "./textList";
+import { getHiddenLines } from "./textFolds";
+import { parseTextListLine, TEXT_LIST_CHECK_MARKERS } from "./textList";
 import {
   getHostLinksVersion,
   getLinkPillWidth,
@@ -51,6 +52,11 @@ export type StyledTextSegment = {
    * drawn pill with the page's name.
    */
   link?: StyledTextLink;
+  /**
+   * YAZ-4277 D4: a checklist marker (`☐` or `☑` and the spaces after it).
+   * The renderers draw a box in its place; its width stays the letters'.
+   */
+  checkbox?: "open" | "done";
 };
 
 export type StyledTextLink = Omit<TextLinkMatch, "start" | "end">;
@@ -272,6 +278,8 @@ export const getStyledVisualLines = (args: {
   wholeElementItalic: boolean;
   wholeElementUnderlined: boolean;
   wholeElementStrikethrough: boolean;
+  /** YAZ-4277 D3: the lines a fold hides (`textFolds.ts`); they get no visual line. */
+  hiddenLines?: ReadonlySet<number> | null;
 }): StyledVisualLine[] => {
   const lines: StyledVisualLine[] = [];
   const fonts: FontString[] = [];
@@ -290,6 +298,10 @@ export const getStyledVisualLines = (args: {
   for (const [logicalLine, originalLine] of args.originalText
     .split("\n")
     .entries()) {
+    if (args.hiddenLines?.has(logicalLine)) {
+      sourceOffset += originalLine.length + 1;
+      continue;
+    }
     const lineStart = sourceOffset;
     const lineEnd = lineStart + originalLine.length;
     while (runIndex < runs.length && runs[runIndex].end <= sourceOffset) {
@@ -301,8 +313,21 @@ export const getStyledVisualLines = (args: {
       runs[runIndex].start < lineEnd;
     // YAZ-4039 D7: a line with a link pill takes the segment path too
     const links = getTextLinks(originalLine);
+    const parsedLine = parseTextListLine(originalLine);
+    // YAZ-4277 D4: and so does a checklist item, for its box
+    const checkbox =
+      parsedLine.markerKind === "check"
+        ? {
+            start: parsedLine.indentation.length,
+            end: originalLine.length - parsedLine.content.length,
+            state:
+              parsedLine.marker === TEXT_LIST_CHECK_MARKERS[1]
+                ? ("done" as const)
+                : ("open" as const),
+          }
+        : null;
     const pieces =
-      hasRuns || links.length
+      hasRuns || links.length || checkbox
         ? getLinePieces(
             originalLine,
             sourceOffset,
@@ -316,6 +341,7 @@ export const getStyledVisualLines = (args: {
               color: undefined,
             },
             links,
+            checkbox,
           )
         : null;
     const visualLines = pieces
@@ -326,7 +352,7 @@ export const getStyledVisualLines = (args: {
           links,
         )
       : getWrappedTextLines(originalLine, font, args.maxWidth);
-    const isListItem = parseTextListLine(originalLine).markerKind !== "none";
+    const isListItem = parsedLine.markerKind !== "none";
     // YAZ-4100 3C: a styled line in a right-to-left script draws its pieces
     // from the right; a line with no run keeps today's path
     const rtl = !!pieces && isRTL(originalLine);
@@ -386,6 +412,7 @@ type LinePiece = ResolvedTextStyle & {
   start: number;
   end: number;
   link?: StyledTextLink;
+  checkbox?: "open" | "done";
 };
 
 /**
@@ -399,13 +426,15 @@ const getLinePieces = (
   firstRun: number,
   whole: ResolvedTextStyle,
   links: readonly TextLinkMatch[],
+  checkbox: { start: number; end: number; state: "open" | "done" } | null,
 ) => {
   const pieces = getRunPieces(line, lineStart, runs, firstRun, whole);
+  const checked = checkbox ? splitCheckboxPiece(pieces, checkbox) : pieces;
   if (!links.length) {
-    return pieces;
+    return checked;
   }
   const linked: LinePiece[] = [];
-  for (const piece of pieces) {
+  for (const piece of checked) {
     let start = piece.start;
     for (const { start: linkStart, end: linkEnd, ...link } of links) {
       if (linkEnd <= start || linkStart >= piece.end) {
@@ -424,6 +453,35 @@ const getLinePieces = (
     }
   }
   return linked;
+};
+
+/** YAZ-4277 D4: the checklist marker as one piece of its own, in the style of its first letter. */
+const splitCheckboxPiece = (
+  pieces: readonly LinePiece[],
+  checkbox: { start: number; end: number; state: "open" | "done" },
+) => {
+  const split: LinePiece[] = [];
+  for (const piece of pieces) {
+    if (piece.end <= checkbox.start || piece.start >= checkbox.end) {
+      split.push(piece);
+      continue;
+    }
+    if (piece.start < checkbox.start) {
+      split.push({ ...piece, end: checkbox.start });
+    }
+    if (piece.start <= checkbox.start) {
+      split.push({
+        ...piece,
+        start: checkbox.start,
+        end: checkbox.end,
+        checkbox: checkbox.state,
+      });
+    }
+    if (piece.end > checkbox.end) {
+      split.push({ ...piece, start: Math.max(piece.start, checkbox.end) });
+    }
+  }
+  return split;
 };
 
 const getRunPieces = (
@@ -541,6 +599,7 @@ const getLineSegments = (
       color: piece.color,
       ...(piece.highlight ? { highlight: piece.highlight } : {}),
       ...(piece.link ? { link: piece.link } : {}),
+      ...(piece.checkbox ? { checkbox: piece.checkbox } : {}),
     });
     x += width;
   }
@@ -576,6 +635,7 @@ type TextElementLayoutStyle = Pick<
   | "textDecoration"
   | "strikethrough"
   | "textRuns"
+  | "foldedLines"
 >;
 
 const getTextElementStyledLinesArgs = (
@@ -597,6 +657,7 @@ const getTextElementStyledLinesArgs = (
   wholeElementItalic: element.fontStyle === "italic",
   wholeElementUnderlined: element.textDecoration === "underline",
   wholeElementStrikethrough: element.strikethrough === true,
+  hiddenLines: getHiddenLines(element, originalText),
 });
 
 /** YAZ-4074 6A item 16: the most text boxes the styled-lines memo holds. */
@@ -604,7 +665,7 @@ export const STYLED_LINES_MEMO_MAX = 1000;
 
 /**
  * YAZ-3718 D1: one layout for each text box with runs or links, keyed by its
- * text, runs, font and width. `refreshTextDimensions`, the canvas and the
+ * text, runs, font, folds (YAZ-4277 D3) and width. `refreshTextDimensions`, the canvas and the
  * editor overlay ask for the same layout on a keystroke, so only the first one
  * measures. The memo is for the whole window: a box that was deleted, or whose
  * board closed, keeps its entry until the memo is full. Then the box changed
@@ -618,6 +679,7 @@ const styledLinesMemo = new Map<
     font: FontString;
     textDecoration: ExcalidrawTextElement["textDecoration"];
     strikethrough: ExcalidrawTextElement["strikethrough"];
+    foldedLines: ExcalidrawTextElement["foldedLines"];
     maxWidth: number;
     linksVersion: number;
     lines: StyledVisualLine[];
@@ -645,6 +707,7 @@ export const getTextElementStyledLines = (
     memo.font === font &&
     memo.textDecoration === element.textDecoration &&
     memo.strikethrough === element.strikethrough &&
+    memo.foldedLines === element.foldedLines &&
     memo.maxWidth === maxWidth &&
     memo.linksVersion === linksVersion
   ) {
@@ -662,6 +725,7 @@ export const getTextElementStyledLines = (
     font,
     textDecoration: element.textDecoration,
     strikethrough: element.strikethrough,
+    foldedLines: element.foldedLines,
     maxWidth,
     linksVersion,
     lines,
@@ -669,13 +733,27 @@ export const getTextElementStyledLines = (
   return lines;
 };
 
+/**
+ * The size of a text box comes from its visible lines (YAZ-4277 D6). Its
+ * `text`, which the box saves as `element.text`, keeps the folded lines too
+ * (D3): copy as text and other Excalidraw apps still have all of it.
+ */
 export const getTextElementStyledLayout = (
   element: TextElementLayoutStyle &
     Pick<ExcalidrawTextElement, "id" | "originalText" | "lineHeight">,
   maxWidth: number,
   originalText = element.originalText,
-) =>
-  getStyledTextLayoutFromLines(
+) => {
+  const layout = getStyledTextLayoutFromLines(
     getTextElementStyledLines(element, maxWidth, originalText),
     element,
   );
+  if (!getHiddenLines(element, originalText)) {
+    return layout;
+  }
+  const allLines = getStyledVisualLines({
+    ...getTextElementStyledLinesArgs(element, maxWidth, originalText),
+    hiddenLines: null,
+  });
+  return { ...layout, text: allLines.map((line) => line.text).join("\n") };
+};

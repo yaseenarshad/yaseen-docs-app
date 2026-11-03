@@ -74,8 +74,8 @@
 .image-studio__naming-preview {
   align-items: center;
   background:
-    linear-gradient(45deg, var(--color-gray-10) 25%, transparent 25%) 0 0 / 12px 12px,
-    linear-gradient(-45deg, var(--color-gray-10) 25%, transparent 25%) 0 0 / 12px 12px,
+    linear-gradient(45deg, var(--picture-tile-check, var(--color-gray-10)) 25%, transparent 25%) 0 0 / 12px 12px,
+    linear-gradient(-45deg, var(--picture-tile-check, var(--color-gray-10)) 25%, transparent 25%) 0 0 / 12px 12px,
     var(--island-bg-color);
   border-radius: 8px;
   display: flex;

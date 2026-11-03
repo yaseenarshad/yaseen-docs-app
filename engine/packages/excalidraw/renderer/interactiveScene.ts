@@ -51,7 +51,13 @@ import {
   selectGroupsFromGivenElements,
 } from "@excalidraw/element";
 
-import { renderSelectionElement } from "@excalidraw/element";
+import {
+  getContainerElement,
+  getFoldArrowPrefs,
+  getTextLayoutMaxWidth,
+  renderSelectionElement,
+  renderTextFoldArrows,
+} from "@excalidraw/element";
 
 import { getCommonBounds, getElementAbsoluteCoords } from "@excalidraw/element";
 import {
@@ -2034,6 +2040,28 @@ const _renderInteractiveScene = ({
       }
     }
     context.restore();
+  }
+
+  // YAZ-4277 D5: the hovered open item's ▾; the static scene draws the rest
+  const foldHover = renderConfig.foldArrowHover;
+  const foldElement = foldHover && elementsMap.get(foldHover.elementId);
+  if (foldHover && foldElement && isTextElement(foldElement)) {
+    renderTextFoldArrows(
+      context,
+      foldElement,
+      getTextLayoutMaxWidth(
+        foldElement,
+        getContainerElement(foldElement, elementsMap),
+      ),
+      {
+        prefs: renderConfig.foldArrows ?? getFoldArrowPrefs(),
+        zoom: appState.zoom.value,
+        offsetX: appState.scrollX,
+        offsetY: appState.scrollY,
+        dark: appState.theme === THEME.DARK,
+        lines: [foldHover.line],
+      },
+    );
   }
 
   appState.searchMatches?.matches.forEach(({ id, focus, matchedLines }) => {

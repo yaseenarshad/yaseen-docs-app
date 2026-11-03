@@ -142,6 +142,15 @@ import {
   newLinearElement,
   newTextElement,
   refreshTextDimensions,
+  setFoldedLines,
+  DEFAULT_FOLD_ARROW_PREFS,
+  getFoldArrowAt,
+  getFoldArrowSize,
+  getToggledFoldedLines,
+  isLineFolded,
+  setFoldArrowPrefs,
+  getTextCheckboxAt,
+  getToggledCheckboxText,
   deepCopyElement,
   duplicateElements,
   hasBoundTextElement,
@@ -282,6 +291,7 @@ import {
   remapTextRunsForTextEdit,
 } from "@excalidraw/element";
 
+import type { FoldArrowHit } from "@excalidraw/element";
 import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
 
 import type {
@@ -377,6 +387,8 @@ import {
 } from "../actions/actionFrame";
 import { createRedoAction, createUndoAction } from "../actions/actionHistory";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
+// YAZ-4277 D9: registers ⌘↑ / ⌘↓ on selected text boxes
+import "../actions/actionTextFolds";
 import {
   getNewTextWrapMargin,
   getResponsiveTextFontSize,
@@ -832,6 +844,11 @@ class App extends React.Component<AppProps, AppState> {
   hitLinkElement?: NonDeletedExcalidrawElement;
   /** YAZ-4039 D11: the link pill under the pointer, as last reported. */
   private hostLinkHover: HostLinkHit | null = null;
+  /** YAZ-4277 D5: the open item whose ▾ shows on hover. */
+  private foldArrowHover: Readonly<{
+    elementId: ExcalidrawElement["id"];
+    line: number;
+  }> | null = null;
   /** The scene's fonts are loaded: a pill's box can be measured. */
   private hostLinkFontsReady = false;
   /** YAZ-4101 3D: moves when the text editor's selection shows another style. */
@@ -901,6 +918,7 @@ class App extends React.Component<AppProps, AppState> {
       isDestroyed: false,
       updateScene: this.updateScene,
       applyDeltas: this.applyDeltas,
+      setTextFolds: this.setTextFolds,
       mutateElement: this.mutateElement,
       updateLibrary: this.library.updateLibrary,
       addFiles: this.addFiles,
@@ -2852,6 +2870,7 @@ class App extends React.Component<AppProps, AppState> {
                               pendingFlowchartNodes:
                                 this.flowchart.pendingNodes,
                               theme: this.state.theme,
+                              foldArrows: this.getFoldArrowPrefs(),
                             }}
                           />
                           {newElementCanvasElement && (
@@ -2894,6 +2913,8 @@ class App extends React.Component<AppProps, AppState> {
                             renderScrollbars={
                               this.props.renderScrollbars === true
                             }
+                            foldArrowHover={this.foldArrowHover}
+                            foldArrows={this.getFoldArrowPrefs()}
                             editorInterface={this.editorInterface}
                             interactionEnabled={this.isInteractionEnabled()}
                             navigationEnabled={this.isNavigationEnabled()}
@@ -3972,6 +3993,8 @@ class App extends React.Component<AppProps, AppState> {
     this.unmounted = false;
     // before the scene loads, so its text boxes lay out with their pills
     this.mountHostLinks();
+    // YAZ-4277 D7: exports read the board's fold arrow size and thickness
+    setFoldArrowPrefs(this.getFoldArrowPrefs());
     this.api = this.createExcalidrawAPI();
     window.addEventListener(
       ANIMATION_RUNTIME_POLICY_EVENT,
@@ -4455,6 +4478,11 @@ class App extends React.Component<AppProps, AppState> {
     // YAZ-4074 6A item 6: GIFs wait while a text box is in edit mode
     if (prevState.editingTextElement !== this.state.editingTextElement) {
       this.gifPlayer.setTyping(this.state.editingTextElement !== null);
+    }
+
+    if (prevProps.foldArrows !== this.props.foldArrows) {
+      setFoldArrowPrefs(this.getFoldArrowPrefs());
+      this.foldArrowHover = null;
     }
 
     if (prevProps.hostLinks !== this.props.hostLinks) {
@@ -6258,6 +6286,20 @@ class App extends React.Component<AppProps, AppState> {
           }
         }
 
+        // YAZ-4277 D9: ⌘↑ / ⌘↓ with text boxes selected fold them; the
+        // flowchart takes every other ⌘ + arrow, so they go first
+        if (
+          canMutateSelection &&
+          event[KEYS.CTRL_OR_CMD] &&
+          isArrowKey(event.key) &&
+          selectedElements.some(
+            (element) => isTextElement(element) && !element.containerId,
+          ) &&
+          this.actionManager.handleKeyDown(event)
+        ) {
+          return;
+        }
+
         if (canMutateSelection && this.flowchart.handleKeyEvent(event)) {
           return;
         }
@@ -8047,6 +8089,18 @@ class App extends React.Component<AppProps, AppState> {
       this.state,
     );
 
+    // YAZ-4277 D4, D5: two quick clicks on a fold arrow or a checklist box
+    // act twice; they start no edit
+    if (
+      this.getFoldArrowTargetAt({ x: sceneX, y: sceneY })?.onArrow ||
+      this.getTextCheckboxTargetAt(
+        { x: sceneX, y: sceneY },
+        this.getElementAtPosition(sceneX, sceneY),
+      )
+    ) {
+      return;
+    }
+
     if (selectedElements.length === 1 && isLinearElement(selectedElements[0])) {
       const selectedLinearElement: ExcalidrawLinearElement =
         selectedElements[0];
@@ -8448,6 +8502,168 @@ class App extends React.Component<AppProps, AppState> {
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     });
     return true;
+  };
+
+  /**
+   * YAZ-4277 D3: writes a box's folds through the switch point
+   * (`textFolds.ts`). The box resizes and its arrows follow. A fold is no
+   * undo step, but the board still changes and saves.
+   */
+  public setTextFolds = (
+    elementId: ExcalidrawElement["id"],
+    foldedLines: readonly number[],
+  ) => {
+    const element = this.scene.getNonDeletedElement(elementId);
+    if (!element || !isTextElement(element)) {
+      return false;
+    }
+    const changed = setFoldedLines(element, foldedLines, this.scene);
+    if (changed) {
+      this.store.scheduleAction(CaptureUpdateAction.NEVER);
+    }
+    return changed;
+  };
+
+  /** YAZ-4277 D5, D7: the board's fold arrows (the host's `foldArrows`). */
+  public getFoldArrowPrefs = () =>
+    this.props.foldArrows ?? DEFAULT_FOLD_ARROW_PREFS;
+
+  /**
+   * YAZ-4277 D5: the fold arrow, or the rest of an item's line, under a
+   * scene point. The topmost text box wins. A box is looked at only when the
+   * point is near it, so a pointer move costs a bounds check for each box.
+   */
+  private getFoldArrowTargetAt = (
+    scenePointer: Readonly<{ x: number; y: number }>,
+  ): FoldArrowHit | null => {
+    const prefs = this.getFoldArrowPrefs();
+    const zoom = this.state.zoom.value;
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    const elements = this.scene.getNonDeletedElements();
+    for (let index = elements.length - 1; index >= 0; index--) {
+      const element = elements[index];
+      if (
+        !isTextElement(element) ||
+        element.locked ||
+        this.state.editingTextElement?.id === element.id
+      ) {
+        continue;
+      }
+      const reach =
+        getFoldArrowSize(element, prefs, zoom) + element.fontSize * 0.2;
+      const near =
+        element.angle !== 0 ||
+        (scenePointer.y >= element.y - reach &&
+          scenePointer.y <= element.y + element.height + reach &&
+          scenePointer.x >= element.x - reach &&
+          scenePointer.x <= element.x + element.width);
+      if (!near) {
+        continue;
+      }
+      const hit = getFoldArrowAt(
+        element,
+        getTextLayoutMaxWidth(
+          element,
+          getContainerElement(element, elementsMap),
+        ),
+        prefs,
+        zoom,
+        scenePointer,
+      );
+      if (hit) {
+        return hit;
+      }
+    }
+    return null;
+  };
+
+  /**
+   * YAZ-4277 D5: the hovered item's ▾ (in "hover" mode) draws on the
+   * interactive canvas; a change of item renders once, a move inside it
+   * renders nothing. Returns the hit, for the cursor.
+   */
+  private updateFoldArrowHover = (
+    scenePointer: Readonly<{ x: number; y: number }> | null,
+  ) => {
+    const hit =
+      scenePointer &&
+      (this.state.activeTool.type === "selection" ||
+        this.state.activeTool.type === "lasso") &&
+      !this.state.viewModeEnabled
+        ? this.getFoldArrowTargetAt(scenePointer)
+        : null;
+    const element = hit && this.scene.getNonDeletedElement(hit.elementId);
+    const next =
+      hit &&
+      element &&
+      isTextElement(element) &&
+      this.getFoldArrowPrefs().openArrows === "hover" &&
+      !isLineFolded(element, hit.line)
+        ? hit
+        : null;
+    const last = this.foldArrowHover;
+    if (
+      last !== next &&
+      (last?.elementId !== next?.elementId || last?.line !== next?.line)
+    ) {
+      this.foldArrowHover = next && {
+        elementId: next.elementId,
+        line: next.line,
+      };
+      this.triggerRender();
+    }
+    return hit;
+  };
+
+  public getFoldArrowHover = () => this.foldArrowHover;
+
+  /** YAZ-4277 D4: the checklist box of the text box under a point, if any. */
+  private getTextCheckboxTargetAt = (
+    scenePointer: Readonly<{ x: number; y: number }>,
+    hitElement: NonDeletedExcalidrawElement | null,
+  ) => {
+    if (!hitElement || hitElement.locked) {
+      return null;
+    }
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    const textElement = isTextElement(hitElement)
+      ? hitElement
+      : getBoundTextElement(hitElement, elementsMap);
+    if (!textElement || this.state.editingTextElement?.id === textElement.id) {
+      return null;
+    }
+    const hit = getTextCheckboxAt(
+      textElement,
+      getTextLayoutMaxWidth(
+        textElement,
+        getContainerElement(textElement, elementsMap),
+      ),
+      scenePointer,
+    );
+    return hit && { element: textElement, offset: hit.offset };
+  };
+
+  /** YAZ-4277 D4: ticks or unticks a checklist item, as one undo step. */
+  private toggleTextCheckbox = (
+    element: NonDeleted<ExcalidrawTextElement>,
+    offset: number,
+  ) => {
+    const originalText = getToggledCheckboxText(element.originalText, offset);
+    if (originalText === element.originalText) {
+      return;
+    }
+    const next = newElementWith(element, { originalText });
+    redrawTextBoundingBox(
+      next,
+      this.scene.getContainerElement(element),
+      this.scene,
+    );
+    this.updateScene({
+      elements: this.scene
+        .getElementsIncludingDeleted()
+        .map((candidate) => (candidate.id === element.id ? next : candidate)),
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
   };
 
   /** Reports the hovered pill to the host, only when it changed. */
@@ -9316,6 +9532,17 @@ class App extends React.Component<AppProps, AppState> {
       );
     }
 
+    // YAZ-4277 D4, D5: an open item's ▾ on hover; a fold arrow and a
+    // checklist box take a click
+    if (
+      this.updateFoldArrowHover(scenePointer)?.onArrow ||
+      (!this.state.viewModeEnabled &&
+        this.getTextCheckboxTargetAt(scenePointer, hitElementMightBeLocked))
+    ) {
+      this.cursor.set(CURSOR_TYPE.POINTER);
+      return;
+    }
+
     const hoveredArrowTextAnchor =
       this.arrowText.updateHoveredAnchor(scenePointer);
 
@@ -9766,6 +9993,37 @@ class App extends React.Component<AppProps, AppState> {
     // panning
     if (this.handleCanvasPanUsingWheelOrSpaceDrag(event)) {
       return;
+    }
+
+    // YAZ-4277 D5: a click on a fold arrow folds or unfolds its item. It
+    // starts no edit and leaves the selection as it is
+    if (
+      event.button === POINTER_BUTTON.MAIN &&
+      !this.state.viewModeEnabled &&
+      (this.state.activeTool.type === "selection" ||
+        this.state.activeTool.type === "lasso")
+    ) {
+      const hit = this.getFoldArrowTargetAt(scenePointer);
+      const element = hit?.onArrow
+        ? this.scene.getNonDeletedElement(hit.elementId)
+        : null;
+      if (hit && element && isTextElement(element)) {
+        this.setTextFolds(
+          element.id,
+          getToggledFoldedLines(element, hit.line),
+        );
+        this.updateFoldArrowHover(scenePointer);
+        return;
+      }
+      // YAZ-4277 D4: a click on a checklist box ticks it, also not in edit
+      const checkbox = this.getTextCheckboxTargetAt(
+        scenePointer,
+        this.getElementAtPosition(scenePointerX, scenePointerY),
+      );
+      if (checkbox) {
+        this.toggleTextCheckbox(checkbox.element, checkbox.offset);
+        return;
+      }
     }
 
     // YAZ-4039 D11: an open gesture on a link pill is the host's; a plain

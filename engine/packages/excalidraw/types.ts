@@ -55,7 +55,7 @@ import type {
   EphemeralIncrement,
 } from "@excalidraw/element";
 import type { GlobalPoint } from "@excalidraw/math";
-import type { HostLinkResolver } from "@excalidraw/element";
+import type { FoldArrowPrefs, HostLinkResolver } from "@excalidraw/element";
 
 import type { Action } from "./actions/types";
 import type { Spreadsheet } from "./charts";
@@ -1081,6 +1081,12 @@ export interface ExcalidrawProps {
   /** Yaseen Docs (YAZ-4277 D1): the editor of a text box. Keep it stable. Absent: the textarea. */
   textEditor?: HostTextEditor;
   /**
+   * Yaseen Docs (YAZ-4277 D5, D7): the fold arrows of text boxes: when open
+   * items show ▾, the size, the thickness and the smallest size on screen.
+   * Keep it stable. Absent: `DEFAULT_FOLD_ARROW_PREFS`.
+   */
+  foldArrows?: FoldArrowPrefs;
+  /**
    * Yaseen Docs (YAZ-4157 demo 6L): the host's own items in the board's
    * right-click menu, asked each time the menu opens on the canvas or on a
    * selection. Not asked in view mode.
@@ -1408,6 +1414,7 @@ export interface ExcalidrawImperativeAPI {
   isDestroyed: boolean;
   updateScene: InstanceType<typeof App>["updateScene"];
   applyDeltas: InstanceType<typeof App>["applyDeltas"];
+  setTextFolds: InstanceType<typeof App>["setTextFolds"];
   mutateElement: InstanceType<typeof App>["mutateElement"];
   updateLibrary: InstanceType<typeof Library>["updateLibrary"];
   resetScene: InstanceType<typeof App>["resetScene"];

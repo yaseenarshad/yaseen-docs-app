@@ -18,6 +18,17 @@
   --right-sidebar-width: var(--canvas-panel-width, 302px) !important;
 }
 
+/* The check of the picture tiles' chequerboard (YAZ-4285, YAZ-4277 D12): the engine's light grey in light mode. The
+   engine's dark theme does not change that grey, so in dark mode the tiles showed light triangles on near black; there
+   the check is a quiet step above the panel's own #232329. */
+.drawing-surface .excalidraw {
+  --picture-tile-check: var(--color-gray-10);
+}
+
+.drawing-surface .excalidraw.theme--dark {
+  --picture-tile-check: #2c2c33;
+}
+
 /* The panel's drag edge: over its right border, a hit area wider than the line. */
 .canvas-panel__resize {
   bottom: 0;
@@ -54,8 +65,8 @@
 .image-studio__preview {
   align-items: center;
   background:
-    linear-gradient(45deg, var(--color-gray-10) 25%, transparent 25%) 0 0 / 12px 12px,
-    linear-gradient(-45deg, var(--color-gray-10) 25%, transparent 25%) 0 0 / 12px 12px,
+    linear-gradient(45deg, var(--picture-tile-check, var(--color-gray-10)) 25%, transparent 25%) 0 0 / 12px 12px,
+    linear-gradient(-45deg, var(--picture-tile-check, var(--color-gray-10)) 25%, transparent 25%) 0 0 / 12px 12px,
     var(--island-bg-color);
   display: flex;
   justify-content: center;

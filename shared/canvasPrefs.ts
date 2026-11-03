@@ -13,9 +13,9 @@
  * `client/src/drawings/engine.ts`). The types and the defaults themselves live in `shared/types.ts`
  * — this file is the behaviour.
  *
- * FOUR KEYS ARE NOT PLAIN appState (the last two, `newTextScreenSize` and `newTextWrapMargin`, YAZ-4247: the engine's
- * `setNewTextScreenSize` and `setNewTextWrapMargin`, set by the surface; `prefsToAppState` emits nothing for them and
- * `appStateToPrefs` keeps the stored ones):
+ * EIGHT KEYS ARE NOT PLAIN appState (`newTextScreenSize` and `newTextWrapMargin`, YAZ-4247: the engine's
+ * `setNewTextScreenSize` and `setNewTextWrapMargin`, set by the surface; the four `foldArrow…` keys, YAZ-4277: the
+ * engine's `foldArrows` prop; `prefsToAppState` emits nothing for them and `appStateToPrefs` keeps the stored ones):
  * - `toolLock` lives inside `activeTool`, and a partial `activeTool` handed to `updateScene` would
  *   wipe the tool the user is holding. `prefsToAppState` emits the DEFAULT tool shape with the
  *   lock set, which is right at MOUNT and wrong for a live update — the surface merges with the
@@ -31,7 +31,7 @@
  */
 
 import { isRecord } from './guards'
-import { DEFAULT_CANVAS_PREFS, LASER_COLORS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, LASER_SIZES, LASER_TRAIL_MODES, ROUGHNESS_LEVELS, SELECT_ON_MODES, TEXT_ALIGNS, type CanvasPrefs, type LaserColor, type LaserSize, type LaserTrailMode, type Roughness, type SelectOn, type TextAlign } from './types'
+import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_MODES, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FOLD_ARROW_THICKNESSES, LASER_COLORS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, LASER_SIZES, LASER_TRAIL_MODES, ROUGHNESS_LEVELS, SELECT_ON_MODES, TEXT_ALIGNS, type CanvasPrefs, type FoldArrowMode, type FoldArrowThickness, type LaserColor, type LaserSize, type LaserTrailMode, type Roughness, type SelectOn, type TextAlign } from './types'
 
 /** Every pref key, in declaration order — the order `changedPrefKeys` reports in. */
 export const CANVAS_PREF_KEYS = Object.keys(DEFAULT_CANVAS_PREFS) as ReadonlyArray<keyof CanvasPrefs>
@@ -64,6 +64,10 @@ const FIELD_OK: { [K in keyof CanvasPrefs]: (v: unknown) => v is CanvasPrefs[K] 
   laserTrailMode: (v): v is LaserTrailMode => typeof v === 'string' && (LASER_TRAIL_MODES as readonly string[]).includes(v),
   laserColor: (v): v is LaserColor => typeof v === 'string' && (LASER_COLORS as readonly string[]).includes(v),
   laserSize: (v): v is LaserSize => typeof v === 'string' && (LASER_SIZES as readonly string[]).includes(v),
+  foldArrowsOpen: (v): v is FoldArrowMode => typeof v === 'string' && (FOLD_ARROW_MODES as readonly string[]).includes(v),
+  foldArrowSize: (v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= FOLD_ARROW_SIZE_MIN && v <= FOLD_ARROW_SIZE_MAX,
+  foldArrowThickness: (v): v is FoldArrowThickness => typeof v === 'string' && (FOLD_ARROW_THICKNESSES as readonly string[]).includes(v),
+  foldArrowMinSize: (v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= FOLD_ARROW_MIN_SIZE_MIN && v <= FOLD_ARROW_MIN_SIZE_MAX,
 }
 
 /** Strict: every field present and valid — the IPC boundary's check. */
@@ -149,6 +153,11 @@ export function prefsToAppState(prefs: CanvasPrefs, keys: ReadonlyArray<keyof Ca
       case 'newTextScreenSize':
       case 'newTextWrapMargin':
         break // the engine's `setNewTextScreenSize` and `setNewTextWrapMargin`, never appState (YAZ-4247)
+      case 'foldArrowsOpen':
+      case 'foldArrowSize':
+      case 'foldArrowThickness':
+      case 'foldArrowMinSize':
+        break // the engine's `foldArrows` prop, never appState (YAZ-4277 D5, D7)
       case 'defaultFontFamily':
         out.currentItemFontFamily = prefs.defaultFontFamily
         break
@@ -200,6 +209,11 @@ export function appStateToPrefs(appState: EngineAppStateSlice, fallback: CanvasP
     laserTrailMode: FIELD_OK.laserTrailMode(appState.laserTrailMode) ? appState.laserTrailMode : fallback.laserTrailMode,
     laserColor: FIELD_OK.laserColor(appState.laserColor) ? appState.laserColor : fallback.laserColor,
     laserSize: FIELD_OK.laserSize(appState.laserSize) ? appState.laserSize : fallback.laserSize,
+    // Not appState (YAZ-4277): the engine never changes them.
+    foldArrowsOpen: fallback.foldArrowsOpen,
+    foldArrowSize: fallback.foldArrowSize,
+    foldArrowThickness: fallback.foldArrowThickness,
+    foldArrowMinSize: fallback.foldArrowMinSize,
   }
 }
 
@@ -211,4 +225,12 @@ export function prefsEqual(a: CanvasPrefs, b: CanvasPrefs): boolean {
 /** The keys whose value differs, in `CANVAS_PREF_KEYS` order — what a live update has to push. */
 export function changedPrefKeys(prev: CanvasPrefs, next: CanvasPrefs): Array<keyof CanvasPrefs> {
   return CANVAS_PREF_KEYS.filter((k) => prev[k] !== next[k])
+}
+
+/**
+ * YAZ-4277 D5, D7: what the engine's `foldArrows` prop gets: the board's own mode (its cog, `"foldArrows"` in its
+ * `yaseendraw` block) over the app's "Fold arrows on open bullets", and the app's size, thickness and smallest size.
+ */
+export function foldArrowsOf(prefs: CanvasPrefs, board: FoldArrowMode | undefined): { openArrows: FoldArrowMode; size: number; thickness: FoldArrowThickness; minScreenSize: number } {
+  return { openArrows: board ?? prefs.foldArrowsOpen, size: prefs.foldArrowSize, thickness: prefs.foldArrowThickness, minScreenSize: prefs.foldArrowMinSize }
 }

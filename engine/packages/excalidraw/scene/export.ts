@@ -24,7 +24,15 @@ import {
 
 import { newElementWith } from "@excalidraw/element";
 
-import { isFrameLikeElement } from "@excalidraw/element";
+import {
+  getContainerElement,
+  getFoldArrowExportLeft,
+  getFoldArrowPrefs,
+  getFoldedLines,
+  getTextLayoutMaxWidth,
+  isFrameLikeElement,
+  isTextElement,
+} from "@excalidraw/element";
 
 import {
   getElementsOverlappingFrame,
@@ -42,6 +50,7 @@ import { newTextElement } from "@excalidraw/element";
 import type { Bounds } from "@excalidraw/common";
 
 import type {
+  ElementsMap,
   ExcalidrawFrameLikeElement,
   ExcalidrawTextElement,
   NonDeleted,
@@ -565,12 +574,37 @@ export const decodeSvgBase64Payload = async ({ svg }: { svg: string }) => {
   throw new Error("INVALID");
 };
 
+/** YAZ-4277 D5: a folded item's ▸ sits left of its marker, so it can stick out of its box. */
+const getFoldArrowsLeft = (
+  elements: readonly NonDeletedExcalidrawElement[],
+  minX: number,
+) => {
+  let left = minX;
+  let elementsMap: ElementsMap | null = null;
+  for (const element of elements) {
+    if (!isTextElement(element) || !getFoldedLines(element).length) {
+      continue;
+    }
+    elementsMap ??= arrayToMap(elements);
+    const arrowLeft = getFoldArrowExportLeft(
+      element,
+      getTextLayoutMaxWidth(element, getContainerElement(element, elementsMap)),
+      getFoldArrowPrefs(),
+    );
+    if (arrowLeft !== null) {
+      left = Math.min(left, arrowLeft);
+    }
+  }
+  return left;
+};
+
 // calculate smallest area to fit the contents in
 const getCanvasSize = (
   elements: readonly NonDeletedExcalidrawElement[],
   exportPadding: number,
 ): Bounds => {
-  const [minX, minY, maxX, maxY] = getCommonBounds(elements);
+  const [boxesMinX, minY, maxX, maxY] = getCommonBounds(elements);
+  const minX = getFoldArrowsLeft(elements, boxesMinX);
   const width = distance(minX, maxX) + exportPadding * 2;
   const height = distance(minY, maxY) + exportPadding * 2;
 

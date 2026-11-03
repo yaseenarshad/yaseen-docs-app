@@ -140,7 +140,7 @@ const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpe
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
 const EDITOR_GROUPS = ['Outline', 'Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents', 'Outside changes', 'Tables', 'Cell notes', 'Calendar tables']
 /** Settings › Drawings (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
-const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign'].map((k) => `canvas.${k}`)
+const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`)
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
@@ -1412,12 +1412,13 @@ describe('SettingsDialog search (D6)', () => {
     // The Selection toolbar row has "bullet" among its words (YAZ-3806 T7). Outline's hint names bullets (YAZ-4094): its four rows.
     type(searchInput(el), 'bullet')
     // The bullets in cells (YAZ-3818 demo): Tables and Cell notes too.
-    const settingsHits = ['Sidebar › Level lines', 'Editor › Outline', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Selection toolbar', 'Editor › Table of contents', 'Editor › Tables', 'Editor › Cell notes']
-    expect(headings(el).slice(0, 8)).toEqual(settingsHits)
+    // The fold arrows of a drawing's text boxes (YAZ-4277 D5, D7): their group's hint names a bullet.
+    const settingsHits = ['Sidebar › Level lines', 'Editor › Outline', 'Editor › Bullet threading', 'Editor › Section indent', 'Editor › Selection toolbar', 'Editor › Table of contents', 'Editor › Tables', 'Editor › Cell notes', 'Drawings › Fold arrows']
+    expect(headings(el).slice(0, 9)).toEqual(settingsHits)
     // On Hotkeys a hit is the ONE row that names a bullet, not its whole table (YAZ-3397 D5), under its key's card (YAZ-3564).
     // The clicks follow the keys (YAZ-3936): the three "Bullet dots" rows, and the built-in clicks of bullet lines and fold arrows.
     expect(headings(el).slice(-3)).toEqual(['Hotkeys › Click', 'Hotkeys › ⌘-click', 'Hotkeys › ⇧-click'])
-    expect(headings(el).slice(8).every((h) => h?.startsWith('Hotkeys › '))).toBe(true)
+    expect(headings(el).slice(9).every((h) => h?.startsWith('Hotkeys › '))).toBe(true)
     expect(rowIds(el).slice(0, 16)).toEqual(['sidebarLineStyle', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines'])
     expect(new Set(rowIds(el).slice(16))).toEqual(
       new Set([
@@ -1425,6 +1426,7 @@ describe('SettingsDialog search (D6)', () => {
         'tableCellBulletIndent',
         'tableCellBulletGap',
         'tableCellNoteTemplate',
+        ...['foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
         ...['bulletList', 'cycleTask', 'indent', 'outdent', 'foldHere', 'unfoldHere', 'foldAll', 'unfoldAll', 'zoomIn', 'copyVisible', 'enter', 'tab'].map((r) => `hotkey-note-${r}`),
         ...['thisTab', 'newTab', 'backgroundTab'].map((r) => `hotkey-bullets-${r}`),
         // A built-in click is found by its place too: "Bullet lines".

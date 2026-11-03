@@ -103,6 +103,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
     generateIdForFile,
     hostLinks,
     textEditor,
+    foldArrows,
     hostContextMenuItems,
     onExportPdf,
     onLinkOpen,
@@ -243,6 +244,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
           generateIdForFile={generateIdForFile}
           hostLinks={hostLinks}
           textEditor={textEditor}
+          foldArrows={foldArrows}
           hostContextMenuItems={hostContextMenuItems}
           onExportPdf={onExportPdf}
           onLinkOpen={onLinkOpen}
@@ -423,6 +425,20 @@ export {
   DEFAULT_NEW_TEXT_SCREEN_SIZE,
 } from "./textCreation";
 export { isInvisiblySmallElement } from "@excalidraw/element";
+// YAZ-4277 D3, D5: the folds of a text box (the `textFolds.ts` switch point) and its fold arrows.
+export {
+  DEFAULT_FOLD_ARROW_PREFS,
+  getAllFoldedLines,
+  getFoldableLines,
+  getFoldedLines,
+  getHiddenLines,
+  getToggledFoldedLines,
+  isFoldableLine,
+  isLineFolded,
+  normalizeFoldedLines,
+  TEXT_LIST_CHECK_MARKERS,
+} from "@excalidraw/element";
+export type { FoldArrowPrefs } from "@excalidraw/element";
 
 export { defaultLang, useI18n, languages } from "./i18n";
 export {

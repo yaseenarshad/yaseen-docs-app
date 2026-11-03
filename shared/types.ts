@@ -622,6 +622,18 @@ export interface BoardHoverLinksRequest {
 }
 
 /**
+ * `board:set-fold-arrows` (YAZ-4277 D5): the cog's "Fold arrows" on a drawing: `'app'` (no key: the app setting), or
+ * `"foldArrows": "hover"` / `"always"` in the board's `yaseendraw` block. One read, one atomic write, as Read only.
+ */
+export interface BoardFoldArrowsRequest {
+  root: string
+  path: string
+  value: 'app' | FoldArrowMode
+  /** Required: the mtime the tab last read or wrote. A differing disk mtime rejects `CONFLICT` and writes NOTHING. */
+  expectedMtime: number
+}
+
+/**
  * `fs:create-board` (YAZ-3028 D9): a NEW drawing or diagram, born with its empty content. Main picks
  * the content by the kind of `path` — the renderer sends none — stamps the dates, and never
  * overwrites (`ALREADY_EXISTS`). No note ID: IDs are for notes only.
@@ -1344,7 +1356,35 @@ export interface CanvasPrefs {
   laserColor: LaserColor
   /** The laser's size (`laserSize`): `S` (🔒 YAZ-1989 D1). */
   laserSize: LaserSize
+  /**
+   * YAZ-4277 D5: when an open bullet in a text box shows its fold arrow ▾: on hover over its line, or always. A folded
+   * bullet always shows ▸. A board's cog can override it (`"foldArrows"` in its `yaseendraw` block). Never appState:
+   * the engine's `foldArrows` prop.
+   */
+  foldArrowsOpen: FoldArrowMode
+  /** YAZ-4277 D7: the fold arrow's size, in % of its text size. `FOLD_ARROW_SIZE_MIN`–`MAX`. */
+  foldArrowSize: number
+  /** YAZ-4277 D7: the fold arrow's line. */
+  foldArrowThickness: FoldArrowThickness
+  /**
+   * YAZ-4277 D7: the smallest fold arrow on screen, px: zoomed out, an arrow stops shrinking here, so a folded bullet
+   * shows from afar. Screen only: exports use the size alone. `FOLD_ARROW_MIN_SIZE_MIN`–`MAX`.
+   */
+  foldArrowMinSize: number
 }
+
+/** YAZ-4277 D5: when an open bullet shows its fold arrow. */
+export const FOLD_ARROW_MODES = ['hover', 'always'] as const
+export type FoldArrowMode = (typeof FOLD_ARROW_MODES)[number]
+/** YAZ-4277 D7: the fold arrow's line, thin to thick. */
+export const FOLD_ARROW_THICKNESSES = ['thin', 'normal', 'thick'] as const
+export type FoldArrowThickness = (typeof FOLD_ARROW_THICKNESSES)[number]
+/** YAZ-4277 D7: the fold arrow's size, % of the text size. */
+export const FOLD_ARROW_SIZE_MIN = 50
+export const FOLD_ARROW_SIZE_MAX = 300
+/** YAZ-4277 D7: the smallest fold arrow on screen, px. */
+export const FOLD_ARROW_MIN_SIZE_MIN = 6
+export const FOLD_ARROW_MIN_SIZE_MAX = 48
 
 /** New text's size on screen (YAZ-4247), px. */
 export const NEW_TEXT_SCREEN_SIZE_MIN = 8
@@ -1373,6 +1413,10 @@ export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
   laserTrailMode: 'fade',
   laserColor: '#ff0000',
   laserSize: 'S',
+  foldArrowsOpen: 'hover',
+  foldArrowSize: 100,
+  foldArrowThickness: 'thick',
+  foldArrowMinSize: 14,
 }
 
 /**

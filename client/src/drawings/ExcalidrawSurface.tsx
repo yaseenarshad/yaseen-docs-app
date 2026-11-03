@@ -67,8 +67,8 @@
 import { requestKeySheet } from '../keys/keySheetRequest'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { picturesSize, referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
-import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
-import { CANVAS_PANEL_DEFAULT_W, CANVAS_PANEL_MAX_W, CANVAS_PANEL_MIN_W, DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type PageView } from '@shared/types'
+import { appStateToPrefs, changedPrefKeys, foldArrowsOf, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
+import { CANVAS_PANEL_DEFAULT_W, CANVAS_PANEL_MAX_W, CANVAS_PANEL_MIN_W, DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type FoldArrowMode, type PageView } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside, MouseMods } from '@shared/keys'
 import { holdColResize } from '../lib/colResize'
@@ -197,6 +197,8 @@ export interface DrawingSurfaceProps {
    * make the PDF. The tab passes it; without it the box has no PDF button. Read once, at mount.
    */
   onExportPdf?: (svg: string, size: { width: number; height: number }) => void | Promise<void>
+  /** The board's own "Fold arrows" (YAZ-4277 D5), from its `yaseendraw` block; absent: the app's setting. */
+  foldArrows?: FoldArrowMode
 }
 
 /** One arrow key on the canvas panel's edge (YAZ-4157 demo 6C). */
@@ -268,6 +270,7 @@ export function ExcalidrawSurface({
   hotkeysAside,
   links,
   onExportPdf,
+  foldArrows: boardFoldArrows,
 }: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
   // YAZ-4277 D1: one text box editor for the surface's life, on the loaded engine's box rules (the prop-stability rule);
@@ -763,6 +766,14 @@ export function ExcalidrawSurface({
     [engine, withPanel, activeTab, closePanel, onDock, imperativeApi, readOnly, theme, searchFocusPending, saveRequestPending, onSaveRequestTaken, onSearchFocused, hasSelection, startPresentation, keyBindings, canvasPanel.width, startPanelResize, resizePanelByKey],
   )
 
+  // YAZ-4277 D5, D7: the text boxes' fold arrows: the board's own mode over the app's, and the app's size rows. One
+  // stable object, so the memoized `<Excalidraw>` renders again only when a row changes.
+  const foldArrows = useMemo(
+    () => foldArrowsOf(canvasPrefs, boardFoldArrows),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the four fold rows only, not every canvas pref
+    [boardFoldArrows, canvasPrefs.foldArrowsOpen, canvasPrefs.foldArrowSize, canvasPrefs.foldArrowThickness, canvasPrefs.foldArrowMinSize],
+  )
+
   // The frame held while the engine chunk is arriving; the host's canvas frame sizes it.
   if (engine === null) return <div className="drawing-surface__loading" />
   const { Excalidraw } = engine
@@ -796,6 +807,7 @@ export function ExcalidrawSurface({
         hostLinks={links?.hostLinks}
         // YAZ-4277 D1: a text box edits with the notes engine (`textBoxEditor.ts`)
         textEditor={textEditor}
+        foldArrows={foldArrows}
         hostContextMenuItems={hostContextMenuItems}
         onExportPdf={exportPdf}
         onLinkOpen={onLinkOpen}
