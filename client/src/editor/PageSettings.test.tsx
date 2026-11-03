@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { TocSource } from '@shared/types'
+import type { OutsideChangeGlow, TocSource } from '@shared/types'
 import { PageSettings } from './PageSettings'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -495,5 +495,66 @@ describe('rows made while the menu is open (YAZ-3943)', () => {
     click(named('Export Image or PDF…'))
     expect(act2).toHaveBeenCalledTimes(1)
     expect(menu()).toBeNull()
+  })
+})
+
+/** "Outside changes glow" (YAZ-4272 D5): this page's glow, one native dropdown; Default follows Settings. */
+describe('PageSettings: Outside changes glow', () => {
+  let changed: ReturnType<typeof vi.fn<(glow: OutsideChangeGlow | null) => void>>
+
+  function mountWith(initial: OutsideChangeGlow | null, appGlow: OutsideChangeGlow = '60s') {
+    readText = vi.fn(() => 'text')
+    changed = vi.fn()
+    function Harness() {
+      const [glow, setGlow] = useState<OutsideChangeGlow | null>(initial)
+      const onChange = (next: OutsideChangeGlow | null) => {
+        changed(next)
+        setGlow(next)
+      }
+      return <PageSettings readOnly={false} onToggleReadOnly={() => undefined} lineNumbers={false} onToggleLineNumbers={() => undefined} tableOfContents onToggleTableOfContents={() => undefined} tocSource={null} onChangeTocSource={() => undefined} outsideGlow={glow} appGlow={appGlow} onChangeOutsideGlow={onChange} readText={readText} />
+    }
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<Harness />))
+    click(cog())
+  }
+
+  const select = () => menu()!.querySelector<HTMLSelectElement>('select.page-settings__select')
+  const pick = (value: string) =>
+    act(() => {
+      select()!.value = value
+      select()!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+  it('a mount that passes no handler has no dropdown (a board, a drawing, a code file)', () => {
+    mount()
+    click(cog())
+    expect(select()).toBeNull()
+    expect(menu()!.textContent).not.toContain('Outside changes glow')
+  })
+
+  it('a label and a dropdown after "TOC made from", above the counts; "Default" names Settings\u2019 glow and is chosen for a page with no choice', () => {
+    mountWith(null, '10s')
+    const label = menu()!.querySelector<HTMLLabelElement>('label.page-settings__label')!
+    expect(label.textContent).toBe('Outside changes glow:')
+    expect(label.htmlFor).toBe(select()!.id)
+    expect([...select()!.options].map((option) => option.textContent)).toEqual(['Default (10 seconds)', 'Until I check it', '10 seconds', '1 minute', 'Off'])
+    expect(select()!.value).toBe('')
+    const order = [...menu()!.children].map((child) => child.className || child.textContent)
+    expect(order.slice(-6)).toEqual(['page-settings__divider', 'page-settings__label', 'page-settings__select', 'page-settings__divider', '1 words', '4 characters'])
+  })
+
+  it('shows the saved glow; a pick hands the host that glow, Default hands null, and the menu stays open', () => {
+    mountWith('off')
+    expect(select()!.value).toBe('off')
+    pick('until-checked')
+    expect(changed).toHaveBeenLastCalledWith('until-checked')
+    expect(select()!.value).toBe('until-checked')
+    pick('')
+    expect(changed).toHaveBeenLastCalledWith(null)
+    expect(select()!.value).toBe('')
+    expect(changed).toHaveBeenCalledTimes(2)
+    expect(menu()).not.toBeNull()
   })
 })

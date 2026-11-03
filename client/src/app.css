@@ -3784,6 +3784,29 @@ body.drag-held iframe {
   font-size: 11px;
 }
 
+/* "Outside changes glow" (YAZ-4272 D5): the same small label, then one native dropdown the menu's width. */
+.page-settings__menu label.page-settings__label {
+  display: block;
+  color: var(--fg-muted);
+}
+
+.page-settings__select {
+  display: block;
+  width: calc(100% - 14px);
+  margin: 0 7px 4px;
+  padding: 3px 4px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.page-settings__select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* The small "i" beside the label: a quiet glyph, not one more row of the menu. */
 .page-settings__menu .page-settings__label .page-settings__info {
   display: inline-flex;

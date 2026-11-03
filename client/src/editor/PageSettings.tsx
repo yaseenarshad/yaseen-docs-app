@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useId, useRef, useState } from 'react'
-import type { TocSource } from '@shared/types'
+import type { OutsideChangeGlow, TocSource } from '@shared/types'
+import { OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
 import { CogIcon } from '../settings/SettingsButton'
 
 /** "TOC made from" (YAZ-2700 D14): Auto is the absence of a choice, `null`, and stands first — it is what a note has until the reader chooses. */
@@ -34,7 +35,8 @@ export interface PageSwitch {
  * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab —
  * all but section indent (YAZ-2709), "Guide lines" and "Folding" (YAZ-4094), "Table of contents" (YAZ-2950)
  * and "TOC made from" (YAZ-2700 D14), which the host saves with the note. "Line numbers" and "Heading
- * levels" are never saved.
+ * levels" are never saved. "Outside changes glow" (YAZ-4272 D5) is a native dropdown: Default (Settings' glow) or one
+ * of the four glows, saved in the note.
  *
  * "Read only" (YAZ-3076 D3) is the FIRST row on a note, a drawing and a diagram, and is stored IN
  * the file by the host. A file with no switch (a code file, YAZ-3448) gives no `onToggleReadOnly`. A board's menu has only that row: every Markdown-only row
@@ -49,7 +51,7 @@ export interface PageSwitch {
  * A drawing (YAZ-3943 D5, D13) passes `rows`, read while the menu is open and never while it is closed:
  * the pictures' size, "Move pictures out" or "Keep pictures inside", and the two exports.
  */
-export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, switches, switchesHeading, rows, readText }: {
+export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, switches, switchesHeading, rows, readText }: {
   /** The file's read-only switch (YAZ-3076 D1): a note, a drawing and a diagram have it. */
   readOnly?: boolean
   /** Off → the host turns it on; on → the host opens the "Allow edits?" box (this menu closes first). Absent → no row (a file with no switch, YAZ-3448). */
@@ -77,6 +79,12 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   tocSource?: TocSource | null
   /** Absent → the menu has no "TOC made from" choice (this page shows no table of contents: there is nothing to build). */
   onChangeTocSource?: (source: TocSource | null) => void
+  /** This page's glow for outside changes (YAZ-4272): its own choice, or `null` (Default), which follows Settings. */
+  outsideGlow?: OutsideChangeGlow | null
+  /** Settings' glow, which "Default (…)" names. */
+  appGlow?: OutsideChangeGlow
+  /** Absent → no "Outside changes glow" row (a board, a drawing, a diagram, a code file). `null` is Default. */
+  onChangeOutsideGlow?: (glow: OutsideChangeGlow | null) => void
   /** Plain rows after "Read only" (a code tab's three, YAZ-3449); absent or empty → none. */
   switches?: readonly PageSwitch[]
   /** A small heading over `switches`, which then form one group (a code tab: "All code files"), and a line after it. */
@@ -102,6 +110,7 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuId = useId()
   const tipId = useId()
+  const glowId = useId()
 
   // A press outside closes the menu, and so does the window losing focus (YAZ-3121, the rule of the
   // "Allow edits?" box): a `pointerdown` in the capture phase, because a canvas may cancel what follows
@@ -197,6 +206,16 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
               <button key={label} type="button" aria-pressed={value === tocSource} onClick={() => onChangeTocSource(value)}>{label}</button>
             ))}
           </div>
+        </>}
+        {/* A native dropdown: five choices do not fit the menu's width as buttons (YAZ-4272 D5). The menu stays open after a pick. */}
+        {onChangeOutsideGlow !== undefined && <>
+          <div className="page-settings__divider" aria-hidden="true" />
+          <label className="page-settings__label" htmlFor={glowId}>Outside changes glow:</label>
+          <select id={glowId} className="page-settings__select" value={outsideGlow ?? ''}
+            onChange={(event) => onChangeOutsideGlow(event.target.value === '' ? null : (event.target.value as OutsideChangeGlow))}>
+            <option value="">Default ({OUTSIDE_CHANGE_GLOW_OPTIONS.find((option) => option.value === appGlow)?.label ?? 'Settings'})</option>
+            {OUTSIDE_CHANGE_GLOW_OPTIONS.map(({ label, value }) => <option key={value} value={value}>{label}</option>)}
+          </select>
         </>}
         {readText !== undefined && <>
           <div className="page-settings__divider" aria-hidden="true" />
