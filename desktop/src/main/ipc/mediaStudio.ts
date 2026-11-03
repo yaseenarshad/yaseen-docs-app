@@ -14,7 +14,7 @@
  */
 import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
-import { isMediaBytesProvider, isMediaSearchSource, PIXABAY_SECRET, type MediaBytesRequest, type MediaSearchRequest } from '@shared/types'
+import { isMediaBytesProvider, isMediaSearchSource, PIXABAY_SECRET, type MediaBytesRequest, type MediaDrawingRequest, type MediaSearchRequest } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure } from '../fs/fsUtils'
 import { requireRequest, str, strOrNull } from '../fs/validate'
@@ -37,6 +37,11 @@ function requireBytesRequest(v: unknown): MediaBytesRequest {
   // catalog and has no bytes to fetch (🔒 YAZ-1775 D4).
   if (!isMediaBytesProvider(r.provider)) throw new BridgeFailure('BAD_REQUEST', "'provider' must be pixabay or iconify")
   return { provider: r.provider, id: str(r.id, 'id') }
+}
+
+/** One library item: the id's shape is checked by the providers (`parseDrawingId`). */
+function requireDrawingRequest(v: unknown): MediaDrawingRequest {
+  return { id: str(requireRequest(v).id, 'id') }
 }
 
 /** How often a running app sweeps the media cache again (YAZ-3044 A34); the first sweep is at launch. */
@@ -65,6 +70,8 @@ export function registerMediaStudioIpc(userData: string, secrets: Secrets, fetch
   handle(CONTRACT.media.search, async (req: unknown) => providers.search(requireSearchRequest(req)))
   handle(CONTRACT.media.preview, async (req: unknown) => providers.preview(requireBytesRequest(req)))
   handle(CONTRACT.media.import, async (req: unknown) => providers.import(requireBytesRequest(req)))
+  handle(CONTRACT.media.drawingIndex, async () => providers.drawingIndex())
+  handle(CONTRACT.media.drawing, async (req: unknown) => providers.drawing(requireDrawingRequest(req)))
 
   return folder
 }

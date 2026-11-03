@@ -12,8 +12,9 @@
  * those are the same rules whether the call came over the bridge or not.
  */
 import { shell } from 'electron'
-import type { ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest } from '@shared/types'
+import { MAX_COMPONENT_FRAGMENT_BYTES, type ComponentRenameRequest, type ComponentSaveRequest, type ComponentSlugRequest } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
+import { BridgeFailure } from '../fs/fsUtils'
 import { requireRequest, str } from '../fs/validate'
 import { followLibraryFolder } from '../library/folder'
 import { createComponentStore, type ComponentStore } from '../library/componentStore'
@@ -27,7 +28,9 @@ function requireSlugRequest(v: unknown): ComponentSlugRequest {
 
 function requireSaveRequest(v: unknown): ComponentSaveRequest {
   const r = requireRequest(v)
-  return { name: str(r.name, 'name'), fragmentJson: str(r.fragmentJson, 'fragmentJson'), previewPng: str(r.previewPng, 'previewPng') }
+  const fragmentJson = str(r.fragmentJson, 'fragmentJson')
+  if (Buffer.byteLength(fragmentJson) > MAX_COMPONENT_FRAGMENT_BYTES) throw new BridgeFailure('TOO_LARGE', 'that component is over 32 MB')
+  return { name: str(r.name, 'name'), fragmentJson, previewPng: str(r.previewPng, 'previewPng') }
 }
 
 function requireRenameRequest(v: unknown): ComponentRenameRequest {

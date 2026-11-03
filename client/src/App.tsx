@@ -655,7 +655,7 @@ export function App() {
   const changeCanvasPanel = useCallback(
     (canvasPanel: CanvasPanelState) => {
       const current = newNoteFolderInputs.current.settings.canvasPanel
-      if (current.tab !== canvasPanel.tab || current.docked !== canvasPanel.docked) changeSettings({ ...newNoteFolderInputs.current.settings, canvasPanel })
+      if (current.tab !== canvasPanel.tab || current.docked !== canvasPanel.docked || current.width !== canvasPanel.width) changeSettings({ ...newNoteFolderInputs.current.settings, canvasPanel })
     },
     [changeSettings],
   )

@@ -1,78 +1,159 @@
 /**
- * THE IMAGES TAB (🔒 YAZ-1775 D4, YAZ-1818): four views — Search, Shapes, Favorites, Recent —
- * over the providers MAIN owns. The renderer never holds an API key and never reaches a provider.
+ * THE ADD TAB (YAZ-4157; before it, the Images tab of 🔒 YAZ-1775 D4 / YAZ-1818 and the Components tab of YAZ-1819):
+ * ONE field over everything a board can take — your favorites, your recent adds, your saved components, the shapes,
+ * Excalidraw's public libraries, and the web (Iconify, Pixabay, over the providers MAIN owns). The renderer never holds
+ * an API key and never reaches a provider.
  *
- * A PREVIEW IS ASKED FOR, NOT LINKED TO. Every tile asks `media:preview` for its bytes as a
- * dataURL, because the renderer may not fetch from a provider; a favorite's stored `previewUrl`
- * is never read. The cache behind it is `lib/previewCache.ts`.
+ * WHAT IT SHOWS (D7). An empty field shows Favorites, Recent, Components and Shapes, one row each. A typed field shows
+ * "Best matches" — every local item, in the ONE order of `rankItems` (D4) — then "Hand-drawn" (the library items, ranked
+ * the same way as you type, demo 6K), then "From the web", one tile per icon with its variants on request (demo 6J).
+ * The chips (D8) narrow them.
  *
- * NO KEY IS NOT AN ERROR (🔒 YAZ-1775 D4). `pixabayAvailable` false simply hides the Pixabay source and
- * says nothing; Settings › Images is where a key is entered.
+ * WHAT IT LEARNS (D1, D5, D9). Each add is one `media:used` write: the MRU, the count, the text it was found by as a
+ * word, and at the third add a favorite — said once, quietly, with Undo. A removed favorite starts its count again:
+ * three more adds bring it back (demo 6A). "Add a word…" (a right-click on a tile) teaches a word by hand.
  *
- * OFFLINE IS A STATE, NOT A BANNER. A search that could not reach a provider renders a passive
- * line; Shapes keeps working entirely, and Favorites and Recent keep working with whatever
- * previews main still has cached.
+ * A PREVIEW IS ASKED FOR, NOT LINKED TO. Every media tile asks `media:preview` for its bytes as a dataURL, because the
+ * renderer may not fetch from a provider; a favorite's stored `previewUrl` is never read. A component's picture is
+ * `components:preview`, and a Hand-drawn item's is drawn here from its elements. The caches are bounded
+ * (`lib/previewCache.tsx`).
  *
- * THE SMART SHAPES ARRIVE LATE ON PURPOSE. `@excalidraw/element` is a second ~300 kB download
- * (`engine.ts`'s lazy rule), so the seven basic shapes render immediately and the twelve Smart
- * Shapes join when it lands. Nothing waits on it.
+ * NO KEY IS NOT AN ERROR (🔒 YAZ-1775 D4): with no Pixabay key there is no Photos chip, and nothing explains why.
+ * OFFLINE IS A STATE, NOT A BANNER: the web half says so in one line; everything local keeps working.
  *
- * WHAT AN INSERT COSTS ON DISK: nothing, here. The bytes go to the engine, its files map grows an
- * id the store does not hold, and `drawing:save` writes it into `assets/` before the scene names
- * it (🔒 YAZ-1775 D3).
+ * THE SMART SHAPES ARRIVE LATE ON PURPOSE. `@excalidraw/element` is a second ~300 kB download (`engine.ts`'s lazy
+ * rule), so the seven basic shapes render immediately and the twelve Smart Shapes join when it lands.
  *
- * WHAT IT REMEMBERS LIVES ELSEWHERE (🔒 YAZ-1990). Closing the canvas panel unmounts this tab, so
- * the view, the queries, the results and the scroll are `imageStudioSession.ts`'s; this component
- * only renders them and keeps what one click has in flight.
+ * WHAT IT REMEMBERS LIVES ELSEWHERE (🔒 YAZ-1990). Closing the canvas panel unmounts this tab, so the chip, the query,
+ * the results and the scroll are `imageStudioSession.ts`'s; this component renders them and keeps what one click has
+ * in flight.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { PIXABAY_SECRET, type MediaBytesProvider, type MediaSearchSource, type StudioItem } from '@shared/types'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { MAX_COMPONENT_NAME_LENGTH, MAX_ITEM_WORD_LENGTH, PIXABAY_SECRET, type ComponentItem, type MediaBytesProvider, type MediaLibraryFile, type StudioItem } from '@shared/types'
+import { normalizeWord } from '@shared/mediaLibrary'
 import { api } from '../api'
 import { createPreviewCache } from '../lib/previewCache'
+import { createScenePreviewPng, type PreviewBounds, type PreviewEngine } from '../lib/scenePreview'
 import { loadExcalidrawElement } from '../drawings/engine'
+import type { ComponentEngine, ComponentTarget } from '../components-library/componentData'
+import { componentFragmentJson, insertComponent } from '../components-library/componentData'
+import { captureImageFile, isTextPaste, nameFromFile, PASTE_IMAGE_TYPES, pastedImages } from '../components-library/pastedImage'
+import { componentItem, componentPreviews, useComponentLibrary } from '../components-library/useComponentLibrary'
 import { insertImage, insertShape, fileFromImport, type InsertEngine, type InsertTarget } from './insertShape'
-import { buildShapeCatalog, filterShapeCatalog, getShape, type ShapeCatalogItem, type ShapePreview, type SmartShapeApi } from './shapes'
-import { getErrorMessage, imageStudioSession, OFFLINE_NOTICE, runSearch, scrollTops, wasRequested, type StudioView } from './imageStudioSession'
+import { buildShapeCatalog, getShape, shapeAliases, type ShapeCatalogItem, type ShapePreview, type SmartShapeApi } from './shapes'
+import { groupResults } from './groupResults'
+import { rankItems } from './rankItems'
+import {
+  MIN_QUERY,
+  chipSource,
+  getErrorMessage,
+  imageStudioSession,
+  OFFLINE_NOTICE,
+  pickChip,
+  runSearch,
+  scrollTops,
+  searchNow,
+  STUDIO_CHIPS,
+  typeQuery,
+  wasRequested,
+  type StudioChip,
+} from './imageStudioSession'
 import './imageStudio.css'
 
-const STUDIO_VIEWS: readonly StudioView[] = ['search', 'shapes', 'favorites', 'recent']
+const CHIP_LABELS: Record<StudioChip, string> = { all: 'All', favorites: 'Favorites', components: 'Components', shapes: 'Shapes', icons: 'Icons', photos: 'Photos' }
 
-const VIEW_LABELS: Record<StudioView, string> = { search: 'Search', shapes: 'Shapes', favorites: 'Favorites', recent: 'Recent' }
+/** One row of the 4-column grid: what a section shows before "Show all" (D7). */
+const ROW = 4
+/** How many of your own matches a typed field shows at a time; "Show more" grows it. */
+const MATCH_PAGE = 48
+/** How to save a copied picture at full size (demo 6M), under Components. */
+const PASTE_HINT = 'Copy a picture anywhere, then press ⌘V here to save it to your library at full size. You can drop a picture file here too.'
+
+/** What an add says on a read-only board, where it puts nothing. */
+export const READ_ONLY_NOTICE = 'This board is read only. Click “Allow edits” on its Read only chip to add to it.'
+/** How many hand-drawn matches show at first (demo 6K): two rows; "Show more" adds `MATCH_PAGE`. */
+const DRAWING_PAGE = 8
 
 export interface ImageStudioProps {
-  /** The two engine values an insert needs; the panel only exists once the engine has loaded. */
-  engine: InsertEngine
+  /** The engine values an insert, a component capture and a component preview need. */
+  engine: InsertEngine & ComponentEngine & PreviewEngine
   /** The engine's imperative handle; `CanvasSidebar` does not render a tab without one. */
-  excalidrawAPI: InsertTarget
-  /** Set by a ⌘F that opened the tab: switch to Search and put the caret in the field (the web app's own pattern). */
+  excalidrawAPI: InsertTarget & ComponentTarget
+  /** Whether the canvas holds a selection right now — the gate of "Save selection" (D6). */
+  hasSelection: boolean
+  /** Set by a ⌘F that opened the tab: put the caret in the field (the web app's own pattern). */
   searchFocusPending?: boolean
   /** Called once the field has the focus, so the request is taken exactly once (🔒 YAZ-1990). */
   onSearchFocused?: () => void
+  /** The board's right-click "Save to library…" (demo 6L): open the name form for the selection, then call the taker. */
+  saveRequestPending?: boolean
+  onSaveRequestTaken?: () => void
+  /** A read-only board: an add puts nothing on it, so it records no use either. */
+  readOnly?: boolean
+  /** The board's theme, which the Hand-drawn tile pictures are drawn in. */
+  theme?: 'light' | 'dark'
 }
 
-/** A catalog shape as a studio item, so one grid renders all four views. */
+/** A catalog shape as a studio item, so one grid renders every kind. */
 const shapeItem = (shape: ShapeCatalogItem): StudioItem => ({
   itemKey: `shape:${shape.id}`,
   provider: 'shape',
   providerId: shape.id,
   kind: 'shape',
   title: shape.title,
-  collectionName: 'Shapes',
 })
 
+/** Whether an item belongs under a chip. */
+function inChip(chip: StudioChip, item: StudioItem, favoriteKeys: ReadonlySet<string>): boolean {
+  switch (chip) {
+    case 'all':
+      return true
+    case 'favorites':
+      return favoriteKeys.has(item.itemKey)
+    case 'components':
+      return item.provider === 'component'
+    case 'shapes':
+      return item.provider === 'shape'
+    case 'icons':
+      return item.provider === 'iconify'
+    case 'photos':
+      return item.provider === 'pixabay'
+  }
+}
+
 /**
- * The tile pictures. Keyed `provider:id` — the same key main's 24 h disk cache uses, so the two
- * can never disagree about what a tile is showing. Exported so a test starts with an empty one.
- * Bounded (YAZ-2073 5J): a long browse must not keep every tile it ever showed, and an evicted
- * tile refills from main's disk cache in milliseconds. 32 MB of dataURLs at most, too (YAZ-3737 S13): a few
- * big photos would cost more than many small icons.
+ * The media tile pictures. Keyed `provider:id` — the same key main's 24 h disk cache uses. Exported so a test starts
+ * with an empty one. Bounded (YAZ-2073 5J, YAZ-3737 S13): 300 pictures and 32 MB of dataURLs at most.
  */
 const previews = createPreviewCache(async (key) => {
   const [provider, ...rest] = key.split(':')
   const { dataURL } = await api.media.preview({ provider: provider as MediaBytesProvider, id: rest.join(':') })
   return dataURL
 }, { limit: 300, maxBytes: 32 * 1024 * 1024 })
-export const clearPreviewMemo = previews.clear
+/**
+ * What a hand-drawn tile (demo 6K) is drawn with: the board's engine and its look (its background). Set by the mounted
+ * tab in an effect; the cache below is module scope like the others, so it outlives a close of the panel. The theme is
+ * in the picture's KEY (`<theme>|<id>`), so a board in the other theme gets its own picture (polish, audit 9).
+ */
+let drawingCanvas: { engine: ComponentEngine & PreviewEngine; appState: () => Record<string, unknown> } | null = null
+const DRAWING_TILE_BOUNDS: PreviewBounds = { maxWidth: 240, maxHeight: 240, padding: 8 }
+/** The picture of what the save step saves (demo 6O). */
+const SAVING_PREVIEW_BOUNDS: PreviewBounds = { maxWidth: 480, maxHeight: 240, padding: 8 }
+/** A library item's picture: its elements from main (one library file serves all its items), drawn here as a PNG. */
+const drawingPreviews = createPreviewCache(async (key) => {
+  if (drawingCanvas === null) throw new Error('No board to draw with')
+  const { engine } = drawingCanvas
+  const [theme, id] = [key.slice(0, key.indexOf('|')), key.slice(key.indexOf('|') + 1)]
+  const { elements } = await api.media.drawing({ id })
+  const restored = engine.restoreElements(elements as never, null) as unknown as unknown[]
+  return createScenePreviewPng(engine, { elements: restored, appState: { ...drawingCanvas.appState(), theme }, files: {} }, DRAWING_TILE_BOUNDS)
+}, { limit: 300, maxBytes: 16 * 1024 * 1024 })
+
+export const clearPreviewMemo = () => {
+  previews.clear()
+  drawingPreviews.clear()
+  componentPreviews.clear()
+}
 
 /** A shape tile's picture: one of six stock outlines, or the engine's own generated path. */
 function ShapeTile({ preview }: { preview: ShapePreview }) {
@@ -116,25 +197,175 @@ function ShapeTile({ preview }: { preview: ShapePreview }) {
   )
 }
 
-export function ImageStudio({ engine, excalidrawAPI, searchFocusPending = false, onSearchFocused }: ImageStudioProps) {
+/** Where a tile's menu opens: at the pointer, or at the tile's corner from the keyboard. `right` keeps it in the panel. */
+type MenuAt = { top: number; left?: number; right?: number }
+/**
+ * The tile whose menu or row is open. `key` is a SLOT — the section and the item — not the item alone: one item can be
+ * in two sections at once (a favorite component is in Favorites and in Components), and only the tile that was
+ * right-clicked opens (demo 6B).
+ */
+type OpenTile = { key: string; mode: 'menu'; at: MenuAt } | { key: string; mode: 'word' | 'rename' | 'confirm' | 'variants' } | null
+const slotOf = (where: string, item: StudioItem) => `${where}|${item.itemKey}`
+
+/** Where an item comes from, in words (demo 6H): the tile's tooltip and the first line of its menu. */
+export function sourceLabel(item: StudioItem): string {
+  if (item.provider === 'iconify') return item.collectionName ? `Iconify · ${item.collectionName}` : 'Iconify'
+  if (item.provider === 'pixabay') return item.creator ? `Pixabay · ${item.creator}` : 'Pixabay'
+  if (item.provider === 'excalidraw') return item.collectionName ? `Excalidraw library · ${item.collectionName}` : 'Excalidraw library'
+  return item.provider === 'component' ? 'Your component' : 'Built-in shape'
+}
+
+/** Google Images for the text in the field (demo 6I): opened in the browser, never fetched by the app. */
+export const googleImagesUrl = (query: string) => `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query.trim())}`
+
+/** About the menu's drawn width: a menu that would pass the list's right edge opens to the left instead. */
+const MENU_WIDTH = 150
+
+/** The quiet line under the field (D9): one sentence, and the item Undo takes back out of the favorites. */
+type Line = { text: string; undo?: StudioItem } | null
+
+/**
+ * Arrow keys between tiles (D7). Left and right walk the tiles in reading order; up and down keep the column, and
+ * cross into the next or the previous section. ArrowUp from the first row goes back to the field.
+ */
+function moveBetweenTiles(event: KeyboardEvent<HTMLElement>, list: HTMLElement | null, field: HTMLInputElement | null) {
+  const from = event.target as HTMLElement
+  if (list === null || !from.classList.contains('image-studio__add')) return
+  const grids = [...list.querySelectorAll<HTMLElement>('.image-studio__grid')]
+  const tilesOf = (grid: HTMLElement) => [...grid.querySelectorAll<HTMLButtonElement>('.image-studio__add')]
+  const all = grids.flatMap(tilesOf)
+  const at = all.indexOf(from as HTMLButtonElement)
+  if (at === -1) return
+  let to: HTMLElement | null | undefined
+  if (event.key === 'ArrowRight') to = all[at + 1]
+  else if (event.key === 'ArrowLeft') to = all[at - 1]
+  else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    const g = grids.findIndex((grid) => grid.contains(from))
+    const tiles = tilesOf(grids[g])
+    const i = tiles.indexOf(from as HTMLButtonElement)
+    const col = i % ROW
+    if (event.key === 'ArrowDown') {
+      const next = grids.slice(g + 1).map(tilesOf).find((t) => t.length > 0)
+      to = tiles[i + ROW] ?? (i + ROW < Math.ceil(tiles.length / ROW) * ROW ? tiles.at(-1) : next?.[Math.min(col, next.length - 1)])
+    } else {
+      const prev = grids.slice(0, g).map(tilesOf).filter((t) => t.length > 0).at(-1)
+      to = i >= ROW ? tiles[i - ROW] : prev ? prev[Math.min(Math.floor((prev.length - 1) / ROW) * ROW + col, prev.length - 1)] : field
+    }
+  } else return
+  if (!to) return
+  event.preventDefault()
+  to.focus()
+}
+
+export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPending = false, onSearchFocused, saveRequestPending = false, onSaveRequestTaken, readOnly = false, theme = 'light' }: ImageStudioProps) {
   // The session outlives this component (🔒 YAZ-1990 D2): closing the panel unmounts it, reopening reads it back.
-  const { view, query, source, shapeQuery, searchedQuery, results, cursor, warnings, isSearching, offline, pageError, error, pixabayAvailable, favorites, recent, smart } =
-    useSyncExternalStore(imageStudioSession.subscribe, imageStudioSession.getState)
+  const session = useSyncExternalStore(imageStudioSession.subscribe, imageStudioSession.getState)
+  const { chip, query, searchedQuery, results, cursor, warnings, isSearching, waiting, offline, pageError, error, pixabayAvailable, favorites, recent, used, components, drawings, recentOpen, smart } = session
   const { set } = imageStudioSession
+  useEffect(() => {
+    drawingCanvas = { engine, appState: () => excalidrawAPI.getAppState() as unknown as Record<string, unknown> }
+  }, [engine, excalidrawAPI])
+
+  // The library index, once a window (demo 6K). A failure (offline) leaves it null, so the next mount asks again.
+  useEffect(() => {
+    if (imageStudioSession.getState().drawings !== null) return
+    let live = true
+    api.media.drawingIndex().then(
+      ({ items }) => live && set({ drawings: items }),
+      () => undefined,
+    )
+    return () => {
+      live = false
+    }
+  }, [])
   const [insertingKey, setInsertingKey] = useState<string | null>(null)
   const [busyFavoriteKey, setBusyFavoriteKey] = useState<string | null>(null)
+  const [openTile, setOpenTile] = useState<OpenTile>(null)
+  const [draft, setDraft] = useState('')
+  const [line, setLine] = useState<Line>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [componentName, setComponentName] = useState('')
+  const [shownMatches, setShownMatches] = useState(MATCH_PAGE)
+  const [shownDrawings, setShownDrawings] = useState(DRAWING_PAGE)
+  const [importMenuOpen, setImportMenuOpen] = useState(false)
+  const importMenuRef = useRef<HTMLSpanElement>(null)
+  // The Components ⋯ menu behaves as a tile's menu does (6B, polish audit 10): its item takes the focus, and a click
+  // outside it closes it.
+  useEffect(() => {
+    if (!importMenuOpen) return
+    importMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    const outside = (event: PointerEvent) => {
+      if (!importMenuRef.current?.contains(event.target as Node)) setImportMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', outside, true)
+    return () => document.removeEventListener('pointerdown', outside, true)
+  }, [importMenuOpen])
 
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  const searchGridRef = useRef<HTMLDivElement>(null)
-  const searchSentinelRef = useRef<HTMLDivElement>(null)
+  const fieldRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
-  // The library lists, and the ONE push that keeps them true in every window and every vault.
+  const report = (kind: 'error' | 'notice', message: string) => (kind === 'error' ? set({ error: message }) : setNotice(message))
+  const library = useComponentLibrary(engine, excalidrawAPI, report)
+  /**
+   * A picture pasted (⌘V) or dropped into the tab (demo 6M): its name form, at full size. One at a time; the event is
+   * taken only when it holds a picture, so a text paste into the field stays a text paste, and the board under the
+   * panel never gets the picture as well.
+   */
+  const takePictures = async (files: File[]) => {
+    try {
+      const picture = await captureImageFile(engine, files[0])
+      // A second picture keeps a name the user already typed (polish, audit 31).
+      setComponentName((typed) => (library.captured !== null && typed.trim() !== '' ? typed : nameFromFile(files[0].name)))
+      library.startSaveFrom(picture)
+      setNotice(files.length > 1 ? 'One picture at a time: the first one is ready to name.' : null)
+    } catch (cause) {
+      set({ error: getErrorMessage(cause, 'That picture could not be read') })
+    }
+  }
+  const takeFrom = (event: { preventDefault(): void; stopPropagation(): void }, data: DataTransfer | null) => {
+    const files = pastedImages(data)
+    if (files.length === 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    void takePictures(files)
+  }
+
+  /**
+   * The save step (demo 6O): while a selection or a picture waits for its name, the form shows WHAT is saved, and the
+   * rest of the tab is greyed and inert, so it reads as one step with one way out (Save, Cancel or Escape).
+   */
+  const saving = library.captured !== null
+  const [savingPreview, setSavingPreview] = useState<string | null>(null)
+  useEffect(() => {
+    setSavingPreview(null)
+    const captured = library.captured
+    if (captured === null) return
+    let live = true
+    createScenePreviewPng(engine, { elements: captured.elements, appState: excalidrawAPI.getAppState() as unknown as Record<string, unknown>, files: captured.files }, SAVING_PREVIEW_BOUNDS).then(
+      (png) => live && setSavingPreview(png),
+      () => undefined,
+    )
+    return () => {
+      live = false
+    }
+  }, [library.captured])
+
+  // The board's right-click "Save to library…" (demo 6L): the name form, once the tab can capture the selection.
+  useEffect(() => {
+    if (!saveRequestPending || !library.canCapture) return
+    onSaveRequestTaken?.()
+    setComponentName('')
+    library.startSave()
+  }, [saveRequestPending, library.canCapture, onSaveRequestTaken])
+
+  const setLibrary = (lib: MediaLibraryFile) => set({ favorites: lib.favorites, recent: lib.recent, used: lib.used })
+
+  // The library, and the ONE push that keeps it true in every window and every vault: one read answers all three lists.
   useEffect(() => {
     let live = true
-    const refresh = () => {
-      void api.media.favorites({ op: 'list' }).then((list) => live && set({ favorites: list }))
-      void api.media.recent({ op: 'list' }).then((list) => live && set({ recent: list }))
-    }
+    const refresh = () => void api.media.used({ op: 'list' }).then((lib) => live && setLibrary(lib), () => undefined)
     refresh()
     const off = api.media.onChanged(refresh)
     return () => {
@@ -143,8 +374,8 @@ export function ImageStudio({ engine, excalidrawAPI, searchFocusPending = false,
     }
   }, [])
 
-  // Whether a key is set, before the first search has said so — so the Pixabay source is never
-  // offered to someone who has not entered one (🔒 YAZ-1775 D4: the renderer learns yes/no, never a value).
+  // Whether a key is set, before the first search has said so — so Photos is never offered to someone who has not
+  // entered one (🔒 YAZ-1775 D4: the renderer learns yes/no, never a value).
   useEffect(() => {
     let live = true
     void api.secrets.has({ name: PIXABAY_SECRET }).then(
@@ -168,72 +399,136 @@ export function ImageStudio({ engine, excalidrawAPI, searchFocusPending = false,
     }
   }, [])
 
-  // A source that is no longer offered cannot stay selected.
+  // A chip that is no longer offered cannot stay picked.
   useEffect(() => {
-    if (!pixabayAvailable && source === 'pixabay') set({ source: 'all' })
-  }, [pixabayAvailable, source])
-
-  const catalog = useMemo(() => buildShapeCatalog(smart), [smart])
-  const shapes = useMemo(() => filterShapeCatalog(catalog, shapeQuery).map(shapeItem), [catalog, shapeQuery])
-  const favoriteKeys = useMemo(() => new Set(favorites.map(({ itemKey }) => itemKey)), [favorites])
-
-  const displayedItems: StudioItem[] = view === 'shapes' ? shapes : view === 'favorites' ? favorites : view === 'recent' ? recent : results
-
-  useEffect(() => {
-    if (searchFocusPending) set({ view: 'search' })
-  }, [searchFocusPending])
+    if (!pixabayAvailable && chip === 'photos') pickChip('all')
+  }, [pixabayAvailable, chip])
 
   useEffect(() => {
     // The kept query arrives selected (🔒 YAZ-1990 D4): typing replaces it, an arrow key keeps it.
-    if (!searchFocusPending || view !== 'search') return
-    searchInputRef.current?.focus()
-    searchInputRef.current?.select()
+    if (!searchFocusPending) return
+    fieldRef.current?.focus()
+    fieldRef.current?.select()
     onSearchFocused?.()
-  }, [searchFocusPending, view, onSearchFocused])
+  }, [searchFocusPending, onSearchFocused])
 
-  // Back where this view was left (🔒 YAZ-1990 D3). Tiles are a fixed 112 px and the rows come from
-  // the session, so they exist on the first paint and the offset cannot overshoot.
+  // Back where this chip was left (🔒 YAZ-1990 D3). The rows come from the session, so they exist on the first paint.
   useLayoutEffect(() => {
-    if (searchGridRef.current) searchGridRef.current.scrollTop = scrollTops[view]
-  }, [view])
+    if (listRef.current) listRef.current.scrollTop = scrollTops[chip]
+  }, [chip])
 
-  // The infinite scroll: one observer on a sentinel at the end of the grid, re-armed whenever the
-  // cursor moves. It is never armed for a cursor already asked for, so a page cannot load twice.
+  const catalog = useMemo(() => buildShapeCatalog(smart), [smart])
+  const shapes = useMemo(() => catalog.map(shapeItem), [catalog])
+  const favoriteKeys = useMemo(() => new Set(favorites.map(({ itemKey }) => itemKey)), [favorites])
+  const usedByKey = useMemo(() => new Map(used.map((row) => [row.itemKey, row])), [used])
+  const componentsBySlug = useMemo(() => new Map(components.map((c) => [c.slug, c])), [components])
+  const componentItems = useMemo(() => components.map(componentItem), [components])
+
+  /** A stored row as it is NOW: a component takes its live name, and one that was deleted is gone (D2). */
+  const live = useMemo(() => {
+    return (item: StudioItem): StudioItem | null => {
+      if (item.provider !== 'component') return item
+      const component = componentsBySlug.get(item.providerId)
+      return component === undefined ? null : componentItem(component)
+    }
+  }, [componentsBySlug])
+  const liveList = (items: readonly StudioItem[]) => items.flatMap((item) => live(item) ?? [])
+
+  const favoriteItems = useMemo(() => liveList(favorites), [favorites, live])
+  const recentItems = useMemo(() => liveList(recent), [recent, live])
+  /** Everything local, once each: the pool "Best matches" ranks. */
+  const pool = useMemo(() => {
+    const byKey = new Map<string, StudioItem>()
+    for (const item of [...favoriteItems, ...recentItems, ...liveList(used), ...componentItems, ...shapes]) if (!byKey.has(item.itemKey)) byKey.set(item.itemKey, item)
+    return [...byKey.values()]
+  }, [favoriteItems, recentItems, used, componentItems, shapes, live])
+
+  const typed = query.trim() !== ''
+  const aliases = (item: StudioItem): readonly string[] => {
+    if (item.provider !== 'shape') return []
+    const shape = getShape(catalog, item.providerId)
+    return shape ? shapeAliases(shape) : []
+  }
+  const yours = useMemo(
+    () => (typed ? rankItems(pool.filter((item) => inChip(chip, item, favoriteKeys)), usedByKey, query, aliases) : []),
+    // `aliases` reads `catalog`, which is listed.
+    [typed, pool, chip, favoriteKeys, usedByKey, query, catalog],
+  )
   useEffect(() => {
-    const sentinel = searchSentinelRef.current
-    if (view !== 'search' || !cursor || pageError || isSearching || wasRequested(cursor) || !sentinel || typeof IntersectionObserver === 'undefined') return
+    setShownMatches(MATCH_PAGE)
+    setShownDrawings(DRAWING_PAGE)
+  }, [query, chip])
+  const yourKeys = useMemo(() => new Set(yours.map((item) => item.itemKey)), [yours])
+  // Excalidraw's public libraries (demo 6K): ranked here by the same matcher as Best matches, as you type, with no
+  // request per key. A library's name is its items' alias, so "tools" finds the Tools library's hammer.
+  const handDrawn = useMemo(
+    () => (typed && chip === 'all' && drawings !== null ? rankItems(drawings, usedByKey, query, (item) => (item.collectionName ? [item.collectionName] : [])).filter((item) => !yourKeys.has(item.itemKey)) : []),
+    [typed, chip, drawings, usedByKey, query, yourKeys],
+  )
+  const webOn = chipSource(chip) !== null
+  // One tile per icon; its copies from other sets and its styles are its variants, shown on request (demo 6J).
+  const webGroups = useMemo(
+    () => (typed && webOn ? groupResults(results.filter((item) => !yourKeys.has(item.itemKey)), searchedQuery || query) : []),
+    [typed, webOn, results, yourKeys, searchedQuery, query],
+  )
+  const variantsOf = useMemo(() => new Map(webGroups.map((group) => [group.head.itemKey, group.variants])), [webGroups])
+
+  // The infinite scroll of the web results: one observer on a sentinel at their end, re-armed whenever the cursor
+  // moves. It is never armed for a cursor already asked for, so a page cannot load twice.
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!typed || !webOn || !cursor || pageError || isSearching || wasRequested(cursor) || !sentinel || typeof IntersectionObserver === 'undefined') return
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) void runSearch({ append: true })
       },
-      { root: searchGridRef.current, rootMargin: '160px 0px' },
+      { root: listRef.current, rootMargin: '160px 0px' },
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [cursor, isSearching, pageError, view])
+  }, [typed, webOn, cursor, isSearching, pageError, chip])
 
-  // Both tiles' buttons are disabled while one is in flight; these re-check the same fact, because
-  // a keyboard activation can land in the frame before React has re-rendered them.
+  // The tile buttons are disabled while one is in flight; these re-check the same fact, because a keyboard
+  // activation can land in the frame before React has re-rendered them.
   const addItem = async (item: StudioItem) => {
     if (insertingKey !== null) return
+    // A read-only board takes no element, so nothing is added and no use is counted (polish, audit Must 2).
+    if (readOnly) {
+      setNotice(READ_ONLY_NOTICE)
+      return
+    }
     setInsertingKey(item.itemKey)
     set({ error: null })
+    setLine(null)
+    setNotice(null)
     try {
       let recorded = item
       if (item.provider === 'shape') {
         const shape = getShape(catalog, item.providerId)
         if (shape === undefined) throw new Error('That shape is not available yet.')
         insertShape(engine, excalidrawAPI, shape)
+      } else if (item.provider === 'component') {
+        await library.insert(item.providerId)
+      } else if (item.provider === 'excalidraw') {
+        // A library item is elements, like a saved component: the same insert, so each copy is independent.
+        const { elements } = await api.media.drawing({ id: item.providerId })
+        insertComponent(engine, excalidrawAPI, componentFragmentJson({ elements, files: {} }))
       } else {
         const imported = await api.media.import({ provider: item.provider, id: item.providerId })
         await insertImage(excalidrawAPI, fileFromImport(item, imported))
-        // Main's item is what the provider says NOW — a fresh size and attribution for the MRU
-        // row — layered over the caller's, which knows the pretty collection name a search gave it.
+        // Main's item is what the provider says NOW — a fresh size and attribution — layered over the caller's,
+        // which knows the pretty collection name a search gave it.
         recorded = { ...item, ...imported.item }
       }
-      set({ recent: await api.media.recent({ op: 'record', item: recorded }) })
+      const wasFavorite = favoriteKeys.has(item.itemKey)
+      const lib = await api.media.used({ op: 'record', item: recorded, query: query.trim() })
+      setLibrary(lib)
+      const row = lib.used.find((u) => u.itemKey === item.itemKey)
+      if (!wasFavorite && row !== undefined && lib.favorites.some((f) => f.itemKey === item.itemKey)) {
+        setLine({ text: `${item.title} is now a favorite. You added it ${row.count} times.`, undo: item })
+      }
     } catch (cause) {
-      set({ error: getErrorMessage(cause, 'Could not add item') })
+      set({ error: getErrorMessage(cause, `${item.title || 'That item'} could not be added`) })
     } finally {
       setInsertingKey(null)
     }
@@ -243,6 +538,7 @@ export function ImageStudio({ engine, excalidrawAPI, searchFocusPending = false,
     if (busyFavoriteKey !== null) return
     setBusyFavoriteKey(item.itemKey)
     set({ error: null })
+    setLine(null)
     try {
       set({ favorites: favoriteKeys.has(item.itemKey) ? await api.media.favorites({ op: 'remove', itemKey: item.itemKey }) : await api.media.favorites({ op: 'add', item }) })
     } catch (cause) {
@@ -252,146 +548,529 @@ export function ImageStudio({ engine, excalidrawAPI, searchFocusPending = false,
     }
   }
 
-  return (
-    <div className="image-studio">
-      <header className="image-studio__header">
-        <div>
-          <span>IMAGE STUDIO</span>
-          <strong>Add visuals</strong>
-        </div>
-      </header>
-      <nav className="image-studio__nav" aria-label="Image Studio sections">
-        {STUDIO_VIEWS.map((tab) => (
-          <button type="button" key={tab} className={view === tab ? 'is-active' : undefined} aria-pressed={view === tab} onClick={() => set({ view: tab })}>
-            {VIEW_LABELS[tab]}
-          </button>
-        ))}
-      </nav>
+  const undoAutoFavorite = async (item: StudioItem) => {
+    setLine(null)
+    try {
+      set({ favorites: await api.media.favorites({ op: 'remove', itemKey: item.itemKey }) })
+    } catch (cause) {
+      set({ error: getErrorMessage(cause, 'Could not change favorites') })
+    }
+  }
 
-      {view === 'search' && (
-        <form
-          className="image-studio__search"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void runSearch({})
-          }}
+  const saveWord = async (item: StudioItem) => {
+    const word = draft
+    setOpenTile(null)
+    if (word.trim() === '') return
+    try {
+      setLibrary(await api.media.used({ op: 'add-word', item, word }))
+      setLine({ text: `“${item.title}” now comes first for “${normalizeWord(word) ?? word.trim()}”.` })
+    } catch (cause) {
+      set({ error: getErrorMessage(cause, 'Could not add the word') })
+    }
+  }
+
+  const openRow = (key: string, mode: 'word' | 'rename' | 'confirm' | 'variants', value = '') => {
+    setDraft(value)
+    setOpenTile({ key, mode })
+  }
+
+  /**
+   * The tile menu (D10, demo 6B): a right-click on the tile, or Shift+F10 / the menu key on its add button. It opens
+   * at the pointer, in the panel, and a click outside it or Escape closes it.
+   */
+  const openMenu = (event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>, key: string) => {
+    event.preventDefault()
+    const card = event.currentTarget.getBoundingClientRect()
+    const listRight = listRef.current?.getBoundingClientRect().right ?? Infinity
+    const x = 'clientX' in event ? event.clientX : card.left + 4
+    const top = 'clientY' in event ? event.clientY - card.top : 24
+    setOpenTile({ key, mode: 'menu', at: x + MENU_WIDTH > listRight ? { top, right: card.right - x } : { top, left: x - card.left } })
+  }
+  const closeMenu = (refocus: boolean) => {
+    const key = openTile?.key
+    setOpenTile(null)
+    if (refocus && key !== undefined) listRef.current?.querySelector<HTMLElement>(`[data-slot="${CSS.escape(key)}"] .image-studio__add`)?.focus()
+  }
+  const menuKey = openTile?.mode === 'menu' ? openTile.key : null
+  useEffect(() => {
+    if (menuKey === null) return
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    const outside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpenTile(null)
+    }
+    document.addEventListener('pointerdown', outside, true)
+    return () => document.removeEventListener('pointerdown', outside, true)
+  }, [menuKey])
+  const menuKeys = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      event.preventDefault()
+      closeMenu(true)
+      return
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    event.preventDefault()
+    event.stopPropagation()
+    const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    const at = items.indexOf(document.activeElement as HTMLElement)
+    items[(at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus()
+  }
+
+  /** One tile, with its star; its menu opens on a right-click (D10). */
+  const tile = (item: StudioItem, where: string): ReactNode => {
+    const slot = slotOf(where, item)
+    const shape = item.provider === 'shape' ? getShape(catalog, item.providerId) : undefined
+    const component: ComponentItem | undefined = item.provider === 'component' ? componentsBySlug.get(item.providerId) : undefined
+    const favorited = favoriteKeys.has(item.itemKey)
+    const menuAt = openTile?.key === slot && openTile.mode === 'menu' ? openTile.at : null
+    const variants = variantsOf.get(item.itemKey) ?? []
+    const variantsOpen = openTile?.key === slot && openTile.mode === 'variants'
+    const busy = insertingKey !== null || (component !== undefined && library.busySlug === component.slug)
+    return (
+      <article className="image-studio__card" key={item.itemKey} data-slot={slot} aria-busy={busy || undefined} onContextMenu={(event) => openMenu(event, slot)}>
+        <button
+          type="button"
+          className="image-studio__add"
+          disabled={busy}
+          onClick={() => void addItem(item)}
+          onKeyDown={(event) => (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) && openMenu(event, slot)}
+          aria-label={`Add ${item.title}`}
+          aria-keyshortcuts="Shift+F10"
+          title={`${item.title} — ${sourceLabel(item)}`}
         >
-          <select
-            aria-label="Search source"
-            value={source}
-            onChange={(event) => {
-              const nextSource = event.target.value as MediaSearchSource
-              set({ source: nextSource })
-              if (searchedQuery) void runSearch({ nextQuery: searchedQuery, nextSource })
+          <span className="image-studio__preview">
+            {item.provider === 'shape' ? (
+              shape ? <ShapeTile preview={shape.preview} /> : <span className="image-studio__placeholder" />
+            ) : item.provider === 'component' ? (
+              <componentPreviews.Preview cacheKey={item.providerId} placeholderClass="image-studio__placeholder" />
+            ) : item.provider === 'excalidraw' ? (
+              <drawingPreviews.Preview cacheKey={`${theme}|${item.providerId}`} placeholderClass="image-studio__placeholder" />
+            ) : (
+              <previews.Preview cacheKey={`${item.provider}:${item.providerId}`} placeholderClass="image-studio__placeholder" />
+            )}
+            {insertingKey === item.itemKey && <span className="image-studio__adding">Adding…</span>}
+          </span>
+          <span className={item.provider === 'component' ? 'image-studio__name' : 'image-studio__name image-studio__name--title'}>{item.title}</span>
+        </button>
+        <button
+          type="button"
+          className={favorited ? 'image-studio__favorite is-active' : 'image-studio__favorite'}
+          aria-label={favorited ? `Remove ${item.title} from favorites` : `Add ${item.title} to favorites`}
+          aria-pressed={favorited}
+          disabled={busyFavoriteKey !== null}
+          onClick={() => void toggleFavorite(item)}
+        >
+          {favorited ? '★' : '☆'}
+        </button>
+        {variants.length > 0 && (
+          <button
+            type="button"
+            className="image-studio__variants-toggle"
+            aria-label={`${variantsOpen ? 'Hide' : 'Show'} ${variants.length} more like ${item.title}`}
+            aria-expanded={variantsOpen}
+            onClick={() => (variantsOpen ? setOpenTile(null) : openRow(slot, 'variants'))}
+          >
+            +{variants.length}
+          </button>
+        )}
+        {menuAt !== null && (
+          <div className="image-studio__menu" role="menu" aria-label={`Actions for ${item.title}`} ref={menuRef} style={menuAt as CSSProperties} onKeyDown={menuKeys}>
+            <div className="image-studio__menu-source">From {sourceLabel(item)}</div>
+            {item.sourceUrl !== undefined && (item.provider === 'iconify' || item.provider === 'pixabay' || item.provider === 'excalidraw') && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpenTile(null)
+                  void api.shell.openLink({ href: item.sourceUrl as string })
+                }}
+              >
+                {item.provider === 'excalidraw' ? 'Open its library ↗' : `Open on ${item.provider === 'iconify' ? 'Iconify' : 'Pixabay'} ↗`}
+              </button>
+            )}
+            {variants.length > 0 && (
+              <button type="button" role="menuitem" onClick={() => openRow(slot, 'variants')}>
+                Show {variants.length} more like this
+              </button>
+            )}
+            <button type="button" role="menuitem" onClick={() => openRow(slot, 'word', query.trim())}>
+              Add a word…
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpenTile(null)
+                void toggleFavorite(item)
+              }}
+            >
+              {favorited ? 'Remove from favorites' : 'Add to favorites'}
+            </button>
+            {component !== undefined && (
+              <>
+                <button type="button" role="menuitem" onClick={() => openRow(slot, 'rename', component.name)}>
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="is-danger"
+                  onClick={() => {
+                    setOpenTile(null)
+                    // 🔒 confirmDelete off = delete straight away; the files go to the Trash either way.
+                    if (library.confirmDelete) openRow(slot, 'confirm')
+                    else library.remove(component)
+                  }}
+                >
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </article>
+    )
+  }
+
+  /** The full-width row that "Add a word…", Rename, Delete or "more like this" opens under the tile's row. */
+  const inlineRow = (item: StudioItem, where: string): ReactNode => {
+    if (openTile?.key !== slotOf(where, item) || openTile.mode === 'menu') return null
+    if (openTile.mode === 'variants') {
+      return (
+        <div className="image-studio__inline image-studio__variants" key={`${item.itemKey}:row`} role="group" aria-label={`More like ${item.title}`}>
+          <div className="image-studio__variants-grid">{(variantsOf.get(item.itemKey) ?? []).map((variant) => tile(variant, `${where}:variants`))}</div>
+        </div>
+      )
+    }
+    const component = item.provider === 'component' ? componentsBySlug.get(item.providerId) : undefined
+    if (openTile.mode === 'confirm' && component) {
+      return (
+        <div className="image-studio__inline" key={`${item.itemKey}:row`} role="alertdialog" aria-label={`Delete ${component.name}?`}>
+          <span>Delete “{component.name}”?</span>
+          <button
+            type="button"
+            className="is-danger"
+            onClick={() => {
+              setOpenTile(null)
+              library.remove(component)
             }}
           >
-            <option value="all">All</option>
-            <option value="iconify">Iconify</option>
-            {/* 🔒 YAZ-1775 D4: with no key there is no Pixabay to offer, and nothing to explain here. */}
-            {pixabayAvailable && <option value="pixabay">Pixabay</option>}
-          </select>
-          <input
-            ref={searchInputRef}
-            type="search"
-            aria-label="Search graphics, icons, and logos"
-            placeholder="Search graphics, icons, and logos"
-            value={query}
-            onChange={(event) => set({ query: event.target.value })}
-          />
-          <button type="submit" disabled={isSearching}>
-            {isSearching ? '…' : 'Search'}
+            Delete
           </button>
-        </form>
-      )}
-      {view === 'shapes' && (
-        <div className="image-studio__search">
-          <input type="search" aria-label="Search shapes" placeholder="Search shapes" value={shapeQuery} onChange={(event) => set({ shapeQuery: event.target.value })} />
+          <button type="button" onClick={() => setOpenTile(null)}>
+            Cancel
+          </button>
         </div>
-      )}
-
-      {view === 'search' && offline && (
-        <div className="image-studio__notice" role="status">
-          {OFFLINE_NOTICE}
-        </div>
-      )}
-      {view === 'search' && warnings.length > 0 && <div className="image-studio__warning">{warnings.join(' ')}</div>}
-      {error && <div className="image-studio__error">{error}</div>}
-
-      <div
-        className="image-studio__grid"
-        ref={searchGridRef}
-        onScroll={(event) => {
-          scrollTops[view] = event.currentTarget.scrollTop
+      )
+    }
+    const renaming = openTile.mode === 'rename'
+    return (
+      <form
+        className="image-studio__inline"
+        key={`${item.itemKey}:row`}
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (renaming && component) {
+            setOpenTile(null)
+            library.rename(component, draft)
+          } else void saveWord(item)
         }}
       >
-        {displayedItems.map((item) => {
-          const catalogShape = item.provider === 'shape' ? getShape(catalog, item.providerId) : undefined
-          const favorited = favoriteKeys.has(item.itemKey)
-          return (
-            <article className="image-studio__card" key={item.itemKey}>
-              <button
-                type="button"
-                className="image-studio__add"
-                disabled={insertingKey !== null}
-                onClick={() => void addItem(item)}
-                aria-label={`Add ${item.title}`}
-              >
-                <span className="image-studio__preview">
-                  {catalogShape ? <ShapeTile preview={catalogShape.preview} /> : <previews.Preview cacheKey={`${item.provider}:${item.providerId}`} placeholderClass="image-studio__placeholder" />}
-                  {insertingKey === item.itemKey && <span className="image-studio__adding">Adding…</span>}
-                </span>
-                <span className="image-studio__meta">
-                  <strong>{item.title}</strong>
-                  <small>{item.provider === 'shape' ? 'Shape' : `${item.kind}${item.collectionName ? ` · ${item.collectionName}` : ''}`}</small>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={favorited ? 'image-studio__favorite is-active' : 'image-studio__favorite'}
-                aria-label={favorited ? `Remove ${item.title} from favorites` : `Add ${item.title} to favorites`}
-                aria-pressed={favorited}
-                disabled={busyFavoriteKey !== null}
-                onClick={() => void toggleFavorite(item)}
-              >
-                {favorited ? '★' : '☆'}
-              </button>
-            </article>
-          )
-        })}
-        {view === 'search' && cursor && results.length > 0 && <div className="image-studio__search-sentinel" ref={searchSentinelRef} aria-hidden="true" />}
+        {/* Autofocused: the menu item above is the only way here. */}
+        <input
+          autoFocus
+          value={draft}
+          maxLength={renaming ? MAX_COMPONENT_NAME_LENGTH : MAX_ITEM_WORD_LENGTH}
+          aria-label={renaming ? `Rename ${item.title}` : `A word for ${item.title}`}
+          placeholder={renaming ? 'Name' : 'A word that finds it'}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => event.key === 'Escape' && setOpenTile(null)}
+        />
+        <button type="submit">Save</button>
+        <button type="button" onClick={() => setOpenTile(null)}>
+          Cancel
+        </button>
+      </form>
+    )
+  }
+
+  /** A grid of tiles in the section `where`; an open inline row goes after the row its tile is on. */
+  const grid = (items: readonly StudioItem[], where: string) => {
+    const cells: ReactNode[] = []
+    items.forEach((item, i) => {
+      cells.push(tile(item, where))
+      const rowEnd = i % ROW === ROW - 1 || i === items.length - 1
+      if (rowEnd) for (const other of items.slice(i - (i % ROW), i + 1)) cells.push(inlineRow(other, where))
+    })
+    return <div className="image-studio__grid">{cells}</div>
+  }
+
+  /** A section: its title, its one row (or all of it), and "Show all" — which picks the chip that shows the rest. */
+  const section = (title: string, items: readonly StudioItem[], more?: { label: string; onClick: () => void }, actions?: ReactNode) => (
+    <section className="image-studio__section" key={title} aria-label={title}>
+      <header className="image-studio__section-head">
+        <h3>{title}</h3>
+        {actions}
+        {more && (
+          <button type="button" className="image-studio__show-all" onClick={more.onClick}>
+            {more.label}
+          </button>
+        )}
+      </header>
+      {grid(items, title)}
+    </section>
+  )
+  const row = (title: string, items: readonly StudioItem[], to: StudioChip) => items.length > 0 && section(title, items.slice(0, ROW), items.length > ROW ? { label: 'Show all', onClick: () => pickChip(to) } : undefined)
+
+  const importMenu = (
+    <span className="image-studio__section-menu" ref={importMenuRef}>
+      <button type="button" className="image-studio__more-inline" aria-label="More for Components" aria-expanded={importMenuOpen} onClick={() => setImportMenuOpen(!importMenuOpen)}>
+        ⋯
+      </button>
+      {importMenuOpen && (
+        <div
+          className="image-studio__menu"
+          role="menu"
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape' && event.key !== 'Tab') return
+            event.preventDefault()
+            setImportMenuOpen(false)
+            importMenuRef.current?.querySelector<HTMLElement>('.image-studio__more-inline')?.focus()
+          }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={library.importing}
+            onClick={() => {
+              setImportMenuOpen(false)
+              setNotice(null)
+              void library.importFile()
+            }}
+            title="Import an .excalidraw file as a component"
+          >
+            {library.importing ? 'Importing…' : 'Import a file…'}
+          </button>
+        </div>
+      )}
+    </span>
+  )
+
+  const chipTitle = CHIP_LABELS[chip]
+  /** The web half shows once the web is asked or is waiting to be: during the pause, a search, offline, a result. */
+  const webShown = webOn && (waiting || isSearching || offline || searchedQuery !== '' || pageError !== null)
+  let body: ReactNode
+  if (typed) {
+    const mine = yours.slice(0, shownMatches)
+    body = (
+      <>
+        {mine.length > 0 && section('Best matches', mine, yours.length > shownMatches ? { label: 'Show more', onClick: () => setShownMatches(shownMatches + MATCH_PAGE) } : undefined)}
+        {handDrawn.length > 0 &&
+          section('Hand-drawn', handDrawn.slice(0, shownDrawings), handDrawn.length > shownDrawings ? { label: 'Show more', onClick: () => setShownDrawings(shownDrawings + MATCH_PAGE) } : undefined)}
+        {/* The web half appears from the first key: during the pause it says the web is coming. */}
+        {webShown && (
+          <section className="image-studio__section" aria-label="From the web">
+            <header className="image-studio__section-head">
+              <h3>From the web</h3>
+            </header>
+            {offline && (
+              <div className="image-studio__notice" role="status">
+                {OFFLINE_NOTICE}
+              </div>
+            )}
+            {warnings.length > 0 && <div className="image-studio__warning">{warnings.join(' ')}</div>}
+            {query.trim().length >= 2 && (waiting || (isSearching && results.length === 0)) && (
+              <div className="image-studio__state" role="status">
+                Searching the web…
+              </div>
+            )}
+            {webGroups.length > 0 && grid(webGroups.map((group) => group.head), 'web')}
+            {/* Also when the filters left nothing (Best matches holds them, or no name has the word): no empty section. */}
+            {!waiting && !isSearching && !offline && searchedQuery !== '' && cursor === null && webGroups.length === 0 && (
+              <div className="image-studio__state">No graphics match “{searchedQuery}”</div>
+            )}
+            {cursor && results.length > 0 && <div className="image-studio__search-sentinel" ref={sentinelRef} aria-hidden="true" />}
+            {pageError && cursor && (
+              <>
+                <div className="image-studio__error" role="alert">
+                  {pageError}
+                </div>
+                <button type="button" className="image-studio__retry" disabled={isSearching} onClick={() => void runSearch({ append: true, retry: true })}>
+                  {isSearching ? 'Retrying…' : 'Retry loading results'}
+                </button>
+              </>
+            )}
+            {isSearching && results.length > 0 && (
+              <div className="image-studio__loading-more" role="status">
+                Loading more…
+              </div>
+            )}
+          </section>
+        )}
+        {/* Nothing local, and no web half yet (a chip with no web, or text too short for a pause search): say so (6Q). */}
+        {mine.length === 0 && handDrawn.length === 0 && !webShown && (
+          <div className="image-studio__state">
+            {/* Enter searches the web from 2 letters only (6S). */}
+            Nothing of yours matches “{query.trim()}”.{webOn && query.trim().length >= MIN_QUERY ? ' Press Enter to search the web.' : ''}
+          </div>
+        )}
+      </>
+    )
+  } else if (chip === 'all') {
+    body = (
+      <>
+        {row('Favorites', favoriteItems, 'favorites')}
+        {recentItems.length > 0 &&
+          section('Recent', recentOpen ? recentItems : recentItems.slice(0, ROW), recentItems.length > ROW ? { label: recentOpen ? 'Show less' : 'Show all', onClick: () => set({ recentOpen: !recentOpen }) } : undefined)}
+        {componentItems.length > 0 && section('Components', componentItems.slice(0, ROW), componentItems.length > ROW ? { label: 'Show all', onClick: () => pickChip('components') } : undefined, importMenu)}
+        <p className="image-studio__hint">{PASTE_HINT}</p>
+        {row('Shapes', shapes, 'shapes')}
+      </>
+    )
+  } else if (chip === 'icons' || chip === 'photos') {
+    body = <div className="image-studio__state">Type to search {chip}.</div>
+  } else {
+    const items = chip === 'favorites' ? favoriteItems : chip === 'components' ? componentItems : shapes
+    body =
+      items.length > 0 || chip === 'components' ? (
+        <>
+          {section(chipTitle, items, undefined, chip === 'components' ? importMenu : undefined)}
+          {items.length === 0 && <div className="image-studio__state">No saved components yet. Select something on the board, then click Save selection.</div>}
+          {chip === 'components' && <p className="image-studio__hint">{PASTE_HINT}</p>}
+        </>
+      ) : (
+        <div className="image-studio__state">Star an item and it stays here for every drawing.</div>
+      )
+  }
+
+  return (
+    <div
+      className="image-studio"
+      // Focusable, so a click anywhere in the tab makes ⌘V a paste HERE (demo 6M).
+      tabIndex={-1}
+      onPaste={(event) => {
+        // Text pasted into a text field stays text, even when the clipboard ALSO holds a picture of it (an Excel
+        // cell, a copied slide); a Finder file's name is no text to type (6P, 6R, `isTextPaste`).
+        const target = event.target as HTMLElement
+        const intoText = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable
+        if (intoText && isTextPaste(event.clipboardData)) return
+        takeFrom(event, event.clipboardData)
+      }}
+      onDragOver={(event) => {
+        if ([...event.dataTransfer.items].some((item) => item.kind === 'file' && PASTE_IMAGE_TYPES.includes(item.type))) {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+      }}
+      onDrop={(event) => takeFrom(event, event.dataTransfer)}
+    >
+      <div className="image-studio__search" inert={saving}>
+        <input
+          ref={fieldRef}
+          type="search"
+          aria-label="Search shapes, icons, and components"
+          placeholder="Search shapes, icons, and components"
+          value={query}
+          onChange={(event) => typeQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              searchNow()
+            } else if (event.key === 'ArrowDown') {
+              const first = listRef.current?.querySelector<HTMLButtonElement>('.image-studio__add')
+              if (first) {
+                event.preventDefault()
+                first.focus()
+              }
+            }
+          }}
+        />
+        {hasSelection && library.canCapture && (
+          <button
+            type="button"
+            className="image-studio__save"
+            onClick={() => {
+              setComponentName('')
+              library.startSave()
+            }}
+          >
+            Save selection
+          </button>
+        )}
       </div>
 
-      {displayedItems.length === 0 && (
-        <div className="image-studio__empty">
-          {view === 'search'
-            ? searchedQuery === ''
-              ? 'Search once, then add anything from the mixed results.'
-              : `No graphics match “${searchedQuery}”`
-            : view === 'favorites'
-              ? 'Star an item and it will stay available in every Excalidraw drawing.'
-              : view === 'recent'
-                ? 'Items you add will appear here across every Excalidraw drawing.'
-                : shapeQuery
-                  ? 'No shapes match your search.'
-                  : 'No items found.'}
-        </div>
-      )}
-      {view === 'search' && pageError && cursor && (
-        <>
-          <div className="image-studio__error" role="alert">
-            {pageError}
+      {library.captured !== null && (
+        <form
+          className="image-studio__naming"
+          aria-label="Save to your library"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void library.commitSave(componentName)
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape') return
+            event.preventDefault()
+            event.stopPropagation()
+            library.cancelSave()
+          }}
+        >
+          <h3 className="image-studio__naming-title">Save to your library</h3>
+          <div className="image-studio__naming-preview">{savingPreview !== null ? <img src={savingPreview} alt="" /> : <span className="image-studio__placeholder" />}</div>
+          {/* Autofocused: the button that opened this form is the only way here. */}
+          <input autoFocus value={componentName} maxLength={MAX_COMPONENT_NAME_LENGTH} required aria-label="Component name" placeholder="Name this component" onChange={(event) => setComponentName(event.target.value)} />
+          <div className="image-studio__naming-actions">
+            <button type="button" onClick={library.cancelSave}>
+              Cancel
+            </button>
+            <button type="submit" disabled={componentName.trim() === '' || library.saving}>
+              {library.saving ? 'Saving…' : `Save ${library.captured.elements.length} element${library.captured.elements.length === 1 ? '' : 's'}`}
+            </button>
           </div>
-          <button type="button" className="image-studio__retry" disabled={isSearching} onClick={() => void runSearch({ append: true, retry: true })}>
-            {isSearching ? 'Retrying…' : 'Retry loading results'}
-          </button>
-        </>
+        </form>
       )}
-      {view === 'search' && isSearching && results.length > 0 && (
-        <div className="image-studio__loading-more" role="status">
-          Loading more…
+
+      <div className={saving ? 'image-studio__rest is-dimmed' : 'image-studio__rest'} inert={saving}>
+        <div className="image-studio__chips" role="group" aria-label="Show">
+          {STUDIO_CHIPS.filter((c) => c !== 'photos' || pixabayAvailable).map((c) => (
+            <button type="button" key={c} className={chip === c ? 'is-active' : undefined} aria-pressed={chip === c} onClick={() => pickChip(c)}>
+              {CHIP_LABELS[c]}
+            </button>
+          ))}
         </div>
-      )}
-      <footer className="image-studio__footer">Graphics via Pixabay · icons via Iconify.</footer>
+
+        {line !== null && (
+          <div className="image-studio__line" role="status">
+            <span>{line.text}</span>
+            {line.undo && (
+              <button type="button" onClick={() => void undoAutoFavorite(line.undo!)}>
+                Undo
+              </button>
+            )}
+          </div>
+        )}
+        {notice !== null && (
+          <div className="image-studio__notice" role="status">
+            {notice}
+          </div>
+        )}
+        {error && <div className="image-studio__error">{error}</div>}
+
+        <div
+          className="image-studio__list"
+          ref={listRef}
+          onKeyDown={(event) => moveBetweenTiles(event, listRef.current, fieldRef.current)}
+          onScroll={(event) => {
+            scrollTops[chip] = event.currentTarget.scrollTop
+          }}
+        >
+          {body}
+        </div>
+        <footer className="image-studio__footer">
+          <span>Graphics via Pixabay · icons via Iconify · drawings from Excalidraw libraries.</span>
+          <button type="button" className="image-studio__google" disabled={query.trim() === ''} onClick={() => void api.shell.openLink({ href: googleImagesUrl(query) })} title="Search Google Images for this text, in your browser">
+            Search Google Images ↗
+          </button>
+        </footer>
+      </div>
     </div>
   )
 }

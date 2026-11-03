@@ -6,7 +6,7 @@ import path from 'node:path'
 import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
-import { createStore, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs, sanitizeToolbarPrefs } from './store'
+import { createStore, isCanvasPanel, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs, sanitizeToolbarPrefs } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -754,15 +754,28 @@ describe('createStore: loading', () => {
     await seed(valid({ settings: legacySettings }))
     expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
     expect(DEFAULT_SETTINGS.libraryFolder).toBeNull()
-    expect(DEFAULT_SETTINGS.canvasPanel).toEqual({ tab: 'components', docked: false })
+    expect(DEFAULT_SETTINGS.canvasPanel).toEqual({ tab: 'image-studio', docked: false })
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, libraryFolder: '/Vault/Library', canvasPanel: { tab: 'presentation', docked: true } } }))
     expect(createStore(file).get().settings).toMatchObject({ libraryFolder: '/Vault/Library', canvasPanel: { tab: 'presentation', docked: true } })
     // One bad half costs that half only; '' or a relative path is never a library folder (it would resolve to the cwd).
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, libraryFolder: 'Library', canvasPanel: { tab: 'boards', docked: true } } }))
-    expect(createStore(file).get().settings).toMatchObject({ libraryFolder: null, canvasPanel: { tab: 'components', docked: true } })
+    expect(createStore(file).get().settings).toMatchObject({ libraryFolder: null, canvasPanel: { tab: 'image-studio', docked: true } })
+    // The Components tab is part of the Add tab now (YAZ-4157 D6): a file saved on it opens on Add, and keeps its dock.
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, canvasPanel: { tab: 'components', docked: true } } }))
+    expect(createStore(file).get().settings).toMatchObject({ canvasPanel: { tab: 'image-studio', docked: true } })
     for (const libraryFolder of ['', 'rel/dir', 7]) expect(isSettings({ ...DEFAULT_SETTINGS, libraryFolder })).toBe(false)
     expect(isSettings({ ...DEFAULT_SETTINGS, canvasPanel: { tab: 'image-studio' } })).toBe(false)
     expect(isSettings(legacySettings)).toBe(false)
+  })
+
+  it('keeps a dragged canvas panel width in 260–720 px, and reads one off that range as none (YAZ-4157 demo 6C)', async () => {
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, canvasPanel: { tab: 'image-studio', docked: true, width: 480 } } }))
+    expect(createStore(file).get().settings.canvasPanel).toEqual({ tab: 'image-studio', docked: true, width: 480 })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, canvasPanel: { tab: 'image-studio', docked: true, width: 9000 } } }))
+    expect(createStore(file).get().settings.canvasPanel).toEqual({ tab: 'image-studio', docked: true })
+    expect(isCanvasPanel({ tab: 'image-studio', docked: false, width: 100 })).toBe(false)
+    expect(isCanvasPanel({ tab: 'image-studio', docked: false, width: 300 })).toBe(true)
+    expect(isCanvasPanel({ tab: 'image-studio', docked: false })).toBe(true)
   })
 
   it('tocLines: an older file without the key loads with hover; the three values load as they are; anything else loads as hover, and fails the channel check (YAZ-2762 D5)', async () => {
