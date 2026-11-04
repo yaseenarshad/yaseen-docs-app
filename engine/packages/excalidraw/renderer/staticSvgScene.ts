@@ -558,7 +558,7 @@ const renderElementToSvg = (
 
         const g = svgRoot.ownerDocument.createElementNS(SVG_NS, "g");
 
-        // YAZ-4355 1E: only a one-color icon inverts (PNG, SVG and PDF export)
+        // YAZ-4355 1E: a many-color icon keeps its colors; every other SVG inverts (SVG and PDF export)
         if (
           renderConfig.theme === THEME.DARK &&
           isDarkInvertedImage(fileData.mimeType, getIconInfo(fileData).kind)

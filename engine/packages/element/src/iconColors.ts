@@ -10,7 +10,9 @@
 //
 // The recipe lives on the element: `customData.yaseenIcon = { colors, parts?,
 // outline }` (see `IconRecipe`). Parts count in the document order of the
-// original's shapes (round 2, decision 1), so the numbers cannot drift.
+// original's shapes (round 2, decision 1), so the numbers cannot drift. A shape
+// that the picture draws only through a `<use>` is a part too, at the place of
+// that `<use>` (YAZ-4373): design tools often draw a color that way.
 //
 // Pure string-and-DOM work (DOMParser), no canvas: it runs in jsdom tests.
 // -----------------------------------------------------------------------------
@@ -59,8 +61,10 @@ export const ICON_SHAPE_TAGS = new Set([
   "polyline",
   "line",
 ]);
-/** A shape inside one of these is not drawn by itself, so it is not a part. */
-const NOT_DRAWN_TAGS = new Set(["defs", "clipPath", "mask"]);
+/** A shape inside one of these is not drawn by itself: only a `<use>` can draw it. */
+const NOT_DRAWN_TAGS = new Set(["defs", "clipPath", "mask", "symbol"]);
+/** `<use>` inside the target of a `<use>`: followed this deep at most. */
+const MAX_USE_DEPTH = 4;
 /** The properties that hold a color the painter changes. */
 const PAINT_PROPS = new Set([
   "fill",
@@ -256,14 +260,86 @@ const isDrawn = (element: Element, root: Element) => {
   return true;
 };
 
-/** The parts: the shapes, in document order, outside `defs`, `clipPath` and `mask`. */
-export const iconShapes = (svg: Element) => {
+const hrefOf = (element: Element) =>
+  (
+    element.getAttribute("href") ??
+    element.getAttribute("xlink:href") ??
+    ""
+  ).trim();
+
+/** Each id of a parsed SVG → its first element (built once per SVG). */
+const idIndexes = new WeakMap<Element, Map<string, Element>>();
+
+/** The element a `#id` reference names, if any. */
+const findRef = (svg: Element, href: string) => {
+  if (!href.startsWith("#")) {
+    return null;
+  }
+  let ids = idIndexes.get(svg);
+  if (!ids) {
+    const index = new Map<string, Element>();
+    walkIcon(svg, (element) => {
+      const id = element.getAttribute("id");
+      if (id && !index.has(id)) {
+        index.set(id, element);
+      }
+    });
+    idIndexes.set(svg, (ids = index));
+  }
+  return ids.get(href.slice(1)) ?? null;
+};
+
+/**
+ * The parts: the shapes the picture draws, in document order. A shape inside
+ * `defs`, `clipPath`, `mask` or `symbol` counts only where a drawn `<use>` draws
+ * it (YAZ-4373). One target is one part, also when several `<use>` draw it; a
+ * `<use>` of an element the picture also draws by itself adds nothing.
+ *
+ * `hosts` gets each `<use>` target → its `<use>`: the target inherits its paint
+ * from the `<use>`, as in a browser.
+ */
+export const iconShapes = (
+  svg: Element,
+  hosts: Map<Element, Element> = new Map(),
+) => {
   const shapes: Element[] = [];
-  walkIcon(svg, (element) => {
-    if (ICON_SHAPE_TAGS.has(element.localName) && isDrawn(element, svg)) {
+  const seen = new Set<Element>();
+  const add = (element: Element) => {
+    if (!seen.has(element)) {
+      seen.add(element);
       shapes.push(element);
     }
-  });
+  };
+  const visit = (root: Element, depth: number) =>
+    walkIcon(root, (element) => {
+      if (!isDrawn(element, root)) {
+        return;
+      }
+      if (ICON_SHAPE_TAGS.has(element.localName)) {
+        add(element);
+        return;
+      }
+      if (element.localName !== "use" || depth >= MAX_USE_DEPTH) {
+        return;
+      }
+      const target = findRef(svg, hrefOf(element));
+      if (
+        !target ||
+        hosts.has(target) ||
+        target.contains(element) ||
+        // drawn by itself: the plain walk counts it
+        (!NOT_DRAWN_TAGS.has(target.localName) && isDrawn(target, svg))
+      ) {
+        return;
+      }
+      hosts.set(target, element);
+      if (ICON_SHAPE_TAGS.has(target.localName)) {
+        add(target);
+      } else {
+        visit(target, depth + 1);
+      }
+    });
+  visit(svg, 0);
   return shapes;
 };
 
@@ -340,7 +416,11 @@ const safeMatches = (element: Element, selector: string) => {
 };
 
 export class IconCascade {
-  constructor(private rules: StyleRule[]) {}
+  /** `hosts`: a `<use>` target → its `<use>`, where the target inherits from (`iconShapes`) */
+  constructor(
+    private rules: StyleRule[],
+    private hosts: ReadonlyMap<Element, Element> = new Map(),
+  ) {}
 
   /** The value an element declares itself for `prop`, if any. */
   declared(element: Element, prop: string): string | undefined {
@@ -380,9 +460,13 @@ export class IconCascade {
     return best?.value;
   }
 
-  /** The value `prop` gets on `element`, inherited from its ancestors up to `root`. */
+  /** The value `prop` gets on `element`, inherited from its ancestors up to `root` (a `<use>` target: from its `<use>`). */
   inherited(element: Element, prop: string, root: Element): string | undefined {
-    for (let node: Element | null = element; node; node = node.parentElement) {
+    for (
+      let node: Element | null = element;
+      node;
+      node = this.hosts.get(node) ?? node.parentElement
+    ) {
       const value = this.declared(node, prop);
       if (value !== undefined && value.toLowerCase() !== "inherit") {
         return value;
@@ -413,16 +497,6 @@ export type IconPart = {
   defaultFill: boolean;
 };
 
-const findById = (svg: Element, id: string) => {
-  let found: Element | null = null;
-  walkIcon(svg, (element) => {
-    if (!found && element.getAttribute("id") === id) {
-      found = element;
-    }
-  });
-  return found as Element | null;
-};
-
 const gradientStops = (
   svg: Element,
   gradient: Element,
@@ -434,16 +508,16 @@ const gradientStops = (
   if (stops.length || depth > 3) {
     return stops;
   }
-  const href = (
-    gradient.getAttribute("href") ??
-    gradient.getAttribute("xlink:href") ??
-    ""
-  ).trim();
-  const next = href.startsWith("#") ? findById(svg, href.slice(1)) : null;
+  const next = findRef(svg, hrefOf(gradient));
   return next ? gradientStops(svg, next, depth + 1) : [];
 };
 
-export type IconReader = { svg: SVGSVGElement; cascade: IconCascade };
+export type IconReader = {
+  svg: SVGSVGElement;
+  cascade: IconCascade;
+  /** the parts' shapes (`iconShapes`) */
+  shapes: Element[];
+};
 
 const resolveColor = (
   { svg, cascade }: IconReader,
@@ -475,7 +549,7 @@ const readPaint = (
   }
   const ref = raw.match(/url\(\s*["']?#([^"')\s]+)/);
   if (ref) {
-    const gradient = findById(svg, ref[1]);
+    const gradient = findRef(svg, `#${ref[1]}`);
     if (!gradient) {
       return null;
     }
@@ -492,7 +566,7 @@ const readPaint = (
 
 /** @private for `iconParts.ts` */
 export const readIconPartList = (reader: IconReader): IconPart[] =>
-  iconShapes(reader.svg).map((element, index) => ({
+  reader.shapes.map((element, index) => ({
     index,
     element,
     fill: readPaint(reader, element, "fill"),
@@ -511,7 +585,12 @@ export const paintColors = (paint: IconPaint | null): string[] =>
 /** @private for `iconParts.ts` */
 export const makeIconReader = (svgText: string): IconReader | null => {
   const svg = parseIconSvg(svgText);
-  return svg ? { svg, cascade: new IconCascade(readStyleRules(svg)) } : null;
+  if (!svg) {
+    return null;
+  }
+  const hosts = new Map<Element, Element>();
+  const shapes = iconShapes(svg, hosts);
+  return { svg, cascade: new IconCascade(readStyleRules(svg), hosts), shapes };
 };
 
 /** The parts of an SVG (the original inside a painted copy), with their paints. */
@@ -607,9 +686,8 @@ export const iconGeometryOf = (svg: Element, outline = 0): IconGeometry => {
 export const iconKindOfColors = (colors: readonly string[]): IconKind =>
   colors.length === 0 ? "photo" : colors.length === 1 ? "one" : "many";
 
-/** The kind, colors and geometry of an SVG's text (D2). */
-export const readIconInfo = (svgText: string): IconInfo => {
-  const source = iconSource(svgText);
+/** The kind, colors and geometry of an original, with a painted copy's outline (SVG units). */
+const iconInfoOfSource = (source: string, outline: number): IconInfo => {
   if (new TextEncoder().encode(source).length > ICON_MAX_BYTES) {
     return PHOTO;
   }
@@ -629,6 +707,12 @@ export const readIconInfo = (svgText: string): IconInfo => {
   if (kind === "photo") {
     return PHOTO;
   }
+  return { kind, colors, geometry: iconGeometryOf(svg, outline) };
+};
+
+/** The kind, colors and geometry of an SVG's text (D2): always the original's. */
+export const readIconInfo = (svgText: string): IconInfo => {
+  const source = iconSource(svgText);
   let outline = 0;
   if (source !== svgText) {
     const painted = parseIconSvg(svgText);
@@ -639,14 +723,56 @@ export const readIconInfo = (svgText: string): IconInfo => {
           "0",
       ) || 0;
   }
-  return { kind, colors, geometry: iconGeometryOf(svg, outline) };
+  return iconInfoOfSource(source, outline);
+};
+
+/** A data URL this long or shorter is decoded whole (any SVG of 256 KB, also URL-encoded). */
+const PLAIN_DATA_URL_MAX = ICON_MAX_BYTES * 3;
+/**
+ * The head of a painted copy that holds its original: the root tag (the
+ * original's own, a few attributes changed) and the `<metadata>` with the
+ * original in base64, at most 256 KB of it.
+ */
+const PAINTED_HEAD_BYTES =
+  ICON_MAX_BYTES + Math.ceil(ICON_MAX_BYTES / 3) * 4 + 4096;
+
+/**
+ * YAZ-4374: the original and outline of a long painted copy, read from its head
+ * only (`paintIcon` writes the metadata as the root's first child). Null when
+ * the head holds no original of at most 256 KB.
+ */
+const paintedSourceOfHead = (dataURL: string) => {
+  const comma = dataURL.indexOf(",");
+  if (!dataURL.slice(0, comma).includes(";base64")) {
+    return null;
+  }
+  const head = base64ToText(
+    dataURL.slice(comma + 1, comma + 1 + Math.ceil(PAINTED_HEAD_BYTES / 3) * 4),
+  );
+  const match = head.match(
+    /^\s*<svg\b[^>]*>\s*<metadata\b([^>]*)>([A-Za-z0-9+/=\s]*)<\/metadata>/,
+  );
+  if (!match || !match[1].includes(`id="${ICON_SOURCE_ID}"`)) {
+    return null;
+  }
+  const base64 = match[2].replace(/\s+/g, "");
+  if (Math.floor((base64.length * 3) / 4) > ICON_MAX_BYTES + 2) {
+    return null;
+  }
+  return {
+    source: base64ToText(base64),
+    outline:
+      parseFloat(match[1].match(/data-outline="([^"]*)"/)?.[1] ?? "0") || 0,
+  };
 };
 
 const infoCache = new Map<string, IconInfo>();
 
 /**
  * The icon info of a file, cached by file id (at most 200). Any file that is not
- * an SVG of at most 256 KB, with a color and no `<image>`, is a "photo".
+ * an SVG of at most 256 KB, with a color and no `<image>`, is a "photo". The
+ * limit measures the original, also inside a painted copy, so painting never
+ * changes the answer (YAZ-4374).
  */
 export const getIconInfo = (
   file: Pick<BinaryFileData, "id" | "mimeType" | "dataURL"> | null | undefined,
@@ -662,13 +788,18 @@ export const getIconInfo = (
     return cached;
   }
   let info = PHOTO;
-  // a painted copy is the original in base64 plus a little: a bigger file cannot hold a qualifying one
-  if (file.dataURL.length <= ICON_MAX_BYTES * 3) {
-    try {
+  try {
+    if (file.dataURL.length <= PLAIN_DATA_URL_MAX) {
       info = readIconInfo(svgOfDataURL(file.dataURL));
-    } catch {
-      info = PHOTO;
+    } else {
+      // only a painted copy this long can hold an original of 256 KB: about 3.11 × it
+      const painted = paintedSourceOfHead(file.dataURL);
+      info = painted
+        ? iconInfoOfSource(painted.source, painted.outline)
+        : PHOTO;
     }
+  } catch {
+    info = PHOTO;
   }
   infoCache.set(file.id, info);
   if (infoCache.size > ICON_INFO_CACHE_SIZE) {
@@ -682,14 +813,16 @@ export const iconKind = (
 ) => getIconInfo(file).kind;
 
 /**
- * YAZ-4355 1E: dark mode inverts an SVG picture only when it is a one-color icon
- * (extra 21). Many-color icons, emoji and photos keep their own colors. An SVG
- * whose kind is not known yet keeps today's rule.
+ * YAZ-4355 1E: dark mode keeps a many-color icon's colors (extra 21). Every
+ * other SVG inverts, as before this work: a one-color icon, and an SVG that is
+ * not recolorable (over 256 KB, an `<image>` inside, no color), so a big black
+ * line drawing stays readable on the dark board (YAZ-4351 1A3). An SVG whose
+ * kind is not known yet inverts too. Other pictures never invert.
  */
 export const isDarkInvertedImage = (
   mimeType: string | undefined,
   kind: IconKind | undefined,
-) => mimeType === MIME_TYPES.svg && (kind === undefined || kind === "one");
+) => mimeType === MIME_TYPES.svg && kind !== "many";
 
 export const isRecolorableIcon = (
   file: Pick<BinaryFileData, "id" | "mimeType" | "dataURL"> | null | undefined,

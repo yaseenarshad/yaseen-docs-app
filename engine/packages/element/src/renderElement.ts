@@ -426,7 +426,7 @@ const drawElementOnCanvas = (
               height: "naturalHeight" in img ? img.naturalHeight : img.height,
             };
 
-        // YAZ-4355 1E: only a one-color icon inverts
+        // YAZ-4355 1E: a many-color icon keeps its colors; every other SVG inverts (the board and the PNG export)
         const shouldInvertImage =
           renderConfig.theme === THEME.DARK &&
           isDarkInvertedImage(cacheEntry?.mimeType, cacheEntry?.iconKind);

@@ -116,6 +116,24 @@ describe("the pick map", () => {
     expect(pickIconTarget(map, 511, 511)).toBe(count > 4 ? 7 : -1);
   });
 
+  it("YAZ-4373: a part drawn through <use> gets its pick color, and the <use> stays visible", () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><defs><rect id="a" width="4" height="8" fill="#e03131"/></defs>' +
+      '<use href="#a" opacity="0.5"/><rect x="4" width="4" height="8" fill="#1971c2"/></svg>';
+    const pick = iconPickMapSvg(svg, 0)!;
+    expect(pick.targets.map((t) => [t.key, t.colors])).toEqual([
+      ["0", ["#e03131"]],
+      ["1", ["#1971c2"]],
+    ]);
+    const doc = new DOMParser().parseFromString(pick.svg, MIME_TYPES.svg);
+    const use = doc.querySelector("use")!.getAttribute("style") ?? "";
+    expect(use).not.toContain("display:none");
+    expect(use).toContain("opacity:1 !important");
+    expect(doc.getElementById("a")!.getAttribute("style")).toContain(
+      `fill:${pick.colors[0]} !important`,
+    );
+  });
+
   it("gives each part a different color, and puts no SVG text or colors of the icon in it", () => {
     expect(new Set(pickColors(500)).size).toBe(500);
     const { pick } = pickMapOf(STYLED);
