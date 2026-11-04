@@ -1,4 +1,4 @@
-import type { MediaFavoritesRequest, MediaItem, MediaUsedRequest } from '@shared/types'
+import { MAX_COMPONENT_FRAGMENT_BYTES, type MediaFavoritesRequest, type MediaItem, type MediaUsedRequest } from '@shared/types'
 import { normalizeMediaItem } from '@shared/mediaLibrary'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure } from '../fs/fsUtils'
@@ -20,7 +20,8 @@ import { handle } from './envelope'
  *
  * The favorites' own copies (YAZ-4363, `library/favoriteCopies.ts`) live beside it and follow the same folder: each
  * change of `media.json` starts a backfill pass (an add, the auto-favorite of a third use, another Mac's file), a
- * removal deletes the copy, and `media:favorite-copies` answers Settings › Images' line.
+ * removal deletes the copy, and `media:favorite-copies` answers Settings › Images' line. Every kind gets a copy
+ * (YAZ-4370); the Add panel reads the elements ones and makes the shapes' ones over three more channels.
  */
 
 /** A renderer's item is validated whole (the web app's validator) or refused; it never reaches the file half-read. */
@@ -67,6 +68,8 @@ export interface MediaLibraryIpcDeps {
   hasPixabayKey?: () => Promise<boolean>
   /** The wait between two copies of a backfill pass; tests make it short. */
   copyIntervalMs?: number
+  /** A saved component's file (`componentStore.read`): a component favorite's copy is made from it (YAZ-4370). */
+  readComponent?: (slug: string) => Promise<string>
 }
 
 export interface MediaLibraryIpc {
@@ -88,6 +91,7 @@ export function registerMediaLibraryIpc(store: Store, userData: string, deps: Me
     favorites: () => media.favorites({ op: 'list' }),
     hasPixabayKey: deps.hasPixabayKey ?? (async () => false),
     intervalMs: deps.copyIntervalMs,
+    readComponent: deps.readComponent,
   })
   media.onChanged(() => {
     broadcastAll(CONTRACT.media.onChanged.channel)
@@ -101,6 +105,15 @@ export function registerMediaLibraryIpc(store: Store, userData: string, deps: Me
   })
   handle(CONTRACT.media.used, async (req: unknown) => media.used(requireUsedRequest(req)))
   handle(CONTRACT.media.favoriteCopies, async () => copies.status())
+  // The elements copies (YAZ-4370): the Add panel reads them for an add, and makes the shapes' ones.
+  handle(CONTRACT.media.favoriteElements, async (itemKey: unknown) => copies.readElements(str(itemKey, 'itemKey')))
+  handle(CONTRACT.media.saveFavoriteElements, async (req: unknown) => {
+    const r = requireRequest(req)
+    const fragmentJson = str(r.fragmentJson, 'fragmentJson')
+    if (Buffer.byteLength(fragmentJson) > MAX_COMPONENT_FRAGMENT_BYTES) throw new BridgeFailure('TOO_LARGE', 'that copy is over 32 MB')
+    return copies.saveElements(str(r.itemKey, 'itemKey'), fragmentJson)
+  })
+  handle(CONTRACT.media.favoritesForPanel, async () => copies.missingForPanel())
   return {
     media,
     copies,

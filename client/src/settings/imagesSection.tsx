@@ -55,7 +55,7 @@ export const IMAGES_SECTION: SettingsSection = {
         {
           id: 'favoriteCopies',
           label: 'Favorites',
-          hint: 'Each Iconify icon and Pixabay picture you favorite keeps its own full-quality copy in the library folder, so it still adds with no network.',
+          hint: 'Each favorite keeps its own copy in the library folder: the full-quality picture of an icon or photo, the elements of a shape, a component or a hand-drawn item. So it still adds with no network, and after its source is gone.',
           keywords: ['favorites', 'copies', 'saved', 'offline', 'size', 'backup', 'iconify', 'pixabay'],
           wide: true,
           render: () => <FavoriteCopiesLine />,

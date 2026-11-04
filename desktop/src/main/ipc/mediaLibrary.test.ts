@@ -117,7 +117,7 @@ describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
 
   it('a favorite add saves its copy, also the auto-favorite at the third use; a removal deletes it (YAZ-4363)', async () => {
     const svg = `data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base64')}`
-    void media.copies.start(async (req) => ({ mimeType: 'image/svg+xml', dataURL: svg, item: item({ itemKey: `${req.provider}:${req.id}`, provider: req.provider, providerId: req.id }) }))
+    void media.copies.start({ picture: async (req) => ({ mimeType: 'image/svg+xml', dataURL: svg, item: item({ itemKey: `${req.provider}:${req.id}`, provider: req.provider, providerId: req.id }) }), drawing: async () => [] })
     const copiesDir = path.join(userData, 'library', LIBRARY_FAVORITES_DIR)
     const copyCount = async () => (await readdir(copiesDir).catch(() => [])).length
     const icon = item({ itemKey: 'iconify:mdi:home', provider: 'iconify', providerId: 'mdi:home', kind: 'icon' })
@@ -128,9 +128,24 @@ describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
     for (let i = 0; i < 3; i++) await used({ op: 'record', item: auto, query: '' })
     await media.copies.backfill()
     expect(await copyCount()).toBe(2)
-    expect(await favoriteCopies()).toEqual(ok({ favorites: 2, saved: 2, saving: 0, waitingForKey: 0, failed: 0, bytes: 12 }))
+    expect(await favoriteCopies()).toEqual(ok({ favorites: 2, saved: 2, saving: 0, waitingForKey: 0, waitingForPanel: 0, failed: 0, bytes: 12 }))
     await favorites({ op: 'remove', itemKey: icon.itemKey })
     expect(await copyCount()).toBe(1)
+  })
+
+  it('a shape favorite`s copy comes from the Add panel over media:save-favorite-elements and reads back (YAZ-4370)', async () => {
+    const star = item({ itemKey: 'shape:star', provider: 'shape', providerId: 'star', kind: 'shape', title: 'Star' })
+    const fragmentJson = JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id: 's', type: 'line' }], files: {} })
+    const call = (channel: { channel: string }, req?: unknown) => registered(channel)({ sender }, req)
+    expect(await call(CONTRACT.media.saveFavoriteElements, { itemKey: star.itemKey, fragmentJson })).toEqual(ok(false)) // not a favorite yet
+    await favorites({ op: 'add', item: star })
+    expect(await call(CONTRACT.media.favoritesForPanel)).toEqual(ok([star.itemKey]))
+    expect(await call(CONTRACT.media.saveFavoriteElements, { itemKey: star.itemKey, fragmentJson: 'not json' })).toEqual(bad('BAD_REQUEST'))
+    expect(await call(CONTRACT.media.saveFavoriteElements, { itemKey: star.itemKey, fragmentJson })).toEqual(ok(true))
+    expect(await call(CONTRACT.media.favoriteElements, star.itemKey)).toEqual(ok(fragmentJson))
+    expect(await call(CONTRACT.media.favoritesForPanel)).toEqual(ok([]))
+    await favorites({ op: 'remove', itemKey: star.itemKey })
+    expect(await call(CONTRACT.media.favoriteElements, star.itemKey)).toEqual(ok(null))
   })
 
   it('follows settings.libraryFolder: the store re-points to the chosen folder and every window is told', async () => {

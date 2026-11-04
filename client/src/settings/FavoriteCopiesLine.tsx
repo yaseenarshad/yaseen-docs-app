@@ -1,6 +1,6 @@
 /**
- * Settings › Images › Library › "Favorites" (YAZ-4363, extras 3 and 25): how many favorites there are, the size of
- * their own copies (photo copies too), and whether every copy is saved — "all saved" or "3 still saving".
+ * Settings › Images › Library › "Favorites" (YAZ-4363, extras 3 and 25; YAZ-4370): how many favorites there are, the
+ * size of their own copies (photo copies too), and whether every copy is saved — "all saved" or "3 still saving".
  *
  * Main answers it (`media:favorite-copies`, `library/favoriteCopies.ts`). The line asks again on `media:changed`, and
  * every 2 s while copies are still saving: a copy that lands changes no list, so no push says so.
@@ -21,6 +21,7 @@ export function favoriteCopiesText(s: FavoriteCopiesStatus): string {
   const open: string[] = []
   if (s.saving > 0) open.push(`${s.saving} still saving`)
   if (s.waitingForKey > 0) open.push(`${s.waitingForKey} wait for a Pixabay key`)
+  if (s.waitingForPanel > 0) open.push(`${s.waitingForPanel} save when the Add panel opens`)
   if (s.failed > 0) open.push(`${s.failed} could not be saved yet`)
   parts.push(open.length === 0 ? 'all saved' : open.join(', '))
   return parts.join(' · ')

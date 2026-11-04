@@ -48,6 +48,7 @@ beforeEach(async () => {
   await writeFile(path.join(from, 'media.json'), JSON.stringify({ version: 1, favorites: [fav('iconify:mdi:old', 3)], recent: [fav('iconify:mdi:old', 3)] }))
   await writeFile(path.join(from, 'favorites', `${'a'.repeat(40)}.svg`), '<svg id="a"/>')
   await writeFile(path.join(from, 'favorites', `${'b'.repeat(40)}.png`), 'PNG-from')
+  await writeFile(path.join(from, 'favorites', `${'c'.repeat(40)}.excalidraw`), fragment('kept-shape')) // an elements copy (YAZ-4370)
   for (const [slug, id] of [['card', 'c1'], ['logo', 'old-logo'], ['same', 's1']]) {
     await writeFile(path.join(from, 'components', `${slug}.excalidraw`), fragment(id))
     await writeFile(path.join(from, 'components', `${slug}.png`), `png-${id}`)
@@ -84,6 +85,7 @@ describe('copyLibrary (YAZ-4364, round 3 decision 3)', () => {
     // favorite copies: the missing one copied; the one already there is not written over.
     expect(await readFile(path.join(to, 'favorites', `${'a'.repeat(40)}.svg`), 'utf8')).toBe('<svg id="a"/>')
     expect(await readFile(path.join(to, 'favorites', `${'b'.repeat(40)}.png`), 'utf8')).toBe('PNG-to')
+    expect(await readFile(path.join(to, 'favorites', `${'c'.repeat(40)}.excalidraw`), 'utf8')).toBe(fragment('kept-shape'))
     // components: the missing one keeps its name; the clash is logo-2 "Logo 2"; the same bytes are not copied again.
     const list = await components.list()
     expect(list.map((c) => [c.slug, c.name]).sort()).toEqual([

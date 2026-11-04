@@ -41,7 +41,7 @@ const onChange = vi.fn()
 
 beforeEach(() => {
   libraryFolder.mockReset().mockResolvedValue('/userData/library')
-  favoriteCopies.mockReset().mockResolvedValue({ favorites: 13, saved: 11, saving: 0, waitingForKey: 0, failed: 0, bytes: 2.5 * 1024 * 1024 })
+  favoriteCopies.mockReset().mockResolvedValue({ favorites: 13, saved: 11, saving: 0, waitingForKey: 0, waitingForPanel: 0, failed: 0, bytes: 2.5 * 1024 * 1024 })
   mediaChanged.mockClear()
   pickFolder.mockReset().mockResolvedValue({ cancelled: true })
   secretHas.mockReset().mockResolvedValue(false)
@@ -115,7 +115,7 @@ describe('Settings › Images › Library › Favorites (YAZ-4363)', () => {
   it('shows the count, the size of the copies and "all saved"; asks again on a library change', async () => {
     await mountImages()
     expect(line()).toBe('13 favorites · 2.5 MB · all saved')
-    favoriteCopies.mockResolvedValueOnce({ favorites: 14, saved: 11, saving: 3, waitingForKey: 0, failed: 0, bytes: 2.5 * 1024 * 1024 })
+    favoriteCopies.mockResolvedValueOnce({ favorites: 14, saved: 11, saving: 3, waitingForKey: 0, waitingForPanel: 0, failed: 0, bytes: 2.5 * 1024 * 1024 })
     await act(async () => {
       mediaChanged.mock.calls[0][0]()
       await Promise.resolve()
@@ -124,9 +124,9 @@ describe('Settings › Images › Library › Favorites (YAZ-4363)', () => {
   })
 
   it('says which copies wait for a Pixabay key and which could not be saved', async () => {
-    favoriteCopies.mockResolvedValue({ favorites: 1, saved: 0, saving: 0, waitingForKey: 5, failed: 1, bytes: 0 })
+    favoriteCopies.mockResolvedValue({ favorites: 1, saved: 0, saving: 0, waitingForKey: 5, waitingForPanel: 2, failed: 1, bytes: 0 })
     await mountImages()
-    expect(line()).toBe('1 favorite · 0 B · 5 wait for a Pixabay key, 1 could not be saved yet')
+    expect(line()).toBe('1 favorite · 0 B · 5 wait for a Pixabay key, 2 save when the Add panel opens, 1 could not be saved yet')
   })
 })
 

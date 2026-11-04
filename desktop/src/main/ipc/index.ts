@@ -95,8 +95,8 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // and component stores, the favorites' own copies (YAZ-4363), and the Image Studio, which asks the copies first.
   // The folder is the setting, else `<settings folder>/library`, else `<userData>/library` (YAZ-4364).
   handle(CONTRACT.drawing.libraryFolder, async () => resolveLibraryFolder(store.get().settings.libraryFolder, userData, store.get().settingsFolder))
-  const library = registerMediaLibraryIpc(store, userData, { macId: places.macId, hasPixabayKey: () => secrets.has(PIXABAY_SECRET) })
   const components = registerComponentsIpc(store, userData)
+  const library = registerMediaLibraryIpc(store, userData, { macId: places.macId, hasPixabayKey: () => secrets.has(PIXABAY_SECRET), readComponent: (slug) => components.read({ slug }) })
   registerMediaStudioIpc(userData, secrets, globalThis.fetch, library.copies)
   // A library that moves (YAZ-4364): after the stores re-pointed, the old folder copies and merges into the new one.
   followLibraryMoves(store, userData, {

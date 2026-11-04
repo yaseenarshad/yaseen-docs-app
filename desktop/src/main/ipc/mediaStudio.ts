@@ -58,7 +58,8 @@ export function registerMediaStudioIpc(userData: string, secrets: Secrets, fetch
   const cache = createMediaCache(folder)
   const readPixabayKey = () => secrets.read(PIXABAY_SECRET)
   const providers = createMediaProviders({ fetch: fetchImpl, readPixabayKey, cache, favoriteCopy: copies })
-  void copies?.start(createMediaProviders({ fetch: fetchImpl, readPixabayKey, cache }).import)
+  const originals = createMediaProviders({ fetch: fetchImpl, readPixabayKey, cache })
+  void copies?.start({ picture: originals.import, drawing: async (id) => (await originals.drawing({ id })).elements })
 
   // Detached: the folder has to exist before the first write, and yesterday's entries have to go,
   // but neither is something a renderer should ever wait behind.

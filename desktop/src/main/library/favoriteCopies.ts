@@ -1,7 +1,15 @@
 /**
- * THE FAVORITES' OWN COPIES (YAZ-4363, round 2 decision 6): `<library>/favorites/<sha1(itemKey)>.<ext>`, one
- * full-quality picture for each Iconify or Pixabay favorite, beside `media.json`. Iconify or Pixabay can drop a
- * picture; the copy stays, and an add or a tile uses it first (`providers.ts`'s `favoriteCopy`), also offline.
+ * THE FAVORITES' OWN COPIES (YAZ-4363, round 2 decision 6; YAZ-4370): `<library>/favorites/<sha1(itemKey)>.<ext>`, one
+ * copy of what each favorite adds to a board, whatever its kind, beside the media files. A provider can drop a
+ * picture, a library can go, a shape can be renamed, a component deleted; the copy stays, and an add or a tile uses
+ * it first, also offline.
+ *
+ *  - TWO KINDS OF COPY. A picture (Iconify, Pixabay) is its bytes, `.<svg|jpg|png|…>`; `providers.ts`'s
+ *    `favoriteCopy` asks for it. Elements (an Excalidraw library item, a shape, a component) are one
+ *    `.excalidraw` file in a component file's shape, image bytes inside; the Add panel reads it (`media:favorite-copy`).
+ *  - WHO MAKES IT. Main: the pictures, a library item (`media:drawing` without the copy step) and a component (its
+ *    own file). The Add panel: a shape, which only the renderer's catalog and engine can build (`missingForPanel`,
+ *    `saveElements`).
  *
  *  - THE NAME IS THE ID. The file is named by the hash of `itemKey`, so no field in `media.json` can lose it, and a
  *    lookup needs nothing but the request. The extension comes from the picture's type.
@@ -23,20 +31,28 @@ import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { LIBRARY_FAVORITES_DIR, type FavoriteCopiesStatus, type MediaBytesRequest, type MediaImportResponse, type MediaPreviewResponse, type StoredMediaItem } from '@shared/types'
+import { LIBRARY_FAVORITES_DIR, MAX_COMPONENT_FRAGMENT_BYTES, type FavoriteCopiesStatus, type MediaBytesRequest, type MediaImportResponse, type MediaPreviewResponse, type StoredMediaItem } from '@shared/types'
 import { parseDataUrl } from '@shared/drawingAssets'
+import { parseComponentFragment } from '@shared/savedComponents'
 import { BridgeFailure, atomicWrite, createChain } from '../fs/fsUtils'
 
 /** The wait between two copies of one pass (round 2 decision 6): a backfill of many favorites is gentle on the providers. */
 export const FAVORITE_COPY_INTERVAL_MS = 1000
 
-/** The providers whose favorites get a copy: the two that serve bytes. A shape, a component or a library drawing has none. */
-const needsCopy = (item: StoredMediaItem): item is StoredMediaItem & { provider: 'iconify' | 'pixabay' } => item.provider === 'iconify' || item.provider === 'pixabay'
+/** The favorites whose copy is a picture: the two providers that serve bytes. Every other kind's copy is elements. */
+const isPicture = (item: StoredMediaItem): item is StoredMediaItem & { provider: 'iconify' | 'pixabay' } => item.provider === 'iconify' || item.provider === 'pixabay'
+/** The kind whose copy the Add panel makes: a shape is built from the renderer's catalog by its engine. */
+const madeByPanel = (item: StoredMediaItem): boolean => item.provider === 'shape'
+/** The extension of an elements copy (YAZ-4370): a component file's own. */
+export const ELEMENTS_COPY_EXT = 'excalidraw'
+
+/** A fragment in a component file's shape, from bare elements (a library item has no image bytes). */
+const fragmentOf = (elements: readonly unknown[]): string => `${JSON.stringify({ type: 'excalidraw', version: 2, source: 'yaseen-docs', elements, appState: {}, files: {} }, null, 2)}\n`
 
 export const favoriteCopyHash = (itemKey: string): string => createHash('sha1').update(itemKey).digest('hex')
 
 /** A copy's file name parts: `<40 hex>.<ext>`. An `atomicWrite` tmp file (`….tmp-<hex>`) never matches. */
-const COPY_NAME_RE = /^([0-9a-f]{40})\.([a-z0-9]{1,8})$/
+const COPY_NAME_RE = /^([0-9a-f]{40})\.([a-z0-9]{1,10})$/
 
 /** The file extension for a picture's type; `image/svg+xml` → `svg`, `image/jpeg` → `jpg`. Null for no image type. */
 export function copyExtension(mimeType: string): string | null {
@@ -55,9 +71,18 @@ export interface FavoriteCopiesDeps {
   favorites: () => Promise<StoredMediaItem[]>
   /** Whether this Mac has a Pixabay key: a Pixabay copy waits until it does. */
   hasPixabayKey: () => Promise<boolean>
+  /** A saved component's file, by slug (`componentStore.read`); it throws when the component is gone. */
+  readComponent?: (slug: string) => Promise<string>
   intervalMs?: number
   /** The wait between two copies; a test passes one that resolves at once. */
   wait?: (ms: number) => Promise<void>
+}
+
+/** How main makes a copy: `providers.ts`'s `import` and `drawing` WITHOUT the copy step (a copy of a copy is no copy). */
+export interface CopyFetchers {
+  picture(req: MediaBytesRequest): Promise<MediaImportResponse>
+  /** A library item's elements, by its `providerId`. */
+  drawing(id: string): Promise<readonly unknown[]>
 }
 
 export interface FavoriteCopies {
@@ -67,11 +92,20 @@ export interface FavoriteCopies {
    */
   preview(req: MediaBytesRequest): Promise<MediaPreviewResponse | null>
   import(req: MediaBytesRequest): Promise<MediaImportResponse | null>
+  /** The elements copy of a favorite, as a component fragment's text; null when there is none (YAZ-4370). */
+  readElements(itemKey: string): Promise<string | null>
   /**
-   * The fetch a copy is made with: `providers.ts`'s `import` WITHOUT the copy step (a copy of a copy is no copy).
-   * Until it is given, passes wait; the first `start` runs the launch backfill, and answers when it is done.
+   * Keep the Add panel's copy of a favorite's elements (a shape). Only for a favorite with no copy yet, and only a
+   * valid fragment of at most 32 MB; answers whether it was kept. The first copy stays.
    */
-  start(fetchOriginal: (req: MediaBytesRequest) => Promise<MediaImportResponse>): Promise<void>
+  saveElements(itemKey: string, fragmentJson: string): Promise<boolean>
+  /** The favorites whose copy the Add panel makes (shapes) and that have none yet. */
+  missingForPanel(): Promise<string[]>
+  /**
+   * How main makes a copy. Until it is given, passes wait; the first `start` runs the launch backfill, and answers
+   * when it is done.
+   */
+  start(fetchers: CopyFetchers): Promise<void>
   /** Start a pass, or ask the running one for one more after it. Never throws; answers when the passes are done. */
   backfill(): Promise<void>
   /** Delete the copy of `itemKey` (its favorite was removed). A copy that is not there is no failure. */
@@ -88,7 +122,7 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
   const interval = deps.intervalMs ?? FAVORITE_COPY_INTERVAL_MS
   const wait = deps.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms).unref?.()))
   let folder = initialFolder
-  let fetchOriginal: ((req: MediaBytesRequest) => Promise<MediaImportResponse>) | null = null
+  let fetchers: CopyFetchers | null = null
   let closed = false
   /** The running passes, and whether a change asked for one more after the current one. */
   let running: Promise<void> | null = null
@@ -122,32 +156,61 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
     const hit = (await listing(dir)).get(favoriteCopyHash(itemKey))
     if (hit === undefined) return null
     const ext = COPY_NAME_RE.exec(hit.name)?.[2] ?? ''
+    if (ext === ELEMENTS_COPY_EXT) return null // elements are no picture
     const bytes = await readFile(path.join(dir, hit.name)).catch(() => null)
     if (bytes === null) return null
     const mimeType = copyMimeType(ext)
     return { mimeType, dataURL: `data:${mimeType};base64,${bytes.toString('base64')}` }
   }
 
-  async function save(item: StoredMediaItem, fetched: MediaImportResponse, library: string): Promise<void> {
+  /** Write one copy, unless the favorite went meanwhile or a copy landed meanwhile. Answers whether it wrote. */
+  function write(itemKey: string, ext: string, bytes: Buffer | string, library: string): Promise<boolean> {
+    return chain.run(async () => {
+      // A removal while the copy was on its way wins: the favorite is gone, so no copy lands.
+      if (library !== folder || !(await deps.favorites()).some((f) => f.itemKey === itemKey)) return false
+      const dir = dirOf(library)
+      if ((await listing(dir)).has(favoriteCopyHash(itemKey))) return false
+      await mkdir(dir, { recursive: true })
+      await atomicWrite(path.join(dir, `${favoriteCopyHash(itemKey)}.${ext}`), bytes)
+      scan = null
+      return true
+    })
+  }
+
+  async function savePicture(item: StoredMediaItem, fetched: MediaImportResponse, library: string): Promise<void> {
     const parsed = parseDataUrl(fetched.dataURL)
     const ext = copyExtension(fetched.mimeType)
     if (parsed === null || ext === null) throw new BridgeFailure('UNSUPPORTED_TYPE', 'the provider answered with something that is not an image')
-    await chain.run(async () => {
-      // A removal while the picture was on its way wins: the favorite is gone, so no copy lands.
-      if (library !== folder || !(await deps.favorites()).some((f) => f.itemKey === item.itemKey)) return
-      const dir = dirOf(library)
-      await mkdir(dir, { recursive: true })
-      await atomicWrite(path.join(dir, `${favoriteCopyHash(item.itemKey)}.${ext}`), Buffer.from(parsed.base64, 'base64'))
-      scan = null
-    })
+    await write(item.itemKey, ext, Buffer.from(parsed.base64, 'base64'), library)
+  }
+
+  /** A fragment that a component file could be, or a throw: an elements copy must insert. */
+  function checkFragment(fragmentJson: string): void {
+    if (Buffer.byteLength(fragmentJson) > MAX_COMPONENT_FRAGMENT_BYTES) throw new BridgeFailure('TOO_LARGE', 'that copy is over 32 MB')
+    try {
+      parseComponentFragment(fragmentJson)
+    } catch (err) {
+      throw new BridgeFailure('BAD_REQUEST', `not a copy of elements: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  /** Main's own copy of one favorite: a picture, a library item's elements or a component's file. */
+  async function copyOne(item: StoredMediaItem, fetch: CopyFetchers, library: string): Promise<void> {
+    if (isPicture(item)) return savePicture(item, await fetch.picture({ provider: item.provider, id: item.providerId }), library)
+    let fragment: string
+    if (item.provider === 'excalidraw') fragment = fragmentOf(await fetch.drawing(item.providerId))
+    else if (item.provider === 'component' && deps.readComponent !== undefined) fragment = await deps.readComponent(item.providerId)
+    else throw new BridgeFailure('NOT_FOUND', `no copy can be made of ${item.itemKey}`)
+    checkFragment(fragment)
+    await write(item.itemKey, ELEMENTS_COPY_EXT, fragment, library)
   }
 
   /** One pass over the favorites of the folder it started in. */
   async function pass(): Promise<void> {
     const library = folder
-    const fetch = fetchOriginal
+    const fetch = fetchers
     if (fetch === null) return
-    const favorites = (await deps.favorites()).filter(needsCopy)
+    const favorites = (await deps.favorites()).filter((item) => !madeByPanel(item))
     const have = await listing(dirOf(library))
     let hasKey: boolean | null = null
     let first = true
@@ -155,10 +218,13 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
       if (closed || library !== folder) return
       if (have.has(favoriteCopyHash(item.itemKey))) continue
       if (item.provider === 'pixabay' && !(hasKey ??= await deps.hasPixabayKey())) continue
-      if (!first) await wait(interval)
-      first = false
+      // One each second for what goes to the network; a component's own file is on this disk.
+      if (item.provider !== 'component') {
+        if (!first) await wait(interval)
+        first = false
+      }
       try {
-        await save(item, await fetch({ provider: item.provider, id: item.providerId }), library)
+        await copyOne(item, fetch, library)
         failed.delete(item.itemKey)
       } catch (cause) {
         // No network: the rest would fail the same way. The next launch, change or key tries again.
@@ -170,7 +236,7 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
   }
 
   function backfill(): Promise<void> {
-    if (closed || fetchOriginal === null) return Promise.resolve()
+    if (closed || fetchers === null) return Promise.resolve()
     if (running !== null) {
       again = true
       return running
@@ -199,9 +265,28 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
       return { ...copy, item }
     },
 
-    start(fetch) {
-      const first = fetchOriginal === null
-      fetchOriginal = fetch
+    async readElements(itemKey) {
+      const dir = dirOf(folder)
+      const hit = (await listing(dir)).get(favoriteCopyHash(itemKey))
+      if (hit === undefined || COPY_NAME_RE.exec(hit.name)?.[2] !== ELEMENTS_COPY_EXT) return null
+      return readFile(path.join(dir, hit.name), 'utf8').catch(() => null)
+    },
+
+    async saveElements(itemKey, fragmentJson) {
+      checkFragment(fragmentJson)
+      const kept = await write(itemKey, ELEMENTS_COPY_EXT, fragmentJson, folder)
+      if (kept) failed.delete(itemKey)
+      return kept
+    },
+
+    async missingForPanel() {
+      const files = await listing()
+      return (await deps.favorites()).filter((f) => madeByPanel(f) && !files.has(favoriteCopyHash(f.itemKey))).map((f) => f.itemKey)
+    },
+
+    start(next) {
+      const first = fetchers === null
+      fetchers = next
       return first ? backfill() : Promise.resolve()
     },
 
@@ -221,17 +306,20 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
     async status() {
       const favorites = await deps.favorites()
       const files = await listing()
-      const missing = favorites.filter(needsCopy).filter((f) => !files.has(favoriteCopyHash(f.itemKey)))
+      const missing = favorites.filter((f) => !files.has(favoriteCopyHash(f.itemKey)))
       const hasKey = missing.some((f) => f.provider === 'pixabay') ? await deps.hasPixabayKey() : true
-      const waitingForKey = hasKey ? 0 : missing.filter((f) => f.provider === 'pixabay').length
-      const failedNow = missing.filter((f) => failed.has(f.itemKey) && !(f.provider === 'pixabay' && !hasKey)).length
+      const keyless = (f: StoredMediaItem) => f.provider === 'pixabay' && !hasKey
+      const waitingForKey = missing.filter(keyless).length
+      const waitingForPanel = missing.filter(madeByPanel).length
+      const failedNow = missing.filter((f) => failed.has(f.itemKey) && !keyless(f) && !madeByPanel(f)).length
       let bytes = 0
       for (const file of files.values()) bytes += file.size
       return {
         favorites: favorites.length,
-        saved: favorites.filter(needsCopy).length - missing.length,
-        saving: missing.length - waitingForKey - failedNow,
+        saved: favorites.length - missing.length,
+        saving: missing.length - waitingForKey - waitingForPanel - failedNow,
         waitingForKey,
+        waitingForPanel,
         failed: failedNow,
         bytes,
       }

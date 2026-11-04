@@ -31,6 +31,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { MAX_COMPONENT_NAME_LENGTH, MAX_ITEM_WORD_LENGTH, PIXABAY_SECRET, type ComponentItem, type MediaBytesProvider, type MediaLibraryFile, type StudioItem } from '@shared/types'
 import { normalizeWord } from '@shared/mediaLibrary'
+import { parseComponentFragment } from '@shared/savedComponents'
 import { api } from '../api'
 import { createPreviewCache } from '../lib/previewCache'
 import { createScenePreviewPng, type PreviewBounds, type PreviewEngine } from '../lib/scenePreview'
@@ -149,8 +150,24 @@ const drawingPreviews = createPreviewCache(async (key) => {
   return createScenePreviewPng(engine, { elements: restored, appState: { ...drawingCanvas.appState(), theme }, files: {} }, DRAWING_TILE_BOUNDS)
 }, { limit: 300, maxBytes: 16 * 1024 * 1024 })
 
+/**
+ * The tile picture of an elements favorite from its own copy (YAZ-4370): a component that was deleted, a shape that
+ * left the catalog, a library item (its copy first, else the network). Keyed `<theme>|<itemKey>`.
+ */
+const copyPreviews = createPreviewCache(async (key) => {
+  if (drawingCanvas === null) throw new Error('No board to draw with')
+  const { engine } = drawingCanvas
+  const [theme, itemKey] = [key.slice(0, key.indexOf('|')), key.slice(key.indexOf('|') + 1)]
+  const copy = await api.media.favoriteElements(itemKey)
+  const fragment = copy !== null ? parseComponentFragment(copy) : itemKey.startsWith('excalidraw:') ? { elements: (await api.media.drawing({ id: itemKey.slice('excalidraw:'.length) })).elements, files: {} } : null
+  if (fragment === null) throw new Error('No copy to draw')
+  const restored = engine.restoreElements(fragment.elements as never, null) as unknown as unknown[]
+  return createScenePreviewPng(engine, { elements: restored, appState: { ...drawingCanvas.appState(), theme }, files: fragment.files }, DRAWING_TILE_BOUNDS)
+}, { limit: 300, maxBytes: 16 * 1024 * 1024 })
+
 export const clearPreviewMemo = () => {
   previews.clear()
+  copyPreviews.clear()
   drawingPreviews.clear()
   componentPreviews.clear()
 }
@@ -438,7 +455,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   }, [componentsBySlug])
   const liveList = (items: readonly StudioItem[]) => items.flatMap((item) => live(item) ?? [])
 
-  const favoriteItems = useMemo(() => liveList(favorites), [favorites, live])
+  // A favorite component that was deleted stays, by its stored name: its copy adds it (YAZ-4370). Elsewhere it is gone (D2).
+  const favoriteItems = useMemo(() => favorites.flatMap((item) => live(item) ?? (item.provider === 'component' ? [item] : [])), [favorites, live])
   const recentItems = useMemo(() => liveList(recent), [recent, live])
   /** Everything local, once each: the pool "Best matches" ranks. */
   const pool = useMemo(() => {
@@ -507,7 +525,11 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     setNotice(null)
     try {
       let recorded = item
-      if (item.provider === 'shape') {
+      // A favorite's own copy first (YAZ-4370): it adds offline, and after its library, shape or component is gone.
+      const copy = item.provider !== 'iconify' && item.provider !== 'pixabay' && favoriteKeys.has(item.itemKey) ? await api.media.favoriteElements(item.itemKey).catch(() => null) : null
+      if (copy !== null) {
+        insertComponent(engine, excalidrawAPI, copy)
+      } else if (item.provider === 'shape') {
         const shape = getShape(catalog, item.providerId)
         if (shape === undefined) throw new Error('That shape is not available yet.')
         insertShape(engine, excalidrawAPI, shape)
@@ -623,6 +645,27 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     ;(adds[plan.index] ?? adds[plan.index - 1] ?? fieldRef.current)?.focus()
   }, [favorites])
 
+  // The shape favorites' copies (YAZ-4370): only this renderer has the catalog and the engine that make a shape, so it
+  // saves the ones main says are missing — when the panel opens, and on each change of the favorites.
+  useEffect(() => {
+    let live = true
+    if (!favorites.some((item) => item.provider === 'shape')) return
+    void api.media.favoritesForPanel().then(
+      async (keys) => {
+        for (const key of keys) {
+          const shape = key.startsWith('shape:') ? getShape(catalog, key.slice('shape:'.length)) : undefined
+          if (!live || shape === undefined) continue
+          const elements = engine.convertToExcalidrawElements(shape.create(0, 0))
+          await api.media.saveFavoriteElements({ itemKey: key, fragmentJson: componentFragmentJson({ elements, files: {} }) }).catch(() => undefined)
+        }
+      },
+      () => undefined,
+    )
+    return () => {
+      live = false
+    }
+  }, [favorites, catalog, engine])
+
   const menuKey = openTile?.mode === 'menu' ? openTile.key : null
   // A menu near the bottom of the list moves up so all of it shows (YAZ-302, checked for YAZ-4365): the list scrolls,
   // so a menu that ran past its bottom edge would be cut off. Never above the list's top.
@@ -682,10 +725,13 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           title={`${item.title} — ${sourceLabel(item)}`}
         >
           <span className="image-studio__preview">
-            {item.provider === 'shape' ? (
-              shape ? <ShapeTile preview={shape.preview} /> : <span className="image-studio__placeholder" />
-            ) : item.provider === 'component' ? (
+            {item.provider === 'shape' && shape ? (
+              <ShapeTile preview={shape.preview} />
+            ) : item.provider === 'component' && component ? (
               <componentPreviews.Preview cacheKey={item.providerId} placeholderClass="image-studio__placeholder" />
+            ) : item.provider === 'shape' || item.provider === 'component' || (item.provider === 'excalidraw' && favorited) ? (
+              // Its source is gone, or it is a library favorite: the picture comes from the copy (YAZ-4370).
+              <copyPreviews.Preview cacheKey={`${theme}|${item.itemKey}`} placeholderClass="image-studio__placeholder" />
             ) : item.provider === 'excalidraw' ? (
               <drawingPreviews.Preview cacheKey={`${theme}|${item.providerId}`} placeholderClass="image-studio__placeholder" />
             ) : (

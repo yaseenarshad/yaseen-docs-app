@@ -1521,18 +1521,28 @@ export type MediaFavoritesRequest = { op: 'list' } | { op: 'add'; item: MediaIte
 export type MediaUsedRequest = { op: 'list' } | { op: 'record'; item: MediaItem; query: string } | { op: 'add-word'; item: MediaItem; word: string }
 
 /**
- * `media:favorite-copies` (YAZ-4363): Settings › Images' line about the favorites' own copies. `favorites` counts every
- * favorite; only an Iconify or Pixabay one needs a copy. Each of those is `saved`, `saving` (the backfill has it
- * still to do), `waitingForKey` (Pixabay, with no key on this Mac) or `failed` (the last try could not get it).
- * `bytes` is the size of every copy in the folder.
+ * `media:favorite-copies` (YAZ-4363, YAZ-4370): Settings › Images' line about the favorites' own copies. Every favorite
+ * needs one, whatever its kind. Each is `saved`, `saving` (the backfill has it still to do), `waitingForKey` (Pixabay,
+ * with no key on this Mac), `waitingForPanel` (a shape: the Add panel makes its copy when it opens) or `failed` (the
+ * last try could not get it). `bytes` is the size of every copy in the folder.
  */
 export interface FavoriteCopiesStatus {
   favorites: number
   saved: number
   saving: number
   waitingForKey: number
+  waitingForPanel: number
   failed: number
   bytes: number
+}
+
+/**
+ * `media:save-favorite-elements` (YAZ-4370): the Add panel's copy of a shape favorite, a component fragment's text.
+ * Main keeps it only for a favorite with no copy yet.
+ */
+export interface FavoriteElementsSaveRequest {
+  itemKey: string
+  fragmentJson: string
 }
 
 // ---------- Image Studio: the provider doors (🔒 YAZ-1775 D4, YAZ-1818) ----------
