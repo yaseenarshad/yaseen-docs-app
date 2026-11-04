@@ -1,8 +1,9 @@
 /**
  * Arrows while typing (YAZ-4273, `typingArrows.ts`): each arrow of the agreed table, the chains for the left and two-way
- * ones, Backspace right after, never in code or an open `<!--`, the setting off, and paste.
+ * ones, Backspace and ⌘Z right after, never in code or an open `<!--`, the setting off, and paste.
  */
 import { editorViewCtx } from '@milkdown/kit/core'
+import { redo, undo } from '@milkdown/kit/prose/history'
 import { Slice } from '@milkdown/kit/prose/model'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -58,22 +59,30 @@ describe('typing an arrow makes one arrow character (YAZ-4273 D6, C15)', () => {
     ['->', '→'],
     ['-->', '→'],
     ['==>', '⇒'],
+    ['=>', '⇒'],
     ['<-', '←'],
     ['<--', '←'],
     ['<->', '↔'],
     ['<-->', '↔'],
     ['<==', '⇐'],
     ['<==>', '⇔'],
+    ['<=', '⇐'],
+    ['<=>', '⇔'],
+    ['--->', '→'],
+    ['===>', '⇒'],
+    ['<--->', '↔'],
+    ['<===>', '⇔'],
   ])('%s gives %s, at its last key (D7)', async (typed, arrow) => {
     const { crepe, view } = await mount('plan\n')
     type(view, ` ${typed} b`)
     expect(saved(crepe)).toBe(`plan ${arrow} b`)
   })
 
-  it('the text around stays: `<=` alone, `=>`, and a single `-` or `=` are text', async () => {
-    const { crepe, view } = await mount('a\n')
-    type(view, ' <= b => c - d = e')
-    expect(saved(crepe)).toBe('a <= b => c - d = e')
+  it('the text around stays: a single `-` or `=`, `==`, and `>=` are text', async () => {
+    const { view } = await mount('a\n')
+    type(view, ' b - c = d == e >= f')
+    // The text, not the save: the save writes `==` as `\=\=`.
+    expect(view.state.doc.textContent).toBe('a b - c = d == e >= f')
   })
 
   it('in a bullet and in a table cell too', async () => {
@@ -100,6 +109,53 @@ describe('Backspace right after gives back the text of that step (D7)', () => {
     type(view, ' <->')
     expect(backspace(view)).toBe(true)
     expect(saved(crepe)).toBe('a ←>')
+  })
+})
+
+describe('⌘Z right after gives back the text of that step (YAZ-4273 demo)', () => {
+  it('`->`: ⌘Z gives `->`; a second ⌘Z takes the typing away', async () => {
+    const { crepe, view } = await mount('a\n')
+    type(view, ' ->')
+    expect(saved(crepe)).toBe('a →')
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(saved(crepe)).toBe('a ->')
+    expect(view.state.selection.from).toBe(view.state.doc.resolve(1).end())
+    undo(view.state, view.dispatch)
+    expect(saved(crepe)).toBe('a')
+  })
+
+  it('text typed right after the arrow is its own step: ⌘Z takes it, then the arrow', async () => {
+    const { crepe, view } = await mount('a\n')
+    type(view, ' -> b')
+    undo(view.state, view.dispatch)
+    expect(saved(crepe)).toBe('a →')
+    undo(view.state, view.dispatch)
+    expect(saved(crepe)).toBe('a ->')
+  })
+
+  it('`<=` meant as "less than or equal": ⌘Z gives `<=` back, and it stays as you type on', async () => {
+    const { crepe, view } = await mount('x\n')
+    type(view, ' <=')
+    expect(saved(crepe)).toBe('x ⇐')
+    undo(view.state, view.dispatch)
+    type(view, ' 5')
+    expect(saved(crepe)).toBe('x <= 5')
+  })
+
+  it('a `<-` that ⌘Z gave back stays text: the next `-` makes no arrow', async () => {
+    const { crepe, view } = await mount('x\n')
+    type(view, ' <-')
+    undo(view.state, view.dispatch)
+    type(view, '- y')
+    expect(saved(crepe)).toBe('x <-- y')
+  })
+
+  it('⌘⇧Z after ⌘Z makes the arrow again', async () => {
+    const { crepe, view } = await mount('a\n')
+    type(view, ' ->')
+    undo(view.state, view.dispatch)
+    redo(view.state, view.dispatch)
+    expect(saved(crepe)).toBe('a →')
   })
 })
 

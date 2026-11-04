@@ -977,7 +977,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'typingArrows',
             label: 'Arrows',
-            hint: 'Typing -> makes →, ==> makes ⇒, <- makes ←, and <-> makes ↔. Backspace right after keeps what you typed. Never in code.',
+            hint: 'Typing -> makes →, => makes ⇒, <- makes ←, <= makes ⇐, and <-> makes ↔. ⌘Z or Backspace right after gives back what you typed. Never in code.',
             keywords: ['arrow', 'arrows', 'auto', 'replace', 'typing', 'symbol', 'convert', '->', '=>', '<-', 'right arrow', 'left arrow'],
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.typingArrows ?? true} onChange={(typingArrows) => onChange({ ...settings, typingArrows })} ariaLabel="Arrows while typing" />
@@ -1148,7 +1148,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-4276 A1: where a calendar table's "All notes" opens.
             id: 'tableAllNotesOpensAt',
             label: 'All notes opens at',
-            hint: 'In a calendar table, "All notes" shows every time block of the column under the table. It opens at the time block of the cell you came from, or at now.',
+            hint: 'In a calendar table, "All notes" shows every time block of the column in the card. It opens at the time block of the cell you came from, or at now.',
             keywords: ['all notes', 'calendar', 'time block', 'now', 'open', 'cell note', 'table'],
             render: ({ settings, onChange }) => (
               <Segmented options={ALL_NOTES_OPENS_AT_OPTIONS} value={settings.tableAllNotesOpensAt ?? 'cell'} onChange={(tableAllNotesOpensAt) => onChange({ ...settings, tableAllNotesOpensAt })} ariaLabel="All notes opens at" />

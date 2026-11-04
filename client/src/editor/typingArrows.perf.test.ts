@@ -1,8 +1,9 @@
 /**
  * One plain keystroke's typing handlers (YAZ-4273 C18, YAZ-4275): every `handleTextInput` of the editor, in order, the
- * way the browser's typing reaches them. The arrow rule adds one regex to the input-rules plugin, and the link guard of
- * `idLinkCaret.ts` one comparison; a plain letter makes neither change the document. The worst place for the regex is
- * the end of a long line: the input-rules plugin reads up to 500 characters before the caret. Runs in the `perf` project;
+ * way the browser's typing reaches them. The arrow handler (a `handleTextInput` prop since the YAZ-4273 demo) returns at
+ * once for a key that ends no arrow, and the link guard of `idLinkCaret.ts` adds one comparison; a plain letter makes
+ * neither change the document. The worst place is the end of a long line: the input-rules plugin and the arrow handler
+ * read up to 500 characters before the caret. Runs in the `perf` project;
  * the budget holds the median of 50, after 10 warm-up runs.
  */
 import { TextSelection } from '@milkdown/kit/prose/state'
