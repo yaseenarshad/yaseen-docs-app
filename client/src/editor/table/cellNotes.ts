@@ -260,21 +260,23 @@ export interface CellNoteCardState {
   cell: number | null
   /** "All notes" (round 4 of the demo): the card shows every cell note of the page, read-only. */
   all: boolean
-  /** "All notes" of a calendar table (YAZ-4276): its column's notes, in the page under the table, editable; else null. */
+  /** "All notes" of a calendar table (YAZ-4276): every time block of a column, in the card around the live note; else null. */
   calendar: CalendarAll | null
   set: DecorationSet
 }
 
-/** The calendar "All notes" view (YAZ-4276, `cellNoteCard.ts`): one column of one calendar table, under the table. */
+/** The calendar "All notes" view (YAZ-4276, `cellNoteCard.ts`): one column of one calendar table, in the card. */
 export interface CalendarAll {
-  /** The column shown, as an index in a row (D3: the open note's, until a column button picks another). */
+  /** The column shown, as an index in a row: the live note's (D3; a column button makes a note of another live). */
   column: number
-  /** The notes shown in the page, the column's notes in row order: mapped through each change. */
+  /** The notes shown: the live note, the card (`isCellNoteHidden`). Mapped through each change. */
   shown: readonly number[]
   /** The notes this view made from an empty time block, by label: leaving the view removes those still empty (A9). */
   made: readonly string[]
   /** "Only filled" (A3): the empty time blocks do not show. */
   onlyFilled: boolean
+  /** The cell the view opened from, mapped: the card stays under it while the live block changes. */
+  anchor: number
 }
 
 export const cellNoteCardKey = new PluginKey<CellNoteCardState>('mdapp-cell-note-card')
