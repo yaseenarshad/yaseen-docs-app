@@ -577,11 +577,22 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     const shape = getShape(catalog, item.providerId)
     return shape ? shapeAliases(shape) : []
   }
-  const yours = useMemo(
+  /**
+   * The items you added, starred or gave a word during this search (YAZ-4348 demo round 2: "if im in the web and then
+   * i click it or i add a word to it it jumps to best matches … where did the image go"). They stay where they were
+   * — in From the web, or Hand-drawn — until the search changes; then they rank in Best matches as usual.
+   */
+  const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set())
+  const touch = (itemKey: string) => setTouched((now) => (now.has(itemKey) ? now : new Set(now).add(itemKey)))
+  useEffect(() => setTouched(new Set()), [query, chip])
+  const ranked = useMemo(
     () => (typed ? rankItems(pool.filter((item) => inChip(chip, item, favoriteKeys)), usedByKey, query, aliases) : []),
     // `aliases` reads `catalog`, which is listed.
     [typed, pool, chip, favoriteKeys, usedByKey, query, catalog],
   )
+  // A touched item that is still on screen elsewhere (the web results, the hand-drawn list) is not in Best matches too.
+  const shownElsewhere = useMemo(() => new Set([...results, ...(drawings ?? [])].map((item) => item.itemKey).filter((key) => touched.has(key))), [results, drawings, touched])
+  const yours = useMemo(() => (shownElsewhere.size === 0 ? ranked : ranked.filter((item) => !shownElsewhere.has(item.itemKey))), [ranked, shownElsewhere])
   useEffect(() => {
     setShownMatches(MATCH_PAGE)
     setShownDrawings(DRAWING_PAGE)
@@ -625,6 +636,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   // activation can land in the frame before React has re-rendered them.
   const addItem = async (item: StudioItem) => {
     if (insertingKey !== null) return
+    touch(item.itemKey)
     // A read-only board takes no element, so nothing is added and no use is counted (polish, audit Must 2).
     if (readOnly) {
       setNotice(READ_ONLY_NOTICE)
@@ -681,6 +693,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
    */
   const toggleFavorite = async (item: StudioItem, slot?: string, fromMenu = false) => {
     if (busyFavoriteKey !== null) return
+    touch(item.itemKey)
     setBusyFavoriteKey(item.itemKey)
     set({ error: null })
     setLine(null)
@@ -708,6 +721,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   // pushed the list down, so the tile and its row jumped); the field empties for the next word.
   const saveWord = async (item: StudioItem, word = draft) => {
     if (word.trim() === '') return
+    touch(item.itemKey)
     setDraft('')
     try {
       setLibrary(await api.media.used({ op: 'add-word', item, word }))

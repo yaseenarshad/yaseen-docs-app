@@ -306,6 +306,25 @@ describe('typing: Best matches, then From the web (D3, D4, D7)', () => {
     expect(tileNames(section(host, 'From the web'))).toEqual(['rocket launch'])
   })
 
+  it('a web icon you give a word stays in From the web until the search changes (YAZ-4348 demo round 2)', async () => {
+    library = libraryOf()
+    media.search.mockResolvedValue({ items: [icon('rocket launch')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    media.used.mockImplementation(async (req) => (req.op === 'add-word' ? (library = libraryOf({ used: [usedRow({ ...icon('rocket launch'), words: [req.word] })] })) : library))
+    const { host } = await mount()
+    await search(host, 'rocket')
+    await rightClick(host, 'rocket launch')
+    await click(byText(host, 'Search words…'))
+    const input = byLabel(host, 'A word for rocket launch') as HTMLInputElement
+    await type(input, 'liftoff')
+    await act(async () => input.form!.requestSubmit())
+    await settle()
+    expect(tileNames(section(host, 'From the web'))).toEqual(['rocket launch'])
+    expect(section(host, 'Best matches')).toBeNull()
+    // A new search ranks it with your own items
+    await search(host, 'rocket l')
+    expect(tileNames(section(host, 'Best matches'))).toEqual(['rocket launch'])
+  })
+
   it('a word you taught an item puts it first (the Emoji app`s learned pick)', async () => {
     library = libraryOf({ favorites: [stored(icon('rocket'))], used: [usedRow({ ...icon('launch pad'), words: ['rocket'] })] })
     const { host } = await mount()
