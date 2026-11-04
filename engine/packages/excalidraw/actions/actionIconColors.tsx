@@ -30,19 +30,6 @@ import {
   MIME_TYPES,
 } from "@excalidraw/common";
 
-/**
- * YAZ-4348 demo: the ▾ after an icon picker's five picks — more colors, then "Custom…" (the full
- * picker with any hex and the eyedropper), the text toolbar's pattern. Without it the only way to a
- * custom color was the color square, which reads as "no outline" while there is none.
- */
-const ICON_MORE_PICKS = [
-  COLOR_PALETTE.white,
-  COLOR_PALETTE.orange[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-  COLOR_PALETTE.violet[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-  COLOR_PALETTE.pink[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-  COLOR_PALETTE.cyan[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-  COLOR_PALETTE.gray[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-];
 import { useEffect, useRef, useState } from "react";
 
 import type { CaptureUpdateActionType, IconRecipe } from "@excalidraw/element";
@@ -70,6 +57,20 @@ import type {
   UIAppState,
 } from "../types";
 import type { ActionResult } from "./types";
+
+/**
+ * YAZ-4348 demo: the ▾ after an icon picker's five picks — more colors, then "Custom…" (the full
+ * picker with any hex and the eyedropper), the text toolbar's pattern. Without it the only way to a
+ * custom color was the color square, which reads as "no outline" while there is none.
+ */
+const ICON_MORE_PICKS = [
+  COLOR_PALETTE.white,
+  COLOR_PALETTE.orange[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.violet[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.pink[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.cyan[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.gray[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+];
 
 /** The longest wait for a new picture to load before the swap. */
 const PRELOAD_TIMEOUT_MS = 1000;
