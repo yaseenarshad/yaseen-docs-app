@@ -45,7 +45,7 @@ import { insertImage, insertShape, fileFromImport, type InsertEngine, type Inser
 import { buildShapeCatalog, getShape, shapeAliases, type ShapeCatalogItem, type ShapePreview, type SmartShapeApi } from './shapes'
 import { groupResults } from './groupResults'
 import { FilterMenu } from './FilterMenu'
-import { IconPacksFooter } from './IconPacksLine'
+import { IconPacksFooter } from './IconPacksFooter'
 import { PackView } from './PackView'
 import { useIconPacks } from './useIconPacks'
 import { rankItems } from './rankItems'

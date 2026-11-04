@@ -800,31 +800,7 @@
   font-size: 10px;
 }
 
-/* "Download all icon packs" (YAZ-4359): one quiet line at the bottom of the icon results. */
-.image-studio__packs {
-  align-items: center;
-  border-top: 1px solid var(--default-border-color);
-  color: var(--text-secondary-color);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 11px;
-  gap: 6px 8px;
-  justify-content: center;
-  line-height: 1.4;
-  margin-top: 8px;
-  padding-top: 8px;
-}
-
-.image-studio__packs button {
-  background: transparent;
-  border: 1px solid var(--color-primary);
-  border-radius: 999px;
-  color: var(--color-primary);
-  cursor: pointer;
-  font-size: 11px;
-  padding: 3px 9px;
-}
-
+/* A failed packs request, in the footer (YAZ-4359). */
 .image-studio__packs-error {
   color: var(--color-danger);
 }

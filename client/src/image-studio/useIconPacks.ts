@@ -1,6 +1,6 @@
 /**
  * THE ICON PACKS' STATUS IN A RENDERER (YAZ-4359): what `media.packs` says now, kept true by `media:packs-progress`.
- * The Add panel's line, its offline line and the Settings row read the SAME store, so the three never disagree, and a
+ * The Add panel's footer, its offline line and the Settings row read the SAME store, so the three never disagree, and a
  * download that one window started shows its progress in every window.
  *
  * Module scope, like the Add tab's session: the panel unmounts on close, and a download goes on without it. The first
@@ -39,9 +39,6 @@ export function useIconPacks(): IconPacksStatus | null {
   follow()
   return useSyncExternalStore(packsStore.subscribe, () => packsStore.getState().status)
 }
-
-/** The packs' status, read once (outside React). */
-export const iconPacksNow = (): IconPacksStatus | null => packsStore.getState().status
 
 /** One verb; the answer is the new status (the progress push says the same, a moment earlier or later). */
 export async function packsDo(op: IconPacksRequest['op']): Promise<IconPacksStatus | null> {
