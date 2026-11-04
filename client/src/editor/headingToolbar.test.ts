@@ -301,8 +301,8 @@ describe('highlight swatches (YAZ-1480)', () => {
 })
 
 /**
- * The Lists group and Underline (YAZ-3806 T1, T3, T4, T8). The rule itself is `listButtons.test.ts`'s table; here the
- * buttons are pressed on the real strip.
+ * The Lists group and Underline (YAZ-3806 T1, T3, T8), and T in a list (YAZ-4369, which replaces T4). The rule itself
+ * is `listButtons.test.ts`'s table; here the buttons are pressed on the real strip.
  */
 describe('list buttons and Underline (YAZ-3806)', () => {
   const LISTS = ['checklist', 'bulletList', 'numberedList'] as const
@@ -317,19 +317,27 @@ describe('list buttons and Underline (YAZ-3806)', () => {
     await press('bulletList')
     expect(getMarkdownForSave(crepe)).toBe('* plain\n')
     expect(litLists()).toEqual(['bulletList'])
-    // T lights only for plain text outside a list (T4).
-    expect(actives()).toEqual([])
+    // T lights for every plain line, in a list or not (YAZ-4369): the bullet is still a paragraph.
+    expect(actives()).toEqual(['text'])
 
     await press('bulletList')
     expect(getMarkdownForSave(crepe)).toBe('plain\n')
     expect(actives()).toEqual(['text'])
   })
 
-  it('T on a bullet: plain text (T4)', async () => {
-    const { crepe, view } = await mount('* one\n')
+  it('T on an H3 bullet: a plain line in the same bullet; its children and siblings stay (YAZ-4369)', async () => {
+    const { crepe, view } = await mount('* ### one\n  * kid\n* two\n')
     await select(view, 'one')
+    expect(actives()).toEqual(['h3'])
+    expect(litLists()).toEqual(['bulletList'])
     await press('text')
-    expect(getMarkdownForSave(crepe)).toBe('one\n')
+    expect(getMarkdownForSave(crepe)).toBe('* one\n  * kid\n* two\n')
+    await select(view, 'one')
+    expect(actives()).toEqual(['text'])
+    expect(litLists()).toEqual(['bulletList'])
+    // A second T on the plain bullet changes nothing; the lit Bullet takes it out of the list.
+    await press('text')
+    expect(getMarkdownForSave(crepe)).toBe('* one\n  * kid\n* two\n')
   })
 
   it('Numbered and Checklist press the same rule', async () => {

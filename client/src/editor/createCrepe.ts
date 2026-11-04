@@ -459,7 +459,10 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  * The Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what block is
  * this?" — the invisible `##` made visible — and whose click switches it, through the same
  * commands the typed markdown runs. `T` is the way back to plain text without backspacing hashes
- * you cannot see, and out of a list too (YAZ-3806 T4): it lights only for plain text outside a list.
+ * you cannot see. It changes only the line's text type, never the list (YAZ-4369, which replaces
+ * YAZ-3806 T4's "out of a list too"): a heading in a bullet becomes a plain line in the same
+ * bullet, and T lights when every line is a paragraph, in a list or not. The lit list button
+ * takes a line out of a list.
  *
  * The Lists group (YAZ-3806 T1, T3): one rule for the three buttons, in `listButtons.ts`. Numbers
  * stay a deliberate act (T2): the Numbered button is a click, like the block handle's command.
@@ -603,7 +606,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // YAZ-3209: over hidden lines, Bold, Italic, Strikethrough, code and H1-H3 / T change the visible
   // ones only, and the toolbar lights for visible lines only. After the presets, by `EditorViewReady`.
   crepe.editor.use(visibleFormatting)
-  // T / ⌘⌥0 out of every list level, ⌘⌥8 = the Bullet button (YAZ-3806 T3, T4). After visibleFormatting: it replaces T.
+  // T / ⌘⌥0 = a paragraph in place, the list kept (YAZ-4369); ⌘⌥8 = the Bullet button (YAZ-3806 T3). After visibleFormatting: it replaces T.
   crepe.editor.use(listButtons)
   // Milkdown's empty-line plugin deletes every inline <br> on parse (YAZ-1452). Ours must run
   // first; re-registering Milkdown's AFTER keeps its id resolvable so empty paragraphs still

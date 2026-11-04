@@ -285,14 +285,15 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
         el.classList.contains('ctx-menu__strip') ? `<${[...el.querySelectorAll('button')].map((b) => `${b.getAttribute('aria-label')}${b.getAttribute('aria-pressed') === 'true' ? '*' : ''}`).join(', ')}>` : el.textContent,
       ),
     )
-  const STRIP = (lit: string | null) => `<${['Bullet list', 'Numbered list', 'Checklist', 'Text'].map((label) => (label === lit ? `${label}*` : label)).join(', ')}>`
+  // A list's lines are paragraphs, so Text lights with the list's button (YAZ-4369).
+  const STRIP = (...lit: string[]) => `<${['Bullet list', 'Numbered list', 'Checklist', 'Text'].map((label) => (lit.includes(label) ? `${label}*` : label)).join(', ')}>`
   const CLIPBOARD = [['Cut', 'Copy', 'Copy as'], ['Paste', 'Paste as']]
   const press = (label: string) => act(() => document.querySelector<HTMLButtonElement>(`.ctx-menu__strip button[aria-label="${label}"]`)!.click())
 
   it('on a bullet with children: Open in new tab, the strip, the children rows, then the clipboard rows, in groups', async () => {
     const { crepe, view } = await open('* a\n  * kid\n* b\n', { onOpen: vi.fn() })
     rightClickOn(view, posOf(crepe, 'a'))
-    expect(groups()).toEqual([['Open in new tab'], [STRIP('Bullet list')], ['Number children', 'Collapse all⌘⇧U', 'Expand all⌘⇧I', 'Lock open'].map((label) => label.replace(/⌘.*/, '')), ...CLIPBOARD])
+    expect(groups()).toEqual([['Open in new tab'], [STRIP('Bullet list', 'Text')], ['Number children', 'Collapse all⌘⇧U', 'Expand all⌘⇧I', 'Lock open'].map((label) => label.replace(/⌘.*/, '')), ...CLIPBOARD])
     // D19: no glyph, so no row is pushed right to line up after one.
     expect(document.querySelector('.ctx-menu')!.classList.contains('ctx-menu--glyphs')).toBe(false)
     // D17: no "⇧-click" hint here (on the text it only extends the selection), so the menu is no wider than the strip.
@@ -304,7 +305,7 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
   it('a misspelled word: the spelling rows first, then the line\'s rows', async () => {
     const { crepe, view } = await open('* teh list\n', { suggest: (word) => (word === 'teh' ? ['the'] : null) })
     rightClickOn(view, posOf(crepe, 'teh') + 1)
-    expect(groups()).toEqual([['the', 'Add to dictionary'], [STRIP('Bullet list')], ...CLIPBOARD])
+    expect(groups()).toEqual([['the', 'Add to dictionary'], [STRIP('Bullet list', 'Text')], ...CLIPBOARD])
   })
 
   it('a strip button changes the whole list, as on the dot, and closes the menu', async () => {
@@ -319,7 +320,7 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
     const { crepe, view } = await open('* a\n* bee\n* c\n')
     caretIn(crepe, 'a')
     rightClickOn(view, posOf(crepe, 'bee') + 1, () => select(crepe, posOf(crepe, 'bee'), endOf(crepe, 'bee')))
-    expect(groups()[0]).toEqual([STRIP('Bullet list')])
+    expect(groups()[0]).toEqual([STRIP('Bullet list', 'Text')])
     press('Numbered list')
     expect(md(crepe)).toBe('1. a\n2. bee\n3. c\n')
   })
@@ -347,7 +348,7 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
     // Inside the list item, before its line: where the gap between the box and the text resolves.
     expect(lineSections(view, posOf(crepe, 'a') - 1, view.state.selection).flat().filter((item) => item.kind === 'strip')).toHaveLength(1)
     rightClickOn(view, posOf(crepe, 'a') - 1)
-    expect(groups()[0]).toEqual([STRIP('Checklist')])
+    expect(groups()[0]).toEqual([STRIP('Checklist', 'Text')])
   })
 
   it('on a fold chevron: the line\'s menu, as on its text, Collapse all and Expand all with the children rows; one ⌘Z (D23)', async () => {
@@ -357,7 +358,7 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
     view.dom.querySelector('p')!.prepend(chevron)
     pointAt(view, posOf(crepe, 'a'))
     act(() => void chevron.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
-    expect(groups().slice(0, 2)).toEqual([[STRIP('Bullet list')], ['Number children', 'Collapse all', 'Expand all', 'Lock open']])
+    expect(groups().slice(0, 2)).toEqual([[STRIP('Bullet list', 'Text')], ['Number children', 'Collapse all', 'Expand all', 'Lock open']])
     const items = () => {
       const found: number[] = []
       view.state.doc.descendants((node, pos) => {
@@ -378,7 +379,7 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
     const { crepe, view } = await open('* a\n  1. kid\n  2. kid2\n')
     // Right before the child list, inside "a"; and between the two children.
     rightClickOn(view, posOf(crepe, 'kid') - 3)
-    expect(groups()[0]).toEqual([STRIP('Numbered list')])
+    expect(groups()[0]).toEqual([STRIP('Numbered list', 'Text')])
     act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     rightClickOn(view, posOf(crepe, 'kid2') - 2)
     press('Bullet list')
@@ -387,14 +388,14 @@ describe('a right-click on a line\'s text shows the bullet menu\'s rows too (YAZ
 
   // 6B1 (YAZ-4019): the real arrow is a widget left of the text box, where `posAtCoords` finds no line.
   it.each([
-    ['a bullet', '* a\n  * kid\n* b\n', '.outline-toggle', 'Bullet list'],
-    ['a heading', '# H\n\ntext\n', '.heading-toggle', null],
+    ['a bullet', '* a\n  * kid\n* b\n', '.outline-toggle', ['Bullet list', 'Text']],
+    ['a heading', '# H\n\ntext\n', '.heading-toggle', []],
   ])('on the real fold arrow of %s: the line\'s menu with Collapse all (D23)', async (_, markdown, arrow, lit) => {
     const { view } = await open(markdown)
     vi.spyOn(view, 'posAtCoords').mockReturnValue(null)
     const toggle = view.dom.querySelector(arrow)!
     act(() => void toggle.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 2, clientY: 50 })))
-    expect(groups()[0]).toEqual([STRIP(lit)])
+    expect(groups()[0]).toEqual([STRIP(...lit)])
     expect(groups()[1]).toEqual(expect.arrayContaining(['Collapse all', 'Expand all']))
   })
 
