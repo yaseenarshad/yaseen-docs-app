@@ -72,9 +72,13 @@ export function registerMediaStudioIpc(userData: string, secrets: Secrets, fetch
   const packsFolder = () => resolveIconPacksFolder(store?.get().settings.iconPacksFolder ?? null, userData)
   // Every window hears each change: the Add panel's line and the Settings row can be in different windows.
   const packs = createIconPacks({ folder: packsFolder(), fetch: fetchImpl, onStatus: (status) => broadcastAll(CONTRACT.media.onPacksProgress.channel, status) })
+  // Each store change is checked against the folder last asked for, so a move that is still going is not asked again.
+  let wanted = packsFolder()
   store?.onChange(() => {
     const next = packsFolder()
-    if (next !== packs.folder()) void packs.moveTo(next).catch((err: unknown) => console.warn('[icon-packs] could not move to', next, err))
+    if (next === wanted) return
+    wanted = next
+    void packs.moveTo(next).catch((err: unknown) => console.warn('[icon-packs] could not move to', next, err))
   })
   const providers = createMediaProviders({ fetch: fetchImpl, readPixabayKey: () => secrets.read(PIXABAY_SECRET), cache, packs })
 

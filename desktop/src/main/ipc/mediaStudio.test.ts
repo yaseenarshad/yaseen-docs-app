@@ -145,3 +145,22 @@ describe('what reaches the renderer', () => {
     expect(answer.ok && answer.value.item.itemKey).toBe('iconify:noto:money-bag')
   })
 })
+
+describe('the icon packs door (YAZ-4359)', () => {
+  it('refuses a verb it does not know, answers the status, and follows the folder setting', async () => {
+    const listeners: Array<(state: { settings: { iconPacksFolder: string | null } }) => void> = []
+    let settings = { iconPacksFolder: null as string | null }
+    const store = { get: () => ({ settings }), onChange: (fn: (typeof listeners)[number]) => listeners.push(fn) }
+    registerMediaStudioIpc(userData, fakeSecrets(null), vi.fn() as unknown as typeof globalThis.fetch, store as never)
+    const packs = registered(CONTRACT.media.packs)
+    await expect(packs(null, { op: 'explode' })).resolves.toEqual(bad('BAD_REQUEST'))
+    const first = (await packs(null, { op: 'status' })) as Envelope<{ state: string; folder: string }>
+    expect(first.ok && first.value).toMatchObject({ state: 'none', folder: path.join(userData, 'icon-packs') })
+    settings = { iconPacksFolder: path.join(userData, 'elsewhere') }
+    for (const fn of listeners) fn({ settings })
+    await until(async () => {
+      const now = (await packs(null, { op: 'status' })) as Envelope<{ folder: string }>
+      return now.ok && now.value.folder === path.join(userData, 'elsewhere')
+    })
+  })
+})
