@@ -100,7 +100,8 @@ export const needsCredit = (licenseName: string | undefined): boolean => /\bCC[ 
 
 /**
  * Where the packs are, and what the download is doing (`media.packs`, `media:packs-progress`).
- * - `none`: no pack on the Mac. `partial`: some packs (a stopped download). `complete`: every pack of `version`.
+ * - `none`: no pack on the Mac. `partial`: a planned pack is missing (a stopped download). `complete`: every planned pack
+ *   is on the Mac — after a stopped or failed "Check for new icons" some can be one version older; the message says so.
  * - `downloading` / `checking` / `removing` / `moving`: a run is going on; the counts move with it.
  */
 export type IconPacksState = 'none' | 'partial' | 'complete' | 'downloading' | 'checking' | 'removing' | 'moving'
@@ -111,10 +112,13 @@ export interface IconPacksStatus {
   folder: string
   /** The `@iconify/json` version tag of the packs (`2.2.553`); null before the first download. */
   version: string | null
-  /** Packs on the Mac, and packs in the plan (an estimate before the first download). */
+  /** Packs on the Mac (during `checking`: the packs that are up to date), and packs in the plan (an estimate before the first download). */
   packs: number
   total: number
-  /** Bytes on the Mac (compressed), and the expected bytes when every pack is there (an estimate until then). */
+  /**
+   * Bytes on the Mac (gzip), and the bytes on the Mac when every planned pack is there: each stored pack's own bytes,
+   * plus each missing pack's planned bytes times one measured ratio. The confirm box and the progress show this one measure.
+   */
   bytes: number
   totalBytes: number
   /** When "Check for new icons" last ran to its end; null = never. */
@@ -128,9 +132,13 @@ export interface IconPacksStatus {
 /** `media.packs`: each verb answers the status after it; `download` and `check` resolve when their run ends. */
 export type IconPacksRequest = { op: 'status' } | { op: 'download' } | { op: 'stop' } | { op: 'check' } | { op: 'remove' }
 
-/** The confirm box's numbers before a plan exists (measured 2026-11-03: 281 packs, 135 MB with gzip (a real download of 2.2.553)). */
-export const ESTIMATED_PACK_COUNT = 281
-export const ESTIMATED_PACK_BYTES = 135 * 1024 * 1024
+/**
+ * The confirm box's numbers before a plan exists. 2.2.553 (2026-11-03) has 281 pack files; 21 of them Iconify hides
+ * (YAZ-4384), so 260 come. A real download of all 281 was 141,759,540 bytes with gzip; the 260 are about 117 million
+ * bytes (530,102,575 raw × the measured ratio 0.221), shown as "112 MB".
+ */
+export const ESTIMATED_PACK_COUNT = 260
+export const ESTIMATED_PACK_BYTES = 112 * 1024 * 1024
 
 /** "17 MB": whole megabytes, one decimal under 10. */
 export function formatPackBytes(bytes: number): string {

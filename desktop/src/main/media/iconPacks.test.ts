@@ -8,10 +8,10 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gunzipSync } from 'node:zlib'
-import { DEFAULT_MEDIA_FILTERS, type IconPacksStatus } from '@shared/iconPacks'
+import { DEFAULT_MEDIA_FILTERS, ESTIMATED_PACK_BYTES, ESTIMATED_PACK_COUNT, type IconPacksStatus } from '@shared/iconPacks'
 import type { MediaSearchResponse, StudioItem } from '@shared/types'
 import type { MediaCache } from './cache'
-import { createIconPacks, gitBlobSha, GITHUB_LIMIT_MESSAGE, newestTag, sha256Of, visibleNames } from './iconPacks'
+import { createIconPacks, gitBlobSha, GITHUB_LIMIT_MESSAGE, newestTag, PACK_GZIP_RATIO, plannedBytes, sha256Of, visibleNames } from './iconPacks'
 import { createMediaProviders } from './providers'
 
 /** One pack file as `@iconify/json` has it. */
@@ -26,14 +26,19 @@ const packFile = (prefix: string, names: string[], over: Record<string, unknown>
     ...Object.fromEntries(Object.entries(over).filter(([k]) => k !== 'info')),
   })
 
-/** A fake GitHub + unpkg: `versions[tag]` is each pack's file text at that tag. */
-function network(versions: Record<string, Record<string, string>>, opts: { limited?: boolean; rawDown?: string[]; slow?: Promise<void> } = {}) {
+/**
+ * A fake GitHub + unpkg: `versions[tag]` is each pack's file text at that tag. `collections.json` at a tag lists each
+ * pack but the `unlisted` ones, and marks the `hidden` ones, as Iconify's does.
+ */
+function network(versions: Record<string, Record<string, string>>, opts: { limited?: boolean; rawDown?: string[]; slow?: Promise<void>; hidden?: string[]; unlisted?: string[] } = {}) {
   const calls: string[] = []
   const latest = Object.keys(versions).sort((a, b) => Number(a.split('.').at(-1)) - Number(b.split('.').at(-1))).at(-1) as string
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input))
     calls.push(url.toString())
     const json = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { ...init, headers: { 'Content-Type': 'application/json', ...init.headers } })
+    const listed = (tag: string) =>
+      json(Object.fromEntries(Object.keys(versions[tag] ?? {}).filter((prefix) => !opts.unlisted?.includes(prefix)).map((prefix) => [prefix, { name: prefix, ...(opts.hidden?.includes(prefix) ? { hidden: true } : {}) }])))
     if (url.hostname === 'api.github.com') {
       if (opts.limited) return json({ message: 'API rate limit exceeded' }, { status: 403, headers: { 'x-ratelimit-remaining': '0' } })
       if (url.pathname.endsWith('/tags')) return json(Object.keys(versions).map((name) => ({ name })))
@@ -41,6 +46,7 @@ function network(versions: Record<string, Record<string, string>>, opts: { limit
       return json({ tree: [{ path: 'README.md', type: 'blob', sha: 'x', size: 1 }, ...Object.entries(versions[tag]).map(([prefix, text]) => ({ path: `json/${prefix}.json`, type: 'blob', sha: gitBlobSha(Buffer.from(text)), size: Buffer.byteLength(text) }))] })
     }
     if (url.hostname === 'raw.githubusercontent.com') {
+      if (url.pathname.endsWith('/collections.json')) return listed(decodeURIComponent(url.pathname.split('/')[3]))
       const [, , , tag, , file] = url.pathname.split('/')
       const prefix = file.replace('.json', '')
       if (opts.rawDown?.includes(prefix)) return new Response('down', { status: 500 })
@@ -50,6 +56,8 @@ function network(versions: Record<string, Record<string, string>>, opts: { limit
     if (url.hostname === 'unpkg.com') {
       if (url.pathname === '/@iconify/json/json/' && url.search === '?meta')
         return json({ version: latest, files: Object.entries(versions[latest]).map(([prefix, text]) => ({ path: `/json/${prefix}.json`, size: Buffer.byteLength(text), integrity: sha256Of(Buffer.from(text)) })) })
+      const list = /^\/@iconify\/json@([^/]+)\/collections\.json$/.exec(url.pathname)
+      if (list) return listed(decodeURIComponent(list[1]))
       const match = /^\/@iconify\/json@([^/]+)\/json\/([a-z0-9-]+)\.json$/.exec(url.pathname)
       if (match) return new Response(versions[decodeURIComponent(match[1])][match[2]])
     }
@@ -179,7 +187,7 @@ describe('the download (round 2 decisions 4 and 8)', () => {
     const updater = createIconPacks({ folder, fetch: net2.fetch, now: () => 1234 })
     const after = await updater.check()
     expect(after).toMatchObject({ state: 'complete', version: '2.2.2', packs: 3, checkedAt: 1234, message: '2 packs updated to version 2.2.2.' })
-    expect(net2.calls.filter((url) => url.includes('raw.githubusercontent.com')).sort()).toEqual([
+    expect(net2.calls.filter((url) => url.includes('raw.githubusercontent.com') && url.includes('/json/')).sort()).toEqual([
       'https://raw.githubusercontent.com/iconify/icon-sets/2.2.2/json/lucide.json',
       'https://raw.githubusercontent.com/iconify/icon-sets/2.2.2/json/noto.json',
     ])
@@ -187,7 +195,76 @@ describe('the download (round 2 decisions 4 and 8)', () => {
     // Nothing changed: no pack downloads.
     net2.calls.length = 0
     expect((await updater.check()).message).toBe('Up to date: version 2.2.2.')
-    expect(net2.calls.some((url) => url.includes('raw.githubusercontent.com'))).toBe(false)
+    expect(net2.calls.some((url) => url.includes('raw.githubusercontent.com') && url.includes('/json/'))).toBe(false)
+  })
+
+  it('a Stop during "Check for new icons" keeps search on the packs and says what is not updated (YAZ-4384)', async () => {
+    const packs = createIconPacks({ folder, fetch: network({ '2.2.1': V1 }).fetch })
+    await packs.download()
+    const v2 = { mdi: packFile('mdi', ['arrow-left', 'new']), noto: packFile('noto', ['red-arrow', 'new'], { info: { palette: true } }), tabler: V1.tabler }
+    const net2 = network({ '2.2.1': V1, '2.2.2': v2 })
+    let packAsked = () => undefined as void
+    const asked = new Promise<void>((resolve) => (packAsked = resolve))
+    const seen: IconPacksStatus[] = []
+    const updater = createIconPacks({
+      folder,
+      onStatus: (s) => seen.push(s),
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (/\/json\/[a-z]+\.json$/.test(String(input))) {
+          packAsked()
+          await new Promise((_, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+        }
+        return net2.fetch(input, init)
+      }) as typeof globalThis.fetch,
+    })
+    const running = updater.check()
+    await asked
+    // During the check the count is the packs that are up to date: 1 of 3 (tabler did not change).
+    expect(seen.at(-1)).toMatchObject({ state: 'checking', packs: 1, total: 3 })
+    const stopped = await updater.stop()
+    await running
+    // Every pack is still on the Mac (two in the older version): complete, not "3 of 3 … Download the rest".
+    expect(stopped).toMatchObject({ state: 'complete', packs: 3, total: 3, failed: false, message: 'Stopped. 2 packs are not updated yet. Check for new icons to update them.' })
+    expect(updater.searchReady()).toBe(true)
+  })
+
+  it('the size total keeps the confirm box`s measure (bytes on the Mac) through the download (YAZ-4384)', async () => {
+    // Before a plan: the estimate the confirm box shows.
+    const packs = createIconPacks({ folder, fetch: network({ '2.2.1': V1 }).fetch })
+    expect(await packs.status()).toMatchObject({ total: ESTIMATED_PACK_COUNT, totalBytes: ESTIMATED_PACK_BYTES })
+    // The checker's case: the first packs gzip worse than the rest (31 packs: 9.6 MB stored of about 31 MB raw). The
+    // total is the bytes on the Mac plus each missing pack's planned bytes times ONE measured ratio, never the first
+    // packs' ratio applied to every pack (that gave "of 168 MB" for 141.8 MB).
+    const stored = (raw: number, bytes: number) => ({ sha: 'x', sha256: 'y', bytes: raw, stored: bytes, info: { prefix: 'a', name: 'a', total: 1, license: { title: 'MIT' }, palette: false } })
+    const plan = { a: { sha: 'x', sha256: null, size: 31_000_000 }, b: { sha: 'x', sha256: null, size: 611_000_000 } }
+    expect(plannedBytes({ plan, packs: {} })).toBe(Math.round(642_000_000 * PACK_GZIP_RATIO))
+    expect(plannedBytes({ plan, packs: { a: stored(31_000_000, 9_600_000) } })).toBe(9_600_000 + Math.round(611_000_000 * PACK_GZIP_RATIO))
+    expect(plannedBytes({ plan, packs: { a: stored(31_000_000, 9_600_000), b: stored(611_000_000, 132_000_000) } })).toBe(141_600_000)
+    // Through a real run: the plan's total is the estimate, and the end's total is the bytes on the Mac.
+    const seen: IconPacksStatus[] = []
+    const watched = createIconPacks({ folder: path.join(folder, 'w'), fetch: network({ '2.2.1': V1 }).fetch, onStatus: (s) => seen.push(s) })
+    const done = await watched.download()
+    const raw = Object.values(V1).reduce((sum, text) => sum + Buffer.byteLength(text), 0)
+    expect(seen.find((s) => s.packs === 0 && s.total === 3)?.totalBytes).toBe(Math.round(raw * PACK_GZIP_RATIO))
+    expect(done.totalBytes).toBe(done.bytes)
+  })
+
+  it('leaves out the packs that Iconify hides: not downloaded, not searched; a check drops one an older download kept (YAZ-4384)', async () => {
+    const versions = { '2.2.1': { ...V1, feather: packFile('feather', ['arrow-up']), bubbles: packFile('bubbles', ['arrow']) } }
+    const net = network(versions, { hidden: ['feather'], unlisted: ['bubbles'] })
+    const packs = createIconPacks({ folder, fetch: net.fetch })
+    const done = await packs.download()
+    expect(done).toMatchObject({ state: 'complete', packs: 3, total: 3 })
+    expect(net.calls.some((url) => /\/(feather|bubbles)\.json$/.test(url))).toBe(false)
+    expect(net.calls).toContain('https://raw.githubusercontent.com/iconify/icon-sets/2.2.1/collections.json')
+    expect([...(await packs.names()).keys()].sort()).toEqual(['mdi', 'noto', 'tabler'])
+
+    // A folder from a build that kept every file: the next check removes the hidden pack.
+    const all = createIconPacks({ folder: path.join(folder, 'old'), fetch: network(versions).fetch })
+    expect((await all.download()).packs).toBe(5)
+    const checked = await createIconPacks({ folder: path.join(folder, 'old'), fetch: net.fetch }).check()
+    expect(checked).toMatchObject({ state: 'complete', packs: 3, total: 3 })
+    expect((await readdir(path.join(folder, 'old'))).filter((f) => f.startsWith('feather') || f.startsWith('bubbles'))).toEqual([])
   })
 
   it('takes a pack from unpkg when GitHub cannot give it, and keeps no file whose checksum does not match', async () => {

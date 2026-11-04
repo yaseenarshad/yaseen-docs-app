@@ -10,7 +10,8 @@
  * newest by number) and `/git/trees/<tag>` — two of the 60 API requests an hour GitHub gives a Mac with no sign-in.
  * At that limit the plan comes from unpkg's `?meta` (the version, and each file's size and sha-256), and the status
  * says so (extra 24). Each pack is ONE raw file (`raw.githubusercontent.com`, not the API), with unpkg at the same
- * version as its backup; jsDelivr refuses the package (over 150 MB). A file is kept only when its hash matches.
+ * version as its backup; jsDelivr refuses the package (over 150 MB). A file is kept only when its hash matches. The
+ * packs that Iconify hides (`collections.json` at the tag) are left out: its search never searches them (YAZ-4384).
  *
  * ON DISK: `<prefix>.json.gz` (the pack, Node's own gzip) and `<prefix>.names.gz` (its visible names, one a line), each
  * written with `atomicWrite`, then `manifest.json`. A pack counts only once the manifest names it, so a crash or a Stop
@@ -78,8 +79,18 @@ export const DOWNLOAD_CONCURRENCY = 3
 /** Opened packs kept in memory for tiles and adds (decision 5). */
 export const MAX_OPEN_PACKS = 6
 export const MAX_OPEN_BYTES = 48 * 1024 * 1024
-/** Before any pack is stored, the stored bytes are guessed from the raw bytes (measured: 4× to 7× smaller). */
-const GUESSED_RATIO = 0.21
+/**
+ * A missing pack's bytes on the Mac, guessed from its planned raw bytes: ONE measured ratio (2.2.553: 141,759,540 bytes
+ * stored of 641,914,151 raw = 0.221), so the total the progress shows is the confirm box's measure (YAZ-4384).
+ */
+export const PACK_GZIP_RATIO = 0.221
+
+/** The bytes on the Mac when every planned pack is there: each stored pack's own, each missing one's guess. */
+export function plannedBytes({ plan, packs }: Pick<IconPacksManifest, 'plan' | 'packs'>): number {
+  let total = 0
+  for (const [prefix, planned] of Object.entries(plan)) total += packs[prefix]?.stored ?? planned.size * PACK_GZIP_RATIO
+  return Math.round(total)
+}
 
 export const GITHUB_LIMIT_MESSAGE = "GitHub's limit of 60 checks an hour is reached, so the app used unpkg."
 
@@ -242,26 +253,29 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
   // ---------- The status ----------
 
   const planned = () => Object.keys(manifest.plan)
-  const complete = () => planned().length > 0 && planned().every((prefix) => isCurrent(manifest.packs[prefix], manifest.plan[prefix]))
+  /** Planned packs that are missing or one version older. */
+  const behind = () => planned().filter((prefix) => !isCurrent(manifest.packs[prefix], manifest.plan[prefix])).length
   /** Every planned pack is here, in some version: an update in progress does not take search back to streaming. */
   const allPresent = () => planned().length > 0 && planned().every((prefix) => manifest.packs[prefix] !== undefined)
 
+  /**
+   * `complete` is every planned pack on the Mac — after a stopped or failed update some can be one version older, and
+   * the message says so (YAZ-4384); `partial` is a planned pack missing. During a check the count is the packs that are
+   * up to date, so its progress moves; else the packs on the Mac.
+   */
   function status(): IconPacksStatus {
     const packs = Object.values(manifest.packs)
     const bytes = packs.reduce((sum, p) => sum + p.stored, 0)
-    const raw = packs.reduce((sum, p) => sum + p.bytes, 0)
-    const plannedRaw = Object.values(manifest.plan).reduce((sum, p) => sum + p.size, 0)
-    const ratio = raw > 0 ? bytes / raw : GUESSED_RATIO
     const total = planned().length
-    const isComplete = complete()
+    const counted = run?.kind === 'checking' ? planned().filter((prefix) => isCurrent(manifest.packs[prefix], manifest.plan[prefix])) : planned().filter((prefix) => manifest.packs[prefix] !== undefined)
     return {
-      state: run !== null ? run.kind : isComplete ? 'complete' : packs.length > 0 ? 'partial' : 'none',
+      state: run !== null ? run.kind : allPresent() ? 'complete' : packs.length > 0 ? 'partial' : 'none',
       folder,
       version: manifest.tag,
-      packs: total > 0 ? planned().filter((prefix) => manifest.packs[prefix] !== undefined).length : packs.length,
+      packs: total > 0 ? counted.length : packs.length,
       total: total > 0 ? total : ESTIMATED_PACK_COUNT,
       bytes,
-      totalBytes: isComplete ? bytes : plannedRaw > 0 ? Math.round(plannedRaw * ratio) : ESTIMATED_PACK_BYTES,
+      totalBytes: total > 0 ? plannedBytes(manifest) : ESTIMATED_PACK_BYTES,
       checkedAt: manifest.checkedAt,
       message: message?.text ?? null,
       failed: message?.failed ?? false,
@@ -366,7 +380,7 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
       plan[match[1]] = { sha: entry.sha, sha256: null, size: entry.size }
     }
     if (Object.keys(plan).length === 0 || Object.keys(plan).length > MAX_PACKS) throw new PackFailure('GitHub listed no packs')
-    return { tag, source: 'github', plan }
+    return { tag, source: 'github', plan: await onlyListed(plan, tag, 'github', signal) }
   }
 
   async function planFromUnpkg(signal: AbortSignal): Promise<Pick<IconPacksManifest, 'tag' | 'source' | 'plan'>> {
@@ -381,7 +395,33 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
       plan[match[1]] = { sha: null, sha256: typeof file.integrity === 'string' && file.integrity.startsWith('sha256-') ? file.integrity : null, size: file.size }
     }
     if (Object.keys(plan).length === 0 || Object.keys(plan).length > MAX_PACKS) throw new PackFailure('unpkg listed no packs')
-    return { tag: version, source: 'unpkg', plan }
+    return { tag: version, source: 'unpkg', plan: await onlyListed(plan, version, 'unpkg', signal) }
+  }
+
+  /**
+   * The plan without the packs Iconify hides (YAZ-4384): its search never searches them, so neither does the Mac. A pack
+   * stays when `collections.json` at the same tag lists it and does not mark it `hidden` (2.2.553: 260 of 281 files;
+   * 5 unlisted, such as `bubbles`, and 16 hidden, such as `feather` and `fluent-emoji`). One raw file, not an API request;
+   * the other source is its backup.
+   */
+  async function onlyListed(plan: Record<string, PlannedPack>, tag: string, source: 'github' | 'unpkg', signal: AbortSignal): Promise<Record<string, PlannedPack>> {
+    const github = `${GITHUB_RAW}/${encodeURIComponent(tag)}/collections.json`
+    const unpkg = `${UNPKG}@${encodeURIComponent(tag)}/collections.json`
+    let lastError: Error = new PackFailure('the list of packs did not read')
+    for (const url of source === 'github' ? [github, unpkg] : [unpkg, github]) {
+      try {
+        const { json } = await getJson(url, signal)
+        if (typeof json !== 'object' || json === null || Array.isArray(json)) continue
+        const listed = json as Record<string, { hidden?: unknown } | null>
+        const kept = Object.fromEntries(Object.entries(plan).filter(([prefix]) => typeof listed[prefix] === 'object' && listed[prefix] !== null && listed[prefix].hidden !== true))
+        if (Object.keys(kept).length === 0) throw new PackFailure(`${new URL(url).host} listed no packs`)
+        return kept
+      } catch (cause) {
+        if (signal.aborted) throw cause
+        lastError = cause as Error
+      }
+    }
+    throw lastError
   }
 
   /** GitHub first; at its limit (or with GitHub down) unpkg, and the limit is said. */
@@ -497,7 +537,7 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
       } catch (cause) {
         if (!abort.signal.aborted) message = { text: failureText(cause), failed: true }
       } finally {
-        if (abort.signal.aborted && message === null) message = { text: `Stopped. ${status().packs} of ${status().total} packs are on this Mac.`, failed: false }
+        if (abort.signal.aborted && message === null) message = { text: kind === 'checking' ? stoppedCheckText(behind()) : `Stopped. ${status().packs} of ${status().total} packs are on this Mac.`, failed: false }
         run = null
         names = null
         await writing.catch(() => undefined)
@@ -509,6 +549,9 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
     tell()
     return done
   }
+
+  const stoppedCheckText = (n: number): string =>
+    n === 0 ? 'Stopped. No pack changed.' : `Stopped. ${n} pack${n === 1 ? ' is' : 's are'} not updated yet. Check for new icons to update ${n === 1 ? 'it' : 'them'}.`
 
   const failureText = (cause: unknown): string =>
     cause instanceof GithubLimit
