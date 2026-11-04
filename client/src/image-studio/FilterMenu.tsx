@@ -1,17 +1,20 @@
 /**
  * THE FILTER BUTTON AND MENU (YAZ-4360; round 3 decisions 4 and 5; extras 13, 15, 16). Right of the Add panel's search
- * field. The menu: Colors (Any, One color, Many colors), Style (Any, Outline, Filled, Duotone, Emoji), Packs (every pack,
- * or "Choose packs…" with the pinned packs first, YAZ-4361), License (Any, Business-safe), and "Clear filters". A badge
- * on the button counts the filters that are on. The chips stay as they are.
+ * field. The menu: Show (All, Favorites, Components, Shapes, Icons, Photos — the old chips row, moved here in the YAZ-4348
+ * demo: "yes move the chips to filter"; Photos only with a Pixabay key), Colors (Any, One color, Many colors), Style
+ * (Any, Outline, Filled, Duotone, Emoji), Packs (every pack, or "Choose packs…" with the pinned packs first, YAZ-4361),
+ * License (Any, Business-safe), and "Clear filters" (Show goes back to All too). A badge on the button counts what is
+ * on: each filter, and Show when it is not All.
  *
  * MAIN applies the filters (`MediaSearchRequest.filters`); this menu only picks them. The caller keeps them in the
- * settings (`mediaFilters`, which travel) and searches again at once — with the packs on the Mac that answer is
+ * settings (`mediaFilters`, which travel; Show stays in the window's session, as the chip did) and searches again at once — with the packs on the Mac that answer is
  * instant. Yasin refines the menu in the demo.
  *
  * Keys: Esc closes it and puts the focus back on the button; the arrow keys walk its items; a click outside closes it.
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { activeFilterCount, DEFAULT_MEDIA_FILTERS, type IconPackInfo, type MediaColorFilter, type MediaFilters, type MediaLicenseFilter, type MediaStyleFilter } from '@shared/iconPacks'
+import { activeFilterCount, type IconPackInfo, type MediaColorFilter, type MediaFilters, type MediaLicenseFilter, type MediaStyleFilter } from '@shared/iconPacks'
+import { STUDIO_CHIP_LABELS, type StudioChip } from './imageStudioSession'
 
 const COLORS: readonly [MediaColorFilter, string][] = [
   ['any', 'Any'],
@@ -34,8 +37,15 @@ const LICENSES: readonly [MediaLicenseFilter, string][] = [
 const MAX_PACK_ROWS = 300
 
 export interface FilterMenuProps {
+  /** What the tab shows (the old chips). */
+  show: StudioChip
+  /** The Show choices on offer: Photos only with a Pixabay key. */
+  shows: readonly StudioChip[]
+  onShow: (show: StudioChip) => void
   filters: MediaFilters
   onChange: (next: MediaFilters) => void
+  /** "Clear filters": Show back to All and every filter off. */
+  onClear: () => void
   /** The pinned packs, first pinned first: they lead the chooser. */
   pinned: readonly string[]
   /** Every pack that can be chosen; asked the first time "Choose packs…" opens. */
@@ -51,14 +61,14 @@ export function packOrder(packs: readonly IconPackInfo[], pinned: readonly strin
   return [...packs].sort((a, b) => at(a.prefix) - at(b.prefix) || a.name.localeCompare(b.name))
 }
 
-export function FilterMenu({ filters, onChange, pinned, loadPacks }: FilterMenuProps) {
+export function FilterMenu({ show, shows, onShow, filters, onChange, onClear, pinned, loadPacks }: FilterMenuProps) {
   const [open, setOpen] = useState(false)
   const [choosing, setChoosing] = useState(false)
   const [packs, setPacks] = useState<IconPackInfo[] | null>(null)
   const [packsFailed, setPacksFailed] = useState(false)
   const [find, setFind] = useState('')
   const box = useRef<HTMLSpanElement>(null)
-  const count = activeFilterCount(filters)
+  const count = activeFilterCount(filters) + (show === 'all' ? 0 : 1)
 
   useEffect(() => {
     if (!open) return
@@ -135,7 +145,7 @@ export function FilterMenu({ filters, onChange, pinned, loadPacks }: FilterMenuP
         aria-label={count > 0 ? `Filter, ${count} on` : 'Filter'}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Filter the icons"
+        title="Show and filter"
         onClick={() => (open ? close() : setOpen(true))}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -148,7 +158,13 @@ export function FilterMenu({ filters, onChange, pinned, loadPacks }: FilterMenuP
         )}
       </button>
       {open && (
-        <div className="image-studio__filter-menu" role="menu" aria-label="Filter the icons" onKeyDown={keys}>
+        <div className="image-studio__filter-menu" role="menu" aria-label="Show and filter" onKeyDown={keys}>
+          {radios(
+            'Show',
+            shows.map((c): [StudioChip, string] => [c, STUDIO_CHIP_LABELS[c]]),
+            show,
+            onShow,
+          )}
           {radios('Colors', COLORS, filters.colors, (colors) => onChange({ ...filters, colors }))}
           {radios('Style', STYLES, filters.style, (style) => onChange({ ...filters, style }))}
           <div className="image-studio__filter-group" role="group" aria-label="Packs">
@@ -188,7 +204,7 @@ export function FilterMenu({ filters, onChange, pinned, loadPacks }: FilterMenuP
             )}
           </div>
           {radios('License', LICENSES, filters.license, (license) => onChange({ ...filters, license }))}
-          <button type="button" role="menuitem" className="image-studio__filter-clear" disabled={count === 0} onClick={() => onChange(DEFAULT_MEDIA_FILTERS)}>
+          <button type="button" role="menuitem" className="image-studio__filter-clear" disabled={count === 0} onClick={onClear}>
             Clear filters
           </button>
         </div>

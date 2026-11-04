@@ -7,7 +7,7 @@
  * WHAT IT SHOWS (D7). An empty field shows Favorites, Recent, Components and Shapes, one row each. A typed field shows
  * "Best matches" — every local item, in the ONE order of `rankItems` (D4) — then "Hand-drawn" (the library items, ranked
  * the same way as you type, demo 6K), then "From the web", one tile per icon with its variants on request (demo 6J).
- * The chips (D8) narrow them.
+ * Filter › Show (the old chips, D8) narrows them.
  *
  * WHAT IT LEARNS (D1, D5, D9). Each add is one `media:used` write: the MRU, the count, the text it was found by as a
  * word, and at the third add a favorite — said once, quietly, with Undo. A removed favorite starts its count again:
@@ -18,7 +18,7 @@
  * `components:preview`, and a Hand-drawn item's is drawn here from its elements. The caches are bounded
  * (`lib/previewCache.tsx`).
  *
- * NO KEY IS NOT AN ERROR (🔒 YAZ-1775 D4): with no Pixabay key there is no Photos chip, and nothing explains why.
+ * NO KEY IS NOT AN ERROR (🔒 YAZ-1775 D4): with no Pixabay key there is no Filter › Show › Photos, and nothing explains why.
  * OFFLINE IS A STATE, NOT A BANNER: the web half says so in one line; everything local keeps working.
  *
  * THE SMART SHAPES ARRIVE LATE ON PURPOSE. `@excalidraw/element` is a second ~300 kB download (`engine.ts`'s lazy
@@ -53,6 +53,7 @@ import { rankItems } from './rankItems'
 import {
   MIN_QUERY,
   chipSource,
+  clearShowAndFilters,
   closePack,
   OFFLINE_WITH_PACKS_NOTICE,
   openPack,
@@ -67,13 +68,13 @@ import {
   scrollTops,
   searchNow,
   STUDIO_CHIPS,
+  STUDIO_CHIP_LABELS,
   typeQuery,
   wasRequested,
   type StudioChip,
 } from './imageStudioSession'
 import './imageStudio.css'
 
-const CHIP_LABELS: Record<StudioChip, string> = { all: 'All', favorites: 'Favorites', components: 'Components', shapes: 'Shapes', icons: 'Icons', photos: 'Photos' }
 
 /** One row of the 4-column grid: what a section shows before "Show all" (D7). */
 const ROW = 4
@@ -334,6 +335,10 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   const changeFilters = (next: MediaFilters) => {
     setFilters(next)
     storage.patchSettings({ mediaFilters: next })
+  }
+  const clearFilters = () => {
+    clearShowAndFilters()
+    storage.patchSettings({ mediaFilters: DEFAULT_MEDIA_FILTERS })
   }
   const togglePin = (prefix: string) => {
     const now = settingsPins()
@@ -1029,7 +1034,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     </span>
   )
 
-  const chipTitle = CHIP_LABELS[chip]
+  const chipTitle = STUDIO_CHIP_LABELS[chip]
   /** The web half shows once the web is asked or is waiting to be: during the pause, a search, offline, a result. */
   const webShown = webOn && (waiting || isSearching || offline || searchedQuery !== '' || pageError !== null)
   let body: ReactNode
@@ -1197,7 +1202,16 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
             }
           }}
         />
-        <FilterMenu filters={filters} onChange={changeFilters} pinned={pinned} loadPacks={loadPackList} />
+        <FilterMenu
+          show={chip}
+          shows={STUDIO_CHIPS.filter((c) => c !== 'photos' || pixabayAvailable)}
+          onShow={pickChip}
+          filters={filters}
+          onChange={changeFilters}
+          onClear={clearFilters}
+          pinned={pinned}
+          loadPacks={loadPackList}
+        />
         {hasSelection && library.canCapture && (
           <button
             type="button"
@@ -1243,14 +1257,6 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       )}
 
       <div className={saving ? 'image-studio__rest is-dimmed' : 'image-studio__rest'} inert={saving}>
-        <div className="image-studio__chips" role="group" aria-label="Show" hidden={pack !== null}>
-          {STUDIO_CHIPS.filter((c) => c !== 'photos' || pixabayAvailable).map((c) => (
-            <button type="button" key={c} className={chip === c ? 'is-active' : undefined} aria-pressed={chip === c} onClick={() => pickChip(c)}>
-              {CHIP_LABELS[c]}
-            </button>
-          ))}
-        </div>
-
         {line !== null && (
           <div className="image-studio__line" role="status">
             <span>{line.text}</span>

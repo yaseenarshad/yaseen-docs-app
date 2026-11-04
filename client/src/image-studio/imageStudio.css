@@ -135,29 +135,6 @@
   opacity: 0.55;
 }
 
-/* The chips (D8): one quiet row; the picked one is the only filled one. */
-.image-studio__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.image-studio__chips button {
-  background: transparent;
-  border: 1px solid var(--default-border-color);
-  border-radius: 999px;
-  color: var(--text-secondary-color);
-  cursor: pointer;
-  font-size: 11px;
-  padding: 3px 9px;
-}
-
-.image-studio__chips button.is-active {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: var(--island-bg-color);
-}
-
 /* The quiet line (D9): the auto-favorite and its Undo, or a word just taught. */
 .image-studio__line {
   align-items: center;
@@ -530,9 +507,8 @@
   opacity: 0.6;
 }
 
-/* The pack page (YAZ-4361) hides the search row and the chips: `hidden` must win over their `display: flex`. */
-.image-studio__search[hidden],
-.image-studio__chips[hidden] {
+/* The pack page (YAZ-4361) hides the search row: `hidden` must win over its `display: flex`. */
+.image-studio__search[hidden] {
   display: none;
 }
 

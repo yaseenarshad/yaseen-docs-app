@@ -180,7 +180,11 @@ const buttons = (host: HTMLElement) => [...host.querySelectorAll('button')]
 const byText = (host: HTMLElement, text: string) => buttons(host).find((button) => button.textContent?.trim() === text)
 const byLabel = (host: HTMLElement, label: string) => host.querySelector<HTMLElement>(`[aria-label="${label}"]`)
 const field = (host: HTMLElement) => byLabel(host, 'Search shapes, icons, and components') as HTMLInputElement
-const chipButton = (host: HTMLElement, label: string) => [...host.querySelectorAll('.image-studio__chips button')].find((b) => b.textContent === label) as HTMLButtonElement | undefined
+/** A choice of Filter › Show (the old chips, YAZ-4348 demo): opens the menu when it is closed. */
+const showOption = async (host: HTMLElement, label: string) => {
+  if (host.querySelector('.image-studio__filter-menu') === null) await click(host.querySelector('.image-studio__filter-button'))
+  return [...host.querySelectorAll('.image-studio__filter-menu [aria-label="Show"] button')].find((b) => b.textContent === label) as HTMLButtonElement | undefined
+}
 const section = (host: HTMLElement, title: string) => host.querySelector<HTMLElement>(`section[aria-label="${title}"]`)
 const tileNames = (host: HTMLElement | null) => [...(host?.querySelectorAll('.image-studio__name') ?? [])].map((n) => n.textContent)
 const click = async (element: Element | null | undefined) => {
@@ -242,13 +246,13 @@ describe('the empty field: Favorites, Recent, Components, Shapes (D7)', () => {
     expect(section(again.host, 'Components')).toBeNull()
   })
 
-  it('Show all picks the chip that shows the rest; Recent, which has no chip, opens in place', async () => {
+  it('Show all picks the Show choice that shows the rest; Recent, which has no chip, opens in place', async () => {
     library = libraryOf({ recent: ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => stored(icon(n))) })
     const { host } = await mount()
     await click(section(host, 'Shapes')!.querySelector('.image-studio__show-all'))
-    expect(chipButton(host, 'Shapes')?.getAttribute('aria-pressed')).toBe('true')
+    expect((await showOption(host, 'Shapes'))?.getAttribute('aria-checked')).toBe('true')
     expect(tileNames(section(host, 'Shapes')).length).toBeGreaterThan(4)
-    await click(chipButton(host, 'All'))
+    await click(await showOption(host, 'All'))
     await click(section(host, 'Recent')!.querySelector('.image-studio__show-all'))
     expect(tileNames(section(host, 'Recent'))).toHaveLength(6)
     expect(section(host, 'Recent')!.querySelector('.image-studio__show-all')?.textContent).toBe('Show less')
@@ -275,7 +279,7 @@ describe('the empty field: Favorites, Recent, Components, Shapes (D7)', () => {
     let land: (value: never) => void = () => {}
     loadElement.mockReturnValue(new Promise((resolve) => (land = resolve)))
     const { host } = await mount()
-    await click(chipButton(host, 'Shapes'))
+    await click(await showOption(host, 'Shapes'))
     const before = tileNames(section(host, 'Shapes')).length
     await act(async () => land(elementPackage as never))
     expect(tileNames(section(host, 'Shapes'))).toHaveLength(before + 1)
@@ -367,16 +371,16 @@ describe('typing: Best matches, then From the web (D3, D4, D7)', () => {
   })
 })
 
-describe('the chips (D8)', () => {
+describe('Filter › Show, the old chips (D8; moved into the Filter menu in the YAZ-4348 demo)', () => {
   it('Icons asks Iconify alone and shows only icons of yours; Shapes asks the web nothing', async () => {
     library = libraryOf({ favorites: [stored(icon('star icon'))] })
     const { host } = await mount()
-    await click(chipButton(host, 'Icons'))
+    await click(await showOption(host, 'Icons'))
     await search(host, 'star')
     expect(media.search).toHaveBeenLastCalledWith({ q: 'star', source: 'iconify', cursor: null, filters: DEFAULT_MEDIA_FILTERS })
     expect(tileNames(section(host, 'Best matches'))).toEqual(['star icon'])
     media.search.mockClear()
-    await click(chipButton(host, 'Shapes'))
+    await click(await showOption(host, 'Shapes'))
     expect(media.search).not.toHaveBeenCalled()
     expect(tileNames(section(host, 'Best matches'))).toEqual(['Star'])
     expect(section(host, 'From the web')).toBeNull()
@@ -384,15 +388,15 @@ describe('the chips (D8)', () => {
 
   it('offers Photos only when a Pixabay key is set, and follows the search answer when the key changes', async () => {
     const { host } = await mount()
-    expect(chipButton(host, 'Photos')).toBeUndefined()
+    expect(await showOption(host, 'Photos')).toBeUndefined()
     media.search.mockResolvedValue({ items: [], nextCursor: null, pixabayAvailable: true, warnings: [] })
     await search(host)
-    expect(chipButton(host, 'Photos')).toBeDefined()
+    expect(await showOption(host, 'Photos')).toBeDefined()
   })
 
   it('Icons and Photos with an empty field ask you to type', async () => {
     const { host } = await mount()
-    await click(chipButton(host, 'Icons'))
+    await click(await showOption(host, 'Icons'))
     expect(host.querySelector('.image-studio__state')?.textContent).toBe('Type to search icons.')
   })
 })
@@ -418,8 +422,8 @@ describe('previews', () => {
   it('asks for one preview once, however often its tile re-mounts', async () => {
     library = libraryOf({ favorites: [stored()] })
     const { host } = await mount()
-    await click(chipButton(host, 'Shapes'))
-    await click(chipButton(host, 'All'))
+    await click(await showOption(host, 'Shapes'))
+    await click(await showOption(host, 'All'))
     expect(media.preview).toHaveBeenCalledTimes(1)
   })
 
@@ -433,10 +437,10 @@ describe('previews', () => {
   it('keeps at most 300 tile pictures: past that the least recently seen goes (YAZ-2073 5J)', async () => {
     library = libraryOf({ favorites: Array.from({ length: 301 }, (_, i) => stored(icon(`i${i}`))) })
     const { host } = await mount()
-    await click(chipButton(host, 'Favorites'))
+    await click(await showOption(host, 'Favorites'))
     expect(media.preview).toHaveBeenCalledTimes(301)
-    await click(chipButton(host, 'Shapes'))
-    await click(chipButton(host, 'Favorites'))
+    await click(await showOption(host, 'Shapes'))
+    await click(await showOption(host, 'Favorites'))
     expect(media.preview).toHaveBeenCalledTimes(302)
     expect(media.preview).toHaveBeenLastCalledWith({ provider: 'iconify', id: 'set:i0' })
   })
@@ -866,7 +870,7 @@ describe('components in the Add tab (D2, D6)', () => {
 
   it('imports a file from the Components ⋯; a file that is not a component is a passive notice and nothing is saved', async () => {
     const { host } = await mount()
-    await click(chipButton(host, 'Components'))
+    await click(await showOption(host, 'Components'))
     expect(host.querySelector('.image-studio__state')?.textContent).toContain('No saved components yet')
     dialog.openDrawing.mockResolvedValue({ name: 'broken.excalidraw', content: 'not json' } as never)
     await click(byLabel(host, 'More for Components'))
@@ -986,12 +990,12 @@ describe('closing and reopening the panel (🔒 YAZ-1990)', () => {
   it('comes back with the chip, the query and the results it had', async () => {
     media.search.mockResolvedValue({ items: [icon('star')], nextCursor: null, pixabayAvailable: false, warnings: [] })
     const first = await mount()
-    await click(chipButton(first.host, 'Icons'))
+    await click(await showOption(first.host, 'Icons'))
     await search(first.host, 'star')
     act(() => root?.unmount())
     media.search.mockClear()
     const { host } = await mount()
-    expect(chipButton(host, 'Icons')?.getAttribute('aria-pressed')).toBe('true')
+    expect((await showOption(host, 'Icons'))?.getAttribute('aria-checked')).toBe('true')
     expect(field(host).value).toBe('star')
     expect(tileNames(section(host, 'From the web'))).toEqual(['star'])
     expect(media.search).not.toHaveBeenCalled()
@@ -1027,6 +1031,50 @@ describe('the Filter button and menu (YAZ-4360)', () => {
     expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaFilters: DEFAULT_MEDIA_FILTERS })
     expect(filterButton(host).querySelector('.image-studio__filter-badge')).toBeNull()
     expect(byText(host, 'Clear filters')?.disabled).toBe(true)
+  })
+
+  it('Show is the first section and the panel has no chips row; the badge counts Show when it is not All, and Clear filters puts it back to All', async () => {
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaFilters: { ...DEFAULT_MEDIA_FILTERS, colors: 'one' } })
+    const { host } = await mount()
+    expect(host.querySelector('.image-studio__chips')).toBeNull()
+    expect(filterButton(host).getAttribute('aria-label')).toBe('Filter, 1 on')
+    await click(filterButton(host))
+    const groups = [...host.querySelectorAll('.image-studio__filter-menu [role="group"]')].map((g) => g.getAttribute('aria-label'))
+    expect(groups[0]).toBe('Show')
+    expect([...host.querySelectorAll('.image-studio__filter-menu [aria-label="Show"] button')].map((b) => b.textContent)).toEqual(['All', 'Favorites', 'Components', 'Shapes', 'Icons'])
+    expect(option(host, 'Show', 'All').getAttribute('aria-checked')).toBe('true')
+    await click(option(host, 'Show', 'Shapes'))
+    expect(imageStudioSession.getState().chip).toBe('shapes')
+    expect(section(host, 'Shapes')).not.toBeNull()
+    expect(filterButton(host).getAttribute('aria-label')).toBe('Filter, 2 on')
+    await click(byText(host, 'Clear filters'))
+    expect(imageStudioSession.getState().chip).toBe('all')
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaFilters: DEFAULT_MEDIA_FILTERS })
+    expect(filterButton(host).querySelector('.image-studio__filter-badge')).toBeNull()
+  })
+
+  it('Clear filters with a query asks the web once, under All and no filters', async () => {
+    media.search.mockResolvedValue({ items: [icon('arrow')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaFilters: { ...DEFAULT_MEDIA_FILTERS, style: 'filled' } })
+    const { host } = await mount()
+    await click(await showOption(host, 'Icons'))
+    await search(host, 'arrow')
+    media.search.mockClear()
+    await click(byText(host, 'Clear filters'))
+    expect(media.search).toHaveBeenCalledTimes(1)
+    expect(media.search).toHaveBeenCalledWith({ q: 'arrow', source: 'all', cursor: null, filters: DEFAULT_MEDIA_FILTERS })
+  })
+
+  it('the arrow keys walk from Show into the filters', async () => {
+    const { host } = await mount()
+    await click(filterButton(host))
+    expect(document.activeElement).toBe(option(host, 'Show', 'All'))
+    await key(host.querySelector('.image-studio__filter-menu')!, 'ArrowDown')
+    expect(document.activeElement).toBe(option(host, 'Show', 'Favorites'))
+    await key(host.querySelector('.image-studio__filter-menu')!, 'ArrowUp')
+    await key(host.querySelector('.image-studio__filter-menu')!, 'ArrowUp')
+    // Up from All wraps to the last item that is on (Clear filters is off with nothing on).
+    expect(document.activeElement?.textContent).toBe('Business-safe')
   })
 
   it('Esc closes the menu back to its button; a click outside closes it too', async () => {
@@ -1097,7 +1145,7 @@ describe('Download all icon packs (YAZ-4359)', () => {
     media.search.mockRejectedValue(new BridgeRequestError('OFFLINE', 'no network'))
     secrets.has.mockResolvedValue(true)
     const { host } = await mount()
-    await click(chipButton(host, 'Photos'))
+    await click(await showOption(host, 'Photos'))
     await search(host, 'arrow')
     expect(host.textContent).toContain(OFFLINE_WITH_PACKS_NOTICE)
   })

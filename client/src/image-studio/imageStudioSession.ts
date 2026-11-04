@@ -18,9 +18,13 @@ import { api, BridgeRequestError } from '../api'
 import { createStore } from '../lib/store'
 import type { SmartShapeApi } from './shapes'
 
-/** The chips (YAZ-4157 D8): what the tab shows. Icons are Iconify's, Photos are Pixabay's. */
+/**
+ * What the tab shows (YAZ-4157 D8): once a row of chips, now the Filter menu's first section, "Show" (YAZ-4348 demo:
+ * "yes move the chips to filter"). Icons are Iconify's, Photos are Pixabay's. The code keeps the word "chip".
+ */
 export type StudioChip = 'all' | 'favorites' | 'components' | 'shapes' | 'icons' | 'photos'
 export const STUDIO_CHIPS: readonly StudioChip[] = ['all', 'favorites', 'components', 'shapes', 'icons', 'photos']
+export const STUDIO_CHIP_LABELS: Record<StudioChip, string> = { all: 'All', favorites: 'Favorites', components: 'Components', shapes: 'Shapes', icons: 'Icons', photos: 'Photos' }
 
 /** Which providers a chip asks; null is a chip that never reaches the web. */
 export const chipSource = (chip: StudioChip): MediaSearchSource | null =>
@@ -226,6 +230,16 @@ export function setFilters(filters: MediaFilters) {
   requestedCursors.clear()
   set({ results: [], cursor: null, warnings: [], searchedQuery: '', isSearching: false, waiting: false, pageError: null })
   void runSearch()
+}
+
+/** The Filter menu's "Clear filters": Show goes back to All and the filters off, with ONE search for both. */
+export function clearShowAndFilters() {
+  const { chip, filters } = imageStudioSession.getState()
+  const filtersOff = JSON.stringify(filters) === JSON.stringify(DEFAULT_MEDIA_FILTERS)
+  if (filtersOff) return pickChip('all')
+  // setFilters asks the web, under Show = All.
+  if (chip !== 'all') imageStudioSession.set({ chip: 'all' })
+  setFilters(DEFAULT_MEDIA_FILTERS)
 }
 
 /** What the search under a pack page was, so Back puts it back as it was, with no new request (YAZ-4361). */
