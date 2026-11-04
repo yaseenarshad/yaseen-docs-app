@@ -6029,7 +6029,8 @@ class App extends React.Component<AppProps, AppState> {
       event.metaKey ||
       // YAZ-4348 demo (Yasin: "Flip and eyedropper win"): ⇧V stays Flip vertical and ⇧G the eyedropper, so
       // violet and green have no outline letter; the picker still sets them
-      (event.shiftKey && SHIFT_KEYS_KEPT_FROM_COLORS.has(event.key.toLowerCase())) ||
+      (event.shiftKey &&
+        SHIFT_KEYS_KEPT_FROM_COLORS.has(event.key.toLowerCase())) ||
       isInteractive(event.target) ||
       isContentEditable
     ) {

@@ -83,9 +83,7 @@ const pick = (color: string) =>
   );
 const recipe = () => imageOf("icon").customData?.yaseenIcon;
 
-const open = async (
-  extra: Parameters<typeof openIcons>[1] = [],
-) => {
+const open = async (extra: Parameters<typeof openIcons>[1] = []) => {
   // the icon is 48 × 48 at (0, 0): part 0 is its top left, part 2 its bottom half
   const [icon] = await openIcons([{ id: "icon", svg: RECTS }], extra);
   API.setSelectedElements([icon as any]);

@@ -216,11 +216,7 @@ const IconColorVariations = ({
       }
       try {
         url = svgToDataURL(
-          paintIcon(
-            svgText,
-            { colors, outline: recipe.outline },
-            outlineUnits,
-          ),
+          paintIcon(svgText, { colors, outline: recipe.outline }, outlineUnits),
         );
       } catch {
         url = "";
@@ -237,8 +233,7 @@ const IconColorVariations = ({
       aria-label="Variations"
     >
       {variations.map(({ name, tip, colors }) => {
-        const active =
-          !!colors && noParts && sameColors(colors, recipe.colors);
+        const active = !!colors && noParts && sameColors(colors, recipe.colors);
         const url = colors ? previewOf(colors) : "";
         return (
           <Tooltip key={name} label={tip} long>
@@ -527,7 +522,7 @@ export const IconColorEditor = ({
   }));
 
   // one palette at a time, the same from a click on a number or its digit key
-  const openBadge = (badge: (typeof badges)[number]) => {
+  const openBadge = (badge: typeof badges[number]) => {
     setOutlineOpen(false);
     setPalette({
       x: badge.x + 18,
@@ -618,7 +613,6 @@ export const IconColorEditor = ({
         </button>
       ))}
 
-
       <div
         className="icon-color-editor__float icon-color-editor__float--strip"
         style={{ left: center.x, top: stripTop }}
@@ -674,54 +668,54 @@ export const IconColorEditor = ({
             className="icon-color-editor__more-trigger"
           >
             <div className="icon-color-editor__more">
-            <div
-              className="icon-color-editor__scope"
-              role="radiogroup"
-              aria-label="Change"
-            >
-              {(
-                [
-                  ["all", "Every part with this color"],
-                  ["one", "Just the part I click"],
-                ] as const
-              ).map(([value, label]) => (
-                <Tooltip key={value} label={SCOPE_TIPS[value]} long>
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={scope === value}
-                    className={clsx({ "is-active": scope === value })}
-                    onClick={() => setScope(value)}
-                  >
-                    {label}
-                  </button>
-                </Tooltip>
-              ))}
-            </div>
-            <Tooltip label={TINT_TIP} long>
-              <label className="icon-color-editor__tint">
-              <span>Tint</span>
-              <IconSizeSlider
-                label="Tint"
-                className="icon-color-editor__tint-slider"
-                value={tint}
-                max={360}
-                onPreview={(degrees) =>
-                  apply({
-                    colors: tintIconColors(info.colors, degrees),
-                    replaceColors: true,
-                    preview: true,
-                  })
-                }
-                onChange={(degrees) => {
-                  setTint(degrees);
-                  apply({
-                    colors: tintIconColors(info.colors, degrees),
-                    replaceColors: true,
-                  });
-                }}
-              />
-            </label>
+              <div
+                className="icon-color-editor__scope"
+                role="radiogroup"
+                aria-label="Change"
+              >
+                {(
+                  [
+                    ["all", "Every part with this color"],
+                    ["one", "Just the part I click"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <Tooltip key={value} label={SCOPE_TIPS[value]} long>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={scope === value}
+                      className={clsx({ "is-active": scope === value })}
+                      onClick={() => setScope(value)}
+                    >
+                      {label}
+                    </button>
+                  </Tooltip>
+                ))}
+              </div>
+              <Tooltip label={TINT_TIP} long>
+                <label className="icon-color-editor__tint">
+                  <span>Tint</span>
+                  <IconSizeSlider
+                    label="Tint"
+                    className="icon-color-editor__tint-slider"
+                    value={tint}
+                    max={360}
+                    onPreview={(degrees) =>
+                      apply({
+                        colors: tintIconColors(info.colors, degrees),
+                        replaceColors: true,
+                        preview: true,
+                      })
+                    }
+                    onChange={(degrees) => {
+                      setTint(degrees);
+                      apply({
+                        colors: tintIconColors(info.colors, degrees),
+                        replaceColors: true,
+                      });
+                    }}
+                  />
+                </label>
               </Tooltip>
             </div>
           </ToolbarPopover>
@@ -739,7 +733,9 @@ export const IconColorEditor = ({
             }}
             icon={
               <span className="icon-color-editor__outline-chip">
-                <i style={{ background: recipe.outline?.color ?? "transparent" }} />
+                <i
+                  style={{ background: recipe.outline?.color ?? "transparent" }}
+                />
                 Outline
               </span>
             }
@@ -760,18 +756,21 @@ export const IconColorEditor = ({
               />
             </div>
           </ToolbarPopover>
-          <Tooltip label="Back to the icon's original colors. The outline stays." long>
-          <button
-            type="button"
-            className="icon-color-editor__button"
-            onClick={() => {
-              setTint(0);
-              setPalette(null);
-              apply({ reset: true });
-            }}
+          <Tooltip
+            label="Back to the icon's original colors. The outline stays."
+            long
           >
-            Reset colors
-          </button>
+            <button
+              type="button"
+              className="icon-color-editor__button"
+              onClick={() => {
+                setTint(0);
+                setPalette(null);
+                apply({ reset: true });
+              }}
+            >
+              Reset colors
+            </button>
           </Tooltip>
           <button
             type="button"
