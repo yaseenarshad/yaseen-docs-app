@@ -1,5 +1,5 @@
 /**
- * The list buttons' and T's lit state (YAZ-3806 T3, T4) — a hot path: Crepe asks it for each of the four buttons on
+ * The list buttons' and T's lit state (YAZ-3806 T3, YAZ-4369) — a hot path: Crepe asks it for each of the four buttons on
  * every update while the strip shows. It is one walk per state (the buttons share it). The documents are
  * `visibleFormatting.perf.test.ts`'s folded outline and 5,000 plain lines, everything selected; each pass is a NEW
  * state, so the cache never answers. Runs in the `perf` project.
@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Transaction } from '@milkdown/kit/prose/state'
 import { median } from '../test-perf'
-import { allLinesAre, toggleListKind } from './listButtons'
+import { allLinesAre, toggleListKind, turnIntoText } from './listButtons'
 import { endOf, mount, posOf, pressKey, select, unmountAll } from './marks/markTestKit'
 
 afterEach(unmountAll)
@@ -67,5 +67,20 @@ describe('listButtons', () => {
     start = performance.now()
     view.dispatch(tr!)
     console.log(`listButtons perf: click over ${name}, ${tr!.steps.length} steps, build ${build.toFixed(0)} ms, apply and draw ${(performance.now() - start).toFixed(0)} ms`)
+  })
+
+  // T (YAZ-4369): one block type change per heading line, and no lift, so the click is ONE step per line.
+  it('perf smoke: T over 1,000 H3 bullets → plain bullets, one step per line', async () => {
+    const { crepe } = await mount(Array.from({ length: 1000 }, (_, i) => `* ### L${i}\n`).join(''))
+    select(crepe, posOf(crepe, 'L0'), endOf(crepe, 'L999'))
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    let tr: Transaction | null = null
+    let start = performance.now()
+    expect(turnIntoText(view.state, (built) => (tr = built))).toBe(true)
+    const build = performance.now() - start
+    expect(tr!.steps.length).toBe(1000)
+    start = performance.now()
+    view.dispatch(tr!)
+    console.log(`listButtons perf: T over 1,000 H3 bullets, ${tr!.steps.length} steps, build ${build.toFixed(0)} ms, apply and draw ${(performance.now() - start).toFixed(0)} ms`)
   })
 })

@@ -137,8 +137,8 @@ describe('format commands over hidden lines (YAZ-3209 D1–D3)', () => {
     foldItem(crepe, 'A')
     select(crepe, posOf(crepe, 'A'), endOf(crepe, 'B'))
     call(crepe, turnIntoTextCommand)
-    // T takes a bullet out of its list too (YAZ-3806 T4): A's hidden kid stays a list, below it.
-    expect(md(crepe)).toBe('A\n\n* ### a1\n\nB\n')
+    // T never changes the list (YAZ-4369): A and B stay bullets, and A's hidden kid stays under A.
+    expect(md(crepe)).toBe('* A\n  * ### a1\n* B\n')
   })
 
   it('S11: Mod-Enter over folded parents cycles the parents; hidden kids keep their state', async () => {

@@ -1,8 +1,8 @@
 /**
  * The block menu's strip (YAZ-3727 D13, D14, D18) through the real createCrepe wiring: Bullet list, Numbered list,
  * Checklist and Text as one row of toolbar buttons, the toolbar's own commands (`listButtons.ts`). With nothing highlighted
- * they change the whole list the line is in (one level); with text highlighted, the highlighted lines. The lit button
- * takes the lines out of their list, as on the toolbar. A plain line or a heading has the strip too (that line only);
+ * they change the whole list the line is in (one level); with text highlighted, the highlighted lines. The lit list
+ * button takes the lines out of their list, as on the toolbar; Text only makes the lines paragraphs (YAZ-4369). A plain line or a heading has the strip too (that line only);
  * a code block has none. "Number children" shows only when the line has children.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -78,7 +78,7 @@ function posOf(view: EditorView, text: string, offset = 0): number {
   return pos
 }
 
-const STRIP = (lit: string | null) => `[${['Bullet list', 'Numbered list', 'Checklist', 'Text'].map((label) => (label === lit ? `${label}*` : label)).join(', ')}]`
+const STRIP = (...lit: string[]) => `[${['Bullet list', 'Numbered list', 'Checklist', 'Text'].map((label) => (lit.includes(label) ? `${label}*` : label)).join(', ')}]`
 
 /** ⌘. through the editor's keymaps: zoom into the bullet that holds the caret. */
 function zoomInto(view: EditorView, text: string): void {
@@ -88,11 +88,11 @@ function zoomInto(view: EditorView, text: string): void {
 }
 
 describe('the block menu\'s strip turns a list into a checklist, bullets, numbers or text (YAZ-3727 D13, D14)', () => {
-  it('on a bullet: one strip, bullets, numbers, checklist, then T (D18), icons only, Bullet list lit; no "Number children" on a line with no children', async () => {
+  it('on a bullet: one strip, bullets, numbers, checklist, then T (D18), icons only, Bullet list and T lit (YAZ-4369); no "Number children" on a line with no children', async () => {
     const { view, item } = await mount('* a\n* b\n* c\n')
     aimAt(view, 'b')
     rightClick(item)
-    expect(menu(view)).toEqual([STRIP('Bullet list')])
+    expect(menu(view)).toEqual([STRIP('Bullet list', 'Text')])
     const buttons = [...popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__strip button')]
     expect(buttons.every((b) => b.querySelector('svg') !== null && b.textContent === '' && b.title === b.getAttribute('aria-label'))).toBe(true)
   })
@@ -101,13 +101,12 @@ describe('the block menu\'s strip turns a list into a checklist, bullets, number
     const { view, item } = await mount('1. a\n   * kid\n2. b\n')
     aimAt(view, 'a')
     rightClick(item)
-    expect(menu(view)).toEqual([STRIP('Numbered list'), '|', 'Number children', 'Bullets with written numbers', 'Collapse all', 'Expand all', 'Lock open'])
+    expect(menu(view)).toEqual([STRIP('Numbered list', 'Text'), '|', 'Number children', 'Bullets with written numbers', 'Collapse all', 'Expand all', 'Lock open'])
   })
 
   it.each([
     ['Numbered list', '1. a\n2. b\n3. c\n'],
     ['Checklist', '* [ ] a\n* [ ] b\n* [ ] c\n'],
-    ['Text', 'a\n\nb\n\nc\n'],
   ])('nothing highlighted: %j changes the whole list', async (label, saved) => {
     const { crepe, view, item } = await mount('* a\n* b\n* c\n')
     aimAt(view, 'b')
@@ -116,6 +115,16 @@ describe('the block menu\'s strip turns a list into a checklist, bullets, number
     expect(getMarkdownForSave(crepe)).toBe(saved)
     expect(popupOf(view)).toBeNull()
     expect(view.dom.contains(document.activeElement)).toBe(true)
+  })
+
+  it('nothing highlighted: Text makes every line of the list a paragraph and keeps the list (YAZ-4369)', async () => {
+    const { crepe, view, item } = await mount('* a\n* ## b\n  * ### kid\n* c\n')
+    aimAt(view, 'b')
+    rightClick(item)
+    expect(menu(view)[0]).toBe(STRIP('Bullet list'))
+    pick(view, 'Text')
+    // One level, as the list buttons: the child keeps its heading.
+    expect(getMarkdownForSave(crepe)).toBe('* a\n* b\n  * ### kid\n* c\n')
   })
 
   it('the whole list is one level: the children keep their kind', async () => {
@@ -148,7 +157,7 @@ describe('the block menu\'s strip turns a list into a checklist, bullets, number
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOf(view, 'bee', 1), posOf(view, 'bee', 2))))
     aimAt(view, 'bee')
     rightClick(item)
-    expect(menu(view)).toEqual([STRIP('Bullet list')])
+    expect(menu(view)).toEqual([STRIP('Bullet list', 'Text')])
     pick(view, 'Numbered list')
     expect(getMarkdownForSave(crepe)).toBe('* a\n\n1. bee\n\n* c\n')
   })
@@ -184,7 +193,7 @@ describe('the block menu\'s strip turns a list into a checklist, bullets, number
     const { crepe, view, item } = await mount('# H\n')
     aimAt(view, 'H')
     rightClick(item)
-    expect(menu(view)).toEqual([STRIP(null)])
+    expect(menu(view)).toEqual([STRIP()])
     pick(view, 'Numbered list')
     expect(getMarkdownForSave(crepe)).toBe('1. # H\n')
   })

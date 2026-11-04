@@ -2,7 +2,8 @@
  * The block menu's strip (YAZ-3727 D13, D14, D18): Bullet list, Numbered list, Checklist and Text, the selection toolbar's
  * list buttons and T (`listButtons.ts`, YAZ-3806) as one row of icon buttons, from a right-click on a line's handle or
  * dot, or on its text (D15, in the note's own menu: `blockMenuItems`), for those who find the bullet easier to reach than a selection. The same commands, so the same rule: one
- * transaction, folds and zoom kept, and the lit button takes the lines out of their list. The most used first (D18); T is last: the least used.
+ * transaction, folds and zoom kept, the lit list button takes the lines out of their list, and Text only makes each line a
+ * paragraph in place, so on a list it keeps the list (YAZ-4369). The most used first (D18); T is last: the least used.
  *
  * The LINE is the item's first block, or the paragraph or heading, that the handle points at; never a code block, a
  * table cell, or a table, rule or image the handle points at (also in a bullet). Which lines change:
