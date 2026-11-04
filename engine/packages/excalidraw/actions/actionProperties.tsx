@@ -718,10 +718,18 @@ export const actionApplySelectedSemanticColor = register<{
           .filter((element, index) => element !== elements[index])
           .map((element) => [element.id, element]),
       );
+      // YAZ-4348 demo (Yasin: "Yes, that rule"): T never hides a one-color
+      // icon; it removes the icon's outline. With no outline it changes nothing.
+      const removeOutline = isTransparent(iconColor);
       return paintIcons(
         app,
         icons,
-        (icon, recipe) => oneColorRecipe(app, icon, recipe, iconColor),
+        (icon, recipe) =>
+          removeOutline
+            ? recipe.outline
+              ? { ...recipe, outline: null }
+              : null
+            : oneColorRecipe(app, icon, recipe, iconColor),
         CaptureUpdateAction.IMMEDIATELY,
       ).then((result) =>
         result
