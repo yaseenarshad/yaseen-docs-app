@@ -309,13 +309,18 @@
   transform: translate(-50%, -50%);
 }
 
+/* YAZ-4348 demo round 2 ("the names are cut off"): a name gets two lines before it is cut; the tile's tooltip has
+   the whole name and its source. */
 .image-studio__name {
-  display: block;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
   font-size: 10px;
+  line-height: 1.25;
   overflow: hidden;
+  overflow-wrap: anywhere;
   padding: 3px 4px 4px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: center;
 }
 
 /* A provider's title is often lower case ("money bag"); a name the user typed keeps its own case. */
