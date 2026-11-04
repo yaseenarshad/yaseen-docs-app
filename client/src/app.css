@@ -572,6 +572,32 @@ button {
     0 7px 14px 0 rgba(0, 0, 0, 0.05);
   font-family: var(--font);
   color: var(--fg);
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* A quick fade and scale in from the ▾'s side (opacity and transform only, so the compositor runs it); usable at once. */
+@media (prefers-reduced-motion: no-preference) {
+  .highlight-panel {
+    transform-origin: top left;
+    animation: highlight-panel-in 100ms ease-out;
+  }
+  .highlight-panel.is-above {
+    transform-origin: bottom left;
+  }
+  .highlight-panel__box {
+    animation: highlight-panel-box-in 80ms ease-out;
+  }
+}
+@keyframes highlight-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes highlight-panel-box-in {
+  from {
+    opacity: 0;
+  }
 }
 /* A dark note is the panel's own colour: a hairline keeps its edge, where the board's darker canvas needs none. */
 [data-theme='dark'] .highlight-panel {
@@ -670,6 +696,8 @@ button {
   padding: 0 4px;
 }
 .highlight-panel__hex-input {
+  user-select: text;
+  -webkit-user-select: text;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -722,7 +750,8 @@ button {
 }
 /* The colour box (YAZ-4388, `editor/highlightColourBox.ts`), right under the Hex code field, the look of Chromium's
    colour popup: the saturation/brightness square on its hue (`--hue`), the eyedropper, the colour (`--pick`) and the
-   hue slider, then R G B. */
+   hue slider, then R G B. A handle rides a carrier as big as its track, moved by `transform` alone, so a drag
+   never lays out. */
 .highlight-panel__box {
   display: flex;
   flex-direction: column;
@@ -741,9 +770,17 @@ button {
   cursor: crosshair;
   touch-action: none;
 }
+.highlight-panel__thumb {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: transform;
+}
 .highlight-panel__sv-handle,
 .highlight-panel__hue-handle {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 12px;
   height: 12px;
   margin: -6px 0 0 -6px;
@@ -818,6 +855,8 @@ button {
   color: var(--fg-muted);
 }
 .highlight-panel__rgb input {
+  user-select: text;
+  -webkit-user-select: text;
   box-sizing: border-box;
   width: 100%;
   height: 26px;

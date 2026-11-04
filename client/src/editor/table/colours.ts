@@ -108,10 +108,9 @@ export function pickCustomColour(view: EditorView, target: CellSelection, attr: 
 
 /**
  * Open the system colour picker on `start` (`#rrggbb`); `onPick` gets the lowercase `#rrggbb` picked, once, on
- * the input's `change`. A later open replaces an earlier one's `onPick`. (The note's highlight panel draws its own
- * colour box instead, YAZ-4388: Chromium's popup opened at the window's top left.)
+ * the input's `change`. A later open replaces an earlier one's `onPick`.
  */
-export function openColourPicker(doc: Document, start: string, onPick: (color: string) => void): void {
+function openColourPicker(doc: Document, start: string, onPick: (color: string) => void): void {
   let picker = pickers.get(doc)
   if (picker === undefined) {
     const input = doc.createElement('input')

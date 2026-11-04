@@ -8,6 +8,9 @@
  * handles, the fields, the panel's hex); one finished pick — the pointer up, Enter in a field, the eyedropper's
  * colour — calls `pick` once, so it is one undo step and one use. The square and the slider cancel their
  * mousedown, so the text selection and the note's focus stay; only the R G B fields take the focus, to be typed in.
+ *
+ * Smoothness: a drag draws at most once a frame (the latest pointer wins), reads the layout before it writes, moves
+ * the handles with `transform` only, and writes only what changed.
  */
 import type { CustomHighlight } from './marks/highlight'
 
@@ -72,15 +75,17 @@ const EYEDROPPER =
 export class ColourBox {
   readonly el: HTMLElement
   #sv: HTMLElement
-  #svHandle: HTMLElement
+  /** The handles' carriers: as big as their track, moved by a `translate` of their own size. */
+  #svThumb: HTMLElement
   #hue: HTMLElement
-  #hueHandle: HTMLElement
-  #swatch: HTMLElement
+  #hueThumb: HTMLElement
   #dropper: HTMLButtonElement
   #fields: HTMLInputElement[]
   /** Kept apart from the hex, so the hue survives a drag through gray or black. */
   #hsv: Hsv = { h: 0, s: 0, v: 0 }
   #dropping = false
+  /** What #draw wrote last, so an unchanged style or attribute is not written again. */
+  #drawn = new Map<string, string>()
 
   constructor(
     readonly doc: Document,
@@ -99,8 +104,9 @@ export class ColourBox {
     this.#sv = div('highlight-panel__sv')
     this.#sv.setAttribute('role', 'slider')
     this.#sv.setAttribute('aria-label', 'Saturation and brightness')
-    this.#svHandle = div('highlight-panel__sv-handle')
-    this.#sv.append(this.#svHandle)
+    this.#svThumb = div('highlight-panel__thumb')
+    this.#svThumb.append(div('highlight-panel__sv-handle'))
+    this.#sv.append(this.#svThumb)
     this.#drag(this.#sv, (x, y) => ({ ...this.#hsv, s: x, v: 1 - y }))
 
     const dropper = doc.createElement('button')
@@ -113,15 +119,15 @@ export class ColourBox {
     dropper.addEventListener('mousedown', (e) => e.preventDefault())
     dropper.addEventListener('click', () => void this.#eyedrop())
     this.#dropper = dropper
-    this.#swatch = div('highlight-panel__box-swatch')
     this.#hue = div('highlight-panel__hue')
     this.#hue.setAttribute('role', 'slider')
     this.#hue.setAttribute('aria-label', 'Hue')
-    this.#hueHandle = div('highlight-panel__hue-handle')
-    this.#hue.append(this.#hueHandle)
+    this.#hueThumb = div('highlight-panel__thumb')
+    this.#hueThumb.append(div('highlight-panel__hue-handle'))
+    this.#hue.append(this.#hueThumb)
     this.#drag(this.#hue, (x) => ({ ...this.#hsv, h: x * 360 }))
     const row = div('highlight-panel__box-row')
-    row.append(dropper, this.#swatch, this.#hue)
+    row.append(dropper, div('highlight-panel__box-swatch'), this.#hue)
 
     const rgb = div('highlight-panel__rgb')
     this.#fields = ['Red', 'Green', 'Blue'].map((name) => {
@@ -173,41 +179,70 @@ export class ColourBox {
     this.#draw()
   }
 
-  /** The handles, the square's hue, the colour and the fields (but the one being typed in). */
+  /** `write(value)` unless `key` already holds `value`. */
+  #put(key: string, value: string, write: (value: string) => void): void {
+    if (this.#drawn.get(key) === value) return
+    this.#drawn.set(key, value)
+    write(value)
+  }
+
+  /** The handles, the square's hue, the colour and the fields (but the one being typed in); only what changed. */
   #draw(except?: HTMLInputElement): void {
     const { h, s, v } = this.#hsv
     const hex = this.hex
-    this.#sv.style.setProperty('--hue', `hsl(${h} 100% 50%)`)
-    this.#svHandle.style.left = `${s * 100}%`
-    this.#svHandle.style.top = `${(1 - v) * 100}%`
-    this.#hueHandle.style.left = `${(h / 360) * 100}%`
-    this.el.style.setProperty('--pick', hex)
-    this.#sv.setAttribute('aria-valuetext', hex)
-    this.#hue.setAttribute('aria-valuenow', String(Math.round(h)))
+    this.#put('hue', `hsl(${h} 100% 50%)`, (x) => this.#sv.style.setProperty('--hue', x))
+    this.#put('sv', `translate(${s * 100}%, ${(1 - v) * 100}%)`, (x) => (this.#svThumb.style.transform = x))
+    this.#put('h', `translateX(${(h / 360) * 100}%)`, (x) => (this.#hueThumb.style.transform = x))
+    this.#put('pick', hex, (x) => {
+      this.el.style.setProperty('--pick', x)
+      this.#sv.setAttribute('aria-valuetext', x)
+    })
+    this.#put('now', String(Math.round(h)), (x) => this.#hue.setAttribute('aria-valuenow', x))
     const rgb = rgbOf(hex)
     this.#fields.forEach((f, i) => {
-      if (f !== except) f.value = String(rgb[i])
+      const value = String(rgb[i])
+      if (f !== except && f.value !== value) f.value = value
     })
   }
 
-  /** A press in the square or the slider: the colour follows the pointer, and its release is the pick. */
+  /**
+   * A press in the square or the slider: the colour follows the pointer, and its release is the pick. The press and
+   * the release draw at once; the moves between draw on the next frame, once, at the latest pointer.
+   */
   #drag(el: HTMLElement, at: (x: number, y: number) => Hsv): void {
     // The selection and the focus stay where they are.
     el.addEventListener('mousedown', (e) => e.preventDefault())
     el.addEventListener('pointerdown', (e: PointerEvent) => {
       if (e.button !== 0) return
-      const follow = (p: MouseEvent) => {
+      let x = e.clientX
+      let y = e.clientY
+      let frame: number | null = null
+      const draw = () => {
+        if (frame !== null) cancelAnimationFrame(frame)
+        frame = null
+        // The read comes before this frame's writes, so it forces no layout.
         const r = el.getBoundingClientRect()
-        this.#hsv = at(clamp((p.clientX - r.left) / (r.width || 1)), clamp((p.clientY - r.top) / (r.height || 1)))
+        this.#hsv = at(clamp((x - r.left) / (r.width || 1)), clamp((y - r.top) / (r.height || 1)))
         this.#draw()
         this.hooks.preview(this.hex)
       }
-      const end = (p: Event) => {
-        this.doc.removeEventListener('pointermove', follow)
+      const move = (p: PointerEvent) => {
+        x = p.clientX
+        y = p.clientY
+        frame ??= requestAnimationFrame(draw)
+      }
+      const end = (p: PointerEvent) => {
+        this.doc.removeEventListener('pointermove', move)
         this.doc.removeEventListener('pointerup', end)
         this.doc.removeEventListener('pointercancel', end)
-        if (p.type !== 'pointerup') return
-        follow(p as MouseEvent)
+        if (p.type !== 'pointerup') {
+          if (frame !== null) cancelAnimationFrame(frame)
+          frame = null
+          return
+        }
+        x = p.clientX
+        y = p.clientY
+        draw()
         if (this.open) this.hooks.pick(this.hex)
       }
       try {
@@ -215,8 +250,8 @@ export class ColourBox {
       } catch {
         // No capture (a synthetic event): the document's listeners still follow.
       }
-      follow(e)
-      this.doc.addEventListener('pointermove', follow)
+      draw()
+      this.doc.addEventListener('pointermove', move)
       this.doc.addEventListener('pointerup', end)
       this.doc.addEventListener('pointercancel', end)
     })

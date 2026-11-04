@@ -23,6 +23,7 @@ import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { toolbarPrefs } from './toolbarPrefs'
 import { HIGHLIGHT_HEX } from './marks/highlight'
 import { readHex, shadesOf } from './highlightPanel'
+import { fromHsv, toHsv } from './highlightColourBox'
 import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './highlightUsed'
 import { DEFAULT_TOOLBAR } from '@shared/types'
 
@@ -352,6 +353,24 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     at.dispatchEvent(event)
     return event
   }
+  /** Animation frames held until `run()`, as the browser's next paint would run them. */
+  const holdFrames = () => {
+    let queue = new Map<number, FrameRequestCallback>()
+    let next = 1
+    vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => {
+      queue.set(next, f)
+      return next++
+    })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => void queue.delete(id))
+    return {
+      pending: () => queue.size,
+      run: () => {
+        const due = queue
+        queue = new Map()
+        due.forEach((f) => f(performance.now()))
+      },
+    }
+  }
   const saved = vi.fn()
 
   beforeEach(() => {
@@ -360,6 +379,7 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     setUsedHighlightColorsSaver(saved)
   })
   afterEach(() => {
+    vi.unstubAllGlobals()
     document.querySelectorAll('.highlight-panel').forEach((el) => el.remove())
     setUsedHighlightColors([])
     setUsedHighlightColorsSaver(() => {})
@@ -560,13 +580,16 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     const square = box().querySelector<HTMLElement>('.highlight-panel__sv')!
     const hue = box().querySelector<HTMLElement>('.highlight-panel__hue')!
     for (const el of [square, hue]) vi.spyOn(el, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 100))
+    const frames = holdFrames()
     // The square keeps the selection and the focus.
     expect(pointer('mousedown', 50, 50, square).defaultPrevented).toBe(true)
     pointer('pointerdown', 50, 50, square)
     pointer('pointermove', 100, 0, document)
+    frames.run()
     // Yellow's hue, full saturation and brightness: the hex field and R G B follow, the text does not yet.
     expect(hexInput().value).toBe('ffd500')
     pointer('pointermove', 100, 50, document)
+    frames.run()
     expect([field('Red').value, field('Green').value, field('Blue').value]).toEqual(['128', '106', '0'])
     expect(getMarkdownForSave(crepe)).toBe('hello world\n')
     expect(saved).not.toHaveBeenCalled()
@@ -578,8 +601,10 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     expect(isOpen()).toBe(true)
     expect(boxOpen()).toBe(true)
     expect(view.hasFocus()).toBe(true)
-    // A move after the release does nothing.
+    // A move after the release does nothing (the editor's own frames run first).
+    frames.run()
     pointer('pointermove', 0, 100, document)
+    expect(frames.pending()).toBe(0)
     expect(hexInput().value).toBe('806a00')
     // The hue slider: red, the same saturation and brightness.
     pointer('pointerdown', 0, 5, hue)
@@ -591,6 +616,79 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     expect(getMarkdownForSave(crepe)).toBe('hello <mark style="background-color: #806a00">world</mark>\n')
     expect(undo(view.state, view.dispatch)).toBe(true)
     expect(getMarkdownForSave(crepe)).toBe('hello world\n')
+  })
+
+  it('a drag draws once a frame, at the latest pointer, by transform alone, and rebuilds no swatch; a cancel picks nothing', async () => {
+    const { crepe, view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    clickPencil()
+    const square = box().querySelector<HTMLElement>('.highlight-panel__sv')!
+    const thumb = square.querySelector<HTMLElement>('.highlight-panel__thumb')!
+    const hueThumb = box().querySelector<HTMLElement>('.highlight-panel__hue .highlight-panel__thumb')!
+    vi.spyOn(square, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 100))
+    const frames = holdFrames()
+    const swatches = [...panel()!.querySelectorAll('.highlight-panel__swatch')]
+    const watch = new MutationObserver(() => {})
+    watch.observe(panel()!, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] })
+    // The press draws at once.
+    pointer('pointerdown', 0, 0, square)
+    expect(hexInput().value).toBe('ffffff')
+    watch.takeRecords()
+    for (let i = 1; i <= 40; i++) pointer('pointermove', i, i, document)
+    // Forty moves: one frame asked for, nothing drawn before it.
+    expect(frames.pending()).toBe(1)
+    expect(watch.takeRecords()).toEqual([])
+    expect(hexInput().value).toBe('ffffff')
+    frames.run()
+    // One draw, at the last move: the square's handle moves by transform, the colour changes; the hue's handle, the
+    // square's hue and every row of swatches are left alone.
+    expect(watch.takeRecords().map((r) => r.target)).toEqual([thumb, box()])
+    expect(thumb.style.transform).toBe('translate(40%, 40%)')
+    expect(hueThumb.style.transform).toBe(`translateX(${(toHsv(HIGHLIGHT_HEX.yellow).h / 360) * 100}%)`)
+    const at40 = fromHsv({ ...toHsv(HIGHLIGHT_HEX.yellow), s: 0.4, v: 0.6 })
+    expect(hexInput().value).toBe(at40.slice(1))
+    expect([...panel()!.querySelectorAll('.highlight-panel__swatch')]).toEqual(swatches)
+    expect(frames.pending()).toBe(0)
+    // A cancelled drag (the pointer lost) drops its frame and picks nothing.
+    pointer('pointermove', 90, 90, document)
+    pointer('pointercancel', 90, 90, document)
+    expect(frames.pending()).toBe(0)
+    await settle()
+    expect(getMarkdownForSave(crepe)).toBe('hello world\n')
+    expect(saved).not.toHaveBeenCalled()
+    watch.disconnect()
+  })
+
+  it('a pick moves the ring, not the nodes: the Colors row is never rebuilt, the same pick again and a second open make nothing', async () => {
+    const { view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    const grid = (n: number) => panel()!.querySelectorAll('.highlight-panel__grid')[n]
+    const colours = [...grid(1).children]
+    const watch = new MutationObserver(() => {})
+    watch.observe(panel()!, { childList: true, subtree: true })
+    await click('Highlight pink')
+    // Only the Shades row changes: pink's shades take the place of "No shades".
+    expect(watch.takeRecords().every((r) => r.target === grid(2))).toBe(true)
+    expect([...grid(1).children]).toEqual(colours)
+    expect(ringed()).toEqual(['Highlight pink'])
+    const pinkShades = [...grid(2).children]
+    await click('Highlight orange')
+    expect([...grid(1).children]).toEqual(colours)
+    expect(ringed()).toEqual(['Highlight orange'])
+    watch.takeRecords()
+    await click('Highlight orange')
+    expect(watch.takeRecords()).toEqual([])
+    // Closed and opened again on pink: the same nodes, none made.
+    await click('Highlight pink')
+    expect([...grid(2).children]).toEqual(pinkShades.map((el) => grid(2).querySelector(`[aria-label="${el.getAttribute('aria-label')}"]`)))
+    watch.takeRecords()
+    await press('highlight-more')
+    await press('highlight-more')
+    expect(isOpen()).toBe(true)
+    expect(watch.takeRecords()).toEqual([])
+    watch.disconnect()
   })
 
   it('R G B from the keyboard: typing previews, Enter is one pick with the focus back in the note', async () => {

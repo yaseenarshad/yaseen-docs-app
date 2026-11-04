@@ -22,6 +22,9 @@
  *
  * The box's pick goes to the text that was selected when it opened: that text is kept in this plugin's state and
  * mapped through each change, as `customColourPick` does for cells; a pick on text that was deleted does nothing.
+ *
+ * Speed: each swatch is made once and kept by its colour, so a pick moves the rings and leaves the nodes; a pick
+ * renders once; the panel is placed before its first paint, with one layout read.
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { closeHistory } from '@milkdown/kit/prose/history'
@@ -118,6 +121,11 @@ class HighlightPanel {
   #box!: ColourBox
   /** The places the keyboard walks, row by row, as drawn now. */
   #rows: Item[][] = []
+  /** Each swatch made, by its row and colour: a render reuses them. */
+  #made = new Map<string, Item>()
+  #noShades: HTMLElement | null = null
+  /** Renders so far: a pick renders only when its change did not already. */
+  #renders = 0
   #current: string | null = null
   /** Where the Shades start: the colour picked last in this panel, else the selection's own. */
   #base: CustomHighlight | null = null
@@ -228,74 +236,108 @@ class HighlightPanel {
     return el
   }
 
-  /** One square: its colour as `--swatch`, a ring when the selection has it. */
-  #swatch(id: string, label: string, fill: string | null, on: boolean, run: () => void): Item {
-    const doc = this.view.dom.ownerDocument
-    const b = doc.createElement('button')
+  /** One square, its colour as `--swatch`: the one made for `key` before, else a new one. */
+  #swatch(key: string, id: string, label: string, fill: string | null, run: () => void, live: Set<string>): Item {
+    live.add(key)
+    const made = this.#made.get(key)
+    if (made !== undefined) return made
+    const b = this.view.dom.ownerDocument.createElement('button')
     b.type = 'button'
     b.className = 'highlight-panel__swatch'
     if (fill === null) b.classList.add('is-none')
     else b.style.setProperty('--swatch', fill)
-    b.classList.toggle('active', on)
     b.tabIndex = -1
     b.title = label
     b.setAttribute('aria-label', label)
-    b.setAttribute('aria-pressed', String(on))
+    b.setAttribute('aria-pressed', 'false')
     b.dataset.item = id
     // The selection and the focus stay in the note.
     b.addEventListener('mousedown', (e) => e.preventDefault())
     b.addEventListener('click', run)
-    return { id, el: b, run }
+    const item = { id, el: b, run }
+    this.#made.set(key, item)
+    return item
+  }
+
+  /** `els` in `row`, touching the row only when they differ from what is there. */
+  static #fill(row: HTMLElement, els: readonly HTMLElement[]): void {
+    const kids = row.children
+    if (kids.length !== els.length || els.some((el, i) => kids[i] !== el)) row.replaceChildren(...els)
+  }
+
+  /** The ring on a swatch the selection has, written only when it changes. */
+  static #ring(item: Item, on: boolean): void {
+    if (item.el.classList.contains('active') === on) return
+    item.el.classList.toggle('active', on)
+    item.el.setAttribute('aria-pressed', String(on))
   }
 
   /** Draw the rows for the selection as it is now. The Hex code field keeps what is being typed in it. */
   #render(): void {
+    this.#renders++
     const colours = highlightColorsIn(this.view.state, this.#type())
     const one = colours.length === 1 ? colours[0] : undefined
     this.#base ??= one === undefined ? null : hexOf(one)
     const rows: Item[][] = []
+    const live = new Set<string>()
 
-    const used = mostUsedHighlightColors().map((c) =>
-      this.#swatch(`used:${c}`, c, customWash(c as CustomHighlight), colours.includes(c as CustomHighlight), () => this.#apply(c as CustomHighlight)),
-    )
+    const usedColours = mostUsedHighlightColors() as CustomHighlight[]
+    const used = usedColours.map((c) => this.#swatch(`used:${c}`, `used:${c}`, c, customWash(c), () => this.#apply(c), live))
+    used.forEach((item, i) => HighlightPanel.#ring(item, colours.includes(usedColours[i])))
     this.#used.hidden = used.length === 0
-    this.#usedRow.replaceChildren(...used.map((i) => i.el))
+    HighlightPanel.#fill(this.#usedRow, used.map((i) => i.el))
     if (used.length > 0) rows.push(used)
 
     const named = [null, ...HIGHLIGHT_COLORS] as HighlightColor[]
-    const none = this.#swatch('none', 'None', null, colours.length === 0, () => this.#remove())
+    const none = this.#swatch('none', 'none', 'None', null, () => this.#remove(), live)
+    HighlightPanel.#ring(none, colours.length === 0)
     const swatches = [
       none,
-      ...named.map((c) =>
-        this.#swatch(`color:${nameOf(c)}`, `Highlight ${nameOf(c)}`, c === null ? 'var(--mark-bg)' : `var(--mark-bg-${c})`, colours.includes(c), () => this.#apply(c)),
-      ),
+      ...named.map((c) => {
+        const item = this.#swatch(`color:${nameOf(c)}`, `color:${nameOf(c)}`, `Highlight ${nameOf(c)}`, c === null ? 'var(--mark-bg)' : `var(--mark-bg-${c})`, () => this.#apply(c), live)
+        HighlightPanel.#ring(item, colours.includes(c))
+        return item
+      }),
     ]
-    this.#colours.replaceChildren(...swatches.map((i) => i.el))
+    HighlightPanel.#fill(this.#colours, swatches.map((i) => i.el))
     rows.push(swatches.slice(0, 5), swatches.slice(5))
 
     if (this.#base === null) {
-      const empty = this.view.dom.ownerDocument.createElement('div')
-      empty.className = 'highlight-panel__no-shades'
-      empty.textContent = 'No shades available for this color'
-      this.#shades.replaceChildren(empty)
+      if (this.#noShades === null) {
+        this.#noShades = this.view.dom.ownerDocument.createElement('div')
+        this.#noShades.className = 'highlight-panel__no-shades'
+        this.#noShades.textContent = 'No shades available for this color'
+      }
+      HighlightPanel.#fill(this.#shades, [this.#noShades])
     } else {
-      const shades = shadesOf(this.#base).map((s, i) =>
-        this.#swatch(`shade:${i}`, `Shade ${i + 1} ${s}`, customWash(s), colours.includes(s), () => this.#apply(s, false)),
-      )
-      this.#shades.replaceChildren(...shades.map((i) => i.el))
+      const shades = shadesOf(this.#base).map((s, i) => {
+        const item = this.#swatch(`shade:${i}:${s}`, `shade:${i}`, `Shade ${i + 1} ${s}`, customWash(s), () => this.#apply(s, false), live)
+        HighlightPanel.#ring(item, colours.includes(s))
+        return item
+      })
+      HighlightPanel.#fill(this.#shades, shades.map((i) => i.el))
       rows.push(shades)
     }
+    // Swatches no row shows now are let go.
+    for (const key of this.#made.keys()) if (!live.has(key)) this.#made.delete(key)
 
     if (this.view.dom.ownerDocument.activeElement !== this.#hexInput) {
-      this.#hexInput.value = this.#box.open ? this.#box.hex.slice(1) : one === undefined ? '' : hexOf(one).slice(1)
+      const value = this.#box.open ? this.#box.hex.slice(1) : one === undefined ? '' : hexOf(one).slice(1)
+      if (this.#hexInput.value !== value) this.#hexInput.value = value
     }
-    this.#hexInput.placeholder = one === undefined && colours.length > 1 ? 'mixed' : ''
+    const placeholder = one === undefined && colours.length > 1 ? 'mixed' : ''
+    if (this.#hexInput.placeholder !== placeholder) this.#hexInput.placeholder = placeholder
     rows.push([
       { id: 'hex', el: this.#hexField, run: () => this.#hexInput.focus() },
       { id: 'pencil', el: this.#pencil, run: () => this.#toggleBox() },
     ])
     this.#rows = rows
     this.#move(this.#current)
+  }
+
+  /** Render, unless the change just made already did (`update` renders on each change of the note). */
+  #renderOnce(since: number): void {
+    if (this.open && this.#renders === since) this.#render()
   }
 
   #show(by: 'pointer' | 'keyboard'): void {
@@ -329,17 +371,23 @@ class HighlightPanel {
     if (focused) this.view.focus()
   }
 
-  /** Under the ▾, or over it when the window has no room below; never past the window's sides. */
+  /**
+   * Under the ▾, or over it when the window has no room below; never past the window's sides. Run in the same task
+   * as the change that showed or grew the panel, so it lands before the first paint: all reads, then the writes.
+   * The size is the layout's (`offset*`), not the open animation's scaled box.
+   */
   #place(): void {
     const el = this.#el!
     const win = this.view.dom.ownerDocument.defaultView
     const at = (this.#arrow() ?? this.view.dom).getBoundingClientRect()
-    const { width, height } = el.getBoundingClientRect()
+    const width = el.offsetWidth
+    const height = el.offsetHeight
     const roomBelow = win === null || at.bottom + 4 + height <= win.innerHeight - 8
-    const top = roomBelow ? at.bottom + 4 : Math.max(8, at.top - 4 - height)
-    const left = win === null ? at.left : Math.max(8, Math.min(at.left, win.innerWidth - width - 8))
-    el.style.top = `${Math.round(top)}px`
-    el.style.left = `${Math.round(left)}px`
+    const top = `${Math.round(roomBelow ? at.bottom + 4 : Math.max(8, at.top - 4 - height))}px`
+    const left = `${Math.round(win === null ? at.left : Math.max(8, Math.min(at.left, win.innerWidth - width - 8)))}px`
+    if (el.style.top !== top) el.style.top = top
+    if (el.style.left !== left) el.style.left = left
+    el.classList.toggle('is-above', !roomBelow)
   }
 
   /** The keyboard's place: a class, since the focus stays in the note (or on the ▾). */
@@ -448,13 +496,15 @@ class HighlightPanel {
   #apply(color: HighlightColor, newBase = true): void {
     if (newBase) this.#base = hexOf(color)
     if (isCustomHighlight(color)) noteHighlightColorUse(color)
+    const since = this.#renders
     this.#run(applyHighlight(this.#type(), color))
-    this.#render()
+    this.#renderOnce(since)
   }
 
   #remove(): void {
+    const since = this.#renders
     this.#run(removeHighlight(this.#type()))
-    this.#render()
+    this.#renderOnce(since)
   }
 
   #toggleBox(): void {
@@ -492,16 +542,18 @@ class HighlightPanel {
     const target = pickKey.getState(view.state) ?? null
     const marked = target === null ? null : highlightRange(view.state, this.#type(), target.from, target.to, color)
     if (marked === null) return
-    view.dispatch(closeHistory(marked))
     noteHighlightColorUse(color)
     this.#base = color
-    if (this.open) this.#render()
+    const since = this.#renders
+    view.dispatch(closeHistory(marked))
+    this.#renderOnce(since)
   }
 
   update(view: EditorView, prev: EditorState): void {
     if (!this.open) return
     if (!prev.selection.eq(view.state.selection) || view.state.selection.empty) this.close()
-    else if (!prev.doc.eq(view.state.doc)) this.#render()
+    // A new doc is a change (`eq` would walk the whole note on each one).
+    else if (prev.doc !== view.state.doc) this.#render()
   }
 
   destroy(): void {
