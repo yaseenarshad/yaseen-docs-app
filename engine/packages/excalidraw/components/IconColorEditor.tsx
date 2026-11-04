@@ -2,7 +2,7 @@
  * Yaseen Docs (YAZ-4354 1D): the "Edit colors" mode of a many-color icon, on the
  * board: the numbers around the picture (one per color it shows now, with a line
  * to that color's part), the palette next to a click, and the strip below the
- * icon (scope, tint, outline, Reset colors, Done).
+ * icon (Variations, scope, tint, outline, Reset colors, Done).
  *
  * A click on the canvas reaches `handlers.pick` first (App): the hidden pick map
  * names the part under it. No SVG of the icon goes into the page: the pick map
@@ -10,6 +10,13 @@
  *
  * Each pick applies at once and is one undo step (`changeIconColors`); the tint
  * drag paints at most every 100 ms and is one undo step at its release.
+ *
+ * YAZ-4348 demo ("prebuilt color variations to edit colors including match my
+ * board"): Variations shows the icon in Original, Blue, Green, Purple, Pink,
+ * Grey and "Match my board". Each preview is a small `<img>` of the painted SVG,
+ * made the first time the card opens and kept while the mode is open. A click
+ * applies a normal `colors` map (`replaceColors`) and clears the part colors,
+ * so the board shows what the preview showed; it is one undo step.
  */
 import clsx from "clsx";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -24,12 +31,16 @@ import {
   buildIconParts,
   currentTargetColors,
   getIconInfo,
+  greyIconColors,
   groupColorChange,
   groupIconColors,
+  hueIconColors,
+  ICON_VARIATION_HUES,
   iconNaturalSize,
   iconPickPointOfScene,
   iconScenePointOfPick,
   loadIconPickMap,
+  matchBoardIconColors,
   paintIcon,
   pickIconTarget,
   svgOfDataURL,
@@ -37,7 +48,11 @@ import {
   tintIconColors,
 } from "@excalidraw/element";
 
-import type { IconPaintTarget, IconPickMap } from "@excalidraw/element";
+import type {
+  IconPaintTarget,
+  IconPickMap,
+  IconRecipe,
+} from "@excalidraw/element";
 import type { InitializedExcalidrawImageElement } from "@excalidraw/element/types";
 
 import {
@@ -48,6 +63,7 @@ import {
 } from "../actions/actionIconColors";
 
 import { ColorPicker } from "./ColorPicker/ColorPicker";
+import { getBoardColors } from "./ColorPicker/colorPickerUtils";
 import { Island } from "./Island";
 import { ToolbarPopover } from "./ToolbarPopover";
 import { Tooltip } from "./Tooltip";
@@ -105,7 +121,147 @@ const shownColor = (color: string) =>
 const PALETTE_HEIGHT = 300;
 const STRIP_HEIGHT = 64;
 
-/** Spreads the numbers' angles so they never sit on top of each other. */
+/** One prebuilt look of the icon (YAZ-4348 demo). */
+type IconVariation = {
+  name: string;
+  tip: string;
+  /** the `colors` map; null: it cannot be made (no colors on the board) */
+  colors: Record<string, string> | null;
+};
+
+/** The most previews the mode keeps (seven per outline). */
+const MAX_VARIATION_PREVIEWS = 42;
+
+const shadesTip = (name: string) =>
+  `${name}: every color turns ${name.toLowerCase()}. Light and dark shades stay, and so do black, white and grey.`;
+
+/** The variations of an icon whose original colors are `originals`. */
+export const iconVariations = (
+  originals: readonly string[],
+  boardColors: readonly string[],
+): IconVariation[] => [
+  { name: "Original", tip: "Original: the icon's own colors.", colors: {} },
+  ...(
+    [
+      ["Blue", ICON_VARIATION_HUES.blue],
+      ["Green", ICON_VARIATION_HUES.green],
+      ["Purple", ICON_VARIATION_HUES.purple],
+      ["Pink", ICON_VARIATION_HUES.pink],
+    ] as const
+  ).map(([name, hue]) => ({
+    name,
+    tip: shadesTip(name),
+    colors: hueIconColors(originals, hue),
+  })),
+  {
+    name: "Grey",
+    tip: "Grey: every color turns grey. Light and dark shades stay.",
+    colors: greyIconColors(originals),
+  },
+  ((colors) => ({
+    name: "Match my board",
+    tip: colors
+      ? "Match my board: uses the colors already on this board."
+      : "Match my board: this board has no colors yet. Color a shape or an icon first.",
+    colors,
+  }))(matchBoardIconColors(originals, boardColors)),
+];
+
+/** The same color map, whatever its key order. */
+const sameColors = (a: Record<string, string>, b: Record<string, string>) =>
+  Object.keys(a).length === Object.keys(b).length &&
+  Object.entries(a).every(([key, color]) => b[key] === color);
+
+/**
+ * The Variations card. It mounts when the card opens; the previews come from
+ * `cache` (the mode's, so each one is painted once while the mode is open).
+ */
+const IconColorVariations = ({
+  app,
+  element,
+  svgText,
+  originals,
+  recipe,
+  outlineUnits,
+  cache,
+  onPick,
+}: {
+  app: AppClassProperties;
+  element: InitializedExcalidrawImageElement;
+  svgText: string;
+  originals: readonly string[];
+  recipe: IconRecipe;
+  outlineUnits: number;
+  cache: Map<string, string>;
+  onPick: (colors: Record<string, string>) => void;
+}) => {
+  const variations = useMemo(
+    () =>
+      iconVariations(
+        originals,
+        getBoardColors(app.scene.getNonDeletedElements(), element.id),
+      ),
+    // the board's colors are read once each time the card opens
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const previewOf = (colors: Record<string, string>) => {
+    const key = `${JSON.stringify(recipe.outline)}|${JSON.stringify(colors)}`;
+    let url = cache.get(key);
+    if (url === undefined) {
+      if (cache.size >= MAX_VARIATION_PREVIEWS) {
+        cache.clear();
+      }
+      try {
+        url = svgToDataURL(
+          paintIcon(
+            svgText,
+            { colors, outline: recipe.outline },
+            outlineUnits,
+          ),
+        );
+      } catch {
+        url = "";
+      }
+      cache.set(key, url);
+    }
+    return url;
+  };
+  const noParts = !recipe.parts || !Object.keys(recipe.parts).length;
+  return (
+    <div
+      className="icon-color-editor__variations"
+      role="group"
+      aria-label="Variations"
+    >
+      {variations.map(({ name, tip, colors }) => {
+        const active =
+          !!colors && noParts && sameColors(colors, recipe.colors);
+        const url = colors ? previewOf(colors) : "";
+        return (
+          <Tooltip key={name} label={tip} long>
+            <button
+              type="button"
+              className={clsx("icon-color-editor__variation", {
+                "is-active": active,
+              })}
+              aria-label={name}
+              aria-pressed={active}
+              aria-disabled={!colors}
+              onClick={() => colors && onPick(colors)}
+            >
+              <span className="icon-color-editor__variation-preview">
+                {url ? <img src={url} alt="" draggable={false} /> : null}
+              </span>
+              <span className="icon-color-editor__variation-name">{name}</span>
+            </button>
+          </Tooltip>
+        );
+      })}
+    </div>
+  );
+};
+
 /**
  * The numbers' angles around the picture, each kept near its part, but never closer than `minGap` (the badge's
  * width at this radius) — also across the wrap from the last to the first. YAZ-4348 demo: an 11-color fire put
@@ -186,6 +342,8 @@ export const IconColorEditor = ({
   // YAZ-4348 demo: one palette at a time — the outline card closes when a color's card opens, and back
   const [outlineOpen, setOutlineOpen] = useState(false);
   const previews = useRef(new Map<string, HTMLImageElement>());
+  // the Variations previews: painted once each while the mode is open
+  const variationPreviews = useRef(new Map<string, string>());
   const lastCount = useRef(0);
 
   // the pick map: once when the mode opens, again when the outline changes the picture's box
@@ -457,6 +615,39 @@ export const IconColorEditor = ({
           <span className="contextual-properties-toolbar__label">
             Edit colors
           </span>
+          {/* YAZ-4348 demo: the prebuilt looks, with live previews, behind one chip */}
+          <ToolbarPopover
+            label="Variations"
+            title="Variations: the icon in other colors, or in the colors already on this board"
+            className="text-toolbar-value icon-color-editor__variations-trigger"
+            icon={
+              <span className="icon-color-editor__variations-chip">
+                <i />
+                Variations
+              </span>
+            }
+          >
+            <IconColorVariations
+              app={app}
+              element={element}
+              svgText={svgText}
+              originals={info.colors}
+              recipe={recipe}
+              outlineUnits={outlineUnits}
+              cache={variationPreviews.current}
+              onPick={(colors) => {
+                setTint(0);
+                setPalette(null);
+                apply({
+                  colors,
+                  replaceColors: true,
+                  parts: Object.fromEntries(
+                    Object.keys(recipe.parts ?? {}).map((key) => [key, null]),
+                  ),
+                });
+              }}
+            />
+          </ToolbarPopover>
           {/* YAZ-4348 demo: the change scope and the tint sit behind ⋯, so the strip stays short */}
           <ToolbarPopover
             label="More options"

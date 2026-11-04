@@ -3,7 +3,7 @@ import {
   MAX_CUSTOM_COLORS_USED_IN_CANVAS,
 } from "@excalidraw/common";
 
-import { getIconRecipe } from "@excalidraw/element";
+import { getIconRecipe, normalizeIconColor } from "@excalidraw/element";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
@@ -191,6 +191,45 @@ export const getMostUsedCustomColors = (
     .sort((a, b) => b[1] - a[1])
     .map((c) => c[0])
     .slice(0, MAX_CUSTOM_COLORS_USED_IN_CANVAS);
+};
+
+/** The most board colors "Match my board" reads. */
+const MAX_BOARD_COLORS = 32;
+
+/**
+ * YAZ-4348 demo ("Match my board"): every color on the board, most used first,
+ * as `#rrggbb`: each element's stroke and background, and each icon's painted
+ * colors (its recipe). The element `exceptId` (the icon being edited) does not
+ * count. Black, white and greys are in the list; the caller keeps what it needs.
+ */
+export const getBoardColors = (
+  elements: readonly ExcalidrawElement[],
+  exceptId?: string,
+) => {
+  const counts = new Map<string, number>();
+  const count = (value: string | null | undefined) => {
+    const color = normalizeIconColor(value);
+    if (color && color !== "currentColor") {
+      counts.set(color, (counts.get(color) ?? 0) + 1);
+    }
+  };
+  for (const element of elements) {
+    if (element.isDeleted || element.id === exceptId) {
+      continue;
+    }
+    count(element.strokeColor);
+    count(element.backgroundColor);
+    const recipe = getIconRecipe(element);
+    if (recipe) {
+      Object.values(recipe.colors).forEach(count);
+      Object.values(recipe.parts ?? {}).forEach(count);
+      count(recipe.outline?.color);
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([color]) => color)
+    .slice(0, MAX_BOARD_COLORS);
 };
 
 export type ActiveColorPickerSectionAtomType =

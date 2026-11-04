@@ -16,6 +16,9 @@ import {
   pickColors,
   pickIconTarget,
   readIconPickMap,
+  greyIconColors,
+  hueIconColors,
+  matchBoardIconColors,
   tintIconColors,
 } from "../src/iconParts";
 
@@ -157,6 +160,69 @@ describe("the tint", () => {
     );
     expect(colors).toEqual({ "#ff0000": "#00ff00" });
     expect(tintIconColors(["#ff0000"], 0)).toEqual({});
+  });
+});
+
+// YAZ-4348 demo: the prebuilt variations of Edit colors
+describe("the variations", () => {
+  const hsl = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16);
+    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(
+      (v) => v / 255,
+    );
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const d = max - min;
+    const h = !d
+      ? 0
+      : max === r
+      ? ((g - b) / d + (g < b ? 6 : 0)) * 60
+      : max === g
+      ? ((b - r) / d + 2) * 60
+      : ((r - g) / d + 4) * 60;
+    return { h, l: (max + min) / 2 };
+  };
+  const GREYS = ["#000000", "#ffffff", "#868e96", "currentColor"];
+
+  it("Blue puts the most used color on blue, keeps each lightness and keeps black, white and greys", () => {
+    const colors = hueIconColors(["#e03131", "#ffd43b", ...GREYS], 215);
+    expect(Object.keys(colors)).toEqual(["#e03131", "#ffd43b"]);
+    expect(hsl(colors["#e03131"]).h).toBeCloseTo(215, -1);
+    // yellow sits 50° from red: it keeps a quarter of that
+    expect(hsl(colors["#ffd43b"]).h).toBeCloseTo(215 + 12, -1);
+    for (const original of ["#e03131", "#ffd43b"]) {
+      expect(hsl(colors[original]).l).toBeCloseTo(hsl(original).l, 2);
+    }
+    expect(hueIconColors(GREYS, 215)).toEqual({});
+  });
+
+  it("Grey takes the color out and keeps the lightness", () => {
+    const colors = greyIconColors(["#e03131", ...GREYS]);
+    expect(Object.keys(colors)).toEqual(["#e03131"]);
+    const grey = colors["#e03131"];
+    expect(grey.slice(1, 3)).toBe(grey.slice(3, 5));
+    expect(grey.slice(3, 5)).toBe(grey.slice(5, 7));
+    expect(hsl(grey).l).toBeCloseTo(hsl("#e03131").l, 2);
+  });
+
+  it("Match my board takes the nearest board color by hue; none with a board of greys", () => {
+    expect(matchBoardIconColors(["#e03131"], ["#1e1e1e", "#ffffff"])).toBe(
+      null,
+    );
+    expect(
+      matchBoardIconColors(
+        ["#e03131", "#1971c2", ...GREYS],
+        ["#1e1e1e", "#E8590C", "#1c7ed6"],
+      ),
+    ).toEqual({ "#e03131": "#e8590c", "#1971c2": "#1c7ed6" });
+  });
+
+  it("Match my board keeps the light-to-dark order when two colors go to one board color", () => {
+    const colors = matchBoardIconColors(["#1864ab", "#a5d8ff"], ["#1c7ed6"])!;
+    // the closer in lightness gets the board color exactly
+    expect(colors["#1864ab"]).toBe("#1c7ed6");
+    expect(hsl(colors["#a5d8ff"]).l).toBeGreaterThan(hsl("#1c7ed6").l);
+    expect(hsl(colors["#a5d8ff"]).h).toBeCloseTo(hsl("#1c7ed6").h, -1);
   });
 });
 

@@ -7,8 +7,11 @@ import {
   MIME_TYPES,
 } from "@excalidraw/common";
 
+import { getIconInfo, hueIconColors } from "@excalidraw/element";
+
 import { Excalidraw } from "../index";
 
+import { API } from "./helpers/api";
 import { imageOf, openIcons, svgOf } from "./helpers/icons";
 import { mockHTMLImageElement } from "./helpers/mocks";
 import { Keyboard, Pointer } from "./helpers/ui";
@@ -80,9 +83,12 @@ const pick = (color: string) =>
   );
 const recipe = () => imageOf("icon").customData?.yaseenIcon;
 
-const open = async () => {
+const open = async (
+  extra: Parameters<typeof openIcons>[1] = [],
+) => {
   // the icon is 48 × 48 at (0, 0): part 0 is its top left, part 2 its bottom half
-  await openIcons([{ id: "icon", svg: RECTS }]);
+  const [icon] = await openIcons([{ id: "icon", svg: RECTS }], extra);
+  API.setSelectedElements([icon as any]);
   fireEvent.click(screen.getByRole("button", { name: "Edit colors" }));
   await waitFor(() => expect(editor()).not.toBeNull());
   // the numbers: red (two parts, the biggest), then blue
@@ -103,6 +109,8 @@ describe("Edit colors (YAZ-4354 1D)", () => {
     await open();
     expect(h.state.colorEditingElementId).toBe("icon");
     expect(document.querySelector(".contextual-properties-toolbar")).toBeNull();
+    // the scope sits behind ⋯ (YAZ-4348 demo)
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
     expect(
       screen.getByRole("radio", { name: "Every part with this color" }),
     ).toHaveAttribute("aria-checked", "true");
@@ -144,7 +152,8 @@ describe("Edit colors (YAZ-4354 1D)", () => {
     // the mode stayed open, and the icon stays selected
     expect(h.state.colorEditingElementId).toBe("icon");
 
-    // the switch does the same without Option
+    // the switch (behind ⋯) does the same without Option
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
     fireEvent.click(
       screen.getByRole("radio", { name: "Just the part I click" }),
     );
@@ -205,5 +214,105 @@ describe("Edit colors (YAZ-4354 1D)", () => {
     await waitFor(() => expect(recipe()).toBeUndefined());
     // the original's own bytes (on a real board, its own file id too)
     expect(svgOf("icon")).toBe(RECTS);
+  });
+  // YAZ-4348 demo: "prebuilt color variations to edit colors including match my board"
+  describe("Variations", () => {
+    const variation = (name: string) =>
+      document.querySelector<HTMLButtonElement>(
+        `.icon-color-editor__variations [aria-label="${name}"]`,
+      )!;
+
+    it("shows seven live previews; a click applies one as one undo step; Match my board is off on a board with no colors", async () => {
+      await open();
+      fireEvent.click(screen.getByRole("button", { name: "Variations" }));
+      const names = [
+        ...document.querySelectorAll(".icon-color-editor__variation"),
+      ].map((button) => button.getAttribute("aria-label"));
+      expect(names).toEqual([
+        "Original",
+        "Blue",
+        "Green",
+        "Purple",
+        "Pink",
+        "Grey",
+        "Match my board",
+      ]);
+      for (const name of names.slice(0, 6)) {
+        expect(
+          variation(name!).querySelector("img")?.getAttribute("src"),
+        ).toMatch(/^data:image\/svg\+xml/);
+      }
+      expect(variation("Original")).toHaveAttribute("aria-pressed", "true");
+      expect(variation("Match my board")).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      fireEvent.click(variation("Match my board"));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(recipe()).toBeUndefined();
+
+      fireEvent.click(variation("Blue"));
+      const blue = hueIconColors(
+        getIconInfo(h.app.files["icon-file" as any]).colors,
+        215,
+      );
+      await waitFor(() => expect(recipe()?.colors).toEqual(blue));
+      expect(Object.keys(blue).sort()).toEqual(["#1971c2", "#e03131"]);
+      expect(h.history.undoStack.length).toBe(1);
+      await waitFor(() =>
+        expect(variation("Blue")).toHaveAttribute("aria-pressed", "true"),
+      );
+
+      Keyboard.undo();
+      expect(recipe()).toBeUndefined();
+    });
+
+    it("a variation clears the part colors, so the board shows what its preview shows", async () => {
+      await open();
+      Keyboard.withModifierKeys({ alt: true }, () => mouse.clickAt(24, 40));
+      await waitFor(() =>
+        expect(document.querySelector(".icon-color-editor__palette")).not.toBe(
+          null,
+        ),
+      );
+      pick(DEFAULT_ELEMENT_STROKE_PICKS[2]);
+      await waitFor(() => expect(recipe()?.parts?.["2"]).toBeDefined());
+      fireEvent.click(screen.getByRole("button", { name: "Variations" }));
+      fireEvent.click(variation("Grey"));
+      await waitFor(() => expect(recipe()?.parts ?? {}).toEqual({}));
+      expect(Object.keys(recipe()!.colors).sort()).toEqual([
+        "#1971c2",
+        "#e03131",
+      ]);
+    });
+
+    it("Match my board uses the colors already on the board", async () => {
+      await open([
+        API.createElement({
+          type: "rectangle",
+          id: "orange",
+          x: 200,
+          strokeColor: "#e8590c",
+        }) as any,
+        API.createElement({
+          type: "rectangle",
+          id: "blue",
+          x: 300,
+          backgroundColor: "#1c7ed6",
+        }) as any,
+      ]);
+      fireEvent.click(screen.getByRole("button", { name: "Variations" }));
+      expect(variation("Match my board")).toHaveAttribute(
+        "aria-disabled",
+        "false",
+      );
+      fireEvent.click(variation("Match my board"));
+      await waitFor(() =>
+        expect(recipe()?.colors).toEqual({
+          "#e03131": "#e8590c",
+          "#1971c2": "#1c7ed6",
+        }),
+      );
+    });
   });
 });

@@ -220,6 +220,124 @@ export const tintIconColors = (
 };
 
 // -----------------------------------------------------------------------------
+// the variations (YAZ-4348 demo: "prebuilt color variations to edit colors
+// including match my board"). Each is a normal `colors` map, as the tint.
+// -----------------------------------------------------------------------------
+
+/** The hue of each prebuilt variation, in degrees. */
+export const ICON_VARIATION_HUES = {
+  blue: 215,
+  green: 140,
+  purple: 270,
+  pink: 330,
+} as const;
+
+/** How much of the colors' own hue spread a variation keeps (0: one hue). */
+const VARIATION_SPREAD = 0.25;
+/** A variation's colors are at least this saturated, so a dull icon turns too. */
+const VARIATION_MIN_SATURATION = 0.4;
+
+/** The signed hue step from `b` to `a`, in (-180, 180]. */
+const hueGap = (a: number, b: number) => ((((a - b) % 360) + 540) % 360) - 180;
+
+type HslColor = { color: string; h: number; s: number; l: number };
+
+/** The colored ones (not black, white or grey) of some hex colors, with their HSL. */
+const coloredOf = (colors: readonly string[]): HslColor[] =>
+  colors
+    .filter((color) => /^#[0-9a-f]{6}$/i.test(color))
+    .map((color) => ({ color, ...toHsl(color) }))
+    .filter(({ s }) => s >= TINT_MIN_SATURATION);
+
+/**
+ * One hue for the whole icon (Blue, Green, Purple, Pink): the most used color
+ * lands on `hue`, the others keep a quarter of their distance from it. Each
+ * color's lightness stays; black, white and greys stay.
+ */
+export const hueIconColors = (
+  originals: readonly string[],
+  hue: number,
+): Record<string, string> => {
+  const colored = coloredOf(originals);
+  const colors: Record<string, string> = {};
+  if (!colored.length) {
+    return colors;
+  }
+  // `originals` is most used first (`getIconInfo`)
+  const main = colored[0].h;
+  for (const { color, h, s, l } of colored) {
+    const turned = (hue + hueGap(h, main) * VARIATION_SPREAD + 360) % 360;
+    const next = fromHsl(turned, Math.max(s, VARIATION_MIN_SATURATION), l);
+    if (next !== color) {
+      colors[color] = next;
+    }
+  }
+  return colors;
+};
+
+/** Grey: every colored color loses its color and keeps its lightness. */
+export const greyIconColors = (
+  originals: readonly string[],
+): Record<string, string> =>
+  Object.fromEntries(
+    coloredOf(originals).map(({ color, l }) => [color, fromHsl(0, 0, l)]),
+  );
+
+/**
+ * "Match my board": each colored original goes to the nearest of the board's
+ * colored colors (by hue first, then lightness). When several go to one board
+ * color, the closest in lightness gets it exactly and the others keep their
+ * lightness step from it, so their light-to-dark order stays. Black, white and
+ * greys stay. Null when the board has no colored color.
+ */
+export const matchBoardIconColors = (
+  originals: readonly string[],
+  boardColors: readonly string[],
+): Record<string, string> | null => {
+  const board = coloredOf([
+    ...new Set(boardColors.map((color) => color.toLowerCase())),
+  ]);
+  if (!board.length) {
+    return null;
+  }
+  const groups = new Map<HslColor, HslColor[]>();
+  for (const original of coloredOf(originals)) {
+    let best = board[0];
+    let bestScore = Infinity;
+    for (const candidate of board) {
+      const score =
+        Math.abs(hueGap(original.h, candidate.h)) / 180 +
+        0.5 * Math.abs(original.l - candidate.l);
+      if (score < bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+    groups.set(best, [...(groups.get(best) ?? []), original]);
+  }
+  const colors: Record<string, string> = {};
+  for (const [target, members] of groups) {
+    const anchor = members.reduce((a, b) =>
+      Math.abs(b.l - target.l) < Math.abs(a.l - target.l) ? b : a,
+    );
+    for (const member of members) {
+      const next =
+        member === anchor
+          ? target.color
+          : fromHsl(
+              target.h,
+              target.s,
+              Math.min(0.96, Math.max(0.04, target.l + member.l - anchor.l)),
+            );
+      if (next !== member.color) {
+        colors[member.color] = next;
+      }
+    }
+  }
+  return colors;
+};
+
+// -----------------------------------------------------------------------------
 // the pick map
 // -----------------------------------------------------------------------------
 
