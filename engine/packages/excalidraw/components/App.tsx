@@ -179,6 +179,8 @@ import {
   getInitializedImageElements,
   GifPlayer,
   normalizeSVG,
+  paintIcon,
+  readIconInfo,
   updateImageCache as _updateImageCache,
   getBoundTextElement,
   getContainerCenter,
@@ -313,6 +315,7 @@ import type {
 } from "@excalidraw/element/types";
 
 import type { ArrowEndpoint } from "@excalidraw/element";
+import type { IconRecipe } from "@excalidraw/element";
 
 import type { Mutable, ValueOf } from "@excalidraw/common/utility-types";
 
@@ -7088,7 +7091,12 @@ class App extends React.Component<AppProps, AppState> {
                   )
                 : null;
             if (wrapAt !== null) {
-              next = { ...next, x: dimensions!.x, autoResize: false, width: wrapAt };
+              next = {
+                ...next,
+                x: dimensions!.x,
+                autoResize: false,
+                width: wrapAt,
+              };
               dimensions = refreshTextDimensions(
                 next,
                 container,
@@ -13918,12 +13926,27 @@ class App extends React.Component<AppProps, AppState> {
 
     this.cursor.set("wait");
 
+    // YAZ-4352 (extra 5): a new one-color icon arrives in the current stroke
+    // color, as a shape does, unless that color is the default black
+    let iconRecipe: IconRecipe | null = null;
     if (mimeType === MIME_TYPES.svg) {
       try {
-        imageFile = SVGStringToFile(
-          normalizeSVG(await imageFile.text()),
-          imageFile.name,
-        );
+        let svg = normalizeSVG(await imageFile.text());
+        const strokeColor = this.state.currentItemStrokeColor;
+        if (
+          strokeColor !== COLOR_PALETTE.black &&
+          !isTransparent(strokeColor)
+        ) {
+          const info = readIconInfo(svg);
+          if (info.kind === "one") {
+            iconRecipe = {
+              colors: { [info.colors[0]]: strokeColor },
+              outline: null,
+            };
+            svg = normalizeSVG(paintIcon(svg, iconRecipe));
+          }
+        }
+        imageFile = SVGStringToFile(svg, imageFile.name);
       } catch (error: any) {
         console.warn(error);
         throw new Error(t("errors.svgImageInsertError"));
@@ -14065,6 +14088,14 @@ class App extends React.Component<AppProps, AppState> {
             });
           }
 
+          if (iconRecipe) {
+            Object.assign(initializedImageElement, {
+              customData: {
+                ...initializedImageElement.customData,
+                yaseenIcon: iconRecipe,
+              },
+            });
+          }
           resolve(initializedImageElement);
         } catch (error: any) {
           console.error(error);

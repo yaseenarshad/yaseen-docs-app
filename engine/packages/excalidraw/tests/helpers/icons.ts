@@ -6,7 +6,11 @@ import {
   svgToDataURL,
 } from "@excalidraw/element";
 
-import type { ExcalidrawImageElement, FileId } from "@excalidraw/element/types";
+import type {
+  ExcalidrawImageElement,
+  FileId,
+  NonDeletedExcalidrawElement,
+} from "@excalidraw/element/types";
 
 import { act, waitFor } from "../test-utils";
 
@@ -34,7 +38,7 @@ export const svgFile = (id: string, svg: string): BinaryFileData => ({
 /** Icons on the board, selected, their pictures loaded (no undo step). */
 export const openIcons = async (
   icons: { id: string; svg?: string; x?: number }[],
-  extra: ExcalidrawImageElement[] = [],
+  extra: NonDeletedExcalidrawElement[] = [],
 ) => {
   const elements = icons.map(({ id, x = 0 }) =>
     API.createElement({
@@ -55,7 +59,10 @@ export const openIcons = async (
       icons.map(({ id, svg = ONE_COLOR_SVG }) => svgFile(`${id}-file`, svg)),
     ),
   );
-  API.setSelectedElements([...elements, ...extra]);
+  API.setSelectedElements([
+    ...(elements as NonDeletedExcalidrawElement[]),
+    ...extra,
+  ]);
   await waitFor(() =>
     expect(elements.every((e) => h.app.imageCache.has(e.fileId!))).toBe(true),
   );

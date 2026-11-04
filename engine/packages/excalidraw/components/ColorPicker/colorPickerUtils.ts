@@ -3,6 +3,8 @@ import {
   MAX_CUSTOM_COLORS_USED_IN_CANVAS,
 } from "@excalidraw/common";
 
+import { getIconRecipe } from "@excalidraw/element";
+
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import type { ColorPickerColor, ColorPaletteCustom } from "@excalidraw/common";
@@ -153,37 +155,37 @@ export const isCustomColor = ({
   return !paletteValues.includes(color);
 };
 
+/**
+ * The custom colors on the board, most used first. YAZ-4352 (extra 6): an icon's
+ * painted colors count in the stroke row too (its recipe: colors, parts, outline),
+ * so an icon palette starts with the colors on this board.
+ */
 export const getMostUsedCustomColors = (
   elements: readonly ExcalidrawElement[],
   type: "elementBackground" | "elementStroke",
   palette: ColorPaletteCustom,
 ) => {
-  const elementColorTypeMap = {
-    elementBackground: "backgroundColor",
-    elementStroke: "strokeColor",
-  };
-
-  const colors = elements.filter((element) => {
-    if (element.isDeleted) {
-      return false;
-    }
-
-    const color =
-      element[elementColorTypeMap[type] as "backgroundColor" | "strokeColor"];
-
-    return isCustomColor({ color, palette });
-  });
+  const property =
+    type === "elementBackground" ? "backgroundColor" : "strokeColor";
 
   const colorCountMap = new Map<string, number>();
-  colors.forEach((element) => {
-    const color =
-      element[elementColorTypeMap[type] as "backgroundColor" | "strokeColor"];
-    if (colorCountMap.has(color)) {
-      colorCountMap.set(color, colorCountMap.get(color)! + 1);
-    } else {
-      colorCountMap.set(color, 1);
+  const count = (color: string | null | undefined) => {
+    if (color && isCustomColor({ color, palette })) {
+      colorCountMap.set(color, (colorCountMap.get(color) ?? 0) + 1);
     }
-  });
+  };
+  for (const element of elements) {
+    if (element.isDeleted) {
+      continue;
+    }
+    count(element[property]);
+    const recipe = type === "elementStroke" ? getIconRecipe(element) : null;
+    if (recipe) {
+      Object.values(recipe.colors).forEach(count);
+      Object.values(recipe.parts ?? {}).forEach(count);
+      count(recipe.outline?.color);
+    }
+  }
 
   return [...colorCountMap.entries()]
     .sort((a, b) => b[1] - a[1])

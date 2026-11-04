@@ -158,7 +158,8 @@ export type ActionName =
   | "togglePolygon"
   | "changeSmartShape"
   | "changeIconColors"
-  | "changeIconOutline";
+  | "changeIconOutline"
+  | "colorEditor";
 
 export type PanelComponentProps = {
   elements: readonly ExcalidrawElement[];

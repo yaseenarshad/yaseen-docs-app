@@ -22,7 +22,12 @@ import {
   paintIconElement,
   svgOfDataURL,
 } from "@excalidraw/element";
-import { MIME_TYPES } from "@excalidraw/common";
+import {
+  DEFAULT_ELEMENT_STROKE_COLOR_PALETTE,
+  DEFAULT_ELEMENT_STROKE_PICKS,
+  MIME_TYPES,
+} from "@excalidraw/common";
+import { useEffect, useRef, useState } from "react";
 
 import type { CaptureUpdateActionType, IconRecipe } from "@excalidraw/element";
 import type {
@@ -37,9 +42,17 @@ import {
   SVGStringToFile,
 } from "../data/blob";
 
+import { ColorPicker } from "../components/ColorPicker/ColorPicker";
+import { ToolbarPopover } from "../components/ToolbarPopover";
+
 import { register } from "./register";
 
-import type { AppClassProperties, AppState, BinaryFiles } from "../types";
+import type {
+  AppClassProperties,
+  AppState,
+  BinaryFiles,
+  UIAppState,
+} from "../types";
 import type { ActionResult } from "./types";
 
 /** The longest wait for a new picture to load before the swap. */
@@ -299,7 +312,38 @@ export const actionChangeIconColors = register<IconColorsChange>({
       captureOf(value.preview),
     );
   },
+  // YAZ-4352 1B: the top bar's "Color" for one-color icons; several selected: one control colors them all
+  PanelComponent: ({ elements, appState, updateData, app }) => {
+    const [open, setOpen] = useState(false);
+    const icons = getIconTargets(elements, appState, app, "one");
+    const colors = new Set(icons.map((icon) => shownIconColor(app, icon)));
+    return (
+      <ColorPicker
+        topPicks={DEFAULT_ELEMENT_STROKE_PICKS}
+        palette={DEFAULT_ELEMENT_STROKE_COLOR_PALETTE}
+        type="elementStroke"
+        label="Icon color"
+        color={colors.size === 1 ? [...colors][0] : null}
+        onChange={(color) => updateData({ color })}
+        elements={elements}
+        appState={appState}
+        updateData={updateData}
+        popupOpen={open}
+        onPopupOpenChange={setOpen}
+      />
+    );
+  },
 });
+
+/** The color a one-color icon shows now (`currentColor` draws black in a picture). */
+export const shownIconColor = (
+  app: Pick<AppClassProperties, "files">,
+  icon: IconTarget,
+) => {
+  const [only] = getIconInfo(app.files[icon.fileId]).colors;
+  const color = getIconRecipe(icon)?.colors[only] ?? only;
+  return color === "currentColor" ? "#000000" : color;
+};
 
 export type IconOutlineChange = {
   /** the outline color; with no outline yet, it starts one at the default width */
@@ -356,4 +400,209 @@ export const actionChangeIconOutline = register<IconOutlineChange>({
       captureOf(value.preview),
     );
   },
+  // YAZ-4352 1B: the top bar's "Outline": its color, then its thickness, as the text size: a number with a slider menu
+  PanelComponent: ({ elements, appState, updateData, app }) => (
+    <IconOutlineControls
+      elements={elements}
+      appState={appState}
+      app={app}
+      onChange={(change) => updateData(change)}
+    />
+  ),
 });
+
+/** A drag paints at most this often (extra 27). */
+export const ICON_PREVIEW_INTERVAL_MS = 100;
+const OUTLINE_SLIDER_MAX = 32;
+const OUTLINE_MAX = 256;
+
+export const IconOutlineControls = ({
+  elements,
+  appState,
+  app,
+  onChange,
+  elementIds,
+}: {
+  elements: readonly ExcalidrawElement[];
+  appState: UIAppState;
+  app: AppClassProperties;
+  onChange: (change: IconOutlineChange) => void;
+  elementIds?: readonly string[];
+}) => {
+  const [open, setOpen] = useState(false);
+  const icons = getIconTargets(elements, appState, app, undefined, elementIds);
+  const colors = new Set(
+    icons.map((icon) => getIconRecipe(icon)?.outline?.color ?? null),
+  );
+  const widths = new Set(
+    icons.map((icon) =>
+      getIconRecipe(icon)?.outline
+        ? iconOutlineWidth(icon, getIconInfo(app.files[icon.fileId]))
+        : 0,
+    ),
+  );
+  const width = widths.size === 1 ? [...widths][0] : null;
+  const label = width === null ? "–" : `${Math.round(width * 10) / 10}`;
+  return (
+    <>
+      <ColorPicker
+        topPicks={DEFAULT_ELEMENT_STROKE_PICKS}
+        palette={DEFAULT_ELEMENT_STROKE_COLOR_PALETTE}
+        type="elementStroke"
+        label="Outline color"
+        color={colors.size === 1 ? [...colors][0] : null}
+        onChange={(color) => onChange({ color, elementIds })}
+        elements={elements}
+        appState={appState}
+        updateData={() => {}}
+        popupOpen={open}
+        onPopupOpenChange={setOpen}
+      />
+      <ToolbarPopover
+        label={`Outline thickness ${label}`}
+        icon={<span aria-hidden="true">{label}</span>}
+        className="text-toolbar-value"
+      >
+        <fieldset className="context-fieldset font-size-popover">
+          <IconSizeSlider
+            label="Outline thickness"
+            value={width}
+            max={OUTLINE_SLIDER_MAX}
+            onPreview={(next) =>
+              onChange({ width: next, preview: true, elementIds })
+            }
+            onChange={(next) => onChange({ width: next, elementIds })}
+          />
+          <ExactSizeInput
+            label="Outline thickness"
+            value={width}
+            max={OUTLINE_MAX}
+            onChange={(next) => onChange({ width: next, elementIds })}
+          />
+        </fieldset>
+      </ToolbarPopover>
+    </>
+  );
+};
+
+/**
+ * A size slider, as the text size's (YAZ-3943 demo 2): a drag shows each size
+ * (`onPreview`, at most every 100 ms, no undo step); the release commits the
+ * last one (`onChange`), so a drag is one undo step.
+ */
+export const IconSizeSlider = ({
+  label,
+  value,
+  min = 0,
+  max,
+  step = 1,
+  onPreview,
+  onChange,
+  className = "font-size-slider",
+}: {
+  label: string;
+  value: number | null;
+  min?: number;
+  max: number;
+  step?: number;
+  onPreview: (value: number) => void;
+  onChange: (value: number) => void;
+  className?: string;
+}) => {
+  const clamp = (next: number | null) =>
+    Math.min(max, Math.max(min, Math.round(next ?? min)));
+  const [draft, setDraft] = useState(clamp(value));
+  const moved = useRef<number | null>(null);
+  const lastPreview = useRef(0);
+  useEffect(() => {
+    if (moved.current === null) {
+      setDraft(clamp(value));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  const commit = () => {
+    if (moved.current !== null) {
+      const next = moved.current;
+      moved.current = null;
+      onChange(next);
+    }
+  };
+  return (
+    <input
+      type="range"
+      className={className}
+      aria-label={label}
+      min={min}
+      max={max}
+      step={step}
+      value={draft}
+      onChange={(event) => {
+        const next = Number(event.target.value);
+        setDraft(next);
+        moved.current = next;
+        const now = Date.now();
+        if (now - lastPreview.current >= ICON_PREVIEW_INTERVAL_MS) {
+          lastPreview.current = now;
+          onPreview(next);
+        }
+      }}
+      onPointerUp={commit}
+      onKeyUp={commit}
+      onBlur={commit}
+      onKeyDown={(event) => event.stopPropagation()}
+    />
+  );
+};
+
+/** The exact number, as the text size's field: Enter or leaving it commits. */
+const ExactSizeInput = ({
+  label,
+  value,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number | null;
+  max: number;
+  onChange: (value: number) => void;
+}) => {
+  const shown = value === null ? "" : `${Math.round(value * 10) / 10}`;
+  const [text, setText] = useState(shown);
+  useEffect(() => setText(shown), [shown]);
+  const commit = () => {
+    const parsed = Number(text);
+    if (text.trim() === "" || !Number.isFinite(parsed)) {
+      setText(shown);
+      return;
+    }
+    const next = Math.min(max, Math.max(0, Math.round(parsed * 10) / 10));
+    setText(`${next}`);
+    if (next !== value) {
+      onChange(next);
+    }
+  };
+  return (
+    <div
+      className="font-size-custom"
+      data-prevent-outside-click
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <input
+        type="number"
+        aria-label={label}
+        min={0}
+        max={max}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") {
+            commit();
+          }
+        }}
+      />
+      <span>px</span>
+    </div>
+  );
+};
