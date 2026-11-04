@@ -25,7 +25,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { MEDIA_LIBRARY_FILE, type MediaFavoritesRequest, type MediaLibraryFile, type MediaUsedRequest, type StoredMediaItem } from '@shared/types'
-import { MEDIA_FILE_RE, addFavorite, addWord, mediaFileName, mergeMediaLibraries, recordUse, removeFavorite, renameMovedComponents, sanitizeMediaLibrary, type ComponentMoves } from '@shared/mediaLibrary'
+import { MEDIA_FILE_RE, addFavorite, addWord, mediaFileName, mergeMediaLibraries, recordUse, removeFavorite, removeWord, renameMovedComponents, sanitizeMediaLibrary, type ComponentMoves } from '@shared/mediaLibrary'
 import { atomicWrite, createChain, fsCall, readOrQuarantine } from '../fs/fsUtils'
 import { makeLibraryDir } from './folder'
 import { createWatchedFolder } from '../watchedFolder'
@@ -125,7 +125,9 @@ export function createMediaStore(initialFolder: string, deps: MediaStoreDeps): M
     },
     used(req) {
       if (req.op === 'list') return chain.wait(read)
-      return mutate((l) => (req.op === 'record' ? recordUse(l, req.item, req.query, now()) : addWord(l, req.item, req.word, now())))
+      return mutate((l) =>
+        req.op === 'record' ? recordUse(l, req.item, req.query, now()) : req.op === 'remove-word' ? removeWord(l, req.itemKey, req.word, now()) : addWord(l, req.item, req.word, now()),
+      )
     },
     mergeFrom(from, moves = {}) {
       return chain.run(async () => {

@@ -81,6 +81,8 @@ describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
     expect(await used({ op: 'record', item: { itemKey: 'x' }, query: '' })).toEqual(bad('BAD_REQUEST'))
     expect(await used({ op: 'record', item: item() })).toEqual(bad('BAD_REQUEST'))
     expect(await used({ op: 'add-word', item: item(), word: 7 })).toEqual(bad('BAD_REQUEST'))
+    expect(await used({ op: 'remove-word', itemKey: '', word: 'oak' })).toEqual(bad('BAD_REQUEST'))
+    expect(await used({ op: 'remove-word', itemKey: 'iconify:noto:x', word: 7 })).toEqual(bad('BAD_REQUEST'))
     expect(await used({ op: 'forget' })).toEqual(bad('BAD_REQUEST'))
     expect(await favorites({ op: 'list' })).toEqual(ok([]))
   })

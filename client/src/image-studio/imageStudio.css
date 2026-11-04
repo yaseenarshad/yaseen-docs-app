@@ -58,6 +58,26 @@
   padding: 1px 7px;
 }
 
+.image-studio__word-chip {
+  align-items: center;
+  display: inline-flex;
+  gap: 2px;
+}
+
+/* The × beside an added word: quiet until pointed at. The name's chip has none: its name always finds it. */
+.image-studio__inline .image-studio__word-remove {
+  background: transparent;
+  border-radius: 999px;
+  color: var(--text-secondary-color);
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.image-studio__inline .image-studio__word-remove:hover {
+  color: var(--color-danger, #e03131);
+}
+
 .image-studio__word-chip.is-name {
   background: var(--button-gray-1);
   color: var(--text-secondary-color);

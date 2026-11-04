@@ -182,6 +182,17 @@ export function addWord(lib: MediaLibraryFile, item: MediaItem, word: string, no
   return { ...lib, used: lib.used.map((u) => (u === before ? { ...u, words: withWord(u.words, clean), updatedAt: after(now, u.updatedAt) } : u)) }
 }
 
+/**
+ * `word` off the item's words (YAZ-4348 demo round 2: the × on a word chip in Search words…). The row stays, with its
+ * count; a newer `updatedAt`, so the other Mac's merge keeps the removal. A word it does not have changes nothing.
+ */
+export function removeWord(lib: MediaLibraryFile, itemKey: string, word: string, now: number): MediaLibraryFile {
+  const clean = normalizeWord(word)
+  const before = lib.used.find((u) => u.itemKey === itemKey)
+  if (clean === null || before === undefined || !before.words.includes(clean)) return lib
+  return { ...lib, used: lib.used.map((u) => (u === before ? { ...u, words: u.words.filter((w) => w !== clean), updatedAt: after(now, u.updatedAt) } : u)) }
+}
+
 // ---------- Two Macs, one library (YAZ-4364, round 3 decision 2) ----------
 
 /** `media-<12 a-z 0-9>.json` (the `macId` shape): one Mac's file. A copy (`media-x 2.json`, `.sync-conflict-…`) never counts. */

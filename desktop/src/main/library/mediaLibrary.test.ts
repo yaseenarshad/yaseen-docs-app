@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { AUTO_FAVORITE_USES, MAX_ITEM_WORDS, MAX_MEDIA_REMOVED, MAX_MEDIA_USED, RECENT_LIMIT, type MediaItem, type MediaLibraryFile, type StoredMediaItem, type UsedMediaItem } from '@shared/types'
-import { EMPTY_MEDIA_LIBRARY, addFavorite, addWord, mergeMediaLibraries, normalizeMediaItem, normalizeStoredMediaItem, normalizeWord, recordRecent, recordUse, removeFavorite, sanitizeMediaLibrary, stamp } from '@shared/mediaLibrary'
+import { EMPTY_MEDIA_LIBRARY, addFavorite, addWord, mergeMediaLibraries, normalizeMediaItem, normalizeStoredMediaItem, normalizeWord, recordRecent, recordUse, removeFavorite, removeWord, sanitizeMediaLibrary, stamp } from '@shared/mediaLibrary'
 
 /** The minimum a provider result has to carry: every required field of `mediaItemValidator`. */
 const item = (over: Partial<MediaItem> = {}): MediaItem => ({ itemKey: 'pixabay:1', provider: 'pixabay', providerId: '1', kind: 'photo', title: 'A tree', ...over })
@@ -369,6 +369,22 @@ describe('addWord — "Add a word…" (YAZ-4157 D5)', () => {
     const state = lib({ used: [used({ words: ['oak'] })] })
     expect(addWord(state, item(), '  ', 1)).toBe(state)
     expect(addWord(state, item(), 'OAK', 1)).toBe(state)
+  })
+})
+
+describe('removeWord — the × on a word chip (YAZ-4348 demo round 2)', () => {
+  it('drops the word, keeps the row and its count, and is stamped again, so the other Mac keeps the removal', () => {
+    const rows = [used({ count: 2, words: ['oak', 'tree'] })]
+    const out = removeWord(lib({ used: rows }), item().itemKey, ' Oak ', 99)
+    expect(out.used[0]).toEqual({ ...rows[0], words: ['tree'], updatedAt: 1001 })
+    expect(mergeMediaLibraries([lib({ used: rows }), out]).used[0].words).toEqual(['tree'])
+  })
+
+  it('a word it does not have, an unknown item or an empty word changes nothing', () => {
+    const state = lib({ used: [used({ words: ['oak'] })] })
+    expect(removeWord(state, item().itemKey, 'elm', 1)).toBe(state)
+    expect(removeWord(state, 'iconify:none:x', 'oak', 1)).toBe(state)
+    expect(removeWord(state, item().itemKey, '  ', 1)).toBe(state)
   })
 })
 

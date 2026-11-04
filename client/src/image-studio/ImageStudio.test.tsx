@@ -685,7 +685,7 @@ describe('the star and the right-click menu (D5, D10, demo 6B)', () => {
     await type(field(host), 'money')
     await rightClick(host, 'money bag')
     await click(byText(host, 'Search words…'))
-    const chips = () => [...host.querySelectorAll('.image-studio__word-chip')].map((c) => c.textContent)
+    const chips = () => [...host.querySelectorAll('.image-studio__word-chip')].map((c) => c.firstChild?.textContent)
     expect(chips()).toEqual(['money bag', 'cash'])
     expect((byLabel(host, 'A word for money bag') as HTMLInputElement).value).toBe('')
     // "money" is in its name already: no offer
@@ -697,6 +697,18 @@ describe('the star and the right-click menu (D5, D10, demo 6B)', () => {
     expect((byLabel(host, 'A word for money bag') as HTMLInputElement).value).toBe('')
     await click(byText(host, '+ mon'))
     expect(media.used).toHaveBeenCalledWith({ op: 'add-word', item: expect.objectContaining({ itemKey: 'iconify:noto:money-bag' }), word: 'mon' })
+  })
+
+  it('the × on a word chip removes that word; the name has no × (YAZ-4348 demo round 2)', async () => {
+    library = libraryOf({ favorites: [stored()], used: [usedRow({ words: ['cash', 'loot'] })] })
+    media.used.mockImplementation(async (req) => (req.op === 'remove-word' ? libraryOf({ ...library, used: [usedRow({ words: ['loot'] })] }) : library))
+    const { host } = await mount()
+    await rightClick(host, 'money bag')
+    await click(byText(host, 'Search words…'))
+    expect(host.querySelector('.image-studio__word-chip.is-name button')).toBeNull()
+    await click(byLabel(host, 'Remove the word “cash”'))
+    expect(media.used).toHaveBeenCalledWith({ op: 'remove-word', itemKey: 'iconify:noto:money-bag', word: 'cash' })
+    expect([...host.querySelectorAll('.image-studio__word-chip')].map((c) => c.firstChild?.textContent)).toEqual(['money bag', 'loot'])
   })
 
   it('a media item`s menu has no Rename or Delete; a component`s has both', async () => {

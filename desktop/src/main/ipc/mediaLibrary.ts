@@ -56,8 +56,10 @@ function requireUsedRequest(v: unknown): MediaUsedRequest {
       return { op: 'record', item: requireItem(r.item), query: r.query }
     case 'add-word':
       return { op: 'add-word', item: requireItem(r.item), word: str(r.word, 'word') }
+    case 'remove-word':
+      return { op: 'remove-word', itemKey: str(r.itemKey, 'itemKey'), word: str(r.word, 'word') }
     default:
-      throw new BridgeFailure('BAD_REQUEST', "'op' must be list, record or add-word")
+      throw new BridgeFailure('BAD_REQUEST', "'op' must be list, record, add-word or remove-word")
   }
 }
 

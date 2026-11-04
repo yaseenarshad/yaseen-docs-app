@@ -716,6 +716,15 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     }
   }
 
+  /** The × on a word chip (YAZ-4348 demo round 2): the word stops finding the item; the row stays open to show it. */
+  const removeWord = async (item: StudioItem, word: string) => {
+    try {
+      setLibrary(await api.media.used({ op: 'remove-word', itemKey: item.itemKey, word }))
+    } catch (cause) {
+      set({ error: getErrorMessage(cause, 'Could not remove the word') })
+    }
+  }
+
   /**
    * The search text, offered as a one-click word (YAZ-4157 D5), unless the icon is already found by it. YAZ-4348 demo
    * round 2: the field itself starts empty; "man" typed in it for the icon Mana read as a change of its words.
@@ -1015,6 +1024,9 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
               {words.map((w) => (
                 <span className="image-studio__word-chip" key={w}>
                   {w}
+                  <button type="button" className="image-studio__word-remove" aria-label={`Remove the word “${w}”`} title="Remove this word" onClick={() => void removeWord(item, w)}>
+                    ×
+                  </button>
                 </span>
               ))}
             </span>

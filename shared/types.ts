@@ -1519,7 +1519,12 @@ export type MediaFavoritesRequest = { op: 'list' } | { op: 'add'; item: MediaIte
  * `media:used` (YAZ-4157 D1) — every verb answers the whole library: `record` is one add (the MRU, the count, the
  * word `query`, and the favorite at the third), `add-word` is "Add a word…" (the item, so a row can start at 0).
  */
-export type MediaUsedRequest = { op: 'list' } | { op: 'record'; item: MediaItem; query: string } | { op: 'add-word'; item: MediaItem; word: string }
+export type MediaUsedRequest =
+  | { op: 'list' }
+  | { op: 'record'; item: MediaItem; query: string }
+  | { op: 'add-word'; item: MediaItem; word: string }
+  // YAZ-4348 demo round 2: the × on a word chip in Search words…
+  | { op: 'remove-word'; itemKey: string; word: string }
 
 /**
  * `media:favorite-copies` (YAZ-4363, YAZ-4370): Settings › Images' line about the favorites' own copies. Every favorite
