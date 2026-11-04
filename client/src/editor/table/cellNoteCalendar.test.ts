@@ -7,7 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
-import { undo } from '@milkdown/kit/prose/history'
+import { redo, undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { getMarkdownForSave, setMarkdown } from '../createCrepe'
@@ -358,13 +358,19 @@ describe('the card\'s place and height (YAZ-4410, YAZ-4411)', () => {
     for (const note of view.dom.querySelectorAll<HTMLElement>('.cell-note')) {
       Object.defineProperty(note, 'offsetParent', { value: host })
       Object.defineProperty(note, 'offsetWidth', { value: 340 })
-      Object.defineProperty(note, 'offsetHeight', { value: 50 })
-      Object.defineProperty(note, 'clientHeight', { value: 50 })
+      Object.defineProperty(note, 'offsetHeight', { get: () => set() || 50 })
+      Object.defineProperty(note, 'clientHeight', { get: () => set() || 50 })
       Object.defineProperty(note, 'scrollHeight', { get: () => Math.max(note.classList.contains(CELL_NOTE_CALENDAR_CLASS) ? 780 : 60, set()) })
     }
-    for (const row of [1, 2, 3]) (view.nodeDOM(cellPos(view, row, 1)) as HTMLElement).getBoundingClientRect = () => new DOMRect(300, cellTop + (row - 1) * 30, 200, 30)
+    let top = cellTop
+    for (const row of [1, 2, 3]) (view.nodeDOM(cellPos(view, row, 1)) as HTMLElement).getBoundingClientRect = () => new DOMRect(300, top + (row - 1) * 30, 200, 30)
+    /** The page scrolled: the first row's cell now at `next`. */
+    const moveCell = (next: number) => {
+      top = next
+      document.dispatchEvent(new Event('scroll'))
+    }
     const vars = () => ({ top: host.style.getPropertyValue('--cell-note-card-top'), cap: host.style.getPropertyValue('--cell-note-card-max-height'), height: host.style.getPropertyValue('--cell-note-card-height') })
-    return { ...mounted, vars }
+    return { ...mounted, vars, moveCell }
   }
   const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
@@ -397,5 +403,72 @@ describe('the card\'s place and height (YAZ-4410, YAZ-4411)', () => {
     await frame()
     expect(vars().height).toBe('60px')
   })
+
+  it('the page scrolls: All notes moves with its cell, out of the window both ways, as a plain card does (DM7)', async () => {
+    const { root, view, vars, moveCell } = await stubbed(30)
+    openCellNote(view, cellPos(view, 1, 1))
+    click(root.querySelector('.cell-note-card__all-toggle')!)
+    await frame()
+    expect(vars().top).toBe('64px')
+    moveCell(-300)
+    expect(vars().top).toBe('-266px')
+    moveCell(900)
+    expect(vars().top).toBe('934px')
+    // Back in the window, low: it moves up to keep its least height in view (YAZ-4410).
+    moveCell(700)
+    expect(vars()).toMatchObject({ top: `${window.innerHeight - 360}px`, cap: '360px' })
+  })
+
+  it('a drag of the bottom edge resizes All notes; the plain cards after it keep their own height (YAZ-4416)', async () => {
+    const { root, view, vars } = await stubbed(30)
+    openCellNote(view, cellPos(view, 1, 1))
+    click(root.querySelector('.cell-note-card__all-toggle')!)
+    await frame()
+    expect(vars().height).toBe('780px')
+    const grip = root.querySelector<HTMLElement>('.cell-note-card-grips [data-grip="s"]')!
+    grip.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 0, clientY: 0, bubbles: true, cancelable: true }))
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 0, clientY: -150 }))
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 0, clientY: -150 }))
+    await frame()
+    expect(vars().height).toBe('630px')
+    click(root.querySelector('.cell-note-card__all-toggle')!)
+    await frame()
+    await frame()
+    expect(vars().height).toBe('60px')
+    openCellNote(view, cellPos(view, 3, 1))
+    await frame()
+    expect(vars().height).toBe('60px')
+  })
 })
 
+describe('⌘Z and ⌘⇧Z keep the caret in the card (YAZ-4415)', () => {
+  it('⌘Z after a click made another block live: the block that the undo changed goes live, the caret in the card', async () => {
+    const { root, view } = await openAll()
+    view.dispatch(view.state.tr.insertText('Q'))
+    click(line(root, 'email'))
+    expect(openCellNoteLabel(view.state)).toBe('cell-3')
+    undo(view.state, view.dispatch)
+    expect(openCellNoteLabel(view.state)).toBe('cell-1')
+    expect(card(root)!.contains(view.domAtPos(view.state.selection.head).node)).toBe(true)
+  })
+
+  it('⌘⇧Z after the ⌘Z of an empty block\'s click: the caret in the card', async () => {
+    const { root, view } = await openAll()
+    click(empties(root)[0]!)
+    undo(view.state, view.dispatch)
+    redo(view.state, view.dispatch)
+    expect(card(root)!.contains(view.domAtPos(view.state.selection.head).node)).toBe(true)
+  })
+
+  it('a plain card: typing in one note, then another note\'s card, then ⌘Z: the card of the note the undo changed', async () => {
+    const { root, view } = await mount(DAY)
+    openCellNote(view, cellPos(view, 1, 1))
+    view.dispatch(view.state.tr.insertText('Q'))
+    openCellNote(view, cellPos(view, 3, 1))
+    expect(openCellNoteLabel(view.state)).toBe('cell-3')
+    undo(view.state, view.dispatch)
+    expect(openCellNoteLabel(view.state)).toBe('cell-1')
+    expect(cellNoteCardKey.getState(view.state)?.calendar).toBeNull()
+    expect(card(root)!.contains(view.domAtPos(view.state.selection.head).node)).toBe(true)
+  })
+})

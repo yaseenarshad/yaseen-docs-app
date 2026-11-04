@@ -865,6 +865,8 @@ interface CardMemory {
   height: number | null
   /** The content's height at the last placement: growth after a resize that cut the content off is counted from it. */
   lastContent: number | null
+  /** A calendar's "All notes" height from a resize, in layout px; null to fit its list. Apart from `height` (YAZ-4416). */
+  allHeight: number | null
   /** Pinned: a mousedown outside the card does not close it. One for the editor, across notes; starts as the setting says. */
   pinned: boolean
 }
@@ -1050,6 +1052,8 @@ const visibleBox = (scroller: HTMLElement | null): { left: number; top: number; 
 /** The smallest card a resize leaves, in px. */
 const MIN_WIDTH = 240
 const MIN_HEIGHT = 120
+/** prosemirror-history's meta on an undo or a redo (its `PluginKey('history')`). */
+const HISTORY_META = 'history$'
 /** The least height of a calendar's "All notes" card under its cell: room for its head and a few time blocks (YAZ-4410). */
 const CALENDAR_MIN_HEIGHT = 360
 
@@ -1077,7 +1081,7 @@ function cardView(view: EditorView) {
   let frameId = 0
   let listening = false
   // The card's spot, size and pin, kept per editor (`memories`): a rebuilt state (a reload from disk) keeps them.
-  const memory = memories.get(view) ?? { placed: null, width: null, height: null, lastContent: null, pinned: pinnedAtStart }
+  const memory = memories.get(view) ?? { placed: null, width: null, height: null, lastContent: null, allHeight: null, pinned: pinnedAtStart }
   memories.set(view, memory)
   let shownHeight = ''
   /** The height last written was a calendar's "All notes" (YAZ-4411): the next plain card is measured afresh. */
@@ -1154,9 +1158,11 @@ function cardView(view: EditorView) {
       setCap(maxBottom - top)
     } else if (calendar) {
       // A calendar's "All notes" under its cell (YAZ-4410): as tall as the area below its top, so the live block can
-      // scroll into the card; with less than `CALENDAR_MIN_HEIGHT` below the cell, it moves up to have that much.
-      top = Math.max(minTop, Math.min(m.spotTop, maxBottom - CALENDAR_MIN_HEIGHT))
-      setCap(maxBottom - top)
+      // scroll into the card. While its cell shows with less than `CALENDAR_MIN_HEIGHT` below it, it moves up to have
+      // that much; else it stands under its cell and scrolls away with it, as a plain card does (DM7).
+      const cellShows = m.spotTop - 4 > minTop && m.spotTop - 4 <= maxBottom
+      top = cellShows && m.spotTop > maxBottom - CALENDAR_MIN_HEIGHT ? Math.max(minTop, maxBottom - CALENDAR_MIN_HEIGHT) : m.spotTop
+      setCap(maxBottom - Math.max(top, minTop))
       left = inArea(m.spotLeft)
     } else {
       // Under its cell (change AQ of the demo): its spot in the page, so it scrolls with the page and leaves the view
@@ -1179,14 +1185,14 @@ function cardView(view: EditorView) {
   /**
    * The height only grows (round 3 of the demo): to fit content that grew past it; after a resize that cut content off,
    * by as much as the content grew. The content's height is the card's scroll height (its box when the content is
-   * shorter). Written only when it changes. A calendar's "All notes" fits its content and keeps no height: its long
-   * list must not make every later card tall (YAZ-4411).
+   * shorter). Written only when it changes. A calendar's "All notes" fits its content, or its own resized height
+   * (`allHeight`), and leaves `height` alone: its long list must not make every later card tall (YAZ-4411, YAZ-4416).
    */
   const grow = (note: HTMLElement, calendar: boolean) => {
     const content = note.scrollHeight + note.offsetHeight - note.clientHeight
     if (calendar) {
       calendarShown = true
-      const value = `${Math.ceil(content)}px`
+      const value = `${Math.ceil(memory.allHeight ?? content)}px`
       if (value === shownHeight) return
       shownHeight = value
       host.style.setProperty('--cell-note-card-height', value)
@@ -1274,10 +1280,11 @@ function cardView(view: EditorView) {
     const areaRight = (box.right - base.left) / scale
     const areaBottom = (box.bottom - base.top) / scale
     const span = (value: number, max: number, min: number) => Math.max(Math.min(min, max), Math.min(value, max))
+    const calendar = cellNoteCardKey.getState(view.state)?.calendar != null
     track(grip.cursor, (dx, dy) => {
       let { left, top } = from
       let w = memory.width
-      let h = memory.height
+      let h = calendar ? memory.allHeight : memory.height
       if (grip.x === 1) w = span(w0 + dx / scale, areaRight - from.left, MIN_WIDTH)
       if (grip.x === -1) {
         w = span(w0 - dx / scale, right0 - areaLeft, MIN_WIDTH)
@@ -1289,7 +1296,8 @@ function cardView(view: EditorView) {
         top = bottom0 - h
       }
       memory.width = w
-      memory.height = h
+      if (calendar) memory.allHeight = h
+      else memory.height = h
       applyWidth()
       placeHere(left, top)
       place()
@@ -1304,6 +1312,7 @@ function cardView(view: EditorView) {
       memory.width = null
       memory.height = null
       memory.lastContent = null
+      memory.allHeight = null
       applyWidth()
       place()
     },
@@ -1381,14 +1390,16 @@ export const cellNoteCard = $prose(
             return cardState(tr.doc, meta.label ?? card.label, meta.all, { onlyFilled: meta.onlyFilled ?? carry.onlyFilled, made: meta.made ?? carry.made, anchor })
           if (meta !== undefined) return cardState(tr.doc, meta)
           if (card.label === null) return card
+          // An undo or a redo puts the caret back where it was (YAZ-4409, YAZ-4415). In a cell note other than the open
+          // one, that note's card opens (in "All notes", its block goes live), so the next key goes where the caret shows.
+          if (tr.getMeta(HISTORY_META) !== undefined) {
+            const at = cellNoteAround(tr.selection.$head)
+            const label = at === null ? null : (tr.doc.nodeAt(at)!.attrs.label as string)
+            if (label !== null && label !== card.label) return cardState(tr.doc, label, card.all, carry)
+          }
           // A calendar's view moves its Now tag with the table's minute tick (YAZ-4276).
           if (!tr.docChanged) return card.calendar !== null && tr.getMeta(calendarKey) !== undefined ? cardState(tr.doc, card.label, card.all, carry) : card
-          if (touchesNotes(tr)) {
-            // A calendar view whose live note went (one ⌘Z took back the note an empty block made, A8): the note the undo
-            // put the caret back in goes live, so the view stays open on it (YAZ-4409).
-            const back = card.calendar !== null && notePosOf(tr.doc, card.label) === null ? cellNoteAround(tr.selection.$head) : null
-            return cardState(tr.doc, back === null ? card.label : (tr.doc.nodeAt(back)!.attrs.label as string), card.all, carry)
-          }
+          if (touchesNotes(tr)) return cardState(tr.doc, card.label, card.all, carry)
           const cell = card.cell === null ? null : tr.mapping.map(card.cell)
           // A calendar's view is built again when its table changes (a row, a time) or another note does (its lines);
           // typing in the live note only maps it.
