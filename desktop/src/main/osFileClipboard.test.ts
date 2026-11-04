@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { clipboard } from 'electron'
-import { FILENAMES_TYPE, readOsFiles, writeOsFiles } from './osFileClipboard'
+import { FILENAMES_TYPE, osFiles, readOsFiles, writeOsFiles } from './osFileClipboard'
 
 /** The stand-in pasteboard: one value per type, as `read` / `writeBuffer` see it. */
 const board = vi.hoisted(() => new Map<string, string>())
@@ -53,12 +53,30 @@ describe('osFileClipboard (YAZ-3265 D13)', () => {
     expect(readOsFiles()).toEqual([])
   })
 
-  it('off macOS both are no-ops: nothing is read or written', () => {
+  it('off macOS both are no-ops: nothing is read or written, and the app cannot know the system clipboard (YAZ-4372)', () => {
     onPlatform('linux')
-    writeOsFiles(['/a.md'])
+    expect(writeOsFiles(['/a.md'])).toBe(false)
     expect(readOsFiles()).toEqual([])
+    expect(osFiles()).toBeNull()
     expect(clipboard.writeBuffer).not.toHaveBeenCalled()
     expect(clipboard.read).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4372: a write answers whether the system clipboard holds the paths; a failed read is "unknown" (null), a clipboard with no files is an empty list', () => {
+    onPlatform('darwin')
+    expect(writeOsFiles(['/v/a.md'])).toBe(true)
+    expect(osFiles()).toEqual(['/v/a.md'])
+    vi.mocked(clipboard.writeBuffer).mockImplementationOnce(() => {
+      throw new Error('busy')
+    })
+    expect(writeOsFiles(['/v/b.md'])).toBe(false)
+    vi.mocked(clipboard.read).mockImplementationOnce(() => {
+      throw new Error('busy')
+    })
+    expect(osFiles()).toBeNull()
+    board.clear()
+    board.set('public.png', 'picture data')
+    expect(osFiles()).toEqual([])
   })
 
   it('with YASEEN_DOCS_FAKE_CLIPBOARD (the e2e harness) the system clipboard is never touched: an in-memory pasteboard stands in; YASEEN_DOCS_E2E alone reaches the real one', () => {

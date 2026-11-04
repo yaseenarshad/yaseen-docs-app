@@ -17,8 +17,11 @@ const VERBS: readonly (readonly [string, boolean, FileClipboardVerb])[] = [
   ['backspace', false, 'delete'],
 ]
 
-/** The pages that keep their own undo (audit 22) and their own ⌘⌫ (YAZ-3272 D20): a note, a drawing (Excalidraw), a diagram (draw.io). */
-const OWN_UNDO = `${NOTE_PAGE}, .editor--drawing, .editor--diagram`
+/** The pages that keep their own copy, cut and paste (YAZ-4372): a drawing (Excalidraw) and a diagram (draw.io). A note keeps its own rules (D6, YAZ-3140). */
+const OWN_CLIPBOARD = '.editor--drawing, .editor--diagram'
+
+/** The pages that keep their own undo (audit 22) and their own ⌘⌫ (YAZ-3272 D20): a note, a drawing, a diagram. */
+const OWN_UNDO = `${NOTE_PAGE}, ${OWN_CLIPBOARD}`
 
 /**
  * Renderer ownership for the sidebar's file clipboard chords — ⌘C / ⌘X / ⌘V (D6 amended,
@@ -36,6 +39,13 @@ const OWN_UNDO = `${NOTE_PAGE}, .editor--drawing, .editor--diagram`
  *
  * ⌘⌫ deletes the sidebar selection (YAZ-3272 D20) on the same boundary, and every page that keeps
  * its own ⌘Z keeps its own ⌘⌫ too: in a note it deletes to the start of the line (S69).
+ *
+ * A board and a diagram keep ⌘C / ⌘X / ⌘V too (YAZ-4372), as they keep ⌘Z: the engine copies, cuts and pastes
+ * its own elements and the system clipboard's picture or text. Its canvas is no field and no contenteditable,
+ * so before this the window took the key, and its `preventDefault` stopped the `paste` event the board waits
+ * for. The sidebar's file clipboard runs only when the focus is outside every board and diagram. A note page
+ * keeps today's rules: its editor is a contenteditable, and `pageHoldsKeys` covers its other text. A paste whose
+ * system clipboard no longer holds the copied files pastes no file anywhere: main's `clipNow` answers null (YAZ-4372).
  */
 export function fileClipboardVerb(event: KeyboardEvent): FileClipboardVerb | null {
   // A page holds the keys (YAZ-3140): with the reader's selection in a note page, ⌘C copies its text.
@@ -43,7 +53,9 @@ export function fileClipboardVerb(event: KeyboardEvent): FileClipboardVerb | nul
   for (const [key, shift, verb] of VERBS) {
     if (!ownsWindowChord(event, { key, shift })) continue
     // Each page keeps its own ⌘Z and ⌘⇧Z (audit 22), also one whose history is empty and lets the key pass; and its own ⌘⌫ (YAZ-3272 D20).
-    if (verb !== 'copy' && verb !== 'cut' && verb !== 'paste' && event.target instanceof Element && event.target.closest(OWN_UNDO) !== null) return null
+    // A board and a diagram keep their own ⌘C, ⌘X and ⌘V too (YAZ-4372): the board pastes the system clipboard's picture.
+    const clipboardKey = verb === 'copy' || verb === 'cut' || verb === 'paste'
+    if (event.target instanceof Element && event.target.closest(clipboardKey ? OWN_CLIPBOARD : OWN_UNDO) !== null) return null
     return verb
   }
   return null

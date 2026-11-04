@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow, clipboard, ipcMain } from 'electron'
 import { CONTRACT, type Envelope } from '@shared/ipc'
 import { makeFirstMac } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
@@ -194,13 +194,72 @@ describe('copy and paste with Finder (YAZ-3265 D13, D14)', () => {
     expect(await paste(path.join(vault, 'Plans'))).toEqual({ ok: true, value: { pasted: [{ from: pdf, to: path.join(vault, 'Plans', 'report.pdf'), kind: 'file' }], failed: [] } })
   })
 
-  it("S49: text copied after the app's Copy holds no files: the app's own clip pastes, as before", async () => {
+  it("S49 (YAZ-4372): text copied after the app's Copy is the newer: the app's clip is stale, so nothing pastes", async () => {
     await layout()
     const pdf = path.join(vault, 'report.pdf')
     await clip('copy', pdf)
     textCopied()
-    expect(await clipState()).toEqual({ ok: true, value: { count: 1, op: 'copy', paths: [pdf] } })
-    expect(await paste(path.join(vault, 'Plans'))).toMatchObject({ ok: true, value: { pasted: [{ from: pdf }] } })
+    expect(await clipState()).toEqual({ ok: true, value: null })
+    // A window that still shows the old Copy pastes nothing (YAZ-3266's CONFLICT), and nothing lands.
+    expect(await pasteAs(path.join(vault, 'Plans'), { op: 'copy', paths: [pdf] })).toMatchObject({ ok: false, error: { code: 'CONFLICT' } })
+    expect(await readdir(path.join(vault, 'Plans'))).not.toContain('report.pdf')
+  })
+
+  it('YAZ-4372: a picture copied as picture data (a screenshot, Copy Image) after the app\u2019s Copy or Cut: nothing pastes; the app\u2019s clip stays in main, and a new Copy pastes again', async () => {
+    await layout()
+    const w = fakeWindow()
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+    const pdf = path.join(vault, 'report.pdf')
+    for (const op of ['copy', 'cut'] as const) {
+      await clip(op, pdf)
+      vi.mocked(w.webContents.send).mockClear()
+      board.clear()
+      board.set('public.png', '\u0089PNG') // no NSFilenamesPboardType: the picture is data, not a file
+      expect(await clipState()).toEqual({ ok: true, value: null })
+      expect(await pasteAs(path.join(vault, 'Plans'), { op, paths: [pdf] })).toMatchObject({ ok: false, error: { code: 'CONFLICT' } })
+      // A read pushes nothing, and main keeps its clip: only the system clipboard says it is stale.
+      expect(w.webContents.send).not.toHaveBeenCalled()
+      expect(fileClip.get()).toEqual({ op, paths: [pdf] })
+    }
+    expect(await readdir(vault)).toContain('report.pdf')
+    // The app's Copy again is the newer: it pastes.
+    await clip('copy', pdf)
+    expect(await paste(path.join(vault, 'Plans'))).toMatchObject({ ok: true, value: { pasted: [{ from: pdf, to: path.join(vault, 'Plans', 'report.pdf') }] } })
+  })
+
+  it('YAZ-4372: when the app cannot know the system clipboard (a failed write, a failed read, off macOS), its own clip stands, as before', async () => {
+    await layout()
+    const pdf = path.join(vault, 'report.pdf')
+    const own = { ok: true, value: { count: 1, op: 'copy', paths: [pdf] } }
+    // A failed write: the system clipboard never held the clip, so it cannot go stale there.
+    vi.mocked(clipboard.writeBuffer).mockImplementationOnce(() => {
+      throw new Error('pasteboard busy')
+    })
+    textCopied()
+    await clip('copy', pdf)
+    expect(await clipState()).toEqual(own)
+    // A failed read, after a write that held.
+    await clip('copy', pdf)
+    textCopied()
+    vi.mocked(clipboard.read).mockImplementationOnce(() => {
+      throw new Error('pasteboard busy')
+    })
+    expect(await clipState()).toEqual(own)
+    // Off macOS the app keeps its own clipboard only.
+    const platform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+    try {
+      expect(await clipState()).toEqual(own)
+    } finally {
+      Object.defineProperty(process, 'platform', { value: platform })
+    }
+  })
+
+  it('YAZ-4372: a Finder Copy of hidden items only is newer too: the app\u2019s clip does not paste', async () => {
+    await layout()
+    await clip('copy', path.join(vault, 'report.pdf'))
+    finderCopies(path.join(finder, '.DS_Store'))
+    expect(await clipState()).toEqual({ ok: true, value: null })
   })
 
   it("a Cut the app pasted is spent: the system clipboard is emptied of the moved files, so Finder's Paste finds no stale paths, and nothing is left to offer", async () => {
@@ -246,9 +305,11 @@ describe('YAZ-3266 (checker 2C1): the window is not told when the clipboard chan
     expect(res).toEqual({ ok: false, error: { code: 'CONFLICT', message: 'The clipboard changed. Paste again.' } })
     expect(await readdir(vault)).toContain('report.pdf')
     expect(await readdir(path.join(vault, 'Plans'))).not.toContain('Note.md')
-    // The window reads again at paste time: main answers the app's cut, and the paste of THAT clip moves it.
-    expect(await clipState()).toEqual({ ok: true, value: { count: 1, op: 'cut', paths: [pdf] } })
-    expect(await pasteAs(path.join(vault, 'Plans'), { op: 'cut', paths: [pdf] })).toMatchObject({ ok: true, value: { pasted: [{ from: pdf, to: path.join(vault, 'Plans', 'report.pdf') }] } })
+    // The window reads again at paste time. The text is the newest copy, so the app's cut is stale too (YAZ-4372):
+    // main answers null, and a paste of that cut moves nothing.
+    expect(await clipState()).toEqual({ ok: true, value: null })
+    expect(await pasteAs(path.join(vault, 'Plans'), { op: 'cut', paths: [pdf] })).toMatchObject({ ok: false, error: { code: 'CONFLICT' } })
+    expect(await readdir(vault)).toContain('report.pdf')
   })
 
   it('a paste with no `expect`, or a bad one, is refused: a paste names the clip it is for', async () => {
