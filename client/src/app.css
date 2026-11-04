@@ -544,6 +544,11 @@ button {
 .milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] {
   margin-left: -2px;
 }
+/* Every lit button gets the highlights' ring (YAZ-4348 demo round 2, Yasin: "i like this box … add that for the other
+   ones also"): T on a plain line, B on bold text, a list button on its list. The ▾ keeps its pressed background. */
+.milkdown .milkdown-toolbar .toolbar-item.active:not([data-toolbar-item='highlight-more']) {
+  box-shadow: inset 0 0 0 2px var(--crepe-color-primary);
+}
 
 /* The highlight ▾ menu (YAZ-4348 demo round 2, `editor/highlightMenu.ts`): on the body, fixed under the ▾, so the
    toolbar's `overflow: hidden` cannot cut it off. */
