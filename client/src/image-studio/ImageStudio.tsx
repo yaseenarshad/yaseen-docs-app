@@ -206,6 +206,8 @@ type MenuAt = { top: number; left?: number; right?: number }
  */
 type OpenTile = { key: string; mode: 'menu'; at: MenuAt } | { key: string; mode: 'word' | 'rename' | 'confirm' | 'variants' } | null
 const slotOf = (where: string, item: StudioItem) => `${where}|${item.itemKey}`
+/** Where the focus goes after a favorite change: the tile's own button, else the one that took its place, else the field. */
+type FocusPlan = { slot: string; section: Element | null; index: number; fromMenu: boolean }
 
 /** Where an item comes from, in words (demo 6H): the tile's tooltip and the first line of its menu. */
 export function sourceLabel(item: StudioItem): string {
@@ -220,6 +222,8 @@ export const googleImagesUrl = (query: string) => `https://www.google.com/search
 
 /** About the menu's drawn width: a menu that would pass the list's right edge opens to the left instead. */
 const MENU_WIDTH = 150
+/** The room a menu keeps from the list's bottom edge when it moves up to fit (YAZ-302, checked for YAZ-4365). */
+const MENU_EDGE_GAP = 4
 
 /** The quiet line under the field (D9): one sentence, and the item Undo takes back out of the favorites. */
 type Line = { text: string; undo?: StudioItem } | null
@@ -534,14 +538,21 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     }
   }
 
-  const toggleFavorite = async (item: StudioItem) => {
+  /**
+   * `slot` is the tile the change came from; `fromMenu` when its menu asked. A tile that leaves its section (a favorite
+   * taken out of Favorites) would take the focus with it to the page (YAZ-302, checked for YAZ-4365): `refocusAfter`
+   * says where it goes instead, once the list has changed.
+   */
+  const toggleFavorite = async (item: StudioItem, slot?: string, fromMenu = false) => {
     if (busyFavoriteKey !== null) return
     setBusyFavoriteKey(item.itemKey)
     set({ error: null })
     setLine(null)
+    if (slot !== undefined) refocusAfter.current = focusPlan(slot, fromMenu)
     try {
       set({ favorites: favoriteKeys.has(item.itemKey) ? await api.media.favorites({ op: 'remove', itemKey: item.itemKey }) : await api.media.favorites({ op: 'add', item }) })
     } catch (cause) {
+      refocusAfter.current = null
       set({ error: getErrorMessage(cause, 'Could not change favorites') })
     } finally {
       setBusyFavoriteKey(null)
@@ -591,7 +602,40 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     setOpenTile(null)
     if (refocus && key !== undefined) listRef.current?.querySelector<HTMLElement>(`[data-slot="${CSS.escape(key)}"] .image-studio__add`)?.focus()
   }
+  const refocusAfter = useRef<FocusPlan | null>(null)
+  const focusPlan = (slot: string, fromMenu: boolean): FocusPlan => {
+    const card = listRef.current?.querySelector(`[data-slot="${CSS.escape(slot)}"]`) ?? null
+    const section = card?.closest('section') ?? null
+    return { slot, section, index: section === null || card === null ? 0 : [...section.querySelectorAll('[data-slot]')].indexOf(card), fromMenu }
+  }
+  useEffect(() => {
+    const plan = refocusAfter.current
+    if (plan === null) return
+    refocusAfter.current = null
+    const list = listRef.current
+    const own = list?.querySelector<HTMLElement>(`[data-slot="${CSS.escape(plan.slot)}"] .image-studio__add`)
+    // A tile that stays keeps the focus where it was; its menu, which is gone, hands it back to the tile.
+    if (own) {
+      if (plan.fromMenu) own.focus()
+      return
+    }
+    const adds = plan.section?.isConnected ? [...plan.section.querySelectorAll<HTMLElement>('[data-slot] .image-studio__add')] : []
+    ;(adds[plan.index] ?? adds[plan.index - 1] ?? fieldRef.current)?.focus()
+  }, [favorites])
+
   const menuKey = openTile?.mode === 'menu' ? openTile.key : null
+  // A menu near the bottom of the list moves up so all of it shows (YAZ-302, checked for YAZ-4365): the list scrolls,
+  // so a menu that ran past its bottom edge would be cut off. Never above the list's top.
+  useLayoutEffect(() => {
+    const menu = menuRef.current
+    const list = listRef.current
+    if (menuKey === null || menu === null || list === null) return
+    const m = menu.getBoundingClientRect()
+    const l = list.getBoundingClientRect()
+    const shift = Math.min(m.bottom - l.bottom + MENU_EDGE_GAP, m.top - l.top)
+    if (shift <= 0) return
+    setOpenTile((open) => (open?.mode === 'menu' && open.key === menuKey ? { ...open, at: { ...open.at, top: open.at.top - shift } } : open))
+  }, [menuKey])
   useEffect(() => {
     if (menuKey === null) return
     menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
@@ -657,7 +701,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           aria-label={favorited ? `Remove ${item.title} from favorites` : `Add ${item.title} to favorites`}
           aria-pressed={favorited}
           disabled={busyFavoriteKey !== null}
-          onClick={() => void toggleFavorite(item)}
+          onClick={() => void toggleFavorite(item, slot)}
         >
           {favorited ? '★' : '☆'}
         </button>
@@ -700,7 +744,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
               role="menuitem"
               onClick={() => {
                 setOpenTile(null)
-                void toggleFavorite(item)
+                void toggleFavorite(item, slot, true)
               }}
             >
               {favorited ? 'Remove from favorites' : 'Add to favorites'}

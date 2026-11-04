@@ -682,6 +682,59 @@ describe('the tile menu (D10, demo 6B)', () => {
   })
 })
 
+describe('two old favorites bugs, checked in today`s panel (YAZ-4365: YAZ-286, YAZ-302)', () => {
+  it('YAZ-286: the star of a Recent tile favorites the row as the library holds it; the board gets nothing', async () => {
+    library = libraryOf({ recent: [stored({ updatedAt: 7 })] })
+    const { host, canvas } = await mount()
+    await click(section(host, 'Recent')!.querySelector('[aria-label="Add money bag to favorites"]'))
+    // The row goes as it is, `updatedAt` too: main's validator drops it (`ipc/mediaLibrary.test.ts`).
+    expect(media.favorites).toHaveBeenCalledExactlyOnceWith({ op: 'add', item: expect.objectContaining({ itemKey: 'iconify:noto:money-bag', updatedAt: 7 }) })
+    expect(section(host, 'Recent')!.querySelector('[aria-label="Remove money bag from favorites"]')).not.toBeNull()
+    expect(tileNames(section(host, 'Favorites'))).toEqual(['money bag'])
+    expect(media.import).not.toHaveBeenCalled()
+    expect(canvas.insertImages).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-302: a tile menu opened near the bottom of the list moves up, so none of it is cut off', async () => {
+    library = libraryOf({ favorites: [stored()] })
+    const { host } = await mount()
+    // The list shows 0–400 px; the tile is at 300–380; the menu is 180 px tall and starts `top` below the tile's top.
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const box = (top: number, bottom: number, left = 0, right = 300) => ({ top, bottom, left, right, x: left, y: top, width: right - left, height: bottom - top, toJSON: () => ({}) })
+      if (this.classList.contains('image-studio__list')) return box(0, 400)
+      if (this.classList.contains('image-studio__card')) return box(300, 380, 0, 100)
+      if (this.classList.contains('image-studio__menu')) {
+        const top = 300 + parseFloat(this.style.top || '0')
+        return box(top, top + 180, 10, 160)
+      }
+      return box(0, 0, 0, 0)
+    })
+    await act(async () => {
+      byLabel(host, 'Add money bag')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 390 }))
+    })
+    await settle(2)
+    const menu = byLabel(host, 'Actions for money bag')!
+    const box = menu.getBoundingClientRect()
+    rect.mockRestore()
+    expect(box.bottom).toBeLessThanOrEqual(400)
+    expect(box.top).toBeGreaterThanOrEqual(0)
+  })
+
+  it('YAZ-302: "Remove from favorites" on a Favorites tile moves the focus to the tile that takes its place, not to the page', async () => {
+    const other = stored({ itemKey: 'iconify:noto:rocket', providerId: 'noto:rocket', title: 'rocket' })
+    library = libraryOf({ favorites: [stored(), other] })
+    const { host } = await mount()
+    await rightClick(host, 'money bag')
+    await click(byText(host, 'Remove from favorites'))
+    expect(tileNames(section(host, 'Favorites'))).toEqual(['rocket'])
+    expect(document.activeElement).toBe(section(host, 'Favorites')!.querySelector('[aria-label="Add rocket"]'))
+    // The star does the same.
+    ;(section(host, 'Favorites')!.querySelector('[aria-label="Remove rocket from favorites"]') as HTMLElement).focus()
+    await click(section(host, 'Favorites')!.querySelector('[aria-label="Remove rocket from favorites"]'))
+    expect(document.activeElement).toBe(field(host))
+  })
+})
+
 describe('components in the Add tab (D2, D6)', () => {
   it('Save selection shows only with a selection; it captures, asks a name, and saves the fragment and a PNG', async () => {
     const without = await mount()

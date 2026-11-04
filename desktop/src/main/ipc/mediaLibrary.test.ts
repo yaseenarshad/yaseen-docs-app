@@ -91,6 +91,15 @@ describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
     expect((res as { value: { updatedAt: number }[] }).value[0].updatedAt).not.toBe(1)
   })
 
+  it('YAZ-286 (checked for YAZ-4365): a Recent row as the Add panel holds it, `updatedAt` and all, favorites through media:favorites', async () => {
+    await used({ op: 'record', item: item(), query: 'tree' })
+    const row = ((await used({ op: 'list' })) as { value: { recent: Record<string, unknown>[] } }).value.recent[0]
+    expect(row.updatedAt).toEqual(expect.any(Number))
+    const answer = await favorites({ op: 'add', item: row })
+    expect(answer).toEqual(ok([{ ...item(), updatedAt: expect.any(Number) }]))
+    expect(await favorites({ op: 'list' })).toEqual(answer)
+  })
+
   it('broadcasts media:changed to EVERY window on an own write and on an external edit — the cross-vault promise', async () => {
     const a = fakeWindow()
     const b = fakeWindow()
