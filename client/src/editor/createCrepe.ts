@@ -30,9 +30,11 @@
  *  - Highlight mark (YAZ-1480, `marks/highlight.ts`): ONE mark with an optional `color`. Yellow
  *    (Mod-Shift-h / typing `==x==` / the first toolbar swatch) is Obsidian's `==text==` on disk —
  *    a vendored micromark tokenizer (gfm-strikethrough's attention run, `=` and exactly two) plus
- *    its stringify escape. Green/blue/pink are click-only and store inline HTML
- *    `<mark class="highlight-<name>">`, read back through the shared `marks/htmlPairs.ts` walk.
- *    Four toolbar swatches after Strikethrough; one click applies, re-clicking the lit one removes.
+ *    its stringify escape. The named colours are click-only and store inline HTML
+ *    `<mark class="highlight-<name>">`, read back through the shared `marks/htmlPairs.ts` walk; a
+ *    custom colour stores `<mark style="background-color: #rrggbb">` (YAZ-4348 demo round 2).
+ *    Four toolbar buttons after Strikethrough, each a bold "A" on its colour; one click applies,
+ *    re-clicking the lit one removes. Their ▾ opens more colours, Remove and Custom… (`highlightMenu.ts`).
  *  - Inline breaks (YAZ-1452, `inlineBreaks.ts`): inline `<br>` ↔ hardbreak, registered BEFORE
  *    Milkdown's `remarkPreserveEmptyLinePlugin` (which otherwise deletes it); table cells save
  *    a hardbreak back as `<br>`, and Shift-Enter inside a cell always inserts one. A `<br>` at a
@@ -273,7 +275,8 @@ import {
   restoreItemLine,
 } from './listItemRoundTrip'
 import { toggleUnderline, underline, underlineSchema } from './marks/underline'
-import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
+import { highlight, highlightColorsIn, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, QUICK_HIGHLIGHTS, type HighlightColor } from './marks/highlight'
+import { hasMenuColour, highlightMenu, MORE_KEY, toggleHighlightMenu } from './highlightMenu'
 import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
 import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
 import { arrangeToolbar, toolbarPrefs } from './toolbarPrefs'
@@ -455,7 +458,8 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  * the selection carries its colour, so a partly highlighted line still shows it; clicking a lit dot
  * removes that colour, an unlit one applies it — through the mark's single command, which
  * `Mod-Shift-h` (yellow) and the `==x==` typing rule share. Yellow is the Markdown `==…==` on
- * disk; a colour is `<mark class="highlight-<name>">`.
+ * disk; a colour is `<mark class="highlight-<name>">`. YAZ-4348 demo round 2: each swatch is a bold
+ * "A" on its colour, a lit one ringed (app.css), and a ▾ after them opens `highlightMenu.ts`.
  *
  * The Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what block is
  * this?" — the invisible `##` made visible — and whose click switches it, through the same
@@ -484,8 +488,8 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  */
 function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined): void {
   const formatting = builder.getGroup('formatting')
-  for (const color of [null, ...HIGHLIGHT_COLORS] as HighlightColor[]) {
-    const id = color === null ? 'highlight' : (`highlight-${color}` as const)
+  for (const color of [null, ...QUICK_HIGHLIGHTS] as HighlightColor[]) {
+    const id = color === null ? 'highlight' : (`highlight-${color}` as 'highlight-green' | 'highlight-blue' | 'highlight-pink')
     formatting.addItem(id, {
       icon: ownIcon(id),
       label: TOOLBAR_LABELS[id],
@@ -494,6 +498,13 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       onRun: (ctx) => ctx.get(commandsCtx).call(setHighlightCommand.key, color),
     })
   }
+  // YAZ-4348 demo round 2: the ▾ of more colours, Remove and Custom…; lit when the selection has one of them.
+  formatting.addItem(MORE_KEY, {
+    icon: ownIcon(MORE_KEY),
+    label: TOOLBAR_LABELS[MORE_KEY],
+    active: (ctx) => hasMenuColour(highlightColorsIn(viewState(ctx), highlightSchema.type(ctx))),
+    onRun: (ctx) => toggleHighlightMenu(ctx.get(editorViewCtx)),
+  })
   formatting.addItem('underline', {
     icon: ownIcon('underline'),
     label: TOOLBAR_LABELS.underline,
@@ -595,6 +606,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(slashMenu.inListWatch)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
+  // The toolbar's highlight ▾ menu and its custom pick's target (YAZ-4348 demo round 2).
+  crepe.editor.use(highlightMenu)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
   // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment.
