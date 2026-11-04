@@ -20,7 +20,7 @@ import { readImage } from '../fs/image'
 import { openInDefaultApp } from '../fs/openDefault'
 import { openInVsCode } from '../fs/openInVsCode'
 import { openLink } from '../fs/openLink'
-import { clearOsFiles, readOsFiles, writeOsFiles } from '../osFileClipboard'
+import { clearOsFiles, osFiles, writeOsFiles } from '../osFileClipboard'
 import { readPdf } from '../fs/pdf'
 import { renameBoardFolders } from '../fs/boardFolderRename'
 import { renameFile, repairRename } from '../fs/rename'
@@ -285,24 +285,29 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   handle(CONTRACT.file.clip, async (req: unknown) => {
     fileClip.set(req)
     const set = fileClip.get()
-    if (set !== null) {
-      writeOsFiles(set.paths)
-      wrote = set.paths
-    }
+    // Only a clip the system clipboard really holds can go stale there (YAZ-4372): off macOS or after a failed write, none.
+    if (set !== null) wrote = writeOsFiles(set.paths) ? set.paths : []
   })
   /**
    * The clip a Paste takes NOW (YAZ-3265 D13): the newer of the app's own and the system clipboard's.
-   * No files there (text copied since), or the files the app put there (they equal its clip, or a cut
-   * that pasted already) → the app's clip, as before this issue. Other files, copied in Finder since →
-   * those, as a COPY (D14). A hidden item is left out with no notice (the tree's rule, S20, S52).
+   * Other files, copied in Finder since → those, as a COPY (D14). A hidden item is left out with no notice
+   * (the tree's rule, S20, S52). The files the app put there (they equal its clip, or a cut that pasted
+   * already) → the app's clip.
+   *
+   * Anything else there (YAZ-4372): text, a picture copied as picture data (a screenshot, a browser's Copy
+   * Image), hidden items only. The user copied something newer, so the app's clip is stale and NOTHING
+   * pastes: `clip-state` answers null, as Finder forgets its copy. The app's clip stays in `fileClip`
+   * untouched (a read pushes nothing). When the app cannot know the system clipboard — off macOS, a failed
+   * read, or a failed write (`wrote` is empty) — its own clip stands, as before.
    */
   const clipNow = (): { clip: FileClip; finder: boolean } | null => {
     const own = fileClip.get()
-    const os = readOsFiles()
-      .map((p) => path.resolve(p))
-      .filter((p) => !isSkipped(path.basename(p)))
-    if (os.length === 0 || sameFiles(os, wrote) || (own !== null && sameFiles(os, own.paths))) return own === null ? null : { clip: own, finder: false }
-    return { clip: { op: 'copy', paths: [...new Set(os)] }, finder: true }
+    const read = osFiles()
+    const all = (read ?? []).map((p) => path.resolve(p))
+    const os = all.filter((p) => !isSkipped(path.basename(p)))
+    if (os.length > 0 && !sameFiles(os, wrote) && !(own !== null && sameFiles(os, own.paths))) return { clip: { op: 'copy', paths: [...new Set(os)] }, finder: true }
+    const held = read === null || wrote.length === 0 || sameFiles(all, wrote)
+    return own !== null && held ? { clip: own, finder: false } : null
   }
   // A window opened AFTER a clip missed the push: it reads the current state once on mount,
   // then `clip:changed` carries the rest (the same catch-up read `github.status` offers). It reads

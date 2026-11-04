@@ -14,6 +14,8 @@ import * as favorites from '../favorites'
 import * as focus from '../focus'
 import { registerFsIpc } from './fs'
 
+/** The system clipboard's stand-in: one value per type. */
+const pasteboard = vi.hoisted(() => new Map<string, string>())
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
@@ -21,8 +23,16 @@ vi.mock('electron', () => ({
   // trash call is stubbed and the assertions are about the store repair and the broadcast.
   // `remove.test.ts` owns the disk-level behaviour.
   shell: { trashItem: vi.fn(async () => undefined) },
-  // fs:clip also writes the system clipboard (YAZ-3265 D13): a stand-in that holds no files, never the real one.
-  clipboard: { read: vi.fn(() => ''), writeBuffer: vi.fn() },
+  // fs:clip also writes the system clipboard (YAZ-3265 D13): an in-memory stand-in, never the real one. It holds what
+  // the app wrote, as the Mac's does: a clip pastes only while the system clipboard still holds it (YAZ-4372).
+  clipboard: {
+    read: vi.fn((type: string) => pasteboard.get(type) ?? ''),
+    clear: vi.fn(() => pasteboard.clear()),
+    writeBuffer: vi.fn((type: string, buffer: Buffer) => {
+      pasteboard.clear()
+      pasteboard.set(type, buffer.toString('utf8'))
+    }),
+  },
 }))
 // The favorites.json repair (YAZ-1766 6A, D13) rides the rename/delete handlers; `favorites.test.ts`
 // owns its disk behaviour, so here it is a mock whose failure must never fail the file op.
