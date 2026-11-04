@@ -10,7 +10,7 @@ import type { MediaSearchResponse, StudioItem } from '@shared/types'
 import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from '@shared/iconPacks'
 import { BridgeFailure } from '../fs/fsUtils'
 import type { MediaCache } from './cache'
-import { decodeCursor } from './curation'
+import { decodeCursor, SEARCH_LIMIT } from './curation'
 import { createMediaProviders, PROVIDER_BUSY, type MediaProviders } from './providers'
 
 /** The disk cache's contract, in a Map — `cache.test.ts` owns the disk half. */
@@ -547,7 +547,7 @@ describe('past Iconify`s 128 (YAZ-4358): one pack at a time, biggest first', () 
     return { pages, cursor }
   }
 
-  it('after the general pass, pages come from one pack at a time, biggest first, with nothing twice and nothing lost', async () => {
+  it('after the general pass, pages come from one pack at a time, biggest first, with nothing twice and nothing skipped of what Iconify answers', async () => {
     const packs = { big: icons('big', 100), mid: icons('mid', 70), small: icons('small', 20), empty: [] }
     const fetchMock = iconifyWithPacks(packs)
     const { pages, cursor } = await everyPage(build(fetchMock as unknown as typeof globalThis.fetch, null))
@@ -594,6 +594,33 @@ describe('past Iconify`s 128 (YAZ-4358): one pack at a time, biggest first', () 
     expect(cursor).toBeNull()
     expect(pages.flat()).toHaveLength(27)
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('prefix=') || String(url).includes('/collections'))).toBe(false)
+  })
+
+  it('fills each page from the colour pass once the general pass has no more, with no request more (YAZ-4384)', async () => {
+    // The general pass has 10 icons, the colour pass 60: before, every page after the first held only the 6 colour icons.
+    const fetchMock = iconifyWithPacks({ big: icons('big', 10) }, icons('noto', 60))
+    const { pages, cursor } = await everyPage(build(fetchMock as unknown as typeof globalThis.fetch, null))
+    expect(cursor).toBeNull()
+    expect(pages.flat()).toHaveLength(70)
+    expect(pages.slice(0, -1).every((page) => page.length === SEARCH_LIMIT)).toBe(true)
+    // The first page still opens with at most 6 colour icons, then the general ones.
+    expect(pages[0].slice(0, 16).map(({ providerId }) => providerId.split(':')[0])).toEqual([...Array(6).fill('noto'), ...Array(10).fill('big')])
+    const asked = fetchMock.mock.calls.map(([url]) => String(url))
+    expect(asked).toHaveLength(new Set(asked).size)
+  })
+
+  it('fills each page in a one-pack search of a colour pack (the pack page, YAZ-4384)', async () => {
+    const fetchMock = iconifyWithPacks({}, icons('noto', 50))
+    const providers = build(fetchMock as unknown as typeof globalThis.fetch, null)
+    const pages: StudioItem[][] = []
+    let cursor: string | null = null
+    do {
+      const page: MediaSearchResponse = await providers.search({ q: 'arrow', source: 'iconify', cursor, filters: { ...DEFAULT_MEDIA_FILTERS, packs: ['noto'] } })
+      pages.push(page.items)
+      cursor = page.nextCursor
+    } while (cursor && pages.length < 20)
+    expect(pages.map((page) => page.length)).toEqual([18, 18, 14])
+    expect(new Set(pages.flat().map(({ providerId }) => providerId)).size).toBe(50)
   })
 
   it('sends no request at all before a search', async () => {

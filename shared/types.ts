@@ -3507,9 +3507,11 @@ export interface MemoryReport {
  * The updater's state (YAZ-2976), owned by main and pushed to every window. `downloading` and `ready`
  * name the new version; `manual` = a newer version exists but this copy cannot replace itself (Windows,
  * an unpackaged run, a read-only or translocated folder, an ad-hoc build — S13). The first launch after
- * the swap is `idle` (YAZ-3698): the user read the notes before the install.
+ * the swap is `idle` (YAZ-3698): the user read the notes before the install. `idle` with `failed` = the download
+ * of that version failed (S9: a wrong sha256, or a stalled download) and the next check tries again; What's New says
+ * so in one line (YAZ-4384).
  */
-export type UpdateState = { kind: 'idle' } | { kind: 'downloading' | 'ready' | 'manual'; version: string }
+export type UpdateState = { kind: 'idle'; failed?: string } | { kind: 'downloading' | 'ready' | 'manual'; version: string }
 
 /** One GitHub release for the "What's new" window (YAZ-2976 D5): `body` is the release's Markdown as GitHub holds it. */
 export interface ReleaseNote {

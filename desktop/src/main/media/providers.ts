@@ -285,7 +285,9 @@ export function createMediaProviders({ fetch, readPixabayKey, cache, packs, favo
   /**
    * The colour pass, then the general pass with the colour sets filtered out — the reason a query answers with emoji
    * and flat icons before it answers with another wall of Material glyphs. Then (YAZ-4358), when a first pass was cut
-   * at Iconify's window, one pass for each pack, biggest first, skipping what the first two showed. At most
+   * at Iconify's window, one pass for each pack, biggest first, skipping what the first two showed (each pack pass is cut
+   * at 128 too, so streaming gives up to 128 matches a pack; the downloaded packs give every match). A page takes at most
+   * 6 colour icons first; once the general pass has no more, the colour pass fills the page (YAZ-4384). At most
    * `MAX_PASS_LOOKUPS` answers are looked up for one page. `scope` is the filters' part (YAZ-4360): the allowed packs
    * (null = every pack) and the test each icon passes.
    */
@@ -296,21 +298,27 @@ export function createMediaProviders({ fetch, readPixabayKey, cache, packs, favo
     const colorPrefixes = allowedIn(COLOR_COLLECTION_PRIORITY)
     const generalScope = scope.allowed === null ? {} : { prefixes: [...scope.allowed] }
     let lookups = 0
+    /** The colour pass's answer, once this page looked it up. */
+    let colorPass: { items: StudioItem[] } | null = null
+    /** Up to `want` more colour icons from where the cursor is. */
+    const takeColor = (want: number) => {
+      if (colorPass === null) return
+      let at = cursor.colorStart
+      for (let got = 0; at < colorPass.items.length && got < want; at++) {
+        if (!scope.keep(colorPass.items[at])) continue
+        items.push(colorPass.items[at])
+        got++
+      }
+      cursor.colorStart = at
+      cursor.colorExhausted = at >= colorPass.items.length
+    }
 
     if (!cursor.colorExhausted && limit > 0) {
       if (colorPrefixes.length === 0) cursor.colorExhausted = true
       else {
-        const pass = await iconifyPass(query, { prefixes: colorPrefixes })
+        colorPass = await iconifyPass(query, { prefixes: colorPrefixes })
         lookups++
-        const want = Math.min(ICONIFY_COLOR_BATCH_LIMIT, limit)
-        let at = cursor.colorStart
-        for (let got = 0; at < pass.items.length && got < want; at++) {
-          if (!scope.keep(pass.items[at])) continue
-          items.push(pass.items[at])
-          got++
-        }
-        cursor.colorStart = at
-        cursor.colorExhausted = at >= pass.items.length
+        takeColor(Math.min(ICONIFY_COLOR_BATCH_LIMIT, limit))
       }
     }
 
@@ -328,6 +336,10 @@ export function createMediaProviders({ fetch, readPixabayKey, cache, packs, favo
         cursor.generalExhausted = at >= pass.items.length
       }
     }
+
+    // The general pass has no more for this page (spent, or it skips the colour packs, as in a search inside `noto`): the
+    // colour pass fills the page from the answer it already has, so a page is not 6 icons (YAZ-4384). No request.
+    if (items.length < limit && cursor.generalExhausted) takeColor(limit - items.length)
 
     // The pack passes start once both first passes are spent, so a page never mixes their order.
     if (items.length < limit && cursor.colorExhausted && cursor.generalExhausted && !cursor.setsExhausted) {

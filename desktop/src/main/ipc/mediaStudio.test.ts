@@ -5,7 +5,8 @@
  * at registration rather than on the first search.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises'
+import { gzipSync } from 'node:zlib'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
@@ -162,5 +163,31 @@ describe('the icon packs door (YAZ-4359)', () => {
       const now = (await packs(null, { op: 'status' })) as Envelope<{ folder: string }>
       return now.ok && now.value.folder === path.join(userData, 'elsewhere')
     })
+  })
+
+  it('a move that fails sets the folder setting back, so the next launch reads the folder that has the packs (YAZ-4377)', async () => {
+    // One pack on the Mac, in the default folder, as a download leaves it.
+    const home = path.join(userData, 'icon-packs')
+    await mkdir(home, { recursive: true })
+    const raw = JSON.stringify({ prefix: 'mdi', info: { name: 'mdi icons', total: 1, license: { title: 'MIT' } }, icons: { home: { body: '<path/>' } } })
+    await writeFile(path.join(home, 'mdi.json.gz'), gzipSync(raw))
+    await writeFile(path.join(home, 'mdi.names.gz'), gzipSync('home'))
+    const pack = { sha: 'x', sha256: 'y', bytes: raw.length, stored: 10, info: { prefix: 'mdi', name: 'mdi icons', total: 1, license: { title: 'MIT' }, palette: false } }
+    await writeFile(path.join(home, 'manifest.json'), JSON.stringify({ version: 1, tag: '2.2.1', source: 'github', plan: { mdi: { sha: 'x', sha256: null, size: raw.length } }, packs: { mdi: pack }, checkedAt: null }))
+    // The chosen folder has a folder in the way of the pack's file name: the move fails.
+    const chosen = path.join(userData, 'chosen')
+    await mkdir(path.join(chosen, 'mdi.json.gz', 'blocker'), { recursive: true })
+    const listeners: Array<() => void> = []
+    let settings = { iconPacksFolder: null as string | null }
+    const store = { get: () => ({ settings }), onChange: (fn: () => void) => listeners.push(fn), setSettings: vi.fn((next: typeof settings) => ((settings = next), listeners.forEach((fn) => fn()))) }
+    registerMediaStudioIpc(userData, fakeSecrets(null), vi.fn() as unknown as typeof globalThis.fetch, store as never)
+    const packs = registered(CONTRACT.media.packs)
+    await until(async () => ((await packs(null, { op: 'status' })) as Envelope<{ state: string }>).ok)
+    settings = { iconPacksFolder: chosen }
+    for (const fn of listeners) fn()
+    await until(async () => store.setSettings.mock.calls.length > 0)
+    expect(store.setSettings).toHaveBeenCalledWith(expect.objectContaining({ iconPacksFolder: null }))
+    const after = (await packs(null, { op: 'status' })) as Envelope<{ state: string; folder: string; failed: boolean }>
+    expect(after.ok && after.value).toMatchObject({ state: 'complete', folder: home, failed: true })
   })
 })

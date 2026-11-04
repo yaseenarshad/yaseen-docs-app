@@ -10,7 +10,8 @@
  * newest by number) and `/git/trees/<tag>` — two of the 60 API requests an hour GitHub gives a Mac with no sign-in.
  * At that limit the plan comes from unpkg's `?meta` (the version, and each file's size and sha-256), and the status
  * says so (extra 24). Each pack is ONE raw file (`raw.githubusercontent.com`, not the API), with unpkg at the same
- * version as its backup; jsDelivr refuses the package (over 150 MB). A file is kept only when its hash matches.
+ * version as its backup; jsDelivr refuses the package (over 150 MB). A file is kept only when its hash matches. The
+ * packs that Iconify hides (`collections.json` at the tag) are left out: its search never searches them (YAZ-4384).
  *
  * ON DISK: `<prefix>.json.gz` (the pack, Node's own gzip) and `<prefix>.names.gz` (its visible names, one a line), each
  * written with `atomicWrite`, then `manifest.json`. A pack counts only once the manifest names it, so a crash or a Stop
@@ -71,13 +72,25 @@ export function partOf(name: string, parts: number): number {
 const MAX_PLAN_BYTES = 8 * 1024 * 1024
 /** More packs than this is not a plan the app reads. */
 const MAX_PACKS = 1000
+/** A request or a body that sends nothing for this long fails its pack (YAZ-4376), as the updater's `STALL_MS`. */
+export const IDLE_MS = 60_000
 /** Packs downloading at the same time. */
 export const DOWNLOAD_CONCURRENCY = 3
 /** Opened packs kept in memory for tiles and adds (decision 5). */
 export const MAX_OPEN_PACKS = 6
 export const MAX_OPEN_BYTES = 48 * 1024 * 1024
-/** Before any pack is stored, the stored bytes are guessed from the raw bytes (measured: 4× to 7× smaller). */
-const GUESSED_RATIO = 0.21
+/**
+ * A missing pack's bytes on the Mac, guessed from its planned raw bytes: ONE measured ratio (2.2.553: 141,759,540 bytes
+ * stored of 641,914,151 raw = 0.221), so the total the progress shows is the confirm box's measure (YAZ-4384).
+ */
+export const PACK_GZIP_RATIO = 0.221
+
+/** The bytes on the Mac when every planned pack is there: each stored pack's own, each missing one's guess. */
+export function plannedBytes({ plan, packs }: Pick<IconPacksManifest, 'plan' | 'packs'>): number {
+  let total = 0
+  for (const [prefix, planned] of Object.entries(plan)) total += packs[prefix]?.stored ?? planned.size * PACK_GZIP_RATIO
+  return Math.round(total)
+}
 
 export const GITHUB_LIMIT_MESSAGE = "GitHub's limit of 60 checks an hour is reached, so the app used unpkg."
 
@@ -199,11 +212,13 @@ export interface IconPacksDeps {
   now?: () => number
   /** Tests only: a smaller `SPLIT_BYTES` / `PART_BYTES`, so a small pack is stored in parts. */
   split?: { above: number; part: number }
+  /** Tests only: a shorter `IDLE_MS`. */
+  idleMs?: number
 }
 
 export type IconPacks = ReturnType<typeof createIconPacks>
 
-export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Date.now, split = { above: SPLIT_BYTES, part: PART_BYTES } }: IconPacksDeps) {
+export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Date.now, split = { above: SPLIT_BYTES, part: PART_BYTES }, idleMs = IDLE_MS }: IconPacksDeps) {
   let folder = startFolder
   let manifest: IconPacksManifest = emptyManifest()
   /** The manifest of `folder` has been read (or tried). */
@@ -238,26 +253,29 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
   // ---------- The status ----------
 
   const planned = () => Object.keys(manifest.plan)
-  const complete = () => planned().length > 0 && planned().every((prefix) => isCurrent(manifest.packs[prefix], manifest.plan[prefix]))
+  /** Planned packs that are missing or one version older. */
+  const behind = () => planned().filter((prefix) => !isCurrent(manifest.packs[prefix], manifest.plan[prefix])).length
   /** Every planned pack is here, in some version: an update in progress does not take search back to streaming. */
   const allPresent = () => planned().length > 0 && planned().every((prefix) => manifest.packs[prefix] !== undefined)
 
+  /**
+   * `complete` is every planned pack on the Mac — after a stopped or failed update some can be one version older, and
+   * the message says so (YAZ-4384); `partial` is a planned pack missing. During a check the count is the packs that are
+   * up to date, so its progress moves; else the packs on the Mac.
+   */
   function status(): IconPacksStatus {
     const packs = Object.values(manifest.packs)
     const bytes = packs.reduce((sum, p) => sum + p.stored, 0)
-    const raw = packs.reduce((sum, p) => sum + p.bytes, 0)
-    const plannedRaw = Object.values(manifest.plan).reduce((sum, p) => sum + p.size, 0)
-    const ratio = raw > 0 ? bytes / raw : GUESSED_RATIO
     const total = planned().length
-    const isComplete = complete()
+    const counted = run?.kind === 'checking' ? planned().filter((prefix) => isCurrent(manifest.packs[prefix], manifest.plan[prefix])) : planned().filter((prefix) => manifest.packs[prefix] !== undefined)
     return {
-      state: run !== null ? run.kind : isComplete ? 'complete' : packs.length > 0 ? 'partial' : 'none',
+      state: run !== null ? run.kind : allPresent() ? 'complete' : packs.length > 0 ? 'partial' : 'none',
       folder,
       version: manifest.tag,
-      packs: total > 0 ? planned().filter((prefix) => manifest.packs[prefix] !== undefined).length : packs.length,
+      packs: total > 0 ? counted.length : packs.length,
       total: total > 0 ? total : ESTIMATED_PACK_COUNT,
       bytes,
-      totalBytes: isComplete ? bytes : plannedRaw > 0 ? Math.round(plannedRaw * ratio) : ESTIMATED_PACK_BYTES,
+      totalBytes: total > 0 ? plannedBytes(manifest) : ESTIMATED_PACK_BYTES,
       checkedAt: manifest.checkedAt,
       message: message?.text ?? null,
       failed: message?.failed ?? false,
@@ -279,22 +297,59 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
 
   // ---------- The network ----------
 
+  /**
+   * `work`, or the abort, or `idleMs` with no answer — whichever comes first (YAZ-4376). Node's `fetch` does not always
+   * end a body read that has started when its signal aborts (measured: 2 of about 8 real Stops hung on `arrayBuffer()`),
+   * so the run never waits on the network alone.
+   */
+  function untilAbortOrIdle<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+    if (signal.aborted) return Promise.reject(signal.reason)
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = () => reject(signal.reason)
+      const timer = setTimeout(() => reject(new PackFailure('a server stopped sending')), idleMs)
+      signal.addEventListener('abort', onAbort, { once: true })
+      work.then(resolve, reject).finally(() => {
+        clearTimeout(timer)
+        signal.removeEventListener('abort', onAbort)
+      })
+    })
+  }
+
   async function get(url: string, signal: AbortSignal, maxBytes: number): Promise<{ status: number; headers: Headers; bytes: Uint8Array | null }> {
     let response: Response
     try {
-      response = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, redirect: 'follow', signal })
+      response = await untilAbortOrIdle(fetch(url, { headers: { 'User-Agent': USER_AGENT }, redirect: 'follow', signal }), signal)
     } catch (cause) {
-      if (signal.aborted) throw cause
+      if (signal.aborted || cause instanceof PackFailure) throw cause
       throw new Unreachable(`could not reach ${new URL(url).host}`)
     }
     if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined)
+      void response.body?.cancel().catch(() => undefined)
       return { status: response.status, headers: response.headers, bytes: null }
     }
-    if (Number(response.headers.get('Content-Length') ?? 0) > maxBytes) throw new PackFailure('a file is larger than the app reads')
-    const bytes = new Uint8Array(await response.arrayBuffer())
-    if (bytes.byteLength > maxBytes) throw new PackFailure('a file is larger than the app reads')
-    return { status: response.status, headers: response.headers, bytes }
+    if (Number(response.headers.get('Content-Length') ?? 0) > maxBytes) {
+      void response.body?.cancel().catch(() => undefined)
+      throw new PackFailure('a file is larger than the app reads')
+    }
+    // Chunk by chunk: each read races the abort and the idle limit, and the size limit holds while the bytes come.
+    const reader = response.body?.getReader()
+    const chunks: Uint8Array[] = []
+    let size = 0
+    try {
+      for (;;) {
+        if (reader === undefined) break
+        const { done, value } = await untilAbortOrIdle(reader.read(), signal)
+        if (done) break
+        size += value.byteLength
+        if (size > maxBytes) throw new PackFailure('a file is larger than the app reads')
+        chunks.push(value)
+      }
+    } catch (cause) {
+      // Not waited for: a read that does not hear the abort may not hear the cancel either.
+      void reader?.cancel().catch(() => undefined)
+      throw cause
+    }
+    return { status: response.status, headers: response.headers, bytes: Buffer.concat(chunks) }
   }
 
   async function getJson(url: string, signal: AbortSignal): Promise<{ status: number; headers: Headers; json: unknown }> {
@@ -325,7 +380,7 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
       plan[match[1]] = { sha: entry.sha, sha256: null, size: entry.size }
     }
     if (Object.keys(plan).length === 0 || Object.keys(plan).length > MAX_PACKS) throw new PackFailure('GitHub listed no packs')
-    return { tag, source: 'github', plan }
+    return { tag, source: 'github', plan: await onlyListed(plan, tag, 'github', signal) }
   }
 
   async function planFromUnpkg(signal: AbortSignal): Promise<Pick<IconPacksManifest, 'tag' | 'source' | 'plan'>> {
@@ -340,7 +395,33 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
       plan[match[1]] = { sha: null, sha256: typeof file.integrity === 'string' && file.integrity.startsWith('sha256-') ? file.integrity : null, size: file.size }
     }
     if (Object.keys(plan).length === 0 || Object.keys(plan).length > MAX_PACKS) throw new PackFailure('unpkg listed no packs')
-    return { tag: version, source: 'unpkg', plan }
+    return { tag: version, source: 'unpkg', plan: await onlyListed(plan, version, 'unpkg', signal) }
+  }
+
+  /**
+   * The plan without the packs Iconify hides (YAZ-4384): its search never searches them, so neither does the Mac. A pack
+   * stays when `collections.json` at the same tag lists it and does not mark it `hidden` (2.2.553: 260 of 281 files;
+   * 5 unlisted, such as `bubbles`, and 16 hidden, such as `feather` and `fluent-emoji`). One raw file, not an API request;
+   * the other source is its backup.
+   */
+  async function onlyListed(plan: Record<string, PlannedPack>, tag: string, source: 'github' | 'unpkg', signal: AbortSignal): Promise<Record<string, PlannedPack>> {
+    const github = `${GITHUB_RAW}/${encodeURIComponent(tag)}/collections.json`
+    const unpkg = `${UNPKG}@${encodeURIComponent(tag)}/collections.json`
+    let lastError: Error = new PackFailure('the list of packs did not read')
+    for (const url of source === 'github' ? [github, unpkg] : [unpkg, github]) {
+      try {
+        const { json } = await getJson(url, signal)
+        if (typeof json !== 'object' || json === null || Array.isArray(json)) continue
+        const listed = json as Record<string, { hidden?: unknown } | null>
+        const kept = Object.fromEntries(Object.entries(plan).filter(([prefix]) => typeof listed[prefix] === 'object' && listed[prefix] !== null && listed[prefix].hidden !== true))
+        if (Object.keys(kept).length === 0) throw new PackFailure(`${new URL(url).host} listed no packs`)
+        return kept
+      } catch (cause) {
+        if (signal.aborted) throw cause
+        lastError = cause as Error
+      }
+    }
+    throw lastError
   }
 
   /** GitHub first; at its limit (or with GitHub down) unpkg, and the limit is said. */
@@ -456,7 +537,7 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
       } catch (cause) {
         if (!abort.signal.aborted) message = { text: failureText(cause), failed: true }
       } finally {
-        if (abort.signal.aborted && message === null) message = { text: `Stopped. ${status().packs} of ${status().total} packs are on this Mac.`, failed: false }
+        if (abort.signal.aborted && message === null) message = { text: kind === 'checking' ? stoppedCheckText(behind()) : `Stopped. ${status().packs} of ${status().total} packs are on this Mac.`, failed: false }
         run = null
         names = null
         await writing.catch(() => undefined)
@@ -468,6 +549,9 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
     tell()
     return done
   }
+
+  const stoppedCheckText = (n: number): string =>
+    n === 0 ? 'Stopped. No pack changed.' : `Stopped. ${n} pack${n === 1 ? ' is' : 's are'} not updated yet. Check for new icons to update ${n === 1 ? 'it' : 'them'}.`
 
   const failureText = (cause: unknown): string =>
     cause instanceof GithubLimit
@@ -639,16 +723,32 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
         return status()
       }
       return startRun('moving', async () => {
-        await mkdir(next, { recursive: true })
         const files = Object.entries(manifest.packs).flatMap(([prefix, pack]) => packFiles(prefix, pack.parts))
-        for (const file of files) {
-          await rename(join(from, file), join(next, file)).catch(async () => {
-            await copyFile(join(from, file), join(next, file))
-            await rm(join(from, file), { force: true })
-          })
+        // Every file first, the new manifest last; a failure on the way puts back what moved (YAZ-4377), so the packs
+        // are always whole in ONE folder. A copy (across two disks) leaves its source until the new manifest is written.
+        const renamed: string[] = []
+        const copied: string[] = []
+        try {
+          await mkdir(next, { recursive: true })
+          for (const file of files) {
+            try {
+              await rename(join(from, file), join(next, file))
+              renamed.push(file)
+            } catch {
+              await copyFile(join(from, file), join(next, file))
+              copied.push(file)
+            }
+          }
+          await writing.catch(() => undefined)
+          await atomicWrite(join(next, MANIFEST_FILE), JSON.stringify(manifest))
+        } catch (cause) {
+          for (const file of renamed) await rename(join(next, file), join(from, file)).catch(() => copyFile(join(next, file), join(from, file)).then(() => rm(join(next, file), { force: true }))).catch(() => undefined)
+          for (const file of copied) await rm(join(next, file), { force: true }).catch(() => undefined)
+          if ((await readdir(next).catch(() => ['?'])).length === 0) await rmdir(next).catch(() => undefined)
+          message = { text: `The icon packs could not move to the new folder, so they stay in ${from}. (${cause instanceof Error ? cause.message : String(cause)})`, failed: true }
+          return
         }
-        await writing.catch(() => undefined)
-        await atomicWrite(join(next, MANIFEST_FILE), JSON.stringify(manifest))
+        for (const file of copied) await rm(join(from, file), { force: true })
         await rm(join(from, MANIFEST_FILE), { force: true })
         // Only an empty old folder goes; anything else in it is the user's.
         if ((await readdir(from).catch(() => ['?'])).length === 0) await rmdir(from).catch(() => undefined)

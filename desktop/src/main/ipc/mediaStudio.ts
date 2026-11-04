@@ -66,7 +66,8 @@ function requirePacksRequest(v: unknown): IconPacksRequest {
 
 /**
  * The cache folder this registration owns — the one fact a test needs back from it. `store` is where the icon packs'
- * folder setting lives (YAZ-4359): a change of it moves the packs. Without one, the packs stay in the default folder.
+ * folder setting lives (YAZ-4359): a change of it moves the packs, and a move that fails sets it back (YAZ-4377).
+ * Without one, the packs stay in the default folder.
  * `copies` (YAZ-4363) are the favorites' own pictures: `preview` and `import` ask them first (then the downloaded
  * packs, then the network), and they are made with a second set of providers that has no copy step, so a copy is
  * always the provider's picture.
@@ -75,7 +76,7 @@ export function registerMediaStudioIpc(
   userData: string,
   secrets: Secrets,
   fetchImpl: typeof globalThis.fetch = globalThis.fetch,
-  store?: Pick<Store, 'get' | 'onChange'>,
+  store?: Pick<Store, 'get' | 'onChange' | 'setSettings'>,
   copies?: FavoriteCopies,
 ): string {
   const folder = join(userData, MEDIA_CACHE_DIR)
@@ -85,11 +86,24 @@ export function registerMediaStudioIpc(
   const packs = createIconPacks({ folder: packsFolder(), fetch: fetchImpl, onStatus: (status) => broadcastAll(CONTRACT.media.onPacksProgress.channel, status) })
   // Each store change is checked against the folder last asked for, so a move that is still going is not asked again.
   let wanted = packsFolder()
+  let settled = store?.get().settings.iconPacksFolder ?? null
   store?.onChange(() => {
     const next = packsFolder()
     if (next === wanted) return
     wanted = next
-    void packs.moveTo(next).catch((err: unknown) => console.warn('[icon-packs] could not move to', next, err))
+    const asked = store.get().settings.iconPacksFolder
+    void packs.moveTo(next).then(
+      (status) => {
+        if (status.folder === next) settled = asked
+        // A move that failed left the packs where they were (YAZ-4377): the setting goes back, so the next launch
+        // reads the folder that has them. Unless the user picked yet another folder meanwhile.
+        else if (wanted === next) {
+          wanted = status.folder
+          store.setSettings({ ...store.get().settings, iconPacksFolder: settled })
+        }
+      },
+      (err: unknown) => console.warn('[icon-packs] could not move to', next, err),
+    )
   })
   const readPixabayKey = () => secrets.read(PIXABAY_SECRET)
   // A favorite's tile is its copy at tile size (YAZ-4385); the add still gets the whole copy.

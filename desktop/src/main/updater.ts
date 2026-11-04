@@ -280,7 +280,8 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
       () => set({ kind: 'ready', version }),
       (err: unknown) => {
         console.error(`[update] the download of ${version} failed: ${String(err)}`)
-        set(refused === version ? { kind: 'manual', version } : before) // S10 stays refused; S9: the next check tries again
+        // S10 stays refused; S9: the next check tries again, and `failed` tells What's New why the button is back (YAZ-4384).
+        set(refused === version ? { kind: 'manual', version } : before.kind === 'idle' ? { kind: 'idle', failed: version } : before)
       },
     )
     return state
