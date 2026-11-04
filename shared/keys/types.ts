@@ -39,4 +39,10 @@ export interface KeyRow {
   passesToPages?: true
   /** An App key that exists only while a tab of these places is in front (the board items of the File menu, YAZ-3564 K13): it blocks only them. */
   onlyIn?: readonly KeyScope[]
+  /**
+   * A built-in drawing key that acts only while something is selected (YAZ-4348: the colour letters, the size digits).
+   * The tool on the same letter has the key the rest of the time, so it clashes with no row and blocks none (K3); its
+   * key card shows both.
+   */
+  withSelection?: true
 }
