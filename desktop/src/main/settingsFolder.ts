@@ -18,8 +18,9 @@
  */
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { newestFile, parseSettingsFile, SETTINGS_FILE_RE, settingsFileName, settingsFileText, type SettingsFile } from '@shared/settingsSync'
+import { newestFile, SETTINGS_FILE_RE, settingsFileName, settingsFileText, type SettingsFile } from '@shared/settingsSync'
 import { atomicWrite } from './fs/fsUtils'
+import { otherMacFiles } from './settingsFiles'
 import type { Store } from './store'
 import { createWatchedFolder, type WatchedFolder } from './watchedFolder'
 
@@ -85,13 +86,7 @@ export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'ap
       },
     ))
 
-  async function others(dir: string): Promise<SettingsFile[]> {
-    const own = settingsFileName(await deps.macId())
-    const names = (await readdir(dir)).filter((name) => SETTINGS_FILE_RE.test(name) && name !== own)
-    // A file that can't be read or parsed (half-synced) is skipped; its next change reads it again.
-    const files = await Promise.all(names.map((name) => readFile(path.join(dir, name), 'utf8').then(parseSettingsFile, () => null)))
-    return files.filter((file): file is SettingsFile => file !== null)
-  }
+  const others = async (dir: string): Promise<SettingsFile[]> => otherMacFiles(dir, await deps.macId())
 
   async function push(): Promise<void> {
     const dir = folder
