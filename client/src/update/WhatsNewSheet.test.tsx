@@ -354,6 +354,26 @@ describe('WhatsNewSheet: update from the Latest row (YAZ-4371)', () => {
     push({ kind: 'downloading', version: '1.0.14' })
     expect(line()).toBeNull()
   })
+
+  it('a download that fails after Update to v… says so in one line, and the button stays to try again (YAZ-4384)', async () => {
+    const { bridge, rows, buttons, labels, line, push } = await render({ kind: 'idle' }, undefined, async () => ({ kind: 'downloading', version: '1.0.14' }))
+    act(() => rows()[0].click())
+    await act(async () => buttons()[1].click())
+    push({ kind: 'downloading', version: '1.0.14' })
+    expect(line()).toBeNull()
+    // Main puts the state back (S9: a wrong sha256, or a stalled download) and names the version.
+    push({ kind: 'idle', failed: '1.0.14' })
+    expect(line()).toBe('The download of v1.0.14 failed. Click Update to try again.')
+    expect(labels()).toEqual(['Later', 'Update to v1.0.14'])
+    expect(enabled(buttons()[1])).toBe(true)
+    await act(async () => buttons()[1].click())
+    expect(bridge.update.check).toHaveBeenCalledTimes(2)
+    push({ kind: 'downloading', version: '1.0.14' })
+    expect(line()).toBeNull()
+    // A failure of an older version is not this row's.
+    push({ kind: 'idle', failed: '1.0.12' })
+    expect(line()).toBeNull()
+  })
 })
 
 describe('WhatsNewSheet: S19 closing', () => {

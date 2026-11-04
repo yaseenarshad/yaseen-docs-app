@@ -31,7 +31,7 @@
  * follows the state: **Downloading v<latest>…** (not clickable), then **Restart to update**, or **Download**
  * for a copy that cannot replace itself. While the check runs the button is not clickable. A failed check,
  * or one that finds no download yet (S2: CI still builds the `.dmg`), says so in one line, and the button
- * stays. Another row, up to date, or a dev run with no feed (`notes.checks`, S7): no such button. `ready`
+ * stays. So does a download that fails after it (S9: main answers `idle` with `failed: <version>`, YAZ-4384). Another row, up to date, or a dev run with no feed (`notes.checks`, S7): no such button. `ready`
  * and `manual` keep their button on every row.
  *
  * The keys are the overlay's, never `window`'s (the SettingsDialog rule, YAZ-888): Esc closes, and
@@ -212,6 +212,8 @@ export default function WhatsNewSheet({ update, onClose }: WhatsNewSheetProps) {
       },
     )
   }
+  /** The sheet's own check's line first; else a download of this version that failed (S9) after the button (YAZ-4384). */
+  const line = checkLine ?? (!checking && update.kind === 'idle' && update.failed === latest ? `The download of v${latest} failed. Click Update to try again.` : null)
   const act = (): void => {
     void api.update.restart().catch(() => undefined)
     // "Download" hands off to the browser, so the sheet has nothing left to do; "Restart to update" quits the app.
@@ -290,9 +292,9 @@ export default function WhatsNewSheet({ update, onClose }: WhatsNewSheetProps) {
           </div>
         )}
         <div className="whats-new__actions">
-          {offerIdle && checkLine !== null && (
+          {offerIdle && line !== null && (
             <p className="whats-new__check-line" role="status">
-              {checkLine}
+              {line}
             </p>
           )}
           <button ref={firstButton} type="button" className="confirm__btn" onClick={onClose}>

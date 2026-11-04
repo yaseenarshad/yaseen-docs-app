@@ -206,14 +206,14 @@ describe('check', () => {
     expect(existsSync(mount)).toBe(false)
   })
 
-  it('S9: a wrong sha256 → back to idle, the file is gone, and nothing is mounted', async () => {
+  it('S9: a wrong sha256 → back to idle (naming the version whose download failed, YAZ-4384), the file is gone, and nothing is mounted', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { updater, calls, states } = fake({ body: () => new TextEncoder().encode('tampered bytes') })
     await updater.check()
     await until(updater, 'idle')
     expect(String(error.mock.calls[0][0])).toContain('sha256')
     expect(existsSync(join(userData, 'update-refused'))).toBe(false) // a second download can succeed
-    expect(states).toEqual([{ kind: 'downloading', version: '1.0.13' }, { kind: 'idle' }])
+    expect(states).toEqual([{ kind: 'downloading', version: '1.0.13' }, { kind: 'idle', failed: '1.0.13' }])
     expect(calls.map(([f, a]) => `${f} ${a[0]}`)).toEqual(['/usr/bin/codesign -d']) // no hdiutil, no ditto
     expect(existsSync(join(userData, 'updates'))).toBe(false)
     error.mockRestore()
@@ -301,7 +301,7 @@ describe('check', () => {
     expect(signal?.aborted).toBe(true)
     await until(updater, 'idle')
     expect(String(error.mock.calls[0][0])).toContain('stalled')
-    expect(states.at(-1)).toEqual({ kind: 'idle' })
+    expect(states.at(-1)).toEqual({ kind: 'idle', failed: '1.0.13' })
     expect(existsSync(join(userData, 'updates'))).toBe(false)
     error.mockRestore()
   })
