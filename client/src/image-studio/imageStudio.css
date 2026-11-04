@@ -828,3 +828,27 @@
   position: fixed;
   z-index: 1000;
 }
+
+/* YAZ-4348 demo: the running download, plain to see: a bar, the count, Cancel. */
+.image-studio__footer-packs.is-busy {
+  color: var(--text-primary-color);
+  flex: 1;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+
+.image-studio__footer-bar {
+  background: var(--default-border-color);
+  border-radius: 999px;
+  display: block;
+  flex-basis: 100%;
+  height: 4px;
+  overflow: hidden;
+}
+
+.image-studio__footer-bar i {
+  background: var(--color-primary);
+  display: block;
+  height: 100%;
+  transition: width 0.3s ease;
+}

@@ -49,7 +49,11 @@ export async function packsDo(op: IconPacksRequest['op']): Promise<IconPacksStat
     const status = await api.media.packs({ op })
     packsStore.set({ status })
     return status
-  } catch {
+  } catch (err) {
+    // YAZ-4348 demo: a request that fails says so where the user clicked, instead of nothing at all
+    console.warn('[icon-packs]', op, 'failed', err)
+    const now = packsStore.getState().status
+    if (now !== null) packsStore.set({ status: { ...now, failed: true, message: op === 'download' ? "The download couldn't start. Try again." : "That didn't work. Try again." } })
     return null
   }
 }
