@@ -216,6 +216,19 @@ const setKey = (
   }
 };
 
+/** A one-color icon's recipe for its one color (the outline stays). */
+export const oneColorRecipe = (
+  app: Pick<AppClassProperties, "files">,
+  element: IconTarget,
+  recipe: IconRecipe,
+  color: string,
+): IconRecipe => {
+  const [only] = getIconInfo(app.files[element.fileId]).colors;
+  const colors: Record<string, string> = {};
+  setKey(colors, only, color);
+  return { colors, outline: recipe.outline };
+};
+
 export type IconColorsChange = {
   /** a one-color icon's one color (several selected: all of them) */
   color?: string;
@@ -262,11 +275,7 @@ export const actionChangeIconColors = register<IconColorsChange>({
           return { colors: {}, outline: recipe.outline };
         }
         if (value.color !== undefined) {
-          const [only] = getIconInfo(app.files[element.fileId]).colors;
-          recipe.colors = {};
-          setKey(recipe.colors, only, value.color);
-          delete recipe.parts;
-          return recipe;
+          return oneColorRecipe(app, element, recipe, value.color);
         }
         if (value.replaceColors) {
           recipe.colors = {};

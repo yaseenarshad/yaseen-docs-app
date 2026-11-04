@@ -211,6 +211,7 @@ import { editEditableText } from "../wysiwyg/editableEdit";
 import { getShortcutKey } from "../shortcut";
 
 import { register } from "./register";
+import { getIconTargets, oneColorRecipe, paintIcons } from "./actionIconColors";
 
 import type { Action } from "./types";
 import type { AppClassProperties, AppState, Primitive } from "../types";
@@ -654,14 +655,21 @@ export const actionApplySelectedSemanticColor = register<{
   name: "applySelectedSemanticColor",
   label: "labels.stroke",
   trackEvent: false,
-  perform: (elements, appState, value) => {
+  perform: (elements, appState, value, app) => {
     if (!value) {
       return false;
     }
 
     let supportedElementCount = 0;
     const paletteValue = COLOR_PALETTE[value.colorName];
+    // YAZ-4353 1C (D4): a one-color icon's hotkey colors the icon itself;
+    // many-color icons and photos keep the box border (YAZ-189)
+    const icons = getIconTargets(elements, appState, app, "one");
+    const iconIds = new Set(icons.map((icon) => icon.id));
     const updatedElements = changeProperty(elements, appState, (element) => {
+      if (iconIds.has(element.id)) {
+        return element;
+      }
       const property =
         value.target === "stroke"
           ? isTextElement(element)
@@ -700,6 +708,35 @@ export const actionApplySelectedSemanticColor = register<{
           : null),
       });
     });
+
+    if (icons.length) {
+      const iconColor = Array.isArray(paletteValue)
+        ? paletteValue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX]
+        : paletteValue;
+      const changed = new Map(
+        updatedElements
+          .filter((element, index) => element !== elements[index])
+          .map((element) => [element.id, element]),
+      );
+      return paintIcons(
+        app,
+        icons,
+        (icon, recipe) => oneColorRecipe(app, icon, recipe, iconColor),
+        CaptureUpdateAction.IMMEDIATELY,
+      ).then((result) =>
+        result
+          ? {
+              ...result,
+              elements: result.elements!.map(
+                (element) => changed.get(element.id) ?? element,
+              ),
+            }
+          : {
+              elements: updatedElements,
+              captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+            },
+      );
+    }
 
     if (!supportedElementCount) {
       return {

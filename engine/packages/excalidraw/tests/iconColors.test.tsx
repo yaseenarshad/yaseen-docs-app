@@ -1,15 +1,9 @@
 // Yaseen Docs (YAZ-4351 1A): the paint actions swap the icon's file and keep the recipe.
 import React from "react";
 
-import { MIME_TYPES } from "@excalidraw/common";
-import {
-  CaptureUpdateAction,
-  iconSource,
-  svgOfDataURL,
-  svgToDataURL,
-} from "@excalidraw/element";
+import { iconSource, svgOfDataURL } from "@excalidraw/element";
 
-import type { ExcalidrawImageElement, FileId } from "@excalidraw/element/types";
+import type { ExcalidrawImageElement } from "@excalidraw/element/types";
 
 import { Excalidraw } from "../index";
 import {
@@ -17,41 +11,11 @@ import {
   actionChangeIconOutline,
 } from "../actions/actionIconColors";
 
-import { API } from "./helpers/api";
+import { ONE_COLOR_SVG, openIcon } from "./helpers/icons";
 import { mockHTMLImageElement } from "./helpers/mocks";
 import { act, render, unmountComponent, waitFor } from "./test-utils";
 
-import type { BinaryFileData } from "../types";
-
 const { h } = window;
-
-export const ONE_COLOR_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24"><path fill="currentColor" d="M4 11h12l-5-5 1.4-1.4L20 12l-7.6 7.4L11 18l5-5H4z"/></svg>';
-
-const file = (id: string, svg: string): BinaryFileData => ({
-  id: id as FileId,
-  mimeType: MIME_TYPES.svg,
-  dataURL: svgToDataURL(svg),
-  created: 1,
-});
-
-export const openIcon = async (svg = ONE_COLOR_SVG, id = "icon") => {
-  const element = API.createElement({
-    type: "image",
-    id,
-    fileId: `${id}-file`,
-    width: 48,
-    height: 48,
-  });
-  API.updateScene({
-    elements: [element],
-    captureUpdate: CaptureUpdateAction.NEVER,
-  });
-  act(() => h.app.addFiles([file(`${id}-file`, svg)]));
-  API.setSelectedElements([element]);
-  await waitFor(() => expect(h.app.imageCache.has(element.fileId!)).toBe(true));
-  return element;
-};
 
 const icon = () => h.elements[0] as ExcalidrawImageElement;
 const iconSvg = () => svgOfDataURL(h.app.files[icon().fileId!].dataURL);
