@@ -254,7 +254,7 @@ type MenuAt = { top: number; left?: number; right?: number }
  * in two sections at once (a favorite component is in Favorites and in Components), and only the tile that was
  * right-clicked opens (demo 6B).
  */
-type OpenTile = { key: string; mode: 'menu'; at: MenuAt } | { key: string; mode: 'word' | 'rename' | 'confirm' | 'variants' } | null
+type OpenTile = { key: string; mode: 'menu'; at: MenuAt } | { key: string; mode: 'word' | 'rename' | 'confirm' } | null
 const slotOf = (where: string, item: StudioItem) => `${where}|${item.itemKey}`
 /** Where the focus goes after a favorite change: the tile's own button, else the one that took its place, else the field. */
 type FocusPlan = { slot: string; section: Element | null; index: number; fromMenu: boolean }
@@ -377,6 +377,16 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   const [insertingKey, setInsertingKey] = useState<string | null>(null)
   const [busyFavoriteKey, setBusyFavoriteKey] = useState<string | null>(null)
   const [openTile, setOpenTile] = useState<OpenTile>(null)
+  // The open "+N" group, apart from `openTile` (YAZ-4348 demo round 2): a right-click on a tile inside the group opens
+  // that tile's menu and the group stays open; one shared state closed the group, and the menu with its tile.
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
+  // Filter › Similar icons (YAZ-4348 demo round 2): the "+N" groups, or every icon as its own tile.
+  const [groupSimilar, setGroupSimilar] = useState<boolean>(() => storage.getSettings()?.mediaGroupSimilar ?? true)
+  const changeGroupSimilar = (on: boolean) => {
+    setGroupSimilar(on)
+    setOpenGroup(null)
+    storage.patchSettings({ mediaGroupSimilar: on })
+  }
   const [draft, setDraft] = useState('')
   const [line, setLine] = useState<Line>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -571,8 +581,12 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   // One tile per icon; its copies from other sets and its styles are its variants, shown on request (demo 6J).
   const webGroups = useMemo(
     // Not on the pack page (YAZ-4361): its results are the pack's own, shown whole.
-    () => (typed && webOn && pack === null ? groupResults(results.filter((item) => !yourKeys.has(item.itemKey)), searchedQuery || query) : []),
-    [typed, webOn, results, yourKeys, searchedQuery, query, pack],
+    () => {
+      if (!(typed && webOn && pack === null)) return []
+      const web = results.filter((item) => !yourKeys.has(item.itemKey))
+      return groupSimilar ? groupResults(web, searchedQuery || query) : web.map((head) => ({ head, variants: [] }))
+    },
+    [typed, webOn, results, yourKeys, searchedQuery, query, pack, groupSimilar],
   )
   const variantsOf = useMemo(() => new Map(webGroups.map((group) => [group.head.itemKey, group.variants])), [webGroups])
 
@@ -686,7 +700,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     }
   }
 
-  const openRow = (key: string, mode: 'word' | 'rename' | 'confirm' | 'variants', value = '') => {
+  const openRow = (key: string, mode: 'word' | 'rename' | 'confirm', value = '') => {
     setDraft(value)
     setOpenTile({ key, mode })
   }
@@ -794,7 +808,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     const favorited = favoriteKeys.has(item.itemKey)
     const menuAt = openTile?.key === slot && openTile.mode === 'menu' ? openTile.at : null
     const variants = variantsOf.get(item.itemKey) ?? []
-    const variantsOpen = openTile?.key === slot && openTile.mode === 'variants'
+    const variantsOpen = openGroup === slot
     const busy = insertingKey !== null || (component !== undefined && library.busySlug === component.slug)
     return (
       <article className="image-studio__card" key={item.itemKey} data-slot={slot} aria-busy={busy || undefined} onContextMenu={(event) => openMenu(event, slot)}>
@@ -841,7 +855,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
             className="image-studio__variants-toggle"
             aria-label={`${variantsOpen ? 'Hide' : 'Show'} ${variants.length} more like ${item.title}`}
             aria-expanded={variantsOpen}
-            onClick={() => (variantsOpen ? setOpenTile(null) : openRow(slot, 'variants'))}
+            onClick={() => setOpenGroup(variantsOpen ? null : slot)}
           >
             +{variants.length}
           </button>
@@ -862,7 +876,14 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
               </button>
             )}
             {variants.length > 0 && (
-              <button type="button" role="menuitem" onClick={() => openRow(slot, 'variants')}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpenTile(null)
+                  setOpenGroup(slot)
+                }}
+              >
                 Show {variants.length} more like this
               </button>
             )}
@@ -910,16 +931,17 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     )
   }
 
-  /** The full-width row that "Add a word…", Rename, Delete or "more like this" opens under the tile's row. */
+  /** The full-width row of a tile's "+N" look-alikes (demo 6J), open under the tile's row while its group is open. */
+  const variantsRow = (item: StudioItem, where: string): ReactNode =>
+    openGroup === slotOf(where, item) && (
+      <div className="image-studio__inline image-studio__variants" key={`${item.itemKey}:group`} role="group" aria-label={`More like ${item.title}`}>
+        <div className="image-studio__variants-grid">{(variantsOf.get(item.itemKey) ?? []).map((variant) => tile(variant, `${where}:variants`))}</div>
+      </div>
+    )
+
+  /** The full-width row that "Add a word…", Rename or Delete opens under the tile's row. */
   const inlineRow = (item: StudioItem, where: string): ReactNode => {
     if (openTile?.key !== slotOf(where, item) || openTile.mode === 'menu') return null
-    if (openTile.mode === 'variants') {
-      return (
-        <div className="image-studio__inline image-studio__variants" key={`${item.itemKey}:row`} role="group" aria-label={`More like ${item.title}`}>
-          <div className="image-studio__variants-grid">{(variantsOf.get(item.itemKey) ?? []).map((variant) => tile(variant, `${where}:variants`))}</div>
-        </div>
-      )
-    }
     const component = item.provider === 'component' ? componentsBySlug.get(item.providerId) : undefined
     if (openTile.mode === 'confirm' && component) {
       return (
@@ -978,7 +1000,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     items.forEach((item, i) => {
       cells.push(tile(item, where))
       const rowEnd = i % ROW === ROW - 1 || i === items.length - 1
-      if (rowEnd) for (const other of items.slice(i - (i % ROW), i + 1)) cells.push(inlineRow(other, where))
+      if (rowEnd) for (const other of items.slice(i - (i % ROW), i + 1)) cells.push(variantsRow(other, where), inlineRow(other, where))
     })
     return <div className="image-studio__grid">{cells}</div>
   }
@@ -1211,6 +1233,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           onClear={clearFilters}
           pinned={pinned}
           loadPacks={loadPackList}
+          groupSimilar={groupSimilar}
+          onGroupSimilar={changeGroupSimilar}
         />
         {hasSelection && library.canCapture && (
           <button

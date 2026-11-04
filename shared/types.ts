@@ -1887,6 +1887,11 @@ export interface SettingsState {
   /** The packs "Pin pack" pinned (YAZ-4361), by prefix, first pinned first: they lead Filter › Packs. Travels. */
   mediaPinnedPacks: string[]
   /**
+   * The Add panel's "+41" groups (YAZ-4348 demo round 2): true shows one tile per icon with its look-alikes behind
+   * "+N"; false shows every icon as its own tile. Filter › Similar icons. Travels; Clear filters keeps it.
+   */
+  mediaGroupSimilar: boolean
+  /**
    * Where the downloaded icon packs live (YAZ-4359, D5 update): ONE folder for every vault and window of this Mac.
    * null = `<userData>/icon-packs`, which only main can resolve. Stays on this Mac (`LOCAL_SETTINGS`).
    */
@@ -2292,6 +2297,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   canvasPanel: DEFAULT_CANVAS_PANEL,
   mediaFilters: DEFAULT_MEDIA_FILTERS,
   mediaPinnedPacks: [],
+  mediaGroupSimilar: true,
   iconPacksFolder: null,
   noticeLength: '4s',
   noticeUndo: true,

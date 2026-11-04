@@ -517,6 +517,45 @@ describe('one tile per icon, its copies on request (demo 6J)', () => {
     await click(byLabel(host, 'Hide 2 more like nail polish'))
     expect(byLabel(host, 'More like nail polish')).toBeNull()
   })
+
+  const nails = () =>
+    media.search.mockResolvedValue({
+      items: [icon('nail-polish', 'noto'), icon('nail-polish', 'twemoji'), icon('nail-polish-medium-dark', 'fluent-emoji-flat'), icon('hammer-and-nail', 'pinhead')],
+      nextCursor: null,
+      pixabayAvailable: false,
+      warnings: [],
+    })
+
+  it('a right-click on a tile inside an open group opens its menu, and the group stays open (YAZ-4348 demo round 2)', async () => {
+    nails()
+    const { host } = await mount()
+    await search(host, 'nail')
+    await click(byLabel(host, 'Show 2 more like nail polish'))
+    const inGroup = byLabel(host, 'More like nail polish')!.querySelector<HTMLElement>('[aria-label="Add nail polish medium dark"]')!
+    await act(async () => {
+      inGroup.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+    })
+    await settle(2)
+    expect(byLabel(host, 'More like nail polish')).not.toBeNull()
+    expect(byLabel(host, 'More like nail polish')!.querySelector('[role="menu"]')).not.toBeNull()
+  })
+
+  it('Filter › Similar icons › Show each one shows every icon as its own tile, and is kept in the settings (YAZ-4348 demo round 2)', async () => {
+    nails()
+    const filterButton = (host: HTMLElement) => host.querySelector<HTMLButtonElement>('.image-studio__filter-button')!
+    const option = (host: HTMLElement, group: string, text: string) =>
+      [...host.querySelectorAll<HTMLButtonElement>(`.image-studio__filter-menu [aria-label="${group}"] button`)].find((b) => b.textContent === text)
+    const { host } = await mount()
+    await search(host, 'nail')
+    expect(tileNames(section(host, 'From the web'))).toEqual(['nail polish', 'hammer and nail'])
+    await click(filterButton(host))
+    await click(option(host, 'Similar icons', 'Show each one'))
+    expect(tileNames(section(host, 'From the web'))).toEqual(['nail polish', 'nail polish', 'nail polish medium dark', 'hammer and nail'])
+    expect(byLabel(host, 'Show 2 more like nail polish')).toBeNull()
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaGroupSimilar: false })
+    // A view choice, not a filter: no badge, and Clear filters keeps it
+    expect(filterButton(host)?.getAttribute('aria-label')).toBe('Filter')
+  })
 })
 
 describe('Excalidraw`s public libraries: the Hand-drawn section (demo 6K)', () => {
@@ -1098,8 +1137,8 @@ describe('the Filter button and menu (YAZ-4360)', () => {
     expect(document.activeElement).toBe(option(host, 'Show', 'Favorites'))
     await key(host.querySelector('.image-studio__filter-menu')!, 'ArrowUp')
     await key(host.querySelector('.image-studio__filter-menu')!, 'ArrowUp')
-    // Up from All wraps to the last item that is on (Clear filters is off with nothing on).
-    expect(document.activeElement?.textContent).toBe('Business-safe')
+    // Up from All wraps to the last item that is on (Clear filters is off with nothing on): Similar icons' last choice.
+    expect(document.activeElement?.textContent).toBe('Show each one')
   })
 
   it('Esc closes the menu back to its button; a click outside closes it too', async () => {

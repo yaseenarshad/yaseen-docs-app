@@ -618,6 +618,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   // YAZ-4360 / YAZ-4361: the Add panel's filters and pinned packs; `sanitizeSettings` repairs the filters part by part.
   mediaFilters: isMediaFilters,
   mediaPinnedPacks: isPinnedPacks,
+  mediaGroupSimilar: (v): v is boolean => typeof v === 'boolean',
   // YAZ-4359: an absolute folder, or null for `<userData>/icon-packs` (never `''`, the `libraryFolder` rule).
   iconPacksFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),
   noticeLength: (v): v is NoticeLength => typeof v === 'string' && (NOTICE_LENGTHS as readonly string[]).includes(v),
