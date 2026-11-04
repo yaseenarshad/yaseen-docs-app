@@ -813,14 +813,16 @@ export const iconKind = (
 ) => getIconInfo(file).kind;
 
 /**
- * YAZ-4355 1E: dark mode inverts an SVG picture only when it is a one-color icon
- * (extra 21). Many-color icons, emoji and photos keep their own colors. An SVG
- * whose kind is not known yet keeps today's rule.
+ * YAZ-4355 1E: dark mode keeps a many-color icon's colors (extra 21). Every
+ * other SVG inverts, as before this work: a one-color icon, and an SVG that is
+ * not recolorable (over 256 KB, an `<image>` inside, no color), so a big black
+ * line drawing stays readable on the dark board (YAZ-4351 1A3). An SVG whose
+ * kind is not known yet inverts too. Other pictures never invert.
  */
 export const isDarkInvertedImage = (
   mimeType: string | undefined,
   kind: IconKind | undefined,
-) => mimeType === MIME_TYPES.svg && (kind === undefined || kind === "one");
+) => mimeType === MIME_TYPES.svg && kind !== "many";
 
 export const isRecolorableIcon = (
   file: Pick<BinaryFileData, "id" | "mimeType" | "dataURL"> | null | undefined,

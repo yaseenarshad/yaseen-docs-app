@@ -62,7 +62,7 @@ export const updateImageCache = async ({
               const data = {
                 image: imagePromise,
                 mimeType: fileData.mimeType,
-                // YAZ-4355 1E: dark mode inverts only one-color icons
+                // YAZ-4355 1E: dark mode keeps only many-color icons' colors
                 ...(fileData.mimeType === MIME_TYPES.svg
                   ? { iconKind: getIconInfo(fileData).kind }
                   : null),
