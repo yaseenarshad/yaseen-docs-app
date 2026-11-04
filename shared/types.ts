@@ -3473,5 +3473,7 @@ export interface ReleaseNote {
  */
 export interface ReleaseNotes {
   current: string
+  /** False in a dev run with no update feed (S7): the sheet then offers no update from the **Latest** row (YAZ-4371). */
+  checks: boolean
   releases: ReleaseNote[]
 }

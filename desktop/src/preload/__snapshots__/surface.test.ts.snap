@@ -197,6 +197,7 @@ state.systemHotkeys/0: invoke state:system-hotkeys []; => "answer"; !> {"code":"
 storage.shrink/2: invoke storage:shrink ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 storage.stats/1: invoke storage:stats ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 tree/1: invoke fs:tree ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+update.check/0: invoke update:check []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 update.notes/0: invoke update:notes []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 update.onState/1: on update:state-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off update:state-changed
 update.restart/0: invoke update:restart []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

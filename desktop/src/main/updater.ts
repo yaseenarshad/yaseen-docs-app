@@ -5,6 +5,7 @@ import { access, mkdir, mkdtemp, open, rename, rm, rmdir, writeFile } from 'node
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { ReleaseNotes, UpdateState } from '@shared/types'
+import { compareVersions, newer, shortVersion } from '@shared/versions'
 
 /**
  * The updater (YAZ-2976 D2): GitHub Releases, no new dependency. A check reads `releases/latest`;
@@ -61,6 +62,8 @@ export interface Updater {
   start(): void
   /** One check now: the state it finds, `downloading` as soon as a download starts. Never two at once; while `downloading` or `ready` it answers the state and fetches nothing (S6). */
   check(): Promise<UpdateState>
+  /** False in a dev run with no feed (S7): no timer check, and the "What's new" sheet offers no update (YAZ-4371). */
+  readonly checks: boolean
   state(): UpdateState
   /** "What's new" (YAZ-2988 D13): every published release, newest first, up to 100 (one page), and this app's version. Asked only when the sheet opens. */
   notes(): Promise<ReleaseNotes>
@@ -83,28 +86,8 @@ interface GithubRelease {
   assets?: GithubAsset[]
 }
 
-const parts = (v: string): number[] => v.replace(/^v/, '').split('.').map((n) => Number.parseInt(n, 10) || 0)
-
-/** `x.y.z` order, a leading `v` ignored: > 0 when `a` is the newer one. */
-export function compareVersions(a: string, b: string): number {
-  const [x, y] = [parts(a), parts(b)]
-  for (let i = 0; i < Math.max(x.length, y.length); i++) {
-    const d = (x[i] ?? 0) - (y[i] ?? 0)
-    if (d !== 0) return d
-  }
-  return 0
-}
-
-export const newer = (a: string, b: string): boolean => compareVersions(a, b) > 0
-
-/**
- * The version a person sees: two numbers when the third is 0 (`2.1.0` → `2.1`), else as is
- * (`2.0.2`). Releases are `2.1`, `2.2`, … from 2.1 on, tagged `v2.1`; package.json keeps `2.1.0`
- * because npm and electron-builder need three numbers. Every version the updater holds — the
- * app's own (`host.version`, made short at its source in index.ts), each tag, the markers — goes
- * through this, so an equality check never sets `2.1` against `2.1.0`.
- */
-export const shortVersion = (v: string): string => v.replace(/^v/, '').replace(/^(\d+\.\d+)\.0$/, '$1')
+// The version order lives in `shared/versions.ts`: the "What's new" sheet compares by the same rule (YAZ-4371).
+export { compareVersions, newer, shortVersion }
 
 /** The Mac `.dmg` with GitHub's `sha256:<hex>` digest; none → the release is not ready yet (S2). */
 export function pickAsset(release: GithubRelease): { url: string; sha256: string } | null {
@@ -164,6 +147,8 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
   const oldMarker = join(host.userData, 'updated-to')
   const refusedFile = join(host.userData, 'update-refused')
   const staged = `${host.bundle}.update`
+  /** S7: a dev run checks only against a fake feed. */
+  const checks = host.isPackaged || host.feed !== undefined
 
   let state: UpdateState = { kind: 'idle' }
   /**
@@ -330,7 +315,7 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
       } catch {
         // nothing refused
       }
-      if (!host.isPackaged && host.feed === undefined) return // S7
+      if (!checks) return // S7
       // S11 across launches: no launch starts `ready`, so a `.part` of a quit download (S12) and a
       // `<bundle>.update` that a crash or a failed swap (S23) left are waste. In the background.
       if (host.platform === 'darwin' && host.isPackaged) swept = Promise.all([rm(updates, { recursive: true, force: true }), rm(staged, { recursive: true, force: true })]).catch(() => undefined)
@@ -342,13 +327,14 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
       }, FIRST_CHECK_MS)
     },
     check,
+    checks,
     state: () => state,
     async notes() {
       // 100 is GitHub's largest page: one request (66 releases, about 0.7 MB, today). A tag with a `-` is a
       // pre-release by name, as in the check, even when GitHub's flag says otherwise. The renderer picks the tags and the default (D10, D11).
       const releases = (await getJson<GithubRelease[]>(`${feed}?per_page=100`)).filter((r) => r.draft !== true && r.prerelease !== true && !r.tag_name.includes('-'))
       releases.sort((a, b) => compareVersions(b.tag_name, a.tag_name))
-      return { current: host.version, releases: releases.slice(0, 100).map((r) => ({ version: shortVersion(r.tag_name), title: r.name ?? r.tag_name, date: r.published_at ?? '', body: r.body ?? '' })) }
+      return { current: host.version, checks, releases: releases.slice(0, 100).map((r) => ({ version: shortVersion(r.tag_name), title: r.name ?? r.tag_name, date: r.published_at ?? '', body: r.body ?? '' })) }
     },
     installOnExit(reopen) {
       if (state.kind !== 'ready') return

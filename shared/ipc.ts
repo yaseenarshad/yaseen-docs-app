@@ -673,6 +673,12 @@ export const CONTRACT = {
     onState: push<UpdateState>('update:state-changed'),
     /** The GitHub release notes for "What's new" (D5): every published release, newest first, up to 100, and this app's version (YAZ-2988 D13). Rejects when GitHub cannot be reached. */
     notes: invoke<[], ReleaseNotes>('update:notes', 0),
+    /**
+     * "Update to v<latest>" in "What's new" (YAZ-4371): one check now, the same as the timer's, and the state
+     * it finds (`downloading` as soon as a download starts). A call during a check joins it (S6). Rejects when
+     * GitHub cannot be reached. A dev run with no feed (S7) answers the state and fetches nothing.
+     */
+    check: invoke<[], UpdateState>('update:check', 0),
     /** "Restart to update" (D6): quit through the quit sequence, swap, open again. For `manual` (S13) it opens the GitHub release page instead. */
     restart: invoke<[], void>('update:restart', 0),
   },
