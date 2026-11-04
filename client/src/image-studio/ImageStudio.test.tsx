@@ -1017,6 +1017,22 @@ describe('the Filter button and menu (YAZ-4360)', () => {
     expect(option(host, 'Colors', 'One color').getAttribute('aria-checked')).toBe('true')
   })
 
+  it('a filter change from another window (the settings sync) searches again, so the results match the badge (YAZ-4384)', async () => {
+    media.search.mockResolvedValue({ items: [icon('arrow')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    const { host } = await mount()
+    await search(host, 'arrow')
+    media.search.mockClear()
+    const listener = () => store.subscribe.mock.calls.forEach(([fn]) => (fn as () => void)())
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaFilters: { ...DEFAULT_MEDIA_FILTERS, colors: 'one' } })
+    await act(async () => listener())
+    expect(media.search).toHaveBeenCalledTimes(1)
+    expect(media.search).toHaveBeenCalledWith({ q: 'arrow', source: 'all', cursor: null, filters: { ...DEFAULT_MEDIA_FILTERS, colors: 'one' } })
+    expect(filterButton(host).querySelector('.image-studio__filter-badge')?.textContent).toBe('1')
+    // The same filters again (any other settings change) asks nothing.
+    await act(async () => listener())
+    expect(media.search).toHaveBeenCalledTimes(1)
+  })
+
   it('counts the filters that are on in a badge, and Clear filters turns them all off', async () => {
     store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaFilters: { colors: 'many', style: 'outline', packs: [], license: 'business' } })
     const { host } = await mount()

@@ -320,12 +320,12 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   const { chip, query, searchedQuery, results, cursor, warnings, isSearching, waiting, offline, pageError, error, pixabayAvailable, favorites, recent, used, components, drawings, recentOpen, smart, filters, pack } = session
   const { set } = imageStudioSession
   const packsStatus = useIconPacks()
-  // The filters and the pins live in the settings (they travel); the session holds a copy for the search to send.
+  // The filters and the pins live in the settings (they travel); the session holds a copy for the search to send. A
+  // change from another window searches again, as a pick in the menu does (YAZ-4384); the same filters ask nothing.
   const [pinned, setPinned] = useState<string[]>(settingsPins)
   useEffect(() => {
     const read = () => {
-      const stored = settingsFilters()
-      if (JSON.stringify(stored) !== JSON.stringify(imageStudioSession.getState().filters)) set({ filters: stored })
+      setFilters(settingsFilters())
       setPinned(settingsPins())
     }
     read()
