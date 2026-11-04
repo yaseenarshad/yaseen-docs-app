@@ -141,6 +141,9 @@ import {
   type ToolbarPrefs,
   TOOLBAR_BUTTONS,
   TOOLBAR_GROUPS,
+  HIGHLIGHT_CUSTOM_COLORS_KEPT,
+  isHighlightCustomColor,
+  type HighlightCustomColor,
   type StartupWindows,
   type VaultOpensOn,
   type StoredTab,
@@ -419,6 +422,19 @@ export function sanitizeToolbarPrefs(raw: unknown): ToolbarPrefs {
   }
 }
 
+/** The highlight panel's custom colours (YAZ-4348 demo round 2), strict — the IPC boundary's check: kept entries, each colour once, at most the cap. */
+const isHighlightCustomColors = (v: unknown): v is HighlightCustomColor[] =>
+  Array.isArray(v) && v.length <= HIGHLIGHT_CUSTOM_COLORS_KEPT && v.every(isHighlightCustomColor) && new Set(v.map((c) => c.color)).size === v.length
+/** The custom colours on load: an entry that does not read, or a colour a second time, is dropped; past the cap, the rest. */
+export function sanitizeHighlightCustomColors(raw: unknown): HighlightCustomColor[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  return raw
+    .filter((c): c is HighlightCustomColor => isHighlightCustomColor(c) && !seen.has(c.color) && Boolean(seen.add(c.color)))
+    .map(({ color, uses }) => ({ color, uses }))
+    .slice(0, HIGHLIGHT_CUSTOM_COLORS_KEPT)
+}
+
 /** Each place's hover switch (YAZ-3403), strict — the IPC boundary's check: every place, each a boolean. */
 const isHoverPreviewIn = (v: unknown): v is Record<HoverPlace, boolean> => isRecord(v) && HOVER_PLACES.every((place) => typeof v[place] === 'boolean')
 /** The sidebar's icon colours (YAZ-3440 D4), strict: each entry a known kind and a `#rrggbb`. */
@@ -568,6 +584,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   rowDates: (v): v is RowDates => isRecord(v) && SORT_MENU_TABS.every((tab) => typeof v[tab] === 'boolean'),
   sidebarTabs: isSidebarTabs,
   selectionToolbar: isToolbarPrefs,
+  highlightCustomColors: isHighlightCustomColors,
   startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
   vaultOpensOn: (v): v is VaultOpensOn => typeof v === 'string' && (VAULT_OPENS_ON as readonly string[]).includes(v),
   sectionStep: (v): v is number => isFiniteNumber(v) && SECTION_STEPS.includes(v),
@@ -667,6 +684,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.mediaFilters = sanitizeMediaFilters(src.mediaFilters)
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
   out.selectionToolbar = sanitizeToolbarPrefs(src.selectionToolbar)
+  out.highlightCustomColors = sanitizeHighlightCustomColors(src.highlightCustomColors)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
   out.hotkeysAside = sanitizeHotkeyAside(src.hotkeysAside)
