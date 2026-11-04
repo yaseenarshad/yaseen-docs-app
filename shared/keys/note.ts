@@ -27,6 +27,8 @@ export const NOTE_KEYS: readonly KeyRow[] = [
   note('strikethrough', 'Strikethrough', ['CmdOrCtrl+Shift+X', 'CmdOrCtrl+Alt+X']),
   note('highlight', 'Highlight', ['CmdOrCtrl+Shift+H']),
   note('inlineCode', 'Inline code', ['CmdOrCtrl+E']),
+  // YAZ-4277 demo round 1: as Google Docs' ⌘\; a text box's ⌘\ is the drawing's own (`drawing.clearTextFormatting`).
+  note('clearFormatting', 'Clear formatting', ['CmdOrCtrl+\\'], { hint: 'Letter styles go and a heading becomes text; bullets, lists, quotes and links stay' }),
   // The blocks.
   note('text', 'Text', ['CmdOrCtrl+Alt+0'], { hint: 'Turn the block into plain text' }),
   ...HEADINGS,

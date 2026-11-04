@@ -273,6 +273,7 @@ import {
   restoreItemLine,
 } from './listItemRoundTrip'
 import { toggleUnderline, underline, underlineSchema } from './marks/underline'
+import { clearFormattingKeymap } from './marks/clearFormatting'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
 import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
 import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
@@ -602,6 +603,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(slashMenu.inListWatch)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
+  crepe.editor.use(clearFormattingKeymap)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
   // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment.
