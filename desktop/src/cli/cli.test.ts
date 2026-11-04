@@ -15,7 +15,10 @@ import { createStore } from '../main/store'
 import { sweepIds } from '../main/vaultIndex/idSweep'
 import { macId } from '../main/vaultIndex/mint'
 import { scanFile } from '../main/vaultIndex/scan'
-import { HELP, USAGE, find, label, main, transformOnDisk } from './cli'
+import { dailyNoteName } from '@shared/dailyNote'
+import { settingsFileText } from '@shared/settingsSync'
+import type { SettingsState } from '@shared/types'
+import { HELP, USAGE, dayOf, find, label, main, transformOnDisk } from './cli'
 
 let dir: string
 beforeEach(async () => {
@@ -789,5 +792,158 @@ describe('the door stays Electron-free (🔒 D1)', () => {
     }
     walk(path.resolve(__dirname, 'index.ts'))
     expect(seen.size).toBeGreaterThan(3) // index → cli → main/fs/file → fsUtils, boundedRead …
+  })
+})
+
+describe('daily and new (YAZ-4269)', () => {
+  const TUE = new Date(2026, 10, 3)
+  const DAILY = { dailyNotes: true, dailyNoteFolder: 'daily', dailyNoteFormat: 'MM_DD- ddd', dailyNoteDayFolder: false }
+  beforeEach(() => {
+    // The app's profile in the temp dir: its state file, this Mac's ID and the locks (S13).
+    vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', dir)
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  /** The app's state file as the app writes it, with the Daily notes settings `daily`, and a settings folder when given. */
+  async function settings(daily: Partial<SettingsState> = DAILY, folder?: string): Promise<void> {
+    const store = createStore(path.join(dir, 'yaseendocs.json'))
+    store.setSettings({ ...store.get().settings, ...daily }, 1000)
+    if (folder !== undefined) store.setSettingsFolder(folder, 1000)
+    await store.flush()
+  }
+  const today = () => dailyNoteName(DAILY.dailyNoteFormat, new Date())
+  const notes = async (folder: string) => (await readdir(folder)).filter((name) => name.endsWith('.md') && !name.startsWith('.')).sort()
+
+  it('daily makes today\'s note by the app\'s settings and its template, then finds it: `made`, then `found`, the same path', async () => {
+    await settings()
+    const root = await vault('v', { 'daily/.template.md': 'PLAN\n' })
+
+    const made = await run(['daily', root])
+    const again = await run(['daily', root])
+
+    const [name] = await notes(path.join(root, 'daily'))
+    expect(made).toEqual({ code: 0, out: `made ${path.join(root, 'daily', name)}\n`, err: '' })
+    expect(again).toEqual({ code: 0, out: `found ${path.join(root, 'daily', name)}\n`, err: '' })
+    expect(await readFile(path.join(root, 'daily', name), 'utf8')).toMatch(new RegExp(`^---\\ntitle: ${today()}\\nid: YAZ-\\d+\\n---\\nPLAN\\n$`))
+  })
+
+  it('five runs at one moment make ONE note (D2)', async () => {
+    await settings()
+    const root = await vault('v', { 'daily/.keep.md': '' })
+
+    const all = await Promise.all(Array.from({ length: 5 }, () => run(['daily', root, '--date', '2026-11-03', '--json'])))
+
+    expect(all.map((r) => r.code)).toEqual([0, 0, 0, 0, 0])
+    const answers = all.map((r) => JSON.parse(r.out) as { path: string; created: boolean })
+    expect(answers.filter((a) => a.created)).toHaveLength(1)
+    expect(await notes(path.join(root, 'daily'))).toEqual([path.basename(answers[0].path)])
+    expect(answers[0]).toMatchObject({ title: '11_03- Tue', others: [] })
+  })
+
+  it('--date: the words and a day; a day that is not one is a usage error (D9)', async () => {
+    expect(dayOf(undefined, TUE)).toEqual(TUE)
+    expect(dayOf('today', new Date(2026, 10, 3, 23, 59))).toEqual(TUE)
+    expect(dayOf('tomorrow', TUE)).toEqual(new Date(2026, 10, 4))
+    expect(dayOf('yesterday', new Date(2026, 10, 1))).toEqual(new Date(2026, 9, 31))
+    expect(dayOf('2026-12-31', TUE)).toEqual(new Date(2026, 11, 31))
+    await settings()
+    const root = await vault('v', { 'daily/.keep.md': '' })
+    for (const bad of ['2026-02-30', '0099-01-01', '11/03', 'next week']) expect((await run(['daily', root, '--date', bad])).code).toBe(2)
+  })
+
+  it('--find only finds: no note is exit 1 with the title it looked for, and nothing is made (D6)', async () => {
+    await settings()
+    const root = await vault('v', { 'daily/11-02-mon-yaz-9.md': '---\ntitle: 11_02- Mon\nid: YAZ-9\n---\n' })
+
+    expect(await run(['daily', root, '--date', '2026-11-02', '--find'])).toEqual({ code: 0, out: `found ${path.join(root, 'daily', '11-02-mon-yaz-9.md')}\n`, err: '' })
+    expect(await run(['daily', root, '--date', '2026-11-03', '--find'])).toEqual({ code: 1, out: '', err: `no daily note "11_03- Tue" in ${root}\n` })
+    expect(await notes(path.join(root, 'daily'))).toEqual(['11-02-mon-yaz-9.md'])
+  })
+
+  it('two notes of the day: the first is the answer, each other is a warning, and `others` in --json (D8)', async () => {
+    await settings()
+    const a = '---\ntitle: 11_03- Tue\nid: YAZ-1\n---\n'
+    const root = await vault('v', { 'daily/a-yaz-1.md': a, 'daily/11-03-tue/b-yaz-2.md': a.replace('YAZ-1', 'YAZ-2') })
+
+    const plain = await run(['daily', root, '--date', '2026-11-03'])
+    const json = await run(['daily', root, '--date', '2026-11-03', '--json'])
+
+    expect(plain).toEqual({ code: 0, out: `found ${path.join(root, 'daily', 'a-yaz-1.md')}\n`, err: `warning: also ${path.join(root, 'daily', '11-03-tue', 'b-yaz-2.md')}\n` })
+    expect(JSON.parse(json.out)).toEqual({ path: path.join(root, 'daily', 'a-yaz-1.md'), title: '11_03- Tue', id: 'YAZ-1', created: false, others: [path.join(root, 'daily', '11-03-tue', 'b-yaz-2.md')] })
+  })
+
+  it('refused with the setting to change: Daily notes off, or no daily notes folder', async () => {
+    const root = await vault('v', {})
+    await settings({ ...DAILY, dailyNotes: false })
+    expect(await run(['daily', root])).toMatchObject({ code: 1, err: 'Daily notes are off. Turn them on in Settings › Files & Links › Daily notes\n' })
+    await settings()
+    expect((await run(['daily', root])).err).toMatch(/has no folder "daily"/)
+    expect((await run(['daily'])).code).toBe(2)
+    expect(await run(['daily', path.join(dir, 'gone')])).toMatchObject({ code: 1, err: `no vault folder ${path.join(dir, 'gone')}\n` })
+    // A flag the verb does not take is refused, never ignored.
+    expect(await run(['daily', root, '--body', 'x'])).toMatchObject({ code: 2, err: expect.stringMatching(/^daily does not take --body\n/) })
+    expect(await run(['new', root, '--title', 'X', '--find'])).toMatchObject({ code: 2, err: expect.stringMatching(/^new does not take --find\n/) })
+  })
+
+  it('D3: the newest settings of another Mac in the settings folder win over an older state file', async () => {
+    const sync = path.join(dir, 'sync')
+    await mkdir(sync)
+    await settings(DAILY, sync)
+    await writeFile(path.join(sync, 'settings-aaaaaaaaaaaa.json'), settingsFileText('Other Mac', 5000, { ...createStore(path.join(dir, 'yaseendocs.json')).get().settings, dailyNoteFolder: 'journal' }))
+    const root = await vault('v', { 'journal/.keep.md': '' })
+
+    const made = await run(['daily', root, '--date', '2026-11-03'])
+
+    expect(made.out).toMatch(new RegExp(`^made ${root}/journal/11-03-tue-yaz-\\d+\\.md\\n$`))
+  })
+
+  it('--open hands the note\'s yaseendocs:// link to the system after the note is ready (D10)', async () => {
+    await settings()
+    const root = await vault('v', { 'daily/my plan #1-yaz-4.md': '---\ntitle: 11_03- Tue\nid: YAZ-4\n---\n' })
+    const opened: string[] = []
+
+    let out = ''
+    const code = await main(['daily', root, '--date', '2026-11-03', '--find', '--open'], { stdin: async () => '', stdout: (t) => (out += t), stderr: () => undefined, open: async (link) => void opened.push(link) })
+
+    expect(code).toBe(0)
+    expect(opened).toEqual([`yaseendocs://${encodeURI(path.join(root, 'daily', 'my plan '))}%231-yaz-4.md`])
+    expect(out).toBe(`found ${path.join(root, 'daily', 'my plan #1-yaz-4.md')}\n`)
+  })
+
+  it('new makes a note as New note does: the template, the title, an id; --body - takes the template body\'s place, its properties go over the template\'s (D4)', async () => {
+    const root = await vault('v', { 'projects/.template.md': '---\nstatus: todo\nowner: me\n---\n## Template body\n' })
+
+    const made = await run(['new', path.join(root, 'projects'), '--title', 'Gym plan', '--body', '-', '--json'], '---\nstatus: doing\n---\n## Plan\n- Gym\n')
+
+    const answer = JSON.parse(made.out) as { path: string; id: string }
+    expect(answer).toMatchObject({ title: 'Gym plan', created: true, others: [], path: expect.stringMatching(/\/projects\/gym-plan-yaz-\d+\.md$/) })
+    expect(await readFile(answer.path, 'utf8')).toBe(`---\nstatus: doing\nowner: me\ntitle: Gym plan\nid: ${answer.id}\n---\n## Plan\n- Gym\n`)
+  })
+
+  it('new again with the same title finds the note and makes nothing; --body is then not written, and says so (D7)', async () => {
+    const root = await vault('v', { 'projects/.keep.md': '' })
+
+    const first = await run(['new', path.join(root, 'projects'), '--title', 'Gym plan'])
+    const again = await run(['new', path.join(root, 'projects'), '--title', 'Gym plan', '--body', 'new text'])
+    const both = await Promise.all([run(['new', path.join(root, 'projects'), '--title', 'Run plan']), run(['new', path.join(root, 'projects'), '--title', 'Run plan'])])
+
+    const made = first.out.replace(/^made /, '').trim()
+    expect(again).toEqual({ code: 0, out: `found ${made}\n`, err: `warning: --body was not written: ${made} was already there\n` })
+    expect(both.map((r) => r.out.split(' ')[0]).sort()).toEqual(['found', 'made'])
+    expect(await notes(path.join(root, 'projects'))).toHaveLength(2)
+  })
+
+  it('new in a vault without IDs: the file is the title, and a properties block that does not parse is refused with nothing made', async () => {
+    const root = await vault('plain', { 'projects/.template.md': '---\nstatus: todo\n---\nBody\n' }, false)
+
+    expect(await run(['new', path.join(root, 'projects'), '--title', 'Gym plan', '--json'])).toMatchObject({ code: 0, out: expect.stringContaining('"id": null') })
+    expect(await readFile(path.join(root, 'projects', 'Gym plan.md'), 'utf8')).toBe('---\nstatus: todo\n---\nBody\n')
+    expect(await run(['new', path.join(root, 'projects'), '--title', 'Bad', '--body', '---\n: [\n---\n'])).toEqual({ code: 1, out: '', err: 'the properties block of --body does not parse\n' })
+    expect(await notes(path.join(root, 'projects'))).toEqual(['Gym plan.md'])
+    expect((await run(['new', path.join(root, 'projects')])).code).toBe(2)
+    expect((await run(['new', path.join(root, 'projects', 'Gym plan.md'), '--title', 'X'])).err).toMatch(/is not a folder/)
+    expect((await run(['new', path.join(root, 'gone'), '--title', 'X'])).err).toBe(`no folder ${path.join(root, 'gone')}\n`)
   })
 })
