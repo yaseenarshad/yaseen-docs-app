@@ -23,6 +23,7 @@ import { createMediaCache } from '../media/cache'
 import { MEDIA_CACHE_DIR } from '../media/cachePolicy'
 import { createMediaProviders } from '../media/providers'
 import { createIconPacks, resolveIconPacksFolder } from '../media/iconPacks'
+import { tilePicture } from '../media/tilePicture'
 import type { FavoriteCopies } from '../library/favoriteCopies'
 import type { Store } from '../store'
 import { broadcastAll } from './broadcast'
@@ -91,7 +92,8 @@ export function registerMediaStudioIpc(
     void packs.moveTo(next).catch((err: unknown) => console.warn('[icon-packs] could not move to', next, err))
   })
   const readPixabayKey = () => secrets.read(PIXABAY_SECRET)
-  const providers = createMediaProviders({ fetch: fetchImpl, readPixabayKey, cache, packs, favoriteCopy: copies })
+  // A favorite's tile is its copy at tile size (YAZ-4385); the add still gets the whole copy.
+  const providers = createMediaProviders({ fetch: fetchImpl, readPixabayKey, cache, packs, favoriteCopy: copies, tilePicture })
   // The copy maker's providers: the same packs (an icon's copy needs no network when its pack is downloaded), no copy step.
   const originals = createMediaProviders({ fetch: fetchImpl, readPixabayKey, cache, packs })
   void copies?.start({ picture: originals.import, drawing: async (id) => (await originals.drawing({ id })).elements })
