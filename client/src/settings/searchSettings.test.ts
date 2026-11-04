@@ -235,7 +235,11 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'hierarchy'))).toEqual(['sidebarLines', 'tocLines'])
     // The canvas's frame outline and draw.io's shape outline share the word too (YAZ-3037).
     // Settings › Editor › Outline (YAZ-4094) names its four rows.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'outline'))).toEqual(['hotkey-diagram-outline', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-diagram-colourOther', 'hotkey-drawing-colors'])
+    // A board's colour letters (YAZ-4348) come last: each names the outline its ⇧ colours, and T takes an icon's off.
+    const outline = ids(searchSettings(settingCandidates(ctx()), 'outline'))
+    expect(outline.slice(0, 13)).toEqual(['hotkey-diagram-outline', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.framesVisible', 'hotkey-diagram-colourOther'])
+    expect(outline.slice(13).sort()).toEqual(hotkeyRows().filter((id) => id.startsWith('hotkey-drawing-color')).sort())
+    expect(outline).toHaveLength(13 + 15)
     // "guide" names the guide lines' rows (YAZ-4094; Bullet threading's hint no longer says it: one name for one thing) and is a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'sidebarLines', 'sectionLines', 'tocLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403).
