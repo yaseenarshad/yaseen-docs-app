@@ -29,6 +29,7 @@ import type { MapEntry, Mutable } from "@excalidraw/common/utility-types";
 import type { Bounds } from "@excalidraw/common";
 
 import { getCenterForBounds } from "./bounds";
+import { getElementStyleScale } from "./screenScale";
 import {
   getAllHoveredElementAtPoint,
   getHoveredElementForBinding,
@@ -126,23 +127,38 @@ export const getBindingGap = (
   // only the stroke width is needed, so the gap can also be computed for a
   // bind target that doesn't exist yet (see `getTextBindingForArrowEndpoint`)
   bindTarget: Pick<ExcalidrawBindableElement, "strokeWidth">,
-  opts: Pick<ExcalidrawArrowElement, "elbowed">,
+  opts: Pick<ExcalidrawArrowElement, "elbowed"> &
+    Partial<Pick<ExcalidrawArrowElement, "customData">>,
 ): number => {
   return (
-    (opts.elbowed ? BASE_BINDING_GAP_ELBOW : BASE_BINDING_GAP) +
+    // YAZ-4277 demo: an arrow drawn at a high zoom keeps the gap it has on
+    // screen at 100% (its style scale, `screenScale.ts`)
+    (opts.elbowed ? BASE_BINDING_GAP_ELBOW : BASE_BINDING_GAP) /
+      getElementStyleScale(opts) +
     bindTarget.strokeWidth / 2
   );
 };
 
+/**
+ * YAZ-4277 demo: the reach of a binding on screen when zoomed far in. Above
+ * zoom 4 the board-px reach (15) would cover hundreds of screen px, so at
+ * 10,000% an arrow drawn near a tiny shape bound both ends inside it and
+ * vanished.
+ */
+const MAX_BINDING_DISTANCE_SCREEN_PX = 60;
+
 export const maxBindingDistance_simple = (zoom?: AppState["zoom"]): number => {
   const BASE_BINDING_DISTANCE = Math.max(BASE_BINDING_GAP, 15);
   const zoomValue = zoom?.value && zoom.value < 1 ? zoom.value : 1;
-  return clamp(
-    // reducing zoom impact so that the diff between binding distance and
-    // binding gap is kept to minimum when possible
-    BASE_BINDING_DISTANCE / (zoomValue * 1.5),
-    BASE_BINDING_DISTANCE,
-    BASE_BINDING_DISTANCE * 2,
+  return Math.min(
+    clamp(
+      // reducing zoom impact so that the diff between binding distance and
+      // binding gap is kept to minimum when possible
+      BASE_BINDING_DISTANCE / (zoomValue * 1.5),
+      BASE_BINDING_DISTANCE,
+      BASE_BINDING_DISTANCE * 2,
+    ),
+    MAX_BINDING_DISTANCE_SCREEN_PX / (zoom?.value ?? 1),
   );
 };
 

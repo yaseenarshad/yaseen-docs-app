@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   COLOR_PALETTE,
+  isColorDark,
   CORNER_RADIUS,
   DEFAULT_ELEMENT_BACKGROUND_COLOR_PALETTE,
   DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX,
@@ -65,8 +66,11 @@ import { LinearElementEditor } from "@excalidraw/element";
 import { newElementWith } from "@excalidraw/element";
 import { getArrowheadForPicker } from "@excalidraw/element";
 
+import { getStyleScale, toBoardSize, toScreenSize } from "@excalidraw/element";
+
 import {
   getBoundTextElement,
+  getBoundTextElementId,
   getTextBackgroundNominalPadding,
   getTextBackgroundPaddingScaleFromNominalPx,
   getScaledTextRoundness,
@@ -410,6 +414,78 @@ const TEXT_TOOLBAR_MORE_COLORS = [
   COLOR_PALETTE.gray[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
 ];
 
+/**
+ * YAZ-4277 demo: the text toolbar's box fill, on the main bar: three plain
+ * tiles (no "A", so they never read as a highlight), the ▾'s others.
+ */
+const TEXT_TOOLBAR_FILL_PICKS = [
+  COLOR_PALETTE.yellow[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+  COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+  COLOR_PALETTE.black,
+];
+// red is the strong red: white letters on it stay readable
+const TEXT_TOOLBAR_MORE_FILLS = [
+  COLOR_PALETTE.green[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+  COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.gray[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+  COLOR_PALETTE.violet[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+];
+const TEXT_TOOLBAR_FILL_LABELS = Object.fromEntries(
+  (
+    [
+      ["yellow", TEXT_TOOLBAR_FILL_PICKS[0]],
+      ["blue", TEXT_TOOLBAR_FILL_PICKS[1]],
+      ["black", TEXT_TOOLBAR_FILL_PICKS[2]],
+      ["green", TEXT_TOOLBAR_MORE_FILLS[0]],
+      ["red", TEXT_TOOLBAR_MORE_FILLS[1]],
+      ["gray", TEXT_TOOLBAR_MORE_FILLS[2]],
+      ["violet", TEXT_TOOLBAR_MORE_FILLS[3]],
+    ] as const
+  ).map(([name, color]) => [color, `Fill ${name}`]),
+);
+
+/**
+ * YAZ-4277 demo: "Text color follows the fill". A dark fill on dark text
+ * gives white text; a light fill (or none) on white text gives black text.
+ * Any other text color stays, and so do the letters' own colors.
+ */
+const getReadableTextColor = (fill: string, text: string) =>
+  isColorDark(fill)
+    ? isColorDark(text)
+      ? COLOR_PALETTE.white
+      : null
+    : text.toLowerCase() === COLOR_PALETTE.white
+    ? COLOR_PALETTE.black
+    : null;
+
+/** The selected boxes' text (a free box, or a shape's label) on `fill`. */
+const withReadableTextColors = (
+  elements: readonly ExcalidrawElement[],
+  appState: AppState,
+  fill: string,
+) => {
+  const textIds = new Set<string>();
+  for (const element of getSelectedElements(elements, appState)) {
+    const textId =
+      isTextElement(element) && !element.containerId
+        ? element.id
+        : getBoundTextElementId(element);
+    if (textId) {
+      textIds.add(textId);
+    }
+  }
+  if (appState.editingTextElement && !appState.editingTextElement.containerId) {
+    textIds.add(appState.editingTextElement.id);
+  }
+  return elements.map((element) => {
+    if (!textIds.has(element.id) || !isTextElement(element)) {
+      return element;
+    }
+    const color = getReadableTextColor(fill, element.strokeColor);
+    return color ? newElementWith(element, { strokeColor: color }) : element;
+  });
+};
+
 /** The one color of all the letters of these boxes, or null (mixed). */
 const getTextBoxesColor = (elements: readonly ExcalidrawTextElement[]) => {
   const colors = new Set(
@@ -527,6 +603,7 @@ export const actionChangeStrokeColor = register<
               : DEFAULT_ELEMENT_STROKE_PICKS
           }
           morePicks={isTextToolbar ? TEXT_TOOLBAR_MORE_COLORS : undefined}
+          swatchLetter={isTextToolbar ? "color" : undefined}
           palette={DEFAULT_ELEMENT_STROKE_COLOR_PALETTE}
           type="elementStroke"
           label={t("labels.stroke")}
@@ -793,6 +870,15 @@ export const actionChangeBackgroundColor = register<
       );
     }
 
+    // YAZ-4277 demo: the letters stay readable on their new fill
+    if (app.props.fillSetsTextColor) {
+      nextElements = withReadableTextColors(
+        nextElements,
+        appState,
+        value.currentItemBackgroundColor,
+      );
+    }
+
     return {
       elements: nextElements,
       appState: {
@@ -811,7 +897,21 @@ export const actionChangeBackgroundColor = register<
           <h3 aria-hidden="true">{t("labels.background")}</h3>
         )}
         <ColorPicker
-          topPicks={DEFAULT_ELEMENT_BACKGROUND_PICKS}
+          topPicks={
+            data?.textToolbar
+              ? TEXT_TOOLBAR_FILL_PICKS
+              : DEFAULT_ELEMENT_BACKGROUND_PICKS
+          }
+          morePicks={data?.textToolbar ? TEXT_TOOLBAR_MORE_FILLS : undefined}
+          onNone={
+            data?.textToolbar
+              ? () =>
+                  updateData({
+                    currentItemBackgroundColor: COLOR_PALETTE.transparent,
+                  })
+              : undefined
+          }
+          pickLabels={data?.textToolbar ? TEXT_TOOLBAR_FILL_LABELS : undefined}
           palette={DEFAULT_ELEMENT_BACKGROUND_COLOR_PALETTE}
           type="elementBackground"
           label={t("labels.background")}
@@ -917,12 +1017,21 @@ export const actionChangeFillStyle = register<ExcalidrawElement["fillStyle"]>({
   },
 });
 
+/**
+ * YAZ-4277 demo: the width and corner pickers speak screen px at this zoom
+ * while "New shapes match the zoom" is on (`screenScale.ts`).
+ */
+const getPickerScale = (app: AppClassProperties) =>
+  getStyleScale(app.state.zoom.value, app.props.newShapesMatchZoom);
+
 const getStrokeWidthKeyForElement = (
   element: ExcalidrawElement,
+  scale = 1,
 ): StrokeWidthKey | null => {
+  const width = toScreenSize(element.strokeWidth, scale);
   return (
     STROKE_WIDTH_KEYS.find(
-      (key) => getStrokeWidthByKey(element.type, key) === element.strokeWidth,
+      (key) => getStrokeWidthByKey(element.type, key) === width,
     ) ?? null
   );
 };
@@ -930,21 +1039,23 @@ const getStrokeWidthKeyForElement = (
 const getStrokeWidthForElement = (
   element: ExcalidrawElement,
   strokeWidthKey: StrokeWidthKey,
+  scale = 1,
 ): ExcalidrawElement["strokeWidth"] => {
-  return getStrokeWidthByKey(element.type, strokeWidthKey);
+  return toBoardSize(getStrokeWidthByKey(element.type, strokeWidthKey), scale);
 };
 
 export const actionChangeStrokeWidth = register<StrokeWidthKey>({
   name: "changeStrokeWidth",
   label: "labels.strokeWidth",
   trackEvent: false,
-  perform: (elements, appState, value) => {
+  perform: (elements, appState, value, app) => {
     invariant(value, "actionChangeStrokeWidth: value must be defined");
+    const scale = getPickerScale(app);
 
     return {
       elements: changeProperty(elements, appState, (el) =>
         newElementWith(el, {
-          strokeWidth: getStrokeWidthForElement(el, value),
+          strokeWidth: getStrokeWidthForElement(el, value, scale),
         }),
       ),
       appState: { ...appState, currentItemStrokeWidthKey: value },
@@ -980,7 +1091,8 @@ export const actionChangeStrokeWidth = register<StrokeWidthKey>({
           value={getFormValue(
             elements,
             app,
-            getStrokeWidthKeyForElement,
+            (element) =>
+              getStrokeWidthKeyForElement(element, getPickerScale(app)),
             (element) => element.hasOwnProperty("strokeWidth"),
             (hasSelection) =>
               hasSelection ? null : appState.currentItemStrokeWidthKey,
@@ -1095,7 +1207,7 @@ export const actionChangeVectorStrokeWidth = register<number>({
   name: "changeVectorStrokeWidth",
   label: "labels.strokeWidth",
   trackEvent: false,
-  perform: (elements, appState, value) => {
+  perform: (elements, appState, value, app) => {
     invariant(
       value !== undefined,
       "actionChangeVectorStrokeWidth: value must be defined",
@@ -1113,7 +1225,9 @@ export const actionChangeVectorStrokeWidth = register<number>({
       selectedElements,
       appState,
     );
+    // the picker's value is screen px; the element keeps board px
     const strokeWidth = normalizeVectorStrokeWidth(value, settings);
+    const boardStrokeWidth = toBoardSize(strokeWidth, getPickerScale(app));
     const shouldActivateImageBorder = selectedElements.some(
       (element) =>
         isImageElement(element) && isTransparent(element.strokeColor),
@@ -1130,7 +1244,7 @@ export const actionChangeVectorStrokeWidth = register<number>({
         }
 
         return newElementWith(element, {
-          strokeWidth,
+          strokeWidth: boardStrokeWidth,
           ...(isImageElement(element) && isTransparent(element.strokeColor)
             ? { strokeColor: visibleImageStrokeColor }
             : null),
@@ -1151,10 +1265,17 @@ export const actionChangeVectorStrokeWidth = register<number>({
       getSelectedElements(elements, appState),
       appState,
     );
+    const scale = getPickerScale(app);
     const value = getFormValue(
       elements,
       app,
-      (element) => element.strokeWidth,
+      (element) =>
+        scale === 1
+          ? element.strokeWidth
+          : normalizeVectorStrokeWidth(
+              toScreenSize(element.strokeWidth, scale),
+              settings,
+            ),
       (element) => hasVectorStrokeWidth(element.type),
       (hasSelection) => (hasSelection ? null : appState[preference]),
     );
@@ -2501,6 +2622,7 @@ export const actionChangeTextHighlight = register<string | null>({
             )}
             popupOpen={customOpen}
             onPopupOpenChange={setCustomOpen}
+            swatchLetter="on-color"
             elements={elements}
             appState={appState}
             updateData={updateData}
@@ -3481,7 +3603,7 @@ export const actionChangeRoundness = register<number | "sharp" | "round">({
   name: "changeRoundness",
   label: "Change edge roundness",
   trackEvent: false,
-  perform: (elements, appState, value) => {
+  perform: (elements, appState, value, app) => {
     if (typeof value === "number") {
       const selectedElements = getSelectedElements(elements, appState);
       if (
@@ -3491,7 +3613,9 @@ export const actionChangeRoundness = register<number | "sharp" | "round">({
         return false;
       }
 
+      // screen px at this zoom; the element keeps board px
       const radius = normalizeCornerRadius(value);
+      const boardRadius = toBoardSize(radius, getPickerScale(app));
       return {
         elements: changeProperty(elements, appState, (element) => {
           if (!canChangeCornerRadiusForElement(element)) {
@@ -3508,7 +3632,7 @@ export const actionChangeRoundness = register<number | "sharp" | "round">({
                       isUsingAdaptiveRadius(element.type)
                         ? ROUNDNESS.ADAPTIVE_RADIUS
                         : ROUNDNESS.PROPORTIONAL_RADIUS,
-                    value: radius,
+                    value: boardRadius,
                   },
           });
         }),
@@ -3560,10 +3684,16 @@ export const actionChangeRoundness = register<number | "sharp" | "round">({
       : canChangeCornerRadius(appState.activeTool.type);
 
     if (usesContinuousCornerRadius) {
+      const scale = getPickerScale(app);
       const value = getFormValue(
         elements,
         app,
-        getRequestedCornerRadius,
+        (element) =>
+          scale === 1
+            ? getRequestedCornerRadius(element)
+            : normalizeCornerRadius(
+                toScreenSize(getRequestedCornerRadius(element), scale),
+              ),
         canChangeCornerRadiusForElement,
         (selectionExists) =>
           selectionExists

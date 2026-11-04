@@ -105,6 +105,8 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
     textEditor,
     foldArrows,
     newElementStyle,
+    fillSetsTextColor,
+    newShapesMatchZoom,
     defaultItemStyle,
     hostContextMenuItems,
     onExportPdf,
@@ -248,6 +250,8 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
           textEditor={textEditor}
           foldArrows={foldArrows}
           newElementStyle={newElementStyle}
+          fillSetsTextColor={fillSetsTextColor}
+          newShapesMatchZoom={newShapesMatchZoom}
           defaultItemStyle={defaultItemStyle}
           hostContextMenuItems={hostContextMenuItems}
           onExportPdf={onExportPdf}

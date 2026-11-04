@@ -23,7 +23,8 @@ import { hasTextList } from "./textList";
 import type { GlobalPoint, Radians } from "@excalidraw/math";
 import type { ExcalidrawTextElement } from "./types";
 
-export type FoldArrowMode = "hover" | "always";
+/** `"off"`: no folding; the host keeps the saved folds aside (YAZ-4277 demo). */
+export type FoldArrowMode = "hover" | "always" | "off";
 export type FoldArrowThickness = "thin" | "normal" | "thick";
 
 export type FoldArrowPrefs = Readonly<{

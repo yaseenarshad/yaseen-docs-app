@@ -26,7 +26,14 @@ interface TopPicksProps {
   titles?: boolean;
   /** YAZ-4074 6B: a swatch's name for a screen reader, by color (the highlight's "Highlight yellow"). */
   labels?: Readonly<Record<string, string>>;
+  /**
+   * YAZ-4277 demo: an "A" on each swatch says what the color is for: in the
+   * color on white (text color), or dark on the color (highlight).
+   */
+  letter?: SwatchLetter;
 }
+
+export type SwatchLetter = "color" | "on-color";
 
 export const TopPicks = ({
   onChange,
@@ -35,6 +42,7 @@ export const TopPicks = ({
   topPicks,
   titles = true,
   labels,
+  letter,
 }: TopPicksProps) => {
   let colors;
   if (type === "elementStroke") {
@@ -66,9 +74,13 @@ export const TopPicks = ({
           color,
           palette: COLOR_PALETTE,
         })?.colorName;
-        const label =
+        const name =
           labels?.[color] ??
           (colorName ? t(`colors.${colorName}` as TranslationKeys) : color);
+        const label =
+          letter === "color" && !labels?.[color]
+            ? `Text ${name.toLowerCase()}`
+            : name;
 
         return (
           <button
@@ -76,10 +88,10 @@ export const TopPicks = ({
               active: color === activeColor,
               "is-transparent": color === "transparent" || !color,
               "is-canonical-white": color === COLOR_PALETTE.white,
-              "has-outline": !isColorDark(
-                color,
-                COLOR_OUTLINE_CONTRAST_THRESHOLD,
-              ),
+              "has-outline":
+                letter === "color" ||
+                !isColorDark(color, COLOR_OUTLINE_CONTRAST_THRESHOLD),
+              [`color-picker__button--letter-${letter}`]: !!letter,
             })}
             style={{ "--swatch-color": color }}
             key={color}
@@ -90,6 +102,11 @@ export const TopPicks = ({
             onClick={() => onChange(color)}
             data-testid={`color-top-pick-${color}`}
           >
+            {letter && (
+              <span className="color-picker__letter" aria-hidden="true">
+                A
+              </span>
+            )}
             <div className="color-picker__button-outline" />
           </button>
         );

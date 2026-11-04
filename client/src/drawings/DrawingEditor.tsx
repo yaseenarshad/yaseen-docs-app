@@ -95,13 +95,14 @@ export const OUTSIDE_FOLDER_WARNING = 'This folder is outside the vault. Your ot
  * no size row and no move. A move writes the file, so Read only greys it out; the exports write elsewhere and stay.
  */
 /** The cog's "Fold arrows" choices (YAZ-4277 D5): the app setting (no key), or the board's own. */
-const FOLD_ARROW_CHOICES: readonly { value: 'app' | FoldArrowMode; label: string }[] = [
-  { value: 'app', label: 'Fold arrows: app setting' },
-  { value: 'hover', label: 'Fold arrows: on hover' },
-  { value: 'always', label: 'Fold arrows: always' },
+const FOLD_ARROW_CHOICES: readonly { value: 'app' | FoldArrowMode; label: string; title: string }[] = [
+  { value: 'app', label: 'App', title: 'The app setting' },
+  { value: 'hover', label: 'Hover', title: 'Arrows show on hover' },
+  { value: 'always', label: 'Always', title: 'Arrows always show' },
+  { value: 'off', label: 'Off', title: 'No folding: every line shows, the folds stay saved' },
 ]
 
-export function drawingCogRows({ pictures, out, folder, home = '', folderAllowed, onAllowFolder, readOnly, onMovePictures, onExportImage, onExportDrawing, hoverLinks, onHoverLinks, foldArrows, onFoldArrows }: {
+export function drawingCogRows({ pictures, out, folder, home = '', folderAllowed, onAllowFolder, readOnly, onMovePictures, onExportImage, onExportDrawing, hoverLinks, onHoverLinks, foldArrows, onFoldArrows, appFoldArrows }: {
   pictures: { bytes: number; count: number; missing?: number }
   out: boolean
   /** The board's own pictures folder (demo round 3), vault-relative or absolute, while `out`; absent: the vault's `assets/`. */
@@ -122,15 +123,27 @@ export function drawingCogRows({ pictures, out, folder, home = '', folderAllowed
   /** The board's own "Fold arrows" (YAZ-4277 D5): `'app'` when the block has none; absent with `onFoldArrows`: no rows. */
   foldArrows?: 'app' | FoldArrowMode
   onFoldArrows?: (value: 'app' | FoldArrowMode) => void
+  /** The app's own mode (Settings › Drawings), named on the "app setting" row so it never reads as a twin of another row. */
+  appFoldArrows?: FoldArrowMode
 }): PageSwitch[] {
   const rows: PageSwitch[] = []
   // It writes the file, so Read only greys it out, as "Move pictures out".
   if (onHoverLinks !== undefined) rows.push({ label: 'Link preview on hover', on: hoverLinks === true, onToggle: onHoverLinks, disabled: readOnly })
-  // YAZ-4277 D5: one row per choice, the board's choice checked; it writes the file, so Read only greys them out too.
+  // YAZ-4277 D5: the board's choice pressed; it writes the file, so Read only greys it out too.
   if (onFoldArrows !== undefined) {
-    for (const { value, label } of FOLD_ARROW_CHOICES) {
-      rows.push({ label, on: (foldArrows ?? 'app') === value, onToggle: () => onFoldArrows(value), disabled: readOnly, divider: value === 'app' })
-    }
+    // demo round 1: ONE switch of four pills; the label names the app's own mode, so "App" never reads as a twin
+    const appMode = FOLD_ARROW_CHOICES.find((choice) => choice.value === appFoldArrows)?.label
+    rows.push({
+      label: appMode === undefined ? 'Fold arrows' : `Fold arrows (app: ${appMode.toLowerCase()})`,
+      divider: true,
+      disabled: readOnly,
+      choices: FOLD_ARROW_CHOICES.map(({ value, label, title }) => ({
+        label,
+        title: value === 'app' && appMode !== undefined ? `${title}: ${appMode}` : title,
+        on: (foldArrows ?? 'app') === value,
+        onPick: () => onFoldArrows(value),
+      })),
+    })
   }
   const place: PicturesPlace = !out ? 'inside' : folder === undefined ? 'assets' : 'folder'
   if (pictures.count > 0) {
@@ -509,6 +522,9 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
 
   // The cog's rows (YAZ-3943 D5, D13), set from here because `renderTopRight` is made once. The rows are
   // made while the cog is open, never on a keystroke; the clicks read this render's handlers through a ref.
+  // Read when the cog opens, so a Settings change never rebuilds the chips.
+  const appFoldArrowsRef = useRef(canvasPrefs?.foldArrowsOpen)
+  appFoldArrowsRef.current = canvasPrefs?.foldArrowsOpen
   const cogActions = useRef({ askMovePictures, exportDrawing, setHoverLinks, setFoldArrows, askAllow })
   cogActions.current = { askMovePictures, exportDrawing, setHoverLinks, setFoldArrows, askAllow }
   useLayoutEffect(
@@ -531,6 +547,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
             onHoverLinks: () => void cogActions.current.setHoverLinks(hoverLinksOff),
             foldArrows: boardFoldArrows ?? 'app',
             onFoldArrows: (value) => void cogActions.current.setFoldArrows(value),
+            appFoldArrows: appFoldArrowsRef.current,
           }),
       }),
     [chips, picturesOut, picturesFolder, home, folderAllowed, readOnly, hoverLinksOff, boardFoldArrows],

@@ -53,7 +53,6 @@ import {
   TOUCH_CTX_MENU_TIMEOUT,
   VERTICAL_ALIGN,
   YOUTUBE_STATES,
-  ZOOM_STEP,
   MIN_ZOOM,
   POINTER_EVENTS,
   TOOL_TYPE,
@@ -180,6 +179,9 @@ import {
   isInvisiblySmallElement,
   getCornerRadius,
   getDefaultCornerRadiusForElementType,
+  getStyleScale,
+  toBoardSize,
+  withStyleScale,
   getRelativeImageCornerRadius,
   isPathALoop,
   createSrcDoc,
@@ -431,6 +433,7 @@ import {
   getScrollToContentState,
   getElementsWithinSelection,
   getNormalizedZoom,
+  getWheelZoom,
   getSelectedElements,
   hasBackground,
   isSomeElementSelected,
@@ -7162,7 +7165,12 @@ class App extends React.Component<AppProps, AppState> {
                   )
                 : null;
             if (wrapAt !== null) {
-              next = { ...next, x: dimensions!.x, autoResize: false, width: wrapAt };
+              next = {
+                ...next,
+                x: dimensions!.x,
+                autoResize: false,
+                width: wrapAt,
+              };
               dimensions = refreshTextDimensions(
                 next,
                 container,
@@ -8535,7 +8543,12 @@ class App extends React.Component<AppProps, AppState> {
     foldedLines: readonly number[],
   ) => {
     const element = this.scene.getNonDeletedElement(elementId);
-    if (!element || !isTextElement(element)) {
+    if (
+      !element ||
+      !isTextElement(element) ||
+      // folding off: a box can only open
+      (this.isFoldingOff() && foldedLines.length)
+    ) {
       return false;
     }
     const changed = setFoldedLines(element, foldedLines, this.scene);
@@ -8549,6 +8562,9 @@ class App extends React.Component<AppProps, AppState> {
   public getFoldArrowPrefs = () =>
     this.props.foldArrows ?? DEFAULT_FOLD_ARROW_PREFS;
 
+  /** YAZ-4277 demo: folding is off on this board: no arrow, no fold. */
+  public isFoldingOff = () => this.getFoldArrowPrefs().openArrows === "off";
+
   /**
    * YAZ-4277 D5: the fold arrow, or the rest of an item's line, under a
    * scene point. The topmost text box wins. A box is looked at only when the
@@ -8558,6 +8574,9 @@ class App extends React.Component<AppProps, AppState> {
     scenePointer: Readonly<{ x: number; y: number }>,
   ): FoldArrowHit | null => {
     const prefs = this.getFoldArrowPrefs();
+    if (prefs.openArrows === "off") {
+      return null;
+    }
     const zoom = this.state.zoom.value;
     const elementsMap = this.scene.getNonDeletedElementsMap();
     const elements = this.scene.getNonDeletedElements();
@@ -8596,6 +8615,22 @@ class App extends React.Component<AppProps, AppState> {
     return null;
   };
 
+  /** YAZ-4277 D5: folds or unfolds the item whose arrow is under the point. */
+  private toggleFoldArrowAt = (
+    scenePointer: Readonly<{ x: number; y: number }>,
+  ) => {
+    const hit = this.getFoldArrowTargetAt(scenePointer);
+    const element = hit?.onArrow
+      ? this.scene.getNonDeletedElement(hit.elementId)
+      : null;
+    if (!hit || !element || !isTextElement(element)) {
+      return false;
+    }
+    this.setTextFolds(element.id, getToggledFoldedLines(element, hit.line));
+    this.updateFoldArrowHover(scenePointer);
+    return true;
+  };
+
   /**
    * YAZ-4277 D5: the hovered item's ▾ (in "hover" mode) draws on the
    * interactive canvas; a change of item renders once, a move inside it
@@ -8607,8 +8642,7 @@ class App extends React.Component<AppProps, AppState> {
     const hit =
       scenePointer &&
       (this.state.activeTool.type === "selection" ||
-        this.state.activeTool.type === "lasso") &&
-      !this.state.viewModeEnabled
+        this.state.activeTool.type === "lasso")
         ? this.getFoldArrowTargetAt(scenePointer)
         : null;
     const element = hit && this.scene.getNonDeletedElement(hit.elementId);
@@ -10052,6 +10086,17 @@ class App extends React.Component<AppProps, AppState> {
 
     this.lastPointerDownEvent = event;
 
+    // YAZ-4277: in view mode (Read only, the share viewer) a press pans, so
+    // a fold arrow takes its click first. The fold shows on this screen only:
+    // a read-only host never saves it
+    if (
+      event.button === POINTER_BUTTON.MAIN &&
+      this.state.viewModeEnabled &&
+      this.toggleFoldArrowAt(scenePointer)
+    ) {
+      return;
+    }
+
     // we must exit before we set `cursorButton` state and `savePointer`
     // else it will send pointer state & laser pointer events in collab when
     // panning
@@ -10067,13 +10112,7 @@ class App extends React.Component<AppProps, AppState> {
       (this.state.activeTool.type === "selection" ||
         this.state.activeTool.type === "lasso")
     ) {
-      const hit = this.getFoldArrowTargetAt(scenePointer);
-      const element = hit?.onArrow
-        ? this.scene.getNonDeletedElement(hit.elementId)
-        : null;
-      if (hit && element && isTextElement(element)) {
-        this.setTextFolds(element.id, getToggledFoldedLines(element, hit.line));
-        this.updateFoldArrowHover(scenePointer);
+      if (this.toggleFoldArrowAt(scenePointer)) {
         return;
       }
       // YAZ-4277 D4: a click on a checklist box ticks it, also not in edit
@@ -11482,6 +11521,7 @@ class App extends React.Component<AppProps, AppState> {
       strokeWidth: this.getCurrentItemStrokeWidth("freedraw"),
       strokeStyle: this.state.currentItemStrokeStyle,
       roughness: this.state.currentItemRoughness,
+      customData: this.getNewElementCustomData(),
       opacity: this.state.currentItemOpacity,
       roundness: null,
       simulatePressure,
@@ -11550,6 +11590,7 @@ class App extends React.Component<AppProps, AppState> {
       strokeWidth: this.getCurrentItemStrokeWidth("iframe"),
       strokeStyle: this.state.currentItemStrokeStyle,
       roughness: this.state.currentItemRoughness,
+      customData: this.getNewElementCustomData(),
       roundness: this.getCurrentItemRoundness("iframe"),
       opacity: this.state.currentItemOpacity,
       locked: false,
@@ -11603,6 +11644,7 @@ class App extends React.Component<AppProps, AppState> {
       strokeWidth: this.getCurrentItemStrokeWidth("embeddable"),
       strokeStyle: this.state.currentItemStrokeStyle,
       roughness: this.state.currentItemRoughness,
+      customData: this.getNewElementCustomData(),
       roundness: this.getCurrentItemRoundness("embeddable"),
       opacity: this.state.currentItemOpacity,
       locked: false,
@@ -11650,6 +11692,7 @@ class App extends React.Component<AppProps, AppState> {
       strokeWidth: this.getCurrentItemStrokeWidth("image"),
       strokeStyle: this.state.currentItemStrokeStyle,
       roughness: this.state.currentItemRoughness,
+      customData: this.getNewElementCustomData(),
       roundness: this.getCurrentItemRoundness("image"),
       opacity: this.state.currentItemOpacity,
       locked: false,
@@ -11828,6 +11871,7 @@ class App extends React.Component<AppProps, AppState> {
               strokeWidth: this.getCurrentItemStrokeWidth(elementType),
               strokeStyle: this.state.currentItemStrokeStyle,
               roughness: this.state.currentItemRoughness,
+              customData: this.getNewElementCustomData(),
               opacity: this.state.currentItemOpacity,
               roundness:
                 this.state.currentItemArrowType === ARROW_TYPE.round
@@ -11855,6 +11899,7 @@ class App extends React.Component<AppProps, AppState> {
               strokeWidth: this.getCurrentItemStrokeWidth(elementType),
               strokeStyle: this.state.currentItemStrokeStyle,
               roughness: this.state.currentItemRoughness,
+              customData: this.getNewElementCustomData(),
               opacity: this.state.currentItemOpacity,
               roundness:
                 this.state.currentItemRoundness === "round"
@@ -11989,7 +12034,10 @@ class App extends React.Component<AppProps, AppState> {
             type: isUsingAdaptiveRadius(elementType)
               ? ROUNDNESS.ADAPTIVE_RADIUS
               : ROUNDNESS.PROPORTIONAL_RADIUS,
-            value: this.state.currentItemCornerRadius,
+            value: toBoardSize(
+              this.state.currentItemCornerRadius,
+              this.getNewElementStyleScale(),
+            ),
           }
         : null;
     }
@@ -12000,7 +12048,10 @@ class App extends React.Component<AppProps, AppState> {
     ) {
       return {
         type: ROUNDNESS.ADAPTIVE_RADIUS,
-        value: getDefaultCornerRadiusForElementType(elementType),
+        value: toBoardSize(
+          getDefaultCornerRadiusForElementType(elementType),
+          this.getNewElementStyleScale(),
+        ),
       };
     }
 
@@ -12013,17 +12064,30 @@ class App extends React.Component<AppProps, AppState> {
       : null;
   }
 
+  /**
+   * YAZ-4277 demo: the scale a new element's styles are made at, the zoom
+   * while "New shapes match the zoom" is on (`screenScale.ts`).
+   */
+  private getNewElementStyleScale = () =>
+    getStyleScale(this.state.zoom.value, this.props.newShapesMatchZoom);
+
+  /** A new shape's `customData`: its style scale, when not 1. */
+  private getNewElementCustomData = () =>
+    withStyleScale(undefined, this.getNewElementStyleScale());
+
   private getCurrentItemStrokeWidth(elementType: ExcalidrawElement["type"]) {
+    // the pickers speak screen px; a text's width is not drawn
+    const scale = elementType === "text" ? 1 : this.getNewElementStyleScale();
     if (this.state.writingMode && elementType === "freedraw") {
-      return this.state.currentItemWritingStrokeWidth;
+      return toBoardSize(this.state.currentItemWritingStrokeWidth, scale);
     }
     if (hasVectorStrokeWidth(elementType)) {
-      return this.state.currentItemVectorStrokeWidth;
+      return toBoardSize(this.state.currentItemVectorStrokeWidth, scale);
     }
 
-    return getStrokeWidthByKey(
-      elementType,
-      this.state.currentItemStrokeWidthKey,
+    return toBoardSize(
+      getStrokeWidthByKey(elementType, this.state.currentItemStrokeWidthKey),
+      scale,
     );
   }
 
@@ -12053,6 +12117,7 @@ class App extends React.Component<AppProps, AppState> {
       strokeWidth: this.getCurrentItemStrokeWidth(elementType),
       strokeStyle: this.state.currentItemStrokeStyle,
       roughness: this.state.currentItemRoughness,
+      customData: this.getNewElementCustomData(),
       opacity: this.state.currentItemOpacity,
       roundness: this.getCurrentItemRoundness(elementType),
       locked: false,
@@ -15693,21 +15758,8 @@ class App extends React.Component<AppProps, AppState> {
       const { deltaX, deltaY } = event;
       // note that event.ctrlKey is necessary to handle pinch zooming
       if (event.metaKey || event.ctrlKey) {
-        const sign = Math.sign(deltaY);
-        const MAX_STEP = ZOOM_STEP * 100;
-        const absDelta = Math.abs(deltaY);
-        let delta = deltaY;
-        if (absDelta > MAX_STEP) {
-          delta = MAX_STEP * sign;
-        }
-
-        let newZoom = this.state.zoom.value - delta / 100;
-        // increase zoom steps the more zoomed-in we are (applies to >100% only)
-        newZoom +=
-          Math.log10(Math.max(1, this.state.zoom.value)) *
-          -sign *
-          // reduced amplification for small deltas (small movements on a trackpad)
-          Math.min(1, absDelta / 20);
+        // YAZ-4277 demo: an even step: the same move on screen at any zoom
+        let newZoom = getWheelZoom(this.state.zoom.value, deltaY);
 
         const minZoom = this.state.scrollConstraints?.lockZoom
           ? this.state.scrollConstraints.zoom

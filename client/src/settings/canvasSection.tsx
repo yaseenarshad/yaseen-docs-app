@@ -51,6 +51,7 @@ const NEW_ELEMENT_STYLE_OPTIONS: readonly Option<NewElementStyleMode>[] = [
 const FOLD_ARROW_MODE_OPTIONS: readonly Option<FoldArrowMode>[] = [
   { value: 'hover', label: 'On hover' },
   { value: 'always', label: 'Always' },
+  { value: 'off', label: 'Off (no folding)' },
 ]
 const FOLD_ARROW_THICKNESS_OPTIONS: readonly Option<FoldArrowThickness>[] = [
   { value: 'thin', label: 'Thin' },
@@ -163,6 +164,10 @@ export const CANVAS_SECTION: SettingsSection = {
             <Segmented options={NEW_ELEMENT_STYLE_OPTIONS} value={settings.canvas.newElementStyle ?? DEFAULT_CANVAS_PREFS.newElementStyle} onChange={(newElementStyle) => onChange(write(settings, { newElementStyle }))} ariaLabel="New shapes and text" />
           ),
         },
+        // YAZ-4277 demo: a shape drawn zoomed in looks as one drawn at 100% (`screenScale.ts`).
+        toggle('newShapesMatchZoom', 'New shapes match the zoom', 'A shape, arrow or line you draw keeps its line width, corners and arrowheads at the same size on screen at any zoom. The width and corner pickers use screen px.', ['zoom', 'line width', 'stroke', 'thick', 'corner', 'radius', 'arrowhead', 'scale']),
+        // YAZ-4277 demo: a black or red fill makes the text white, so it stays readable.
+        toggle('fillSetsTextColor', 'Text color follows the fill', 'A dark fill turns dark text white; a light fill turns white text black. Any other text color stays.', ['fill', 'background', 'contrast', 'white text', 'readable']),
         width('writingStrokeWidth', 'Writing pen width', `Default ${DEFAULT_CANVAS_PREFS.writingStrokeWidth}.`),
         width('vectorStrokeWidth', 'Vector stroke width', `Default ${DEFAULT_CANVAS_PREFS.vectorStrokeWidth}.`),
         {

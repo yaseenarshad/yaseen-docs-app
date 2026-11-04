@@ -44,6 +44,7 @@ import { generateLinearCollisionShape } from "./shape";
 import { hitElementItself, isPointInElement } from "./collision";
 import { LinearElementEditor } from "./linearElementEditor";
 import { isRectangularElement } from "./typeChecks";
+import { getElementStyleScale } from "./screenScale";
 import { maxBindingDistance_simple } from "./binding";
 
 import {
@@ -495,7 +496,15 @@ export const isPathALoop = (
 
 export const getCornerRadius = (x: number, element: ExcalidrawElement) => {
   if (element.roundness?.value !== undefined) {
-    return Math.min(normalizeCornerRadius(element.roundness.value), x / 2);
+    // YAZ-4277 demo: a radius picked zoomed in is a fraction of a board px
+    // (`screenScale.ts`), so it is kept, not rounded to whole px
+    const value = element.roundness.value;
+    return Math.min(
+      Number.isFinite(value)
+        ? Math.min(CORNER_RADIUS.max, Math.max(CORNER_RADIUS.min, value))
+        : CORNER_RADIUS.default,
+      x / 2,
+    );
   }
 
   if (
@@ -506,7 +515,9 @@ export const getCornerRadius = (x: number, element: ExcalidrawElement) => {
   }
 
   if (element.roundness?.type === ROUNDNESS.ADAPTIVE_RADIUS) {
-    const fixedRadiusSize = element.roundness?.value ?? DEFAULT_ADAPTIVE_RADIUS;
+    const fixedRadiusSize =
+      element.roundness?.value ??
+      DEFAULT_ADAPTIVE_RADIUS / getElementStyleScale(element);
 
     const CUTOFF_SIZE = fixedRadiusSize / DEFAULT_PROPORTIONAL_RADIUS;
 

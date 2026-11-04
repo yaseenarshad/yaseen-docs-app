@@ -32,7 +32,8 @@ export async function mountBox(text: string, textRuns: TextRuns = undefined, sel
   const onChange = vi.fn<(text: string, textRuns: TextRuns, selection: { anchor: number; head: number }) => void>()
   const onSelectionChange = vi.fn<(s: { anchor: number; head: number }) => void>()
   const onFoldsChange = vi.fn<(lines: readonly number[]) => void>()
-  const session = createTextBoxEditor(helpers).mount({ root, text, textRuns, foldedLines, selection, onChange, onSelectionChange, onFoldsChange })
+  // no canvas in a unit test: the editor's own layout places its toolbar, as before `clientRectAt`
+  const session = createTextBoxEditor(helpers).mount({ root, text, textRuns, foldedLines, selection, onChange, onSelectionChange, onFoldsChange, clientRectAt: () => null })
   mounts.push({ destroy: session.destroy, root })
   const crepe = created[created.length - 1]
   let view: EditorView | null = null

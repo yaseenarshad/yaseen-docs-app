@@ -17,7 +17,7 @@ import { getSelectedElements } from "../scene";
 
 import { register } from "./register";
 
-import type { AppState } from "../types";
+import type { AppClassProperties, AppState } from "../types";
 
 /**
  * YAZ-4277 D9: ⌘↑ folds all and ⌘↓ unfolds all in the selected free text
@@ -41,7 +41,9 @@ const foldKeyTest =
     event: React.KeyboardEvent | KeyboardEvent,
     appState: AppState,
     elements: readonly ExcalidrawElement[],
+    app: AppClassProperties,
   ) =>
+    !app.isFoldingOff() &&
     event[KEYS.CTRL_OR_CMD] &&
     !event.shiftKey &&
     !event.altKey &&

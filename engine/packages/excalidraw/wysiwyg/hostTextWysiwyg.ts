@@ -6,6 +6,7 @@ import {
   THEME,
   applyDarkModeFilter,
   getFontString,
+  isDarwin,
   isTestEnv,
   isWritableElement,
   viewportCoordsToSceneCoords,
@@ -26,7 +27,9 @@ import {
   getTextLinkRanges,
   getToggledFoldedLines,
   hasTextList,
+  isFoldableLine,
   isTextElement,
+  parseTextListLine,
 } from "@excalidraw/element";
 
 import type { StyledVisualLine } from "@excalidraw/element";
@@ -65,6 +68,25 @@ export const CARET_SCREEN_PX = 1.5;
 /** The caret's width in board px: 1.5 px on screen at this zoom (the math of `getResponsiveTextFontSize`). */
 export const getCaretWidth = (zoom: number) => CARET_SCREEN_PX / zoom;
 
+/**
+ * Puts a 1 px node over a rectangle in board px, by a transform. The overlay
+ * is scaled by the zoom, and layout snaps a box's edges to whole board px: at
+ * 3000% a 0.05 px caret drew 0 or 30 px wide. A transform is never snapped.
+ */
+const placeOverlayRect = (
+  node: HTMLElement,
+  rect: Readonly<{ left: number; top: number; width: number; height: number }>,
+) =>
+  Object.assign(node.style, {
+    position: "absolute",
+    left: "0",
+    top: "0",
+    width: "1px",
+    height: "1px",
+    transformOrigin: "0 0",
+    transform: `translate(${rect.left}px, ${rect.top}px) scale(${rect.width}, ${rect.height})`,
+  });
+
 /** The CSS transform that puts a box-sized node over the box: scaled by the zoom from its top left, turned about its center. */
 const getTransform = (
   width: number,
@@ -98,6 +120,47 @@ export const isTextEditorOpen = () => openEditor !== null;
 /** A letter of a word, for a double click. */
 const isWordCharacter = (character: string) =>
   /[\p{L}\p{M}\p{N}_]/u.test(character);
+
+/** A press this soon and this near (screen px) to the last one adds a click. */
+const MULTI_CLICK_MS = 500;
+const MULTI_CLICK_PX = 4;
+/**
+ * A press on the board this near (screen px) to the box in edit goes to the
+ * box. Zoomed out, the box is a few px tall: a press just past its edge took
+ * the board, which ended the edit, and the next press started a new one.
+ */
+const NEAR_BOX_PX = 8;
+
+/** The word at `at`: its letters, or the one other character there. */
+const getWordRange = (text: string, at: number): [number, number] => {
+  let start = at;
+  let end = at;
+  while (start > 0 && isWordCharacter(text.charAt(start - 1))) {
+    start--;
+  }
+  while (end < text.length && isWordCharacter(text.charAt(end))) {
+    end++;
+  }
+  if (start === end && end < text.length && text.charAt(end) !== "\n") {
+    end++;
+  }
+  return [start, end];
+};
+
+/**
+ * The line at `at`, without its newline. A list item's line starts after its
+ * indent and marker (`•`, `○`, `▪`, `☐`, `☑`, `1.`), as a note selects it.
+ */
+const getLineRange = (text: string, at: number): [number, number] => {
+  const lineStart = text.lastIndexOf("\n", at - 1) + 1;
+  const newline = text.indexOf("\n", at);
+  const lineEnd = newline === -1 ? text.length : newline;
+  const parsed = parseTextListLine(text.slice(lineStart, lineEnd));
+  return [
+    parsed.markerKind === "none" ? lineStart : lineEnd - parsed.content.length,
+    lineEnd,
+  ];
+};
 
 /**
  * YAZ-4277 D1: a text box edited by the host's editor (`textEditor`). The
@@ -158,6 +221,11 @@ export const hostTextWysiwyg = ({
     });
   }
   overlay.style.pointerEvents = "none";
+  // The invisible editor can lay out far bigger than the box (a tiny font:
+  // the notes' px spacing, Chrome's minimum font size), so its caret sits off
+  // screen and the browser scrolled the board's layers to it on each key.
+  // Fixed, its scroll chain skips them: nothing scrolls (YAZ-4277 demo).
+  root.style.position = "fixed";
 
   let text = element.originalText;
   let selection: HostTextSelection = { anchor: text.length, head: text.length };
@@ -199,27 +267,18 @@ export const hostTextWysiwyg = ({
     for (const rectangle of geometry.rectangles) {
       const span = document.createElement("span");
       span.className = "excalidraw-wysiwyg-selection";
-      Object.assign(span.style, {
-        position: "absolute",
-        left: `${rectangle.left}px`,
-        top: `${rectangle.top}px`,
-        width: `${rectangle.width}px`,
-        height: `${rectangle.height}px`,
-      });
+      placeOverlayRect(span, rectangle);
       overlay.appendChild(span);
     }
     if (geometry.caret) {
       // a new caret each time, so its blink starts again where it moved to
       const caret = document.createElement("span");
       caret.className = "excalidraw-wysiwyg-caret";
-      Object.assign(caret.style, {
-        position: "absolute",
-        left: `${geometry.caret.left}px`,
-        top: `${geometry.caret.top}px`,
-        width: `${getCaretWidth(app.state.zoom.value)}px`,
-        height: `${geometry.caret.height}px`,
-        backgroundColor: layout.color,
+      placeOverlayRect(caret, {
+        ...geometry.caret,
+        width: getCaretWidth(app.state.zoom.value),
       });
+      caret.style.backgroundColor = layout.color;
       overlay.appendChild(caret);
     }
   };
@@ -267,6 +326,8 @@ export const hostTextWysiwyg = ({
     // YAZ-4277 D1: the editor lays out its lines near the canvas ones; the
     // engine never reads them (a click and ↑ / ↓ use the canvas layout)
     Object.assign(root.style, box, {
+      left: `${viewportX + app.state.offsetLeft}px`,
+      top: `${viewportY + app.state.offsetTop}px`,
       width: `${maxWidth === Infinity ? current.width : maxWidth}px`,
       font: getFontString(current),
       lineHeight: `${lineHeightPx}px`,
@@ -359,6 +420,44 @@ export const hostTextWysiwyg = ({
   // ---------------------------------------------------------------------------
   // YAZ-4039 D12, D15: page links. The host's `[[` picker follows the text and
   // the caret; a pill is one unit for the caret.
+
+  /**
+   * YAZ-4277 demo: the screen box of the caret at `offset`, from the canvas
+   * layout. The editor's pop-up toolbar and `/` menu anchor here: its own
+   * invisible layout drifts from the canvas (far right at 3000%).
+   */
+  const getClientRectAt = (offset: number) => {
+    if (!layout) {
+      return null;
+    }
+    const { caret } = getStyledVisualSelectionGeometry({
+      lines: layout.lines,
+      containerWidth: layout.width,
+      textAlign: layout.textAlign,
+      lineHeightPx: layout.lineHeightPx,
+      selectionStart: offset,
+      selectionEnd: offset,
+    });
+    if (!caret) {
+      return null;
+    }
+    // the browser turns the box's zoom and rotation into screen px
+    const probe = document.createElement("span");
+    placeOverlayRect(probe, {
+      ...caret,
+      width: getCaretWidth(app.state.zoom.value),
+    });
+    probe.style.visibility = "hidden";
+    overlay.appendChild(probe);
+    const box = probe.getBoundingClientRect();
+    probe.remove();
+    return {
+      left: box.left,
+      right: box.right,
+      top: box.top,
+      bottom: box.bottom,
+    };
+  };
 
   const getCaretClientRect = () => {
     const caret = overlay.querySelector(".excalidraw-wysiwyg-caret");
@@ -489,6 +588,7 @@ export const hostTextWysiwyg = ({
 
   const session = textEditor.mount({
     root,
+    clientRectAt: (offset) => getClientRectAt(offset),
     text,
     textRuns: element.textRuns,
     foldedLines: folds,
@@ -527,6 +627,11 @@ export const hostTextWysiwyg = ({
       if (isDestroyed) {
         return;
       }
+      // folding off (YAZ-4277 demo): the note's ⌘↑ in the box folds nothing
+      if (app.isFoldingOff() && nextFolds.length) {
+        session.setFolds(folds);
+        return;
+      }
       // D3: no undo step; the box resizes to its visible lines
       folds = nextFolds;
       app.setTextFolds(element.id, nextFolds);
@@ -551,14 +656,36 @@ export const hostTextWysiwyg = ({
   // a word and a triple click a line, from the canvas layout
 
   let dragAnchor: number | null = null;
+  /** After a double or a triple click: the drag goes by words or by lines. */
+  let dragUnit: { range: [number, number]; of: typeof getWordRange } | null =
+    null;
+  /** The last press, for the click count (Chromium's pointerdown has none). */
+  let lastPress: { time: number; x: number; y: number; count: number } | null =
+    null;
   const onDragMove = (event: PointerEvent) => {
     const offset = getOffsetAt(viewportCoordsToSceneCoords(event, app.state));
-    if (dragAnchor !== null && offset !== null) {
+    if (offset === null) {
+      return;
+    }
+    if (dragUnit) {
+      // the first word (or line) stays selected; a move inside it changes
+      // nothing, so a shaky hand keeps the double click
+      const [start, end] = dragUnit.range;
+      const [nextStart, nextEnd] = dragUnit.of(text, offset);
+      session.setSelection(
+        nextStart >= start
+          ? { anchor: start, head: Math.max(end, nextEnd) }
+          : { anchor: end, head: nextStart },
+      );
+      return;
+    }
+    if (dragAnchor !== null) {
       session.setSelection({ anchor: dragAnchor, head: offset });
     }
   };
   const stopDrag = () => {
     dragAnchor = null;
+    dragUnit = null;
     window.removeEventListener("pointermove", onDragMove);
     window.removeEventListener("pointerup", stopDrag);
     window.removeEventListener("pointercancel", stopDrag);
@@ -601,37 +728,34 @@ export const hostTextWysiwyg = ({
     event.preventDefault();
     stopDrag();
     session.focus();
-    dragAnchor = event.shiftKey ? selection.anchor : offset;
-    session.setSelection({ anchor: dragAnchor, head: offset });
+    const count =
+      !event.shiftKey &&
+      lastPress &&
+      event.timeStamp - lastPress.time <= MULTI_CLICK_MS &&
+      Math.hypot(event.clientX - lastPress.x, event.clientY - lastPress.y) <=
+        MULTI_CLICK_PX
+        ? Math.min(lastPress.count + 1, 3)
+        : 1;
+    lastPress = {
+      time: event.timeStamp,
+      x: event.clientX,
+      y: event.clientY,
+      count,
+    };
+    if (count > 1) {
+      // a double click selects the word, a triple click the line, at the
+      // press, as in a note
+      const of = count === 2 ? getWordRange : getLineRange;
+      const range = of(text, offset);
+      dragUnit = { range, of };
+      session.setSelection({ anchor: range[0], head: range[1] });
+    } else {
+      dragAnchor = event.shiftKey ? selection.anchor : offset;
+      session.setSelection({ anchor: dragAnchor, head: offset });
+    }
     window.addEventListener("pointermove", onDragMove);
     window.addEventListener("pointerup", stopDrag);
     window.addEventListener("pointercancel", stopDrag);
-  };
-
-  // Chromium sends `detail: 0` on pointerdown: the count comes from `click`
-  const onRootClick = (event: MouseEvent) => {
-    if (event.detail < 2 || selection.anchor !== selection.head) {
-      return;
-    }
-    const at = getOffsetAt(viewportCoordsToSceneCoords(event, app.state));
-    if (at === null) {
-      return;
-    }
-    let start = at;
-    let end = at;
-    if (event.detail >= 3) {
-      start = text.lastIndexOf("\n", at - 1) + 1;
-      const lineEnd = text.indexOf("\n", at);
-      end = lineEnd === -1 ? text.length : lineEnd;
-    } else {
-      while (start > 0 && isWordCharacter(text.charAt(start - 1))) {
-        start--;
-      }
-      while (end < text.length && isWordCharacter(text.charAt(end))) {
-        end++;
-      }
-    }
-    session.setSelection({ anchor: start, head: end });
   };
 
   /** YAZ-4039 D15: right-click on a pill in the editor gives the link menu. */
@@ -732,6 +856,55 @@ export const hostTextWysiwyg = ({
     return true;
   };
 
+  /**
+   * ⌘← / ⌘→ to the start or the end of the line the canvas draws (the
+   * editor's own, unseen lines are not the drawn ones); the start of an
+   * item's first line is after its bullet. ⌘↑ / ⌘↓ to the start or the end
+   * of the text, except on an item that folds: there the note keys fold it
+   * (D9). ⇧ extends. False: not one of these keys here.
+   */
+  const moveToEdge = (key: string, extend: boolean) => {
+    if (!layout || !layout.lines.length) {
+      return false;
+    }
+    const head = selection.head;
+    let offset: number;
+    if (key === KEYS.ARROW_UP || key === KEYS.ARROW_DOWN) {
+      const lineIndex = text.slice(0, head).split("\n").length - 1;
+      if (isFoldableLine(text, lineIndex)) {
+        return false;
+      }
+      offset = key === KEYS.ARROW_UP ? 0 : text.length;
+    } else if (key === KEYS.ARROW_LEFT || key === KEYS.ARROW_RIGHT) {
+      const { lines } = layout;
+      let index = 0;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].start <= head) {
+          index = i;
+        }
+      }
+      const line = lines[index];
+      offset = line.end;
+      if (key === KEYS.ARROW_LEFT) {
+        offset = line.start;
+        if (line.start === 0 || text.charAt(line.start - 1) === "\n") {
+          const lineEnd = text.indexOf("\n", line.start);
+          const { raw, content } = parseTextListLine(
+            text.slice(line.start, lineEnd === -1 ? text.length : lineEnd),
+          );
+          offset = Math.min(line.start + raw.length - content.length, line.end);
+        }
+      }
+    } else {
+      return false;
+    }
+    session.setSelection({
+      anchor: extend ? selection.anchor : offset,
+      head: offset,
+    });
+    return true;
+  };
+
   let submittedViaKeyboard = false;
   const onRootKeyDown = (event: KeyboardEvent) => {
     // YAZ-4039 D12: the host's open `[[` picker takes ↑, ↓, Enter and Esc
@@ -750,6 +923,18 @@ export const hostTextWysiwyg = ({
       event.preventDefault();
       submittedViaKeyboard = true;
       handleSubmit();
+      return;
+    }
+    if (
+      isDarwin &&
+      event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.isComposing &&
+      moveToEdge(event.key, event.shiftKey)
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
       return;
     }
     if (
@@ -888,6 +1073,26 @@ export const hostTextWysiwyg = ({
     window.addEventListener("blur", handleSubmit);
   };
 
+  /** True when the press is within `NEAR_BOX_PX` on screen of the box. */
+  const isNearBox = (event: MouseEvent) => {
+    if (!layout) {
+      return false;
+    }
+    const point = viewportCoordsToSceneCoords(event, app.state);
+    const [localX, localY] = pointRotateRads(
+      pointFrom(point.x, point.y),
+      pointFrom(layout.x + layout.width / 2, layout.y + layout.height / 2),
+      -layout.angle as Radians,
+    );
+    const reach = NEAR_BOX_PX / app.state.zoom.value;
+    return (
+      localX >= layout.x - reach &&
+      localX <= layout.x + layout.width + reach &&
+      localY >= layout.y - reach &&
+      localY <= layout.y + layout.height + reach
+    );
+  };
+
   const onWindowPointerDown = (event: MouseEvent) => {
     const { target } = event;
     if (event.button === POINTER_BUTTON.WHEEL) {
@@ -903,6 +1108,9 @@ export const hostTextWysiwyg = ({
       temporarilyDisableSubmit();
     } else if (target instanceof HTMLCanvasElement && toggleFoldAt(event)) {
       // a fold arrow of this box: the edit goes on
+    } else if (target instanceof HTMLCanvasElement && isNearBox(event)) {
+      // just past the box's edge: a click, a double or a triple click in it
+      onRootPointerDown(event as PointerEvent);
     } else if (target instanceof HTMLCanvasElement && !isTestEnv()) {
       // a click on the board ends the edit, the frame after
       requestAnimationFrame(handleSubmit);
@@ -932,10 +1140,20 @@ export const hostTextWysiwyg = ({
       : null;
   observer?.observe(canvas);
 
+  /** The scroll of each `overflow: hidden` layer above the editor, at the edit's start. */
+  const fixedLayers = new Map<HTMLElement, readonly [number, number]>();
+  const keepLayersInPlace = (event: Event) => {
+    const layer = event.target as HTMLElement;
+    const at = fixedLayers.get(layer);
+    if (at && (layer.scrollLeft !== at[0] || layer.scrollTop !== at[1])) {
+      layer.scrollLeft = at[0];
+      layer.scrollTop = at[1];
+    }
+  };
+
   const cleanup = () => {
     stopDrag();
     root.removeEventListener("pointerdown", onRootPointerDown);
-    root.removeEventListener("click", onRootClick);
     root.removeEventListener("contextmenu", onRootContextMenu);
     root.removeEventListener("keydown", onRootKeyDown, true);
     root.removeEventListener("paste", onRootPaste, true);
@@ -944,6 +1162,7 @@ export const hostTextWysiwyg = ({
     window.removeEventListener("pointerup", bindBlurEvent);
     window.removeEventListener("blur", handleSubmit);
     window.removeEventListener("beforeunload", handleSubmit);
+    document.removeEventListener("scroll", keepLayersInPlace, true);
     unbindUpdate();
     unbindScroll();
     unbindChange();
@@ -958,7 +1177,6 @@ export const hostTextWysiwyg = ({
   };
 
   root.addEventListener("pointerdown", onRootPointerDown);
-  root.addEventListener("click", onRootClick);
   root.addEventListener("contextmenu", onRootContextMenu);
   root.addEventListener("keydown", onRootKeyDown, true);
   root.addEventListener("paste", onRootPaste, true);
@@ -990,6 +1208,19 @@ export const hostTextWysiwyg = ({
   );
   editorContainer?.appendChild(root);
   editorContainer?.appendChild(overlay);
+  // the board's layers never scroll: a browser reveal of the invisible,
+  // zoomed editor (a click under the box at 1665%) moved them up the window
+  for (
+    let layer = root.parentElement;
+    layer && layer !== document.body;
+    layer = layer.parentElement
+  ) {
+    const { overflowX, overflowY } = getComputedStyle(layer);
+    if (/hidden|clip/.test(overflowX + overflowY)) {
+      fixedLayers.set(layer, [layer.scrollLeft, layer.scrollTop]);
+    }
+  }
+  document.addEventListener("scroll", keepLayersInPlace, true);
   update();
   bindBlurEvent();
 

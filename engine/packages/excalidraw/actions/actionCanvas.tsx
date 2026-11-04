@@ -3,7 +3,6 @@ import {
   MAX_ZOOM,
   MIN_ZOOM,
   THEME,
-  ZOOM_STEP,
   CODES,
   KEYS,
 } from "@excalidraw/common";
@@ -32,7 +31,7 @@ import {
 import { useAppStateValue } from "../hooks/useAppStateValue";
 
 import { t } from "../i18n";
-import { getNormalizedZoom } from "../scene";
+import { getNormalizedZoom, getSteppedZoom } from "../scene";
 import {
   constrainScrollState,
   getViewportForZoomWithScrollConstraints,
@@ -140,7 +139,7 @@ export const actionZoomIn = register({
         {
           viewportX: appState.width / 2 + appState.offsetLeft,
           viewportY: appState.height / 2 + appState.offsetTop,
-          nextZoom: getNormalizedZoom(appState.zoom.value + ZOOM_STEP),
+          nextZoom: getSteppedZoom(appState.zoom.value, 1),
         },
         appState,
       ),
@@ -190,7 +189,7 @@ export const actionZoomOut = register({
         {
           viewportX: appState.width / 2 + appState.offsetLeft,
           viewportY: appState.height / 2 + appState.offsetTop,
-          nextZoom: getNormalizedZoom(appState.zoom.value - ZOOM_STEP),
+          nextZoom: getSteppedZoom(appState.zoom.value, -1),
         },
         appState,
       ),

@@ -15,7 +15,7 @@ export async function setBoardFoldArrows(req: unknown): Promise<BoardReadOnlyRes
   const { dir, file, body } = boardTarget(req, 'drawing')
   const { value, expectedMtime } = body
   if (value !== 'app' && !(FOLD_ARROW_MODES as readonly unknown[]).includes(value)) {
-    throw new BridgeFailure('BAD_REQUEST', "'value' must be 'app', 'hover' or 'always'", { path: file })
+    throw new BridgeFailure('BAD_REQUEST', "'value' must be 'app', 'hover', 'always' or 'off'", { path: file })
   }
   if (typeof expectedMtime !== 'number') throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: file })
   await requireDir(dir)

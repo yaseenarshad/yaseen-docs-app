@@ -115,12 +115,18 @@ const plainUndo = $shortcut(() => ({
   BoxUndo: { key: 'Mod-z', priority: 200, onRun: () => undo },
 }))
 
+/**
+ * The editor is invisible and zoomed: at a high zoom it runs far past the screen, and ProseMirror's scroll to the
+ * selection moved the board's own layers (`overflow: hidden`) up the window (demo round 1). The canvas shows the caret.
+ */
+const noScroll = $prose(() => new Plugin({ key: new PluginKey('textBoxNoScroll'), props: { handleScrollToSelection: () => true } }))
+
 /** Same text, same runs: nothing to tell the engine. */
 const sameRuns = (a: TextRuns, b: TextRuns) => JSON.stringify(a ?? []) === JSON.stringify(b ?? [])
 
 export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
   return {
-    mount({ root, text, textRuns, foldedLines, selection, onChange, onSelectionChange, onFoldsChange }) {
+    mount({ root, text, textRuns, foldedLines, selection, onChange, onSelectionChange, onFoldsChange, clientRectAt }) {
       let destroyed = false
       let isReady = false
       let wantsFocus = false
@@ -160,7 +166,7 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
       // the note keys as the user set them (YAZ-3564 K4), read as a note reads them: once, as the edit opens
       const crepe = createCrepe({ root, defaultValue: '', features: textBoxFeatures, hidden: TEXT_BOX_HIDDEN, extendToolbar: textColorButtons, hotkeys: storage.getSettings()?.hotkeys })
       lockToTextBox(crepe)
-      crepe.editor.use(endKeys).use(plainUndo).use(report)
+      crepe.editor.use(endKeys).use(plainUndo).use(noScroll).use(report)
 
       // The toolbar and the `/` menu draw at screen size, over the board: in a layer of their own on the page, with
       // Crepe's look (`milkdown`). Floating UI places them from the selection's box on screen, as in a note.
@@ -182,6 +188,10 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
       const ready = crepe.create().then(() => {
         if (destroyed) return
         const view = crepe.editor.ctx.get(editorViewCtx)
+        // The pop-up toolbar and the `/` menu ask the view where a position is on screen. The view is invisible and its
+        // layout drifts from the canvas (demo round 1: far right at 3000%, lost at a low zoom), so the canvas answers.
+        const ownCoords = view.coordsAtPos.bind(view)
+        view.coordsAtPos = (pos, side) => clientRectAt(offsetAt(view.state.doc, pos, helpers)) ?? ownCoords(pos, side)
         const doc = boxToDoc(view.state.schema, text, textRuns, helpers)
         const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content)
         tr.setSelection(TextSelection.create(tr.doc, posAt(tr.doc, pending.anchor, helpers), posAt(tr.doc, pending.head, helpers)))

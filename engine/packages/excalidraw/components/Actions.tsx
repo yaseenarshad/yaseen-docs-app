@@ -593,6 +593,23 @@ export const ContextualPropertiesToolbar = ({
               {renderAction("changeTextHighlight", { contextToolbar: true })}
             </>
           )}
+          {/* YAZ-4277 demo: the box fill on the main bar too, beside the
+              letters' two colors */}
+          {predicates.backgroundColor && (
+            <>
+              <ContextualToolbarDivider />
+              <div
+                className="contextual-properties-toolbar__group"
+                role="group"
+                aria-label="Fill"
+              >
+                {renderAction("changeBackgroundColor", {
+                  contextToolbar: true,
+                  textToolbar: true,
+                })}
+              </div>
+            </>
+          )}
           <ContextualToolbarDivider />
           {renderAction("changeTextStyle", { contextToolbar: true })}
           <ContextualToolbarDivider />
@@ -600,7 +617,7 @@ export const ContextualPropertiesToolbar = ({
           {lineSpacing()}
           <ContextualSecondaryProperties
             renderAction={renderAction}
-            showBackgroundColor={predicates.backgroundColor}
+            showBackgroundColor={false}
             showRoundness={predicates.roundness}
             showOpacity={predicates.opacity}
             showTextBackgroundPadding={targetElements.some(

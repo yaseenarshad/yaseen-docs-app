@@ -854,7 +854,20 @@ export type HostTextEditor = {
      * moved a folded item to another line): line indexes in the text now.
      */
     onFoldsChange: (foldedLines: readonly number[]) => void;
+    /**
+     * YAZ-4277 demo: the screen box of the caret at `offset`, as the canvas
+     * draws it. The editor's own layout is invisible and does not match the
+     * canvas, so its pop-up toolbar and `/` menu anchor here.
+     */
+    clientRectAt: (offset: number) => HostTextClientRect | null;
   }) => HostTextEditorSession;
+};
+
+export type HostTextClientRect = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
 };
 
 export type HostTextSelection = { anchor: number; head: number };
@@ -1114,6 +1127,17 @@ export interface ExcalidrawProps {
    * Absent or "keep": the last style carries to the next shape (upstream).
    */
   newElementStyle?: "default" | "keep";
+  /**
+   * Yaseen Docs (YAZ-4277 demo): a fill picked for text keeps it readable:
+   * a dark fill turns dark text white, a light fill turns white text black.
+   */
+  fillSetsTextColor?: boolean;
+  /**
+   * Yaseen Docs (YAZ-4277 demo): a new shape's line width, corner radius,
+   * wobble and arrowheads keep their screen size at the zoom it is made at
+   * (`screenScale.ts`); the width and radius pickers speak screen px.
+   */
+  newShapesMatchZoom?: boolean;
   /** Yaseen Docs (YAZ-4277 D14): the host's defaults for a new element's style. Keep it stable. */
   defaultItemStyle?: Partial<NewElementStyle>;
   /**
@@ -1297,6 +1321,8 @@ export type AppClassProperties = {
   >;
   files: BinaryFiles;
   gifPlayer: App["gifPlayer"];
+  /** YAZ-4277 demo: the fold keys do nothing while folding is off. */
+  isFoldingOff: App["isFoldingOff"];
   editorInterface: App["editorInterface"];
   scene: App["scene"];
   syncActionResult: App["syncActionResult"];

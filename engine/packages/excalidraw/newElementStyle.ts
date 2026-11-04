@@ -14,9 +14,12 @@
 import { getStrokeWidthByKey, ROUNDNESS } from "@excalidraw/common";
 import {
   getDefaultCornerRadiusForElementType,
+  getElementStyleScale,
+  hasTextList,
   hasVectorStrokeWidth,
   isTextElement,
   isUsingAdaptiveRadius,
+  toBoardSize,
 } from "@excalidraw/element";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
@@ -109,10 +112,15 @@ export const getDefaultStyleUpdates = (
     return {
       ...shape,
       fontFamily: defaults.currentItemFontFamily,
-      // a label keeps its place in its shape
+      // a label keeps its place in its shape; a box of list lines reads
+      // from the left, as a note does (YAZ-4277 demo)
       ...(element.containerId
         ? {}
-        : { textAlign: defaults.currentItemTextAlign }),
+        : {
+            textAlign: hasTextList(element.originalText)
+              ? "left"
+              : defaults.currentItemTextAlign,
+          }),
       textRuns: undefined,
       fontWeight: "normal",
       fontStyle: "normal",
@@ -133,12 +141,17 @@ export const getDefaultStyleUpdates = (
     return null;
   }
   const round = defaults.currentItemRoundness === "round";
+  // YAZ-4277 demo: a shape made zoomed in gets the defaults at its own scale
+  const scale = getElementStyleScale(element);
   return {
     ...shape,
     fillStyle: defaults.currentItemFillStyle,
-    strokeWidth: hasVectorStrokeWidth(element.type)
-      ? defaults.currentItemVectorStrokeWidth
-      : getStrokeWidthByKey(element.type, defaults.currentItemStrokeWidthKey),
+    strokeWidth: toBoardSize(
+      hasVectorStrokeWidth(element.type)
+        ? defaults.currentItemVectorStrokeWidth
+        : getStrokeWidthByKey(element.type, defaults.currentItemStrokeWidthKey),
+      scale,
+    ),
     strokeStyle: defaults.currentItemStrokeStyle,
     roughness: defaults.currentItemRoughness,
     ...(element.type === "freedraw"
@@ -149,7 +162,10 @@ export const getDefaultStyleUpdates = (
             : element.type === "rectangle"
             ? {
                 type: ROUNDNESS.ADAPTIVE_RADIUS,
-                value: getDefaultCornerRadiusForElementType("rectangle"),
+                value: toBoardSize(
+                  getDefaultCornerRadiusForElementType("rectangle"),
+                  scale,
+                ),
               }
             : {
                 type: isUsingAdaptiveRadius(element.type)

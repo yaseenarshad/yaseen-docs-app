@@ -97,6 +97,7 @@ export * from "./sortElements";
 export * from "./store";
 export * from "./textElement";
 export * from "./textFolds";
+export * from "./screenScale";
 export * from "./textFoldArrows";
 export * from "./textCheckbox";
 export * from "./textList";

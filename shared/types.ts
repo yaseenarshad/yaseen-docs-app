@@ -1378,14 +1378,28 @@ export interface CanvasPrefs {
    * Never appState: the engine's `newElementStyle` prop.
    */
   newElementStyle: NewElementStyleMode
+  /**
+   * YAZ-4277 demo: "Text color follows the fill". A dark fill on dark text turns the text white; a light fill (or
+   * none) on white text turns it black; any other text color stays. Never appState: the engine's `fillSetsTextColor`.
+   */
+  fillSetsTextColor: boolean
+  /**
+   * YAZ-4277 demo: "New shapes match the zoom". A new shape's line width, corner radius, wobble and arrowheads keep
+   * their screen size at the zoom it is made at, and the width and corner pickers speak screen px. Never appState: the
+   * engine's `newShapesMatchZoom` prop.
+   */
+  newShapesMatchZoom: boolean
 }
 
 /** YAZ-4277 D14: "Start with the default style" or "Keep the last style". */
 export const NEW_ELEMENT_STYLE_MODES = ['default', 'keep'] as const
 export type NewElementStyleMode = (typeof NEW_ELEMENT_STYLE_MODES)[number]
 
-/** YAZ-4277 D5: when an open bullet shows its fold arrow. */
-export const FOLD_ARROW_MODES = ['hover', 'always'] as const
+/**
+ * YAZ-4277 D5: when an open bullet shows its fold arrow. `'off'` (demo round 1): no folding at all; the saved folds
+ * stay in the file, unshown, and come back when folding is on again (`ExcalidrawSurface.tsx`).
+ */
+export const FOLD_ARROW_MODES = ['hover', 'always', 'off'] as const
 export type FoldArrowMode = (typeof FOLD_ARROW_MODES)[number]
 /** YAZ-4277 D7: the fold arrow's line, thin to thick. */
 export const FOLD_ARROW_THICKNESSES = ['thin', 'normal', 'thick'] as const
@@ -1429,6 +1443,8 @@ export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
   foldArrowThickness: 'thick',
   foldArrowMinSize: 14,
   newElementStyle: 'default',
+  fillSetsTextColor: true,
+  newShapesMatchZoom: true,
 }
 
 /**

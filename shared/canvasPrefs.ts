@@ -69,6 +69,8 @@ const FIELD_OK: { [K in keyof CanvasPrefs]: (v: unknown) => v is CanvasPrefs[K] 
   foldArrowThickness: (v): v is FoldArrowThickness => typeof v === 'string' && (FOLD_ARROW_THICKNESSES as readonly string[]).includes(v),
   foldArrowMinSize: (v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= FOLD_ARROW_MIN_SIZE_MIN && v <= FOLD_ARROW_MIN_SIZE_MAX,
   newElementStyle: (v): v is NewElementStyleMode => typeof v === 'string' && (NEW_ELEMENT_STYLE_MODES as readonly string[]).includes(v),
+  fillSetsTextColor: isBool,
+  newShapesMatchZoom: isBool,
 }
 
 /** Strict: every field present and valid — the IPC boundary's check. */
@@ -161,6 +163,10 @@ export function prefsToAppState(prefs: CanvasPrefs, keys: ReadonlyArray<keyof Ca
         break // the engine's `foldArrows` prop, never appState (YAZ-4277 D5, D7)
       case 'newElementStyle':
         break // the engine's `newElementStyle` prop, never appState (YAZ-4277 D14)
+      case 'fillSetsTextColor':
+        break // the engine's `fillSetsTextColor` prop, never appState (YAZ-4277 demo)
+      case 'newShapesMatchZoom':
+        break // the engine's `newShapesMatchZoom` prop, never appState (YAZ-4277 demo)
       case 'defaultFontFamily':
         out.currentItemFontFamily = prefs.defaultFontFamily
         break
@@ -221,6 +227,8 @@ export function appStateToPrefs(appState: EngineAppStateSlice, fallback: CanvasP
     foldArrowThickness: fallback.foldArrowThickness,
     foldArrowMinSize: fallback.foldArrowMinSize,
     newElementStyle: fallback.newElementStyle,
+    fillSetsTextColor: fallback.fillSetsTextColor,
+    newShapesMatchZoom: fallback.newShapesMatchZoom,
   }
 }
 
