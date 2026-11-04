@@ -509,7 +509,10 @@ import { MagicIcon, copyIcon, fullscreenIcon } from "./icons";
 import { AppStateObserver, type OnStateChange } from "./AppStateObserver";
 
 import { findShapeByKey, TOGGLE_TOOLS } from "./Tools";
-import { getSemanticColorNameForHotkey } from "./ColorPicker/colorPickerUtils";
+import {
+  getSemanticColorNameForHotkey,
+  SHIFT_KEYS_KEPT_FROM_COLORS,
+} from "./ColorPicker/colorPickerUtils";
 
 import UnlockPopup from "./UnlockPopup";
 
@@ -6014,6 +6017,9 @@ class App extends React.Component<AppProps, AppState> {
       event.ctrlKey ||
       event.altKey ||
       event.metaKey ||
+      // YAZ-4348 demo (Yasin: "Flip and eyedropper win"): ⇧V stays Flip vertical and ⇧G the eyedropper, so
+      // violet and green have no outline letter; the picker still sets them
+      (event.shiftKey && SHIFT_KEYS_KEPT_FROM_COLORS.has(event.key.toLowerCase())) ||
       isInteractive(event.target) ||
       isContentEditable
     ) {

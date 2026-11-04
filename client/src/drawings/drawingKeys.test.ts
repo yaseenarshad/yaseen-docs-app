@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { sameKey } from '@shared/hotkeyBindings'
 import { ALL_KEYS, clashesOf, keysOf } from '@shared/keys'
-import { DRAWING_ACTIONS, DRAWING_KEYS, SELECTION_COLOURS, SELECTION_SIZES } from '@shared/keys/drawing'
+import { DRAWING_ACTIONS, DRAWING_KEYS, SELECTION_COLOURS, SELECTION_SIZES, SHIFT_KEPT } from '@shared/keys/drawing'
 import { drawingKeyBindings, pressed, toEngineChord } from './drawingKeys'
 
 type EngineAction = { name: string; keyTest?: (event: KeyboardEvent, appState: unknown, elements: unknown[], app: unknown) => boolean }
@@ -90,7 +90,9 @@ describe('the drawing rows (K1, K6)', () => {
 
   it('YAZ-4348: one built-in row per colour letter (and its ⇧) and per size digit, with a selection; none is a clash', () => {
     const picked = DRAWING_KEYS.filter((row) => row.withSelection === true)
-    expect(picked.map((row) => row.keys)).toEqual([...SELECTION_COLOURS.map(([l]) => [l, `Shift+${l}`]), ...SELECTION_SIZES.map(([d]) => [d])])
+    // ⇧V and ⇧G stay Flip vertical and the eyedropper (YAZ-4348 demo): their colour rows have the bare letter only
+    expect(picked.map((row) => row.keys)).toEqual([...SELECTION_COLOURS.map(([l]) => (SHIFT_KEPT[l] === undefined ? [l, `Shift+${l}`] : [l])), ...SELECTION_SIZES.map(([d]) => [d])])
+    expect(Object.keys(SHIFT_KEPT).map((l) => l.toLowerCase())).toEqual([...engineSource('components/ColorPicker/colorPickerUtils.ts').matchAll(/SHIFT_KEYS_KEPT_FROM_COLORS[^\]]*\]/g)].flatMap(([m]) => [...m.matchAll(/"([a-z])"/g)].map(([, l]) => l)))
     for (const row of picked) expect(row.changeable, row.id).toBe(false)
     const keys = picked.flatMap((row) => row.keys)
     expect(new Set(keys).size).toBe(keys.length)

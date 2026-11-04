@@ -56,9 +56,17 @@ export const SELECTION_SIZES: readonly (readonly [digit: string, text: number, o
   ['0', 128, 1024],
 ]
 
+/**
+ * The ⇧ letters that keep their own action with a selection (YAZ-4348 demo, Yasin: "Flip and eyedropper win"), so they
+ * colour no outline: the engine's `SHIFT_KEYS_KEPT_FROM_COLORS`. Violet and green outlines come from the picker.
+ */
+export const SHIFT_KEPT: Readonly<Record<string, string>> = { V: 'Flip vertical', G: 'the eyedropper' }
+
 const colourRow = ([letter, name]: readonly [string, string]): KeyRow =>
   letter === 'T'
     ? selected('colorTransparent', 'Transparent — with a selection (on an icon: takes off the outline)', ['T', 'Shift+T'], 'Colours the selection: no fill on a shape, no colour on a line or a text; ⇧T no outline, or no background on a free text. A one-colour icon keeps its colour and loses its outline')
+    : SHIFT_KEPT[letter] !== undefined
+    ? selected(`color${name}`, `${name} — with a selection`, [letter], `Colours the selection ${name.toLowerCase()}: a shape's fill, a line's or a text's colour, a picture's border, a one-colour icon. ⇧${letter} stays ${SHIFT_KEPT[letter]}; the outline's ${name.toLowerCase()} is in the picker`)
     : selected(`color${name}`, `${name} — with a selection (⇧${letter}: the outline)`, [letter, `Shift+${letter}`], `Colours the selection ${name.toLowerCase()}: a shape's fill, a line's or a text's colour, a picture's border, a one-colour icon; ⇧${letter} the outline, or a free text's background`)
 
 const sizeRow = ([digit, text, other]: readonly [string, number, number]): KeyRow =>

@@ -59,6 +59,15 @@ export const SEMANTIC_COLOR_HOTKEYS = defineSemanticColorHotkeys({
   bronze: "n",
 } as const);
 
+/**
+ * YAZ-4348 demo: the ⇧ letters that keep their own action with a selection (⇧V Flip vertical, ⇧G the
+ * eyedropper), so they never color the outline (violet, green).
+ */
+export const SHIFT_KEYS_KEPT_FROM_COLORS: ReadonlySet<string> = new Set([
+  "v",
+  "g",
+]);
+
 const semanticColorEntries = Object.entries(SEMANTIC_COLOR_HOTKEYS) as [
   ColorPickerColor,
   string,
