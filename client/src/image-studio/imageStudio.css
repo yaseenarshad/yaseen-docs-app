@@ -12,6 +12,25 @@
 
 .image-studio__search input,
 .image-studio__naming input,
+/* YAZ-4348 demo round 2: the Add a search word row: a title line over the field, so a word reads as added. */
+.image-studio__word-head {
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  font-size: 11px;
+  gap: 1px;
+  padding: 0 2px 2px;
+}
+
+.image-studio__word-has {
+  color: var(--text-secondary-color);
+  font-size: 10px;
+}
+
+.image-studio__word-form input {
+  flex: 1;
+}
+
 .image-studio__inline input {
   background: var(--input-bg-color);
   border: 1px solid var(--default-border-color);
@@ -418,7 +437,7 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-/* "Add a word…", Rename and Delete open a full-width row under the tile's row: a 4-column tile is too small for a field. */
+/* "Add a search word…", Rename and Delete open a full-width row under the tile's row: a 4-column tile is too small for a field. */
 .image-studio__inline {
   align-items: center;
   background: var(--island-bg-color);

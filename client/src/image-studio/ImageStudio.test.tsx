@@ -662,12 +662,12 @@ describe('the star and the right-click menu (D5, D10, demo 6B)', () => {
     expect(media.favorites).toHaveBeenLastCalledWith({ op: 'remove', itemKey: 'iconify:noto:money-bag' })
   })
 
-  it('Add a word… saves the word, starting from the text in the field', async () => {
+  it('Add a search word… saves the word, starting from the text in the field', async () => {
     library = libraryOf({ favorites: [stored()] })
     media.used.mockImplementation(async (req) => (req.op === 'add-word' ? libraryOf({ ...library, used: [usedRow({ words: [req.word.trim().toLowerCase()] })] }) : library))
     const { host } = await mount()
     await rightClick(host, 'money bag')
-    await click(byText(host, 'Add a word…'))
+    await click(byText(host, 'Add a search word…'))
     const input = byLabel(host, 'A word for money bag') as HTMLInputElement
     await type(input, 'Cash')
     await act(async () => input.form!.requestSubmit())
@@ -676,6 +676,17 @@ describe('the star and the right-click menu (D5, D10, demo 6B)', () => {
     expect(host.querySelector('.image-studio__line')?.textContent).toContain('now comes first for “cash”')
     await type(field(host), 'cash')
     expect(tileNames(section(host, 'Best matches'))).toEqual(['money bag'])
+  })
+
+  it('Add a search word… says it adds (the name stays) and starts empty when the search already finds the icon (YAZ-4348 demo round 2)', async () => {
+    library = libraryOf({ favorites: [stored()] })
+    const { host } = await mount()
+    await type(field(host), 'money')
+    await rightClick(host, 'money bag')
+    await click(byText(host, 'Add a search word…'))
+    expect(host.querySelector('.image-studio__word-head')?.textContent).toContain('Add a search word for money bag')
+    expect((byLabel(host, 'A word for money bag') as HTMLInputElement).value).toBe('')
+    expect(byText(host, 'Add word')).toBeDefined()
   })
 
   it('a media item`s menu has no Rename or Delete; a component`s has both', async () => {
@@ -700,7 +711,7 @@ describe('the tile menu (D10, demo 6B)', () => {
     // An Iconify icon's menu leads with its pack (YAZ-4361).
     expect(document.activeElement?.textContent).toBe('More from this pack')
     await key(menu, 'ArrowDown')
-    expect(document.activeElement?.textContent).toBe('Add a word…')
+    expect(document.activeElement?.textContent).toBe('Add a search word…')
     await key(menu, 'ArrowDown')
     expect(document.activeElement?.textContent).toBe('Remove from favorites')
     await key(menu, 'Escape')

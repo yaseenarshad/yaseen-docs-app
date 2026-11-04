@@ -11,7 +11,7 @@
  *
  * WHAT IT LEARNS (D1, D5, D9). Each add is one `media:used` write: the MRU, the count, the text it was found by as a
  * word, and at the third add a favorite — said once, quietly, with Undo. A removed favorite starts its count again:
- * three more adds bring it back (demo 6A). "Add a word…" (a right-click on a tile) teaches a word by hand.
+ * three more adds bring it back (demo 6A). "Add a search word…" (a right-click on a tile) teaches a word by hand.
  *
  * A PREVIEW IS ASKED FOR, NOT LINKED TO. Every media tile asks `media:preview` for its bytes as a dataURL, because the
  * renderer may not fetch from a provider; a favorite's stored `previewUrl` is never read. A component's picture is
@@ -700,6 +700,15 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     }
   }
 
+  /**
+   * The search text a new word starts from (YAZ-4157 D5), unless the icon is already found by it (YAZ-4348 demo round 2:
+   * "man" in the field of the icon Man read as a rename of its name, not a new word): then the field starts empty.
+   */
+  const wordToOffer = (item: StudioItem): string => {
+    const typedWord = query.trim()
+    const known = [...item.title.toLowerCase().split(/\s+/), ...(usedByKey.get(item.itemKey)?.words ?? [])]
+    return typedWord === '' || known.includes(typedWord.toLowerCase()) ? '' : typedWord
+  }
   const openRow = (key: string, mode: 'word' | 'rename' | 'confirm', value = '') => {
     setDraft(value)
     setOpenTile({ key, mode })
@@ -892,8 +901,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
                 More from this pack
               </button>
             )}
-            <button type="button" role="menuitem" onClick={() => openRow(slot, 'word', query.trim())}>
-              Add a word…
+            <button type="button" role="menuitem" onClick={() => openRow(slot, 'word', wordToOffer(item))}>
+              Add a search word…
             </button>
             <button
               type="button"
@@ -939,7 +948,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       </div>
     )
 
-  /** The full-width row that "Add a word…", Rename or Delete opens under the tile's row. */
+  /** The full-width row that "Add a search word…", Rename or Delete opens under the tile's row. */
   const inlineRow = (item: StudioItem, where: string): ReactNode => {
     if (openTile?.key !== slotOf(where, item) || openTile.mode === 'menu') return null
     const component = item.provider === 'component' ? componentsBySlug.get(item.providerId) : undefined
@@ -964,9 +973,10 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       )
     }
     const renaming = openTile.mode === 'rename'
+    const words = usedByKey.get(item.itemKey)?.words ?? []
     return (
       <form
-        className="image-studio__inline"
+        className={renaming ? 'image-studio__inline' : 'image-studio__inline image-studio__word-form'}
         key={`${item.itemKey}:row`}
         onSubmit={(event) => {
           event.preventDefault()
@@ -976,17 +986,26 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           } else void saveWord(item)
         }}
       >
+        {!renaming && (
+          // YAZ-4348 demo round 2: a title says the word is ADDED (the name stays), and the words it has show
+          <div className="image-studio__word-head">
+            <span>
+              Add a search word for <b>{item.title}</b>
+            </span>
+            <span className="image-studio__word-has">{words.length > 0 ? `Finds it now: ${[item.title.toLowerCase(), ...words].join(', ')}` : `Its name stays “${item.title}”.`}</span>
+          </div>
+        )}
         {/* Autofocused: the menu item above is the only way here. */}
         <input
           autoFocus
           value={draft}
           maxLength={renaming ? MAX_COMPONENT_NAME_LENGTH : MAX_ITEM_WORD_LENGTH}
           aria-label={renaming ? `Rename ${item.title}` : `A word for ${item.title}`}
-          placeholder={renaming ? 'Name' : 'A word that finds it'}
+          placeholder={renaming ? 'Name' : 'A new word, like “person”'}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => event.key === 'Escape' && setOpenTile(null)}
         />
-        <button type="submit">Save</button>
+        <button type="submit">{renaming ? 'Save' : 'Add word'}</button>
         <button type="button" onClick={() => setOpenTile(null)}>
           Cancel
         </button>
