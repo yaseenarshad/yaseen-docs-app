@@ -31,7 +31,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { MAX_COMPONENT_NAME_LENGTH, MAX_ITEM_WORD_LENGTH, PIXABAY_SECRET, type ComponentItem, type MediaBytesProvider, type MediaLibraryFile, type StudioItem } from '@shared/types'
 import { normalizeWord } from '@shared/mediaLibrary'
+import { DEFAULT_MEDIA_FILTERS, needsCredit, sanitizeMediaFilters, type IconPackInfo, type MediaFilters } from '@shared/iconPacks'
 import { api } from '../api'
+import { storage } from '../lib/storage'
 import { createPreviewCache } from '../lib/previewCache'
 import { createScenePreviewPng, type PreviewBounds, type PreviewEngine } from '../lib/scenePreview'
 import { loadExcalidrawElement } from '../drawings/engine'
@@ -42,10 +44,20 @@ import { componentItem, componentPreviews, useComponentLibrary } from '../compon
 import { insertImage, insertShape, fileFromImport, type InsertEngine, type InsertTarget } from './insertShape'
 import { buildShapeCatalog, getShape, shapeAliases, type ShapeCatalogItem, type ShapePreview, type SmartShapeApi } from './shapes'
 import { groupResults } from './groupResults'
+import { FilterMenu } from './FilterMenu'
+import { IconPacksLine } from './IconPacksLine'
+import { PackView } from './PackView'
+import { useIconPacks } from './useIconPacks'
 import { rankItems } from './rankItems'
 import {
   MIN_QUERY,
   chipSource,
+  closePack,
+  OFFLINE_WITH_PACKS_NOTICE,
+  openPack,
+  setFilters,
+  setPackInfo,
+  typePackQuery,
   getErrorMessage,
   imageStudioSession,
   OFFLINE_NOTICE,
@@ -149,7 +161,27 @@ const drawingPreviews = createPreviewCache(async (key) => {
   return createScenePreviewPng(engine, { elements: restored, appState: { ...drawingCanvas.appState(), theme }, files: {} }, DRAWING_TILE_BOUNDS)
 }, { limit: 300, maxBytes: 16 * 1024 * 1024 })
 
+/**
+ * Every pack the panel can name (Filter › Packs, the pack page, YAZ-4360 / YAZ-4361): asked once a window, when first
+ * needed — main answers the Mac's packs or Iconify's list. A failure is forgotten, so the next ask retries.
+ */
+let packList: Promise<IconPackInfo[]> | null = null
+export function loadPackList(): Promise<IconPackInfo[]> {
+  if (packList !== null) return packList
+  const asked = api.media.packList()
+  packList = asked
+  asked.catch(() => {
+    if (packList === asked) packList = null
+  })
+  return asked
+}
+
+/** The settings' filters and pins, read where the panel has no settings prop (`storage`, which a test may not have). */
+const settingsFilters = (): MediaFilters => sanitizeMediaFilters(storage.getSettings()?.mediaFilters ?? DEFAULT_MEDIA_FILTERS)
+const settingsPins = (): string[] => storage.getSettings()?.mediaPinnedPacks ?? []
+
 export const clearPreviewMemo = () => {
+  packList = null
   previews.clear()
   drawingPreviews.clear()
   componentPreviews.clear()
@@ -215,6 +247,10 @@ export function sourceLabel(item: StudioItem): string {
   return item.provider === 'component' ? 'Your component' : 'Built-in shape'
 }
 
+/** The line an add of a CC-BY icon shows (extra 16): its pack's license asks for a credit where the work is published. */
+export const creditReminder = (item: StudioItem): string =>
+  `Credit needed: ${item.collectionName ?? 'this pack'} is ${item.licenseName}. Name its author where you publish this board.`
+
 /** Google Images for the text in the field (demo 6I): opened in the browser, never fetched by the app. */
 export const googleImagesUrl = (query: string) => `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query.trim())}`
 
@@ -260,8 +296,42 @@ function moveBetweenTiles(event: KeyboardEvent<HTMLElement>, list: HTMLElement |
 export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPending = false, onSearchFocused, saveRequestPending = false, onSaveRequestTaken, readOnly = false, theme = 'light' }: ImageStudioProps) {
   // The session outlives this component (🔒 YAZ-1990 D2): closing the panel unmounts it, reopening reads it back.
   const session = useSyncExternalStore(imageStudioSession.subscribe, imageStudioSession.getState)
-  const { chip, query, searchedQuery, results, cursor, warnings, isSearching, waiting, offline, pageError, error, pixabayAvailable, favorites, recent, used, components, drawings, recentOpen, smart } = session
+  const { chip, query, searchedQuery, results, cursor, warnings, isSearching, waiting, offline, pageError, error, pixabayAvailable, favorites, recent, used, components, drawings, recentOpen, smart, filters, pack } = session
   const { set } = imageStudioSession
+  const packsStatus = useIconPacks()
+  // The filters and the pins live in the settings (they travel); the session holds a copy for the search to send.
+  const [pinned, setPinned] = useState<string[]>(settingsPins)
+  useEffect(() => {
+    const read = () => {
+      const stored = settingsFilters()
+      if (JSON.stringify(stored) !== JSON.stringify(imageStudioSession.getState().filters)) set({ filters: stored })
+      setPinned(settingsPins())
+    }
+    read()
+    return storage.subscribe(read)
+  }, [])
+  const changeFilters = (next: MediaFilters) => {
+    setFilters(next)
+    storage.patchSettings({ mediaFilters: next })
+  }
+  const togglePin = (prefix: string) => {
+    const now = settingsPins()
+    const next = now.includes(prefix) ? now.filter((p) => p !== prefix) : [...now, prefix]
+    setPinned(next)
+    storage.patchSettings({ mediaPinnedPacks: next })
+  }
+  /** "More from this pack" (YAZ-4361): the page opens at once; its name, count and license follow from the pack list. */
+  const explorePack = (prefix: string) => {
+    setOpenTile(null)
+    void loadPackList().then(
+      (list) => {
+        const info = list.find((p) => p.prefix === prefix)
+        if (info !== undefined) setPackInfo(info)
+      },
+      () => undefined,
+    )
+    openPack(prefix, null)
+  }
   useEffect(() => {
     drawingCanvas = { engine, appState: () => excalidrawAPI.getAppState() as unknown as Record<string, unknown> }
   }, [engine, excalidrawAPI])
@@ -416,6 +486,11 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   useLayoutEffect(() => {
     if (listRef.current) listRef.current.scrollTop = scrollTops[chip]
   }, [chip])
+  // The pack page starts at its top; Back lands where the search was left (YAZ-4361).
+  const packOpen = pack !== null
+  useLayoutEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = packOpen ? 0 : scrollTops[chip]
+  }, [packOpen])
 
   const catalog = useMemo(() => buildShapeCatalog(smart), [smart])
   const shapes = useMemo(() => catalog.map(shapeItem), [catalog])
@@ -468,8 +543,9 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   const webOn = chipSource(chip) !== null
   // One tile per icon; its copies from other sets and its styles are its variants, shown on request (demo 6J).
   const webGroups = useMemo(
-    () => (typed && webOn ? groupResults(results.filter((item) => !yourKeys.has(item.itemKey)), searchedQuery || query) : []),
-    [typed, webOn, results, yourKeys, searchedQuery, query],
+    // Not on the pack page (YAZ-4361): its results are the pack's own, shown whole.
+    () => (typed && webOn && pack === null ? groupResults(results.filter((item) => !yourKeys.has(item.itemKey)), searchedQuery || query) : []),
+    [typed, webOn, results, yourKeys, searchedQuery, query, pack],
   )
   const variantsOf = useMemo(() => new Map(webGroups.map((group) => [group.head.itemKey, group.variants])), [webGroups])
 
@@ -477,7 +553,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   // moves. It is never armed for a cursor already asked for, so a page cannot load twice.
   useEffect(() => {
     const sentinel = sentinelRef.current
-    if (!typed || !webOn || !cursor || pageError || isSearching || wasRequested(cursor) || !sentinel || typeof IntersectionObserver === 'undefined') return
+    if (!(packOpen || (typed && webOn)) || !cursor || pageError || isSearching || wasRequested(cursor) || !sentinel || typeof IntersectionObserver === 'undefined') return
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) void runSearch({ append: true })
@@ -486,7 +562,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [typed, webOn, cursor, isSearching, pageError, chip])
+  }, [typed, webOn, cursor, isSearching, pageError, chip, packOpen])
 
   // The tile buttons are disabled while one is in flight; these re-check the same fact, because a keyboard
   // activation can land in the frame before React has re-rendered them.
@@ -526,6 +602,9 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       const row = lib.used.find((u) => u.itemKey === item.itemKey)
       if (!wasFavorite && row !== undefined && lib.favorites.some((f) => f.itemKey === item.itemKey)) {
         setLine({ text: `${item.title} is now a favorite. You added it ${row.count} times.`, undo: item })
+      } else if (recorded.provider === 'iconify' && needsCredit(recorded.licenseName)) {
+        // Extra 16: a CC-BY icon asks for a credit where the work is published.
+        setLine({ text: creditReminder(recorded) })
       }
     } catch (cause) {
       set({ error: getErrorMessage(cause, `${item.title || 'That item'} could not be added`) })
@@ -690,6 +769,11 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
             {variants.length > 0 && (
               <button type="button" role="menuitem" onClick={() => openRow(slot, 'variants')}>
                 Show {variants.length} more like this
+              </button>
+            )}
+            {item.provider === 'iconify' && pack?.prefix !== item.providerId.slice(0, item.providerId.indexOf(':')) && (
+              <button type="button" role="menuitem" onClick={() => explorePack(item.providerId.slice(0, item.providerId.indexOf(':')))}>
+                More from this pack
               </button>
             )}
             <button type="button" role="menuitem" onClick={() => openRow(slot, 'word', query.trim())}>
@@ -859,7 +943,46 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   /** The web half shows once the web is asked or is waiting to be: during the pause, a search, offline, a result. */
   const webShown = webOn && (waiting || isSearching || offline || searchedQuery !== '' || pageError !== null)
   let body: ReactNode
-  if (typed) {
+  if (pack !== null) {
+    // The pack page (YAZ-4361): every icon of the pack, as Iconify or the Mac lists them — no folding of look-alikes,
+    // the user came to see them all.
+    body = (
+      <PackView
+        pack={pack}
+        pinned={pinned.includes(pack.prefix)}
+        onBack={closePack}
+        onPin={() => togglePin(pack.prefix)}
+        onType={typePackQuery}
+        onSearchNow={searchNow}
+      >
+        {offline && (
+          <div className="image-studio__notice" role="status">
+            {packsStatus?.state === 'complete' ? OFFLINE_WITH_PACKS_NOTICE : OFFLINE_NOTICE}
+          </div>
+        )}
+        {results.length > 0 && grid(results, 'pack')}
+        {(waiting || (isSearching && results.length === 0)) && (
+          <div className="image-studio__state" role="status">
+            Loading the pack…
+          </div>
+        )}
+        {!waiting && !isSearching && !offline && cursor === null && results.length === 0 && pageError === null && (
+          <div className="image-studio__state">{pack.query.trim() === '' ? 'This pack has no icons to show.' : `No icon in this pack matches “${pack.query.trim()}”`}</div>
+        )}
+        {cursor && results.length > 0 && <div className="image-studio__search-sentinel" ref={sentinelRef} aria-hidden="true" />}
+        {pageError && cursor && (
+          <button type="button" className="image-studio__retry" disabled={isSearching} onClick={() => void runSearch({ append: true, retry: true })}>
+            {isSearching ? 'Retrying…' : 'Retry loading icons'}
+          </button>
+        )}
+        {isSearching && results.length > 0 && (
+          <div className="image-studio__loading-more" role="status">
+            Loading more…
+          </div>
+        )}
+      </PackView>
+    )
+  } else if (typed) {
     const mine = yours.slice(0, shownMatches)
     body = (
       <>
@@ -874,7 +997,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
             </header>
             {offline && (
               <div className="image-studio__notice" role="status">
-                {OFFLINE_NOTICE}
+                {packsStatus?.state === 'complete' ? OFFLINE_WITH_PACKS_NOTICE : OFFLINE_NOTICE}
               </div>
             )}
             {warnings.length > 0 && <div className="image-studio__warning">{warnings.join(' ')}</div>}
@@ -904,6 +1027,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
                 Loading more…
               </div>
             )}
+            {/* YAZ-4359: at the bottom of the icon results, the way to every icon, also offline. */}
+            {chipSource(chip) !== 'pixabay' && searchedQuery !== '' && !waiting && <IconPacksLine />}
           </section>
         )}
         {/* Nothing local, and no web half yet (a chip with no web, or text too short for a pause search): say so (6Q). */}
@@ -963,7 +1088,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       }}
       onDrop={(event) => takeFrom(event, event.dataTransfer)}
     >
-      <div className="image-studio__search" inert={saving}>
+      <div className="image-studio__search" inert={saving} hidden={pack !== null}>
         <input
           ref={fieldRef}
           type="search"
@@ -984,6 +1109,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
             }
           }}
         />
+        <FilterMenu filters={filters} onChange={changeFilters} pinned={pinned} loadPacks={loadPackList} />
         {hasSelection && library.canCapture && (
           <button
             type="button"
@@ -1029,7 +1155,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       )}
 
       <div className={saving ? 'image-studio__rest is-dimmed' : 'image-studio__rest'} inert={saving}>
-        <div className="image-studio__chips" role="group" aria-label="Show">
+        <div className="image-studio__chips" role="group" aria-label="Show" hidden={pack !== null}>
           {STUDIO_CHIPS.filter((c) => c !== 'photos' || pixabayAvailable).map((c) => (
             <button type="button" key={c} className={chip === c ? 'is-active' : undefined} aria-pressed={chip === c} onClick={() => pickChip(c)}>
               {CHIP_LABELS[c]}
@@ -1059,7 +1185,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           ref={listRef}
           onKeyDown={(event) => moveBetweenTiles(event, listRef.current, fieldRef.current)}
           onScroll={(event) => {
-            scrollTops[chip] = event.currentTarget.scrollTop
+            // The pack page has its own scroll; the search under it keeps the place Back returns to.
+            if (imageStudioSession.getState().pack === null) scrollTops[chip] = event.currentTarget.scrollTop
           }}
         >
           {body}
