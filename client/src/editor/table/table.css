@@ -892,7 +892,8 @@
 
 .milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__column,
 .milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__now,
-.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__filled {
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__filled,
+.milkdown .ProseMirror .cell-note-all-head .cell-note-card__copy {
   flex: none;
   height: 22px;
   padding: 0 8px;

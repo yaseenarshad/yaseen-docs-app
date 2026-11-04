@@ -326,3 +326,76 @@ describe('where it opens, and how it closes (D, A9, A10)', () => {
     expect(root.querySelector(`.${CELL_NOTE_CALENDAR_CLASS}`)).toBeNull()
   })
 })
+
+describe('one ⌘Z after a click on an empty block (A8, YAZ-4409)', () => {
+  it('the note and its mark go; All notes stays open on the block that was live before, the caret in it', async () => {
+    const { root, view } = await openAll()
+    expect(openCellNoteLabel(view.state)).toBe('cell-1')
+    click(empties(root)[0]!)
+    expect(openCellNoteLabel(view.state)).toBe('cell-4')
+    undo(view.state, view.dispatch)
+    expect(cellNoteCardKey.getState(view.state)?.calendar).not.toBeNull()
+    expect(openCellNoteLabel(view.state)).toBe('cell-1')
+    expect(card(root)!.contains(view.domAtPos(view.state.selection.head).node)).toBe(true)
+  })
+})
+
+describe('the card\'s place and height (YAZ-4410, YAZ-4411)', () => {
+  /**
+   * jsdom has no layout: the visible area is 0 to the window's 768 px (the scroller's 800 px, cut by the window), the
+   * editor's box from 0, the cell at `cellTop`. A note's
+   * content is 60 px, or 780 px in All notes; like a real box, it measures at least the height the card is set to.
+   */
+  async function stubbed(cellTop: number) {
+    const mounted = await mount(DAY)
+    const { root, view } = mounted
+    const host = view.dom.parentElement!
+    root.style.overflowY = 'auto'
+    root.getBoundingClientRect = () => new DOMRect(0, 0, 1000, 800)
+    host.getBoundingClientRect = () => new DOMRect(0, 0, 1000, 800)
+    Object.defineProperty(host, 'offsetWidth', { value: 1000 })
+    const set = () => parseFloat(host.style.getPropertyValue('--cell-note-card-height')) || 0
+    for (const note of view.dom.querySelectorAll<HTMLElement>('.cell-note')) {
+      Object.defineProperty(note, 'offsetParent', { value: host })
+      Object.defineProperty(note, 'offsetWidth', { value: 340 })
+      Object.defineProperty(note, 'offsetHeight', { value: 50 })
+      Object.defineProperty(note, 'clientHeight', { value: 50 })
+      Object.defineProperty(note, 'scrollHeight', { get: () => Math.max(note.classList.contains(CELL_NOTE_CALENDAR_CLASS) ? 780 : 60, set()) })
+    }
+    for (const row of [1, 2, 3]) (view.nodeDOM(cellPos(view, row, 1)) as HTMLElement).getBoundingClientRect = () => new DOMRect(300, cellTop + (row - 1) * 30, 200, 30)
+    const vars = () => ({ top: host.style.getPropertyValue('--cell-note-card-top'), cap: host.style.getPropertyValue('--cell-note-card-max-height'), height: host.style.getPropertyValue('--cell-note-card-height') })
+    return { ...mounted, vars }
+  }
+  const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+  it('opened from a cell low in the window, the card moves up to keep its least height in view; from a high cell it stays under it, as tall as the area below', async () => {
+    const low = await stubbed(700)
+    openCellNote(low.view, cellPos(low.view, 1, 1))
+    click(low.root.querySelector('.cell-note-card__all-toggle')!)
+    await frame()
+    expect(low.vars()).toMatchObject({ top: `${window.innerHeight - 360}px`, cap: '360px' })
+    await unmountAll()
+    const high = await stubbed(30)
+    openCellNote(high.view, cellPos(high.view, 1, 1))
+    click(high.root.querySelector('.cell-note-card__all-toggle')!)
+    await frame()
+    expect(high.vars()).toMatchObject({ top: '64px', cap: `${window.innerHeight - 64}px` })
+  })
+
+  it('All notes fits its own list; back in a plain card, and in the next note\'s, the height is the plain note\'s again', async () => {
+    const { root, view, vars } = await stubbed(30)
+    openCellNote(view, cellPos(view, 1, 1))
+    expect(vars().height).toBe('60px')
+    click(root.querySelector('.cell-note-card__all-toggle')!)
+    await frame()
+    expect(vars().height).toBe('780px')
+    click(root.querySelector('.cell-note-card__all-toggle')!)
+    await frame()
+    await frame()
+    expect(vars().height).toBe('60px')
+    openCellNote(view, cellPos(view, 3, 1))
+    await frame()
+    expect(vars().height).toBe('60px')
+  })
+})
+

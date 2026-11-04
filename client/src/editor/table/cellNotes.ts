@@ -337,7 +337,7 @@ const isOrphan = (state: EditorState, pos: number): boolean => (cellNotesKey.get
 export const isCellNoteHidden = (state: EditorState, pos: number): boolean => {
   if (isOrphan(state, pos)) return false
   const card = cellNoteCardKey.getState(state)
-  // A calendar's "All notes" (YAZ-4276) shows its column's notes in the page, and no card.
+  // A calendar's "All notes" (YAZ-4276) shows the live note as its card (`shown`); the other blocks are lines in it.
   if (card?.calendar != null) return !card.calendar.shown.includes(pos)
   return card?.pos !== pos
 }

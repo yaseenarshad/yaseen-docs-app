@@ -731,7 +731,7 @@ function cardState(doc: ProseNode, label: string | null, all = false, carry: Par
   if (label === null || pos === null) return CLOSED
   const mark = markPosOf(doc, label)
   const cell = mark === null ? null : cellPosAround(doc.resolve(mark))
-  // A calendar table's "All notes" is its own view, in the page (YAZ-4276); every other table's is the list.
+  // A calendar table's "All notes" is its own view, in the card (YAZ-4276); every other table's is the list.
   const calendar = all && cell !== null ? calendarState(doc, label, pos, cell, carry) : null
   if (calendar !== null) return calendar
   const note = doc.nodeAt(pos)!
@@ -1050,6 +1050,8 @@ const visibleBox = (scroller: HTMLElement | null): { left: number; top: number; 
 /** The smallest card a resize leaves, in px. */
 const MIN_WIDTH = 240
 const MIN_HEIGHT = 120
+/** The least height of a calendar's "All notes" card under its cell: room for its head and a few time blocks (YAZ-4410). */
+const CALENDAR_MIN_HEIGHT = 360
 
 /** The eight resize grips: an edge or a corner, its sides (-1 left/top, 1 right/bottom) and its cursor. */
 const GRIPS: ReadonlyArray<{ name: string; x: -1 | 0 | 1; y: -1 | 0 | 1; cursor: string }> = [
@@ -1078,6 +1080,8 @@ function cardView(view: EditorView) {
   const memory = memories.get(view) ?? { placed: null, width: null, height: null, lastContent: null, pinned: pinnedAtStart }
   memories.set(view, memory)
   let shownHeight = ''
+  /** The height last written was a calendar's "All notes" (YAZ-4411): the next plain card is measured afresh. */
+  let calendarShown = false
   /** The cap on the card's height last set: the visible area below its top. */
   let cap = ''
   /** The scroller, found on open, and the visible area, read again after a scroll or a window resize. */
@@ -1134,7 +1138,8 @@ function cardView(view: EditorView) {
       return null
     }
     const { note, base, scale, area: box } = m
-    grow(note)
+    const calendar = cellNoteCardKey.getState(view.state)?.calendar != null
+    grow(note, calendar)
     const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max))
     const minTop = (box.top - base.top) / scale
     const maxBottom = (box.bottom - base.top) / scale
@@ -1147,6 +1152,12 @@ function cardView(view: EditorView) {
       top = clamp((box.top + memory.placed.y - base.top) / scale, minTop, Math.max(minTop, maxBottom - MIN_HEIGHT))
       left = inArea((box.left + memory.placed.x - base.left) / scale)
       setCap(maxBottom - top)
+    } else if (calendar) {
+      // A calendar's "All notes" under its cell (YAZ-4410): as tall as the area below its top, so the live block can
+      // scroll into the card; with less than `CALENDAR_MIN_HEIGHT` below the cell, it moves up to have that much.
+      top = Math.max(minTop, Math.min(m.spotTop, maxBottom - CALENDAR_MIN_HEIGHT))
+      setCap(maxBottom - top)
+      left = inArea(m.spotLeft)
     } else {
       // Under its cell (change AQ of the demo): its spot in the page, so it scrolls with the page and leaves the view
       // with its cell. No clamp from top to bottom. As tall as the visible area at most.
@@ -1168,10 +1179,29 @@ function cardView(view: EditorView) {
   /**
    * The height only grows (round 3 of the demo): to fit content that grew past it; after a resize that cut content off,
    * by as much as the content grew. The content's height is the card's scroll height (its box when the content is
-   * shorter). Written only when it changes.
+   * shorter). Written only when it changes. A calendar's "All notes" fits its content and keeps no height: its long
+   * list must not make every later card tall (YAZ-4411).
    */
-  const grow = (note: HTMLElement) => {
+  const grow = (note: HTMLElement, calendar: boolean) => {
     const content = note.scrollHeight + note.offsetHeight - note.clientHeight
+    if (calendar) {
+      calendarShown = true
+      const value = `${Math.ceil(content)}px`
+      if (value === shownHeight) return
+      shownHeight = value
+      host.style.setProperty('--cell-note-card-height', value)
+      return
+    }
+    if (calendarShown) {
+      // Back from "All notes": the card still stands at its height, so this frame's content is not the note's. The
+      // card's own height first; the next frame measures the note.
+      calendarShown = false
+      shownHeight = memory.height === null ? '' : `${Math.ceil(memory.height)}px`
+      if (memory.height === null) host.style.removeProperty('--cell-note-card-height')
+      else host.style.setProperty('--cell-note-card-height', shownHeight)
+      schedule()
+      return
+    }
     if (memory.height === null) memory.height = content
     else if (memory.lastContent !== null && content > memory.lastContent && content > memory.height) memory.height = memory.lastContent <= memory.height ? content : memory.height + content - memory.lastContent
     memory.lastContent = content
@@ -1353,7 +1383,12 @@ export const cellNoteCard = $prose(
           if (card.label === null) return card
           // A calendar's view moves its Now tag with the table's minute tick (YAZ-4276).
           if (!tr.docChanged) return card.calendar !== null && tr.getMeta(calendarKey) !== undefined ? cardState(tr.doc, card.label, card.all, carry) : card
-          if (touchesNotes(tr)) return cardState(tr.doc, card.label, card.all, carry)
+          if (touchesNotes(tr)) {
+            // A calendar view whose live note went (one ⌘Z took back the note an empty block made, A8): the note the undo
+            // put the caret back in goes live, so the view stays open on it (YAZ-4409).
+            const back = card.calendar !== null && notePosOf(tr.doc, card.label) === null ? cellNoteAround(tr.selection.$head) : null
+            return cardState(tr.doc, back === null ? card.label : (tr.doc.nodeAt(back)!.attrs.label as string), card.all, carry)
+          }
           const cell = card.cell === null ? null : tr.mapping.map(card.cell)
           // A calendar's view is built again when its table changes (a row, a time) or another note does (its lines);
           // typing in the live note only maps it.
