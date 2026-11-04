@@ -1,9 +1,10 @@
 /**
- * CHECKER (YAZ-4362 round 1): two "Macs" on one settings folder, with the real stores wired as `ipc/index.ts` wires
- * them. Temp folders only; the fetchers are stubs (no network).
+ * THE LIBRARY ON TWO MACS (YAZ-4364): two "Macs" (two userData folders) on one settings folder, with the real stores
+ * wired as `ipc/index.ts` wires them. Temp folders only; the fetchers are stubs (no network). The checker wrote these
+ * in round 1 (YAZ-4362); each bug's case stays: S1b YAZ-4378, S3 YAZ-4380, S4 YAZ-4381, S6 YAZ-4382, S9 YAZ-4383.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { MediaBytesRequest, MediaImportResponse, MediaItem } from '@shared/types'
@@ -142,7 +143,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-describe('checker G3: two Macs, one settings folder', () => {
+describe('the library on two Macs, one settings folder (YAZ-4364)', () => {
   it('S1: both Macs move their old library into <settings>/library; nothing is lost or deleted', async () => {
     const uA = path.join(dir, 'macA')
     const uB = path.join(dir, 'macB')
@@ -169,7 +170,8 @@ describe('checker G3: two Macs, one settings folder', () => {
 
     const lib = path.join(settings, 'library')
     expect((await readdir(lib)).filter((n) => n.endsWith('.json')).sort()).toEqual(['components.json', `media-${A}.json`, `media-${B}.json`])
-    const all = ['component:logo', 'iconify:mdi:a', 'iconify:mdi:b', 'iconify:mdi:shared']
+    // A's favorite of its own logo follows it to logo-2 (YAZ-4378).
+    const all = ['component:logo-2', 'iconify:mdi:a', 'iconify:mdi:b', 'iconify:mdi:shared']
     expect(await keys(macA)).toEqual(all)
     expect(await keys(macB)).toEqual(all)
     // The old folders: untouched.
@@ -183,9 +185,12 @@ describe('checker G3: two Macs, one settings folder', () => {
     // Components: B's logo kept, A's became logo-2.
     expect(files['components/logo.excalidraw']).toBe(fragment('B-logo'))
     expect(files['components/logo-2.excalidraw']).toBe(fragment('A-logo'))
-    console.log('S1 notices A:', macA.notices, 'B:', macB.notices)
-    console.log('S1 network fetches A:', macA.fetched, 'B:', macB.fetched)
-    console.log('S1 component:logo copy =', files[copyName('component:logo', 'excalidraw')]?.includes('A-logo') ? "A's logo" : files[copyName('component:logo', 'excalidraw')])
+    expect(macA.notices).toHaveLength(1)
+    expect(macB.notices).toHaveLength(1)
+    // Every copy was in an old folder: no Mac asks the network (YAZ-4382).
+    expect(macA.fetched).toEqual([])
+    expect(macB.fetched).toEqual([])
+    expect(files[copyName('component:logo-2', 'excalidraw')]).toBe(fragment('A-logo'))
     expect(await macA.copies.status()).toMatchObject({ favorites: 4, saved: 4 })
   })
 
@@ -206,11 +211,11 @@ describe('checker G3: two Macs, one settings folder', () => {
     const macA = launch(A, uA, true)
     await settle()
     const favs = await macA.media.favorites({ op: 'list' })
-    // The favorite's component, as the tile and "Open" see it:
+    expect(favs.map((f) => [f.itemKey, f.title])).toEqual([['component:logo-2', 'Logo 2']])
+    // The favorite's component, as the tile and "Open" see it, and its copy, as the add sees it: both A's logo.
     const pointsAt = await macA.components.read({ slug: favs[0].providerId })
-    console.log('S1b favorite', favs[0].itemKey, '→ component file holds', pointsAt.includes('A-logo') ? "A's logo" : "B's logo")
-    console.log('S1b copy holds', (await macA.copies.readElements('component:logo'))?.includes('A-logo') ? "A's logo" : "B's logo")
     expect(pointsAt).toContain('A-logo')
+    expect(await macA.copies.readElements(favs[0].itemKey)).toContain('A-logo')
   })
 
   it('S2: a removal on Mac A stays removed on Mac B; its copy goes; a later re-add on B comes back on A', async () => {
@@ -256,7 +261,7 @@ describe('checker G3: two Macs, one settings folder', () => {
     t += 10
     await macB.media.used({ op: 'record', item: asItem(icon('z')), query: 'z' })
     const usedB = (await macB.media.used({ op: 'list' })).used.find((u) => u.itemKey === 'iconify:mdi:z')
-    console.log('S3 count on B after the removal on A and one add:', usedB?.count)
+    expect(usedB?.count).toBe(1)
     expect(await keys(macB)).toEqual([])
   })
 
@@ -273,7 +278,6 @@ describe('checker G3: two Macs, one settings folder', () => {
     // A minute later, Mac A removes it.
     await macA.media.favorites({ op: 'remove', itemKey: 'iconify:mdi:w' })
     await settle()
-    console.log('S4 A after its removal:', await keys(macA), 'B:', await keys(macB))
     expect(await keys(macA)).toEqual([])
     expect(await keys(macB)).toEqual([])
   })
@@ -308,7 +312,6 @@ describe('checker G3: two Macs, one settings folder', () => {
     await settle()
     const lib = await snapshot(path.join(settings, 'library'))
     const fromNet = names.filter((n) => lib[copyName(`iconify:mdi:${n}`, 'svg')]?.includes('net-'))
-    console.log('S6 network fetches:', macA.fetched, 'copies that came from the network, not the old folder:', fromNet)
     expect(macA.fetched).toEqual([])
     expect(fromNet).toEqual([])
   })
@@ -339,7 +342,7 @@ describe('checker G3: two Macs, one settings folder', () => {
     await writeFile(bFile, JSON.stringify({ version: 1, favorites: [icon('b1', 5)], recent: [], used: [], removed: {} }))
     expect(await keys(macA)).toEqual(['iconify:mdi:a1', 'iconify:mdi:b1'])
   })
-  it('S9: the settings folder is gone at a launch (renamed, drive out): what do Favorites show, and where do writes go?', async () => {
+  it('S9: the settings folder is gone at a launch (renamed, drive out): the favorites stay, and no write makes the gone folder again', async () => {
     const uA = path.join(dir, 'macA')
     await oldLibrary(uA, [icon('p1'), icon('p2')], {})
     let macA = launch(A, uA, true)
@@ -348,13 +351,22 @@ describe('checker G3: two Macs, one settings folder', () => {
     await macA.close()
     macs.splice(macs.indexOf(macA), 1)
     // The user renames the synced folder (or the drive is out) before the next launch.
-    const { rename } = await import('node:fs/promises')
     await rename(path.join(dir, 'Sync'), path.join(dir, 'Sync-renamed'))
     macA = launch(A, uA, true)
     await settle()
-    console.log('S9 favorites with the settings folder gone:', await keys(macA))
+    expect(await keys(macA)).toEqual(['iconify:mdi:p1', 'iconify:mdi:p2'])
     await macA.media.favorites({ op: 'add', item: asItem(icon('p3')) })
-    console.log('S9 after one add, the gone folder exists again:', await readdir(path.join(dir, 'Sync')).then(() => true, () => false), await snapshot(path.join(dir, 'Sync')))
+    await settle()
     expect(await keys(macA)).toEqual(['iconify:mdi:p1', 'iconify:mdi:p2', 'iconify:mdi:p3'])
+    expect(await readdir(path.join(dir, 'Sync')).then(() => true, () => false)).toBe(false)
+
+    // The folder comes back: the next launch merges what changed meanwhile into it.
+    await macA.close()
+    macs.splice(macs.indexOf(macA), 1)
+    await rename(path.join(dir, 'Sync-renamed'), path.join(dir, 'Sync'))
+    macA = launch(A, uA, true)
+    await settle()
+    expect(await keys(macA)).toEqual(['iconify:mdi:p1', 'iconify:mdi:p2', 'iconify:mdi:p3'])
+    expect(await readdir(path.join(settings, 'library'))).toContain(`media-${A}.json`)
   })
 })

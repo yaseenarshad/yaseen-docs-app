@@ -22,19 +22,25 @@
  *  - A REMOVAL DELETES THE COPY (`remove`, after `media:favorites` remove). The copy is a copy, not the user's data:
  *    `rm`, not the trash, so an unfavorite does not fill the Trash with hashed files.
  *  - A LIBRARY THAT MOVES (YAZ-4364): `copyFrom` copies the copies the new folder lacks; it never writes over one.
+ *    Each lands whole or not at all (YAZ-4379): `createDurable`, a fsynced tmp file linked onto the name. A copy that
+ *    failed fails the move, so the next launch copies it again from the old folder. A component that moved to another
+ *    slug (YAZ-4378) takes its copy along, under its new itemKey's name.
+ *  - A PASS LOOKS AGAIN BEFORE EACH FETCH (YAZ-4382): a copy that landed meanwhile (a move, another Mac) is not
+ *    fetched again. The look is one `stat` while the folder's mtime is unchanged.
  *  - THE FOLDER SCAN IS CACHED ON ITS OWN mtime, as `componentStore.ts` does: a tile asks for its copy, and one
  *    `stat` of the folder answers whether the last `readdir` is still true.
  *
  * Electron-free: the favorites, the fetch and the key check come in, so tests run on a temp folder with no network.
  */
 import { createHash } from 'node:crypto'
-import { constants } from 'node:fs'
-import { copyFile, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { readdir, readFile, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { LIBRARY_FAVORITES_DIR, MAX_COMPONENT_FRAGMENT_BYTES, type FavoriteCopiesStatus, type MediaBytesRequest, type MediaImportResponse, type MediaPreviewResponse, type StoredMediaItem } from '@shared/types'
 import { parseDataUrl } from '@shared/drawingAssets'
 import { parseComponentFragment } from '@shared/savedComponents'
-import { BridgeFailure, atomicWrite, createChain } from '../fs/fsUtils'
+import { componentItemKey, type ComponentMoves } from '@shared/mediaLibrary'
+import { BridgeFailure, atomicWrite, createChain, createDurable } from '../fs/fsUtils'
+import { makeLibraryDir } from './folder'
 
 /** The wait between two copies of one pass (round 2 decision 6): a backfill of many favorites is gentle on the providers. */
 export const FAVORITE_COPY_INTERVAL_MS = 1000
@@ -113,8 +119,12 @@ export interface FavoriteCopies {
   status(): Promise<FavoriteCopiesStatus>
   /** Point at another library folder (the setting changed); a running pass stops, and a new one starts there. */
   setFolder(folder: string): void
-  /** Copy the copies of the library in `from` that this folder lacks (YAZ-4364: the library moved). Answers how many. */
-  copyFrom(from: string): Promise<number>
+  /**
+   * Copy the copies of the library in `from` that this folder lacks (YAZ-4364: the library moved). Answers how many.
+   * `moves` are the components that came over under another slug (YAZ-4378): their copies take the new name. A copy
+   * that could not be made throws, after the others are tried.
+   */
+  copyFrom(from: string, moves?: ComponentMoves): Promise<number>
   close(): Promise<void>
 }
 
@@ -170,7 +180,7 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
       if (library !== folder || !(await deps.favorites()).some((f) => f.itemKey === itemKey)) return false
       const dir = dirOf(library)
       if ((await listing(dir)).has(favoriteCopyHash(itemKey))) return false
-      await mkdir(dir, { recursive: true })
+      await makeLibraryDir(library, LIBRARY_FAVORITES_DIR)
       await atomicWrite(path.join(dir, `${favoriteCopyHash(itemKey)}.${ext}`), bytes)
       scan = null
       return true
@@ -211,12 +221,12 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
     const fetch = fetchers
     if (fetch === null) return
     const favorites = (await deps.favorites()).filter((item) => !madeByPanel(item))
-    const have = await listing(dirOf(library))
     let hasKey: boolean | null = null
     let first = true
     for (const item of favorites) {
       if (closed || library !== folder) return
-      if (have.has(favoriteCopyHash(item.itemKey))) continue
+      // The folder again, each time (YAZ-4382): a move or another Mac may have brought the copy meanwhile.
+      if ((await listing(dirOf(library))).has(favoriteCopyHash(item.itemKey))) continue
       if (item.provider === 'pixabay' && !(hasKey ??= await deps.hasPixabayKey())) continue
       // One each second for what goes to the network; a component's own file is on this disk.
       if (item.provider !== 'component') {
@@ -325,25 +335,34 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
       }
     },
 
-    copyFrom(from) {
+    copyFrom(from, moves = {}) {
       return chain.run(async () => {
-        const dir = dirOf(folder)
+        const library = folder
+        const dir = dirOf(library)
         const fromDir = dirOf(from)
         if (path.resolve(fromDir) === path.resolve(dir)) return 0
+        // A moved component's copy is named by its old itemKey there, and by its new one here.
+        const renamed = new Map(Object.entries(moves).map(([slug, to]) => [favoriteCopyHash(componentItemKey(slug)), favoriteCopyHash(componentItemKey(to.slug))]))
         const have = await listing(dir)
         let copied = 0
+        let failure: unknown = null
         for (const name of await readdir(fromDir).catch(() => [] as string[])) {
           const m = COPY_NAME_RE.exec(name)
-          if (m === null || have.has(m[1])) continue
-          await mkdir(dir, { recursive: true })
-          // EXCL: a copy that landed meanwhile (a backfill, another Mac) is not written over.
-          const ok = await copyFile(path.join(fromDir, name), path.join(dir, name), constants.COPYFILE_EXCL).then(
-            () => true,
-            () => false,
-          )
-          if (ok) copied++
+          if (m === null) continue
+          const hash = renamed.get(m[1]) ?? m[1]
+          if (have.has(hash)) continue
+          try {
+            const bytes = await readFile(path.join(fromDir, name))
+            await makeLibraryDir(library, LIBRARY_FAVORITES_DIR)
+            // Whole or not at all, and never over a copy that landed meanwhile (a backfill, another Mac): EEXIST.
+            await createDurable(path.join(dir, `${hash}.${m[2]}`), bytes)
+            copied++
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code !== 'EEXIST') failure ??= err
+          }
         }
         if (copied > 0) scan = null
+        if (failure !== null) throw failure
         return copied
       })
     },

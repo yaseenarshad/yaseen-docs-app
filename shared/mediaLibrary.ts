@@ -232,3 +232,40 @@ export function mergeMediaLibraries(libs: readonly MediaLibraryFile[]): MediaLib
     removed: cleanRemoved(removed),
   }
 }
+
+// ---------- A Library move with a component name clash (YAZ-4378) ----------
+
+/** The components that a Library move copied under another slug: old slug → the slug and name in the new folder. */
+export type ComponentMoves = Readonly<Record<string, { readonly slug: string; readonly name: string }>>
+
+/** A saved component's itemKey (`componentItem` in the renderer): its slug is its id. */
+export const componentItemKey = (slug: string): string => `component:${slug}`
+
+/**
+ * The old folder's library with each moved component's rows on its new slug and name: `favorites`, `recent`, `used`
+ * and `removed`. So after the move a favorite still means the component that was favorited, and its tile and its add
+ * give the same one. Each row maps once, from its old slug: a chain of moves (`logo` → `logo-2`, `logo-2` → `logo-3`)
+ * never maps a row twice. The library is answered as it is when no row moves.
+ */
+export function renameMovedComponents(lib: MediaLibraryFile, moves: ComponentMoves): MediaLibraryFile {
+  if (Object.keys(moves).length === 0) return lib
+  const moveOf = (itemKey: string) => {
+    const slug = itemKey.startsWith('component:') ? itemKey.slice('component:'.length) : null
+    return slug !== null && Object.hasOwn(moves, slug) ? moves[slug] : null
+  }
+  const row = <T extends StoredMediaItem>(r: T): T => {
+    const to = r.provider === 'component' ? moveOf(r.itemKey) : null
+    return to === null ? r : { ...r, itemKey: componentItemKey(to.slug), providerId: to.slug, title: to.name }
+  }
+  const removedKey = (key: string): string => {
+    const to = moveOf(key)
+    return to === null ? key : componentItemKey(to.slug)
+  }
+  return {
+    ...lib,
+    favorites: lib.favorites.map(row),
+    recent: lib.recent.map(row),
+    used: lib.used.map(row),
+    removed: Object.fromEntries(Object.entries(lib.removed).map(([key, at]) => [removedKey(key), at])),
+  }
+}
