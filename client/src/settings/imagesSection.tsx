@@ -6,7 +6,8 @@
  *   broadcast to every window, and a key in it would be a key in every devtools console. The row
  *   writes through `secrets:set` and reads back only "set" / "not set" (`PixabayKeyControl`).
  * - The library folder (Draw's 🔒 YAZ-1775 D5): ONE folder every vault shares, for saved components and
- *   media favorites; `SettingsState.libraryFolder`, null = `<userData>/library`. Draw keeps it under
+ *   media favorites; `SettingsState.libraryFolder`, null = `<settings folder>/library` with a settings folder
+ *   (YAZ-4364), else `<userData>/library`. Draw keeps it under
  *   Files; in Docs, Files & Links is about notes, and the library is the canvas panel's.
  * - The favorites (YAZ-4363): their count, the size of their own copies, and "all saved" or "3 still saving".
  */
@@ -39,7 +40,7 @@ export const IMAGES_SECTION: SettingsSection = {
           // only main can resolve the default.
           id: 'libraryFolder',
           label: 'Library folder',
-          hint: 'Your saved components and media favorites, shared by every vault. Put it inside a synced vault to back it up.',
+          hint: 'Your saved components and media favorites, shared by every vault. With a settings folder, it lives there and syncs with your settings. A new folder gets a copy of your library, and the old one stays.',
           keywords: ['library', 'components', 'favorites', 'media', 'folder'],
           wide: true,
           render: ({ settings, onChange }) => (

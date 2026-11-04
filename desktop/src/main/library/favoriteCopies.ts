@@ -13,13 +13,15 @@
  *    that failed is tried again by the next pass. A change during a pass runs one more pass after it.
  *  - A REMOVAL DELETES THE COPY (`remove`, after `media:favorites` remove). The copy is a copy, not the user's data:
  *    `rm`, not the trash, so an unfavorite does not fill the Trash with hashed files.
+ *  - A LIBRARY THAT MOVES (YAZ-4364): `copyFrom` copies the copies the new folder lacks; it never writes over one.
  *  - THE FOLDER SCAN IS CACHED ON ITS OWN mtime, as `componentStore.ts` does: a tile asks for its copy, and one
  *    `stat` of the folder answers whether the last `readdir` is still true.
  *
  * Electron-free: the favorites, the fetch and the key check come in, so tests run on a temp folder with no network.
  */
 import { createHash } from 'node:crypto'
-import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { copyFile, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { LIBRARY_FAVORITES_DIR, type FavoriteCopiesStatus, type MediaBytesRequest, type MediaImportResponse, type MediaPreviewResponse, type StoredMediaItem } from '@shared/types'
 import { parseDataUrl } from '@shared/drawingAssets'
@@ -77,6 +79,8 @@ export interface FavoriteCopies {
   status(): Promise<FavoriteCopiesStatus>
   /** Point at another library folder (the setting changed); a running pass stops, and a new one starts there. */
   setFolder(folder: string): void
+  /** Copy the copies of the library in `from` that this folder lacks (YAZ-4364: the library moved). Answers how many. */
+  copyFrom(from: string): Promise<number>
   close(): Promise<void>
 }
 
@@ -231,6 +235,29 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
         failed: failedNow,
         bytes,
       }
+    },
+
+    copyFrom(from) {
+      return chain.run(async () => {
+        const dir = dirOf(folder)
+        const fromDir = dirOf(from)
+        if (path.resolve(fromDir) === path.resolve(dir)) return 0
+        const have = await listing(dir)
+        let copied = 0
+        for (const name of await readdir(fromDir).catch(() => [] as string[])) {
+          const m = COPY_NAME_RE.exec(name)
+          if (m === null || have.has(m[1])) continue
+          await mkdir(dir, { recursive: true })
+          // EXCL: a copy that landed meanwhile (a backfill, another Mac) is not written over.
+          const ok = await copyFile(path.join(fromDir, name), path.join(dir, name), constants.COPYFILE_EXCL).then(
+            () => true,
+            () => false,
+          )
+          if (ok) copied++
+        }
+        if (copied > 0) scan = null
+        return copied
+      })
     },
 
     setFolder(next) {

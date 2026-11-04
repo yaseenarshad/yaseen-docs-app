@@ -85,6 +85,14 @@ describe('Settings › Images › Library folder', () => {
     ])
   })
 
+  it('with a settings folder, the default is in it and the row says it syncs (YAZ-4364)', async () => {
+    libraryFolder.mockResolvedValue('/Sync/settings/library')
+    vi.mocked(api.state.settingsFolder).mockResolvedValueOnce({ folder: '/Sync/settings', missing: false }).mockResolvedValueOnce({ folder: '/Sync/settings', missing: false })
+    await mountImages()
+    await flush()
+    expect(el.querySelector('[data-testid="library-folder-path"]')?.textContent).toBe('/Sync/settings/library (default: in your settings folder, so it syncs)')
+  })
+
   it('a chosen folder is its own answer; Reset writes null, never an empty string; Choose… writes the picked path', async () => {
     await mountImages({ ...DEFAULT_SETTINGS, libraryFolder: '/Vault/Library' })
     expect(el.querySelector('[data-testid="library-folder-path"]')?.textContent).toBe('/Vault/Library')

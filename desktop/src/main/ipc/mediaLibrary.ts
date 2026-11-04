@@ -61,6 +61,8 @@ function requireUsedRequest(v: unknown): MediaUsedRequest {
 }
 
 export interface MediaLibraryIpcDeps {
+  /** This Mac's ID (YAZ-4364): this Mac writes only `media-<macId>.json`. */
+  macId: () => Promise<string>
   /** Whether this Mac has a Pixabay key (`secrets.has(PIXABAY_SECRET)`): a Pixabay copy waits until it does. */
   hasPixabayKey?: () => Promise<boolean>
   /** The wait between two copies of a backfill pass; tests make it short. */
@@ -75,13 +77,13 @@ export interface MediaLibraryIpc {
 }
 
 /** Returns the stores so a test can close the watcher; `main/index.ts` lets the process end take them. */
-export function registerMediaLibraryIpc(store: Store, userData: string, deps: MediaLibraryIpcDeps = {}): MediaLibraryIpc {
+export function registerMediaLibraryIpc(store: Store, userData: string, deps: MediaLibraryIpcDeps): MediaLibraryIpc {
   const folder = followLibraryFolder(store, userData, (next) => {
     media.setFolder(next)
     copies.setFolder(next)
     broadcastAll(CONTRACT.media.onChanged.channel)
   })
-  const media = createMediaStore(folder)
+  const media = createMediaStore(folder, { macId: deps.macId })
   const copies = createFavoriteCopies(folder, {
     favorites: () => media.favorites({ op: 'list' }),
     hasPixabayKey: deps.hasPixabayKey ?? (async () => false),

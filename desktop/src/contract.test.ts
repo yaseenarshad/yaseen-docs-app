@@ -48,7 +48,7 @@ it('main handles every invoke exactly once and listens on exactly the send chann
   registerMemoryIpc({ report: vi.fn() })
   registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', releases: [] }) }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
   registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), write: vi.fn(), readText: vi.fn(), readHTML: vi.fn(), revealImage: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
-  registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc, { userData: dir, viewerAssetsDir: dir, drawioDir: dir, fontsDir: dir, isPackaged: true }, { missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined })
+  registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc, { userData: dir, viewerAssetsDir: dir, drawioDir: dir, fontsDir: dir, isPackaged: true, macId: async () => 'contracttest' }, { missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined })
   expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()).toEqual(INVOKES)
   expect(vi.mocked(ipcMain.on).mock.calls.map(([ch]) => ch).sort()).toEqual(SENDS)
 })

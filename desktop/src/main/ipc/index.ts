@@ -7,6 +7,7 @@ import type { SettingsFolder } from '../settingsFolder'
 import type { LspPool } from '../lsp/pool'
 import type { Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
+import { copyLibrary, followLibraryMoves } from '../library/copyLibrary'
 import { resolveLibraryFolder } from '../library/folder'
 import { registerBoardIpc } from './board'
 import { registerComponentsIpc } from './components'
@@ -48,6 +49,8 @@ import { registerWindowIpc } from './window'
  */
 export type IpcPlaces = ShareIpcPlaces & {
   userData: string
+  /** This Mac's ID (`vaultIndex/mint.ts`): the library's media file of this Mac is `media-<macId>.json` (YAZ-4364). */
+  macId: () => Promise<string>
   /** `app.getAppPath()`: a dev build's language helpers are in `node_modules` from there upward (YAZ-3454, YAZ-3500). */
   appPath?: string
 }
@@ -90,10 +93,16 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   })
   // The canvas panel (YAZ-3038; Draw's 🔒 YAZ-1775 D4 / D5): the library folder every vault shares, its media
   // and component stores, the favorites' own copies (YAZ-4363), and the Image Studio, which asks the copies first.
-  handle(CONTRACT.drawing.libraryFolder, async () => resolveLibraryFolder(store.get().settings.libraryFolder, userData))
-  const library = registerMediaLibraryIpc(store, userData, { hasPixabayKey: () => secrets.has(PIXABAY_SECRET) })
-  registerComponentsIpc(store, userData)
+  // The folder is the setting, else `<settings folder>/library`, else `<userData>/library` (YAZ-4364).
+  handle(CONTRACT.drawing.libraryFolder, async () => resolveLibraryFolder(store.get().settings.libraryFolder, userData, store.get().settingsFolder))
+  const library = registerMediaLibraryIpc(store, userData, { macId: places.macId, hasPixabayKey: () => secrets.has(PIXABAY_SECRET) })
+  const components = registerComponentsIpc(store, userData)
   registerMediaStudioIpc(userData, secrets, globalThis.fetch, library.copies)
+  // A library that moves (YAZ-4364): after the stores re-pointed, the old folder copies and merges into the new one.
+  followLibraryMoves(store, userData, {
+    copy: (from) => copyLibrary(from, { media: library.media, components, copies: library.copies }),
+    notice: (message) => windows.appNotice(message),
+  })
   registerShareIpc(userData, secrets, places)
   // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
   return { sync: registerGithubIpc(store), secrets, lsp }

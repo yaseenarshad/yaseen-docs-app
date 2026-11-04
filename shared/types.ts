@@ -1467,20 +1467,27 @@ export type StoredMediaItem = MediaItem & { updatedAt: number }
 export type UsedMediaItem = StoredMediaItem & { count: number; words: string[] }
 
 /**
- * `<library>/media.json` (🔒 YAZ-1775 D5): the cross-vault media library, ONE file for the whole account.
+ * The cross-vault media library (🔒 YAZ-1775 D5): ONE library for the whole account.
  * The lists are newest-first and de-duplicated by `itemKey`; `favorites` is the user's pinned
  * set, `recent` is an MRU of what they actually placed on a board, `used` is what the Add tab learned from
- * those adds (YAZ-4157 D1). Still version 1: a build from before drops `used` and reads the rest.
+ * those adds (YAZ-4157 D1). Still version 1: a build from before drops `used` and `removed` and reads the rest.
+ *
+ * Two Macs (YAZ-4364, round 3 decision 2): each Mac writes only `<library>/media-<macId>.json`, and a read merges
+ * every Mac's file and an old `media.json` (`mergeMediaLibraries`). `removed` is each favorite taken out (itemKey →
+ * when), so a merge does not bring it back.
  */
 export interface MediaLibraryFile {
   version: 1
   favorites: StoredMediaItem[]
   recent: StoredMediaItem[]
   used: UsedMediaItem[]
+  removed: Record<string, number>
 }
 
-/** The library file's name inside the library folder. */
+/** The library file of a build from before YAZ-4364, inside the library folder: still read, never written. */
 export const MEDIA_LIBRARY_FILE = 'media.json'
+/** The removals a library keeps, the newest first (YAZ-4364): older ones drop. */
+export const MAX_MEDIA_REMOVED = 2000
 /**
  * `<library>/components/` (🔒 YAZ-1775 D5): where YAZ-1819 writes a saved component's `.excalidraw` + `.png`.
  * Named here so nothing else claims it; YAZ-1817 creates NOTHING — the folder appears on YAZ-1819's first write.

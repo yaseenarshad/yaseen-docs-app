@@ -30,6 +30,10 @@
  *
  * TRASH, NEVER `rm` (the app's rule for every delete): `shell.trashItem` comes in as an argument,
  * so this module stays Electron-free and its tests run on a temp folder with a spy.
+ *
+ * A LIBRARY THAT MOVES (YAZ-4364, `copyLibrary.ts`): `mergeFrom` copies another folder's components in, on the same
+ * chain. A component that is missing copies with its name. The same slug with the same bytes is already here. The same
+ * slug with other bytes gets the next free `-2`, `-3`, … and its name the same number. Nothing is written over.
  */
 import { mkdir, readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
@@ -66,6 +70,8 @@ import { createWatchedFolder } from '../watchedFolder'
 
 /** The one preview format (🔒 YAZ-1775 D5): the renderer exports PNG, and nothing else is stored. */
 const PREVIEW_MIME = 'image/png'
+/** A copied component with a clash takes `-2` … `-99` at most; past that it is not copied (YAZ-4364). */
+const MAX_COPY_NUMBER = 99
 
 export interface ComponentStore {
   /** The reconciled index, newest-updated first. */
@@ -82,6 +88,8 @@ export interface ComponentStore {
   preview(req: ComponentSlugRequest): Promise<string>
   /** Point at another library folder (the setting changed); the old one goes quiet. */
   setFolder(folder: string): void
+  /** Copy the components of the library in `from` into this folder (YAZ-4364). Answers how many came over. */
+  mergeFrom(from: string): Promise<number>
   /** Fires after any change to the components library — an own write or an external one. */
   onChanged(listener: () => void): () => void
   close(): Promise<void>
@@ -191,6 +199,30 @@ export function createComponentStore(initialFolder: string, deps: { now?: () => 
   }
 
   const componentsOf = (dir: string): string => path.join(dir, LIBRARY_COMPONENTS_DIR)
+
+  const countElements = (bytes: Buffer): number | null => {
+    try {
+      return parseComponentFragment(bytes.toString('utf8')).elements.length
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Where a copied component goes (YAZ-4364): its own slug when that is free, else `<slug>-2`, `-3`, … — the first that
+   * is free. Null when the slug, or one of its numbered copies, already holds these very bytes: a second copy changes nothing.
+   */
+  async function freeSlugFor(slug: string, bytes: Buffer): Promise<{ slug: string; n: number } | null> {
+    const taken = new Set<string>()
+    for (let n = 1; n <= MAX_COPY_NUMBER; n++) {
+      const candidate = n === 1 ? slug : uniqueComponentSlug(slug, taken)
+      taken.add(candidate)
+      const here = await readFile(fragmentPath(candidate)).catch(() => null)
+      if (here === null) return isValidComponentSlug(candidate) ? { slug: candidate, n } : null
+      if (here.equals(bytes)) return null
+    }
+    return null
+  }
 
   const watched = createWatchedFolder({
     dir: initialFolder,
@@ -302,6 +334,45 @@ export function createComponentStore(initialFolder: string, deps: { now?: () => 
       folder = next
       scanCache = null
       watched.setFolder(next)
+    },
+
+    mergeFrom(from) {
+      return mutate(async (index) => {
+        if (path.resolve(from) === path.resolve(folder)) return { index, value: 0 }
+        const fromDir = componentsOf(from)
+        const names = await readdir(fromDir).catch(() => [] as string[])
+        // The other folder's names: its index, read and never moved aside (it is not this store's file).
+        const fromIndex = sanitizeComponentsIndex(await readFile(path.join(from, COMPONENTS_INDEX_FILE), 'utf8').then((t) => JSON.parse(t) as unknown).catch(() => null)) ?? EMPTY_COMPONENTS_INDEX
+        const named = new Map(fromIndex.items.map((item) => [item.slug, item]))
+        let next = index
+        let copied = 0
+        for (const name of names) {
+          const slug = slugOfComponentFile(name)
+          if (slug === null) continue
+          const p = path.join(fromDir, name)
+          const bytes = await readFile(p).catch(() => null)
+          // A fragment that is not a component is not copied, as a read would not offer it (`scanFolder`).
+          const elementCount = bytes === null ? null : countElements(bytes)
+          if (bytes === null || elementCount === null) continue
+          const target = await freeSlugFor(slug, bytes)
+          if (target === null) continue // already here, byte for byte
+          await writeBytes(fragmentPath(target.slug), bytes)
+          const preview = await readFile(path.join(fromDir, componentPreviewName(slug))).catch(() => null)
+          if (preview !== null) await writeBytes(previewPath(target.slug), preview)
+          const row = named.get(slug)
+          const mtimeMs = (await stat(p)).mtimeMs
+          const label = row?.name ?? slug
+          next = putComponentItem(next, {
+            slug: target.slug,
+            name: target.n === 1 ? label : (normalizeComponentName(`${label} ${target.n}`) ?? label),
+            elementCount: row?.elementCount ?? elementCount,
+            createdAt: row?.createdAt ?? mtimeMs,
+            updatedAt: row?.updatedAt ?? mtimeMs,
+          })
+          copied++
+        }
+        return { index: next, value: copied }
+      })
     },
 
     onChanged(listener) {

@@ -47,7 +47,7 @@ const stored = (over: Partial<StudioItem & { updatedAt: number }> = {}): StoredM
 const usedRow = (over: Partial<UsedMediaItem> = {}): UsedMediaItem => ({ ...stored(), count: 1, words: [], ...over })
 const icon = (name: string, set = 'set') => item({ itemKey: `iconify:${set}:${name}`, providerId: `${set}:${name}`, title: name.replace(/-/g, ' ') })
 const component = (over: Partial<ComponentItem> = {}): ComponentItem => ({ slug: 'pricing-card', name: 'Pricing card', elementCount: 2, createdAt: 1, updatedAt: 1, ...over })
-const libraryOf = (over: Partial<MediaLibraryFile> = {}): MediaLibraryFile => ({ version: 1, favorites: [], recent: [], used: [], ...over })
+const libraryOf = (over: Partial<MediaLibraryFile> = {}): MediaLibraryFile => ({ version: 1, favorites: [], recent: [], used: [], removed: {}, ...over })
 const rect = (id: string) => ({ id, type: 'rectangle' })
 
 const smart: SmartShapeApi = {

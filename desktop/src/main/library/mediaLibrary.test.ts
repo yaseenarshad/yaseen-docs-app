@@ -7,8 +7,8 @@
  * it is not one at all. The FILE is lenient around that — a bad row is dropped, the rest survive.
  */
 import { describe, expect, it } from 'vitest'
-import { AUTO_FAVORITE_USES, MAX_ITEM_WORDS, MAX_MEDIA_USED, RECENT_LIMIT, type MediaItem, type MediaLibraryFile, type StoredMediaItem, type UsedMediaItem } from '@shared/types'
-import { EMPTY_MEDIA_LIBRARY, addFavorite, addWord, normalizeMediaItem, normalizeStoredMediaItem, normalizeWord, recordRecent, recordUse, removeFavorite, sanitizeMediaLibrary, stamp } from '@shared/mediaLibrary'
+import { AUTO_FAVORITE_USES, MAX_ITEM_WORDS, MAX_MEDIA_REMOVED, MAX_MEDIA_USED, RECENT_LIMIT, type MediaItem, type MediaLibraryFile, type StoredMediaItem, type UsedMediaItem } from '@shared/types'
+import { EMPTY_MEDIA_LIBRARY, addFavorite, addWord, mergeMediaLibraries, normalizeMediaItem, normalizeStoredMediaItem, normalizeWord, recordRecent, recordUse, removeFavorite, sanitizeMediaLibrary, stamp } from '@shared/mediaLibrary'
 
 /** The minimum a provider result has to carry: every required field of `mediaItemValidator`. */
 const item = (over: Partial<MediaItem> = {}): MediaItem => ({ itemKey: 'pixabay:1', provider: 'pixabay', providerId: '1', kind: 'photo', title: 'A tree', ...over })
@@ -92,7 +92,7 @@ describe('normalizeStoredMediaItem — the same, plus the stamp the file orders 
 
 describe('sanitizeMediaLibrary — lenient over the rows, strict about the file', () => {
   it('reads a well-formed file back unchanged', () => {
-    const file = { version: 1, favorites: [stored()], recent: [stored({ itemKey: 'iconify:a', provider: 'iconify', providerId: 'a', kind: 'icon' })], used: [] }
+    const file = { version: 1, favorites: [stored()], recent: [stored({ itemKey: 'iconify:a', provider: 'iconify', providerId: 'a', kind: 'icon' })], used: [], removed: { 'pixabay:9': 4 } }
     expect(sanitizeMediaLibrary(file)).toEqual(file)
   })
 
@@ -156,17 +156,17 @@ describe('addFavorite (the web app`s addFavorite)', () => {
 describe('removeFavorite', () => {
   it('drops the one itemKey and leaves everything else in order', () => {
     const before = { ...EMPTY_MEDIA_LIBRARY, favorites: [stored({ itemKey: 'a' }), stored({ itemKey: 'b' }), stored({ itemKey: 'c' })] }
-    expect(removeFavorite(before, 'b').favorites.map((f) => f.itemKey)).toEqual(['a', 'c'])
+    expect(removeFavorite(before, 'b', 9).favorites.map((f) => f.itemKey)).toEqual(['a', 'c'])
   })
 
   it('an itemKey that is not there is a no-op, not an error', () => {
     const before = { ...EMPTY_MEDIA_LIBRARY, favorites: [stored()] }
-    expect(removeFavorite(before, 'nope')).toEqual(before)
+    expect(removeFavorite(before, 'nope', 9)).toEqual(before)
   })
 
   it('never touches recent — the two lists are independent (unfavoriting does not forget a use)', () => {
-    const before = { version: 1 as const, favorites: [stored({ itemKey: 'a' })], recent: [stored({ itemKey: 'a' })], used: [] }
-    expect(removeFavorite(before, 'a').recent).toEqual(before.recent)
+    const before = { version: 1 as const, favorites: [stored({ itemKey: 'a' })], recent: [stored({ itemKey: 'a' })], used: [], removed: {} }
+    expect(removeFavorite(before, 'a', 9).recent).toEqual(before.recent)
   })
 })
 
@@ -196,7 +196,7 @@ describe('recordRecent (the web app`s recordRecent) — an MRU, not a log', () =
   })
 
   it('never touches favorites — a favorite that is used stays favorited, once', () => {
-    const before = { version: 1 as const, favorites: [stored({ itemKey: 'a' })], recent: [], used: [] }
+    const before = { version: 1 as const, favorites: [stored({ itemKey: 'a' })], recent: [], used: [], removed: {} }
     expect(recordRecent(before, item({ itemKey: 'a' }), 5).favorites).toEqual(before.favorites)
   })
 })
@@ -210,7 +210,7 @@ const component = item({ itemKey: 'component:pricing-card', provider: 'component
 describe('the used list in the file (YAZ-4157 D1)', () => {
   it('a library from before YAZ-4157 (no used) reads as none and keeps everything else', () => {
     const before = { version: 1, favorites: [stored()], recent: [stored()] }
-    expect(sanitizeMediaLibrary(before)).toEqual({ ...before, used: [] })
+    expect(sanitizeMediaLibrary(before)).toEqual({ ...before, used: [], removed: {} })
   })
 
   it('reads a used row back, and drops a row with a bad count — the other rows survive', () => {
@@ -277,7 +277,7 @@ describe('recordUse — one add (YAZ-4157 D1, D9)', () => {
   it(`a removed favorite starts its count again: ${AUTO_FAVORITE_USES} more adds bring it back, not the next one (demo 6A)`, () => {
     let state = lib()
     for (let i = 1; i <= AUTO_FAVORITE_USES; i++) state = recordUse(state, item(), 'tree', i)
-    state = removeFavorite(state, item().itemKey)
+    state = removeFavorite(state, item().itemKey, 15)
     expect(state.used[0]).toMatchObject({ count: 0, words: ['tree'] })
     for (let i = 1; i < AUTO_FAVORITE_USES; i++) state = recordUse(state, item(), '', 20 + i)
     expect(state.favorites).toEqual([])
@@ -285,8 +285,8 @@ describe('recordUse — one add (YAZ-4157 D1, D9)', () => {
     expect(state.favorites).toEqual([stamp(item(), 30)])
   })
 
-  it('removing a favorite that was never added to a board changes only the favorites', () => {
-    expect(removeFavorite(lib({ favorites: [stored()] }), stored().itemKey)).toEqual(lib())
+  it('removing a favorite that was never added to a board changes only the favorites, and notes the removal (YAZ-4364)', () => {
+    expect(removeFavorite(lib({ favorites: [stored()] }), stored().itemKey, 7)).toEqual(lib({ removed: { [stored().itemKey]: 7 } }))
   })
 
   it(`moves the item to the head of used and keeps ${MAX_MEDIA_USED} rows`, () => {
@@ -329,5 +329,42 @@ describe('addWord — "Add a word…" (YAZ-4157 D5)', () => {
     const state = lib({ used: [used({ words: ['oak'] })] })
     expect(addWord(state, item(), '  ', 1)).toBe(state)
     expect(addWord(state, item(), 'OAK', 1)).toBe(state)
+  })
+})
+
+describe('mergeMediaLibraries — two Macs, one library (YAZ-4364, round 3 decision 2)', () => {
+  const at = (itemKey: string, updatedAt: number) => stored({ itemKey, providerId: itemKey, updatedAt })
+
+  it('keeps every Mac`s favorites; per itemKey the newest row wins, newest first', () => {
+    const mine = lib({ favorites: [at('a', 5), at('both', 1)] })
+    const theirs = lib({ favorites: [at('b', 7), { ...at('both', 3), title: 'newer' }] })
+    const out = mergeMediaLibraries([mine, theirs])
+    expect(out.favorites.map((f) => [f.itemKey, f.updatedAt])).toEqual([['b', 7], ['a', 5], ['both', 3]])
+    expect(out.favorites[2].title).toBe('newer')
+  })
+
+  it('a removal stays removed: an older row on another Mac does not bring it back; a newer add does', () => {
+    const mine = lib({ removed: { tree: 10 } })
+    expect(mergeMediaLibraries([mine, lib({ favorites: [at('tree', 4)] })]).favorites).toEqual([])
+    expect(mergeMediaLibraries([mine, lib({ favorites: [at('tree', 12)] })]).favorites.map((f) => f.itemKey)).toEqual(['tree'])
+    // The newest removal of the two counts.
+    expect(mergeMediaLibraries([lib({ removed: { tree: 3 } }), lib({ removed: { tree: 10 } }), lib({ favorites: [at('tree', 5)] })]).removed).toEqual({ tree: 10 })
+  })
+
+  it('a removal, then the add again, then a merge with the old row: the favorite stays', () => {
+    let mine = removeFavorite(lib({ favorites: [at('tree', 1)] }), 'tree', 5)
+    mine = addFavorite(mine, item({ itemKey: 'tree', providerId: 'tree' }), 9)
+    expect(mine.removed).toEqual({})
+    expect(mergeMediaLibraries([mine, lib({ favorites: [at('tree', 1)], removed: { tree: 5 } })]).favorites.map((f) => [f.itemKey, f.updatedAt])).toEqual([['tree', 9]])
+  })
+
+  it('caps recent, used and removed as one file does; one library is answered as it is', () => {
+    const many = (n: number, p: string) => Array.from({ length: n }, (_, i) => at(`${p}${i}`, i))
+    const out = mergeMediaLibraries([lib({ recent: many(40, 'x') }), lib({ recent: many(40, 'y') })])
+    expect(out.recent).toHaveLength(RECENT_LIMIT)
+    const removed = Object.fromEntries(Array.from({ length: MAX_MEDIA_REMOVED + 5 }, (_, i) => [`r${i}`, i]))
+    expect(Object.keys(mergeMediaLibraries([lib({ removed }), lib()]).removed)).toHaveLength(MAX_MEDIA_REMOVED)
+    const one = lib({ favorites: [at('a', 1)] })
+    expect(mergeMediaLibraries([one])).toBe(one)
   })
 })

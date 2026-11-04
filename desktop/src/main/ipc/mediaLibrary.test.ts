@@ -18,6 +18,8 @@ const ok = (value: unknown) => ({ ok: true, value })
 const bad = (code: string) => expect.objectContaining({ ok: false, error: expect.objectContaining({ code }) })
 const item = (over: Partial<MediaItem> = {}): MediaItem => ({ itemKey: 'pixabay:1', provider: 'pixabay', providerId: '1', kind: 'photo', title: 'A tree', ...over })
 const sender = { id: 1 }
+/** This test's "Mac": it writes `media-<MAC>.json` (YAZ-4364). */
+const MAC = 'aaaaaaaaaaaa'
 
 const until = async (pred: () => boolean, ms = 3000) => {
   const t0 = Date.now()
@@ -43,7 +45,7 @@ beforeEach(async () => {
   userData = path.join(dir, 'userData')
   await mkdir(path.join(userData, 'library'), { recursive: true })
   store = createStore(path.join(userData, 'yaseendocs.json'))
-  media = registerMediaLibraryIpc(store, userData)
+  media = registerMediaLibraryIpc(store, userData, { macId: async () => MAC })
 })
 afterEach(async () => {
   await media.close()
@@ -56,7 +58,7 @@ const used = (req: unknown) => registered(CONTRACT.media.used)({ sender }, req)
 const favoriteCopies = () => registered(CONTRACT.media.favoriteCopies)({ sender })
 
 describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
-  it('reads and writes `<userData>/library/media.json` by default (🔒 YAZ-1775 D5), every verb answering its list', async () => {
+  it('reads and writes `<userData>/library/media-<macId>.json` by default (🔒 YAZ-1775 D5, YAZ-4364), every verb answering its list', async () => {
     expect(await favorites({ op: 'list' })).toEqual(ok([]))
     const added = await favorites({ op: 'add', item: item() })
     expect(added).toEqual(ok([expect.objectContaining({ itemKey: 'pixabay:1', updatedAt: expect.any(Number) })]))
@@ -65,7 +67,7 @@ describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
     )
     expect(await used({ op: 'list' })).toEqual(ok(expect.objectContaining({ recent: [expect.objectContaining({ itemKey: 'iconify:a' })] })))
     expect(await favorites({ op: 'remove', itemKey: 'pixabay:1' })).toEqual(ok([]))
-    const disk = JSON.parse(await readFile(path.join(userData, 'library', MEDIA_LIBRARY_FILE), 'utf8')) as { favorites: unknown[]; recent: unknown[] }
+    const disk = JSON.parse(await readFile(path.join(userData, 'library', `media-${MAC}.json`), 'utf8')) as { favorites: unknown[]; recent: unknown[] }
     expect(disk.favorites).toEqual([])
     expect(disk.recent).toHaveLength(1)
   })
@@ -98,9 +100,10 @@ describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
     expect(a.webContents.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.media.onChanged.channel)
     expect(b.webContents.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.media.onChanged.channel)
     a.webContents.send.mockClear()
-    await writeFile(path.join(userData, 'library', MEDIA_LIBRARY_FILE), JSON.stringify({ version: 1, favorites: [], recent: [] }))
+    // The other Mac's file, as a sync brings it (YAZ-4364): heard, and read with this Mac's own.
+    await writeFile(path.join(userData, 'library', 'media-bbbbbbbbbbbb.json'), JSON.stringify({ version: 1, favorites: [{ ...item({ itemKey: 'theirs', providerId: 't' }), updatedAt: 1 }], recent: [] }))
     await until(() => a.webContents.send.mock.calls.some(([ch]) => ch === CONTRACT.media.onChanged.channel))
-    expect(await favorites({ op: 'list' })).toEqual(ok([]))
+    expect(await favorites({ op: 'list' })).toEqual(ok([expect.objectContaining({ itemKey: 'pixabay:1' }), expect.objectContaining({ itemKey: 'theirs' })]))
   })
 
   it('a favorite add saves its copy, also the auto-favorite at the third use; a removal deletes it (YAZ-4363)', async () => {
