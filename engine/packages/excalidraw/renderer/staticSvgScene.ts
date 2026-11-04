@@ -9,7 +9,6 @@ import {
   isTestEnv,
   getVerticalOffset,
   applyDarkModeFilter,
-  MIME_TYPES,
 } from "@excalidraw/common";
 import { normalizeLink, toValidURL } from "@excalidraw/common";
 import {
@@ -18,6 +17,7 @@ import {
   getTextHighlightFill,
 } from "@excalidraw/element";
 import { getUncroppedWidthAndHeight } from "@excalidraw/element";
+import { getIconInfo, isDarkInvertedImage } from "@excalidraw/element";
 import {
   createPlaceholderEmbeddableLabel,
   getEmbedLink,
@@ -558,9 +558,10 @@ const renderElementToSvg = (
 
         const g = svgRoot.ownerDocument.createElementNS(SVG_NS, "g");
 
+        // YAZ-4355 1E: only a one-color icon inverts (PNG, SVG and PDF export)
         if (
           renderConfig.theme === THEME.DARK &&
-          fileData.mimeType === MIME_TYPES.svg
+          isDarkInvertedImage(fileData.mimeType, getIconInfo(fileData).kind)
         ) {
           g.setAttribute("filter", DARK_THEME_FILTER);
         }

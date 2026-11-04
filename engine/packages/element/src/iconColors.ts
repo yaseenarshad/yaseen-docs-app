@@ -675,6 +675,16 @@ export const iconKind = (
   file: Pick<BinaryFileData, "id" | "mimeType" | "dataURL"> | null | undefined,
 ) => getIconInfo(file).kind;
 
+/**
+ * YAZ-4355 1E: dark mode inverts an SVG picture only when it is a one-color icon
+ * (extra 21). Many-color icons, emoji and photos keep their own colors. An SVG
+ * whose kind is not known yet keeps today's rule.
+ */
+export const isDarkInvertedImage = (
+  mimeType: string | undefined,
+  kind: IconKind | undefined,
+) => mimeType === MIME_TYPES.svg && (kind === undefined || kind === "one");
+
 export const isRecolorableIcon = (
   file: Pick<BinaryFileData, "id" | "mimeType" | "dataURL"> | null | undefined,
 ) => iconKind(file) !== "photo";

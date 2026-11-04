@@ -44,6 +44,7 @@ import type {
 
 import { getElementAbsoluteCoords, getElementBounds } from "./bounds";
 import { getUncroppedImageElement } from "./cropElement";
+import { isDarkInvertedImage } from "./iconColors";
 import { LinearElementEditor } from "./linearElementEditor";
 import {
   getBoundTextElement,
@@ -418,9 +419,10 @@ const drawElementOnCanvas = (
               height: "naturalHeight" in img ? img.naturalHeight : img.height,
             };
 
+        // YAZ-4355 1E: only a one-color icon inverts
         const shouldInvertImage =
           renderConfig.theme === THEME.DARK &&
-          cacheEntry?.mimeType === MIME_TYPES.svg;
+          isDarkInvertedImage(cacheEntry?.mimeType, cacheEntry?.iconKind);
 
         if (shouldInvertImage && isSafari) {
           const devicePixelRatio = window.devicePixelRatio || 1;
