@@ -33,8 +33,9 @@
  *    its stringify escape. The named colours are click-only and store inline HTML
  *    `<mark class="highlight-<name>">`, read back through the shared `marks/htmlPairs.ts` walk; a
  *    custom colour stores `<mark style="background-color: #rrggbb">` (YAZ-4348 demo round 2).
- *    Four toolbar buttons after Strikethrough, each a bold "A" on its colour; one click applies,
- *    re-clicking the lit one removes. Their ▾ opens more colours, Remove and Custom… (`highlightMenu.ts`).
+ *    Three toolbar buttons after Strikethrough (yellow, green, blue), each a bold "A" on its colour;
+ *    one click applies, re-clicking the lit one removes. Their ▾ opens the board-style colour panel:
+ *    most used custom colours, every colour and None, shades, a hex code (`highlightPanel.ts`).
  *  - Inline breaks (YAZ-1452, `inlineBreaks.ts`): inline `<br>` ↔ hardbreak, registered BEFORE
  *    Milkdown's `remarkPreserveEmptyLinePlugin` (which otherwise deletes it); table cells save
  *    a hardbreak back as `<br>`, and Shift-Enter inside a cell always inserts one. A `<br>` at a
@@ -276,7 +277,7 @@ import {
 } from './listItemRoundTrip'
 import { toggleUnderline, underline, underlineSchema } from './marks/underline'
 import { highlight, highlightColorsIn, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, QUICK_HIGHLIGHTS, type HighlightColor } from './marks/highlight'
-import { hasMenuColour, highlightMenu, MORE_KEY, toggleHighlightMenu } from './highlightMenu'
+import { hasPanelColour, highlightPanel, MORE_KEY, toggleHighlightPanel } from './highlightPanel'
 import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
 import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
 import { arrangeToolbar, toolbarPrefs } from './toolbarPrefs'
@@ -449,17 +450,18 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  *
  * THE STRIP, by default, left to right (YAZ-3806): the Heading group (H1, H2, H3, T), the Lists
  * group (Checklist, Bullet list, Numbered list), Crepe's own Formatting group (Bold, Italic,
- * Underline, Strikethrough, the four swatches), then Crepe's code and link. The user reorders and
- * hides groups and buttons in Settings (`toolbarPrefs.ts`); the tab order is the strip's order.
+ * Underline, Strikethrough, the highlight buttons and their ▾), then Crepe's code and link. The user
+ * reorders and hides groups and buttons in Settings (`toolbarPrefs.ts`); the tab order is the strip's order.
  *
- * The four highlight swatches (YAZ-1480 — yellow, green, blue, pink) join Crepe's OWN Formatting
+ * The highlight swatches (YAZ-1480; since YAZ-4348 demo round 2 yellow, green, blue — pink lives in
+ * the ▾ panel with the other colours) join Crepe's OWN Formatting
  * group right after Strikethrough: `getGroup('formatting')` reaches it because `buildToolbar`
  * runs AFTER Crepe has added that group. Bold's toggle semantics (🔒 D5): a dot is lit when ANY of
  * the selection carries its colour, so a partly highlighted line still shows it; clicking a lit dot
  * removes that colour, an unlit one applies it — through the mark's single command, which
  * `Mod-Shift-h` (yellow) and the `==x==` typing rule share. Yellow is the Markdown `==…==` on
  * disk; a colour is `<mark class="highlight-<name>">`. YAZ-4348 demo round 2: each swatch is a bold
- * "A" on its colour, a lit one ringed (app.css), and a ▾ after them opens `highlightMenu.ts`.
+ * "A" on its colour, a lit one ringed (app.css), and a ▾ after them opens the colour panel, `highlightPanel.ts`.
  *
  * The Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what block is
  * this?" — the invisible `##` made visible — and whose click switches it, through the same
@@ -489,7 +491,7 @@ const runOnView = (ctx: Ctx, command: Command): void => {
 function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined): void {
   const formatting = builder.getGroup('formatting')
   for (const color of [null, ...QUICK_HIGHLIGHTS] as HighlightColor[]) {
-    const id = color === null ? 'highlight' : (`highlight-${color}` as 'highlight-green' | 'highlight-blue' | 'highlight-pink')
+    const id = color === null ? 'highlight' : (`highlight-${color}` as 'highlight-green' | 'highlight-blue')
     formatting.addItem(id, {
       icon: ownIcon(id),
       label: TOOLBAR_LABELS[id],
@@ -498,12 +500,12 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       onRun: (ctx) => ctx.get(commandsCtx).call(setHighlightCommand.key, color),
     })
   }
-  // YAZ-4348 demo round 2: the ▾ of more colours, Remove and Custom…; lit when the selection has one of them.
+  // YAZ-4348 demo round 2: the ▾ of the colour panel; lit when the selection has a colour that is not a button.
   formatting.addItem(MORE_KEY, {
     icon: ownIcon(MORE_KEY),
     label: TOOLBAR_LABELS[MORE_KEY],
-    active: (ctx) => hasMenuColour(highlightColorsIn(viewState(ctx), highlightSchema.type(ctx))),
-    onRun: (ctx) => toggleHighlightMenu(ctx.get(editorViewCtx)),
+    active: (ctx) => hasPanelColour(highlightColorsIn(viewState(ctx), highlightSchema.type(ctx))),
+    onRun: (ctx) => toggleHighlightPanel(ctx.get(editorViewCtx)),
   })
   formatting.addItem('underline', {
     icon: ownIcon('underline'),
@@ -606,8 +608,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(slashMenu.inListWatch)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
-  // The toolbar's highlight ▾ menu and its custom pick's target (YAZ-4348 demo round 2).
-  crepe.editor.use(highlightMenu)
+  // The toolbar's highlight ▾ colour panel and its system picker's target (YAZ-4348 demo round 2).
+  crepe.editor.use(highlightPanel)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
   // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment.

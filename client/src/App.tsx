@@ -58,6 +58,7 @@ import { setCalendarDaySetting, setTimeFormatSetting } from './editor/table/time
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
 import { toolbarPrefs } from './editor/toolbarPrefs'
+import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
@@ -597,6 +598,8 @@ export function App() {
   useEffect(() => {
     toolbarPrefs.value = settings.selectionToolbar
   }, [settings.selectionToolbar])
+  // The highlight panel's most used custom colours (YAZ-4348 demo round 2): read by every note's panel, absent from an older main process.
+  useEffect(() => setUsedHighlightColors(settings.highlightCustomColors ?? []), [settings.highlightCustomColors])
 
   // A Files window's own sidebar zoom (YAZ-3389 D13): only this window writes it, so a local copy stays true.
   const [filesZoom, setFilesZoomState] = useState(() => (filesWindow ? storage.getFilesZoom() : 100))
@@ -653,6 +656,8 @@ export function App() {
   // The outside changes list's Pin and Unpin (YAZ-3704 demo): the same stable door.
   const changeOutsideListPinned = useCallback((pinned: boolean) => changeSettings({ ...newNoteFolderInputs.current.settings, outsideListPinned: pinned }), [changeSettings])
   const changeTableOfContentsWidth = useCallback((width: number) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContentsWidth: width }), [changeSettings])
+  // A custom pick in a note's highlight panel (YAZ-4348 demo round 2): the same stable door.
+  useEffect(() => setUsedHighlightColorsSaver((next) => changeSettings({ ...newNoteFolderInputs.current.settings, highlightCustomColors: next })), [changeSettings])
   // The table of contents' zoom (YAZ-3939 D9): the same value writes nothing, as for the sidebar zoom.
   const changeTocZoom = useCallback(
     (tocZoom: number) => {

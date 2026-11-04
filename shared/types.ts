@@ -1169,9 +1169,10 @@ export const DEFAULT_SIDEBAR_TABS: SidebarTabsPrefs = { order: [...SIDEBAR_TABS]
 export const TOOLBAR_LAYOUT = {
   lineType: ['h1', 'h2', 'h3', 'text'],
   lists: ['checklist', 'bulletList', 'numberedList'],
-  // `highlight-more` (YAZ-4348 demo round 2): the ▾ of more highlight colours. Last, so a saved order (the loader
-  // appends a new button) puts it right after the highlight buttons too.
-  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', 'highlight-more'],
+  // `highlight-more` (YAZ-4348 demo round 2): the ▾ of the highlight colour panel. Last, so a saved order (the loader
+  // appends a new button) puts it right after the highlight buttons too. Pink left the strip for the panel (demo round
+  // 2, Yasin): a saved setting that still names `highlight-pink` loses it on load, as any unknown name.
+  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more'],
   insert: ['code', 'link'],
 } as const
 export type ToolbarGroupId = keyof typeof TOOLBAR_LAYOUT
@@ -1189,6 +1190,19 @@ export interface ToolbarPrefs {
   hidden: ToolbarButtonId[]
 }
 export const DEFAULT_TOOLBAR: ToolbarPrefs = { groups: [...TOOLBAR_GROUPS], buttons: [...TOOLBAR_BUTTONS], hidden: [] }
+/** A custom highlight colour (lowercase `#rrggbb`) and how many times it was picked (YAZ-4348 demo round 2). */
+export interface HighlightCustomColor {
+  color: string
+  uses: number
+}
+/** How many custom highlight colours the settings keep: more than the row shows, so a new colour can climb into it. */
+export const HIGHLIGHT_CUSTOM_COLORS_KEPT = 10
+/** How many the highlight panel's "Most used custom colors" row shows: one row of its grid. */
+export const HIGHLIGHT_CUSTOM_COLORS_SHOWN = 5
+/** A kept entry: a lowercase `#rrggbb` and a whole count of one or more. */
+export const isHighlightCustomColor = (v: unknown): v is HighlightCustomColor =>
+  typeof v === 'object' && v !== null && typeof (v as HighlightCustomColor).color === 'string' && /^#[0-9a-f]{6}$/.test((v as HighlightCustomColor).color) &&
+  Number.isInteger((v as HighlightCustomColor).uses) && (v as HighlightCustomColor).uses >= 1
 /** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites; Files has none. `best` is Search's alone (YAZ-3511 D12). */
 export type SortBy = 'manual' | 'name' | 'updated' | 'best'
 /** One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first. */
@@ -1780,6 +1794,11 @@ export interface SettingsState {
   sidebarTabs: SidebarTabsPrefs
   /** The selection toolbar's group order, button order and hidden buttons (YAZ-3806 T5). Travels with the settings. */
   selectionToolbar: ToolbarPrefs
+  /**
+   * The custom highlight colours picked in the note's highlight panel (YAZ-4348 demo round 2), most used first: its
+   * "Most used custom colors" row shows the first `HIGHLIGHT_CUSTOM_COLORS_SHOWN`. Travels with the settings.
+   */
+  highlightCustomColors: HighlightCustomColor[]
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
   /** What a vault opens on (YAZ-3487 D15): every vault open reads it — main's new windows, `openRoot`, `bootTabs`, the empty-window door. */
@@ -2258,6 +2277,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   rowDates: DEFAULT_ROW_DATES,
   sidebarTabs: DEFAULT_SIDEBAR_TABS,
   selectionToolbar: DEFAULT_TOOLBAR,
+  highlightCustomColors: [],
   startupWindows: 'last',
   vaultOpensOn: 'blank',
   sectionStep: 30,

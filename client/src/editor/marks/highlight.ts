@@ -7,7 +7,7 @@
  *    and stringify `unsafe` rules that write `\=` for any `=` touching another `=`.
  *  - A named colour has no Markdown syntax, so — like underline's `<u>` — it is inline HTML
  *    `<mark class="highlight-<name>">`, read back through the shared `htmlPairs.ts` walk.
- *  - A custom colour (YAZ-4348 demo round 2, the ▾ menu's Custom…) is `color: '#rrggbb'`, inline
+ *  - A custom colour (YAZ-4348 demo round 2, the ▾ panel's shades, hex code and picker) is `color: '#rrggbb'`, inline
  *    HTML `<mark style="background-color: #rrggbb">`: the one form that renders in any Markdown
  *    viewer without our CSS. Only that exact spelling (lowercase hex) is read, so any other
  *    `<mark style>` stays HTML with its bytes. The note paints it as a translucent wash, as the
@@ -30,10 +30,10 @@ import type { Event, Extension, Resolver, State, Token, TokenizeContext, Tokeniz
 import { visibleRangeHasMark, visibleRanges } from '../lineSelection'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
 
-/** The named colours that are toolbar buttons after yellow. */
-export const QUICK_HIGHLIGHTS = ['green', 'blue', 'pink'] as const
-/** The named colours of the toolbar's ▾ menu (YAZ-4348 demo round 2). */
-export const MORE_HIGHLIGHTS = ['orange', 'purple', 'red', 'gray'] as const
+/** The named colours that are toolbar buttons after yellow (YAZ-4348 demo round 2: pink went into the ▾ panel). */
+export const QUICK_HIGHLIGHTS = ['green', 'blue'] as const
+/** The named colours only the toolbar's ▾ panel has (YAZ-4348 demo round 2). */
+export const MORE_HIGHLIGHTS = ['pink', 'orange', 'purple', 'red', 'gray'] as const
 /** Every named colour, each `<mark class="highlight-<name>">`; yellow is `null` (the default, and the only one with Markdown syntax). */
 export const HIGHLIGHT_COLORS = [...QUICK_HIGHLIGHTS, ...MORE_HIGHLIGHTS] as const
 export type HighlightName = (typeof HIGHLIGHT_COLORS)[number]
@@ -46,6 +46,21 @@ export const isCustomHighlight = (value: unknown): value is CustomHighlight => t
 
 /** How strong a custom colour's wash is: the named colours' 0.35–0.4, so text on it stays readable in both themes. */
 export const CUSTOM_WASH = 0.4
+
+/**
+ * Each colour's solid hue, the `rgb` of its app.css wash token: what the panel's Hex code field shows for it, and
+ * where its Shades start (YAZ-4348 demo round 2). A shade or a typed hex is a custom colour.
+ */
+export const HIGHLIGHT_HEX: Record<HighlightName | 'yellow', CustomHighlight> = {
+  yellow: '#ffd500',
+  green: '#50c878',
+  blue: '#50a0ff',
+  pink: '#ff78b4',
+  orange: '#ff9628',
+  purple: '#a06eff',
+  red: '#ff5050',
+  gray: '#969696',
+}
 
 /** A custom colour's see-through wash, `rgba(r, g, b, 0.4)`. */
 export function customWash(hex: CustomHighlight): string {
@@ -310,10 +325,16 @@ const setHighlight = (type: MarkType, color: HighlightColor, always = false): Co
   return true
 }
 
-/** ONE command: the toolbar's highlight buttons, the ▾ menu's colours and the shortcut all go through it. */
+/** ONE command: the toolbar's highlight buttons and the shortcut go through it. */
 export const setHighlightCommand = $command('SetHighlight', (ctx) => (color: HighlightColor = null) =>
   setHighlight(highlightSchema.type(ctx), color),
 )
+
+/**
+ * The ▾ panel's pick (YAZ-4348 demo round 2): the same rules as a button press, but never a toggle — a lit
+ * colour picked again stays, as in the board's colour panel, which stays open for the next pick.
+ */
+export const applyHighlight = (type: MarkType, color: HighlightColor): Command => setHighlight(type, color, true)
 
 /**
  * A custom pick (YAZ-4348 demo round 2): the colour goes on `from`–`to`, the text that was selected when the
@@ -332,10 +353,10 @@ export function highlightRange(state: EditorState, type: MarkType, from: number,
 }
 
 /**
- * The ▾ menu's Remove highlight (YAZ-4348 demo round 2): every colour off the visible selection, and off the
- * marks a caret would type with. Declines where there is no highlight to remove.
+ * The ▾ panel's None (YAZ-4348 demo round 2): every colour off the visible selection, and off the marks a
+ * caret would type with. Declines where there is no highlight to remove.
  */
-const removeHighlight = (type: MarkType): Command => (state, dispatch) => {
+export const removeHighlight =(type: MarkType): Command => (state, dispatch) => {
   if (state.selection.empty) {
     if (type.isInSet(state.storedMarks ?? state.selection.$from.marks()) === undefined) return false
     dispatch?.(state.tr.removeStoredMark(type))

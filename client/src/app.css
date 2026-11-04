@@ -36,7 +36,7 @@
   --mark-bg-green: rgba(80, 200, 120, 0.35);
   --mark-bg-blue: rgba(80, 160, 255, 0.35);
   --mark-bg-pink: rgba(255, 120, 180, 0.35);
-  /* The highlight ▾ menu's colours (YAZ-4348 demo round 2): translucent too, one value for both themes. */
+  /* The highlight ▾ panel's colours (YAZ-4348 demo round 2): translucent too, one value for both themes. */
   --mark-bg-orange: rgba(255, 150, 40, 0.35);
   --mark-bg-purple: rgba(160, 110, 255, 0.35);
   --mark-bg-red: rgba(255, 80, 80, 0.35);
@@ -529,76 +529,140 @@ button {
   background: var(--crepe-color-selected);
 }
 
-/* The highlight ▾ menu (YAZ-4348 demo round 2, `editor/highlightMenu.ts`): on the body, fixed under the ▾, so the
+/* The highlight ▾ panel (YAZ-4348 demo round 2, `editor/highlightPanel.ts`): the board's colour popup
+   (`engine/…/ColorPicker/ColorPicker.scss`) in the note's own tokens. On the body, fixed under the ▾, so the
    toolbar's `overflow: hidden` cannot cut it off. */
-.highlight-menu {
+.highlight-panel {
   position: fixed;
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 4px;
+  gap: 12px;
+  width: 13rem;
+  box-sizing: border-box;
+  padding: 8px 4px 4px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
   font-family: var(--font);
+  color: var(--fg);
 }
-.highlight-menu[hidden] {
+.highlight-panel[hidden],
+.highlight-panel__section[hidden] {
   display: none;
 }
-.highlight-menu__swatches {
-  display: flex;
-  gap: 2px;
-  padding-bottom: 2px;
+.highlight-panel__heading {
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
 }
-.highlight-menu__swatch,
-.highlight-menu__row {
+.highlight-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(5, 30px);
+  gap: 4px;
+  padding: 8px;
+}
+/* A swatch: a rounded square of its colour (`--swatch`), a faint outline; the selection's colours ringed. */
+.highlight-panel__swatch {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: 8px;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 18%, transparent);
+  cursor: pointer;
+}
+.highlight-panel__swatch:hover::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 40%, transparent);
+}
+.highlight-panel__swatch.active::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 9px;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+/* None: the board's transparent checkerboard. */
+.highlight-panel__swatch.is-none {
+  background: repeating-conic-gradient(color-mix(in srgb, var(--fg) 16%, var(--bg)) 0 25%, var(--bg) 0 50%) 0 0 / 10px 10px;
+}
+.highlight-panel__no-shades {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+/* Hex code: `#`, the field, a divider and the pencil, in one rounded box (the board's `color-picker__input-label`). */
+.highlight-panel__hex {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  margin: 8px;
+  padding: 0 4px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.highlight-panel__hex:focus-within {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.highlight-panel__hash {
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+.highlight-panel__hex-input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0.4px;
+}
+.highlight-panel__hex-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+.highlight-panel__pencil {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
   background: transparent;
   color: var(--fg);
   cursor: pointer;
 }
-.highlight-menu__swatch {
-  display: block;
-  width: 32px;
-  height: 32px;
-  padding: 4px;
+.highlight-panel__pencil svg {
+  width: 16px;
+  height: 16px;
 }
-.highlight-menu__swatch svg {
-  display: block;
-  width: 24px;
-  height: 24px;
-}
-.highlight-menu__row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  padding: 5px 7px;
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-  white-space: nowrap;
-}
-.highlight-menu :is(.highlight-menu__swatch, .highlight-menu__row):hover,
-.highlight-menu .is-current {
+.highlight-panel__pencil:hover {
   background: var(--bg-hover);
 }
-.highlight-menu .highlight-menu__swatch.active {
-  box-shadow: inset 0 0 0 2px var(--accent);
-}
-/* Custom…'s swatch: the hue wheel, or the selection's own custom colour, ringed, when it has one. */
-.highlight-menu__custom-swatch {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  background: conic-gradient(#ff5a5a, #ffd500, #50c878, #50a0ff, #a06eff, #ff5a5a);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 20%, transparent);
-}
-.highlight-menu__row.active .highlight-menu__custom-swatch {
-  box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent);
+/* The keyboard's place: the board's focus ring. */
+.highlight-panel .is-current {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Crepe's reset gives paragraphs line-height 1.5 and 4px vertical padding; the padding is

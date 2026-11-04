@@ -78,7 +78,7 @@ function lit(crepe: Crepe, color: HighlightColor): boolean {
   return crepe.editor.action((ctx) => rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), color))
 }
 
-/** Which of the four dots are lit, in swatch order — the toolbar's own `[null, ...HIGHLIGHT_COLORS]`. */
+/** Which colours are lit, in the order `[null, ...HIGHLIGHT_COLORS]` (yellow, then every named colour). */
 const litDots = (crepe: Crepe): HighlightColor[] =>
   ([null, ...HIGHLIGHT_COLORS] as HighlightColor[]).filter((c) => lit(crepe, c))
 
