@@ -11,6 +11,7 @@
  * docs/CONTRACTS.md › Bridge API.
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardHoverLinksRequest, BoardPicturesRequest, BoardPicturesResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaDrawingIndexResponse, MediaDrawingRequest, MediaDrawingResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaLibraryFile, MediaUsedRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PickPicturesFolderRequest, PickPicturesFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SavePdfRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult, MemoryReport, StartView } from './types'
+import type { FoundNote } from './noteBirth'
 import type { CopyAsMode, CopyAsRich, FavoriteCopiesStatus, FavoriteElementsSaveRequest, NoteMenuAction, NoteMenuArg, MemoryTabFacts } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
@@ -63,6 +64,11 @@ export const CONTRACT = {
    * does not use IDs.
    */
   mintNoteId: invoke<[path: string], string | null>('fs:mint-note-id', 1),
+  /**
+   * Today's daily note of `vault`, a vault of the calling window, found on disk or made (YAZ-4269 D2): for the button
+   * when its index has none. One maker at a time on this Mac, the command too, so the two never make two notes.
+   */
+  makeDailyNote: invoke<[vault: string], FoundNote>('fs:make-daily-note', 1),
   /** Bases property index for `root` (GRO-2129): full scan on first call, watcher-incremental after. */
   index: invoke<[root: string], IndexResponse>('fs:index', 1),
   /** The cold-start reconcile diff for `root` (Links E1c, GRO-2242); null before the first `index(root)` build. Read it AFTER the first index snapshot. */

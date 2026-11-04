@@ -96,6 +96,7 @@ lsp.install/0: invoke lsp:install []; => "answer"; !> {"code":"NOT_FOUND","messa
 lsp.onInstallProgress/1: on lsp:install-progress -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off lsp:install-progress
 lsp.open/1: invoke lsp:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 lsp.references/1: invoke lsp:references ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+makeDailyNote/1: invoke fs:make-daily-note ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.drawing/1: invoke media:drawing ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.drawingIndex/0: invoke media:drawing-index []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.favoriteCopies/0: invoke media:favorite-copies []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

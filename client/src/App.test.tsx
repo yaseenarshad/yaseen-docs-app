@@ -284,6 +284,15 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       files[path] = { content: content ?? '', mtime: 1 }
       return { path, mtime: 1, size: (content ?? '').length }
     }),
+    // Today's daily note in the main process (YAZ-4269 D2), as it is in a vault without IDs and the flat layout: the
+    // note named by the title in the daily notes folder, found when it is there, else made.
+    makeDailyNote: vi.fn(async (vault: string) => {
+      const title = dailyNoteName(state.settings.dailyNoteFormat, new Date()).trim()
+      const path = `${vault}/${state.settings.dailyNoteFolder}/${title}.md`
+      const created = files[path] === undefined
+      if (created) files[path] = { content: '', mtime: 1 }
+      return { path, title, id: null, created, others: [] }
+    }),
     pickFolder: vi.fn(async () => ({ cancelled: true as const })),
     watch: vi.fn((_root?: string, _listener?: unknown): (() => void) => () => undefined),
     state: {
@@ -2467,7 +2476,7 @@ describe('App ⌘-click on the daily note button (YAZ-3776)', () => {
     expect(captured.sidebar?.lens).toBe('recents')
     expect(captured.sidebar?.revealRequest ?? null).toBeNull()
     await press(true)
-    expect(bridge.createFile).toHaveBeenCalledTimes(1)
+    expect(bridge.makeDailyNote).toHaveBeenCalledTimes(1)
     expect(tabs(el)).toEqual(['plan*', today(), 'garden'])
   })
 
@@ -6794,7 +6803,7 @@ describe('App Files window (YAZ-3357)', () => {
       b.bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [{ type: 'dir', name: 'Daily', path: '/v/Daily', children: [{ type: 'file', name: `${daily}.md`, path: `/v/Daily/${daily}.md`, size: 1, mtime: 1, kind: 'markdown' }] }], generatedAt: 1 }))
     })
     const sidebar = await filesSidebar()
-    // The note is on disk but not in the (empty) index, so it is made: the create finds it, and it opens (a vault without IDs).
+    // The note is on disk but not in the (empty) index, so main is asked: it finds it on disk, and it opens.
     act(() => sidebar.onOpenDailyNote?.(true))
     await vi.waitFor(() => expect(bridge.window.openFromFiles).toHaveBeenCalledTimes(1), { timeout: SLOW_RUNNER_MS })
     act(() => sidebar.onOpenDailyNote?.(false))
