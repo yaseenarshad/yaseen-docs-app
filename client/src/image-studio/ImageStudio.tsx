@@ -76,8 +76,16 @@ import {
 import './imageStudio.css'
 
 
-/** One row of the 4-column grid: what a section shows before "Show all" (D7). */
-const ROW = 4
+/**
+ * One row of the grid: what a section shows before "Show all" (D7). Four at the panel's usual width; a wider panel
+ * (YAZ-4348 demo round 2: "one would expect more icons to show up instead of only getting them bigger") fits one
+ * more column for each `TILE_MIN_WIDTH` it gains.
+ */
+const MIN_ROW = 4
+const TILE_MIN_WIDTH = 84
+const TILE_GAP = 6
+/** The columns a list of this width holds. */
+const rowFor = (width: number): number => Math.max(MIN_ROW, Math.floor((width + TILE_GAP) / (TILE_MIN_WIDTH + TILE_GAP)))
 /** How many of your own matches a typed field shows at a time; "Show more" grows it. */
 const MATCH_PAGE = 48
 /** How to save a copied picture at full size (demo 6M), under Components. */
@@ -286,7 +294,7 @@ type Line = { text: string; undo?: StudioItem } | null
  * Arrow keys between tiles (D7). Left and right walk the tiles in reading order; up and down keep the column, and
  * cross into the next or the previous section. ArrowUp from the first row goes back to the field.
  */
-function moveBetweenTiles(event: KeyboardEvent<HTMLElement>, list: HTMLElement | null, field: HTMLInputElement | null) {
+function moveBetweenTiles(event: KeyboardEvent<HTMLElement>, list: HTMLElement | null, field: HTMLInputElement | null, ROW: number) {
   const from = event.target as HTMLElement
   if (list === null || !from.classList.contains('image-studio__add')) return
   const grids = [...list.querySelectorAll<HTMLElement>('.image-studio__grid')]
@@ -409,6 +417,15 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
 
   const fieldRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  // The columns follow the list's width (`rowFor`): the grids and a section's one row use the same count.
+  const [ROW, setRow] = useState(MIN_ROW)
+  useEffect(() => {
+    const list = listRef.current
+    if (list === null || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => setRow(rowFor(entry.contentRect.width)))
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [])
   const menuRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
@@ -1037,7 +1054,11 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       const rowEnd = i % ROW === ROW - 1 || i === items.length - 1
       if (rowEnd) for (const other of items.slice(i - (i % ROW), i + 1)) cells.push(variantsRow(other, where), inlineRow(other, where))
     })
-    return <div className="image-studio__grid">{cells}</div>
+    return (
+      <div className="image-studio__grid" style={{ '--studio-cols': ROW } as CSSProperties}>
+        {cells}
+      </div>
+    )
   }
 
   /** A section: its title, its one row (or all of it), and "Show all" — which picks the chip that shows the rest. */
@@ -1336,7 +1357,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
         <div
           className="image-studio__list"
           ref={listRef}
-          onKeyDown={(event) => moveBetweenTiles(event, listRef.current, fieldRef.current)}
+          onKeyDown={(event) => moveBetweenTiles(event, listRef.current, fieldRef.current, ROW)}
           onScroll={(event) => {
             // The pack page has its own scroll; the search under it keeps the place Back returns to.
             if (imageStudioSession.getState().pack === null) scrollTops[chip] = event.currentTarget.scrollTop
