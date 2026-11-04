@@ -52,8 +52,21 @@ export const GITHUB_RAW = 'https://raw.githubusercontent.com/iconify/icon-sets'
 export const UNPKG = 'https://unpkg.com/@iconify/json'
 const USER_AGENT = 'Yaseen Docs Image Studio'
 
-/** The biggest pack today is about 12 MB of JSON; more than this is not one. */
-export const MAX_PACK_BYTES = 64 * 1024 * 1024
+/** The biggest pack today (`fluent-emoji`, measured 2026-11-03) is 99 MB of JSON; more than this is not one. */
+export const MAX_PACK_BYTES = 256 * 1024 * 1024
+/**
+ * A pack bigger than this is stored in parts (`<prefix>.part-<n>.json.gz`, each about `PART_BYTES` of icons; its
+ * aliases and box stay in `<prefix>.json.gz`), so a tile opens one part, never 99 MB, and the memory bound holds.
+ */
+export const SPLIT_BYTES = 16 * 1024 * 1024
+export const PART_BYTES = 8 * 1024 * 1024
+
+/** Which part holds the icon `name` (FNV-1a of the name). */
+export function partOf(name: string, parts: number): number {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < name.length; i++) hash = Math.imul(hash ^ name.charCodeAt(i), 0x01000193)
+  return (hash >>> 0) % parts
+}
 /** The plan's answers: GitHub's tree is about 60 KB, unpkg's meta about 40 KB. */
 const MAX_PLAN_BYTES = 8 * 1024 * 1024
 /** More packs than this is not a plan the app reads. */
@@ -86,7 +99,12 @@ export interface StoredPack {
   bytes: number
   stored: number
   info: IconPackInfo
+  /** How many parts its icons are stored in; absent = one file (`SPLIT_BYTES`). */
+  parts?: number
 }
+
+/** The files of one stored pack, by name. */
+export const packFiles = (prefix: string, parts = 0): string[] => [`${prefix}.json.gz`, `${prefix}.names.gz`, ...Array.from({ length: parts }, (_, n) => `${prefix}.part-${n}.json.gz`)]
 
 export interface IconPacksManifest {
   version: 1
@@ -133,6 +151,7 @@ export function parseManifest(raw: unknown): IconPacksManifest {
     const info = p?.info as IconPackInfo | undefined
     if (!isIconPrefix(prefix) || typeof p?.sha !== 'string' || typeof p.sha256 !== 'string' || typeof p.bytes !== 'number' || typeof p.stored !== 'number' || typeof info?.name !== 'string') continue
     out.packs[prefix] = { sha: p.sha, sha256: p.sha256, bytes: p.bytes, stored: p.stored, info }
+    if (typeof p.parts === 'number' && Number.isInteger(p.parts) && p.parts > 0 && p.parts <= 256) out.packs[prefix].parts = p.parts
   }
   return out
 }
@@ -178,11 +197,13 @@ export interface IconPacksDeps {
   /** Called with the status on every change a reader can see: each pack done, a run starting or ending. */
   onStatus?: (status: IconPacksStatus) => void
   now?: () => number
+  /** Tests only: a smaller `SPLIT_BYTES` / `PART_BYTES`, so a small pack is stored in parts. */
+  split?: { above: number; part: number }
 }
 
 export type IconPacks = ReturnType<typeof createIconPacks>
 
-export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Date.now }: IconPacksDeps) {
+export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Date.now, split = { above: SPLIT_BYTES, part: PART_BYTES } }: IconPacksDeps) {
   let folder = startFolder
   let manifest: IconPacksManifest = emptyManifest()
   /** The manifest of `folder` has been read (or tried). */
@@ -371,14 +392,24 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
     }
     if (data.prefix !== prefix || typeof data.icons !== 'object' || data.icons === null) throw new PackFailure(`${prefix} is not a pack`)
     const visible = visibleNames(data as { icons?: Record<string, { hidden?: boolean }> })
-    const [json, list] = await Promise.all([gzipAsync(bytes), gzipAsync(Buffer.from(visible.join('\n'), 'utf8'))])
+    const parts = bytes.byteLength > split.above ? Math.ceil(bytes.byteLength / split.part) : 0
+    // A big pack: its box and aliases in the main file, its icons in parts by name.
+    const buckets: Record<string, unknown>[] = Array.from({ length: parts }, () => ({}))
+    if (parts > 0) for (const [name, icon] of Object.entries(data.icons as Record<string, unknown>)) buckets[partOf(name, parts)][name] = icon
+    const main = parts > 0 ? Buffer.from(JSON.stringify({ ...data, icons: {} }), 'utf8') : bytes
+    const [json, list, ...pieces] = await Promise.all([gzipAsync(main), gzipAsync(Buffer.from(visible.join('\n'), 'utf8')), ...buckets.map((icons) => gzipAsync(Buffer.from(JSON.stringify({ icons }), 'utf8')))])
     if (signal.aborted) return
     await mkdir(folder, { recursive: true })
+    for (const [n, piece] of pieces.entries()) await atomicWrite(join(folder, `${prefix}.part-${n}.json.gz`), piece)
     await atomicWrite(fileOf(prefix, 'json'), json)
     await atomicWrite(fileOf(prefix, 'names'), list)
-    manifest.packs[prefix] = { sha: gitBlobSha(bytes), sha256: sha256Of(bytes), bytes: bytes.byteLength, stored: json.byteLength + list.byteLength, info: packInfo(prefix, data, visible.length) }
-    open.delete(prefix)
+    const before = manifest.packs[prefix]
+    manifest.packs[prefix] = { sha: gitBlobSha(bytes), sha256: sha256Of(bytes), bytes: bytes.byteLength, stored: [json, list, ...pieces].reduce((sum, b) => sum + b.byteLength, 0), info: packInfo(prefix, data, visible.length) }
+    if (parts > 0) manifest.packs[prefix].parts = parts
+    for (const key of [...open.keys()]) if (key === prefix || key.startsWith(`${prefix}#`)) open.delete(key)
     await saveManifest()
+    // An update with fewer parts than before: the old extra parts go.
+    for (let n = parts; n < (before?.parts ?? 0); n++) await rm(join(folder, `${prefix}.part-${n}.json.gz`), { force: true })
   }
 
   /** Every planned pack that is not current yet, `DOWNLOAD_CONCURRENCY` at a time. Answers how many failed. */
@@ -408,9 +439,10 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
 
   /** Files of a pack that left the plan, and their manifest entry. */
   async function dropPack(prefix: string): Promise<void> {
+    const parts = manifest.packs[prefix]?.parts ?? 0
     delete manifest.packs[prefix]
-    open.delete(prefix)
-    await Promise.all([rm(fileOf(prefix, 'json'), { force: true }), rm(fileOf(prefix, 'names'), { force: true })])
+    for (const key of [...open.keys()]) if (key === prefix || key.startsWith(`${prefix}#`)) open.delete(key)
+    await Promise.all(packFiles(prefix, parts).map((file) => rm(join(folder, file), { force: true })))
   }
 
   function startRun(kind: 'downloading' | 'checking' | 'removing' | 'moving', body: (signal: AbortSignal) => Promise<void>): Promise<IconPacksStatus> {
@@ -477,17 +509,16 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
     return value
   }
 
-  /** One opened pack, from the least-recently-used memory (decision 5's bounds), else from its file. */
-  function openPack(prefix: string): Promise<(IconifySetData & Record<string, unknown>) | null> {
-    if (manifest.packs[prefix] === undefined) return Promise.resolve(null)
-    const known = open.get(prefix)
+  /** One opened file (`prefix`, or `prefix#n` for a part), from the least-recently-used memory (decision 5's bounds). */
+  function openFile(key: string, file: string, bytes: number): Promise<(IconifySetData & Record<string, unknown>) | null> {
+    const known = open.get(key)
     if (known !== undefined) {
-      open.delete(prefix)
-      open.set(prefix, known)
-      return known.data
+      open.delete(key)
+      open.set(key, known)
+      return known.data.catch(() => null)
     }
-    const entry = { data: readFile(fileOf(prefix, 'json')).then(gunzipAsync).then((raw) => JSON.parse(raw.toString('utf8')) as IconifySetData & Record<string, unknown>), bytes: manifest.packs[prefix].bytes }
-    open.set(prefix, entry)
+    const entry = { data: readFile(join(folder, file)).then(gunzipAsync).then((raw) => JSON.parse(raw.toString('utf8')) as IconifySetData & Record<string, unknown>), bytes }
+    open.set(key, entry)
     let total = [...open.values()].reduce((sum, e) => sum + e.bytes, 0)
     for (const [oldest, e] of open) {
       if (open.size <= 1 || (open.size <= MAX_OPEN_PACKS && total <= MAX_OPEN_BYTES)) break
@@ -495,9 +526,24 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
       total -= e.bytes
     }
     entry.data.catch(() => {
-      if (open.get(prefix) === entry) open.delete(prefix)
+      if (open.get(key) === entry) open.delete(key)
     })
     return entry.data.catch(() => null)
+  }
+
+  /** The pack data that builds `name`: the whole pack, or for a big pack its main file with the part that holds the icon. */
+  async function openPack(prefix: string, name: string): Promise<IconifySetData | null> {
+    const stored = manifest.packs[prefix]
+    if (stored === undefined) return null
+    const parts = stored.parts ?? 0
+    const share = Math.ceil(stored.bytes / Math.max(1, parts))
+    const main = await openFile(prefix, `${prefix}.json.gz`, parts > 0 ? Math.min(share, 1024 * 1024) : stored.bytes)
+    if (main === null || parts === 0) return main
+    // The alias steps first (they live in the main file), then the part of the icon they end on.
+    let at = name
+    for (let depth = 0; depth < 8 && main.aliases?.[at] !== undefined; depth++) at = main.aliases[at].parent
+    const part = await openFile(`${prefix}#${partOf(at, parts)}`, `${prefix}.part-${partOf(at, parts)}.json.gz`, share)
+    return part === null ? null : { ...main, icons: part.icons }
   }
 
   return {
@@ -562,7 +608,7 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
       }
       return startRun('removing', async () => {
         for (const prefix of Object.keys(manifest.packs)) await dropPack(prefix)
-        for (const prefix of planned()) await Promise.all([rm(fileOf(prefix, 'json'), { force: true }), rm(fileOf(prefix, 'names'), { force: true })])
+        for (const prefix of planned()) await Promise.all(packFiles(prefix).map((file) => rm(join(folder, file), { force: true })))
         await writing.catch(() => undefined)
         await rm(join(folder, MANIFEST_FILE), { force: true })
         manifest = emptyManifest()
@@ -594,7 +640,7 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
       }
       return startRun('moving', async () => {
         await mkdir(next, { recursive: true })
-        const files = Object.keys(manifest.packs).flatMap((prefix) => [`${prefix}.json.gz`, `${prefix}.names.gz`])
+        const files = Object.entries(manifest.packs).flatMap(([prefix, pack]) => packFiles(prefix, pack.parts))
         for (const file of files) {
           await rename(join(from, file), join(next, file)).catch(async () => {
             await copyFile(join(from, file), join(next, file))
@@ -626,7 +672,7 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
     /** The SVG of `prefix:name` from its pack, or null when the pack or the icon is not here. */
     async svg(providerId: string): Promise<string | null> {
       const at = providerId.indexOf(':')
-      const data = await openPack(providerId.slice(0, at))
+      const data = await openPack(providerId.slice(0, at), providerId.slice(at + 1))
       return data === null ? null : iconSvg(data, providerId.slice(at + 1), { transforms: true })
     },
     /** For a test: the folder now. */

@@ -30,7 +30,7 @@ import { BridgeFailure } from '../fs/fsUtils'
 import type { MediaCache } from './cache'
 import { CACHE_TTL_MS, pixabayItemCacheKey, pixabayPageCacheKey, previewCacheKey, searchCacheKey } from './cachePolicy'
 import { indexItems, libraryItemElements, LIBRARIES_INDEX_URL, LIBRARIES_ORIGIN, MAX_DRAWING_ELEMENTS_BYTES, MAX_INDEX_BYTES, MAX_LIBRARY_FILE_BYTES, MAX_LIBRARY_FILES_IN_MEMORY, parseDrawingId } from './excalidrawLibraries'
-import { activeFilterCount, filtersKey, isIconPrefix, type IconPackInfo, type MediaFilters } from '@shared/iconPacks'
+import { activeFilterCount, isIconPrefix, type IconPackInfo, type MediaFilters } from '@shared/iconPacks'
 import type { IconPacks } from './iconPacks'
 import { rankLocalMatches } from './iconPackSearch'
 import { createIconifyBatcher, type IconifySetData } from './iconifyBatch'
@@ -364,21 +364,27 @@ export function createMediaProviders({ fetch, readPixabayKey, cache, packs }: Me
       return collection === undefined ? [] : [[prefix, collection]]
     })) })
 
-  /** The last few local searches' ranked matches, so the next page is a slice. */
+  /**
+   * The last few local searches' ranked matches, with no filter: the next page is a slice, and a filter change only
+   * filters the kept list — a click in the Filter menu costs milliseconds, not another walk over every name.
+   */
   const localMatches = new Map<string, Promise<string[]>>()
   const MAX_LOCAL_SEARCHES = 4
-  function rankedLocally(query: string, filters: MediaFilters | undefined, scope: IconifyScope): Promise<string[]> {
-    const memoKey = `${query}\u0000${filtersKey(filters)}`
-    const known = localMatches.get(memoKey)
-    if (known !== undefined) return known
-    const value = (packs as LocalIconPacks).names().then((byPack) => rankLocalMatches([...byPack], query, scope.allowed, (id) => scope.keep({ providerId: id } as StudioItem)))
-    localMatches.set(memoKey, value)
-    for (const oldest of localMatches.keys()) {
-      if (localMatches.size <= MAX_LOCAL_SEARCHES) break
-      localMatches.delete(oldest)
+  async function rankedLocally(query: string, filters: MediaFilters | undefined, scope: IconifyScope): Promise<string[]> {
+    let ranked = localMatches.get(query)
+    if (ranked === undefined) {
+      const value = (packs as LocalIconPacks).names().then((byPack) => rankLocalMatches([...byPack], query, null, () => true))
+      ranked = value
+      localMatches.set(query, value)
+      for (const oldest of localMatches.keys()) {
+        if (localMatches.size <= MAX_LOCAL_SEARCHES) break
+        localMatches.delete(oldest)
+      }
+      value.catch(() => localMatches.delete(query))
     }
-    value.catch(() => localMatches.delete(memoKey))
-    return value
+    const ids = await ranked
+    if (filters === undefined || activeFilterCount(filters) === 0) return ids
+    return ids.filter((id) => (scope.allowed === null || scope.allowed.has(id.slice(0, id.indexOf(':')))) && scope.keep({ providerId: id } as StudioItem))
   }
 
   /** One page of a list of ids, from `generalStart`; the other passes are spent. */

@@ -202,6 +202,20 @@ describe('the download (round 2 decisions 4 and 8)', () => {
     expect(packs.has('mdi')).toBe(false)
   })
 
+  it('stores a big pack in parts, and builds any icon of it from its part, an alias too', async () => {
+    const big = packFile('big', Array.from({ length: 40 }, (_, i) => `icon-${i}`))
+    const packs = createIconPacks({ folder, fetch: network({ '2.2.1': { big } }).fetch, split: { above: 1000, part: 600 } })
+    const done = await packs.download()
+    const parts = Math.ceil(Buffer.byteLength(big) / 600)
+    expect(done.state).toBe('complete')
+    expect((await readdir(folder)).filter((f) => f.includes('.part-'))).toHaveLength(parts)
+    for (const n of [0, 17, 39]) expect(await packs.svg(`big:icon-${n}`)).toContain(`<path d="big-icon-${n}"/>`)
+    expect(await packs.svg('big:icon-0-turned')).toContain('rotate(90 12 12)')
+    expect(await packs.svg('big:nope')).toBeNull()
+    await packs.remove()
+    expect(await readdir(folder).catch(() => [])).toEqual([])
+  })
+
   it('"Choose a folder…" moves the packs; a folder that has packs is used as it is', async () => {
     const packs = createIconPacks({ folder, fetch: network({ '2.2.1': V1 }).fetch })
     await packs.download()

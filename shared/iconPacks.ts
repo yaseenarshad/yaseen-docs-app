@@ -128,9 +128,9 @@ export interface IconPacksStatus {
 /** `media.packs`: each verb answers the status after it; `download` and `check` resolve when their run ends. */
 export type IconPacksRequest = { op: 'status' } | { op: 'download' } | { op: 'stop' } | { op: 'check' } | { op: 'remove' }
 
-/** The confirm box's numbers before a plan exists (measured 2026-11-03: 281 packs; about 130 MB with gzip). */
+/** The confirm box's numbers before a plan exists (measured 2026-11-03: 281 packs, 135 MB with gzip (a real download of 2.2.553)). */
 export const ESTIMATED_PACK_COUNT = 281
-export const ESTIMATED_PACK_BYTES = 130 * 1024 * 1024
+export const ESTIMATED_PACK_BYTES = 135 * 1024 * 1024
 
 /** "17 MB": whole megabytes, one decimal under 10. */
 export function formatPackBytes(bytes: number): string {
