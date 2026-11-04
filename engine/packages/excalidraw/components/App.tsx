@@ -4480,6 +4480,16 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   componentDidUpdate(prevProps: AppProps, prevState: AppState) {
+    // YAZ-4348 demo: the top bar's Edit colors button unmounts with the bar, and the focus falls to the page,
+    // where a board without handleKeyboardGlobally (the app's) hears no key: the mode takes the focus, so
+    // 1 to 9, Esc and Enter work at once
+    if (
+      this.state.colorEditingElementId &&
+      !prevState.colorEditingElementId &&
+      !this.excalidrawContainerRef.current?.contains(document.activeElement)
+    ) {
+      this.focusContainer();
+    }
     // YAZ-4354 1D: Edit colors ends when its icon is deleted or not selected
     if (this.state.colorEditingElementId) {
       const element = this.scene.getElement(this.state.colorEditingElementId);

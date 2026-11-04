@@ -336,3 +336,27 @@ describe("Edit colors (YAZ-4354 1D)", () => {
     });
   });
 });
+
+// YAZ-4348 demo: the app's boards have no handleKeyboardGlobally, so a key reaches the board only while it has the focus
+describe("Edit colors keys on a board that owns its keys", () => {
+  beforeEach(async () => {
+    unmountComponent();
+    vi.unstubAllGlobals();
+    mockHTMLImageElement(16, 16);
+    await render(<Excalidraw />);
+  });
+
+  it("takes the focus when it opens, so 1 to 9 and Esc work at once", async () => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    await open();
+    const container = document.querySelector(".excalidraw-container");
+    expect(container?.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: "2" });
+    expect(
+      document.querySelector(".icon-color-editor__badge.is-active")
+        ?.textContent,
+    ).toBe("2");
+    fireEvent.keyDown(document.activeElement!, { key: KEYS.ESCAPE });
+    expect(document.querySelector(".icon-color-editor__palette")).toBeNull();
+  });
+});
