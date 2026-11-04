@@ -86,6 +86,14 @@ export function normalizeUsedItem(v: unknown): UsedMediaItem | null {
 /** How an incoming item gets its stamp: main's clock, never the renderer's. */
 export const stamp = (item: MediaItem, now: number): StoredMediaItem => ({ ...item, updatedAt: now })
 
+/**
+ * NEVER BACK IN TIME (YAZ-4381, the YAZ-3299 rule of `store.ts` `setSettings`): a change's stamp is `now`, or just
+ * above the stamp it replaces when that is later. Two Macs share the library, and the newest stamp wins the merge; a
+ * Mac whose clock runs ahead must not win over a later change made on this Mac.
+ */
+export const after = (now: number, ...before: (number | undefined)[]): number =>
+  before.reduce<number>((at, b) => (b === undefined || b < at ? at : b + 1), now)
+
 /** Null when the document is not a version-1 library at all (→ corrupt, moved aside); otherwise every readable row. */
 export function sanitizeMediaLibrary(raw: unknown): MediaLibraryFile | null {
   if (!isRecord(raw) || raw.version !== 1) return null
@@ -99,35 +107,41 @@ export function sanitizeMediaLibrary(raw: unknown): MediaLibraryFile | null {
 /** The web app's `addFavorite`: a new key goes to the head, an existing one changes nothing. Nothing falls off (YAZ-4363). */
 export function addFavorite(lib: MediaLibraryFile, item: MediaItem, now: number): MediaLibraryFile {
   if (lib.favorites.some((f) => f.itemKey === item.itemKey)) return lib
-  // A favorite added again is newer than its removal, so a merge keeps it; the note has done its work.
-  const { [item.itemKey]: _was, ...removed } = lib.removed
-  return { ...lib, favorites: [stamp(item, now), ...lib.favorites], removed }
+  // A favorite added again is newer than its removal (also one from a Mac whose clock runs ahead), so a merge keeps
+  // it; the note has done its work. It is also newer than the head of the list, so it shows first on every Mac.
+  const { [item.itemKey]: was, ...removed } = lib.removed
+  return { ...lib, favorites: [stamp(item, after(now, was, lib.favorites[0]?.updatedAt)), ...lib.favorites], removed }
 }
 
 /**
  * A removal starts the item's count again (YAZ-4157 demo 6A): it becomes a favorite again after `AUTO_FAVORITE_USES`
  * more adds, the same rule as the first time, and never on the very next add. Its words stay. It is kept in `removed`
- * at `now` (YAZ-4364), so another Mac's file that still holds the favorite does not bring it back.
+ * (YAZ-4364), so another Mac's file that still holds the favorite does not bring it back.
+ *
+ * Both stamps are newer than the rows they replace (`after`): the note is newer than the favorite, also one from a Mac
+ * whose clock runs ahead (YAZ-4381), and the `used` row at count 0 is stamped again, so it wins over the other Mac's
+ * row with the old count (YAZ-4380).
  */
 export function removeFavorite(lib: MediaLibraryFile, itemKey: string, now: number): MediaLibraryFile {
-  if (!lib.favorites.some((f) => f.itemKey === itemKey)) return lib
+  const row = lib.favorites.find((f) => f.itemKey === itemKey)
+  if (row === undefined) return lib
   return {
     ...lib,
-    favorites: lib.favorites.filter((f) => f.itemKey !== itemKey),
-    used: lib.used.map((u) => (u.itemKey === itemKey ? { ...u, count: 0 } : u)),
-    removed: cleanRemoved({ ...lib.removed, [itemKey]: now }),
+    favorites: lib.favorites.filter((f) => f !== row),
+    used: lib.used.map((u) => (u.itemKey === itemKey ? { ...u, count: 0, updatedAt: after(now, u.updatedAt) } : u)),
+    removed: cleanRemoved({ ...lib.removed, [itemKey]: after(now, row.updatedAt, lib.removed[itemKey]) }),
   }
 }
 
-/** The web app's `recordRecent`: an MRU — the item as it arrives NOW moves to the head, re-stamped. */
+/** The web app's `recordRecent`: an MRU — the item as it arrives NOW moves to the head, re-stamped above the head (`after`). */
 export function recordRecent(lib: MediaLibraryFile, item: MediaItem, now: number): MediaLibraryFile {
-  return { ...lib, recent: [stamp(item, now), ...lib.recent.filter((r) => r.itemKey !== item.itemKey)].slice(0, RECENT_LIMIT) }
+  return { ...lib, recent: [stamp(item, after(now, lib.recent[0]?.updatedAt)), ...lib.recent.filter((r) => r.itemKey !== item.itemKey)].slice(0, RECENT_LIMIT) }
 }
 
-/** The item's row moved to the head of `used`, re-stamped — `edit` makes the new one from the old (or none). */
-function touchUsed(lib: MediaLibraryFile, item: MediaItem, now: number, edit: (before: UsedMediaItem | undefined) => UsedMediaItem): MediaLibraryFile {
+/** The item's row moved to the head of `used`, re-stamped — `edit` makes the new one from the old (or none) at `at`. */
+function touchUsed(lib: MediaLibraryFile, item: MediaItem, now: number, edit: (before: UsedMediaItem | undefined, at: number) => UsedMediaItem): MediaLibraryFile {
   const before = lib.used.find((u) => u.itemKey === item.itemKey)
-  return { ...lib, used: [edit(before), ...lib.used.filter((u) => u.itemKey !== item.itemKey)].slice(0, MAX_MEDIA_USED) }
+  return { ...lib, used: [edit(before, after(now, before?.updatedAt)), ...lib.used.filter((u) => u.itemKey !== item.itemKey)].slice(0, MAX_MEDIA_USED) }
 }
 
 /** `words` with `word` in front (once), capped. */
@@ -143,8 +157,8 @@ const usedRow = (before: UsedMediaItem | undefined, item: MediaItem, now: number
  */
 export function recordUse(lib: MediaLibraryFile, item: MediaItem, query: string, now: number): MediaLibraryFile {
   const next = recordRecent(
-    touchUsed(lib, item, now, (before) => {
-      const row = usedRow(before, item, now)
+    touchUsed(lib, item, now, (before, at) => {
+      const row = usedRow(before, item, at)
       return { ...row, count: row.count + 1, words: withWord(row.words, normalizeWord(query)) }
     }),
     item,
@@ -156,15 +170,16 @@ export function recordUse(lib: MediaLibraryFile, item: MediaItem, query: string,
 
 /**
  * "Add a word…" (YAZ-4157 D5): the word goes in front of the item's words. A word is not a use, so a known row keeps
- * its place and its stamp; an item never added starts a row at 0 uses.
+ * its place and its count; an item never added starts a row at 0 uses. The row is stamped again (`after`): with two
+ * Macs, the row with the newest stamp is the one that stays (YAZ-4380).
  */
 export function addWord(lib: MediaLibraryFile, item: MediaItem, word: string, now: number): MediaLibraryFile {
   const clean = normalizeWord(word)
   if (clean === null) return lib
   const before = lib.used.find((u) => u.itemKey === item.itemKey)
-  if (before === undefined) return touchUsed(lib, item, now, () => ({ ...usedRow(undefined, item, now), words: [clean] }))
+  if (before === undefined) return touchUsed(lib, item, now, (_none, at) => ({ ...usedRow(undefined, item, at), words: [clean] }))
   if (before.words[0] === clean) return lib
-  return { ...lib, used: lib.used.map((u) => (u === before ? { ...u, words: withWord(u.words, clean) } : u)) }
+  return { ...lib, used: lib.used.map((u) => (u === before ? { ...u, words: withWord(u.words, clean), updatedAt: after(now, u.updatedAt) } : u)) }
 }
 
 // ---------- Two Macs, one library (YAZ-4364, round 3 decision 2) ----------

@@ -176,10 +176,18 @@ describe('recordRecent (the web app`s recordRecent) — an MRU, not a log', () =
   })
 
   it('a use of something already there MOVES it to the head and re-stamps it, never duplicates', () => {
-    const before = { ...EMPTY_MEDIA_LIBRARY, recent: [stored({ itemKey: 'b' }), stored({ itemKey: 'a', updatedAt: 1 })] }
+    const before = { ...EMPTY_MEDIA_LIBRARY, recent: [stored({ itemKey: 'b', updatedAt: 500 }), stored({ itemKey: 'a', updatedAt: 1 })] }
     const after = recordRecent(before, item({ itemKey: 'a', title: 'A tree' }), 900)
     expect(after.recent.map((r) => r.itemKey)).toEqual(['a', 'b'])
     expect(after.recent[0].updatedAt).toBe(900)
+  })
+
+  it('the stamp is above the head`s, also when the head came from a Mac whose clock runs ahead (YAZ-4381)', () => {
+    const before = { ...EMPTY_MEDIA_LIBRARY, recent: [stored({ itemKey: 'b', updatedAt: 5000 })] }
+    const after = recordRecent(before, item({ itemKey: 'a' }), 900)
+    expect(after.recent[0].updatedAt).toBe(5001)
+    // A merge with the other Mac's file keeps this Mac's use at the head.
+    expect(mergeMediaLibraries([before, after]).recent.map((r) => r.itemKey)).toEqual(['a', 'b'])
   })
 
   it('re-records the item as it arrives NOW — a title or licence that changed is refreshed', () => {
@@ -286,7 +294,36 @@ describe('recordUse — one add (YAZ-4157 D1, D9)', () => {
   })
 
   it('removing a favorite that was never added to a board changes only the favorites, and notes the removal (YAZ-4364)', () => {
-    expect(removeFavorite(lib({ favorites: [stored()] }), stored().itemKey, 7)).toEqual(lib({ removed: { [stored().itemKey]: 7 } }))
+    expect(removeFavorite(lib({ favorites: [stored()] }), stored().itemKey, 7000)).toEqual(lib({ removed: { [stored().itemKey]: 7000 } }))
+  })
+
+  it('a removal is newer than the favorite, also when its row came from a Mac whose clock runs ahead (YAZ-4381)', () => {
+    // The other Mac (one hour ahead) favorited it at 3,600,000; this Mac removes it at 60,000 by its own clock.
+    const theirs = lib({ favorites: [stored({ updatedAt: 3_600_000 })] })
+    const ours = removeFavorite(theirs, stored().itemKey, 60_000)
+    expect(ours.removed[stored().itemKey]).toBe(3_600_001)
+    expect(mergeMediaLibraries([ours, theirs]).favorites).toEqual([])
+    expect(mergeMediaLibraries([theirs, ours]).favorites).toEqual([])
+  })
+
+  it('a favorite added again is newer than a removal from a Mac whose clock runs ahead (YAZ-4381)', () => {
+    const theirs = lib({ removed: { [item().itemKey]: 3_600_000 } })
+    const ours = addFavorite(theirs, item(), 60_000)
+    expect(ours.favorites[0].updatedAt).toBe(3_600_001)
+    expect(mergeMediaLibraries([theirs, ours]).favorites.map((f) => f.itemKey)).toEqual([item().itemKey])
+  })
+
+  it('a removal stamps the used row again at count 0, so the other Mac`s row with the old count loses the merge (YAZ-4380)', () => {
+    const theirs = lib({ favorites: [stored({ updatedAt: 1030 })], used: [used({ count: 3, updatedAt: 1030 })] })
+    const ours = removeFavorite(theirs, item().itemKey, 1040)
+    expect(ours.used[0]).toMatchObject({ count: 0, updatedAt: 1040 })
+    // Either Mac's file first: the count is 0, and the next add is 1 use, not a favorite.
+    for (const merged of [mergeMediaLibraries([theirs, ours]), mergeMediaLibraries([ours, theirs])]) {
+      expect(merged.used[0].count).toBe(0)
+      const next = recordUse(merged, item(), '', 1050)
+      expect(next.used[0].count).toBe(1)
+      expect(next.favorites).toEqual([])
+    }
   })
 
   it(`moves the item to the head of used and keeps ${MAX_MEDIA_USED} rows`, () => {
@@ -312,11 +349,14 @@ describe('recordUse — one add (YAZ-4157 D1, D9)', () => {
 })
 
 describe('addWord — "Add a word…" (YAZ-4157 D5)', () => {
-  it('a known row gets the word in front and keeps its place, its stamp and its count', () => {
+  it('a known row gets the word in front and keeps its place and its count; it is stamped again, so the other Mac sees the word (YAZ-4380)', () => {
     const rows = [used({ itemKey: 'other', providerId: 'o' }), used({ count: 2, words: ['tree'] })]
     const out = addWord(lib({ used: rows }), item(), ' Oak ', 99)
-    expect(out.used[1]).toEqual({ ...rows[1], words: ['oak', 'tree'] })
+    // 99 is earlier than the row's 1000: the stamp goes just above it (YAZ-4381).
+    expect(out.used[1]).toEqual({ ...rows[1], words: ['oak', 'tree'], updatedAt: 1001 })
     expect(out.used[0]).toBe(rows[0])
+    const theirs = lib({ used: rows })
+    expect(mergeMediaLibraries([theirs, out]).used.find((u) => u.itemKey === item().itemKey)?.words).toEqual(['oak', 'tree'])
   })
 
   it('an item never added starts a row at 0 uses — a word is not a use', () => {
