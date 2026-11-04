@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
+import { mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { homedir, hostname } from 'node:os'
 import path from 'node:path'
 import { IDS_FILE, idLettersOf, idsAnswer, noteIdNumber, numberId, vaultNoteId } from '@shared/noteId'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { BridgeFailure, atomicWrite, createDurable, toBridgeFailure } from '../fs/fsUtils'
+import { LOCK_DIR, onlyOne } from '../fs/lock'
 import { userDataDir } from '../userData'
 import { scanAll } from './reconcile'
 import { walk } from './scan'
@@ -359,7 +360,10 @@ async function take(root: string, door: Door, count: number, floor: number | und
  * caller already holds them (the sweep); else the index is asked (`highestFrom`).
  */
 export function mintIds(root: string, count: number, floor?: number): Promise<string[] | null> {
-  return inTurn(root, (door) => take(root, door, count, floor))
+  // `inTurn` is one request at a time in THIS process. The app and the command are two processes with one count file
+  // (R20), so the read and the write of it are also one at a time across them (YAZ-4269 5A): else two of them can read
+  // the same last number and each give it.
+  return inTurn(root, async (door) => onlyOne(path.join(appDataDir(root), LOCK_DIR), `ids\n${await realpath(root).catch(() => root)}`, () => take(root, door, count, floor)))
 }
 
 /** `ask` behind every request already made of the door of `root`: one at a time for a vault (R17). */
@@ -370,6 +374,19 @@ function inTurn<T>(root: string, ask: (door: Door) => Promise<T>): Promise<T> {
   const mine = held.turn.then(() => ask(held))
   held.turn = mine.catch(() => undefined)
   return mine
+}
+
+/**
+ * The vault whose IDs a page is in (YAZ-2523 🔒 V10): the nearest folder at or above it that has
+ * ANSWERED, when that answer is yes. A folder that only holds app settings is not asked. Null
+ * when the nearest answer is no, or nothing above has answered: "no" means no for agents too.
+ */
+export async function idVault(from: string): Promise<string | null> {
+  for (let dir = from; ; dir = path.dirname(dir)) {
+    const { answer } = await vaultIds(dir)
+    if (answer !== undefined) return answer ? dir : null
+    if (dir === path.dirname(dir)) return null
+  }
 }
 
 /** A vault that gives IDs, as a create or a copy holds it for one request. */

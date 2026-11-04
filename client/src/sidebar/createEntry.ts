@@ -6,10 +6,10 @@
  */
 import { BOARD_EXTENSION, boardBaseName, fileKind } from '@shared/fileKind'
 import type { BoardKind } from '@shared/types'
+import { validateEntryName } from '@shared/entryName'
 import { basename, dirname } from '../lib/paths'
 
-/** What the inline input creates: a markdown note, a folder, or a board — an Excalidraw drawing or a draw.io diagram (YAZ-3028 D9). */
-export type EntryKind = 'file' | 'dir' | BoardKind
+export { plainEntryName, validateEntryName, type EntryKind } from '@shared/entryName'
 
 /** The name an empty board box gives (YAZ-3028 D9): `Untitled`, then `Untitled 2`, … */
 const UNTITLED = 'Untitled'
@@ -33,15 +33,6 @@ export function boardPath(parentDir: string, typed: string, kind: BoardKind): st
  */
 export function untitledNames(seed: string, max = 20): string[] {
   return Array.from({ length: max }, (_, i) => `${seed}${UNTITLED}${i === 0 ? '' : ` ${i + 1}`}`)
-}
-
-/** Human-readable reason the name is unusable, or null when fine. */
-export function validateEntryName(name: string): string | null {
-  const trimmed = name.trim()
-  if (trimmed.includes('/')) return 'Name cannot contain "/"'
-  if (trimmed.includes('\0')) return 'Name contains an invalid character'
-  if (trimmed.startsWith('.')) return 'Names starting with "." are hidden'
-  return null
 }
 
 /** Seed for "New dated folder" (YAZ-1604) and "New dated note" (YAZ-2242): `09_14- ` — today's MM_DD, then `- ` so the title lands one space after the dash. */
@@ -110,17 +101,4 @@ export function renamedPath(oldPath: string, newName: string): string {
   const shownHasKind = shown !== old && fileKind(shown) !== null
   if (fileKind(final) === null || (shownHasKind && boardBaseName(final) === final)) final += oldPath.slice(oldPath.lastIndexOf('.'))
   return `${dirname(oldPath)}/${final}`
-}
-
-/**
- * The name on disk of the note or the folder named `typed` in a vault that does not use IDs
- * (YAZ-2523 🔒 V3), made or renamed: as typed, and a note with `suffix` unless a Markdown suffix
- * was typed. Any other suffix is part of the name (`talk.pdf` is the note `talk.pdf.md`): a note
- * is never changed into another kind of file. A name a file cannot hold is refused.
- */
-export function plainEntryName(typed: string, kind: EntryKind, suffix = '.md'): string {
-  const name = typed.trim()
-  const invalid = validateEntryName(name)
-  if (invalid !== null) throw new Error(invalid)
-  return kind === 'dir' || fileKind(name) === 'markdown' ? name : name + suffix
 }

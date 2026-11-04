@@ -19,6 +19,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     readAsset: vi.fn(),
     writeAsset: vi.fn(),
     mintNoteId: vi.fn(),
+    makeDailyNote: vi.fn(),
     createBoard: vi.fn(),
     boardHead: vi.fn(),
     drawing: vi.fn(),
