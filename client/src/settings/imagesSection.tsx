@@ -8,7 +8,9 @@
  * - The library folder (Draw's 🔒 YAZ-1775 D5): ONE folder every vault shares, for saved components and
  *   media favorites; `SettingsState.libraryFolder`, null = `<userData>/library`. Draw keeps it under
  *   Files; in Docs, Files & Links is about notes, and the library is the canvas panel's.
+ * - Icon packs (YAZ-4359), its own group: every Iconify pack on this Mac, and where they live (`IconPacksControl`).
  */
+import { IconPacksControl } from './IconPacksControl'
 import { LibraryFolderControl, LibraryFolderHint } from './LibraryFolderControl'
 import { PixabayKeyControl } from './PixabayKeyControl'
 import type { SettingsSection } from './registry'
@@ -48,6 +50,20 @@ export const IMAGES_SECTION: SettingsSection = {
               </div>
             </>
           ),
+        },
+      ],
+    },
+    {
+      title: 'Icon packs',
+      items: [
+        {
+          // YAZ-4359: never downloads by itself; the confirm box says how much comes.
+          id: 'iconPacks',
+          label: 'Icon packs',
+          hint: 'Download every Iconify icon pack to this Mac once. Then icon search, tiles and adds are instant, complete and offline. One folder serves every vault on this Mac.',
+          keywords: ['icon packs', 'iconify', 'download', 'offline', 'icons', 'update', 'check for new icons', 'folder'],
+          wide: true,
+          render: ({ settings, onChange }) => <IconPacksControl settings={settings} onChange={onChange} />,
         },
       ],
     },

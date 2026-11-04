@@ -10,6 +10,7 @@ import type { IconRule } from './vaultIcons'
 import type { ReviewEntry } from './reviews'
 import type { HotkeyOverrides } from './hotkeyBindings'
 import { DEFAULT_DAILY_NOTE_FORMAT } from './dailyNote'
+import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from './iconPacks'
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
 
 // ---------- Errors ----------
@@ -1538,6 +1539,11 @@ export interface MediaSearchRequest {
   source: MediaSearchSource
   /** The `nextCursor` of the previous page; absent or null starts over. Opaque: main minted it, main reads it. */
   cursor?: string | null
+  /**
+   * The Filter menu's choices (YAZ-4360, `shared/iconPacks.ts`); main applies them to the icons. Absent = no filter.
+   * With exactly one pack in `packs`, `q` may be empty: that is the pack page's every icon (YAZ-4361).
+   */
+  filters?: MediaFilters
 }
 
 /**
@@ -1840,6 +1846,15 @@ export interface SettingsState {
   libraryFolder: string | null
   /** The canvas panel's last tab and dock preference (YAZ-3038). See `CanvasPanelState`. */
   canvasPanel: CanvasPanelState
+  /** The Add panel's Filter menu (YAZ-4360): Colors, Style, Packs, License. Travels with the settings. */
+  mediaFilters: MediaFilters
+  /** The packs "Pin pack" pinned (YAZ-4361), by prefix, first pinned first: they lead Filter › Packs. Travels. */
+  mediaPinnedPacks: string[]
+  /**
+   * Where the downloaded icon packs live (YAZ-4359, D5 update): ONE folder for every vault and window of this Mac.
+   * null = `<userData>/icon-packs`, which only main can resolve. Stays on this Mac (`LOCAL_SETTINGS`).
+   */
+  iconPacksFolder: string | null
   /** How long a toast stays (YAZ-3303 D5). A toast with Undo stays at least `UNDO_NOTICE_MS`. */
   noticeLength: NoticeLength
   /** The toasts of a move, a rename or a delete, with Undo (YAZ-3303 D6). Off: no toast; ⌘Z still works. */
@@ -1943,7 +1958,7 @@ export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
  * and a drag width each fit one Mac only, like `AppState.sidebarWidth`. So does the code tab's helper switch
  * (YAZ-3500): its helpers are a download on this Mac. Every other field travels.
  */
-export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers']
+export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers', 'iconPacksFolder']
 
 /** The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover. */
 export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'links' | 'drawings'
@@ -2239,6 +2254,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
   diagramDarkColors: 'adapt',
   libraryFolder: null,
   canvasPanel: DEFAULT_CANVAS_PANEL,
+  mediaFilters: DEFAULT_MEDIA_FILTERS,
+  mediaPinnedPacks: [],
+  iconPacksFolder: null,
   noticeLength: '4s',
   noticeUndo: true,
   noticeClipboard: true,

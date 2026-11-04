@@ -35,30 +35,69 @@ export interface IconifySetData {
 const MAX_ALIAS_DEPTH = 6
 
 /**
- * The SVG for `name` in `set`, as the `.svg` endpoint would answer it, or null when the set data has no such icon or
- * the icon is rotated or flipped (the caller then fetches that one finished SVG).
+ * The SVG for `name` in `set`, as the `.svg` endpoint would answer it, or null when the set data has no such icon.
+ *
+ * A rotated or flipped icon (an alias that turns its parent) is null too, unless `transforms` is set: the tile batch
+ * then fetches that one finished SVG. A downloaded pack (YAZ-4359) has no network to ask, so it builds the turn itself,
+ * as Iconify's own `iconToSVG` does: the flips and turns of every alias step add up, and wrap the body in one `<g>`.
  */
-export function iconSvg(set: IconifySetData, name: string): string | null {
-  // An alias may set its own box over its parent's; a nearer value wins.
+export function iconSvg(set: IconifySetData, name: string, { transforms = false }: { transforms?: boolean } = {}): string | null {
+  // An alias may set its own box over its parent's; a nearer value wins. Its turns add to its parent's.
   const box: Partial<IconData> = {}
+  let rotate = 0
+  let hFlip = false
+  let vFlip = false
   let at = name
   for (let depth = 0; depth <= MAX_ALIAS_DEPTH; depth++) {
     const icon = set.icons?.[at]
     const alias = icon === undefined ? set.aliases?.[at] : undefined
     const step = icon ?? alias
     if (step === undefined) return null
-    if (step.rotate || step.hFlip || step.vFlip) return null
+    if (step.rotate || step.hFlip || step.vFlip) {
+      if (!transforms) return null
+      rotate += step.rotate ?? 0
+      if (step.hFlip) hFlip = !hFlip
+      if (step.vFlip) vFlip = !vFlip
+    }
     for (const key of ['left', 'top', 'width', 'height'] as const) if (box[key] === undefined && typeof step[key] === 'number') box[key] = step[key]
     if (icon !== undefined) {
-      const left = box.left ?? set.left ?? 0
-      const top = box.top ?? set.top ?? 0
-      const width = box.width ?? set.width ?? 16
-      const height = box.height ?? set.height ?? 16
-      return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1em" height="1em" viewBox="${left} ${top} ${width} ${height}">${icon.body}</svg>`
+      const view = { left: box.left ?? set.left ?? 0, top: box.top ?? set.top ?? 0, width: box.width ?? set.width ?? 16, height: box.height ?? set.height ?? 16 }
+      const body = rotate !== 0 || hFlip || vFlip ? turned(icon.body, view, rotate, hFlip, vFlip) : icon.body
+      return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1em" height="1em" viewBox="${view.left} ${view.top} ${view.width} ${view.height}">${body}</svg>`
     }
     at = (alias as { parent: string }).parent
   }
   return null
+}
+
+/** `iconToSVG`'s turn, from `@iconify/utils`: it changes `view` in place (a quarter turn swaps its sides). */
+function turned(body: string, view: { left: number; top: number; width: number; height: number }, rotate: number, hFlip: boolean, vFlip: boolean): string {
+  const steps: string[] = []
+  let turns = rotate
+  if (hFlip) {
+    if (vFlip) turns += 2
+    else {
+      steps.push(`translate(${view.width + view.left} ${0 - view.top})`, 'scale(-1 1)')
+      view.top = view.left = 0
+    }
+  } else if (vFlip) {
+    steps.push(`translate(${0 - view.left} ${view.height + view.top})`, 'scale(1 -1)')
+    view.top = view.left = 0
+  }
+  turns = ((turns % 4) + 4) % 4
+  if (turns === 1) {
+    const c = view.height / 2 + view.top
+    steps.unshift(`rotate(90 ${c} ${c})`)
+  } else if (turns === 2) steps.unshift(`rotate(180 ${view.width / 2 + view.left} ${view.height / 2 + view.top})`)
+  else if (turns === 3) {
+    const c = view.width / 2 + view.left
+    steps.unshift(`rotate(-90 ${c} ${c})`)
+  }
+  if (turns % 2 === 1) {
+    ;[view.left, view.top] = [view.top, view.left]
+    ;[view.width, view.height] = [view.height, view.width]
+  }
+  return steps.length > 0 ? `<g transform="${steps.join(' ')}">${body}</g>` : body
 }
 
 /** How long the first tile of a set waits for the others; the renderer asks for a page's tiles all at once. */

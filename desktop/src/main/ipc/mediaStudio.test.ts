@@ -97,6 +97,9 @@ describe('the guards', () => {
     await expect(search(null, { q: 'money bag', source: 'web' })).resolves.toEqual(bad('BAD_REQUEST'))
     await expect(search(null, { q: 'money bag', source: 'all', cursor: 7 })).resolves.toEqual(bad('BAD_REQUEST'))
     await expect(search(null, { q: 'a', source: 'all' })).resolves.toEqual(bad('BAD_REQUEST'))
+    // YAZ-4360: a filter set this build cannot read is a bad request, never "no filter".
+    await expect(search(null, { q: 'money bag', source: 'all', filters: { colors: 'red', style: 'any', packs: [], license: 'any' } })).resolves.toEqual(bad('BAD_REQUEST'))
+    await expect(search(null, { q: 'money bag', source: 'all', filters: { colors: 'any', style: 'any', packs: ['../x'], license: 'any' } })).resolves.toEqual(bad('BAD_REQUEST'))
   })
 
   it('refuses preview and import for a provider that serves no bytes — `shape` is drawn, not fetched', async () => {
@@ -140,5 +143,24 @@ describe('what reaches the renderer', () => {
     expect(answer.ok && answer.value.mimeType).toBe('image/svg+xml')
     expect(answer.ok && answer.value.dataURL.startsWith('data:image/svg+xml;base64,')).toBe(true)
     expect(answer.ok && answer.value.item.itemKey).toBe('iconify:noto:money-bag')
+  })
+})
+
+describe('the icon packs door (YAZ-4359)', () => {
+  it('refuses a verb it does not know, answers the status, and follows the folder setting', async () => {
+    const listeners: Array<(state: { settings: { iconPacksFolder: string | null } }) => void> = []
+    let settings = { iconPacksFolder: null as string | null }
+    const store = { get: () => ({ settings }), onChange: (fn: (typeof listeners)[number]) => listeners.push(fn) }
+    registerMediaStudioIpc(userData, fakeSecrets(null), vi.fn() as unknown as typeof globalThis.fetch, store as never)
+    const packs = registered(CONTRACT.media.packs)
+    await expect(packs(null, { op: 'explode' })).resolves.toEqual(bad('BAD_REQUEST'))
+    const first = (await packs(null, { op: 'status' })) as Envelope<{ state: string; folder: string }>
+    expect(first.ok && first.value).toMatchObject({ state: 'none', folder: path.join(userData, 'icon-packs') })
+    settings = { iconPacksFolder: path.join(userData, 'elsewhere') }
+    for (const fn of listeners) fn({ settings })
+    await until(async () => {
+      const now = (await packs(null, { op: 'status' })) as Envelope<{ folder: string }>
+      return now.ok && now.value.folder === path.join(userData, 'elsewhere')
+    })
   })
 })

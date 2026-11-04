@@ -177,6 +177,7 @@ import { isValidPicturesFolder } from '@shared/drawingAssets'
 import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
+import { isMediaFilters, isPinnedPacks, sanitizeMediaFilters } from '@shared/iconPacks'
 import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId, keyFor, sameKey, scopedId, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, asideId, gestureRow, isDefaultGesture, isGestureEntry, isUsableFor, keyRow, withAside, type HotkeyAside } from '@shared/keys'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
@@ -614,6 +615,11 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   // `''` — an empty string would resolve to the process cwd, which is not a place for a user's library.
   libraryFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),
   canvasPanel: isCanvasPanel,
+  // YAZ-4360 / YAZ-4361: the Add panel's filters and pinned packs; `sanitizeSettings` repairs the filters part by part.
+  mediaFilters: isMediaFilters,
+  mediaPinnedPacks: isPinnedPacks,
+  // YAZ-4359: an absolute folder, or null for `<userData>/icon-packs` (never `''`, the `libraryFolder` rule).
+  iconPacksFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),
   noticeLength: (v): v is NoticeLength => typeof v === 'string' && (NOTICE_LENGTHS as readonly string[]).includes(v),
   noticeUndo: (v): v is boolean => typeof v === 'boolean',
   noticeClipboard: (v): v is boolean => typeof v === 'boolean',
@@ -657,6 +663,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   // A store written before a canvas pref existed keeps every pref it does have, instead of resetting the lot.
   out.canvas = sanitizeCanvasPrefs(src.canvas)
   out.canvasPanel = sanitizeCanvasPanel(src.canvasPanel)
+  out.mediaFilters = sanitizeMediaFilters(src.mediaFilters)
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
   out.selectionToolbar = sanitizeToolbarPrefs(src.selectionToolbar)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)

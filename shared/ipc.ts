@@ -14,6 +14,7 @@ import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, Bo
 import type { CopyAsMode, CopyAsRich, NoteMenuAction, NoteMenuArg, MemoryTabFacts } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
+import type { IconPackInfo, IconPacksRequest, IconPacksStatus } from './iconPacks'
 import type { SystemHotkey } from './macosHotkeys'
 import type { VaultIcons } from './vaultIcons'
 
@@ -147,6 +148,16 @@ export const CONTRACT = {
     drawingIndex: invoke<[], MediaDrawingIndexResponse>('media:drawing-index', 0),
     /** One library item's elements, to draw its tile and to put it on the board. */
     drawing: invoke<[req: MediaDrawingRequest], MediaDrawingResponse>('media:drawing', 1),
+    /**
+     * The downloaded icon packs (YAZ-4359, `main/media/iconPacks.ts`): `status`, `download` (also "Download the rest"),
+     * `stop`, `check` ("Check for new icons"), `remove`. Each answers the status after it; `download` and `check`
+     * resolve when their run ends and never reject for a failed download (the status says why).
+     */
+    packs: invoke<[req: IconPacksRequest], IconPacksStatus>('media:packs', 1),
+    /** Every status change of the packs, to every window: each pack done, a run starting or ending. */
+    onPacksProgress: push<IconPacksStatus>('media:packs-progress'),
+    /** Every pack the Add panel can name (YAZ-4360 Filter › Packs, YAZ-4361 the pack page): the Mac's, else Iconify's list. */
+    packList: invoke<[], IconPackInfo[]>('media:pack-list', 0),
   },
   /** The canvas panel's cross-vault saved-component library over `<library>/components/` (YAZ-3038; Draw's 🔒 YAZ-1775 D5). */
   components: {

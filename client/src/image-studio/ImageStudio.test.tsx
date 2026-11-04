@@ -5,15 +5,17 @@
  * the chips, what one add teaches the library, what it never asks for (a stored `previewUrl`), what it hides with no
  * key, and what still works with no network.
  */
+import { DEFAULT_MEDIA_FILTERS } from '@shared/iconPacks'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { IconPacksStatus } from '@shared/iconPacks'
 import { DEFAULT_SETTINGS, type ComponentItem, type MediaLibraryFile, type StoredMediaItem, type StudioItem, type UsedMediaItem } from '@shared/types'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: {
-    media: { favorites: vi.fn(), recent: vi.fn(), used: vi.fn(), onChanged: vi.fn(), search: vi.fn(), preview: vi.fn(), import: vi.fn(), drawingIndex: vi.fn(), drawing: vi.fn() },
+    media: { favorites: vi.fn(), recent: vi.fn(), used: vi.fn(), onChanged: vi.fn(), search: vi.fn(), preview: vi.fn(), import: vi.fn(), drawingIndex: vi.fn(), drawing: vi.fn(), packs: vi.fn(), onPacksProgress: vi.fn(), packList: vi.fn() },
     components: { list: vi.fn(), save: vi.fn(), read: vi.fn(), rename: vi.fn(), delete: vi.fn(), preview: vi.fn(), onChanged: vi.fn() },
     dialog: { openDrawing: vi.fn() },
     secrets: { has: vi.fn(), set: vi.fn() },
@@ -26,14 +28,15 @@ vi.mock('../components-library/pastedImage', async (importOriginal) => ({
   // jsdom draws no pictures; `pastedImage.test.ts` tests the real one.
   captureImageFile: vi.fn(async () => ({ elements: [{ id: 'img-1', type: 'image', fileId: 'f1' }], files: { f1: { id: 'f1', mimeType: 'image/png', dataURL: 'data:image/png;base64,AQID' } } })),
 }))
-vi.mock('../lib/storage', () => ({ storage: { getSettings: vi.fn(), subscribe: vi.fn() } }))
+vi.mock('../lib/storage', () => ({ storage: { getSettings: vi.fn(), subscribe: vi.fn(), patchSettings: vi.fn() } }))
 
 import { api, BridgeRequestError } from '../api'
 import { loadExcalidrawElement } from '../drawings/engine'
 import { storage } from '../lib/storage'
 import { clearPreviewMemo, ImageStudio, READ_ONLY_NOTICE, type ImageStudioProps } from './ImageStudio'
-import { imageStudioSession, OFFLINE_NOTICE, resetImageStudioSession, SEARCH_PAUSE_MS } from './imageStudioSession'
+import { imageStudioSession, OFFLINE_NOTICE, OFFLINE_WITH_PACKS_NOTICE, resetImageStudioSession, SEARCH_PAUSE_MS } from './imageStudioSession'
 import type { SmartShapeApi } from './shapes'
+import { resetIconPacks } from './useIconPacks'
 
 const media = vi.mocked(api.media)
 const components = vi.mocked(api.components)
@@ -97,6 +100,10 @@ function fakeCanvas() {
   }
 }
 
+/** The icon packs as main reports them (YAZ-4359): none on the Mac unless a test says otherwise. */
+const packsStatus = (over: Partial<IconPacksStatus> = {}): IconPacksStatus => ({ state: 'none', folder: '/u/icon-packs', version: null, packs: 0, total: 281, bytes: 0, totalBytes: 135 * 1024 * 1024, checkedAt: null, message: null, failed: false, ...over })
+let packsListener: ((status: IconPacksStatus) => void) | null = null
+
 let root: Root | null = null
 let container: HTMLElement | null = null
 let library = libraryOf()
@@ -128,6 +135,14 @@ beforeEach(() => {
   loadElement.mockReset().mockResolvedValue(elementPackage as unknown as Awaited<ReturnType<typeof loadExcalidrawElement>>)
   store.getSettings.mockReset().mockReturnValue(DEFAULT_SETTINGS)
   store.subscribe.mockReset().mockReturnValue(() => undefined)
+  store.patchSettings.mockReset()
+  resetIconPacks()
+  media.packs.mockReset().mockResolvedValue(packsStatus())
+  media.onPacksProgress.mockReset().mockImplementation((listener) => {
+    packsListener = listener as (status: IconPacksStatus) => void
+    return () => undefined
+  })
+  media.packList.mockReset().mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -315,7 +330,7 @@ describe('typing: Best matches, then From the web (D3, D4, D7)', () => {
     expect(section(host, 'From the web')?.textContent).toContain('Searching the web…')
     await act(async () => vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS))
     expect(media.search).toHaveBeenCalledTimes(1)
-    expect(media.search).toHaveBeenCalledWith({ q: 'money', source: 'all', cursor: null })
+    expect(media.search).toHaveBeenCalledWith({ q: 'money', source: 'all', cursor: null, filters: DEFAULT_MEDIA_FILTERS })
   })
 
   it('says which query found nothing on the web', async () => {
@@ -355,7 +370,7 @@ describe('the chips (D8)', () => {
     const { host } = await mount()
     await click(chipButton(host, 'Icons'))
     await search(host, 'star')
-    expect(media.search).toHaveBeenLastCalledWith({ q: 'star', source: 'iconify', cursor: null })
+    expect(media.search).toHaveBeenLastCalledWith({ q: 'star', source: 'iconify', cursor: null, filters: DEFAULT_MEDIA_FILTERS })
     expect(tileNames(section(host, 'Best matches'))).toEqual(['star icon'])
     media.search.mockClear()
     await click(chipButton(host, 'Shapes'))
@@ -627,6 +642,9 @@ describe('the tile menu (D10, demo 6B)', () => {
     expect(byLabel(host, 'More for money bag')).toBeNull()
     expect(await rightClick(host, 'money bag')).toBe(false)
     const menu = byLabel(host, 'Actions for money bag')!
+    // An Iconify icon's menu leads with its pack (YAZ-4361).
+    expect(document.activeElement?.textContent).toBe('More from this pack')
+    await key(menu, 'ArrowDown')
     expect(document.activeElement?.textContent).toBe('Add a word…')
     await key(menu, 'ArrowDown')
     expect(document.activeElement?.textContent).toBe('Remove from favorites')
@@ -880,5 +898,180 @@ describe('closing and reopening the panel (🔒 YAZ-1990)', () => {
     expect(field(host).value).toBe('star')
     expect(tileNames(section(host, 'From the web'))).toEqual(['star'])
     expect(media.search).not.toHaveBeenCalled()
+  })
+})
+
+describe('the Filter button and menu (YAZ-4360)', () => {
+  const filterButton = (host: HTMLElement) => host.querySelector<HTMLButtonElement>('.image-studio__filter-button')!
+  const option = (host: HTMLElement, group: string, text: string) =>
+    [...(host.querySelector(`.image-studio__filter-menu [aria-label="${group}"]`)?.querySelectorAll('button') ?? [])].find((b) => b.textContent === text) as HTMLButtonElement
+
+  it('sits right of the field; a pick searches again AT ONCE with the filters, and is remembered in the settings', async () => {
+    media.search.mockResolvedValue({ items: [icon('arrow')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    const { host } = await mount()
+    expect(field(host).nextElementSibling?.querySelector('.image-studio__filter-button')).not.toBeNull()
+    await search(host, 'arrow')
+    media.search.mockClear()
+    await click(filterButton(host))
+    await click(option(host, 'Colors', 'One color'))
+    expect(media.search).toHaveBeenCalledTimes(1)
+    expect(media.search).toHaveBeenCalledWith({ q: 'arrow', source: 'all', cursor: null, filters: { ...DEFAULT_MEDIA_FILTERS, colors: 'one' } })
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaFilters: { ...DEFAULT_MEDIA_FILTERS, colors: 'one' } })
+    expect(option(host, 'Colors', 'One color').getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('counts the filters that are on in a badge, and Clear filters turns them all off', async () => {
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaFilters: { colors: 'many', style: 'outline', packs: [], license: 'business' } })
+    const { host } = await mount()
+    expect(filterButton(host).querySelector('.image-studio__filter-badge')?.textContent).toBe('3')
+    expect(filterButton(host).getAttribute('aria-label')).toBe('Filter, 3 on')
+    await click(filterButton(host))
+    await click(byText(host, 'Clear filters'))
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaFilters: DEFAULT_MEDIA_FILTERS })
+    expect(filterButton(host).querySelector('.image-studio__filter-badge')).toBeNull()
+    expect(byText(host, 'Clear filters')?.disabled).toBe(true)
+  })
+
+  it('Esc closes the menu back to its button; a click outside closes it too', async () => {
+    const { host } = await mount()
+    await click(filterButton(host))
+    expect(document.activeElement?.getAttribute('role')).toBe('menuitemradio')
+    await key(host.querySelector('.image-studio__filter-menu')!, 'Escape')
+    expect(host.querySelector('.image-studio__filter-menu')).toBeNull()
+    expect(document.activeElement).toBe(filterButton(host))
+    await click(filterButton(host))
+    await act(async () => {
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    })
+    expect(host.querySelector('.image-studio__filter-menu')).toBeNull()
+  })
+
+  it('Choose packs… lists the pinned packs first, and a pick adds the pack to the filter', async () => {
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaPinnedPacks: ['tabler'] })
+    const pack = (prefix: string, name: string) => ({ prefix, name, total: 10, license: { title: 'MIT' }, palette: false })
+    media.packList.mockResolvedValue([pack('mdi', 'Material Design'), pack('tabler', 'Tabler'), pack('akar', 'Akar')])
+    const { host } = await mount()
+    await click(filterButton(host))
+    await click(byText(host, 'Choose packs…'))
+    const rows = [...host.querySelectorAll('.image-studio__filter-pack-name')].map((n) => n.textContent)
+    expect(rows).toEqual(['Tabler', 'Akar', 'Material Design'])
+    await click(host.querySelector('[role="menuitemcheckbox"][title^="Akar"]'))
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaFilters: { ...DEFAULT_MEDIA_FILTERS, packs: ['akar'] } })
+  })
+})
+
+describe('Download all icon packs (YAZ-4359)', () => {
+  it('offers the download at the bottom of the icon results, asks first, and starts only on Download', async () => {
+    media.search.mockResolvedValue({ items: [icon('arrow')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    const { host } = await mount()
+    await search(host, 'arrow')
+    const line = byLabel(host, 'Icon packs')!
+    expect(section(host, 'From the web')?.lastElementChild).toBe(line)
+    expect(line.textContent).toContain('Want every icon, also offline?')
+    await click(byText(host, 'Download all icon packs'))
+    const sheet = document.querySelector('[role="dialog"]')!
+    expect(sheet.textContent).toContain('All 281 free icon packs from Iconify come to this Mac: about 135 MB.')
+    expect(media.packs).not.toHaveBeenCalledWith({ op: 'download' })
+    await click(byText(document.body, 'Download'))
+    expect(media.packs).toHaveBeenCalledWith({ op: 'download' })
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('shows the progress in the same place with Cancel; a stop then offers Download the rest; with every pack the line is gone', async () => {
+    media.search.mockResolvedValue({ items: [icon('arrow')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    const { host } = await mount()
+    await search(host, 'arrow')
+    await act(async () => packsListener?.(packsStatus({ state: 'downloading', packs: 37, bytes: 17 * 1024 * 1024 })))
+    expect(byLabel(host, 'Icon packs')?.textContent).toContain('Downloading icon packs: 37 of 281 (17 MB of 135 MB)')
+    await click(byText(host, 'Cancel'))
+    expect(media.packs).toHaveBeenCalledWith({ op: 'stop' })
+    await act(async () => packsListener?.(packsStatus({ state: 'partial', packs: 37 })))
+    expect(byLabel(host, 'Icon packs')?.textContent).toContain('37 of 281 icon packs are on this Mac.')
+    media.packs.mockClear()
+    await click(byText(host, 'Download the rest'))
+    // The rest needs no new confirm: the user said yes already.
+    expect(media.packs).toHaveBeenCalledWith({ op: 'download' })
+    await act(async () => packsListener?.(packsStatus({ state: 'complete', packs: 281 })))
+    expect(byLabel(host, 'Icon packs')).toBeNull()
+  })
+
+  it('offline with every pack on the Mac, the line says icon search still works (extra 17)', async () => {
+    media.packs.mockResolvedValue(packsStatus({ state: 'complete', packs: 281 }))
+    media.search.mockRejectedValue(new BridgeRequestError('OFFLINE', 'no network'))
+    secrets.has.mockResolvedValue(true)
+    const { host } = await mount()
+    await click(chipButton(host, 'Photos'))
+    await search(host, 'arrow')
+    expect(host.textContent).toContain(OFFLINE_WITH_PACKS_NOTICE)
+  })
+})
+
+describe('More from this pack (YAZ-4361)', () => {
+  const tabler = { prefix: 'tabler', name: 'Tabler Icons', total: 5900, license: { title: 'MIT' }, palette: false }
+
+  async function openTablerPack() {
+    media.packList.mockResolvedValue([tabler])
+    media.search.mockImplementation(async (req) =>
+      req.filters?.packs[0] === 'tabler'
+        ? { items: req.q === '' ? [icon('arrow-up', 'tabler'), icon('star', 'tabler')] : [icon('arrow-up', 'tabler')], nextCursor: null, pixabayAvailable: false, warnings: [] }
+        : { items: [icon('arrow-up', 'tabler'), icon('arrow', 'mdi')], nextCursor: 'MORE', pixabayAvailable: false, warnings: [] },
+    )
+    const mounted = await mount()
+    await search(mounted.host, 'arrow')
+    await rightClick(mounted.host, 'arrow up')
+    await click(byText(mounted.host, 'More from this pack'))
+    await settle()
+    return mounted
+  }
+
+  it('the tile menu opens the right pack: its name, count and license, and every icon of it', async () => {
+    const { host } = await openTablerPack()
+    expect(media.search).toHaveBeenLastCalledWith({ q: '', source: 'iconify', cursor: null, filters: { ...DEFAULT_MEDIA_FILTERS, packs: ['tabler'] } })
+    const page = byLabel(host, 'Pack: Tabler Icons')!
+    expect(page.textContent).toContain('5,900 icons · MIT')
+    expect(tileNames(page)).toEqual(['arrow up', 'star'])
+    expect(document.activeElement?.textContent).toBe('‹ Back')
+    // The main field and the chips wait underneath.
+    expect(host.querySelector('.image-studio__search')?.hasAttribute('hidden')).toBe(true)
+  })
+
+  it('its own search asks only that pack', async () => {
+    const { host } = await openTablerPack()
+    vi.useFakeTimers()
+    await type(byLabel(host, 'Search Tabler Icons') as HTMLInputElement, 'arrow')
+    await act(async () => vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS))
+    expect(media.search).toHaveBeenLastCalledWith({ q: 'arrow', source: 'iconify', cursor: null, filters: { ...DEFAULT_MEDIA_FILTERS, packs: ['tabler'] } })
+    expect(tileNames(byLabel(host, 'Pack: Tabler Icons'))).toEqual(['arrow up'])
+  })
+
+  it('Back returns to the same search, results and next page, with no new request', async () => {
+    const { host } = await openTablerPack()
+    const asked = media.search.mock.calls.length
+    await click(byText(host, '‹ Back'))
+    expect(media.search.mock.calls.length).toBe(asked)
+    expect(field(host).value).toBe('arrow')
+    expect(tileNames(section(host, 'From the web'))).toEqual(['arrow up', 'arrow'])
+    expect(imageStudioSession.getState()).toMatchObject({ pack: null, cursor: 'MORE', searchedQuery: 'arrow' })
+  })
+
+  it('Pin pack saves the pin in the settings, and a second press takes it off', async () => {
+    const { host } = await openTablerPack()
+    await click(byText(host, 'Pin pack'))
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaPinnedPacks: ['tabler'] })
+    expect(byText(host, 'Pinned')?.getAttribute('aria-pressed')).toBe('true')
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaPinnedPacks: ['tabler'] })
+    await click(byText(host, 'Pinned'))
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaPinnedPacks: [] })
+  })
+})
+
+describe('the credit reminder (YAZ-4360, extra 16)', () => {
+  it('a CC-BY icon says that it needs a credit when it is added', async () => {
+    media.search.mockResolvedValue({ items: [item({ collectionName: 'Font Awesome', licenseName: 'CC BY 4.0' })], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    media.import.mockResolvedValue({ mimeType: 'image/svg+xml', dataURL: `data:image/svg+xml;base64,${btoa('<svg/>')}`, item: item() })
+    const { host } = await mount()
+    await search(host)
+    await click(byLabel(host, 'Add money bag'))
+    expect(host.querySelector('.image-studio__line')?.textContent).toBe('Credit needed: Font Awesome is CC BY 4.0. Name its author where you publish this board.')
   })
 })

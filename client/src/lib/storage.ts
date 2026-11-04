@@ -369,6 +369,14 @@ export const storage = {
     state = { ...state, settings }
     send('state.setSettings', () => api.state.setSettings(settings))
   },
+  /**
+   * A few fields from a place that has no settings prop (the Add panel's filters and pins, YAZ-4360 / YAZ-4361): laid
+   * over the settings of the moment, and the listeners wake at once, so App's copy is never older than this write.
+   */
+  patchSettings(patch: Partial<SettingsState>): void {
+    storage.setSettings({ ...state.settings, ...patch })
+    listeners.forEach((l) => l())
+  },
 
   /** Sidebar visibility is window identity; global state broadcasts cannot change another window. */
   getSidebarCollapsed: (): boolean => identity.sidebarCollapsed,
