@@ -16,6 +16,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
+import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
@@ -132,7 +133,7 @@ describe('Heading toolbar group (YAZ-923)', () => {
     expect(strip).toEqual([
       'h1', 'h2', 'h3', 'text', '|',
       'checklist', 'bulletList', 'numberedList', '|',
-      'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', '|',
+      'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', 'highlight-more', '|',
       'code', 'link',
     ])
     // The tab order is that order: every item is a button where it stands, and none jumps the queue or leaves it.
@@ -301,6 +302,205 @@ describe('highlight swatches (YAZ-1480)', () => {
 })
 
 /**
+ * The highlight buttons' new look and their ▾ menu (YAZ-4348 demo round 2, `highlightMenu.ts`): each button is a
+ * bold "A" on a square of its wash token; the ▾ opens more colours, Remove highlight and Custom… on the body, so
+ * the toolbar's `overflow: hidden` cannot cut it off, and without taking the focus or the selection.
+ */
+describe('highlight buttons and the ▾ menu (YAZ-4348 demo round 2)', () => {
+  const menu = () => document.querySelector<HTMLElement>('body > .highlight-menu')
+  const isOpen = () => menu() !== null && !menu()!.hidden
+  const menuItem = (label: string) => {
+    const el = menu()?.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+    if (el == null) throw new Error(`no menu item: ${label}`)
+    return el
+  }
+  /** A real click on a menu item: the mousedown the menu cancels, then the click. */
+  const clickItem = async (label: string) => {
+    const el = menuItem(label)
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    el.dispatchEvent(down)
+    expect(down.defaultPrevented).toBe(true)
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+    await settle()
+  }
+  const key = (k: string) => {
+    const event = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })
+    document.activeElement!.dispatchEvent(event)
+    return event
+  }
+  const customInput = () => document.querySelector<HTMLInputElement>('input.table-colour-input')!
+
+  afterEach(() => {
+    document.querySelectorAll('.highlight-menu').forEach((el) => el.remove())
+  })
+
+  it('each highlight button is a bold "A" on a square of its own wash token, and the ▾ follows them', async () => {
+    const { view } = await mount('hello world\n')
+    await select(view, 'world')
+    const tokens = ['--mark-bg', '--mark-bg-green', '--mark-bg-blue', '--mark-bg-pink']
+    SWATCHES.forEach((key, i) => {
+      const square = must(key).querySelector('svg rect.highlight-icon__wash')
+      expect(square?.getAttribute('fill')).toBe(`var(${tokens[i]})`)
+      const letter = must(key).querySelector('svg text.highlight-icon__a')
+      expect(letter?.textContent).toBe('A')
+      expect(letter?.getAttribute('font-weight')).toBe('800')
+    })
+    const keys = order()
+    expect(keys[keys.indexOf('highlight-pink') + 1]).toBe('highlight-more')
+    expect(must('highlight-more').getAttribute('aria-label')).toBe('More highlight colours')
+  })
+
+  it('the lit button is the selection\'s colour (the ring); the ▾ lights for a menu or custom colour', async () => {
+    const { view } = await mount('<mark class="highlight-blue">blue</mark> <mark class="highlight-orange">orange</mark> <mark style="background-color: #3366ff">mine</mark> plain\n')
+    await select(view, 'blue')
+    expect(litDots()).toEqual(['highlight-blue'])
+    expect(must('highlight-more').classList.contains('active')).toBe(false)
+    await select(view, 'orange')
+    expect(litDots()).toEqual([])
+    expect(must('highlight-more').classList.contains('active')).toBe(true)
+    await select(view, 'mine')
+    expect(must('highlight-more').classList.contains('active')).toBe(true)
+    await select(view, 'plain')
+    expect(must('highlight-more').classList.contains('active')).toBe(false)
+  })
+
+  it('the ▾ opens the menu on the body under it — four colours, Remove highlight, Custom… — and keeps the selection and the focus', async () => {
+    const { view } = await mount('hello world\n')
+    await select(view, 'world')
+    const before = view.state.selection
+    await press('highlight-more')
+    expect(isOpen()).toBe(true)
+    expect(menu()!.closest('.milkdown-toolbar')).toBeNull()
+    expect(menu()!.getAttribute('role')).toBe('menu')
+    const labels = [...menu()!.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))
+    expect(labels).toEqual(['Highlight orange', 'Highlight purple', 'Highlight red', 'Highlight gray', 'Remove highlight', 'Custom…'])
+    expect(menuItem('Highlight orange').querySelector('rect')?.getAttribute('fill')).toBe('var(--mark-bg-orange)')
+    expect(view.state.selection.eq(before)).toBe(true)
+    expect(view.hasFocus()).toBe(true)
+    // A second press closes it.
+    await press('highlight-more')
+    expect(isOpen()).toBe(false)
+  })
+
+  it('a colour in the menu highlights the selection with its class form, closes the menu, and the strip lights the ▾', async () => {
+    const { crepe, view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    await clickItem('Highlight orange')
+    expect(getMarkdownForSave(crepe)).toBe('hello <mark class="highlight-orange">world</mark>\n')
+    expect(isOpen()).toBe(false)
+    expect(must('highlight-more').classList.contains('active')).toBe(true)
+    // Opened again, orange wears the ring.
+    await press('highlight-more')
+    expect(menuItem('Highlight orange').classList.contains('active')).toBe(true)
+    expect(menuItem('Highlight orange').getAttribute('aria-checked')).toBe('true')
+    expect(menuItem('Highlight red').getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('Remove highlight takes every colour off the selection', async () => {
+    const { crepe, view } = await mount('==a== <mark class="highlight-red">b</mark> c\n')
+    await selectSpan(view, 'a', 'c')
+    await press('highlight-more')
+    await clickItem('Remove highlight')
+    expect(getMarkdownForSave(crepe)).toBe('a b c\n')
+  })
+
+  it('Escape closes it and goes no further; a mousedown outside closes it; a new selection closes it', async () => {
+    const { view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    const esc = key('Escape')
+    expect(esc.defaultPrevented).toBe(true)
+    expect(isOpen()).toBe(false)
+    expect(view.state.selection.empty).toBe(false)
+
+    await press('highlight-more')
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(isOpen()).toBe(false)
+
+    await press('highlight-more')
+    await select(view, 'hello')
+    expect(isOpen()).toBe(false)
+  })
+
+  it('works from the keyboard: arrows move through the items, Enter picks; a key press on the ▾ opens it on the first item', async () => {
+    const { crepe, view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    const current = () => menu()!.querySelector('.is-current')?.getAttribute('aria-label') ?? null
+    expect(current()).toBeNull()
+    expect(key('ArrowDown').defaultPrevented).toBe(true)
+    expect(current()).toBe('Highlight orange')
+    key('ArrowRight')
+    expect(current()).toBe('Highlight purple')
+    key('End')
+    expect(current()).toBe('Custom…')
+    key('ArrowDown')
+    expect(current()).toBe('Highlight orange')
+    key('ArrowUp')
+    key('ArrowUp')
+    expect(current()).toBe('Remove highlight')
+    key('Home')
+    key('ArrowRight')
+    key('ArrowRight')
+    expect(current()).toBe('Highlight red')
+    expect(key('Enter').defaultPrevented).toBe(true)
+    await settle()
+    expect(getMarkdownForSave(crepe)).toBe('hello <mark class="highlight-red">world</mark>\n')
+    expect(isOpen()).toBe(false)
+
+    // Enter or Space on a focused ▾ is a click with no pointer (detail 0): the menu opens on its first item.
+    must('highlight-more').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 }))
+    expect(isOpen()).toBe(true)
+    expect(current()).toBe('Highlight orange')
+    // Any other key closes it and goes on to the note.
+    expect(key('x').defaultPrevented).toBe(false)
+    expect(isOpen()).toBe(false)
+  })
+
+  it('Custom… opens the system colour picker; the pick goes to the text selected then, as the style form, in one undo step', async () => {
+    const { crepe, view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    await clickItem('Custom…')
+    expect(isOpen()).toBe(false)
+    const input = customInput()
+    expect(input.value).toBe('#ffd500')
+    // The panel does not block the window: the user selects other text, then picks.
+    await select(view, 'hello')
+    input.value = '#3366ff'
+    input.dispatchEvent(new Event('change'))
+    await settle()
+    expect(getMarkdownForSave(crepe)).toBe('hello <mark style="background-color: #3366ff">world</mark>\n')
+    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe('hello')
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('hello world\n')
+  })
+
+  it('on a custom run, Custom… wears the ring and the picker starts on its colour', async () => {
+    const { view } = await mount('<mark style="background-color: #3366ff">mine</mark>\n')
+    await select(view, 'mine')
+    await press('highlight-more')
+    expect(menuItem('Custom…').getAttribute('aria-checked')).toBe('true')
+    await clickItem('Custom…')
+    expect(customInput().value).toBe('#3366ff')
+  })
+
+  it('a custom pick on text deleted while the picker was open does nothing', async () => {
+    const { crepe, view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    await clickItem('Custom…')
+    const from = view.state.doc.textContent.indexOf('world') + 1
+    view.dispatch(view.state.tr.delete(from, from + 5))
+    customInput().value = '#3366ff'
+    customInput().dispatchEvent(new Event('change'))
+    expect(getMarkdownForSave(crepe)).not.toContain('<mark')
+    expect(view.state.doc.textContent).toBe('hello ')
+  })
+})
+
+/**
  * The Lists group and Underline (YAZ-3806 T1, T3, T8), and T in a list (YAZ-4369, which replaces T4). The rule itself
  * is `listButtons.test.ts`'s table; here the buttons are pressed on the real strip.
  */
@@ -385,7 +585,7 @@ describe('the toolbar setting (YAZ-3806 T5, T6)', () => {
 
     toolbarPrefs.value = { ...DEFAULT_TOOLBAR, hidden: ['checklist', 'bulletList', 'numberedList'] }
     await tick()
-    expect(strip()).toEqual(['h1', 'h2', 'h3', 'text', '|', 'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', '|', 'code', 'link'])
+    expect(strip()).toEqual(['h1', 'h2', 'h3', 'text', '|', 'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', 'highlight-more', '|', 'code', 'link'])
 
     toolbarPrefs.value = { ...DEFAULT_TOOLBAR, groups: ['lists', 'lineType', 'textStyle', 'insert'], buttons: ['link', ...DEFAULT_TOOLBAR.buttons.filter((b) => b !== 'link')] }
     await tick()
@@ -397,7 +597,7 @@ describe('the toolbar setting (YAZ-3806 T5, T6)', () => {
     expect(strip()).toEqual([
       'h1', 'h2', 'h3', 'text', '|',
       'checklist', 'bulletList', 'numberedList', '|',
-      'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', '|',
+      'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', 'highlight-more', '|',
       'code', 'link',
     ])
   })

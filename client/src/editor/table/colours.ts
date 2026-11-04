@@ -92,7 +92,26 @@ const NO_PICK = () => {}
  * for a new value, so the same colour picked for other cells still applies. One pick, one undo step.
  */
 export function pickCustomColour(view: EditorView, target: CellSelection, attr: 'fill' | 'color'): void {
-  const doc = view.dom.ownerDocument
+  const colours = new Set<unknown>()
+  target.forEachCell((cell) => void colours.add(cell.attrs[attr]))
+  const [only] = colours
+  const start = colours.size === 1 && typeof only === 'string' && only.startsWith('#') ? only : START
+  view.dispatch(view.state.tr.setMeta(pickKey, { anchor: target.$anchorCell.pos, head: target.$headCell.pos }))
+  openColourPicker(view.dom.ownerDocument, start, (color) => {
+    if (view.isDestroyed) return
+    const cells = targetOf(view.state)
+    const tr = view.state.tr.setMeta(pickKey, null)
+    if (cells !== null) setCellsAttr(closeHistory(tr), rectOf(cells), attr, color)
+    view.dispatch(tr)
+  })
+}
+
+/**
+ * Open the system colour picker on `start` (`#rrggbb`); `onPick` gets the lowercase `#rrggbb` picked, once, on
+ * the input's `change`. A later open replaces an earlier one's `onPick`. Shared with the note's highlight ▾ menu
+ * (YAZ-4348 demo round 2, `highlightMenu.ts`), which keeps its own target the same way.
+ */
+export function openColourPicker(doc: Document, start: string, onPick: (color: string) => void): void {
   let picker = pickers.get(doc)
   if (picker === undefined) {
     const input = doc.createElement('input')
@@ -111,18 +130,8 @@ export function pickCustomColour(view: EditorView, target: CellSelection, attr: 
     picker = made
   }
   if (!picker.input.isConnected) doc.body.appendChild(picker.input)
-  const colours = new Set<unknown>()
-  target.forEachCell((cell) => void colours.add(cell.attrs[attr]))
-  const [only] = colours
-  picker.input.value = colours.size === 1 && typeof only === 'string' && only.startsWith('#') ? only : START
-  view.dispatch(view.state.tr.setMeta(pickKey, { anchor: target.$anchorCell.pos, head: target.$headCell.pos }))
-  picker.onPick = (color) => {
-    if (view.isDestroyed) return
-    const cells = targetOf(view.state)
-    const tr = view.state.tr.setMeta(pickKey, null)
-    if (cells !== null) setCellsAttr(closeHistory(tr), rectOf(cells), attr, color)
-    view.dispatch(tr)
-  }
+  picker.input.value = start
+  picker.onPick = onPick
   picker.input.click()
 }
 

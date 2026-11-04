@@ -36,6 +36,11 @@
   --mark-bg-green: rgba(80, 200, 120, 0.35);
   --mark-bg-blue: rgba(80, 160, 255, 0.35);
   --mark-bg-pink: rgba(255, 120, 180, 0.35);
+  /* The highlight ▾ menu's colours (YAZ-4348 demo round 2): translucent too, one value for both themes. */
+  --mark-bg-orange: rgba(255, 150, 40, 0.35);
+  --mark-bg-purple: rgba(160, 110, 255, 0.35);
+  --mark-bg-red: rgba(255, 80, 80, 0.35);
+  --mark-bg-gray: rgba(150, 150, 150, 0.35);
   /* Amber notice family: conflict bar + rename banner — the two that ask for a decision. (The
      link-notice toast left it for the context menu's surface tokens, YAZ-1674: it confirms as
      often as it warns.) */
@@ -497,11 +502,103 @@ button {
 .milkdown .ProseMirror mark.highlight-green { background: var(--mark-bg-green); }
 .milkdown .ProseMirror mark.highlight-blue { background: var(--mark-bg-blue); }
 .milkdown .ProseMirror mark.highlight-pink { background: var(--mark-bg-pink); }
+.milkdown .ProseMirror mark.highlight-orange { background: var(--mark-bg-orange); }
+.milkdown .ProseMirror mark.highlight-purple { background: var(--mark-bg-purple); }
+.milkdown .ProseMirror mark.highlight-red { background: var(--mark-bg-red); }
+.milkdown .ProseMirror mark.highlight-gray { background: var(--mark-bg-gray); }
+/* A custom colour (YAZ-4348 demo round 2) paints its own wash inline (`marks/highlight.ts` `customWash`). */
 
-/* A lit swatch (🔒 D5) reads as a pressed button, one step darker than hover — the dot's fill IS its colour,
-   so Crepe's "active = primary-coloured icon" cue only reached the 0.35-opacity outline and was too easy to miss. */
-.milkdown .milkdown-toolbar .toolbar-item.active[data-toolbar-item^='highlight'] {
+/* A lit highlight button (🔒 D5; YAZ-4348 demo round 2): a ring in the accent round its "A" square. The square's
+   fill IS its colour, so a pressed-button background would hide behind it, and Crepe's "active = primary-coloured
+   icon" cue only reached the square's faint outline. */
+.milkdown .milkdown-toolbar .toolbar-item.active[data-toolbar-item^='highlight']:not([data-toolbar-item='highlight-more']) {
+  box-shadow: inset 0 0 0 2px var(--crepe-color-primary);
+}
+
+/* The ▾ after the highlight buttons (YAZ-4348 demo round 2): narrow, as the cell toolbar's; lit as a pressed button
+   when the selection has one of its menu's colours. */
+.milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] {
+  width: 16px;
+  margin-left: -4px;
+  padding: 4px 0;
+}
+.milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] svg {
+  width: 16px;
+}
+.milkdown .milkdown-toolbar .toolbar-item.active[data-toolbar-item='highlight-more'] {
   background: var(--crepe-color-selected);
+}
+
+/* The highlight ▾ menu (YAZ-4348 demo round 2, `editor/highlightMenu.ts`): on the body, fixed under the ▾, so the
+   toolbar's `overflow: hidden` cannot cut it off. */
+.highlight-menu {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  font-family: var(--font);
+}
+.highlight-menu[hidden] {
+  display: none;
+}
+.highlight-menu__swatches {
+  display: flex;
+  gap: 2px;
+  padding-bottom: 2px;
+}
+.highlight-menu__swatch,
+.highlight-menu__row {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.highlight-menu__swatch {
+  display: block;
+  width: 32px;
+  height: 32px;
+  padding: 4px;
+}
+.highlight-menu__swatch svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+.highlight-menu__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 7px;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+.highlight-menu :is(.highlight-menu__swatch, .highlight-menu__row):hover,
+.highlight-menu .is-current {
+  background: var(--bg-hover);
+}
+.highlight-menu .highlight-menu__swatch.active {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+/* Custom…'s swatch: the hue wheel, or the selection's own custom colour, ringed, when it has one. */
+.highlight-menu__custom-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: conic-gradient(#ff5a5a, #ffd500, #50c878, #50a0ff, #a06eff, #ff5a5a);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 20%, transparent);
+}
+.highlight-menu__row.active .highlight-menu__custom-swatch {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent);
 }
 
 /* Crepe's reset gives paragraphs line-height 1.5 and 4px vertical padding; the padding is

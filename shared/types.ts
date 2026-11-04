@@ -1169,7 +1169,9 @@ export const DEFAULT_SIDEBAR_TABS: SidebarTabsPrefs = { order: [...SIDEBAR_TABS]
 export const TOOLBAR_LAYOUT = {
   lineType: ['h1', 'h2', 'h3', 'text'],
   lists: ['checklist', 'bulletList', 'numberedList'],
-  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink'],
+  // `highlight-more` (YAZ-4348 demo round 2): the ▾ of more highlight colours. Last, so a saved order (the loader
+  // appends a new button) puts it right after the highlight buttons too.
+  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', 'highlight-more'],
   insert: ['code', 'link'],
 } as const
 export type ToolbarGroupId = keyof typeof TOOLBAR_LAYOUT
