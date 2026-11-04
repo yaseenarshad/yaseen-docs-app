@@ -44,6 +44,7 @@ import type {
 
 import { getElementAbsoluteCoords, getElementBounds } from "./bounds";
 import { getUncroppedImageElement } from "./cropElement";
+import { isDarkInvertedImage } from "./iconColors";
 import { LinearElementEditor } from "./linearElementEditor";
 import {
   getBoundTextElement,
@@ -159,6 +160,8 @@ export interface ExcalidrawElementWithCanvas {
   containingFrameOpacity: number;
   /** YAZ-3944 D2: the GIF frame drawn on `canvas` (`GifPlayer.frameToken`) */
   gifFrame?: number;
+  /** YAZ-4354 1D: the Edit colors preview drawn on `canvas` */
+  iconPreview?: HTMLImageElement | null;
 }
 
 const cappedElementCanvasSize = (
@@ -392,8 +395,13 @@ const drawElementOnCanvas = (
           ? renderConfig.imageCache.get(element.fileId)
           : null;
       // YAZ-3944 D2: the frame on show of a playing GIF, else the still image
+      // YAZ-4354 1D: Edit colors fades the other parts while a number is pointed at
       const img = isInitializedImageElement(element)
-        ? renderConfig.gifPlayer?.frameFor(element) ?? cacheEntry?.image
+        ? (renderConfig.colorEditPreview?.elementId === element.id
+            ? renderConfig.colorEditPreview.image
+            : null) ??
+          renderConfig.gifPlayer?.frameFor(element) ??
+          cacheEntry?.image
         : undefined;
 
       if (img != null && !(img instanceof Promise)) {
@@ -418,9 +426,10 @@ const drawElementOnCanvas = (
               height: "naturalHeight" in img ? img.naturalHeight : img.height,
             };
 
+        // YAZ-4355 1E: only a one-color icon inverts
         const shouldInvertImage =
           renderConfig.theme === THEME.DARK &&
-          cacheEntry?.mimeType === MIME_TYPES.svg;
+          isDarkInvertedImage(cacheEntry?.mimeType, cacheEntry?.iconKind);
 
         if (shouldInvertImage && isSafari) {
           const devicePixelRatio = window.devicePixelRatio || 1;
@@ -807,9 +816,15 @@ const generateElementWithCanvas = (
   const gifFrame = isImageElement(element)
     ? renderConfig.gifPlayer?.frameToken(element)
     : undefined;
+  // YAZ-4354 1D: a new Edit colors preview draws this element again
+  const iconPreview =
+    renderConfig.colorEditPreview?.elementId === element.id
+      ? renderConfig.colorEditPreview.image
+      : null;
   const changed =
     !prevElementWithCanvas ||
     shouldRegenerateBecauseZoom ||
+    (prevElementWithCanvas.iconPreview ?? null) !== iconPreview ||
     prevElementWithCanvas.theme !== appState.theme ||
     prevElementWithCanvas.imageCrop !== imageCrop ||
     prevElementWithCanvas.containingFrameOpacity !== containingFrameOpacity;
@@ -831,6 +846,7 @@ const generateElementWithCanvas = (
     }
 
     elementWithCanvas.gifFrame = gifFrame;
+    elementWithCanvas.iconPreview = iconPreview;
     elementWithCanvasCache.set(element, elementWithCanvas);
 
     return elementWithCanvas;

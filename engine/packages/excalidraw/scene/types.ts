@@ -45,6 +45,8 @@ export type StaticCanvasRenderConfig = {
   theme: AppState["theme"];
   /** YAZ-3944 D2: the board's GIF frames; absent (exports), a GIF shows its first frame */
   gifPlayer?: GifPlayer;
+  /** YAZ-4354 1D: Edit colors' faded preview of one icon (a loaded picture, never page SVG) */
+  colorEditPreview?: { elementId: string; image: HTMLImageElement } | null;
 };
 
 export type SVGRenderConfig = {

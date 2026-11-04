@@ -9,6 +9,7 @@ import {
 } from "@excalidraw/common";
 
 import {
+  getIconInfo,
   getSmartShapeMetadata,
   hasStrokeColor,
   hasVectorStrokeWidth,
@@ -424,6 +425,22 @@ export const ContextualPropertiesToolbar = ({
         targetElements.every(isUnboundTextElement)));
   const isImageTarget =
     targetElements.length > 0 && targetElements.every(isImageElement);
+  // YAZ-4352 1B: icons get their own bar; a photo, or icons with a photo, keep today's
+  const iconKinds = isImageTarget
+    ? new Set(
+        targetElements.map((element) =>
+          isInitializedImageElement(element) && !element.locked
+            ? getIconInfo(app.files[element.fileId]).kind
+            : "photo",
+        ),
+      )
+    : null;
+  const iconBar =
+    !iconKinds || iconKinds.has("photo")
+      ? null
+      : iconKinds.size === 1 && iconKinds.has("one")
+      ? ("one" as const)
+      : ("many" as const);
   const isExclusiveVectorStrokeTarget = hasExclusiveVectorStrokeTarget(
     appState,
     targetElements,
@@ -459,6 +476,8 @@ export const ContextualPropertiesToolbar = ({
 
   if (
     appState.viewModeEnabled ||
+    // YAZ-4354 1D: Edit colors has its own strip below the icon
+    appState.colorEditingElementId ||
     (!isTextTarget &&
       !isImageTarget &&
       !isVectorPropertiesTarget &&
@@ -588,7 +607,37 @@ export const ContextualPropertiesToolbar = ({
           />
         </>
       )}
-      {isImageTarget && (
+      {isImageTarget && iconBar === "one" && (
+        <>
+          {/* YAZ-4352 1B: a one-color icon: Color, then Outline; Border moves into More properties */}
+          <span className="contextual-properties-toolbar__label">Color</span>
+          {renderAction("changeIconColors", { contextToolbar: true })}
+          <ContextualToolbarDivider />
+          <span className="contextual-properties-toolbar__label">Outline</span>
+          {renderAction("changeIconOutline", { contextToolbar: true })}
+          <ContextualSecondaryProperties
+            renderAction={renderAction}
+            showImageBorder
+            showRoundness={predicates.roundness}
+            showOpacity={predicates.opacity}
+          />
+        </>
+      )}
+      {isImageTarget && iconBar === "many" && (
+        <>
+          {/* YAZ-4352 1B: a many-color icon: Edit colors (1D), Outline; Border in More properties */}
+          {renderAction("colorEditor", { contextToolbar: true })}
+          <span className="contextual-properties-toolbar__label">Outline</span>
+          {renderAction("changeIconOutline", { contextToolbar: true })}
+          <ContextualSecondaryProperties
+            renderAction={renderAction}
+            showImageBorder
+            showRoundness={predicates.roundness}
+            showOpacity={predicates.opacity}
+          />
+        </>
+      )}
+      {isImageTarget && iconBar === null && (
         <>
           <span className="contextual-properties-toolbar__label">Border</span>
           {renderAction("changeStrokeColor", { contextToolbar: true })}
@@ -776,8 +825,11 @@ const ContextualSecondaryProperties = ({
   showRoundness = false,
   showOpacity = false,
   showTextBackgroundPadding = false,
+  showImageBorder = false,
 }: {
   renderAction: ActionManager["renderAction"];
+  /** YAZ-4352 1B: an icon's box border (its color and width) */
+  showImageBorder?: boolean;
   showBackgroundColor?: boolean;
   showFreedrawMode?: boolean;
   showStrokeStyle?: boolean;
@@ -793,7 +845,8 @@ const ContextualSecondaryProperties = ({
     !showSloppiness &&
     !showRoundness &&
     !showOpacity &&
-    !showTextBackgroundPadding
+    !showTextBackgroundPadding &&
+    !showImageBorder
   ) {
     return null;
   }
@@ -803,6 +856,21 @@ const ContextualSecondaryProperties = ({
       <ContextualToolbarDivider />
       <ToolbarPopover label="More properties" icon={DotsHorizontalIcon}>
         <div className="contextual-properties-toolbar__secondary-properties">
+          {showImageBorder && (
+            <div
+              className="contextual-properties-toolbar__image-border"
+              role="group"
+              aria-label="Border"
+            >
+              <span className="contextual-properties-toolbar__label">
+                Border
+              </span>
+              {renderAction("changeStrokeColor", { contextToolbar: true })}
+              {renderAction("changeVectorStrokeWidth", {
+                contextToolbar: true,
+              })}
+            </div>
+          )}
           {showBackgroundColor &&
             renderAction("changeBackgroundColor", { contextToolbar: true })}
           {showFreedrawMode &&

@@ -815,6 +815,7 @@ const BUSY_APP_STATE_KEYS = [
   'selectedLinearElement',
   'editingFrame',
   'croppingElementId',
+  'colorEditingElementId',
   'selectedElementsAreBeingDragged',
   'isResizing',
   'isRotating',

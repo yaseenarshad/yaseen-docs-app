@@ -504,6 +504,13 @@ body.excalidraw-cursor-resize * {
     width: auto;
   }
 
+  // YAZ-4352 1B: an icon's box border in More properties: its label, color and width in one row
+  .contextual-properties-toolbar__image-border {
+    align-items: center;
+    display: flex;
+    gap: 0.35rem;
+  }
+
   // the size popover: the slider, then the exact field
   .font-size-popover {
     align-items: center;

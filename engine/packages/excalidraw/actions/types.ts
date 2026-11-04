@@ -156,7 +156,10 @@ export type ActionName =
   | "wrapSelectionInFrame"
   | "toggleShapeSwitch"
   | "togglePolygon"
-  | "changeSmartShape";
+  | "changeSmartShape"
+  | "changeIconColors"
+  | "changeIconOutline"
+  | "colorEditor";
 
 export type PanelComponentProps = {
   elements: readonly ExcalidrawElement[];
