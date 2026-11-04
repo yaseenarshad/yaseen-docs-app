@@ -673,7 +673,12 @@ describe('the star and the right-click menu (D5, D10, demo 6B)', () => {
     await act(async () => input.form!.requestSubmit())
     await settle()
     expect(media.used).toHaveBeenCalledWith({ op: 'add-word', item: expect.objectContaining({ itemKey: 'iconify:noto:money-bag' }), word: 'Cash' })
-    expect(host.querySelector('.image-studio__line')?.textContent).toContain('now comes first for “cash”')
+    // The row stays open with the new chip, the field empty for the next word, and no line above the list (YAZ-4348 demo round 2)
+    expect([...host.querySelectorAll('.image-studio__word-chip')].map((c) => c.firstChild?.textContent)).toEqual(['money bag', 'cash'])
+    expect((byLabel(host, 'A word for money bag') as HTMLInputElement).value).toBe('')
+    expect(host.querySelector('.image-studio__line')).toBeNull()
+    // The tile whose row is open is ringed
+    expect(byLabel(host, 'Add money bag')!.closest('.image-studio__card')?.classList.contains('is-editing')).toBe(true)
     await type(field(host), 'cash')
     expect(tileNames(section(host, 'Best matches'))).toEqual(['money bag'])
   })

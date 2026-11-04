@@ -44,6 +44,13 @@
   padding: 0 2px 2px;
 }
 
+/* The row's own words are chips, not the row's one stretched label (`.image-studio__inline span`). */
+.image-studio__inline .image-studio__word-head span {
+  flex: none;
+  overflow: visible;
+  white-space: normal;
+}
+
 .image-studio__word-chips {
   display: flex;
   flex-wrap: wrap;
@@ -280,6 +287,30 @@
   min-width: 0;
   overflow-anchor: auto;
   position: relative;
+}
+
+/* YAZ-4348 demo round 2: the tile whose row is open, and the notch of its row that points up at it. */
+.image-studio__card.is-editing {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.image-studio__inline[style*='--notch'] {
+  border-color: var(--color-primary);
+  position: relative;
+}
+
+.image-studio__inline[style*='--notch']::before {
+  background: var(--island-bg-color);
+  border-left: 1px solid var(--color-primary);
+  border-top: 1px solid var(--color-primary);
+  content: '';
+  height: 8px;
+  left: var(--notch);
+  position: absolute;
+  top: -5px;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
 }
 
 .image-studio__card:hover,

@@ -30,7 +30,6 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { MAX_COMPONENT_NAME_LENGTH, MAX_ITEM_WORD_LENGTH, PIXABAY_SECRET, type ComponentItem, type MediaBytesProvider, type MediaLibraryFile, type StudioItem } from '@shared/types'
-import { normalizeWord } from '@shared/mediaLibrary'
 import { DEFAULT_MEDIA_FILTERS, needsCredit, sanitizeMediaFilters, type IconPackInfo, type MediaFilters } from '@shared/iconPacks'
 import { parseComponentFragment } from '@shared/savedComponents'
 import { api } from '../api'
@@ -705,12 +704,13 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     }
   }
 
+  // YAZ-4348 demo round 2: the row stays open after an add, with the new chip in it, and no line above the list (it
+  // pushed the list down, so the tile and its row jumped); the field empties for the next word.
   const saveWord = async (item: StudioItem, word = draft) => {
-    setOpenTile(null)
     if (word.trim() === '') return
+    setDraft('')
     try {
       setLibrary(await api.media.used({ op: 'add-word', item, word }))
-      setLine({ text: `“${item.title}” now comes first for “${normalizeWord(word) ?? word.trim()}”.` })
     } catch (cause) {
       set({ error: getErrorMessage(cause, 'Could not add the word') })
     }
@@ -845,7 +845,14 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     const variantsOpen = openGroup === slot
     const busy = insertingKey !== null || (component !== undefined && library.busySlug === component.slug)
     return (
-      <article className="image-studio__card" key={item.itemKey} data-slot={slot} aria-busy={busy || undefined} onContextMenu={(event) => openMenu(event, slot)}>
+      <article
+        // The tile whose row is open (Search words, Rename, Delete) is ringed, so the row says whose it is (YAZ-4348 demo round 2)
+        className={openTile?.key === slot && openTile.mode !== 'menu' ? 'image-studio__card is-editing' : 'image-studio__card'}
+        key={item.itemKey}
+        data-slot={slot}
+        aria-busy={busy || undefined}
+        onContextMenu={(event) => openMenu(event, slot)}
+      >
         <button
           type="button"
           className="image-studio__add"
@@ -974,12 +981,14 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     )
 
   /** The full-width row that "Search words…", Rename or Delete opens under the tile's row. */
-  const inlineRow = (item: StudioItem, where: string): ReactNode => {
+  const inlineRow = (item: StudioItem, where: string, column = 0): ReactNode => {
+    // A notch over the tile's column points up at the ringed tile
+    const notch = { '--notch': `${((column + 0.5) / ROW) * 100}%` } as CSSProperties
     if (openTile?.key !== slotOf(where, item) || openTile.mode === 'menu') return null
     const component = item.provider === 'component' ? componentsBySlug.get(item.providerId) : undefined
     if (openTile.mode === 'confirm' && component) {
       return (
-        <div className="image-studio__inline" key={`${item.itemKey}:row`} role="alertdialog" aria-label={`Delete ${component.name}?`}>
+        <div className="image-studio__inline" style={notch} key={`${item.itemKey}:row`} role="alertdialog" aria-label={`Delete ${component.name}?`}>
           <span>Delete “{component.name}”?</span>
           <button
             type="button"
@@ -1002,6 +1011,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     return (
       <form
         className={renaming ? 'image-studio__inline' : 'image-studio__inline image-studio__word-form'}
+        style={notch}
         key={`${item.itemKey}:row`}
         onSubmit={(event) => {
           event.preventDefault()
@@ -1064,7 +1074,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     items.forEach((item, i) => {
       cells.push(tile(item, where))
       const rowEnd = i % ROW === ROW - 1 || i === items.length - 1
-      if (rowEnd) for (const other of items.slice(i - (i % ROW), i + 1)) cells.push(variantsRow(other, where), inlineRow(other, where))
+      if (rowEnd) items.slice(i - (i % ROW), i + 1).forEach((other, column) => cells.push(variantsRow(other, where), inlineRow(other, where, column)))
     })
     return (
       <div className="image-studio__grid" style={{ '--studio-cols': ROW } as CSSProperties}>
