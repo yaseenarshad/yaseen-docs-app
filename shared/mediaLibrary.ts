@@ -7,15 +7,14 @@
  * The item validator is the web app's `convex/mediaTypes.ts` verbatim: an item is whole or it is
  * not one at all (a wrong-typed optional REJECTS rather than being dropped — a half-read item
  * would show a broken tile). The FILE is lenient around that: a bad row is dropped, the rest
- * survive, so one hand-edit cannot cost the user 499 favorites. Both lists are newest-first,
- * de-duplicated by `itemKey`, and capped on the tail — the same order the web app's
- * `by_ownerId_and_updatedAt` index answered in.
+ * survive, so one hand-edit cannot cost the user their other favorites. The lists are newest-first and
+ * de-duplicated by `itemKey` — the same order the web app's `by_ownerId_and_updatedAt` index answered in.
+ * `recent` and `used` are capped on the tail; `favorites` has no cap (YAZ-4363): the user builds it by hand.
  */
 import {
   AUTO_FAVORITE_USES,
   MAX_ITEM_WORDS,
   MAX_ITEM_WORD_LENGTH,
-  MAX_MEDIA_FAVORITES,
   MAX_MEDIA_USED,
   RECENT_LIMIT,
   isMediaItemKind,
@@ -93,13 +92,13 @@ export function sanitizeMediaLibrary(raw: unknown): MediaLibraryFile | null {
   const list = (rows: unknown, cap: number) => cleanList(rows, normalizeStoredMediaItem, (item) => item.itemKey, cap)
   // A library from before YAZ-4157 has no `used`: it reads as none, and nothing else changes.
   const used = cleanList(raw.used, normalizeUsedItem, (item) => item.itemKey, MAX_MEDIA_USED)
-  return { version: 1, favorites: list(raw.favorites, MAX_MEDIA_FAVORITES), recent: list(raw.recent, RECENT_LIMIT), used }
+  return { version: 1, favorites: list(raw.favorites, Infinity), recent: list(raw.recent, RECENT_LIMIT), used }
 }
 
-/** The web app's `addFavorite`: a new key goes to the head, an existing one changes nothing. */
+/** The web app's `addFavorite`: a new key goes to the head, an existing one changes nothing. Nothing falls off (YAZ-4363). */
 export function addFavorite(lib: MediaLibraryFile, item: MediaItem, now: number): MediaLibraryFile {
   if (lib.favorites.some((f) => f.itemKey === item.itemKey)) return lib
-  return { ...lib, favorites: [stamp(item, now), ...lib.favorites].slice(0, MAX_MEDIA_FAVORITES) }
+  return { ...lib, favorites: [stamp(item, now), ...lib.favorites] }
 }
 
 /**

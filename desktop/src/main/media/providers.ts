@@ -87,6 +87,14 @@ export interface MediaProvidersDeps {
   /** `secrets.read(PIXABAY_SECRET)` — null when no key is stored or it cannot be decrypted here. */
   readPixabayKey: () => Promise<string | null>
   cache: MediaCache
+  /**
+   * A favorite's own copy (YAZ-4363, `library/favoriteCopies.ts`), asked FIRST by `preview` and `import`, so a
+   * favorite shows and adds with no network and no key. Null = no copy; a copy that cannot be read is no copy.
+   */
+  favoriteCopy?: {
+    preview(req: MediaBytesRequest): Promise<MediaPreviewResponse | null>
+    import(req: MediaBytesRequest): Promise<MediaImportResponse | null>
+  }
 }
 
 export interface MediaProviders {
@@ -102,7 +110,11 @@ type ProviderFailure = { provider: SearchProvider; error: BridgeFailure }
 
 const warningFor = (provider: SearchProvider) => (provider === 'iconify' ? 'Icons are temporarily unavailable.' : 'Pixabay graphics are temporarily unavailable.')
 
-export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProvidersDeps): MediaProviders {
+export function createMediaProviders({ fetch, readPixabayKey, cache, favoriteCopy }: MediaProvidersDeps): MediaProviders {
+  /** The favorite copy step (YAZ-4363): its answer, or null when there is no copy or it failed. */
+  const fromCopy = <T,>(read: ((req: MediaBytesRequest) => Promise<T | null>) | undefined, req: MediaBytesRequest): Promise<T | null> =>
+    read === undefined ? Promise.resolve(null) : read(req).catch(() => null)
+
   /**
    * A request that never got an answer is OFFLINE; one that got a bad answer is the provider's fault. A 429 is asked
    * once more, after the wait its `Retry-After` names (1 s when it names none, 2 s at most): typing searches on a pause
@@ -450,6 +462,8 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     },
 
     async preview(req) {
+      const copy = await fromCopy(favoriteCopy?.preview, req)
+      if (copy !== null) return copy
       const cacheKey = previewCacheKey(req.provider, req.id)
       const hit = await cache.read<MediaPreviewResponse>(cacheKey)
       // The cache first, always: it is what keeps a favorited tile visible with no network and,
@@ -463,6 +477,8 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     },
 
     async import(req) {
+      const copy = await fromCopy(favoriteCopy?.import, req)
+      if (copy !== null) return copy
       // NEVER cached (🔒 YAZ-1775 D4): these bytes are on their way to `assets/`, which content-addresses
       // and de-duplicates them already (🔒 YAZ-1775 D3).
       const { url, item } = await sourceUrl(req, false, await readPixabayKey())

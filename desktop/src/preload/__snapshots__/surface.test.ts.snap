@@ -98,6 +98,7 @@ lsp.open/1: invoke lsp:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message
 lsp.references/1: invoke lsp:references ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.drawing/1: invoke media:drawing ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.drawingIndex/0: invoke media:drawing-index []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+media.favoriteCopies/0: invoke media:favorite-copies []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.favorites/1: invoke media:favorites ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.import/1: invoke media:import ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.onChanged/1: on media:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off media:changed

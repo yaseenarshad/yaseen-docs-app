@@ -1488,8 +1488,12 @@ export const MEDIA_LIBRARY_FILE = 'media.json'
 export const LIBRARY_COMPONENTS_DIR = 'components'
 /** The components index beside that folder: `<library>/components.json` (🔒 YAZ-1775 D5, YAZ-1819). */
 export const COMPONENTS_INDEX_FILE = 'components.json'
-/** Favorites are capped at the web app's `listFavorites` ceiling; the oldest fall off the end. */
-export const MAX_MEDIA_FAVORITES = 500
+/**
+ * `<library>/favorites/` (YAZ-4363): one full-quality copy of each Iconify or Pixabay favorite, named
+ * `<sha1(itemKey)>.<ext>` — the name comes from the id, so no field in `media.json` can lose it.
+ * Favorites have NO cap (YAZ-4363, round 2 decision 7): a list the user builds by hand never deletes itself.
+ */
+export const LIBRARY_FAVORITES_DIR = 'favorites'
 /** The MRU's length, the web app's `RECENT_LIMIT` exactly. */
 export const RECENT_LIMIT = 60
 /** The `used` rows kept; the one used longest ago falls off (YAZ-4157 D1). */
@@ -1508,6 +1512,21 @@ export type MediaFavoritesRequest = { op: 'list' } | { op: 'add'; item: MediaIte
  * word `query`, and the favorite at the third), `add-word` is "Add a word…" (the item, so a row can start at 0).
  */
 export type MediaUsedRequest = { op: 'list' } | { op: 'record'; item: MediaItem; query: string } | { op: 'add-word'; item: MediaItem; word: string }
+
+/**
+ * `media:favorite-copies` (YAZ-4363): Settings › Images' line about the favorites' own copies. `favorites` counts every
+ * favorite; only an Iconify or Pixabay one needs a copy. Each of those is `saved`, `saving` (the backfill has it
+ * still to do), `waitingForKey` (Pixabay, with no key on this Mac) or `failed` (the last try could not get it).
+ * `bytes` is the size of every copy in the folder.
+ */
+export interface FavoriteCopiesStatus {
+  favorites: number
+  saved: number
+  saving: number
+  waitingForKey: number
+  failed: number
+  bytes: number
+}
 
 // ---------- Image Studio: the provider doors (🔒 YAZ-1775 D4, YAZ-1818) ----------
 

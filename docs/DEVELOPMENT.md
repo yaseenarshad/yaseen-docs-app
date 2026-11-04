@@ -51,7 +51,7 @@ open desktop/dist-app/*.dmg
 - Beside the state file, in the same app-data folder (YAZ-3028; most ported from Draw), each made lazily:
   - `secrets.json` (YAZ-3038, YAZ-3040): the Pixabay API key, the Cloudflare API token and the share upload password. Owner-only (0600), plain text, never sent to a renderer.
   - `sharing.json` (YAZ-3040): the Cloudflare account, bucket and Worker that share links use.
-  - `library/` (YAZ-3038): `media.json` favorites and recents, `components/` and `components.json` — the saved components every vault shares. Settings › Images › Library folder can move it anywhere, a synced vault included.
+  - `library/` (YAZ-3038): `media.json` favorites and recents, `favorites/` (each Iconify or Pixabay favorite's own copy, YAZ-4363), `components/` and `components.json` — the saved components every vault shares. Settings › Images › Library folder can move it anywhere, a synced vault included.
   - `media-cache/` (YAZ-3038): Image Studio search pages and tile pictures, kept 24 h; swept at launch and each hour.
   - `thumbs/` (YAZ-3035): preview-sized copies of a drawing's pictures for the hover preview, with a byte cap.
   - `draw-import.json` (YAZ-3041): the Draw import's marker — when the app-data half ran, and each vault's half.

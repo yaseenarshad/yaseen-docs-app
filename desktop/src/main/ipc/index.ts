@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { CONTRACT } from '@shared/ipc'
+import { PIXABAY_SECRET } from '@shared/types'
 import type { GitSyncManager } from '../git/manager'
 import type { Secrets } from '../secrets'
 import type { SettingsFolder } from '../settingsFolder'
@@ -83,13 +84,16 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // THE one secrets instance (YAZ-3028): `secrets.set`/`has` for the renderer, `read` for main's own callers.
   // It is threaded into the Image Studio's providers (a Pixabay request is built without the key ever leaving
   // main; YAZ-3038) and into sharing (the Cloudflare token and the upload password; YAZ-3040).
-  const secrets = registerSecretsIpc(userData)
+  // A new Pixabay key starts the favorites' backfill (YAZ-4363): the Pixabay copies waited for it.
+  const secrets = registerSecretsIpc(userData, (name) => {
+    if (name === PIXABAY_SECRET) void library.copies.backfill()
+  })
   // The canvas panel (YAZ-3038; Draw's 🔒 YAZ-1775 D4 / D5): the library folder every vault shares, its media
-  // and component stores, and the Image Studio.
+  // and component stores, the favorites' own copies (YAZ-4363), and the Image Studio, which asks the copies first.
   handle(CONTRACT.drawing.libraryFolder, async () => resolveLibraryFolder(store.get().settings.libraryFolder, userData))
-  registerMediaLibraryIpc(store, userData)
+  const library = registerMediaLibraryIpc(store, userData, { hasPixabayKey: () => secrets.has(PIXABAY_SECRET) })
   registerComponentsIpc(store, userData)
-  registerMediaStudioIpc(userData, secrets)
+  registerMediaStudioIpc(userData, secrets, globalThis.fetch, library.copies)
   registerShareIpc(userData, secrets, places)
   // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
   return { sync: registerGithubIpc(store), secrets, lsp }

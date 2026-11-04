@@ -3,6 +3,7 @@ import { normalizeMediaItem } from '@shared/mediaLibrary'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure } from '../fs/fsUtils'
 import { requireRequest, str } from '../fs/validate'
+import { createFavoriteCopies, type FavoriteCopies } from '../library/favoriteCopies'
 import { followLibraryFolder } from '../library/folder'
 import { createMediaStore, type MediaStore } from '../library/mediaStore'
 import type { Store } from '../store'
@@ -16,6 +17,10 @@ import { handle } from './envelope'
  *
  * The store follows `settings.libraryFolder`: a change re-points it and counts as a change of
  * the library (the lists a window shows are different now), so it broadcasts too.
+ *
+ * The favorites' own copies (YAZ-4363, `library/favoriteCopies.ts`) live beside it and follow the same folder: each
+ * change of `media.json` starts a backfill pass (an add, the auto-favorite of a third use, another Mac's file), a
+ * removal deletes the copy, and `media:favorite-copies` answers Settings › Images' line.
  */
 
 /** A renderer's item is validated whole (the web app's validator) or refused; it never reaches the file half-read. */
@@ -55,15 +60,51 @@ function requireUsedRequest(v: unknown): MediaUsedRequest {
   }
 }
 
-/** Returns the store so a test can close its watcher; `main/index.ts` lets the process end take it. */
-export function registerMediaLibraryIpc(store: Store, userData: string): MediaStore {
+export interface MediaLibraryIpcDeps {
+  /** Whether this Mac has a Pixabay key (`secrets.has(PIXABAY_SECRET)`): a Pixabay copy waits until it does. */
+  hasPixabayKey?: () => Promise<boolean>
+  /** The wait between two copies of a backfill pass; tests make it short. */
+  copyIntervalMs?: number
+}
+
+export interface MediaLibraryIpc {
+  media: MediaStore
+  /** Handed to the Image Studio (`registerMediaStudioIpc`), whose providers ask it first and start its backfill. */
+  copies: FavoriteCopies
+  close(): Promise<void>
+}
+
+/** Returns the stores so a test can close the watcher; `main/index.ts` lets the process end take them. */
+export function registerMediaLibraryIpc(store: Store, userData: string, deps: MediaLibraryIpcDeps = {}): MediaLibraryIpc {
   const folder = followLibraryFolder(store, userData, (next) => {
     media.setFolder(next)
+    copies.setFolder(next)
     broadcastAll(CONTRACT.media.onChanged.channel)
   })
   const media = createMediaStore(folder)
-  media.onChanged(() => broadcastAll(CONTRACT.media.onChanged.channel))
-  handle(CONTRACT.media.favorites, async (req: unknown) => media.favorites(requireFavoritesRequest(req)))
+  const copies = createFavoriteCopies(folder, {
+    favorites: () => media.favorites({ op: 'list' }),
+    hasPixabayKey: deps.hasPixabayKey ?? (async () => false),
+    intervalMs: deps.copyIntervalMs,
+  })
+  media.onChanged(() => {
+    broadcastAll(CONTRACT.media.onChanged.channel)
+    void copies.backfill()
+  })
+  handle(CONTRACT.media.favorites, async (req: unknown) => {
+    const request = requireFavoritesRequest(req)
+    const list = await media.favorites(request)
+    if (request.op === 'remove') await copies.remove(request.itemKey)
+    return list
+  })
   handle(CONTRACT.media.used, async (req: unknown) => media.used(requireUsedRequest(req)))
-  return media
+  handle(CONTRACT.media.favoriteCopies, async () => copies.status())
+  return {
+    media,
+    copies,
+    close: async () => {
+      await copies.close()
+      await media.close()
+    },
+  }
 }

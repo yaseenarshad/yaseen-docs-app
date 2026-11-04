@@ -97,6 +97,8 @@ describe('settingCandidates', () => {
       // Settings › Images (YAZ-3038).
       'pixabayApiKey',
       'libraryFolder',
+      // The favorites and their copies (YAZ-4363).
+      'favoriteCopies',
       // Settings › Files & Links › New notes (YAZ-4246), its first group.
       'newNoteLocation',
       'newNoteTitleTemplate',

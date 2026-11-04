@@ -8,7 +8,9 @@
  * - The library folder (Draw's 🔒 YAZ-1775 D5): ONE folder every vault shares, for saved components and
  *   media favorites; `SettingsState.libraryFolder`, null = `<userData>/library`. Draw keeps it under
  *   Files; in Docs, Files & Links is about notes, and the library is the canvas panel's.
+ * - The favorites (YAZ-4363): their count, the size of their own copies, and "all saved" or "3 still saving".
  */
+import { FavoriteCopiesLine } from './FavoriteCopiesLine'
 import { LibraryFolderControl, LibraryFolderHint } from './LibraryFolderControl'
 import { PixabayKeyControl } from './PixabayKeyControl'
 import type { SettingsSection } from './registry'
@@ -48,6 +50,14 @@ export const IMAGES_SECTION: SettingsSection = {
               </div>
             </>
           ),
+        },
+        {
+          id: 'favoriteCopies',
+          label: 'Favorites',
+          hint: 'Each Iconify icon and Pixabay picture you favorite keeps its own full-quality copy in the library folder, so it still adds with no network.',
+          keywords: ['favorites', 'copies', 'saved', 'offline', 'size', 'backup', 'iconify', 'pixabay'],
+          wide: true,
+          render: () => <FavoriteCopiesLine />,
         },
       ],
     },

@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
-import { MEDIA_LIBRARY_FILE, type MediaItem } from '@shared/types'
+import { LIBRARY_FAVORITES_DIR, MEDIA_LIBRARY_FILE, type MediaItem } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
-import type { MediaStore } from '../library/mediaStore'
 import { createStore, type Store } from '../store'
-import { registerMediaLibraryIpc } from './mediaLibrary'
+import { registerMediaLibraryIpc, type MediaLibraryIpc } from './mediaLibrary'
 import { registered } from './ipcFixture'
 
 vi.mock('electron', () => ({
@@ -36,7 +35,7 @@ function fakeWindow() {
 let dir: string
 let userData: string
 let store: Store
-let media: MediaStore
+let media: MediaLibraryIpc
 beforeEach(async () => {
   vi.mocked(ipcMain.handle).mockClear()
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([])
@@ -54,6 +53,7 @@ afterEach(async () => {
 
 const favorites = (req: unknown) => registered(CONTRACT.media.favorites)({ sender }, req)
 const used = (req: unknown) => registered(CONTRACT.media.used)({ sender }, req)
+const favoriteCopies = () => registered(CONTRACT.media.favoriteCopies)({ sender })
 
 describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
   it('reads and writes `<userData>/library/media.json` by default (🔒 YAZ-1775 D5), every verb answering its list', async () => {
@@ -101,6 +101,24 @@ describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
     await writeFile(path.join(userData, 'library', MEDIA_LIBRARY_FILE), JSON.stringify({ version: 1, favorites: [], recent: [] }))
     await until(() => a.webContents.send.mock.calls.some(([ch]) => ch === CONTRACT.media.onChanged.channel))
     expect(await favorites({ op: 'list' })).toEqual(ok([]))
+  })
+
+  it('a favorite add saves its copy, also the auto-favorite at the third use; a removal deletes it (YAZ-4363)', async () => {
+    const svg = `data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base64')}`
+    void media.copies.start(async (req) => ({ mimeType: 'image/svg+xml', dataURL: svg, item: item({ itemKey: `${req.provider}:${req.id}`, provider: req.provider, providerId: req.id }) }))
+    const copiesDir = path.join(userData, 'library', LIBRARY_FAVORITES_DIR)
+    const copyCount = async () => (await readdir(copiesDir).catch(() => [])).length
+    const icon = item({ itemKey: 'iconify:mdi:home', provider: 'iconify', providerId: 'mdi:home', kind: 'icon' })
+    await favorites({ op: 'add', item: icon })
+    await media.copies.backfill()
+    expect(await copyCount()).toBe(1)
+    const auto = item({ itemKey: 'iconify:mdi:star', provider: 'iconify', providerId: 'mdi:star', kind: 'icon' })
+    for (let i = 0; i < 3; i++) await used({ op: 'record', item: auto, query: '' })
+    await media.copies.backfill()
+    expect(await copyCount()).toBe(2)
+    expect(await favoriteCopies()).toEqual(ok({ favorites: 2, saved: 2, saving: 0, waitingForKey: 0, failed: 0, bytes: 12 }))
+    await favorites({ op: 'remove', itemKey: icon.itemKey })
+    expect(await copyCount()).toBe(1)
   })
 
   it('follows settings.libraryFolder: the store re-points to the chosen folder and every window is told', async () => {

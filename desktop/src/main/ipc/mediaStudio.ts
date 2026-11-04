@@ -21,6 +21,7 @@ import { requireRequest, str, strOrNull } from '../fs/validate'
 import { createMediaCache } from '../media/cache'
 import { MEDIA_CACHE_DIR } from '../media/cachePolicy'
 import { createMediaProviders } from '../media/providers'
+import type { FavoriteCopies } from '../library/favoriteCopies'
 import type { Secrets } from '../secrets'
 import { handle } from './envelope'
 
@@ -47,11 +48,17 @@ function requireDrawingRequest(v: unknown): MediaDrawingRequest {
 /** How often a running app sweeps the media cache again (YAZ-3044 A34); the first sweep is at launch. */
 export const MEDIA_CACHE_SWEEP_MS = 60 * 60_000
 
-/** The cache folder this registration owns — the one fact a test needs back from it. */
-export function registerMediaStudioIpc(userData: string, secrets: Secrets, fetchImpl: typeof globalThis.fetch = globalThis.fetch): string {
+/**
+ * The cache folder this registration owns — the one fact a test needs back from it. `copies` (YAZ-4363) are the
+ * favorites' own pictures: `preview` and `import` ask them first, and they are made with a second set of providers
+ * that has no copy step, so a copy is always the provider's picture.
+ */
+export function registerMediaStudioIpc(userData: string, secrets: Secrets, fetchImpl: typeof globalThis.fetch = globalThis.fetch, copies?: FavoriteCopies): string {
   const folder = join(userData, MEDIA_CACHE_DIR)
   const cache = createMediaCache(folder)
-  const providers = createMediaProviders({ fetch: fetchImpl, readPixabayKey: () => secrets.read(PIXABAY_SECRET), cache })
+  const readPixabayKey = () => secrets.read(PIXABAY_SECRET)
+  const providers = createMediaProviders({ fetch: fetchImpl, readPixabayKey, cache, favoriteCopy: copies })
+  void copies?.start(createMediaProviders({ fetch: fetchImpl, readPixabayKey, cache }).import)
 
   // Detached: the folder has to exist before the first write, and yesterday's entries have to go,
   // but neither is something a renderer should ever wait behind.

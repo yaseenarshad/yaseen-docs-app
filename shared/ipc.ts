@@ -11,7 +11,7 @@
  * docs/CONTRACTS.md › Bridge API.
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardHoverLinksRequest, BoardPicturesRequest, BoardPicturesResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaDrawingIndexResponse, MediaDrawingRequest, MediaDrawingResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaLibraryFile, MediaUsedRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PickPicturesFolderRequest, PickPicturesFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SavePdfRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult, MemoryReport, StartView } from './types'
-import type { CopyAsMode, CopyAsRich, NoteMenuAction, NoteMenuArg, MemoryTabFacts } from './types'
+import type { CopyAsMode, CopyAsRich, FavoriteCopiesStatus, NoteMenuAction, NoteMenuArg, MemoryTabFacts } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { SystemHotkey } from './macosHotkeys'
@@ -137,6 +137,8 @@ export const CONTRACT = {
     used: invoke<[req: MediaUsedRequest], MediaLibraryFile>('media:used', 1),
     /** `media.json` changed — any vault, any writer. */
     onChanged: push('media:changed'),
+    /** The favorites' own copies (YAZ-4363): how many favorites, how many saved, how many still saving, and their size. */
+    favoriteCopies: invoke<[], FavoriteCopiesStatus>('media:favorite-copies', 0),
     /** Federated search: main fetches, curates and caches, so the renderer never holds a key or reaches a provider. */
     search: invoke<[req: MediaSearchRequest], MediaSearchResponse>('media:search', 1),
     /** One tile's picture as a dataURL, from main's 24 h disk cache when it is there. */

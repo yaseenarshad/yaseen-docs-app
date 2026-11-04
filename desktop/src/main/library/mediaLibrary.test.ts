@@ -7,7 +7,7 @@
  * it is not one at all. The FILE is lenient around that — a bad row is dropped, the rest survive.
  */
 import { describe, expect, it } from 'vitest'
-import { AUTO_FAVORITE_USES, MAX_ITEM_WORDS, MAX_MEDIA_FAVORITES, MAX_MEDIA_USED, RECENT_LIMIT, type MediaItem, type MediaLibraryFile, type StoredMediaItem, type UsedMediaItem } from '@shared/types'
+import { AUTO_FAVORITE_USES, MAX_ITEM_WORDS, MAX_MEDIA_USED, RECENT_LIMIT, type MediaItem, type MediaLibraryFile, type StoredMediaItem, type UsedMediaItem } from '@shared/types'
 import { EMPTY_MEDIA_LIBRARY, addFavorite, addWord, normalizeMediaItem, normalizeStoredMediaItem, normalizeWord, recordRecent, recordUse, removeFavorite, sanitizeMediaLibrary, stamp } from '@shared/mediaLibrary'
 
 /** The minimum a provider result has to carry: every required field of `mediaItemValidator`. */
@@ -116,10 +116,10 @@ describe('sanitizeMediaLibrary — lenient over the rows, strict about the file'
     expect(out?.favorites).toEqual([stored({ updatedAt: 9 })])
   })
 
-  it('enforces both caps on READ too — a hand-edited file cannot grow the lists', () => {
+  it('enforces the recent cap on READ too; favorites have no cap (YAZ-4363): 600 stay 600', () => {
     const many = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => stored({ itemKey: `${prefix}${i}`, providerId: String(i) }))
-    const out = sanitizeMediaLibrary({ version: 1, favorites: many(MAX_MEDIA_FAVORITES + 5, 'f'), recent: many(RECENT_LIMIT + 5, 'r') })
-    expect(out?.favorites).toHaveLength(MAX_MEDIA_FAVORITES)
+    const out = sanitizeMediaLibrary({ version: 1, favorites: many(600, 'f'), recent: many(RECENT_LIMIT + 5, 'r') })
+    expect(out?.favorites).toHaveLength(600)
     expect(out?.recent).toHaveLength(RECENT_LIMIT)
   })
 })
@@ -137,12 +137,12 @@ describe('addFavorite (the web app`s addFavorite)', () => {
     expect(after.favorites).toEqual(before.favorites)
   })
 
-  it('drops the OLDEST once the list is full — the cap is on the tail', () => {
-    const full = { ...EMPTY_MEDIA_LIBRARY, favorites: Array.from({ length: MAX_MEDIA_FAVORITES }, (_, i) => stored({ itemKey: `f${i}` })) }
+  it('never drops a favorite (YAZ-4363): the 601st add keeps all 600 before it', () => {
+    const full = { ...EMPTY_MEDIA_LIBRARY, favorites: Array.from({ length: 600 }, (_, i) => stored({ itemKey: `f${i}` })) }
     const out = addFavorite(full, item({ itemKey: 'new' }), 500)
-    expect(out.favorites).toHaveLength(MAX_MEDIA_FAVORITES)
+    expect(out.favorites).toHaveLength(601)
     expect(out.favorites[0].itemKey).toBe('new')
-    expect(out.favorites.at(-1)?.itemKey).toBe(`f${MAX_MEDIA_FAVORITES - 2}`)
+    expect(out.favorites.at(-1)?.itemKey).toBe('f599')
   })
 
   it('never touches the input', () => {
