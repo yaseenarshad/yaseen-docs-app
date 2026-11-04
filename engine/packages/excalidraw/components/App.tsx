@@ -716,6 +716,7 @@ class App extends React.Component<AppProps, AppState> {
   public iconColorEditor: IconColorEditorHandlers = {
     pick: null,
     escape: null,
+    digit: null,
   };
   /** YAZ-4354 1D: the faded preview of the icon in Edit colors (static canvas) */
   private colorEditPreview: {
@@ -6259,6 +6260,19 @@ class App extends React.Component<AppProps, AppState> {
           if (!this.iconColorEditor.escape?.()) {
             this.finishIconColorEditing();
           }
+          event.preventDefault();
+          return;
+        }
+
+        // YAZ-4348 demo: in Edit colors a digit opens that number's palette; no digit sizes the icon there
+        if (
+          this.state.colorEditingElementId &&
+          /^[0-9]$/.test(event.key) &&
+          !event[KEYS.CTRL_OR_CMD] &&
+          !event.altKey &&
+          !event.shiftKey
+        ) {
+          this.iconColorEditor.digit?.(Number(event.key));
           event.preventDefault();
           return;
         }

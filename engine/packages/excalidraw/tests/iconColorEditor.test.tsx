@@ -179,6 +179,26 @@ describe("Edit colors (YAZ-4354 1D)", () => {
     expect(recipe()?.parts).toEqual({ "2": DEFAULT_ELEMENT_STROKE_PICKS[2] });
   });
 
+  it("the keys 1 to 9 open the numbers' palettes; a digit with no number does nothing", async () => {
+    await open();
+    Keyboard.keyPress("2");
+    expect(
+      document.querySelector(".icon-color-editor__badge.is-active")
+        ?.textContent,
+    ).toBe("2");
+    Keyboard.keyPress("1");
+    expect(
+      document.querySelector(".icon-color-editor__badge.is-active")
+        ?.textContent,
+    ).toBe("1");
+    const size = [imageOf("icon").width, imageOf("icon").height];
+    Keyboard.keyPress(KEYS.ESCAPE);
+    Keyboard.keyPress("5");
+    expect(document.querySelector(".icon-color-editor__palette")).toBeNull();
+    expect(h.state.colorEditingElementId).toBe("icon");
+    expect([imageOf("icon").width, imageOf("icon").height]).toEqual(size);
+  });
+
   it("Esc closes the palette, then leaves; Enter, Done and a click outside leave", async () => {
     await open();
     fireEvent.click(screen.getByRole("button", { name: "Color 2" }));

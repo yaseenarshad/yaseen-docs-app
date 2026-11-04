@@ -87,6 +87,8 @@ export type IconColorEditorHandlers = {
     | null;
   /** Esc or Enter: true when the mode closed its palette (the mode stays) */
   escape: (() => boolean) | null;
+  /** YAZ-4348 demo: a digit 1 to 9 opens that number's palette; true when there is such a number */
+  digit: ((n: number) => boolean) | null;
 };
 
 type Palette = {
@@ -434,6 +436,7 @@ export const IconColorEditor = ({
     () => () => {
       handlers.pick = null;
       handlers.escape = null;
+      handlers.digit = null;
       onPreview(null);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -477,6 +480,7 @@ export const IconColorEditor = ({
   }, [hovered, recipeKey]);
 
   if (!natural) {
+    handlers.digit = null;
     return null;
   }
 
@@ -521,6 +525,27 @@ export const IconColorEditor = ({
     x: center.x + Math.cos(angles[i]) * radius,
     y: center.y + Math.sin(angles[i]) * radius,
   }));
+
+  // one palette at a time, the same from a click on a number or its digit key
+  const openBadge = (badge: (typeof badges)[number]) => {
+    setOutlineOpen(false);
+    setPalette({
+      x: badge.x + 18,
+      y: badge.y,
+      color: badge.group.color,
+      target: null,
+      justThisPart: false,
+    });
+  };
+  // YAZ-4348 demo ("1- yes im down for that"): the keys 1 to 9 open the numbers' palettes
+  handlers.digit = (n) => {
+    const badge = badges[n - 1];
+    if (!badge) {
+      return false;
+    }
+    openBadge(badge);
+    return true;
+  };
 
   const activeGroup = palette ? groupByColor(palette.color) : null;
   // while a pick paints (async), the new color has no number yet: the card stays, with the last count
@@ -581,20 +606,13 @@ export const IconColorEditor = ({
           }}
           title={`Color ${number} · ${group.keys.length} part${
             group.keys.length === 1 ? "" : "s"
-          }. Click to change it; point to see its parts.`}
+          }. Click${
+            number <= 9 ? ` or press ${number}` : ""
+          } to change it; point to see its parts.`}
           aria-label={`Color ${number}`}
           onPointerEnter={() => setHovered(group.color)}
           onPointerLeave={() => setHovered(null)}
-          onClick={() => {
-            setOutlineOpen(false);
-            setPalette({
-              x: x + 18,
-              y,
-              color: group.color,
-              target: null,
-              justThisPart: false,
-            });
-          }}
+          onClick={() => openBadge(badges[number - 1])}
         >
           {number}
         </button>
