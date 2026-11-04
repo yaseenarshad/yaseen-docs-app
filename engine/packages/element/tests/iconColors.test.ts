@@ -2,6 +2,7 @@
 import { MIME_TYPES } from "@excalidraw/common";
 
 import {
+  ICON_MAX_BYTES,
   getIconInfo,
   iconOutlineWidth,
   iconSource,
@@ -81,6 +82,49 @@ describe("readIconColors", () => {
       "rect",
       "path",
     ]);
+  });
+
+  it("reads a color drawn through <use>", () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="24" height="24" viewBox="0 0 24 24"><defs><path id="a" fill="#ff0000" d="M0 0h12v24H0z"/></defs><use xlink:href="#a"/><path fill="#0000ff" d="M12 0h12v24H12z"/></svg>';
+    expect(readIconInfo(svg).kind).toBe("many");
+  });
+
+  it("YAZ-4373: a shape drawn through <use> is a part, in draw order, with the paint it inherits from the <use>", () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="24" height="24" viewBox="0 0 24 24">' +
+      '<defs><path id="a" fill="#ff0000" d="M0 0h8v24H0z"/><g id="g"><path d="M8 0h8v24H8z"/></g></defs>' +
+      // a <symbol> is drawn only through a <use>: one that no <use> names adds no color
+      '<symbol id="unused"><path fill="#123456" d="M0 0h1v1H0z"/></symbol>' +
+      '<path fill="#0000ff" d="M16 0h8v24H16z"/>' +
+      // the same target twice is one part; a <use> of itself stops
+      '<use xlink:href="#a"/><use href="#g" fill="#00ff00"/><use href="#a" x="2"/><use id="self" href="#self"/>' +
+      "</svg>";
+    const { parts } = readIconParts(svg)!;
+    expect(parts.map((p) => p.element.getAttribute("d"))).toEqual([
+      "M16 0h8v24H16z",
+      "M0 0h8v24H0z",
+      "M8 0h8v24H8z",
+    ]);
+    // the path inside <g id="g"> inherits the <use>'s fill, not the SVG default black
+    expect(parts[2].fill).toEqual({ color: "#00ff00" });
+    expect(parts[2].defaultFill).toBe(false);
+    expect(readIconColors(svg).sort()).toEqual([
+      "#0000ff",
+      "#00ff00",
+      "#ff0000",
+    ]);
+    // "every part" and "just this part" both reach the shape inside <defs>
+    const painted = paintIcon(svg, {
+      colors: { "#ff0000": "#e03131" },
+      parts: { "2": "#1971c2" },
+      outline: null,
+    });
+    const doc = new DOMParser().parseFromString(painted, MIME_TYPES.svg);
+    expect(doc.getElementById("a")!.getAttribute("fill")).toBe("#e03131");
+    expect(doc.querySelector("#g path")!.getAttribute("style")).toContain(
+      "fill:#1971c2 !important",
+    );
   });
 
   it("calls a picture with an <image> inside a photo", () => {
@@ -273,6 +317,57 @@ describe("the file", () => {
     const back = svgOfDataURL(svgToDataURL(painted));
     expect(back).toBe(painted);
     expect(iconSource(back)).toContain("✓");
+  });
+
+  it("a painted copy of an original near 256 KB is still an icon", () => {
+    const pad = "M0 0h1v1H0z".repeat(Math.ceil((ICON_MAX_BYTES - 6000) / 11));
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="#ff0000" d="${pad}"/><path fill="#0000ff" d="M12 0h12v24H12z"/></svg>`;
+    const file = (id: string, text: string) =>
+      ({ id, mimeType: "image/svg+xml", dataURL: svgToDataURL(text) } as any);
+    expect(getIconInfo(file("o", svg)).kind).toBe("many");
+    const painted = paintIcon(svg, {
+      colors: { "#ff0000": "#00ff00" },
+      outline: null,
+    });
+    expect(getIconInfo(file("p", painted)).kind).toBe("many");
+  });
+
+  it("YAZ-4374: the size limit measures the original, so painting never changes the answer", () => {
+    const red = (bytes: number) => "M0 0h1v1H0z".repeat(Math.ceil(bytes / 11));
+    const svgOf = (pad: string) =>
+      `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="#ff0000" d="${pad}"/><path fill="#0000ff" d="M12 0h12v24H12z"/></svg>`;
+    const fileOf = (id: string, text: string) => ({
+      id: id as FileId,
+      mimeType: MIME_TYPES.svg,
+      dataURL: svgToDataURL(text),
+    });
+    const fits = svgOf(red(ICON_MAX_BYTES - 400));
+    const over = svgOf(red(ICON_MAX_BYTES + 400));
+    expect(new TextEncoder().encode(fits).length).toBeLessThanOrEqual(
+      ICON_MAX_BYTES,
+    );
+    expect(new TextEncoder().encode(over).length).toBeGreaterThan(
+      ICON_MAX_BYTES,
+    );
+    // a heavy paint: an outline and a part color on each of the two parts
+    const heavy = {
+      colors: { "#ff0000": "#00ff00" },
+      parts: { "0": "#e03131", "1:stroke": "#1971c2" },
+      outline: { color: "#ffffff", width: 4 },
+    };
+    const fitsInfo = getIconInfo(fileOf("fits", fits));
+    const fitsPainted = getIconInfo(
+      fileOf("fits-painted", paintIcon(fits, heavy, 2)),
+    );
+    expect(fitsInfo.kind).toBe("many");
+    expect(fitsPainted.kind).toBe("many");
+    expect(fitsPainted.colors).toEqual(fitsInfo.colors);
+    expect(fitsPainted.geometry!.outline).toBe(2);
+    expect(getIconInfo(fileOf("over", over)).kind).toBe("photo");
+    // a painted copy of a too-big original (made by hand: the action never paints a photo)
+    expect(
+      getIconInfo(fileOf("over-painted", paintIcon(over, heavy))).kind,
+    ).toBe("photo");
   });
 
   it("caches the info by file id", () => {

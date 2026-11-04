@@ -246,11 +246,14 @@ export const pickColors = (count: number) => {
   return colors;
 };
 
-const HIDDEN_TAGS = new Set(["text", "use", "image", "foreignObject"]);
+const HIDDEN_TAGS = new Set(["text", "image", "foreignObject"]);
+/** These draw their parts: flat, so a pixel keeps its exact pick color. */
+const FLAT_TAGS = new Set(["g", "svg", "use", "symbol"]);
 
 /**
  * The pick map's SVG: every paint target in its pick color, flat, with no
- * opacity, filter or anti-aliasing; text and `<use>` hidden. The picture fills
+ * opacity, filter or anti-aliasing; text hidden. A `<use>` stays: its target
+ * carries the pick color (YAZ-4373). The picture fills
  * 512 × 512 exactly as the element's file fills its box (same geometry, same
  * outline padding), so a pixel maps straight to the element.
  */
@@ -269,7 +272,7 @@ export const iconPickMapSvg = (svgText: string, outlineUnits: number) => {
   walkIcon(svg, (element) => {
     if (HIDDEN_TAGS.has(element.localName)) {
       appendIconStyle(element, "display", "none");
-    } else if (element.localName === "g" || element.localName === "svg") {
+    } else if (FLAT_TAGS.has(element.localName)) {
       appendIconStyle(element, "opacity", "1");
       appendIconStyle(element, "filter", "none");
     }
