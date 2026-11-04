@@ -4,7 +4,7 @@
  * move. Then the local half through the providers: a search over every pack, and tiles and adds built from a pack.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gunzipSync } from 'node:zlib'
@@ -123,6 +123,38 @@ describe('the download (round 2 decisions 4 and 8)', () => {
     expect(net.calls.filter((url) => url.includes('api.github.com')).length).toBe(apiBefore)
   })
 
+  it('Stop ends the run even when a body read does not end on abort (YAZ-4376)', async () => {
+    const net = network({ '2.2.1': V1 })
+    // Measured on the real network: after a Stop, one pack's `arrayBuffer()` never settled. This body never ends and
+    // does not hear the abort.
+    const stalled = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/tabler.json')) return new Response(new ReadableStream({ start: () => undefined }), { status: 200 })
+      return net.fetch(input, init)
+    }) as typeof globalThis.fetch
+    const packs = createIconPacks({ folder, fetch: stalled })
+    void packs.download()
+    await vi.waitFor(async () => expect((await packs.status()).packs).toBe(2))
+    const stopped = await Promise.race([packs.stop(), new Promise<'still running'>((resolve) => setTimeout(() => resolve('still running'), 3000))])
+    expect(stopped).not.toBe('still running')
+    expect(stopped).toMatchObject({ state: 'partial', packs: 2, message: 'Stopped. 2 of 3 packs are on this Mac.' })
+    // The run is over: "Download the rest" starts a new one, and its Stop ends it too.
+    const again = packs.download()
+    expect((await packs.status()).state).toBe('downloading')
+    expect(await packs.stop()).toMatchObject({ state: 'partial', packs: 2 })
+    await again
+  })
+
+  it('a body that stops sending with no Stop fails that pack after the idle limit, and the run ends', async () => {
+    const net = network({ '2.2.1': V1 })
+    const stalled = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/tabler.json')) return new Response(new ReadableStream({ start: () => undefined }), { status: 200 })
+      return net.fetch(input, init)
+    }) as typeof globalThis.fetch
+    const done = await createIconPacks({ folder, fetch: stalled, idleMs: 50 }).download()
+    expect(done).toMatchObject({ state: 'partial', packs: 2, failed: true })
+    expect(done.message).toBe('1 pack could not download (a server stopped sending). Try again.')
+  })
+
   it('resumes after a stop in the middle: only the missing packs come', async () => {
     const net = network({ '2.2.1': V1 })
     const first = createIconPacks({ folder, fetch: net.fetch })
@@ -200,6 +232,25 @@ describe('the download (round 2 decisions 4 and 8)', () => {
     expect(await packs.remove()).toMatchObject({ state: 'none', packs: 0, version: null })
     expect(await readdir(folder)).toEqual(['my-notes.txt'])
     expect(packs.has('mdi')).toBe(false)
+  })
+
+  it('a move that fails part way keeps every pack usable in one folder (YAZ-4377)', async () => {
+    const from = path.join(folder, 'from')
+    const next = path.join(folder, 'next')
+    const packs = createIconPacks({ folder: from, fetch: network({ '2.2.1': V1 }).fetch })
+    await packs.download()
+    // The new folder holds a non-empty folder where one pack file must go: its rename and its copy fail.
+    await mkdir(path.join(next, 'noto.json.gz', 'blocker'), { recursive: true })
+    const after = await packs.moveTo(next)
+    expect(after).toMatchObject({ state: 'complete', folder: from, packs: 3, failed: true })
+    expect(after.message).toMatch(/^The icon packs could not move to the new folder, so they stay in .*from\. /)
+    for (const id of ['mdi:home', 'noto:house', 'tabler:star']) expect(await packs.svg(id)).not.toBeNull()
+    expect((await packs.names()).get('mdi')).toEqual(['arrow-left', 'arrow-right', 'home'])
+    // Each folder's manifest names only files that are in it: the old one is whole, the new one has none of ours.
+    expect((await readdir(from)).sort()).toEqual(['manifest.json', 'mdi.json.gz', 'mdi.names.gz', 'noto.json.gz', 'noto.names.gz', 'tabler.json.gz', 'tabler.names.gz'])
+    expect(await readdir(next)).toEqual(['noto.json.gz'])
+    // A new main at the old folder reads every pack.
+    expect(await createIconPacks({ folder: from, fetch: network({}).fetch }).status()).toMatchObject({ state: 'complete', packs: 3 })
   })
 
   it('stores a big pack in parts, and builds any icon of it from its part, an alias too', async () => {

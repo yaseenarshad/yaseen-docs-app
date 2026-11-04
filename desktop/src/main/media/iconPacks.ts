@@ -71,6 +71,8 @@ export function partOf(name: string, parts: number): number {
 const MAX_PLAN_BYTES = 8 * 1024 * 1024
 /** More packs than this is not a plan the app reads. */
 const MAX_PACKS = 1000
+/** A request or a body that sends nothing for this long fails its pack (YAZ-4376), as the updater's `STALL_MS`. */
+export const IDLE_MS = 60_000
 /** Packs downloading at the same time. */
 export const DOWNLOAD_CONCURRENCY = 3
 /** Opened packs kept in memory for tiles and adds (decision 5). */
@@ -199,11 +201,13 @@ export interface IconPacksDeps {
   now?: () => number
   /** Tests only: a smaller `SPLIT_BYTES` / `PART_BYTES`, so a small pack is stored in parts. */
   split?: { above: number; part: number }
+  /** Tests only: a shorter `IDLE_MS`. */
+  idleMs?: number
 }
 
 export type IconPacks = ReturnType<typeof createIconPacks>
 
-export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Date.now, split = { above: SPLIT_BYTES, part: PART_BYTES } }: IconPacksDeps) {
+export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Date.now, split = { above: SPLIT_BYTES, part: PART_BYTES }, idleMs = IDLE_MS }: IconPacksDeps) {
   let folder = startFolder
   let manifest: IconPacksManifest = emptyManifest()
   /** The manifest of `folder` has been read (or tried). */
@@ -279,22 +283,59 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
 
   // ---------- The network ----------
 
+  /**
+   * `work`, or the abort, or `idleMs` with no answer — whichever comes first (YAZ-4376). Node's `fetch` does not always
+   * end a body read that has started when its signal aborts (measured: 2 of about 8 real Stops hung on `arrayBuffer()`),
+   * so the run never waits on the network alone.
+   */
+  function untilAbortOrIdle<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+    if (signal.aborted) return Promise.reject(signal.reason)
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = () => reject(signal.reason)
+      const timer = setTimeout(() => reject(new PackFailure('a server stopped sending')), idleMs)
+      signal.addEventListener('abort', onAbort, { once: true })
+      work.then(resolve, reject).finally(() => {
+        clearTimeout(timer)
+        signal.removeEventListener('abort', onAbort)
+      })
+    })
+  }
+
   async function get(url: string, signal: AbortSignal, maxBytes: number): Promise<{ status: number; headers: Headers; bytes: Uint8Array | null }> {
     let response: Response
     try {
-      response = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, redirect: 'follow', signal })
+      response = await untilAbortOrIdle(fetch(url, { headers: { 'User-Agent': USER_AGENT }, redirect: 'follow', signal }), signal)
     } catch (cause) {
-      if (signal.aborted) throw cause
+      if (signal.aborted || cause instanceof PackFailure) throw cause
       throw new Unreachable(`could not reach ${new URL(url).host}`)
     }
     if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined)
+      void response.body?.cancel().catch(() => undefined)
       return { status: response.status, headers: response.headers, bytes: null }
     }
-    if (Number(response.headers.get('Content-Length') ?? 0) > maxBytes) throw new PackFailure('a file is larger than the app reads')
-    const bytes = new Uint8Array(await response.arrayBuffer())
-    if (bytes.byteLength > maxBytes) throw new PackFailure('a file is larger than the app reads')
-    return { status: response.status, headers: response.headers, bytes }
+    if (Number(response.headers.get('Content-Length') ?? 0) > maxBytes) {
+      void response.body?.cancel().catch(() => undefined)
+      throw new PackFailure('a file is larger than the app reads')
+    }
+    // Chunk by chunk: each read races the abort and the idle limit, and the size limit holds while the bytes come.
+    const reader = response.body?.getReader()
+    const chunks: Uint8Array[] = []
+    let size = 0
+    try {
+      for (;;) {
+        if (reader === undefined) break
+        const { done, value } = await untilAbortOrIdle(reader.read(), signal)
+        if (done) break
+        size += value.byteLength
+        if (size > maxBytes) throw new PackFailure('a file is larger than the app reads')
+        chunks.push(value)
+      }
+    } catch (cause) {
+      // Not waited for: a read that does not hear the abort may not hear the cancel either.
+      void reader?.cancel().catch(() => undefined)
+      throw cause
+    }
+    return { status: response.status, headers: response.headers, bytes: Buffer.concat(chunks) }
   }
 
   async function getJson(url: string, signal: AbortSignal): Promise<{ status: number; headers: Headers; json: unknown }> {
@@ -639,16 +680,32 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
         return status()
       }
       return startRun('moving', async () => {
-        await mkdir(next, { recursive: true })
         const files = Object.entries(manifest.packs).flatMap(([prefix, pack]) => packFiles(prefix, pack.parts))
-        for (const file of files) {
-          await rename(join(from, file), join(next, file)).catch(async () => {
-            await copyFile(join(from, file), join(next, file))
-            await rm(join(from, file), { force: true })
-          })
+        // Every file first, the new manifest last; a failure on the way puts back what moved (YAZ-4377), so the packs
+        // are always whole in ONE folder. A copy (across two disks) leaves its source until the new manifest is written.
+        const renamed: string[] = []
+        const copied: string[] = []
+        try {
+          await mkdir(next, { recursive: true })
+          for (const file of files) {
+            try {
+              await rename(join(from, file), join(next, file))
+              renamed.push(file)
+            } catch {
+              await copyFile(join(from, file), join(next, file))
+              copied.push(file)
+            }
+          }
+          await writing.catch(() => undefined)
+          await atomicWrite(join(next, MANIFEST_FILE), JSON.stringify(manifest))
+        } catch (cause) {
+          for (const file of renamed) await rename(join(next, file), join(from, file)).catch(() => copyFile(join(next, file), join(from, file)).then(() => rm(join(next, file), { force: true }))).catch(() => undefined)
+          for (const file of copied) await rm(join(next, file), { force: true }).catch(() => undefined)
+          if ((await readdir(next).catch(() => ['?'])).length === 0) await rmdir(next).catch(() => undefined)
+          message = { text: `The icon packs could not move to the new folder, so they stay in ${from}. (${cause instanceof Error ? cause.message : String(cause)})`, failed: true }
+          return
         }
-        await writing.catch(() => undefined)
-        await atomicWrite(join(next, MANIFEST_FILE), JSON.stringify(manifest))
+        for (const file of copied) await rm(join(from, file), { force: true })
         await rm(join(from, MANIFEST_FILE), { force: true })
         // Only an empty old folder goes; anything else in it is the user's.
         if ((await readdir(from).catch(() => ['?'])).length === 0) await rmdir(from).catch(() => undefined)
