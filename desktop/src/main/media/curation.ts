@@ -119,6 +119,11 @@ export interface IconifyCursor {
   setIndex: number
   setStart: number
   setsExhausted: boolean
+  /**
+   * The walk is over the downloaded packs (YAZ-4359): `generalStart` is then the place in the ranked matches, and the
+   * other passes are spent. A local cursor whose packs went away starts streaming from the start.
+   */
+  local: boolean
 }
 
 /** Where the Pixabay walk has got to: a page per image type, whose turn it is, and what was already shown. */
@@ -251,7 +256,7 @@ export function initialCursor(query: string, source: MediaSearchSource): SearchC
     version: 1,
     query,
     source,
-    iconify: { colorStart: 0, generalStart: 0, colorExhausted: false, generalExhausted: false, setIndex: 0, setStart: 0, setsExhausted: false },
+    iconify: { colorStart: 0, generalStart: 0, colorExhausted: false, generalExhausted: false, setIndex: 0, setStart: 0, setsExhausted: false, local: false },
     pixabay: { vectorPage: 1, illustrationPage: 1, nextType: 'vector', vectorExhausted: false, illustrationExhausted: false, seenIds: [] },
   }
 }
@@ -288,6 +293,7 @@ export function decodeCursor(value: string | null | undefined, query: string, so
       !validInteger(cursor.iconify?.setStart, 0) ||
       cursor.iconify.setStart > ICONIFY_ASK_LIMIT ||
       !validBoolean(cursor.iconify?.setsExhausted) ||
+      !validBoolean(cursor.iconify?.local) ||
       !validInteger(cursor.pixabay?.vectorPage, 1) ||
       !validInteger(cursor.pixabay?.illustrationPage, 1) ||
       (cursor.pixabay?.nextType !== 'vector' && cursor.pixabay?.nextType !== 'illustration') ||

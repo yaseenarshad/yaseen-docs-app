@@ -30,7 +30,9 @@ import { BridgeFailure } from '../fs/fsUtils'
 import type { MediaCache } from './cache'
 import { CACHE_TTL_MS, pixabayItemCacheKey, pixabayPageCacheKey, previewCacheKey, searchCacheKey } from './cachePolicy'
 import { indexItems, libraryItemElements, LIBRARIES_INDEX_URL, LIBRARIES_ORIGIN, MAX_DRAWING_ELEMENTS_BYTES, MAX_INDEX_BYTES, MAX_LIBRARY_FILE_BYTES, MAX_LIBRARY_FILES_IN_MEMORY, parseDrawingId } from './excalidrawLibraries'
-import { activeFilterCount, type MediaFilters } from '@shared/iconPacks'
+import { activeFilterCount, filtersKey, isIconPrefix, type IconPackInfo, type MediaFilters } from '@shared/iconPacks'
+import type { IconPacks } from './iconPacks'
+import { rankLocalMatches } from './iconPackSearch'
 import { createIconifyBatcher, type IconifySetData } from './iconifyBatch'
 import {
   allowedPrefixes,
@@ -46,6 +48,7 @@ import {
   iconifyItemFromId,
   iconifySearchUrl,
   iconifySetsBySize,
+  initialCursor,
   iconifySvgUrl,
   interleaveResults,
   isColorCollection,
@@ -96,7 +99,12 @@ export interface MediaProvidersDeps {
   /** `secrets.read(PIXABAY_SECRET)` — null when no key is stored or it cannot be decrypted here. */
   readPixabayKey: () => Promise<string | null>
   cache: MediaCache
+  /** The downloaded icon packs (YAZ-4359, `iconPacks.ts`); absent = streaming only, as before them. */
+  packs?: LocalIconPacks
 }
+
+/** What the providers read of the downloaded packs. */
+export type LocalIconPacks = Pick<IconPacks, 'searchReady' | 'has' | 'packs' | 'info' | 'names' | 'svg'>
 
 export interface MediaProviders {
   search(req: MediaSearchRequest): Promise<MediaSearchResponse>
@@ -104,6 +112,8 @@ export interface MediaProviders {
   import(req: MediaBytesRequest): Promise<MediaImportResponse>
   drawingIndex(): Promise<MediaDrawingIndexResponse>
   drawing(req: MediaDrawingRequest): Promise<MediaDrawingResponse>
+  /** Every pack the Add panel can name (Filter › Packs, the pack page, YAZ-4360 / YAZ-4361): the Mac's when it has them, else Iconify's list. */
+  packList(): Promise<IconPackInfo[]>
 }
 
 /** The filters' part of an Iconify search (YAZ-4360): the allowed packs (null = every pack) and the test each icon passes. */
@@ -117,9 +127,12 @@ const prefixOf = (item: StudioItem) => item.providerId.slice(0, item.providerId.
 /** What a provider's failure looks like to the search loop: which one, and why. */
 type ProviderFailure = { provider: SearchProvider; error: BridgeFailure }
 
+/** Pixabay offline while the icons come from the Mac (YAZ-4359, extra 17). */
+export const LOCAL_OFFLINE_WARNING = "You're offline. Icons still come from your downloaded packs; Pixabay graphics need the internet."
+
 const warningFor = (provider: SearchProvider) => (provider === 'iconify' ? 'Icons are temporarily unavailable.' : 'Pixabay graphics are temporarily unavailable.')
 
-export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProvidersDeps): MediaProviders {
+export function createMediaProviders({ fetch, readPixabayKey, cache, packs }: MediaProvidersDeps): MediaProviders {
   /**
    * A request that never got an answer is OFFLINE; one that got a bad answer is the provider's fault. A 429 is asked
    * once more, after the wait its `Retry-After` names (1 s when it names none, 2 s at most): typing searches on a pause
@@ -332,11 +345,67 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
    * The filters as an Iconify scope (YAZ-4360): the allowed packs, from the pack facts only when a filter reads them
    * (Packs alone asks nothing), and the style test on each icon name.
    */
-  async function scopeFor(filters: MediaFilters | undefined): Promise<IconifyScope> {
+  async function scopeFor(filters: MediaFilters | undefined, local: boolean): Promise<IconifyScope> {
     const style = filters?.style ?? 'any'
     const keep = style === 'any' || style === 'emoji' ? () => true : (item: StudioItem) => matchesStyle(item.providerId, style)
-    const facts = filtersNeedPackFacts(filters) ? await iconifyCollections() : {}
+    // With the packs on the Mac, the facts are theirs: a filter change asks the network nothing (round 3 decision 4).
+    const facts = !filtersNeedPackFacts(filters) ? {} : local && packs !== undefined ? Object.fromEntries(packs.packs().map((info) => [info.prefix, info])) : await iconifyCollections()
     return { allowed: allowedPrefixes(facts, filters), keep }
+  }
+
+  // ---------- The downloaded packs (YAZ-4359) and the pack page (YAZ-4361) ----------
+
+  /** A pack's facts as the payload `normalizeIconifyResults` reads, so a local item reads like a streamed one. */
+  const collectionOf = (info: IconPackInfo | null | undefined): IconifyCollection | undefined =>
+    info == null ? undefined : { name: info.name, category: info.category, license: info.license, palette: info.palette }
+  const localItems = (ids: readonly string[]): StudioItem[] =>
+    normalizeIconifyResults({ icons: [...ids], collections: Object.fromEntries([...new Set(ids.map((id) => id.slice(0, id.indexOf(':'))))].flatMap((prefix) => {
+      const collection = collectionOf(packs?.info(prefix))
+      return collection === undefined ? [] : [[prefix, collection]]
+    })) })
+
+  /** The last few local searches' ranked matches, so the next page is a slice. */
+  const localMatches = new Map<string, Promise<string[]>>()
+  const MAX_LOCAL_SEARCHES = 4
+  function rankedLocally(query: string, filters: MediaFilters | undefined, scope: IconifyScope): Promise<string[]> {
+    const memoKey = `${query}\u0000${filtersKey(filters)}`
+    const known = localMatches.get(memoKey)
+    if (known !== undefined) return known
+    const value = (packs as LocalIconPacks).names().then((byPack) => rankLocalMatches([...byPack], query, scope.allowed, (id) => scope.keep({ providerId: id } as StudioItem)))
+    localMatches.set(memoKey, value)
+    for (const oldest of localMatches.keys()) {
+      if (localMatches.size <= MAX_LOCAL_SEARCHES) break
+      localMatches.delete(oldest)
+    }
+    value.catch(() => localMatches.delete(memoKey))
+    return value
+  }
+
+  /** One page of a list of ids, from `generalStart`; the other passes are spent. */
+  function pageOf(ids: readonly string[], currentCursor: IconifyCursor, limit: number, local: boolean, make: (ids: readonly string[]) => StudioItem[]): ProviderSearchResult<'iconify'> {
+    const start = currentCursor.generalStart
+    const end = Math.min(ids.length, start + limit)
+    const cursor: IconifyCursor = { ...currentCursor, colorExhausted: true, setsExhausted: true, generalStart: end, generalExhausted: end >= ids.length, local }
+    return { items: make(ids.slice(start, end)), cursor, hasMore: iconifyHasMore(cursor) }
+  }
+
+  /** The pack page with an empty search (YAZ-4361): every visible icon of one pack, from the Mac or Iconify's `/collection`. */
+  async function browsePack(prefix: string, cursor: IconifyCursor, limit: number, local: boolean): Promise<ProviderSearchResult<'iconify'>> {
+    if (local && packs !== undefined) {
+      const names = (await packs.names()).get(prefix) ?? []
+      return pageOf(names.map((name) => `${prefix}:${name}`), cursor, limit, true, localItems)
+    }
+    const url = new URL(`${ICONIFY_API}/collection`)
+    url.searchParams.set('prefix', prefix)
+    const [listed, collections] = await Promise.all([
+      cachedJson<{ uncategorized?: unknown; categories?: unknown; hidden?: unknown }>(`iconify/collection/${prefix}`, url.toString(), { maxBytes: MAX_COLLECTIONS_BYTES }),
+      iconifyCollections().catch(() => ({}) as Record<string, IconifyCollection>),
+    ])
+    const hidden = new Set(Array.isArray(listed.hidden) ? listed.hidden : [])
+    const categories = typeof listed.categories === 'object' && listed.categories !== null ? Object.values(listed.categories as Record<string, unknown>) : []
+    const names = [...new Set([...categories, listed.uncategorized].flatMap((list) => (Array.isArray(list) ? list : [])).filter((name): name is string => typeof name === 'string' && !hidden.has(name)))]
+    const info = collections[prefix]
+    return pageOf(names.map((name) => `${prefix}:${name}`), cursor, limit, false, (ids) => normalizeIconifyResults({ icons: [...ids], collections: info === undefined ? {} : { [prefix]: info } }))
   }
 
   // ---------- Pixabay ----------
@@ -411,11 +480,30 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
       cursor.pixabay.vectorExhausted = true
       cursor.pixabay.illustrationExhausted = true
     }
-    const providers = providersFor(req.source).filter((provider) => provider !== 'pixabay' || (pixabayAvailable && !filtered))
+    // The pack page with no search (YAZ-4361): one pack's every icon, no Pixabay.
+    const browse = query === '' ? (req.filters?.packs[0] ?? null) : null
+    if (browse !== null) {
+      cursor.pixabay.vectorExhausted = true
+      cursor.pixabay.illustrationExhausted = true
+    }
+    const providers = providersFor(browse !== null ? 'iconify' : req.source).filter((provider) => provider !== 'pixabay' || (pixabayAvailable && !filtered))
     const limits = filtered ? { ...providerLimits(req.source), iconify: SEARCH_LIMIT } : providerLimits(req.source)
-    const iconifyScope = await scopeFor(req.filters)
+    // The downloaded packs answer when every pack is here (YAZ-4359). A cursor from before they came goes on streaming;
+    // a local cursor whose packs went away streams from the start.
+    const ready = packs?.searchReady() === true
+    if (cursor.iconify.local && !ready) cursor.iconify = initialCursor(query, req.source).iconify
+    const local = ready && (!req.cursor || cursor.iconify.local)
+    const iconifyScope = await scopeFor(req.filters, local)
+    const searchLocally = async (limit: number): Promise<ProviderSearchResult<'iconify'>> =>
+      pageOf(await rankedLocally(query, req.filters, iconifyScope), cursor.iconify, limit, true, localItems)
     const runProvider = (provider: SearchProvider, limit: number): Promise<AnyProviderSearchResult> =>
-      provider === 'iconify' ? searchIconify(query, cursor.iconify, limit, iconifyScope) : searchPixabay(query, cursor.pixabay, limit, key as string)
+      provider === 'pixabay'
+        ? searchPixabay(query, cursor.pixabay, limit, key as string)
+        : browse !== null
+          ? browsePack(browse, cursor.iconify, limit, local)
+          : local
+            ? searchLocally(limit)
+            : searchIconify(query, cursor.iconify, limit, iconifyScope)
 
     const resultsByProvider = new Map<SearchProvider, StudioItem[]>()
     const succeeded = new Set<SearchProvider>()
@@ -442,7 +530,8 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     const warn = (provider: SearchProvider, error: BridgeFailure) => {
       if (!failures.some((failure) => failure.provider === provider)) {
         failures.push({ provider, error })
-        warnings.push(warningFor(provider))
+        // Extra 17: offline with the packs on the Mac, the icons still come; only Pixabay needs the internet.
+        warnings.push(local && provider === 'pixabay' && error.code === 'OFFLINE' ? LOCAL_OFFLINE_WARNING : warningFor(provider))
       }
     }
 
@@ -481,6 +570,15 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
   }
 
   // ---------- The bytes ----------
+
+  /** An Iconify icon whose pack is on the Mac: its SVG built from the pack, and the item with the pack's facts (YAZ-4359). */
+  async function localIcon(req: MediaBytesRequest): Promise<{ image: MediaPreviewResponse; item: StudioItem } | null> {
+    if (packs === undefined || req.provider !== 'iconify' || iconifySvgUrl(req.id) === null || !packs.has(req.id.slice(0, req.id.indexOf(':')))) return null
+    const svg = await packs.svg(req.id)
+    const [item] = svg === null ? [] : localItems([req.id])
+    if (svg === null || item === undefined) return null
+    return { image: { mimeType: 'image/svg+xml', dataURL: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}` }, item }
+  }
 
   async function pixabayRecord(id: string, key: string | null): Promise<PixabayHit> {
     if (key === null) throw new BridgeFailure('PROVIDER_FAILED', 'Pixabay needs an API key')
@@ -527,7 +625,11 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
   return {
     async search(req) {
       const query = req.q.trim().slice(0, MAX_QUERY_LENGTH)
-      if (query.length < MIN_QUERY_LENGTH) throw new BridgeFailure('BAD_REQUEST', 'enter at least two characters')
+      // An empty search of ONE pack is the pack page's every icon (YAZ-4361); any other search needs two letters.
+      const browsing = query === '' && req.filters?.packs.length === 1
+      if (query.length < MIN_QUERY_LENGTH && !browsing) throw new BridgeFailure('BAD_REQUEST', 'enter at least two characters')
+      // The packs on the Mac answer at once and change with an update: no disk cache for their answers (YAZ-4359).
+      if (packs?.searchReady() === true) return searchUncached(query, { ...req, q: query }, await readPixabayKey())
       const key = await readPixabayKey()
       const cacheKey = searchCacheKey(query, req.source, req.cursor, key !== null, req.filters)
       const hit = await cache.read<MediaSearchResponse>(cacheKey)
@@ -541,6 +643,9 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     },
 
     async preview(req) {
+      // A downloaded pack draws its own tile, with no network (YAZ-4359).
+      const fromPack = await localIcon(req)
+      if (fromPack !== null) return fromPack.image
       const cacheKey = previewCacheKey(req.provider, req.id)
       const hit = await cache.read<MediaPreviewResponse>(cacheKey)
       // The cache first, always: it is what keeps a favorited tile visible with no network and,
@@ -556,8 +661,29 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     async import(req) {
       // NEVER cached (🔒 YAZ-1775 D4): these bytes are on their way to `assets/`, which content-addresses
       // and de-duplicates them already (🔒 YAZ-1775 D3).
+      const fromPack = await localIcon(req)
+      if (fromPack !== null) return { ...fromPack.image, item: fromPack.item }
       const { url, item } = await sourceUrl(req, false, await readPixabayKey())
       return { ...(await fetchImage(url)), item }
+    },
+
+    async packList() {
+      if (packs !== undefined && packs.packs().length > 0) return packs.packs()
+      const collections = await iconifyCollections()
+      return Object.entries(collections).flatMap(([prefix, c]): IconPackInfo[] =>
+        c.hidden || !isIconPrefix(prefix)
+          ? []
+          : [
+              {
+                prefix,
+                name: c.name ?? prefix,
+                total: finiteNumber(c.total) ?? 0,
+                license: { title: c.license?.title ?? c.license?.spdx ?? 'Open source', ...(c.license?.spdx ? { spdx: c.license.spdx } : {}), ...(c.license?.url ? { url: c.license.url } : {}) },
+                ...(c.category ? { category: c.category } : {}),
+                palette: c.palette === true,
+              },
+            ],
+      )
     },
 
     // Excalidraw's public libraries (YAZ-4157 demo 6K, `excalidrawLibraries.ts`): the index and the library files

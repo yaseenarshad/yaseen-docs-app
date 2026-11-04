@@ -101,6 +101,9 @@ media.drawingIndex/0: invoke media:drawing-index []; => "answer"; !> {"code":"NO
 media.favorites/1: invoke media:favorites ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.import/1: invoke media:import ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.onChanged/1: on media:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off media:changed
+media.onPacksProgress/1: on media:packs-progress -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off media:packs-progress
+media.packList/0: invoke media:pack-list []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+media.packs/1: invoke media:packs ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.preview/1: invoke media:preview ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.search/1: invoke media:search ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.used/1: invoke media:used ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

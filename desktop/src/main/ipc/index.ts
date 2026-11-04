@@ -89,7 +89,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   handle(CONTRACT.drawing.libraryFolder, async () => resolveLibraryFolder(store.get().settings.libraryFolder, userData))
   registerMediaLibraryIpc(store, userData)
   registerComponentsIpc(store, userData)
-  registerMediaStudioIpc(userData, secrets)
+  registerMediaStudioIpc(userData, secrets, globalThis.fetch, store)
   registerShareIpc(userData, secrets, places)
   // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
   return { sync: registerGithubIpc(store), secrets, lsp }
