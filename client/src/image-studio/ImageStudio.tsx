@@ -46,7 +46,7 @@ import { insertImage, insertShape, fileFromImport, type InsertEngine, type Inser
 import { buildShapeCatalog, getShape, shapeAliases, type ShapeCatalogItem, type ShapePreview, type SmartShapeApi } from './shapes'
 import { groupResults } from './groupResults'
 import { FilterMenu } from './FilterMenu'
-import { IconPacksLine } from './IconPacksLine'
+import { IconPacksFooter } from './IconPacksLine'
 import { PackView } from './PackView'
 import { useIconPacks } from './useIconPacks'
 import { rankItems } from './rankItems'
@@ -1117,8 +1117,6 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
                 Loading more…
               </div>
             )}
-            {/* YAZ-4359: at the bottom of the icon results, the way to every icon, also offline. */}
-            {chipSource(chip) !== 'pixabay' && searchedQuery !== '' && !waiting && <IconPacksLine />}
           </section>
         )}
         {/* Nothing local, and no web half yet (a chip with no web, or text too short for a pause search): say so (6Q). */}
@@ -1283,9 +1281,14 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
         </div>
         <footer className="image-studio__footer">
           <span>Graphics via Pixabay · icons via Iconify · drawings from Excalidraw libraries.</span>
-          <button type="button" className="image-studio__google" disabled={query.trim() === ''} onClick={() => void api.shell.openLink({ href: googleImagesUrl(query) })} title="Search Google Images for this text, in your browser">
-            Search Google Images ↗
-          </button>
+          {/* YAZ-4348 demo: the packs download sits in the footer, beside Google Images */}
+          <IconPacksFooter
+            google={
+              <button type="button" className="image-studio__google" disabled={query.trim() === ''} onClick={() => void api.shell.openLink({ href: googleImagesUrl(query) })} title="Search Google Images for this text, in your browser">
+                Google Images ↗
+              </button>
+            }
+          />
         </footer>
       </div>
     </div>

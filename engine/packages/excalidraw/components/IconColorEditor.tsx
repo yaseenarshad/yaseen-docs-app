@@ -49,6 +49,9 @@ import {
 
 import { ColorPicker } from "./ColorPicker/ColorPicker";
 import { Island } from "./Island";
+import { ToolbarPopover } from "./ToolbarPopover";
+import { Tooltip } from "./Tooltip";
+import { DotsHorizontalIcon } from "./icons";
 
 import "./IconColorEditor.scss";
 
@@ -82,18 +85,59 @@ type Palette = {
 };
 
 const BADGE_GAP = 34;
-const PALETTE_WIDTH = 236;
+/** The number badge's width in px (`IconColorEditor.scss`, 2.5rem). */
+const BADGE_SIZE = 40;
+const PALETTE_WIDTH = 300;
+/** YAZ-4348 demo: what each control does, on hover. */
+const SCOPE_TIPS = {
+  all: "Click a part of the picture: every part that has the same color changes with it.",
+  one: "Click a part of the picture: only that part changes. Tip: hold Option (Alt) while you click to do this once.",
+} as const;
+const TINT_TIP =
+  "Turns every color around the color wheel at once. Black, white and grey stay, and so do the light and dark shades.";
+/**
+ * YAZ-4375 (1D1): the color a part SHOWS. `currentColor` draws black in a picture, but as a CSS value on a badge it
+ * took the badge's own text color (white on white), and the tooltip said "currentColor".
+ */
+const shownColor = (color: string) =>
+  color === "currentColor" ? "#000000" : color;
+/** YAZ-4348 demo: the card's height, so it can sit clear of the strip. */
+const PALETTE_HEIGHT = 300;
+const STRIP_HEIGHT = 64;
 
 /** Spreads the numbers' angles so they never sit on top of each other. */
-const spreadAngles = (angles: number[]) => {
-  const order = angles.map((angle, i) => ({ angle, i }));
-  order.sort((a, b) => a.angle - b.angle);
-  const gap = Math.min(0.5, (2 * Math.PI) / Math.max(order.length, 1));
-  for (let pass = 0; pass < 6; pass++) {
-    for (let k = 1; k < order.length; k++) {
-      if (order[k].angle - order[k - 1].angle < gap) {
-        order[k].angle = order[k - 1].angle + gap;
+/**
+ * The numbers' angles around the picture, each kept near its part, but never closer than `minGap` (the badge's
+ * width at this radius) — also across the wrap from the last to the first. YAZ-4348 demo: an 11-color fire put
+ * numbers on top of each other, because the old pass pushed only forward and never compared the last with the
+ * first. When the circle cannot hold them all at `minGap`, they spread evenly.
+ */
+const spreadAngles = (angles: number[], minGap: number) => {
+  const n = angles.length;
+  if (n < 2) {
+    return [...angles];
+  }
+  const TAU = 2 * Math.PI;
+  const order = angles
+    .map((angle, i) => ({ angle: ((angle % TAU) + TAU) % TAU, i }))
+    .sort((a, b) => a.angle - b.angle);
+  const gap = Math.min(minGap, TAU / n);
+  // pull apart every close pair (the last and the first too), half each way, until nothing overlaps
+  for (let pass = 0; pass < 60; pass++) {
+    let moved = false;
+    for (let k = 0; k < n; k++) {
+      const a = order[k];
+      const b = order[(k + 1) % n];
+      const diff = k === n - 1 ? b.angle + TAU - a.angle : b.angle - a.angle;
+      if (diff < gap - 1e-6) {
+        const push = (gap - diff) / 2;
+        a.angle -= push;
+        b.angle += push;
+        moved = true;
       }
+    }
+    if (!moved) {
+      break;
     }
   }
   const out = [...angles];
@@ -139,6 +183,8 @@ export const IconColorEditor = ({
   const [hovered, setHovered] = useState<string | null>(null);
   const [tint, setTint] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // YAZ-4348 demo: one palette at a time — the outline card closes when a color's card opens, and back
+  const [outlineOpen, setOutlineOpen] = useState(false);
   const previews = useRef(new Map<string, HTMLImageElement>());
   const lastCount = useRef(0);
 
@@ -281,9 +327,12 @@ export const IconColorEditor = ({
     x: element.x + element.width / 2,
     y: element.y + element.height / 2,
   });
-  const radius =
+  // a ring wide enough to hold every number side by side (an 11-color fire needs a wider ring than a star)
+  const radius = Math.max(
     (Math.max(element.width, element.height) / 2) * appState.zoom.value +
-    BADGE_GAP;
+      BADGE_GAP,
+    (groups.length * (BADGE_SIZE + 10)) / (2 * Math.PI),
+  );
   const anchors = groups.map((group) => {
     let best = -1;
     for (const key of group.keys) {
@@ -305,6 +354,7 @@ export const IconColorEditor = ({
         ? -Math.PI / 2 + i * 0.7
         : Math.atan2(anchor.y - center.y, anchor.x - center.x),
     ),
+    (BADGE_SIZE + 10) / radius,
   );
   const badges = groups.map((group, i) => ({
     group,
@@ -333,6 +383,20 @@ export const IconColorEditor = ({
     center.y + radius + 8 > appState.height - 60
       ? Math.max(8, center.y - radius - 60)
       : center.y + radius + 8;
+  // the color's card never covers the strip: beside the click, else above or below the strip
+  const paletteTop = (y: number) => {
+    const fit = (top: number) =>
+      Math.max(8, Math.min(top, appState.height - PALETTE_HEIGHT - 8));
+    const top = fit(y - 40);
+    const overlaps =
+      top < stripTop + STRIP_HEIGHT + 8 && top + PALETTE_HEIGHT > stripTop - 8;
+    if (!overlaps) {
+      return top;
+    }
+    return stripTop > center.y
+      ? fit(stripTop - PALETTE_HEIGHT - 12)
+      : fit(stripTop + STRIP_HEIGHT + 12);
+  };
 
   return (
     <div className="icon-color-editor" data-testid="icon-color-editor">
@@ -354,29 +418,161 @@ export const IconColorEditor = ({
           style={{
             left: x,
             top: y,
-            background: group.color,
-            color: isColorDark(group.color) ? "#ffffff" : "#1e1e1e",
+            background: shownColor(group.color),
+            color: isColorDark(shownColor(group.color)) ? "#ffffff" : "#1e1e1e",
           }}
-          title={`Color ${number}: ${group.color} (${group.keys.length} part${
+          title={`Color ${number} · ${group.keys.length} part${
             group.keys.length === 1 ? "" : "s"
-          })`}
+          }. Click to change it; point to see its parts.`}
           aria-label={`Color ${number}`}
           onPointerEnter={() => setHovered(group.color)}
           onPointerLeave={() => setHovered(null)}
-          onClick={() =>
+          onClick={() => {
+            setOutlineOpen(false);
             setPalette({
               x: x + 18,
               y,
               color: group.color,
               target: null,
               justThisPart: false,
-            })
-          }
+            });
+          }}
         >
           {number}
         </button>
       ))}
 
+
+      <div
+        className="icon-color-editor__float icon-color-editor__float--strip"
+        style={{ left: center.x, top: stripTop }}
+        data-prevent-outside-click
+      >
+        <Island
+          className="icon-color-editor__strip"
+          padding={1}
+          role="toolbar"
+          aria-label="Edit colors"
+        >
+          <span className="contextual-properties-toolbar__label">
+            Edit colors
+          </span>
+          {/* YAZ-4348 demo: the change scope and the tint sit behind ⋯, so the strip stays short */}
+          <ToolbarPopover
+            label="More options"
+            title="More: what a click changes, and Tint"
+            icon={DotsHorizontalIcon}
+            className="icon-color-editor__more-trigger"
+          >
+            <div className="icon-color-editor__more">
+            <div
+              className="icon-color-editor__scope"
+              role="radiogroup"
+              aria-label="Change"
+            >
+              {(
+                [
+                  ["all", "Every part with this color"],
+                  ["one", "Just the part I click"],
+                ] as const
+              ).map(([value, label]) => (
+                <Tooltip key={value} label={SCOPE_TIPS[value]} long>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={scope === value}
+                    className={clsx({ "is-active": scope === value })}
+                    onClick={() => setScope(value)}
+                  >
+                    {label}
+                  </button>
+                </Tooltip>
+              ))}
+            </div>
+            <Tooltip label={TINT_TIP} long>
+              <label className="icon-color-editor__tint">
+              <span>Tint</span>
+              <IconSizeSlider
+                label="Tint"
+                className="icon-color-editor__tint-slider"
+                value={tint}
+                max={360}
+                onPreview={(degrees) =>
+                  apply({
+                    colors: tintIconColors(info.colors, degrees),
+                    replaceColors: true,
+                    preview: true,
+                  })
+                }
+                onChange={(degrees) => {
+                  setTint(degrees);
+                  apply({
+                    colors: tintIconColors(info.colors, degrees),
+                    replaceColors: true,
+                  });
+                }}
+              />
+            </label>
+              </Tooltip>
+            </div>
+          </ToolbarPopover>
+          {/* YAZ-4348 demo: one outline chip; its colors and thickness open in their own card */}
+          <ToolbarPopover
+            label="Outline"
+            title="Outline: a line around the icon's shape. Pick its color and thickness."
+            className="text-toolbar-value icon-color-editor__outline-trigger"
+            open={outlineOpen}
+            onOpenChange={(open) => {
+              setOutlineOpen(open);
+              if (open) {
+                setPalette(null);
+              }
+            }}
+            icon={
+              <span className="icon-color-editor__outline-chip">
+                <i style={{ background: recipe.outline?.color ?? "transparent" }} />
+                Outline
+              </span>
+            }
+          >
+            <div className="icon-color-editor__outline-card">
+              <IconOutlineControls
+                elements={app.scene.getNonDeletedElements()}
+                appState={appState}
+                app={app}
+                elementIds={[element.id]}
+                onChange={(change) =>
+                  actionManager.executeAction(
+                    actionManager.actions.changeIconOutline,
+                    "ui",
+                    change,
+                  )
+                }
+              />
+            </div>
+          </ToolbarPopover>
+          <Tooltip label="Back to the icon's original colors. The outline stays." long>
+          <button
+            type="button"
+            className="icon-color-editor__button"
+            onClick={() => {
+              setTint(0);
+              setPalette(null);
+              apply({ reset: true });
+            }}
+          >
+            Reset colors
+          </button>
+          </Tooltip>
+          <button
+            type="button"
+            className="icon-color-editor__button icon-color-editor__done"
+            onClick={onDone}
+          >
+            Done
+          </button>
+        </Island>
+      </div>
       {palette && (
         <div
           className="icon-color-editor__float"
@@ -385,7 +581,7 @@ export const IconColorEditor = ({
               8,
               Math.min(palette.x + 16, appState.width - PALETTE_WIDTH - 8),
             ),
-            top: Math.max(8, Math.min(palette.y - 40, appState.height - 260)),
+            top: paletteTop(palette.y),
           }}
           data-prevent-outside-click
         >
@@ -398,7 +594,7 @@ export const IconColorEditor = ({
             <div className="icon-color-editor__palette-title">
               <span
                 className="icon-color-editor__swatch"
-                style={{ background: palette.color }}
+                style={{ background: shownColor(palette.color) }}
               />
               Color {paletteNumber} —{" "}
               {justThisPart
@@ -451,106 +647,6 @@ export const IconColorEditor = ({
           </Island>
         </div>
       )}
-
-      <div
-        className="icon-color-editor__float icon-color-editor__float--strip"
-        style={{ left: center.x, top: stripTop }}
-        data-prevent-outside-click
-      >
-        <Island
-          className="icon-color-editor__strip"
-          padding={1}
-          role="toolbar"
-          aria-label="Edit colors"
-        >
-          <span className="contextual-properties-toolbar__label">
-            Edit colors
-          </span>
-          <div
-            className="icon-color-editor__scope"
-            role="radiogroup"
-            aria-label="Change"
-          >
-            {(
-              [
-                ["all", "Every part with this color"],
-                ["one", "Just the part I click"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={scope === value}
-                className={clsx({ "is-active": scope === value })}
-                title={
-                  value === "one"
-                    ? "Or hold Option (Alt) while you click a part"
-                    : undefined
-                }
-                onClick={() => setScope(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <label className="icon-color-editor__tint">
-            <span>Tint</span>
-            <IconSizeSlider
-              label="Tint"
-              className="icon-color-editor__tint-slider"
-              value={tint}
-              max={360}
-              onPreview={(degrees) =>
-                apply({
-                  colors: tintIconColors(info.colors, degrees),
-                  replaceColors: true,
-                  preview: true,
-                })
-              }
-              onChange={(degrees) => {
-                setTint(degrees);
-                apply({
-                  colors: tintIconColors(info.colors, degrees),
-                  replaceColors: true,
-                });
-              }}
-            />
-          </label>
-          <span className="contextual-properties-toolbar__label">Outline</span>
-          <IconOutlineControls
-            elements={app.scene.getNonDeletedElements()}
-            appState={appState}
-            app={app}
-            elementIds={[element.id]}
-            onChange={(change) =>
-              actionManager.executeAction(
-                actionManager.actions.changeIconOutline,
-                "ui",
-                change,
-              )
-            }
-          />
-          <button
-            type="button"
-            className="icon-color-editor__button"
-            onClick={() => {
-              setTint(0);
-              setPalette(null);
-              apply({ reset: true });
-            }}
-          >
-            Reset colors
-          </button>
-          <button
-            type="button"
-            className="icon-color-editor__button icon-color-editor__done"
-            onClick={onDone}
-          >
-            Done
-          </button>
-        </Island>
-      </div>
     </div>
   );
 };

@@ -53,10 +53,16 @@
    would hide a white icon. One board, one square size. */
 .image-studio__preview {
   align-items: center;
-  background:
-    linear-gradient(45deg, var(--color-gray-10) 25%, transparent 25%) 0 0 / 12px 12px,
-    linear-gradient(-45deg, var(--color-gray-10) 25%, transparent 25%) 0 0 / 12px 12px,
-    var(--island-bg-color);
+  /* YAZ-4348 demo: a real chequerboard (two offset layers, not the half pattern that drew a zigzag), and faint:
+     its squares are the panel's own text colour at 6 %, so it follows the theme instead of a light grey that
+     shouted on a dark board. */
+  --image-studio-check: color-mix(in srgb, var(--text-primary-color) 6%, transparent);
+  background-color: var(--island-bg-color);
+  background-image:
+    linear-gradient(45deg, var(--image-studio-check) 25%, transparent 25%, transparent 75%, var(--image-studio-check) 75%),
+    linear-gradient(45deg, var(--image-studio-check) 25%, transparent 25%, transparent 75%, var(--image-studio-check) 75%);
+  background-position: 0 0, 6px 6px;
+  background-size: 12px 12px;
   display: flex;
   justify-content: center;
   overflow: hidden;

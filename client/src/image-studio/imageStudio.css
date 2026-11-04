@@ -801,3 +801,54 @@
   border-color: var(--color-primary);
   outline: none;
 }
+
+/* YAZ-4348 demo: the footer row: the packs download on the left, Google Images on the right; centred alone.
+   Both are quiet text links on one line (demo round 1: "more discrete and inconspicuous"). */
+.image-studio__footer-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.image-studio__footer-actions.is-centered {
+  justify-content: center;
+}
+
+.image-studio__footer-actions .image-studio__google,
+.image-studio__footer-download,
+.image-studio__footer-packs button {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-secondary-color);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 2px;
+  white-space: nowrap;
+}
+
+.image-studio__footer-actions .image-studio__google:hover:not(:disabled),
+.image-studio__footer-download:hover,
+.image-studio__footer-packs button:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.image-studio__footer-packs {
+  align-items: center;
+  color: var(--text-secondary-color);
+  display: inline-flex;
+  font-size: 10px;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* YAZ-4348 demo: the packs confirm box above the board's side panel (see PacksConfirm). */
+.image-studio__sheet-layer {
+  inset: 0;
+  position: fixed;
+  z-index: 1000;
+}

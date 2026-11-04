@@ -23,10 +23,26 @@ import {
   svgOfDataURL,
 } from "@excalidraw/element";
 import {
+  COLOR_PALETTE,
+  DEFAULT_ELEMENT_STROKE_COLOR_INDEX,
   DEFAULT_ELEMENT_STROKE_COLOR_PALETTE,
   DEFAULT_ELEMENT_STROKE_PICKS,
   MIME_TYPES,
 } from "@excalidraw/common";
+
+/**
+ * YAZ-4348 demo: the ▾ after an icon picker's five picks — more colors, then "Custom…" (the full
+ * picker with any hex and the eyedropper), the text toolbar's pattern. Without it the only way to a
+ * custom color was the color square, which reads as "no outline" while there is none.
+ */
+const ICON_MORE_PICKS = [
+  COLOR_PALETTE.white,
+  COLOR_PALETTE.orange[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.violet[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.pink[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.cyan[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.gray[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+];
 import { useEffect, useRef, useState } from "react";
 
 import type { CaptureUpdateActionType, IconRecipe } from "@excalidraw/element";
@@ -320,6 +336,7 @@ export const actionChangeIconColors = register<IconColorsChange>({
     return (
       <ColorPicker
         topPicks={DEFAULT_ELEMENT_STROKE_PICKS}
+        morePicks={ICON_MORE_PICKS}
         palette={DEFAULT_ELEMENT_STROKE_COLOR_PALETTE}
         type="elementStroke"
         label="Icon color"
@@ -447,6 +464,7 @@ export const IconOutlineControls = ({
     <>
       <ColorPicker
         topPicks={DEFAULT_ELEMENT_STROKE_PICKS}
+        morePicks={ICON_MORE_PICKS}
         palette={DEFAULT_ELEMENT_STROKE_COLOR_PALETTE}
         type="elementStroke"
         label="Outline color"
