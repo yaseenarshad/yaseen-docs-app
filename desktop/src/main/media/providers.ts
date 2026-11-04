@@ -37,9 +37,11 @@ import {
   hasMorePages,
   ICONIFY_API,
   ICONIFY_COLOR_BATCH_LIMIT,
+  iconifyAnswerCapped,
+  iconifyHasMore,
   iconifyItemFromId,
-  iconifyPageExhausted,
   iconifySearchUrl,
+  iconifySetsBySize,
   iconifySvgUrl,
   interleaveResults,
   isColorCollection,
@@ -56,7 +58,10 @@ import {
   SEARCH_LIMIT,
   COLOR_COLLECTION_PRIORITY,
   finiteNumber,
+  MAX_COLLECTIONS_BYTES,
+  MAX_PASS_LOOKUPS,
   type AnyProviderSearchResult,
+  type IconifyCollection,
   type IconifyCursor,
   type IconifySearchPayload,
   type PixabayCursor,
@@ -96,6 +101,14 @@ export interface MediaProviders {
   drawingIndex(): Promise<MediaDrawingIndexResponse>
   drawing(req: MediaDrawingRequest): Promise<MediaDrawingResponse>
 }
+
+/** The filters' part of an Iconify search (YAZ-4360): the allowed packs (null = every pack) and the test each icon passes. */
+interface IconifyScope {
+  allowed: ReadonlySet<string> | null
+  keep: (item: StudioItem) => boolean
+}
+
+const prefixOf = (item: StudioItem) => item.providerId.slice(0, item.providerId.indexOf(':'))
 
 /** What a provider's failure looks like to the search loop: which one, and why. */
 type ProviderFailure = { provider: SearchProvider; error: BridgeFailure }
@@ -204,56 +217,111 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     return fetchJson<IconifySetData>(url.toString())
   })
 
-  async function fetchIconifyPage(query: string, start: number, limit: number, prefixes?: string[]) {
-    const payload = await fetchJson<IconifySearchPayload>(iconifySearchUrl(query, start, limit, prefixes).toString())
-    const fetchedCount = payload.icons?.length ?? 0
-    return {
-      items: normalizeIconifyResults(payload),
-      fetchedCount,
-      responseLimit: finiteNumber(payload.limit) ?? limit,
-      total: finiteNumber(payload.total),
-    }
+  /**
+   * Iconify's pack list (`/collections`, about 110 KB): the order of the pack passes (YAZ-4358) and what a filter reads
+   * (YAZ-4360). Through the 24 h disk cache, and parsed once for each 24 h; a failure is forgotten, so the next ask retries.
+   */
+  let collectionsMemo: { at: number; value: Promise<Record<string, IconifyCollection>> } | null = null
+  function iconifyCollections(): Promise<Record<string, IconifyCollection>> {
+    if (collectionsMemo !== null && fresh(collectionsMemo.at)) return collectionsMemo.value
+    const value = cachedJson<Record<string, IconifyCollection>>('iconify/collections', `${ICONIFY_API}/collections`, { maxBytes: MAX_COLLECTIONS_BYTES }).then((raw) =>
+      typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? raw : {},
+    )
+    const memo = { at: Date.now(), value }
+    collectionsMemo = memo
+    value.catch(() => {
+      if (collectionsMemo === memo) collectionsMemo = null
+    })
+    return value
   }
 
   /**
-   * The colour pass, then the general pass with the colour sets filtered out — the reason a query
-   * answers with emoji and flat icons before it answers with another wall of Material glyphs.
-   * The general pass loops because it may have to skip a whole page of colour icons it already
-   * showed; eight requests is the Worker's own ceiling on that.
+   * ONE pass's whole answer (YAZ-4358): Iconify answers at most its window of 128 for one query, all in one request, so
+   * the answer is kept 24 h and every later page of the same pass slices it with no request.
    */
-  async function searchIconify(query: string, currentCursor: IconifyCursor, limit: number): Promise<ProviderSearchResult<'iconify'>> {
+  async function iconifyPass(query: string, scope: { prefixes?: readonly string[]; prefix?: string }): Promise<{ items: StudioItem[]; capped: boolean }> {
+    const url = iconifySearchUrl(query, scope)
+    const payload = await cachedJson<IconifySearchPayload>(`iconify/search${url.search}`, url.toString())
+    return { items: normalizeIconifyResults(payload), capped: iconifyAnswerCapped(payload) }
+  }
+
+  /**
+   * The colour pass, then the general pass with the colour sets filtered out — the reason a query answers with emoji
+   * and flat icons before it answers with another wall of Material glyphs. Then (YAZ-4358), when a first pass was cut
+   * at Iconify's window, one pass for each pack, biggest first, skipping what the first two showed. At most
+   * `MAX_PASS_LOOKUPS` answers are looked up for one page. `scope` is the filters' part (YAZ-4360): the allowed packs
+   * (null = every pack) and the test each icon passes.
+   */
+  async function searchIconify(query: string, currentCursor: IconifyCursor, limit: number, scope: IconifyScope): Promise<ProviderSearchResult<'iconify'>> {
     const cursor = { ...currentCursor }
     const items: StudioItem[] = []
+    const allowedIn = (prefixes: readonly string[]) => (scope.allowed === null ? [...prefixes] : prefixes.filter((prefix) => scope.allowed!.has(prefix)))
+    const colorPrefixes = allowedIn(COLOR_COLLECTION_PRIORITY)
+    const generalScope = scope.allowed === null ? {} : { prefixes: [...scope.allowed] }
+    let lookups = 0
+
     if (!cursor.colorExhausted && limit > 0) {
-      const start = cursor.colorStart
-      const page = await fetchIconifyPage(query, start, Math.min(ICONIFY_COLOR_BATCH_LIMIT, limit), COLOR_COLLECTION_PRIORITY)
-      const returnedItems = page.items.slice(0, limit)
-      // A page that yielded nothing usable still consumed what it fetched — otherwise the cursor
-      // never advances and the next request asks for the same window again.
-      const consumedCount = returnedItems.length > 0 || page.fetchedCount === 0 ? returnedItems.length : page.fetchedCount
-      cursor.colorStart += consumedCount
-      cursor.colorExhausted = iconifyPageExhausted(start, consumedCount, page)
-      items.push(...returnedItems)
-    }
-
-    let requests = 0
-    while (items.length < limit && !cursor.generalExhausted && requests < 8) {
-      const start = cursor.generalStart
-      const page = await fetchIconifyPage(query, start, limit - items.length)
-      let consumedCount = 0
-      for (const item of page.items) {
-        consumedCount++
-        if (!isColorCollection(item.providerId.split(':')[0])) items.push(item)
-        if (items.length === limit) break
+      if (colorPrefixes.length === 0) cursor.colorExhausted = true
+      else {
+        const pass = await iconifyPass(query, { prefixes: colorPrefixes })
+        lookups++
+        const want = Math.min(ICONIFY_COLOR_BATCH_LIMIT, limit)
+        let at = cursor.colorStart
+        for (let got = 0; at < pass.items.length && got < want; at++) {
+          if (!scope.keep(pass.items[at])) continue
+          items.push(pass.items[at])
+          got++
+        }
+        cursor.colorStart = at
+        cursor.colorExhausted = at >= pass.items.length
       }
-      if (consumedCount === 0 && page.fetchedCount > 0) consumedCount = page.fetchedCount
-      cursor.generalStart += consumedCount
-      cursor.generalExhausted = iconifyPageExhausted(start, consumedCount, page)
-      requests++
-      if (consumedCount === 0) break
     }
 
-    return { items: items.slice(0, limit), cursor, hasMore: !cursor.colorExhausted || !cursor.generalExhausted }
+    if (items.length < limit && !cursor.generalExhausted) {
+      if (scope.allowed !== null && scope.allowed.size === 0) cursor.generalExhausted = true
+      else {
+        const pass = await iconifyPass(query, generalScope)
+        lookups++
+        let at = cursor.generalStart
+        for (; at < pass.items.length && items.length < limit; at++) {
+          const item = pass.items[at]
+          if (!isColorCollection(prefixOf(item)) && scope.keep(item)) items.push(item)
+        }
+        cursor.generalStart = at
+        cursor.generalExhausted = at >= pass.items.length
+      }
+    }
+
+    // The pack passes start once both first passes are spent, so a page never mixes their order.
+    if (items.length < limit && cursor.colorExhausted && cursor.generalExhausted && !cursor.setsExhausted) {
+      // What the first passes showed, read back from the cache (no request): a pack pass skips it.
+      const firsts = await Promise.all([colorPrefixes.length > 0 ? iconifyPass(query, { prefixes: colorPrefixes }) : null, scope.allowed?.size === 0 ? null : iconifyPass(query, generalScope)])
+      const capped = firsts.some((pass) => pass?.capped === true)
+      // One allowed pack: the general pass WAS its pass.
+      if (!capped || scope.allowed?.size === 1) cursor.setsExhausted = true
+      else {
+        const shown = new Set<string>()
+        for (const item of firsts[0]?.items ?? []) shown.add(item.itemKey)
+        for (const item of firsts[1]?.items ?? []) if (!isColorCollection(prefixOf(item))) shown.add(item.itemKey)
+        const sets = iconifySetsBySize(await iconifyCollections(), scope.allowed)
+        while (items.length < limit && cursor.setIndex < sets.length && lookups < MAX_PASS_LOOKUPS) {
+          const pass = await iconifyPass(query, { prefix: sets[cursor.setIndex] })
+          lookups++
+          let at = cursor.setStart
+          for (; at < pass.items.length && items.length < limit; at++) {
+            const item = pass.items[at]
+            if (!shown.has(item.itemKey) && scope.keep(item)) items.push(item)
+          }
+          if (at >= pass.items.length) {
+            cursor.setIndex++
+            cursor.setStart = 0
+          } else cursor.setStart = at
+        }
+        if (cursor.setIndex >= sets.length) cursor.setsExhausted = true
+      }
+    }
+
+    return { items: items.slice(0, limit), cursor, hasMore: iconifyHasMore(cursor) }
   }
 
   // ---------- Pixabay ----------
@@ -323,8 +391,9 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     }
     const providers = providersFor(req.source).filter((provider) => provider !== 'pixabay' || pixabayAvailable)
     const limits = providerLimits(req.source)
+    const iconifyScope: IconifyScope = { allowed: null, keep: () => true }
     const runProvider = (provider: SearchProvider, limit: number): Promise<AnyProviderSearchResult> =>
-      provider === 'iconify' ? searchIconify(query, cursor.iconify, limit) : searchPixabay(query, cursor.pixabay, limit, key as string)
+      provider === 'iconify' ? searchIconify(query, cursor.iconify, limit, iconifyScope) : searchPixabay(query, cursor.pixabay, limit, key as string)
 
     const resultsByProvider = new Map<SearchProvider, StudioItem[]>()
     const succeeded = new Set<SearchProvider>()

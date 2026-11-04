@@ -116,7 +116,11 @@ describe('the Pixabay key, which never leaves main (🔒 YAZ-1775 D4)', () => {
 
 describe('search over both providers', () => {
   it('runs only the requested provider and returns an opaque cursor while there is more', async () => {
-    const fetchMock = vi.fn(async () => json(iconifyPayload(['fluent-color:rocket-24'], { total: 100, start: 0, limit: 64 })))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      const icons = url.searchParams.has('prefixes') ? ['fluent-color:rocket-24'] : Array.from({ length: 30 }, (_, i) => `lucide:rocket-${i}`)
+      return json(iconifyPayload(icons, { total: icons.length, start: 0, limit: 128 }))
+    })
     const response = await build(fetchMock as unknown as typeof globalThis.fetch, null).search({ q: 'rocket', source: 'iconify' })
     expect(response.items.every(({ provider }) => provider === 'iconify')).toBe(true)
     expect(response.nextCursor).not.toBeNull()
@@ -125,6 +129,7 @@ describe('search over both providers', () => {
     const decoded = decodeCursor(response.nextCursor, 'rocket', 'iconify')
     expect(decoded.query).toBe('rocket')
     expect(decoded.iconify.colorStart).toBeGreaterThan(0)
+    expect(decoded.iconify.generalStart).toBe(17)
   })
 
   it('exhausts both providers independently without skipping or repeating a result', async () => {
@@ -505,5 +510,95 @@ describe('the bytes, and the guards 🔒 YAZ-1775 D4 put on them', () => {
 
   it('is PROVIDER_FAILED for a Pixabay import with no key at all', async () => {
     await expect(code(build(vi.fn() as unknown as typeof globalThis.fetch, null).import({ provider: 'pixabay', id: '101' }))).resolves.toBe('PROVIDER_FAILED')
+  })
+})
+
+describe('past Iconify`s 128 (YAZ-4358): one pack at a time, biggest first', () => {
+  /**
+   * Iconify, as measured: each query answers its whole window at once (at most 128). The general answer mixes the
+   * packs; a pack's own answer is that pack's first 128. `/collections` lists the packs and their sizes.
+   */
+  function iconifyWithPacks(packs: Record<string, string[]>, color = ['noto:arrow-a', 'noto:arrow-b']) {
+    const mixed: string[] = []
+    for (let i = 0; mixed.length < Object.values(packs).flat().length; i++) for (const list of Object.values(packs)) if (i < list.length) mixed.push(list[i])
+    const answer = (icons: string[]) => json(iconifyPayload(icons.slice(0, 128), { total: Math.min(icons.length, 128), start: 0, limit: 128 }))
+    return vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.pathname === '/collections') return json(Object.fromEntries(Object.entries(packs).map(([prefix, icons]) => [prefix, { name: prefix, total: 1000 - Object.keys(packs).indexOf(prefix) * 100 + icons.length * 0 }])))
+      expect(url.searchParams.get('start')).toBe('0')
+      const prefix = url.searchParams.get('prefix')
+      if (prefix !== null) return answer(packs[prefix] ?? [])
+      if (url.searchParams.has('prefixes')) return answer(color)
+      return answer(mixed)
+    })
+  }
+
+  const icons = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}:arrow-${i}`)
+
+  async function everyPage(providers: MediaProviders) {
+    const pages: StudioItem[][] = []
+    let cursor: string | null = null
+    do {
+      const page: MediaSearchResponse = await providers.search({ q: 'arrow', source: 'iconify', cursor })
+      pages.push(page.items)
+      cursor = page.nextCursor
+    } while (cursor && pages.length < 100)
+    return { pages, cursor }
+  }
+
+  it('after the general pass, pages come from one pack at a time, biggest first, with nothing twice and nothing lost', async () => {
+    const packs = { big: icons('big', 100), mid: icons('mid', 70), small: icons('small', 20), empty: [] }
+    const fetchMock = iconifyWithPacks(packs)
+    const { pages, cursor } = await everyPage(build(fetchMock as unknown as typeof globalThis.fetch, null))
+    const seen = pages.flat().map(({ providerId }) => providerId)
+
+    expect(cursor).toBeNull()
+    expect(new Set(seen)).toEqual(new Set(['noto:arrow-a', 'noto:arrow-b', ...packs.big, ...packs.mid, ...packs.small]))
+    expect(seen).toHaveLength(new Set(seen).size)
+    // The general pass showed 128 of the 190; the pack passes bring the rest, all of big before any of mid.
+    const afterGeneral = seen.slice(2 + 128)
+    expect(afterGeneral.length).toBe(190 - 128)
+    const lastBig = afterGeneral.map((id) => id.split(':')[0]).lastIndexOf('big')
+    expect(afterGeneral.slice(0, lastBig + 1).every((id) => id.startsWith('big:'))).toBe(true)
+    expect(afterGeneral.slice(lastBig + 1).every((id) => id.startsWith('mid:'))).toBe(true)
+    // Every pass is ONE request, however many pages it fills; small (all shown) and empty cost their one request too.
+    const asked = fetchMock.mock.calls.map(([url]) => String(url))
+    expect(asked).toHaveLength(new Set(asked).size)
+    expect(asked.filter((url) => url.includes('prefix=')).map((url) => new URL(url).searchParams.get('prefix'))).toEqual(['big', 'mid', 'small', 'empty'])
+  })
+
+  it('resumes in the middle of a pack from the cursor alone', async () => {
+    const packs = { big: icons('big', 120), small: icons('small', 30) }
+    const warm = build(iconifyWithPacks(packs) as unknown as typeof globalThis.fetch, null)
+    let cursor: string | null = null
+    let decoded = decodeCursor(null, 'arrow', 'iconify')
+    for (let pages = 0; decoded.iconify.setStart === 0 && pages < 30; pages++) {
+      const page: MediaSearchResponse = await warm.search({ q: 'arrow', source: 'iconify', cursor })
+      cursor = page.nextCursor
+      decoded = decodeCursor(cursor, 'arrow', 'iconify')
+    }
+    expect(decoded.iconify).toMatchObject({ setIndex: 0, colorExhausted: true, generalExhausted: true })
+    expect(decoded.iconify.setStart).toBeGreaterThan(0)
+    const expected = (await warm.search({ q: 'arrow', source: 'iconify', cursor })).items
+    // A fresh main (an empty cache) goes on from exactly that place.
+    cache = memoryCache()
+    const next = await build(iconifyWithPacks(packs) as unknown as typeof globalThis.fetch, null).search({ q: 'arrow', source: 'iconify', cursor })
+    expect(next.items.map(({ itemKey }) => itemKey)).toEqual(expected.map(({ itemKey }) => itemKey))
+    expect(next.items[0].providerId).toBe(`big:arrow-${decoded.iconify.setStart}`)
+  })
+
+  it('asks no pack at all when the first passes were not cut, and then has no next page', async () => {
+    const fetchMock = iconifyWithPacks({ big: icons('big', 20), small: icons('small', 5) })
+    const { pages, cursor } = await everyPage(build(fetchMock as unknown as typeof globalThis.fetch, null))
+    expect(cursor).toBeNull()
+    expect(pages.flat()).toHaveLength(27)
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('prefix=') || String(url).includes('/collections'))).toBe(false)
+  })
+
+  it('sends no request at all before a search', async () => {
+    const fetchMock = vi.fn()
+    build(fetchMock as unknown as typeof globalThis.fetch)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

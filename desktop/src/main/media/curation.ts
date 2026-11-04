@@ -31,9 +31,21 @@ export const MAX_IMPORT_BYTES = 20 * 1024 * 1024
 /** Search JSON and previews live this long on disk; bump `SEARCH_CACHE_VERSION` to orphan them early. */
 export const CACHE_SECONDS = 24 * 60 * 60
 /** Part of every search cache key: changing the curation changes this, and yesterday's answers stop counting. */
-export const SEARCH_CACHE_VERSION = '2'
+export const SEARCH_CACHE_VERSION = '3'
 export const PIXABAY_API = 'https://pixabay.com/api/'
 export const ICONIFY_API = 'https://api.iconify.design'
+/**
+ * What one Iconify search asks for (YAZ-4358, measured 2026-11-03): Iconify clamps `limit` to 32–128 and refuses a
+ * `start` past that window, so one request with the largest limit and `start=0` IS the whole answer of that query —
+ * at most 128 matches. The app keeps it 24 h and pages through it with no further request.
+ */
+export const ICONIFY_ASK_LIMIT = 999
+/** The window Iconify answers when it names none. */
+export const ICONIFY_WINDOW = 128
+/** The most pass answers one page looks up (the Worker's ceiling of eight requests). */
+export const MAX_PASS_LOOKUPS = 8
+/** Iconify's pack list: about 110 KB today; more than this is not read. */
+export const MAX_COLLECTIONS_BYTES = 4 * 1024 * 1024
 
 /**
  * The icon sets that are COLOURED, best first. They are asked for in their own batch before the
@@ -76,8 +88,14 @@ export interface PixabayHit {
 
 export interface IconifyCollection {
   name?: string
+  /** How many icons the pack has (`/collections` only). */
+  total?: number
   category?: string
   license?: { title?: string; url?: string; spdx?: string }
+  /** True: many-color icons. False: one color (`currentColor`). */
+  palette?: boolean
+  /** Iconify hides a pack that is gone or replaced (`/collections` leaves most of them out already). */
+  hidden?: boolean
 }
 
 export interface IconifySearchPayload {
@@ -87,12 +105,19 @@ export interface IconifySearchPayload {
   limit?: number
 }
 
-/** Where the Iconify walk has got to: a colour pass and a general pass, each with its own start. */
+/**
+ * Where the Iconify walk has got to: a colour pass and a general pass, each with its own start, then (YAZ-4358) one
+ * pass for each pack, biggest first — `setIndex` is the pack in that list, `setStart` the place in its answer. The
+ * pack passes run only when a first pass was cut at Iconify's window of 128; otherwise `setsExhausted` is set at once.
+ */
 export interface IconifyCursor {
   colorStart: number
   generalStart: number
   colorExhausted: boolean
   generalExhausted: boolean
+  setIndex: number
+  setStart: number
+  setsExhausted: boolean
 }
 
 /** Where the Pixabay walk has got to: a page per image type, whose turn it is, and what was already shown. */
@@ -225,7 +250,7 @@ export function initialCursor(query: string, source: MediaSearchSource): SearchC
     version: 1,
     query,
     source,
-    iconify: { colorStart: 0, generalStart: 0, colorExhausted: false, generalExhausted: false },
+    iconify: { colorStart: 0, generalStart: 0, colorExhausted: false, generalExhausted: false, setIndex: 0, setStart: 0, setsExhausted: false },
     pixabay: { vectorPage: 1, illustrationPage: 1, nextType: 'vector', vectorExhausted: false, illustrationExhausted: false, seenIds: [] },
   }
 }
@@ -235,6 +260,8 @@ export function encodeCursor(cursor: SearchCursor): string {
   return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url')
 }
 
+/** Iconify has about 280 packs; a cursor past this many is not one the app made. */
+const MAX_SET_INDEX = 2000
 const validInteger = (candidate: unknown, minimum: number) => typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= minimum
 const validBoolean = (candidate: unknown) => typeof candidate === 'boolean'
 
@@ -255,6 +282,11 @@ export function decodeCursor(value: string | null | undefined, query: string, so
       !validInteger(cursor.iconify?.generalStart, 0) ||
       !validBoolean(cursor.iconify?.colorExhausted) ||
       !validBoolean(cursor.iconify?.generalExhausted) ||
+      !validInteger(cursor.iconify?.setIndex, 0) ||
+      cursor.iconify.setIndex > MAX_SET_INDEX ||
+      !validInteger(cursor.iconify?.setStart, 0) ||
+      cursor.iconify.setStart > ICONIFY_ASK_LIMIT ||
+      !validBoolean(cursor.iconify?.setsExhausted) ||
       !validInteger(cursor.pixabay?.vectorPage, 1) ||
       !validInteger(cursor.pixabay?.illustrationPage, 1) ||
       (cursor.pixabay?.nextType !== 'vector' && cursor.pixabay?.nextType !== 'illustration') ||
@@ -282,12 +314,19 @@ export function providersFor(source: MediaSearchSource): SearchProvider[] {
   return source === 'all' ? ['iconify', 'pixabay'] : [source]
 }
 
-/**
- * Whether the page just consumed was the last one. Iconify answers `total` when it feels like it;
- * without one, a short page (fewer icons than the limit it echoed) is the end.
- */
-export function iconifyPageExhausted(start: number, consumedCount: number, page: { fetchedCount: number; responseLimit: number; total?: number }): boolean {
-  return page.total !== undefined ? start + consumedCount >= page.total : consumedCount === page.fetchedCount && page.fetchedCount < page.responseLimit
+/** Whether Iconify cut this answer at its window: then more matches may exist than it named (YAZ-4358). */
+export function iconifyAnswerCapped(payload: { icons?: string[]; total?: number; limit?: number }): boolean {
+  const count = payload.icons?.length ?? 0
+  const window = finiteNumber(payload.limit) ?? ICONIFY_WINDOW
+  return count > 0 && (finiteNumber(payload.total) ?? count) >= window
+}
+
+/** The packs, biggest first (YAZ-4358): the order of the pack passes. A hidden pack is left out; a tie keeps the name order. */
+export function iconifySetsBySize(collections: Record<string, IconifyCollection>, allowed: ReadonlySet<string> | null = null): string[] {
+  return Object.entries(collections)
+    .filter(([prefix, info]) => !info.hidden && (allowed === null || allowed.has(prefix)))
+    .sort(([a, x], [b, y]) => (finiteNumber(y.total) ?? 0) - (finiteNumber(x.total) ?? 0) || a.localeCompare(b))
+    .map(([prefix]) => prefix)
 }
 
 export const oppositePixabayType = (type: PixabayImageType): PixabayImageType => (type === 'vector' ? 'illustration' : 'vector')
@@ -299,10 +338,13 @@ export function nextPixabayType(cursor: PixabayCursor): PixabayImageType | null 
   return cursor[`${alternate}Exhausted`] ? null : alternate
 }
 
+/** Whether the Iconify half still has a pass with icons in it. */
+export const iconifyHasMore = (cursor: IconifyCursor): boolean => !cursor.colorExhausted || !cursor.generalExhausted || !cursor.setsExhausted
+
 /** Whether a cursor still has a page in it — what decides `nextCursor: null` and stops the scroll. */
 export function hasMorePages(cursor: SearchCursor, source: MediaSearchSource): boolean {
   return providersFor(source).some((provider) =>
-    provider === 'iconify' ? !cursor.iconify.colorExhausted || !cursor.iconify.generalExhausted : !cursor.pixabay.vectorExhausted || !cursor.pixabay.illustrationExhausted,
+    provider === 'iconify' ? iconifyHasMore(cursor.iconify) : !cursor.pixabay.vectorExhausted || !cursor.pixabay.illustrationExhausted,
   )
 }
 
@@ -320,13 +362,17 @@ export function pixabaySearchUrl(query: string, page: number, imageType: Pixabay
   return url
 }
 
-/** Iconify's search URL; `prefixes` is what makes the colour pass a colour pass. */
-export function iconifySearchUrl(query: string, start: number, limit: number, prefixes?: string[]): URL {
+/**
+ * Iconify's search URL for one whole pass (YAZ-4358): `prefixes` is what makes the colour pass a colour pass (and a
+ * filter a filter, YAZ-4360); `prefix` is one pack's own pass. Always from the start, with the largest limit.
+ */
+export function iconifySearchUrl(query: string, scope: { prefixes?: readonly string[]; prefix?: string } = {}): URL {
   const url = new URL(`${ICONIFY_API}/search`)
   url.searchParams.set('query', query)
-  url.searchParams.set('limit', String(limit))
-  url.searchParams.set('start', String(start))
-  if (prefixes?.length) url.searchParams.set('prefixes', prefixes.join(','))
+  url.searchParams.set('limit', String(ICONIFY_ASK_LIMIT))
+  url.searchParams.set('start', '0')
+  if (scope.prefix !== undefined) url.searchParams.set('prefix', scope.prefix)
+  else if (scope.prefixes?.length) url.searchParams.set('prefixes', scope.prefixes.join(','))
   return url
 }
 

@@ -11,9 +11,10 @@ import {
   encodeCursor,
   hasMorePages,
   ICONIFY_ALL_RESULT_LIMIT,
+  iconifyAnswerCapped,
   iconifyItemFromId,
-  iconifyPageExhausted,
   iconifySearchUrl,
+  iconifySetsBySize,
   pixabaySearchUrl,
   iconifySvgUrl,
   initialCursor,
@@ -39,11 +40,11 @@ const iconItem = (providerId: string, over: Partial<{ kind: 'icon' | 'logo'; tit
 })
 
 describe('the numbers 🔒 YAZ-1775 D4 locked', () => {
-  it('is 18 results, 14 icons and 4 graphics in "all", cache version 2, 20 MB imports', () => {
+  it('is 18 results, 14 icons and 4 graphics in "all", cache version 3 (YAZ-4358), 20 MB imports', () => {
     expect(SEARCH_LIMIT).toBe(18)
     expect(ICONIFY_ALL_RESULT_LIMIT).toBe(14)
     expect(PIXABAY_ALL_RESULT_LIMIT).toBe(4)
-    expect(SEARCH_CACHE_VERSION).toBe('2')
+    expect(SEARCH_CACHE_VERSION).toBe('3')
     expect(MAX_IMPORT_BYTES).toBe(20 * 1024 * 1024)
   })
 
@@ -187,6 +188,12 @@ describe('the opaque cursor', () => {
     }
     expect(bad((c) => ((c as { version: number }).version = 2))).toThrow()
     expect(bad((c) => (c.iconify.colorStart = -1))).toThrow()
+    // YAZ-4358: the pack passes' place is checked like the rest.
+    expect(bad((c) => (c.iconify.setIndex = -1))).toThrow()
+    expect(bad((c) => (c.iconify.setIndex = 1.5))).toThrow()
+    expect(bad((c) => (c.iconify.setStart = 5000))).toThrow()
+    expect(bad((c) => ((c.iconify as { setsExhausted: unknown }).setsExhausted = 'no'))).toThrow()
+    expect(bad((c) => delete (c.iconify as Partial<typeof c.iconify>).setIndex)).toThrow()
     expect(bad((c) => (c.pixabay.vectorPage = 0))).toThrow()
     expect(bad((c) => ((c.pixabay as { nextType: string }).nextType = 'photo'))).toThrow()
     expect(bad((c) => (c.pixabay.seenIds = ['abc']))).toThrow()
@@ -198,6 +205,9 @@ describe('the opaque cursor', () => {
     expect(hasMorePages(cursor, 'all')).toBe(true)
     cursor.iconify.colorExhausted = true
     cursor.iconify.generalExhausted = true
+    // YAZ-4358: the pack passes are still to come.
+    expect(hasMorePages(cursor, 'iconify')).toBe(true)
+    cursor.iconify.setsExhausted = true
     expect(hasMorePages(cursor, 'iconify')).toBe(false)
     expect(hasMorePages(cursor, 'all')).toBe(true)
     cursor.pixabay.vectorExhausted = true
@@ -215,24 +225,34 @@ describe('the opaque cursor', () => {
   })
 })
 
-describe('page exhaustion', () => {
-  it('trusts a reported total when there is one', () => {
-    expect(iconifyPageExhausted(0, 10, { fetchedCount: 10, responseLimit: 10, total: 10 })).toBe(true)
-    expect(iconifyPageExhausted(0, 10, { fetchedCount: 10, responseLimit: 10, total: 40 })).toBe(false)
+describe('a pass answer and the pack order (YAZ-4358)', () => {
+  it('is cut when Iconify filled its window of 128, and complete below it', () => {
+    const icons = (n: number) => Array.from({ length: n }, (_, i) => `mdi:a-${i}`)
+    expect(iconifyAnswerCapped({ icons: icons(128), total: 128, limit: 128 })).toBe(true)
+    expect(iconifyAnswerCapped({ icons: icons(40), total: 40, limit: 128 })).toBe(false)
+    // No `total` or `limit` named: the count against Iconify's window of 128.
+    expect(iconifyAnswerCapped({ icons: icons(128) })).toBe(true)
+    expect(iconifyAnswerCapped({ icons: icons(127) })).toBe(false)
+    expect(iconifyAnswerCapped({ icons: [], total: 0, limit: 128 })).toBe(false)
   })
 
-  it('without a total, only a SHORT page that was fully consumed is the end', () => {
-    expect(iconifyPageExhausted(0, 3, { fetchedCount: 3, responseLimit: 10 })).toBe(true)
-    expect(iconifyPageExhausted(0, 10, { fetchedCount: 10, responseLimit: 10 })).toBe(false)
-    expect(iconifyPageExhausted(0, 2, { fetchedCount: 3, responseLimit: 10 })).toBe(false)
+  it('orders the packs biggest first, leaves hidden ones out, and keeps only the allowed', () => {
+    const collections = { small: { total: 10 }, big: { total: 900 }, mid: { total: 300 }, gone: { total: 5000, hidden: true }, tie: { total: 300 } }
+    expect(iconifySetsBySize(collections)).toEqual(['big', 'mid', 'tie', 'small'])
+    expect(iconifySetsBySize(collections, new Set(['small', 'mid']))).toEqual(['mid', 'small'])
   })
 })
 
 describe('provider URLs and the import-time item', () => {
-  it('passes prefixes only for the colour pass', () => {
-    expect(iconifySearchUrl('rocket', 0, 6, ['noto']).searchParams.get('prefixes')).toBe('noto')
-    expect(iconifySearchUrl('rocket', 0, 6).searchParams.has('prefixes')).toBe(false)
-    expect(iconifySearchUrl('rocket', 12, 6).searchParams.get('start')).toBe('12')
+  it('asks for a whole pass at once: from the start, the largest limit, with prefixes or one prefix (YAZ-4358)', () => {
+    const url = iconifySearchUrl('rocket', { prefixes: ['noto', 'twemoji'] })
+    expect(url.searchParams.get('prefixes')).toBe('noto,twemoji')
+    expect(url.searchParams.get('start')).toBe('0')
+    expect(url.searchParams.get('limit')).toBe('999')
+    expect(iconifySearchUrl('rocket').searchParams.has('prefixes')).toBe(false)
+    const one = iconifySearchUrl('rocket', { prefix: 'mdi' })
+    expect(one.searchParams.get('prefix')).toBe('mdi')
+    expect(one.searchParams.has('prefixes')).toBe(false)
   })
 
   it('serves an icon SVG by name and refuses anything that is not prefix:name', () => {
