@@ -592,8 +592,7 @@
   gap: 4px;
 }
 
-.image-studio__filter-options button,
-.image-studio__filter-clear {
+.image-studio__filter-options button {
   background: transparent;
   border: 1px solid var(--default-border-color);
   border-radius: 999px;
@@ -609,13 +608,31 @@
   color: var(--island-bg-color);
 }
 
+/* YAZ-4348 demo round 2: "Clear filters" sits at the top right, on the Show line, so it is one short reach from the
+   button; it stays LAST in the keys' order (the arrow keys still walk Show → License → Clear filters). */
 .image-studio__filter-clear {
-  align-self: flex-start;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 4px;
+  position: absolute;
+  right: 6px;
+  top: 7px;
+}
+
+.image-studio__filter-clear:hover:not(:disabled) {
+  text-decoration: underline;
 }
 
 .image-studio__filter-clear:disabled {
+  color: var(--text-secondary-color);
   cursor: default;
-  opacity: 0.45;
+  font-weight: 400;
+  opacity: 0.5;
 }
 
 .image-studio__filter-chosen,
