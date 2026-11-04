@@ -23,6 +23,7 @@ import { createMediaCache } from '../media/cache'
 import { MEDIA_CACHE_DIR } from '../media/cachePolicy'
 import { createMediaProviders } from '../media/providers'
 import { createIconPacks, resolveIconPacksFolder } from '../media/iconPacks'
+import type { FavoriteCopies } from '../library/favoriteCopies'
 import type { Store } from '../store'
 import { broadcastAll } from './broadcast'
 import type { Secrets } from '../secrets'
@@ -65,8 +66,17 @@ function requirePacksRequest(v: unknown): IconPacksRequest {
 /**
  * The cache folder this registration owns — the one fact a test needs back from it. `store` is where the icon packs'
  * folder setting lives (YAZ-4359): a change of it moves the packs. Without one, the packs stay in the default folder.
+ * `copies` (YAZ-4363) are the favorites' own pictures: `preview` and `import` ask them first (then the downloaded
+ * packs, then the network), and they are made with a second set of providers that has no copy step, so a copy is
+ * always the provider's picture.
  */
-export function registerMediaStudioIpc(userData: string, secrets: Secrets, fetchImpl: typeof globalThis.fetch = globalThis.fetch, store?: Pick<Store, 'get' | 'onChange'>): string {
+export function registerMediaStudioIpc(
+  userData: string,
+  secrets: Secrets,
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+  store?: Pick<Store, 'get' | 'onChange'>,
+  copies?: FavoriteCopies,
+): string {
   const folder = join(userData, MEDIA_CACHE_DIR)
   const cache = createMediaCache(folder)
   const packsFolder = () => resolveIconPacksFolder(store?.get().settings.iconPacksFolder ?? null, userData)
@@ -80,7 +90,11 @@ export function registerMediaStudioIpc(userData: string, secrets: Secrets, fetch
     wanted = next
     void packs.moveTo(next).catch((err: unknown) => console.warn('[icon-packs] could not move to', next, err))
   })
-  const providers = createMediaProviders({ fetch: fetchImpl, readPixabayKey: () => secrets.read(PIXABAY_SECRET), cache, packs })
+  const readPixabayKey = () => secrets.read(PIXABAY_SECRET)
+  const providers = createMediaProviders({ fetch: fetchImpl, readPixabayKey, cache, packs, favoriteCopy: copies })
+  // The copy maker's providers: the same packs (an icon's copy needs no network when its pack is downloaded), no copy step.
+  const originals = createMediaProviders({ fetch: fetchImpl, readPixabayKey, cache, packs })
+  void copies?.start({ picture: originals.import, drawing: async (id) => (await originals.drawing({ id })).elements })
 
   // Detached: the folder has to exist before the first write, and yesterday's entries have to go,
   // but neither is something a renderer should ever wait behind.

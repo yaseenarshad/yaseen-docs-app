@@ -1,6 +1,7 @@
 /**
  * "Library folder" (Settings › Images, YAZ-3038; Draw's 🔒 YAZ-1775 D5): the one folder every vault shares, where media
- * favorites and saved components live (`library/mediaStore.ts`, `library/componentStore.ts`).
+ * favorites and saved components live (`library/mediaStore.ts`, `library/componentStore.ts`). With a settings folder
+ * and no folder chosen, it is `<settings folder>/library` (YAZ-4364); a new folder gets a copy, and the old one stays.
  *
  * A component rather than an inline `render` because the row shows the RESOLVED path, and only
  * main knows what null resolves to (`<userData>/library`) — so it asks, once per value.
@@ -18,23 +19,26 @@ interface LibraryFolderControlProps {
   onChange: (next: SettingsState) => void
 }
 
-/** The resolved folder for the current setting; `''` while the first fetch is in flight. */
-function useResolvedLibraryFolder(setting: string | null): string {
-  const [resolved, setResolved] = useState(setting ?? '')
+/**
+ * The resolved folder for the current setting; `''` while the first fetch is in flight. `inSettings`: the default is
+ * `<settings folder>/library` (YAZ-4364), so the library syncs with the settings.
+ */
+function useResolvedLibraryFolder(setting: string | null): { resolved: string; inSettings: boolean } {
+  const [resolved, setResolved] = useState({ resolved: setting ?? '', inSettings: false })
   useEffect(() => {
     let live = true
     // A chosen path IS the answer — main would only echo it back.
     if (setting !== null) {
-      setResolved(setting)
+      setResolved({ resolved: setting, inSettings: false })
       return
     }
-    api.drawing.libraryFolder().then(
-      (p) => {
-        if (live) setResolved(p)
+    Promise.all([api.drawing.libraryFolder(), api.state.settingsFolder().catch(() => ({ folder: null }))]).then(
+      ([p, settings]) => {
+        if (live) setResolved({ resolved: p, inSettings: settings.folder !== null })
       },
       // A bridge that cannot answer leaves the row saying "…" rather than a wrong path.
       () => {
-        if (live) setResolved('')
+        if (live) setResolved({ resolved: '', inSettings: false })
       },
     )
     return () => {
@@ -46,11 +50,11 @@ function useResolvedLibraryFolder(setting: string | null): string {
 
 /** The resolved path, as the row's live hint. */
 export function LibraryFolderHint({ setting }: { setting: string | null }) {
-  const resolved = useResolvedLibraryFolder(setting)
+  const { resolved, inSettings } = useResolvedLibraryFolder(setting)
   return (
     <p className="settings__path" data-testid="library-folder-path">
       {resolved === '' ? '…' : resolved}
-      {setting === null && resolved !== '' ? ' (default)' : ''}
+      {setting === null && resolved !== '' ? (inSettings ? ' (default: in your settings folder, so it syncs)' : ' (default)') : ''}
     </p>
   )
 }

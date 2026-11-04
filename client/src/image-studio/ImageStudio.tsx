@@ -32,6 +32,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalS
 import { MAX_COMPONENT_NAME_LENGTH, MAX_ITEM_WORD_LENGTH, PIXABAY_SECRET, type ComponentItem, type MediaBytesProvider, type MediaLibraryFile, type StudioItem } from '@shared/types'
 import { normalizeWord } from '@shared/mediaLibrary'
 import { DEFAULT_MEDIA_FILTERS, needsCredit, sanitizeMediaFilters, type IconPackInfo, type MediaFilters } from '@shared/iconPacks'
+import { parseComponentFragment } from '@shared/savedComponents'
 import { api } from '../api'
 import { storage } from '../lib/storage'
 import { createPreviewCache } from '../lib/previewCache'
@@ -162,6 +163,21 @@ const drawingPreviews = createPreviewCache(async (key) => {
 }, { limit: 300, maxBytes: 16 * 1024 * 1024 })
 
 /**
+ * The tile picture of an elements favorite from its own copy (YAZ-4370): a component that was deleted, a shape that
+ * left the catalog, a library item (its copy first, else the network). Keyed `<theme>|<itemKey>`.
+ */
+const copyPreviews = createPreviewCache(async (key) => {
+  if (drawingCanvas === null) throw new Error('No board to draw with')
+  const { engine } = drawingCanvas
+  const [theme, itemKey] = [key.slice(0, key.indexOf('|')), key.slice(key.indexOf('|') + 1)]
+  const copy = await api.media.favoriteElements(itemKey)
+  const fragment = copy !== null ? parseComponentFragment(copy) : itemKey.startsWith('excalidraw:') ? { elements: (await api.media.drawing({ id: itemKey.slice('excalidraw:'.length) })).elements, files: {} } : null
+  if (fragment === null) throw new Error('No copy to draw')
+  const restored = engine.restoreElements(fragment.elements as never, null) as unknown as unknown[]
+  return createScenePreviewPng(engine, { elements: restored, appState: { ...drawingCanvas.appState(), theme }, files: fragment.files }, DRAWING_TILE_BOUNDS)
+}, { limit: 300, maxBytes: 16 * 1024 * 1024 })
+
+/**
  * Every pack the panel can name (Filter › Packs, the pack page, YAZ-4360 / YAZ-4361): asked once a window, when first
  * needed — main answers the Mac's packs or Iconify's list. A failure is forgotten, so the next ask retries.
  */
@@ -183,6 +199,7 @@ const settingsPins = (): string[] => storage.getSettings()?.mediaPinnedPacks ?? 
 export const clearPreviewMemo = () => {
   packList = null
   previews.clear()
+  copyPreviews.clear()
   drawingPreviews.clear()
   componentPreviews.clear()
 }
@@ -238,6 +255,8 @@ type MenuAt = { top: number; left?: number; right?: number }
  */
 type OpenTile = { key: string; mode: 'menu'; at: MenuAt } | { key: string; mode: 'word' | 'rename' | 'confirm' | 'variants' } | null
 const slotOf = (where: string, item: StudioItem) => `${where}|${item.itemKey}`
+/** Where the focus goes after a favorite change: the tile's own button, else the one that took its place, else the field. */
+type FocusPlan = { slot: string; section: Element | null; index: number; fromMenu: boolean }
 
 /** Where an item comes from, in words (demo 6H): the tile's tooltip and the first line of its menu. */
 export function sourceLabel(item: StudioItem): string {
@@ -256,6 +275,8 @@ export const googleImagesUrl = (query: string) => `https://www.google.com/search
 
 /** About the menu's drawn width: a menu that would pass the list's right edge opens to the left instead. */
 const MENU_WIDTH = 150
+/** The room a menu keeps from the list's bottom edge when it moves up to fit (YAZ-302, checked for YAZ-4365). */
+const MENU_EDGE_GAP = 4
 
 /** The quiet line under the field (D9): one sentence, and the item Undo takes back out of the favorites. */
 type Line = { text: string; undo?: StudioItem } | null
@@ -509,7 +530,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   }, [componentsBySlug])
   const liveList = (items: readonly StudioItem[]) => items.flatMap((item) => live(item) ?? [])
 
-  const favoriteItems = useMemo(() => liveList(favorites), [favorites, live])
+  // A favorite component that was deleted stays, by its stored name: its copy adds it (YAZ-4370). Elsewhere it is gone (D2).
+  const favoriteItems = useMemo(() => favorites.flatMap((item) => live(item) ?? (item.provider === 'component' ? [item] : [])), [favorites, live])
   const recentItems = useMemo(() => liveList(recent), [recent, live])
   /** Everything local, once each: the pool "Best matches" ranks. */
   const pool = useMemo(() => {
@@ -579,7 +601,11 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     setNotice(null)
     try {
       let recorded = item
-      if (item.provider === 'shape') {
+      // A favorite's own copy first (YAZ-4370): it adds offline, and after its library, shape or component is gone.
+      const copy = item.provider !== 'iconify' && item.provider !== 'pixabay' && favoriteKeys.has(item.itemKey) ? await api.media.favoriteElements(item.itemKey).catch(() => null) : null
+      if (copy !== null) {
+        insertComponent(engine, excalidrawAPI, copy)
+      } else if (item.provider === 'shape') {
         const shape = getShape(catalog, item.providerId)
         if (shape === undefined) throw new Error('That shape is not available yet.')
         insertShape(engine, excalidrawAPI, shape)
@@ -613,14 +639,21 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     }
   }
 
-  const toggleFavorite = async (item: StudioItem) => {
+  /**
+   * `slot` is the tile the change came from; `fromMenu` when its menu asked. A tile that leaves its section (a favorite
+   * taken out of Favorites) would take the focus with it to the page (YAZ-302, checked for YAZ-4365): `refocusAfter`
+   * says where it goes instead, once the list has changed.
+   */
+  const toggleFavorite = async (item: StudioItem, slot?: string, fromMenu = false) => {
     if (busyFavoriteKey !== null) return
     setBusyFavoriteKey(item.itemKey)
     set({ error: null })
     setLine(null)
+    if (slot !== undefined) refocusAfter.current = focusPlan(slot, fromMenu)
     try {
       set({ favorites: favoriteKeys.has(item.itemKey) ? await api.media.favorites({ op: 'remove', itemKey: item.itemKey }) : await api.media.favorites({ op: 'add', item }) })
     } catch (cause) {
+      refocusAfter.current = null
       set({ error: getErrorMessage(cause, 'Could not change favorites') })
     } finally {
       setBusyFavoriteKey(null)
@@ -670,7 +703,61 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     setOpenTile(null)
     if (refocus && key !== undefined) listRef.current?.querySelector<HTMLElement>(`[data-slot="${CSS.escape(key)}"] .image-studio__add`)?.focus()
   }
+  const refocusAfter = useRef<FocusPlan | null>(null)
+  const focusPlan = (slot: string, fromMenu: boolean): FocusPlan => {
+    const card = listRef.current?.querySelector(`[data-slot="${CSS.escape(slot)}"]`) ?? null
+    const section = card?.closest('section') ?? null
+    return { slot, section, index: section === null || card === null ? 0 : [...section.querySelectorAll('[data-slot]')].indexOf(card), fromMenu }
+  }
+  useEffect(() => {
+    const plan = refocusAfter.current
+    if (plan === null) return
+    refocusAfter.current = null
+    const list = listRef.current
+    const own = list?.querySelector<HTMLElement>(`[data-slot="${CSS.escape(plan.slot)}"] .image-studio__add`)
+    // A tile that stays keeps the focus where it was; its menu, which is gone, hands it back to the tile.
+    if (own) {
+      if (plan.fromMenu) own.focus()
+      return
+    }
+    const adds = plan.section?.isConnected ? [...plan.section.querySelectorAll<HTMLElement>('[data-slot] .image-studio__add')] : []
+    ;(adds[plan.index] ?? adds[plan.index - 1] ?? fieldRef.current)?.focus()
+  }, [favorites])
+
+  // The shape favorites' copies (YAZ-4370): only this renderer has the catalog and the engine that make a shape, so it
+  // saves the ones main says are missing — when the panel opens, and on each change of the favorites.
+  useEffect(() => {
+    let live = true
+    if (!favorites.some((item) => item.provider === 'shape')) return
+    void api.media.favoritesForPanel().then(
+      async (keys) => {
+        for (const key of keys) {
+          const shape = key.startsWith('shape:') ? getShape(catalog, key.slice('shape:'.length)) : undefined
+          if (!live || shape === undefined) continue
+          const elements = engine.convertToExcalidrawElements(shape.create(0, 0))
+          await api.media.saveFavoriteElements({ itemKey: key, fragmentJson: componentFragmentJson({ elements, files: {} }) }).catch(() => undefined)
+        }
+      },
+      () => undefined,
+    )
+    return () => {
+      live = false
+    }
+  }, [favorites, catalog, engine])
+
   const menuKey = openTile?.mode === 'menu' ? openTile.key : null
+  // A menu near the bottom of the list moves up so all of it shows (YAZ-302, checked for YAZ-4365): the list scrolls,
+  // so a menu that ran past its bottom edge would be cut off. Never above the list's top.
+  useLayoutEffect(() => {
+    const menu = menuRef.current
+    const list = listRef.current
+    if (menuKey === null || menu === null || list === null) return
+    const m = menu.getBoundingClientRect()
+    const l = list.getBoundingClientRect()
+    const shift = Math.min(m.bottom - l.bottom + MENU_EDGE_GAP, m.top - l.top)
+    if (shift <= 0) return
+    setOpenTile((open) => (open?.mode === 'menu' && open.key === menuKey ? { ...open, at: { ...open.at, top: open.at.top - shift } } : open))
+  }, [menuKey])
   useEffect(() => {
     if (menuKey === null) return
     menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
@@ -717,10 +804,13 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           title={`${item.title} — ${sourceLabel(item)}`}
         >
           <span className="image-studio__preview">
-            {item.provider === 'shape' ? (
-              shape ? <ShapeTile preview={shape.preview} /> : <span className="image-studio__placeholder" />
-            ) : item.provider === 'component' ? (
+            {item.provider === 'shape' && shape ? (
+              <ShapeTile preview={shape.preview} />
+            ) : item.provider === 'component' && component ? (
               <componentPreviews.Preview cacheKey={item.providerId} placeholderClass="image-studio__placeholder" />
+            ) : item.provider === 'shape' || item.provider === 'component' || (item.provider === 'excalidraw' && favorited) ? (
+              // Its source is gone, or it is a library favorite: the picture comes from the copy (YAZ-4370).
+              <copyPreviews.Preview cacheKey={`${theme}|${item.itemKey}`} placeholderClass="image-studio__placeholder" />
             ) : item.provider === 'excalidraw' ? (
               <drawingPreviews.Preview cacheKey={`${theme}|${item.providerId}`} placeholderClass="image-studio__placeholder" />
             ) : (
@@ -736,7 +826,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           aria-label={favorited ? `Remove ${item.title} from favorites` : `Add ${item.title} to favorites`}
           aria-pressed={favorited}
           disabled={busyFavoriteKey !== null}
-          onClick={() => void toggleFavorite(item)}
+          onClick={() => void toggleFavorite(item, slot)}
         >
           {favorited ? '★' : '☆'}
         </button>
@@ -784,7 +874,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
               role="menuitem"
               onClick={() => {
                 setOpenTile(null)
-                void toggleFavorite(item)
+                void toggleFavorite(item, slot, true)
               }}
             >
               {favorited ? 'Remove from favorites' : 'Add to favorites'}

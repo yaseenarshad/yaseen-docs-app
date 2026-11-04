@@ -19,6 +19,12 @@ describe('resolveLibraryFolder (🔒 YAZ-1775 D5)', () => {
   it('a chosen path is used as it stands — pointing it inside a synced vault IS the backup story', () => {
     expect(resolveLibraryFolder('/Users/x/Vault/Library', '/anything')).toBe('/Users/x/Vault/Library')
   })
+
+  it('with a settings folder and no chosen path, the default is `<settings folder>/library`; a chosen path still wins (YAZ-4364)', () => {
+    expect(resolveLibraryFolder(null, '/data', '/Sync/settings')).toBe(path.join('/Sync/settings', DEFAULT_LIBRARY_DIR))
+    expect(resolveLibraryFolder(null, '/data', null)).toBe(path.join('/data', DEFAULT_LIBRARY_DIR))
+    expect(resolveLibraryFolder('/Vault/Library', '/data', '/Sync/settings')).toBe('/Vault/Library')
+  })
 })
 
 describe('followLibraryFolder', () => {
@@ -33,7 +39,11 @@ describe('followLibraryFolder', () => {
     change({ ...state, settings: { ...state.settings, libraryFolder: '/Vault/Library' } })
     change({ ...state, settings: { ...state.settings, libraryFolder: '/Vault/Library' } })
     change({ ...state, settings: { ...state.settings, libraryFolder: null } })
-    expect(moves).toEqual(['/Vault/Library', path.join('/data', DEFAULT_LIBRARY_DIR)])
+    // A settings folder moves the default (YAZ-4364); with a chosen path it changes nothing.
+    change({ ...state, settingsFolder: '/Sync/settings' })
+    change({ ...state, settings: { ...state.settings, libraryFolder: '/Vault/Library' } })
+    change({ ...state, settingsFolder: null })
+    expect(moves).toEqual(['/Vault/Library', path.join('/data', DEFAULT_LIBRARY_DIR), path.join('/Sync/settings', DEFAULT_LIBRARY_DIR), '/Vault/Library'])
   })
 })
 

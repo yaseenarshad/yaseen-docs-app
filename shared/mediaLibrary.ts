@@ -7,15 +7,15 @@
  * The item validator is the web app's `convex/mediaTypes.ts` verbatim: an item is whole or it is
  * not one at all (a wrong-typed optional REJECTS rather than being dropped — a half-read item
  * would show a broken tile). The FILE is lenient around that: a bad row is dropped, the rest
- * survive, so one hand-edit cannot cost the user 499 favorites. Both lists are newest-first,
- * de-duplicated by `itemKey`, and capped on the tail — the same order the web app's
- * `by_ownerId_and_updatedAt` index answered in.
+ * survive, so one hand-edit cannot cost the user their other favorites. The lists are newest-first and
+ * de-duplicated by `itemKey` — the same order the web app's `by_ownerId_and_updatedAt` index answered in.
+ * `recent` and `used` are capped on the tail; `favorites` has no cap (YAZ-4363): the user builds it by hand.
  */
 import {
   AUTO_FAVORITE_USES,
   MAX_ITEM_WORDS,
   MAX_ITEM_WORD_LENGTH,
-  MAX_MEDIA_FAVORITES,
+  MAX_MEDIA_REMOVED,
   MAX_MEDIA_USED,
   RECENT_LIMIT,
   isMediaItemKind,
@@ -27,7 +27,7 @@ import {
 } from './types'
 import { cleanList, isFiniteNumber, isRecord } from './guards'
 
-export const EMPTY_MEDIA_LIBRARY: MediaLibraryFile = { version: 1, favorites: [], recent: [], used: [] }
+export const EMPTY_MEDIA_LIBRARY: MediaLibraryFile = { version: 1, favorites: [], recent: [], used: [], removed: {} }
 
 
 /** The optional fields and their one type each — `mediaItemValidator`'s `v.optional(...)` rows. */
@@ -93,22 +93,30 @@ export function sanitizeMediaLibrary(raw: unknown): MediaLibraryFile | null {
   const list = (rows: unknown, cap: number) => cleanList(rows, normalizeStoredMediaItem, (item) => item.itemKey, cap)
   // A library from before YAZ-4157 has no `used`: it reads as none, and nothing else changes.
   const used = cleanList(raw.used, normalizeUsedItem, (item) => item.itemKey, MAX_MEDIA_USED)
-  return { version: 1, favorites: list(raw.favorites, MAX_MEDIA_FAVORITES), recent: list(raw.recent, RECENT_LIMIT), used }
+  return { version: 1, favorites: list(raw.favorites, Infinity), recent: list(raw.recent, RECENT_LIMIT), used, removed: cleanRemoved(raw.removed) }
 }
 
-/** The web app's `addFavorite`: a new key goes to the head, an existing one changes nothing. */
+/** The web app's `addFavorite`: a new key goes to the head, an existing one changes nothing. Nothing falls off (YAZ-4363). */
 export function addFavorite(lib: MediaLibraryFile, item: MediaItem, now: number): MediaLibraryFile {
   if (lib.favorites.some((f) => f.itemKey === item.itemKey)) return lib
-  return { ...lib, favorites: [stamp(item, now), ...lib.favorites].slice(0, MAX_MEDIA_FAVORITES) }
+  // A favorite added again is newer than its removal, so a merge keeps it; the note has done its work.
+  const { [item.itemKey]: _was, ...removed } = lib.removed
+  return { ...lib, favorites: [stamp(item, now), ...lib.favorites], removed }
 }
 
 /**
  * A removal starts the item's count again (YAZ-4157 demo 6A): it becomes a favorite again after `AUTO_FAVORITE_USES`
- * more adds, the same rule as the first time, and never on the very next add. Its words stay.
+ * more adds, the same rule as the first time, and never on the very next add. Its words stay. It is kept in `removed`
+ * at `now` (YAZ-4364), so another Mac's file that still holds the favorite does not bring it back.
  */
-export function removeFavorite(lib: MediaLibraryFile, itemKey: string): MediaLibraryFile {
+export function removeFavorite(lib: MediaLibraryFile, itemKey: string, now: number): MediaLibraryFile {
   if (!lib.favorites.some((f) => f.itemKey === itemKey)) return lib
-  return { ...lib, favorites: lib.favorites.filter((f) => f.itemKey !== itemKey), used: lib.used.map((u) => (u.itemKey === itemKey ? { ...u, count: 0 } : u)) }
+  return {
+    ...lib,
+    favorites: lib.favorites.filter((f) => f.itemKey !== itemKey),
+    used: lib.used.map((u) => (u.itemKey === itemKey ? { ...u, count: 0 } : u)),
+    removed: cleanRemoved({ ...lib.removed, [itemKey]: now }),
+  }
 }
 
 /** The web app's `recordRecent`: an MRU — the item as it arrives NOW moves to the head, re-stamped. */
@@ -157,4 +165,55 @@ export function addWord(lib: MediaLibraryFile, item: MediaItem, word: string, no
   if (before === undefined) return touchUsed(lib, item, now, () => ({ ...usedRow(undefined, item, now), words: [clean] }))
   if (before.words[0] === clean) return lib
   return { ...lib, used: lib.used.map((u) => (u === before ? { ...u, words: withWord(u.words, clean) } : u)) }
+}
+
+// ---------- Two Macs, one library (YAZ-4364, round 3 decision 2) ----------
+
+/** `media-<12 a-z 0-9>.json` (the `macId` shape): one Mac's file. A copy (`media-x 2.json`, `.sync-conflict-…`) never counts. */
+export const MEDIA_FILE_RE = /^media-[0-9a-z]{12}\.json$/
+
+export const mediaFileName = (macId: string): string => `media-${macId}.json`
+
+/** `removed` as the file holds it: a bad entry drops; the newest `MAX_MEDIA_REMOVED` stay. */
+function cleanRemoved(raw: unknown): Record<string, number> {
+  if (!isRecord(raw)) return {}
+  const rows = Object.entries(raw).filter((e): e is [string, number] => e[0] !== '' && isFiniteNumber(e[1]))
+  return Object.fromEntries(rows.sort((a, b) => b[1] - a[1]).slice(0, MAX_MEDIA_REMOVED))
+}
+
+/** Per itemKey the row with the newest `updatedAt` (a tie keeps the one seen first), newest first, capped. */
+function newestRows<T extends StoredMediaItem>(lists: readonly (readonly T[])[], cap: number, keep: (row: T) => boolean = () => true): T[] {
+  const best = new Map<string, { row: T; at: number }>()
+  let seen = 0
+  for (const list of lists) {
+    for (const row of list) {
+      const had = best.get(row.itemKey)
+      if (had === undefined || row.updatedAt > had.row.updatedAt) best.set(row.itemKey, { row, at: had?.at ?? seen++ })
+    }
+  }
+  return [...best.values()]
+    .filter(({ row }) => keep(row))
+    .sort((a, b) => b.row.updatedAt - a.row.updatedAt || a.at - b.at)
+    .slice(0, cap)
+    .map(({ row }) => row)
+}
+
+/**
+ * Every Mac's file as ONE library (decision 2). Per itemKey the newest `updatedAt` wins. A removal is kept in
+ * `removed` (itemKey → when), so a merge does not bring back a favorite that is older than its removal; a favorite
+ * added again after it is newer, and stays. The first library wins a tie: the caller puts this Mac's own file first.
+ * One library is answered as it is.
+ */
+export function mergeMediaLibraries(libs: readonly MediaLibraryFile[]): MediaLibraryFile {
+  if (libs.length === 0) return EMPTY_MEDIA_LIBRARY
+  if (libs.length === 1) return libs[0]
+  const removed: Record<string, number> = {}
+  for (const lib of libs) for (const [key, at] of Object.entries(lib.removed)) if (!(at <= (removed[key] ?? -Infinity))) removed[key] = at
+  return {
+    version: 1,
+    favorites: newestRows(libs.map((l) => l.favorites), Infinity, (row) => !(row.updatedAt <= (removed[row.itemKey] ?? -Infinity))),
+    recent: newestRows(libs.map((l) => l.recent), RECENT_LIMIT),
+    used: newestRows(libs.map((l) => l.used), MAX_MEDIA_USED),
+    removed: cleanRemoved(removed),
+  }
 }

@@ -1468,20 +1468,27 @@ export type StoredMediaItem = MediaItem & { updatedAt: number }
 export type UsedMediaItem = StoredMediaItem & { count: number; words: string[] }
 
 /**
- * `<library>/media.json` (🔒 YAZ-1775 D5): the cross-vault media library, ONE file for the whole account.
+ * The cross-vault media library (🔒 YAZ-1775 D5): ONE library for the whole account.
  * The lists are newest-first and de-duplicated by `itemKey`; `favorites` is the user's pinned
  * set, `recent` is an MRU of what they actually placed on a board, `used` is what the Add tab learned from
- * those adds (YAZ-4157 D1). Still version 1: a build from before drops `used` and reads the rest.
+ * those adds (YAZ-4157 D1). Still version 1: a build from before drops `used` and `removed` and reads the rest.
+ *
+ * Two Macs (YAZ-4364, round 3 decision 2): each Mac writes only `<library>/media-<macId>.json`, and a read merges
+ * every Mac's file and an old `media.json` (`mergeMediaLibraries`). `removed` is each favorite taken out (itemKey →
+ * when), so a merge does not bring it back.
  */
 export interface MediaLibraryFile {
   version: 1
   favorites: StoredMediaItem[]
   recent: StoredMediaItem[]
   used: UsedMediaItem[]
+  removed: Record<string, number>
 }
 
-/** The library file's name inside the library folder. */
+/** The library file of a build from before YAZ-4364, inside the library folder: still read, never written. */
 export const MEDIA_LIBRARY_FILE = 'media.json'
+/** The removals a library keeps, the newest first (YAZ-4364): older ones drop. */
+export const MAX_MEDIA_REMOVED = 2000
 /**
  * `<library>/components/` (🔒 YAZ-1775 D5): where YAZ-1819 writes a saved component's `.excalidraw` + `.png`.
  * Named here so nothing else claims it; YAZ-1817 creates NOTHING — the folder appears on YAZ-1819's first write.
@@ -1489,8 +1496,12 @@ export const MEDIA_LIBRARY_FILE = 'media.json'
 export const LIBRARY_COMPONENTS_DIR = 'components'
 /** The components index beside that folder: `<library>/components.json` (🔒 YAZ-1775 D5, YAZ-1819). */
 export const COMPONENTS_INDEX_FILE = 'components.json'
-/** Favorites are capped at the web app's `listFavorites` ceiling; the oldest fall off the end. */
-export const MAX_MEDIA_FAVORITES = 500
+/**
+ * `<library>/favorites/` (YAZ-4363): one full-quality copy of each Iconify or Pixabay favorite, named
+ * `<sha1(itemKey)>.<ext>` — the name comes from the id, so no field in `media.json` can lose it.
+ * Favorites have NO cap (YAZ-4363, round 2 decision 7): a list the user builds by hand never deletes itself.
+ */
+export const LIBRARY_FAVORITES_DIR = 'favorites'
 /** The MRU's length, the web app's `RECENT_LIMIT` exactly. */
 export const RECENT_LIMIT = 60
 /** The `used` rows kept; the one used longest ago falls off (YAZ-4157 D1). */
@@ -1509,6 +1520,31 @@ export type MediaFavoritesRequest = { op: 'list' } | { op: 'add'; item: MediaIte
  * word `query`, and the favorite at the third), `add-word` is "Add a word…" (the item, so a row can start at 0).
  */
 export type MediaUsedRequest = { op: 'list' } | { op: 'record'; item: MediaItem; query: string } | { op: 'add-word'; item: MediaItem; word: string }
+
+/**
+ * `media:favorite-copies` (YAZ-4363, YAZ-4370): Settings › Images' line about the favorites' own copies. Every favorite
+ * needs one, whatever its kind. Each is `saved`, `saving` (the backfill has it still to do), `waitingForKey` (Pixabay,
+ * with no key on this Mac), `waitingForPanel` (a shape: the Add panel makes its copy when it opens) or `failed` (the
+ * last try could not get it). `bytes` is the size of every copy in the folder.
+ */
+export interface FavoriteCopiesStatus {
+  favorites: number
+  saved: number
+  saving: number
+  waitingForKey: number
+  waitingForPanel: number
+  failed: number
+  bytes: number
+}
+
+/**
+ * `media:save-favorite-elements` (YAZ-4370): the Add panel's copy of a shape favorite, a component fragment's text.
+ * Main keeps it only for a favorite with no copy yet.
+ */
+export interface FavoriteElementsSaveRequest {
+  itemKey: string
+  fragmentJson: string
+}
 
 // ---------- Image Studio: the provider doors (🔒 YAZ-1775 D4, YAZ-1818) ----------
 

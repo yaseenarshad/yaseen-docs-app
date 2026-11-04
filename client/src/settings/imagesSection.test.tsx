@@ -20,7 +20,8 @@ vi.mock('../api', async (importOriginal) => {
     ...actual,
     api: {
       drawing: { libraryFolder: vi.fn() },
-      media: { packs: vi.fn(async () => null), onPacksProgress: vi.fn(() => () => undefined) },
+      // The favorites line (YAZ-4363) asks main for the copies, and again on each library change.
+      media: { packs: vi.fn(async () => null), onPacksProgress: vi.fn(() => () => undefined), favoriteCopies: vi.fn(), onChanged: vi.fn(() => () => undefined) },
       pickFolder: vi.fn(),
       secrets: { has: vi.fn(), set: vi.fn() },
       // Settings opens on General (YAZ-3276 D7), whose Settings folder row asks main where the settings are.
@@ -30,6 +31,8 @@ vi.mock('../api', async (importOriginal) => {
 })
 
 const libraryFolder = vi.mocked(api.drawing.libraryFolder)
+const favoriteCopies = vi.mocked(api.media.favoriteCopies)
+const mediaChanged = vi.mocked(api.media.onChanged)
 const pickFolder = vi.mocked(api.pickFolder)
 const secretHas = vi.mocked(api.secrets.has)
 const secretSet = vi.mocked(api.secrets.set)
@@ -40,6 +43,8 @@ const onChange = vi.fn()
 
 beforeEach(() => {
   libraryFolder.mockReset().mockResolvedValue('/userData/library')
+  favoriteCopies.mockReset().mockResolvedValue({ favorites: 13, saved: 11, saving: 0, waitingForKey: 0, waitingForPanel: 0, failed: 0, bytes: 2.5 * 1024 * 1024 })
+  mediaChanged.mockClear()
   pickFolder.mockReset().mockResolvedValue({ cancelled: true })
   secretHas.mockReset().mockResolvedValue(false)
   secretSet.mockReset().mockResolvedValue(undefined)
@@ -82,6 +87,14 @@ describe('Settings › Images › Library folder', () => {
     ])
   })
 
+  it('with a settings folder, the default is in it and the row says it syncs (YAZ-4364)', async () => {
+    libraryFolder.mockResolvedValue('/Sync/settings/library')
+    vi.mocked(api.state.settingsFolder).mockResolvedValueOnce({ folder: '/Sync/settings', missing: false }).mockResolvedValueOnce({ folder: '/Sync/settings', missing: false })
+    await mountImages()
+    await flush()
+    expect(el.querySelector('[data-testid="library-folder-path"]')?.textContent).toBe('/Sync/settings/library (default: in your settings folder, so it syncs)')
+  })
+
   it('a chosen folder is its own answer; Reset writes null, never an empty string; Choose… writes the picked path', async () => {
     await mountImages({ ...DEFAULT_SETTINGS, libraryFolder: '/Vault/Library' })
     expect(el.querySelector('[data-testid="library-folder-path"]')?.textContent).toBe('/Vault/Library')
@@ -95,6 +108,27 @@ describe('Settings › Images › Library folder', () => {
       await Promise.resolve()
     })
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, libraryFolder: '/Elsewhere/Library' })
+  })
+})
+
+describe('Settings › Images › Library › Favorites (YAZ-4363)', () => {
+  const line = () => el.querySelector('[data-testid="favorite-copies"]')?.textContent
+
+  it('shows the count, the size of the copies and "all saved"; asks again on a library change', async () => {
+    await mountImages()
+    expect(line()).toBe('13 favorites · 2.5 MB · all saved')
+    favoriteCopies.mockResolvedValueOnce({ favorites: 14, saved: 11, saving: 3, waitingForKey: 0, waitingForPanel: 0, failed: 0, bytes: 2.5 * 1024 * 1024 })
+    await act(async () => {
+      mediaChanged.mock.calls[0][0]()
+      await Promise.resolve()
+    })
+    expect(line()).toBe('14 favorites · 2.5 MB · 3 still saving')
+  })
+
+  it('says which copies wait for a Pixabay key and which could not be saved', async () => {
+    favoriteCopies.mockResolvedValue({ favorites: 1, saved: 0, saving: 0, waitingForKey: 5, waitingForPanel: 2, failed: 1, bytes: 0 })
+    await mountImages()
+    expect(line()).toBe('1 favorite · 0 B · 5 wait for a Pixabay key, 2 save when the Add panel opens, 1 could not be saved yet')
   })
 })
 

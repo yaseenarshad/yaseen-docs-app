@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
-import { MEDIA_LIBRARY_FILE, type MediaItem } from '@shared/types'
+import { LIBRARY_FAVORITES_DIR, MEDIA_LIBRARY_FILE, type MediaItem } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
-import type { MediaStore } from '../library/mediaStore'
 import { createStore, type Store } from '../store'
-import { registerMediaLibraryIpc } from './mediaLibrary'
+import { registerMediaLibraryIpc, type MediaLibraryIpc } from './mediaLibrary'
 import { registered } from './ipcFixture'
 
 vi.mock('electron', () => ({
@@ -19,6 +18,8 @@ const ok = (value: unknown) => ({ ok: true, value })
 const bad = (code: string) => expect.objectContaining({ ok: false, error: expect.objectContaining({ code }) })
 const item = (over: Partial<MediaItem> = {}): MediaItem => ({ itemKey: 'pixabay:1', provider: 'pixabay', providerId: '1', kind: 'photo', title: 'A tree', ...over })
 const sender = { id: 1 }
+/** This test's "Mac": it writes `media-<MAC>.json` (YAZ-4364). */
+const MAC = 'aaaaaaaaaaaa'
 
 const until = async (pred: () => boolean, ms = 3000) => {
   const t0 = Date.now()
@@ -36,7 +37,7 @@ function fakeWindow() {
 let dir: string
 let userData: string
 let store: Store
-let media: MediaStore
+let media: MediaLibraryIpc
 beforeEach(async () => {
   vi.mocked(ipcMain.handle).mockClear()
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([])
@@ -44,7 +45,7 @@ beforeEach(async () => {
   userData = path.join(dir, 'userData')
   await mkdir(path.join(userData, 'library'), { recursive: true })
   store = createStore(path.join(userData, 'yaseendocs.json'))
-  media = registerMediaLibraryIpc(store, userData)
+  media = registerMediaLibraryIpc(store, userData, { macId: async () => MAC })
 })
 afterEach(async () => {
   await media.close()
@@ -54,9 +55,10 @@ afterEach(async () => {
 
 const favorites = (req: unknown) => registered(CONTRACT.media.favorites)({ sender }, req)
 const used = (req: unknown) => registered(CONTRACT.media.used)({ sender }, req)
+const favoriteCopies = () => registered(CONTRACT.media.favoriteCopies)({ sender })
 
 describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
-  it('reads and writes `<userData>/library/media.json` by default (🔒 YAZ-1775 D5), every verb answering its list', async () => {
+  it('reads and writes `<userData>/library/media-<macId>.json` by default (🔒 YAZ-1775 D5, YAZ-4364), every verb answering its list', async () => {
     expect(await favorites({ op: 'list' })).toEqual(ok([]))
     const added = await favorites({ op: 'add', item: item() })
     expect(added).toEqual(ok([expect.objectContaining({ itemKey: 'pixabay:1', updatedAt: expect.any(Number) })]))
@@ -65,7 +67,7 @@ describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
     )
     expect(await used({ op: 'list' })).toEqual(ok(expect.objectContaining({ recent: [expect.objectContaining({ itemKey: 'iconify:a' })] })))
     expect(await favorites({ op: 'remove', itemKey: 'pixabay:1' })).toEqual(ok([]))
-    const disk = JSON.parse(await readFile(path.join(userData, 'library', MEDIA_LIBRARY_FILE), 'utf8')) as { favorites: unknown[]; recent: unknown[] }
+    const disk = JSON.parse(await readFile(path.join(userData, 'library', `media-${MAC}.json`), 'utf8')) as { favorites: unknown[]; recent: unknown[] }
     expect(disk.favorites).toEqual([])
     expect(disk.recent).toHaveLength(1)
   })
@@ -89,6 +91,15 @@ describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
     expect((res as { value: { updatedAt: number }[] }).value[0].updatedAt).not.toBe(1)
   })
 
+  it('YAZ-286 (checked for YAZ-4365): a Recent row as the Add panel holds it, `updatedAt` and all, favorites through media:favorites', async () => {
+    await used({ op: 'record', item: item(), query: 'tree' })
+    const row = ((await used({ op: 'list' })) as { value: { recent: Record<string, unknown>[] } }).value.recent[0]
+    expect(row.updatedAt).toEqual(expect.any(Number))
+    const answer = await favorites({ op: 'add', item: row })
+    expect(answer).toEqual(ok([{ ...item(), updatedAt: expect.any(Number) }]))
+    expect(await favorites({ op: 'list' })).toEqual(answer)
+  })
+
   it('broadcasts media:changed to EVERY window on an own write and on an external edit — the cross-vault promise', async () => {
     const a = fakeWindow()
     const b = fakeWindow()
@@ -98,9 +109,43 @@ describe('registerMediaLibraryIpc (🔒 YAZ-1775 D4 / D5, YAZ-1817)', () => {
     expect(a.webContents.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.media.onChanged.channel)
     expect(b.webContents.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.media.onChanged.channel)
     a.webContents.send.mockClear()
-    await writeFile(path.join(userData, 'library', MEDIA_LIBRARY_FILE), JSON.stringify({ version: 1, favorites: [], recent: [] }))
+    // The other Mac's file, as a sync brings it (YAZ-4364): heard, and read with this Mac's own.
+    await writeFile(path.join(userData, 'library', 'media-bbbbbbbbbbbb.json'), JSON.stringify({ version: 1, favorites: [{ ...item({ itemKey: 'theirs', providerId: 't' }), updatedAt: 1 }], recent: [] }))
     await until(() => a.webContents.send.mock.calls.some(([ch]) => ch === CONTRACT.media.onChanged.channel))
-    expect(await favorites({ op: 'list' })).toEqual(ok([]))
+    expect(await favorites({ op: 'list' })).toEqual(ok([expect.objectContaining({ itemKey: 'pixabay:1' }), expect.objectContaining({ itemKey: 'theirs' })]))
+  })
+
+  it('a favorite add saves its copy, also the auto-favorite at the third use; a removal deletes it (YAZ-4363)', async () => {
+    const svg = `data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base64')}`
+    void media.copies.start({ picture: async (req) => ({ mimeType: 'image/svg+xml', dataURL: svg, item: item({ itemKey: `${req.provider}:${req.id}`, provider: req.provider, providerId: req.id }) }), drawing: async () => [] })
+    const copiesDir = path.join(userData, 'library', LIBRARY_FAVORITES_DIR)
+    const copyCount = async () => (await readdir(copiesDir).catch(() => [])).length
+    const icon = item({ itemKey: 'iconify:mdi:home', provider: 'iconify', providerId: 'mdi:home', kind: 'icon' })
+    await favorites({ op: 'add', item: icon })
+    await media.copies.backfill()
+    expect(await copyCount()).toBe(1)
+    const auto = item({ itemKey: 'iconify:mdi:star', provider: 'iconify', providerId: 'mdi:star', kind: 'icon' })
+    for (let i = 0; i < 3; i++) await used({ op: 'record', item: auto, query: '' })
+    await media.copies.backfill()
+    expect(await copyCount()).toBe(2)
+    expect(await favoriteCopies()).toEqual(ok({ favorites: 2, saved: 2, saving: 0, waitingForKey: 0, waitingForPanel: 0, failed: 0, bytes: 12 }))
+    await favorites({ op: 'remove', itemKey: icon.itemKey })
+    expect(await copyCount()).toBe(1)
+  })
+
+  it('a shape favorite`s copy comes from the Add panel over media:save-favorite-elements and reads back (YAZ-4370)', async () => {
+    const star = item({ itemKey: 'shape:star', provider: 'shape', providerId: 'star', kind: 'shape', title: 'Star' })
+    const fragmentJson = JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id: 's', type: 'line' }], files: {} })
+    const call = (channel: { channel: string }, req?: unknown) => registered(channel)({ sender }, req)
+    expect(await call(CONTRACT.media.saveFavoriteElements, { itemKey: star.itemKey, fragmentJson })).toEqual(ok(false)) // not a favorite yet
+    await favorites({ op: 'add', item: star })
+    expect(await call(CONTRACT.media.favoritesForPanel)).toEqual(ok([star.itemKey]))
+    expect(await call(CONTRACT.media.saveFavoriteElements, { itemKey: star.itemKey, fragmentJson: 'not json' })).toEqual(bad('BAD_REQUEST'))
+    expect(await call(CONTRACT.media.saveFavoriteElements, { itemKey: star.itemKey, fragmentJson })).toEqual(ok(true))
+    expect(await call(CONTRACT.media.favoriteElements, star.itemKey)).toEqual(ok(fragmentJson))
+    expect(await call(CONTRACT.media.favoritesForPanel)).toEqual(ok([]))
+    await favorites({ op: 'remove', itemKey: star.itemKey })
+    expect(await call(CONTRACT.media.favoriteElements, star.itemKey)).toEqual(ok(null))
   })
 
   it('follows settings.libraryFolder: the store re-points to the chosen folder and every window is told', async () => {

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { DEFAULT_MEDIA_FILTERS, type IconPacksStatus } from '@shared/iconPacks'
-import type { MediaSearchResponse } from '@shared/types'
+import type { MediaSearchResponse, StudioItem } from '@shared/types'
 import type { MediaCache } from './cache'
 import { createIconPacks, gitBlobSha, GITHUB_LIMIT_MESSAGE, newestTag, sha256Of, visibleNames } from './iconPacks'
 import { createMediaProviders } from './providers'
@@ -284,6 +284,24 @@ describe('the packs answer search, tiles and adds (decision 5)', () => {
     expect(offline).not.toHaveBeenCalled()
     // A pack that is not here goes to the network as before.
     await expect(providers.preview({ provider: 'iconify', id: 'lucide:arrow' })).rejects.toMatchObject({ code: 'OFFLINE' })
+  })
+
+  it("a favorite's own copy (YAZ-4363) answers before the pack; with no copy, the pack answers", async () => {
+    const { packs, offline } = await withPacks()
+    const copyImage = { mimeType: 'image/svg+xml', dataURL: 'data:image/svg+xml;base64,Y29weQ==' }
+    const copyItem = { itemKey: 'iconify:tabler:star', provider: 'iconify', providerId: 'tabler:star' } as StudioItem
+    const has = (id: string) => id === 'tabler:star'
+    const favoriteCopy = {
+      preview: vi.fn(async ({ id }: { id: string }) => (has(id) ? copyImage : null)),
+      import: vi.fn(async ({ id }: { id: string }) => (has(id) ? { ...copyImage, item: copyItem } : null)),
+    }
+    const providers = createMediaProviders({ fetch: offline as unknown as typeof globalThis.fetch, readPixabayKey: async () => null, cache: memoryCache(), packs, favoriteCopy })
+    expect(await providers.preview({ provider: 'iconify', id: 'tabler:star' })).toEqual(copyImage)
+    expect(await providers.import({ provider: 'iconify', id: 'tabler:star' })).toMatchObject({ dataURL: copyImage.dataURL, item: copyItem })
+    const fromPack = await providers.import({ provider: 'iconify', id: 'mdi:home' })
+    expect(Buffer.from(fromPack.dataURL.split(',')[1], 'base64').toString()).toContain('<path d="mdi-home"/>')
+    expect(favoriteCopy.import).toHaveBeenCalledTimes(2)
+    expect(offline).not.toHaveBeenCalled()
   })
 })
 

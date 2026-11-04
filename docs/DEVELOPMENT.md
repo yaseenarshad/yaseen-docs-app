@@ -51,8 +51,9 @@ open desktop/dist-app/*.dmg
 - Beside the state file, in the same app-data folder (YAZ-3028; most ported from Draw), each made lazily:
   - `secrets.json` (YAZ-3038, YAZ-3040): the Pixabay API key, the Cloudflare API token and the share upload password. Owner-only (0600), plain text, never sent to a renderer.
   - `sharing.json` (YAZ-3040): the Cloudflare account, bucket and Worker that share links use.
-  - `library/` (YAZ-3038): `media.json` favorites and recents, `components/` and `components.json` — the saved components every vault shares. Settings › Images › Library folder can move it anywhere, a synced vault included.
+  - `library/` (YAZ-3038): `media-<Mac ID>.json` favorites and recents (YAZ-4364: one file for each Mac, read together with an old `media.json`), `favorites/` (each favorite's own copy: a picture, or its elements as `.excalidraw`; YAZ-4363, YAZ-4370), `components/` and `components.json` — the saved components every vault shares. Settings › Images › Library folder can move it anywhere, a synced vault included; with a settings folder and no folder picked it is `<settings folder>/library` instead. A move copies the library and keeps the old folder.
   - `icon-packs/` (YAZ-4359): every Iconify pack after Settings › Images › Icon packs › Download (`<prefix>.json.gz`, `<prefix>.names.gz`, `manifest.json`), about 135 MB; only after a confirm, never by itself. "Choose a folder…" puts it elsewhere (`iconPacksFolder`).
+  - `library-folder.json` (YAZ-4364): the library folder of the last launch, so a launch knows when to copy the library to a new place.
   - `media-cache/` (YAZ-3038): Image Studio search pages and tile pictures, kept 24 h; swept at launch and each hour.
   - `thumbs/` (YAZ-3035): preview-sized copies of a drawing's pictures for the hover preview, with a byte cap.
   - `draw-import.json` (YAZ-3041): the Draw import's marker — when the app-data half ran, and each vault's half.

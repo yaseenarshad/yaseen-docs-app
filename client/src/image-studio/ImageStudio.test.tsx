@@ -15,7 +15,7 @@ import { DEFAULT_SETTINGS, type ComponentItem, type MediaLibraryFile, type Store
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: {
-    media: { favorites: vi.fn(), recent: vi.fn(), used: vi.fn(), onChanged: vi.fn(), search: vi.fn(), preview: vi.fn(), import: vi.fn(), drawingIndex: vi.fn(), drawing: vi.fn(), packs: vi.fn(), onPacksProgress: vi.fn(), packList: vi.fn() },
+    media: { favorites: vi.fn(), recent: vi.fn(), used: vi.fn(), onChanged: vi.fn(), search: vi.fn(), preview: vi.fn(), import: vi.fn(), drawingIndex: vi.fn(), drawing: vi.fn(), packs: vi.fn(), onPacksProgress: vi.fn(), packList: vi.fn(), favoriteElements: vi.fn(), saveFavoriteElements: vi.fn(), favoritesForPanel: vi.fn() },
     components: { list: vi.fn(), save: vi.fn(), read: vi.fn(), rename: vi.fn(), delete: vi.fn(), preview: vi.fn(), onChanged: vi.fn() },
     dialog: { openDrawing: vi.fn() },
     secrets: { has: vi.fn(), set: vi.fn() },
@@ -50,7 +50,7 @@ const stored = (over: Partial<StudioItem & { updatedAt: number }> = {}): StoredM
 const usedRow = (over: Partial<UsedMediaItem> = {}): UsedMediaItem => ({ ...stored(), count: 1, words: [], ...over })
 const icon = (name: string, set = 'set') => item({ itemKey: `iconify:${set}:${name}`, providerId: `${set}:${name}`, title: name.replace(/-/g, ' ') })
 const component = (over: Partial<ComponentItem> = {}): ComponentItem => ({ slug: 'pricing-card', name: 'Pricing card', elementCount: 2, createdAt: 1, updatedAt: 1, ...over })
-const libraryOf = (over: Partial<MediaLibraryFile> = {}): MediaLibraryFile => ({ version: 1, favorites: [], recent: [], used: [], ...over })
+const libraryOf = (over: Partial<MediaLibraryFile> = {}): MediaLibraryFile => ({ version: 1, favorites: [], recent: [], used: [], removed: {}, ...over })
 const rect = (id: string) => ({ id, type: 'rectangle' })
 
 const smart: SmartShapeApi = {
@@ -122,6 +122,9 @@ beforeEach(() => {
   media.preview.mockReset().mockResolvedValue({ mimeType: 'image/svg+xml', dataURL: 'data:image/svg+xml;base64,PREVIEW' })
   media.drawingIndex.mockReset().mockResolvedValue({ items: [] })
   media.drawing.mockReset().mockResolvedValue({ elements: [{ id: 'line-1', type: 'line', isDeleted: false }] })
+  media.favoriteElements.mockReset().mockResolvedValue(null)
+  media.saveFavoriteElements.mockReset().mockResolvedValue(true)
+  media.favoritesForPanel.mockReset().mockResolvedValue([])
   media.import.mockReset().mockResolvedValue({ mimeType: 'image/svg+xml', dataURL: `data:image/svg+xml;base64,${btoa('<svg/>')}`, item: item({ width: 48, height: 48 }) })
   components.list.mockReset().mockResolvedValue([])
   components.save.mockReset().mockResolvedValue(component({ slug: 'new-one', name: 'New one' }))
@@ -700,6 +703,59 @@ describe('the tile menu (D10, demo 6B)', () => {
   })
 })
 
+describe('two old favorites bugs, checked in today`s panel (YAZ-4365: YAZ-286, YAZ-302)', () => {
+  it('YAZ-286: the star of a Recent tile favorites the row as the library holds it; the board gets nothing', async () => {
+    library = libraryOf({ recent: [stored({ updatedAt: 7 })] })
+    const { host, canvas } = await mount()
+    await click(section(host, 'Recent')!.querySelector('[aria-label="Add money bag to favorites"]'))
+    // The row goes as it is, `updatedAt` too: main's validator drops it (`ipc/mediaLibrary.test.ts`).
+    expect(media.favorites).toHaveBeenCalledExactlyOnceWith({ op: 'add', item: expect.objectContaining({ itemKey: 'iconify:noto:money-bag', updatedAt: 7 }) })
+    expect(section(host, 'Recent')!.querySelector('[aria-label="Remove money bag from favorites"]')).not.toBeNull()
+    expect(tileNames(section(host, 'Favorites'))).toEqual(['money bag'])
+    expect(media.import).not.toHaveBeenCalled()
+    expect(canvas.insertImages).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-302: a tile menu opened near the bottom of the list moves up, so none of it is cut off', async () => {
+    library = libraryOf({ favorites: [stored()] })
+    const { host } = await mount()
+    // The list shows 0–400 px; the tile is at 300–380; the menu is 180 px tall and starts `top` below the tile's top.
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const box = (top: number, bottom: number, left = 0, right = 300) => ({ top, bottom, left, right, x: left, y: top, width: right - left, height: bottom - top, toJSON: () => ({}) })
+      if (this.classList.contains('image-studio__list')) return box(0, 400)
+      if (this.classList.contains('image-studio__card')) return box(300, 380, 0, 100)
+      if (this.classList.contains('image-studio__menu')) {
+        const top = 300 + parseFloat(this.style.top || '0')
+        return box(top, top + 180, 10, 160)
+      }
+      return box(0, 0, 0, 0)
+    })
+    await act(async () => {
+      byLabel(host, 'Add money bag')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 390 }))
+    })
+    await settle(2)
+    const menu = byLabel(host, 'Actions for money bag')!
+    const box = menu.getBoundingClientRect()
+    rect.mockRestore()
+    expect(box.bottom).toBeLessThanOrEqual(400)
+    expect(box.top).toBeGreaterThanOrEqual(0)
+  })
+
+  it('YAZ-302: "Remove from favorites" on a Favorites tile moves the focus to the tile that takes its place, not to the page', async () => {
+    const other = stored({ itemKey: 'iconify:noto:rocket', providerId: 'noto:rocket', title: 'rocket' })
+    library = libraryOf({ favorites: [stored(), other] })
+    const { host } = await mount()
+    await rightClick(host, 'money bag')
+    await click(byText(host, 'Remove from favorites'))
+    expect(tileNames(section(host, 'Favorites'))).toEqual(['rocket'])
+    expect(document.activeElement).toBe(section(host, 'Favorites')!.querySelector('[aria-label="Add rocket"]'))
+    // The star does the same.
+    ;(section(host, 'Favorites')!.querySelector('[aria-label="Remove rocket from favorites"]') as HTMLElement).focus()
+    await click(section(host, 'Favorites')!.querySelector('[aria-label="Remove rocket from favorites"]'))
+    expect(document.activeElement).toBe(field(host))
+  })
+})
+
 describe('components in the Add tab (D2, D6)', () => {
   it('Save selection shows only with a selection; it captures, asks a name, and saves the fragment and a PNG', async () => {
     const without = await mount()
@@ -855,12 +911,53 @@ describe('components in the Add tab (D2, D6)', () => {
     expect(components.delete).toHaveBeenCalledTimes(2)
   })
 
-  it('a favorite component shows its live name, and one that was deleted is not shown at all', async () => {
+  it('a favorite component shows its live name; one that was deleted stays in Favorites by its stored name (YAZ-4370), and nowhere else', async () => {
     const fav = (slug: string, title: string) => stored({ itemKey: `component:${slug}`, provider: 'component', providerId: slug, kind: 'component', title })
-    library = libraryOf({ favorites: [fav('pricing-card', 'Old name'), fav('gone', 'Gone')] })
+    library = libraryOf({ favorites: [fav('pricing-card', 'Old name'), fav('gone', 'Gone')], recent: [fav('gone', 'Gone')] })
     components.list.mockResolvedValue([component({ name: 'New name' })])
     const { host } = await mount()
-    expect(tileNames(section(host, 'Favorites'))).toEqual(['New name'])
+    expect(tileNames(section(host, 'Favorites'))).toEqual(['New name', 'Gone'])
+    expect(tileNames(section(host, 'Recent'))).toEqual([])
+  })
+})
+
+describe('every favorite keeps a copy (YAZ-4370)', () => {
+  const fragment = (id: string) => JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id, type: 'line' }], files: {} })
+
+  it('an add of a favorite library item, shape or component uses its copy first, also when the source is gone', async () => {
+    const drawn = stored({ itemKey: 'excalidraw:lib#3', provider: 'excalidraw', providerId: 'lib#3', kind: 'drawing', title: 'Hammer' })
+    const renamed = stored({ itemKey: 'shape:old-star', provider: 'shape', providerId: 'old-star', kind: 'shape', title: 'Old star' })
+    const deleted = stored({ itemKey: 'component:gone', provider: 'component', providerId: 'gone', kind: 'component', title: 'Gone card' })
+    library = libraryOf({ favorites: [drawn, renamed, deleted] })
+    media.favoriteElements.mockImplementation(async (itemKey) => fragment(`copy-of-${itemKey}`))
+    media.drawing.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'that item is no longer in its library'))
+    const { host, canvas } = await mount()
+    for (const title of ['Hammer', 'Old star', 'Gone card']) await click(section(host, 'Favorites')!.querySelector(`[aria-label="Add ${title}"]`))
+    expect(media.favoriteElements.mock.calls.filter(([key]) => key !== undefined).map(([key]) => key)).toEqual(expect.arrayContaining([drawn.itemKey, renamed.itemKey, deleted.itemKey]))
+    expect(canvas.insertElements.mock.calls.map(([elements]) => (elements as { id: string }[])[0].id)).toEqual([`copy-of-${drawn.itemKey}`, `copy-of-${renamed.itemKey}`, `copy-of-${deleted.itemKey}`])
+    expect(components.read).not.toHaveBeenCalled()
+    expect(host.querySelector('.image-studio__error')).toBeNull()
+  })
+
+  it('with no copy, an add works as before; a tile that is not a favorite never asks for one', async () => {
+    library = libraryOf({ favorites: [stored({ itemKey: 'shape:rectangle', provider: 'shape', providerId: 'rectangle', kind: 'shape', title: 'Rectangle' })] })
+    const { host, canvas } = await mount()
+    await click(section(host, 'Favorites')!.querySelector('[aria-label="Add Rectangle"]'))
+    expect(canvas.updateScene).toHaveBeenCalled()
+    media.favoriteElements.mockClear()
+    await click(section(host, 'Shapes')!.querySelector('[aria-label="Add Rounded rectangle"]'))
+    expect(media.favoriteElements).not.toHaveBeenCalled()
+  })
+
+  it('the panel saves the copy of each shape favorite that main asks for, built by the engine', async () => {
+    library = libraryOf({ favorites: [stored({ itemKey: 'shape:rectangle', provider: 'shape', providerId: 'rectangle', kind: 'shape', title: 'Rectangle' })] })
+    media.favoritesForPanel.mockResolvedValue(['shape:rectangle', 'shape:not-in-the-catalog'])
+    await mount()
+    await settle()
+    expect(media.saveFavoriteElements).toHaveBeenCalledOnce()
+    const [{ itemKey, fragmentJson }] = media.saveFavoriteElements.mock.calls[0]
+    expect(itemKey).toBe('shape:rectangle')
+    expect(JSON.parse(fragmentJson).elements).toEqual([expect.objectContaining({ id: 'new-0', type: 'rectangle' })])
   })
 })
 
