@@ -5,7 +5,11 @@
  * ever exercised through a live `Request` and which is the piece an infinite scroll rests on.
  */
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from '@shared/iconPacks'
 import {
+  allowedPrefixes,
+  filtersNeedPackFacts,
+  matchesStyle,
   COLOR_COLLECTION_PRIORITY,
   decodeCursor,
   encodeCursor,
@@ -269,5 +273,66 @@ describe('provider URLs and the import-time item', () => {
     expect(item?.licenseName).toBeUndefined()
     expect(iconifyItemFromId('simple-icons:github')).toMatchObject({ kind: 'logo', trademarkNotice: true })
     expect(iconifyItemFromId('nope')).toBeNull()
+  })
+})
+
+describe('the filters (YAZ-4360)', () => {
+  const facts = {
+    mdi: { palette: false, category: 'Material', license: { spdx: 'Apache-2.0', title: 'Apache 2.0' } },
+    noto: { palette: true, category: 'Emoji', license: { spdx: 'Apache-2.0' } },
+    logos: { palette: true, category: 'Logos', license: { spdx: 'CC0-1.0' } },
+    cbi: { palette: false, category: 'Thematic', license: { spdx: 'CC-BY-NC-SA-4.0' } },
+    ps: { palette: false, license: { spdx: 'CC-BY-NC-4.0' } },
+  }
+  const filters = (over: Partial<MediaFilters>): MediaFilters => ({ ...DEFAULT_MEDIA_FILTERS, ...over })
+  const allowed = (over: Partial<MediaFilters>) => {
+    const set = allowedPrefixes(facts, filters(over))
+    return set === null ? null : [...set].sort()
+  }
+
+  it('allows every pack with no filter, and asks for no pack facts', () => {
+    expect(allowedPrefixes(facts, undefined)).toBeNull()
+    expect(allowed({})).toBeNull()
+    expect(filtersNeedPackFacts(filters({}))).toBe(false)
+    expect(filtersNeedPackFacts(filters({ packs: ['mdi'] }))).toBe(false)
+  })
+
+  it('reads each option from the pack: Colors from palette, Emoji from category, Business-safe from the license', () => {
+    expect(allowed({ colors: 'one' })).toEqual(['cbi', 'mdi', 'ps'])
+    expect(allowed({ colors: 'many' })).toEqual(['logos', 'noto'])
+    expect(allowed({ style: 'emoji' })).toEqual(['noto'])
+    expect(allowed({ license: 'business' })).toEqual(['logos', 'mdi', 'noto'])
+    // Outline, Filled and Duotone are a test on each name, not on the pack.
+    expect(allowed({ style: 'outline' })).toBeNull()
+    expect(filtersNeedPackFacts(filters({ colors: 'one' }))).toBe(true)
+  })
+
+  it('names the packs, and joins every filter', () => {
+    expect(allowed({ packs: ['mdi', 'unknown'] })).toEqual(['mdi', 'unknown'])
+    // With a filter that reads facts, a pack the facts do not know is out.
+    expect(allowed({ packs: ['mdi', 'unknown'], colors: 'one' })).toEqual(['mdi'])
+    expect(allowed({ colors: 'one', license: 'business' })).toEqual(['mdi'])
+    expect(allowed({ colors: 'many', style: 'emoji', packs: ['logos'] })).toEqual([])
+  })
+
+  it('reads Style from the name ending, past a size number, and from the pack ending', () => {
+    expect(matchesStyle('mdi:arrow-left-outline', 'outline')).toBe(true)
+    expect(matchesStyle('ri:arrow-up-line', 'outline')).toBe(true)
+    expect(matchesStyle('fluent:arrow-up-24-regular', 'outline')).toBe(true)
+    expect(matchesStyle('mdi:arrow-left', 'outline')).toBe(false)
+    expect(matchesStyle('mdi:arrow-left-outline', 'filled')).toBe(false)
+    expect(matchesStyle('ri:arrow-up-fill', 'filled')).toBe(true)
+    expect(matchesStyle('heroicons:arrow-up-20-solid', 'filled')).toBe(true)
+    expect(matchesStyle('fluent:arrow-up-24-filled', 'filled')).toBe(true)
+    expect(matchesStyle('ph:arrow-up-duotone', 'duotone')).toBe(true)
+    expect(matchesStyle('solar:arrow-up-bold-duotone', 'duotone')).toBe(true)
+    expect(matchesStyle('ic:twotone-arrow', 'duotone')).toBe(false)
+    expect(matchesStyle('material-symbols:home-two-tone', 'duotone')).toBe(true)
+    expect(matchesStyle('icon-park-outline:arrow-up', 'outline')).toBe(true)
+    expect(matchesStyle('fa6-solid:arrow-up', 'filled')).toBe(true)
+    expect(matchesStyle('line-md:arrow-up', 'outline')).toBe(false)
+    // Any and Emoji are not a name rule.
+    expect(matchesStyle('mdi:arrow', 'any')).toBe(true)
+    expect(matchesStyle('mdi:arrow', 'emoji')).toBe(true)
   })
 })

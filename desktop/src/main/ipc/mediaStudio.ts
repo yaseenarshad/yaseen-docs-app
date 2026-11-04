@@ -16,6 +16,7 @@ import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import { isMediaBytesProvider, isMediaSearchSource, PIXABAY_SECRET, type MediaBytesRequest, type MediaDrawingRequest, type MediaSearchRequest } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
+import { isMediaFilters, type MediaFilters } from '@shared/iconPacks'
 import { BridgeFailure } from '../fs/fsUtils'
 import { requireRequest, str, strOrNull } from '../fs/validate'
 import { createMediaCache } from '../media/cache'
@@ -28,7 +29,11 @@ function requireSearchRequest(v: unknown): MediaSearchRequest {
   const r = requireRequest(v)
   if (typeof r.q !== 'string') throw new BridgeFailure('BAD_REQUEST', "'q' must be a string")
   if (!isMediaSearchSource(r.source)) throw new BridgeFailure('BAD_REQUEST', "'source' must be all, iconify or pixabay")
-  return { q: r.q, source: r.source, cursor: r.cursor === undefined ? null : strOrNull(r.cursor, 'cursor') }
+  // YAZ-4360: the filters are checked whole; a bad one is a bad request, never a silent "no filter".
+  if (r.filters !== undefined && !isMediaFilters(r.filters)) throw new BridgeFailure('BAD_REQUEST', "'filters' is not a filter set")
+  const req: MediaSearchRequest = { q: r.q, source: r.source, cursor: r.cursor === undefined ? null : strOrNull(r.cursor, 'cursor') }
+  if (r.filters !== undefined) req.filters = r.filters as MediaFilters
+  return req
 }
 
 function requireBytesRequest(v: unknown): MediaBytesRequest {

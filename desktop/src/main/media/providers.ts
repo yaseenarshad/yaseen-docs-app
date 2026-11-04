@@ -30,9 +30,13 @@ import { BridgeFailure } from '../fs/fsUtils'
 import type { MediaCache } from './cache'
 import { CACHE_TTL_MS, pixabayItemCacheKey, pixabayPageCacheKey, previewCacheKey, searchCacheKey } from './cachePolicy'
 import { indexItems, libraryItemElements, LIBRARIES_INDEX_URL, LIBRARIES_ORIGIN, MAX_DRAWING_ELEMENTS_BYTES, MAX_INDEX_BYTES, MAX_LIBRARY_FILE_BYTES, MAX_LIBRARY_FILES_IN_MEMORY, parseDrawingId } from './excalidrawLibraries'
+import { activeFilterCount, type MediaFilters } from '@shared/iconPacks'
 import { createIconifyBatcher, type IconifySetData } from './iconifyBatch'
 import {
+  allowedPrefixes,
   decodeCursor,
+  filtersNeedPackFacts,
+  matchesStyle,
   encodeCursor,
   hasMorePages,
   ICONIFY_API,
@@ -324,6 +328,17 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
     return { items: items.slice(0, limit), cursor, hasMore: iconifyHasMore(cursor) }
   }
 
+  /**
+   * The filters as an Iconify scope (YAZ-4360): the allowed packs, from the pack facts only when a filter reads them
+   * (Packs alone asks nothing), and the style test on each icon name.
+   */
+  async function scopeFor(filters: MediaFilters | undefined): Promise<IconifyScope> {
+    const style = filters?.style ?? 'any'
+    const keep = style === 'any' || style === 'emoji' ? () => true : (item: StudioItem) => matchesStyle(item.providerId, style)
+    const facts = filtersNeedPackFacts(filters) ? await iconifyCollections() : {}
+    return { allowed: allowedPrefixes(facts, filters), keep }
+  }
+
   // ---------- Pixabay ----------
 
   async function fetchPixabayPage(query: string, imageType: PixabayImageType, page: number, key: string) {
@@ -389,9 +404,16 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
       cursor.pixabay.vectorExhausted = true
       cursor.pixabay.illustrationExhausted = true
     }
-    const providers = providersFor(req.source).filter((provider) => provider !== 'pixabay' || pixabayAvailable)
-    const limits = providerLimits(req.source)
-    const iconifyScope: IconifyScope = { allowed: null, keep: () => true }
+    // An active filter is about icons (YAZ-4360): Colors, Style, Packs and License mean nothing for a Pixabay graphic,
+    // so a filtered search shows icons only, and the Pixabay half has no further page either.
+    const filtered = req.filters !== undefined && activeFilterCount(req.filters) > 0
+    if (filtered) {
+      cursor.pixabay.vectorExhausted = true
+      cursor.pixabay.illustrationExhausted = true
+    }
+    const providers = providersFor(req.source).filter((provider) => provider !== 'pixabay' || (pixabayAvailable && !filtered))
+    const limits = filtered ? { ...providerLimits(req.source), iconify: SEARCH_LIMIT } : providerLimits(req.source)
+    const iconifyScope = await scopeFor(req.filters)
     const runProvider = (provider: SearchProvider, limit: number): Promise<AnyProviderSearchResult> =>
       provider === 'iconify' ? searchIconify(query, cursor.iconify, limit, iconifyScope) : searchPixabay(query, cursor.pixabay, limit, key as string)
 
@@ -507,7 +529,7 @@ export function createMediaProviders({ fetch, readPixabayKey, cache }: MediaProv
       const query = req.q.trim().slice(0, MAX_QUERY_LENGTH)
       if (query.length < MIN_QUERY_LENGTH) throw new BridgeFailure('BAD_REQUEST', 'enter at least two characters')
       const key = await readPixabayKey()
-      const cacheKey = searchCacheKey(query, req.source, req.cursor, key !== null)
+      const cacheKey = searchCacheKey(query, req.source, req.cursor, key !== null, req.filters)
       const hit = await cache.read<MediaSearchResponse>(cacheKey)
       if (hit !== null) return hit
       const response = await searchUncached(query, { ...req, q: query }, key)

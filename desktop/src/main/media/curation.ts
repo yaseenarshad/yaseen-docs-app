@@ -16,6 +16,7 @@
  *   three `replace`s. Same bytes, same alphabet, same stripped padding — Node has the encoder.
  */
 import type { MediaItemKind, MediaSearchSource, StudioItem } from '@shared/types'
+import { isNonCommercial, type MediaFilters, type MediaStyleFilter } from '@shared/iconPacks'
 
 /** How many results ONE page of a search answers with. */
 export const SEARCH_LIMIT = 18
@@ -402,4 +403,63 @@ export function iconifyItemFromId(providerId: string): StudioItem | null {
   }
   if (kind === 'logo') item.trademarkNotice = true
   return item
+}
+
+// ---------- The filters (YAZ-4360, round 3 decision 4) ----------
+
+/** What a filter reads of a pack: Iconify's `/collections` entry, or a downloaded pack's own `info`. */
+export type PackFacts = Pick<IconifyCollection, 'palette' | 'category' | 'license'>
+
+/** Whether a filter needs the pack facts at all: Packs alone does not (and costs no `/collections` request). */
+export const filtersNeedPackFacts = (filters: MediaFilters | undefined): boolean =>
+  filters !== undefined && (filters.colors !== 'any' || filters.style === 'emoji' || filters.license !== 'any')
+
+/**
+ * The packs a search may show, or null for every pack. Colors read the pack's `palette` (one color = `currentColor`),
+ * Emoji its category, Business-safe its license (no `-NC`, extra 16), Packs names them. A pack the facts do not know
+ * passes a Packs-only filter (a downloaded pack Iconify no longer lists) but no other.
+ */
+export function allowedPrefixes(facts: Record<string, PackFacts>, filters: MediaFilters | undefined): Set<string> | null {
+  if (filters === undefined) return null
+  const needFacts = filtersNeedPackFacts(filters)
+  if (!needFacts && filters.packs.length === 0) return null
+  const candidates = filters.packs.length > 0 ? filters.packs : Object.keys(facts)
+  return new Set(
+    candidates.filter((prefix) => {
+      if (!needFacts) return true
+      const pack = facts[prefix]
+      if (pack === undefined) return false
+      if (filters.colors === 'one' && pack.palette !== false) return false
+      if (filters.colors === 'many' && pack.palette !== true) return false
+      if (filters.style === 'emoji' && pack.category !== 'Emoji') return false
+      if (filters.license === 'business' && isNonCommercial(pack.license ?? {})) return false
+      return true
+    }),
+  )
+}
+
+/**
+ * The words that end an icon name in each style, and that end a pack's own prefix (`icon-park-outline`, `fa6-solid`).
+ * A number after them (`arrow-up-24-filled` has it before) is a size, not a style, and is skipped.
+ */
+const STYLE_WORDS: Record<Exclude<MediaStyleFilter, 'any' | 'emoji'>, ReadonlySet<string>> = {
+  outline: new Set(['outline', 'outlined', 'line', 'linear', 'stroke', 'regular']),
+  filled: new Set(['fill', 'filled', 'solid', 'glyph']),
+  duotone: new Set(['duotone', 'twotone', 'duo', 'duocolor', 'bulk']),
+}
+
+const lastWord = (dashed: string): string => {
+  const words = dashed.toLowerCase().split('-')
+  while (words.length > 1 && /^\d+$/.test(words[words.length - 1])) words.pop()
+  // `two-tone` is one word.
+  if (words.length > 1 && words[words.length - 1] === 'tone' && words[words.length - 2] === 'two') return 'twotone'
+  return words[words.length - 1]
+}
+
+/** Whether `prefix:name` is in `style`: by the name's ending, or by the pack's ending. Any and Emoji (a pack rule) pass. */
+export function matchesStyle(providerId: string, style: MediaStyleFilter): boolean {
+  if (style === 'any' || style === 'emoji') return true
+  const at = providerId.indexOf(':')
+  const words = STYLE_WORDS[style]
+  return words.has(lastWord(providerId.slice(at + 1))) || (at > 0 && providerId.slice(0, at).includes('-') && words.has(lastWord(providerId.slice(0, at))))
 }

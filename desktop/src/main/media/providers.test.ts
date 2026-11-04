@@ -7,6 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MediaSearchResponse, StudioItem } from '@shared/types'
+import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from '@shared/iconPacks'
 import { BridgeFailure } from '../fs/fsUtils'
 import type { MediaCache } from './cache'
 import { decodeCursor } from './curation'
@@ -600,5 +601,47 @@ describe('past Iconify`s 128 (YAZ-4358): one pack at a time, biggest first', () 
     build(fetchMock as unknown as typeof globalThis.fetch)
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('the filters, in main (YAZ-4360)', () => {
+  const facts = { mdi: { name: 'MDI', total: 7000, palette: false, license: { spdx: 'Apache-2.0' } }, noto: { name: 'Noto', total: 3000, palette: true, category: 'Emoji', license: { spdx: 'Apache-2.0' } }, cbi: { name: 'CBI', total: 900, palette: false, license: { spdx: 'CC-BY-NC-SA-4.0' } } }
+  function iconify() {
+    return vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.hostname !== 'api.iconify.design') return json({ hits: [{ id: 1, type: 'vector', previewURL: 'https://x/p.png', tags: 'arrow' }], totalHits: 1 })
+      if (url.pathname === '/collections') return json(facts)
+      const all = ['mdi:arrow', 'mdi:arrow-outline', 'noto:arrow', 'cbi:arrow', 'cbi:arrow-outline']
+      const allowed = url.searchParams.get('prefixes')?.split(',') ?? Object.keys(facts)
+      const icons = all.filter((id) => allowed.includes(id.split(':')[0]))
+      return json(iconifyPayload(icons, { total: icons.length, limit: 128 }))
+    })
+  }
+  const ids = (page: MediaSearchResponse) => page.items.map(({ providerId }) => providerId).sort()
+  const f = (over: Partial<MediaFilters>): MediaFilters => ({ ...DEFAULT_MEDIA_FILTERS, ...over })
+
+  it('sends Iconify the allowed packs, and every result matches', async () => {
+    const fetchMock = iconify()
+    const providers = build(fetchMock as unknown as typeof globalThis.fetch, null)
+    expect(ids(await providers.search({ q: 'arrow', source: 'iconify', filters: f({ colors: 'one', license: 'business' }) }))).toEqual(['mdi:arrow', 'mdi:arrow-outline'])
+    const sent = fetchMock.mock.calls.map(([url]) => new URL(String(url))).filter((url) => url.pathname === '/search')
+    expect(sent.every((url) => url.searchParams.get('prefixes') === 'mdi')).toBe(true)
+    expect(ids(await providers.search({ q: 'arrow', source: 'iconify', filters: f({ style: 'emoji' }) }))).toEqual(['noto:arrow'])
+    expect(ids(await providers.search({ q: 'arrow', source: 'iconify', filters: f({ style: 'outline' }) }))).toEqual(['cbi:arrow-outline', 'mdi:arrow-outline'])
+  })
+
+  it('asks for no pack list with Packs alone, and a filtered search shows icons only', async () => {
+    const fetchMock = iconify()
+    const page = await build(fetchMock as unknown as typeof globalThis.fetch, 'key').search({ q: 'arrow', source: 'all', filters: f({ packs: ['cbi'] }) })
+    expect(ids(page)).toEqual(['cbi:arrow', 'cbi:arrow-outline'])
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/collections') || String(url).includes('pixabay'))).toBe(false)
+    expect(page.nextCursor).toBeNull()
+  })
+
+  it('caches each filter set apart', async () => {
+    const providers = build(iconify() as unknown as typeof globalThis.fetch, null)
+    await providers.search({ q: 'arrow', source: 'iconify', filters: f({ colors: 'one' }) })
+    const many = await providers.search({ q: 'arrow', source: 'iconify', filters: f({ colors: 'many' }) })
+    expect(ids(many)).toEqual(['noto:arrow'])
   })
 })

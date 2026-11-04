@@ -97,6 +97,9 @@ describe('the guards', () => {
     await expect(search(null, { q: 'money bag', source: 'web' })).resolves.toEqual(bad('BAD_REQUEST'))
     await expect(search(null, { q: 'money bag', source: 'all', cursor: 7 })).resolves.toEqual(bad('BAD_REQUEST'))
     await expect(search(null, { q: 'a', source: 'all' })).resolves.toEqual(bad('BAD_REQUEST'))
+    // YAZ-4360: a filter set this build cannot read is a bad request, never "no filter".
+    await expect(search(null, { q: 'money bag', source: 'all', filters: { colors: 'red', style: 'any', packs: [], license: 'any' } })).resolves.toEqual(bad('BAD_REQUEST'))
+    await expect(search(null, { q: 'money bag', source: 'all', filters: { colors: 'any', style: 'any', packs: ['../x'], license: 'any' } })).resolves.toEqual(bad('BAD_REQUEST'))
   })
 
   it('refuses preview and import for a provider that serves no bytes — `shape` is drawn, not fetched', async () => {
