@@ -433,7 +433,7 @@ describe('notes (D5, D8, YAZ-2988 D13)', () => {
 
   it('a null name or body has a fallback', async () => {
     const { updater } = fake({ list: [{ ...release('v1.0.7'), name: null, body: null, published_at: null }] })
-    await expect(updater.notes()).resolves.toEqual({ current: '1.0.12', releases: [{ version: '1.0.7', title: 'v1.0.7', date: '', body: '' }] })
+    await expect(updater.notes()).resolves.toEqual({ current: '1.0.12', checks: true, releases: [{ version: '1.0.7', title: 'v1.0.7', date: '', body: '' }] })
   })
 
   it('rejects when GitHub cannot be reached (S18)', async () => {
@@ -470,6 +470,11 @@ describe('start (D7, S3, S7)', () => {
     await vi.advanceTimersByTimeAsync(10_000)
     expect(e2e.fetched).toEqual([`${FEED}/latest`])
     expect(e2e.updater.state()).toEqual({ kind: 'manual', version: '1.0.13' }) // an unpackaged run cannot replace itself (S13)
+    // YAZ-4371: the "What's new" sheet learns it from the notes, and offers no update in the dev run
+    // (the dev run reads the real feed's notes: here any URL answers an empty list)
+    const devNotes = fake({ overrides: { isPackaged: false, feed: undefined, fetch: async () => Response.json([]) } })
+    expect([dev.updater.checks, (await devNotes.updater.notes()).checks]).toEqual([false, false])
+    expect([e2e.updater.checks, (await e2e.updater.notes()).checks]).toEqual([true, true])
   })
 })
 
