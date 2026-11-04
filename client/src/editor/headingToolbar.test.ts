@@ -338,7 +338,20 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     at.dispatchEvent(event)
     return event
   }
-  const customInput = () => document.querySelector<HTMLInputElement>('input.table-colour-input')!
+  const box = () => panel()!.querySelector<HTMLElement>('.highlight-panel__box')!
+  const boxOpen = () => !box().hidden
+  const pencil = () => panel()!.querySelector<HTMLButtonElement>('button[aria-label="Custom colour…"]')!
+  const clickPencil = () => {
+    pencil().dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    pencil().dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+  }
+  const field = (name: 'Red' | 'Green' | 'Blue') => box().querySelector<HTMLInputElement>(`input[aria-label="${name}"]`)!
+  /** A pointer on the box's square or slider, at (x, y) in a 100 × 100 box at the window's top left. */
+  const pointer = (type: string, x: number, y: number, at: EventTarget) => {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 })
+    at.dispatchEvent(event)
+    return event
+  }
   const saved = vi.fn()
 
   beforeEach(() => {
@@ -505,45 +518,190 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     expect(view.hasFocus()).toBe(true)
   })
 
-  it('the pencil and the field open the system colour picker right under the field; the pick goes to the text selected then, in one undo step', async () => {
-    const { crepe, view } = await mount('<mark class="highlight-green">hello</mark> world\n')
+  it('the pencil and the field open the panel\'s own colour box right under the Hex code field, never the system picker', async () => {
+    const { view } = await mount('<mark class="highlight-green">hello</mark> world\n')
     await select(view, 'world')
     await press('highlight-more')
-    const field = panel()!.querySelector<HTMLElement>('.highlight-panel__hex')!
-    vi.spyOn(field, 'getBoundingClientRect').mockReturnValue(new DOMRect(40, 200, 150, 34))
-    const pencil = panel()!.querySelector<HTMLButtonElement>('button[aria-label="Custom colour…"]')!
-    pencil.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
-    pencil.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
-    const input = customInput()
-    expect([input.style.left, input.style.top]).toEqual(['40px', '234px'])
-    // Nothing on the selection: the picker starts on yellow's hue.
-    expect(input.value).toBe('#ffd500')
-    // The popup does not block the window: the user selects other text, then picks.
-    await select(view, 'hello')
-    input.value = '#3366ff'
-    input.dispatchEvent(new Event('change'))
-    await settle()
-    expect(getMarkdownForSave(crepe)).toBe('<mark class="highlight-green">hello</mark> <mark style="background-color: #3366ff">world</mark>\n')
-    expect(saved).toHaveBeenLastCalledWith([{ color: '#3366ff', uses: 1 }])
-    expect(undo(view.state, view.dispatch)).toBe(true)
-    expect(getMarkdownForSave(crepe)).toBe('<mark class="highlight-green">hello</mark> world\n')
+    expect(boxOpen()).toBe(false)
+    clickPencil()
+    expect(boxOpen()).toBe(true)
+    // Inside the panel, right after the Hex code field, in its section.
+    const hexField = panel()!.querySelector('.highlight-panel__hex')!
+    expect(hexField.nextElementSibling).toBe(box())
+    expect(pencil().getAttribute('aria-expanded')).toBe('true')
+    expect(document.querySelector('input[type="color"]')).toBeNull()
+    expect(box().querySelector('[aria-label="Saturation and brightness"] .highlight-panel__sv-handle')).not.toBeNull()
+    expect(box().querySelector('[aria-label="Hue"] .highlight-panel__hue-handle')).not.toBeNull()
+    // Nothing on the selection: the box starts on yellow.
+    expect([field('Red').value, field('Green').value, field('Blue').value]).toEqual(['255', '213', '0'])
+    expect(view.hasFocus()).toBe(true)
+    // The pencil again closes just the box.
+    clickPencil()
+    expect(boxOpen()).toBe(false)
+    expect(isOpen()).toBe(true)
 
     // A mousedown on the field opens it too, on the field's colour.
     await select(view, 'hello')
     await press('highlight-more')
     hexInput().dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
-    expect(customInput().value).toBe(HIGHLIGHT_HEX.green)
+    expect(boxOpen()).toBe(true)
+    expect([field('Red').value, field('Green').value, field('Blue').value]).toEqual(['80', '200', '120'])
+    // A hex typed in the field moves the box.
+    hexInput().value = '3366ff'
+    hexInput().dispatchEvent(new Event('input', { bubbles: true }))
+    expect([field('Red').value, field('Green').value, field('Blue').value]).toEqual(['51', '102', '255'])
   })
 
-  it('a picker pick on text deleted while it was open does nothing', async () => {
+  it('a drag in the box previews, and its release is one pick: one undo step, one use; the box stays open', async () => {
     const { crepe, view } = await mount('hello world\n')
     await select(view, 'world')
     await press('highlight-more')
-    panel()!.querySelector<HTMLButtonElement>('button[aria-label="Custom colour…"]')!.click()
+    clickPencil()
+    const square = box().querySelector<HTMLElement>('.highlight-panel__sv')!
+    const hue = box().querySelector<HTMLElement>('.highlight-panel__hue')!
+    for (const el of [square, hue]) vi.spyOn(el, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 100))
+    // The square keeps the selection and the focus.
+    expect(pointer('mousedown', 50, 50, square).defaultPrevented).toBe(true)
+    pointer('pointerdown', 50, 50, square)
+    pointer('pointermove', 100, 0, document)
+    // Yellow's hue, full saturation and brightness: the hex field and R G B follow, the text does not yet.
+    expect(hexInput().value).toBe('ffd500')
+    pointer('pointermove', 100, 50, document)
+    expect([field('Red').value, field('Green').value, field('Blue').value]).toEqual(['128', '106', '0'])
+    expect(getMarkdownForSave(crepe)).toBe('hello world\n')
+    expect(saved).not.toHaveBeenCalled()
+    pointer('pointerup', 100, 50, document)
+    await settle()
+    expect(getMarkdownForSave(crepe)).toBe('hello <mark style="background-color: #806a00">world</mark>\n')
+    expect(saved).toHaveBeenCalledTimes(1)
+    expect(saved).toHaveBeenLastCalledWith([{ color: '#806a00', uses: 1 }])
+    expect(isOpen()).toBe(true)
+    expect(boxOpen()).toBe(true)
+    expect(view.hasFocus()).toBe(true)
+    // A move after the release does nothing.
+    pointer('pointermove', 0, 100, document)
+    expect(hexInput().value).toBe('806a00')
+    // The hue slider: red, the same saturation and brightness.
+    pointer('pointerdown', 0, 5, hue)
+    pointer('pointerup', 0, 5, document)
+    await settle()
+    expect(getMarkdownForSave(crepe)).toBe('hello <mark style="background-color: #800000">world</mark>\n')
+    expect(saved).toHaveBeenCalledTimes(2)
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('hello <mark style="background-color: #806a00">world</mark>\n')
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('hello world\n')
+  })
+
+  it('R G B from the keyboard: typing previews, Enter is one pick with the focus back in the note', async () => {
+    const { crepe, view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    clickPencil()
+    const type = (name: 'Red' | 'Green' | 'Blue', value: string) => {
+      field(name).focus()
+      field(name).value = value
+      field(name).dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    type('Red', '51')
+    type('Green', '102')
+    type('Blue', '255')
+    expect(hexInput().value).toBe('3366ff')
+    // Keys in a field are its own: a letter does not close the panel.
+    expect(key('x', field('Blue')).defaultPrevented).toBe(false)
+    expect(isOpen()).toBe(true)
+    // The up arrow steps the channel.
+    key('ArrowUp', field('Blue'))
+    expect(field('Blue').value).toBe('255')
+    key('ArrowDown', field('Red'))
+    expect(hexInput().value).toBe('3266ff')
+    expect(getMarkdownForSave(crepe)).toBe('hello world\n')
+    expect(key('Enter', field('Red')).defaultPrevented).toBe(true)
+    await settle()
+    expect(getMarkdownForSave(crepe)).toBe('hello <mark style="background-color: #3266ff">world</mark>\n')
+    expect(saved).toHaveBeenCalledTimes(1)
+    expect(view.hasFocus()).toBe(true)
+    expect(boxOpen()).toBe(true)
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('hello world\n')
+  })
+
+  it('Escape closes only the box — from the note, the hex field or an R G B field — and a second one the panel', async () => {
+    const { view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    clickPencil()
+    expect(key('Escape').defaultPrevented).toBe(true)
+    expect(boxOpen()).toBe(false)
+    expect(isOpen()).toBe(true)
+    key('Escape')
+    expect(isOpen()).toBe(false)
+
+    await press('highlight-more')
+    clickPencil()
+    field('Green').focus()
+    key('Escape', field('Green'))
+    expect(boxOpen()).toBe(false)
+    expect(isOpen()).toBe(true)
+    expect(view.hasFocus()).toBe(true)
+
+    hexInput().dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    hexInput().focus()
+    key('Escape', hexInput())
+    expect(boxOpen()).toBe(false)
+    expect(isOpen()).toBe(true)
+    expect(view.state.selection.empty).toBe(false)
+    // Closing the panel takes the box with it: the next open starts without it.
+    clickPencil()
+    key('Escape', hexInput())
+    key('Escape', hexInput())
+    expect(isOpen()).toBe(false)
+    await press('highlight-more')
+    expect(boxOpen()).toBe(false)
+  })
+
+  it('the eyedropper: hidden without the browser\'s EyeDropper; with it, its colour is one pick', async () => {
+    const win = window as unknown as { EyeDropper?: unknown }
+    const { crepe, view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    clickPencil()
+    const dropper = () => box().querySelector<HTMLButtonElement>('button[aria-label="Pick a colour from the screen"]')!
+    expect(dropper().hidden).toBe(true)
+    clickPencil()
+    win.EyeDropper = class {
+      open = () => Promise.resolve({ sRGBHex: '#123456' })
+    }
+    try {
+      clickPencil()
+      expect(dropper().hidden).toBe(false)
+      dropper().click()
+      await settle()
+      expect(getMarkdownForSave(crepe)).toBe('hello <mark style="background-color: #123456">world</mark>\n')
+      expect(saved).toHaveBeenCalledTimes(1)
+      expect([field('Red').value, field('Green').value, field('Blue').value]).toEqual(['18', '52', '86'])
+      // Cancelled (Escape in the eyedropper): nothing.
+      win.EyeDropper = class {
+        open = () => Promise.reject(new DOMException('cancelled', 'AbortError'))
+      }
+      dropper().click()
+      await settle()
+      expect(saved).toHaveBeenCalledTimes(1)
+    } finally {
+      delete win.EyeDropper
+    }
+  })
+
+  it('a box pick after its text was deleted does nothing: the panel and the box are gone', async () => {
+    const { crepe, view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    clickPencil()
+    const enter = field('Red')
     const from = view.state.doc.textContent.indexOf('world') + 1
     view.dispatch(view.state.tr.delete(from, from + 5))
-    customInput().value = '#3366ff'
-    customInput().dispatchEvent(new Event('change'))
+    expect(isOpen()).toBe(false)
+    key('Enter', enter)
     expect(getMarkdownForSave(crepe)).not.toContain('<mark')
     expect(view.state.doc.textContent).toBe('hello ')
     expect(saved).not.toHaveBeenCalled()

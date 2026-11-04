@@ -108,14 +108,10 @@ export function pickCustomColour(view: EditorView, target: CellSelection, attr: 
 
 /**
  * Open the system colour picker on `start` (`#rrggbb`); `onPick` gets the lowercase `#rrggbb` picked, once, on
- * the input's `change`. A later open replaces an earlier one's `onPick`. Shared with the note's highlight panel
- * (YAZ-4348 demo round 2, `highlightPanel.ts`), which keeps its own target the same way.
- *
- * `under`: the element the picker opens under. Chromium's colour popup opens where the input sits, so the hidden
- * input moves to that element's bottom left first (the highlight panel's Hex code field); without it, the input
- * stays at the window's top left (the CSS).
+ * the input's `change`. A later open replaces an earlier one's `onPick`. (The note's highlight panel draws its own
+ * colour box instead, YAZ-4388: Chromium's popup opened at the window's top left.)
  */
-export function openColourPicker(doc: Document, start: string, onPick: (color: string) => void, under?: Element): void {
+export function openColourPicker(doc: Document, start: string, onPick: (color: string) => void): void {
   let picker = pickers.get(doc)
   if (picker === undefined) {
     const input = doc.createElement('input')
@@ -134,9 +130,6 @@ export function openColourPicker(doc: Document, start: string, onPick: (color: s
     picker = made
   }
   if (!picker.input.isConnected) doc.body.appendChild(picker.input)
-  const at = under?.getBoundingClientRect()
-  picker.input.style.left = at === undefined ? '' : `${Math.round(at.left)}px`
-  picker.input.style.top = at === undefined ? '' : `${Math.round(at.bottom)}px`
   picker.input.value = start
   picker.onPick = onPick
   picker.input.click()

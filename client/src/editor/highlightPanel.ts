@@ -8,7 +8,8 @@
  *    highlight.
  *  - **Shades** — 5 steps, lighter to darker, of the colour picked; a shade is a custom colour.
  *  - **Hex code** — `#`, the colour's hex, and a pencil. A valid hex and Enter applies it; a click on the field or
- *    the pencil opens the system colour picker (`table/colours.ts`) right under the field.
+ *    the pencil opens the panel's own colour box right under the field (`highlightColourBox.ts`, YAZ-4388: Chromium's
+ *    popup opened at the window's top left); the pencil again, or Escape, closes just the box.
  * A custom colour saves as `<mark style="background-color: #rrggbb">` (CONTRACTS rule 31).
  *
  * As the board's, the panel stays open for the next pick, and the colours the selection has wear a ring. Each
@@ -16,13 +17,11 @@
  * `overflow: hidden`, so a panel inside it would be cut off. It never takes the selection: its swatches cancel
  * their mousedown and the keys are read on the document while it is open — arrows move through the swatches as
  * a grid, Home and End, Enter or Space picks, Escape closes it; any other key closes it and goes on to the note.
- * Only the Hex code field takes the focus, to be typed in; Enter there gives the focus back to the note first.
- * A click outside or a new selection closes the panel; a scroll moves it with the ▾.
+ * Only the Hex code field and the box's R G B fields take the focus, to be typed in; a pick from them gives the
+ * focus back to the note first. A click outside or a new selection closes the panel; a scroll moves it with the ▾.
  *
- * A system picker's pick goes to the text that was selected when it opened: the colour popup does not block the
- * window, so the user can select other text or type while it is open. That text is kept in this plugin's state
- * and mapped through each change, as `customColourPick` does for cells; a pick on text that was deleted does
- * nothing.
+ * The box's pick goes to the text that was selected when it opened: that text is kept in this plugin's state and
+ * mapped through each change, as `customColourPick` does for cells; a pick on text that was deleted does nothing.
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { closeHistory } from '@milkdown/kit/prose/history'
@@ -43,13 +42,13 @@ import {
   type CustomHighlight,
   type HighlightColor,
 } from './marks/highlight'
+import { ColourBox } from './highlightColourBox'
 import { mostUsedHighlightColors, noteHighlightColorUse } from './highlightUsed'
-import { openColourPicker } from './table/colours'
 
 /** The ▾'s toolbar key. */
 export const MORE_KEY = 'highlight-more'
 
-/** The text a system picker's pick goes to while it is open, or null. */
+/** The text the colour box's pick goes to while it is open, or null. */
 type Target = { from: number; to: number } | null
 const pickKey = new PluginKey<Target>('mdapp-highlight-pick')
 
@@ -103,8 +102,9 @@ interface Item {
   run: () => void
 }
 
+/** The board's Hex code icon (`eyeDropperIcon`, a Tabler pencil), stroke for stroke. */
 const PENCIL =
-  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-4-4L4 16v4Z M13.5 6.5l4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M11 7l6 6"/><path d="M4 16l11.7 -11.7a1 1 0 0 1 1.4 0l2.6 2.6a1 1 0 0 1 0 1.4l-11.7 11.7h-4v-4z"/></svg>'
 
 class HighlightPanel {
   #el: HTMLElement | null = null
@@ -115,6 +115,7 @@ class HighlightPanel {
   #hexField!: HTMLElement
   #hexInput!: HTMLInputElement
   #pencil!: HTMLButtonElement
+  #box!: ColourBox
   /** The places the keyboard walks, row by row, as drawn now. */
   #rows: Item[][] = []
   #current: string | null = null
@@ -192,10 +193,16 @@ class HighlightPanel {
     input.maxLength = 7
     input.tabIndex = -1
     input.setAttribute('aria-label', 'Hex code')
-    // A click on the field opens the system picker under it, and leaves the caret in it for typing. Before the
-    // field takes the focus (a listener runs before the mousedown's default), so the toolbar sees the note focused.
-    input.addEventListener('mousedown', () => this.#pickCustom())
+    // A click on the field opens the colour box under it, and leaves the caret in it for typing. Before the field
+    // takes the focus (a listener runs before the mousedown's default), so the toolbar sees the note focused.
+    input.addEventListener('mousedown', () => {
+      if (!this.#box.open) this.#openBox()
+    })
     input.addEventListener('keydown', this.#hexKey)
+    input.addEventListener('input', () => {
+      const hex = readHex(input.value)
+      if (hex !== null && this.#box.open) this.#box.set(hex)
+    })
     this.#hexInput = input
     const pencil = doc.createElement('button')
     pencil.type = 'button'
@@ -205,10 +212,18 @@ class HighlightPanel {
     pencil.setAttribute('aria-label', 'Custom colour…')
     pencil.innerHTML = PENCIL
     pencil.addEventListener('mousedown', (e) => e.preventDefault())
-    pencil.addEventListener('click', () => this.#pickCustom())
+    pencil.addEventListener('click', () => this.#toggleBox())
+    pencil.setAttribute('aria-expanded', 'false')
     this.#pencil = pencil
     this.#hexField.append(hash, input, div('highlight-panel__hex-divider'), pencil)
-    hex.append(heading('Hex code'), this.#hexField)
+    this.#box = new ColourBox(doc, {
+      preview: (color) => {
+        if (doc.activeElement !== this.#hexInput) this.#hexInput.value = color.slice(1)
+      },
+      pick: this.#pickBox,
+      close: () => this.#closeBox(),
+    })
+    hex.append(heading('Hex code'), this.#hexField, this.#box.el)
     el.append(this.#used, colours, shades, hex)
     return el
   }
@@ -271,11 +286,13 @@ class HighlightPanel {
       rows.push(shades)
     }
 
-    if (this.view.dom.ownerDocument.activeElement !== this.#hexInput) this.#hexInput.value = one === undefined ? '' : hexOf(one).slice(1)
+    if (this.view.dom.ownerDocument.activeElement !== this.#hexInput) {
+      this.#hexInput.value = this.#box.open ? this.#box.hex.slice(1) : one === undefined ? '' : hexOf(one).slice(1)
+    }
     this.#hexInput.placeholder = one === undefined && colours.length > 1 ? 'mixed' : ''
     rows.push([
       { id: 'hex', el: this.#hexField, run: () => this.#hexInput.focus() },
-      { id: 'pencil', el: this.#pencil, run: () => this.#pickCustom() },
+      { id: 'pencil', el: this.#pencil, run: () => this.#toggleBox() },
     ])
     this.#rows = rows
     this.#move(this.#current)
@@ -299,14 +316,17 @@ class HighlightPanel {
 
   close = (): void => {
     if (!this.open) return
-    this.#el!.hidden = true
-    this.#move(null)
     const doc = this.view.dom.ownerDocument
+    const focused = this.#el!.contains(doc.activeElement)
+    this.#el!.hidden = true
+    this.#box.hide()
+    this.#pencil.setAttribute('aria-expanded', 'false')
+    this.#move(null)
     doc.removeEventListener('keydown', this.#key, true)
     doc.removeEventListener('pointerdown', this.#outside, true)
     doc.removeEventListener('mousedown', this.#outside, true)
     doc.removeEventListener('scroll', this.#scrolled, true)
-    if (doc.activeElement === this.#hexInput) this.view.focus()
+    if (focused) this.view.focus()
   }
 
   /** Under the ▾, or over it when the window has no room below; never past the window's sides. */
@@ -351,7 +371,8 @@ class HighlightPanel {
   }
 
   #key = (e: KeyboardEvent) => {
-    if (e.target === this.#hexInput) return
+    // The panel's fields read their own keys.
+    if (e.target instanceof HTMLInputElement && this.#el?.contains(e.target)) return
     const stop = () => {
       e.preventDefault()
       e.stopPropagation()
@@ -359,7 +380,8 @@ class HighlightPanel {
     switch (e.key) {
       case 'Escape':
         stop()
-        this.close()
+        if (this.#box.open) this.#closeBox()
+        else this.close()
         return
       case 'ArrowDown':
       case 'ArrowUp':
@@ -384,12 +406,13 @@ class HighlightPanel {
     }
   }
 
-  /** Enter applies a valid hex, the focus back in the note first so its toolbar stays; Escape closes. */
+  /** Enter applies a valid hex, the focus back in the note first so its toolbar stays; Escape closes the box, else the panel. */
   #hexKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
-      this.close()
+      if (this.#box.open) this.#closeBox()
+      else this.close()
     } else if (e.key === 'Enter') {
       e.preventDefault()
       e.stopPropagation()
@@ -434,30 +457,45 @@ class HighlightPanel {
     this.#render()
   }
 
-  /** The system colour picker, under the Hex code field, on the field's colour; its pick goes to the text selected now. */
-  #pickCustom(): void {
+  #toggleBox(): void {
+    if (this.#box.open) this.#closeBox()
+    else this.#openBox()
+  }
+
+  /** The colour box under the Hex code field, on the field's colour; its pick goes to the text selected now. */
+  #openBox(): void {
     const { view } = this
     const { from, to, empty } = view.state.selection
-    if (empty) return
-    const start = readHex(this.#hexInput.value) ?? HIGHLIGHT_HEX.yellow
+    if (empty || !this.open) return
     view.dispatch(view.state.tr.setMeta(pickKey, { from, to }))
-    openColourPicker(
-      view.dom.ownerDocument,
-      start,
-      (color) => {
-        if (view.isDestroyed) return
-        // Back in the note before the change lands, so its toolbar (and the ▾ under the panel) stays.
-        if (view.dom.ownerDocument.activeElement === this.#hexInput) view.focus()
-        const target = pickKey.getState(view.state) ?? null
-        const marked = target !== null && isCustomHighlight(color) ? highlightRange(view.state, this.#type(), target.from, target.to, color) : null
-        view.dispatch((marked === null ? view.state.tr : closeHistory(marked)).setMeta(pickKey, null))
-        if (marked === null || !isCustomHighlight(color)) return
-        noteHighlightColorUse(color)
-        this.#base = color
-        if (this.open) this.#render()
-      },
-      this.#hexField,
-    )
+    this.#box.show(readHex(this.#hexInput.value) ?? HIGHLIGHT_HEX.yellow)
+    this.#pencil.setAttribute('aria-expanded', 'true')
+    this.#place()
+  }
+
+  /** Just the box; a focus in it goes back to the note. */
+  #closeBox(): void {
+    const doc = this.view.dom.ownerDocument
+    const focused = this.#box.el.contains(doc.activeElement)
+    this.#box.hide()
+    this.#pencil.setAttribute('aria-expanded', 'false')
+    if (focused) this.view.focus()
+    if (this.open) this.#place()
+  }
+
+  /** One finished pick in the box: one undo step, one use. The box stays open for the next. */
+  #pickBox = (color: CustomHighlight): void => {
+    const { view } = this
+    if (view.isDestroyed || !this.open || !this.#box.open) return
+    // Back in the note before the change lands, so its toolbar (and the ▾ under the panel) stays.
+    if (this.#el!.contains(view.dom.ownerDocument.activeElement)) view.focus()
+    const target = pickKey.getState(view.state) ?? null
+    const marked = target === null ? null : highlightRange(view.state, this.#type(), target.from, target.to, color)
+    if (marked === null) return
+    view.dispatch(closeHistory(marked))
+    noteHighlightColorUse(color)
+    this.#base = color
+    if (this.open) this.#render()
   }
 
   update(view: EditorView, prev: EditorState): void {
@@ -474,7 +512,7 @@ class HighlightPanel {
   }
 }
 
-/** The panel of each note, and the system picker's target text, mapped through each change. */
+/** The panel of each note, and the colour box's target text, mapped through each change. */
 export const highlightPanel = $prose(
   (ctx) =>
     new Plugin<Target>({
