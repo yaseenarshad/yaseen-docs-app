@@ -138,7 +138,7 @@ const NONE: ReadonlySet<number> = new Set()
 
 let nextId = 1
 
-const endsAt = (glow: OutsideChangeGlow, now: number): number | null => (glow === '10s' ? now + 10_000 : glow === '60s' ? now + 60_000 : null)
+const endsAt = (glow: OutsideChangeGlow, now: number): number | null => (glow === '60s' ? now + 60_000 : glow === '5m' ? now + 300_000 : null)
 
 /** The textblock nearest `pos` (a bullet removed leaves a range between blocks): the one after it, else the one before. */
 const textblockNear = (doc: ProseNode, pos: number): number | null => {
@@ -524,7 +524,12 @@ const buildDecorations = (doc: ProseNode, changes: readonly OutsideChange[], act
   return DecorationSet.create(doc, decorations)
 }
 
-const snapshotOf = ({ changes, wholeNote }: OutsideState): OutsideChangesSnapshot => ({ count: changes.length, wholeNote })
+/** The bar's view of the list: the count, whole-note mode, and when the last timed glow goes (null while any waits for a check). */
+const snapshotOf = ({ changes, wholeNote, wholeNoteEnds }: OutsideState): OutsideChangesSnapshot => ({
+  count: changes.length,
+  wholeNote,
+  fadesAt: wholeNote ? wholeNoteEnds : changes.length > 0 && changes.every((change) => change.ends !== null) ? Math.max(...changes.map((change) => change.ends!)) : null,
+})
 
 const applyMeta = (meta: OutsideMeta, state: Omit<OutsideState, 'decorations'>): { next: Omit<OutsideState, 'decorations'>; redraw: boolean } => {
   switch (meta.type) {

@@ -704,16 +704,17 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Outside changes')
     expect(group?.querySelector('.settings-group__hint')?.textContent).toBe(OUTSIDE_CHANGES_HINT)
     expect(row(el, 'outsideChangeGlow')?.querySelector('.setting__label')?.textContent).toBe('Glow')
+    // The YAZ-4272 demo: 1 minute, 5 minutes, Until I check it, Off (10 seconds went: too quick to read).
     expect(rowButtons(el, 'outsideChangeGlow').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
-      ['Until I check it', 'true'],
-      ['10 seconds', 'false'],
       ['1 minute', 'false'],
+      ['5 minutes', 'false'],
+      ['Until I check it', 'true'],
       ['Off', 'false'],
     ])
-    act(() => rowButtons(el, 'outsideChangeGlow')[2].click())
+    act(() => rowButtons(el, 'outsideChangeGlow')[1].click())
     act(() => rowButtons(el, 'outsideChangeGlow')[3].click())
     expect(onChange.mock.calls.map((call) => call[0])).toEqual([
-      { ...DEFAULT_SETTINGS, outsideChangeGlow: '60s' },
+      { ...DEFAULT_SETTINGS, outsideChangeGlow: '5m' },
       { ...DEFAULT_SETTINGS, outsideChangeGlow: 'off' },
     ])
   })

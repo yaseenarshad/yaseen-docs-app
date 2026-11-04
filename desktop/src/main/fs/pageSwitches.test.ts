@@ -44,7 +44,7 @@ describe("the page's own glow for outside changes (YAZ-4272 D2)", () => {
   it('no key, a value that is not a glow, or a block that does not parse follow the app setting', () => {
     expect(noteOutsideGlow('# Body\n')).toBeNull()
     expect(noteOutsideGlow(NOTE)).toBeNull()
-    for (const value of ['true', 'false', '10', '"5s"', '[10s]', '']) expect(noteOutsideGlow(`---\noutside-glow: ${value}\n---\n`), value).toBeNull()
+    for (const value of ['true', 'false', '10', '"5s"', '[10s]', '10s', '']) expect(noteOutsideGlow(`---\noutside-glow: ${value}\n---\n`), value).toBeNull()
     expect(noteOutsideGlow('---\noutside-glow: 10s\n  bad: [\n---\n')).toBeNull()
   })
 

@@ -231,6 +231,13 @@
   background: var(--bg-hover);
 }
 
+/* A timed Glow's countdown (the YAZ-4272 demo): quiet, after the count; its digits keep their width as they tick. */
+.outside-changes-bar__fade {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .outside-changes-bar {
   position: relative;
   display: flex;

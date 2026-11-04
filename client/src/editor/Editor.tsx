@@ -1197,7 +1197,7 @@ function CrepeHost({
           </button>
         </div>
       ) : (
-        <OutsideChangesBar channel={outsideChanges} pinned={outsideListPinned} onPin={onChangeOutsideListPinned} />
+        <OutsideChangesBar channel={outsideChanges} pinned={outsideListPinned} onPin={onChangeOutsideListPinned} onKeep={() => changeOutsideGlow('until-checked')} />
       )}
       {/* The scroller holds SIX stacked blocks, in this order. Block ZERO is the page title
           (⚡ YAZ-888) — the file's own name, React-side and never a ProseMirror node; block ONE is

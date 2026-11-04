@@ -127,9 +127,10 @@ export const SECTION_LINES_OPTIONS: readonly Option<SectionLines>[] = [
 
 /** Outside changes (YAZ-3704 D5): how long changed words glow; the change list in the open note reads it. */
 export const OUTSIDE_CHANGE_GLOW_OPTIONS: readonly Option<OutsideChangeGlow>[] = [
-  { label: 'Until I check it', value: 'until-checked' },
-  { label: '10 seconds', value: '10s' },
+  // The YAZ-4272 demo: timed first, shortest first; 10 seconds was too quick to read.
   { label: '1 minute', value: '60s' },
+  { label: '5 minutes', value: '5m' },
+  { label: 'Until I check it', value: 'until-checked' },
   { label: 'Off', value: 'off' },
 ]
 

@@ -535,12 +535,12 @@ describe('PageSettings: Outside changes glow', () => {
   })
 
   it('a label and a dropdown after "TOC made from", above the counts; "Default" is chosen for a page with no choice, and its tooltip names Settings\u2019 glow', () => {
-    mountWith(null, '10s')
+    mountWith(null, '5m')
     const label = menu()!.querySelector<HTMLLabelElement>('label.page-settings__label')!
     expect(label.textContent).toBe('Outside changes glow:')
     expect(label.htmlFor).toBe(select()!.id)
-    expect([...select()!.options].map((option) => option.textContent)).toEqual(['Default', 'Until I check it', '10 seconds', '1 minute', 'Off'])
-    expect(select()!.title).toBe('Default follows Settings: 10 seconds')
+    expect([...select()!.options].map((option) => option.textContent)).toEqual(['Default', '1 minute', '5 minutes', 'Until I check it', 'Off'])
+    expect(select()!.title).toBe('Default follows Settings: 5 minutes')
     expect(select()!.value).toBe('')
     const order = [...menu()!.children].map((child) => child.className || child.textContent)
     expect(order.slice(-6)).toEqual(['page-settings__divider', 'page-settings__label', 'page-settings__select', 'page-settings__divider', '1 words', '4 characters'])
