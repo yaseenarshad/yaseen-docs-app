@@ -529,6 +529,22 @@ button {
   background: var(--crepe-color-selected);
 }
 
+/* The note's selection toolbar, tighter (YAZ-4348 demo round 2, Yasin: "everything so spaced out … decently spaced
+   out but not so close together"): Crepe gives each 32 px button 6 px on every side (12 px between two) and each
+   divider 10 px; now 4 px between buttons, 6 px either side of a divider, the same height. */
+.milkdown .milkdown-toolbar {
+  padding: 0 4px;
+}
+.milkdown .milkdown-toolbar .toolbar-item {
+  margin: 6px 2px;
+}
+.milkdown .milkdown-toolbar .divider {
+  margin: 10px 6px;
+}
+.milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] {
+  margin-left: -2px;
+}
+
 /* The highlight ▾ menu (YAZ-4348 demo round 2, `editor/highlightMenu.ts`): on the body, fixed under the ▾, so the
    toolbar's `overflow: hidden` cannot cut it off. */
 .highlight-menu {
