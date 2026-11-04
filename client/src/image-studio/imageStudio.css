@@ -22,9 +22,33 @@
   padding: 0 2px 2px;
 }
 
-.image-studio__word-has {
-  color: var(--text-secondary-color);
+.image-studio__word-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 3px;
+}
+
+.image-studio__word-chip {
+  background: var(--color-primary-light);
+  border-radius: 999px;
   font-size: 10px;
+  padding: 1px 7px;
+}
+
+.image-studio__word-chip.is-name {
+  background: var(--button-gray-1);
+  color: var(--text-secondary-color);
+}
+
+/* The search text, one click from being a word (YAZ-4157 D5): beside the field, never in it. */
+.image-studio__word-offer {
+  align-items: center;
+  color: var(--text-secondary-color);
+  display: inline-flex;
+  flex-basis: 100%;
+  font-size: 10px;
+  gap: 4px;
 }
 
 .image-studio__word-form input {
@@ -442,7 +466,7 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-/* "Add a search word…", Rename and Delete open a full-width row under the tile's row: a 4-column tile is too small for a field. */
+/* "Search words…", Rename and Delete open a full-width row under the tile's row: a 4-column tile is too small for a field. */
 .image-studio__inline {
   align-items: center;
   background: var(--island-bg-color);

@@ -11,7 +11,7 @@
  *
  * WHAT IT LEARNS (D1, D5, D9). Each add is one `media:used` write: the MRU, the count, the text it was found by as a
  * word, and at the third add a favorite — said once, quietly, with Undo. A removed favorite starts its count again:
- * three more adds bring it back (demo 6A). "Add a search word…" (a right-click on a tile) teaches a word by hand.
+ * three more adds bring it back (demo 6A). "Search words…" (a right-click on a tile) teaches a word by hand.
  *
  * A PREVIEW IS ASKED FOR, NOT LINKED TO. Every media tile asks `media:preview` for its bytes as a dataURL, because the
  * renderer may not fetch from a provider; a favorite's stored `previewUrl` is never read. A component's picture is
@@ -688,8 +688,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     }
   }
 
-  const saveWord = async (item: StudioItem) => {
-    const word = draft
+  const saveWord = async (item: StudioItem, word = draft) => {
     setOpenTile(null)
     if (word.trim() === '') return
     try {
@@ -701,8 +700,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   }
 
   /**
-   * The search text a new word starts from (YAZ-4157 D5), unless the icon is already found by it (YAZ-4348 demo round 2:
-   * "man" in the field of the icon Man read as a rename of its name, not a new word): then the field starts empty.
+   * The search text, offered as a one-click word (YAZ-4157 D5), unless the icon is already found by it. YAZ-4348 demo
+   * round 2: the field itself starts empty; "man" typed in it for the icon Mana read as a change of its words.
    */
   const wordToOffer = (item: StudioItem): string => {
     const typedWord = query.trim()
@@ -901,8 +900,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
                 More from this pack
               </button>
             )}
-            <button type="button" role="menuitem" onClick={() => openRow(slot, 'word', wordToOffer(item))}>
-              Add a search word…
+            <button type="button" role="menuitem" onClick={() => openRow(slot, 'word')}>
+              Search words…
             </button>
             <button
               type="button"
@@ -948,7 +947,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       </div>
     )
 
-  /** The full-width row that "Add a search word…", Rename or Delete opens under the tile's row. */
+  /** The full-width row that "Search words…", Rename or Delete opens under the tile's row. */
   const inlineRow = (item: StudioItem, where: string): ReactNode => {
     if (openTile?.key !== slotOf(where, item) || openTile.mode === 'menu') return null
     const component = item.provider === 'component' ? componentsBySlug.get(item.providerId) : undefined
@@ -987,12 +986,21 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
         }}
       >
         {!renaming && (
-          // YAZ-4348 demo round 2: a title says the word is ADDED (the name stays), and the words it has show
+          // YAZ-4348 demo round 2: every word that finds it shows (its name first), and a new one is ADDED to them
           <div className="image-studio__word-head">
             <span>
-              Add a search word for <b>{item.title}</b>
+              Search words for <b>{item.title}</b>
             </span>
-            <span className="image-studio__word-has">{words.length > 0 ? `Finds it now: ${[item.title.toLowerCase(), ...words].join(', ')}` : `Its name stays “${item.title}”.`}</span>
+            <span className="image-studio__word-chips" aria-label={`Words that find ${item.title}`}>
+              <span className="image-studio__word-chip is-name" title="Its name always finds it">
+                {item.title.toLowerCase()}
+              </span>
+              {words.map((w) => (
+                <span className="image-studio__word-chip" key={w}>
+                  {w}
+                </span>
+              ))}
+            </span>
           </div>
         )}
         {/* Autofocused: the menu item above is the only way here. */}
@@ -1009,6 +1017,14 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
         <button type="button" onClick={() => setOpenTile(null)}>
           Cancel
         </button>
+        {!renaming && wordToOffer(item) !== '' && (
+          <span className="image-studio__word-offer">
+            Your search:
+            <button type="button" onClick={() => void saveWord(item, wordToOffer(item))}>
+              + {wordToOffer(item)}
+            </button>
+          </span>
+        )}
       </form>
     )
   }
