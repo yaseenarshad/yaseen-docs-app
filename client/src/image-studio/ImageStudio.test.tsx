@@ -258,6 +258,15 @@ describe('the empty field: Favorites, Recent, Components, Shapes (D7)', () => {
     expect(section(host, 'Recent')!.querySelector('.image-studio__show-all')?.textContent).toBe('Show less')
   })
 
+  it('the Filter menu stays open after a Show pick, so several picks are one trip (YAZ-4348 demo round 2)', async () => {
+    const { host } = await mount()
+    await click(await showOption(host, 'Shapes'))
+    expect(host.querySelector('.image-studio__filter-menu')).not.toBeNull()
+    await click([...host.querySelectorAll('.image-studio__filter-menu [aria-label="Colors"] button')].find((b) => b.textContent === 'One color'))
+    expect(host.querySelector('.image-studio__filter-menu')).not.toBeNull()
+    expect((await showOption(host, 'Shapes'))?.getAttribute('aria-checked')).toBe('true')
+  })
+
   it('re-lists the library on media:changed and the components on components:changed', async () => {
     let fireMedia = () => {}
     let fireComponents = () => {}

@@ -100,14 +100,19 @@ export function IconPacksFooter({ google }: { google: ReactNode }) {
   let packs: ReactNode = null
   if (shown) {
     if (packsBusy(status)) {
-      // YAZ-4348 demo: a running download is the one thing in the footer that needs attention, so it shows plainly
-      const share = status.total > 0 ? Math.min(100, Math.round((status.packs / status.total) * 100)) : 0
+      // YAZ-4348 demo round 2 ("ugly UI"): one quiet line, like the links beside it: a short word, a thin bar and its
+      // percent, then Cancel. The full count (packs and MB) is in the tooltip and is what a screen reader hears.
+      const share = status.totalBytes > 0 ? Math.min(100, Math.round((status.bytes / status.totalBytes) * 100)) : status.total > 0 ? Math.min(100, Math.round((status.packs / status.total) * 100)) : 0
+      const full = packsProgressText(status)
       packs = (
-        <span className="image-studio__footer-packs is-busy" role="status">
+        <span className="image-studio__footer-packs is-busy" role="status" aria-label={full} title={full}>
+          <span aria-hidden="true">{status.state === 'checking' ? 'Checking icons' : 'Downloading icons'}</span>
           <span className="image-studio__footer-bar" aria-hidden="true">
             <i style={{ width: `${share}%` }} />
           </span>
-          <span>{packsProgressText(status)}</span>
+          <span className="image-studio__footer-share" aria-hidden="true">
+            {share}%
+          </span>
           <button type="button" onClick={() => void packsDo('stop')}>
             Cancel
           </button>
