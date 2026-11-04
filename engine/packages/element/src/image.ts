@@ -10,6 +10,7 @@ import type {
   BinaryFiles,
 } from "@excalidraw/excalidraw/types";
 
+import { getIconInfo } from "./iconColors";
 import { isInitializedImageElement } from "./typeChecks";
 
 import type {
@@ -61,6 +62,10 @@ export const updateImageCache = async ({
               const data = {
                 image: imagePromise,
                 mimeType: fileData.mimeType,
+                // YAZ-4355 1E: dark mode inverts only one-color icons
+                ...(fileData.mimeType === MIME_TYPES.svg
+                  ? { iconKind: getIconInfo(fileData).kind }
+                  : null),
               } as const;
               // store the promise immediately to indicate there's an in-progress
               // initialization

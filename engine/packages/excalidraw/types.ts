@@ -56,6 +56,7 @@ import type {
 } from "@excalidraw/element";
 import type { GlobalPoint } from "@excalidraw/math";
 import type { HostLinkResolver } from "@excalidraw/element";
+import type { IconKind } from "@excalidraw/element";
 
 import type { Action } from "./actions/types";
 import type { Spreadsheet } from "./charts";
@@ -1223,6 +1224,8 @@ export type AppClassProperties = {
     {
       image: HTMLImageElement | Promise<HTMLImageElement>;
       mimeType: ValueOf<typeof IMAGE_MIME_TYPES>;
+      /** Yaseen Docs (YAZ-4355 1E): an SVG's icon kind, read once when it loads */
+      iconKind?: IconKind;
     }
   >;
   files: BinaryFiles;

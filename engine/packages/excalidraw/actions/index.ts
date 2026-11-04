@@ -106,5 +106,9 @@ export { actionChangeSmartShape } from "./actionSmartShape";
 
 export { actionToggleCropEditor } from "./actionCropEditor";
 export { actionToggleGifPlayback } from "./actionToggleGifPlayback";
+export {
+  actionChangeIconColors,
+  actionChangeIconOutline,
+} from "./actionIconColors";
 
 export { actionResizeSelectionToPreset } from "../selectionSizePresets";

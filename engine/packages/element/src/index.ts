@@ -79,6 +79,7 @@ export * from "./frame";
 export * from "./groups";
 export * from "./heading";
 export * from "./gifPlayer";
+export * from "./iconColors";
 export * from "./image";
 export * from "./linearElementEditor";
 export * from "./mutateElement";
