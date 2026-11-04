@@ -476,6 +476,8 @@ export const ContextualPropertiesToolbar = ({
 
   if (
     appState.viewModeEnabled ||
+    // YAZ-4354 1D: Edit colors has its own strip below the icon
+    appState.colorEditingElementId ||
     (!isTextTarget &&
       !isImageTarget &&
       !isVectorPropertiesTarget &&

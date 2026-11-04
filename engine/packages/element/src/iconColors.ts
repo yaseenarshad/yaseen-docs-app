@@ -44,6 +44,8 @@ const ICON_INFO_CACHE_SIZE = 200;
 
 export const ICON_SOURCE_ID = "yaseen-icon-source";
 const OUTLINE_FILTER_ID = "yaseen-icon-outline";
+/** The faded parts of the Edit colors preview (YAZ-4354 1D). */
+const FADED_OPACITY = 0.15;
 /** An `<img>` sizes `1em` at the default font size. */
 const EM_PX = 16;
 
@@ -192,7 +194,8 @@ export const svgToDataURL = (svg: string) =>
 // parse
 // -----------------------------------------------------------------------------
 
-const parseSvg = (svgText: string) => {
+/** @private for `iconParts.ts` */
+export const parseIconSvg = (svgText: string) => {
   const doc = new DOMParser().parseFromString(svgText, MIME_TYPES.svg);
   const svg = doc.documentElement;
   if (
@@ -222,7 +225,7 @@ export const iconSource = (svgText: string) => {
   if (!svgText.includes(ICON_SOURCE_ID)) {
     return svgText;
   }
-  const svg = parseSvg(svgText);
+  const svg = parseIconSvg(svgText);
   const metadata = svg && findSourceMetadata(svg);
   if (!metadata?.textContent) {
     return svgText;
@@ -235,10 +238,11 @@ export const iconSource = (svgText: string) => {
 };
 
 /** Every element under `root`, in document order. */
-const walk = (root: Element, visit: (element: Element) => void) => {
+/** @private for `iconParts.ts` */
+export const walkIcon = (root: Element, visit: (element: Element) => void) => {
   for (const child of Array.from(root.children)) {
     visit(child);
-    walk(child, visit);
+    walkIcon(child, visit);
   }
 };
 
@@ -255,7 +259,7 @@ const isDrawn = (element: Element, root: Element) => {
 /** The parts: the shapes, in document order, outside `defs`, `clipPath` and `mask`. */
 export const iconShapes = (svg: Element) => {
   const shapes: Element[] = [];
-  walk(svg, (element) => {
+  walkIcon(svg, (element) => {
     if (ICON_SHAPE_TAGS.has(element.localName) && isDrawn(element, svg)) {
       shapes.push(element);
     }
@@ -306,7 +310,7 @@ const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
 const readStyleRules = (svg: Element): StyleRule[] => {
   const rules: StyleRule[] = [];
-  walk(svg, (element) => {
+  walkIcon(svg, (element) => {
     if (element.localName !== "style") {
       return;
     }
@@ -335,7 +339,7 @@ const safeMatches = (element: Element, selector: string) => {
   }
 };
 
-class Cascade {
+export class IconCascade {
   constructor(private rules: StyleRule[]) {}
 
   /** The value an element declares itself for `prop`, if any. */
@@ -411,7 +415,7 @@ export type IconPart = {
 
 const findById = (svg: Element, id: string) => {
   let found: Element | null = null;
-  walk(svg, (element) => {
+  walkIcon(svg, (element) => {
     if (!found && element.getAttribute("id") === id) {
       found = element;
     }
@@ -439,10 +443,10 @@ const gradientStops = (
   return next ? gradientStops(svg, next, depth + 1) : [];
 };
 
-type Reader = { svg: SVGSVGElement; cascade: Cascade };
+export type IconReader = { svg: SVGSVGElement; cascade: IconCascade };
 
 const resolveColor = (
-  { svg, cascade }: Reader,
+  { svg, cascade }: IconReader,
   element: Element,
   raw: string,
 ) => {
@@ -455,7 +459,7 @@ const resolveColor = (
 };
 
 const readPaint = (
-  reader: Reader,
+  reader: IconReader,
   element: Element,
   prop: "fill" | "stroke",
 ): IconPaint | null => {
@@ -486,7 +490,8 @@ const readPaint = (
   return color ? { color } : null;
 };
 
-const readParts = (reader: Reader): IconPart[] =>
+/** @private for `iconParts.ts` */
+export const readIconPartList = (reader: IconReader): IconPart[] =>
   iconShapes(reader.svg).map((element, index) => ({
     index,
     element,
@@ -503,15 +508,16 @@ export const paintColors = (paint: IconPaint | null): string[] =>
     ? [paint.color]
     : paint.stops.map((s) => s.color);
 
-const makeReader = (svgText: string): Reader | null => {
-  const svg = parseSvg(svgText);
-  return svg ? { svg, cascade: new Cascade(readStyleRules(svg)) } : null;
+/** @private for `iconParts.ts` */
+export const makeIconReader = (svgText: string): IconReader | null => {
+  const svg = parseIconSvg(svgText);
+  return svg ? { svg, cascade: new IconCascade(readStyleRules(svg)) } : null;
 };
 
 /** The parts of an SVG (the original inside a painted copy), with their paints. */
 export const readIconParts = (svgText: string) => {
-  const reader = makeReader(iconSource(svgText));
-  return reader ? { svg: reader.svg, parts: readParts(reader) } : null;
+  const reader = makeIconReader(iconSource(svgText));
+  return reader ? { svg: reader.svg, parts: readIconPartList(reader) } : null;
 };
 
 /** Each color of the original, most used first (D2: what the user sees, also inside `<style>` rules). */
@@ -607,12 +613,12 @@ export const readIconInfo = (svgText: string): IconInfo => {
   if (new TextEncoder().encode(source).length > ICON_MAX_BYTES) {
     return PHOTO;
   }
-  const svg = parseSvg(source);
+  const svg = parseIconSvg(source);
   if (!svg) {
     return PHOTO;
   }
   let hasPicture = false;
-  walk(svg, (element) => {
+  walkIcon(svg, (element) => {
     hasPicture ||= element.localName === "image";
   });
   if (hasPicture) {
@@ -625,7 +631,7 @@ export const readIconInfo = (svgText: string): IconInfo => {
   }
   let outline = 0;
   if (source !== svgText) {
-    const painted = parseSvg(svgText);
+    const painted = parseIconSvg(svgText);
     outline =
       parseFloat(
         (painted &&
@@ -741,7 +747,12 @@ const rewriteDeclarations = (text: string, colors: Record<string, string>) =>
     })
     .join(";");
 
-const appendStyle = (element: Element, prop: string, value: string) => {
+/** @private for `iconParts.ts` */
+export const appendIconStyle = (
+  element: Element,
+  prop: string,
+  value: string,
+) => {
   const style = (element.getAttribute("style") ?? "").trim();
   element.setAttribute(
     "style",
@@ -770,7 +781,12 @@ const wrapChildren = (svg: Element, keep: (child: Element) => boolean) => {
 };
 
 /** The root's size and view box with an outline of `units` on each side. */
-const setGeometry = (svg: Element, geometry: IconGeometry, units: number) => {
+/** @private for `iconParts.ts` */
+export const setIconGeometry = (
+  svg: Element,
+  geometry: IconGeometry,
+  units: number,
+) => {
   const [x, y, w, h] = geometry.viewBox;
   svg.setAttribute(
     "viewBox",
@@ -785,7 +801,7 @@ const setGeometry = (svg: Element, geometry: IconGeometry, units: number) => {
 
 /** Applies `colors`, then `parts` (each pick starts from the original). */
 const applyColors = (
-  reader: Reader,
+  reader: IconReader,
   parts: IconPart[],
   recipe: Pick<IconRecipe, "colors" | "parts">,
 ) => {
@@ -794,7 +810,7 @@ const applyColors = (
   if (Object.keys(colors).length) {
     // 1. every attribute and inline style that holds one of the colors
     const all: Element[] = [svg];
-    walk(svg, (element) => all.push(element));
+    walkIcon(svg, (element) => all.push(element));
     for (const element of all) {
       for (const prop of PAINT_PROPS) {
         const value = element.getAttribute(prop);
@@ -839,7 +855,11 @@ const applyColors = (
     const [index, which] = key.split(":");
     const part = parts[Number(index)];
     if (part) {
-      appendStyle(part.element, which === "stroke" ? "stroke" : "fill", color);
+      appendIconStyle(
+        part.element,
+        which === "stroke" ? "stroke" : "fill",
+        color,
+      );
     }
   }
 };
@@ -895,16 +915,30 @@ export const paintIcon = (
   svgText: string,
   recipe: IconRecipe,
   outlineUnits = 0,
+  options?: {
+    /** YAZ-4354 1D: the preview fades every part but these paint keys */
+    fadeExcept?: ReadonlySet<string>;
+  },
 ): string => {
   const source = iconSource(svgText);
-  const reader = makeReader(source);
+  const reader = makeIconReader(source);
   if (!reader) {
     throw new Error("Invalid SVG");
   }
   const { svg } = reader;
   const geometry = iconGeometryOf(svg);
-  const parts = readParts(reader);
+  const parts = readIconPartList(reader);
   applyColors(reader, parts, recipe);
+  if (options?.fadeExcept) {
+    for (const part of parts) {
+      if (
+        !options.fadeExcept.has(`${part.index}`) &&
+        !options.fadeExcept.has(`${part.index}:stroke`)
+      ) {
+        appendIconStyle(part.element, "opacity", `${FADED_OPACITY}`);
+      }
+    }
+  }
   const units =
     recipe.outline && recipe.outline.width > 0 && outlineUnits > 0
       ? outlineUnits
@@ -912,7 +946,7 @@ export const paintIcon = (
   if (units) {
     addOutline(svg, geometry, units, recipe.outline!.color);
   }
-  setGeometry(svg, geometry, units);
+  setIconGeometry(svg, geometry, units);
   if (!svg.getAttribute("xmlns")) {
     svg.setAttribute("xmlns", SVG_NS);
   }

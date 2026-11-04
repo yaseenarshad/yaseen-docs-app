@@ -556,6 +556,8 @@ export interface AppState {
   /** image cropping */
   isCropping: boolean;
   croppingElementId: ExcalidrawElement["id"] | null;
+  /** YAZ-4354 1D: the many-color icon in "Edit colors"; not saved */
+  colorEditingElementId: ExcalidrawElement["id"] | null;
 
   /** null if no search matches found / search closed */
   searchMatches: Readonly<{

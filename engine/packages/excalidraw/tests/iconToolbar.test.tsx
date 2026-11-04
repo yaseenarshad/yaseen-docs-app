@@ -81,9 +81,11 @@ describe("the icon top bar (YAZ-4352 1B)", () => {
     ).not.toBeNull();
   });
 
-  it("shows Outline and no Color for a many-color icon, and today's Border for a photo", async () => {
+  it("shows Edit colors and Outline, no Color, for a many-color icon, and today's Border for a photo", async () => {
     await openIcons([{ id: "many", svg: MANY_COLOR_SVG }]);
     expect(labels()).toEqual(["Outline"]);
+    expect(screen.getByRole("button", { name: "Edit colors" })).toBeTruthy();
+    expect(screen.queryByLabelText("Icon color")).toBeNull();
 
     const photo = API.createElement({
       type: "image",
