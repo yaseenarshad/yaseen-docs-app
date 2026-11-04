@@ -109,7 +109,15 @@ export interface MediaProvidersDeps {
     preview(req: MediaBytesRequest): Promise<MediaPreviewResponse | null>
     import(req: MediaBytesRequest): Promise<MediaImportResponse | null>
   }
+  /**
+   * A copy at tile size (YAZ-4385, `tilePicture.ts`): the same picture when it is small already, null when main cannot
+   * read it. Absent = a tile gets the provider's own preview, and the copy only offline.
+   */
+  tilePicture?: (image: MediaPreviewResponse) => MediaPreviewResponse | null
 }
+
+/** The largest SVG copy a tile takes as it is (YAZ-4385): 1 MB of dataURL. An icon's SVG is a few KB. */
+const MAX_TILE_SVG_CHARS = 1024 * 1024
 
 /** What the providers read of the downloaded packs. */
 export type LocalIconPacks = Pick<IconPacks, 'searchReady' | 'has' | 'packs' | 'info' | 'names' | 'svg'>
@@ -140,7 +148,7 @@ export const LOCAL_OFFLINE_WARNING = "You're offline. Icons still come from your
 
 const warningFor = (provider: SearchProvider) => (provider === 'iconify' ? 'Icons are temporarily unavailable.' : 'Pixabay graphics are temporarily unavailable.')
 
-export function createMediaProviders({ fetch, readPixabayKey, cache, packs, favoriteCopy }: MediaProvidersDeps): MediaProviders {
+export function createMediaProviders({ fetch, readPixabayKey, cache, packs, favoriteCopy, tilePicture }: MediaProvidersDeps): MediaProviders {
   /** The favorite copy step (YAZ-4363): its answer, or null when there is no copy or it failed. */
   const fromCopy = <T,>(read: ((req: MediaBytesRequest) => Promise<T | null>) | undefined, req: MediaBytesRequest): Promise<T | null> =>
     read === undefined ? Promise.resolve(null) : read(req).catch(() => null)
@@ -663,19 +671,42 @@ export function createMediaProviders({ fetch, readPixabayKey, cache, packs, favo
     async preview(req) {
       // A favorite's own copy first (YAZ-4363), then a downloaded pack draws its own tile (YAZ-4359): no network.
       const copy = await fromCopy(favoriteCopy?.preview, req)
-      if (copy !== null) return copy
+      const cacheKey = previewCacheKey(req.provider, req.id)
+      // An SVG copy is sharp at any size, and an icon's is small. A photo copy is the full picture, up to 20 MB: the tile
+      // gets it at tile size (YAZ-4385), made once from the copy and kept in the cache, so it needs no network either.
+      // A big SVG (a Pixabay vector) cannot be made smaller here: it takes the provider's preview, as other types do.
+      if (copy !== null && copy.mimeType === 'image/svg+xml' && copy.dataURL.length <= MAX_TILE_SVG_CHARS) return copy
+      if (copy !== null) {
+        const made = await cache.read<MediaPreviewResponse>(cacheKey)
+        if (made !== null) return made
+        let tile: MediaPreviewResponse | null = null
+        try {
+          tile = tilePicture?.(copy) ?? null
+        } catch (err) {
+          console.warn(`[media] could not make a tile of the copy of ${req.provider}:${req.id}: ${String(err)}`)
+        }
+        if (tile !== null) {
+          await cache.write(cacheKey, tile)
+          return tile
+        }
+      }
       const fromPack = await localIcon(req)
       if (fromPack !== null) return fromPack.image
-      const cacheKey = previewCacheKey(req.provider, req.id)
       const hit = await cache.read<MediaPreviewResponse>(cacheKey)
       // The cache first, always: it is what keeps a favorited tile visible with no network and,
       // for Pixabay, with no key (🔒 YAZ-1775 D4's offline half).
       if (hit !== null) return hit
-      const built = req.provider === 'iconify' && iconifySvgUrl(req.id) !== null ? await iconifyBatch.svg(req.id) : null
-      // An icon the set data cannot build (rotated, flipped, gone) is the one finished SVG, on its own.
-      const image = built !== null ? { mimeType: 'image/svg+xml', dataURL: `data:image/svg+xml;base64,${Buffer.from(built).toString('base64')}` } : await fetchImage((await sourceUrl(req, true, await readPixabayKey())).url)
-      await cache.write(cacheKey, image)
-      return image
+      try {
+        const built = req.provider === 'iconify' && iconifySvgUrl(req.id) !== null ? await iconifyBatch.svg(req.id) : null
+        // An icon the set data cannot build (rotated, flipped, gone) is the one finished SVG, on its own.
+        const image = built !== null ? { mimeType: 'image/svg+xml', dataURL: `data:image/svg+xml;base64,${Buffer.from(built).toString('base64')}` } : await fetchImage((await sourceUrl(req, true, await readPixabayKey())).url)
+        await cache.write(cacheKey, image)
+        return image
+      } catch (err) {
+        // A copy that main cannot make smaller, with no network or no key: the tile still shows, from the copy.
+        if (copy !== null) return copy
+        throw err
+      }
     },
 
     async import(req) {

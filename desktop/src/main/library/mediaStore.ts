@@ -22,11 +22,12 @@
  * watcher echo is dropped by mtime; a write by the OTHER machine, through a synced folder, is another
  * file or another mtime, and notifies as usual.
  */
-import { mkdir, readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { MEDIA_LIBRARY_FILE, type MediaFavoritesRequest, type MediaLibraryFile, type MediaUsedRequest, type StoredMediaItem } from '@shared/types'
-import { MEDIA_FILE_RE, addFavorite, addWord, mediaFileName, mergeMediaLibraries, recordUse, removeFavorite, sanitizeMediaLibrary } from '@shared/mediaLibrary'
+import { MEDIA_FILE_RE, addFavorite, addWord, mediaFileName, mergeMediaLibraries, recordUse, removeFavorite, renameMovedComponents, sanitizeMediaLibrary, type ComponentMoves } from '@shared/mediaLibrary'
 import { atomicWrite, createChain, fsCall, readOrQuarantine } from '../fs/fsUtils'
+import { makeLibraryDir } from './folder'
 import { createWatchedFolder } from '../watchedFolder'
 
 export interface MediaStore {
@@ -36,9 +37,10 @@ export interface MediaStore {
   used(req: MediaUsedRequest): Promise<MediaLibraryFile>
   /**
    * Merge the library of another folder into this one (YAZ-4364: the library folder changed). Answers how many rows
-   * it brought; a second merge brings none and writes nothing.
+   * it brought; a second merge brings none and writes nothing. `moves` are the components that came over under another
+   * slug (YAZ-4378): their rows follow them there.
    */
-  mergeFrom(folder: string): Promise<number>
+  mergeFrom(folder: string, moves?: ComponentMoves): Promise<number>
   /** Point at another library folder (the setting changed); the old one goes quiet. */
   setFolder(folder: string): void
   /** Fires after any change to a library file — an own write or an external one. Returns an unsubscribe. */
@@ -99,7 +101,8 @@ export function createMediaStore(initialFolder: string, deps: MediaStoreDeps): M
     const dir = folder
     const p = path.join(dir, await ownName())
     const { mtime } = await fsCall(p, async () => {
-      await mkdir(dir, { recursive: true })
+      // Never `mkdir -p` (YAZ-4383): a settings folder that is gone must not come back as a stray copy.
+      await makeLibraryDir(dir)
       return atomicWrite(p, `${JSON.stringify(lib, null, 2)}\n`)
     })
     watched.noteOwnWrite(p, mtime)
@@ -124,11 +127,11 @@ export function createMediaStore(initialFolder: string, deps: MediaStoreDeps): M
       if (req.op === 'list') return chain.wait(read)
       return mutate((l) => (req.op === 'record' ? recordUse(l, req.item, req.query, now()) : addWord(l, req.item, req.word, now())))
     },
-    mergeFrom(from) {
+    mergeFrom(from, moves = {}) {
       return chain.run(async () => {
         if (path.resolve(from) === path.resolve(folder)) return 0
         const here = await read()
-        const there = await readMerged(from, null, false)
+        const there = renameMovedComponents(await readMerged(from, null, false), moves)
         if (rowCount(there) === 0 && Object.keys(there.removed).length === 0) return 0
         const merged = mergeMediaLibraries([here, there])
         // A merge that changes nothing writes nothing: a second copy is silent.

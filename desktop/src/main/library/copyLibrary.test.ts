@@ -10,7 +10,7 @@ import path from 'node:path'
 import { defaultAppState, type AppState } from '@shared/types'
 import { createComponentStore, type ComponentStore } from './componentStore'
 import { copyLibrary, followLibraryMoves, LIBRARY_MARKER_FILE } from './copyLibrary'
-import { createFavoriteCopies, type FavoriteCopies } from './favoriteCopies'
+import { createFavoriteCopies, favoriteCopyHash, type FavoriteCopies } from './favoriteCopies'
 import { createMediaStore, type MediaStore } from './mediaStore'
 
 const MAC = 'aaaaaaaaaaaa'
@@ -105,6 +105,55 @@ describe('copyLibrary (YAZ-4364, round 3 decision 3)', () => {
     expect(await snapshot(to)).toEqual(newAfter)
   })
 
+  it('a favorite of a component whose name clashes follows it to logo-2: its tile and its add give the favorited one (YAZ-4378)', async () => {
+    const logo = { itemKey: 'component:logo', provider: 'component', providerId: 'logo', kind: 'component', title: 'Logo', updatedAt: 4 }
+    await writeFile(path.join(from, 'media.json'), JSON.stringify({ version: 1, favorites: [logo], recent: [logo], used: [{ ...logo, count: 2, words: ['brand'] }], removed: {} }))
+    await writeFile(path.join(from, 'favorites', `${favoriteCopyHash('component:logo')}.excalidraw`), fragment('old-logo'))
+    // The new folder already has a favorite of ITS logo, with its own copy.
+    await writeFile(path.join(to, `media-${MAC}.json`), JSON.stringify({ version: 1, favorites: [{ ...logo, updatedAt: 9 }], recent: [], used: [], removed: {} }))
+    await writeFile(path.join(to, 'favorites', `${favoriteCopyHash('component:logo')}.excalidraw`), fragment('new-logo'))
+
+    await copyLibrary(from, { media, components, copies })
+    const favs = await media.favorites({ op: 'list' })
+    expect(favs.map((f) => [f.itemKey, f.providerId, f.title]).sort()).toEqual([
+      ['component:logo', 'logo', 'Logo'],
+      ['component:logo-2', 'logo-2', 'Logo 2'],
+    ])
+    // Each favorite: the tile (its component) and the add (its copy) are the same component.
+    expect(await components.read({ slug: 'logo' })).toContain('new-logo')
+    expect(await copies.readElements('component:logo')).toContain('new-logo')
+    expect(await components.read({ slug: 'logo-2' })).toContain('old-logo')
+    expect(await copies.readElements('component:logo-2')).toContain('old-logo')
+    // Its count and words came along too.
+    const lib = await media.used({ op: 'list' })
+    expect(lib.used.find((u) => u.itemKey === 'component:logo-2')).toMatchObject({ count: 2, words: ['brand'] })
+    expect(lib.recent.map((r) => r.itemKey)).toEqual(['component:logo-2'])
+
+    // A second copy finds the bytes already at logo-2: the rows still follow them there, and nothing changes.
+    const newAfter = await snapshot(to)
+    expect(await copyLibrary(from, { media, components, copies })).toBe(0)
+    expect(await snapshot(to)).toEqual(newAfter)
+  })
+
+  it('a move whose old folder holds every copy asks the network for none of them (YAZ-4382)', async () => {
+    const names = ['n1', 'n2', 'n3']
+    await writeFile(path.join(from, 'media.json'), JSON.stringify({ version: 1, favorites: names.map((n) => fav(`iconify:mdi:${n}`, 3)), recent: [], used: [] }))
+    for (const n of names) await writeFile(path.join(from, 'favorites', `${favoriteCopyHash(`iconify:mdi:${n}`)}.svg`), `<svg id="old-${n}"/>`)
+    const fetched: string[] = []
+    media.onChanged(() => void copies.backfill())
+    await copies.start({
+      picture: async (req) => {
+        fetched.push(req.id)
+        return { mimeType: 'image/svg+xml', dataURL: `data:image/svg+xml;base64,${Buffer.from('<svg id="net"/>').toString('base64')}`, item: { itemKey: `iconify:${req.id}`, provider: 'iconify', providerId: req.id, kind: 'icon', title: req.id } }
+      },
+      drawing: async () => [],
+    })
+    await copyLibrary(from, { media, components, copies })
+    await copies.backfill()
+    expect(fetched).toEqual(['mdi:new']) // only the favorite that has no copy anywhere
+    for (const n of names) expect(await readFile(path.join(to, 'favorites', `${favoriteCopyHash(`iconify:mdi:${n}`)}.svg`), 'utf8')).toBe(`<svg id="old-${n}"/>`)
+  })
+
   it('a folder that is gone copies nothing', async () => {
     expect(await copyLibrary(path.join(dir, 'nowhere'), { media, components, copies })).toBe(0)
   })
@@ -126,6 +175,7 @@ describe('followLibraryMoves (YAZ-4364, round 3 decisions 1 and 3)', () => {
 
   it('the first launch with a settings folder copies today`s library into <settings folder>/library once, and says so', async () => {
     state = { ...state, settingsFolder: path.join(dir, 'Sync') }
+    await mkdir(path.join(dir, 'Sync'))
     const copy = vi.fn(async () => 3)
     const notice = vi.fn()
     await followLibraryMoves(fakeStore(), userData, { copy, notice }).settled()

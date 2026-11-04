@@ -7,10 +7,17 @@
  * `<userData>/library`. `libraryFolder` stays a setting of this Mac (`LOCAL_SETTINGS`). A change of the
  * answer copies the library across (`copyLibrary.ts`).
  *
+ * A SETTINGS FOLDER THAT IS GONE (YAZ-4383): renamed, its repo moved, its drive out. While it is not there, the
+ * default is `<userData>/library` — the library of before the move, which the move kept — so the favorites stay
+ * visible. When it is back, the next launch or change copies and merges what changed meanwhile into it. And no store
+ * write makes a gone folder again: a store makes only the library folder itself, never a missing parent
+ * (`makeLibraryDir`).
+ *
  * Only the main process knows where userData is, so only main can resolve
  * `SettingsState.libraryFolder` — which is why the Settings row asks through
  * `drawing:library-folder`. Electron-free on purpose (userData comes in as an argument).
  */
+import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Store } from '../store'
@@ -18,8 +25,21 @@ import type { Store } from '../store'
 /** The folder's name under the settings folder, or under userData, when the setting is null. */
 export const DEFAULT_LIBRARY_DIR = 'library'
 
-export function resolveLibraryFolder(setting: string | null, userData: string, settingsFolder: string | null = null): string {
-  return setting ?? join(settingsFolder ?? userData, DEFAULT_LIBRARY_DIR)
+/** `exists` is the check of the settings folder itself (one `stat`); tests pass their own. */
+export function resolveLibraryFolder(setting: string | null, userData: string, settingsFolder: string | null = null, exists: (dir: string) => boolean = existsSync): string {
+  if (setting !== null) return setting
+  return join(settingsFolder !== null && exists(settingsFolder) ? settingsFolder : userData, DEFAULT_LIBRARY_DIR)
+}
+
+/**
+ * Make the library folder (and `sub` inside it) for a write, but never a parent of it that is missing (YAZ-4383): a
+ * settings folder or a drive that is gone fails the write with ENOENT, and does not come back as a stray empty copy.
+ */
+export async function makeLibraryDir(library: string, sub?: string): Promise<void> {
+  await mkdir(library).catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== 'EEXIST') throw err
+  })
+  if (sub !== undefined) await mkdir(join(library, sub), { recursive: true })
 }
 
 /**

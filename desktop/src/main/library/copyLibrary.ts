@@ -7,9 +7,15 @@
  *    last launch (`<userData>/library-folder.json`) with today's, so the first launch with a settings folder copies
  *    today's library into `<settings folder>/library` ONE time. A copy that fails is tried again by the next launch:
  *    the marker moves only after a copy that worked.
- *  - WHAT. `media.json` merges into this Mac's `media-<macId>.json` (`mediaStore.mergeFrom`); the favorites' copies
- *    copy when missing (`favoriteCopies.copyFrom`); a component copies when missing, and one with the same name and
- *    other bytes gets `-2` (`componentStore.mergeFrom`). A second copy changes nothing.
+ *  - WHAT, IN THIS ORDER. A component copies when missing, and one with the same name and other bytes gets `-2`
+ *    (`componentStore.mergeFrom`). The favorites' copies copy when missing (`favoriteCopies.copyFrom`). Last,
+ *    `media.json` merges into this Mac's `media-<macId>.json` (`mediaStore.mergeFrom`). A second copy changes nothing.
+ *     - The components go first (YAZ-4378): a component that got another slug takes its favorites, recent and used
+ *       rows and its copy along, so a favorite still means the component that was favorited.
+ *     - The copies go before the media (YAZ-4382): the media merge starts a backfill pass, and the favorites must find
+ *       their copies there, or the pass fetches each one from the network again.
+ *     - A copy that failed (YAZ-4379) still lets the media merge run, so the favorites show; then the move fails, and
+ *       the next launch copies again.
  *  - THE LINE. A copy that brought anything over says so once, in a window: "Copied your library. The old one is
  *    still at …".
  *
@@ -23,7 +29,7 @@ import { atomicWrite } from '../fs/fsUtils'
 import type { Store } from '../store'
 import type { ComponentStore } from './componentStore'
 import type { FavoriteCopies } from './favoriteCopies'
-import { resolveLibraryFolder } from './folder'
+import { DEFAULT_LIBRARY_DIR, resolveLibraryFolder } from './folder'
 import type { MediaStore } from './mediaStore'
 
 /** Where this Mac keeps the library folder of its last launch, beside the state file. */
@@ -41,11 +47,16 @@ export interface LibraryParts {
  */
 export async function copyLibrary(from: string, parts: LibraryParts): Promise<number> {
   if (!existsSync(from)) return 0
-  // One after another: each part writes on its own store's chain, and a failure stops the rest, so the next launch
-  // tries the whole copy again.
-  const media = await parts.media.mergeFrom(from)
-  const copies = await parts.copies.copyFrom(from)
-  const components = await parts.components.mergeFrom(from)
+  // One after another: each part writes on its own store's chain. A failed component merge stops the rest (the rows
+  // need its slugs), so the next launch tries the whole copy again.
+  const { copied: components, moves } = await parts.components.mergeFrom(from)
+  let failure: unknown = null
+  const copies = await parts.copies.copyFrom(from, moves).catch((err: unknown) => {
+    failure = err
+    return 0
+  })
+  const media = await parts.media.mergeFrom(from, moves)
+  if (failure !== null) throw failure
   return media + copies + components
 }
 
@@ -91,7 +102,8 @@ export function followLibraryMoves(store: Pick<Store, 'get' | 'onChange'>, userD
     try {
       const copied = from === to ? 0 : await deps.copy(from)
       const state = store.get()
-      const intoSettings = state.settings.libraryFolder === null && state.settingsFolder !== null && to === resolveNow(state)
+      // Into the settings folder itself: not into the local fallback while it is gone (YAZ-4383).
+      const intoSettings = state.settings.libraryFolder === null && state.settingsFolder !== null && to === path.join(state.settingsFolder, DEFAULT_LIBRARY_DIR)
       if (copied > 0) deps.notice(libraryCopiedNotice(from, intoSettings))
       await atomicWrite(marker, `${JSON.stringify({ folder: to }, null, 2)}\n`)
     } catch (err) {

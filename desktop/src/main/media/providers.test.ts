@@ -645,3 +645,51 @@ describe('the filters, in main (YAZ-4360)', () => {
     expect(ids(many)).toEqual(['noto:arrow'])
   })
 })
+
+describe('a favorite`s tile (YAZ-4385): the copy at tile size, the add the whole copy', () => {
+  const photo = { mimeType: 'image/jpeg', dataURL: `data:image/jpeg;base64,${Buffer.alloc(3000, 7).toString('base64')}` }
+  const small = { mimeType: 'image/jpeg', dataURL: 'data:image/jpeg;base64,c21hbGw=' }
+  const item = { itemKey: 'pixabay:5', provider: 'pixabay', providerId: '5', kind: 'photo', title: 'Tree' } as StudioItem
+  const copyOf = (image: { mimeType: string; dataURL: string }) => ({
+    preview: vi.fn(async () => image),
+    import: vi.fn(async () => ({ ...image, item })),
+  })
+  const offline = vi.fn(async () => {
+    throw new TypeError('fetch failed')
+  })
+
+  it('a photo copy gives a tile made once and kept in the cache; the add still gets the whole copy; no network', async () => {
+    const tilePicture = vi.fn(() => small)
+    const providers = createMediaProviders({ fetch: offline as unknown as typeof globalThis.fetch, readPixabayKey: async () => 'secret', cache, favoriteCopy: copyOf(photo), tilePicture })
+    expect(await providers.preview({ provider: 'pixabay', id: '5' })).toEqual(small)
+    expect(await providers.preview({ provider: 'pixabay', id: '5' })).toEqual(small)
+    expect(tilePicture).toHaveBeenCalledTimes(1)
+    expect(await providers.import({ provider: 'pixabay', id: '5' })).toMatchObject({ dataURL: photo.dataURL, item })
+    expect(offline).not.toHaveBeenCalled()
+  })
+
+  it('an icon`s SVG copy goes as it is', async () => {
+    const svg = { mimeType: 'image/svg+xml', dataURL: 'data:image/svg+xml;base64,PHN2Zy8+' }
+    const tilePicture = vi.fn(() => small)
+    const providers = createMediaProviders({ fetch: offline as unknown as typeof globalThis.fetch, readPixabayKey: async () => null, cache, favoriteCopy: copyOf(svg), tilePicture })
+    expect(await providers.preview({ provider: 'iconify', id: 'mdi:star' })).toEqual(svg)
+    expect(tilePicture).not.toHaveBeenCalled()
+  })
+
+  it('a copy main cannot make smaller takes the provider`s preview; offline, the tile still shows from the copy', async () => {
+    const tilePicture = vi.fn(() => null)
+    const online = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('https://pixabay.com/api/')) return json({ hits: [{ id: 5, type: 'illustration', previewURL: 'https://cdn.pixabay.com/p.jpg', largeImageURL: 'https://cdn.pixabay.com/l.jpg', tags: 'tree' }] })
+      return new Response(Buffer.from('tiny'), { headers: { 'Content-Type': 'image/jpeg' } })
+    })
+    const providers = createMediaProviders({ fetch: online as unknown as typeof globalThis.fetch, readPixabayKey: async () => 'secret', cache, favoriteCopy: copyOf(photo), tilePicture })
+    const tile = await providers.preview({ provider: 'pixabay', id: '5' })
+    expect(Buffer.from(tile.dataURL.split(',')[1], 'base64').toString()).toBe('tiny')
+    expect(online.mock.calls.map(([u]) => String(u))).toContain('https://cdn.pixabay.com/p.jpg')
+
+    cache.store.clear()
+    const away = createMediaProviders({ fetch: offline as unknown as typeof globalThis.fetch, readPixabayKey: async () => 'secret', cache, favoriteCopy: copyOf(photo), tilePicture })
+    expect(await away.preview({ provider: 'pixabay', id: '5' })).toEqual(photo)
+  })
+})
