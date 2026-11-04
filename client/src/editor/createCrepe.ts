@@ -285,6 +285,7 @@ import { cellBlocksOnly } from './table/cellBlocks'
 import { cellNotes, withoutEmptyCellNotes } from './table/cellNotes'
 import { cellNoteButton } from './table/cellNoteButton'
 import { cellNoteCard, cellNoteCardKeymap } from './table/cellNoteCard'
+import { bulletSelectAllKeymap } from './bulletSelectAll'
 import { cellNoteDeleteGuard } from './table/cellNoteGuard'
 import { cellNoteClipboard } from './table/cellNoteClipboard'
 import { cellNotePreview } from './table/cellNotePreview'
@@ -667,6 +668,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(cellNotePreview)
   crepe.editor.use(cellNoteCard)
   crepe.editor.use(cellNoteCardKeymap)
+  // ⌘A on a bullet (YAZ-4348 demo round 2): its line first, then the whole note; priority 80, under the cell's 90.
+  crepe.editor.use(bulletSelectAllKeymap)
   // A custom colour pick's target cells (YAZ-3817), kept through edits while the system picker is open.
   crepe.editor.use(customColourPick)
   // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.

@@ -1425,7 +1425,7 @@ describe('SettingsDialog search (D6)', () => {
         'tableCellBulletIndent',
         'tableCellBulletGap',
         'tableCellNoteTemplate',
-        ...['bulletList', 'cycleTask', 'indent', 'outdent', 'foldHere', 'unfoldHere', 'foldAll', 'unfoldAll', 'zoomIn', 'copyVisible', 'enter', 'tab'].map((r) => `hotkey-note-${r}`),
+        ...['bulletList', 'cycleTask', 'indent', 'outdent', 'foldHere', 'unfoldHere', 'foldAll', 'unfoldAll', 'zoomIn', 'copyVisible', 'enter', 'tab', 'selectAll'].map((r) => `hotkey-note-${r}`),
         ...['thisTab', 'newTab', 'backgroundTab'].map((r) => `hotkey-bullets-${r}`),
         // A built-in click is found by its place too: "Bullet lines".
         ...['fold-unfold-that-bullet-or-heading-secti', 'collapse-direct-children-fully-expand-th'].map((r) => `hotkey-mouse-${r}`),

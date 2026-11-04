@@ -187,6 +187,8 @@ describe('format commands over hidden lines (YAZ-3209 D1–D3)', () => {
   it('S17: ⌘A (select all) bolds the visible lines only, and Mod-Enter over it agrees', async () => {
     const { crepe, view } = await mount('* A\n* B\n  * b1\n')
     foldItem(crepe, 'B')
+    // On a bullet the first ⌘A selects its line (YAZ-4348 demo round 2); the second is the page's select all.
+    expect(pressKey(crepe, 'a', { mod: true })).toBe(true)
     expect(pressKey(crepe, 'a', { mod: true })).toBe(true)
     expect(view.state.selection).toBeInstanceOf(AllSelection)
     call(crepe, toggleStrongCommand)

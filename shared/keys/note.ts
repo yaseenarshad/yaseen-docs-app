@@ -58,7 +58,7 @@ export const NOTE_KEYS: readonly KeyRow[] = [
   // Built in: the Mac's edit keys.
   note('undo', 'Undo', ['CmdOrCtrl+Z'], { hint: 'Also reverts the latest fold or zoom', builtIn: true }),
   note('redo', 'Redo', ['CmdOrCtrl+Shift+Z', 'CmdOrCtrl+Y'], { builtIn: true }),
-  note('selectAll', 'Select all the text of the note', ['CmdOrCtrl+A'], { builtIn: true }),
+  note('selectAll', 'Select all the text of the note', ['CmdOrCtrl+A'], { hint: 'On a bullet: its line first, then the whole note. In a table cell: the cell first', builtIn: true }),
   // Built in: the typing keys.
   note('enter', 'New line, or a new bullet', ['Enter'], { hint: 'In a pop-up: pick the row', builtIn: true }),
   note('lineBreak', 'Line break inside the block', ['Shift+Enter'], { builtIn: true }),
