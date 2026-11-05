@@ -30,7 +30,7 @@ import {
   MIME_TYPES,
 } from "@excalidraw/common";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import type { CaptureUpdateActionType, IconRecipe } from "@excalidraw/element";
 import type {
@@ -46,6 +46,7 @@ import {
 } from "../data/blob";
 
 import { ColorPicker } from "../components/ColorPicker/ColorPicker";
+import { DraftSlider, ExactNumberInput } from "../components/SizeControls";
 import { ToolbarPopover } from "../components/ToolbarPopover";
 
 import { register } from "./register";
@@ -524,9 +525,10 @@ export const IconOutlineControls = ({
             }
             onChange={(next) => onChange({ width: next, elementIds })}
           />
-          <ExactSizeInput
+          <ExactNumberInput
             label="Outline thickness"
             value={width}
+            min={0}
             max={OUTLINE_MAX}
             onChange={(next) => onChange({ width: next, elementIds })}
           />
@@ -539,121 +541,9 @@ export const IconOutlineControls = ({
 /**
  * A size slider, as the text size's (YAZ-3943 demo 2): a drag shows each size
  * (`onPreview`, at most every 100 ms, no undo step); the release commits the
- * last one (`onChange`), so a drag is one undo step.
+ * last one (`onChange`), so a drag is one undo step. YAZ-4366: the shared
+ * `DraftSlider`.
  */
-export const IconSizeSlider = ({
-  label,
-  value,
-  min = 0,
-  max,
-  step = 1,
-  onPreview,
-  onChange,
-  className = "font-size-slider",
-}: {
-  label: string;
-  value: number | null;
-  min?: number;
-  max: number;
-  step?: number;
-  onPreview: (value: number) => void;
-  onChange: (value: number) => void;
-  className?: string;
-}) => {
-  const clamp = (next: number | null) =>
-    Math.min(max, Math.max(min, Math.round(next ?? min)));
-  const [draft, setDraft] = useState(clamp(value));
-  const moved = useRef<number | null>(null);
-  const lastPreview = useRef(0);
-  useEffect(() => {
-    if (moved.current === null) {
-      setDraft(clamp(value));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
-  const commit = () => {
-    if (moved.current !== null) {
-      const next = moved.current;
-      moved.current = null;
-      onChange(next);
-    }
-  };
-  return (
-    <input
-      type="range"
-      className={className}
-      aria-label={label}
-      min={min}
-      max={max}
-      step={step}
-      value={draft}
-      onChange={(event) => {
-        const next = Number(event.target.value);
-        setDraft(next);
-        moved.current = next;
-        const now = Date.now();
-        if (now - lastPreview.current >= ICON_PREVIEW_INTERVAL_MS) {
-          lastPreview.current = now;
-          onPreview(next);
-        }
-      }}
-      onPointerUp={commit}
-      onKeyUp={commit}
-      onBlur={commit}
-      onKeyDown={(event) => event.stopPropagation()}
-    />
-  );
-};
-
-/** The exact number, as the text size's field: Enter or leaving it commits. */
-const ExactSizeInput = ({
-  label,
-  value,
-  max,
-  onChange,
-}: {
-  label: string;
-  value: number | null;
-  max: number;
-  onChange: (value: number) => void;
-}) => {
-  const shown = value === null ? "" : `${Math.round(value * 10) / 10}`;
-  const [text, setText] = useState(shown);
-  useEffect(() => setText(shown), [shown]);
-  const commit = () => {
-    const parsed = Number(text);
-    if (text.trim() === "" || !Number.isFinite(parsed)) {
-      setText(shown);
-      return;
-    }
-    const next = Math.min(max, Math.max(0, Math.round(parsed * 10) / 10));
-    setText(`${next}`);
-    if (next !== value) {
-      onChange(next);
-    }
-  };
-  return (
-    <div
-      className="font-size-custom"
-      data-prevent-outside-click
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <input
-        type="number"
-        aria-label={label}
-        min={0}
-        max={max}
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          event.stopPropagation();
-          if (event.key === "Enter") {
-            commit();
-          }
-        }}
-      />
-      <span>px</span>
-    </div>
-  );
-};
+export const IconSizeSlider = (
+  props: Omit<Parameters<typeof DraftSlider>[0], "previewEveryMs">,
+) => <DraftSlider previewEveryMs={ICON_PREVIEW_INTERVAL_MS} {...props} />;
