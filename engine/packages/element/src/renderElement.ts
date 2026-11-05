@@ -397,8 +397,8 @@ const drawElementOnCanvas = (
       // YAZ-3944 D2: the frame on show of a playing GIF, else the still image
       // YAZ-4354 1D: Edit colors fades the other parts while a number is pointed at
       const img = isInitializedImageElement(element)
-        ? (renderConfig.colorEditPreview?.elementId === element.id
-            ? renderConfig.colorEditPreview.image
+        ? (renderConfig.colorEditPreview?.current?.elementId === element.id
+            ? renderConfig.colorEditPreview.current.image
             : null) ??
           renderConfig.gifPlayer?.frameFor(element) ??
           cacheEntry?.image
@@ -818,8 +818,8 @@ const generateElementWithCanvas = (
     : undefined;
   // YAZ-4354 1D: a new Edit colors preview draws this element again
   const iconPreview =
-    renderConfig.colorEditPreview?.elementId === element.id
-      ? renderConfig.colorEditPreview.image
+    renderConfig.colorEditPreview?.current?.elementId === element.id
+      ? renderConfig.colorEditPreview.current.image
       : null;
   const changed =
     !prevElementWithCanvas ||

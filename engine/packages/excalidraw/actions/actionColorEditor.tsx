@@ -74,7 +74,7 @@ export const actionToggleColorEditor = register({
       <button
         type="button"
         className="contextual-properties-toolbar__text-button"
-        title={`${label} — click a part of the picture to change its color`}
+        title={`${label}: click a part of the picture to change its color`}
         aria-label={label}
         onClick={() => updateData(null)}
       >

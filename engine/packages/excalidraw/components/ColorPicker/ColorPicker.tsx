@@ -475,6 +475,11 @@ export const ColorPicker = ({
               mode={type === "elementStroke" ? "stroke" : "background"}
               editingTextElement={!!appState.editingTextElement}
               onToggle={() => {
+                // YAZ-4366: a host that keeps the open state (the Edit colors card) opens and closes it here
+                if (onPopupOpenChange) {
+                  onPopupOpenChange(!isOpen);
+                  return;
+                }
                 // atomic switch: if another popup is open, close it first, then open this one next tick
                 if (appState.openPopup === type) {
                   // toggle off on same trigger

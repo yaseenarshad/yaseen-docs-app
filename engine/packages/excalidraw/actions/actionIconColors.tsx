@@ -128,6 +128,27 @@ export const currentIconRecipe = (
 const latestPaint = new Map<string, number>();
 let paintCounter = 0;
 
+/**
+ * YAZ-4366: the files that only a drag's previews made, for each board. A tint or outline drag makes up to 10 a
+ * second, each up to about 1 MB of data URL; once the board shows a newer one, nothing can show them again.
+ */
+const previewFiles = new WeakMap<AppClassProperties, Set<FileId>>();
+
+/** Drops the preview files that nothing shows, after the paint's result is on the board. */
+const dropPreviewFiles = (app: AppClassProperties) =>
+  setTimeout(() => {
+    const ids = previewFiles.get(app);
+    if (!ids?.size) {
+      return;
+    }
+    app.dropUnusedFiles(ids);
+    for (const id of ids) {
+      if (!app.files[id] && !app.imageCache.has(id)) {
+        ids.delete(id);
+      }
+    }
+  });
+
 const loadImage = (dataURL: string) =>
   new Promise<HTMLImageElement | null>((resolve) => {
     const image = new Image();
@@ -156,6 +177,11 @@ export const paintIcons = async (
   const token = ++paintCounter;
   for (const target of targets) {
     latestPaint.set(target.id, token);
+  }
+  const preview = captureUpdate === CaptureUpdateAction.EVENTUALLY;
+  let previews = previewFiles.get(app);
+  if (!previews) {
+    previewFiles.set(app, (previews = new Set()));
   }
   const files: BinaryFiles = {};
   const changes = new Map<string, Partial<InitializedExcalidrawImageElement>>();
@@ -193,6 +219,9 @@ export const paintIcons = async (
         created: Date.now(),
         lastRetrieved: Date.now(),
       };
+      if (preview) {
+        previews.add(fileId);
+      }
       if (!app.imageCache.has(fileId)) {
         const image = await loadImage(dataURL);
         if (image) {
@@ -204,9 +233,14 @@ export const paintIcons = async (
         }
       }
     }
+    if (!preview) {
+      // the release's file is an undo step's now, also when a preview made it
+      previews.delete(fileId);
+    }
     changes.set(target.id, { ...updates, fileId });
   }
 
+  dropPreviewFiles(app);
   if (targets.some((target) => latestPaint.get(target.id) !== token)) {
     return false;
   }
