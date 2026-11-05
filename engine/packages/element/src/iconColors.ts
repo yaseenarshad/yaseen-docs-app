@@ -17,7 +17,7 @@
 // Pure string-and-DOM work (DOMParser), no canvas: it runs in jsdom tests.
 // -----------------------------------------------------------------------------
 
-import { MIME_TYPES, SVG_NS } from "@excalidraw/common";
+import { colorToHex, MIME_TYPES, SVG_NS } from "@excalidraw/common";
 
 import type { BinaryFileData, DataURL } from "@excalidraw/excalidraw/types";
 
@@ -75,32 +75,6 @@ const PAINT_PROPS = new Set([
   "color",
 ]);
 
-const NAMED_COLORS: Record<string, string> = {
-  black: "#000000",
-  white: "#ffffff",
-  red: "#ff0000",
-  green: "#008000",
-  blue: "#0000ff",
-  yellow: "#ffff00",
-  orange: "#ffa500",
-  purple: "#800080",
-  gray: "#808080",
-  grey: "#808080",
-  silver: "#c0c0c0",
-  maroon: "#800000",
-  olive: "#808000",
-  lime: "#00ff00",
-  aqua: "#00ffff",
-  cyan: "#00ffff",
-  teal: "#008080",
-  navy: "#000080",
-  fuchsia: "#ff00ff",
-  magenta: "#ff00ff",
-  pink: "#ffc0cb",
-  brown: "#a52a2a",
-  gold: "#ffd700",
-};
-
 const hex2 = (value: number) =>
   Math.max(0, Math.min(255, Math.round(value)))
     .toString(16)
@@ -109,7 +83,8 @@ const hex2 = (value: number) =>
 /**
  * One key for one color: lowercase 6-digit hex, or `currentColor`. Null for
  * no color (`none`, `transparent`, a zero alpha), a reference (`url(…)`) and
- * anything it does not know.
+ * anything it does not know. YAZ-4366: the 148 CSS color names and `hsl()`
+ * come through tinycolor2 (`colorToHex`), so `darkred` is a color too.
  */
 export const normalizeIconColor = (
   value: string | null | undefined,
@@ -155,7 +130,26 @@ export const normalizeIconColor = (
     }
     return `#${hex2(r)}${hex2(g)}${hex2(b)}`;
   }
-  return NAMED_COLORS[v] ?? null;
+  const hsl = v.match(/^hsla?\(([^)]*)\)$/);
+  if (hsl) {
+    const parts = hsl[1].split(/[\s,/]+/).filter(Boolean);
+    if (
+      parts.length < 3 ||
+      (parts[3] !== undefined && parseFloat(parts[3]) === 0)
+    ) {
+      return null;
+    }
+    // tinycolor2 reads neither `deg` nor an alpha after `/`: the hue as a number, the alpha is checked above
+    const [h, s, l] = parts;
+    return (
+      colorToHex(`hsl(${h.replace(/deg$/, "")}, ${s}, ${l})`)?.slice(0, 7) ??
+      null
+    );
+  }
+  // a name; a word of the letters a to f only would read as hex digits (no CSS name is one)
+  return /^[a-z]+$/.test(v) && /[g-z]/.test(v)
+    ? colorToHex(v)?.slice(0, 7) ?? null
+    : null;
 };
 
 // -----------------------------------------------------------------------------

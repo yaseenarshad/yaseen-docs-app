@@ -12,7 +12,7 @@
 // coordinates); `loadIconPickMap` is the thin canvas step.
 // -----------------------------------------------------------------------------
 
-import { SVG_NS } from "@excalidraw/common";
+import { colorToHsl, hslToHex, SVG_NS } from "@excalidraw/common";
 
 import {
   appendIconStyle,
@@ -146,52 +146,9 @@ export const groupColorChange = (
 /** Below this saturation a color is a grey: the tint keeps it. */
 const TINT_MIN_SATURATION = 0.12;
 
-const toHsl = (hex: string) => {
-  const n = parseInt(hex.slice(1), 16);
-  const r = ((n >> 16) & 255) / 255;
-  const g = ((n >> 8) & 255) / 255;
-  const b = (n & 255) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  const d = max - min;
-  if (d === 0) {
-    return { h: 0, s: 0, l };
-  }
-  const s = d / (1 - Math.abs(2 * l - 1));
-  const h =
-    max === r
-      ? ((g - b) / d + (g < b ? 6 : 0)) * 60
-      : max === g
-      ? ((b - r) / d + 2) * 60
-      : ((r - g) / d + 4) * 60;
-  return { h, s, l };
-};
-
-const fromHsl = (h: number, s: number, l: number) => {
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = l - c / 2;
-  const [r, g, b] =
-    h < 60
-      ? [c, x, 0]
-      : h < 120
-      ? [x, c, 0]
-      : h < 180
-      ? [0, c, x]
-      : h < 240
-      ? [0, x, c]
-      : h < 300
-      ? [x, 0, c]
-      : [c, 0, x];
-  return `#${[r, g, b]
-    .map((v) =>
-      Math.round((v + m) * 255)
-        .toString(16)
-        .padStart(2, "0"),
-    )
-    .join("")}`;
-};
+/** YAZ-4366: through tinycolor2 (`@excalidraw/common`); the keys are always `#rrggbb` here. */
+const toHsl = (hex: string) => colorToHsl(hex) ?? { h: 0, s: 0, l: 0 };
+const fromHsl = hslToHex;
 
 /**
  * The tint: each colored original turned by `degrees` of hue. Black, white and
