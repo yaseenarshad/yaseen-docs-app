@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { defaultAppState, type AppState } from '@shared/types'
-import { DEFAULT_LIBRARY_DIR, ensureLibraryFolder, followLibraryFolder, makeLibraryDir, resolveLibraryFolder } from './folder'
+import { DEFAULT_LIBRARY_DIR, ensureLibraryFolder, followLibraryFolder, libraryFolderOf, makeLibraryDir, resolveLibraryFolder } from './folder'
 
 let dir: string
 beforeEach(async () => {
@@ -32,6 +32,21 @@ describe('resolveLibraryFolder (🔒 YAZ-1775 D5)', () => {
     expect(resolveLibraryFolder(null, '/data', settings)).toBe(path.join('/data', DEFAULT_LIBRARY_DIR))
     await mkdir(settings, { recursive: true })
     expect(resolveLibraryFolder(null, '/data', settings)).toBe(path.join(settings, DEFAULT_LIBRARY_DIR))
+  })
+})
+
+describe('libraryFolderOf (YAZ-4366)', () => {
+  it('one look at the settings folder for each store change, however many followers ask', () => {
+    const looks: string[] = []
+    const exists = (d: string) => (looks.push(d), true)
+    const state = { ...defaultAppState(), settingsFolder: '/Sync/settings' }
+    for (let i = 0; i < 3; i++) expect(libraryFolderOf(state, '/data', exists)).toBe(path.join('/Sync/settings', DEFAULT_LIBRARY_DIR))
+    expect(looks).toEqual(['/Sync/settings'])
+    // The next change (a new state) looks again: a drive that went is seen.
+    expect(libraryFolderOf({ ...state }, '/data', () => false)).toBe(path.join('/data', DEFAULT_LIBRARY_DIR))
+    // Another userData is another answer.
+    expect(libraryFolderOf(state, '/other', exists)).toBe(path.join('/Sync/settings', DEFAULT_LIBRARY_DIR))
+    expect(looks).toHaveLength(2)
   })
 })
 

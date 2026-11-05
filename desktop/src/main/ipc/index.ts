@@ -9,7 +9,7 @@ import type { LspPool } from '../lsp/pool'
 import type { Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { copyLibrary, followLibraryMoves } from '../library/copyLibrary'
-import { resolveLibraryFolder } from '../library/folder'
+import { libraryFolderOf } from '../library/folder'
 import { registerBoardIpc } from './board'
 import { registerComponentsIpc } from './components'
 import { registerDialogIpc } from './dialog'
@@ -95,7 +95,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // The canvas panel (YAZ-3038; Draw's 🔒 YAZ-1775 D4 / D5): the library folder every vault shares, its media
   // and component stores, the favorites' own copies (YAZ-4363), and the Image Studio, which asks the copies first.
   // The folder is the setting, else `<settings folder>/library`, else `<userData>/library` (YAZ-4364).
-  handle(CONTRACT.drawing.libraryFolder, async () => resolveLibraryFolder(store.get().settings.libraryFolder, userData, store.get().settingsFolder))
+  handle(CONTRACT.drawing.libraryFolder, async () => libraryFolderOf(store.get(), userData))
   // A deleted component's favorite and copy keep its slug (YAZ-4366): `library` is made next, and asked only on a save.
   const components = registerComponentsIpc(store, userData, undefined, (slug) => library.copies.holds(componentItemKey(slug)))
   const library = registerMediaLibraryIpc(store, userData, { macId: places.macId, hasPixabayKey: () => secrets.has(PIXABAY_SECRET), readComponent: (slug) => components.read({ slug }) })

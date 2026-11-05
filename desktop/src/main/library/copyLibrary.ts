@@ -29,7 +29,7 @@ import { atomicWrite } from '../fs/fsUtils'
 import type { Store } from '../store'
 import type { ComponentStore } from './componentStore'
 import type { FavoriteCopies } from './favoriteCopies'
-import { DEFAULT_LIBRARY_DIR, resolveLibraryFolder } from './folder'
+import { DEFAULT_LIBRARY_DIR, libraryFolderOf, resolveLibraryFolder } from './folder'
 import type { MediaStore } from './mediaStore'
 
 /** Where this Mac keeps the library folder of its last launch, beside the state file. */
@@ -95,7 +95,7 @@ async function readMarker(file: string): Promise<string | null> {
  */
 export function followLibraryMoves(store: Pick<Store, 'get' | 'onChange'>, userData: string, deps: LibraryMovesDeps): LibraryMoves {
   const marker = path.join(userData, LIBRARY_MARKER_FILE)
-  const resolveNow = (state = store.get()) => resolveLibraryFolder(state.settings.libraryFolder, userData, state.settingsFolder)
+  const resolveNow = (state = store.get()) => libraryFolderOf(state, userData)
   let current = resolveNow()
 
   async function move(from: string, to: string): Promise<void> {
