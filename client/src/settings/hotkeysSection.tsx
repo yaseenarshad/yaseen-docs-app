@@ -846,9 +846,16 @@ const clickOwned = (row: GestureRow): string => `${GESTURE_PLACE_TITLES[row.plac
 const shownClick = (gesture: string | null): string => (gesture === null ? 'No gesture' : gestureDisplay(gesture))
 const clickChanged = (row: GestureRow, overrides: HotkeyOverrides): boolean => overrides[row.id] !== undefined
 
-/** Why a gesture cannot be a row's, or null when it can: ⌃-click is the Mac's right-click (the link menu, the bullet menu). */
-function clickRefusal(gesture: string): string | null {
-  return parseGesture(gesture)?.ctrl === true ? `${gestureDisplay(gesture)} is the Mac's right-click. Pick a different gesture.` : null
+/**
+ * Why a gesture cannot be a row's, or null when it can: ⌃-click is the Mac's right-click (the link menu, the bullet menu).
+ * On a file (YAZ-4444), Click opens it and ⇧-click is the selection gesture (YAZ-1336 🔒 D2): no row takes them.
+ */
+function clickRefusal(row: GestureRow, gesture: string): string | null {
+  if (parseGesture(gesture)?.ctrl === true) return `${gestureDisplay(gesture)} is the Mac's right-click. Pick a different gesture.`
+  if (row.place !== 'files') return null
+  if (sameGesture(gesture, 'Click')) return 'Click opens the file. Pick a different gesture.'
+  if (sameGesture(gesture, 'Shift+Click')) return '⇧-click selects files. Pick a different gesture.'
+  return null
 }
 
 /**
@@ -917,7 +924,7 @@ function GestureBox({ row, ctx }: { row: GestureRow; ctx: SettingsCtx }) {
 
   const heard = (gesture: string): void => {
     if (sameGesture(gesture, current)) return idle()
-    const refused = clickRefusal(gesture)
+    const refused = clickRefusal(row, gesture)
     if (refused !== null) return setMode({ kind: 'recording', refused })
     setMode({ kind: 'confirm', pending: { kind: 'save', gesture, from: gestureClashes(row, gesture, overrides) } })
   }
@@ -1104,7 +1111,7 @@ const clickLegendItem: SettingDef = {
   keywords: ['mouse', 'click', 'drag', 'gesture', ...ROW_KEYWORDS],
   bare: true,
   available: (ctx) => !isFiltered(ctx) || clicksOnly(ctx),
-  render: () => <p className="hotkeys__line">One card per click or drag, one box per place. Links in a note and Bullet dots are yours to change: click the box, then hold the keys and click it again.</p>,
+  render: () => <p className="hotkeys__line">One card per click or drag, one box per place. Links in a note, Bullet dots and Files in lists are yours to change: click the box, then hold the keys and click it again.</p>,
 }
 
 /** The clicks' groups (YAZ-3936): the legend, one card per gesture, then the clicks with no gesture. */

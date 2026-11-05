@@ -19,7 +19,7 @@ import { HOVER_PREVIEW_DWELL_MS } from '../../sidebar/HoverPreviewHost'
 import { spacePanel } from '../../tabs/cardPreview'
 
 /** No store behind this mount: collapse state stays in the pane. */
-vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
+vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined, getRoots: () => ['/vault'] } }))
 vi.mock('../../api', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../api')>()
   return {
@@ -27,6 +27,7 @@ vi.mock('../../api', async (importOriginal) => {
     api: {
       ...original.api,
       shell: { reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }) },
+      window: { open: vi.fn(async () => undefined) },
       // The hover panel's fetch: a body for every path, so the panel always has content.
       readFile: vi.fn(async (path: string) => ({ path, content: `body of ${path}\n`, mtime: 1, size: 1 })),
     },
@@ -372,16 +373,19 @@ describe('the Name cell (YAZ-2420 D26, table F)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('F: ⌘-click on a Name cell opens the note in a background tab, ⌥-click to the right; ⇧-click opens nothing', () => {
+  it('F: ⌘-click on a Name cell opens the note in a background tab, ⌥-click to the right; ⇧-click opens nothing; ⇧⌘-click a new window (YAZ-4444 D32)', () => {
     const openRight = vi.fn()
     const openBackground = vi.fn()
+    vi.mocked(api.window.open).mockClear()
     const { el, onOpenFile } = mount(TYPED_BASE, { folder: testFolderHost({ openRight, openBackground }) })
     modClick(nameCell(el), { metaKey: true })
     expect(openBackground).toHaveBeenCalledExactlyOnceWith(agentic)
     modClick(nameCell(el), { altKey: true })
     expect(openRight).toHaveBeenCalledExactlyOnceWith(agentic)
     modClick(nameCell(el), { shiftKey: true })
+    expect(api.window.open).not.toHaveBeenCalled()
     modClick(nameCell(el), { shiftKey: true, metaKey: true })
+    expect(api.window.open).toHaveBeenCalledExactlyOnceWith({ root: '/vault', file: agentic })
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(openBackground).toHaveBeenCalledOnce()
     expect(openRight).toHaveBeenCalledOnce()

@@ -1,7 +1,7 @@
 /** The Recents list at the real scale (YAZ-3235): three vaults of 10,000 notes, each with a full save log of MAX_EDITS files. Runs in the `perf` project (YAZ-740). */
 import { describe, expect, it } from 'vitest'
 import { MAX_EDITS, type TreeNode, type TreeResponse } from '@shared/types'
-import { timeMedian } from '../test-perf'
+import { budgetMs, timeMedian } from '../test-perf'
 import { MAX_RECENTS, recentDays, recentFiles } from './recents'
 
 const T = 1_700_000_000_000
@@ -30,13 +30,13 @@ describe('Recents perf (YAZ-3235)', () => {
     const cold = performance.now() - t0
     expect(edits.every((e) => Object.keys(e).length === MAX_EDITS)).toBe(true)
     expect(files).toHaveLength(MAX_RECENTS)
-    expect(cold).toBeLessThan(50)
+    expect(cold).toBeLessThan(budgetMs(50))
 
     // A save: one log is a new object; the trees are the same objects, so their file sets are not read again.
     // The median of 100 saves is the budget (`timeMedian`): re-reading the trees costs every save ~10x it.
     const saves = Array.from({ length: 100 }, (_, i) => [{ ...edits[0], '/a/Folder 0/Note 0.md': T + i }, edits[1], edits[2]])
     const { median, worst } = timeMedian(100, (i) => recentDays(recentFiles(trees, roots, saves[i]), new Date(T)))
     console.log(`recents perf: cold ${cold.toFixed(1)} ms, a save median ${median.toFixed(2)} ms, worst ${worst.toFixed(2)} ms of 100`)
-    expect(median).toBeLessThan(2)
+    expect(median).toBeLessThan(budgetMs(2))
   })
 })

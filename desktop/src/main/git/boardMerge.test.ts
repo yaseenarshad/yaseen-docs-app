@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mergeBoards } from '@shared/boardMerge'
-import { hoverLinksOff, picturesOut, withHoverLinks, withPicturesOut } from '@shared/drawingAssets'
+import { boardFoldArrowsOf, hoverLinksOff, picturesOut, withBoardFoldArrows, withHoverLinks, withPicturesOut } from '@shared/drawingAssets'
 import { isDrawingReadOnly, withDrawingReadOnly } from '@shared/readOnly'
 
 type El = Record<string, unknown> & { id: string }
@@ -235,6 +235,18 @@ describe('mergeBoards — the switches of the yaseendraw block (YAZ-3943 1E): th
       expect(hoverLinksOff(merged)).toBe(true)
       expect(merged.switched).toEqual({ hoverLinks: 300 })
     }
+  })
+
+  it('YAZ-4277 D5: the board\'s "Fold arrows" is a switch too: the newest choice wins, "app setting" (no key) included', () => {
+    const base = scene({ createdAt: 1, updatedAt: 2 })
+    const macA = withBoardFoldArrows(base, 'always', 1, 300)
+    for (const [theirs, mine] of [[macA, edited(base, 400)], [edited(base, 400), macA]]) {
+      const merged = blockOf(base, theirs, mine)
+      expect(boardFoldArrowsOf(merged)).toBe('always')
+      expect(merged.switched).toEqual({ foldArrows: 300 })
+    }
+    const backToApp = withBoardFoldArrows(macA, null, 1, 500)
+    for (const [theirs, mine] of [[macA, backToApp], [backToApp, macA]]) expect(blockOf(macA, theirs, mine)).not.toHaveProperty('foldArrows')
   })
 
   it('a board whose switches have no time merges as before: ours wins, and a key only theirs holds stays', () => {

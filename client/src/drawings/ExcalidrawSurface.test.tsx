@@ -22,8 +22,15 @@ vi.mock('./engine', () => {
     restoreAppState: () => ({}),
     getSceneVersion: () => 0,
     serializeAsJSON: vi.fn((elements: unknown) => JSON.stringify({ elements, appState: {} })),
+    // YAZ-4277 D18: the fold switch point's save step; with folding on nothing is aside (`foldsOff.test.tsx` runs the real one)
+    withFoldsPutBack: (elements: unknown) => elements,
   }
-  return { loadExcalidraw: async () => mod, applyToolbarMode: () => undefined }
+  const textEditor = { mount: () => ({ setSelection: () => undefined, focus: () => undefined, destroy: () => undefined }) }
+  return {
+    loadExcalidraw: async () => mod,
+    loadTextBoxEditor: async () => ({ createTextBoxEditor: () => textEditor }),
+    applyToolbarMode: () => undefined,
+  }
 })
 vi.mock('katex/dist/katex.min.css', () => ({}))
 
@@ -56,6 +63,14 @@ async function render(readOnly: boolean | undefined): Promise<void> {
 }
 
 const last = (): Record<string, unknown> => engine.props.at(-1) ?? {}
+
+describe('the text box editor (YAZ-4277 D1)', () => {
+  it('passes the text box editor, made with the engine, to the canvas', async () => {
+    await render(undefined)
+    expect((last().textEditor as { mount?: unknown } | undefined)?.mount).toBeTypeOf('function')
+    expect(engine.props.every((props) => props.textEditor === last().textEditor)).toBe(true)
+  })
+})
 
 describe('the board`s right-click menu: Save to library… (YAZ-4157 demo 6L)', () => {
   async function renderWithPanel(readOnly: boolean): Promise<void> {
@@ -334,5 +349,30 @@ describe('the exported copy and the board itself (YAZ-3943)', () => {
     })
     void (last().onExportPdf as (svg: string, size: unknown) => void)('<svg/>', { width: 1, height: 2 })
     expect(onExportPdf).toHaveBeenCalledWith('<svg/>', { width: 1, height: 2 })
+  })
+})
+
+/** YAZ-4404 4H and YAZ-4406 4J: the two Settings › Drawings switches reach the engine as props, never as appState. */
+describe('the engine props of the round 1 switches', () => {
+  const mountWith = async (canvasPrefs?: import('@shared/types').CanvasPrefs): Promise<void> => {
+    container ??= document.createElement('div')
+    document.body.appendChild(container)
+    root ??= createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" canvasPrefs={canvasPrefs} onSnapshot={() => undefined} onFailed={() => undefined} />)
+    })
+  }
+
+  it('both are on by default; each Off reaches the engine at once, and neither goes into the initial appState', async () => {
+    const { DEFAULT_CANVAS_PREFS } = await import('@shared/types')
+    await mountWith(undefined)
+    expect(last()).toMatchObject({ fillSetsTextColor: true, newShapesMatchZoom: true })
+    const appState = (last().initialData as { appState: Record<string, unknown> }).appState
+    expect(appState).not.toHaveProperty('fillSetsTextColor')
+    expect(appState).not.toHaveProperty('newShapesMatchZoom')
+    await mountWith({ ...DEFAULT_CANVAS_PREFS, fillSetsTextColor: false })
+    expect(last()).toMatchObject({ fillSetsTextColor: false, newShapesMatchZoom: true })
+    await mountWith({ ...DEFAULT_CANVAS_PREFS, fillSetsTextColor: false, newShapesMatchZoom: false })
+    expect(last()).toMatchObject({ fillSetsTextColor: false, newShapesMatchZoom: false })
   })
 })

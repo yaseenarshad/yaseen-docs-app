@@ -16,3 +16,12 @@ describe('the head buttons of a calendar\'s All notes (YAZ-4412)', () => {
     }
   })
 })
+
+describe('a read-only cell note (YAZ-4433, D30)', () => {
+  it('its empty time block and its lines show the default cursor in a preview and in a note that keeps its caret (`data-read-only`)', () => {
+    const rules = [...tableCss.replace(/\/\*.*?\*\//gs, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.trim(), body }))
+    const rule = rules.find(({ selector }) => selector === ".milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) :is(.cell-note-time-empty, .cell-note-block__line)")
+    expect(rule).toBeDefined()
+    expect(rule!.body).toMatch(/cursor:\s*default/)
+  })
+})

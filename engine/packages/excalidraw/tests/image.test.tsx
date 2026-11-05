@@ -83,18 +83,24 @@ describe("image insertion", () => {
   const setup = () =>
     setupImageTest([DEER_IMAGE_DIMENSIONS, SMILEY_IMAGE_DIMENSIONS]);
 
+  // YAZ-4277: in any order. The mock gives each new <img> the next size of
+  // its list, and the two files load at the same time: under load the second
+  // file made its <img> first and took the deer's size, so the boxes swapped.
   const assert = async () => {
     await waitFor(() => {
-      expect(h.elements).toEqual([
-        expect.objectContaining({
-          ...INITIALIZED_IMAGE_PROPS,
-          ...DEER_IMAGE_DIMENSIONS,
-        }),
-        expect.objectContaining({
-          ...INITIALIZED_IMAGE_PROPS,
-          ...SMILEY_IMAGE_DIMENSIONS,
-        }),
-      ]);
+      expect(h.elements).toHaveLength(2);
+      expect(h.elements).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            ...INITIALIZED_IMAGE_PROPS,
+            ...DEER_IMAGE_DIMENSIONS,
+          }),
+          expect.objectContaining({
+            ...INITIALIZED_IMAGE_PROPS,
+            ...SMILEY_IMAGE_DIMENSIONS,
+          }),
+        ]),
+      );
     });
     // Not placed on top of each other
     const dimensionsSet = new Set(h.elements.map((el) => `${el.x}-${el.y}`));

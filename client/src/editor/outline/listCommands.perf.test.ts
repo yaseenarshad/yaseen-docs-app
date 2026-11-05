@@ -18,7 +18,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { undo } from '@milkdown/kit/prose/history'
 import type { Transaction } from '@milkdown/kit/prose/state'
-import { median } from '../../test-perf'
+import { budgetMs, median } from '../../test-perf'
 import { setFoldingOn } from './foldingSwitch'
 import { endOf, mount, posOf, pressKey, select, unmountAll } from '../marks/markTestKit'
 
@@ -66,8 +66,8 @@ describe('outliner joins next to a fold', () => {
   ] as const)('perf smoke: %s fold hiding 2,000 lines, %s: the join takes under 5 ms, the whole press under 40 ms', async (kind, key, markdown) => {
     const [own, whole] = await timeJoin(markdown, key)
     console.log(`outliner join perf: ${kind} fold, ${HIDDEN} hidden lines, ${key}: join ${own.toFixed(2)} ms, whole press ${whole.toFixed(2)} ms (medians of 10)`)
-    expect(own).toBeLessThan(5)
-    expect(whole).toBeLessThan(WHOLE_PRESS_BUDGET)
+    expect(own).toBeLessThan(budgetMs(5))
+    expect(whole).toBeLessThan(budgetMs(WHOLE_PRESS_BUDGET))
   })
 })
 
@@ -93,7 +93,7 @@ describe('typing next to a saved heading fold (YAZ-4119 fix 6)', () => {
     const on = await timeTyping(true)
     const off = await timeTyping(false)
     console.log(`heading fold typing perf: ${HIDDEN} hidden lines, one letter: folding on ${on.toFixed(2)} ms, folding off ${off.toFixed(2)} ms (medians of 10)`)
-    expect(on).toBeLessThan(WHOLE_PRESS_BUDGET)
-    expect(off).toBeLessThan(WHOLE_PRESS_BUDGET)
+    expect(on).toBeLessThan(budgetMs(WHOLE_PRESS_BUDGET))
+    expect(off).toBeLessThan(budgetMs(WHOLE_PRESS_BUDGET))
   })
 })

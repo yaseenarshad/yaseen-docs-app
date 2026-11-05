@@ -1,4 +1,4 @@
-import { GITHUB_FILE_WARN_BYTES, type BoardMeta, type NewBoardPictures } from './types'
+import { FOLD_ARROW_MODES, GITHUB_FILE_WARN_BYTES, type BoardMeta, type FoldArrowMode, type NewBoardPictures } from './types'
 import { isFiniteNumber, isRecord } from './guards'
 
 /**
@@ -407,6 +407,34 @@ export function withHoverLinks(scene: Record<string, unknown>, on: boolean, born
   const { [HOVER_LINKS_KEY]: _old, createdAt, updatedAt, ...extras } = isRecord(own) ? own : {}
   const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }
   return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...(on ? {} : { [HOVER_LINKS_KEY]: false }) }, HOVER_LINKS_KEY, at), ...rest }
+}
+
+// ---------- Fold arrows, per board (YAZ-4277 D5) ----------
+
+/**
+ * The `yaseendraw` block key of the board's "Fold arrows": `"foldArrows": "hover"`, `"always"` or `"off"` (YAZ-4277
+ * D18: no folding on this board; the saved folds stay in the file) overrides the app's "Fold arrows on open bullets".
+ * No key: the app setting.
+ */
+export const FOLD_ARROWS_KEY = 'foldArrows'
+
+/** The board's own fold arrow mode, or null for the app setting (also for a value the app does not know). */
+export function boardFoldArrowsOf(block: unknown): FoldArrowMode | null {
+  const value = isRecord(block) ? block[FOLD_ARROWS_KEY] : undefined
+  return typeof value === 'string' && (FOLD_ARROW_MODES as readonly string[]).includes(value) ? (value as FoldArrowMode) : null
+}
+
+/**
+ * The scene with its fold arrow mode (`null`: the app setting); the SAME object when it already is. The rule of
+ * `withHoverLinks`: the block comes back first, a block with no dates gets `bornAt`, every other key stays, and the
+ * switch records `at` as its change time (1E: the newest change wins a two-Mac merge).
+ */
+export function withBoardFoldArrows(scene: Record<string, unknown>, value: FoldArrowMode | null, bornAt: number, at = Date.now()): Record<string, unknown> {
+  const { [BOARD_META_KEY]: own, ...rest } = scene
+  if (boardFoldArrowsOf(own) === value && (value !== null || !(isRecord(own) && FOLD_ARROWS_KEY in own))) return scene
+  const { [FOLD_ARROWS_KEY]: _old, createdAt, updatedAt, ...extras } = isRecord(own) ? own : {}
+  const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }
+  return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...(value === null ? {} : { [FOLD_ARROWS_KEY]: value }) }, FOLD_ARROWS_KEY, at), ...rest }
 }
 
 /** One picture inside a board: the shape the engine's `addFiles` reads (it keys on `id`). */

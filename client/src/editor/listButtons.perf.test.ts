@@ -8,10 +8,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Transaction } from '@milkdown/kit/prose/state'
-import { median } from '../test-perf'
+import { budgetMs, median } from '../test-perf'
 import { allLinesAre, toggleListKind, turnIntoText } from './listButtons'
 import { endOf, mount, posOf, pressKey, select, unmountAll } from './marks/markTestKit'
-import { hasPanelColour } from './highlightPanel'
+import { panelColour } from './highlightPanel'
 import { highlightSchema, QUICK_HIGHLIGHTS, rangeHasHighlight } from './marks/highlight'
 
 afterEach(unmountAll)
@@ -49,7 +49,7 @@ async function highlightCheck(markdown: string, first: string, last: string, fol
     const [state, type] = crepe.editor.action((ctx) => [ctx.get(editorViewCtx).state, highlightSchema.type(ctx)] as const)
     const start = performance.now()
     for (const color of [null, ...QUICK_HIGHLIGHTS]) rangeHasHighlight(state, type, color)
-    hasPanelColour(state, type)
+    panelColour(state, type)
     runs.push(performance.now() - start)
   }
   return [median(runs), Math.max(...runs)]
@@ -59,13 +59,13 @@ describe('listButtons', () => {
   it('perf smoke: the four lit checks over 1,000 folded parents (5,000 lines) stay inside a frame', async () => {
     const [median, worst] = await litCheck(OUTLINE, 'P0', `P${PARENTS - 1}`, true)
     console.log(`listButtons perf: folded bullets, ${PARENTS * 5} lines, median ${median.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 10`)
-    expect(median).toBeLessThan(10)
+    expect(median).toBeLessThan(budgetMs(10))
   })
 
   it('perf smoke: the same over 5,000 plain lines', async () => {
     const [median, worst] = await litCheck(PLAIN, 'L0', `L${PARENTS * 5 - 1}`, false)
     console.log(`listButtons perf: plain, ${PARENTS * 5} lines, median ${median.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 10`)
-    expect(median).toBeLessThan(10)
+    expect(median).toBeLessThan(budgetMs(10))
   })
 
   // A click is one transaction of about ONE step per line: lines side by side change as one run (a wrap round the
@@ -112,6 +112,6 @@ describe('listButtons', () => {
   ] as const)('perf smoke: the highlight buttons\' and the ▾\'s lit checks over %s, everything selected, stay inside a frame', async (name, markdown, last, fold) => {
     const [median, worst] = await highlightCheck(markdown, 'top', last, fold)
     console.log(`listButtons perf: highlight checks, ${name}, median ${median.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 10`)
-    expect(median).toBeLessThan(10)
+    expect(median).toBeLessThan(budgetMs(10))
   })
 })

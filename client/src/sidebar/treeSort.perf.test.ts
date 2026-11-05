@@ -7,7 +7,7 @@ import { fileCandidates, searchRows } from '../search/searchCandidates'
 import { filterTest, timesByPath, timeStart } from '../search/searchFilter'
 import { searchTree } from '../search/searchTree'
 import { sortLevel, timeOf, withMtime } from './treeSort'
-import { timeMedian } from '../test-perf'
+import { budgetMs, timeMedian } from '../test-perf'
 
 // 100 folders × 10 subfolders × 10 notes = 10,000 notes, each with its own time; plus a level of 108 rows, the largest one a real vault has.
 const note = (path: string, mtime: number): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime, kind: 'markdown' })
@@ -43,7 +43,7 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     const level = Array.from({ length: 108 }, (_, i) => note(`/v/Phase ${(i * 37) % 108}.md`, i))
     sortLevel(level, { by: 'name', reverse: false }, label)
     const { median } = timeMedian(100, (i) => sortLevel(level, { by: 'name', reverse: i % 2 === 1 }, label))
-    expect(median).toBeLessThan(1)
+    expect(median).toBeLessThan(budgetMs(1))
   })
 
   it('every level of 10,000 notes, fully open, sorts by Last updated in under 50 ms — the folder times come once per tree', () => {
@@ -55,14 +55,14 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     sortAll(nodes, { by: 'updated', reverse: true })
     const warm = performance.now() - t1
     console.log(`sortAll 10k: cold ${cold.toFixed(1)} ms, warm ${warm.toFixed(1)} ms`)
-    expect(cold).toBeLessThan(50)
+    expect(cold).toBeLessThan(budgetMs(50))
   })
 
   it('a save patches one time into 10,000 notes in under 1 ms', () => {
     let trees: ReadonlyMap<string, TreeResponse> = new Map([['/v', { root: '/v', tree: tree() } as TreeResponse]])
     const { median: each, worst } = timeMedian(100, (i) => (trees = withMtime(trees, '/v', `/v/Folder ${i}/Sub 9/Note 9.md`, 20_000 + i)))
     console.log(`withMtime 10k: median ${(each * 1000).toFixed(0)} µs per save, worst ${(worst * 1000).toFixed(0)} µs of 100`)
-    expect(each).toBeLessThan(1)
+    expect(each).toBeLessThan(budgetMs(1))
   })
 
   it('a keystroke on Search (YAZ-3511): 50 matches cut from 10,000 notes, sorted by Last updated, each row\'s date, in under 2 ms', () => {
@@ -84,7 +84,7 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     expect(keystroke(0)).toBeGreaterThanOrEqual(50)
     const { median, worst } = timeMedian(100, keystroke)
     console.log(`search keystroke, 50 of 10k by Last updated: median ${(median * 1000).toFixed(0)} µs, worst ${(worst * 1000).toFixed(0)} µs of 100`)
-    expect(median).toBeLessThan(2)
+    expect(median).toBeLessThan(budgetMs(2))
   })
 
   it('a keystroke on Search under Best match (YAZ-3511 D12): 50 matches cut from 10,000 notes, each folder scored by its best match, in under 2 ms', () => {
@@ -108,7 +108,7 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     expect(keystroke(0)).toBeGreaterThanOrEqual(50)
     const { median, worst } = timeMedian(100, keystroke)
     console.log(`search keystroke, 50 of 10k by Best match: median ${(median * 1000).toFixed(0)} µs, worst ${(worst * 1000).toFixed(0)} µs of 100`)
-    expect(median).toBeLessThan(2)
+    expect(median).toBeLessThan(budgetMs(2))
   })
 
   // 10,000 candidates, a third of them PDFs, with each row's time (a filter's whole input, D16).
@@ -129,7 +129,7 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     const queries = ['n', 'no', 'not', 'note', 'note 1', 'note 2']
     const { median, worst } = timeMedian(60, (i) => searchRows(kept, queries[i % queries.length]).length)
     console.log(`search keystroke with PDFs on, 3k of 10k kept: median ${(median * 1000).toFixed(0)} µs, worst ${(worst * 1000).toFixed(0)} µs of 60`)
-    expect(median).toBeLessThan(2)
+    expect(median).toBeLessThan(budgetMs(2))
   })
 
   it('a filter pick (YAZ-3511 D16): each row\'s time over 11,100 rows and the filter over 10,000 candidates, once per pick, not per keystroke', () => {
@@ -142,6 +142,6 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     expect(pick()).toBe(0) // the fixture's times are from 1970
     const { median, worst } = timeMedian(20, pick)
     console.log(`filter pick, 10k candidates: median ${median.toFixed(2)} ms, worst ${worst.toFixed(2)} ms of 20`)
-    expect(median).toBeLessThan(16) // one frame, once per pick or per save while a time range is on
+    expect(median).toBeLessThan(budgetMs(16)) // one frame, once per pick or per save while a time range is on
   })
 })

@@ -147,6 +147,8 @@ export type ActionName =
   | "wrapTextInContainer"
   | "commandPalette"
   | "autoResize"
+  | "foldTextBoxes"
+  | "unfoldTextBoxes"
   | "elementStats"
   | "searchMenu"
   | "copyElementLink"

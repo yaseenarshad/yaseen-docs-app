@@ -62,14 +62,19 @@
   --text-secondary-color: var(--color-gray-50);
 }
 
-/* A tile's picture sits on a chequerboard: these are transparent graphics, and a flat white tile
-   would hide a white icon. One board, one square size. */
-.image-studio__preview {
+/* A tile's picture sits on a chequerboard: these are transparent graphics. One board, one square size, for the
+   grid tiles and the save step's picture alike. */
+.image-studio__preview,
+.image-studio__naming-preview {
   align-items: center;
-  /* YAZ-4348 demo: a real chequerboard (two offset layers, not the half pattern that drew a zigzag), and faint:
-     its squares are the panel's own text colour at 6 %, so it follows the theme instead of a light grey that
-     shouted on a dark board. */
-  --image-studio-check: color-mix(in srgb, var(--text-primary-color) 6%, transparent);
+  /* YAZ-4348 demo: a real chequerboard (two offset layers, not the half pattern that drew a zigzag). YAZ-4443 (round
+     2, "the background still adds some noise"): very faint, the panel's text colour at 3 %, just enough to say
+     "transparent". */
+  --image-studio-check: color-mix(in srgb, var(--text-primary-color) 3%, transparent);
+  /* YAZ-4443: the two tiles a picture can get (`lib/pictureTone.tsx` measures it). In each theme one of them is the
+     panel itself, so a picture that already reads on the theme's tile keeps today's look. */
+  --picture-tile-light: var(--island-bg-color);
+  --picture-tile-dark: #232329;
   background-color: var(--island-bg-color);
   background-image:
     linear-gradient(45deg, var(--image-studio-check) 25%, transparent 25%, transparent 75%, var(--image-studio-check) 75%),
@@ -80,6 +85,27 @@
   justify-content: center;
   overflow: hidden;
   position: relative;
+}
+
+.excalidraw.theme--dark .image-studio__preview,
+.excalidraw.theme--dark .image-studio__naming-preview {
+  --picture-tile-light: #e4e4e9;
+  --picture-tile-dark: var(--island-bg-color);
+}
+
+/* YAZ-4443 ("Auto per picture"): a dark picture (black line art) gets the light tile, a light picture (a white icon)
+   the dark one; each tile's check is equally faint. A mid picture, or one that could not be measured, keeps the
+   theme's tile above. */
+.image-studio__preview.is-light-tile,
+.image-studio__naming-preview.is-light-tile {
+  --image-studio-check: rgb(0 0 0 / 3%);
+  background-color: var(--picture-tile-light);
+}
+
+.image-studio__preview.is-dark-tile,
+.image-studio__naming-preview.is-dark-tile {
+  --image-studio-check: rgb(255 255 255 / 3%);
+  background-color: var(--picture-tile-dark);
 }
 
 .image-studio__preview img {

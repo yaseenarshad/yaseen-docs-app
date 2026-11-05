@@ -15,7 +15,7 @@ it builds and how to take new Excalidraw changes.
 - `milkdown-plugin-tooltip-7.22.1-yaz2238.*`: `@milkdown/plugin-tooltip` 7.22.1 with the YAZ-2238
   throttled-update fix. Provenance and rebuild: `milkdown-plugin-tooltip-7.22.1-yaz2238.md`.
 - `milkdown-crepe-7.22.1-yaz3550.*`: `@milkdown/crepe` 7.22.1 with the YAZ-3550 slash menu in a list
-  item and its filter keywords. Provenance and rebuild: `milkdown-crepe-7.22.1-yaz3550.md`.
+  item and its filter keywords, and the YAZ-4440 selection toolbar on a ⌘A select all. Provenance and rebuild: `milkdown-crepe-7.22.1-yaz3550.md`.
 
 Each ships as a `.tgz`, the readable `.patch` it was built from, and an `.md`. All are installed
 through the root `package.json` (`file:` devDependencies plus `overrides`, so every Milkdown package

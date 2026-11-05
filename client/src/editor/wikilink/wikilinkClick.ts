@@ -109,8 +109,12 @@ export function wikilinkMatchAt(doc: ProseNode, pos: number): { from: number; to
   return found
 }
 
-/** How a link opens: in this tab, a new tab, or a background tab (YAZ-3936). */
+/** How a link opens: in this tab, a new tab, or a background tab (YAZ-3936), or a new window (YAZ-4444). */
 export type LinkFollow = (inner: string, where: GestureAction) => void
+
+/** The door of `where` (YAZ-3936). A new window is the link menu's "Open in ▸ New window" (YAZ-4444); absent → this tab, as a new tab's. */
+export const openerOf = (nav: WikilinkNav, where: GestureAction): ((path: string) => void) =>
+  where === 'backgroundTab' ? nav.openBackground : where === 'newTab' ? (nav.openNewTab ?? nav.openCurrent) : where === 'newWindow' ? (nav.openNewWindow ?? nav.openCurrent) : nav.openCurrent
 
 /**
  * Follows the raw `[[inner]]` as an open gesture does: opens it `where` the gesture says; an unresolved link is
@@ -123,7 +127,7 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
     const page = linkPageName(inner)
     if (page === '') return // same-file [[#h]] — the heading jump is GRO-2239, not this unit
     const background = where === 'backgroundTab'
-    const open = background ? nav.openBackground : where === 'newTab' ? (nav.openNewTab ?? nav.openCurrent) : nav.openCurrent
+    const open = openerOf(nav, where)
     const viewSource = viewOnly
     const viewTarget = viewSource === undefined ? null : viewOnlyLinkTarget(inner)
     if (viewTarget !== null && viewSource !== undefined) {

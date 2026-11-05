@@ -65,8 +65,9 @@ describe('numbers take the bullets\' marker colour (YAZ-3727 D7)', () => {
   })
 
   it('threading sets the variable on the label wrapper that holds the number', async () => {
+    // The page's own "Bullet threading" on its host (YAZ-4432); the app default is off.
     const app = document.createElement('div')
-    app.className = 'app'
+    app.className = 'editor-host'
     app.dataset.threading = 'on'
     document.body.appendChild(app)
     const crepe = await mount('1. Plan\n   1. deep\n', app)

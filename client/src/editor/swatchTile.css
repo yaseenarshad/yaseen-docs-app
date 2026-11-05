@@ -1,0 +1,155 @@
+/*
+ * The board toolbar's color tiles, in the note's pop-up toolbar and the text box's (YAZ-4445, Yaseen: "can we make
+ * this look the same also so its 1 design language?"). `toolbarButtons.ts` `swatchTile` makes the markup. Each value
+ * below is the engine's own; the engine compiles its SCSS into its own bundle, so they are copied here, once:
+ *  - engine/packages/excalidraw/components/ColorPicker/ColorPicker.scss:
+ *    `.color-picker__button` (--size 1.375rem, --radius 4px, `has-outline` #d9d9d9, hover scale 1.075, `active`: a
+ *    1px outline at -1px), `.color-picker__letter` (0.875rem, 600, #1e1e1e), `--letter-color` (white; a white "A" on
+ *    #1e1e1e), `.color-picker-container--more` (0.25rem between tiles, 0.125rem before the ▾),
+ *    `.color-picker__more-popover` (its rows).
+ *  - engine/packages/excalidraw/css/styles.scss `.text-toolbar-more`: the ▾ (1rem wide, 0.7rem, a 3px bar of a color
+ *    of its own menu); engine/packages/excalidraw/css/theme.scss `--theme-filter`: a white tile in dark mode.
+ * `swatchTile.test.ts` reads those engine files and fails when a value here is no longer the engine's.
+ * The lit ring is the note's accent, as the highlight ▾ panel's (app.css `.highlight-panel__swatch.active`).
+ */
+:root {
+  --swatch-tile-size: 1.375rem;
+  --swatch-tile-radius: 4px;
+  --swatch-tile-gap: 0.25rem;
+  --swatch-tile-more-gap: 0.125rem;
+  --swatch-tile-outline: #d9d9d9;
+  --swatch-tile-letter-size: 0.875rem;
+  --swatch-tile-letter-weight: 600;
+  --swatch-tile-dark: #1e1e1e;
+  --swatch-tile-hover-scale: 1.075;
+  --swatch-more-width: 1rem;
+  --swatch-more-size: 0.7rem;
+  --swatch-theme-filter: invert(93%) hue-rotate(180deg);
+}
+
+/* A tile: its color (`--swatch-color`) with a faint inset outline, and an "A". */
+.swatch-tile {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--swatch-tile-size);
+  height: var(--swatch-tile-size);
+  border-radius: var(--swatch-tile-radius);
+  background-color: var(--swatch-color);
+  box-shadow: inset 0 0 0 1px var(--swatch-tile-outline);
+  pointer-events: none;
+}
+.swatch-tile__letter {
+  font-family: inherit;
+  font-size: var(--swatch-tile-letter-size);
+  font-weight: var(--swatch-tile-letter-weight);
+  line-height: 1;
+  color: var(--swatch-tile-dark);
+}
+/* Text color: the "A" in the color, on white; a white "A" on a dark tile. In dark mode the board turns its tiles with
+   its theme filter, and the canvas its letters: the same filter here. */
+.swatch-tile--color {
+  background-color: #ffffff;
+}
+.swatch-tile--color .swatch-tile__letter {
+  color: var(--swatch-color);
+}
+.swatch-tile--color.is-canonical-white {
+  background-color: var(--swatch-tile-dark);
+}
+[data-theme='dark'] .swatch-tile--color {
+  filter: var(--swatch-theme-filter);
+}
+/* Highlight: the "A" in the note's text color on the wash, so it reads as highlighted text does in each theme. */
+.swatch-tile--on-color .swatch-tile__letter {
+  color: var(--fg, var(--swatch-tile-dark));
+}
+[data-theme='dark'] .swatch-tile--on-color {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 15%, var(--bg));
+}
+
+/* A button that holds a tile: the tile's size, 0.25rem apart, no background of its own; it grows a little on hover,
+   and a lit one has the 1px ring just outside it. In the pop-up toolbar (Crepe's buttons) and in a ▾ panel. */
+.milkdown .milkdown-toolbar .toolbar-item:has(.swatch-tile),
+.swatch-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  box-sizing: border-box;
+  width: var(--swatch-tile-size);
+  height: var(--swatch-tile-size);
+  margin: 0 calc(var(--swatch-tile-gap) / 2);
+  padding: 0;
+  border: 0;
+  border-radius: var(--swatch-tile-radius);
+  background: transparent;
+  cursor: pointer;
+}
+.swatch-button {
+  margin: 0;
+}
+.milkdown .milkdown-toolbar .toolbar-item:has(.swatch-tile):hover,
+.milkdown .milkdown-toolbar .toolbar-item:has(.swatch-tile):active {
+  background: transparent;
+}
+.milkdown .milkdown-toolbar .toolbar-item:has(.swatch-tile):hover:not(.active),
+.swatch-button:hover:not(.active) {
+  transform: scale(var(--swatch-tile-hover-scale));
+}
+.milkdown .milkdown-toolbar .toolbar-item.active:has(.swatch-tile)::after,
+.swatch-button.active::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: var(--swatch-tile-radius);
+  box-shadow: 0 0 0 1px var(--accent);
+  pointer-events: none;
+}
+
+/* The ▾ glyph, as the board's; centered where it stands in for an icon (Settings › Selection toolbar). */
+.swatch-more {
+  font-size: var(--swatch-more-size);
+  line-height: 1;
+}
+.toolbar-arrange__svg:has(> .swatch-more) {
+  display: grid;
+  place-items: center;
+}
+
+/* The ▾ after the tiles: the board's glyph, 1rem wide, 0.125rem after the last tile; the hover background while open.
+   Lit, it has a bar of the selection's color from its menu (`toolbarHost.ts` `showMoreColour`). */
+.milkdown .milkdown-toolbar .toolbar-item:has(.swatch-more) {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--swatch-more-width);
+  padding: 0;
+  margin-left: calc(var(--swatch-tile-more-gap) - var(--swatch-tile-gap) / 2);
+  font-size: var(--swatch-more-size);
+  color: var(--crepe-color-on-background, var(--fg));
+}
+.milkdown .milkdown-toolbar .toolbar-item:has(.swatch-more):active,
+.milkdown .milkdown-toolbar .toolbar-item[aria-expanded='true']:has(.swatch-more) {
+  background: var(--crepe-color-hover);
+}
+.milkdown .milkdown-toolbar .toolbar-item.active:has(.swatch-more)::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 3px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--more-colour, currentColor);
+}
+.milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] {
+  --more-colour: var(--highlight-more-colour);
+}
+.milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='text-color-more'] {
+  --more-colour: var(--text-color-more-colour);
+}

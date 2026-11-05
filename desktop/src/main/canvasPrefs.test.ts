@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CANVAS_PREFS, LASER_COLORS, LASER_SIZES, LASER_TRAIL_MODES, type CanvasPrefs } from '@shared/types'
-import { appStateToPrefs, CANVAS_PREF_KEYS, changedPrefKeys, isCanvasPrefs, prefsEqual, prefsToAppState, sanitizeCanvasPrefs, type EngineAppStateSlice } from '@shared/canvasPrefs'
+import { appStateToPrefs, CANVAS_PREF_KEYS, changedPrefKeys, foldArrowsOf, isCanvasPrefs, prefsEqual, prefsToAppState, sanitizeCanvasPrefs, type EngineAppStateSlice } from '@shared/canvasPrefs'
 
 const prefs = (over: Partial<CanvasPrefs> = {}): CanvasPrefs => ({ ...DEFAULT_CANVAS_PREFS, ...over })
 
@@ -28,12 +28,23 @@ describe('DEFAULT_CANVAS_PREFS', () => {
       laserTrailMode: 'fade',
       laserColor: '#ff0000',
       laserSize: 'S',
+      // YAZ-4277 D5, D7: the fold arrows of text boxes.
+      foldArrowsOpen: 'hover',
+      foldArrowSize: 100,
+      foldArrowThickness: 'thick',
+      foldArrowMinSize: 14,
+      // YAZ-4277 D14: new shapes start with the default style.
+      newElementStyle: 'default',
+      // YAZ-4404 (D21): the text color follows the fill; YAZ-4406 (D24): new shapes match the zoom. Both on.
+      fillSetsTextColor: true,
+      newShapesMatchZoom: true,
     })
   })
 
-  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds and the new text size and wrap margin (YAZ-4247), and no more', () => {
-    expect(CANVAS_PREF_KEYS).toHaveLength(19)
-    expect(CANVAS_PREF_KEYS.slice(-3)).toEqual(['laserTrailMode', 'laserColor', 'laserSize'])
+  it('is the FOURTEEN keys D9 names plus the three laser keys 🔒 YAZ-1989 D1 adds, the new text size and wrap margin (YAZ-4247), the four fold arrow keys, "New shapes and text", "Text color follows the fill" and "New shapes match the zoom" (YAZ-4277), and no more', () => {
+    expect(CANVAS_PREF_KEYS).toHaveLength(26)
+    expect(CANVAS_PREF_KEYS.slice(-10, -7)).toEqual(['laserTrailMode', 'laserColor', 'laserSize'])
+    expect(CANVAS_PREF_KEYS.slice(-7)).toEqual(['foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize', 'newElementStyle', 'fillSetsTextColor', 'newShapesMatchZoom'])
     // The round-4 amendment removed the properties-toolbar pref: the toolbar mode is a constant.
     expect(CANVAS_PREF_KEYS).not.toContain('propertiesToolbar')
   })
@@ -164,8 +175,11 @@ describe('appStateToPrefs', () => {
     laserSize: 'L',
   }
 
+  // "Keep the last style" (YAZ-4277 D14): a pick on the board writes the new-element defaults back, as before D14.
+  const keep = prefs({ newElementStyle: 'keep' })
+
   it('reads every key back off the engine', () => {
-    expect(appStateToPrefs(full, DEFAULT_CANVAS_PREFS)).toEqual({
+    expect(appStateToPrefs(full, keep)).toEqual({
       gridModeEnabled: true,
       objectsSnapModeEnabled: true,
       snapToMidpoints: false,
@@ -186,12 +200,28 @@ describe('appStateToPrefs', () => {
       laserTrailMode: 'sticky',
       laserColor: '#2979ff',
       laserSize: 'L',
+      // Not appState (YAZ-4277): the stored ones.
+      foldArrowsOpen: 'hover',
+      foldArrowSize: 100,
+      foldArrowThickness: 'thick',
+      foldArrowMinSize: 14,
+      newElementStyle: 'keep',
+      fillSetsTextColor: true,
+      newShapesMatchZoom: true,
     })
   })
 
+  it('YAZ-4277 D14: in "Start with the default style" a pick never writes the new-element defaults back', () => {
+    const seen = appStateToPrefs(full, DEFAULT_CANVAS_PREFS)
+    for (const k of ['writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'defaultRoughness', 'defaultTextAlign'] as const) expect(seen[k], k).toBe(DEFAULT_CANVAS_PREFS[k])
+    // the other keys still follow the board
+    expect(seen.gridModeEnabled).toBe(true)
+    expect(seen.laserSize).toBe('L')
+  })
+
   it('round-trips through prefsToAppState', () => {
-    const start = prefs({ gridModeEnabled: true, selectOn: 'overlap', toolLock: true, writingStrokeWidth: 0.75, defaultFontFamily: 5, defaultRoughness: 1, defaultTextAlign: 'right', laserTrailMode: 'hold', laserColor: '#d500f9', laserSize: 'M' })
-    const back = appStateToPrefs({ ...(prefsToAppState(start) as EngineAppStateSlice), frameRendering: { outline: start.framesVisible, name: start.framesVisible } }, DEFAULT_CANVAS_PREFS)
+    const start = prefs({ newElementStyle: 'keep', gridModeEnabled: true, selectOn: 'overlap', toolLock: true, writingStrokeWidth: 0.75, defaultFontFamily: 5, defaultRoughness: 1, defaultTextAlign: 'right', laserTrailMode: 'hold', laserColor: '#d500f9', laserSize: 'M' })
+    const back = appStateToPrefs({ ...(prefsToAppState(start) as EngineAppStateSlice), frameRendering: { outline: start.framesVisible, name: start.framesVisible } }, keep)
     expect(back).toEqual(start)
   })
 
@@ -229,4 +259,60 @@ describe('prefsEqual / changedPrefKeys (the anti-ping-pong rule)', () => {
     expect(changedPrefKeys(prefs(), prefs())).toEqual([])
     expect(changedPrefKeys(prefs(), prefs({ defaultTextAlign: 'left', gridModeEnabled: true }))).toEqual(['gridModeEnabled', 'defaultTextAlign'])
   })
+})
+
+describe('foldArrowsOf (YAZ-4277 D5, D7)', () => {
+  it('the board\'s own mode wins over the app\'s; the size rows are the app\'s', () => {
+    const app = prefs({ foldArrowsOpen: 'hover', foldArrowSize: 150, foldArrowThickness: 'thin', foldArrowMinSize: 20 })
+    expect(foldArrowsOf(app, undefined)).toEqual({ openArrows: 'hover', size: 150, thickness: 'thin', minScreenSize: 20 })
+    expect(foldArrowsOf(app, 'always')).toEqual({ openArrows: 'always', size: 150, thickness: 'thin', minScreenSize: 20 })
+    expect(foldArrowsOf(prefs({ foldArrowsOpen: 'always' }), 'hover').openArrows).toBe('hover')
+  })
+
+  it('each row saves and reloads; a bad value falls back to its default alone', () => {
+    const saved = prefs({ foldArrowsOpen: 'always', foldArrowSize: 200, foldArrowThickness: 'normal', foldArrowMinSize: 30 })
+    expect(sanitizeCanvasPrefs(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+    expect(isCanvasPrefs(saved)).toBe(true)
+    const junk = { foldArrowsOpen: ['never', 1], foldArrowSize: [40, 310, 99.5, '100'], foldArrowThickness: ['bold', null], foldArrowMinSize: [5, 49, 14.5] }
+    for (const [field, values] of Object.entries(junk)) {
+      for (const value of values) {
+        expect(sanitizeCanvasPrefs({ ...saved, [field]: value }), `${field}: ${String(value)}`).toEqual({ ...saved, [field]: DEFAULT_CANVAS_PREFS[field as keyof CanvasPrefs] })
+      }
+    }
+  })
+})
+
+describe('YAZ-4401 2E: folding off is a fourth fold arrow mode', () => {
+  it("'off' saves and reloads, at the app and as a board's own mode; the board's mode still wins", () => {
+    const off = prefs({ foldArrowsOpen: 'off' })
+    expect(isCanvasPrefs(off)).toBe(true)
+    expect(sanitizeCanvasPrefs(JSON.parse(JSON.stringify(off)))).toEqual(off)
+    expect(foldArrowsOf(off, undefined).openArrows).toBe('off')
+    expect(foldArrowsOf(prefs(), 'off').openArrows).toBe('off')
+    expect(foldArrowsOf(off, 'hover').openArrows).toBe('hover')
+    // still never appState: the engine's `foldArrows` prop
+    expect(prefsToAppState(off, ['foldArrowsOpen'])).toEqual({})
+  })
+})
+
+describe('YAZ-4404 4H "Text color follows the fill" and YAZ-4406 4J "New shapes match the zoom"', () => {
+  for (const key of ['fillSetsTextColor', 'newShapesMatchZoom'] as const) {
+    it(`${key}: on by default, a boolean only, saved off and reloaded off, and never appState (the engine's prop)`, () => {
+      expect(DEFAULT_CANVAS_PREFS[key]).toBe(true)
+      const off = prefs({ [key]: false })
+      expect(isCanvasPrefs(off)).toBe(true)
+      expect(sanitizeCanvasPrefs(JSON.parse(JSON.stringify(off)))).toEqual(off)
+      for (const bad of ['true', 1, null]) {
+        expect(isCanvasPrefs({ ...off, [key]: bad }), String(bad)).toBe(false)
+        expect(sanitizeCanvasPrefs({ ...off, [key]: bad })[key], String(bad)).toBe(true)
+      }
+      // a store from before the key existed loads whole, the switch on
+      const { [key]: _drop, ...before } = off
+      expect(sanitizeCanvasPrefs(before)[key]).toBe(true)
+      expect(prefsToAppState(off, [key])).toEqual({})
+      expect(Object.keys(prefsToAppState(off))).not.toContain(key)
+      // the engine never answers it: a board's appState keeps the stored value
+      expect(appStateToPrefs({ gridModeEnabled: true }, off)[key]).toBe(false)
+    })
+  }
 })

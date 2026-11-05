@@ -2,6 +2,10 @@ import { pointFrom } from "@excalidraw/math";
 
 import { Excalidraw, restoreElements } from "@excalidraw/excalidraw";
 import {
+  DEFAULT_NEW_TEXT_SCREEN_SIZE,
+  setNewTextScreenSize,
+} from "@excalidraw/excalidraw/textCreation";
+import {
   type Bounds,
   KEYS,
   ROUNDNESS,
@@ -254,18 +258,26 @@ describe("generic element", () => {
     });
   });
 
-  it("maps a scaled explicit radius that rounds to zero back to sharp", () => {
+  // YAZ-4408 (4L, D26): a resize that takes the line below 0.5 board px
+  // scales the line and the corner exactly, so the corner stays round
+  it("keeps a scaled explicit radius exact when the line leaves 0.5–100 board px", () => {
     const rectangle = API.createElement({
       type: "rectangle",
       width: 100,
       height: 100,
+      strokeWidth: 2,
       roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 1 },
     });
     API.setElements([rectangle]);
 
     UI.resize(rectangle, "se", [-90, -90]);
 
-    expect(rectangle.roundness).toBeNull();
+    expect(rectangle.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 0.1,
+    });
+    expect(rectangle.strokeWidth).toBe(0.2);
+    expect(rectangle.customData).toEqual({ styleScale: 10 });
   });
 
   it("does not scale explicit rounding for excluded element families", () => {
@@ -862,6 +874,17 @@ describe("arrow element", () => {
 });
 
 describe("text element", () => {
+  // YAZ-4247: a new text is 14 px on screen (it was 130 at zoom 1). A
+  // two-line 14 px text is 35 px tall, under the 40 px (5 × the 8 px handle)
+  // that the side handles need, and the font size keys round 14 × 1.1 to 15.
+  // So these tests make their text at 20 px.
+  beforeEach(() => {
+    setNewTextScreenSize(20);
+  });
+  afterEach(() => {
+    setNewTextScreenSize(DEFAULT_NEW_TEXT_SCREEN_SIZE);
+  });
+
   it("does not jump when resizing starts from a glyph-hugging handle", async () => {
     const text = UI.createElement("text");
     await UI.editText(text, "hello");
@@ -2152,7 +2175,9 @@ describe("getSizeRelativeResizeUpdates", () => {
       ).toEqual({});
     });
 
-    it("normalizes scaled strokeWidth (0.5 floor, 100 cap, 0.1 rounding)", () => {
+    // YAZ-4408 (4L, D26): past 0.5–100 the line scales exactly, and the style
+    // scale keeps the rest of its look in proportion; inside, it rounds
+    it("scales strokeWidth exactly past 0.5–100, and rounds to 0.1 inside", () => {
       const rect = API.createElement({
         type: "rectangle",
         width: 100,
@@ -2162,10 +2187,10 @@ describe("getSizeRelativeResizeUpdates", () => {
       });
       expect(
         getSizeRelativeResizeUpdates(rect, 10, 10, { mode: "single" }),
-      ).toEqual({ strokeWidth: 0.5 });
+      ).toEqual({ strokeWidth: 0.2, customData: { styleScale: 10 } });
       expect(
         getSizeRelativeResizeUpdates(rect, 10000, 10000, { mode: "single" }),
-      ).toEqual({ strokeWidth: 100 });
+      ).toEqual({ strokeWidth: 200, customData: { styleScale: 0.01 } });
       expect(
         getSizeRelativeResizeUpdates(rect, 133, 133, { mode: "single" }),
       ).toEqual({ strokeWidth: 2.7 });
@@ -2242,10 +2267,11 @@ describe("getSizeRelativeResizeUpdates", () => {
     it.each([
       [0.3, 1, 0.3],
       [0.3, 0.5, 0.2],
-      [0.3, 0.1, 0.1],
+      // YAZ-4408 (4L, D26): past the writing range (0.1–100) it is exact
+      [0.3, 0.1, 0.03],
       [0.3, 2, 0.6],
       [2, 0.1, 0.2],
-      [2, 100, 100],
+      [2, 100, 200],
     ])(
       "preserves fine ink when group scaling width %s by %s to %s",
       (width, groupScale, expectedWidth) => {
@@ -2264,8 +2290,10 @@ describe("getSizeRelativeResizeUpdates", () => {
       },
     );
 
+    // YAZ-4408 (4L, D26): no 0.5 floor: the line keeps its look relative to
+    // the shrunk unit, and the style scale keeps its arrowhead and wobble
     it.each(["line", "arrow"] as const)(
-      "keeps the normal width floor for group-shrunk %s elements",
+      "scales a group-shrunk %s's width exactly below the 0.5 floor",
       (type) => {
         const element = createLinearLike(type, 2);
         expect(
@@ -2273,7 +2301,7 @@ describe("getSizeRelativeResizeUpdates", () => {
             mode: "group",
             groupScale: 0.1,
           }),
-        ).toEqual({ strokeWidth: 0.5 });
+        ).toEqual({ strokeWidth: 0.2, customData: { styleScale: 10 } });
       },
     );
 

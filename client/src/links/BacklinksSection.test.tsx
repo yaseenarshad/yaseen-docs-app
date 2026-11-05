@@ -15,11 +15,12 @@ import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../views/engine'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BacklinksSection } from './BacklinksSection'
+import { storage } from '../lib/storage'
 import backlinksCss from './backlinks.css?inline'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn() },
+  api: { readFile: vi.fn(), window: { open: vi.fn(async () => undefined) } },
 }))
 
 // The sidebar's note panel (YAZ-3403): a stand-in that says which note it shows and where it was told to go.
@@ -100,7 +101,7 @@ const header = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.backli
 const notes = (el: HTMLElement) => [...el.querySelectorAll('.backlinks__note')] as HTMLElement[]
 const snippets = (el: HTMLElement) => [...el.querySelectorAll('.backlinks__snippet')] as HTMLElement[]
 
-function click(el: Element, modifiers: { metaKey?: boolean } = {}): void {
+function click(el: Element, modifiers: { metaKey?: boolean; shiftKey?: boolean } = {}): void {
   act(() => void el.dispatchEvent(new MouseEvent('click', { bubbles: true, ...modifiers })))
 }
 
@@ -201,6 +202,20 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     expect(openCurrent).toHaveBeenLastCalledWith(A)
     click(snippets(el)[1], { metaKey: true })
     expect(openBackground).toHaveBeenLastCalledWith(C)
+  })
+
+  it('⇧⌘-click opens the note in a new window, entry and snippet alike (YAZ-4444 D32): no tab', async () => {
+    storage.mirrorRoots(['/vault'])
+    vi.mocked(api.window.open).mockClear()
+    const el = mount()
+    feed(RECORDS)
+    click(header(el)!)
+    await flush()
+    click(notes(el)[1], { metaKey: true, shiftKey: true })
+    click(snippets(el)[0], { metaKey: true, shiftKey: true })
+    expect(vi.mocked(api.window.open).mock.calls).toEqual([[{ root: '/vault', file: C }], [{ root: '/vault', file: A }]])
+    expect(openCurrent).not.toHaveBeenCalled()
+    expect(openBackground).not.toHaveBeenCalled()
   })
 
   it('a failed read leaves the entry standing without snippets — never an error surface', async () => {

@@ -318,6 +318,26 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, codeOutlineLocals: 1 })).toBe(false)
   })
 
+  it('Add panel hover zoom (YAZ-4447, D34): a file from before it reads On; Off survives a restart; junk reads On. A stored Similar icons choice is kept', async () => {
+    const { mediaHoverZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: { ...legacySettings, mediaGroupSimilar: true } }))
+    expect(createStore(file).get().settings).toMatchObject({ mediaHoverZoom: true, mediaGroupSimilar: true })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, mediaHoverZoom: false } }))
+    expect(createStore(file).get().settings.mediaHoverZoom).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, mediaHoverZoom: 'no' }).mediaHoverZoom).toBe(true)
+    expect(isSettings({ ...DEFAULT_SETTINGS, mediaHoverZoom: 1 })).toBe(false)
+  })
+
+  it('Add panel hover size (YAZ-4447 demo round 2): a file from before it reads Medium; Large survives a restart; junk reads Medium', async () => {
+    const { mediaHoverZoomSize: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.mediaHoverZoomSize).toBe('medium')
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, mediaHoverZoomSize: 'large' } }))
+    expect(createStore(file).get().settings.mediaHoverZoomSize).toBe('large')
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, mediaHoverZoomSize: 'huge' }).mediaHoverZoomSize).toBe('medium')
+    expect(isSettings({ ...DEFAULT_SETTINGS, mediaHoverZoomSize: 2 })).toBe(false)
+  })
+
   it('outsideChangeGlow (YAZ-3704 D5): a file from before it reads Until I check it; each value survives a restart; junk reads the default', async () => {
     const { outsideChangeGlow: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     expect(DEFAULT_SETTINGS.outsideChangeGlow).toBe('until-checked')
@@ -539,7 +559,7 @@ describe('createStore: loading', () => {
       }
     }
     // The canvas keys repair inside `canvas`: the bad one falls back, the others stay.
-    const canvasJunk: Record<string, unknown[]> = { newTextScreenSize: [7, 49, 14.5, '14'], newTextWrapMargin: [-1, 601, 12.5, null] }
+    const canvasJunk: Record<string, unknown[]> = { newTextScreenSize: [7, 49, 14.5, '14'], newTextWrapMargin: [-1, 601, 12.5, null], foldArrowsOpen: ['never'], foldArrowSize: [40, 310], foldArrowThickness: ['bold'], foldArrowMinSize: [5, 49], newElementStyle: ['last', 1] }
     for (const [field, values] of Object.entries(canvasJunk)) {
       for (const value of values) {
         await seed(valid({ settings: { ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, gridModeEnabled: true, [field]: value } } }))

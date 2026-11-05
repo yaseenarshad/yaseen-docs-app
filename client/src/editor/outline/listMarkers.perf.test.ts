@@ -10,7 +10,7 @@
  * `listMarkers.ts` header.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { median } from '../../test-perf'
+import { budgetMs, median } from '../../test-perf'
 import { mount, posOf, unmountAll } from '../marks/markTestKit'
 import { listMarkersKey } from './listMarkers'
 
@@ -44,7 +44,7 @@ async function keystroke(note: string, text: string, name: string): Promise<{ me
 
 describe('list markers on a big note', () => {
   it('perf smoke: one keystroke at 6,000 lines, the plugin step takes under 1 ms', async () => {
-    expect((await keystroke(NOTE, 'b 500', '6,000 lines')).median).toBeLessThan(1)
+    expect((await keystroke(NOTE, 'b 500', '6,000 lines')).median).toBeLessThan(budgetMs(1))
   }, 60_000)
 
   it.each([
@@ -52,7 +52,7 @@ describe('list markers on a big note', () => {
     ['a 6,000-item numbered list', FLAT_NUMBERS],
   ])('perf smoke: one keystroke in %s, the plugin step takes under 1 ms', async (name, note) => {
     const { median: mid, worst } = await keystroke(note, 'line 3000', name)
-    expect(mid).toBeLessThan(1)
-    expect(worst).toBeLessThan(20)
+    expect(mid).toBeLessThan(budgetMs(1))
+    expect(worst).toBeLessThan(budgetMs(20))
   }, 60_000)
 })

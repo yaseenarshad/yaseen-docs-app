@@ -13,6 +13,7 @@ import {
   rescalePoints,
   getFontString,
   normalizeVectorStrokeWidth,
+  VECTOR_STROKE_WIDTH,
   WRITING_STROKE_WIDTH,
 } from "@excalidraw/common";
 
@@ -65,6 +66,7 @@ import {
 
 import { isInGroup } from "./groups";
 import { normalizeCornerRadius } from "./utils";
+import { getElementStyleScale } from "./screenScale";
 
 import type { Scene } from "./Scene";
 
@@ -319,6 +321,7 @@ const getScaledElementRoundness = (
   element: ExcalidrawElement,
   nextWidth: number,
   nextHeight: number,
+  exact = false,
 ): ExcalidrawElement["roundness"] => {
   if (
     (element.type !== "rectangle" && element.type !== "image") ||
@@ -333,7 +336,11 @@ const getScaledElementRoundness = (
     return element.roundness;
   }
 
-  const value = normalizeCornerRadius(element.roundness.value * ratio);
+  // a shape at its own style scale keeps the exact radius: whole board px
+  // would square the corner of a shape made at a high zoom
+  const value = exact
+    ? Number((element.roundness.value * ratio).toPrecision(4))
+    : normalizeCornerRadius(element.roundness.value * ratio);
 
   if (value === element.roundness.value) {
     return element.roundness;
@@ -343,8 +350,20 @@ const getScaledElementRoundness = (
 };
 
 export type SizeRelativeResizeUpdates = Partial<
-  Pick<ExcalidrawElement, "roundness" | "strokeWidth">
+  Pick<ExcalidrawElement, "roundness" | "strokeWidth" | "customData">
 >;
+
+/** `customData` with the style scale `scale`; the field goes at scale 1. */
+const withResizedStyleScale = (
+  customData: ExcalidrawElement["customData"],
+  scale: number,
+): ExcalidrawElement["customData"] => {
+  const { styleScale: _, ...rest } = customData ?? {};
+  if (Math.abs(scale - 1) < 0.001) {
+    return customData && Object.keys(rest).length ? rest : undefined;
+  }
+  return { ...rest, styleScale: Number(scale.toPrecision(4)) };
+};
 
 export type SizeRelativeResizeOptions = {
   /** `"single"` for a single-element resize, `"group"` for multi/group. */
@@ -405,24 +424,51 @@ export const getSizeRelativeResizeUpdates = (
 ): SizeRelativeResizeUpdates => {
   const updates: Mutable<SizeRelativeResizeUpdates> = {};
 
+  const strokeRatio =
+    origElement.strokeWidth > 0
+      ? getStrokeWidthScaleRatio(origElement, nextWidth, nextHeight, opts)
+      : null;
+  const strokeSettings = isFreeDrawElement(origElement)
+    ? WRITING_STROKE_WIDTH
+    : VECTOR_STROKE_WIDTH;
+  const styleScale = getElementStyleScale(origElement);
+  const exactStroke =
+    strokeRatio === null ? null : origElement.strokeWidth * strokeRatio;
+  // YAZ-4277 demo: a shape made at another zoom (`customData.styleScale`),
+  // or a resize past the picker's board-px range (0.5 to 100, in tenths),
+  // scales its line, its corner and its own style scale together, so the
+  // border keeps its look relative to the shape at any size and zoom. The
+  // clamp turned a 0.01 px line at 10,000% into 0.5 px (50 px on screen).
+  const scaled =
+    exactStroke !== null &&
+    (styleScale !== 1 ||
+      exactStroke < strokeSettings.min ||
+      exactStroke > strokeSettings.max);
+
   const roundness = getScaledElementRoundness(
     origElement,
     nextWidth,
     nextHeight,
+    scaled || styleScale !== 1,
   );
   if (roundness !== origElement.roundness) {
     updates.roundness = roundness;
   }
 
-  const strokeRatio =
-    origElement.strokeWidth > 0
-      ? getStrokeWidthScaleRatio(origElement, nextWidth, nextHeight, opts)
-      : null;
-  if (strokeRatio !== null) {
-    const strokeWidth = normalizeVectorStrokeWidth(
-      origElement.strokeWidth * strokeRatio,
-      isFreeDrawElement(origElement) ? WRITING_STROKE_WIDTH : undefined,
+  if (scaled && strokeRatio !== null && exactStroke !== null) {
+    const strokeWidth = Number(exactStroke.toPrecision(4));
+    if (strokeWidth !== origElement.strokeWidth) {
+      updates.strokeWidth = strokeWidth;
+    }
+    const customData = withResizedStyleScale(
+      origElement.customData,
+      styleScale / strokeRatio,
     );
+    if (customData !== origElement.customData) {
+      updates.customData = customData;
+    }
+  } else if (exactStroke !== null) {
+    const strokeWidth = normalizeVectorStrokeWidth(exactStroke, strokeSettings);
     if (strokeWidth !== origElement.strokeWidth) {
       updates.strokeWidth = strokeWidth;
     }
@@ -1498,6 +1544,7 @@ export const resizeMultipleElements = (
         fontSize?: ExcalidrawTextElement["fontSize"];
         roundness?: ExcalidrawTextElement["roundness"];
         strokeWidth?: ExcalidrawElement["strokeWidth"];
+        customData?: ExcalidrawElement["customData"];
         scale?: ExcalidrawImageElement["scale"];
         boundTextFontSize?: ExcalidrawTextElement["fontSize"];
         startBinding?: ExcalidrawElbowArrowElement["startBinding"];

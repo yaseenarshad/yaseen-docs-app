@@ -13,8 +13,8 @@
  * preview's ONE broken state (never a crash, `editor/drawing/drawingPreview.ts`). No repair, no
  * partial render: a half-parsed scene would be a lie about what the file holds.
  */
-import type { DrawingFileEntry } from '@shared/types'
-import { BOARD_META_KEY, hoverLinksOff, picturesFolderOf, picturesOut, referencedFileIds } from '@shared/drawingAssets'
+import type { DrawingFileEntry, FoldArrowMode } from '@shared/types'
+import { BOARD_META_KEY, boardFoldArrowsOf, hoverLinksOff, picturesFolderOf, picturesOut, referencedFileIds } from '@shared/drawingAssets'
 import { isRecord } from '@shared/guards'
 import { isDrawingReadOnly } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
@@ -35,14 +35,17 @@ export interface DrawingScene {
   readonly picturesFolder?: string
   /** `"hoverLinks": false` in the block (YAZ-3943 demo 2): the board's link preview on hover is off; absent = on. */
   readonly hoverLinksOff?: boolean
+  /** `"foldArrows"` in the block (YAZ-4277 D5): the board's own fold arrow mode; absent = the app setting. */
+  readonly foldArrows?: FoldArrowMode
 }
 
 /** The scene's switches, each present only when it is not the default: a plain scene keeps the shape it always had. */
-const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true; picturesOut?: true; picturesFolder?: string; hoverLinksOff?: true } => ({
+const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true; picturesOut?: true; picturesFolder?: string; hoverLinksOff?: true; foldArrows?: FoldArrowMode } => ({
   ...(isDrawingReadOnly(scene) ? { readOnly: true } : {}),
   ...(picturesOut(scene[BOARD_META_KEY]) ? { picturesOut: true } : {}),
   ...(picturesFolderOf(scene[BOARD_META_KEY]) === null ? {} : { picturesFolder: picturesFolderOf(scene[BOARD_META_KEY]) as string }),
   ...(hoverLinksOff(scene[BOARD_META_KEY]) ? { hoverLinksOff: true } : {}),
+  ...(boardFoldArrowsOf(scene[BOARD_META_KEY]) === null ? {} : { foldArrows: boardFoldArrowsOf(scene[BOARD_META_KEY]) as FoldArrowMode }),
 })
 
 /** Embed targets that get a preview — everything else renders exactly as it always has. */

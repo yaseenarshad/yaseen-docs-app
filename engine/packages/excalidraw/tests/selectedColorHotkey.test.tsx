@@ -24,7 +24,7 @@ import { act, fireEvent, render, togglePopover } from "./test-utils";
 
 const h = window.h;
 
-// YAZ-4348 demo: ⇧V (Flip vertical) and ⇧G (the eyedropper) keep their actions, so they color no outline
+// YAZ-4348 demo: ⇧V (Flip vertical) and ⇧G (the eyedropper) keep their actions, so they color no fill (YAZ-4277 D16)
 const SHIFT_COLOR_HOTKEYS = Object.entries(SEMANTIC_COLOR_HOTKEYS).filter(
   ([, hotkey]) => !SHIFT_KEYS_KEPT_FROM_COLORS.has(hotkey),
 );
@@ -45,10 +45,10 @@ describe("selected-element semantic color hotkeys", () => {
 
     Keyboard.keyPress(KEYS.R);
 
+    // YAZ-4277 D16: the letter colors the line; a red, transparent rectangle
     expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
-      strokeColor: COLOR_PALETTE.black,
-      backgroundColor:
-        COLOR_PALETTE.red[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+      strokeColor: COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+      backgroundColor: COLOR_PALETTE.transparent,
     });
     expect(h.state.activeTool.type).toBe("selection");
   });
@@ -123,7 +123,7 @@ describe("selected-element semantic color hotkeys", () => {
   );
 
   it.each(SHIFT_COLOR_HOTKEYS)(
-    "applies Shift+%s = %s to stroke while preserving fill",
+    "applies Shift+%s = %s to the fill while keeping the line (YAZ-4277 D16)",
     (colorName, hotkey) => {
       const rectangle = API.createElement({
         type: "rectangle",
@@ -137,15 +137,15 @@ describe("selected-element semantic color hotkeys", () => {
       const expectedColor =
         typeof paletteValue === "string"
           ? paletteValue
-          : paletteValue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX];
+          : paletteValue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX];
 
       Keyboard.withModifierKeys({ shift: true }, () => {
         Keyboard.keyPress(hotkey.toUpperCase());
       });
 
       expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
-        strokeColor: expectedColor,
-        backgroundColor: "#abcdef",
+        strokeColor: "#123456",
+        backgroundColor: expectedColor,
       });
       expect(h.state.activeTool.type).toBe("selection");
     },
@@ -213,9 +213,11 @@ describe("selected-element semantic color hotkeys", () => {
       backgroundColor:
         COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
     });
+    // YAZ-4277 D16: ⇧ colors the fill of a shape too
     expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
-      strokeColor: COLOR_PALETTE.blue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-      backgroundColor: "#abcdef",
+      strokeColor: "#222222",
+      backgroundColor:
+        COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
     });
   });
 
@@ -258,11 +260,15 @@ describe("selected-element semantic color hotkeys", () => {
       Keyboard.keyPress("u");
     });
 
-    [rectangle, image].forEach((element) => {
-      expect(h.app.scene.getElement(element.id)).toMatchObject({
-        strokeColor: COLOR_PALETTE.blue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-        backgroundColor: element.backgroundColor,
-      });
+    // YAZ-4277 D16: the rectangle's fill; a picture has no fill, so its line as before
+    expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
+      strokeColor: rectangle.strokeColor,
+      backgroundColor:
+        COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+    });
+    expect(h.app.scene.getElement(image.id)).toMatchObject({
+      strokeColor: COLOR_PALETTE.blue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+      backgroundColor: image.backgroundColor,
     });
     expect(h.app.scene.getElement(iframe.id)).toMatchObject(iframe);
     expect(h.state.selectedElementIds).toEqual({
@@ -272,7 +278,7 @@ describe("selected-element semantic color hotkeys", () => {
     });
   });
 
-  it("changes only a selected container stroke and not its bound text", () => {
+  it("changes only a selected container fill and not its bound text", () => {
     const [container, text] = API.createTextContainer();
     API.setElements([container, text]);
     API.setSelectedElements([container]);
@@ -282,8 +288,9 @@ describe("selected-element semantic color hotkeys", () => {
     });
 
     expect(h.app.scene.getElement(container.id)).toMatchObject({
-      strokeColor: COLOR_PALETTE.blue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-      backgroundColor: container.backgroundColor,
+      strokeColor: container.strokeColor,
+      backgroundColor:
+        COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
       boundElements: container.boundElements,
     });
     expect(h.app.scene.getElement(text.id)).toMatchObject({
@@ -292,7 +299,7 @@ describe("selected-element semantic color hotkeys", () => {
     });
   });
 
-  it("consumes unsupported-only Shift colors with stroke-specific feedback", () => {
+  it("consumes unsupported-only Shift colors with fill-specific feedback", () => {
     const iframe = API.createElement({ type: "iframe" });
     API.setElements([iframe]);
     API.setSelectedElements([iframe]);
@@ -303,7 +310,7 @@ describe("selected-element semantic color hotkeys", () => {
 
     expect(h.state.activeTool.type).toBe("selection");
     expect(h.state.toast?.message).toBe(
-      "The selected elements do not support alternate color shortcuts.",
+      "The selected elements have no fill for ⇧ + a color letter.",
     );
   });
 
@@ -536,11 +543,11 @@ describe("selected-element semantic color hotkeys", () => {
 
     Keyboard.keyPress(KEYS.R);
 
+    // YAZ-4277 D16: the letter colors the line of every element
     shapes.forEach((element) => {
       expect(h.app.scene.getElement(element.id)).toMatchObject({
-        strokeColor: "#123456",
-        backgroundColor:
-          COLOR_PALETTE.red[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+        strokeColor: COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+        backgroundColor: COLOR_PALETTE.transparent,
       });
     });
     strokeTargets.forEach((element) => {
@@ -565,8 +572,8 @@ describe("selected-element semantic color hotkeys", () => {
     Keyboard.keyPress("u");
 
     expect(h.app.scene.getElement(container.id)).toMatchObject({
-      backgroundColor:
-        COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+      strokeColor: COLOR_PALETTE.blue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+      backgroundColor: container.backgroundColor,
       boundElements: container.boundElements,
     });
     expect(h.app.scene.getElement(text.id)).toMatchObject({
@@ -593,8 +600,8 @@ describe("selected-element semantic color hotkeys", () => {
     Keyboard.keyPress(KEYS.T);
 
     expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
-      strokeColor: "#123456",
-      backgroundColor: COLOR_PALETTE.transparent,
+      strokeColor: COLOR_PALETTE.transparent,
+      backgroundColor: "#abcdef",
     });
     expect(h.app.scene.getElement(text.id)).toMatchObject({
       strokeColor: COLOR_PALETTE.transparent,
@@ -620,8 +627,7 @@ describe("selected-element semantic color hotkeys", () => {
     Keyboard.keyPress(KEYS.P);
 
     expect(h.app.scene.getElement(frame.id)).toMatchObject({
-      backgroundColor:
-        COLOR_PALETTE.pink[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+      strokeColor: COLOR_PALETTE.pink[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
       groupIds: ["group-1"],
     });
     expect(h.app.scene.getElement(child.id)).toMatchObject({
@@ -644,8 +650,8 @@ describe("selected-element semantic color hotkeys", () => {
 
     Keyboard.keyPress(KEYS.G);
 
-    expect(h.app.scene.getElement(rectangle.id)?.backgroundColor).toBe(
-      COLOR_PALETTE.green[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+    expect(h.app.scene.getElement(rectangle.id)?.strokeColor).toBe(
+      COLOR_PALETTE.green[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
     );
     expect(h.app.scene.getElement(image.id)?.strokeColor).toBe(
       COLOR_PALETTE.green[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
@@ -667,7 +673,7 @@ describe("selected-element semantic color hotkeys", () => {
     expect(h.elements).toBe(before);
     expect(h.state.activeTool.type).toBe("selection");
     expect(h.state.toast?.message).toBe(
-      "The selected elements do not support direct color shortcuts.",
+      "The selected elements have no line for a color letter.",
     );
   });
 
@@ -710,8 +716,8 @@ describe("selected-element semantic color hotkeys", () => {
     Keyboard.keyPress(KEYS.R);
     await act(async () => {});
 
-    expect(h.app.scene.getElement(rectangle.id)?.backgroundColor).toBe(
-      COLOR_PALETTE.red[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+    expect(h.app.scene.getElement(rectangle.id)?.strokeColor).toBe(
+      COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
     );
     expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
       COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
@@ -724,8 +730,8 @@ describe("selected-element semantic color hotkeys", () => {
 
     Keyboard.undo();
     await act(async () => {});
-    expect(h.app.scene.getElement(rectangle.id)?.backgroundColor).toBe(
-      COLOR_PALETTE.transparent,
+    expect(h.app.scene.getElement(rectangle.id)?.strokeColor).toBe(
+      COLOR_PALETTE.black,
     );
     expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
       COLOR_PALETTE.black,
@@ -737,8 +743,8 @@ describe("selected-element semantic color hotkeys", () => {
 
     Keyboard.redo();
     await act(async () => {});
-    expect(h.app.scene.getElement(rectangle.id)?.backgroundColor).toBe(
-      COLOR_PALETTE.red[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+    expect(h.app.scene.getElement(rectangle.id)?.strokeColor).toBe(
+      COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
     );
     expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
       COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
@@ -764,8 +770,9 @@ describe("selected-element semantic color hotkeys", () => {
       Keyboard.keyPress(KEYS.R.toUpperCase());
     });
     expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
-      backgroundColor: originalFill,
-      strokeColor: COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+      backgroundColor:
+        COLOR_PALETTE.red[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+      strokeColor: originalStroke,
     });
     expect(h.app.scene.getElement(text.id)).toMatchObject({
       strokeColor: COLOR_PALETTE.black,

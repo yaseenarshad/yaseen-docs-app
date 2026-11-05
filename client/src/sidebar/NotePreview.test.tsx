@@ -127,13 +127,19 @@ describe('NotePreview', () => {
     expect(crepes[0].foldingOn?.()).toBe(false)
   })
 
+  it('YAZ-4432: the note\'s own "Bullet threading" goes on its instance (a note with no choice carries no key: the test below)', async () => {
+    readFile.mockImplementation(file('---\nbullet-threading: true\n---\n* a\n  * b\n'))
+    const panel = await show()
+    expect(panel.querySelector<HTMLElement>('.note-preview__body .editor-instance')!.dataset.threading).toBe('on')
+  })
+
   it('YAZ-4094 F1: a note with no choice carries no key, and folds as Settings › "Folding default" says', async () => {
     const settings = vi.spyOn(storage, 'getSettings').mockReturnValue({ ...DEFAULT_SETTINGS, foldingOnByDefault: false })
     try {
       readFile.mockImplementation(file('* a\n  * b\n'))
       const panel = await show()
       const instance = panel.querySelector<HTMLElement>('.note-preview__body .editor-instance')!
-      expect(instance.hasAttribute('data-guide-lines') || instance.hasAttribute('data-folding')).toBe(false)
+      expect(instance.hasAttribute('data-guide-lines') || instance.hasAttribute('data-folding') || instance.hasAttribute('data-threading')).toBe(false)
       expect(crepes[0].foldingOn?.()).toBe(false)
       settings.mockReturnValue(DEFAULT_SETTINGS)
       act(() => root?.unmount())

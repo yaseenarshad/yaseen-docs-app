@@ -17,7 +17,7 @@ import { READ_ONLY_TIP, guardReadOnly, readOnlyPaths } from '../readOnlyRows'
 import { propertyKeys } from '../engine'
 import { allPropertyKeys } from './properties'
 
-vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
+vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined, getRoots: () => [] } }))
 vi.mock('../../editor/createCrepe', () => ({
   createCrepe: vi.fn((opts: { root: HTMLElement; defaultValue?: string }) => {
     opts.root.textContent = opts.defaultValue ?? ''

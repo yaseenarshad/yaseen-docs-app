@@ -496,6 +496,62 @@ describe('rows made while the menu is open (YAZ-3943)', () => {
     expect(act2).toHaveBeenCalledTimes(1)
     expect(menu()).toBeNull()
   })
+
+  /** A choice row (YAZ-4402 3A): the label, then one group of pills, as "TOC made from". */
+  function mountChoices(disabled = false) {
+    const picks = { a: vi.fn(), b: vi.fn(), c: vi.fn() }
+    const rows = () => [
+      { label: 'Link preview on hover', on: true, onToggle: () => undefined },
+      {
+        label: 'Fold arrows (app: hover)',
+        divider: true,
+        disabled,
+        choices: [
+          { label: 'App', on: false, onPick: picks.a, title: 'The app setting: Hover' },
+          { label: 'Hover', on: true, onPick: picks.b },
+          { label: 'Off', on: false, onPick: picks.c, title: 'No folding' },
+        ],
+      },
+    ]
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    act(() => root.render(<PageSettings readOnly={false} onToggleReadOnly={() => undefined} rows={rows} />))
+    click(cog())
+    const group = () => menu()!.querySelector<HTMLElement>('.page-settings__choices')!
+    const pills = () => [...group().querySelectorAll<HTMLButtonElement>('button')]
+    return { picks, group, pills }
+  }
+
+  it('YAZ-4402 3A: a choice row is its label, then one named group of pills; only the chosen pill is pressed, each has its tooltip', () => {
+    const { group, pills } = mountChoices()
+    expect([...menu()!.children].map((c) => c.className || c.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'page-settings__divider', 'page-settings__label', 'page-settings__choices'])
+    expect(menu()!.querySelector('.page-settings__label')!.textContent).toBe('Fold arrows (app: hover):')
+    expect(group().getAttribute('role')).toBe('group')
+    expect(group().getAttribute('aria-label')).toBe('Fold arrows (app: hover)')
+    expect(pills().map((b) => [b.textContent, b.getAttribute('aria-pressed'), b.getAttribute('title')])).toEqual([['App', 'false', 'The app setting: Hover'], ['Hover', 'true', null], ['Off', 'false', 'No folding']])
+  })
+
+  it('YAZ-4402 3A: a pick calls only its own handler and leaves the menu open', () => {
+    const { picks, pills } = mountChoices()
+    click(pills()[2])
+    expect(picks.c).toHaveBeenCalledTimes(1)
+    expect(picks.a).not.toHaveBeenCalled()
+    expect(picks.b).not.toHaveBeenCalled()
+    expect(menu()).not.toBeNull()
+    click(pills()[0])
+    expect(picks.a).toHaveBeenCalledTimes(1)
+    expect(menu()).not.toBeNull()
+  })
+
+  it('YAZ-4402 3A: a disabled choice row (Read only) greys out every pill, and a click picks nothing', () => {
+    const { picks, pills } = mountChoices(true)
+    expect(pills().map((b) => b.disabled)).toEqual([true, true, true])
+    for (const b of pills()) click(b)
+    expect(picks.a).not.toHaveBeenCalled()
+    expect(picks.b).not.toHaveBeenCalled()
+    expect(picks.c).not.toHaveBeenCalled()
+  })
 })
 
 /** "Outside changes glow" (YAZ-4272 D5): this page's glow, one native dropdown; Default follows Settings. */
