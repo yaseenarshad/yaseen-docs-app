@@ -1,13 +1,15 @@
 /**
  * THE LIBRARY ON TWO MACS (YAZ-4364): two "Macs" (two userData folders) on one settings folder, with the real stores
  * wired as `ipc/index.ts` wires them. Temp folders only; the fetchers are stubs (no network). The checker wrote these
- * in round 1 (YAZ-4362); each bug's case stays: S1b YAZ-4378, S3 YAZ-4380, S4 YAZ-4381, S6 YAZ-4382, S9 YAZ-4383.
+ * in round 1 (YAZ-4362); each bug's case stays: S1b YAZ-4378, S3 YAZ-4380, S4 YAZ-4381, S6 YAZ-4382, S9 YAZ-4383,
+ * S10 YAZ-4366.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { MediaBytesRequest, MediaImportResponse, MediaItem } from '@shared/types'
+import { componentItemKey } from '@shared/mediaLibrary'
 import { BridgeFailure } from '../fs/fsUtils'
 import type { MediaCache } from '../media/cache'
 import { createMediaProviders } from '../media/providers'
@@ -73,7 +75,8 @@ function launch(macId: string, userData: string, withSettings: boolean, now?: ()
     copies.setFolder(next)
     components.setFolder(next)
   })
-  components = createComponentStore(folder, { trash: vi.fn(async () => undefined) })
+  // The trash takes the file away, as the OS's does.
+  components = createComponentStore(folder, { trash: vi.fn(async (p: string) => rm(p)), slugHeld: (slug) => copies.holds(componentItemKey(slug)) })
   media = createMediaStore(folder, { macId: async () => macId, now })
   copies = createFavoriteCopies(folder, {
     favorites: () => media.favorites({ op: 'list' }),
@@ -368,5 +371,41 @@ describe('the library on two Macs, one settings folder (YAZ-4364)', () => {
     await settle()
     expect(await keys(macA)).toEqual(['iconify:mdi:p1', 'iconify:mdi:p2', 'iconify:mdi:p3'])
     expect(await readdir(path.join(settings, 'library'))).toContain(`media-${A}.json`)
+  })
+
+  it('S10: a new component never takes the slug of a deleted one whose favorite and copy stay (YAZ-4366)', async () => {
+    const PNG = 'data:image/png;base64,iVBORw0KGgo='
+    await mkdir(path.join(dir, 'macA'))
+    const mac = launch(A, path.join(dir, 'macA'), false)
+    await settle()
+    // "Logo" is saved and starred; the backfill makes its copy. Then it is deleted: the favorite and the copy stay.
+    const old = await mac.components.save({ name: 'Logo', fragmentJson: fragment('old-logo'), previewPng: PNG })
+    await mac.media.favorites({ op: 'add', item: asItem(comp(old.slug)) })
+    await settle()
+    expect(await mac.copies.readElements(componentItemKey('logo'))).toContain('old-logo')
+    await mac.components.delete({ slug: 'logo' })
+    // A different "Logo": its own slug, so the old favorite's tile and add keep the old one, and the new one gets a copy.
+    const fresh = await mac.components.save({ name: 'Logo', fragmentJson: fragment('new-logo'), previewPng: PNG })
+    expect(fresh.slug).toBe('logo-2')
+    await mac.media.favorites({ op: 'add', item: asItem(comp(fresh.slug)) })
+    await settle()
+    expect(await mac.copies.readElements(componentItemKey('logo'))).toContain('old-logo')
+    expect(await mac.copies.readElements(componentItemKey('logo-2'))).toContain('new-logo')
+  })
+
+  it('S10b: a Library move does not put a component on a slug that a stale copy holds (YAZ-4366)', async () => {
+    const uA = path.join(dir, 'macA')
+    await oldLibrary(uA, [], {
+      'components/logo.excalidraw': fragment('A-logo'),
+      'components.json': JSON.stringify({ version: 1, items: [{ slug: 'logo', name: 'Logo', elementCount: 1, createdAt: 1, updatedAt: 1 }] }),
+    })
+    // The settings folder's library: a copy of a deleted "logo" whose favorite stays.
+    await mkdir(path.join(settings, 'library', 'favorites'), { recursive: true })
+    await writeFile(path.join(settings, 'library', copyName('component:logo', 'excalidraw')), fragment('deleted-logo'))
+    await writeFile(path.join(settings, 'library', `media-${B}.json`), JSON.stringify({ version: 1, favorites: [comp('logo', 5)], recent: [], used: [], removed: {} }))
+    const macA = launch(A, uA, true)
+    await settle()
+    expect((await macA.components.list()).map((c) => [c.slug, c.name])).toEqual([['logo-2', 'Logo 2']])
+    expect(await macA.copies.readElements(componentItemKey('logo'))).toContain('deleted-logo')
   })
 })

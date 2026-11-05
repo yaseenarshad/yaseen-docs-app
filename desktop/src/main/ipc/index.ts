@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { CONTRACT } from '@shared/ipc'
 import { PIXABAY_SECRET } from '@shared/types'
+import { componentItemKey } from '@shared/mediaLibrary'
 import type { GitSyncManager } from '../git/manager'
 import type { Secrets } from '../secrets'
 import type { SettingsFolder } from '../settingsFolder'
@@ -95,7 +96,8 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // and component stores, the favorites' own copies (YAZ-4363), and the Image Studio, which asks the copies first.
   // The folder is the setting, else `<settings folder>/library`, else `<userData>/library` (YAZ-4364).
   handle(CONTRACT.drawing.libraryFolder, async () => resolveLibraryFolder(store.get().settings.libraryFolder, userData, store.get().settingsFolder))
-  const components = registerComponentsIpc(store, userData)
+  // A deleted component's favorite and copy keep its slug (YAZ-4366): `library` is made next, and asked only on a save.
+  const components = registerComponentsIpc(store, userData, undefined, (slug) => library.copies.holds(componentItemKey(slug)))
   const library = registerMediaLibraryIpc(store, userData, { macId: places.macId, hasPixabayKey: () => secrets.has(PIXABAY_SECRET), readComponent: (slug) => components.read({ slug }) })
   // The store also carries the icon packs' folder setting (YAZ-4359).
   registerMediaStudioIpc(userData, secrets, globalThis.fetch, store, library.copies)

@@ -110,6 +110,11 @@ export interface FavoriteCopies {
   /** The favorites whose copy the Add panel makes (shapes) and that have none yet. */
   missingForPanel(): Promise<string[]>
   /**
+   * A favorite or a copy holds `itemKey` (YAZ-4366): a deleted component's favorite and copy stay, so a new component
+   * must not take its slug (`componentStore`'s `slugHeld`).
+   */
+  holds(itemKey: string): Promise<boolean>
+  /**
    * How main makes a copy. Until it is given, passes wait; the first `start` runs the launch backfill, and answers
    * when it is done.
    */
@@ -300,6 +305,10 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
     async missingForPanel() {
       const files = await listing()
       return (await deps.favorites()).filter((f) => madeByPanel(f) && !files.has(favoriteCopyHash(f.itemKey))).map((f) => f.itemKey)
+    },
+
+    async holds(itemKey) {
+      return (await listing()).has(favoriteCopyHash(itemKey)) || (await deps.favorites()).some((f) => f.itemKey === itemKey)
     },
 
     start(next) {
