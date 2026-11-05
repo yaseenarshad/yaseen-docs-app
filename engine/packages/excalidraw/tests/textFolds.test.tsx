@@ -5,6 +5,7 @@ import { vi } from "vitest";
 
 import {
   CaptureUpdateAction,
+  getHiddenLines,
   newElementWith,
   refreshTextDimensions,
 } from "@excalidraw/element";
@@ -207,6 +208,76 @@ describe("text folds on the board (YAZ-4277 D3, D6)", () => {
     const [restored] = restoreElements([text], null) as ExcalidrawTextElement[];
     expect(restored.foldedLines).toBeUndefined();
     expect(restored.height).toBe(175);
+  });
+});
+
+/**
+ * YAZ-4434 (D31): each fold saves its bullet's text too. After an outside
+ * edit, restore finds the same bullet by its text (the nearest match), or the
+ * fold opens. A wrong bullet never folds.
+ */
+describe("fold anchors after an outside edit (YAZ-4434, D31)", () => {
+  beforeEach(async () => {
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+  });
+
+  const BOARD = ["• A", "    ○ a1", "• B", "    ○ b1"].join("\n");
+
+  /** Folds "B" on the board and returns the box as the file saves it. */
+  const saveWithBFolded = () => {
+    API.setElements([createMoat({ text: BOARD })]);
+    act(() => h.app.setTextFolds("moat", [2]));
+    return JSON.parse(serializeAsJSON(h.elements, h.state, {}, "local"))
+      .elements[0];
+  };
+  const hiddenText = (element: ExcalidrawTextElement) => {
+    const hidden = getHiddenLines(element);
+    const lines = element.originalText.split("\n");
+    return hidden ? [...hidden].map((line) => lines[line]) : [];
+  };
+
+  it("the file saves the folded bullet's text beside its line number", () => {
+    const saved = saveWithBFolded();
+    expect(saved.foldedLines).toEqual([2]);
+    expect(saved.foldedLineTexts).toEqual(["B"]);
+  });
+
+  it("checker repro: a bullet with a child added above the folded B keeps B folded, not A", () => {
+    const saved = saveWithBFolded();
+    const edited = `• Z\n    ○ z1\n${BOARD}`;
+    const [restored] = restoreElements(
+      [{ ...saved, originalText: edited, text: edited }],
+      null,
+    ) as ExcalidrawTextElement[];
+    expect(restored.foldedLines).toEqual([4]);
+    expect(restored.foldedLineTexts).toEqual(["B"]);
+    expect(hiddenText(restored)).toEqual(["    ○ b1"]);
+    // the box measures again: 5 of its 6 lines show
+    expect(restored.height).toBe(125);
+  });
+
+  it("an outside edit of the folded bullet's own text opens the fold; no other bullet folds", () => {
+    const saved = saveWithBFolded();
+    const edited = BOARD.replace("• B", "• B renamed");
+    const [restored] = restoreElements(
+      [{ ...saved, originalText: edited, text: edited }],
+      null,
+    ) as ExcalidrawTextElement[];
+    expect(restored.foldedLines).toBeUndefined();
+    expect("foldedLineTexts" in restored).toBe(false);
+    expect(hiddenText(restored)).toEqual([]);
+    expect(restored.height).toBe(100);
+  });
+
+  it("an old file with no anchors keeps the line-number guard", () => {
+    const saved = saveWithBFolded();
+    delete saved.foldedLineTexts;
+    const [restored] = restoreElements(
+      [saved],
+      null,
+    ) as ExcalidrawTextElement[];
+    expect(restored.foldedLines).toEqual([2]);
+    expect("foldedLineTexts" in restored).toBe(false);
   });
 });
 

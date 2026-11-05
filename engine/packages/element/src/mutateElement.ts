@@ -121,11 +121,13 @@ export const mutateElement = <TElement extends Mutable<ExcalidrawElement>>(
       (element as any)[key] = value;
       didChange = true;
     } else if (
-      (key === "textRuns" || key === "foldedLines") &&
+      (key === "textRuns" ||
+        key === "foldedLines" ||
+        key === "foldedLineTexts") &&
       (element as any)[key] !== undefined
     ) {
       // YAZ-4101: no run left is a change: the last style of the letters went
-      // (YAZ-4277 D3: the last fold, too)
+      // (YAZ-4277 D3: the last fold and its anchor, too)
       (element as any)[key] = undefined;
       didChange = true;
     }
@@ -171,11 +173,13 @@ export const newElementWith = <TElement extends ExcalidrawElement>(
       }
       didChange = true;
     } else if (
-      (key === "textRuns" || key === "foldedLines") &&
+      (key === "textRuns" ||
+        key === "foldedLines" ||
+        key === "foldedLineTexts") &&
       (element as any)[key] !== undefined
     ) {
       // YAZ-4101: no run left is a change: the last style of the letters went
-      // (YAZ-4277 D3: the last fold, too)
+      // (YAZ-4277 D3: the last fold and its anchor, too)
       didChange = true;
     }
   }

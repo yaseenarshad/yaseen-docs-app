@@ -1,12 +1,18 @@
 /**
  * YAZ-4277 D3: the switch point for the folds of a text box. This module is
- * the only code that reads or writes `foldedLines`. The layout, the
+ * the only code that reads or writes `foldedLines` and `foldedLineTexts`. The layout, the
  * renderers, the fold arrows, the keys, restore, the host editor and the
  * host's folding off (D18: `takeFoldsAside`, `withFoldsPutBack`) all ask it.
  * A later per-tab mode (YAZ-4297) changes only this module.
  *
  * `foldedLines` holds the indexes (in `originalText.split("\n")`) of the
  * folded list items. Absent or empty: no fold.
+ *
+ * YAZ-4434 (D31): `foldedLineTexts` holds the anchor of each fold, in the
+ * same order: the folded item's text, trimmed, without its marker. Each fold
+ * write saves it. Restore uses it to find a fold's item after an outside edit
+ * moved the lines (`restoreFolds`). A file with no anchors keeps the
+ * line-number guard (`normalizeFoldedLines`).
  *
  * A list item is a line with a bullet marker (`•`, `○`, `▪`) or a checklist
  * marker (`☐`, `☑`), as `parseTextListLine` reads it. A numbered line is not
@@ -19,7 +25,8 @@
  *
  * A fold hides the children of its item. A fold that does not point to a
  * list item with children hides nothing: after an outside edit the worst case
- * is a fold that opens. No text is hidden by mistake and none is lost.
+ * is a fold that opens. No text is hidden by mistake and none is lost. With
+ * anchors, restore never folds an item whose text is not the anchor.
  */
 import { arrayToMap } from "@excalidraw/common";
 
@@ -44,6 +51,8 @@ type FoldOutline = {
   /** The children of line `i` are the lines `i + 1` to `childrenEnd[i] - 1`. */
   childrenEnd: number[];
   foldable: boolean[];
+  /** The anchor of each line: its item text, trimmed (YAZ-4434). */
+  texts: string[];
 };
 
 const FOLDABLE_MARKER_KINDS = new Set(["bullet", "check"]);
@@ -61,6 +70,7 @@ const getFoldOutline = (text: string): FoldOutline => {
   const lines = text.split("\n").map(parseTextListLine);
   const childrenEnd = new Array<number>(lines.length);
   const foldable = new Array<boolean>(lines.length);
+  const texts = new Array<string>(lines.length);
   // one pass from the end: a line's children end where the first later
   // line at its level or lower starts
   const open: number[] = [];
@@ -74,8 +84,9 @@ const getFoldOutline = (text: string): FoldOutline => {
     foldable[index] =
       FOLDABLE_MARKER_KINDS.has(lines[index].markerKind) &&
       childrenEnd[index] > index + 1;
+    texts[index] = lines[index].content.trim();
   }
-  const outline = { childrenEnd, foldable };
+  const outline = { childrenEnd, foldable, texts };
   lastOutline = { text, outline };
   return outline;
 };
@@ -163,6 +174,111 @@ export const normalizeFoldedLines = (
   return lines.length ? lines : undefined;
 };
 
+/**
+ * YAZ-4434 (D31): the anchor of each fold in `lines`: the item text of that
+ * line of `text`, trimmed, without its marker.
+ */
+export const getFoldAnchors = (
+  text: string,
+  lines: readonly number[],
+): string[] => {
+  const { texts } = getFoldOutline(text);
+  return lines.map((line) => texts[line] ?? "");
+};
+
+const sameStrings = (
+  a: readonly string[] | undefined,
+  b: readonly string[] | undefined,
+) =>
+  (a?.length ?? 0) === (b?.length ?? 0) &&
+  (a ?? []).every((value, index) => value === b![index]);
+
+/**
+ * YAZ-4434 (D31): the anchors after an in-app edit of a box's text to
+ * `nextText`, as an element update: empty when the box has no fold or its
+ * anchors stay the same. The edit keeps the line numbers right (the editor
+ * reports a fold that moved); this keeps each anchor equal to its line's
+ * text, so a renamed folded bullet stays folded after a reload.
+ */
+export const getFoldAnchorsUpdate = (
+  element: Pick<ExcalidrawTextElement, "foldedLines" | "foldedLineTexts">,
+  nextText: string,
+): Partial<Pick<ExcalidrawTextElement, "foldedLineTexts">> => {
+  if (!element.foldedLines?.length) {
+    return {};
+  }
+  const anchors = getFoldAnchors(nextText, element.foldedLines);
+  return sameStrings(anchors, element.foldedLineTexts)
+    ? {}
+    : { foldedLineTexts: anchors };
+};
+
+/**
+ * YAZ-4434 (D31), the guard at restore (a load, an outside edit). With an
+ * anchor for each fold, each fold:
+ * - stays when its line is a list item with children and has its text;
+ * - else moves to the list item with children and that text nearest to its
+ *   line (the earlier line wins a tie; two folds never take one line);
+ * - else opens.
+ * An item whose text is not the anchor never folds. With no anchors (an
+ * old file), or anchors of another length, the line-number guard applies
+ * (`normalizeFoldedLines`) and no anchor is added. Undefined: no fold left.
+ */
+export const restoreFolds = (
+  text: string,
+  foldedLines: unknown,
+  foldedLineTexts: unknown,
+): { foldedLines: number[]; foldedLineTexts?: string[] } | undefined => {
+  if (!Array.isArray(foldedLines) || !foldedLines.length) {
+    return undefined;
+  }
+  if (
+    !Array.isArray(foldedLineTexts) ||
+    foldedLineTexts.length !== foldedLines.length ||
+    !foldedLineTexts.every((anchor) => typeof anchor === "string")
+  ) {
+    const lines = normalizeFoldedLines(text, foldedLines);
+    return lines && { foldedLines: lines };
+  }
+  const { foldable, texts } = getFoldOutline(text);
+  const taken = new Set<number>();
+  const moved: { from: number; anchor: string }[] = [];
+  foldedLines.forEach((line: unknown, index) => {
+    if (!Number.isInteger(line)) {
+      return;
+    }
+    const from = line as number;
+    const anchor = foldedLineTexts[index] as string;
+    if (foldable[from] === true && texts[from] === anchor) {
+      taken.add(from);
+    } else {
+      moved.push({ from, anchor });
+    }
+  });
+  moved.sort((a, b) => a.from - b.from);
+  for (const { from, anchor } of moved) {
+    let nearest = -1;
+    for (let line = 0; line < texts.length; line++) {
+      if (
+        foldable[line] &&
+        texts[line] === anchor &&
+        !taken.has(line) &&
+        (nearest < 0 || Math.abs(line - from) < Math.abs(nearest - from))
+      ) {
+        nearest = line;
+      }
+    }
+    if (nearest >= 0) {
+      taken.add(nearest);
+    }
+  }
+  if (!taken.size) {
+    return undefined;
+  }
+  const lines = [...taken].sort((a, b) => a - b);
+  return { foldedLines: lines, foldedLineTexts: getFoldAnchors(text, lines) };
+};
+
 /** The folds after a fold or an unfold of line `line`. */
 export const getToggledFoldedLines = (
   element: Pick<ExcalidrawTextElement, "foldedLines" | "originalText">,
@@ -180,10 +296,10 @@ export const getAllFoldedLines = (
 ) => getFoldableLines(element.originalText);
 
 /**
- * Writes the folds of a box: the box resizes to its visible lines (D6) and
- * its bound arrows follow. The caller commits it as no undo step
- * (`CaptureUpdateAction.NEVER`), which still saves the board (D3).
- * Returns false when the folds did not change.
+ * Writes the folds of a box, each with its anchor (YAZ-4434): the box resizes
+ * to its visible lines (D6) and its bound arrows follow. The caller commits
+ * it as no undo step (`CaptureUpdateAction.NEVER`), which still saves the
+ * board (D3). Returns false when the folds and their anchors did not change.
  */
 export const setFoldedLines = (
   element: NonDeleted<ExcalidrawTextElement>,
@@ -191,14 +307,19 @@ export const setFoldedLines = (
   scene: Scene,
 ): boolean => {
   const next = normalizeFoldedLines(element.originalText, foldedLines);
+  const anchors = next && getFoldAnchors(element.originalText, next);
   const current = getFoldedLines(element);
   if (
     (next?.length ?? 0) === current.length &&
-    (next ?? []).every((line, index) => line === current[index])
+    (next ?? []).every((line, index) => line === current[index]) &&
+    (!next || sameStrings(anchors, element.foldedLineTexts))
   ) {
     return false;
   }
-  scene.mutateElement(element, { foldedLines: next });
+  scene.mutateElement(element, {
+    foldedLines: next,
+    foldedLineTexts: anchors,
+  });
   redrawTextBoundingBox(
     element,
     getContainerElement(element, scene.getNonDeletedElementsMap()),
@@ -211,25 +332,31 @@ export const setFoldedLines = (
 /**
  * YAZ-4277 D18, folding off: the folds a host keeps aside, by box id. Each
  * entry keeps the box's `originalText` too: the line numbers belong to that
- * text only.
+ * text only. `lineTexts` are the folds' anchors (YAZ-4434), in that text.
  */
-export type FoldsAside = ReadonlyMap<
-  string,
-  Readonly<{ text: string; lines: readonly number[] }>
->;
+type FoldsAsideEntry = {
+  text: string;
+  lines: readonly number[];
+  lineTexts: readonly string[];
+};
+export type FoldsAside = ReadonlyMap<string, Readonly<FoldsAsideEntry>>;
 
 /** The folds of each live box in `elements`, to keep aside (folding off). */
 export const getFoldsAside = (
   elements: readonly ExcalidrawElement[],
 ): FoldsAside => {
-  const aside = new Map<string, { text: string; lines: readonly number[] }>();
+  const aside = new Map<string, FoldsAsideEntry>();
   for (const element of elements) {
     if (!isTextElement(element) || element.isDeleted) {
       continue;
     }
     const lines = getFoldedLines(element);
     if (lines.length) {
-      aside.set(element.id, { text: element.originalText, lines });
+      aside.set(element.id, {
+        text: element.originalText,
+        lines,
+        lineTexts: getFoldAnchors(element.originalText, lines),
+      });
     }
   }
   return aside;
@@ -256,6 +383,7 @@ export const takeFoldsAside = (
       }
       const open = { ...element } as ExcalidrawTextElement;
       delete (open as { foldedLines?: unknown }).foldedLines;
+      delete (open as { foldedLineTexts?: unknown }).foldedLineTexts;
       return {
         ...open,
         ...refreshTextDimensions(
@@ -300,8 +428,9 @@ export const getFoldsToPutBack = (
 
 /**
  * `elements` for the file while folding is off: each box that can take its
- * aside folds back (`getFoldsToPutBack`) is saved with them. The size stays
- * as the board shows it; a load with folding on measures it again (D6).
+ * aside folds back (`getFoldsToPutBack`) is saved with them and their
+ * anchors. The size stays as the board shows it; a load with folding on
+ * measures it again (D6).
  */
 export const withFoldsPutBack = <T extends ExcalidrawElement>(
   elements: readonly T[],
@@ -313,6 +442,12 @@ export const withFoldsPutBack = <T extends ExcalidrawElement>(
   }
   return elements.map((element) => {
     const lines = back.get(element.id);
-    return lines ? { ...element, foldedLines: lines } : element;
+    return lines
+      ? {
+          ...element,
+          foldedLines: lines,
+          foldedLineTexts: aside.get(element.id)!.lineTexts,
+        }
+      : element;
   });
 };

@@ -8,6 +8,7 @@ import type {
   NonDeleted,
 } from "@excalidraw/element/types";
 
+import { restoreElements } from "../data/restore";
 import { Excalidraw } from "../index";
 import { setKeyBindings } from "../keyRemap";
 import { CARET_SCREEN_PX, getCaretWidth } from "../wysiwyg/hostTextWysiwyg";
@@ -402,6 +403,42 @@ describe("folds in edit (YAZ-4306)", () => {
     fireEvent.keyDown(last().input, { key: KEYS.ESCAPE });
     Keyboard.undo();
     expect(box().foldedLines).toEqual([0]);
+  });
+
+  /** YAZ-4434 (D31): an edit in the app keeps each fold's anchor on its line's text. */
+  it("a renamed folded bullet keeps its anchor, so it stays folded after a reload", async () => {
+    await editFolded();
+    act(() =>
+      last().onChange(FOLDED.replace("• a", "• a renamed"), undefined, {
+        anchor: 11,
+        head: 11,
+      }),
+    );
+    expect(box().foldedLines).toEqual([0]);
+    expect(box().foldedLineTexts).toEqual(["a renamed"]);
+    const [restored] = restoreElements(
+      [box()],
+      null,
+    ) as ExcalidrawTextElement[];
+    expect(restored.foldedLines).toEqual([0]);
+  });
+
+  it("Enter above a fold: the editor's report moves the fold and its anchor", async () => {
+    await editFolded();
+    const next = `• new\n    ○ n\n${FOLDED}`;
+    // the editor reports the text, then the fold it moved, in one update
+    act(() => {
+      last().onChange(next, undefined, { anchor: 5, head: 5 });
+      last().onFoldsChange([2]);
+    });
+    expect(box().foldedLines).toEqual([2]);
+    expect(box().foldedLineTexts).toEqual(["a"]);
+    // "• new" has a child too, but the reload folds "• a"
+    const [restored] = restoreElements(
+      [{ ...box(), foldedLines: [0] }],
+      null,
+    ) as ExcalidrawTextElement[];
+    expect(restored.foldedLines).toEqual([2]);
   });
 
   it("moves a caret out of a hidden line, the way it moved", async () => {

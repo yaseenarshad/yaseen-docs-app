@@ -274,6 +274,12 @@ export type ExcalidrawTextElement = _ExcalidrawElementBase &
      * Read and write it only through `textFolds.ts`.
      */
     foldedLines?: readonly number[];
+    /**
+     * YAZ-4434 (D31): the anchor of each fold, in the order of `foldedLines`:
+     * the folded item's text, trimmed, without its marker. Restore finds a
+     * moved item by it. Absent in an old file. Only through `textFolds.ts`.
+     */
+    foldedLineTexts?: readonly string[];
     text: string;
     textAlign: TextAlign;
     verticalAlign: VerticalAlign;

@@ -66,7 +66,7 @@ import { syncInvalidIndices } from "@excalidraw/element";
 
 import {
   getTextElementStyledLayout,
-  normalizeFoldedLines,
+  restoreFolds,
   refreshTextDimensions,
 } from "@excalidraw/element";
 
@@ -570,12 +570,21 @@ export const restoreElement = (
           : undefined;
       // YAZ-4277 D3: the stale-fold guard. An outside edit can shift the
       // lines, so a fold that no longer points to a list item with children
-      // goes; the box then measures its lines again below
+      // goes. YAZ-4434 (D31): a fold with an anchor moves to the item with
+      // its text, or goes; a wrong item never folds. When the folded lines
+      // changed, the box measures its lines again below
       const savedFolds = (element as { foldedLines?: unknown }).foldedLines;
-      const foldedLines = normalizeFoldedLines(originalText, savedFolds);
-      const foldsDropped =
+      const folds = restoreFolds(
+        originalText,
+        savedFolds,
+        (element as { foldedLineTexts?: unknown }).foldedLineTexts,
+      );
+      const foldedLines = folds?.foldedLines;
+      const foldedLineTexts = folds?.foldedLineTexts;
+      const foldsChanged =
         Array.isArray(savedFolds) &&
-        savedFolds.length !== (foldedLines?.length ?? 0);
+        (savedFolds.length !== (foldedLines?.length ?? 0) ||
+          !!foldedLines?.some((line) => !savedFolds.includes(line)));
       const backgroundPaddingScale = normalizeTextBackgroundPaddingScale(
         (element as { backgroundPaddingScale?: unknown })
           .backgroundPaddingScale,
@@ -609,11 +618,15 @@ export const restoreElement = (
         strikethrough,
         backgroundPaddingScale,
         foldedLines,
+        foldedLineTexts,
       });
       if (!foldedLines) {
         delete (element as { foldedLines?: unknown }).foldedLines;
       }
-      if (foldsDropped && !element.isDeleted) {
+      if (!foldedLineTexts) {
+        delete (element as { foldedLineTexts?: unknown }).foldedLineTexts;
+      }
+      if (foldsChanged && !element.isDeleted) {
         Object.assign(
           element,
           refreshTextDimensions(
