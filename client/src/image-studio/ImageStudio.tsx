@@ -297,7 +297,7 @@ function InlineForm({ item, renaming, initial, words, offer, notch, onWord, onRe
   }
   return (
     <form
-      className={renaming ? 'image-studio__inline' : 'image-studio__inline image-studio__word-form'}
+      className={renaming ? 'image-studio__inline is-pointing' : 'image-studio__inline is-pointing image-studio__word-form'}
       style={notch}
       onSubmit={(event) => {
         event.preventDefault()
@@ -1107,13 +1107,13 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
 
   /** The full-width row that "Search words…", Rename or Delete opens under the tile's row. */
   const inlineRow = (item: StudioItem, where: string, column = 0): ReactNode => {
-    // A notch over the tile's column points up at the ringed tile
+    // A notch over the tile's column points up at the ringed tile (`is-pointing` draws it)
     const notch = { '--notch': `${((column + 0.5) / ROW) * 100}%` } as CSSProperties
     if (openTile?.key !== slotOf(where, item) || openTile.mode === 'menu') return null
     const component = item.provider === 'component' ? componentsBySlug.get(item.providerId) : undefined
     if (openTile.mode === 'confirm' && component) {
       return (
-        <div className="image-studio__inline" style={notch} key={`${item.itemKey}:row`} role="alertdialog" aria-label={`Delete ${component.name}?`}>
+        <div className="image-studio__inline is-pointing" style={notch} key={`${item.itemKey}:row`} role="alertdialog" aria-label={`Delete ${component.name}?`}>
           <span>Delete “{component.name}”?</span>
           <button
             type="button"

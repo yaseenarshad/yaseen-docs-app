@@ -59,16 +59,13 @@
 }
 
 .image-studio__word-chip {
+  align-items: center;
   background: var(--color-primary-light);
   border-radius: 999px;
-  font-size: 10px;
-  padding: 1px 7px;
-}
-
-.image-studio__word-chip {
-  align-items: center;
   display: inline-flex;
+  font-size: 10px;
   gap: 2px;
+  padding: 1px 7px;
 }
 
 /* The × beside an added word: quiet until pointed at. The name's chip has none: its name always finds it. */
@@ -82,7 +79,7 @@
 }
 
 .image-studio__inline .image-studio__word-remove:hover {
-  color: var(--color-danger, #e03131);
+  color: var(--color-danger);
 }
 
 .image-studio__word-chip.is-name {
@@ -295,12 +292,12 @@
   box-shadow: 0 0 0 1px var(--color-primary);
 }
 
-.image-studio__inline[style*='--notch'] {
+.image-studio__inline.is-pointing {
   border-color: var(--color-primary);
   position: relative;
 }
 
-.image-studio__inline[style*='--notch']::before {
+.image-studio__inline.is-pointing::before {
   background: var(--island-bg-color);
   border-left: 1px solid var(--color-primary);
   border-top: 1px solid var(--color-primary);
