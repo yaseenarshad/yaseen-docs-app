@@ -324,8 +324,17 @@ export const getStyledVisualLines = (args: {
                 : ("open" as const),
           }
         : null;
-    const pieces =
-      hasRuns || links.length || checkbox
+    // YAZ-4277 bug: an item's indent and marker draw no underline or strike
+    // (they keep the runs they had, and the whole box's style), as in a note
+    const prefixEnd =
+      parsedLine.markerKind === "none"
+        ? 0
+        : originalLine.length - parsedLine.content.length;
+    const decoratedPrefix =
+      prefixEnd > 0 &&
+      (args.wholeElementUnderlined || args.wholeElementStrikethrough);
+    const linePieces =
+      hasRuns || links.length || checkbox || decoratedPrefix
         ? getLinePieces(
             originalLine,
             sourceOffset,
@@ -342,6 +351,10 @@ export const getStyledVisualLines = (args: {
             checkbox,
           )
         : null;
+    const pieces =
+      linePieces && prefixEnd > 0
+        ? undecoratePrefix(linePieces, prefixEnd)
+        : linePieces;
     const visualLines = pieces
       ? getWrappedTextLineWithMeasure(
           originalLine,
@@ -451,6 +464,30 @@ const getLinePieces = (
     }
   }
   return linked;
+};
+
+/** The pieces with no underline or strike before `prefixEnd` (a list item's indent and marker). */
+const undecoratePrefix = (pieces: readonly LinePiece[], prefixEnd: number) => {
+  const out: LinePiece[] = [];
+  for (const piece of pieces) {
+    if (
+      piece.start >= prefixEnd ||
+      (!piece.underlined && !piece.strikethrough)
+    ) {
+      out.push(piece);
+      continue;
+    }
+    out.push({
+      ...piece,
+      end: Math.min(piece.end, prefixEnd),
+      underlined: false,
+      strikethrough: false,
+    });
+    if (piece.end > prefixEnd) {
+      out.push({ ...piece, start: prefixEnd });
+    }
+  }
+  return out;
 };
 
 /** YAZ-4277 D4: the checklist marker as one piece of its own, in the style of its first letter. */

@@ -214,3 +214,163 @@ describe("every list marker and fold arrow scales with the text (YAZ-4277 bug)",
     }
   }
 });
+
+/**
+ * YAZ-4277 bug: a nested checklist item drew an underline under its indent,
+ * before its box ("__☐ test", "›_☐ test" when folded). The letters of an
+ * item's indent and marker keep the style runs they had (the editor has no
+ * place for them), and the canvas drew their underline. A list item's indent
+ * and marker never draw an underline or a strike, as in a note: the line
+ * starts at its letters.
+ */
+describe("a list item's indent and marker draw no underline or strike (YAZ-4277 bug)", () => {
+  const FONT_SIZE = 20;
+
+  /** Each underline and strike as [its line, its x]. */
+  const decorations = (
+    text: string,
+    extra: Partial<ExcalidrawTextElement>,
+  ) => {
+    const box = {
+      ...newTextElement({
+        text,
+        x: 0,
+        y: 0,
+        fontSize: FONT_SIZE,
+        textAlign: "left",
+        backgroundColor: "transparent",
+      }),
+      ...extra,
+    } as ExcalidrawTextElement;
+    const sized = {
+      ...box,
+      ...refreshTextDimensions(box, null, new Map()),
+    } as ExcalidrawTextElement;
+    const rects: { x: number; y: number }[] = [];
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (
+      this: HTMLCanvasElement,
+      ...args: any[]
+    ) {
+      const context = (getContext as any).apply(this, args);
+      if (context && args[0] === "2d") {
+        const fillRect = context.fillRect.bind(context);
+        context.fillRect = (x: number, y: number, w: number, h: number) => {
+          rects.push({ x, y });
+          return fillRect(x, y, w, h);
+        };
+      }
+      return context;
+    } as any;
+    try {
+      const canvas = document.createElement("canvas");
+      const elementsMap = arrayToMap([sized]) as any;
+      renderElement(
+        sized as any,
+        elementsMap,
+        elementsMap,
+        rough.canvas(canvas),
+        canvas.getContext("2d")!,
+        {
+          canvasBackgroundColor: "#ffffff",
+          imageCache: new Map(),
+          renderGrid: false,
+          isExporting: true,
+          embedsValidationStatus: new Map(),
+          elementsPendingErasure: new Set(),
+          pendingFlowchartNodes: null,
+          theme: "light",
+        } as any,
+        {
+          zoom: { value: getNormalizedZoom(1) },
+          scrollX: 0,
+          scrollY: 0,
+          selectedElementIds: {},
+          hoveredElementIds: {},
+          openDialog: null,
+          frameRendering: { enabled: false, clip: false, name: false },
+          croppingElementId: null,
+          theme: "light",
+        } as any,
+      );
+    } finally {
+      HTMLCanvasElement.prototype.getContext = getContext;
+    }
+    const lineHeight = (sized.height / text.split("\n").length) as number;
+    return rects.map(({ x, y }) => ({ line: Math.floor(y / lineHeight), x }));
+  };
+
+  /** The x where each line's letters start: after its indent and marker. */
+  const letterStarts = (text: string) => {
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d")!;
+    context.font = `${FONT_SIZE}px Excalifont`;
+    return text.split("\n").map((line) => {
+      const prefix = /^[ \t]*(?:[•○▪☐☑]|\d+\.)[ \t]+/u.exec(line)?.[0] ?? "";
+      return context.measureText(prefix).width;
+    });
+  };
+
+  const expectAfterPrefix = (
+    text: string,
+    extra: Partial<ExcalidrawTextElement>,
+    expectedLines: number[],
+  ) => {
+    const found = decorations(text, extra);
+    const starts = letterStarts(text);
+    expect([...new Set(found.map(({ line }) => line))].sort()).toEqual(
+      expectedLines,
+    );
+    for (const { line, x } of found) {
+      expect({ line, x }).toEqual({
+        line,
+        x: expect.toSatisfy((value: number) => value >= starts[line] - 1e-6),
+      });
+    }
+  };
+
+  // Yaseen's box: the indent of each nested item kept an underline run
+  const CHECKLIST = "☐ Schedule\n    ☐ test\n    ☐ test";
+
+  it("a nested checklist item whose indent has an underline run", () => {
+    // line 2 starts at 11, its indent is 11-15; line 3's indent is 22-26
+    expectAfterPrefix(
+      CHECKLIST,
+      {
+        textRuns: [
+          { start: 11, end: 15, underline: true },
+          { start: 22, end: 26, underline: true },
+        ],
+      } as any,
+      [],
+    );
+  });
+
+  it("a run over a whole nested item underlines and strikes its letters only", () => {
+    expectAfterPrefix(
+      CHECKLIST,
+      {
+        textRuns: [{ start: 11, end: 21, underline: true, strikethrough: true }],
+      } as any,
+      [1],
+    );
+  });
+
+  it("nested bullets and numbers with a run over the whole text", () => {
+    const text = "• one\n    ○ two\n        ▪ three\n1. four";
+    expectAfterPrefix(
+      text,
+      { textRuns: [{ start: 0, end: text.length, underline: true }] } as any,
+      [0, 1, 2, 3],
+    );
+  });
+
+  it("nested items with the whole box underlined and struck", () => {
+    const text = "• one\n    ○ two\n    ☐ three";
+    expectAfterPrefix(
+      text,
+      { textDecoration: "underline", strikethrough: true } as any,
+      [0, 1, 2],
+    );
+  });
+});
