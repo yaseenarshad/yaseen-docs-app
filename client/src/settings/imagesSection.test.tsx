@@ -107,6 +107,31 @@ describe('Settings › Images › Add panel › Hover zoom (YAZ-4447, D34)', () 
   })
 })
 
+describe('Settings › Images › Add panel › Hover size (YAZ-4447 demo round 2)', () => {
+  const sizes = () => rowButtons('mediaHoverZoomSize').map((b) => [b.textContent, b.getAttribute('aria-pressed')])
+  it('sits right under Hover zoom in the same group, Medium by default', async () => {
+    await mountImages()
+    expect(sizes()).toEqual([
+      ['Small', 'false'],
+      ['Medium', 'true'],
+      ['Large', 'false'],
+    ])
+    expect(row('mediaHoverZoom')?.nextElementSibling).toBe(row('mediaHoverZoomSize'))
+  })
+
+  it('Large writes the same setting as Filter › Hover size', async () => {
+    await mountImages()
+    act(() => rowButtons('mediaHoverZoomSize')[2].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, mediaHoverZoomSize: 'large' })
+  })
+
+  it('is not there while Hover zoom is Off', async () => {
+    await mountImages({ ...DEFAULT_SETTINGS, mediaHoverZoom: false })
+    expect(row('mediaHoverZoom')).not.toBeNull()
+    expect(row('mediaHoverZoomSize')).toBeNull()
+  })
+})
+
 describe('Settings › Images › Library folder', () => {
   it('shows the default main resolved, marked as the default; Reset is off while it IS the default', async () => {
     await mountImages()

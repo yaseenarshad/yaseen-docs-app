@@ -328,6 +328,16 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, mediaHoverZoom: 1 })).toBe(false)
   })
 
+  it('Add panel hover size (YAZ-4447 demo round 2): a file from before it reads Medium; Large survives a restart; junk reads Medium', async () => {
+    const { mediaHoverZoomSize: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.mediaHoverZoomSize).toBe('medium')
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, mediaHoverZoomSize: 'large' } }))
+    expect(createStore(file).get().settings.mediaHoverZoomSize).toBe('large')
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, mediaHoverZoomSize: 'huge' }).mediaHoverZoomSize).toBe('medium')
+    expect(isSettings({ ...DEFAULT_SETTINGS, mediaHoverZoomSize: 2 })).toBe(false)
+  })
+
   it('outsideChangeGlow (YAZ-3704 D5): a file from before it reads Until I check it; each value survives a restart; junk reads the default', async () => {
     const { outsideChangeGlow: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     expect(DEFAULT_SETTINGS.outsideChangeGlow).toBe('until-checked')

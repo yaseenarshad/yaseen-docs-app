@@ -1703,7 +1703,19 @@ export interface MediaSearchResponse {
 export interface MediaBytesRequest {
   provider: MediaBytesProvider
   id: string
+  /**
+   * `media:preview` only. The hover zoom's sharp picture (YAZ-4447 demo round 2): a Pixabay item's `webformatURL` at
+   * this width, which fits the zoom box. Never cached by main (the panel keeps the last 40); an icon ignores it.
+   */
+  zoomWidth?: MediaZoomWidth
 }
+/** The sizes Pixabay serves a `webformatURL` at (its `_640` swapped): the hover zoom asks the one that fits its box. */
+export const MEDIA_ZOOM_WIDTHS = [340, 640, 960] as const
+export type MediaZoomWidth = (typeof MEDIA_ZOOM_WIDTHS)[number]
+export const isMediaZoomWidth = (v: unknown): v is MediaZoomWidth => (MEDIA_ZOOM_WIDTHS as readonly unknown[]).includes(v)
+/** The hover zoom's sizes (YAZ-4447 demo round 2), `SettingsState.mediaHoverZoomSize`. */
+export const MEDIA_HOVER_ZOOM_SIZES = ['small', 'medium', 'large'] as const
+export type MediaHoverZoomSize = (typeof MEDIA_HOVER_ZOOM_SIZES)[number]
 export type MediaPreviewRequest = MediaBytesRequest
 export type MediaImportRequest = MediaBytesRequest
 
@@ -2010,6 +2022,12 @@ export interface SettingsState {
    * zoom and Settings › Images › Add panel are the same switch. Travels; Clear filters keeps it. Default on.
    */
   mediaHoverZoom: boolean
+  /**
+   * How big the hover zoom is (YAZ-4447 demo round 2): Small 3 times the tile (240 px at most), Medium 8 times (640 px),
+   * Large 12 times (960 px); every size stays inside the window. Filter › Hover size and Settings › Images › Add panel
+   * are the same choice. Travels. Default Medium.
+   */
+  mediaHoverZoomSize: MediaHoverZoomSize
   /**
    * Where the downloaded icon packs live (YAZ-4359, D5 update): ONE folder for every vault and window of this Mac.
    * null = `<userData>/icon-packs`, which only main can resolve. Stays on this Mac (`LOCAL_SETTINGS`).
@@ -2425,6 +2443,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   mediaPinnedPacks: [],
   mediaGroupSimilar: false,
   mediaHoverZoom: true,
+  mediaHoverZoomSize: 'medium',
   iconPacksFolder: null,
   noticeLength: '4s',
   noticeUndo: true,

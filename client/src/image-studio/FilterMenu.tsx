@@ -8,6 +8,7 @@
  *  - License: Any, Business-safe;
  *  - Similar icons: "Group them (+N)" or "Show each one" (YAZ-4348 demo round 2), a view choice, not a filter;
  *  - Hover zoom: On or Off (YAZ-4447, D34), a view choice too; Settings › Images › Add panel is the same switch.
+ *    Hover size (demo round 2): Small, Medium or Large, beside it while it is On; the same in Settings.
  * "Clear filters" sits at the top right, on the Show line; Show goes back to All too, and the two view choices stay. It
  * is the last item in the keys' order. A badge on the button counts what is on: each filter, and Show when it is not All.
  *
@@ -19,6 +20,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { activeFilterCount, type IconPackInfo, type MediaColorFilter, type MediaFilters, type MediaLicenseFilter, type MediaStyleFilter } from '@shared/iconPacks'
+import type { MediaHoverZoomSize } from '@shared/types'
 import { STUDIO_CHIP_LABELS, type StudioChip } from './imageStudioSession'
 
 const COLORS: readonly [MediaColorFilter, string][] = [
@@ -61,6 +63,9 @@ export interface FilterMenuProps {
   /** Hover zoom (YAZ-4447, D34): a resting pointer shows a tile bigger. A view choice like Similar icons. */
   hoverZoom: boolean
   onHoverZoom: (on: boolean) => void
+  /** Hover size (YAZ-4447 demo round 2): how big the zoom is. Shown only while Hover zoom is On. */
+  hoverZoomSize: MediaHoverZoomSize
+  onHoverZoomSize: (size: MediaHoverZoomSize) => void
 }
 
 /** The packs in the chooser's order: pinned first (in pin order), then by name. */
@@ -72,7 +77,7 @@ export function packOrder(packs: readonly IconPackInfo[], pinned: readonly strin
   return [...packs].sort((a, b) => at(a.prefix) - at(b.prefix) || a.name.localeCompare(b.name))
 }
 
-export function FilterMenu({ show, shows, onShow, filters, onChange, onClear, pinned, loadPacks, groupSimilar, onGroupSimilar, hoverZoom, onHoverZoom }: FilterMenuProps) {
+export function FilterMenu({ show, shows, onShow, filters, onChange, onClear, pinned, loadPacks, groupSimilar, onGroupSimilar, hoverZoom, onHoverZoom, hoverZoomSize, onHoverZoomSize }: FilterMenuProps) {
   const [open, setOpen] = useState(false)
   const [choosing, setChoosing] = useState(false)
   const [packs, setPacks] = useState<IconPackInfo[] | null>(null)
@@ -233,6 +238,17 @@ export function FilterMenu({ show, shows, onShow, filters, onChange, onClear, pi
             hoverZoom ? 'on' : 'off',
             (choice) => onHoverZoom(choice === 'on'),
           )}
+          {hoverZoom &&
+            radios<MediaHoverZoomSize>(
+              'Hover size',
+              [
+                ['small', 'Small'],
+                ['medium', 'Medium'],
+                ['large', 'Large'],
+              ],
+              hoverZoomSize,
+              onHoverZoomSize,
+            )}
           <button type="button" role="menuitem" className="image-studio__filter-clear" disabled={count === 0} onClick={onClear}>
             Clear filters
           </button>

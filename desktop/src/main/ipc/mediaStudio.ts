@@ -15,7 +15,7 @@
  */
 import { join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
-import { isMediaBytesProvider, isMediaSearchSource, PIXABAY_SECRET, type MediaBytesRequest, type MediaDrawingRequest, type MediaSearchRequest } from '@shared/types'
+import { isMediaBytesProvider, isMediaSearchSource, isMediaZoomWidth, MEDIA_ZOOM_WIDTHS, PIXABAY_SECRET, type MediaBytesRequest, type MediaDrawingRequest, type MediaSearchRequest } from '@shared/types'
 import { CONTRACT } from '@shared/ipc'
 import { isMediaFilters, type IconPacksRequest, type MediaFilters } from '@shared/iconPacks'
 import { BridgeFailure } from '../fs/fsUtils'
@@ -47,7 +47,10 @@ function requireBytesRequest(v: unknown): MediaBytesRequest {
   // `shape` is deliberately not one of these: a shape is drawn by the renderer from its own
   // catalog and has no bytes to fetch (🔒 YAZ-1775 D4).
   if (!isMediaBytesProvider(r.provider)) throw new BridgeFailure('BAD_REQUEST', "'provider' must be pixabay or iconify")
-  return { provider: r.provider, id: str(r.id, 'id') }
+  if (r.zoomWidth === undefined) return { provider: r.provider, id: str(r.id, 'id') }
+  // The hover zoom's sharp picture (YAZ-4447): one of the widths Pixabay serves, nothing else.
+  if (!isMediaZoomWidth(r.zoomWidth)) throw new BridgeFailure('BAD_REQUEST', `'zoomWidth' must be one of ${MEDIA_ZOOM_WIDTHS.join(', ')}`)
+  return { provider: r.provider, id: str(r.id, 'id'), zoomWidth: r.zoomWidth }
 }
 
 /** One library item: the id's shape is checked by the providers (`parseDrawingId`). */

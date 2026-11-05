@@ -37,7 +37,7 @@ import { clearPreviewMemo, ImageStudio, READ_ONLY_NOTICE, type ImageStudioProps 
 import { imageStudioSession, OFFLINE_NOTICE, OFFLINE_WITH_PACKS_NOTICE, resetImageStudioSession, SEARCH_PAUSE_MS } from './imageStudioSession'
 import type { SmartShapeApi } from './shapes'
 import { resetIconPacks } from './useIconPacks'
-import { TILE_ZOOM_MAX } from './tileHoverZoom'
+import { clearZoomCache, TILE_ZOOM_SIZES } from './tileHoverZoom'
 
 const media = vi.mocked(api.media)
 const components = vi.mocked(api.components)
@@ -1278,9 +1278,9 @@ describe('the Filter button and menu (YAZ-4360)', () => {
     expect(document.activeElement).toBe(option(host, 'Show', 'Favorites'))
     await key(host.querySelector('.image-studio__filter-menu')!, 'ArrowUp')
     await key(host.querySelector('.image-studio__filter-menu')!, 'ArrowUp')
-    // Up from All wraps to the last item that is on (Clear filters is off with nothing on): Hover zoom's last choice (D34).
-    expect(document.activeElement?.textContent).toBe('Off')
-    expect(document.activeElement?.closest('[aria-label="Hover zoom"]')).not.toBeNull()
+    // Up from All wraps to the last item that is on (Clear filters is off with nothing on): Hover size's last choice (D34).
+    expect(document.activeElement?.textContent).toBe('Large')
+    expect(document.activeElement?.closest('[aria-label="Hover size"]')).not.toBeNull()
   })
 
   it('Esc closes the menu back to its button; a click outside closes it too', async () => {
@@ -1544,7 +1544,7 @@ describe('hover zoom on a picture tile (YAZ-4447, D34)', () => {
     const [left, top, size] = [parseFloat(box.style.left), parseFloat(box.style.top), parseFloat(box.style.width)]
     // the test tile is 84 px: 8 × 84 = 672, past the 640 px cap; the window may cap it further
     expect(size).toBe(Math.min(640, window.innerWidth - 16, window.innerHeight - 16))
-    expect(size).toBeLessThanOrEqual(TILE_ZOOM_MAX)
+    expect(size).toBeLessThanOrEqual(TILE_ZOOM_SIZES.medium.max)
     expect(left + size).toBeLessThanOrEqual(700) // left of the tile: the room is there
     expect(left).toBeGreaterThanOrEqual(0)
     expect(top).toBeGreaterThanOrEqual(0)
@@ -1607,6 +1607,64 @@ describe('hover zoom on a picture tile (YAZ-4447, D34)', () => {
     expect(shown()).toBe(false)
   })
 
+  it('Filter › Hover size sits under Hover zoom: Medium by default, Large saves and grows the box, Off hides it', async () => {
+    const { host, tile } = await mountTile()
+    vi.useRealTimers()
+    await click(host.querySelector('.image-studio__filter-button'))
+    const sizes = () => [...host.querySelectorAll<HTMLButtonElement>('.image-studio__filter-menu [aria-label="Hover size"] button')]
+    expect(sizes().map((b) => [b.textContent, b.getAttribute('aria-checked')])).toEqual([
+      ['Small', 'false'],
+      ['Medium', 'true'],
+      ['Large', 'false'],
+    ])
+    const groups = [...host.querySelectorAll('.image-studio__filter-menu [role="group"]')].map((g) => g.getAttribute('aria-label'))
+    expect(groups.indexOf('Hover size')).toBe(groups.indexOf('Hover zoom') + 1)
+    await click(sizes()[2])
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaHoverZoomSize: 'large' })
+    vi.useFakeTimers()
+    await over(tile)
+    await wait(400)
+    // 12 × 84 = 1008, past the 960 px cap; the 768 px window caps it at 752
+    expect(parseFloat(zoom()!.style.width)).toBe(Math.min(960, window.innerWidth - 16, window.innerHeight - 16))
+    await out(tile, document.body)
+    vi.useRealTimers()
+    await click([...host.querySelectorAll<HTMLButtonElement>('.image-studio__filter-menu [aria-label="Hover zoom"] button')][1])
+    expect(sizes()).toEqual([])
+  })
+
+  it('Small from the settings makes the box 3 times the tile', async () => {
+    const { tile } = await mountTile({ ...DEFAULT_SETTINGS, mediaHoverZoomSize: 'small' })
+    await over(tile)
+    await wait(400)
+    expect(parseFloat(zoom()!.style.width)).toBe(Math.min(240, 3 * 84))
+  })
+
+  it('a Pixabay tile asks main once for its sharp picture and swaps it in; an icon tile asks nothing', async () => {
+    clearZoomCache()
+    const photo = item({ itemKey: 'pixabay:42', provider: 'pixabay', providerId: '42', kind: 'illustration', title: 'money bag' })
+    media.preview.mockImplementation(async (req) =>
+      req.zoomWidth === undefined ? { mimeType: 'image/png', dataURL: 'data:image/png;base64,SMALL' } : { mimeType: 'image/jpeg', dataURL: `data:image/jpeg;base64,LARGE${req.zoomWidth}` },
+    )
+    store.getSettings.mockReturnValue(DEFAULT_SETTINGS)
+    media.search.mockResolvedValue({ items: [photo], nextCursor: null, pixabayAvailable: true, warnings: [] })
+    const { host } = await mount()
+    await search(host)
+    const tile = host.querySelector<HTMLElement>('.image-studio__preview')!
+    tile.getBoundingClientRect = () => ({ left: 700, top: 20, right: 784, bottom: 104, width: 84, height: 84, x: 700, y: 20, toJSON: () => ({}) })
+    vi.useFakeTimers()
+    await over(tile)
+    await wait(400)
+    await act(async () => void (await vi.advanceTimersByTimeAsync(0)))
+    expect(media.preview).toHaveBeenCalledWith({ provider: 'pixabay', id: '42', zoomWidth: 640 })
+    expect(zoom()!.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,LARGE640')
+    const asked = media.preview.mock.calls.length
+    await out(tile, document.body)
+    await over(tile)
+    await wait(400)
+    expect(zoom()!.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,LARGE640')
+    expect(media.preview.mock.calls.length).toBe(asked)
+  })
+
   it('stays off when the settings say Off (another window, or Settings › Images)', async () => {
     const { tile } = await mountTile({ ...DEFAULT_SETTINGS, mediaHoverZoom: false })
     await over(tile)
@@ -1618,6 +1676,7 @@ describe('hover zoom on a picture tile (YAZ-4447, D34)', () => {
 describe('the defaults of D34', () => {
   it('Hover zoom is On and Similar icons shows each one', () => {
     expect(DEFAULT_SETTINGS.mediaHoverZoom).toBe(true)
+    expect(DEFAULT_SETTINGS.mediaHoverZoomSize).toBe('medium')
     expect(DEFAULT_SETTINGS.mediaGroupSimilar).toBe(false)
   })
 
