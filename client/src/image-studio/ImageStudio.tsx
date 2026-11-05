@@ -22,7 +22,7 @@
  * OFFLINE IS A STATE, NOT A BANNER: the web half says so in one line; everything local keeps working.
  *
  * THE SMART SHAPES ARRIVE LATE ON PURPOSE. `@excalidraw/element` is a second ~300 kB download (`engine.ts`'s lazy
- * rule), so the seven basic shapes render immediately and the twelve Smart Shapes join when it lands.
+ * rule), so the seven basic shapes render immediately and the 20 Smart Shapes join when it lands.
  *
  * WHAT IT REMEMBERS LIVES ELSEWHERE (🔒 YAZ-1990). Closing the canvas panel unmounts this tab, so the chip, the query,
  * the results and the scroll are `imageStudioSession.ts`'s; this component renders them and keeps what one click has
@@ -45,7 +45,7 @@ import { insertImage, insertShape, fileFromImport, type InsertEngine, type Inser
 import { buildShapeCatalog, getShape, shapeAliases, type ShapeCatalogItem, type ShapePreview, type SmartShapeApi } from './shapes'
 import { groupResults } from './groupResults'
 import { FilterMenu } from './FilterMenu'
-import { IconPacksFooter } from './IconPacksLine'
+import { IconPacksFooter } from './IconPacksFooter'
 import { PackView } from './PackView'
 import { useIconPacks } from './useIconPacks'
 import { rankItems } from './rankItems'
@@ -78,7 +78,7 @@ import './imageStudio.css'
 /**
  * One row of the grid: what a section shows before "Show all" (D7). Four at the panel's usual width; a wider panel
  * (YAZ-4348 demo round 2: "one would expect more icons to show up instead of only getting them bigger") fits one
- * more column for each `TILE_MIN_WIDTH` it gains.
+ * more column for each `TILE_MIN_WIDTH + TILE_GAP` (90 px) it gains.
  */
 const MIN_ROW = 4
 const TILE_MIN_WIDTH = 84
@@ -90,8 +90,18 @@ const MATCH_PAGE = 48
 /** How to save a copied picture at full size (demo 6M), under Components. */
 const PASTE_HINT = 'Copy a picture anywhere, then press ⌘V here to save it to your library at full size. You can drop a picture file here too.'
 
+/** No item touched during this search: one empty set, so `shownElsewhere` keeps its identity. */
+const NOTHING_TOUCHED: ReadonlySet<string> = new Set()
+
 /** What an add says on a read-only board, where it puts nothing. */
 export const READ_ONLY_NOTICE = 'This board is read only. Click “Allow edits” on its Read only chip to add to it.'
+/**
+ * How many tiles the pack page shows before "Show more" (YAZ-4366 audit 70). A big pack scrolled whole put thousands
+ * of tiles in the list, and each panel change (an add, an open menu) built every one again. The infinite scroll goes
+ * on up to the cap; "Show more" lifts it by the same step. Every shown tile stays in the DOM, so the arrow keys still
+ * walk all of them.
+ */
+const PACK_PAGE = 240
 /** How many hand-drawn matches show at first (demo 6K): two rows; "Show more" adds `MATCH_PAGE`. */
 const DRAWING_PAGE = 8
 
@@ -203,6 +213,9 @@ export function loadPackList(): Promise<IconPackInfo[]> {
 /** The settings' filters and pins, read where the panel has no settings prop (`storage`, which a test may not have). */
 const settingsFilters = (): MediaFilters => sanitizeMediaFilters(storage.getSettings()?.mediaFilters ?? DEFAULT_MEDIA_FILTERS)
 const settingsPins = (): string[] => storage.getSettings()?.mediaPinnedPacks ?? []
+const settingsGroupSimilar = (): boolean => storage.getSettings()?.mediaGroupSimilar ?? true
+/** The pins as they are now, or the same array when they hold the same packs, so a settings broadcast renders nothing. */
+const samePins = (now: string[], next: string[]): string[] => (now.length === next.length && now.every((p, i) => p === next[i]) ? now : next)
 
 export const clearPreviewMemo = () => {
   packList = null
@@ -251,6 +264,91 @@ function ShapeTile({ preview }: { preview: ShapePreview }) {
     <svg viewBox="0 0 100 100" aria-hidden="true">
       <polygon className="image-studio__shape-path--basic" points={points} />
     </svg>
+  )
+}
+
+interface InlineFormProps {
+  item: StudioItem
+  /** Rename (a component's name), else "Search words…". */
+  renaming: boolean
+  initial: string
+  /** The words that find the item now, after its name. */
+  words: readonly string[]
+  /** The search text as a one-click word, or '' (`wordToOffer`). */
+  offer: string
+  notch: CSSProperties
+  onWord: (word: string) => void
+  onRemoveWord: (word: string) => void
+  onRename: (name: string) => void
+  onClose: () => void
+}
+
+/**
+ * The full-width row that "Search words…" or Rename opens under the tile's row. Its own component, so a key typed in
+ * its field renders this row only, not the whole panel with every grid and tile (YAZ-4366 audit 68).
+ */
+function InlineForm({ item, renaming, initial, words, offer, notch, onWord, onRemoveWord, onRename, onClose }: InlineFormProps) {
+  const [draft, setDraft] = useState(initial)
+  // YAZ-4348 demo round 2: the field empties for the next word; the row stays open, with the new chip in it.
+  const addWord = (word: string) => {
+    if (word.trim() === '') return
+    setDraft('')
+    onWord(word)
+  }
+  return (
+    <form
+      className={renaming ? 'image-studio__inline is-pointing' : 'image-studio__inline is-pointing image-studio__word-form'}
+      style={notch}
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (renaming) onRename(draft)
+        else addWord(draft)
+      }}
+    >
+      {!renaming && (
+        // YAZ-4348 demo round 2: every word that finds it shows (its name first), and a new one is ADDED to them
+        <div className="image-studio__word-head">
+          <span>
+            Search words for <b>{item.title}</b>
+          </span>
+          <span className="image-studio__word-chips" aria-label={`Words that find ${item.title}`}>
+            <span className="image-studio__word-chip is-name" title="Its name always finds it">
+              {item.title.toLowerCase()}
+            </span>
+            {words.map((w) => (
+              <span className="image-studio__word-chip" key={w}>
+                {w}
+                <button type="button" className="image-studio__word-remove" aria-label={`Remove the word “${w}”`} title="Remove this word" onClick={() => onRemoveWord(w)}>
+                  ×
+                </button>
+              </span>
+            ))}
+          </span>
+        </div>
+      )}
+      {/* Autofocused: the menu item above is the only way here. */}
+      <input
+        autoFocus
+        value={draft}
+        maxLength={renaming ? MAX_COMPONENT_NAME_LENGTH : MAX_ITEM_WORD_LENGTH}
+        aria-label={renaming ? `Rename ${item.title}` : `A word for ${item.title}`}
+        placeholder={renaming ? 'Name' : 'A new word, like “person”'}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => event.key === 'Escape' && onClose()}
+      />
+      <button type="submit">{renaming ? 'Save' : 'Add word'}</button>
+      <button type="button" onClick={onClose}>
+        Cancel
+      </button>
+      {offer !== '' && (
+        <span className="image-studio__word-offer">
+          Your search:
+          <button type="button" onClick={() => addWord(offer)}>
+            + {offer}
+          </button>
+        </span>
+      )}
+    </form>
   )
 }
 
@@ -328,13 +426,18 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   const { chip, query, searchedQuery, results, cursor, warnings, isSearching, waiting, offline, pageError, error, pixabayAvailable, favorites, recent, used, components, drawings, recentOpen, smart, filters, pack } = session
   const { set } = imageStudioSession
   const packsStatus = useIconPacks()
-  // The filters and the pins live in the settings (they travel); the session holds a copy for the search to send. A
-  // change from another window searches again, as a pick in the menu does (YAZ-4384); the same filters ask nothing.
+  // The filters, the pins and Similar icons live in the settings (they travel); the session holds a copy of the
+  // filters for the search to send. A change from another window searches again, as a pick in the menu does
+  // (YAZ-4384); the same filters ask nothing. `read` runs on each settings broadcast (a tab click too), so the same
+  // values keep the same state and render nothing (YAZ-4366 audit 67, 69).
   const [pinned, setPinned] = useState<string[]>(settingsPins)
+  // Filter › Similar icons (YAZ-4348 demo round 2): the "+N" groups, or every icon as its own tile.
+  const [groupSimilar, setGroupSimilar] = useState<boolean>(settingsGroupSimilar)
   useEffect(() => {
     const read = () => {
       setFilters(settingsFilters())
-      setPinned(settingsPins())
+      setPinned((now) => samePins(now, settingsPins()))
+      setGroupSimilar(settingsGroupSimilar())
     }
     read()
     return storage.subscribe(read)
@@ -387,19 +490,18 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   // The open "+N" group, apart from `openTile` (YAZ-4348 demo round 2): a right-click on a tile inside the group opens
   // that tile's menu and the group stays open; one shared state closed the group, and the menu with its tile.
   const [openGroup, setOpenGroup] = useState<string | null>(null)
-  // Filter › Similar icons (YAZ-4348 demo round 2): the "+N" groups, or every icon as its own tile.
-  const [groupSimilar, setGroupSimilar] = useState<boolean>(() => storage.getSettings()?.mediaGroupSimilar ?? true)
+  // A change of Similar icons, here or from another window, closes the open group: its tile may no longer have one.
+  useEffect(() => setOpenGroup(null), [groupSimilar])
   const changeGroupSimilar = (on: boolean) => {
     setGroupSimilar(on)
-    setOpenGroup(null)
     storage.patchSettings({ mediaGroupSimilar: on })
   }
-  const [draft, setDraft] = useState('')
   const [line, setLine] = useState<Line>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [componentName, setComponentName] = useState('')
   const [shownMatches, setShownMatches] = useState(MATCH_PAGE)
   const [shownDrawings, setShownDrawings] = useState(DRAWING_PAGE)
+  const [shownPack, setShownPack] = useState(PACK_PAGE)
   const [importMenuOpen, setImportMenuOpen] = useState(false)
   const importMenuRef = useRef<HTMLSpanElement>(null)
   // The Components ⋯ menu behaves as a tile's menu does (6B, polish audit 10): its item takes the focus, and a click
@@ -540,6 +642,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   }, [chip])
   // The pack page starts at its top; Back lands where the search was left (YAZ-4361).
   const packOpen = pack !== null
+  useEffect(() => setShownPack(PACK_PAGE), [pack?.prefix, pack?.query])
   useLayoutEffect(() => {
     if (listRef.current) listRef.current.scrollTop = packOpen ? 0 : scrollTops[chip]
   }, [packOpen])
@@ -580,18 +683,27 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   /**
    * The items you added, starred or gave a word during this search (YAZ-4348 demo round 2: "if im in the web and then
    * i click it or i add a word to it it jumps to best matches … where did the image go"). They stay where they were
-   * — in From the web, or Hand-drawn — until the search changes; then they rank in Best matches as usual.
+   * — in From the web, or Hand-drawn — until the search changes; then they rank in Best matches as usual. An item
+   * already in Best matches is not one: it stays there too, and does not jump to From the web (YAZ-4366 audit 66).
    */
   const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set())
-  const touch = (itemKey: string) => setTouched((now) => (now.has(itemKey) ? now : new Set(now).add(itemKey)))
-  useEffect(() => setTouched(new Set()), [query, chip])
+  const touch = (itemKey: string) => {
+    if (yourKeys.has(itemKey)) return
+    setTouched((now) => (now.has(itemKey) ? now : new Set(now).add(itemKey)))
+  }
+  // The same empty set when nothing was touched, so a typed key costs no second render (YAZ-4366 audit 71).
+  useEffect(() => setTouched((now) => (now.size === 0 ? now : new Set())), [query, chip])
   const ranked = useMemo(
     () => (typed ? rankItems(pool.filter((item) => inChip(chip, item, favoriteKeys)), usedByKey, query, aliases) : []),
     // `aliases` reads `catalog`, which is listed.
     [typed, pool, chip, favoriteKeys, usedByKey, query, catalog],
   )
   // A touched item that is still on screen elsewhere (the web results, the hand-drawn list) is not in Best matches too.
-  const shownElsewhere = useMemo(() => new Set([...results, ...(drawings ?? [])].map((item) => item.itemKey).filter((key) => touched.has(key))), [results, drawings, touched])
+  // With nothing touched (most searches) it walks nothing, also on each page of results (YAZ-4366 audit 72).
+  const shownElsewhere = useMemo(
+    () => (touched.size === 0 ? NOTHING_TOUCHED : new Set([...results, ...(drawings ?? [])].map((item) => item.itemKey).filter((key) => touched.has(key)))),
+    [results, drawings, touched],
+  )
   const yours = useMemo(() => (shownElsewhere.size === 0 ? ranked : ranked.filter((item) => !shownElsewhere.has(item.itemKey))), [ranked, shownElsewhere])
   useEffect(() => {
     setShownMatches(MATCH_PAGE)
@@ -630,7 +742,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [typed, webOn, cursor, isSearching, pageError, chip, packOpen])
+    // `shownPack`: on the pack page the sentinel comes back after "Show more"
+  }, [typed, webOn, cursor, isSearching, pageError, chip, packOpen, shownPack])
 
   // The tile buttons are disabled while one is in flight; these re-check the same fact, because a keyboard
   // activation can land in the frame before React has re-rendered them.
@@ -718,11 +831,10 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   }
 
   // YAZ-4348 demo round 2: the row stays open after an add, with the new chip in it, and no line above the list (it
-  // pushed the list down, so the tile and its row jumped); the field empties for the next word.
-  const saveWord = async (item: StudioItem, word = draft) => {
+  // pushed the list down, so the tile and its row jumped).
+  const saveWord = async (item: StudioItem, word: string) => {
     if (word.trim() === '') return
     touch(item.itemKey)
-    setDraft('')
     try {
       setLibrary(await api.media.used({ op: 'add-word', item, word }))
     } catch (cause) {
@@ -748,8 +860,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     const known = [...item.title.toLowerCase().split(/\s+/), ...(usedByKey.get(item.itemKey)?.words ?? [])]
     return typedWord === '' || known.includes(typedWord.toLowerCase()) ? '' : typedWord
   }
-  const openRow = (key: string, mode: 'word' | 'rename' | 'confirm', value = '') => {
-    setDraft(value)
+  const openRow = (key: string, mode: 'word' | 'rename' | 'confirm') => {
     setOpenTile({ key, mode })
   }
 
@@ -962,7 +1073,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
             </button>
             {component !== undefined && (
               <>
-                <button type="button" role="menuitem" onClick={() => openRow(slot, 'rename', component.name)}>
+                <button type="button" role="menuitem" onClick={() => openRow(slot, 'rename')}>
                   Rename
                 </button>
                 <button
@@ -996,13 +1107,13 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
 
   /** The full-width row that "Search words…", Rename or Delete opens under the tile's row. */
   const inlineRow = (item: StudioItem, where: string, column = 0): ReactNode => {
-    // A notch over the tile's column points up at the ringed tile
+    // A notch over the tile's column points up at the ringed tile (`is-pointing` draws it)
     const notch = { '--notch': `${((column + 0.5) / ROW) * 100}%` } as CSSProperties
     if (openTile?.key !== slotOf(where, item) || openTile.mode === 'menu') return null
     const component = item.provider === 'component' ? componentsBySlug.get(item.providerId) : undefined
     if (openTile.mode === 'confirm' && component) {
       return (
-        <div className="image-studio__inline" style={notch} key={`${item.itemKey}:row`} role="alertdialog" aria-label={`Delete ${component.name}?`}>
+        <div className="image-studio__inline is-pointing" style={notch} key={`${item.itemKey}:row`} role="alertdialog" aria-label={`Delete ${component.name}?`}>
           <span>Delete “{component.name}”?</span>
           <button
             type="button"
@@ -1021,64 +1132,24 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       )
     }
     const renaming = openTile.mode === 'rename'
-    const words = usedByKey.get(item.itemKey)?.words ?? []
     return (
-      <form
-        className={renaming ? 'image-studio__inline' : 'image-studio__inline image-studio__word-form'}
-        style={notch}
-        key={`${item.itemKey}:row`}
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (renaming && component) {
-            setOpenTile(null)
-            library.rename(component, draft)
-          } else void saveWord(item)
+      <InlineForm
+        // The mode in the key: Rename after Search words starts from the name, not from the typed word
+        key={`${item.itemKey}:row:${openTile.mode}`}
+        item={item}
+        renaming={renaming}
+        initial={renaming && component ? component.name : ''}
+        words={usedByKey.get(item.itemKey)?.words ?? []}
+        offer={renaming ? '' : wordToOffer(item)}
+        notch={notch}
+        onWord={(word) => void saveWord(item, word)}
+        onRemoveWord={(word) => void removeWord(item, word)}
+        onRename={(name) => {
+          setOpenTile(null)
+          if (component) library.rename(component, name)
         }}
-      >
-        {!renaming && (
-          // YAZ-4348 demo round 2: every word that finds it shows (its name first), and a new one is ADDED to them
-          <div className="image-studio__word-head">
-            <span>
-              Search words for <b>{item.title}</b>
-            </span>
-            <span className="image-studio__word-chips" aria-label={`Words that find ${item.title}`}>
-              <span className="image-studio__word-chip is-name" title="Its name always finds it">
-                {item.title.toLowerCase()}
-              </span>
-              {words.map((w) => (
-                <span className="image-studio__word-chip" key={w}>
-                  {w}
-                  <button type="button" className="image-studio__word-remove" aria-label={`Remove the word “${w}”`} title="Remove this word" onClick={() => void removeWord(item, w)}>
-                    ×
-                  </button>
-                </span>
-              ))}
-            </span>
-          </div>
-        )}
-        {/* Autofocused: the menu item above is the only way here. */}
-        <input
-          autoFocus
-          value={draft}
-          maxLength={renaming ? MAX_COMPONENT_NAME_LENGTH : MAX_ITEM_WORD_LENGTH}
-          aria-label={renaming ? `Rename ${item.title}` : `A word for ${item.title}`}
-          placeholder={renaming ? 'Name' : 'A new word, like “person”'}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => event.key === 'Escape' && setOpenTile(null)}
-        />
-        <button type="submit">{renaming ? 'Save' : 'Add word'}</button>
-        <button type="button" onClick={() => setOpenTile(null)}>
-          Cancel
-        </button>
-        {!renaming && wordToOffer(item) !== '' && (
-          <span className="image-studio__word-offer">
-            Your search:
-            <button type="button" onClick={() => void saveWord(item, wordToOffer(item))}>
-              + {wordToOffer(item)}
-            </button>
-          </span>
-        )}
-      </form>
+        onClose={() => setOpenTile(null)}
+      />
     )
   }
 
@@ -1169,7 +1240,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
             {packsStatus?.state === 'complete' ? OFFLINE_WITH_PACKS_NOTICE : OFFLINE_NOTICE}
           </div>
         )}
-        {results.length > 0 && grid(results, 'pack')}
+        {results.length > 0 && grid(results.slice(0, shownPack), 'pack')}
         {(waiting || (isSearching && results.length === 0)) && (
           <div className="image-studio__state" role="status">
             Loading the pack…
@@ -1178,7 +1249,12 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
         {!waiting && !isSearching && !offline && cursor === null && results.length === 0 && pageError === null && (
           <div className="image-studio__state">{pack.query.trim() === '' ? 'This pack has no icons to show.' : `No icon in this pack matches “${pack.query.trim()}”`}</div>
         )}
-        {cursor && results.length > 0 && <div className="image-studio__search-sentinel" ref={sentinelRef} aria-hidden="true" />}
+        {cursor && results.length > 0 && results.length < shownPack && <div className="image-studio__search-sentinel" ref={sentinelRef} aria-hidden="true" />}
+        {(results.length > shownPack || (cursor !== null && results.length >= shownPack)) && (
+          <button type="button" className="image-studio__show-all image-studio__pack-more" onClick={() => setShownPack(shownPack + PACK_PAGE)}>
+            Show more
+          </button>
+        )}
         {pageError && cursor && (
           <button type="button" className="image-studio__retry" disabled={isSearching} onClick={() => void runSearch({ append: true, retry: true })}>
             {isSearching ? 'Retrying…' : 'Retry loading icons'}

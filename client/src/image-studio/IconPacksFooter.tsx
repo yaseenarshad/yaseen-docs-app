@@ -1,15 +1,16 @@
 /**
- * "DOWNLOAD ALL ICON PACKS" AT THE BOTTOM OF THE ICON RESULTS (YAZ-4359, round 2 decision 8). Streaming stays the
- * default; this line offers the rest: "Want every icon, also offline?". The button opens the confirm box
- * (`ConfirmSheet`), and only its Download starts anything — packs never download by themselves. The progress shows in
- * the same place, with Cancel; a stop keeps the finished packs, and the line then offers "Download the rest". With
- * every pack on the Mac the line is gone. Settings › Images › Icon packs has the same box (`PacksConfirm`).
+ * THE ICON PACKS DOWNLOAD IN THE ADD PANEL'S FOOTER (YAZ-4359, round 2 decision 8; in the footer since the YAZ-4348
+ * demo). Streaming stays the default; "↓ All icon packs", beside "Google Images ↗", offers the rest. It opens the
+ * confirm box (`ConfirmSheet`), and only its Download starts anything: packs never download by themselves. The
+ * progress shows in the same place, with Cancel; a stop keeps the finished packs, and the link then says "↓ The rest of
+ * the icon packs". With every pack on the Mac only Google Images shows. Settings › Images › Icon packs has the same box
+ * (`PacksConfirm`).
  */
 import { useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { formatPackBytes, packsBusy, packsProgressText, type IconPacksStatus } from '@shared/iconPacks'
 import { ConfirmSheet } from '../components/ConfirmSheet'
-import { packsDo, useIconPacks } from './useIconPacks'
+import { failedRequest, packsDo, useIconPacks } from './useIconPacks'
 
 /** The confirm box's sentence, in the approved words, with the plan's numbers when there is one. */
 export const packsConfirmText = (status: Pick<IconPacksStatus, 'total' | 'totalBytes'>): string =>
@@ -50,45 +51,6 @@ export function PacksConfirm({ status, onClose }: { status: IconPacksStatus; onC
   )
 }
 
-export function IconPacksLine() {
-  const status = useIconPacks()
-  const [asking, setAsking] = useState(false)
-  if (status === null || status.state === 'complete' || status.state === 'removing' || status.state === 'moving') return null
-  const busy = packsBusy(status)
-  return (
-    <div className="image-studio__packs" role="status" aria-label="Icon packs">
-      {busy ? (
-        <>
-          <span>{packsProgressText(status)}</span>
-          <button type="button" onClick={() => void packsDo('stop')}>
-            Cancel
-          </button>
-        </>
-      ) : (
-        <>
-          <span className={status.failed ? 'image-studio__packs-error' : undefined}>
-            {status.failed && status.message !== null
-              ? status.message
-              : status.state === 'partial'
-              ? `${status.packs} of ${status.total} icon packs are on this Mac.`
-              : 'Want every icon, also offline?'}
-          </span>
-          {status.state === 'partial' ? (
-            <button type="button" onClick={() => void packsDo('download')}>
-              Download the rest
-            </button>
-          ) : (
-            <button type="button" onClick={() => setAsking(true)}>
-              Download all icon packs
-            </button>
-          )}
-        </>
-      )}
-      {asking && <PacksConfirm status={status} onClose={() => setAsking(false)} />}
-    </div>
-  )
-}
-
 /**
  * YAZ-4348 demo: the panel's footer row. While packs are missing, the download (or its progress with Cancel) sits on
  * the left and `google` on the right; with every pack on the Mac only `google` shows, centred.
@@ -119,12 +81,17 @@ export function IconPacksFooter({ google }: { google: ReactNode }) {
         </span>
       )
     } else if (status.failed && status.message !== null) {
+      // Try again repeats the request that failed (YAZ-4366 audit 65); a download with no pack on the Mac yet is the
+      // first download again, so it asks first, as "↓ All icon packs" does.
+      const retry = failedRequest()
       packs = (
         <span className="image-studio__footer-packs" role="status">
           <span className="image-studio__packs-error">{status.message}</span>
-          <button type="button" onClick={() => void packsDo('download')}>
-            Try again
-          </button>
+          {retry !== null && (
+            <button type="button" onClick={() => (retry === 'download' && status.state === 'none' ? setAsking(true) : void packsDo(retry))}>
+              Try again
+            </button>
+          )}
         </span>
       )
     } else {

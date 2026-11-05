@@ -1,14 +1,18 @@
 /**
  * THE FILTER BUTTON AND MENU (YAZ-4360; round 3 decisions 4 and 5; extras 13, 15, 16). Right of the Add panel's search
- * field. The menu: Show (All, Favorites, Components, Shapes, Icons, Photos — the old chips row, moved here in the YAZ-4348
- * demo: "yes move the chips to filter"; Photos only with a Pixabay key), Colors (Any, One color, Many colors), Style
- * (Any, Outline, Filled, Duotone, Emoji), Packs (every pack, or "Choose packs…" with the pinned packs first, YAZ-4361),
- * License (Any, Business-safe), and "Clear filters" (Show goes back to All too). A badge on the button counts what is
- * on: each filter, and Show when it is not All.
+ * field. The menu, top to bottom:
+ *  - Show: All, Favorites, Components, Shapes, Icons, Photos (Photos only with a Pixabay key);
+ *  - Colors: Any, One color, Many colors;
+ *  - Style: Any, Outline, Filled, Duotone, Emoji;
+ *  - Packs: every pack, or "Choose packs…" with the pinned packs first (YAZ-4361);
+ *  - License: Any, Business-safe;
+ *  - Similar icons: "Group them (+N)" or "Show each one" (YAZ-4348 demo round 2), a view choice, not a filter.
+ * "Clear filters" sits at the top right, on the Show line; Show goes back to All too, and Similar icons stays. It is
+ * the last item in the keys' order. A badge on the button counts what is on: each filter, and Show when it is not All.
  *
  * MAIN applies the filters (`MediaSearchRequest.filters`); this menu only picks them. The caller keeps them in the
- * settings (`mediaFilters`, which travel; Show stays in the window's session, as the chip did) and searches again at once — with the packs on the Mac that answer is
- * instant. Yasin refines the menu in the demo.
+ * settings (`mediaFilters`, which travel; Show stays in the window's session) and searches again at once. With the
+ * packs on the Mac that answer is instant.
  *
  * Keys: Esc closes it and puts the focus back on the button; the arrow keys walk its items; a click outside closes it.
  */

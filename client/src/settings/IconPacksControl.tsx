@@ -1,6 +1,6 @@
 /**
  * SETTINGS › IMAGES › ICON PACKS (YAZ-4359; round 2 decision 8, the D5 update, extra 24). The row that the Add panel's
- * "Download all icon packs" line has a twin of: what is on this Mac, the download with the same confirm box
+ * footer download ("↓ All icon packs") has a twin of: what is on this Mac, the download with the same confirm box
  * (`PacksConfirm`) and the same progress, "Check for new icons" (only the packs that changed; GitHub's limit is said
  * in the status line), "Remove…" after a confirm, and where the packs live: "Choose a folder…" — ONE folder for every
  * vault and window of this Mac (`SettingsState.iconPacksFolder`, this Mac only); main moves the packs there.
@@ -12,7 +12,7 @@ import { formatPackBytes, packsBusy, packsProgressText, type IconPacksStatus } f
 import type { SettingsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { usePickFolder } from '../hooks/usePickFolder'
-import { PacksConfirm } from '../image-studio/IconPacksLine'
+import { PacksConfirm } from '../image-studio/IconPacksFooter'
 import { packsDo, useIconPacks } from '../image-studio/useIconPacks'
 
 /** The row's status sentence. */

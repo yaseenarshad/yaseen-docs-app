@@ -59,16 +59,13 @@
 }
 
 .image-studio__word-chip {
+  align-items: center;
   background: var(--color-primary-light);
   border-radius: 999px;
-  font-size: 10px;
-  padding: 1px 7px;
-}
-
-.image-studio__word-chip {
-  align-items: center;
   display: inline-flex;
+  font-size: 10px;
   gap: 2px;
+  padding: 1px 7px;
 }
 
 /* The × beside an added word: quiet until pointed at. The name's chip has none: its name always finds it. */
@@ -82,7 +79,7 @@
 }
 
 .image-studio__inline .image-studio__word-remove:hover {
-  color: var(--color-danger, #e03131);
+  color: var(--color-danger);
 }
 
 .image-studio__word-chip.is-name {
@@ -295,12 +292,12 @@
   box-shadow: 0 0 0 1px var(--color-primary);
 }
 
-.image-studio__inline[style*='--notch'] {
+.image-studio__inline.is-pointing {
   border-color: var(--color-primary);
   position: relative;
 }
 
-.image-studio__inline[style*='--notch']::before {
+.image-studio__inline.is-pointing::before {
   background: var(--island-bg-color);
   border-left: 1px solid var(--color-primary);
   border-top: 1px solid var(--color-primary);
@@ -709,7 +706,7 @@
 }
 
 /* YAZ-4348 demo round 2: "Clear filters" sits at the top right, on the Show line, so it is one short reach from the
-   button; it stays LAST in the keys' order (the arrow keys still walk Show → License → Clear filters). */
+   button; it stays LAST in the keys' order (the arrow keys still walk Show → Similar icons → Clear filters). */
 .image-studio__filter-clear {
   background: transparent;
   border: 0;
@@ -800,31 +797,7 @@
   font-size: 10px;
 }
 
-/* "Download all icon packs" (YAZ-4359): one quiet line at the bottom of the icon results. */
-.image-studio__packs {
-  align-items: center;
-  border-top: 1px solid var(--default-border-color);
-  color: var(--text-secondary-color);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 11px;
-  gap: 6px 8px;
-  justify-content: center;
-  line-height: 1.4;
-  margin-top: 8px;
-  padding-top: 8px;
-}
-
-.image-studio__packs button {
-  background: transparent;
-  border: 1px solid var(--color-primary);
-  border-radius: 999px;
-  color: var(--color-primary);
-  cursor: pointer;
-  font-size: 11px;
-  padding: 3px 9px;
-}
-
+/* A failed packs request, in the footer (YAZ-4359). */
 .image-studio__packs-error {
   color: var(--color-danger);
 }
@@ -834,6 +807,11 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* The pack page's "Show more" (YAZ-4366 audit 70), under its grid. */
+.image-studio__pack-more {
+  align-self: center;
 }
 
 .image-studio__pack-head {

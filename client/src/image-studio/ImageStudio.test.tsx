@@ -246,6 +246,39 @@ describe('the empty field: Favorites, Recent, Components, Shapes (D7)', () => {
     expect(section(again.host, 'Components')).toBeNull()
   })
 
+  it('fits four columns at least, and one more for each 90 px of list width (YAZ-4348 demo round 2)', async () => {
+    // jsdom has no ResizeObserver: this one hands the test the panel's callback, so a width is one call.
+    let resize: ((entries: { contentRect: { width: number } }[]) => void) | null = null
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: typeof resize) {
+          resize = callback
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    try {
+      library = libraryOf({ favorites: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((n) => stored(icon(n))) })
+      const { host } = await mount()
+      const columnsAt = async (width: number) => {
+        await act(async () => resize!([{ contentRect: { width } }]))
+        const grid = section(host, 'Favorites')!.querySelector<HTMLElement>('.image-studio__grid')!
+        expect(grid.style.getPropertyValue('--studio-cols')).toBe(String(tileNames(section(host, 'Favorites')).length))
+        return tileNames(section(host, 'Favorites')).length
+      }
+      // 4 tiles of 84 px and 3 gaps of 6 px are 354 px; each next column needs one more tile and gap, 90 px
+      expect(await columnsAt(200)).toBe(4)
+      expect(await columnsAt(443)).toBe(4)
+      expect(await columnsAt(444)).toBe(5)
+      expect(await columnsAt(534)).toBe(6)
+      expect(await columnsAt(354)).toBe(4)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('Show all picks the Show choice that shows the rest; Recent, which has no chip, opens in place', async () => {
     library = libraryOf({ recent: ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => stored(icon(n))) })
     const { host } = await mount()
@@ -304,6 +337,18 @@ describe('typing: Best matches, then From the web (D3, D4, D7)', () => {
     await search(host, 'rocket')
     expect(tileNames(section(host, 'Best matches'))).toEqual(['rocket', 'Rocket ship'])
     expect(tileNames(section(host, 'From the web'))).toEqual(['rocket launch'])
+  })
+
+  it('an item in Best matches that is also a web result stays in Best matches when you add or star it (YAZ-4366 audit 66)', async () => {
+    library = libraryOf({ favorites: [stored(icon('rocket'))], used: [usedRow(icon('rocket launch'))] })
+    media.search.mockResolvedValue({ items: [icon('rocket'), icon('rocket launch'), icon('rocket ship')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    const { host } = await mount()
+    await search(host, 'rocket')
+    expect(tileNames(section(host, 'Best matches'))).toEqual(['rocket', 'rocket launch'])
+    await click(section(host, 'Best matches')!.querySelector('[aria-label="Add rocket"]'))
+    await click(section(host, 'Best matches')!.querySelector('[aria-label="Add rocket launch to favorites"]'))
+    expect(tileNames(section(host, 'Best matches'))).toEqual(['rocket', 'rocket launch'])
+    expect(tileNames(section(host, 'From the web'))).toEqual(['rocket ship'])
   })
 
   it('a web icon you give a word stays in From the web until the search changes (YAZ-4348 demo round 2)', async () => {
@@ -575,6 +620,16 @@ describe('one tile per icon, its copies on request (demo 6J)', () => {
     // A view choice, not a filter: no badge, and Clear filters keeps it
     expect(filterButton(host)?.getAttribute('aria-label')).toBe('Filter')
   })
+
+  it('Similar icons changed in another window (the settings sync) applies here at once (YAZ-4366 audit 67)', async () => {
+    nails()
+    const { host } = await mount()
+    await search(host, 'nail')
+    expect(tileNames(section(host, 'From the web'))).toEqual(['nail polish', 'hammer and nail'])
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaGroupSimilar: false })
+    await act(async () => store.subscribe.mock.calls.forEach(([fn]) => (fn as () => void)()))
+    expect(tileNames(section(host, 'From the web'))).toEqual(['nail polish', 'nail polish', 'nail polish medium dark', 'hammer and nail'])
+  })
 })
 
 describe('Excalidraw`s public libraries: the Hand-drawn section (demo 6K)', () => {
@@ -789,9 +844,9 @@ describe('the tile menu (D10, demo 6B)', () => {
     expect(byLabel(host, 'Actions for money bag')).toBeNull()
   })
 
-  it('Search Google Images opens the field`s text in the browser; with no text it is off (demo 6I)', async () => {
+  it('Google Images opens the field`s text in the browser; with no text it is off (demo 6I)', async () => {
     const { host } = await mount()
-    const google = byText(host, 'Search Google Images ↗') as HTMLButtonElement
+    const google = byText(host, 'Google Images ↗') as HTMLButtonElement
     expect(google.disabled).toBe(true)
     await type(field(host), 'hammer and nail')
     await click(google)
@@ -1226,16 +1281,20 @@ describe('the Filter button and menu (YAZ-4360)', () => {
   })
 })
 
-describe('Download all icon packs (YAZ-4359)', () => {
-  it('offers the download at the bottom of the icon results, asks first, and starts only on Download', async () => {
+describe('Download all icon packs (YAZ-4359), in the footer since the YAZ-4348 demo', () => {
+  const footerActions = (host: HTMLElement) => host.querySelector<HTMLElement>('.image-studio__footer-actions')!
+
+  it('offers the download in the footer beside Google Images, asks first above the panel, and starts only on Download', async () => {
     media.search.mockResolvedValue({ items: [icon('arrow')], nextCursor: null, pixabayAvailable: false, warnings: [] })
     const { host } = await mount()
     await search(host, 'arrow')
-    const line = byLabel(host, 'Icon packs')!
-    expect(section(host, 'From the web')?.lastElementChild).toBe(line)
-    expect(line.textContent).toContain('Want every icon, also offline?')
-    await click(byText(host, 'Download all icon packs'))
-    const sheet = document.querySelector('[role="dialog"]')!
+    const footer = footerActions(host)
+    expect([...footer.children].map((child) => child.textContent)).toEqual(['↓ All icon packs', 'Google Images ↗'])
+    await click(byText(host, '↓ All icon packs'))
+    // The box opens on `document.body`, in the layer over the board's side panel, and a click on it is not a click outside the panel
+    const layer = document.body.querySelector(':scope > .image-studio__sheet-layer')!
+    expect(layer.hasAttribute('data-prevent-outside-click')).toBe(true)
+    const sheet = layer.querySelector('[role="dialog"]')!
     expect(sheet.textContent).toContain('All 281 free icon packs from Iconify come to this Mac: about 135 MB.')
     expect(media.packs).not.toHaveBeenCalledWith({ op: 'download' })
     await click(byText(document.body, 'Download'))
@@ -1243,22 +1302,64 @@ describe('Download all icon packs (YAZ-4359)', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 
-  it('shows the progress in the same place with Cancel; a stop then offers Download the rest; with every pack the line is gone', async () => {
+  it('shows the progress in the footer with Cancel; a stop then offers the rest; with every pack only Google Images shows', async () => {
     media.search.mockResolvedValue({ items: [icon('arrow')], nextCursor: null, pixabayAvailable: false, warnings: [] })
     const { host } = await mount()
     await search(host, 'arrow')
     await act(async () => packsListener?.(packsStatus({ state: 'downloading', packs: 37, bytes: 17 * 1024 * 1024 })))
-    expect(byLabel(host, 'Icon packs')?.textContent).toContain('Downloading icon packs: 37 of 281 (17 MB of 135 MB)')
+    // One quiet line: a word, a bar, the percent, Cancel; the full count is the tooltip and what a screen reader hears
+    const busy = footerActions(host).querySelector<HTMLElement>('[role="status"]')!
+    expect(busy.textContent).toBe('Downloading icons13%Cancel')
+    expect(busy.querySelector<HTMLElement>('.image-studio__footer-bar i')?.style.width).toBe('13%')
+    expect(busy.getAttribute('aria-label')).toBe('Downloading icon packs: 37 of 281 (17 MB of 135 MB)')
+    expect(busy.title).toBe('Downloading icon packs: 37 of 281 (17 MB of 135 MB)')
     await click(byText(host, 'Cancel'))
     expect(media.packs).toHaveBeenCalledWith({ op: 'stop' })
     await act(async () => packsListener?.(packsStatus({ state: 'partial', packs: 37 })))
-    expect(byLabel(host, 'Icon packs')?.textContent).toContain('37 of 281 icon packs are on this Mac.')
     media.packs.mockClear()
-    await click(byText(host, 'Download the rest'))
+    await click(byText(host, '↓ The rest of the icon packs'))
     // The rest needs no new confirm: the user said yes already.
     expect(media.packs).toHaveBeenCalledWith({ op: 'download' })
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
     await act(async () => packsListener?.(packsStatus({ state: 'complete', packs: 281 })))
-    expect(byLabel(host, 'Icon packs')).toBeNull()
+    expect([...footerActions(host).children].map((child) => child.textContent)).toEqual(['Google Images ↗'])
+    expect(footerActions(host).classList.contains('is-centered')).toBe(true)
+  })
+
+  it('Try again repeats the request that failed; a download that never started asks first again (YAZ-4366 audit 65)', async () => {
+    const { host } = await mount()
+    // A download that failed before any pack came: Try again is the first download again, so the box asks first
+    await act(async () => packsListener?.(packsStatus({ state: 'downloading' })))
+    await act(async () => packsListener?.(packsStatus({ state: 'none', failed: true, message: "You're offline. Connect to the internet to download icon packs." })))
+    media.packs.mockClear()
+    await click(byText(host, 'Try again'))
+    expect(media.packs).not.toHaveBeenCalled()
+    expect(document.querySelector('.image-studio__sheet-layer [role="dialog"]')).not.toBeNull()
+    await click(byText(document.body, 'Cancel'))
+    // A Check that failed checks again; it does not start the download
+    await act(async () => packsListener?.(packsStatus({ state: 'checking', packs: 200 })))
+    await act(async () => packsListener?.(packsStatus({ state: 'partial', packs: 200, failed: true, message: '3 packs could not download (timeout). Try again.' })))
+    await click(byText(host, 'Try again'))
+    expect(media.packs.mock.calls).toEqual([[{ op: 'check' }]])
+    // A download that failed part way downloads the rest at once: the user said yes already
+    await act(async () => packsListener?.(packsStatus({ state: 'downloading', packs: 37 })))
+    await act(async () => packsListener?.(packsStatus({ state: 'partial', packs: 37, failed: true, message: '1 pack could not download (timeout). Try again.' })))
+    media.packs.mockClear()
+    await click(byText(host, 'Try again'))
+    expect(media.packs.mock.calls).toEqual([[{ op: 'download' }]])
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('a download request that the bridge refused, with no pack on the Mac, asks first on Try again (YAZ-4366 audit 65)', async () => {
+    const { host } = await mount()
+    await click(byText(host, '↓ All icon packs'))
+    media.packs.mockRejectedValueOnce(new Error('no bridge'))
+    await click(byText(document.body, 'Download'))
+    expect(footerActions(host).textContent).toContain("The download couldn't start. Try again.")
+    media.packs.mockClear()
+    await click(byText(host, 'Try again'))
+    expect(media.packs).not.toHaveBeenCalled()
+    expect(document.querySelector('.image-studio__sheet-layer [role="dialog"]')).not.toBeNull()
   })
 
   it('offline with every pack on the Mac, the line says icon search still works (extra 17)', async () => {
@@ -1318,6 +1419,32 @@ describe('More from this pack (YAZ-4361)', () => {
     expect(field(host).value).toBe('arrow')
     expect(tileNames(section(host, 'From the web'))).toEqual(['arrow up', 'arrow'])
     expect(imageStudioSession.getState()).toMatchObject({ pack: null, cursor: 'MORE', searchedQuery: 'arrow' })
+  })
+
+  it('shows 240 tiles of a big pack, then Show more; the infinite scroll goes on up to the cap (YAZ-4366 audit 70)', async () => {
+    const big = Array.from({ length: 300 }, (_, i) => icon(`icon-${i}`, 'tabler'))
+    media.packList.mockResolvedValue([tabler])
+    media.search.mockImplementation(async (req) =>
+      req.filters?.packs[0] === 'tabler'
+        ? req.cursor === null
+          ? { items: big.slice(0, 240), nextCursor: 'P2', pixabayAvailable: false, warnings: [] }
+          : { items: big.slice(240), nextCursor: null, pixabayAvailable: false, warnings: [] }
+        : { items: [icon('arrow-up', 'tabler')], nextCursor: null, pixabayAvailable: false, warnings: [] },
+    )
+    const { host } = await mount()
+    await search(host, 'arrow')
+    await rightClick(host, 'arrow up')
+    await click(byText(host, 'More from this pack'))
+    await settle()
+    const page = () => byLabel(host, 'Pack: Tabler Icons')!
+    expect(tileNames(page())).toHaveLength(240)
+    // At the cap the sentinel is gone, so the scroll asks no next page until Show more
+    expect(page().querySelector('.image-studio__search-sentinel')).toBeNull()
+    await click(byText(host, 'Show more'))
+    expect(page().querySelector('.image-studio__search-sentinel')).not.toBeNull()
+    await act(async () => imageStudioSession.set({ results: big, cursor: null }))
+    expect(tileNames(page())).toHaveLength(300)
+    expect(byText(host, 'Show more')).toBeUndefined()
   })
 
   it('Pin pack saves the pin in the settings, and a second press takes it off', async () => {
