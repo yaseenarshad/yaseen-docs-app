@@ -15,7 +15,7 @@
     width: 100%;
 
     line {
-      stroke: var(--color-gray-50, #adb5bd);
+      stroke: var(--color-gray-50);
       stroke-dasharray: 3 3;
       stroke-width: 1;
     }
@@ -192,29 +192,64 @@
     }
   }
 
-  // the top bar's "Edit colors" button keeps the bar's own size
-  .contextual-properties-toolbar__text-button {
-    background: transparent;
-    border: 1px solid var(--default-border-color);
-    border-radius: var(--border-radius-md);
-    color: var(--text-primary-color);
-    cursor: pointer;
-    font-size: 0.75rem;
-    height: 2rem;
-    padding: 0 0.6rem;
-    white-space: nowrap;
-
-    &:hover {
-      background: var(--button-hover-bg);
-    }
-  }
-
   .icon-color-editor__done {
     background: var(--color-primary);
     border-color: var(--color-primary);
-    color: var(--color-surface-lowest, #fff);
+    color: var(--color-surface-lowest);
+  }
+
+  // YAZ-4348 demo: the outline chip and the ⋯ trigger fit their content, at the strip's height
+  .contextual-properties-toolbar__popover-trigger.icon-color-editor__outline-trigger,
+  .contextual-properties-toolbar__popover-trigger.icon-color-editor__variations-trigger,
+  .contextual-properties-toolbar__popover-trigger.icon-color-editor__more-trigger {
+    height: 2.5rem;
+    min-width: 2.5rem;
+    padding: 0 0.6rem;
+    width: auto;
+  }
+
+  // YAZ-4348 demo: the strip's one outline chip
+  .icon-color-editor__outline-chip {
+    align-items: center;
+    display: inline-flex;
+    font-size: 0.9375rem;
+    gap: 0.45rem;
+    padding: 0 0.35rem;
+
+    i {
+      border: 1px solid var(--default-border-color);
+      border-radius: 4px;
+      height: 1rem;
+      width: 1rem;
+    }
+  }
+
+  // YAZ-4348 demo: the strip's Variations chip (a small color wheel)
+  .icon-color-editor__variations-chip {
+    align-items: center;
+    display: inline-flex;
+    font-size: 0.9375rem;
+    gap: 0.45rem;
+    padding: 0 0.35rem;
+
+    i {
+      background: conic-gradient(
+        #4dabf7,
+        #b197fc,
+        #f783ac,
+        #ffd43b,
+        #69db7c,
+        #4dabf7
+      );
+      border-radius: 50%;
+      height: 1rem;
+      width: 1rem;
+    }
   }
 }
+
+// The strip's cards (⋯, Outline, Variations) are in `ToolbarPopover`'s portal, not in the strip: their rules stay
+// at the root on purpose, so they never depend on where the portal puts them.
 
 // YAZ-4348 demo: the ⋯ card of Edit colors (the change scope, then the tint)
 .icon-color-editor__more {
@@ -225,22 +260,7 @@
   padding: 0.25rem;
 }
 
-// YAZ-4348 demo: the strip's one outline chip, and its card
-.icon-color-editor__outline-chip {
-  align-items: center;
-  display: inline-flex;
-  font-size: 0.9375rem;
-  gap: 0.45rem;
-  padding: 0 0.35rem;
-
-  i {
-    border: 1px solid var(--default-border-color);
-    border-radius: 4px;
-    height: 1rem;
-    width: 1rem;
-  }
-}
-
+// YAZ-4348 demo: the outline's card (its colors and thickness)
 .icon-color-editor__outline-card {
   align-items: center;
   display: flex;
@@ -248,34 +268,7 @@
   padding: 0.25rem;
 }
 
-// YAZ-4348 demo: the outline chip and the ⋯ trigger fit their content, at the strip's height
-.excalidraw {
-  .contextual-properties-toolbar__popover-trigger.icon-color-editor__outline-trigger,
-  .contextual-properties-toolbar__popover-trigger.icon-color-editor__variations-trigger,
-  .contextual-properties-toolbar__popover-trigger.icon-color-editor__more-trigger {
-    height: 2.5rem;
-    min-width: 2.5rem;
-    padding: 0 0.6rem;
-    width: auto;
-  }
-}
-
-// YAZ-4348 demo: the strip's Variations chip (a small color wheel), and its card of live previews
-.icon-color-editor__variations-chip {
-  align-items: center;
-  display: inline-flex;
-  font-size: 0.9375rem;
-  gap: 0.45rem;
-  padding: 0 0.35rem;
-
-  i {
-    background: conic-gradient(#4dabf7, #b197fc, #f783ac, #ffd43b, #69db7c, #4dabf7);
-    border-radius: 50%;
-    height: 1rem;
-    width: 1rem;
-  }
-}
-
+// YAZ-4348 demo: the Variations card of live previews
 .icon-color-editor__variations {
   display: grid;
   gap: 0.25rem;
