@@ -27,8 +27,8 @@ import {
 import { extendListItemSchemaForTask, insertTableInputRule } from '@milkdown/kit/preset/gfm'
 import { Fragment, type Node as ProseNode, type Schema, Slice } from '@milkdown/kit/prose/model'
 import { InputRule } from '@milkdown/kit/prose/inputrules'
-import { type Command, Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
-import { canJoin } from '@milkdown/kit/prose/transform'
+import { type Command, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
+import { canJoin, Mapping } from '@milkdown/kit/prose/transform'
 import { $inputRule, $markSchema, $pasteRule, $prose, $shortcut } from '@milkdown/kit/utils'
 
 /** The marks a box draws (`textBoxDoc.ts` maps each to a run style). */
@@ -44,11 +44,16 @@ export const textColorSchema = $markSchema('text_color', () => ({
   toMarkdown: { match: (mark) => mark.type.name === 'text_color', runner: () => {} },
 }))
 
-/** True when the node, and all it holds, is something a box draws. */
-function fits(node: ProseNode): boolean {
+/** True when the node itself, not what it holds, is something a box draws. */
+function fitsSelf(node: ProseNode): boolean {
   if (!BOX_NODES.has(node.type.name)) return false
   if (node.type.name === 'list_item' && node.attrs.listType !== 'bullet') return false
-  if (node.isText) return node.marks.every((mark) => BOX_MARKS.has(mark.type.name))
+  return !node.isText || node.marks.every((mark) => BOX_MARKS.has(mark.type.name))
+}
+
+/** True when the node, and all it holds, is something a box draws. */
+function fits(node: ProseNode): boolean {
+  if (!fitsSelf(node)) return false
   let ok = true
   node.forEach((child) => {
     if (ok && !fits(child)) ok = false
@@ -154,20 +159,55 @@ function pasteAsBox(slice: Slice, schema: Schema): Slice {
 
 const boxPaste = $pasteRule(() => ({ run: (slice: Slice, view) => pasteAsBox(slice, view.state.schema) }))
 
-/** The backstop: after any change, a top-level block a box cannot draw becomes lines and bullets. */
+/**
+ * The ranges of the last document that the transactions changed. Null when a step changed no range (a mark, an
+ * attribute): then the whole document is checked.
+ */
+function changedRanges(transactions: readonly Transaction[]): Array<[number, number]> | null {
+  const maps = transactions.flatMap((tr) => tr.mapping.maps)
+  const mapping = new Mapping(maps)
+  const ranges: Array<[number, number]> = []
+  for (let index = 0; index < maps.length; index++) {
+    const after = mapping.slice(index + 1)
+    let any = false
+    maps[index].forEach((_oldStart, _oldEnd, start, end) => {
+      any = true
+      ranges.push([after.map(start, -1), after.map(end, 1)])
+    })
+    if (!any) return null
+  }
+  return ranges
+}
+
+const isTopBlock = (node: ProseNode) => node.type.name === 'paragraph' || node.type.name === 'bullet_list'
+
+/**
+ * The backstop: after any change, a top-level block a box cannot draw becomes lines and bullets. Only the nodes in the
+ * changed ranges are checked (YAZ-4312 S4): the rest fit after the last change, so a key checks its own line.
+ */
 const boxBlocks = $prose(
   () =>
     new Plugin({
       key: new PluginKey('mdapp-text-box-blocks'),
       appendTransaction: (transactions, _old, state) => {
         if (!transactions.some((tr) => tr.docChanged)) return null
-        const wrong: Array<{ pos: number; node: ProseNode }> = []
-        state.doc.forEach((node, pos) => {
-          if (!fits(node) || (node.type.name !== 'paragraph' && node.type.name !== 'bullet_list')) wrong.push({ pos, node })
-        })
-        if (wrong.length === 0) return null
+        const wrong = new Map<number, ProseNode>()
+        const ranges = changedRanges(transactions)
+        if (ranges === null)
+          state.doc.forEach((node, pos) => {
+            if (!fits(node) || !isTopBlock(node)) wrong.set(pos, node)
+          })
+        else
+          for (const [from, to] of ranges) {
+            let top = { pos: 0, node: state.doc }
+            state.doc.nodesBetween(from, to, (node, pos, parent) => {
+              if (parent === state.doc) top = { pos, node }
+              if (!fitsSelf(node) || (node === top.node && !isTopBlock(node))) wrong.set(top.pos, top.node)
+            })
+          }
+        if (wrong.size === 0) return null
         const tr = state.tr
-        for (const { pos, node } of wrong.reverse()) {
+        for (const [pos, node] of [...wrong].sort(([a], [b]) => b - a)) {
           const blocks = blocksOf(state.schema, Fragment.from(node))
           tr.replaceWith(pos, pos + node.nodeSize, blocks.length ? blocks : state.schema.nodes.paragraph.create())
         }
@@ -199,7 +239,7 @@ const plainLineChecklist = $inputRule(
 )
 
 /**
- * Tab / Shift-Tab on plain lines (YAZ-4277 1D, the textarea's rule): 4 spaces at the start of each line the selection
+ * Tab / Shift-Tab on plain lines (YAZ-4277 1D, the old textarea's rule): 4 spaces at the start of each line the selection
  * covers, or up to 4 taken away. In a bullet the note's outliner indents the bullet (its keys run first).
  */
 const plainLineIndent = (direction: 1 | -1): Command => (state, dispatch) => {
