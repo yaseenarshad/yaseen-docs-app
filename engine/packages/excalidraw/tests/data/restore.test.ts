@@ -974,6 +974,38 @@ describe("restoreElements", () => {
       });
     });
 
+    it("keeps a corner made at another zoom at its style scale (YAZ-4312 S7)", () => {
+      // a file reopened or pasted: a corner made at 10,000% was squared,
+      // and one made at 1% was cut to 100 board px (1 px on screen)
+      const [high, low] = restore.restoreElements(
+        [
+          {
+            ...API.createElement({ type: "rectangle", width: 1, height: 1 }),
+            roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 0.08 },
+            customData: { styleScale: 100 },
+          },
+          {
+            ...API.createElement({
+              type: "rectangle",
+              width: 5000,
+              height: 5000,
+            }),
+            roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 800 },
+            customData: { styleScale: 0.01 },
+          },
+        ],
+        null,
+      );
+      expect(high.roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: 0.08,
+      });
+      expect(low.roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: 800,
+      });
+    });
+
     it("clamps proportional radius on large shapes to the max", () => {
       const [rect] = restore.restoreElements(
         [

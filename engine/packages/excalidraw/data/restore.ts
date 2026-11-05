@@ -467,7 +467,7 @@ const restoreElementWithProperties = <
     frameId: element.frameId ?? null,
     roundness: element.roundness
       ? materializeElementRoundnessValue(
-          normalizeElementRoundness(element.roundness),
+          normalizeElementRoundness(element.roundness, element),
           element,
         )
       : element.strokeSharpness === "round"
