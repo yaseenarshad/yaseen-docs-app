@@ -65,6 +65,7 @@
  * (rule 28). Which mode a surface is in is read ONCE, at mount.
  */
 import { requestKeySheet } from '../keys/keySheetRequest'
+import { tellReadOnlyEdit } from '../editor/readOnlyEdit'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { picturesSize, referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, foldArrowsOf, NEW_ELEMENT_DEFAULT_KEYS, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
@@ -214,6 +215,9 @@ export interface DrawingAppSettings {
   canvasPrefs: DrawingSurfaceProps['canvasPrefs']
   onCanvasPrefsChange: DrawingSurfaceProps['onCanvasPrefsChange']
 }
+
+/** Where a Read only board's edit attempt lands (YAZ-4446): the engine's focusable box, or its canvas. */
+const BOARD_EDIT_TARGET = '.excalidraw-container, canvas'
 
 /** One arrow key on the canvas panel's edge (YAZ-4157 demo 6C). */
 const PANEL_KEY_STEP = 16
@@ -524,6 +528,26 @@ export function ExcalidrawSurface({
     requestKeySheet()
     return true
   }, [])
+
+  /**
+   * A Read only board's edit attempt (YAZ-4446, D33): the engine's view mode ignores it, so the pane's "Read only" chip
+   * says why. Only on the engine's own box (where its keys, paste and cut land) or its canvas, never on a control in it
+   * (the chips, the panel's fields). A view key the engine takes (zoom, the page keys) stops in the engine, and ? stops
+   * at `onHelpKey`: neither gets here.
+   */
+  const tellBoardEdit = useCallback((event: { target: EventTarget }) => {
+    if (event.target instanceof Element && event.target.matches(BOARD_EDIT_TARGET)) tellReadOnlyEdit(event.target, 'drawing')
+  }, [])
+  const onReadOnlyKey = useCallback(
+    (event: ReactKeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.nativeEvent.isComposing) return
+      if (event.key === 'Enter' || event.key === 'Backspace' || event.key === 'Delete' || (event.key.length === 1 && event.key !== ' ')) tellBoardEdit(event)
+    },
+    [tellBoardEdit],
+  )
+  const onReadOnlyDoubleClick = useCallback((event: ReactMouseEvent) => {
+    if (event.target instanceof HTMLCanvasElement) tellBoardEdit(event)
+  }, [tellBoardEdit])
 
   /** ⌘F's one job (demo 6N): the caret in the Add tab's search field, opening the tab if it is not open. */
   const focusAddSearch = useCallback(() => {
@@ -846,6 +870,11 @@ export function ExcalidrawSurface({
       className="drawing-surface"
       style={{ '--canvas-panel-width': `${canvasPanel.width ?? CANVAS_PANEL_DEFAULT_W}px` } as CSSProperties}
       onKeyDownCapture={withPanel ? onKeyDownCapture : onHelpKey}
+      onKeyDown={readOnly ? onReadOnlyKey : undefined}
+      onPaste={readOnly ? tellBoardEdit : undefined}
+      onCut={readOnly ? tellBoardEdit : undefined}
+      onDrop={readOnly ? tellBoardEdit : undefined}
+      onDoubleClick={readOnly ? onReadOnlyDoubleClick : undefined}
     >
       <Excalidraw
         initialData={initialData}

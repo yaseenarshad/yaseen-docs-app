@@ -4098,6 +4098,120 @@ body.drag-held iframe {
   opacity: 0.85;
 }
 
+/* The message of an edit attempt (YAZ-4446, D33): a card under the chip, a red arrow pointing up at it, and one red pulse
+   of the chip. The live region is always there and draws nothing; the card is absolute in the chip's box, so nothing
+   in the page moves, and it takes no pointer, so the page under it still answers. The toast's surface and shadow
+   (`.link-notice`); the red is `--danger`, 4.5:1 (light) and 5.6:1 (dark) against `--bg` for the arrow and the lock. */
+.read-only-message {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 11;
+  pointer-events: none;
+}
+
+.read-only-message__card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: max-content;
+  max-width: 260px;
+  margin-top: 20px;
+  padding: 9px 12px 9px 10px;
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  color: var(--fg);
+  font-size: 12.5px;
+  line-height: 17px;
+  text-align: left;
+  white-space: normal;
+}
+
+/* The arrow stands in the gap between the chip and the card, under the chip's middle (`--read-only-message-arrow`, from
+   the card's right edge). */
+.read-only-message__arrow {
+  position: absolute;
+  bottom: calc(100% + 3px);
+  right: calc(var(--read-only-message-arrow, 40px) - 6px);
+  display: flex;
+  color: var(--danger);
+}
+
+.read-only-message__icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+.read-only-message__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.read-only-message__text strong {
+  font-weight: 600;
+}
+
+/* The chip it points at: red while the card shows. */
+.read-only-chip .read-only-chip__button--pulse {
+  border-color: var(--danger);
+}
+
+.read-only-chip .read-only-chip__button--pulse svg {
+  color: var(--danger);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .read-only-message__card {
+    animation: read-only-message-in 160ms ease-out both;
+  }
+
+  .read-only-message__arrow {
+    animation: read-only-message-point 700ms ease-in-out 160ms 2;
+  }
+
+  .read-only-chip .read-only-chip__button--pulse {
+    animation: read-only-chip-pulse 650ms ease-out;
+  }
+}
+
+@keyframes read-only-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes read-only-message-point {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes read-only-chip-pulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 55%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--danger) 0%, transparent);
+  }
+}
+
 /* Page settings (YAZ-2643): the cog left of the zoom pill. Its menu shares the zoom menu's rules above. */
 .page-settings {
   position: relative;
