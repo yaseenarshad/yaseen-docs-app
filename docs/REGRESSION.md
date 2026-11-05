@@ -407,7 +407,7 @@ The dev app (`npm run dev`) will do, on an isolated profile (`YASEEN_DOCS_USER_D
 5. Click a column's handle on a table with one column, and a row's handle on a table with one body row: the note's table menu opens, and "Delete column" and "Delete row" are dimmed and do nothing.
 6. Copy 3 × 3 cells and paste them into Google Sheets: they land as cells.
 7. Select two cells › Fill ▾ › Custom colour…, and pick a colour. Select two other cells and pick the same colour again: those cells get it too. Open Custom colour… on the first two cells: the picker starts on their colour.
-8. Open Custom colour… on two cells, then, with the colour panel still open, select other cells and pick a colour: the first two cells get it. Open it again, close the note with ⌘W, then pick: nothing happens, and no error shows.
+8. Right-click two cells › Custom colour…: the colour box opens under them, not at the window's top left. Select other cells and pick a colour: the first two cells get it. Open it again, close the note with ⌘W, then pick: nothing happens, and no error shows. In the cell toolbar's palette, Custom colour… opens the box under the item; a pick colours the selected cells, and the box stays open (YAZ-4366).
 
 ### P2–P4 Packaging
 
