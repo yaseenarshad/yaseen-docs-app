@@ -607,26 +607,20 @@ export const ContextualPropertiesToolbar = ({
           />
         </>
       )}
-      {isImageTarget && iconBar === "one" && (
+      {isImageTarget && iconBar !== null && (
         <>
-          {/* YAZ-4352 1B: a one-color icon: Color, then Outline; Border moves into More properties */}
-          <span className="contextual-properties-toolbar__label">Color</span>
-          {renderAction("changeIconColors", { contextToolbar: true })}
+          {/* YAZ-4352 1B: a one-color icon: Color; a many-color icon: Edit colors (1D). Then Outline; Border in More properties */}
+          {iconBar === "one" ? (
+            <>
+              <span className="contextual-properties-toolbar__label">
+                Color
+              </span>
+              {renderAction("changeIconColors", { contextToolbar: true })}
+            </>
+          ) : (
+            renderAction("colorEditor", { contextToolbar: true })
+          )}
           <ContextualToolbarDivider />
-          <span className="contextual-properties-toolbar__label">Outline</span>
-          {renderAction("changeIconOutline", { contextToolbar: true })}
-          <ContextualSecondaryProperties
-            renderAction={renderAction}
-            showImageBorder
-            showRoundness={predicates.roundness}
-            showOpacity={predicates.opacity}
-          />
-        </>
-      )}
-      {isImageTarget && iconBar === "many" && (
-        <>
-          {/* YAZ-4352 1B: a many-color icon: Edit colors (1D), Outline; Border in More properties */}
-          {renderAction("colorEditor", { contextToolbar: true })}
           <span className="contextual-properties-toolbar__label">Outline</span>
           {renderAction("changeIconOutline", { contextToolbar: true })}
           <ContextualSecondaryProperties

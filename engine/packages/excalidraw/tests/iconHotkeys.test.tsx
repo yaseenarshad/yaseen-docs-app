@@ -90,9 +90,7 @@ describe("color hotkeys on icons (YAZ-4353 1C)", () => {
 
     // one undo step brings the outline back
     Keyboard.undo();
-    expect(imageOf("a").customData?.yaseenIcon?.outline?.color).toBe(
-      "#ffffff",
-    );
+    expect(imageOf("a").customData?.yaseenIcon?.outline?.color).toBe("#ffffff");
   });
 
   it("a many-color icon and a photo keep the border; a shape beside an icon gets its color too", async () => {

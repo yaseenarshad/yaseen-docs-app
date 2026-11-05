@@ -141,6 +141,11 @@ import { FontPicker } from "../components/FontPicker/FontPicker";
 import { IconPicker } from "../components/IconPicker";
 import { Range } from "../components/Range";
 import {
+  DraftSlider,
+  ExactNumberInput,
+  formatExactNumber,
+} from "../components/SizeControls";
+import {
   ArrowheadArrowIcon,
   ArrowheadBarIcon,
   ArrowheadCircleIcon,
@@ -1746,12 +1751,6 @@ export const actionChangeTextBackgroundPadding =
 const FONT_SIZE_MAX = 512;
 const SLIDER_FONT_SIZE_MIN = 8;
 const SLIDER_FONT_SIZE_MAX = 128;
-/** A size outside the slider's range shows the slider at its end. */
-const sliderFontSize = (value: number | null) =>
-  Math.min(
-    SLIDER_FONT_SIZE_MAX,
-    Math.max(SLIDER_FONT_SIZE_MIN, Math.round(value ?? DEFAULT_FONT_SIZE)),
-  );
 
 export const actionChangeFontSize = register<
   // `preview`: a size slider being dragged (YAZ-3943 demo 2): shown, and one undo step at its release
@@ -1881,7 +1880,7 @@ export const actionChangeFontSize = register<
 
 /**
  * YAZ-3943 demo 2: the size slider. Dragging shows each size (`onPreview`, no undo step); the release
- * commits the last one (`onChange`), so a drag is one undo step.
+ * commits the last one (`onChange`), so a drag is one undo step. YAZ-4366: the shared `DraftSlider`.
  */
 const FontSizeSlider = ({
   value,
@@ -1891,52 +1890,22 @@ const FontSizeSlider = ({
   value: number | null;
   onPreview: (value: number) => void;
   onChange: (value: number) => void;
-}) => {
-  const [draft, setDraft] = useState(sliderFontSize(value));
-  const moved = useRef<number | null>(null);
-  useEffect(() => {
-    if (moved.current === null) {
-      setDraft(sliderFontSize(value));
-    }
-  }, [value]);
-  const commit = () => {
-    if (moved.current !== null) {
-      const size = moved.current;
-      moved.current = null;
-      onChange(size);
-    }
-  };
-  return (
-    <input
-      type="range"
-      className="font-size-slider"
-      aria-label="Font size"
-      min={SLIDER_FONT_SIZE_MIN}
-      max={SLIDER_FONT_SIZE_MAX}
-      step={1}
-      value={draft}
-      onChange={(event) => {
-        const size = Number(event.target.value);
-        setDraft(size);
-        moved.current = size;
-        onPreview(size);
-      }}
-      onPointerUp={commit}
-      onKeyUp={commit}
-      onBlur={commit}
-      onKeyDown={(event) => event.stopPropagation()}
-    />
-  );
-};
+}) => (
+  <DraftSlider
+    label="Font size"
+    value={value}
+    min={SLIDER_FONT_SIZE_MIN}
+    max={SLIDER_FONT_SIZE_MAX}
+    fallback={DEFAULT_FONT_SIZE}
+    onPreview={onPreview}
+    onChange={onChange}
+  />
+);
 
 /** YAZ-3943 demo 2: a whole size as it is, any other with one decimal (19.33 → "19.3"). */
-export const formatFontSize = (value: number | null) =>
-  value === null
-    ? ""
-    : Number.isInteger(value)
-    ? `${value}`
-    : `${Math.round(value * 10) / 10}`;
+export const formatFontSize = formatExactNumber;
 
+/** YAZ-4366: the shared `ExactNumberInput`, 1 to 512. */
 const ExactFontSizeInput = ({
   value,
   onChange,
@@ -1948,98 +1917,23 @@ const ExactFontSizeInput = ({
   compact?: boolean;
   /** YAZ-3943 demo 2: false: no "px" (the size popover) */
   unit?: boolean;
-}) => {
-  const [inputValue, setInputValue] = useState(formatFontSize(value));
-
-  useEffect(() => {
-    setInputValue(formatFontSize(value));
-  }, [value]);
-
-  const commit = () => {
-    const parsed = Number(inputValue);
-    if (!Number.isFinite(parsed)) {
-      setInputValue(formatFontSize(value));
-      return;
-    }
-    const nextValue = Math.min(
-      FONT_SIZE_MAX,
-      Math.max(MIN_FONT_SIZE, Math.round(parsed * 10) / 10),
-    );
-    setInputValue(nextValue.toString());
-    onChange(nextValue);
-  };
-
-  const nudge = (amount: number) => {
-    const currentValue = Number(inputValue || value || DEFAULT_FONT_SIZE);
-    const nextValue = Math.min(
-      512,
-      Math.max(1, Math.round((currentValue + amount) * 10) / 10),
-    );
-    setInputValue(nextValue.toString());
-    onChange(nextValue);
-  };
-
-  return (
-    <div
-      className={clsx("font-size-custom", {
-        "font-size-custom--compact": compact,
-      })}
-      data-prevent-outside-click
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      {compact && (
-        <button
-          type="button"
-          aria-label="Decrease font size"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onClick={() => nudge(-1)}
-        >
-          −
-        </button>
-      )}
-      <label>
-        <input
-          aria-label="Exact font size"
-          type="number"
-          min="1"
-          max="512"
-          step="0.1"
-          value={inputValue}
-          placeholder="Mixed"
-          onChange={(event) => setInputValue(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            event.stopPropagation();
-            if (event.key === KEYS.ENTER) {
-              event.preventDefault();
-              commit();
-            } else if (event.key === KEYS.ESCAPE) {
-              setInputValue(formatFontSize(value));
-            }
-          }}
-        />
-        {/* YAZ-3943 demo 2: the text toolbar has no unit */}
-        {!compact && unit && <span>px</span>}
-      </label>
-      {compact && (
-        <button
-          type="button"
-          aria-label="Increase font size"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onClick={() => nudge(1)}
-        >
-          +
-        </button>
-      )}
-    </div>
-  );
-};
+}) => (
+  <ExactNumberInput
+    label="Exact font size"
+    value={value}
+    min={MIN_FONT_SIZE}
+    max={FONT_SIZE_MAX}
+    onChange={onChange}
+    unit={unit ? "px" : null}
+    placeholder="Mixed"
+    compact={compact}
+    nudge={{
+      decrease: "Decrease font size",
+      increase: "Increase font size",
+      fallback: DEFAULT_FONT_SIZE,
+    }}
+  />
+);
 
 type TextStyleChange =
   | { property: "fontWeight"; enabled: boolean }

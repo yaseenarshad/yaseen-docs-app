@@ -7,7 +7,11 @@ import {
   MIME_TYPES,
 } from "@excalidraw/common";
 
-import { getIconInfo, hueIconColors } from "@excalidraw/element";
+import {
+  getIconInfo,
+  hueIconColors,
+  tintIconColors,
+} from "@excalidraw/element";
 
 import { Excalidraw } from "../index";
 
@@ -83,9 +87,7 @@ const pick = (color: string) =>
   );
 const recipe = () => imageOf("icon").customData?.yaseenIcon;
 
-const open = async (
-  extra: Parameters<typeof openIcons>[1] = [],
-) => {
+const open = async (extra: Parameters<typeof openIcons>[1] = []) => {
   // the icon is 48 × 48 at (0, 0): part 0 is its top left, part 2 its bottom half
   const [icon] = await openIcons([{ id: "icon", svg: RECTS }], extra);
   API.setSelectedElements([icon as any]);
@@ -223,6 +225,210 @@ describe("Edit colors (YAZ-4354 1D)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit colors" }));
     act(() => mouse.clickAt(300, 300));
     expect(h.state.colorEditingElementId).toBeNull();
+  });
+
+  // YAZ-4366 (round 3 decision 7, extra 27): the tint shows each step, and its release is one undo step
+  it("a tint drag shows each step and is one undo step; its previews leave no files", async () => {
+    await open();
+    const before = new Set(Object.keys(h.app.files));
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    const slider = screen.getByLabelText("Tint", {
+      selector: "input[type=range]",
+    });
+    const originals = getIconInfo(h.app.files["icon-file" as any]).colors;
+    const now = vi.spyOn(Date, "now");
+    for (const [i, value] of ["30", "60", "90"].entries()) {
+      now.mockReturnValue(1000 + i * 200);
+      fireEvent.change(slider, { target: { value } });
+      await waitFor(() =>
+        expect(recipe()?.colors).toEqual(
+          tintIconColors(originals, Number(value)),
+        ),
+      );
+    }
+    now.mockRestore();
+    expect(h.history.undoStack.length).toBe(0);
+    fireEvent.pointerUp(slider);
+    await waitFor(() => expect(h.history.undoStack.length).toBe(1));
+    expect(recipe()?.colors).toEqual(tintIconColors(originals, 90));
+    // the 30 and 60 previews are gone; the original and the 90 stay
+    await waitFor(() =>
+      expect(Object.keys(h.app.files).sort()).toEqual(
+        [...before, imageOf("icon").fileId].sort(),
+      ),
+    );
+    expect([...h.app.imageCache.keys()].sort()).toEqual(
+      [...before, imageOf("icon").fileId].sort(),
+    );
+
+    Keyboard.undo();
+    expect(recipe()).toBeUndefined();
+    expect(imageOf("icon").fileId).toBe("icon-file");
+  });
+
+  // YAZ-4366: the design bar: a hover never renders the whole App again
+  it("a hover on a number paints the faded preview on the static canvas only", async () => {
+    await open();
+    const holder = (h.app as any).colorEditPreview;
+    const repaint = vi.spyOn(holder, "repaint");
+    const render = vi.spyOn(h.app, "render");
+    const badge = screen.getByRole("button", { name: "Color 1" });
+    fireEvent.pointerEnter(badge);
+    await waitFor(() => expect(holder.current?.elementId).toBe("icon"));
+    fireEvent.pointerLeave(badge);
+    await waitFor(() => expect(holder.current).toBeNull());
+    expect(repaint).toHaveBeenCalledTimes(2);
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  // YAZ-4375 (1D1): `currentColor` draws black in a picture, but as CSS on a badge it is the badge's own text color
+  it("a currentColor part's number has a visible background", async () => {
+    const MIXED =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">' +
+      '<rect x="0" y="0" width="16" height="8" fill="currentColor"/>' +
+      '<rect x="0" y="8" width="16" height="8" fill="#e03131"/></svg>';
+    await openIcons([{ id: "icon", svg: MIXED }]);
+    fireEvent.click(screen.getByRole("button", { name: "Edit colors" }));
+    await waitFor(() => expect(badges().length).toBe(2));
+    for (const badge of document.querySelectorAll<HTMLElement>(
+      ".icon-color-editor__badge",
+    )) {
+      expect(badge.style.background.toLowerCase()).not.toBe("currentcolor");
+    }
+  });
+
+  // YAZ-4366: the shade chips and the card's picker show what the picture shows, not "currentColor"
+  it("a shaded part's chips and picker show currentColor as black", async () => {
+    const SHADED =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">' +
+      '<defs><linearGradient id="g"><stop offset="0" stop-color="currentColor"/>' +
+      '<stop offset="1" stop-color="#e03131"/></linearGradient></defs>' +
+      '<rect x="0" y="0" width="16" height="8" fill="url(#g)"/>' +
+      '<rect x="0" y="8" width="16" height="8" fill="#1971c2"/></svg>';
+    await openIcons([{ id: "icon", svg: SHADED }]);
+    fireEvent.click(screen.getByRole("button", { name: "Edit colors" }));
+    await waitFor(() => expect(badges().length).toBe(3));
+    mouse.clickAt(24, 8);
+    await waitFor(() =>
+      expect(
+        document.querySelectorAll(".icon-color-editor__chips button").length,
+      ).toBe(2),
+    );
+    const chips = [
+      ...document.querySelectorAll<HTMLElement>(
+        ".icon-color-editor__chips button",
+      ),
+    ];
+    for (const chip of chips) {
+      expect(chip.querySelector("i")!.style.background.toLowerCase()).not.toBe(
+        "currentcolor",
+      );
+      // each chip names its number
+      expect(Number(chip.textContent)).toBeGreaterThan(0);
+    }
+    const trigger = document.querySelector<HTMLElement>(
+      ".icon-color-editor__palette .color-picker__button.active-color",
+    )!;
+    expect(trigger.style.getPropertyValue("--swatch-color").toLowerCase()).toBe(
+      "#000000",
+    );
+  });
+
+  // YAZ-4366: the full picker belongs to one color's card; the next card opens without it
+  it("a new color card opens with the full picker closed", async () => {
+    // radix's popover needs it (`togglePopover`)
+    vi.stubGlobal(
+      "ResizeObserver",
+      class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: "Color 1" }));
+    fireEvent.click(
+      document.querySelector<HTMLElement>(
+        ".icon-color-editor__palette .color-picker__button.active-color",
+      )!,
+    );
+    await waitFor(() =>
+      expect(document.querySelector(".color-picker-content")).not.toBeNull(),
+    );
+    fireEvent.click(
+      document.querySelectorAll<HTMLElement>(".icon-color-editor__badge")[1],
+    );
+    await waitFor(() =>
+      expect(
+        document.querySelector(".icon-color-editor__badge.is-active")
+          ?.textContent,
+      ).toBe("2"),
+    );
+    expect(document.querySelector(".color-picker-content")).toBeNull();
+  });
+
+  // YAZ-4422 (1G1): one card at a time (YAZ-4349 demo: "two palettes at once confused Yasin")
+  describe("one card at a time", () => {
+    const cardOf = {
+      Variations: ".icon-color-editor__variations",
+      "More options": ".icon-color-editor__more",
+    } as const;
+    for (const name of ["Variations", "More options"] as const) {
+      it(`a digit key while ${name} is open closes ${name}`, async () => {
+        await open();
+        fireEvent.click(screen.getByRole("button", { name }));
+        await waitFor(() =>
+          expect(document.querySelector(cardOf[name])).not.toBeNull(),
+        );
+        fireEvent.keyDown(document.activeElement ?? document, {
+          key: "1",
+          code: "Digit1",
+        });
+        await waitFor(() =>
+          expect(
+            document.querySelector(".icon-color-editor__palette"),
+          ).not.toBeNull(),
+        );
+        expect(document.querySelector(cardOf[name])).toBeNull();
+      });
+
+      it(`a click on ${name} closes an open color card`, async () => {
+        await open();
+        fireEvent.click(screen.getByRole("button", { name: "Color 1" }));
+        await waitFor(() =>
+          expect(
+            document.querySelector(".icon-color-editor__palette"),
+          ).not.toBeNull(),
+        );
+        fireEvent.click(screen.getByRole("button", { name }));
+        await waitFor(() =>
+          expect(document.querySelector(cardOf[name])).not.toBeNull(),
+        );
+        expect(
+          document.querySelector(".icon-color-editor__palette"),
+        ).toBeNull();
+      });
+    }
+
+    it("Variations and ⋯ close each other and the Outline card", async () => {
+      await open();
+      fireEvent.click(screen.getByRole("button", { name: "Variations" }));
+      await waitFor(() =>
+        expect(document.querySelector(cardOf.Variations)).not.toBeNull(),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      await waitFor(() =>
+        expect(document.querySelector(cardOf["More options"])).not.toBeNull(),
+      );
+      expect(document.querySelector(cardOf.Variations)).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Outline" }));
+      await waitFor(() =>
+        expect(
+          document.querySelector(".icon-color-editor__outline-card"),
+        ).not.toBeNull(),
+      );
+      expect(document.querySelector(cardOf["More options"])).toBeNull();
+    });
   });
 
   it("Reset colors gives the original colors back", async () => {

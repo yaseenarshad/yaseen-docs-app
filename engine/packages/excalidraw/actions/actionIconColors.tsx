@@ -30,20 +30,7 @@ import {
   MIME_TYPES,
 } from "@excalidraw/common";
 
-/**
- * YAZ-4348 demo: the ▾ after an icon picker's five picks — more colors, then "Custom…" (the full
- * picker with any hex and the eyedropper), the text toolbar's pattern. Without it the only way to a
- * custom color was the color square, which reads as "no outline" while there is none.
- */
-const ICON_MORE_PICKS = [
-  COLOR_PALETTE.white,
-  COLOR_PALETTE.orange[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-  COLOR_PALETTE.violet[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-  COLOR_PALETTE.pink[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-  COLOR_PALETTE.cyan[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-  COLOR_PALETTE.gray[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
-];
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import type { CaptureUpdateActionType, IconRecipe } from "@excalidraw/element";
 import type {
@@ -59,6 +46,7 @@ import {
 } from "../data/blob";
 
 import { ColorPicker } from "../components/ColorPicker/ColorPicker";
+import { DraftSlider, ExactNumberInput } from "../components/SizeControls";
 import { ToolbarPopover } from "../components/ToolbarPopover";
 
 import { register } from "./register";
@@ -70,6 +58,20 @@ import type {
   UIAppState,
 } from "../types";
 import type { ActionResult } from "./types";
+
+/**
+ * YAZ-4348 demo: the ▾ after an icon picker's five picks — more colors, then "Custom…" (the full
+ * picker with any hex and the eyedropper), the text toolbar's pattern. Without it the only way to a
+ * custom color was the color square, which reads as "no outline" while there is none.
+ */
+const ICON_MORE_PICKS = [
+  COLOR_PALETTE.white,
+  COLOR_PALETTE.orange[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.violet[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.pink[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.cyan[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.gray[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+];
 
 /** The longest wait for a new picture to load before the swap. */
 const PRELOAD_TIMEOUT_MS = 1000;
@@ -99,8 +101,6 @@ export const getIconTargets = (
     return kind ? info.kind === kind : info.kind !== "photo";
   });
 
-const EMPTY_RECIPE: IconRecipe = { colors: {}, outline: null };
-
 /**
  * A copy of the element's recipe, or an empty one. The outline width is the one
  * the board shows now: it scales with a resize after the paint.
@@ -111,7 +111,7 @@ export const currentIconRecipe = (
 ): IconRecipe => {
   const recipe = getIconRecipe(element);
   if (!recipe) {
-    return { ...EMPTY_RECIPE, colors: {} };
+    return { colors: {}, outline: null };
   }
   const width = recipe.outline
     ? iconOutlineWidth(element, getIconInfo(files[element.fileId]))
@@ -126,6 +126,27 @@ export const currentIconRecipe = (
 /** The latest paint for each element; an older paint that finishes later is dropped. */
 const latestPaint = new Map<string, number>();
 let paintCounter = 0;
+
+/**
+ * YAZ-4366: the files that only a drag's previews made, for each board. A tint or outline drag makes up to 10 a
+ * second, each up to about 1 MB of data URL; once the board shows a newer one, nothing can show them again.
+ */
+const previewFiles = new WeakMap<AppClassProperties, Set<FileId>>();
+
+/** Drops the preview files that nothing shows, after the paint's result is on the board. */
+const dropPreviewFiles = (app: AppClassProperties) =>
+  setTimeout(() => {
+    const ids = previewFiles.get(app);
+    if (!ids?.size) {
+      return;
+    }
+    app.dropUnusedFiles(ids);
+    for (const id of ids) {
+      if (!app.files[id] && !app.imageCache.has(id)) {
+        ids.delete(id);
+      }
+    }
+  });
 
 const loadImage = (dataURL: string) =>
   new Promise<HTMLImageElement | null>((resolve) => {
@@ -155,6 +176,11 @@ export const paintIcons = async (
   const token = ++paintCounter;
   for (const target of targets) {
     latestPaint.set(target.id, token);
+  }
+  const preview = captureUpdate === CaptureUpdateAction.EVENTUALLY;
+  let previews = previewFiles.get(app);
+  if (!previews) {
+    previewFiles.set(app, (previews = new Set()));
   }
   const files: BinaryFiles = {};
   const changes = new Map<string, Partial<InitializedExcalidrawImageElement>>();
@@ -192,6 +218,9 @@ export const paintIcons = async (
         created: Date.now(),
         lastRetrieved: Date.now(),
       };
+      if (preview) {
+        previews.add(fileId);
+      }
       if (!app.imageCache.has(fileId)) {
         const image = await loadImage(dataURL);
         if (image) {
@@ -203,9 +232,14 @@ export const paintIcons = async (
         }
       }
     }
+    if (!preview) {
+      // the release's file is an undo step's now, also when a preview made it
+      previews.delete(fileId);
+    }
     changes.set(target.id, { ...updates, fileId });
   }
 
+  dropPreviewFiles(app);
   if (targets.some((target) => latestPaint.get(target.id) !== token)) {
     return false;
   }
@@ -353,7 +387,7 @@ export const actionChangeIconColors = register<IconColorsChange>({
 });
 
 /** The color a one-color icon shows now (`currentColor` draws black in a picture). */
-export const shownIconColor = (
+const shownIconColor = (
   app: Pick<AppClassProperties, "files">,
   icon: IconTarget,
 ) => {
@@ -372,10 +406,10 @@ export type IconOutlineChange = {
 };
 
 /** A new outline's width: about a twelfth of the icon's smaller side, at least 1 px. */
-export const defaultIconOutlineWidth = (element: IconTarget) =>
+const defaultIconOutlineWidth = (element: IconTarget) =>
   Math.max(1, Math.round(Math.min(element.width, element.height) / 12));
 
-export const DEFAULT_ICON_OUTLINE_COLOR = "#ffffff";
+const DEFAULT_ICON_OUTLINE_COLOR = "#ffffff";
 
 export const actionChangeIconOutline = register<IconOutlineChange>({
   name: "changeIconOutline",
@@ -429,7 +463,7 @@ export const actionChangeIconOutline = register<IconOutlineChange>({
 });
 
 /** A drag paints at most this often (extra 27). */
-export const ICON_PREVIEW_INTERVAL_MS = 100;
+const ICON_PREVIEW_INTERVAL_MS = 100;
 const OUTLINE_SLIDER_MAX = 32;
 const OUTLINE_MAX = 256;
 
@@ -491,9 +525,10 @@ export const IconOutlineControls = ({
             }
             onChange={(next) => onChange({ width: next, elementIds })}
           />
-          <ExactSizeInput
+          <ExactNumberInput
             label="Outline thickness"
             value={width}
+            min={0}
             max={OUTLINE_MAX}
             onChange={(next) => onChange({ width: next, elementIds })}
           />
@@ -506,121 +541,9 @@ export const IconOutlineControls = ({
 /**
  * A size slider, as the text size's (YAZ-3943 demo 2): a drag shows each size
  * (`onPreview`, at most every 100 ms, no undo step); the release commits the
- * last one (`onChange`), so a drag is one undo step.
+ * last one (`onChange`), so a drag is one undo step. YAZ-4366: the shared
+ * `DraftSlider`.
  */
-export const IconSizeSlider = ({
-  label,
-  value,
-  min = 0,
-  max,
-  step = 1,
-  onPreview,
-  onChange,
-  className = "font-size-slider",
-}: {
-  label: string;
-  value: number | null;
-  min?: number;
-  max: number;
-  step?: number;
-  onPreview: (value: number) => void;
-  onChange: (value: number) => void;
-  className?: string;
-}) => {
-  const clamp = (next: number | null) =>
-    Math.min(max, Math.max(min, Math.round(next ?? min)));
-  const [draft, setDraft] = useState(clamp(value));
-  const moved = useRef<number | null>(null);
-  const lastPreview = useRef(0);
-  useEffect(() => {
-    if (moved.current === null) {
-      setDraft(clamp(value));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
-  const commit = () => {
-    if (moved.current !== null) {
-      const next = moved.current;
-      moved.current = null;
-      onChange(next);
-    }
-  };
-  return (
-    <input
-      type="range"
-      className={className}
-      aria-label={label}
-      min={min}
-      max={max}
-      step={step}
-      value={draft}
-      onChange={(event) => {
-        const next = Number(event.target.value);
-        setDraft(next);
-        moved.current = next;
-        const now = Date.now();
-        if (now - lastPreview.current >= ICON_PREVIEW_INTERVAL_MS) {
-          lastPreview.current = now;
-          onPreview(next);
-        }
-      }}
-      onPointerUp={commit}
-      onKeyUp={commit}
-      onBlur={commit}
-      onKeyDown={(event) => event.stopPropagation()}
-    />
-  );
-};
-
-/** The exact number, as the text size's field: Enter or leaving it commits. */
-const ExactSizeInput = ({
-  label,
-  value,
-  max,
-  onChange,
-}: {
-  label: string;
-  value: number | null;
-  max: number;
-  onChange: (value: number) => void;
-}) => {
-  const shown = value === null ? "" : `${Math.round(value * 10) / 10}`;
-  const [text, setText] = useState(shown);
-  useEffect(() => setText(shown), [shown]);
-  const commit = () => {
-    const parsed = Number(text);
-    if (text.trim() === "" || !Number.isFinite(parsed)) {
-      setText(shown);
-      return;
-    }
-    const next = Math.min(max, Math.max(0, Math.round(parsed * 10) / 10));
-    setText(`${next}`);
-    if (next !== value) {
-      onChange(next);
-    }
-  };
-  return (
-    <div
-      className="font-size-custom"
-      data-prevent-outside-click
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <input
-        type="number"
-        aria-label={label}
-        min={0}
-        max={max}
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          event.stopPropagation();
-          if (event.key === "Enter") {
-            commit();
-          }
-        }}
-      />
-      <span>px</span>
-    </div>
-  );
-};
+export const IconSizeSlider = (
+  props: Omit<Parameters<typeof DraftSlider>[0], "previewEveryMs">,
+) => <DraftSlider previewEveryMs={ICON_PREVIEW_INTERVAL_MS} {...props} />;

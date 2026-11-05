@@ -55,6 +55,36 @@ describe("normalizeIconColor", () => {
     expect(normalizeIconColor("url(#fed)")).toBeNull();
     expect(normalizeIconColor("rgba(0,0,0,0)")).toBeNull();
   });
+
+  // YAZ-4366: the hand table knew 23 of the 148 CSS names and no hsl()
+  it("reads every CSS color name and hsl()", () => {
+    expect(normalizeIconColor("darkred")).toBe("#8b0000");
+    expect(normalizeIconColor("RebeccaPurple")).toBe("#663399");
+    expect(normalizeIconColor("hsl(120, 100%, 25%)")).toBe("#008000");
+    expect(normalizeIconColor("hsl(120deg 100% 25%)")).toBe("#008000");
+    expect(normalizeIconColor("hsla(120, 100%, 25%, 0.5)")).toBe("#008000");
+    expect(normalizeIconColor("hsla(120, 100%, 25%, 0)")).toBeNull();
+    expect(normalizeIconColor("hsl(120 100% 25% / 0)")).toBeNull();
+    // not colors: a word of hex letters, an unknown name
+    expect(normalizeIconColor("fed")).toBeNull();
+    expect(normalizeIconColor("notacolor")).toBeNull();
+  });
+
+  it("an icon colored with names and hsl() is a many-color icon with those colors", () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">' +
+      '<path fill="darkred" d="M0 0h12v24H0z"/>' +
+      '<path fill="hsl(240, 100%, 50%)" d="M12 0h12v24H12z"/></svg>';
+    expect(readIconInfo(svg).kind).toBe("many");
+    expect(readIconColors(svg).sort()).toEqual(["#0000ff", "#8b0000"]);
+    // a paint finds them too
+    const painted = paintIcon(svg, {
+      colors: { "#8b0000": "#2f9e44" },
+      outline: null,
+    });
+    expect(attr(painted, "path", 0, "fill")).toBe("#2f9e44");
+    expect(attr(painted, "path", 1, "fill")).toBe("hsl(240, 100%, 50%)");
+  });
 });
 
 describe("readIconColors", () => {

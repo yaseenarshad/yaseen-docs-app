@@ -519,6 +519,7 @@ import UnlockPopup from "./UnlockPopup";
 import type { ExcalidrawLibraryIds } from "../data/types";
 
 import type {
+  ColorEditPreview,
   RenderInteractiveSceneCallback,
   ScrollBars,
 } from "../scene/types";
@@ -721,11 +722,8 @@ class App extends React.Component<AppProps, AppState> {
     escape: null,
     digit: null,
   };
-  /** YAZ-4354 1D: the faded preview of the icon in Edit colors (static canvas) */
-  private colorEditPreview: {
-    elementId: string;
-    image: HTMLImageElement;
-  } | null = null;
+  /** YAZ-4354 1D: the faded preview of the icon in Edit colors (static canvas; YAZ-4366: one stable holder) */
+  private colorEditPreview: ColorEditPreview = { current: null };
   /** YAZ-3944 D2: this board's GIF frames */
   public gifPlayer = new GifPlayer((id) => this.files[id]);
 
@@ -5758,7 +5756,13 @@ class App extends React.Component<AppProps, AppState> {
    *   still in it) and what undo falls back to for an element the scene lacks. It keeps every
    *   element it ever saw as a deleted one, so a deleted one counts only when a step changes it.
    */
-  public pruneFiles = () => {
+  public pruneFiles = () => this.dropUnusedFiles();
+
+  /**
+   * YAZ-4366: `pruneFiles` for only the files in `only` (all when absent), so a drag's previews can go at once
+   * (`paintIcons`) while every other file waits for the host's next prune.
+   */
+  public dropUnusedFiles = (only?: ReadonlySet<string>) => {
     const used = new Set<string>();
     const keep = (element: object) => {
       if ("fileId" in element && typeof element.fileId === "string") {
@@ -5788,14 +5792,14 @@ class App extends React.Component<AppProps, AppState> {
     const nextFiles: BinaryFiles = {};
     let dropped = false;
     for (const [id, fileData] of Object.entries(this.files)) {
-      if (used.has(id)) {
+      if (used.has(id) || (only && !only.has(id))) {
         nextFiles[id] = fileData;
       } else {
         dropped = true;
       }
     }
     for (const id of this.imageCache.keys()) {
-      if (!used.has(id)) {
+      if (!used.has(id) && (!only || only.has(id))) {
         this.imageCache.delete(id);
         dropped = true;
       }
@@ -6029,7 +6033,8 @@ class App extends React.Component<AppProps, AppState> {
       event.metaKey ||
       // YAZ-4348 demo (Yasin: "Flip and eyedropper win"): ⇧V stays Flip vertical and ⇧G the eyedropper, so
       // violet and green have no outline letter; the picker still sets them
-      (event.shiftKey && SHIFT_KEYS_KEPT_FROM_COLORS.has(event.key.toLowerCase())) ||
+      (event.shiftKey &&
+        SHIFT_KEYS_KEPT_FROM_COLORS.has(event.key.toLowerCase())) ||
       isInteractive(event.target) ||
       isContentEditable
     ) {
@@ -8016,19 +8021,20 @@ class App extends React.Component<AppProps, AppState> {
     });
   };
 
+  /** YAZ-4366: a hover on a number paints only the static canvas; the App does not render again (the design bar). */
   private setColorEditPreview = (image: HTMLImageElement | null) => {
     const id = this.state.colorEditingElementId;
     const next = image && id ? { elementId: id, image } : null;
-    if (next?.image !== this.colorEditPreview?.image) {
-      this.colorEditPreview = next;
-      this.setState({});
+    if (next?.image !== this.colorEditPreview.current?.image) {
+      this.colorEditPreview.current = next;
+      this.colorEditPreview.repaint?.();
     }
   };
 
   /** YAZ-4354 1D: Done, Esc, Enter or a click outside. Each pick is already applied. */
   public finishIconColorEditing = () => {
     if (this.state.colorEditingElementId) {
-      this.colorEditPreview = null;
+      this.colorEditPreview.current = null;
       this.setState({ colorEditingElementId: null });
     }
   };

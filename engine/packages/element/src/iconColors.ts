@@ -17,7 +17,7 @@
 // Pure string-and-DOM work (DOMParser), no canvas: it runs in jsdom tests.
 // -----------------------------------------------------------------------------
 
-import { MIME_TYPES, SVG_NS } from "@excalidraw/common";
+import { colorToHex, MIME_TYPES, SVG_NS } from "@excalidraw/common";
 
 import type { BinaryFileData, DataURL } from "@excalidraw/excalidraw/types";
 
@@ -44,7 +44,7 @@ export const ICON_MAX_BYTES = 256 * 1024;
 /** The info cache keeps this many files (by file id). */
 const ICON_INFO_CACHE_SIZE = 200;
 
-export const ICON_SOURCE_ID = "yaseen-icon-source";
+const ICON_SOURCE_ID = "yaseen-icon-source";
 const OUTLINE_FILTER_ID = "yaseen-icon-outline";
 /** The faded parts of the Edit colors preview (YAZ-4354 1D). */
 const FADED_OPACITY = 0.15;
@@ -52,7 +52,7 @@ const FADED_OPACITY = 0.15;
 const EM_PX = 16;
 
 /** The shapes that are parts (round 2, decision 1). */
-export const ICON_SHAPE_TAGS = new Set([
+const ICON_SHAPE_TAGS = new Set([
   "path",
   "circle",
   "ellipse",
@@ -75,32 +75,6 @@ const PAINT_PROPS = new Set([
   "color",
 ]);
 
-const NAMED_COLORS: Record<string, string> = {
-  black: "#000000",
-  white: "#ffffff",
-  red: "#ff0000",
-  green: "#008000",
-  blue: "#0000ff",
-  yellow: "#ffff00",
-  orange: "#ffa500",
-  purple: "#800080",
-  gray: "#808080",
-  grey: "#808080",
-  silver: "#c0c0c0",
-  maroon: "#800000",
-  olive: "#808000",
-  lime: "#00ff00",
-  aqua: "#00ffff",
-  cyan: "#00ffff",
-  teal: "#008080",
-  navy: "#000080",
-  fuchsia: "#ff00ff",
-  magenta: "#ff00ff",
-  pink: "#ffc0cb",
-  brown: "#a52a2a",
-  gold: "#ffd700",
-};
-
 const hex2 = (value: number) =>
   Math.max(0, Math.min(255, Math.round(value)))
     .toString(16)
@@ -109,7 +83,8 @@ const hex2 = (value: number) =>
 /**
  * One key for one color: lowercase 6-digit hex, or `currentColor`. Null for
  * no color (`none`, `transparent`, a zero alpha), a reference (`url(…)`) and
- * anything it does not know.
+ * anything it does not know. YAZ-4366: the 148 CSS color names and `hsl()`
+ * come through tinycolor2 (`colorToHex`), so `darkred` is a color too.
  */
 export const normalizeIconColor = (
   value: string | null | undefined,
@@ -155,7 +130,26 @@ export const normalizeIconColor = (
     }
     return `#${hex2(r)}${hex2(g)}${hex2(b)}`;
   }
-  return NAMED_COLORS[v] ?? null;
+  const hsl = v.match(/^hsla?\(([^)]*)\)$/);
+  if (hsl) {
+    const parts = hsl[1].split(/[\s,/]+/).filter(Boolean);
+    if (
+      parts.length < 3 ||
+      (parts[3] !== undefined && parseFloat(parts[3]) === 0)
+    ) {
+      return null;
+    }
+    // tinycolor2 reads neither `deg` nor an alpha after `/`: the hue as a number, the alpha is checked above
+    const [h, s, l] = parts;
+    return (
+      colorToHex(`hsl(${h.replace(/deg$/, "")}, ${s}, ${l})`)?.slice(0, 7) ??
+      null
+    );
+  }
+  // a name; a word of the letters a to f only would read as hex digits (no CSS name is one)
+  return /^[a-z]+$/.test(v) && /[g-z]/.test(v)
+    ? colorToHex(v)?.slice(0, 7) ?? null
+    : null;
 };
 
 // -----------------------------------------------------------------------------
@@ -198,8 +192,7 @@ export const svgToDataURL = (svg: string) =>
 // parse
 // -----------------------------------------------------------------------------
 
-/** @private for `iconParts.ts` */
-export const parseIconSvg = (svgText: string) => {
+const parseIconSvg = (svgText: string) => {
   const doc = new DOMParser().parseFromString(svgText, MIME_TYPES.svg);
   const svg = doc.documentElement;
   if (
@@ -241,8 +234,10 @@ export const iconSource = (svgText: string) => {
   }
 };
 
-/** Every element under `root`, in document order. */
-/** @private for `iconParts.ts` */
+/**
+ * Every element under `root`, in document order.
+ * @private for `iconParts.ts`
+ */
 export const walkIcon = (root: Element, visit: (element: Element) => void) => {
   for (const child of Array.from(root.children)) {
     visit(child);
@@ -298,10 +293,7 @@ const findRef = (svg: Element, href: string) => {
  * `hosts` gets each `<use>` target → its `<use>`: the target inherits its paint
  * from the `<use>`, as in a browser.
  */
-export const iconShapes = (
-  svg: Element,
-  hosts: Map<Element, Element> = new Map(),
-) => {
+const iconShapes = (svg: Element, hosts: Map<Element, Element> = new Map()) => {
   const shapes: Element[] = [];
   const seen = new Set<Element>();
   const add = (element: Element) => {
@@ -415,7 +407,7 @@ const safeMatches = (element: Element, selector: string) => {
   }
 };
 
-export class IconCascade {
+class IconCascade {
   /** `hosts`: a `<use>` target → its `<use>`, where the target inherits from (`iconShapes`) */
   constructor(
     private rules: StyleRule[],
@@ -575,7 +567,7 @@ export const readIconPartList = (reader: IconReader): IconPart[] =>
       reader.cascade.inherited(element, "fill", reader.svg) === undefined,
   }));
 
-export const paintColors = (paint: IconPaint | null): string[] =>
+const paintColors = (paint: IconPaint | null): string[] =>
   !paint
     ? []
     : "color" in paint
@@ -602,11 +594,13 @@ export const readIconParts = (svgText: string) => {
 /** Each color of the original, most used first (D2: what the user sees, also inside `<style>` rules). */
 export const readIconColors = (svgText: string): string[] => {
   const read = readIconParts(svgText);
-  if (!read) {
-    return [];
-  }
+  return read ? colorsOfParts(read.parts) : [];
+};
+
+/** The colors of some parts, most used first. */
+const colorsOfParts = (parts: readonly IconPart[]): string[] => {
   const counts = new Map<string, number>();
-  for (const part of read.parts) {
+  for (const part of parts) {
     for (const color of [
       ...paintColors(part.fill),
       ...paintColors(part.stroke),
@@ -683,7 +677,7 @@ export const iconGeometryOf = (svg: Element, outline = 0): IconGeometry => {
 };
 
 /** "one": only `currentColor`, or one color; "many": more; "photo": every other picture. */
-export const iconKindOfColors = (colors: readonly string[]): IconKind =>
+const iconKindOfColors = (colors: readonly string[]): IconKind =>
   colors.length === 0 ? "photo" : colors.length === 1 ? "one" : "many";
 
 /** The kind, colors and geometry of an original, with a painted copy's outline (SVG units). */
@@ -691,10 +685,12 @@ const iconInfoOfSource = (source: string, outline: number): IconInfo => {
   if (new TextEncoder().encode(source).length > ICON_MAX_BYTES) {
     return PHOTO;
   }
-  const svg = parseIconSvg(source);
-  if (!svg) {
+  // YAZ-4366: one parse for the picture check, the colors and the geometry
+  const reader = makeIconReader(source);
+  if (!reader) {
     return PHOTO;
   }
+  const { svg } = reader;
   let hasPicture = false;
   walkIcon(svg, (element) => {
     hasPicture ||= element.localName === "image";
@@ -702,7 +698,7 @@ const iconInfoOfSource = (source: string, outline: number): IconInfo => {
   if (hasPicture) {
     return PHOTO;
   }
-  const colors = readIconColors(source);
+  const colors = colorsOfParts(readIconPartList(reader));
   const kind = iconKindOfColors(colors);
   if (kind === "photo") {
     return PHOTO;
@@ -808,10 +804,6 @@ export const getIconInfo = (
   return info;
 };
 
-export const iconKind = (
-  file: Pick<BinaryFileData, "id" | "mimeType" | "dataURL"> | null | undefined,
-) => getIconInfo(file).kind;
-
 /**
  * YAZ-4355 1E: dark mode keeps a many-color icon's colors (extra 21). Every
  * other SVG inverts, as before this work: a one-color icon, and an SVG that is
@@ -823,10 +815,6 @@ export const isDarkInvertedImage = (
   mimeType: string | undefined,
   kind: IconKind | undefined,
 ) => mimeType === MIME_TYPES.svg && kind !== "many";
-
-export const isRecolorableIcon = (
-  file: Pick<BinaryFileData, "id" | "mimeType" | "dataURL"> | null | undefined,
-) => iconKind(file) !== "photo";
 
 /** The recipe on an element, if it has one. */
 export const getIconRecipe = (element: {
@@ -913,8 +901,10 @@ const wrapChildren = (svg: Element, keep: (child: Element) => boolean) => {
   return g;
 };
 
-/** The root's size and view box with an outline of `units` on each side. */
-/** @private for `iconParts.ts` */
+/**
+ * The root's size and view box with an outline of `units` on each side.
+ * @private for `iconParts.ts`
+ */
 export const setIconGeometry = (
   svg: Element,
   geometry: IconGeometry,

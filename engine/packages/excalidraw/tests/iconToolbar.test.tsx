@@ -54,8 +54,9 @@ describe("the icon top bar (YAZ-4352 1B)", () => {
   it("shows Color and Outline for one-color icons, and Border in More properties", async () => {
     await openIcons([{ id: "a" }, { id: "b", x: 100 }]);
     expect(labels()).toEqual(["Color", "Outline"]);
-    expect(screen.getByLabelText("Icon color")).toBeTruthy();
-    expect(screen.getByLabelText("Outline color")).toBeTruthy();
+    // YAZ-4423: with `morePicks` each picker ends in its ▾ ("…: more"), not the color square
+    expect(screen.getByLabelText("Icon color: more")).toBeTruthy();
+    expect(screen.getByLabelText("Outline color: more")).toBeTruthy();
 
     // one Color control colors both
     fireEvent.click(
@@ -85,7 +86,7 @@ describe("the icon top bar (YAZ-4352 1B)", () => {
     await openIcons([{ id: "many", svg: MANY_COLOR_SVG }]);
     expect(labels()).toEqual(["Outline"]);
     expect(screen.getByRole("button", { name: "Edit colors" })).toBeTruthy();
-    expect(screen.queryByLabelText("Icon color")).toBeNull();
+    expect(screen.queryByLabelText("Icon color: more")).toBeNull();
 
     const photo = API.createElement({
       type: "image",

@@ -2,7 +2,8 @@
  * Yaseen Docs (YAZ-4354 1D): the "Edit colors" mode of a many-color icon, on the
  * board: the numbers around the picture (one per color it shows now, with a line
  * to that color's part), the palette next to a click, and the strip below the
- * icon (Variations, scope, tint, outline, Reset colors, Done).
+ * icon (Variations, ⋯ with the scope and the tint, Outline, Reset colors, Done).
+ * One card shows at a time: a color's card or one of the strip's (YAZ-4422).
  *
  * A click on the canvas reaches `handlers.pick` first (App): the hidden pick map
  * names the part under it. No SVG of the icon goes into the page: the pick map
@@ -19,7 +20,7 @@
  * so the board shows what the preview showed; it is one undo step.
  */
 import clsx from "clsx";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
   DEFAULT_ELEMENT_STROKE_COLOR_PALETTE,
@@ -91,6 +92,9 @@ export type IconColorEditorHandlers = {
   digit: ((n: number) => boolean) | null;
 };
 
+/** The strip's card that is open (YAZ-4422: one card at a time, a color's card too). */
+type StripCard = "variations" | "more" | "outline" | null;
+
 type Palette = {
   /** where it opens, in container pixels */
   x: number;
@@ -138,7 +142,7 @@ const shadesTip = (name: string) =>
   `${name}: every color turns ${name.toLowerCase()}. Light and dark shades stay, and so do black, white and grey.`;
 
 /** The variations of an icon whose original colors are `originals`. */
-export const iconVariations = (
+const iconVariations = (
   originals: readonly string[],
   boardColors: readonly string[],
 ): IconVariation[] => [
@@ -216,11 +220,7 @@ const IconColorVariations = ({
       }
       try {
         url = svgToDataURL(
-          paintIcon(
-            svgText,
-            { colors, outline: recipe.outline },
-            outlineUnits,
-          ),
+          paintIcon(svgText, { colors, outline: recipe.outline }, outlineUnits),
         );
       } catch {
         url = "";
@@ -237,8 +237,7 @@ const IconColorVariations = ({
       aria-label="Variations"
     >
       {variations.map(({ name, tip, colors }) => {
-        const active =
-          !!colors && noParts && sameColors(colors, recipe.colors);
+        const active = !!colors && noParts && sameColors(colors, recipe.colors);
         const url = colors ? previewOf(colors) : "";
         return (
           <Tooltip key={name} label={tip} long>
@@ -334,6 +333,11 @@ export const IconColorEditor = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [element.id],
   );
+  // YAZ-4366: each target's index by its key, so a number finds its parts in one look each
+  const targetIndex = useMemo(
+    () => new Map(targets.map((target, i) => [target.key, i])),
+    [targets],
+  );
   const outlineUnits = info.geometry?.outline ?? 0;
   const [pickMap, setPickMap] = useState<IconPickMap | null>(null);
   const [scope, setScope] = useState<"all" | "one">("all");
@@ -341,8 +345,8 @@ export const IconColorEditor = ({
   const [hovered, setHovered] = useState<string | null>(null);
   const [tint, setTint] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
-  // YAZ-4348 demo: one palette at a time — the outline card closes when a color's card opens, and back
-  const [outlineOpen, setOutlineOpen] = useState(false);
+  // YAZ-4348 demo, YAZ-4422: one card at a time; a strip card closes the color's card, and back
+  const [stripCard, setStripCard] = useState<StripCard>(null);
   const previews = useRef(new Map<string, HTMLImageElement>());
   // the Variations previews: painted once each while the mode is open
   const variationPreviews = useRef(new Map<string, string>());
@@ -400,48 +404,86 @@ export const IconColorEditor = ({
     setPalette({ ...palette, color: color ?? palette.color });
   };
 
-  // the App's clicks and keys reach the mode through these
-  handlers.pick = (scene, client, justThisPart) => {
-    if (!natural) {
-      return false;
+  /**
+   * Opens a color's card, or closes it (null). YAZ-4422: a color's card closes the strip's card. YAZ-4366: each
+   * card opens with the full picker closed; a pick inside the card keeps it (`setPalette`).
+   */
+  const showPalette = (next: Palette | null) => {
+    setPalette(next);
+    setPickerOpen(false);
+    if (next) {
+      setStripCard(null);
     }
-    const point = iconPickPointOfScene(element, natural, scene);
+  };
+
+  /** A strip card's open state; opening it closes the other cards (YAZ-4422). */
+  const stripCardProps = (card: Exclude<StripCard, null>) => ({
+    open: stripCard === card,
+    onOpenChange: (open: boolean) => {
+      // a close can come after the next card opened (its outside click): it closes only itself
+      setStripCard((current) =>
+        open ? card : current === card ? null : current,
+      );
+      if (open) {
+        showPalette(null);
+      }
+    },
+  });
+
+  // a canvas click: true when it was inside the picture (the mode keeps it)
+  const pick: NonNullable<IconColorEditorHandlers["pick"]> = (
+    scene,
+    client,
+    justThisPart,
+  ) => {
+    const point = natural && iconPickPointOfScene(element, natural, scene);
     if (!point) {
       return false;
     }
     const index = pickMap ? pickIconTarget(pickMap, point.x, point.y) : -1;
     const target = index >= 0 ? targets[index] : null;
     if (!target) {
-      setPalette(null);
+      showPalette(null);
       return true;
     }
-    const color = currentTargetColors(target, recipe)[0];
-    setPalette({
+    showPalette({
       x: client.x - appState.offsetLeft,
       y: client.y - appState.offsetTop,
-      color,
+      color: currentTargetColors(target, recipe)[0],
       target,
       justThisPart,
     });
     return true;
   };
-  handlers.escape = () => {
+  const escape = () => {
     if (palette) {
-      setPalette(null);
+      showPalette(null);
       return true;
     }
     return false;
   };
-  useEffect(
-    () => () => {
+
+  /**
+   * The App's clicks and keys reach the mode through `handlers`. YAZ-4366: the render does not write them; they are
+   * set once, and they call the last render's functions (`live`, set after each commit).
+   */
+  const live = useRef<Required<{
+    [K in keyof IconColorEditorHandlers]: NonNullable<
+      IconColorEditorHandlers[K]
+    >;
+  }> | null>(null);
+  useLayoutEffect(() => {
+    handlers.pick = (...args) => live.current?.pick(...args) ?? false;
+    handlers.escape = () => live.current?.escape() ?? false;
+    handlers.digit = (n) => live.current?.digit(n) ?? false;
+    return () => {
       handlers.pick = null;
       handlers.escape = null;
       handlers.digit = null;
       onPreview(null);
-    },
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  }, []);
 
   // the faded preview while a number is pointed at
   const recipeKey = JSON.stringify(recipe);
@@ -479,11 +521,6 @@ export const IconColorEditor = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hovered, recipeKey]);
 
-  if (!natural) {
-    handlers.digit = null;
-    return null;
-  }
-
   // the numbers: around the picture, each pointing at its color's biggest part
   const center = toContainer({
     x: element.x + element.width / 2,
@@ -498,7 +535,7 @@ export const IconColorEditor = ({
   const anchors = groups.map((group) => {
     let best = -1;
     for (const key of group.keys) {
-      const i = targets.findIndex((t) => t.key === key);
+      const i = targetIndex.get(key) ?? -1;
       if (
         i >= 0 &&
         (best < 0 || (pickMap?.areas[i] ?? 0) > (pickMap?.areas[best] ?? 0))
@@ -506,8 +543,9 @@ export const IconColorEditor = ({
         best = i;
       }
     }
-    const pick = best >= 0 ? pickMap?.anchors[best] : null;
-    const scene = pick ? iconScenePointOfPick(element, natural, pick) : null;
+    const anchor = best >= 0 ? pickMap?.anchors[best] : null;
+    const scene =
+      anchor && natural ? iconScenePointOfPick(element, natural, anchor) : null;
     return scene ? toContainer(scene) : center;
   });
   const angles = spreadAngles(
@@ -527,9 +565,8 @@ export const IconColorEditor = ({
   }));
 
   // one palette at a time, the same from a click on a number or its digit key
-  const openBadge = (badge: (typeof badges)[number]) => {
-    setOutlineOpen(false);
-    setPalette({
+  const openBadge = (badge: typeof badges[number]) => {
+    showPalette({
       x: badge.x + 18,
       y: badge.y,
       color: badge.group.color,
@@ -538,14 +575,17 @@ export const IconColorEditor = ({
     });
   };
   // YAZ-4348 demo ("1- yes im down for that"): the keys 1 to 9 open the numbers' palettes
-  handlers.digit = (n) => {
-    const badge = badges[n - 1];
+  const digit = (n: number) => {
+    const badge = natural ? badges[n - 1] : undefined;
     if (!badge) {
       return false;
     }
     openBadge(badge);
     return true;
   };
+  useLayoutEffect(() => {
+    live.current = { pick, escape, digit };
+  });
 
   const activeGroup = palette ? groupByColor(palette.color) : null;
   // while a pick paints (async), the new color has no number yet: the card stays, with the last count
@@ -580,6 +620,10 @@ export const IconColorEditor = ({
       ? fit(stripTop - PALETTE_HEIGHT - 12)
       : fit(stripTop + STRIP_HEIGHT + 12);
   };
+
+  if (!natural) {
+    return null;
+  }
 
   return (
     <div className="icon-color-editor" data-testid="icon-color-editor">
@@ -618,7 +662,6 @@ export const IconColorEditor = ({
         </button>
       ))}
 
-
       <div
         className="icon-color-editor__float icon-color-editor__float--strip"
         style={{ left: center.x, top: stripTop }}
@@ -638,6 +681,7 @@ export const IconColorEditor = ({
             label="Variations"
             title="Variations: the icon in other colors, or in the colors already on this board"
             className="text-toolbar-value icon-color-editor__variations-trigger"
+            {...stripCardProps("variations")}
             icon={
               <span className="icon-color-editor__variations-chip">
                 <i />
@@ -655,7 +699,7 @@ export const IconColorEditor = ({
               cache={variationPreviews.current}
               onPick={(colors) => {
                 setTint(0);
-                setPalette(null);
+                showPalette(null);
                 apply({
                   colors,
                   replaceColors: true,
@@ -672,56 +716,57 @@ export const IconColorEditor = ({
             title="More: what a click changes, and Tint"
             icon={DotsHorizontalIcon}
             className="icon-color-editor__more-trigger"
+            {...stripCardProps("more")}
           >
             <div className="icon-color-editor__more">
-            <div
-              className="icon-color-editor__scope"
-              role="radiogroup"
-              aria-label="Change"
-            >
-              {(
-                [
-                  ["all", "Every part with this color"],
-                  ["one", "Just the part I click"],
-                ] as const
-              ).map(([value, label]) => (
-                <Tooltip key={value} label={SCOPE_TIPS[value]} long>
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={scope === value}
-                    className={clsx({ "is-active": scope === value })}
-                    onClick={() => setScope(value)}
-                  >
-                    {label}
-                  </button>
-                </Tooltip>
-              ))}
-            </div>
-            <Tooltip label={TINT_TIP} long>
-              <label className="icon-color-editor__tint">
-              <span>Tint</span>
-              <IconSizeSlider
-                label="Tint"
-                className="icon-color-editor__tint-slider"
-                value={tint}
-                max={360}
-                onPreview={(degrees) =>
-                  apply({
-                    colors: tintIconColors(info.colors, degrees),
-                    replaceColors: true,
-                    preview: true,
-                  })
-                }
-                onChange={(degrees) => {
-                  setTint(degrees);
-                  apply({
-                    colors: tintIconColors(info.colors, degrees),
-                    replaceColors: true,
-                  });
-                }}
-              />
-            </label>
+              <div
+                className="icon-color-editor__scope"
+                role="radiogroup"
+                aria-label="Change"
+              >
+                {(
+                  [
+                    ["all", "Every part with this color"],
+                    ["one", "Just the part I click"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <Tooltip key={value} label={SCOPE_TIPS[value]} long>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={scope === value}
+                      className={clsx({ "is-active": scope === value })}
+                      onClick={() => setScope(value)}
+                    >
+                      {label}
+                    </button>
+                  </Tooltip>
+                ))}
+              </div>
+              <Tooltip label={TINT_TIP} long>
+                <label className="icon-color-editor__tint">
+                  <span>Tint</span>
+                  <IconSizeSlider
+                    label="Tint"
+                    className="icon-color-editor__tint-slider"
+                    value={tint}
+                    max={360}
+                    onPreview={(degrees) =>
+                      apply({
+                        colors: tintIconColors(info.colors, degrees),
+                        replaceColors: true,
+                        preview: true,
+                      })
+                    }
+                    onChange={(degrees) => {
+                      setTint(degrees);
+                      apply({
+                        colors: tintIconColors(info.colors, degrees),
+                        replaceColors: true,
+                      });
+                    }}
+                  />
+                </label>
               </Tooltip>
             </div>
           </ToolbarPopover>
@@ -730,16 +775,12 @@ export const IconColorEditor = ({
             label="Outline"
             title="Outline: a line around the icon's shape. Pick its color and thickness."
             className="text-toolbar-value icon-color-editor__outline-trigger"
-            open={outlineOpen}
-            onOpenChange={(open) => {
-              setOutlineOpen(open);
-              if (open) {
-                setPalette(null);
-              }
-            }}
+            {...stripCardProps("outline")}
             icon={
               <span className="icon-color-editor__outline-chip">
-                <i style={{ background: recipe.outline?.color ?? "transparent" }} />
+                <i
+                  style={{ background: recipe.outline?.color ?? "transparent" }}
+                />
                 Outline
               </span>
             }
@@ -760,18 +801,21 @@ export const IconColorEditor = ({
               />
             </div>
           </ToolbarPopover>
-          <Tooltip label="Back to the icon's original colors. The outline stays." long>
-          <button
-            type="button"
-            className="icon-color-editor__button"
-            onClick={() => {
-              setTint(0);
-              setPalette(null);
-              apply({ reset: true });
-            }}
+          <Tooltip
+            label="Back to the icon's original colors. The outline stays."
+            long
           >
-            Reset colors
-          </button>
+            <button
+              type="button"
+              className="icon-color-editor__button"
+              onClick={() => {
+                setTint(0);
+                showPalette(null);
+                apply({ reset: true });
+              }}
+            >
+              Reset colors
+            </button>
           </Tooltip>
           <button
             type="button"
@@ -805,7 +849,7 @@ export const IconColorEditor = ({
                 className="icon-color-editor__swatch"
                 style={{ background: shownColor(palette.color) }}
               />
-              Color {paletteNumber} —{" "}
+              Color {paletteNumber}:{" "}
               {justThisPart
                 ? "just this part"
                 : `${partCount} part${partCount === 1 ? "" : "s"}`}
@@ -815,19 +859,25 @@ export const IconColorEditor = ({
                 className="icon-color-editor__chips"
                 title="This part is shaded. Pick which of its colors to change."
               >
-                {chips.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    className={clsx({ "is-active": color === palette.color })}
-                    onClick={() =>
-                      setPalette({ ...palette, color, justThisPart: false })
-                    }
-                  >
-                    <i style={{ background: color }} />
-                    {groups.findIndex((g) => g.color === color) + 1}
-                  </button>
-                ))}
+                {chips.map((color) => {
+                  // YAZ-4366: a color with no number yet (a pick still paints) shows no "0"
+                  const number = groups.findIndex((g) => g.color === color) + 1;
+                  return (
+                    <button
+                      key={color}
+                      type="button"
+                      className={clsx({
+                        "is-active": color === palette.color,
+                      })}
+                      onClick={() =>
+                        setPalette({ ...palette, color, justThisPart: false })
+                      }
+                    >
+                      <i style={{ background: shownColor(color) }} />
+                      {number > 0 ? number : null}
+                    </button>
+                  );
+                })}
               </div>
             )}
             <ColorPicker
@@ -835,7 +885,7 @@ export const IconColorEditor = ({
               palette={DEFAULT_ELEMENT_STROKE_COLOR_PALETTE}
               type="elementStroke"
               label={`Color ${paletteNumber}`}
-              color={palette.color}
+              color={shownColor(palette.color)}
               onChange={(color) => pickColor(color)}
               elements={app.scene.getNonDeletedElements()}
               appState={appState}
@@ -848,7 +898,7 @@ export const IconColorEditor = ({
               className="icon-color-editor__link"
               onClick={() => {
                 pickColor(null);
-                setPalette(null);
+                showPalette(null);
               }}
             >
               Back to original
