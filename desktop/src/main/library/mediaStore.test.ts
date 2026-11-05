@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { MAX_MEDIA_REMOVED, MEDIA_LIBRARY_FILE, type MediaItem } from '@shared/types'
@@ -171,6 +171,23 @@ describe('createMediaStore — two Macs (YAZ-4364, round 3 decision 2)', () => {
     const out = await store.used({ op: 'list' })
     expect(out.recent.map((r) => [r.itemKey, r.updatedAt])).toEqual([['a', 20], ['b', 15]])
     expect(out.used).toEqual([expect.objectContaining({ itemKey: 'a', count: 2, words: ['theirs'] })])
+  })
+
+  it('a read parses only a file whose mtime or size changed; a file that went leaves the merge (YAZ-4366)', async () => {
+    const other = path.join(library, OTHER)
+    await writeFile(other, lib({ favorites: [row('aa', 5)] }))
+    const at = new Date(2_000_000_000_000)
+    await utimes(other, at, at)
+    expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual(['aa'])
+    // The same size and mtime: the kept parse answers, with no read of the file.
+    await writeFile(other, lib({ favorites: [row('bb', 5)] }))
+    await utimes(other, at, at)
+    expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual(['aa'])
+    // A new mtime: the file is read again.
+    await utimes(other, new Date(2_000_000_001_000), new Date(2_000_000_001_000))
+    expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual(['bb'])
+    await rm(other)
+    expect(await store.favorites({ op: 'list' })).toEqual([])
   })
 
   it('another Mac`s file that does not parse is skipped, never moved aside; a copy like "media-x 2.json" never counts', async () => {
