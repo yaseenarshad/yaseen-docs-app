@@ -147,6 +147,30 @@ describe('the pop-ups are placed from the canvas (YAZ-4398 1H)', () => {
   })
 })
 
+/**
+ * YAZ-4442 (1H2): a box's list item holds one line (`paragraph bullet_list?`, `textBoxLock.ts`). The list buttons
+ * wrapped all the selected plain lines in ONE item, which a box cannot hold: the click threw and nothing changed.
+ */
+describe('the list buttons on several plain lines of a box (YAZ-4442)', () => {
+  const click = (key: string) =>
+    document.querySelector<HTMLElement>(`.excalidraw-text-box-popups .milkdown-toolbar [data-toolbar-item="${key}"]`)!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
+
+  it.each([
+    ['checklist', '☐ one\n☐ two\n☐ three'],
+    ['bulletList', '• one\n• two\n• three'],
+  ])('%s makes each selected plain line an item, and a second click makes them plain lines again', async (key, items) => {
+    const { view } = await mountBox('before\none\ntwo\nthree')
+    view.focus()
+    // a drag from inside "one" to inside "three"
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 10, 22)))
+    await settle()
+    click(key)
+    expect(boxText(view)).toBe(`before\n${items}`)
+    click(key)
+    expect(boxText(view)).toBe('before\none\ntwo\nthree')
+  })
+})
+
 /** YAZ-4396 1F: the editor is invisible and zoomed, so ProseMirror never scrolls to show its selection (the board did move). */
 describe('the text box editor never scrolls (YAZ-4396 1F)', () => {
   it('its scroll-to-selection handler answers "done", so ProseMirror scrolls no layer', async () => {
