@@ -27,7 +27,9 @@ import type {
 /**
  * YAZ-4399 (1I): during an edit, ⌘← / ⌘→ go to the start and the end of
  * the line the canvas draws (after the bullet on an item's first line),
- * ⌘↑ / ⌘↓ to the start and the end of the text, and ⇧ extends. The keys
+ * ⌘↑ / ⌘↓ to the start (after the marker) and the end of the caret's line
+ * (D35: they never leave it; an item with children folds instead, D9), and
+ * ⇧ extends. The keys
  * are the Mac's only, so this file runs as a Mac (⌘ is CTRL_OR_CMD).
  */
 vi.hoisted(() => {
@@ -140,29 +142,99 @@ describe("⌘ and the arrow keys in edit (YAZ-4399)", () => {
     });
   });
 
-  it("⌘↑ and ⌘↓ go to the start and the end of the text, and ⇧ extends", async () => {
+  it("⌘↑ and ⌘↓ stay in the caret's line: its start and its end, and ⇧ extends (D35)", async () => {
     await startEdit("one\ntwo\nthree");
     caretAt(5);
     expect(pressCmd(KEYS.ARROW_UP)).toBe(false);
     expect(last().session.setSelection).toHaveBeenLastCalledWith({
-      anchor: 0,
-      head: 0,
+      anchor: 4,
+      head: 4,
     });
     expect(pressCmd(KEYS.ARROW_DOWN)).toBe(false);
     expect(last().session.setSelection).toHaveBeenLastCalledWith({
-      anchor: 13,
-      head: 13,
+      anchor: 7,
+      head: 7,
     });
     caretAt(5);
     pressCmd(KEYS.ARROW_DOWN, true);
     expect(last().session.setSelection).toHaveBeenLastCalledWith({
       anchor: 5,
-      head: 13,
+      head: 7,
     });
     pressCmd(KEYS.ARROW_UP, true);
     expect(last().session.setSelection).toHaveBeenLastCalledWith({
       anchor: 5,
+      head: 4,
+    });
+    // at the end of the line already: ⌘↓ does not go on to the next line
+    caretAt(7);
+    pressCmd(KEYS.ARROW_DOWN);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 7,
+      head: 7,
+    });
+    // at the start already: ⌘↑ does not go back to the line before
+    caretAt(4);
+    pressCmd(KEYS.ARROW_UP);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 4,
+      head: 4,
+    });
+  });
+
+  it("⌘↑ and ⌘↓ on a wrapped line go to the start and the end of the whole line, not of the drawn line (D35)", async () => {
+    const box = await startEdit("aaaa bbbb cccc\nnext", 50);
+    const { lines } = getTextElementStyledLayout(box, box.width);
+    // "aaaa bbbb cccc" draws as three lines
+    expect(lines.filter((line) => line.logicalLine === 0).length).toBe(3);
+    const middle = lines[1];
+    caretAt(middle.start + 2);
+    pressCmd(KEYS.ARROW_DOWN);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 14,
+      head: 14,
+    });
+    caretAt(middle.start + 2);
+    pressCmd(KEYS.ARROW_UP);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 0,
       head: 0,
+    });
+  });
+
+  it("⌘↑ on a list item with no children goes to just after its marker; ⌘↓ to its end (D35)", async () => {
+    await startEdit("• one\n    ○ three\n• two words\n1. four");
+    // in "two"
+    caretAt(22);
+    pressCmd(KEYS.ARROW_UP);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 20,
+      head: 20,
+    });
+    pressCmd(KEYS.ARROW_DOWN);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 29,
+      head: 29,
+    });
+    // a nested item: after its indent and its marker
+    caretAt(15);
+    pressCmd(KEYS.ARROW_UP);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 12,
+      head: 12,
+    });
+    caretAt(15);
+    pressCmd(KEYS.ARROW_DOWN, true);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 15,
+      head: 17,
+    });
+    // a numbered item
+    caretAt(35);
+    pressCmd(KEYS.ARROW_UP);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 33,
+      head: 33,
     });
   });
 
@@ -190,12 +262,17 @@ describe("⌘ and the arrow keys in edit (YAZ-4399)", () => {
     pressCmd(KEYS.ARROW_DOWN);
     // the engine moves no caret: the editor folds and unfolds
     expect(last().session.setSelection).not.toHaveBeenCalled();
-    // a line with no children: the engine's ⌘↑
-    caretAt(14);
+    // a line with no children: the engine's ⌘↑ and ⌘↓, in that line (D35)
+    caretAt(17);
     pressCmd(KEYS.ARROW_UP);
     expect(last().session.setSelection).toHaveBeenLastCalledWith({
-      anchor: 0,
-      head: 0,
+      anchor: 15,
+      head: 15,
+    });
+    pressCmd(KEYS.ARROW_DOWN);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 20,
+      head: 20,
     });
   });
 });
