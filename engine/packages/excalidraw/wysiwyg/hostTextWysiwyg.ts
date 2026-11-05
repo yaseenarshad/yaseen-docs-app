@@ -877,9 +877,11 @@ export const hostTextWysiwyg = ({
   /**
    * ⌘← / ⌘→ to the start or the end of the line the canvas draws (the
    * editor's own, unseen lines are not the drawn ones); the start of an
-   * item's first line is after its bullet. ⌘↑ / ⌘↓ to the start or the end
-   * of the text, except on an item that folds: there the note keys fold it
-   * (D9). ⇧ extends. False: not one of these keys here.
+   * item's first line is after its bullet. ⌘↑ / ⌘↓ never leave the caret's
+   * line (D35: between two newlines, over all its drawn lines): ⌘↑ to its
+   * start, after an item's marker, and ⌘↓ to its end. On an item that folds
+   * the note keys fold it instead (D9). ⇧ extends. False: not one of these
+   * keys here.
    */
   const moveToEdge = (key: string, extend: boolean) => {
     if (!layout || !layout.lines.length) {
@@ -892,7 +894,9 @@ export const hostTextWysiwyg = ({
       if (isFoldableLine(text, lineIndex)) {
         return false;
       }
-      offset = key === KEYS.ARROW_UP ? 0 : text.length;
+      // D35: each line is a unit (Yaseen)
+      const [contentStart, lineEnd] = getLineRange(text, head);
+      offset = key === KEYS.ARROW_UP ? contentStart : lineEnd;
     } else if (key === KEYS.ARROW_LEFT || key === KEYS.ARROW_RIGHT) {
       const { lines } = layout;
       let index = 0;
