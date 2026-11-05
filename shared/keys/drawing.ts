@@ -62,15 +62,25 @@ export const SELECTION_SIZES: readonly (readonly [digit: string, text: number, o
  */
 export const SHIFT_KEPT: Readonly<Record<string, string>> = { V: 'Flip vertical', G: 'the eyedropper' }
 
+/**
+ * A colour letter's row. On a one-colour icon the letter and its ⇧ both colour the icon itself, and T and ⇧T both
+ * take off its outline (the engine's `actionApplySelectedSemanticColor`, YAZ-4353 1C; Yasin, audit 42: the text says
+ * so, the key stays). No em dash in a label (YAZ-4421).
+ */
 const colourRow = ([letter, name]: readonly [string, string]): KeyRow =>
   letter === 'T'
-    ? selected('colorTransparent', 'Transparent — with a selection (on an icon: takes off the outline)', ['T', 'Shift+T'], 'Colours the selection: no fill on a shape, no colour on a line or a text; ⇧T no outline, or no background on a free text. A one-colour icon keeps its colour and loses its outline')
+    ? selected('colorTransparent', 'Transparent, with a selection (on an icon: takes off the outline)', ['T', 'Shift+T'], 'Colours the selection: no fill on a shape, no colour on a line or a text; ⇧T no outline, or no background on a free text')
     : SHIFT_KEPT[letter] !== undefined
-    ? selected(`color${name}`, `${name} — with a selection`, [letter], `Colours the selection ${name.toLowerCase()}: a shape's fill, a line's or a text's colour, a picture's border, a one-colour icon. ⇧${letter} stays ${SHIFT_KEPT[letter]}; the outline's ${name.toLowerCase()} is in the picker`)
-    : selected(`color${name}`, `${name} — with a selection (⇧${letter}: the outline)`, [letter, `Shift+${letter}`], `Colours the selection ${name.toLowerCase()}: a shape's fill, a line's or a text's colour, a picture's border, a one-colour icon; ⇧${letter} the outline, or a free text's background`)
+    ? selected(`color${name}`, `${name}, with a selection`, [letter], `Colours the selection ${name.toLowerCase()}: a shape's fill, a line's or a text's colour, a picture's border, a one-colour icon. ⇧${letter} stays ${SHIFT_KEPT[letter]}; the outline's ${name.toLowerCase()} is in the picker`)
+    : selected(
+        `color${name}`,
+        `${name}, with a selection (⇧${letter}: a shape's outline)`,
+        [letter, `Shift+${letter}`],
+        `Colours the selection ${name.toLowerCase()}: a shape's fill, a line's or a text's colour, a picture's border, a one-colour icon. ⇧${letter} colours a shape's outline, or a free text's background; on a one-colour icon ${letter} and ⇧${letter} both colour the icon`,
+      )
 
 const sizeRow = ([digit, text, other]: readonly [string, number, number]): KeyRow =>
-  selected(`size${digit}`, `Size: text ${text}, anything else ${other} on its long side — with a selection`, [digit], 'Sizes the selection as you see it at this zoom; a locked one keeps its size')
+  selected(`size${digit}`, `Size: text ${text}, anything else ${other} on its long side, with a selection`, [digit], 'Sizes the selection as you see it at this zoom; a locked one keeps its size')
 
 export const DRAWING_KEYS: readonly KeyRow[] = [
   // The tools (the engine's `TOOLS`, `components/Tools.tsx`); a tool with no letter can still get one.

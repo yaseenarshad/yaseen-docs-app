@@ -96,14 +96,28 @@ describe('the drawing rows (K1, K6)', () => {
     for (const row of picked) expect(row.changeable, row.id).toBe(false)
     const keys = picked.flatMap((row) => row.keys)
     expect(new Set(keys).size).toBe(keys.length)
-    expect(rowOf('drawing.colorRed')?.label).toBe('Red — with a selection (⇧R: the outline)')
-    expect(rowOf('drawing.colorTransparent')?.label).toBe('Transparent — with a selection (on an icon: takes off the outline)')
-    expect(rowOf('drawing.size0')?.label).toBe('Size: text 128, anything else 1024 on its long side — with a selection')
+    expect(rowOf('drawing.colorRed')?.label).toBe("Red, with a selection (⇧R: a shape's outline)")
+    expect(rowOf('drawing.colorTransparent')?.label).toBe('Transparent, with a selection (on an icon: takes off the outline)')
+    expect(rowOf('drawing.size0')?.label).toBe('Size: text 128, anything else 1024 on its long side, with a selection')
     // R is Rectangle and Red: neither is the other's clash, and a tool can still move onto a colour letter.
     expect(clashesOf(rowOf('drawing.rectangle')!, 'R', {}, {}).map((r) => r.id)).toEqual([])
     expect(clashesOf(rowOf('drawing.colorRed')!, 'R', {}, {}).map((r) => r.id)).toEqual([])
     expect(clashesOf(rowOf('drawing.diamond')!, 'N', {}, {}).map((r) => r.id)).toEqual([])
     expect(clashesOf(rowOf('drawing.diamond')!, 'R', {}, {}).map((r) => r.id)).toEqual(['drawing.rectangle'])
+  })
+
+  it('YAZ-4418: the colour letter and size digit rows use no em dash in their labels', () => {
+    const picked = DRAWING_KEYS.filter((row) => row.withSelection === true)
+    expect(picked.filter((row) => row.label.includes('—')).map((row) => row.id)).toEqual([])
+  })
+
+  it('YAZ-4366 (audit 42, 62): a ⇧letter colours a one-colour icon itself, as the letter does; T says once that it takes off the outline', () => {
+    // The engine's `actionApplySelectedSemanticColor` paints a one-colour icon whatever `value.target` is
+    expect(rowOf('drawing.colorRed')?.hint).toBe(
+      "Colours the selection red: a shape's fill, a line's or a text's colour, a picture's border, a one-colour icon. ⇧R colours a shape's outline, or a free text's background; on a one-colour icon R and ⇧R both colour the icon",
+    )
+    expect(rowOf('drawing.colorTransparent')?.hint).toBe('Colours the selection: no fill on a shape, no colour on a line or a text; ⇧T no outline, or no background on a free text')
+    expect(rowOf('drawing.colorViolet')?.hint).toBe("Colours the selection violet: a shape's fill, a line's or a text's colour, a picture's border, a one-colour icon. ⇧V stays Flip vertical; the outline's violet is in the picker")
   })
 
   it('is every action key, every tool and the app’s own canvas keys changeable; the rest built in', () => {
