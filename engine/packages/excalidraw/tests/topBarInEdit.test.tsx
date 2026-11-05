@@ -48,14 +48,19 @@ describe("the top bar in edit", () => {
     return { text, editor: await getTextEditor() };
   };
 
-  it("shows exactly font, size, align, line spacing and Background in edit", async () => {
+  it("shows exactly font, size, align, line spacing and the fill group in edit", async () => {
     await edit();
+    // demo round 2: the same fill group as outside the edit, not a Background
+    // pop-over
     expect(controls()).toEqual([
       "Show font picker: Excalifont",
       "Font size 20",
       "Text align",
       "Line spacing 1.25",
-      "Background",
+      "Fill yellow",
+      "Fill blue",
+      "Fill black",
+      "Background: more",
     ]);
   });
 

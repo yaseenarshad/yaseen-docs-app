@@ -970,10 +970,11 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
       expect(editor.selectionStart).toBe(lines[2].start);
       fireEvent.keyDown(editor, { key: KEYS.ARROW_UP });
       expect(editor.selectionStart).toBe(lines[1].start);
+      // D37: ⇧↓ selects by the whole line (a wrapped line is one), to its end
       fireEvent.keyDown(editor, { key: KEYS.ARROW_DOWN, shiftKey: true });
       expect([editor.selectionStart, editor.selectionEnd]).toEqual([
         lines[1].start,
-        lines[2].start,
+        originalText.length,
       ]);
       // from the last line, ↓ goes to the end
       editor.setSelectionRange(lines.at(-1)!.start, lines.at(-1)!.start);
