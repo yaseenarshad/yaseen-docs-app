@@ -59,7 +59,9 @@ export const getCheckboxGeometry = (
     y: top,
     size,
     radius: size * 0.18,
-    strokeWidth: Math.max(1, fontSize / 14),
+    // YAZ-4441: a part of the text size, with no floor: these are scene
+    // units, and a floor of 1 is a blob on a box with a small text size
+    strokeWidth: fontSize / 14,
     /** The tick of a done box: three points. */
     tick: [
       [left + size * 0.24, top + size * 0.52],
