@@ -114,9 +114,6 @@ export const focusOpenTextEditor = () => openEditor?.focus();
 export const pauseOpenTextEditorBlur = (duration: number) =>
   openEditor?.pauseBlur(duration);
 
-/** True while a text box is open in the editor. */
-export const isTextEditorOpen = () => openEditor !== null;
-
 /** A letter of a word, for a double click. */
 const isWordCharacter = (character: string) =>
   /[\p{L}\p{M}\p{N}_]/u.test(character);
@@ -241,6 +238,8 @@ export const hostTextWysiwyg = ({
     color: string;
   } | null = null;
   let lastFont = "";
+  /** The styles last written on the root and the overlay: a key that moves nothing writes none (YAZ-4312 S5). */
+  let lastStyles = "";
   let isDestroyed = false;
 
   const getElement = () => {
@@ -322,10 +321,11 @@ export const hostTextWysiwyg = ({
       height: `${current.height}px`,
       transform: getTransform(current.width, current.height, angle, app.state),
     };
-    Object.assign(overlay.style, box, { opacity: current.opacity / 100 });
+    const overlayStyle = { ...box, opacity: `${current.opacity / 100}` };
     // YAZ-4277 D1: the editor lays out its lines near the canvas ones; the
     // engine never reads them (a click and ↑ / ↓ use the canvas layout)
-    Object.assign(root.style, box, {
+    const rootStyle = {
+      ...box,
       left: `${viewportX + app.state.offsetLeft}px`,
       top: `${viewportY + app.state.offsetTop}px`,
       width: `${maxWidth === Infinity ? current.width : maxWidth}px`,
@@ -334,7 +334,16 @@ export const hostTextWysiwyg = ({
       textAlign: current.textAlign,
       whiteSpace: maxWidth === Infinity ? "pre" : "pre-wrap",
       overflowWrap: "break-word",
-    });
+    };
+    const styles = [
+      ...Object.values(overlayStyle),
+      ...Object.values(rootStyle),
+    ].join("\n");
+    if (styles !== lastStyles) {
+      lastStyles = styles;
+      Object.assign(overlay.style, overlayStyle);
+      Object.assign(root.style, rootStyle);
+    }
     layout = {
       lines: getTextElementStyledLines(current, maxWidth, current.originalText),
       x,
@@ -620,7 +629,7 @@ export const hostTextWysiwyg = ({
         nextFontStyle: current?.fontStyle,
         nextTextRuns,
       });
-      renderSelection();
+      // the scene update of this change has drawn the caret and the selection
       reportEditor(true);
     },
     onFoldsChange: (nextFolds) => {

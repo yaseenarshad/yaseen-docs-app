@@ -739,9 +739,9 @@ export const actionApplySelectedSemanticColor = register<{
  * YAZ-4277 D15: ⌘\ sets every selected element back to the default style
  * (`getDefaultStyleUpdates`, the defaults of D14). It keeps the place, size,
  * rotation, text, font size, link, lock, groups, bindings, folds and checkbox
- * letters. One undo step. In edit, the key is the editor's: the old textarea
- * clears the edited box as before, and the notes editor clears the styles of
- * the selected letters (agent A's seam).
+ * letters. One undo step. In edit, the host's text editor takes the key
+ * first and clears the styles of the selected letters (`clearLetterStyles` of
+ * the `textEditor` seam); the action run in edit clears the edited box.
  */
 export const actionClearSelectedTextFormatting = register({
   name: "clearSelectedTextFormatting",
@@ -3357,7 +3357,7 @@ export const actionChangeFontFamily = register<{
 
               // Refocus text editor when font picker closes if we were editing text
               if (isCompact && appState.editingTextElement) {
-                restoreCaretPosition(null); // Just refocus without saved position
+                restoreCaretPosition();
               }
             }
           }}

@@ -29,5 +29,7 @@ export default defineConfig({
     testTimeout: 30_000,
     sequence: { groupOrder: 1 },
     fileParallelism: false,
+    // as the client project: a perf test of the REAL engine (`textBoxTyping.perf.test.ts`) needs its dist inlined
+    server: { deps: { inline: [/@excalidraw\//] } },
   },
 })

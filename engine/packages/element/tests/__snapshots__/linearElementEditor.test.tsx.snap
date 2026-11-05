@@ -12,7 +12,7 @@ collaboration made
 easy"
 `;
 
-exports[`Test Linear Elements > Test bound text element > should match styles for text editor 1`] = `"position: fixed; margin: 0px; padding: 0px; transform-origin: center center; z-index: var(--zIndex-wysiwyg); left: 35px; top: 7.5px; width: 220px; height: 25px; transform: translate(0px, 0px) scale(1) rotate(0deg); text-align: center; white-space: pre-wrap; overflow-wrap: break-word; font: Emoji 20px 20px; line-height: 25px;"`;
+exports[`Test Linear Elements > Test bound text element > should match styles for text editor 1`] = `"position: fixed; margin: 0px; padding: 0px; transform-origin: center center; z-index: var(--zIndex-wysiwyg); left: 35px; top: 7.5px; width: 220px; height: 25px; transform: translate(0px, 0px) scale(1) rotate(0deg); font: Emoji 20px 20px; line-height: 25px; text-align: center; white-space: pre-wrap; overflow-wrap: break-word;"`;
 
 exports[`Test Linear Elements > Test bound text element > should resize and position the bound text and bounding box correctly when 3 pointer arrow element resized 2`] = `
 "Online whiteboard

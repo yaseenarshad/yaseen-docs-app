@@ -24,7 +24,6 @@ import { activeEyeDropperAtom } from "../EyeDropper";
 import { PropertiesPopover } from "../PropertiesPopover";
 import { slashIcon, strokeIcon } from "../icons";
 import {
-  saveCaretPosition,
   restoreCaretPosition,
   temporarilyDisableTextEditorBlur,
 } from "../../hooks/useTextEditorFocus";
@@ -172,19 +171,7 @@ const ColorPickerPopupContent = ({
           ref={colorPickerContentRef}
           palette={palette}
           color={color}
-          onChange={(changedColor) => {
-            // Save caret position before color change if editing text
-            const savedSelection = appState.editingTextElement
-              ? saveCaretPosition()
-              : null;
-
-            onChange(changedColor);
-
-            // Restore caret position after color change if editing text
-            if (appState.editingTextElement && savedSelection) {
-              restoreCaretPosition(savedSelection);
-            }
-          }}
+          onChange={onChange}
           onEyeDropperToggle={(force) => {
             setEyeDropperState((state) => {
               if (force) {

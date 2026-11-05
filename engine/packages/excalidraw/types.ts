@@ -1113,7 +1113,7 @@ export interface ExcalidrawProps {
   generateLinkForSelection?: (id: string, type: "element" | "group") => string;
   /** Yaseen Docs (YAZ-4039 D7, D11): page links in text boxes. Keep it stable. */
   hostLinks?: HostLinks;
-  /** Yaseen Docs (YAZ-4277 D1): the editor of a text box. Keep it stable. Absent: the textarea. */
+  /** Yaseen Docs (YAZ-4277 D1): the editor of a text box. Keep it stable. Absent: a box shows its text and does not edit. */
   textEditor?: HostTextEditor;
   /**
    * Yaseen Docs (YAZ-4277 D5, D7): the fold arrows of text boxes: when open
