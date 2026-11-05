@@ -838,7 +838,7 @@ export const hostTextWysiwyg = ({
   // the keys the engine owns, before the editor's own keys
 
   /** ↑ / ↓ by the lines the canvas draws. */
-  const moveLine = (direction: -1 | 1, extend: boolean) => {
+  const moveLine = (direction: -1 | 1) => {
     if (!layout || !layout.lines.length) {
       return false;
     }
@@ -866,12 +866,64 @@ export const hostTextWysiwyg = ({
         );
     goalX = x;
     keepGoalX = true;
-    session.setSelection({
-      anchor: extend ? selection.anchor : offset,
-      head: offset,
-    });
+    session.setSelection({ anchor: offset, head: offset });
     keepGoalX = false;
     return true;
+  };
+
+  /**
+   * D37: ⇧↑ / ⇧↓ select by line, as a note does (YAZ-1734 `extendByLine`).
+   * A line is the text between two newlines; an item's line starts after its
+   * marker. Only the head moves. From mid-line it goes to its own line's end
+   * (⇧↓) or start (⇧↑); from an edge to the same edge of the next shown line
+   * (an empty line counts as its start for ⇧↓, its end for ⇧↑). A press
+   * toward the anchor never goes past it and, with no line left, stops on it.
+   * At the first or the last line, away from the anchor, nothing changes.
+   */
+  const extendByLine = (direction: -1 | 1) => {
+    const { anchor, head } = selection;
+    const [start, end] = getLineRange(text, head);
+    const atStart = head <= start;
+    const atEnd = head === end;
+    const edge =
+      atStart && atEnd
+        ? direction > 0
+          ? "start"
+          : "end"
+        : atStart
+        ? "start"
+        : atEnd
+        ? "end"
+        : null;
+    const toward = direction > 0 ? anchor > head : anchor < head;
+    let next: number;
+    if (edge === null) {
+      next = direction > 0 ? end : start;
+    } else {
+      const lines = text.split("\n");
+      const current = getElement();
+      const hidden = current ? getHiddenLines(current, text) : null;
+      let line = text.slice(0, head).split("\n").length - 1 + direction;
+      while (hidden?.has(line)) {
+        line += direction;
+      }
+      if (line < 0 || line >= lines.length) {
+        if (!toward) {
+          return;
+        }
+        next = anchor;
+      } else {
+        const lineStart = lines
+          .slice(0, line)
+          .reduce((sum, value) => sum + value.length + 1, 0);
+        const [targetStart, targetEnd] = getLineRange(text, lineStart);
+        next = edge === "start" ? targetStart : targetEnd;
+      }
+    }
+    if (toward && (direction > 0 ? next > anchor : next < anchor)) {
+      next = anchor;
+    }
+    session.setSelection({ anchor, head: next });
   };
 
   /**
@@ -880,8 +932,8 @@ export const hostTextWysiwyg = ({
    * item's first line is after its bullet. ⌘↑ / ⌘↓ never leave the caret's
    * line (D35: between two newlines, over all its drawn lines): ⌘↑ to its
    * start, after an item's marker, and ⌘↓ to its end. On an item that folds
-   * the note keys fold it instead (D9). ⇧ extends. False: not one of these
-   * keys here.
+   * the note keys fold it instead (D9). ⇧ extends (⌘⇧↑ / ⌘⇧↓ never come
+   * here, D37). False: not one of these keys here.
    */
   const moveToEdge = (key: string, extend: boolean) => {
     if (!layout || !layout.lines.length) {
@@ -947,6 +999,16 @@ export const hostTextWysiwyg = ({
       handleSubmit();
       return;
     }
+    // D37: ⌘⇧↑ / ⌘⇧↓ do nothing in the box: Yaseen's window tool owns them
+    if (
+      event[KEYS.CTRL_OR_CMD] &&
+      event.shiftKey &&
+      (event.key === KEYS.ARROW_UP || event.key === KEYS.ARROW_DOWN)
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (
       isDarwin &&
       event.metaKey &&
@@ -965,7 +1027,13 @@ export const hostTextWysiwyg = ({
       !event.altKey &&
       !event.isComposing
     ) {
-      if (moveLine(event.key === KEYS.ARROW_UP ? -1 : 1, event.shiftKey)) {
+      const direction = event.key === KEYS.ARROW_UP ? -1 : 1;
+      if (event.shiftKey) {
+        // D37: consumed even when nothing changes, as the note's key is
+        extendByLine(direction);
+        event.preventDefault();
+        event.stopPropagation();
+      } else if (moveLine(direction)) {
         event.preventDefault();
         event.stopPropagation();
       }

@@ -28,8 +28,9 @@ import type {
  * YAZ-4399 (1I): during an edit, ⌘← / ⌘→ go to the start and the end of
  * the line the canvas draws (after the bullet on an item's first line),
  * ⌘↑ / ⌘↓ to the start (after the marker) and the end of the caret's line
- * (D35: they never leave it; an item with children folds instead, D9), and
- * ⇧ extends. The keys
+ * (D35: they never leave it; an item with children folds instead, D9).
+ * ⌘⇧← / ⌘⇧→ extend; ⌘⇧↑ / ⌘⇧↓ do nothing (D37). ⇧↑ / ⇧↓ select by line as
+ * a note does (D37). The keys
  * are the Mac's only, so this file runs as a Mac (⌘ is CTRL_OR_CMD).
  */
 vi.hoisted(() => {
@@ -142,7 +143,7 @@ describe("⌘ and the arrow keys in edit (YAZ-4399)", () => {
     });
   });
 
-  it("⌘↑ and ⌘↓ stay in the caret's line: its start and its end, and ⇧ extends (D35)", async () => {
+  it("⌘↑ and ⌘↓ stay in the caret's line: its start and its end (D35)", async () => {
     await startEdit("one\ntwo\nthree");
     caretAt(5);
     expect(pressCmd(KEYS.ARROW_UP)).toBe(false);
@@ -154,17 +155,6 @@ describe("⌘ and the arrow keys in edit (YAZ-4399)", () => {
     expect(last().session.setSelection).toHaveBeenLastCalledWith({
       anchor: 7,
       head: 7,
-    });
-    caretAt(5);
-    pressCmd(KEYS.ARROW_DOWN, true);
-    expect(last().session.setSelection).toHaveBeenLastCalledWith({
-      anchor: 5,
-      head: 7,
-    });
-    pressCmd(KEYS.ARROW_UP, true);
-    expect(last().session.setSelection).toHaveBeenLastCalledWith({
-      anchor: 5,
-      head: 4,
     });
     // at the end of the line already: ⌘↓ does not go on to the next line
     caretAt(7);
@@ -223,12 +213,6 @@ describe("⌘ and the arrow keys in edit (YAZ-4399)", () => {
       anchor: 12,
       head: 12,
     });
-    caretAt(15);
-    pressCmd(KEYS.ARROW_DOWN, true);
-    expect(last().session.setSelection).toHaveBeenLastCalledWith({
-      anchor: 15,
-      head: 17,
-    });
     // a numbered item
     caretAt(35);
     pressCmd(KEYS.ARROW_UP);
@@ -274,5 +258,133 @@ describe("⌘ and the arrow keys in edit (YAZ-4399)", () => {
       anchor: 20,
       head: 20,
     });
+  });
+});
+
+/**
+ * `key` with ⇧ only; false when the engine took it (default prevented). The
+ * selection the engine sets comes back, as the real editor reports it.
+ */
+const pressShift = (key: string) => {
+  const { setSelection } = last().session;
+  const calls = setSelection.mock.calls.length;
+  const result = fireEvent.keyDown(last().input, { key, shiftKey: true });
+  if (setSelection.mock.calls.length > calls) {
+    const { anchor, head } = setSelection.mock.lastCall![0];
+    caretAt(anchor, head);
+  }
+  return result;
+};
+
+describe("⇧↑ and ⇧↓ select by line, as a note does (YAZ-4399, D37)", () => {
+  beforeEach(async () => {
+    mounted = [];
+    await render(
+      <Excalidraw handleKeyboardGlobally={true} textEditor={textEditor} />,
+    );
+  });
+
+  it("from mid-line: first the rest of the line, then whole lines; back the same way, never past the anchor", async () => {
+    await startEdit("hidden 1\nhidden 2\nhidden 3");
+    // "hidd|en 1"
+    caretAt(4);
+    expect(pressShift(KEYS.ARROW_DOWN)).toBe(false);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 4,
+      head: 8,
+    });
+    pressShift(KEYS.ARROW_DOWN);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 4,
+      head: 17,
+    });
+    pressShift(KEYS.ARROW_UP);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 4,
+      head: 8,
+    });
+    // no line before: back to the anchor, not past it
+    pressShift(KEYS.ARROW_UP);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 4,
+      head: 4,
+    });
+    pressShift(KEYS.ARROW_UP);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 4,
+      head: 0,
+    });
+  });
+
+  it("from a line's start: the next line's start each time", async () => {
+    await startEdit("one\ntwo\nthree");
+    caretAt(0);
+    pressShift(KEYS.ARROW_DOWN);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 0,
+      head: 4,
+    });
+    pressShift(KEYS.ARROW_DOWN);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 0,
+      head: 8,
+    });
+  });
+
+  it("at the last line's end ⇧↓ changes nothing", async () => {
+    await startEdit("one\ntwo");
+    caretAt(2, 7);
+    expect(pressShift(KEYS.ARROW_DOWN)).toBe(false);
+    expect(last().session.setSelection).not.toHaveBeenCalled();
+  });
+
+  it("goes by the whole line, not by the drawn line, on a wrapped line", async () => {
+    const box = await startEdit("aaaa bbbb cccc\nnext", 50);
+    const { lines } = getTextElementStyledLayout(box, box.width);
+    expect(lines.filter((line) => line.logicalLine === 0).length).toBe(3);
+    caretAt(lines[1].start + 2);
+    pressShift(KEYS.ARROW_DOWN);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: lines[1].start + 2,
+      head: 14,
+    });
+    // plain ↓ still goes by the drawn line
+    caretAt(lines[1].start + 2);
+    fireEvent.keyDown(last().input, { key: KEYS.ARROW_DOWN });
+    const { anchor, head } = last().session.setSelection.mock.lastCall![0];
+    expect(anchor).toBe(head);
+    expect(head).toBeGreaterThanOrEqual(lines[2].start);
+    expect(head).toBeLessThanOrEqual(lines[2].end);
+  });
+
+  it("a list item's line starts after its marker", async () => {
+    // "• one" 0-5, "• two" 6-11, "    ○ three" 12-23
+    await startEdit("• one\n• two\n    ○ three");
+    caretAt(2);
+    pressShift(KEYS.ARROW_DOWN);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 2,
+      head: 8,
+    });
+    pressShift(KEYS.ARROW_DOWN);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 2,
+      head: 18,
+    });
+    // ⇧↑ from mid "two": to just after its marker
+    caretAt(9);
+    pressShift(KEYS.ARROW_UP);
+    expect(last().session.setSelection).toHaveBeenLastCalledWith({
+      anchor: 9,
+      head: 8,
+    });
+  });
+
+  it("⌘⇧↑ and ⌘⇧↓ do nothing (they belong to another app)", async () => {
+    await startEdit("one\ntwo\nthree");
+    caretAt(5);
+    expect(pressCmd(KEYS.ARROW_UP, true)).toBe(false);
+    expect(pressCmd(KEYS.ARROW_DOWN, true)).toBe(false);
+    expect(last().session.setSelection).not.toHaveBeenCalled();
   });
 });
