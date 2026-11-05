@@ -359,7 +359,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(groupTitles(el)).toEqual(EDITOR_GROUPS)
     expect(hints()).toEqual([OUTLINE_HINT, THREADING_HINT, SECTION_INDENT_HINT, 'The buttons over a selection, as the preview shows them. Drag a square to move it, or a group by its handle; click a square to hide or show it. Hotkeys keep working.', TOC_HINT, OUTSIDE_CHANGES_HINT])
     // The threading rows carry the shortened labels; the group names the feature.
-    expect(['bulletThreading', 'threadWidth', 'threadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Show', 'Line width', 'Line colour'])
+    expect(['bulletThreading', 'threadWidth', 'threadColor'].map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Bullet threading default', 'Line width', 'Line colour'])
     for (const id of ['bulletThreading', 'threadWidth', 'threadColor']) expect(row(el, id)?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Bullet threading')
 
     clickNav(el, 'Files & Links')
@@ -682,6 +682,15 @@ describe('SettingsDialog rows write through the popover contracts', () => {
       { ...DEFAULT_SETTINGS, guideLineDarkness: 20 },
       { ...DEFAULT_SETTINGS, foldingOnByDefault: false },
     ])
+  })
+
+  it('"Bullet threading default": Off by default, in the look of "Guide lines default" (On, Off), and On writes the whole object with only `bulletThreading` changed (YAZ-4432)', () => {
+    expect(DEFAULT_SETTINGS.bulletThreading).toBe(false)
+    const { el, onChange } = mountOn('Editor')
+    expect(row(el, 'bulletThreading')?.querySelector('.setting__hint')?.textContent).toBe('Off: a page can still turn it on in its cog.')
+    expect(rowButtons(el, 'bulletThreading').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'false'], ['Off', 'true']])
+    act(() => rowButtons(el, 'bulletThreading')[0].click())
+    expect(onChange.mock.calls.map((call) => call[0])).toEqual([{ ...DEFAULT_SETTINGS, bulletThreading: true }])
   })
 
   it('Guide line darkness off a preset: no preset is selected, the stepper stops at the ends, and Reset writes the default (YAZ-4094 G3)', () => {

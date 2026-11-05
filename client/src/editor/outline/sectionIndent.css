@@ -123,33 +123,45 @@
 }
 
 /* The path: the first `data-sp` lines of a block take bullet threading's colour and width, and
-   only while bullet threading is on (Settings › Editor › Bullet threading). */
-.app[data-threading='on'] .editor-instance .milkdown > .ProseMirror > [data-sp] {
+   only while bullet threading is on for this page (its cog's "Bullet threading", else Settings' default; YAZ-4432). */
+.editor-host[data-threading='on'] .editor-instance .milkdown > .ProseMirror > [data-sp],
+.editor-instance[data-threading='on'] .milkdown > .ProseMirror > [data-sp],
+:root[data-threading='on'] .editor-instance:not(.editor-host[data-threading='off'] .editor-instance, [data-threading='off']) .milkdown > .ProseMirror > [data-sp] {
   --l1: var(--thread-color, var(--accent));
   --w1: var(--thread-width, 2px);
 }
 
-.app[data-threading='on'] .editor-instance .milkdown > .ProseMirror > :is([data-sp='2'], [data-sp='3'], [data-sp='4'], [data-sp='5'], [data-sp='6']) {
+.editor-host[data-threading='on'] .editor-instance .milkdown > .ProseMirror > :is([data-sp='2'], [data-sp='3'], [data-sp='4'], [data-sp='5'], [data-sp='6']),
+.editor-instance[data-threading='on'] .milkdown > .ProseMirror > :is([data-sp='2'], [data-sp='3'], [data-sp='4'], [data-sp='5'], [data-sp='6']),
+:root[data-threading='on'] .editor-instance:not(.editor-host[data-threading='off'] .editor-instance, [data-threading='off']) .milkdown > .ProseMirror > :is([data-sp='2'], [data-sp='3'], [data-sp='4'], [data-sp='5'], [data-sp='6']) {
   --l2: var(--thread-color, var(--accent));
   --w2: var(--thread-width, 2px);
 }
 
-.app[data-threading='on'] .editor-instance .milkdown > .ProseMirror > :is([data-sp='3'], [data-sp='4'], [data-sp='5'], [data-sp='6']) {
+.editor-host[data-threading='on'] .editor-instance .milkdown > .ProseMirror > :is([data-sp='3'], [data-sp='4'], [data-sp='5'], [data-sp='6']),
+.editor-instance[data-threading='on'] .milkdown > .ProseMirror > :is([data-sp='3'], [data-sp='4'], [data-sp='5'], [data-sp='6']),
+:root[data-threading='on'] .editor-instance:not(.editor-host[data-threading='off'] .editor-instance, [data-threading='off']) .milkdown > .ProseMirror > :is([data-sp='3'], [data-sp='4'], [data-sp='5'], [data-sp='6']) {
   --l3: var(--thread-color, var(--accent));
   --w3: var(--thread-width, 2px);
 }
 
-.app[data-threading='on'] .editor-instance .milkdown > .ProseMirror > :is([data-sp='4'], [data-sp='5'], [data-sp='6']) {
+.editor-host[data-threading='on'] .editor-instance .milkdown > .ProseMirror > :is([data-sp='4'], [data-sp='5'], [data-sp='6']),
+.editor-instance[data-threading='on'] .milkdown > .ProseMirror > :is([data-sp='4'], [data-sp='5'], [data-sp='6']),
+:root[data-threading='on'] .editor-instance:not(.editor-host[data-threading='off'] .editor-instance, [data-threading='off']) .milkdown > .ProseMirror > :is([data-sp='4'], [data-sp='5'], [data-sp='6']) {
   --l4: var(--thread-color, var(--accent));
   --w4: var(--thread-width, 2px);
 }
 
-.app[data-threading='on'] .editor-instance .milkdown > .ProseMirror > :is([data-sp='5'], [data-sp='6']) {
+.editor-host[data-threading='on'] .editor-instance .milkdown > .ProseMirror > :is([data-sp='5'], [data-sp='6']),
+.editor-instance[data-threading='on'] .milkdown > .ProseMirror > :is([data-sp='5'], [data-sp='6']),
+:root[data-threading='on'] .editor-instance:not(.editor-host[data-threading='off'] .editor-instance, [data-threading='off']) .milkdown > .ProseMirror > :is([data-sp='5'], [data-sp='6']) {
   --l5: var(--thread-color, var(--accent));
   --w5: var(--thread-width, 2px);
 }
 
-.app[data-threading='on'] .editor-instance .milkdown > .ProseMirror > [data-sp='6'] {
+.editor-host[data-threading='on'] .editor-instance .milkdown > .ProseMirror > [data-sp='6'],
+.editor-instance[data-threading='on'] .milkdown > .ProseMirror > [data-sp='6'],
+:root[data-threading='on'] .editor-instance:not(.editor-host[data-threading='off'] .editor-instance, [data-threading='off']) .milkdown > .ProseMirror > [data-sp='6'] {
   --l6: var(--thread-color, var(--accent));
   --w6: var(--thread-width, 2px);
 }

@@ -192,7 +192,7 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; bulletThreadingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
@@ -201,7 +201,7 @@ async function mount(content: string, mtime = 1, extra: { path?: string; wikilin
   if (extra.behind === true) container.className = 'tabstack__layer tabstack__layer--hidden'
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} guideLinesOnByDefault={extra.guideLinesOnByDefault} foldingOnByDefault={extra.foldingOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} guideLinesOnByDefault={extra.guideLinesOnByDefault} foldingOnByDefault={extra.foldingOnByDefault} bulletThreadingOnByDefault={extra.bulletThreadingOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} />))
   await settle()
   await settle()
   return container
@@ -713,7 +713,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(pressCmdJ().defaultPrevented).toBe(true)
     const stores = watchStores()
     clickCog(el)
-    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Heading levels:false', 'Table of contents✓:true'])
+    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Bullet threading:false', 'Heading levels:false', 'Table of contents✓:true'])
     diskHas(BODY, 1)
     await clickRow(el, 'Table of contents')
     expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('false')
@@ -755,6 +755,41 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(host(el).dataset.guideLines).toBe('off')
   })
 
+  it('"Bullet threading" follows Settings › "Bullet threading default" (off) until THIS page chooses: the row writes `bullet-threading` IN the note, both ways, and the host carries only the page’s own choice (YAZ-4432)', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 2, size: body.content.length }))
+    const host = (el: HTMLElement) => el.querySelector<HTMLElement>('.editor-host')!
+    // No prop: the app default, off. The row is unchecked and the host says nothing, so `:root`'s default draws.
+    const el = await mount(BODY)
+    clickCog(el)
+    expect(row(el, 'Bullet threading').getAttribute('aria-pressed')).toBe('false')
+    expect(host(el).hasAttribute('data-threading')).toBe(false)
+    diskHas(BODY, 1)
+    await clickRow(el, 'Bullet threading')
+    expect(written()).toEqual(['---\nbullet-threading: true\n---\n' + BODY])
+    expect(row(el, 'Bullet threading').getAttribute('aria-pressed')).toBe('true')
+    expect(host(el).dataset.threading).toBe('on')
+    act(() => root?.unmount())
+    el.remove()
+    // The default On: the page's own `false` wins over it.
+    writeFile.mockClear()
+    const on = await mount(BODY, 1, { bulletThreadingOnByDefault: true })
+    clickCog(on)
+    expect(row(on, 'Bullet threading').getAttribute('aria-pressed')).toBe('true')
+    expect(host(on).hasAttribute('data-threading')).toBe(false)
+    diskHas(BODY, 1)
+    await clickRow(on, 'Bullet threading')
+    expect(written()).toEqual(['---\nbullet-threading: false\n---\n' + BODY])
+    expect(row(on, 'Bullet threading').getAttribute('aria-pressed')).toBe('false')
+    expect(host(on).dataset.threading).toBe('off')
+    act(() => root?.unmount())
+    on.remove()
+    // A page that chose On stays on under the default Off: a new editor reads the note.
+    const again = await mount('---\nbullet-threading: true\n---\n' + BODY, 1, { bulletThreadingOnByDefault: false })
+    clickCog(again)
+    expect(row(again, 'Bullet threading').getAttribute('aria-pressed')).toBe('true')
+    expect(host(again).dataset.threading).toBe('on')
+  })
+
   it('"Folding" off writes `folding: false` IN the note, takes the "Collapse all" button away and tells the editor once; a fold key then shows the message (YAZ-4094 F1, item 12)', async () => {
     writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 2, size: body.content.length }))
     const onNotice = vi.fn()
@@ -785,6 +820,18 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     await clickRow(el, 'Guide lines')
     expect(written()).toEqual(['---\nreadonly: true\nguide-lines: false\n---\n' + BODY])
     expect(row(el, 'Guide lines').getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('a read-only note still turns its "Bullet threading" on: the row writes the key beside `readonly` (YAZ-4432, the YAZ-4111 choice 2 rule)', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 2, size: body.content.length }))
+    const LOCKED = '---\nreadonly: true\n---\n'
+    const el = await mount(LOCKED + BODY)
+    clickCog(el)
+    diskHas(LOCKED + BODY, 1)
+    await clickRow(el, 'Bullet threading')
+    expect(written()).toEqual(['---\nreadonly: true\nbullet-threading: true\n---\n' + BODY])
+    expect(row(el, 'Bullet threading').getAttribute('aria-pressed')).toBe('true')
+    expect(el.querySelector<HTMLElement>('.editor-host')!.dataset.threading).toBe('on')
   })
 
   it('a note whose frontmatter does not parse: the row changes nothing, writes nothing, and says so in one notice', async () => {
@@ -818,7 +865,7 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(el.querySelector('nav.toc')).toBeNull()
     expect(pressCmdJ().defaultPrevented).toBe(false)
     clickCog(el)
-    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Heading levels:false', 'Table of contents:false'])
+    expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Bullet threading:false', 'Heading levels:false', 'Table of contents:false'])
     expect(el.querySelector('.page-settings__choices')).toBeNull()
     diskHas(BODY, 1)
     await clickRow(el, 'Table of contents')

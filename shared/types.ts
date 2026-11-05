@@ -1745,7 +1745,7 @@ export interface SettingsState {
   lineSpacing: number
   /** Vertical padding above and below each block, px (spacing between blocks = 2×). */
   blockGap: number
-  /** Accent the root → caret bullet path (GRO-2094). View-only; never written into the file. */
+  /** Settings › Editor › Bullet threading › "Bullet threading default" (GRO-2094, YAZ-4432): accent the root → caret bullet path on each page with no choice in its cog (`bullet-threading`) and in every editor with no cog. A page's choice wins. Off by default (D29); a saved value stays. */
   bulletThreading: boolean
   /** Thread line width in px: 1 | 2 | 3, like logseq-bullet-threading (GRO-2109). */
   threadWidth: number
@@ -2239,11 +2239,11 @@ export function isValidNewNoteFolder(v: string): boolean {
   return v === '' || v.split('/').every((s) => s.trim() !== '' && !s.trim().startsWith('.') && !s.includes('\0'))
 }
 
-/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on, 2px, accent; new notes beside the source page (YAZ-1643); section steps of 30px with the grey lines always there (YAZ-2709). */
+/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading off (YAZ-4432), 2px, accent; new notes beside the source page (YAZ-1643); section steps of 30px with the grey lines always there (YAZ-2709). */
 export const DEFAULT_SETTINGS: SettingsState = {
   lineSpacing: 1.5,
   blockGap: 4,
-  bulletThreading: true,
+  bulletThreading: false,
   threadWidth: 2,
   threadColor: null,
   guideLinesOnByDefault: true,
