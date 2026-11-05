@@ -1503,7 +1503,10 @@ export interface MediaLibraryFile {
 
 /** The library file of a build from before YAZ-4364, inside the library folder: still read, never written. */
 export const MEDIA_LIBRARY_FILE = 'media.json'
-/** The removals a library keeps, the newest first (YAZ-4364): older ones drop. */
+/**
+ * The removals a library keeps, the newest first (YAZ-4364): older ones drop, but never one that still holds back a
+ * favorite in another library file (YAZ-4366, `mergeMediaLibraries`).
+ */
 export const MAX_MEDIA_REMOVED = 2000
 /**
  * `<library>/components/` (🔒 YAZ-1775 D5): where YAZ-1819 writes a saved component's `.excalidraw` + `.png`.

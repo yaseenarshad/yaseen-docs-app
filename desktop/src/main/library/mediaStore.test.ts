@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { MEDIA_LIBRARY_FILE, type MediaItem } from '@shared/types'
+import { MAX_MEDIA_REMOVED, MEDIA_LIBRARY_FILE, type MediaItem } from '@shared/types'
 import { createMediaStore, type MediaStore } from './mediaStore'
 
 const item = (over: Partial<MediaItem> = {}): MediaItem => ({ itemKey: 'pixabay:1', provider: 'pixabay', providerId: '1', kind: 'photo', title: 'A tree', ...over })
@@ -146,6 +146,23 @@ describe('createMediaStore — two Macs (YAZ-4364, round 3 decision 2)', () => {
     // The other Mac favorites it again, later than the removal: it is back.
     await writeFile(path.join(library, OTHER), lib({ favorites: [row('tree', 2000)] }))
     expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual(['tree'])
+  })
+
+  it('a favorite removed long ago stays removed while the old media.json still holds it, past the removals cap (YAZ-4366)', async () => {
+    // X is a favorite in the old file, which no build writes again. This Mac removed X, then 2,000 more favorites.
+    await writeFile(path.join(library, MEDIA_LIBRARY_FILE), lib({ favorites: [row('x', 5)] }))
+    expect(await store.favorites({ op: 'remove', itemKey: 'x' })).toEqual([])
+    const newer = Object.fromEntries(Array.from({ length: MAX_MEDIA_REMOVED }, (_, i) => [`gone-${i}`, 5000 + i]))
+    const own = (await onDisk()) as { removed: Record<string, number> }
+    await writeFile(file(), JSON.stringify({ ...own, favorites: [row('y', 4000)], removed: { ...own.removed, ...newer } }))
+    // One more removal writes the library with the cap applied; X's note must not fall off while media.json holds X.
+    await store.favorites({ op: 'remove', itemKey: 'y' })
+    expect(((await onDisk()) as { removed: Record<string, number> }).removed.x).toBeDefined()
+    expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual([])
+    // The same for a Mac that no longer runs: its file holds X for good.
+    await writeFile(path.join(library, OTHER), lib({ favorites: [row('x', 6)] }))
+    await store.favorites({ op: 'remove', itemKey: 'nothing' })
+    expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual([])
   })
 
   it('per itemKey the newest row wins, in recent and used too', async () => {
