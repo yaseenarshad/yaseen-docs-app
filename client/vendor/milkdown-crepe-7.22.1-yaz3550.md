@@ -11,6 +11,13 @@ small changes to the BlockEdit slash menu (YAZ-3550; YAZ-3511 D21, D22):
   added to the types). A stock row has none, so its filtering is unchanged; the app's "Current
   time" row is found by "now" and "clock" this way.
 
+It also carries one change to the selection toolbar (YAZ-4440): its `shouldShow` accepts an
+`AllSelection` as well as a `TextSelection`. ⌘A (ProseMirror's select all) makes an `AllSelection`,
+so the toolbar hid when all the text was selected, in a note and in a board's text box. An empty
+document still shows no toolbar. Crepe's config has no option for this either.
+`client/src/editor/selectAllToolbar.test.ts` and `client/src/drawings/textBoxPopups.test.ts` fail on
+a copy without it.
+
 The package name and version remain unchanged, and the root `package.json` installs it through a
 `file:` devDependency and an `overrides` entry, as the other two patched packages. When updating an
 existing checkout, use `npm ci`; `npm install` can keep an already installed upstream copy.
@@ -29,7 +36,8 @@ node tools/buildMilkdownPatch.mjs crepe
 ```
 
 Only these files differ from upstream: `src/feature/block-edit/menu/{index,config,utils}.ts`,
-`lib/types/feature/block-edit/menu/utils.d.ts`, and `lib/{esm,cjs}/index.js` and
-`lib/{esm,cjs}/feature/block-edit/index.js` (the bundled root entry and the feature entry the app
-imports). The four stale source maps of those `.js` files and their `sourceMappingURL` lines are
+`src/feature/toolbar/index.ts`, `lib/types/feature/block-edit/menu/utils.d.ts`, and
+`lib/{esm,cjs}/index.js`, `lib/{esm,cjs}/feature/block-edit/index.js` and
+`lib/{esm,cjs}/feature/toolbar/index.js` (the bundled root entry and the feature entries the app
+imports). The six stale source maps of those `.js` files and their `sourceMappingURL` lines are
 removed, because the compiled runtime is patched directly.
