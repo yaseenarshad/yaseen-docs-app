@@ -195,6 +195,25 @@ describe('board:set-fold-arrows on a drawing', () => {
     expect(parseBoardMetaBlock(await readFile(file, 'utf8'))).toEqual({ createdAt: 1000, updatedAt: 2000, switched: { foldArrows: expect.any(Number) } })
   })
 
+  it("YAZ-4401 2E: `off` is a board's own mode: it writes `\"foldArrows\": \"off\"`, reads back as off, and leaves the elements' folds as they are", async () => {
+    const folded = `${JSON.stringify({ type: 'excalidraw', version: 2, yaseendraw: { createdAt: 1000, updatedAt: 2000 }, elements: [{ id: 't', type: 'text', foldedLines: [0, 3] }], appState: {}, files: {} })}\n`
+    const { file, mtime } = await seed('Folded.excalidraw', folded)
+    const off = await setBoardFoldArrows({ root, path: 'Folded.excalidraw', value: 'off', expectedMtime: mtime })
+    const written = await readFile(file, 'utf8')
+    expect(parseBoardMetaBlock(written)).toEqual({ createdAt: 1000, updatedAt: 2000, foldArrows: 'off', switched: { foldArrows: expect.any(Number) } })
+    expect(boardFoldArrowsOf(parseBoardMetaBlock(written))).toBe('off')
+    expect((JSON.parse(written) as { elements: unknown[] }).elements).toEqual([{ id: 't', type: 'text', foldedLines: [0, 3] }])
+    // the same value again writes nothing
+    expect((await setBoardFoldArrows({ root, path: 'Folded.excalidraw', value: 'off', expectedMtime: off.mtime })).mtime).toBe(off.mtime)
+  })
+
+  it("YAZ-4401 2E: a bad value's message names all four choices", async () => {
+    const { mtime } = await seed('Sketch.excalidraw', SCENE)
+    const bad = await failure(setBoardFoldArrows({ root, path: 'Sketch.excalidraw', value: 'never', expectedMtime: mtime }))
+    expect(bad.code).toBe('BAD_REQUEST')
+    expect(bad.message).toBe("'value' must be 'app', 'hover', 'always' or 'off'")
+  })
+
   it('refuses a bad request and a diagram, and writes nothing', async () => {
     const { file, mtime } = await seed('Sketch.excalidraw', SCENE)
     await seed('Flow.drawio', DIAGRAM)
