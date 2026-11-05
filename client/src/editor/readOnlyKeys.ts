@@ -33,7 +33,8 @@
  * code blocks, the links, the tables) still means read only. Only the DOM changes: while locked the body is
  * `contenteditable="true"` with `data-read-only`, so the browser draws the caret and moves it, and ProseMirror reads the
  * new selection. The navigation keys (`NAVIGATION_KEYS`, any modifier) go through the note's own keymaps like the view
- * actions (⇧↑ / ⇧↓ select by line); a key no keymap takes moves the caret natively. Nothing can edit, at the root: a
+ * actions (⇧↑ / ⇧↓ select by line, and in a table the arrows cross cells); a key no keymap takes moves the caret natively.
+ * Tab / ⇧Tab go to the next / previous table cell, straight through the table's own move. Nothing can edit, at the root: a
  * non-editable view runs none of ProseMirror's edit handlers and ignores DOM changes, `beforeinput` is cancelled for
  * every input type (typing, Enter, delete, paste, drop, spell replace, the native ⌘B / ⌘Z), and a change that cannot be
  * cancelled (IME composition) is drawn again from the document at its `input` event. No `filterTransaction`: a read-only
@@ -41,6 +42,7 @@
  */
 import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
+import { goToNextCell } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { $prose } from '@milkdown/kit/utils'
@@ -118,6 +120,20 @@ function domCaret(view: EditorView): { anchor: number; head: number } | null {
   }
 }
 
+/** The editor's selection follows the DOM caret, when the reader moved it elsewhere: there is where "at the caret" means. */
+function followCaret(view: EditorView, caret: { anchor: number; head: number } | null): void {
+  const { selection } = view.state
+  if (caret === null || (selection.anchor === caret.anchor && selection.head === caret.head)) return
+  view.dispatch(view.state.tr.setSelection(TextSelection.between(view.state.doc.resolve(caret.anchor), view.state.doc.resolve(caret.head))).setMeta('addToHistory', false))
+}
+
+/** A transaction that changes the document is dropped: a locked note moves its caret, folds and zooms, never edits. */
+const viewOnly =
+  (dispatch: (tr: Transaction) => void) =>
+  (tr: Transaction): void => {
+    if (!tr.docChanged) dispatch(tr)
+  }
+
 /** This note is the one the reader is in: visible, and the focus on `<body>` or inside its own section. */
 function holdsReader(view: EditorView): boolean {
   const doc = view.dom.ownerDocument
@@ -151,8 +167,17 @@ export const readOnlyKeys = $prose(
           beforeinput: refuse,
           paste: refuse,
           cut: refuse,
-          // Tab indents in a normal note, so it never takes the focus out of the body.
-          keydown: (view, event) => event.key === 'Tab' && refuse(view, event),
+          // Tab indents in a normal note, so it never takes the focus out of the body. In a table cell Tab / ⇧Tab go to
+          // the next / previous cell, as in a normal note, but straight to the table's own move: a cell bullet's
+          // indent (the note's Tab before the table's) never runs, and the last cell adds no row (YAZ-4433).
+          keydown: (view, event) => {
+            if (event.key !== 'Tab' || !refuse(view, event)) return false
+            if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+              followCaret(view, domCaret(view))
+              goToNextCell(event.shiftKey ? -1 : 1)(view.state, viewOnly(view.dispatch))
+            }
+            return true
+          },
           input: (view) => {
             if (view.editable) return false
             redrawFromDoc(view)
@@ -203,14 +228,9 @@ export const readOnlyKeys = $prose(
           // drawn first (`focusReadOnlyBody`): then ⌘A shows, and the next key starts in the note.
           if (caret === null) view.focus()
           // The caret the reader clicked is where "at the caret" means.
-          const { selection } = view.state
-          if (caret !== null && (selection.anchor !== caret.anchor || selection.head !== caret.head)) {
-            view.dispatch(view.state.tr.setSelection(TextSelection.between(view.state.doc.resolve(caret.anchor), view.state.doc.resolve(caret.head))).setMeta('addToHistory', false))
-          }
+          followCaret(view, caret)
           const dispatch = view.dispatch
-          view.dispatch = (tr: Transaction) => {
-            if (!tr.docChanged) dispatch(tr)
-          }
+          view.dispatch = viewOnly(dispatch)
           try {
             if (view.someProp('handleKeyDown', (handle) => handle(view, event))) event.preventDefault()
           } finally {
