@@ -278,7 +278,8 @@ import {
 import { toggleUnderline, underline, underlineSchema } from './marks/underline'
 import { clearFormattingKeymap } from './marks/clearFormatting'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, QUICK_HIGHLIGHTS, type HighlightColor } from './marks/highlight'
-import { hasPanelColour, highlightPanel, MORE_KEY, toggleHighlightPanel } from './highlightPanel'
+import { highlightPanel, MORE_KEY, panelColour, toggleHighlightPanel } from './highlightPanel'
+import { showMoreColour } from './toolbarHost'
 import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
 import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
 import { arrangeToolbar, toolbarPrefs } from './toolbarPrefs'
@@ -471,6 +472,7 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  * `Mod-Shift-h` (yellow) and the `==x==` typing rule share. Yellow is the Markdown `==…==` on
  * disk; a colour is `<mark class="highlight-<name>">`. YAZ-4348 demo round 2: each swatch is a bold
  * "A" on its colour, a lit one ringed (app.css), and a ▾ after them opens the colour panel, `highlightPanel.ts`.
+ * YAZ-4445: the swatches and the ▾ are the board toolbar's tiles (`toolbarButtons.ts` `swatchTile`, `swatchTile.css`).
  *
  * The Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what block is
  * this?" — the invisible `##` made visible — and whose click switches it, through the same
@@ -509,11 +511,17 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       onRun: (ctx) => ctx.get(commandsCtx).call(setHighlightCommand.key, color),
     })
   }
-  // YAZ-4348 demo round 2: the ▾ of the colour panel; lit when the selection has a colour that is not a button.
+  // YAZ-4348 demo round 2: the ▾ of the colour panel; lit when the selection has a colour that is not a button,
+  // with a bar of that colour under it, as the board's ▾ (YAZ-4445).
   formatting.addItem(MORE_KEY, {
     icon: ownIcon(MORE_KEY),
     label: TOOLBAR_LABELS[MORE_KEY],
-    active: (ctx) => hasPanelColour(viewState(ctx), highlightSchema.type(ctx)),
+    active: (ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const colour = panelColour(view.state, highlightSchema.type(ctx))
+      showMoreColour(view, MORE_KEY, colour)
+      return colour !== null
+    },
     onRun: (ctx) => toggleHighlightPanel(ctx.get(editorViewCtx)),
   })
   formatting.addItem('underline', {

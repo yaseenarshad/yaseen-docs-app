@@ -48,13 +48,25 @@ import {
 import { hexOfRgb, rgbOf } from '../lib/colour'
 import { ColourBox } from './highlightColourBox'
 import { mostUsedHighlightColors, noteHighlightColorUse } from './highlightUsed'
+import { toolbarItemOf } from './toolbarHost'
 
 /** The ▾'s toolbar key. */
 export const MORE_KEY = 'highlight-more'
 
-/** Whether the selection has a colour that is not a toolbar button: the ▾ lights for it. */
-export const hasPanelColour = (state: EditorState, type: MarkType): boolean =>
-  someHighlightColor(state, type, (c) => c !== null && !(QUICK_HIGHLIGHTS as readonly string[]).includes(c))
+/**
+ * A colour on the selection that is not a toolbar button, as its wash, or null: the ▾ lights for it and shows a bar
+ * of it, as the board's ▾ does (YAZ-4445).
+ */
+export function panelColour(state: EditorState, type: MarkType): string | null {
+  let found: HighlightColor = null
+  someHighlightColor(state, type, (c) => {
+    if (c === null || (QUICK_HIGHLIGHTS as readonly string[]).includes(c)) return false
+    found = c
+    return true
+  })
+  const colour = found as HighlightColor
+  return colour === null ? null : isCustomHighlight(colour) ? customWash(colour) : `var(--mark-bg-${colour})`
+}
 
 /** A colour's name in the panel: yellow is the mark's `null`. */
 const nameOf = (color: HighlightColor): string => (color === null ? 'yellow' : color)
@@ -139,9 +151,9 @@ class HighlightPanel {
 
   #type = () => highlightSchema.type(this.ctx)
 
-  /** The strip's ▾ of this editor, or null while the toolbar is not drawn. */
+  /** The strip's ▾ of this editor, or null while the toolbar is not drawn; in a text box, in its pop-ups' layer (YAZ-4445). */
   #arrow(): HTMLElement | null {
-    return this.view.dom.parentElement?.querySelector<HTMLElement>(`.milkdown-toolbar [data-toolbar-item="${MORE_KEY}"]`) ?? null
+    return toolbarItemOf(this.view, MORE_KEY)
   }
 
   /** Enter or Space on a focused ▾ is a click with no pointer: Crepe's own buttons answer only the pointer. */
@@ -345,6 +357,7 @@ class HighlightPanel {
     this.#render()
     if (by === 'keyboard') this.#move(this.#rows[0]?.[0]?.id ?? null)
     this.#place()
+    this.#arrow()?.setAttribute('aria-expanded', 'true')
     doc.addEventListener('keydown', this.#key, true)
     doc.addEventListener('pointerdown', this.#outside, true)
     doc.addEventListener('mousedown', this.#outside, true)
@@ -359,6 +372,7 @@ class HighlightPanel {
     this.#box.hide()
     this.#pencil.setAttribute('aria-expanded', 'false')
     this.#move(null)
+    this.#arrow()?.removeAttribute('aria-expanded')
     doc.removeEventListener('keydown', this.#key, true)
     doc.removeEventListener('pointerdown', this.#outside, true)
     doc.removeEventListener('mousedown', this.#outside, true)
