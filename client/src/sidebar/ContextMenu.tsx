@@ -189,7 +189,14 @@ function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { i
           else onOpen()
         }}
       >
-        {item.label}
+        {item.icon === undefined ? (
+          item.label
+        ) : (
+          <span className="ctx-menu__label">
+            {item.icon}
+            {item.label}
+          </span>
+        )}
       </button>
       {open && <Flyout anchor={buttonRef} sections={item.children} onClose={onClose} onCloseFlyout={onCloseFlyout} />}
     </div>
@@ -200,7 +207,7 @@ function ParentItem({ item, open, onHover, onOpen, onCloseFlyout, onClose }: { i
 export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
   // A glyph on any row (YAZ-3264 D6) leaves an empty slot on the rows without one, so every label
   // starts at the same place, as in a Finder menu. A flyout is its own menu and keeps its own rule.
-  const glyphs = sections.some((section) => section.some((item) => item.kind !== 'strip' && item.children === undefined && item.icon !== undefined))
+  const glyphs = sections.some((section) => section.some((item) => item.kind !== 'strip' && item.icon !== undefined))
   // The ONE open flyout (D7 amended): at most one parent is expanded at a time.
   const [openId, setOpenId] = useState<string | null>(null)
   // Hover intent (YAZ-3085 D4): three parents stand in a column, so a pointer on its way into a

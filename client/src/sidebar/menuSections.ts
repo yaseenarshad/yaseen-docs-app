@@ -65,6 +65,8 @@ export interface MenuAction extends MenuItemBase {
 export interface MenuParent extends MenuItemBase {
   onSelect?: () => void
   children: readonly MenuAction[][]
+  /** A glyph before the label, as a leaf has: "Add to focus ▸" keeps its eye (YAZ-4460 F4). */
+  icon?: ReactNode
 }
 
 /** One button of a strip: its icon, its name as the tooltip and the accessible name, lit when `active`. */
