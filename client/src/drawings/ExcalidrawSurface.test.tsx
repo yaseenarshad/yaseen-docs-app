@@ -349,3 +349,28 @@ describe('the exported copy and the board itself (YAZ-3943)', () => {
     expect(onExportPdf).toHaveBeenCalledWith('<svg/>', { width: 1, height: 2 })
   })
 })
+
+/** YAZ-4404 4H and YAZ-4406 4J: the two Settings › Drawings switches reach the engine as props, never as appState. */
+describe('the engine props of the round 1 switches', () => {
+  const mountWith = async (canvasPrefs?: import('@shared/types').CanvasPrefs): Promise<void> => {
+    container ??= document.createElement('div')
+    document.body.appendChild(container)
+    root ??= createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" canvasPrefs={canvasPrefs} onSnapshot={() => undefined} onFailed={() => undefined} />)
+    })
+  }
+
+  it('both are on by default; each Off reaches the engine at once, and neither goes into the initial appState', async () => {
+    const { DEFAULT_CANVAS_PREFS } = await import('@shared/types')
+    await mountWith(undefined)
+    expect(last()).toMatchObject({ fillSetsTextColor: true, newShapesMatchZoom: true })
+    const appState = (last().initialData as { appState: Record<string, unknown> }).appState
+    expect(appState).not.toHaveProperty('fillSetsTextColor')
+    expect(appState).not.toHaveProperty('newShapesMatchZoom')
+    await mountWith({ ...DEFAULT_CANVAS_PREFS, fillSetsTextColor: false })
+    expect(last()).toMatchObject({ fillSetsTextColor: false, newShapesMatchZoom: true })
+    await mountWith({ ...DEFAULT_CANVAS_PREFS, fillSetsTextColor: false, newShapesMatchZoom: false })
+    expect(last()).toMatchObject({ fillSetsTextColor: false, newShapesMatchZoom: false })
+  })
+})
