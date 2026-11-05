@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { MenuAction, MenuEntry, MenuParent, MenuStrip } from './menuSections'
 
 /** How long a hover waits before it swaps or closes an open flyout (YAZ-3085 D4): the pointer's time to cross a row. */
@@ -22,9 +22,14 @@ interface ContextMenuProps {
 }
 
 /** Groups of items (🔒 D7): one `role="group"` per NON-EMPTY section — the root and every flyout share it. */
+/** The pick of each radio set of an open menu (YAZ-4460 demo): a row's id, once a click made one. */
+const RadioPicks = createContext<{ picked: Readonly<Record<string, string>>; pick: (group: string, id: string) => void }>({ picked: {}, pick: () => undefined })
+
 function Groups<T extends MenuEntry>({ sections, render }: { sections: readonly (readonly T[])[]; render: (item: T) => ReactNode }) {
+  const [picked, setPicked] = useState<Readonly<Record<string, string>>>({})
+  const radios = useMemo(() => ({ picked, pick: (group: string, id: string) => setPicked((was) => ({ ...was, [group]: id })) }), [picked])
   return (
-    <>
+    <RadioPicks.Provider value={radios}>
       {sections
         .filter((section) => section.length > 0)
         .map((section) => (
@@ -32,7 +37,7 @@ function Groups<T extends MenuEntry>({ sections, render }: { sections: readonly 
             {section.map(render)}
           </div>
         ))}
-    </>
+    </RadioPicks.Provider>
   )
 }
 
@@ -67,7 +72,9 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
   const label = armed && item.confirm !== undefined ? item.confirm : item.label
   // A check row (`onToggle`, YAZ-4460 demo): its ✓ is held here, so it flips at the click while the menu stays open.
   const [checked, setChecked] = useState(item.checked === true)
-  const hint = item.onToggle !== undefined ? (checked ? '✓' : undefined) : item.hint
+  const radios = useContext(RadioPicks)
+  const radioOn = item.radio === undefined ? false : radios.picked[item.radio.group] !== undefined ? radios.picked[item.radio.group] === item.id : item.radio.on
+  const hint = item.onToggle !== undefined ? (checked ? '✓' : undefined) : item.radio !== undefined ? (radioOn ? '✓' : undefined) : item.hint
   // A two-click check row (`twoClick`): armed, it says what the second click does — add (accent) or remove (red).
   const shown = armed && item.twoClick === true ? (checked ? 'Click again to remove' : 'Click again to add') : label
   const armedClass = !armed ? '' : item.twoClick === true && !checked ? ' ctx-menu__item--armed-add' : ' ctx-menu__item--armed'
@@ -101,6 +108,11 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
           setArmed(false)
           setChecked(!checked)
           return item.onToggle(!checked)
+        }
+        if (item.radio !== undefined) {
+          // A radio row keeps the menu open, and its ✓ moves here.
+          if (!radioOn) item.onSelect()
+          return radios.pick(item.radio.group, item.id)
         }
         item.onSelect()
         onClose()

@@ -2030,17 +2030,16 @@ export function Sidebar({
               onOpenVsCode: openVsCode,
               onOpenDefault: openDefault,
               onReveal: reveal,
-              // An add shows the Focus tab (YAZ-2619 D3) — not from the Search tab, which stays
-              // (YAZ-2638 D2); a remove keeps the tab (R5). This is not a `viaTree` item.
+              // An add keeps the tab that shows (YAZ-4460 demo: "it doesnt automatically snap you to focus", which replaces
+              // YAZ-2619 D3's jump to the Focus tab); the toast confirms. This is not a `viaTree` item.
               onToggleFocus: (paths, isOn) => {
                 toggleFocus(paths, isOn)
-                if (!isOn && !searching && lens !== 'focus') onLensChange('focus')
               },
-              // YAZ-4460 F4: into a focus folder — a new one opens its name field — and the Focus tab shows, as an add does.
+              // YAZ-4460 F4: into a focus folder. Only a NEW folder shows the Focus tab: its name field opens there.
               onFocusInFolder: (paths, id) => {
                 const into = lists.focusTab.moveIn(paths, id)
-                if (into === null) return
-                if (id === null) setEditingFolder(into)
+                if (into === null || id !== null) return
+                setEditingFolder(into)
                 if (!searching && lens !== 'focus') onLensChange('focus')
               },
               // YAZ-4460 demo: the same for the Favorites tab's folders; a new one opens its name field on the Favorites tab.

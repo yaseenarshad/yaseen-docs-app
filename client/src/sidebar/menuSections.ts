@@ -59,6 +59,11 @@ export interface MenuAction extends MenuItemBase {
    */
   checked?: boolean
   onToggle?: (on: boolean) => void
+  /**
+   * One of a set where one is picked (YAZ-4460 demo: the folder an item is in): the menu stays open after the click and
+   * the ✓ moves to it. `group` names the set; `on` is the pick when the menu opened.
+   */
+  radio?: { group: string; on: boolean }
   /** A check row that asks with a second click first (YAZ-4460 demo): "Click again to add" / "Click again to remove". */
   twoClick?: true
   /** A glyph before the label (YAZ-3279: the tab row's menu): an SVG, or a `FileIcon` (the Search menu's Type list, YAZ-3511 D13). It holds no text, so `textContent` stays the bare label. Only a leaf draws one. */
@@ -293,9 +298,11 @@ export type FocusPlace = string | null | 'top'
  * `current` undefined: the rows are not in focus yet.
  */
 export function focusPlaces(folders: readonly { id: string; name: string }[], current: string | null | undefined, to: (place: FocusPlace) => void, kind: 'focus' | 'favorites' = 'focus'): MenuAction[][] {
-  const rows = folders.map((f) => ({ id: `${kind}-in-${f.id}`, label: f.name, hint: current === f.id ? '✓' : undefined, onSelect: () => to(f.id) }))
+  // The places are one set: the menu stays open on a pick and the ✓ moves (YAZ-4460 demo). "New … folder…" closes it: its name field opens.
+  const group = `${kind}-place`
+  const rows = folders.map((f) => ({ id: `${kind}-in-${f.id}`, label: f.name, radio: { group, on: current === f.id }, onSelect: () => to(f.id) }))
   const tab = kind === 'focus' ? 'Focus' : 'Favorites'
-  const top = current === undefined ? [] : [{ id: `${kind}-top`, label: 'No folder', tip: `Show it on its own on the ${tab} tab, outside every folder`, hint: current === null ? '✓' : undefined, onSelect: () => to('top') }]
+  const top = current === undefined ? [] : [{ id: `${kind}-top`, label: 'No folder', tip: `Show it on its own on the ${tab} tab, outside every folder`, radio: { group, on: current === null }, onSelect: () => to('top') }]
   return [...(rows.length > 0 ? [rows] : []), ...(top.length > 0 ? [top] : []), [{ id: `${kind}-new-folder`, label: kind === 'focus' ? 'New focus folder…' : 'New favorite folder…', onSelect: () => to(null) }]]
 }
 
