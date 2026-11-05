@@ -3,6 +3,7 @@ import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { TextFormatting } from '@shared/textFormatting'
 import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -1530,6 +1531,8 @@ export function App() {
   // "Hide all others" on a focus folder (YAZ-4460 F8): the one folder the Focus tab shows, by the Recents filter's rule —
   // this window's session only, never written. A folder that goes ends it (the sidebar checks it is still there).
   const [focusOnly, setFocusOnly] = useState<string | null>(null)
+  // The Recents Type filter (YAZ-4450 demo), Search's types: the window's session only, as the vault pick.
+  const [recentType, setRecentType] = useState<SearchType>('all')
   const recentPick = recentVault !== null && roots.length > 1 && roots.includes(recentVault) ? recentVault : null
   useEffect(() => {
     if (recentVault !== null && recentPick === null) setRecentVault(null)
@@ -3223,6 +3226,8 @@ export function App() {
           onRecentVault={setRecentVault}
           focusOnly={focusOnly}
           onFocusOnly={setFocusOnly}
+          recentType={recentType}
+          onRecentType={setRecentType}
           onAddVaultFor={addVaultFor}
           closedVaults={closedVaults}
           onSetVaultOpen={setVaultOpen}

@@ -120,3 +120,25 @@ export function filterSection(filter: SearchFilter, set: (next: SearchFilter) =>
   }
   return [flyout('type', TYPES, 'filter-type', 'Type'), flyout('time', TIMES, 'filter-time', 'Time')]
 }
+
+/** The Type flyout alone, as Search's (D13), for the Recents menu (YAZ-4450 demo): `omit` leaves out types its rows never have. */
+export function typeFlyout(type: SearchType, set: (next: SearchType) => void, omit: readonly SearchType[] = []): MenuSection[number] {
+  const choices = TYPES.filter(([value]) => !omit.includes(value))
+  const leaf = ([value, text, iconOf]: (typeof TYPES)[number]) => ({
+    id: `filter-type-${value}`,
+    label: text,
+    ...(iconOf !== undefined && { icon: typeIcon(iconOf) }),
+    hint: type === value ? '✓' : undefined,
+    onSelect: () => {
+      if (type !== value) set(value)
+    },
+  })
+  return { id: 'filter-type', label: 'Type', hint: choices.find(([value]) => value === type)?.[1], children: [[leaf(choices[0])], choices.slice(1).map(leaf)] }
+}
+
+/** A type's chip, as the search bar names it (D24): its name and its icon; null for All types. */
+export function typeChip(type: SearchType): { label: string; icon?: ReactNode } | null {
+  const found = TYPES.find(([value]) => value === type)
+  if (type === 'all' || found === undefined) return null
+  return { label: found[1], ...(found[2] !== undefined && { icon: typeIcon(found[2]) }) }
+}

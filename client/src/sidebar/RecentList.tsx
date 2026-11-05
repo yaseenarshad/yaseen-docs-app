@@ -5,6 +5,7 @@ import type { OnListFold } from './listFold'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
 import { FileIcon, NameEnding } from './FileIcon'
+import { typeOf, type SearchType } from '../search/searchFilter'
 import { byVault, MAX_RECENTS, recentDays, recentFiles, timeOf, type RecentFile, type RecentGroup } from './recents'
 
 type Log = Readonly<Record<string, number>>
@@ -67,6 +68,8 @@ interface RecentListProps {
   roots: readonly string[]
   /** The vault filter (YAZ-4450 D5): only the files of this vault; null for all. */
   only?: string | null
+  /** The Type filter (YAZ-4450 demo), Search's types: only files of this type; 'all' for all. */
+  type?: SearchType
   /** Each day split by vault (YAZ-4450 D7), with each vault's name; undefined draws each day as one list. */
   groups?: { nameOf: (root: string) => string }
   /** The names of the pages (YAZ-2420 D14): a row shows its page's name, as a Files row does. */
@@ -91,10 +94,10 @@ interface RecentListProps {
  * the tab shows. Memo: App draws again on each app-state broadcast; the list draws only when its own
  * props, a save log or the day change.
  */
-export const RecentList = memo(function RecentList({ trees, roots, only = null, groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold }: RecentListProps) {
+export const RecentList = memo(function RecentList({ trees, roots, only = null, type = 'all', groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold }: RecentListProps) {
   const edits = useEdits(roots)
   const today = useToday()
-  const files = useMemo(() => recentFiles(trees, roots, edits, only), [trees, roots, edits, only])
+  const files = useMemo(() => recentFiles(trees, roots, edits, only, type === 'all' ? undefined : (path) => typeOf({ kind: 'file', path }) === type), [trees, roots, edits, only, type])
   const days = useMemo(() => recentDays(files, new Date()), [files, today]) // eslint-disable-line react-hooks/exhaustive-deps -- a new day draws the headings again (S16)
   // Each day's vault groups (YAZ-4450 D7), cut once per list: 200 rows at most.
   const grouped = groups !== undefined
@@ -123,7 +126,8 @@ export const RecentList = memo(function RecentList({ trees, roots, only = null, 
   if (files.length === 0) {
     // A tree still on its way: the list cannot say yet which logged files are there.
     if (!roots.every((root) => trees.has(root))) return <p className="sidebar__msg">Loading…</p>
-    return <p className="sidebar__msg">Files you edit show here.</p>
+    // A filter that leaves nothing says so (YAZ-4450): the list is not empty, the filter is.
+    return <p className="sidebar__msg">{only !== null || type !== 'all' ? 'No recent files match these filters.' : 'Files you edit show here.'}</p>
   }
   return (
     <>

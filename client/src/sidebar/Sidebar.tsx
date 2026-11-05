@@ -16,7 +16,7 @@ import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind, typ
 import type { MovedGesture } from '../lib/moveHistory'
 import { ancestorDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP } from '../search/searchCandidates'
-import { filterOn, filterSection, NO_FILTER, type SearchFilter } from '../search/searchFilter'
+import { filterOn, filterSection, NO_FILTER, typeChip, typeFlyout, type SearchFilter, type SearchType } from '../search/searchFilter'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmMove } from './ConfirmMove'
@@ -230,6 +230,9 @@ interface SidebarProps {
   /** "Hide all others" (YAZ-4460 F8): App's, for the window's session — the one focus folder the Focus tab shows; null shows all. */
   focusOnly?: string | null
   onFocusOnly?: (id: string | null) => void
+  /** The Recents Type filter (YAZ-4450 demo): App's, for the window's session; 'all' for all types. */
+  recentType?: SearchType
+  onRecentType?: (type: SearchType) => void
   /** The Recents tab's vault filter (YAZ-4450 D5, D6): App's, for the window's session; null is All vaults. */
   recentVault?: string | null
   onRecentVault?: (root: string | null) => void
@@ -628,6 +631,8 @@ export function Sidebar({
   onAddVaultFor,
   focusOnly = null,
   onFocusOnly,
+  recentType = 'all',
+  onRecentType,
   onSessionNameConsumed,
   onRootMissing,
   onFileMissing,
@@ -698,7 +703,9 @@ export function Sidebar({
   vaultsRef.current = vaults
   // The Recents tab's button (YAZ-4450 D5): its vault filter, in a window with two or more vaults only. Its menu stands where
   // a sort menu would: one menu at a time.
-  const menuTab: SortMenuTab | 'recents' | null = sortedTab ?? (lens === 'recents' && multi ? 'recents' : null)
+  // Since the Type filter (YAZ-4450 demo) Recents has its button in every window; the vault rows stay a workspace's.
+  const menuTab: SortMenuTab | 'recents' | null = sortedTab ?? (lens === 'recents' ? 'recents' : null)
+  const recentChip = typeChip(recentType)
   // Each day split by vault while all vaults show (D7, D8). Kept by value: the vaults' array is new on each App render, and
   // RecentList is a memo.
   const vaultNames = vaults.map((vault) => vault.name).join('\0')
@@ -1596,8 +1603,8 @@ export function Sidebar({
         onChangePrefs={changeTabs}
         sortShows={menuTab !== null}
         sortOpen={sortMenu !== null && sortMenu.tab === menuTab}
-        sortFiltered={(searching && filterOn(searchFilter)) || (menuTab === 'recents' && recentVault !== null)}
-        sortLabel={menuTab === 'recents' ? 'Filter by vault' : undefined}
+        sortFiltered={(searching && filterOn(searchFilter)) || (menuTab === 'recents' && (recentVault !== null || recentType !== 'all'))}
+        sortLabel={menuTab === 'recents' ? 'Filter' : undefined}
         onSort={openSort}
         foldShows
         foldDisabled={foldDisabled}
@@ -1645,7 +1652,13 @@ export function Sidebar({
         </div>
       )}
       {searching && <SearchFilterBar filter={searchFilter} onFilter={setSearchFilter} />}
-      {menuTab === 'recents' && recentVault !== null && <FilterChips chips={[{ key: 'vault', label: vaultOf(recentVault).name }]} onRemove={() => onRecentVault?.(null)} />}
+      {menuTab === 'recents' && (
+        <FilterChips
+          chips={[...(recentVault === null ? [] : [{ key: 'vault', label: vaultOf(recentVault).name }]), ...(recentChip === null ? [] : [{ key: 'type', ...recentChip }])]}
+          onRemove={(key) => (key === 'vault' ? onRecentVault?.(null) : onRecentType?.('all'))}
+          onClear={() => (onRecentVault?.(null), onRecentType?.('all'))}
+        />
+      )}
       {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
           Search tab has no such target, so right-clicking its blank space offers nothing (YAZ-803)
           — not even Electron's text menu, which leaked through until YAZ-2050. Its ROWS get the
@@ -1794,7 +1807,7 @@ export function Sidebar({
           <SessionList onFold={setListFold} titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} renameRequest={sessionNameRequest} onRenameConsumed={onSessionNameConsumed} />
         ) : lens === 'recents' ? (
           // The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window, by day.
-          <RecentList onFold={setListFold} trees={trees} roots={roots} only={recentVault} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+          <RecentList onFold={setListFold} trees={trees} roots={roots} only={recentVault} type={recentType} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
@@ -1929,7 +1942,7 @@ export function Sidebar({
         <ContextMenu
           x={sortMenu.x}
           y={sortMenu.y}
-          sections={recentSections(vaults, recentVault, (pick) => onRecentVault?.(pick), { on: settings.recentsByVault, set: (on) => onChangeSettings({ ...settings, recentsByVault: on }) })}
+          sections={recentSections(vaults, recentVault, (pick) => onRecentVault?.(pick), { on: settings.recentsByVault, set: (on) => onChangeSettings({ ...settings, recentsByVault: on }) }, typeFlyout(recentType, (next) => onRecentType?.(next), ['folders']))}
           onClose={() => setSortMenu(null)}
         />
       )}
