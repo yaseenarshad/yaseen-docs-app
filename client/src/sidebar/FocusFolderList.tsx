@@ -5,7 +5,6 @@ import { resolveItem, type FolderItem } from '../lists/focusFolders'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { TextField } from '../views/view/TextField'
 import { ContextMenu } from './ContextMenu'
-import { FileIcon } from './FileIcon'
 
 /** Two clicks on a name inside this gap rename it, as on a session (YAZ-3147, YAZ-4460 F3). */
 const RENAME_CLICK_GAP_MS = 300
@@ -100,7 +99,10 @@ export function FocusFolderList({ folders, roots, renderItems, editing, onEdit, 
                         <li key={`${item.vault}/${item.path}`}>
                           <button type="button" className="tree__row tree__row--ghost" style={{ paddingLeft: 26 }} title={`In "${at.ghost}", which is not in this window`} onClick={() => onGhost(at.ghost, item.path)} onContextMenu={(e) => (e.preventDefault(), e.stopPropagation())}>
                             <span className="tree__label">
-                              <FileIcon path={item.path} />
+                              {/* A ghost reads as one at a glance (YAZ-4460 demo): 👻 where its file icon would be. */}
+                              <span className="tree__ghost-icon" aria-hidden>
+                                👻
+                              </span>
                               {item.path.slice(item.path.lastIndexOf('/') + 1).replace(/\.md$/, '')}
                             </span>
                             <span className="tree__vault">{at.ghost}</span>
