@@ -104,6 +104,8 @@ describe('settingCandidates', () => {
       'favoriteCopies',
       // The icon packs (YAZ-4359), their own group.
       'iconPacks',
+      // The Add panel's hover zoom (YAZ-4447, D34), the switch of its Filter menu.
+      'mediaHoverZoom',
       // Settings › Files & Links › New notes (YAZ-4246), its first group.
       'newNoteLocation',
       'newNoteTitleTemplate',
@@ -246,8 +248,9 @@ describe('searchSettings', () => {
     expect(outline).toHaveLength(13 + 15)
     // "guide" names the guide lines' rows (YAZ-4094; Bullet threading's hint no longer says it: one name for one thing) and is a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'sidebarLines', 'sectionLines', 'tocLines'])
-    // And the hover preview's master switch and each place's own (YAZ-3403).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hotkey-code-showHover'])
+    // And the hover preview's master switch and each place's own (YAZ-3403). The Add panel's Hover zoom (YAZ-4447, D34)
+    // leads: its label starts with the word.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['mediaHoverZoom', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hotkey-code-showHover'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
   })

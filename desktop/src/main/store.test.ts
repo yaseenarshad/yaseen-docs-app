@@ -318,6 +318,16 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, codeOutlineLocals: 1 })).toBe(false)
   })
 
+  it('Add panel hover zoom (YAZ-4447, D34): a file from before it reads On; Off survives a restart; junk reads On. A stored Similar icons choice is kept', async () => {
+    const { mediaHoverZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: { ...legacySettings, mediaGroupSimilar: true } }))
+    expect(createStore(file).get().settings).toMatchObject({ mediaHoverZoom: true, mediaGroupSimilar: true })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, mediaHoverZoom: false } }))
+    expect(createStore(file).get().settings.mediaHoverZoom).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, mediaHoverZoom: 'no' }).mediaHoverZoom).toBe(true)
+    expect(isSettings({ ...DEFAULT_SETTINGS, mediaHoverZoom: 1 })).toBe(false)
+  })
+
   it('outsideChangeGlow (YAZ-3704 D5): a file from before it reads Until I check it; each value survives a restart; junk reads the default', async () => {
     const { outsideChangeGlow: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     expect(DEFAULT_SETTINGS.outsideChangeGlow).toBe('until-checked')

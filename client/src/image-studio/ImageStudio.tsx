@@ -29,7 +29,7 @@
  * in flight.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { MAX_COMPONENT_NAME_LENGTH, MAX_ITEM_WORD_LENGTH, PIXABAY_SECRET, type ComponentItem, type MediaBytesProvider, type MediaLibraryFile, type StudioItem } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COMPONENT_NAME_LENGTH, MAX_ITEM_WORD_LENGTH, PIXABAY_SECRET, type ComponentItem, type MediaBytesProvider, type MediaLibraryFile, type StudioItem } from '@shared/types'
 import { DEFAULT_MEDIA_FILTERS, needsCredit, sanitizeMediaFilters, type IconPackInfo, type MediaFilters } from '@shared/iconPacks'
 import { parseComponentFragment } from '@shared/savedComponents'
 import { api } from '../api'
@@ -46,6 +46,7 @@ import { insertImage, insertShape, fileFromImport, type InsertEngine, type Inser
 import { buildShapeCatalog, getShape, shapeAliases, type ShapeCatalogItem, type ShapePreview, type SmartShapeApi } from './shapes'
 import { groupResults } from './groupResults'
 import { FilterMenu } from './FilterMenu'
+import { attachTileHoverZoom } from './tileHoverZoom'
 import { IconPacksFooter } from './IconPacksFooter'
 import { PackView } from './PackView'
 import { useIconPacks } from './useIconPacks'
@@ -214,7 +215,8 @@ export function loadPackList(): Promise<IconPackInfo[]> {
 /** The settings' filters and pins, read where the panel has no settings prop (`storage`, which a test may not have). */
 const settingsFilters = (): MediaFilters => sanitizeMediaFilters(storage.getSettings()?.mediaFilters ?? DEFAULT_MEDIA_FILTERS)
 const settingsPins = (): string[] => storage.getSettings()?.mediaPinnedPacks ?? []
-const settingsGroupSimilar = (): boolean => storage.getSettings()?.mediaGroupSimilar ?? true
+const settingsGroupSimilar = (): boolean => storage.getSettings()?.mediaGroupSimilar ?? DEFAULT_SETTINGS.mediaGroupSimilar
+const settingsHoverZoom = (): boolean => storage.getSettings()?.mediaHoverZoom ?? DEFAULT_SETTINGS.mediaHoverZoom
 /** The pins as they are now, or the same array when they hold the same packs, so a settings broadcast renders nothing. */
 const samePins = (now: string[], next: string[]): string[] => (now.length === next.length && now.every((p, i) => p === next[i]) ? now : next)
 
@@ -447,11 +449,14 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   const [pinned, setPinned] = useState<string[]>(settingsPins)
   // Filter › Similar icons (YAZ-4348 demo round 2): the "+N" groups, or every icon as its own tile.
   const [groupSimilar, setGroupSimilar] = useState<boolean>(settingsGroupSimilar)
+  // Filter › Hover zoom (YAZ-4447, D34), the same switch as Settings › Images › Add panel.
+  const [hoverZoom, setHoverZoom] = useState<boolean>(settingsHoverZoom)
   useEffect(() => {
     const read = () => {
       setFilters(settingsFilters())
       setPinned((now) => samePins(now, settingsPins()))
       setGroupSimilar(settingsGroupSimilar())
+      setHoverZoom(settingsHoverZoom())
     }
     read()
     return storage.subscribe(read)
@@ -510,6 +515,10 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     setGroupSimilar(on)
     storage.patchSettings({ mediaGroupSimilar: on })
   }
+  const changeHoverZoom = (on: boolean) => {
+    setHoverZoom(on)
+    storage.patchSettings({ mediaHoverZoom: on })
+  }
   const [line, setLine] = useState<Line>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [componentName, setComponentName] = useState('')
@@ -532,6 +541,11 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
 
   const fieldRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  // The hover zoom (YAZ-4447, D34): its listeners live on the list, and only while the switch is on.
+  useEffect(() => {
+    const list = listRef.current
+    return hoverZoom && list !== null ? attachTileHoverZoom(list) : undefined
+  }, [hoverZoom])
   // The columns follow the list's width (`rowFor`): the grids and a section's one row use the same count.
   const [ROW, setRow] = useState(MIN_ROW)
   useEffect(() => {
@@ -1417,6 +1431,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           loadPacks={loadPackList}
           groupSimilar={groupSimilar}
           onGroupSimilar={changeGroupSimilar}
+          hoverZoom={hoverZoom}
+          onHoverZoom={changeHoverZoom}
         />
         {hasSelection && library.canCapture && (
           <button

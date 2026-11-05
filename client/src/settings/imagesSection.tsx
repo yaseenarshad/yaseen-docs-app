@@ -11,10 +11,13 @@
  *   Files; in Docs, Files & Links is about notes, and the library is the canvas panel's.
  * - The favorites (YAZ-4363): their count, the size of their own copies, and "all saved" or "3 still saving".
  * - Icon packs (YAZ-4359), its own group: every Iconify pack on this Mac, and where they live (`IconPacksControl`).
+ * - Add panel › Hover zoom (YAZ-4447, D34): the same `mediaHoverZoom` as the panel's Filter › Hover zoom.
  */
+import { Segmented } from './controls'
 import { FavoriteCopiesLine } from './FavoriteCopiesLine'
 import { IconPacksControl } from './IconPacksControl'
 import { LibraryFolderControl, LibraryFolderHint } from './LibraryFolderControl'
+import { ON_OFF_OPTIONS } from './options'
 import { PixabayKeyControl } from './PixabayKeyControl'
 import type { SettingsSection } from './registry'
 
@@ -75,6 +78,18 @@ export const IMAGES_SECTION: SettingsSection = {
           keywords: ['icon packs', 'iconify', 'download', 'offline', 'icons', 'update', 'check for new icons', 'folder'],
           wide: true,
           render: ({ settings, onChange }) => <IconPacksControl settings={settings} onChange={onChange} />,
+        },
+      ],
+    },
+    {
+      title: 'Add panel',
+      items: [
+        {
+          id: 'mediaHoverZoom',
+          label: 'Hover zoom',
+          hint: "Rest the pointer on a picture in a drawing's Add panel to see it bigger. The panel's Filter menu has the same switch.",
+          keywords: ['hover zoom', 'zoom', 'bigger', 'enlarge', 'preview', 'add panel', 'image studio', 'tiles', 'pictures', 'icons'],
+          render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.mediaHoverZoom} onChange={(mediaHoverZoom) => onChange({ ...settings, mediaHoverZoom })} ariaLabel="Hover zoom" />,
         },
       ],
     },

@@ -2001,9 +2001,15 @@ export interface SettingsState {
   mediaPinnedPacks: string[]
   /**
    * The Add panel's "+41" groups (YAZ-4348 demo round 2): true shows one tile per icon with its look-alikes behind
-   * "+N"; false shows every icon as its own tile. Filter › Similar icons. Travels; Clear filters keeps it.
+   * "+N"; false shows every icon as its own tile. Filter › Similar icons. Travels; Clear filters keeps it. Default
+   * false, "Show each one" (YAZ-4447, D34). A stored value stays: the store writes every field, so no migration.
    */
   mediaGroupSimilar: boolean
+  /**
+   * The Add panel's hover zoom (YAZ-4447, D34): the pointer resting on a picture tile shows it bigger. Filter › Hover
+   * zoom and Settings › Images › Add panel are the same switch. Travels; Clear filters keeps it. Default on.
+   */
+  mediaHoverZoom: boolean
   /**
    * Where the downloaded icon packs live (YAZ-4359, D5 update): ONE folder for every vault and window of this Mac.
    * null = `<userData>/icon-packs`, which only main can resolve. Stays on this Mac (`LOCAL_SETTINGS`).
@@ -2417,7 +2423,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   canvasPanel: DEFAULT_CANVAS_PANEL,
   mediaFilters: DEFAULT_MEDIA_FILTERS,
   mediaPinnedPacks: [],
-  mediaGroupSimilar: true,
+  mediaGroupSimilar: false,
+  mediaHoverZoom: true,
   iconPacksFolder: null,
   noticeLength: '4s',
   noticeUndo: true,
