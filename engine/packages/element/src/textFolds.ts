@@ -10,7 +10,8 @@
  *
  * YAZ-4434 (D31): `foldedLineTexts` holds the anchor of each fold, in the
  * same order: the folded item's text, trimmed, without its marker. Each fold
- * write saves it. Restore uses it to find a fold's item after an outside edit
+ * write saves it, and each text write keeps it in step (`withFoldAnchors`,
+ * YAZ-4439). Restore uses it to find a fold's item after an outside edit
  * moved the lines (`restoreFolds`). A file with no anchors keeps the
  * line-number guard (`normalizeFoldedLines`).
  *
@@ -211,6 +212,42 @@ export const getFoldAnchorsUpdate = (
   return sameStrings(anchors, element.foldedLineTexts)
     ? {}
     : { foldedLineTexts: anchors };
+};
+
+/**
+ * YAZ-4439 (D31): the switch point for each write of a box's text. Every path
+ * writes `originalText` through `newElementWith` or `mutateElement`: the text
+ * edit, Edit link, Remove link, a checklist tick, a list change. Both ask this.
+ * An update that changes the text of a box with a fold, and sets no anchors
+ * itself, gets the anchors of its folds in the new text. So the fold stays
+ * after a reload. An update with no new text costs one check.
+ */
+export const withFoldAnchors = <T extends object>(
+  element: ExcalidrawElement,
+  updates: T,
+): T => {
+  const update = updates as Partial<ExcalidrawTextElement>;
+  if (
+    typeof update.originalText !== "string" ||
+    !isTextElement(element) ||
+    update.originalText === element.originalText ||
+    "foldedLineTexts" in update
+  ) {
+    return updates;
+  }
+  const foldedLines =
+    "foldedLines" in update ? update.foldedLines : element.foldedLines;
+  if (!foldedLines?.length) {
+    // the same write opens the last fold: its anchors go too
+    return element.foldedLineTexts === undefined
+      ? updates
+      : { ...updates, foldedLineTexts: undefined };
+  }
+  const anchors = getFoldAnchorsUpdate(
+    { foldedLines, foldedLineTexts: element.foldedLineTexts },
+    update.originalText,
+  );
+  return "foldedLineTexts" in anchors ? { ...updates, ...anchors } : updates;
 };
 
 /**

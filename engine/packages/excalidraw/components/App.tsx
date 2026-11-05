@@ -152,7 +152,6 @@ import {
   getTextCheckboxAt,
   getToggledCheckboxText,
   getFoldedLines,
-  getFoldAnchorsUpdate,
   deepCopyElement,
   duplicateElements,
   hasBoundTextElement,
@@ -7297,9 +7296,9 @@ class App extends React.Component<AppProps, AppState> {
               );
             }
             return newElementWith(_element, {
-              originalText: nextOriginalText,
               // YAZ-4434 (D31): each fold's anchor follows its line's text
-              ...getFoldAnchorsUpdate(_element, nextOriginalText),
+              // (`newElementWith` asks `withFoldAnchors`, YAZ-4439)
+              originalText: nextOriginalText,
               ...nextStyles,
               ...(wrapAt === null ? {} : { autoResize: false }),
               isDeleted: isDeleted ?? _element.isDeleted,

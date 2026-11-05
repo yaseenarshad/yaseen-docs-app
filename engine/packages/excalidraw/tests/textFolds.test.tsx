@@ -279,6 +279,38 @@ describe("fold anchors after an outside edit (YAZ-4434, D31)", () => {
     expect(restored.foldedLines).toEqual([2]);
     expect("foldedLineTexts" in restored).toBe(false);
   });
+
+  // YAZ-4439: a text write in the app, from any path, keeps each anchor on
+  // its line's text, so the fold stays after a reload
+  describe("Edit link and Remove link on the folded bullet's own line (YAZ-4439)", () => {
+    const LINKED = ["• A", "    ○ a1", "• See [[Old]]", "    ○ b1"].join("\n");
+    const replaceLink = (text: string) => {
+      API.setElements([createMoat({ text: LINKED })]);
+      act(() => h.app.setTextFolds("moat", [2]));
+      const start = LINKED.indexOf("[[Old]]");
+      act(() => {
+        h.app.replaceHostLinkText("moat", start, start + 7, "[[Old]]", text);
+      });
+      const saved = JSON.parse(
+        serializeAsJSON(h.elements, h.state, {}, "local"),
+      ).elements[0];
+      return restoreElements([saved], null)[0] as ExcalidrawTextElement;
+    };
+
+    it("Edit link: the fold survives a reload", () => {
+      const restored = replaceLink("[[New]]");
+      expect(restored.foldedLines).toEqual([2]);
+      expect(restored.foldedLineTexts).toEqual(["See [[New]]"]);
+      expect(hiddenText(restored)).toEqual(["    ○ b1"]);
+    });
+
+    it("Remove link: the fold survives a reload", () => {
+      const restored = replaceLink("Old");
+      expect(restored.foldedLines).toEqual([2]);
+      expect(restored.foldedLineTexts).toEqual(["See Old"]);
+      expect(hiddenText(restored)).toEqual(["    ○ b1"]);
+    });
+  });
 });
 
 // The Moat box at (100, 100): "• 1) Automated Pipeline" is the line from

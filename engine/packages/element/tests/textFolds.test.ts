@@ -1,3 +1,4 @@
+import { mutateElement, newElementWith } from "../src/mutateElement";
 import { newTextElement } from "../src/newElement";
 import {
   getAllFoldedLines,
@@ -225,6 +226,63 @@ describe("fold anchors: restore finds a moved bullet by its text (YAZ-4434, D31)
       foldedLineTexts: ["B"],
     });
     expect(getFoldAnchorsUpdate({}, BOARD)).toEqual({});
+  });
+
+  // YAZ-4439: every write of a box's text (Edit link, Remove link, a paste,
+  // an action) goes through `newElementWith` or `mutateElement`
+  describe("a text write from any path keeps the anchors in step (YAZ-4439)", () => {
+    const folded = () => ({
+      ...newTextElement({ x: 0, y: 0, text: BOARD }),
+      foldedLines: [2],
+      foldedLineTexts: ["B"],
+    });
+    const RENAMED = BOARD.replace("• B", "• B [[New]]");
+
+    it("newElementWith", () => {
+      const next = newElementWith(folded(), {
+        originalText: RENAMED,
+        text: RENAMED,
+      });
+      expect(next.foldedLines).toEqual([2]);
+      expect(next.foldedLineTexts).toEqual(["B [[New]]"]);
+    });
+
+    it("mutateElement", () => {
+      const element = folded();
+      mutateElement(element, new Map(), { originalText: RENAMED });
+      expect(element.foldedLineTexts).toEqual(["B [[New]]"]);
+    });
+
+    it("the folds that the same write sets", () => {
+      const next = newElementWith(folded(), {
+        originalText: RENAMED,
+        foldedLines: [0],
+      });
+      expect(next.foldedLineTexts).toEqual(["A"]);
+      const opened = newElementWith(folded(), {
+        originalText: RENAMED,
+        foldedLines: undefined,
+      });
+      expect(opened.foldedLineTexts).toBeUndefined();
+    });
+
+    it("an anchor that the write sets wins; a write with no text change keeps the anchors", () => {
+      expect(
+        newElementWith(folded(), {
+          originalText: RENAMED,
+          foldedLineTexts: ["kept"],
+        }).foldedLineTexts,
+      ).toEqual(["kept"]);
+      const moved = newElementWith(folded(), { x: 10 });
+      expect(moved.foldedLineTexts).toEqual(["B"]);
+    });
+
+    it("a box with no fold gets no anchor", () => {
+      const next = newElementWith(newTextElement({ x: 0, y: 0, text: BOARD }), {
+        originalText: RENAMED,
+      });
+      expect("foldedLineTexts" in next).toBe(false);
+    });
   });
 });
 

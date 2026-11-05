@@ -14,6 +14,8 @@ import { updateElbowArrowPoints } from "./elbowArrow";
 
 import { isElbowArrow } from "./typeChecks";
 
+import { withFoldAnchors } from "./textFolds";
+
 import type {
   ElementsMap,
   ExcalidrawElbowArrowElement,
@@ -45,6 +47,8 @@ export const mutateElement = <TElement extends Mutable<ExcalidrawElement>>(
   },
 ) => {
   let didChange = false;
+  // YAZ-4439 (D31): a new text keeps each fold's anchor on its line's text
+  updates = withFoldAnchors(element, updates);
 
   // casting to any because can't use `in` operator
   // (see https://github.com/microsoft/TypeScript/issues/21732)
@@ -161,6 +165,8 @@ export const newElementWith = <TElement extends ExcalidrawElement>(
   force = false,
 ): TElement => {
   let didChange = false;
+  // YAZ-4439 (D31): a new text keeps each fold's anchor on its line's text
+  updates = withFoldAnchors(element, updates);
   for (const key in updates) {
     const value = (updates as any)[key];
     if (typeof value !== "undefined") {
