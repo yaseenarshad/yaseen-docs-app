@@ -12,7 +12,11 @@ import { pointFrom, pointRotateRads } from "@excalidraw/math";
 
 import { getListMarkerMiddle } from "./textCheckbox";
 import { getFoldableLines, getFoldedLines } from "./textFolds";
-import { getLineHeightInPx, getLineWidth } from "./textMeasurements";
+import {
+  getLineHeightInPx,
+  getLineWidth,
+  getTextMetricsVersion,
+} from "./textMeasurements";
 import {
   getStyledVisualLineStart,
   getTextElementStyledLines,
@@ -101,6 +105,7 @@ const anchorsMemo = new WeakMap<
     version: number;
     maxWidth: number;
     linksVersion: number;
+    metricsVersion: number;
     anchors: readonly FoldArrowAnchor[];
   }
 >();
@@ -111,12 +116,15 @@ export const getFoldArrowAnchors = (
   maxWidth: number,
 ): readonly FoldArrowAnchor[] => {
   const linksVersion = getHostLinksVersion();
+  // YAZ-4438: a font that loads moves the lines
+  const metricsVersion = getTextMetricsVersion();
   const memo = anchorsMemo.get(element);
   if (
     memo &&
     memo.version === element.version &&
     memo.maxWidth === maxWidth &&
-    memo.linksVersion === linksVersion
+    memo.linksVersion === linksVersion &&
+    memo.metricsVersion === metricsVersion
   ) {
     return memo.anchors;
   }
@@ -153,6 +161,7 @@ export const getFoldArrowAnchors = (
     version: element.version,
     maxWidth,
     linksVersion,
+    metricsVersion,
     anchors,
   });
   return anchors;

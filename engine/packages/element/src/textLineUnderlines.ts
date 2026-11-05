@@ -4,7 +4,12 @@ import {
   getWrappedTextLineWithMeasure,
   getWrappedTextLines,
 } from "./textWrapping";
-import { charWidth, getLineHeightInPx, getLineWidth } from "./textMeasurements";
+import {
+  charWidth,
+  getLineHeightInPx,
+  getLineWidth,
+  getTextMetricsVersion,
+} from "./textMeasurements";
 import { getHiddenLines } from "./textFolds";
 import { parseTextListLine, TEXT_LIST_CHECK_MARKERS } from "./textList";
 import {
@@ -680,9 +685,10 @@ export const STYLED_LINES_MEMO_MAX = 1000;
 
 /**
  * YAZ-3718 D1: one layout for each text box, keyed by its text, runs, font,
- * folds (YAZ-4277 D3) and width. `refreshTextDimensions`, the canvas, the
- * editor overlay and the fold arrows ask for the same layout on a keystroke, so
- * only the first one measures. YAZ-4435: a plain box (no runs, folds or links)
+ * folds (YAZ-4277 D3), width and letter widths (YAZ-4438: a font that
+ * loads). `refreshTextDimensions`, the canvas, the editor overlay and the
+ * fold arrows ask for the same layout on a keystroke, so only the first one
+ * measures. YAZ-4435: a plain box (no runs, folds or links)
  * is kept too, as it is the most common box. The memo is for the whole window: a box that was deleted, or whose
  * board closed, keeps its entry until the memo is full. Then the box changed
  * longest ago goes out (YAZ-4074 6A item 16); it measures again if it comes back.
@@ -698,6 +704,7 @@ const styledLinesMemo = new Map<
     foldedLines: ExcalidrawTextElement["foldedLines"];
     maxWidth: number;
     linksVersion: number;
+    metricsVersion: number;
     lines: StyledVisualLine[];
     text: string | null;
   }
@@ -713,6 +720,8 @@ const getTextElementLayout = (
   const memo = styledLinesMemo.get(element.id);
   // YAZ-4039 D7: a box with links is memoized too; a label change moves the version
   const linksVersion = getHostLinksVersion();
+  // YAZ-4438: a font that loads makes the layout again
+  const metricsVersion = getTextMetricsVersion();
   if (
     memo &&
     memo.originalText === originalText &&
@@ -722,7 +731,8 @@ const getTextElementLayout = (
     memo.strikethrough === element.strikethrough &&
     memo.foldedLines === element.foldedLines &&
     memo.maxWidth === maxWidth &&
-    memo.linksVersion === linksVersion
+    memo.linksVersion === linksVersion &&
+    memo.metricsVersion === metricsVersion
   ) {
     return memo;
   }
@@ -741,6 +751,7 @@ const getTextElementLayout = (
     foldedLines: element.foldedLines,
     maxWidth,
     linksVersion,
+    metricsVersion,
     lines,
     text,
   });
