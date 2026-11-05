@@ -76,7 +76,12 @@ export function FocusFolderList({ folders, roots, renderItems, editing, onEdit, 
                   <TextField className="create-inline__input" value={folder.name} aria-label="Focus folder name" autoFocus selectOnMount maxLength={MAX_VAULT_NAME} normalize={cleanVaultName} onCommit={(next) => onRename(folder.id, next)} onDone={() => onEdit(null)} />
                 </div>
               ) : (
-                <button type="button" className="tree__row focus-folder" data-focus-folder={folder.id} aria-expanded={open} onClick={(e) => click(e, folder.id)} onContextMenu={(e) => (e.preventDefault(), setMenu({ x: e.clientX, y: e.clientY, id: folder.id }))}>
+                <button type="button" className="tree__row focus-folder" data-focus-folder={folder.id} aria-expanded={open} onClick={(e) => click(e, folder.id)} onContextMenu={(e) => {
+                    // Its own menu only: the tab's blank-space menu must not open under it.
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setMenu({ x: e.clientX, y: e.clientY, id: folder.id })
+                  }}>
                   <span className={`tree__chevron${open ? ' tree__chevron--open' : ''}`} />
                   <StackIcon />
                   <span className="tree__label">{folder.name}</span>
@@ -90,7 +95,7 @@ export function FocusFolderList({ folders, roots, renderItems, editing, onEdit, 
                     <ul className="tree">
                       {ghosts.map(({ item, at }) => (
                         <li key={`${item.vault}/${item.path}`}>
-                          <button type="button" className="tree__row tree__row--ghost" style={{ paddingLeft: 26 }} title={`In "${at.ghost}", which is not in this window`} onClick={() => onGhost(at.ghost, item.path)}>
+                          <button type="button" className="tree__row tree__row--ghost" style={{ paddingLeft: 26 }} title={`In "${at.ghost}", which is not in this window`} onClick={() => onGhost(at.ghost, item.path)} onContextMenu={(e) => (e.preventDefault(), e.stopPropagation())}>
                             <span className="tree__label">
                               <FileIcon path={item.path} />
                               {item.path.slice(item.path.lastIndexOf('/') + 1).replace(/\.md$/, '')}
