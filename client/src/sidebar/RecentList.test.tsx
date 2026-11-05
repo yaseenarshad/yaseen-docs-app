@@ -24,7 +24,7 @@ function installBridge(app: AppState) {
         return () => undefined
       }),
     },
-    window: { identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'recents' })) },
+    window: { identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'recents' })), open: vi.fn(async () => undefined) },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return { emit: (next: AppState) => act(() => listener?.(next)) }
@@ -154,6 +154,16 @@ describe('RecentList (YAZ-3235 D3 to D7)', () => {
     act(() => fold?.setAll(true))
     expect(groups()).toHaveLength(3)
     expect(files()).toHaveLength(3)
+  })
+
+  it('⇧⌘-click opens the file in a new window on its own vault (YAZ-4444 D32): no tab', async () => {
+    await mount(stateWith({ '/w': { '/w/d.md': at(2026, 10, 23, 9) } }))
+    const [row] = rows()
+    fire(row, 'click', { metaKey: true, shiftKey: true, detail: 1 })
+    const bridge = (window as unknown as { yaseenDocs: { window: { open: ReturnType<typeof vi.fn> } } }).yaseenDocs
+    expect(bridge.window.open).toHaveBeenCalledExactlyOnceWith({ root: '/w', file: '/w/d.md' })
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
   })
 
   it('S19, S20: a click previews, a ⌘-click opens a background tab, a double-click keeps the tab; a right-click hands the path and the event to the menu', async () => {

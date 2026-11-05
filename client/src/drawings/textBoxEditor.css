@@ -1,0 +1,32 @@
+/* YAZ-4277 D1: the text box editor (`textBoxEditor.ts`) lays its lines out as the box does: no page padding, no
+   paragraph gaps, the box's font, line height and wrap from the root the engine places. The engine makes it
+   transparent; only ↑ and ↓ see this layout. */
+.excalidraw-host-text-editor .milkdown,
+.excalidraw-host-text-editor .milkdown .ProseMirror,
+.excalidraw-host-text-editor .milkdown .ProseMirror p {
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  white-space: inherit;
+  min-height: 0;
+}
+
+/* YAZ-4277 1C: the block handle has no place in a box (its rows are a note's). */
+.excalidraw-host-text-editor .milkdown-block-handle {
+  display: none;
+}
+
+/* The pop-up toolbar and the `/` menu, moved out of the zoomed, invisible root: screen size, over the board. */
+.milkdown.excalidraw-text-box-popups {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  background: none;
+}
+
+.milkdown.excalidraw-text-box-popups > * {
+  pointer-events: auto;
+}

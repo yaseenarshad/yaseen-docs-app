@@ -1,8 +1,9 @@
 /**
  * THE CLICKS THE USER CAN CHANGE (YAZ-3936, demo round 1 C4 of YAZ-3879): a gesture is a set of modifiers and a
- * click ('CmdOrCtrl+Click', 'Shift+Click', 'Click'). Two places have rows, each with the same three actions:
- * "Links in notes and drawings" and "Bullet dots". The other clicks and drags of the app are built in (Settings › Hotkeys
- * shows them from `client/src/settings/hotkeys.ts`).
+ * click ('CmdOrCtrl+Click', 'Shift+Click', 'Click'). Three places have rows: "Links in notes and drawings" and
+ * "Bullet dots" open in this tab, a new tab or a background tab; links and "Files in lists" open a file in a new window
+ * (YAZ-4444, D32 of YAZ-4278). The other clicks and drags of the app are built in (Settings › Hotkeys shows them from
+ * `client/src/settings/hotkeys.ts`).
  *
  * The user's changes live in `SettingsState.hotkeys` with the keys' changes (`HotkeyOverrides`), by row id
  * ('links.thisTab'): only a change is stored, null is "No gesture", and a value equal to the default is never
@@ -15,9 +16,12 @@
 import type { HotkeyOverrides } from '../hotkeyBindings'
 
 /** Where a gesture works. */
-export type GesturePlace = 'links' | 'bullets'
-/** What a gesture does there: open the link's page (or the bullet, zoomed in) in this tab, a new tab, or a new tab behind. */
-export type GestureAction = 'thisTab' | 'newTab' | 'backgroundTab'
+export type GesturePlace = 'links' | 'bullets' | 'files'
+/**
+ * What a gesture does there: open the link's page (or the bullet, zoomed in) in this tab, a new tab, or a new tab behind;
+ * or open the file in a new window on the vault that holds it, as the menu's "Open in ▸ New window" (YAZ-4444).
+ */
+export type GestureAction = 'thisTab' | 'newTab' | 'backgroundTab' | 'newWindow'
 
 export interface GestureRow {
   /** `<place>.<action>`, stable: the settings store keys a change by it. */
@@ -33,23 +37,28 @@ export interface GestureRow {
 }
 
 /** The place tags of Settings › Hotkeys; the page's search finds a row by them ("links in notes"). */
-export const GESTURE_PLACE_TITLES: Record<GesturePlace, string> = { links: 'Links in notes and drawings', bullets: 'Bullet dots' }
+export const GESTURE_PLACE_TITLES: Record<GesturePlace, string> = { links: 'Links in notes and drawings', bullets: 'Bullet dots', files: 'Files in lists' }
 
 const LINK_HINT = 'A [[link]] or a Markdown link. A link to a page that does not exist makes the page first.'
 const BULLET_HINT = 'Zoomed into the bullet. The names in the zoom path too.'
+const FILE_HINT = 'A file in the sidebar, Recents, the new tab page, a backlink, a table name or a board card. Not a folder.'
 
 /**
  * The rows, in the order the page lists them. Defaults (YAZ-3747 demo, Yaseen: "Browser style"): on a link, as in a
  * browser, ⌘-click opens a background tab and ⌘⇧-click a new tab in front; "Open in this tab" has no click (right-click ›
  * Open), and Click is the text's. Bullet dots as before: Click zooms in, ⇧-click a new tab in front, ⌘-click behind.
+ * A file opens in a new window with ⇧⌘-click (YAZ-4444, D32). A link keeps ⌘⇧-click for a new tab (YAZ-3747), so its
+ * "Open in a new window" has no gesture until the user gives it one.
  */
 export const GESTURE_ROWS: readonly GestureRow[] = [
   { id: 'links.thisTab', place: 'links', action: 'thisTab', label: 'Open in this tab', hint: LINK_HINT, gesture: null },
   { id: 'links.newTab', place: 'links', action: 'newTab', label: 'Open in a new tab', hint: LINK_HINT, gesture: 'CmdOrCtrl+Shift+Click' },
   { id: 'links.backgroundTab', place: 'links', action: 'backgroundTab', label: 'Open in a background tab', hint: LINK_HINT, gesture: 'CmdOrCtrl+Click' },
+  { id: 'links.newWindow', place: 'links', action: 'newWindow', label: 'Open in a new window', hint: LINK_HINT, gesture: null },
   { id: 'bullets.thisTab', place: 'bullets', action: 'thisTab', label: 'Open in this tab (zoom in)', hint: BULLET_HINT, gesture: 'Click' },
   { id: 'bullets.newTab', place: 'bullets', action: 'newTab', label: 'Open in a new tab', hint: BULLET_HINT, gesture: 'Shift+Click' },
   { id: 'bullets.backgroundTab', place: 'bullets', action: 'backgroundTab', label: 'Open in a background tab', hint: BULLET_HINT, gesture: 'CmdOrCtrl+Click' },
+  { id: 'files.newWindow', place: 'files', action: 'newWindow', label: 'Open in a new window', hint: FILE_HINT, gesture: 'CmdOrCtrl+Shift+Click' },
 ]
 
 const BY_ID = new Map(GESTURE_ROWS.map((row) => [row.id, row]))
@@ -145,7 +154,7 @@ export const gestureClashes = (row: GestureRow, gesture: string, overrides: Hotk
 
 /**
  * What a click in `place` does now (C4): the action whose gesture has exactly the modifiers held, or null for a click
- * no row has. Read at the click, so a change in Settings works at once; a scan of three rows.
+ * no row has. Read at the click, so a change in Settings works at once; a scan of a few rows.
  */
 export function gestureAction(place: GesturePlace, event: MouseMods, overrides: HotkeyOverrides | undefined): GestureAction | null {
   const held = heldOf(event)

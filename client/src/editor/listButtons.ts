@@ -196,8 +196,20 @@ const setKind = (tr: Transaction, types: Types, run: readonly number[], kind: Li
     if (!$first.parent.canReplaceWith($first.index(), $first.index() + run.length, listType)) return
     const lastPos = run[run.length - 1]
     const end = lastPos + tr.doc.nodeAt(lastPos)!.nodeSize
-    tr.wrap(new NodeRange($first, tr.doc.resolve(end), $first.depth), [{ type: listType, attrs: { spread: false } }, { type: types.item, attrs: itemAttrs(kind, null) }])
-    for (let i = run.length - 1; i > 0; i--) tr.split(run[i] + 2, 1)
+    const wrappers = [{ type: listType, attrs: { spread: false } }, { type: types.item, attrs: itemAttrs(kind, null) }]
+    if (types.item.validContent(tr.doc.slice(first, end).content)) {
+      tr.wrap(new NodeRange($first, tr.doc.resolve(end), $first.depth), wrappers)
+      for (let i = run.length - 1; i > 0; i--) tr.split(run[i] + 2, 1)
+    } else {
+      // YAZ-4442: a text box's item holds one line (`paragraph bullet_list?`, `textBoxLock.ts`), so the lines cannot
+      // share one item. Each line gets its own list and item, last first; then the lists join, last first. A wrap adds
+      // 4 positions before the lines after it, so line i's list starts at its old place plus 4 × i.
+      for (let i = run.length - 1; i >= 0; i--) {
+        const $line = tr.doc.resolve(run[i])
+        tr.wrap(new NodeRange($line, tr.doc.resolve(run[i] + tr.doc.nodeAt(run[i])!.nodeSize), $line.depth), wrappers)
+      }
+      for (let i = run.length - 1; i > 0; i--) tr.join(run[i] + 4 * i)
+    }
     joinNeighbours(tr, first)
     return
   }

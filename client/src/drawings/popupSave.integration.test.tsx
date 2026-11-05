@@ -11,7 +11,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { DrawingLoadRequest, DrawingSaveRequest } from '@shared/types'
-import type { DrawingSurfaceProps } from './ExcalidrawSurface'
+import type { DrawingAppSettings, DrawingSurfaceProps } from './ExcalidrawSurface'
+
+/** The app's drawing settings when a test sets none (YAZ-4436): the defaults, and no door that writes them. */
+const NO_SETTINGS: DrawingAppSettings = { canvasPrefs: undefined, onCanvasPrefsChange: undefined }
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -95,7 +98,7 @@ describe('the popup saves a board over 10 MiB (YAZ-3943 1A1)', () => {
     document.body.appendChild(container)
     const view = createRoot(container)
     const onClose = vi.fn()
-    await act(async () => view.render(<DrawingModal root={root} target="Big.excalidraw" theme="light" onClose={onClose} />))
+    await act(async () => view.render(<DrawingModal {...NO_SETTINGS} root={root} target="Big.excalidraw" theme="light" onClose={onClose} />))
     await vi.waitFor(() => expect(seam.props).not.toBeNull())
     const files = seam.props!.scene.files as Record<string, { dataURL: string; mimeType: string }>
     expect(files.pic.dataURL).toBe(BIG)
@@ -135,7 +138,7 @@ describe('an undo after a save keeps the picture (YAZ-4074 6A item 1)', () => {
     document.body.appendChild(container)
     const view = createRoot(container)
     const onClose = vi.fn()
-    await act(async () => view.render(<DrawingModal root={root} target="Small.excalidraw" theme="light" onClose={onClose} />))
+    await act(async () => view.render(<DrawingModal {...NO_SETTINGS} root={root} target="Small.excalidraw" theme="light" onClose={onClose} />))
     await vi.waitFor(() => expect(seam.props).not.toBeNull())
 
     // The engine keeps the bytes in memory after a delete; only `referenced` changes.

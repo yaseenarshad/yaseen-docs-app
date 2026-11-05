@@ -1,13 +1,16 @@
 import React from "react";
 
+import { KEYS } from "@excalidraw/common";
+
 import type { ExcalidrawTextElement } from "@excalidraw/element/types";
 
 import { Excalidraw } from "../index";
 import { setNewTextWrapMargin } from "../textCreation";
 
-import { Pointer, UI } from "./helpers/ui";
+import { API } from "./helpers/api";
+import { Keyboard, Pointer, UI } from "./helpers/ui";
 import { getTextEditor, updateTextEditor } from "./queries/dom";
-import { render } from "./test-utils";
+import { fireEvent, render } from "./test-utils";
 
 import type { NormalizedZoomValue } from "../types";
 
@@ -46,6 +49,27 @@ describe("new text size on screen and wrap", () => {
       h.state.width / h.state.zoom.value - h.state.scrollX + 1,
     );
     expect(text.text).toContain("\n");
+  });
+
+  // YAZ-4277: a box that was there keeps its lines when its edit starts and ends
+  it("a box that was there and passes the right edge does not wrap", async () => {
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+    const box = API.createElement({
+      type: "text",
+      text: "word ".repeat(100),
+      x: h.state.width - 200,
+      y: 100,
+    });
+    API.setElements([box]);
+    API.setSelectedElements([box]);
+    Keyboard.keyPress(KEYS.ENTER);
+    const editor = await getTextEditor();
+    updateTextEditor(editor, `${"word ".repeat(100)}more`);
+    fireEvent.keyDown(editor, { key: KEYS.ESCAPE });
+    expect(h.state.editingTextElement).toBe(null);
+    const text = h.elements[0] as ExcalidrawTextElement;
+    expect(text.autoResize).toBe(true);
+    expect(text.text).not.toContain("\n");
   });
 
   it("the app's margin starts the wrap that far before the edge", async () => {

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   COLOR_PALETTE,
+  isColorDark,
   CORNER_RADIUS,
   DEFAULT_ELEMENT_BACKGROUND_COLOR_PALETTE,
   DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX,
@@ -48,12 +49,8 @@ import {
   DEFAULT_TEXT_HIGHLIGHT,
   getTextRangeColor,
   getTextRangeHighlight,
-  getTextRunInsertStyle,
   isNonDeletedElement,
-  isTextRangeStyled,
   remapTextRunsForTextEdit,
-  setTextRunColor,
-  setTextRunFlag,
   setTextRunHighlight,
   TEXT_HIGHLIGHT_FILLS,
 } from "@excalidraw/element";
@@ -69,8 +66,11 @@ import { LinearElementEditor } from "@excalidraw/element";
 import { newElementWith } from "@excalidraw/element";
 import { getArrowheadForPicker } from "@excalidraw/element";
 
+import { getStyleScale, toBoardSize, toScreenSize } from "@excalidraw/element";
+
 import {
   getBoundTextElement,
+  getBoundTextElementId,
   getTextBackgroundNominalPadding,
   getTextBackgroundPaddingScaleFromNominalPx,
   getScaledTextRoundness,
@@ -125,6 +125,11 @@ import type {
 
 import type { ElementUpdate, Scene, TextRunFlag } from "@excalidraw/element";
 
+import {
+  getDefaultNewElementStyle,
+  getDefaultStyleUpdates,
+} from "../newElementStyle";
+
 import type { CaptureUpdateActionType } from "@excalidraw/element";
 
 import { trackEvent } from "../analytics";
@@ -140,11 +145,7 @@ import { ColorPicker } from "../components/ColorPicker/ColorPicker";
 import { FontPicker } from "../components/FontPicker/FontPicker";
 import { IconPicker } from "../components/IconPicker";
 import { Range } from "../components/Range";
-import {
-  DraftSlider,
-  ExactNumberInput,
-  formatExactNumber,
-} from "../components/SizeControls";
+import { DraftSlider } from "../components/SizeControls";
 import {
   ArrowheadArrowIcon,
   ArrowheadBarIcon,
@@ -206,12 +207,6 @@ import {
   withCaretPositionPreservation,
   restoreCaretPosition,
 } from "../hooks/useTextEditorFocus";
-
-import {
-  getPendingTextStyle,
-  setPendingTextStyle,
-} from "../wysiwyg/pendingTextStyle";
-import { editEditableText } from "../wysiwyg/editableEdit";
 
 import { getShortcutKey } from "../shortcut";
 
@@ -394,78 +389,18 @@ export const changeFontSize = (
 // -----------------------------------------------------------------------------
 
 /**
- * YAZ-3718 D10: in the editor, a text color colors only the selected letters,
- * and with only a caret the next typed letters. A selected box gets the color
- * on all its text, so its runs lose their colors.
+ * A text box gets the color on all its text, so its runs lose their colors
+ * (YAZ-4277 D8: letters are colored in the box editor's pop-up toolbar).
  */
-const changeTextColor = (
-  element: ExcalidrawTextElement,
-  appState: AppState,
-  color: string,
-) => {
-  const editable =
-    element.id === appState.editingTextElement?.id
-      ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-      : null;
-  // the box color needs no run color
-  const runColor = color === element.strokeColor ? undefined : color;
-  if (!editable) {
-    return newElementWith(element, {
-      strokeColor: color,
-      textRuns: clearTextRunStyle(
-        element.textRuns,
-        element.originalText.length,
-        "color",
-      ),
-    });
-  }
-  if (editable.selectionStart === editable.selectionEnd) {
-    setPendingTextStyle(editable, { color: runColor ?? null });
-    return element;
-  }
-  return newElementWith(element, {
-    textRuns: setTextRunColor(
+const changeTextColor = (element: ExcalidrawTextElement, color: string) =>
+  newElementWith(element, {
+    strokeColor: color,
+    textRuns: clearTextRunStyle(
       element.textRuns,
-      editable.value.length,
-      editable.selectionStart,
-      editable.selectionEnd,
-      runColor,
+      element.originalText.length,
+      "color",
     ),
   });
-};
-
-/**
- * YAZ-4101 3D: the Text color in the editor shows the selected letters' color,
- * null (mixed) when they have several, and with only a caret the color the
- * next typed letter gets. Undefined: no text editor is open.
- */
-const getEditorTextColor = (app: AppClassProperties) => {
-  const editing = app.state.editingTextElement;
-  const editable = editing
-    ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-    : null;
-  if (!editing || !editable) {
-    return undefined;
-  }
-  const element = app.scene.getElement(editing.id) ?? editing;
-  if (!isTextElement(element)) {
-    return element.strokeColor;
-  }
-  const pending =
-    editable.selectionStart === editable.selectionEnd
-      ? getPendingTextStyle(editable)?.color
-      : undefined;
-  const color =
-    pending !== undefined
-      ? pending ?? undefined
-      : getTextRangeColor(
-          element.textRuns,
-          editable.value,
-          editable.selectionStart,
-          editable.selectionEnd,
-        );
-  return color === null ? null : color ?? element.strokeColor;
-};
 
 /** YAZ-3943 demo 2: the text toolbar's three fixed colors (black is the box default), and the ▾'s two. */
 const TEXT_TOOLBAR_COLOR_PICKS = [
@@ -480,6 +415,78 @@ const TEXT_TOOLBAR_MORE_COLORS = [
   COLOR_PALETTE.violet[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
   COLOR_PALETTE.gray[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
 ];
+
+/**
+ * YAZ-4277 demo: the text toolbar's box fill, on the main bar: three plain
+ * tiles (no "A", so they never read as a highlight), the ▾'s others.
+ */
+const TEXT_TOOLBAR_FILL_PICKS = [
+  COLOR_PALETTE.yellow[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+  COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+  COLOR_PALETTE.black,
+];
+// red is the strong red: white letters on it stay readable
+const TEXT_TOOLBAR_MORE_FILLS = [
+  COLOR_PALETTE.green[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+  COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.gray[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+  COLOR_PALETTE.violet[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+];
+const TEXT_TOOLBAR_FILL_LABELS = Object.fromEntries(
+  (
+    [
+      ["yellow", TEXT_TOOLBAR_FILL_PICKS[0]],
+      ["blue", TEXT_TOOLBAR_FILL_PICKS[1]],
+      ["black", TEXT_TOOLBAR_FILL_PICKS[2]],
+      ["green", TEXT_TOOLBAR_MORE_FILLS[0]],
+      ["red", TEXT_TOOLBAR_MORE_FILLS[1]],
+      ["gray", TEXT_TOOLBAR_MORE_FILLS[2]],
+      ["violet", TEXT_TOOLBAR_MORE_FILLS[3]],
+    ] as const
+  ).map(([name, color]) => [color, `Fill ${name}`]),
+);
+
+/**
+ * YAZ-4277 demo: "Text color follows the fill". A dark fill on dark text
+ * gives white text; a light fill (or none) on white text gives black text.
+ * Any other text color stays, and so do the letters' own colors.
+ */
+const getReadableTextColor = (fill: string, text: string) =>
+  isColorDark(fill)
+    ? isColorDark(text)
+      ? COLOR_PALETTE.white
+      : null
+    : text.toLowerCase() === COLOR_PALETTE.white
+    ? COLOR_PALETTE.black
+    : null;
+
+/** The selected boxes' text (a free box, or a shape's label) on `fill`. */
+const withReadableTextColors = (
+  elements: readonly ExcalidrawElement[],
+  appState: AppState,
+  fill: string,
+) => {
+  const textIds = new Set<string>();
+  for (const element of getSelectedElements(elements, appState)) {
+    const textId =
+      isTextElement(element) && !element.containerId
+        ? element.id
+        : getBoundTextElementId(element);
+    if (textId) {
+      textIds.add(textId);
+    }
+  }
+  if (appState.editingTextElement && !appState.editingTextElement.containerId) {
+    textIds.add(appState.editingTextElement.id);
+  }
+  return elements.map((element) => {
+    if (!textIds.has(element.id) || !isTextElement(element)) {
+      return element;
+    }
+    const color = getReadableTextColor(fill, element.strokeColor);
+    return color ? newElementWith(element, { strokeColor: color }) : element;
+  });
+};
 
 /** The one color of all the letters of these boxes, or null (mixed). */
 const getTextBoxesColor = (elements: readonly ExcalidrawTextElement[]) => {
@@ -532,11 +539,7 @@ export const actionChangeStrokeColor = register<
               return el;
             }
             if (isTextElement(el)) {
-              return changeTextColor(
-                el,
-                appState,
-                value.currentItemStrokeColor,
-              );
+              return changeTextColor(el, value.currentItemStrokeColor);
             }
             // First activation of an image border: size the width relative
             // to the image (GRO-1545). Re-coloring a visible border keeps it.
@@ -576,11 +579,8 @@ export const actionChangeStrokeColor = register<
     const targetElements = getTargetElements(elements, appState);
     const hasExclusiveTextTarget =
       targetElements.length > 0 && targetElements.every(isTextElement);
-    // YAZ-4101 3D: the letters' color in the editor; a selected box with
-    // letters of several colors shows mixed too
-    const editorColor = appState.editingTextElement
-      ? getEditorTextColor(app)
-      : hasExclusiveTextTarget
+    // YAZ-4101 3D: a box with letters of several colors shows mixed
+    const editorColor = hasExclusiveTextTarget
       ? getTextBoxesColor(targetElements as ExcalidrawTextElement[])
       : undefined;
     // YAZ-3943 demo 2: the text toolbar has three fixed colors and a ▾ with
@@ -605,6 +605,7 @@ export const actionChangeStrokeColor = register<
               : DEFAULT_ELEMENT_STROKE_PICKS
           }
           morePicks={isTextToolbar ? TEXT_TOOLBAR_MORE_COLORS : undefined}
+          swatchLetter={isTextToolbar ? "color" : undefined}
           palette={DEFAULT_ELEMENT_STROKE_COLOR_PALETTE}
           type="elementStroke"
           label={t("labels.stroke")}
@@ -630,17 +631,29 @@ export const actionChangeStrokeColor = register<
   },
 });
 
-const getSemanticColorProperty = (element: ExcalidrawElement) => {
-  if (
+/**
+ * YAZ-4277 D16: a color letter colors the line of every element (a shape's
+ * outline, a text's letters, an arrow, a line, a pen line, a picture's
+ * border); ⇧ + the letter colors the fill (a shape's fill, a free text box's
+ * fill). An element with no fill keeps today's ⇧ rule: its line.
+ */
+const getColorLetterProperty = (element: ExcalidrawElement, fill: boolean) => {
+  const isShape =
     element.type === "rectangle" ||
     element.type === "ellipse" ||
     element.type === "diamond" ||
-    isFrameLikeElement(element)
-  ) {
-    return "backgroundColor" as const;
+    isFrameLikeElement(element);
+  if (fill) {
+    if (isTextElement(element)) {
+      return element.containerId === null ? ("backgroundColor" as const) : null;
+    }
+    if (isShape) {
+      return "backgroundColor" as const;
+    }
+    return hasStrokeColor(element.type) ? ("strokeColor" as const) : null;
   }
-
   if (
+    isShape ||
     element.type === "text" ||
     element.type === "line" ||
     element.type === "arrow" ||
@@ -649,7 +662,6 @@ const getSemanticColorProperty = (element: ExcalidrawElement) => {
   ) {
     return "strokeColor" as const;
   }
-
   return null;
 };
 
@@ -675,16 +687,11 @@ export const actionApplySelectedSemanticColor = register<{
       if (iconIds.has(element.id)) {
         return element;
       }
-      const property =
-        value.target === "stroke"
-          ? isTextElement(element)
-            ? element.containerId === null
-              ? ("backgroundColor" as const)
-              : null
-            : hasStrokeColor(element.type)
-            ? ("strokeColor" as const)
-            : null
-          : getSemanticColorProperty(element);
+      // `target: "stroke"` is the ⇧ key (the name is the old one)
+      const property = getColorLetterProperty(
+        element,
+        value.target === "stroke",
+      );
       if (!property) {
         return element;
       }
@@ -758,8 +765,8 @@ export const actionApplySelectedSemanticColor = register<{
           toast: {
             message:
               value.target === "stroke"
-                ? "The selected elements do not support alternate color shortcuts."
-                : "The selected elements do not support direct color shortcuts.",
+                ? "The selected elements have no fill for ⇧ + a color letter."
+                : "The selected elements have no line for a color letter.",
             duration: 3000,
           },
         },
@@ -774,28 +781,53 @@ export const actionApplySelectedSemanticColor = register<{
   },
 });
 
+/**
+ * YAZ-4277 D15: ⌘\ sets every selected element back to the default style
+ * (`getDefaultStyleUpdates`, the defaults of D14). It keeps the place, size,
+ * rotation, text, font size, link, lock, groups, bindings, folds and checkbox
+ * letters. One undo step. In edit, the host's text editor takes the key
+ * first and clears the styles of the selected letters (`clearLetterStyles` of
+ * the `textEditor` seam); the action run in edit clears the edited box.
+ */
 export const actionClearSelectedTextFormatting = register({
   name: "clearSelectedTextFormatting",
-  label: "Clear selected text colors",
+  label: "Reset to default style",
   trackEvent: false,
   perform: (elements, appState, _, app) => {
+    const defaults = getDefaultNewElementStyle(app.props.defaultItemStyle);
+    const editing = !!appState.editingTextElement;
     const updatedElements = changeProperty(
       elements,
       appState,
       (element) => {
-        if (!isTextElement(element)) {
+        const updates = editing
+          ? isTextElement(element)
+            ? {
+                strokeColor: COLOR_PALETTE.black,
+                backgroundColor: COLOR_PALETTE.transparent,
+                backgroundPaddingScale: undefined,
+                roundness: null,
+                // YAZ-3718 D10: clear formatting removes every run
+                textRuns: undefined,
+              }
+            : null
+          : getDefaultStyleUpdates(element, defaults);
+        if (!updates) {
           return element;
         }
-        let nextElement: ExcalidrawTextElement = newElementWith(element, {
-          strokeColor: COLOR_PALETTE.black,
-          backgroundColor: COLOR_PALETTE.transparent,
-          backgroundPaddingScale: undefined,
-          roundness: null,
-          // YAZ-3718 D10: clear formatting removes every run
-          textRuns: undefined,
-        });
-        // YAZ-4071: bold and italic runs change the letter widths
-        if (element.textRuns?.length) {
+        let nextElement: ExcalidrawElement = newElementWith(
+          element,
+          updates as ElementUpdate<typeof element>,
+        );
+        // YAZ-4071: bold and italic runs (and a new font) change the letter widths
+        if (
+          isTextElement(element) &&
+          isTextElement(nextElement) &&
+          (element.textRuns?.length ||
+            element.fontFamily !== nextElement.fontFamily ||
+            element.fontWeight !== nextElement.fontWeight ||
+            element.fontStyle !== nextElement.fontStyle)
+        ) {
           redrawTextBoundingBox(
             nextElement,
             app.scene.getContainerElement(element),
@@ -824,9 +856,7 @@ export const actionClearSelectedTextFormatting = register({
     !event.shiftKey &&
     event.key === "\\" &&
     (isTextElement(appState.editingTextElement) ||
-      getSelectedElements(elements, appState, {
-        includeBoundTextElement: true,
-      }).some(isTextElement)),
+      getSelectedElements(elements, appState).length > 0),
 });
 
 export const actionChangeBackgroundColor = register<
@@ -886,6 +916,15 @@ export const actionChangeBackgroundColor = register<
       );
     }
 
+    // YAZ-4277 demo: the letters stay readable on their new fill
+    if (app.props.fillSetsTextColor) {
+      nextElements = withReadableTextColors(
+        nextElements,
+        appState,
+        value.currentItemBackgroundColor,
+      );
+    }
+
     return {
       elements: nextElements,
       appState: {
@@ -904,7 +943,22 @@ export const actionChangeBackgroundColor = register<
           <h3 aria-hidden="true">{t("labels.background")}</h3>
         )}
         <ColorPicker
-          topPicks={DEFAULT_ELEMENT_BACKGROUND_PICKS}
+          topPicks={
+            data?.textToolbar
+              ? TEXT_TOOLBAR_FILL_PICKS
+              : DEFAULT_ELEMENT_BACKGROUND_PICKS
+          }
+          morePicks={data?.textToolbar ? TEXT_TOOLBAR_MORE_FILLS : undefined}
+          onNone={
+            data?.textToolbar
+              ? () =>
+                  updateData({
+                    currentItemBackgroundColor: COLOR_PALETTE.transparent,
+                  })
+              : undefined
+          }
+          pickLabels={data?.textToolbar ? TEXT_TOOLBAR_FILL_LABELS : undefined}
+          swatchLetter={data?.textToolbar ? "box" : undefined}
           palette={DEFAULT_ELEMENT_BACKGROUND_COLOR_PALETTE}
           type="elementBackground"
           label={t("labels.background")}
@@ -1010,12 +1064,21 @@ export const actionChangeFillStyle = register<ExcalidrawElement["fillStyle"]>({
   },
 });
 
+/**
+ * YAZ-4277 demo: the width and corner pickers speak screen px at this zoom
+ * while "New shapes match the zoom" is on (`screenScale.ts`).
+ */
+const getPickerScale = (app: AppClassProperties) =>
+  getStyleScale(app.state.zoom.value, app.props.newShapesMatchZoom);
+
 const getStrokeWidthKeyForElement = (
   element: ExcalidrawElement,
+  scale = 1,
 ): StrokeWidthKey | null => {
+  const width = toScreenSize(element.strokeWidth, scale);
   return (
     STROKE_WIDTH_KEYS.find(
-      (key) => getStrokeWidthByKey(element.type, key) === element.strokeWidth,
+      (key) => getStrokeWidthByKey(element.type, key) === width,
     ) ?? null
   );
 };
@@ -1023,21 +1086,23 @@ const getStrokeWidthKeyForElement = (
 const getStrokeWidthForElement = (
   element: ExcalidrawElement,
   strokeWidthKey: StrokeWidthKey,
+  scale = 1,
 ): ExcalidrawElement["strokeWidth"] => {
-  return getStrokeWidthByKey(element.type, strokeWidthKey);
+  return toBoardSize(getStrokeWidthByKey(element.type, strokeWidthKey), scale);
 };
 
 export const actionChangeStrokeWidth = register<StrokeWidthKey>({
   name: "changeStrokeWidth",
   label: "labels.strokeWidth",
   trackEvent: false,
-  perform: (elements, appState, value) => {
+  perform: (elements, appState, value, app) => {
     invariant(value, "actionChangeStrokeWidth: value must be defined");
+    const scale = getPickerScale(app);
 
     return {
       elements: changeProperty(elements, appState, (el) =>
         newElementWith(el, {
-          strokeWidth: getStrokeWidthForElement(el, value),
+          strokeWidth: getStrokeWidthForElement(el, value, scale),
         }),
       ),
       appState: { ...appState, currentItemStrokeWidthKey: value },
@@ -1073,7 +1138,8 @@ export const actionChangeStrokeWidth = register<StrokeWidthKey>({
           value={getFormValue(
             elements,
             app,
-            getStrokeWidthKeyForElement,
+            (element) =>
+              getStrokeWidthKeyForElement(element, getPickerScale(app)),
             (element) => element.hasOwnProperty("strokeWidth"),
             (hasSelection) =>
               hasSelection ? null : appState.currentItemStrokeWidthKey,
@@ -1188,7 +1254,7 @@ export const actionChangeVectorStrokeWidth = register<number>({
   name: "changeVectorStrokeWidth",
   label: "labels.strokeWidth",
   trackEvent: false,
-  perform: (elements, appState, value) => {
+  perform: (elements, appState, value, app) => {
     invariant(
       value !== undefined,
       "actionChangeVectorStrokeWidth: value must be defined",
@@ -1206,7 +1272,9 @@ export const actionChangeVectorStrokeWidth = register<number>({
       selectedElements,
       appState,
     );
+    // the picker's value is screen px; the element keeps board px
     const strokeWidth = normalizeVectorStrokeWidth(value, settings);
+    const boardStrokeWidth = toBoardSize(strokeWidth, getPickerScale(app));
     const shouldActivateImageBorder = selectedElements.some(
       (element) =>
         isImageElement(element) && isTransparent(element.strokeColor),
@@ -1223,7 +1291,7 @@ export const actionChangeVectorStrokeWidth = register<number>({
         }
 
         return newElementWith(element, {
-          strokeWidth,
+          strokeWidth: boardStrokeWidth,
           ...(isImageElement(element) && isTransparent(element.strokeColor)
             ? { strokeColor: visibleImageStrokeColor }
             : null),
@@ -1244,10 +1312,17 @@ export const actionChangeVectorStrokeWidth = register<number>({
       getSelectedElements(elements, appState),
       appState,
     );
+    const scale = getPickerScale(app);
     const value = getFormValue(
       elements,
       app,
-      (element) => element.strokeWidth,
+      (element) =>
+        scale === 1
+          ? element.strokeWidth
+          : normalizeVectorStrokeWidth(
+              toScreenSize(element.strokeWidth, scale),
+              settings,
+            ),
       (element) => hasVectorStrokeWidth(element.type),
       (hasSelection) => (hasSelection ? null : appState[preference]),
     );
@@ -1747,7 +1822,7 @@ export const actionChangeTextBackgroundPadding =
     },
   });
 
-/** YAZ-3943 demo 2: the exact field's range (1 to 512); the slider runs 8 to 128. */
+/** YAZ-3943 demo 2: the exact field's range (`MIN_FONT_SIZE` 0.01 to 512); the slider runs 8 to 128. */
 const FONT_SIZE_MAX = 512;
 const SLIDER_FONT_SIZE_MIN = 8;
 const SLIDER_FONT_SIZE_MAX = 128;
@@ -1902,10 +1977,42 @@ const FontSizeSlider = ({
   />
 );
 
-/** YAZ-3943 demo 2: a whole size as it is, any other with one decimal (19.33 → "19.3"). */
-export const formatFontSize = formatExactNumber;
+/**
+ * YAZ-3943 demo 2, YAZ-4312 M1: a size as the field keeps it: tenths from 1 up
+ * (19.33 → 19.3), 2 significant digits below 1 (text made at a high zoom:
+ * 0.1375 → 0.14).
+ */
+const roundFontSize = (value: number) =>
+  value >= 1 ? Math.round(value * 10) / 10 : Number(value.toPrecision(2));
 
-/** YAZ-4366: the shared `ExactNumberInput`, 1 to 512. */
+const clampFontSize = (value: number) =>
+  Math.min(FONT_SIZE_MAX, Math.max(MIN_FONT_SIZE, roundFontSize(value)));
+
+export const formatFontSize = (value: number | null) =>
+  value === null ? "" : `${roundFontSize(value)}`;
+
+/** YAZ-4312 M1: below 1 px, a step multiplies or divides by this. */
+const FONT_SIZE_STEP_FACTOR = 1.25;
+
+/**
+ * YAZ-4312 M1: one − or + step (also the field's arrow keys): ±1 from 1 px up,
+ * ×/÷ 1.25 below, so a step never jumps past 1 px or under `MIN_FONT_SIZE`.
+ */
+export const stepFontSize = (current: number, direction: 1 | -1) =>
+  clampFontSize(
+    direction > 0
+      ? current >= 1
+        ? current + 1
+        : current * FONT_SIZE_STEP_FACTOR
+      : current - 1 >= 1
+      ? current - 1
+      : current / FONT_SIZE_STEP_FACTOR,
+  );
+
+/**
+ * YAZ-4312 M1: its own field, not the shared `ExactNumberInput` (YAZ-4366): tiny
+ * text keeps 2 significant digits and a step below 1 px multiplies.
+ */
 const ExactFontSizeInput = ({
   value,
   onChange,
@@ -1917,23 +2024,111 @@ const ExactFontSizeInput = ({
   compact?: boolean;
   /** YAZ-3943 demo 2: false: no "px" (the size popover) */
   unit?: boolean;
-}) => (
-  <ExactNumberInput
-    label="Exact font size"
-    value={value}
-    min={MIN_FONT_SIZE}
-    max={FONT_SIZE_MAX}
-    onChange={onChange}
-    unit={unit ? "px" : null}
-    placeholder="Mixed"
-    compact={compact}
-    nudge={{
-      decrease: "Decrease font size",
-      increase: "Increase font size",
-      fallback: DEFAULT_FONT_SIZE,
-    }}
-  />
-);
+}) => {
+  const [inputValue, setInputValue] = useState(formatFontSize(value));
+
+  useEffect(() => {
+    setInputValue(formatFontSize(value));
+  }, [value]);
+
+  /** YAZ-4312 M1: what the user typed, or null when the field shows the size as it is. */
+  const typedValue = () => {
+    if (inputValue === formatFontSize(value) || inputValue.trim() === "") {
+      return null;
+    }
+    const parsed = Number(inputValue);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const commit = () => {
+    const typed = typedValue();
+    // YAZ-4312 M1: no change typed (or an empty, mixed field): write nothing
+    if (typed === null) {
+      setInputValue(formatFontSize(value));
+      return;
+    }
+    const nextValue = clampFontSize(typed);
+    setInputValue(formatFontSize(nextValue));
+    onChange(nextValue);
+  };
+
+  const nudge = (direction: 1 | -1) => {
+    const nextValue = stepFontSize(
+      typedValue() ?? value ?? DEFAULT_FONT_SIZE,
+      direction,
+    );
+    setInputValue(formatFontSize(nextValue));
+    onChange(nextValue);
+  };
+
+  return (
+    <div
+      className={clsx("font-size-custom", {
+        "font-size-custom--compact": compact,
+      })}
+      data-prevent-outside-click
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {compact && (
+        <button
+          type="button"
+          aria-label="Decrease font size"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={() => nudge(-1)}
+        >
+          −
+        </button>
+      )}
+      <label>
+        <input
+          aria-label="Exact font size"
+          type="number"
+          min={MIN_FONT_SIZE}
+          max={FONT_SIZE_MAX}
+          step="any"
+          value={inputValue}
+          placeholder="Mixed"
+          onChange={(event) => setInputValue(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === KEYS.ENTER) {
+              event.preventDefault();
+              commit();
+            } else if (
+              event.key === KEYS.ARROW_UP ||
+              event.key === KEYS.ARROW_DOWN
+            ) {
+              // YAZ-4312 M1: the native step (by 1, floored at `min`) makes tiny text bigger
+              event.preventDefault();
+              nudge(event.key === KEYS.ARROW_UP ? 1 : -1);
+            } else if (event.key === KEYS.ESCAPE) {
+              setInputValue(formatFontSize(value));
+            }
+          }}
+        />
+        {/* YAZ-3943 demo 2: the text toolbar has no unit */}
+        {!compact && unit && <span>px</span>}
+      </label>
+      {compact && (
+        <button
+          type="button"
+          aria-label="Increase font size"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={() => nudge(1)}
+        >
+          +
+        </button>
+      )}
+    </div>
+  );
+};
 
 type TextStyleChange =
   | { property: "fontWeight"; enabled: boolean }
@@ -1983,42 +2178,6 @@ const getWholeTextStyle = (
     ? { textDecoration: enabled ? "underline" : "none" }
     : { strikethrough: enabled };
 
-/**
- * YAZ-3718 D10: in the editor, a style changes only the selected letters, and
- * with only a caret the next typed letters get it. The whole-box flag first
- * becomes a run over all the text, so a part can lose it. Null: no change.
- */
-const setSelectedTextStyle = (
-  element: ExcalidrawTextElement,
-  property: BooleanTextStyleProperty,
-  enabled: boolean,
-  editable: HTMLTextAreaElement,
-): ElementUpdate<ExcalidrawTextElement> | null => {
-  const { value: text, selectionStart, selectionEnd } = editable;
-  const flag = TEXT_RUN_FLAG_OF[property];
-  const whole = isWholeTextStyled(element, property);
-  if (selectionStart === selectionEnd) {
-    setPendingTextStyle(editable, { [flag]: enabled });
-    if (!whole) {
-      return null;
-    }
-  }
-  const runs = whole
-    ? setTextRunFlag(element.textRuns, text.length, 0, text.length, flag, true)
-    : element.textRuns;
-  return {
-    ...getWholeTextStyle(property, false),
-    textRuns: setTextRunFlag(
-      runs,
-      text.length,
-      selectionStart,
-      selectionEnd,
-      flag,
-      enabled,
-    ),
-  };
-};
-
 const getTextStyle = (
   element: ExcalidrawElement,
   property: TextStyleChange["property"],
@@ -2034,38 +2193,9 @@ const getTextStyle = (
   if (!textElement) {
     return false;
   }
-  const editable =
-    app.state.editingTextElement?.id === textElement.id
-      ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-      : null;
-  if (property !== "listMode") {
-    const whole = isWholeTextStyled(textElement, property);
-    if (!editable || whole) {
-      return whole;
-    }
-    const flag = TEXT_RUN_FLAG_OF[property];
-    // a caret shows the style the next typed letter gets
-    return editable.selectionStart === editable.selectionEnd
-      ? getPendingTextStyle(editable)?.[flag] ??
-          getTextRunInsertStyle(
-            textElement.textRuns,
-            editable.value,
-            editable.selectionStart,
-          )[flag] === true
-      : isTextRangeStyled(
-          textElement.textRuns,
-          editable.selectionStart,
-          editable.selectionEnd,
-          flag,
-        );
-  }
-
-  return editable
-    ? getTextListMode(
-        editable.value,
-        editable.selectionStart,
-        editable.selectionEnd,
-      )
+  // YAZ-4277 D8: the whole box; letters are styled in the box editor
+  return property !== "listMode"
+    ? isWholeTextStyled(textElement, property)
     : getTextListMode(textElement.originalText);
 };
 
@@ -2075,39 +2205,6 @@ const changeTextStyle = (
   value: TextStyleChange,
   app: AppClassProperties,
 ) => {
-  const editable = appState.editingTextElement
-    ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-    : null;
-  const editableList = editable
-    ? value.property === "listMode"
-      ? setTextListMode(
-          editable.value,
-          editable.selectionStart,
-          editable.selectionEnd,
-          value.mode,
-        )
-      : null
-    : null;
-  const editableSelection = editable
-    ? {
-        start: editable.selectionStart,
-        end: editable.selectionEnd,
-      }
-    : null;
-  // YAZ-4071 7M: in the editor, the markers go in through the editor's own
-  // edit, so ⌘Z takes them back in one step. Its input event sets the box's
-  // text and moves the runs line by line (YAZ-4071 7C).
-  if (editable && editableList) {
-    editable.focus();
-    editEditableText(
-      editable,
-      editableList.text,
-      editableList.selectionStart,
-      editableList.selectionEnd,
-      true,
-    );
-  }
-
   const updatedElements = changeProperty(
     elements,
     appState,
@@ -2116,18 +2213,14 @@ const changeTextStyle = (
         return element;
       }
       if (value.property === "listMode") {
-        // the box in the editor has its markers and runs already (above)
-        const box =
-          editableList && element.id === appState.editingTextElement?.id
-            ? (app.scene.getElement(element.id) as ExcalidrawTextElement)
-            : element;
+        const box = element;
         const listChange = setTextListMode(
           box.originalText,
           0,
           box.originalText.length,
           value.mode,
         );
-        const text = box === element ? listChange.text : box.originalText;
+        const text = listChange.text;
         let nextElement: ExcalidrawTextElement = newElementWith(box, {
           originalText: text,
           text,
@@ -2150,27 +2243,16 @@ const changeTextStyle = (
         nextElement = offsetElementAfterFontResize(box, nextElement, app.scene);
         return nextElement;
       }
-      // YAZ-3718 D10: the editor styles the selected letters, a selected box
-      // styles all its text and drops that style from its runs
-      const styles =
-        editable && element.id === appState.editingTextElement?.id
-          ? setSelectedTextStyle(
-              element,
-              value.property,
-              value.enabled,
-              editable,
-            )
-          : {
-              ...getWholeTextStyle(value.property, value.enabled),
-              textRuns: clearTextRunStyle(
-                element.textRuns,
-                element.originalText.length,
-                TEXT_RUN_FLAG_OF[value.property],
-              ),
-            };
-      if (!styles) {
-        return element;
-      }
+      // a box styles all its text and drops that style from its runs
+      // (YAZ-4277 D8: letters are styled in the box editor)
+      const styles: ElementUpdate<ExcalidrawTextElement> = {
+        ...getWholeTextStyle(value.property, value.enabled),
+        textRuns: clearTextRunStyle(
+          element.textRuns,
+          element.originalText.length,
+          TEXT_RUN_FLAG_OF[value.property],
+        ),
+      };
       // bold and italic change the letter widths
       if (value.property === "fontWeight" || value.property === "fontStyle") {
         let nextElement: ExcalidrawTextElement = newElementWith(
@@ -2194,21 +2276,6 @@ const changeTextStyle = (
     },
     true,
   );
-
-  if (editable && editableSelection && value.property !== "listMode") {
-    editable.setSelectionRange(editableSelection.start, editableSelection.end);
-    editable.focus();
-    queueMicrotask(() => {
-      if (editable.isConnected) {
-        editable.setSelectionRange(
-          editableSelection.start,
-          editableSelection.end,
-        );
-        editable.focus();
-      }
-    });
-    restoreCaretPosition(editableSelection);
-  }
 
   return {
     elements: updatedElements,
@@ -2468,94 +2535,47 @@ const changeTextHighlight = (
   highlight: string | undefined,
   app: AppClassProperties,
 ) => {
-  const editing = appState.editingTextElement;
-  const editable = editing
-    ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-    : null;
-  if (!editing) {
-    return {
-      elements: changeProperty(
-        elements,
-        appState,
-        (element) =>
-          isTextElement(element)
-            ? newElementWith(element, {
-                textRuns: setTextRunHighlight(
-                  element.textRuns,
-                  element.originalText.length,
-                  0,
-                  element.originalText.length,
-                  highlight,
-                ),
-              })
-            : element,
-        true,
-      ),
-      appState,
-      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-    };
-  }
-  if (!editable) {
-    return false;
-  }
-  const start = editable.selectionStart;
-  const end = editable.selectionEnd;
-  if (start === end) {
-    setPendingTextStyle(editable, { highlight: highlight ?? null });
-    return { appState, captureUpdate: CaptureUpdateAction.EVENTUALLY };
-  }
-  const updatedElements = changeProperty(
-    elements,
-    appState,
-    (element) =>
-      isTextElement(element) && element.id === editing.id
-        ? newElementWith(element, {
-            textRuns: setTextRunHighlight(
-              element.textRuns,
-              editable.value.length,
-              start,
-              end,
-              highlight,
-            ),
-          })
-        : element,
-    true,
-  );
-  editable.setSelectionRange(start, end);
-  editable.focus();
-  restoreCaretPosition({ start, end });
   return {
-    elements: updatedElements,
+    elements: changeProperty(
+      elements,
+      appState,
+      (element) =>
+        isTextElement(element)
+          ? newElementWith(element, {
+              textRuns: setTextRunHighlight(
+                element.textRuns,
+                element.originalText.length,
+                0,
+                element.originalText.length,
+                highlight,
+              ),
+            })
+          : element,
+      true,
+    ),
     appState,
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   };
 };
 
-/** YAZ-4102 3E: the highlight of the editor's selected letters, or of its caret. */
-const getEditorTextHighlight = (app: AppClassProperties) => {
-  const editing = app.state.editingTextElement;
-  const editable = editing
-    ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-    : null;
-  const element = editing ? app.scene.getElement(editing.id) : null;
-  if (!editable || !element || !isTextElement(element)) {
-    return undefined;
-  }
-  if (editable.selectionStart !== editable.selectionEnd) {
-    return getTextRangeHighlight(
-      element.textRuns,
-      editable.selectionStart,
-      editable.selectionEnd,
-    );
-  }
-  const pending = getPendingTextStyle(editable)?.highlight;
-  return pending !== undefined
-    ? pending ?? undefined
-    : getTextRunInsertStyle(
-        element.textRuns,
-        editable.value,
-        editable.selectionStart,
-      ).highlight;
+/** The one highlight of every letter of the boxes the action changes, if they share one. */
+const getBoxesHighlight = (
+  elements: readonly ExcalidrawElement[],
+  appState: AppState,
+) => {
+  const boxes = (
+    appState.editingTextElement
+      ? [appState.editingTextElement]
+      : getSelectedElements(elements, appState, {
+          includeBoundTextElement: true,
+        })
+  ).filter(isTextElement);
+  const highlights = new Set(
+    boxes.map((box) =>
+      getTextRangeHighlight(box.textRuns, 0, box.originalText.length),
+    ),
+  );
+  return highlights.size === 1 ? [...highlights][0] : undefined;
 };
 
 /** YAZ-4102 3E: ⌘⇧H toggles the default highlight (yellow), as in notes. */
@@ -2567,7 +2587,7 @@ export const actionToggleTextHighlight = register({
     changeTextHighlight(
       elements,
       appState,
-      getEditorTextHighlight(app) === DEFAULT_TEXT_HIGHLIGHT
+      getBoxesHighlight(elements, appState) === DEFAULT_TEXT_HIGHLIGHT
         ? undefined
         : DEFAULT_TEXT_HIGHLIGHT,
       app,
@@ -2611,11 +2631,7 @@ export const actionChangeTextHighlight = register<string | null>({
         getTextRangeHighlight(box.textRuns, 0, box.originalText.length),
       ),
     );
-    const current = appState.editingTextElement
-      ? getEditorTextHighlight(app)
-      : highlights.size === 1
-      ? [...highlights][0]
-      : undefined;
+    const current = highlights.size === 1 ? [...highlights][0] : undefined;
     const names = Object.keys(TEXT_HIGHLIGHT_FILLS);
     // YAZ-3943 demo 2: the text toolbar's highlight is a color group like
     // Text color: yellow, green, blue, then a ▾ with pink, None and Custom…
@@ -2662,6 +2678,7 @@ export const actionChangeTextHighlight = register<string | null>({
             )}
             popupOpen={customOpen}
             onPopupOpenChange={setCustomOpen}
+            swatchLetter="on-color"
             elements={elements}
             appState={appState}
             updateData={updateData}
@@ -3359,7 +3376,7 @@ export const actionChangeFontFamily = register<{
 
               // Refocus text editor when font picker closes if we were editing text
               if (isCompact && appState.editingTextElement) {
-                restoreCaretPosition(null); // Just refocus without saved position
+                restoreCaretPosition();
               }
             }
           }}
@@ -3642,7 +3659,7 @@ export const actionChangeRoundness = register<number | "sharp" | "round">({
   name: "changeRoundness",
   label: "Change edge roundness",
   trackEvent: false,
-  perform: (elements, appState, value) => {
+  perform: (elements, appState, value, app) => {
     if (typeof value === "number") {
       const selectedElements = getSelectedElements(elements, appState);
       if (
@@ -3652,7 +3669,9 @@ export const actionChangeRoundness = register<number | "sharp" | "round">({
         return false;
       }
 
+      // screen px at this zoom; the element keeps board px
       const radius = normalizeCornerRadius(value);
+      const boardRadius = toBoardSize(radius, getPickerScale(app));
       return {
         elements: changeProperty(elements, appState, (element) => {
           if (!canChangeCornerRadiusForElement(element)) {
@@ -3669,7 +3688,7 @@ export const actionChangeRoundness = register<number | "sharp" | "round">({
                       isUsingAdaptiveRadius(element.type)
                         ? ROUNDNESS.ADAPTIVE_RADIUS
                         : ROUNDNESS.PROPORTIONAL_RADIUS,
-                    value: radius,
+                    value: boardRadius,
                   },
           });
         }),
@@ -3721,10 +3740,16 @@ export const actionChangeRoundness = register<number | "sharp" | "round">({
       : canChangeCornerRadius(appState.activeTool.type);
 
     if (usesContinuousCornerRadius) {
+      const scale = getPickerScale(app);
       const value = getFormValue(
         elements,
         app,
-        getRequestedCornerRadius,
+        (element) =>
+          scale === 1
+            ? getRequestedCornerRadius(element)
+            : normalizeCornerRadius(
+                toScreenSize(getRequestedCornerRadius(element), scale),
+              ),
         canChangeCornerRadiusForElement,
         (selectionExists) =>
           selectionExists

@@ -35,6 +35,7 @@ import { pageLabel, pathTitles, type PathTitles } from '../lib/pageLabel'
 import { dirname } from '../lib/paths'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import { backlinksFor, folderMentionSnippets, mentionSnippets, type MentionSnippet } from './backlinks'
+import { newWindowClick } from '../lib/newWindowClick'
 import './backlinks.css'
 
 export interface BacklinksSectionProps {
@@ -154,6 +155,8 @@ function BacklinkEntry({
   const lines = useMemo(() => (folder ? folderMentionSnippets(record, target, resolve ?? (() => null), titles) : snippets), [folder, record, target, resolve, titles, snippets])
 
   const open = (event: React.MouseEvent): void => {
+    // ⇧⌘-click opens the note in a new window (YAZ-4444 D32); a folder's page has none.
+    if (!folder && newWindowClick(event, page)) return
     if (event.metaKey && openBackground !== undefined) openBackground(page)
     else openCurrent(page)
   }

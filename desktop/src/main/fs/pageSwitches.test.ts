@@ -24,6 +24,13 @@ describe('the page switches in the frontmatter', () => {
     expect(notePageSwitches('---\nnote: folding\n---\nfolding: false\n')).toEqual({})
   })
 
+  it('YAZ-4432: `bullet-threading` is a page switch too, read and written both ways', () => {
+    expect(notePageSwitches('---\nbullet-threading: true\n---\n')).toEqual({ 'bullet-threading': true })
+    const off = setNotePageSwitch(NOTE, 'bullet-threading', false)
+    expect(off).toBe('---\n# the owner\'s comment\ntags: [a, b]\nstatus: "draft"\nbullet-threading: false\n---\n# Body\n\ntext\n')
+    expect(notePageSwitches(setNotePageSwitch(off, 'bullet-threading', true))).toEqual({ 'bullet-threading': true })
+  })
+
   it('writes `true` and `false` both, keeps every other byte, and a note with no frontmatter gets a block', () => {
     const off = setNotePageSwitch(NOTE, 'guide-lines', false)
     expect(off).toBe('---\n# the owner\'s comment\ntags: [a, b]\nstatus: "draft"\nguide-lines: false\n---\n# Body\n\ntext\n')

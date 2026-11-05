@@ -812,3 +812,73 @@ describe("binding to a point-like (sub-pixel) element", () => {
     },
   );
 });
+
+/**
+ * YAZ-4414 (4M): at 10,000% the binding reach is 60 screen px. With the old
+ * 15 board px floor (1,500 screen px) both ends of an arrow drawn near a tiny
+ * shape bound inside it, the points collapsed and the arrow was deleted.
+ */
+describe("an arrow drawn at 10,000% near tiny shapes (YAZ-4414)", () => {
+  beforeEach(async () => {
+    mouse.reset();
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+  });
+
+  it("stays, unbound, with its length", () => {
+    // 0.5 × 0.3 board px: 50 × 30 px on screen at 10,000%
+    const tiny = API.createElement({
+      type: "rectangle",
+      x: 2,
+      y: 2,
+      width: 0.5,
+      height: 0.3,
+    });
+    API.setElements([tiny]);
+    API.setAppState({ zoom: { value: 100 as any }, scrollX: 0, scrollY: 0 });
+
+    // from 100 px right of the shape, 200 px long (1 and 2 board px)
+    UI.clickTool("arrow");
+    mouse.reset();
+    mouse.downAt(350, 215);
+    mouse.moveTo(450, 215);
+    mouse.moveTo(550, 215);
+    mouse.up();
+
+    const arrows = h.elements.filter(
+      (element) => element.type === "arrow" && !element.isDeleted,
+    ) as ExcalidrawArrowElement[];
+    expect(arrows).toHaveLength(1);
+    const [arrow] = arrows;
+    expect(arrow.startBinding).toBeNull();
+    expect(arrow.endBinding).toBeNull();
+    expect(arrow.width).toBeCloseTo(2, 2);
+  });
+
+  it("still binds an end drawn onto the tiny shape", () => {
+    const tiny = API.createElement({
+      type: "rectangle",
+      x: 2,
+      y: 2,
+      width: 0.5,
+      height: 0.3,
+      backgroundColor: "#ffec99",
+      fillStyle: "solid",
+    });
+    API.setElements([tiny]);
+    API.setAppState({ zoom: { value: 100 as any }, scrollX: 0, scrollY: 0 });
+
+    UI.clickTool("arrow");
+    mouse.reset();
+    mouse.downAt(550, 215);
+    mouse.moveTo(400, 215);
+    mouse.moveTo(225, 215);
+    mouse.up();
+
+    const arrow = h.elements.find(
+      (element) => element.type === "arrow" && !element.isDeleted,
+    ) as ExcalidrawArrowElement;
+    expect(arrow).toBeDefined();
+    expect(arrow.startBinding).toBeNull();
+    expect(arrow.endBinding?.elementId).toBe(tiny.id);
+  });
+});

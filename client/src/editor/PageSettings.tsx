@@ -28,6 +28,8 @@ export interface PageSwitch {
   divider?: boolean
   /** An info row's tooltip: the whole of a text the label shortens (a pictures folder's full path, YAZ-3943 demo round 3). */
   title?: string
+  /** A CHOICE row (YAZ-4277 demo): the label, then pills, one pressed, as "TOC made from". The menu stays open. */
+  choices?: readonly { label: string; on: boolean; onPick: () => void; title?: string }[]
 }
 
 /**
@@ -51,7 +53,7 @@ export interface PageSwitch {
  * A drawing (YAZ-3943 D5, D13) passes `rows`, read while the menu is open and never while it is closed:
  * the pictures' size, "Move pictures out" or "Keep pictures inside", and the two exports.
  */
-export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, switches, switchesHeading, rows, readText }: {
+export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, bulletThreading = false, onToggleBulletThreading, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, switches, switchesHeading, rows, readText }: {
   /** The file's read-only switch (YAZ-3076 D1): a note, a drawing and a diagram have it. */
   readOnly?: boolean
   /** Off → the host turns it on; on → the host opens the "Allow edits?" box (this menu closes first). Absent → no row (a file with no switch, YAZ-3448). */
@@ -68,6 +70,9 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   /** This page's bullets and headings fold (YAZ-4094 F1): its own choice, else Settings' "Folding default". Absent handler → no row. */
   folding?: boolean
   onToggleFolding?: () => void
+  /** This page's bullet threading (YAZ-4432): its own choice, else Settings' "Bullet threading default". Absent handler → no row. */
+  bulletThreading?: boolean
+  onToggleBulletThreading?: () => void
   /** Every heading wears its level, "H2", after its text (YAZ-2700). Without the switch on, only the heading in hand does. */
   headingLevels?: boolean
   onToggleHeadingLevels?: () => void
@@ -130,9 +135,17 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
     }
   }, [open])
 
-  const rowOf = ({ label, on, onToggle, disabled, warn, divider, title }: PageSwitch) => <Fragment key={label}>
+  const rowOf = ({ label, on, onToggle, disabled, warn, divider, title, choices }: PageSwitch) => <Fragment key={label}>
     {divider === true && <div className="page-settings__divider" aria-hidden="true" />}
-    {onToggle === undefined ? <p className={warn === true ? 'page-settings__warn' : undefined} title={title}>{label}</p>
+    {choices !== undefined ? <>
+      <p className="page-settings__label">{label}:</p>
+      <div className="page-settings__choices" role="group" aria-label={label}>
+        {choices.map((choice) => (
+          <button key={choice.label} type="button" aria-pressed={choice.on} disabled={disabled} title={choice.title} onClick={choice.onPick}>{choice.label}</button>
+        ))}
+      </div>
+    </>
+      : onToggle === undefined ? <p className={warn === true ? 'page-settings__warn' : undefined} title={title}>{label}</p>
       : on === undefined ? <button type="button" disabled={disabled} onClick={() => {
         setOpen(false)
         onToggle()
@@ -183,6 +196,9 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         </button>}
         {onToggleFolding !== undefined && <button type="button" aria-pressed={folding} onClick={onToggleFolding}>
           <span>Folding</span><span aria-hidden="true">{folding ? '✓' : ''}</span>
+        </button>}
+        {onToggleBulletThreading !== undefined && <button type="button" aria-pressed={bulletThreading} onClick={onToggleBulletThreading}>
+          <span>Bullet threading</span><span aria-hidden="true">{bulletThreading ? '✓' : ''}</span>
         </button>}
         {onToggleHeadingLevels !== undefined && <button type="button" aria-pressed={headingLevels} onClick={onToggleHeadingLevels}>
           <span>Heading levels</span><span aria-hidden="true">{headingLevels ? '✓' : ''}</span>

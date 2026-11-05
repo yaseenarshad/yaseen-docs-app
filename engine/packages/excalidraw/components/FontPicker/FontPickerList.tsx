@@ -43,6 +43,8 @@ import {
   FreedrawIcon,
 } from "../icons";
 
+import { focusOpenTextEditor } from "../../wysiwyg/hostTextWysiwyg";
+
 import { fontPickerKeyHandler } from "./keyboardNavHandlers";
 
 import type { JSX } from "react";
@@ -206,34 +208,11 @@ export const FontPickerList = React.memo(
     // Create a wrapped onSelect function that preserves caret position
     const wrappedOnSelect = useCallback(
       (fontFamily: FontFamilyValues) => {
-        // Save caret position before font selection if editing text
-        let savedSelection: { start: number; end: number } | null = null;
-        if (app.state.editingTextElement) {
-          const textEditor = document.querySelector(
-            ".excalidraw-wysiwyg",
-          ) as HTMLTextAreaElement;
-          if (textEditor) {
-            savedSelection = {
-              start: textEditor.selectionStart,
-              end: textEditor.selectionEnd,
-            };
-          }
-        }
-
         onSelect(fontFamily);
 
-        // Restore caret position after font selection if editing text
-        if (app.state.editingTextElement && savedSelection) {
-          setTimeout(() => {
-            const textEditor = document.querySelector(
-              ".excalidraw-wysiwyg",
-            ) as HTMLTextAreaElement;
-            if (textEditor && savedSelection) {
-              textEditor.focus();
-              textEditor.selectionStart = savedSelection.start;
-              textEditor.selectionEnd = savedSelection.end;
-            }
-          }, 0);
+        // the text editor keeps its selection; it gets the focus back
+        if (app.state.editingTextElement) {
+          setTimeout(focusOpenTextEditor, 0);
         }
       },
       [onSelect, app.state.editingTextElement],
@@ -374,14 +353,7 @@ export const FontPickerList = React.memo(
 
           // Refocus text editor when font picker closes if we were editing text
           if (app.state.editingTextElement) {
-            setTimeout(() => {
-              const textEditor = document.querySelector(
-                ".excalidraw-wysiwyg",
-              ) as HTMLTextAreaElement;
-              if (textEditor) {
-                textEditor.focus();
-              }
-            }, 0);
+            setTimeout(focusOpenTextEditor, 0);
           }
         }}
         onPointerLeave={onLeave}

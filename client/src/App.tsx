@@ -698,22 +698,23 @@ export function App() {
     applyCrepeTheme(theme)
   }, [theme])
 
-  // Guide lines and folding (YAZ-4094 D2, G2, G3, F1): the defaults, the show choice and the darkness go on <html>,
+  // Guide lines, folding and bullet threading (YAZ-4094 D2, G2, G3, F1; YAZ-4432): the defaults, the show choice and the darkness go on <html>,
   // as `data-theme` does, so they reach every editor of this page — also a hover preview, which is portalled to
   // <body> outside `.app`, and the Files window's popup, which copies <html>'s attributes (`previewPopup.ts`).
-  // guideLines.css reads them; a note's own key on its host or preview wins. CSS only: no editor remounts.
+  // guideLines.css and bulletThreading.css read them; a note's own key on its host or preview wins. CSS only: no editor remounts.
   useLayoutEffect(() => {
     const html = document.documentElement
     html.dataset.guideLines = settings.guideLinesOnByDefault ? 'on' : 'off'
     html.dataset.guideLinesShow = settings.guideLinesShow
     html.dataset.folding = settings.foldingOnByDefault ? 'on' : 'off'
+    html.dataset.threading = settings.bulletThreading ? 'on' : 'off'
     // A percent of the text colour, and 20 points more on hover.
     html.style.setProperty('--guide-line-darkness', `${settings.guideLineDarkness}%`)
     html.style.setProperty('--guide-line-darkness-hover', `${Math.min(100, settings.guideLineDarkness + 20)}%`)
-  }, [settings.guideLinesOnByDefault, settings.guideLinesShow, settings.foldingOnByDefault, settings.guideLineDarkness])
+  }, [settings.guideLinesOnByDefault, settings.guideLinesShow, settings.foldingOnByDefault, settings.bulletThreading, settings.guideLineDarkness])
 
   // Editor spacing settings land as CSS custom properties; app.css consumes them (GRO-2024).
-  // Bullet threading and content width are CSS gates too — no editor remount. So are section
+  // Content width is a CSS gate too — no editor remount (bullet threading's default is on <html>, above). So are section
   // indent's grey lines (YAZ-2709, `data-section-lines`), and the sidebar tree's icons (YAZ-3440 D4,
   // `data-sidebar-file-icons`, `data-sidebar-folder-icons`) and its arrows' turn (D6, `data-sidebar-arrow`): a change
   // restyles the rows and renders no tree level. A calendar table's marker look and its dim past rows (YAZ-4162 D6, D14,
@@ -1257,8 +1258,10 @@ export function App() {
     else if (reviewing.current) openBackground(path)
     // "New tab" is always a new tab, a copy when another tab shows the page (YAZ-3943 5B, as browsers do; it was D10's "go to that tab").
     else if (where === 'newTab') openKept(path, true)
+    // A link's "Open in a new window" (YAZ-4444): the link menu's New window.
+    else if (where === 'newWindow') linkActions.openNewWindow?.(path)
     else navigate(path)
-  }, [openBackground, openBackgroundCopy, navigate, openKept])
+  }, [openBackground, openBackgroundCopy, navigate, openKept, linkActions])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
   // A trip to another copy of the same file (YAZ-2940) moves `activeTab` and not `file`, so both are watched.
   const closeReview = useCallback(() => live.current.vaults.forEach((vault) => vault.review.close()), [])
@@ -2914,9 +2917,10 @@ export function App() {
       // YAZ-2700: the table of contents is a SETTING too, and whether its names fit depends on the content width.
       tableOfContents: settings.tableOfContents,
       tocOnByDefault: settings.tocOnByDefault,
-      // YAZ-4094: the defaults of the page cog's "Guide lines" and "Folding" — a page with no choice follows them.
+      // YAZ-4094, YAZ-4432: the defaults of the page cog's "Guide lines", "Folding" and "Bullet threading" — a page with no choice follows them.
       guideLinesOnByDefault: settings.guideLinesOnByDefault,
       foldingOnByDefault: settings.foldingOnByDefault,
+      bulletThreadingOnByDefault: settings.bulletThreading,
       contentWidth: settings.contentWidth,
       onChangeTableOfContents: changeTableOfContents,
       // YAZ-2752: the width of its names column is a SETTING as well.
@@ -3118,7 +3122,7 @@ export function App() {
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
     <VaultLinksContext.Provider value={vaultLinks}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands

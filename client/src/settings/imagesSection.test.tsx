@@ -77,6 +77,61 @@ function type(input: HTMLInputElement, value: string) {
   })
 }
 
+describe('Settings › Images › Add panel › Hover zoom (YAZ-4447, D34)', () => {
+  const choice = () => rowButtons('mediaHoverZoom').map((b) => [b.textContent, b.getAttribute('aria-checked') ?? b.getAttribute('aria-pressed')])
+  it("shows the value the Add panel's Filter menu writes: On by default, Off when it is off", async () => {
+    await mountImages()
+    expect(choice()).toEqual([
+      ['On', 'true'],
+      ['Off', 'false'],
+    ])
+    act(() => root?.unmount())
+    el.remove()
+    await mountImages({ ...DEFAULT_SETTINGS, mediaHoverZoom: false })
+    expect(choice()).toEqual([
+      ['On', 'false'],
+      ['Off', 'true'],
+    ])
+  })
+
+  it('Off writes the same setting', async () => {
+    await mountImages()
+    act(() => rowButtons('mediaHoverZoom')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, mediaHoverZoom: false })
+  })
+
+  it('the search finds it as "hover zoom" and as "zoom"', async () => {
+    const { searchSettings, settingCandidates } = await import('./searchSettings')
+    const candidates = settingCandidates({ settings: { ...DEFAULT_SETTINGS }, onChange })
+    for (const words of ['hover zoom', 'zoom', 'bigger']) expect(searchSettings(candidates, words).map((h) => h.item.id)).toContain('mediaHoverZoom')
+  })
+})
+
+describe('Settings › Images › Add panel › Hover size (YAZ-4447 demo round 2)', () => {
+  const sizes = () => rowButtons('mediaHoverZoomSize').map((b) => [b.textContent, b.getAttribute('aria-pressed')])
+  it('sits right under Hover zoom in the same group, Medium by default', async () => {
+    await mountImages()
+    expect(sizes()).toEqual([
+      ['Small', 'false'],
+      ['Medium', 'true'],
+      ['Large', 'false'],
+    ])
+    expect(row('mediaHoverZoom')?.nextElementSibling).toBe(row('mediaHoverZoomSize'))
+  })
+
+  it('Large writes the same setting as Filter › Hover size', async () => {
+    await mountImages()
+    act(() => rowButtons('mediaHoverZoomSize')[2].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, mediaHoverZoomSize: 'large' })
+  })
+
+  it('is not there while Hover zoom is Off', async () => {
+    await mountImages({ ...DEFAULT_SETTINGS, mediaHoverZoom: false })
+    expect(row('mediaHoverZoom')).not.toBeNull()
+    expect(row('mediaHoverZoomSize')).toBeNull()
+  })
+})
+
 describe('Settings › Images › Library folder', () => {
   it('shows the default main resolved, marked as the default; Reset is off while it IS the default', async () => {
     await mountImages()

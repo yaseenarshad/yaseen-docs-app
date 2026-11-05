@@ -22,7 +22,7 @@ import { basename, rootOfPath } from '@shared/types'
 import { linkFor, pastedPath } from '../editor/pathPaste'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import { linkClickAction } from '../editor/linkGesture'
-import type { LinkFollow, WikilinkNav } from '../editor/wikilink/wikilinkClick'
+import { openerOf, type LinkFollow, type WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import { idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, missingId, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { isFolderPath, pathTitles } from '../lib/pageLabel'
@@ -197,8 +197,7 @@ export function windowFollow(source: WikilinkResolveSource, nav: WikilinkNav, fo
     const vault = linkVault(inner)
     const path = vault === undefined || vault.source === source ? null : linkPath(inner, vault.source, vault.viewOnly)
     if (path === null) return follow(inner, where)
-    const open = where === 'backgroundTab' ? nav.openBackground : where === 'newTab' ? (nav.openNewTab ?? nav.openCurrent) : nav.openCurrent
-    open(path)
+    openerOf(nav, where)(path)
   }
 }
 
@@ -306,7 +305,6 @@ export function openShapeLink(link: string, event: MouseMods, deps: Pick<Drawing
     nav.onNotice(`Can't open "${text}": it is not a page of this vault`)
     return true
   }
-  const open = where === 'backgroundTab' ? nav.openBackground : where === 'newTab' ? (nav.openNewTab ?? nav.openCurrent) : nav.openCurrent
-  open(path)
+  openerOf(nav, where)(path)
   return true
 }

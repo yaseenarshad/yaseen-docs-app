@@ -33,6 +33,8 @@ const ENGINE_CLASSES: Record<string, [file: string, why: string]> = {
   'App-top-bar': ['drawings/presentation/presentation.css', 'hides the top bar while presenting'],
   'App-bottom-bar': ['drawings/presentation/presentation.css', 'hides the bottom bar while presenting'],
   'excalidraw-container': ['drawings/ExcalidrawSurface.tsx', 'focuses it when a tab is revealed (focusHandoff)'],
+  // The text box editor (YAZ-4277 D1): the root the engine places over the box.
+  'excalidraw-host-text-editor': ['drawings/textBoxEditor.css', "the editor's lines laid out as the box's"],
 }
 
 const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]))

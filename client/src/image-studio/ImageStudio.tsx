@@ -29,12 +29,13 @@
  * in flight.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { MAX_COMPONENT_NAME_LENGTH, MAX_ITEM_WORD_LENGTH, PIXABAY_SECRET, type ComponentItem, type MediaBytesProvider, type MediaLibraryFile, type StudioItem } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COMPONENT_NAME_LENGTH, MAX_ITEM_WORD_LENGTH, PIXABAY_SECRET, type ComponentItem, type MediaBytesProvider, type MediaHoverZoomSize, type MediaLibraryFile, type StudioItem } from '@shared/types'
 import { DEFAULT_MEDIA_FILTERS, needsCredit, sanitizeMediaFilters, type IconPackInfo, type MediaFilters } from '@shared/iconPacks'
 import { parseComponentFragment } from '@shared/savedComponents'
 import { api } from '../api'
 import { storage } from '../lib/storage'
 import { createPreviewCache } from '../lib/previewCache'
+import { clearToneMemo, PictureTile } from '../lib/pictureTone'
 import { createScenePreviewPng, type PreviewBounds, type PreviewEngine } from '../lib/scenePreview'
 import { loadExcalidrawElement } from '../drawings/engine'
 import type { ComponentEngine, ComponentTarget } from '../components-library/componentData'
@@ -45,6 +46,7 @@ import { insertImage, insertShape, fileFromImport, type InsertEngine, type Inser
 import { buildShapeCatalog, getShape, shapeAliases, type ShapeCatalogItem, type ShapePreview, type SmartShapeApi } from './shapes'
 import { groupResults } from './groupResults'
 import { FilterMenu } from './FilterMenu'
+import { attachTileHoverZoom, type ZoomLoader } from './tileHoverZoom'
 import { IconPacksFooter } from './IconPacksFooter'
 import { PackView } from './PackView'
 import { useIconPacks } from './useIconPacks'
@@ -213,7 +215,11 @@ export function loadPackList(): Promise<IconPackInfo[]> {
 /** The settings' filters and pins, read where the panel has no settings prop (`storage`, which a test may not have). */
 const settingsFilters = (): MediaFilters => sanitizeMediaFilters(storage.getSettings()?.mediaFilters ?? DEFAULT_MEDIA_FILTERS)
 const settingsPins = (): string[] => storage.getSettings()?.mediaPinnedPacks ?? []
-const settingsGroupSimilar = (): boolean => storage.getSettings()?.mediaGroupSimilar ?? true
+const settingsGroupSimilar = (): boolean => storage.getSettings()?.mediaGroupSimilar ?? DEFAULT_SETTINGS.mediaGroupSimilar
+const settingsHoverZoom = (): boolean => storage.getSettings()?.mediaHoverZoom ?? DEFAULT_SETTINGS.mediaHoverZoom
+const settingsHoverZoomSize = (): MediaHoverZoomSize => storage.getSettings()?.mediaHoverZoomSize ?? DEFAULT_SETTINGS.mediaHoverZoomSize
+/** The hover zoom's sharp picture of a Pixabay item (YAZ-4447 demo round 2): main fetches it, as every tile picture. */
+const loadZoomPicture: ZoomLoader = async (id, zoomWidth) => (await api.media.preview({ provider: 'pixabay', id, zoomWidth })).dataURL
 /** The pins as they are now, or the same array when they hold the same packs, so a settings broadcast renders nothing. */
 const samePins = (now: string[], next: string[]): string[] => (now.length === next.length && now.every((p, i) => p === next[i]) ? now : next)
 
@@ -223,6 +229,19 @@ export const clearPreviewMemo = () => {
   copyPreviews.clear()
   drawingPreviews.clear()
   componentPreviews.clear()
+  clearToneMemo()
+}
+
+/**
+ * The key a tile's tone is cached by (YAZ-4443): its picture's own preview-cache key, named by cache, so the same id in
+ * two caches (or a drawing in the other theme) is two pictures. It follows the branches of the tile's picture below.
+ */
+const toneKeyOf = (item: StudioItem, { hasSource, favorited, theme }: { hasSource: boolean; favorited: boolean; theme: string }): string => {
+  if (item.provider === 'shape' && hasSource) return `shape:${item.providerId}`
+  if (item.provider === 'component' && hasSource) return `component:${item.providerId}`
+  if (item.provider === 'shape' || item.provider === 'component' || (item.provider === 'excalidraw' && favorited)) return `copy:${theme}|${item.itemKey}`
+  if (item.provider === 'excalidraw') return `drawing:${theme}|${item.providerId}`
+  return `${item.provider}:${item.providerId}`
 }
 
 /** A shape tile's picture: one of six stock outlines, or the engine's own generated path. */
@@ -433,11 +452,17 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   const [pinned, setPinned] = useState<string[]>(settingsPins)
   // Filter › Similar icons (YAZ-4348 demo round 2): the "+N" groups, or every icon as its own tile.
   const [groupSimilar, setGroupSimilar] = useState<boolean>(settingsGroupSimilar)
+  // Filter › Hover zoom (YAZ-4447, D34), the same switch as Settings › Images › Add panel.
+  const [hoverZoom, setHoverZoom] = useState<boolean>(settingsHoverZoom)
+  // Filter › Hover size (YAZ-4447 demo round 2), the same choice as Settings › Images › Add panel › Hover size.
+  const [hoverZoomSize, setHoverZoomSize] = useState<MediaHoverZoomSize>(settingsHoverZoomSize)
   useEffect(() => {
     const read = () => {
       setFilters(settingsFilters())
       setPinned((now) => samePins(now, settingsPins()))
       setGroupSimilar(settingsGroupSimilar())
+      setHoverZoom(settingsHoverZoom())
+      setHoverZoomSize(settingsHoverZoomSize())
     }
     read()
     return storage.subscribe(read)
@@ -496,6 +521,14 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     setGroupSimilar(on)
     storage.patchSettings({ mediaGroupSimilar: on })
   }
+  const changeHoverZoom = (on: boolean) => {
+    setHoverZoom(on)
+    storage.patchSettings({ mediaHoverZoom: on })
+  }
+  const changeHoverZoomSize = (size: MediaHoverZoomSize) => {
+    setHoverZoomSize(size)
+    storage.patchSettings({ mediaHoverZoomSize: size })
+  }
   const [line, setLine] = useState<Line>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [componentName, setComponentName] = useState('')
@@ -518,6 +551,11 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
 
   const fieldRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  // The hover zoom (YAZ-4447, D34): its listeners live on the list, and only while the switch is on.
+  useEffect(() => {
+    const list = listRef.current
+    return hoverZoom && list !== null ? attachTileHoverZoom(list, { size: hoverZoomSize, load: loadZoomPicture }) : undefined
+  }, [hoverZoom, hoverZoomSize])
   // The columns follow the list's width (`rowFor`): the grids and a section's one row use the same count.
   const [ROW, setRow] = useState(MIN_ROW)
   useEffect(() => {
@@ -975,6 +1013,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
         className={openTile?.key === slot && openTile.mode !== 'menu' ? 'image-studio__card is-editing' : 'image-studio__card'}
         key={item.itemKey}
         data-slot={slot}
+        // The hover zoom asks a sharp picture of a Pixabay item only: an icon is an SVG, a shape or drawing is local.
+        data-zoom={item.provider === 'pixabay' ? item.providerId : undefined}
         aria-busy={busy || undefined}
         onContextMenu={(event) => openMenu(event, slot)}
       >
@@ -988,7 +1028,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           aria-keyshortcuts="Shift+F10"
           title={`${item.title} — ${sourceLabel(item)}`}
         >
-          <span className="image-studio__preview">
+          <PictureTile className="image-studio__preview" toneKey={toneKeyOf(item, { hasSource: shape !== undefined || component !== undefined, favorited, theme })}>
             {item.provider === 'shape' && shape ? (
               <ShapeTile preview={shape.preview} />
             ) : item.provider === 'component' && component ? (
@@ -1002,7 +1042,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
               <previews.Preview cacheKey={`${item.provider}:${item.providerId}`} placeholderClass="image-studio__placeholder" />
             )}
             {insertingKey === item.itemKey && <span className="image-studio__adding">Adding…</span>}
-          </span>
+          </PictureTile>
           <span className={item.provider === 'component' ? 'image-studio__name' : 'image-studio__name image-studio__name--title'}>{item.title}</span>
         </button>
         <button
@@ -1403,6 +1443,10 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           loadPacks={loadPackList}
           groupSimilar={groupSimilar}
           onGroupSimilar={changeGroupSimilar}
+          hoverZoom={hoverZoom}
+          onHoverZoom={changeHoverZoom}
+          hoverZoomSize={hoverZoomSize}
+          onHoverZoomSize={changeHoverZoomSize}
         />
         {hasSelection && library.canCapture && (
           <button
@@ -1434,7 +1478,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           }}
         >
           <h3 className="image-studio__naming-title">Save to your library</h3>
-          <div className="image-studio__naming-preview">{savingPreview !== null ? <img src={savingPreview} alt="" /> : <span className="image-studio__placeholder" />}</div>
+          <PictureTile className="image-studio__naming-preview">{savingPreview !== null ? <img src={savingPreview} alt="" /> : <span className="image-studio__placeholder" />}</PictureTile>
           {/* Autofocused: the button that opened this form is the only way here. */}
           <input autoFocus value={componentName} maxLength={MAX_COMPONENT_NAME_LENGTH} required aria-label="Component name" placeholder="Name this component" onChange={(event) => setComponentName(event.target.value)} />
           <div className="image-studio__naming-actions">

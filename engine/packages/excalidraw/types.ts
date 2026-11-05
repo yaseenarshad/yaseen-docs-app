@@ -55,8 +55,10 @@ import type {
   EphemeralIncrement,
 } from "@excalidraw/element";
 import type { GlobalPoint } from "@excalidraw/math";
-import type { HostLinkResolver } from "@excalidraw/element";
+import type { FoldArrowPrefs, HostLinkResolver } from "@excalidraw/element";
 import type { IconKind } from "@excalidraw/element";
+
+import type { NewElementStyle } from "./newElementStyle";
 
 import type { Action } from "./actions/types";
 import type { Spreadsheet } from "./charts";
@@ -812,7 +814,7 @@ export type HostLinkHit = {
  * Yaseen Docs (YAZ-4039 D12): the text editor, for the host's `[[` picker.
  * `typed`: the change is typing, not a caret move.
  */
-export type HostTextEditor = {
+export type HostTextEditorState = {
   text: string;
   caret: number;
   typed: boolean;
@@ -825,6 +827,72 @@ export type HostTextEditor = {
    * (the saved box). True when `raw` was there.
    */
   replaceLink: (raw: string, text: string) => boolean;
+};
+
+/**
+ * Yaseen Docs (YAZ-4277 D1): the host's text editor for a text box. The engine
+ * places `root` over the box (position, zoom, rotation), and the canvas keeps
+ * drawing the box: the editor in `root` is invisible. The engine draws the
+ * caret and the selection from the canvas layout. Offsets are in the box's
+ * `originalText`.
+ */
+export type HostTextEditor = {
+  mount: (options: {
+    root: HTMLElement;
+    text: string;
+    textRuns: ExcalidrawTextElement["textRuns"];
+    /** YAZ-4306: the box's folds (`getFoldedLines`), line indexes in `text`. */
+    foldedLines: readonly number[];
+    /** The selection at start. */
+    selection: HostTextSelection;
+    /** YAZ-4277 1B: the text, its letter styles as the box saves them, and the selection after the edit. */
+    onChange: (
+      text: string,
+      textRuns: ExcalidrawTextElement["textRuns"],
+      selection: HostTextSelection,
+    ) => void;
+    /** The selection moved, and the text did not change. */
+    onSelectionChange: (selection: HostTextSelection) => void;
+    /**
+     * YAZ-4306: the folds changed (a fold key in the editor, or an edit that
+     * moved a folded item to another line): line indexes in the text now.
+     */
+    onFoldsChange: (foldedLines: readonly number[]) => void;
+    /**
+     * YAZ-4277 demo: the screen box of the caret at `offset`, as the canvas
+     * draws it. The editor's own layout is invisible and does not match the
+     * canvas, so its pop-up toolbar and `/` menu anchor here.
+     */
+    clientRectAt: (offset: number) => HostTextClientRect | null;
+  }) => HostTextEditorSession;
+};
+
+export type HostTextClientRect = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+
+export type HostTextSelection = { anchor: number; head: number };
+
+export type HostTextEditorSession = {
+  /** A click or a drag on the box put the selection. */
+  setSelection: (selection: HostTextSelection) => void;
+  /**
+   * Puts `text` in place of `start`..`end` as one edit, the caret after it
+   * (a picked `[[link]]`, a pasted page path). Offsets in `originalText`.
+   */
+  replaceText: (start: number, end: number, text: string) => void;
+  /**
+   * YAZ-4345 (D15): ⌘\ in edit takes every letter style off the selected
+   * letters (with only a caret, off the next letters), as one undo step.
+   */
+  clearLetterStyles: () => void;
+  /** YAZ-4306: the box's folds changed outside the editor (a fold arrow click in edit). */
+  setFolds: (foldedLines: readonly number[]) => void;
+  focus: () => void;
+  destroy: () => void;
 };
 
 /**
@@ -868,7 +936,7 @@ export type HostLinks = {
    */
   dropLinks?: (files: readonly File[]) => string[] | null;
   /** The text editor's text or caret changed; null: the editor closed. */
-  onEditorChange?: (editor: HostTextEditor | null) => void;
+  onEditorChange?: (editor: HostTextEditorState | null) => void;
   /** A key in the text editor: true when the host took it (its open picker). */
   onEditorKeyDown?: (event: KeyboardEvent) => boolean;
 };
@@ -1049,6 +1117,33 @@ export interface ExcalidrawProps {
   generateLinkForSelection?: (id: string, type: "element" | "group") => string;
   /** Yaseen Docs (YAZ-4039 D7, D11): page links in text boxes. Keep it stable. */
   hostLinks?: HostLinks;
+  /** Yaseen Docs (YAZ-4277 D1): the editor of a text box. Keep it stable. Absent: a box shows its text and does not edit. */
+  textEditor?: HostTextEditor;
+  /**
+   * Yaseen Docs (YAZ-4277 D5, D7): the fold arrows of text boxes: when open
+   * items show ▾, the size, the thickness and the smallest size on screen.
+   * Keep it stable. Absent: `DEFAULT_FOLD_ARROW_PREFS`.
+   */
+  foldArrows?: FoldArrowPrefs;
+  /**
+   * Yaseen Docs (YAZ-4277 D14): "default": a style changed on a selection
+   * stays on it, and the selection tool brings back `defaultItemStyle`.
+   * Absent or "keep": the last style carries to the next shape (upstream).
+   */
+  newElementStyle?: "default" | "keep";
+  /**
+   * Yaseen Docs (YAZ-4277 demo): a fill picked for text keeps it readable:
+   * a dark fill turns dark text white, a light fill turns white text black.
+   */
+  fillSetsTextColor?: boolean;
+  /**
+   * Yaseen Docs (YAZ-4277 demo): a new shape's line width, corner radius,
+   * wobble and arrowheads keep their screen size at the zoom it is made at
+   * (`screenScale.ts`); the width and radius pickers speak screen px.
+   */
+  newShapesMatchZoom?: boolean;
+  /** Yaseen Docs (YAZ-4277 D14): the host's defaults for a new element's style. Keep it stable. */
+  defaultItemStyle?: Partial<NewElementStyle>;
   /**
    * Yaseen Docs (YAZ-4157 demo 6L): the host's own items in the board's
    * right-click menu, asked each time the menu opens on the canvas or on a
@@ -1232,6 +1327,8 @@ export type AppClassProperties = {
   >;
   files: BinaryFiles;
   gifPlayer: App["gifPlayer"];
+  /** YAZ-4277 demo: the fold keys do nothing while folding is off. */
+  isFoldingOff: App["isFoldingOff"];
   editorInterface: App["editorInterface"];
   scene: App["scene"];
   syncActionResult: App["syncActionResult"];
@@ -1380,6 +1477,7 @@ export interface ExcalidrawImperativeAPI {
   isDestroyed: boolean;
   updateScene: InstanceType<typeof App>["updateScene"];
   applyDeltas: InstanceType<typeof App>["applyDeltas"];
+  setTextFolds: InstanceType<typeof App>["setTextFolds"];
   mutateElement: InstanceType<typeof App>["mutateElement"];
   updateLibrary: InstanceType<typeof Library>["updateLibrary"];
   resetScene: InstanceType<typeof App>["resetScene"];

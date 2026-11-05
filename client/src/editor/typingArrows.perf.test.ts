@@ -9,7 +9,7 @@
  */
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { afterEach, describe, expect, it } from 'vitest'
-import { median } from '../test-perf'
+import { budgetMs, median } from '../test-perf'
 import { mount, unmountAll } from './marks/markTestKit'
 
 afterEach(unmountAll)
@@ -37,7 +37,7 @@ describe('the typing handlers on a big note', () => {
     console.log(
       `typing handlers perf: a plain letter at the end of a ${LONG.length}-character line, 2,000 bullets: median ${median(ms).toFixed(3)} ms, p95 ${sorted[Math.floor(ms.length * 0.95)].toFixed(3)} ms, max ${sorted[sorted.length - 1].toFixed(3)} ms (50 runs)`,
     )
-    expect(median(ms)).toBeLessThan(0.5)
+    expect(median(ms)).toBeLessThan(budgetMs(0.5))
   }, 60_000)
 
   it('perf smoke: the key that makes an arrow (`-` then `>`), at the end of a 550-character line, takes under one frame (16 ms)', async () => {
@@ -65,6 +65,6 @@ describe('the typing handlers on a big note', () => {
     }
     expect(view.state.doc.textBetween(end, view.state.selection.head)).toBe(' →'.repeat(60))
     console.log(`typing handlers perf: the arrow key at the end of a long line, 2,000 bullets: median ${median(arrow).toFixed(3)} ms (a plain letter's own transaction: median ${median(plain).toFixed(3)} ms), 50 runs`)
-    expect(median(arrow)).toBeLessThan(16)
+    expect(median(arrow)).toBeLessThan(budgetMs(16))
   }, 60_000)
 })

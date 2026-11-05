@@ -11,7 +11,7 @@
  */
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { afterEach, describe, expect, it } from 'vitest'
-import { median } from '../../test-perf'
+import { budgetMs, median } from '../../test-perf'
 import { BIG, FROZEN, PLAIN, STYLED, TSV, cellText, clipboard, closeAll, mount, typeAt, typeInTurn } from './tableSpeedKit'
 
 afterEach(closeAll)
@@ -45,15 +45,15 @@ describe('S6: a 500 × 10 table stays fast', () => {
     // The note is for the log: Milkdown's own `keepTableAlignPlugin` walks every cell of the table on each key
     // (main has it too), so the table types ~9× slower than a note of the same text at idle (~7 ms against ~0.8).
     // 60 ms catches a rescan of our own on top of it.
-    expect(table).toBeLessThan(60)
+    expect(table).toBeLessThan(budgetMs(60))
     // The ratios only print (YAZ-3796): the round-1 freeze cost 1.17–1.24, and a loaded machine reached 1.21 with
     // the fix, so no time ceiling tells them apart. `tableSpeed.test.ts` holds "no change in typing speed" (YAZ-3790)
     // by counts; the 60 ms ceiling above still catches a gross cost in a frozen table.
-    expect(frozen).toBeLessThan(60)
-    expect(styled).toBeLessThan(60)
+    expect(frozen).toBeLessThan(budgetMs(60))
+    expect(styled).toBeLessThan(budgetMs(60))
     // The approved number (YAZ-3697): ~15 ms measured. The GitHub runner takes 60–87 ms (jsdom) since PR #219, and a
     // loaded Mac 115 ms, so 50 failed every CI run on `main` (YAZ-3743, Yaseen's OK). 150 ms still catches a rescan of
     // the table per pasted cell, which costs seconds.
-    expect(paste).toBeLessThan(150)
+    expect(paste).toBeLessThan(budgetMs(150))
   }, 120_000)
 })

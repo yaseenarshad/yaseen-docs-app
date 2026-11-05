@@ -5,7 +5,7 @@ import type { IndexRecord, TreeNode } from '@shared/types'
 import { allDirs, atOrBelow, otherFiles, pinnedRoots, withoutPaths } from '../lib/treeState'
 import { fileCandidates, folderCandidates, searchCandidates, searchRows, type SearchCandidate } from './searchCandidates'
 import { searchTree } from './searchTree'
-import { timeMedian } from '../test-perf'
+import { budgetMs, timeMedian } from '../test-perf'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -76,7 +76,7 @@ describe('searchCandidates', () => {
     // only ever prints on failure hides the drift that walks up to it.
     console.log(`search perf: 2000 records + 500 folders + 250 other files in ${elapsed.toFixed(1)} ms (${candidates.length} candidates, 10 searches, each cut to a tree)`)
     // Alone on an idle pool, warm and the median of 5 runs, this is a real budget: ~3 ms measured, 50 ms allowed.
-    expect(elapsed).toBeLessThan(50)
+    expect(elapsed).toBeLessThan(budgetMs(50))
   })
 
   it('perf smoke: 10,000 notes with a number ID. A search by title, by a bare number and by an ID each cost one read of the query (YAZ-2677 D9, S78)', () => {
@@ -102,7 +102,7 @@ describe('searchCandidates', () => {
     expect(none.first).toBeUndefined()
     console.log(`search perf: 10000 notes with a number ID (20000 candidates), one search: by title ${title.ms.toFixed(2)} ms, by bare number ${number.ms.toFixed(2)} ms, by ID ${id.ms.toFixed(2)} ms, by letters of before ${was.ms.toFixed(2)} ms, no match ${none.ms.toFixed(2)} ms`)
     // A search that holds an ID does the title scan too, so it may cost about two of them: never a parse for each note.
-    for (const run of [title, number, id, was, none]) expect(run.ms).toBeLessThan(25)
+    for (const run of [title, number, id, was, none]) expect(run.ms).toBeLessThan(budgetMs(25))
   })
 
   // The two groups (YAZ-2662 D2, D4, R2): the same vault with pinned items. What a keystroke pays
@@ -135,6 +135,6 @@ describe('searchCandidates', () => {
     expect(rows.every((c) => first.has(c.path))).toBe(true) // each pinned match went before each other match
     expect(drawn).toBe(new Set(rows.map((c) => c.path)).size) // the two cuts found each kept row one time
     console.log(`search perf, ${label}: 10 searches, each cut to the two groups, in ${elapsed.toFixed(1)} ms (the set of ${first.size} pinned rows built once, in ${(start - built).toFixed(1)} ms)`)
-    expect(elapsed).toBeLessThan(50)
+    expect(elapsed).toBeLessThan(budgetMs(50))
   })
 })

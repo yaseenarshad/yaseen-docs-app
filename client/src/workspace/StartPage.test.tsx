@@ -72,7 +72,7 @@ function installBridge({ trees, opens = {}, closed = {}, favorites = {}, favorit
         return () => stateChanged.delete(listener)
       }),
     },
-    window: { identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: roots[0], roots, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })) },
+    window: { identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: roots[0], roots, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files' })), open: vi.fn(async () => undefined) },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
@@ -305,6 +305,21 @@ describe('StartPage', () => {
     await act(async () => list([]))
     expect([emptyLine(el, 'recent'), emptyLine(el, 'favorites'), emptyLine(el, 'closed')]).toEqual(['Pages you open show here.', 'No favorites yet. Right-click a file or folder → Add to favorites.', 'Notes you close show here.'])
     expect(el.querySelector('button.start__row')).toBeNull()
+  })
+
+  it('⇧⌘-click on a file opens it in a new window (YAZ-4444 D32); on a folder it opens none and works as before', async () => {
+    const v = vault()
+    const { el, props, bridge } = await mount({
+      trees: { [v]: [dir(`${v}/Projects`), file(`${v}/a.md`)] },
+      opens: { [v]: { [`${v}/a.md`]: used(1) } },
+      favorites: { [v]: [`${v}/Projects`] },
+    })
+    await click(row(el, `${v}/a.md`), { metaKey: true, shiftKey: true })
+    expect(bridge.window.open.mock.calls).toEqual([[{ root: v, file: `${v}/a.md` }]])
+    expect([vi.mocked(props.onOpen).mock.calls, vi.mocked(props.onOpenBackground).mock.calls]).toEqual([[], []])
+    await click(row(el, `${v}/Projects`), { metaKey: true, shiftKey: true })
+    expect(bridge.window.open).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(props.onOpenBackground).mock.calls).toEqual([[`${v}/Projects`]])
   })
 
   it('S21, S22: a click on a file opens it, ⌘-click opens it in the background; a click on a folder shows it in Files; a file with no viewer in the app opens in its default app', async () => {

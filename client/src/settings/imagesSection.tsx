@@ -11,12 +11,23 @@
  *   Files; in Docs, Files & Links is about notes, and the library is the canvas panel's.
  * - The favorites (YAZ-4363): their count, the size of their own copies, and "all saved" or "3 still saving".
  * - Icon packs (YAZ-4359), its own group: every Iconify pack on this Mac, and where they live (`IconPacksControl`).
+ * - Add panel › Hover zoom (YAZ-4447, D34): the same `mediaHoverZoom` as the panel's Filter › Hover zoom, and Hover
+ *   size beside it (demo round 2), the same `mediaHoverZoomSize` as Filter › Hover size.
  */
+import type { MediaHoverZoomSize } from '@shared/types'
+import { Segmented } from './controls'
 import { FavoriteCopiesLine } from './FavoriteCopiesLine'
 import { IconPacksControl } from './IconPacksControl'
 import { LibraryFolderControl, LibraryFolderHint } from './LibraryFolderControl'
+import { ON_OFF_OPTIONS } from './options'
 import { PixabayKeyControl } from './PixabayKeyControl'
 import type { SettingsSection } from './registry'
+
+const HOVER_ZOOM_SIZE_OPTIONS: readonly { label: string; value: MediaHoverZoomSize }[] = [
+  { label: 'Small', value: 'small' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'Large', value: 'large' },
+]
 
 export const IMAGES_SECTION: SettingsSection = {
   id: 'images',
@@ -75,6 +86,27 @@ export const IMAGES_SECTION: SettingsSection = {
           keywords: ['icon packs', 'iconify', 'download', 'offline', 'icons', 'update', 'check for new icons', 'folder'],
           wide: true,
           render: ({ settings, onChange }) => <IconPacksControl settings={settings} onChange={onChange} />,
+        },
+      ],
+    },
+    {
+      title: 'Add panel',
+      items: [
+        {
+          id: 'mediaHoverZoom',
+          label: 'Hover zoom',
+          hint: "Rest the pointer on a picture in a drawing's Add panel to see it bigger. The panel's Filter menu has the same switch.",
+          keywords: ['hover zoom', 'zoom', 'bigger', 'enlarge', 'preview', 'add panel', 'image studio', 'tiles', 'pictures', 'icons'],
+          render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.mediaHoverZoom} onChange={(mediaHoverZoom) => onChange({ ...settings, mediaHoverZoom })} ariaLabel="Hover zoom" />,
+        },
+        {
+          // YAZ-4447 demo round 2: the same `mediaHoverZoomSize` as the panel's Filter › Hover size; only while it is on.
+          id: 'mediaHoverZoomSize',
+          label: 'Hover size',
+          hint: 'How big the hover zoom is: Small, Medium (the default) or Large. Each size fits on the screen. The panel\'s Filter menu has the same choice.',
+          keywords: ['hover size', 'zoom size', 'hover zoom', 'small', 'medium', 'large', 'bigger', 'add panel'],
+          available: ({ settings }) => settings.mediaHoverZoom,
+          render: ({ settings, onChange }) => <Segmented options={HOVER_ZOOM_SIZE_OPTIONS} value={settings.mediaHoverZoomSize} onChange={(mediaHoverZoomSize) => onChange({ ...settings, mediaHoverZoomSize })} ariaLabel="Hover size" />,
         },
       ],
     },

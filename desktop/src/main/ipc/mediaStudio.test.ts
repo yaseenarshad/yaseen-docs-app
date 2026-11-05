@@ -112,6 +112,8 @@ describe('the guards', () => {
       await expect(call(null, { provider: 'iconify' })).resolves.toEqual(bad('BAD_REQUEST'))
       await expect(call(null, 'noto:rocket')).resolves.toEqual(bad('BAD_REQUEST'))
     }
+    // The hover zoom's width (YAZ-4447): only a width Pixabay serves.
+    await expect(registered(CONTRACT.media.preview)(null, { provider: 'pixabay', id: '1', zoomWidth: 4000 })).resolves.toEqual(bad('BAD_REQUEST'))
   })
 })
 

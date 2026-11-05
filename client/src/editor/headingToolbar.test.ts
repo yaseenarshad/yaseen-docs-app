@@ -171,7 +171,7 @@ describe('highlight swatches (YAZ-1480)', () => {
       title: must(key).title,
       keys: must(key).getAttribute('aria-keyshortcuts'),
     })
-    expect(attrs('highlight')).toEqual({ label: 'Highlight', title: 'Highlight (⇧⌘H)', keys: 'Meta+Shift+H' })
+    expect(attrs('highlight')).toEqual({ label: 'Highlight yellow', title: 'Highlight yellow (⇧⌘H)', keys: 'Meta+Shift+H' })
     // A colour has no shortcut at all — no empty attribute left behind.
     expect(attrs('highlight-green')).toEqual({ label: 'Highlight green', title: 'Highlight green', keys: null })
   })

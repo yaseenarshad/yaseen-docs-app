@@ -1,4 +1,5 @@
 import "pepjs";
+import React from "react";
 import { act } from "@testing-library/react";
 import {
   render,
@@ -19,6 +20,7 @@ import type { AllPossibleKeys } from "@excalidraw/common/utility-types";
 
 import { STORAGE_KEYS } from "../../../excalidraw-app/app_constants";
 
+import { testTextEditor } from "./helpers/textEditor";
 import { Pointer, UI } from "./helpers/ui";
 import * as toolQueries from "./queries/toolQueries";
 
@@ -51,6 +53,15 @@ const renderApp: TestRenderFn = async (ui, options) => {
   if (options?.localStorageData) {
     initLocalStorage(options.localStorageData);
     delete options.localStorageData;
+  }
+
+  // YAZ-4277 1D: a text box edits in a host's editor; the tests' own
+  if (
+    React.isValidElement<{ textEditor?: unknown }>(ui) &&
+    (ui.type as { displayName?: string }).displayName === "Excalidraw" &&
+    !ui.props.textEditor
+  ) {
+    ui = React.cloneElement(ui, { textEditor: testTextEditor });
   }
 
   const renderResult = render(ui, {

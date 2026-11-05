@@ -1,7 +1,7 @@
 /** Paste a path, get a link (YAZ-3609) perf smoke: the `path → row` map at 20,000 rows. Runs in the `perf` project (YAZ-740). */
 import { describe, expect, it } from 'vitest'
 import type { LinkCandidate } from '../links/completion'
-import { timeMedian } from '../test-perf'
+import { budgetMs, timeMedian } from '../test-perf'
 import { hrefTarget, linkFor } from './pathPaste'
 import { createWikilinkCandidateSource } from './wikilink/wikilinkPicker'
 
@@ -24,7 +24,7 @@ describe('pathPaste', () => {
     expect(target).toBe('/vault/folder9/note-9.md')
     console.log(`pathPaste perf: ${ROWS} rows, first paste median ${build.toFixed(1)} ms, click lookup median ${click.toFixed(3)} ms`)
     // Paste and click are no keystroke path; the budget keeps the map one pass over the rows.
-    expect(build).toBeLessThan(50)
-    expect(click).toBeLessThan(1)
+    expect(build).toBeLessThan(budgetMs(50))
+    expect(click).toBeLessThan(budgetMs(1))
   })
 })

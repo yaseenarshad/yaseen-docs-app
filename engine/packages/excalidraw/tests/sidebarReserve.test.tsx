@@ -14,9 +14,10 @@ describe("the sidebar reserve of getOffsets", () => {
   it("follows --right-sidebar-width; with none, it is the default", async () => {
     await render(<Excalidraw />);
     const container = h.app.excalidrawContainerValue.container!;
+    // the offset can be absent in the type; absent here fails the checks (NaN)
     const reserveLeft = () =>
       h.app.viewport.getOffsets({ reserve: { sidebar: true }, padding: 0 })
-        .left;
+        .left ?? NaN;
     const byDefault = reserveLeft();
     container.style.setProperty("--right-sidebar-width", "480px");
     expect(reserveLeft() - byDefault).toBe(480 - 302);

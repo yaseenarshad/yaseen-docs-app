@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { linkCandidates, matchLinkCandidates } from './completion'
-import { timeMedian } from '../test-perf'
+import { budgetMs, timeMedian } from '../test-perf'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -40,6 +40,6 @@ describe('linkCandidates', () => {
     // only ever prints on failure hides the drift that walks up to it.
     console.log(`completion perf: 5000 records, median ${elapsed.toFixed(1)} ms of 5 (${candidates.length} candidates)`)
     // Alone on an idle pool this is a real budget: ~27 ms measured, 100 ms allowed.
-    expect(elapsed).toBeLessThan(100)
+    expect(elapsed).toBeLessThan(budgetMs(100))
   })
 })

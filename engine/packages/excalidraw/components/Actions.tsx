@@ -45,7 +45,7 @@ import {
   getFormValue,
 } from "../actions/actionProperties";
 
-import { useTextEditorFocus } from "../hooks/useTextEditorFocus";
+import { restoreCaretPosition } from "../hooks/useTextEditorFocus";
 
 import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 
@@ -573,7 +573,33 @@ export const ContextualPropertiesToolbar = ({
       role="toolbar"
       aria-label="Element properties"
     >
-      {isTextTarget && (
+      {/* YAZ-4277 D8: in edit, the whole-box controls only; the letters'
+          styles are in the box editor's pop-up toolbar */}
+      {isTextTarget && appState.editingTextElement && (
+        <>
+          {fontAndSize()}
+          <ContextualToolbarDivider />
+          {textAlignMenu()}
+          {lineSpacing()}
+          {/* demo round 2: the same fill group as outside the edit */}
+          {predicates.backgroundColor && (
+            <>
+              <ContextualToolbarDivider />
+              <div
+                className="contextual-properties-toolbar__group"
+                role="group"
+                aria-label="Fill"
+              >
+                {renderAction("changeBackgroundColor", {
+                  contextToolbar: true,
+                  textToolbar: true,
+                })}
+              </div>
+            </>
+          )}
+        </>
+      )}
+      {isTextTarget && !appState.editingTextElement && (
         <>
           {fontAndSize()}
           <ContextualToolbarDivider />
@@ -591,6 +617,23 @@ export const ContextualPropertiesToolbar = ({
               {renderAction("changeTextHighlight", { contextToolbar: true })}
             </>
           )}
+          {/* YAZ-4277 demo: the box fill on the main bar too, beside the
+              letters' two colors */}
+          {predicates.backgroundColor && (
+            <>
+              <ContextualToolbarDivider />
+              <div
+                className="contextual-properties-toolbar__group"
+                role="group"
+                aria-label="Fill"
+              >
+                {renderAction("changeBackgroundColor", {
+                  contextToolbar: true,
+                  textToolbar: true,
+                })}
+              </div>
+            </>
+          )}
           <ContextualToolbarDivider />
           {renderAction("changeTextStyle", { contextToolbar: true })}
           <ContextualToolbarDivider />
@@ -598,7 +641,7 @@ export const ContextualPropertiesToolbar = ({
           {lineSpacing()}
           <ContextualSecondaryProperties
             renderAction={renderAction}
-            showBackgroundColor={predicates.backgroundColor}
+            showBackgroundColor={false}
             showRoundness={predicates.roundness}
             showOpacity={predicates.opacity}
             showTextBackgroundPadding={targetElements.some(
@@ -1106,7 +1149,6 @@ const CombinedTextProperties = ({
   predicates: ShapeActionPredicates;
   container: HTMLDivElement | null;
 }) => {
-  const { saveCaretPosition, restoreCaretPosition } = useTextEditorFocus();
   const isOpen = appState.openPopup === "compactTextProperties";
 
   return (
@@ -1115,9 +1157,6 @@ const CombinedTextProperties = ({
         open={isOpen}
         onOpenChange={(open) => {
           if (open) {
-            if (appState.editingTextElement) {
-              saveCaretPosition();
-            }
             setAppState({ openPopup: "compactTextProperties" });
           } else {
             setAppState({ openPopup: null });
@@ -1141,9 +1180,6 @@ const CombinedTextProperties = ({
               if (isOpen) {
                 setAppState({ openPopup: null });
               } else {
-                if (appState.editingTextElement) {
-                  saveCaretPosition();
-                }
                 setAppState({ openPopup: "compactTextProperties" });
               }
             }}

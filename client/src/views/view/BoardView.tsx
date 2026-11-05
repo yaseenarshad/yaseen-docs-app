@@ -1,6 +1,7 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { type Modifiers, openByGesture, openTarget } from '../../lib/openGesture'
+import { newWindowClick } from '../../lib/newWindowClick'
 import type { FolderSettings } from '../folderSettings'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -191,7 +192,7 @@ export function BoardView({
           className="view-board__title"
           onClick={(event) => {
             event.stopPropagation()
-            openCard(row, event)
+            if (!newWindowClick(event, row.record.path)) openCard(row, event)
           }}
         >
           {readOnly.has(row.record.path) ? <ReadOnlyName>{rowTitle(row)}</ReadOnlyName> : rowTitle(row)}
@@ -242,7 +243,9 @@ export function BoardView({
           // title, Enter, or a modifier opens — so a card without a title still has a name to read.
           tabIndex={0}
           aria-label={nameKey === undefined ? row.record.title : undefined}
+          // ⇧⌘-click opens the note in a new window (YAZ-4444 D32), asked before ⇧ vetoes the open.
           onClick={(event) => {
+            if (newWindowClick(event, row.record.path)) return
             if (openTarget(event) === 'current') event.currentTarget.focus()
             else openCard(row, event)
           }}

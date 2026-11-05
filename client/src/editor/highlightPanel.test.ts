@@ -93,20 +93,23 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     setUsedHighlightColorsSaver(() => {})
   })
 
-  it('each highlight button is a bold "A" on a square of its own wash token — yellow, green, blue — and the ▾ follows them', async () => {
+  it('each highlight button is the board\'s tile — a dark "A" on its own wash token, yellow, green, blue, named as on the board — and the ▾ follows them (YAZ-4445)', async () => {
     const { view } = await mount('hello world\n')
     await select(view, 'world')
     const tokens = ['--mark-bg', '--mark-bg-green', '--mark-bg-blue']
+    const names = ['Highlight yellow (⇧⌘H)', 'Highlight green', 'Highlight blue']
     SWATCHES.forEach((key, i) => {
-      const square = must(key).querySelector('svg rect.highlight-icon__wash')
-      expect(square?.getAttribute('fill')).toBe(`var(${tokens[i]})`)
-      const letter = must(key).querySelector('svg text.highlight-icon__a')
-      expect(letter?.textContent).toBe('A')
-      expect(letter?.getAttribute('font-weight')).toBe('800')
+      const tile = must(key).querySelector<HTMLElement>('.swatch-tile')
+      expect([...tile!.classList]).toEqual(['swatch-tile', 'swatch-tile--on-color'])
+      expect(tile!.style.getPropertyValue('--swatch-color')).toBe(`var(${tokens[i]})`)
+      expect(tile!.querySelector('.swatch-tile__letter')?.textContent).toBe('A')
+      expect(must(key).title).toBe(names[i])
     })
     const keys = order()
     expect(keys[keys.indexOf('highlight-blue') + 1]).toBe('highlight-more')
     expect(must('highlight-more').getAttribute('aria-label')).toBe('More highlight colours')
+    // the board's ▾: its glyph, no tile
+    expect(must('highlight-more').querySelector('.swatch-more')?.textContent).toBe('▾')
   })
 
   it('the lit button is the selection\'s colour (the ring); the ▾ lights for pink, a panel colour or a custom one', async () => {
@@ -114,13 +117,17 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     await select(view, 'blue')
     expect(litDots()).toEqual(['highlight-blue'])
     expect(must('highlight-more').classList.contains('active')).toBe(false)
-    for (const text of ['pink', 'orange', 'mine']) {
+    // YAZ-4445: as the board's ▾, a bar of that colour under it (the toolbar's `--highlight-more-colour`)
+    const bar = () => document.querySelector<HTMLElement>('.milkdown-toolbar')!.style.getPropertyValue('--highlight-more-colour')
+    for (const [text, colour] of [['pink', 'var(--mark-bg-pink)'], ['orange', 'var(--mark-bg-orange)'], ['mine', 'rgba(51, 102, 255, 0.4)']]) {
       await select(view, text)
       expect(litDots()).toEqual([])
       expect(must('highlight-more').classList.contains('active')).toBe(true)
+      expect(bar()).toBe(colour)
     }
     await select(view, 'plain')
     expect(must('highlight-more').classList.contains('active')).toBe(false)
+    expect(bar()).toBe('')
   })
 
   it('the ▾ opens the panel on the body: Colours (None and the 8), Shades, Hex code — and keeps the selection and the focus', async () => {

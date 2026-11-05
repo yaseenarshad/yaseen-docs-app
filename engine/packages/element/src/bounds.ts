@@ -47,6 +47,7 @@ import {
   deconstructRectanguloidElement,
 } from "./utils";
 import { intersectElementWithLineSegment } from "./collision";
+import { getElementStyleScale } from "./screenScale";
 import { elementOverlapsWithFrame, getContainingFrame } from "./frame";
 
 import type { Drawable, Op } from "roughjs/bin/core";
@@ -808,7 +809,8 @@ export const getArrowheadPoints = (
   const nx = (x2 - x1) / distance;
   const ny = (y2 - y1) / distance;
 
-  const size = getArrowheadSize(arrowhead);
+  // YAZ-4277 demo: an arrow made zoomed in keeps its head's screen size
+  const size = getArrowheadSize(arrowhead) / getElementStyleScale(element);
 
   let length = 0;
 

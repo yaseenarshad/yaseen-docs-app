@@ -55,6 +55,7 @@ import {
   isLinearElement,
 } from "./typeChecks";
 import { getCornerRadius, isPathALoop } from "./utils";
+import { getElementStyleScale } from "./screenScale";
 import { headingForPointIsHorizontal } from "./heading";
 
 import { canChangeRoundness } from "./comparisons";
@@ -171,8 +172,10 @@ const getDashArrayDotted = (strokeWidth: number) => [1.5, 6 + strokeWidth];
 function adjustRoughness(element: ExcalidrawElement): number {
   const roughness = element.roughness;
 
-  const maxSize = Math.max(element.width, element.height);
-  const minSize = Math.min(element.width, element.height);
+  // the sizes as they were on screen when the element was made
+  const scale = getElementStyleScale(element);
+  const maxSize = Math.max(element.width, element.height) * scale;
+  const minSize = Math.min(element.width, element.height) * scale;
 
   // don't reduce roughness if
   if (
@@ -196,6 +199,9 @@ export const generateRoughOptions = (
   continuousPath = false,
   isDarkMode: boolean = false,
 ): Options => {
+  // YAZ-4277 demo: the wobble and the dash widening are board px; a shape
+  // made zoomed in divides them by its scale (`screenScale.ts`)
+  const scale = getElementStyleScale(element);
   const options: Options = {
     seed: element.seed,
     strokeLineDash:
@@ -211,7 +217,7 @@ export const generateRoughOptions = (
     // similar to solid strokes, because we're also disabling multiStroke
     strokeWidth:
       element.strokeStyle !== "solid"
-        ? element.strokeWidth + 0.5
+        ? element.strokeWidth + 0.5 / scale
         : element.strokeWidth,
     // when increasing strokeWidth, we must explicitly set fillWeight and
     // hachureGap because if not specified, roughjs uses strokeWidth to
@@ -223,6 +229,10 @@ export const generateRoughOptions = (
     preserveVertices:
       continuousPath || element.roughness < ROUGHNESS.cartoonist,
   };
+  if (scale !== 1) {
+    // rough.js's default is 2
+    options.maxRandomnessOffset = 2 / scale;
+  }
 
   switch (element.type) {
     case "rectangle":

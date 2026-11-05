@@ -623,6 +623,18 @@ export interface BoardHoverLinksRequest {
 }
 
 /**
+ * `board:set-fold-arrows` (YAZ-4277 D5, D18, D19): the cog's "Fold arrows" on a drawing: `'app'` (no key: the app
+ * setting), or `"foldArrows": "hover"` / `"always"` / `"off"` in the board's `yaseendraw` block. One read, one atomic write, as Read only.
+ */
+export interface BoardFoldArrowsRequest {
+  root: string
+  path: string
+  value: 'app' | FoldArrowMode
+  /** Required: the mtime the tab last read or wrote. A differing disk mtime rejects `CONFLICT` and writes NOTHING. */
+  expectedMtime: number
+}
+
+/**
  * `fs:create-board` (YAZ-3028 D9): a NEW drawing or diagram, born with its empty content. Main picks
  * the content by the kind of `path` — the renderer sends none — stamps the dates, and never
  * overwrites (`ALREADY_EXISTS`). No note ID: IDs are for notes only.
@@ -1369,7 +1381,66 @@ export interface CanvasPrefs {
   laserColor: LaserColor
   /** The laser's size (`laserSize`): `S` (🔒 YAZ-1989 D1). */
   laserSize: LaserSize
+  /**
+   * YAZ-4277 D5: when an open bullet in a text box shows its fold arrow ▾: on hover over its line, or always. A folded
+   * bullet always shows ▸. A board's cog can override it (`"foldArrows"` in its `yaseendraw` block). Never appState:
+   * the engine's `foldArrows` prop.
+   */
+  foldArrowsOpen: FoldArrowMode
+  /** YAZ-4277 D7: the fold arrow's size, in % of its text size. `FOLD_ARROW_SIZE_MIN`–`MAX`. */
+  foldArrowSize: number
+  /** YAZ-4277 D7: the fold arrow's line. */
+  foldArrowThickness: FoldArrowThickness
+  /**
+   * YAZ-4277 D7: the smallest fold arrow on screen, px: zoomed out, an arrow stops shrinking here, so a folded bullet
+   * shows from afar. Screen only: exports use the size alone. `FOLD_ARROW_MIN_SIZE_MIN`–`MAX`.
+   */
+  foldArrowMinSize: number
+  /**
+   * YAZ-4277 D14: "New shapes and text". `default`: a style changed on a selection stays on it, a style picked for a
+   * tool lasts until the selection tool, and the defaults above change only here. `keep`: the last style carries to the
+   * next shape, and a pick writes the font, sloppiness, align and line widths back here (the behaviour before D14).
+   * Never appState: the engine's `newElementStyle` prop.
+   */
+  newElementStyle: NewElementStyleMode
+  /**
+   * YAZ-4277 demo: "Text color follows the fill". A dark fill on dark text turns the text white; a light fill (or
+   * none) on white text turns it black; any other text color stays. Never appState: the engine's `fillSetsTextColor`.
+   */
+  fillSetsTextColor: boolean
+  /**
+   * YAZ-4277 demo: "New shapes match the zoom". A new shape's line width, corner radius, wobble and arrowheads keep
+   * their screen size at the zoom it is made at, and the width and corner pickers speak screen px. Never appState: the
+   * engine's `newShapesMatchZoom` prop.
+   */
+  newShapesMatchZoom: boolean
 }
+
+/** YAZ-4277 D14: "Start with the default style" or "Keep the last style". */
+export const NEW_ELEMENT_STYLE_MODES = ['default', 'keep'] as const
+export type NewElementStyleMode = (typeof NEW_ELEMENT_STYLE_MODES)[number]
+
+/**
+ * YAZ-4277 D5: when an open bullet shows its fold arrow. `'off'` (demo round 1): no folding at all; the saved folds
+ * stay in the file, unshown, and come back when folding is on again (`ExcalidrawSurface.tsx`).
+ */
+export const FOLD_ARROW_MODES = ['hover', 'always', 'off'] as const
+export type FoldArrowMode = (typeof FOLD_ARROW_MODES)[number]
+/** YAZ-4277 D7: the fold arrow's line, thin to thick. */
+export const FOLD_ARROW_THICKNESSES = ['thin', 'normal', 'thick'] as const
+export type FoldArrowThickness = (typeof FOLD_ARROW_THICKNESSES)[number]
+/**
+ * YAZ-4277 D5, D7: what the engine's `foldArrows` prop gets (`foldArrowsOf`). The engine has its own copy of these
+ * three types (`FoldArrowPrefs` in `engine/packages/element/src/textFoldArrows.ts`), because `shared/` never imports
+ * the engine and the engine never imports `shared/`. `client/src/drawings/foldArrowTypes.test.ts` keeps them equal.
+ */
+export type FoldArrowPrefs = Readonly<{ openArrows: FoldArrowMode; size: number; thickness: FoldArrowThickness; minScreenSize: number }>
+/** YAZ-4277 D7: the fold arrow's size, % of the text size. */
+export const FOLD_ARROW_SIZE_MIN = 50
+export const FOLD_ARROW_SIZE_MAX = 300
+/** YAZ-4277 D7: the smallest fold arrow on screen, px. */
+export const FOLD_ARROW_MIN_SIZE_MIN = 6
+export const FOLD_ARROW_MIN_SIZE_MAX = 48
 
 /** New text's size on screen (YAZ-4247), px. */
 export const NEW_TEXT_SCREEN_SIZE_MIN = 8
@@ -1398,6 +1469,13 @@ export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
   laserTrailMode: 'fade',
   laserColor: '#ff0000',
   laserSize: 'S',
+  foldArrowsOpen: 'hover',
+  foldArrowSize: 100,
+  foldArrowThickness: 'thick',
+  foldArrowMinSize: 14,
+  newElementStyle: 'default',
+  fillSetsTextColor: true,
+  newShapesMatchZoom: true,
 }
 
 /**
@@ -1631,7 +1709,19 @@ export interface MediaSearchResponse {
 export interface MediaBytesRequest {
   provider: MediaBytesProvider
   id: string
+  /**
+   * `media:preview` only. The hover zoom's sharp picture (YAZ-4447 demo round 2): a Pixabay item's `webformatURL` at
+   * this width, which fits the zoom box. Never cached by main (the panel keeps the last 40); an icon ignores it.
+   */
+  zoomWidth?: MediaZoomWidth
 }
+/** The sizes Pixabay serves a `webformatURL` at (its `_640` swapped): the hover zoom asks the one that fits its box. */
+export const MEDIA_ZOOM_WIDTHS = [340, 640, 960] as const
+export type MediaZoomWidth = (typeof MEDIA_ZOOM_WIDTHS)[number]
+export const isMediaZoomWidth = (v: unknown): v is MediaZoomWidth => (MEDIA_ZOOM_WIDTHS as readonly unknown[]).includes(v)
+/** The hover zoom's sizes (YAZ-4447 demo round 2), `SettingsState.mediaHoverZoomSize`. */
+export const MEDIA_HOVER_ZOOM_SIZES = ['small', 'medium', 'large'] as const
+export type MediaHoverZoomSize = (typeof MEDIA_HOVER_ZOOM_SIZES)[number]
 export type MediaPreviewRequest = MediaBytesRequest
 export type MediaImportRequest = MediaBytesRequest
 
@@ -1747,7 +1837,7 @@ export interface SettingsState {
   lineSpacing: number
   /** Vertical padding above and below each block, px (spacing between blocks = 2×). */
   blockGap: number
-  /** Accent the root → caret bullet path (GRO-2094). View-only; never written into the file. */
+  /** Settings › Editor › Bullet threading › "Bullet threading default" (GRO-2094, YAZ-4432): accent the root → caret bullet path on each page with no choice in its cog (`bullet-threading`) and in every editor with no cog. A page's choice wins. Off by default (D29); a saved value stays. */
   bulletThreading: boolean
   /** Thread line width in px: 1 | 2 | 3, like logseq-bullet-threading (GRO-2109). */
   threadWidth: number
@@ -1933,9 +2023,21 @@ export interface SettingsState {
   mediaPinnedPacks: string[]
   /**
    * The Add panel's "+41" groups (YAZ-4348 demo round 2): true shows one tile per icon with its look-alikes behind
-   * "+N"; false shows every icon as its own tile. Filter › Similar icons. Travels; Clear filters keeps it.
+   * "+N"; false shows every icon as its own tile. Filter › Similar icons. Travels; Clear filters keeps it. Default
+   * false, "Show each one" (YAZ-4447, D34). A stored value stays: the store writes every field, so no migration.
    */
   mediaGroupSimilar: boolean
+  /**
+   * The Add panel's hover zoom (YAZ-4447, D34): the pointer resting on a picture tile shows it bigger. Filter › Hover
+   * zoom and Settings › Images › Add panel are the same switch. Travels; Clear filters keeps it. Default on.
+   */
+  mediaHoverZoom: boolean
+  /**
+   * How big the hover zoom is (YAZ-4447 demo round 2): Small 3 times the tile (240 px at most), Medium 8 times (640 px),
+   * Large 12 times (960 px); every size stays inside the window. Filter › Hover size and Settings › Images › Add panel
+   * are the same choice. Travels. Default Medium.
+   */
+  mediaHoverZoomSize: MediaHoverZoomSize
   /**
    * Where the downloaded icon packs live (YAZ-4359, D5 update): ONE folder for every vault and window of this Mac.
    * null = `<userData>/icon-packs`, which only main can resolve. Stays on this Mac (`LOCAL_SETTINGS`).
@@ -2272,11 +2374,11 @@ export function isValidNewNoteFolder(v: string): boolean {
   return v === '' || v.split('/').every((s) => s.trim() !== '' && !s.trim().startsWith('.') && !s.includes('\0'))
 }
 
-/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on, 2px, accent; new notes beside the source page (YAZ-1643); section steps of 30px with the grey lines always there (YAZ-2709). */
+/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading off (YAZ-4432), 2px, accent; new notes beside the source page (YAZ-1643); section steps of 30px with the grey lines always there (YAZ-2709). */
 export const DEFAULT_SETTINGS: SettingsState = {
   lineSpacing: 1.5,
   blockGap: 4,
-  bulletThreading: true,
+  bulletThreading: false,
   threadWidth: 2,
   threadColor: null,
   guideLinesOnByDefault: true,
@@ -2351,7 +2453,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
   canvasPanel: DEFAULT_CANVAS_PANEL,
   mediaFilters: DEFAULT_MEDIA_FILTERS,
   mediaPinnedPacks: [],
-  mediaGroupSimilar: true,
+  mediaGroupSimilar: false,
+  mediaHoverZoom: true,
+  mediaHoverZoomSize: 'medium',
   iconPacksFolder: null,
   noticeLength: '4s',
   noticeUndo: true,

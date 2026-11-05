@@ -24,7 +24,6 @@ import { activeEyeDropperAtom } from "../EyeDropper";
 import { PropertiesPopover } from "../PropertiesPopover";
 import { slashIcon, strokeIcon } from "../icons";
 import {
-  saveCaretPosition,
   restoreCaretPosition,
   temporarilyDisableTextEditorBlur,
 } from "../../hooks/useTextEditorFocus";
@@ -33,6 +32,8 @@ import { ColorInput } from "./ColorInput";
 import { Picker } from "./Picker";
 import PickerHeading from "./PickerHeading";
 import { TopPicks } from "./TopPicks";
+
+import type { SwatchLetter } from "./TopPicks";
 import { activeColorPickerSectionAtom } from "./colorPickerUtils";
 
 import "./ColorPicker.scss";
@@ -70,6 +71,8 @@ interface ColorPickerProps {
    */
   popupOpen?: boolean;
   onPopupOpenChange?: (open: boolean) => void;
+  /** YAZ-4277 demo: the swatches' "A" (`TopPicks`), so text color and highlight never look alike. */
+  swatchLetter?: SwatchLetter;
 }
 
 const ColorPickerPopupContent = ({
@@ -159,14 +162,7 @@ const ColorPickerPopupContent = ({
 
         // Refocus text editor when popover closes if we were editing text
         if (appState.editingTextElement) {
-          setTimeout(() => {
-            const textEditor = document.querySelector(
-              ".excalidraw-wysiwyg",
-            ) as HTMLTextAreaElement;
-            if (textEditor) {
-              textEditor.focus();
-            }
-          }, 0);
+          restoreCaretPosition();
         }
       }}
     >
@@ -175,19 +171,7 @@ const ColorPickerPopupContent = ({
           ref={colorPickerContentRef}
           palette={palette}
           color={color}
-          onChange={(changedColor) => {
-            // Save caret position before color change if editing text
-            const savedSelection = appState.editingTextElement
-              ? saveCaretPosition()
-              : null;
-
-            onChange(changedColor);
-
-            // Restore caret position after color change if editing text
-            if (appState.editingTextElement && savedSelection) {
-              restoreCaretPosition(savedSelection);
-            }
-          }}
+          onChange={onChange}
           onEyeDropperToggle={(force) => {
             setEyeDropperState((state) => {
               if (force) {
@@ -323,6 +307,7 @@ const MoreColors = ({
   onCustom,
   onNone,
   pickLabels,
+  swatchLetter,
 }: {
   color: string | null;
   label: string;
@@ -334,6 +319,7 @@ const MoreColors = ({
   onCustom: () => void;
   onNone?: () => void;
   pickLabels?: Readonly<Record<string, string>>;
+  swatchLetter?: SwatchLetter;
 }) => {
   const [open, setOpen] = useState(false);
   const other = !!color && color !== "transparent" && !topPicks.includes(color);
@@ -362,6 +348,7 @@ const MoreColors = ({
           topPicks={morePicks}
           titles={false}
           labels={pickLabels}
+          letter={swatchLetter}
         />
         {onNone && (
           <button
@@ -405,6 +392,7 @@ export const ColorPicker = ({
   pickLabels,
   popupOpen,
   onPopupOpenChange,
+  swatchLetter,
 }: ColorPickerProps) => {
   const openRef = useRef(appState.openPopup);
   useEffect(() => {
@@ -434,9 +422,11 @@ export const ColorPicker = ({
             onChange={onChange}
             type={type}
             topPicks={topPicks}
-            // the text toolbar's swatches have no tooltip (YAZ-3943 demo 2)
-            titles={!morePicks}
+            // the text toolbar's swatches have no tooltip (YAZ-3943 demo 2),
+            // but lettered ones name their job ("Text red", YAZ-4277 demo)
+            titles={!morePicks || !!swatchLetter || !!pickLabels}
             labels={pickLabels}
+            letter={swatchLetter}
           />
         )}
         {!isCompactMode && !morePicks && <ButtonSeparator />}
@@ -463,6 +453,7 @@ export const ColorPicker = ({
                   onCustom={openPopup}
                   onNone={onNone}
                   pickLabels={pickLabels}
+                  swatchLetter={swatchLetter}
                 />
               </span>
             </Popover.Anchor>

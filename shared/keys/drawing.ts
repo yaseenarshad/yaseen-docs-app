@@ -7,7 +7,7 @@
  * fails on one with no row.
  *
  * The keys that act only while something is selected (YAZ-4348) are built-in rows of their own, one per key, flagged
- * `withSelection`: each colour letter (R is Red with a selection, Rectangle without one; ⇧R the outline) and each size
+ * `withSelection`: each colour letter (R is Red with a selection, Rectangle without one; R the line, ⇧R the fill: YAZ-4277 D16) and each size
  * digit. Their key card shows them beside the tool on the same letter, and they clash with no row (`clashesOf`).
  * `drawingKeys.test.ts` reads the engine's letter and digit tables and fails when these rows drift from them.
  */
@@ -58,25 +58,26 @@ export const SELECTION_SIZES: readonly (readonly [digit: string, text: number, o
 
 /**
  * The ⇧ letters that keep their own action with a selection (YAZ-4348 demo, Yasin: "Flip and eyedropper win"), so they
- * colour no outline: the engine's `SHIFT_KEYS_KEPT_FROM_COLORS`. Violet and green outlines come from the picker.
+ * colour no fill (YAZ-4277 D16: ⇧ is the fill): the engine's `SHIFT_KEYS_KEPT_FROM_COLORS`. Violet and green fills come
+ * from the picker.
  */
 export const SHIFT_KEPT: Readonly<Record<string, string>> = { V: 'Flip vertical', G: 'the eyedropper' }
 
 /**
  * A colour letter's row. On a one-colour icon the letter and its ⇧ both colour the icon itself, and T and ⇧T both
  * take off its outline (the engine's `actionApplySelectedSemanticColor`, YAZ-4353 1C; Yasin, audit 42: the text says
- * so, the key stays). No em dash in a label (YAZ-4421).
+ * so, the key stays). No em dash in a label (YAZ-4421). The letter colours the line, ⇧ the fill (YAZ-4277 D16).
  */
 const colourRow = ([letter, name]: readonly [string, string]): KeyRow =>
   letter === 'T'
-    ? selected('colorTransparent', 'Transparent, with a selection (on an icon: takes off the outline)', ['T', 'Shift+T'], 'Colours the selection: no fill on a shape, no colour on a line or a text; ⇧T no outline, or no background on a free text')
+    ? selected('colorTransparent', 'Transparent, with a selection (on an icon: takes off the outline)', ['T', 'Shift+T'], 'Colours the selection: no outline on a shape, no colour on a line or a text; ⇧T no fill on a shape, or no background on a free text')
     : SHIFT_KEPT[letter] !== undefined
-    ? selected(`color${name}`, `${name}, with a selection`, [letter], `Colours the selection ${name.toLowerCase()}: a shape's fill, a line's or a text's colour, a picture's border, a one-colour icon. ⇧${letter} stays ${SHIFT_KEPT[letter]}; the outline's ${name.toLowerCase()} is in the picker`)
+    ? selected(`color${name}`, `${name}, with a selection`, [letter], `Colours the selection ${name.toLowerCase()}: a shape's outline, a line's or a text's colour, a picture's border, a one-colour icon. ⇧${letter} stays ${SHIFT_KEPT[letter]}; the fill's ${name.toLowerCase()} is in the picker`)
     : selected(
         `color${name}`,
-        `${name}, with a selection (⇧${letter}: a shape's outline)`,
+        `${name}, with a selection (⇧${letter}: the fill)`,
         [letter, `Shift+${letter}`],
-        `Colours the selection ${name.toLowerCase()}: a shape's fill, a line's or a text's colour, a picture's border, a one-colour icon. ⇧${letter} colours a shape's outline, or a free text's background; on a one-colour icon ${letter} and ⇧${letter} both colour the icon`,
+        `Colours the selection ${name.toLowerCase()}: a shape's outline, a line's or a text's colour, a picture's border, a one-colour icon. ⇧${letter} colours a shape's fill, or a free text's background; on a one-colour icon ${letter} and ⇧${letter} both colour the icon`,
       )
 
 const sizeRow = ([digit, text, other]: readonly [string, number, number]): KeyRow =>
@@ -127,7 +128,7 @@ export const DRAWING_KEYS: readonly KeyRow[] = [
   key('textStrikethrough', 'Strikethrough', ['CmdOrCtrl+Shift+X'], 'A selected text; while you type, ⌘⇧X stays'),
   // YAZ-4102 3E: highlight letters, as in a note (the note's ⌘⇧H); the text editor hears the changed key too.
   key('textHighlight', 'Highlight the selected letters', ['CmdOrCtrl+Shift+H'], 'While you type a text, as in a note; the toolbar has the other colours'),
-  key('clearTextFormatting', 'Clear text formatting', ['CmdOrCtrl+\\']),
+  key('clearTextFormatting', 'Reset to default style', ['CmdOrCtrl+\\'], 'Every selected shape and text: black line, no fill, the Settings › Drawings defaults; keeps place, size and words'),
   key('decreaseFontSize', 'Smaller text', ['CmdOrCtrl+Shift+,'], 'While you type, ⌘⇧< stays'),
   key('increaseFontSize', 'Larger text', ['CmdOrCtrl+Shift+.'], 'While you type, ⌘⇧> stays'),
   key('zoomIn', 'Zoom in', ['CmdOrCtrl+=', 'Shift+=']),

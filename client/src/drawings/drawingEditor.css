@@ -96,9 +96,14 @@
 /* The surface's own element fills the frame, as the engine's does — in the tab and in the embed's
    modal alike. In the tab it is also the ⌘F / ⌘C capture host and the PRESENTATION's containing block
    (YAZ-3038): the player is a sibling of the engine, absolutely positioned over this pane rather than
-   fixed over the window, because the shell keeps several drawing tabs mounted at once. */
+   fixed over the window, because the shell keeps several drawing tabs mounted at once.
+   It is its own stacking context (YAZ-4277): the engine's layers go up to 120 (its docked panel,
+   `--zIndex-ui-library`), and with nothing to hold them they painted over the app's own overlays
+   (Settings and the other sheets at 50–90). The engine's modals go to `document.body`, so they
+   still cover the window. */
 .drawing-surface {
   position: relative;
+  isolation: isolate;
   width: 100%;
   height: 100%;
 }
@@ -294,4 +299,9 @@
   border: 1px solid var(--border);
   border-radius: 5px;
   outline: none;
+}
+
+/* The Read only message (YAZ-4446) opens above the engine's toolbar too, as the cog's menu does (YAZ-4071 7J). */
+.editor--drawing .excalidraw .drawing-editor__chips .read-only-message {
+  z-index: calc(var(--zIndex-ui-top, 100) + 1);
 }

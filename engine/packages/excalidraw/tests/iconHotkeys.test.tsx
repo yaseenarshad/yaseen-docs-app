@@ -3,7 +3,6 @@ import React from "react";
 
 import {
   COLOR_PALETTE,
-  DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX,
   DEFAULT_ELEMENT_STROKE_COLOR_INDEX,
   KEYS,
 } from "@excalidraw/common";
@@ -109,8 +108,9 @@ describe("color hotkeys on icons (YAZ-4353 1C)", () => {
     expect(imageOf("many").strokeColor).toBe(red);
     expect(imageOf("many").customData?.yaseenIcon).toBeUndefined();
     expect(imageOf("photo").strokeColor).toBe(red);
-    expect(h.app.scene.getElement("rect")?.backgroundColor).toBe(
-      COLOR_PALETTE.red[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+    // YAZ-4277 D16: the letter colors a shape's line (its outline), not its fill
+    expect(h.app.scene.getElement("rect")?.strokeColor).toBe(
+      COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
     );
     // one undo step for all of it
     Keyboard.undo();

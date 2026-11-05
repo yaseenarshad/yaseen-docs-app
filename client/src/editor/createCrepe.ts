@@ -276,8 +276,10 @@ import {
   restoreItemLine,
 } from './listItemRoundTrip'
 import { toggleUnderline, underline, underlineSchema } from './marks/underline'
+import { clearFormattingKeymap } from './marks/clearFormatting'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, QUICK_HIGHLIGHTS, type HighlightColor } from './marks/highlight'
-import { hasPanelColour, highlightPanel, MORE_KEY, toggleHighlightPanel } from './highlightPanel'
+import { highlightPanel, MORE_KEY, panelColour, toggleHighlightPanel } from './highlightPanel'
+import { showMoreColour } from './toolbarHost'
 import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
 import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
 import { arrangeToolbar, toolbarPrefs } from './toolbarPrefs'
@@ -426,13 +428,20 @@ export interface CreateCrepeOptions {
    * hover preview card, the read-only previews and the outline view: they mount no React root for each table.
    */
   tableZoomPill?: boolean
+  /**
+   * A NON-note instance's rows that never show (YAZ-4277 D4, a drawing text box): toolbar buttons and slash rows by
+   * key. Absent → every row, as a note.
+   */
+  hidden?: { toolbar?: readonly string[]; slash?: readonly string[] }
+  /** A NON-note instance's own toolbar buttons (YAZ-4277 1E: a drawing text box's letter colors), added before the build. */
+  extendToolbar?: (builder: ToolbarBuilder) => void
 }
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
-interface ToolbarGroup {
+export interface ToolbarGroup {
   addItem: (key: string, item: ToolbarItem & { onRun: (ctx: Ctx) => void }) => unknown
 }
-interface ToolbarBuilder {
+export interface ToolbarBuilder {
   addGroup: (key: string, label: string) => ToolbarGroup
   getGroup: (key: string) => ToolbarGroup
   /** The builder's OWN list of groups, in strip order (Crepe's `GroupBuilder.build` hands back the array itself, not a copy). */
@@ -463,6 +472,7 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  * `Mod-Shift-h` (yellow) and the `==x==` typing rule share. Yellow is the Markdown `==…==` on
  * disk; a colour is `<mark class="highlight-<name>">`. YAZ-4348 demo round 2: each swatch is a bold
  * "A" on its colour, a lit one ringed (app.css), and a ▾ after them opens the colour panel, `highlightPanel.ts`.
+ * YAZ-4445: the swatches and the ▾ are the board toolbar's tiles (`toolbarButtons.ts` `swatchTile`, `swatchTile.css`).
  *
  * The Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what block is
  * this?" — the invisible `##` made visible — and whose click switches it, through the same
@@ -489,7 +499,7 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  * would keep Crepe's order and raise nothing; `headingToolbar.test.ts` reads the strip of a real
  * editor and fails on it.
  */
-function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined): void {
+function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = [], extend?: (builder: ToolbarBuilder) => void): void {
   const formatting = builder.getGroup('formatting')
   for (const color of [null, ...QUICK_HIGHLIGHTS] as HighlightColor[]) {
     const id = color === null ? 'highlight' : (`highlight-${color}` as 'highlight-green' | 'highlight-blue')
@@ -501,11 +511,17 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       onRun: (ctx) => ctx.get(commandsCtx).call(setHighlightCommand.key, color),
     })
   }
-  // YAZ-4348 demo round 2: the ▾ of the colour panel; lit when the selection has a colour that is not a button.
+  // YAZ-4348 demo round 2: the ▾ of the colour panel; lit when the selection has a colour that is not a button,
+  // with a bar of that colour under it, as the board's ▾ (YAZ-4445).
   formatting.addItem(MORE_KEY, {
     icon: ownIcon(MORE_KEY),
     label: TOOLBAR_LABELS[MORE_KEY],
-    active: (ctx) => hasPanelColour(viewState(ctx), highlightSchema.type(ctx)),
+    active: (ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const colour = panelColour(view.state, highlightSchema.type(ctx))
+      showMoreColour(view, MORE_KEY, colour)
+      return colour !== null
+    },
     onRun: (ctx) => toggleHighlightPanel(ctx.get(editorViewCtx)),
   })
   formatting.addItem('underline', {
@@ -544,11 +560,15 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       onRun: (ctx) => runOnView(ctx, toggleListKind(kind)),
     })
   }
+  extend?.(builder)
   // The default order leads with the Heading group (YAZ-2700): the toolbar opens over the start of
   // the selection, so its first buttons are the ones under the hand after a double click.
   const groups = builder.build()
   noteCrepeIcons(groups)
   arrangeToolbar(groups, toolbarPrefs.value)
+  if (hidden.length === 0) return
+  for (const group of groups) group.items = group.items.filter((item) => !hidden.includes(item.key))
+  groups.splice(0, groups.length, ...groups.filter((group) => group.items.length > 0))
 }
 
 /**
@@ -567,7 +587,7 @@ const escapeToSidebar = $shortcut(() => ({
 }))
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
-  const slashMenu = createSlashMenu(opts.drawing === undefined ? undefined : drawingMenu(opts.drawing))
+  const slashMenu = createSlashMenu(opts.drawing === undefined ? undefined : drawingMenu(opts.drawing), opts.hidden?.slash)
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
@@ -587,7 +607,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // active button is the answer to "what is this?", and whose click is the switch. The
       // markdown stays the source of truth; these call the same commands typing `##` does.
       // YAZ-1480 adds Highlight into Crepe's own Formatting group from the same builder.
-      [CrepeFeature.Toolbar]: { buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys) },
+      [CrepeFeature.Toolbar]: { buildToolbar: (builder) => buildToolbar(builder, opts.hotkeys, opts.hidden?.toolbar, opts.extendToolbar) },
       // Native text carets track document zoom without a second painted overlay.
       [CrepeFeature.Cursor]: { virtual: false },
       // YAZ-2270: long lines wrap like prose instead of scrolling sideways, and colours come from
@@ -609,6 +629,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(slashMenu.inListWatch)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
+  crepe.editor.use(clearFormattingKeymap)
   // The toolbar's highlight ▾ colour panel and its colour box (YAZ-4348 demo round 2, YAZ-4388).
   crepe.editor.use(highlightPanel)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.

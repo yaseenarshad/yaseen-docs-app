@@ -25,7 +25,7 @@
  * it was, which is the behaviour the Worker's own test pins. Only when EVERY requested provider
  * failed does the call itself reject.
  */
-import type { MediaBytesRequest, MediaDrawingIndexResponse, MediaDrawingRequest, MediaDrawingResponse, MediaImportResponse, MediaPreviewResponse, MediaSearchRequest, MediaSearchResponse, StudioItem } from '@shared/types'
+import type { MediaBytesRequest, MediaDrawingIndexResponse, MediaDrawingRequest, MediaDrawingResponse, MediaImportResponse, MediaPreviewResponse, MediaSearchRequest, MediaSearchResponse, MediaZoomWidth, StudioItem } from '@shared/types'
 import { BridgeFailure } from '../fs/fsUtils'
 import type { MediaCache } from './cache'
 import { CACHE_TTL_MS, pixabayItemCacheKey, pixabayPageCacheKey, previewCacheKey, searchCacheKey } from './cachePolicy'
@@ -693,6 +693,15 @@ export function createMediaProviders({ fetch, readPixabayKey, cache, packs, favo
     },
 
     async preview(req) {
+      // The hover zoom's sharp picture (YAZ-4447 demo round 2): Pixabay's `webformatURL` at the width that fits the
+      // zoom box, never the original. The record is the one `import` reads (24 h cache); the bytes are not cached here,
+      // the panel keeps the last 40. An icon is an SVG, sharp at any size: it never asks.
+      if (req.zoomWidth !== undefined && req.provider === 'pixabay') {
+        const record = await pixabayRecord(req.id, await readPixabayKey())
+        const url = zoomSourceUrl(record.webformatURL, req.zoomWidth)
+        if (url === null) throw new BridgeFailure('PROVIDER_FAILED', 'Pixabay gave no usable image URL')
+        return fetchImage(url)
+      }
       // A favorite's own copy first (YAZ-4363), then a downloaded pack draws its own tile (YAZ-4359): no network.
       const cacheKey = previewCacheKey(req.provider, req.id)
       const found = await fromCopy(favoriteCopy?.find, req)
@@ -777,6 +786,15 @@ export function createMediaProviders({ fetch, readPixabayKey, cache, packs, favo
       return { elements }
     },
   }
+}
+
+/**
+ * A Pixabay `webformatURL` (`…_640.jpg`) at `width`: Pixabay serves it at 180, 340, 640 and 960 by swapping `_640`
+ * (its API docs). A URL without `_640` is used as it is. Null for no usable URL.
+ */
+export function zoomSourceUrl(webformatURL: string | undefined, width: MediaZoomWidth): string | null {
+  if (typeof webformatURL !== 'string' || !webformatURL.startsWith('https://')) return null
+  return webformatURL.replace(/_640(\.\w+)$/, `_${width}$1`)
 }
 
 /** Anything a provider call rejected with, as the typed failure the bridge carries. */
