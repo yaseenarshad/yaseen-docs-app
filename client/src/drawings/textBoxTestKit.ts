@@ -25,15 +25,22 @@ export function unmountAll(): void {
 }
 
 /** Mounts the editor on a box and waits until Crepe holds its document, as the engine does on a double click. */
-export async function mountBox(text: string, textRuns: TextRuns = undefined, selection = { anchor: 0, head: 0 }, foldedLines: readonly number[] = []) {
+export async function mountBox(
+  text: string,
+  textRuns: TextRuns = undefined,
+  selection = { anchor: 0, head: 0 },
+  foldedLines: readonly number[] = [],
+  /** The canvas's answer to "where is this offset on screen" (YAZ-4398 1H); none by default, as with no canvas. */
+  clientRectAt: (offset: number) => { left: number; right: number; top: number; bottom: number } | null = () => null,
+) {
   const root = document.createElement('div')
   root.className = 'excalidraw-host-text-editor'
   document.body.appendChild(root)
   const onChange = vi.fn<(text: string, textRuns: TextRuns, selection: { anchor: number; head: number }) => void>()
   const onSelectionChange = vi.fn<(s: { anchor: number; head: number }) => void>()
   const onFoldsChange = vi.fn<(lines: readonly number[]) => void>()
-  // no canvas in a unit test: the editor's own layout places its toolbar, as before `clientRectAt`
-  const session = createTextBoxEditor(helpers).mount({ root, text, textRuns, foldedLines, selection, onChange, onSelectionChange, onFoldsChange, clientRectAt: () => null })
+  // no canvas in a unit test unless the test gives one: then the editor's own layout places its toolbar, as before `clientRectAt`
+  const session = createTextBoxEditor(helpers).mount({ root, text, textRuns, foldedLines, selection, onChange, onSelectionChange, onFoldsChange, clientRectAt })
   mounts.push({ destroy: session.destroy, root })
   const crepe = created[created.length - 1]
   let view: EditorView | null = null

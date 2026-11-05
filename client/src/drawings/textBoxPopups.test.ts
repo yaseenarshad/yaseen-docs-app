@@ -67,3 +67,73 @@ describe('the pop-up toolbar and the / menu of a text box (YAZ-4277 1C, D4, D8)'
     expect(boxText(view)).toBe('☐ ')
   })
 })
+
+/**
+ * YAZ-4398 1H: the toolbar and the `/` menu are placed from the canvas. The view's `coordsAtPos` asks the mount's
+ * `clientRectAt` with the box offset of the position, and uses the editor's own layout only when the canvas has no answer.
+ */
+describe('the pop-ups are placed from the canvas (YAZ-4398 1H)', () => {
+  const at = (left: number, top: number) => ({ left, right: left + 1, top, bottom: top + 20 })
+  /** The px of the floating element's own place, from its inline style (Floating UI writes left / top or a translate). */
+  const placed = (el: HTMLElement) => {
+    const style = el.style
+    const translate = /translate(?:3d)?\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px/.exec(style.transform)
+    return translate !== null ? { x: Number(translate[1]), y: Number(translate[2]) } : { x: Number.parseFloat(style.left), y: Number.parseFloat(style.top) }
+  }
+
+  it('coordsAtPos is the canvas rect of the box offset (not the document position)', async () => {
+    const clientRectAt = vi.fn((offset: number) => at(1000 + offset * 10, 400))
+    const { view } = await mountBox('pick these words', undefined, { anchor: 0, head: 0 }, [], clientRectAt)
+    // position 6 in the document is offset 5 in the box's text: "pick |these"
+    expect(view.coordsAtPos(6)).toEqual(at(1050, 400))
+    expect(clientRectAt).toHaveBeenLastCalledWith(5)
+  })
+
+  it('a selection puts the toolbar at the canvas rect of the selected words', async () => {
+    const canvas = { x: 1200, y: 640 }
+    const { view } = await mountBox('pick these words', undefined, { anchor: 0, head: 0 }, [], () => at(canvas.x, canvas.y))
+    view.focus()
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 6, 11)))
+    await settle()
+    const toolbar = document.querySelector<HTMLElement>('.excalidraw-text-box-popups .milkdown-toolbar')!
+    expect(toolbar.dataset.show).toBe('true')
+    const first = placed(toolbar)
+    // the canvas moves the words (a pan or a zoom): the toolbar follows the canvas, not the hidden editor
+    canvas.x = 300
+    canvas.y = 90
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 5)))
+    await settle()
+    const second = placed(toolbar)
+    // jsdom has no viewport width, so Floating UI's shift pins the toolbar's x at 0; its y follows the canvas
+    expect(first.y - second.y).toBeCloseTo(550, 0)
+  })
+
+  it('the / menu is placed at the canvas rect of the caret', async () => {
+    const canvas = { x: 700, y: 500 }
+    const { view } = await mountBox('', undefined, { anchor: 0, head: 0 }, [], () => at(canvas.x, canvas.y))
+    view.focus()
+    typeText(view, '/')
+    await settle()
+    const menu = document.querySelector<HTMLElement>('.excalidraw-text-box-popups .milkdown-slash-menu')!
+    const first = placed(menu)
+    canvas.x = 100
+    canvas.y = 100
+    typeText(view, 't')
+    await settle()
+    const second = placed(menu)
+    expect(first.x - second.x).toBeCloseTo(600, 0)
+    expect(first.y - second.y).toBeCloseTo(400, 0)
+  })
+})
+
+/** YAZ-4396 1F: the editor is invisible and zoomed, so ProseMirror never scrolls to show its selection (the board did move). */
+describe('the text box editor never scrolls (YAZ-4396 1F)', () => {
+  it('its scroll-to-selection handler answers "done", so ProseMirror scrolls no layer', async () => {
+    const { view } = await mountBox('pick these words')
+    expect(view.someProp('handleScrollToSelection', (f) => f(view))).toBe(true)
+    // and a transaction that asks to scroll reaches the handler, not ProseMirror's own scroll
+    const coords = vi.spyOn(view, 'coordsAtPos')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 5)).scrollIntoView())
+    expect(coords).not.toHaveBeenCalled()
+  })
+})
