@@ -63,17 +63,23 @@ describe("the top bar in edit", () => {
     const text = API.createElement({ type: "text", text: "Hello" });
     API.setElements([text]);
     API.setSelectedElements([text]);
+    // YAZ-4403 (4G, D20): lettered text swatches name their job, and the
+    // box fill is on the main bar after the highlight
     expect(controls()).toEqual([
       "Show font picker: Excalifont",
       "Font size 20",
-      "Black",
-      "Red",
-      "Blue",
+      "Text black",
+      "Text red",
+      "Text blue",
       "Stroke: more",
       "Highlight yellow",
       "Highlight green",
       "Highlight blue",
       "Highlight: more",
+      "Fill yellow",
+      "Fill blue",
+      "Fill black",
+      "Background: more",
       "Bold",
       "Italic",
       "Underline",
