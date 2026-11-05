@@ -86,13 +86,17 @@ describe('the notes’ fold keys on a drawing (YAZ-4277 D9)', () => {
     const { registeredActions, restoreAppState } = await engine()
     const box = { id: 't', type: 'text', containerId: null, isDeleted: false }
     const appState = { ...restoreAppState(null, null), selectedElementIds: { t: true } }
+    // the engine asks the app whether folding is off (YAZ-4401 2E): here it is on
+    const app = { isFoldingOff: () => false }
     for (const [id, name] of Object.entries(NOTE_KEYS_ON_DRAWINGS)) {
       const action = registeredActions.find((a) => a.name === name)
       for (const key of ALL_KEYS.find((row) => row.id === id)!.keys) {
         const event = new KeyboardEvent('keydown', { ...toEngineChord(key)!, bubbles: true })
-        expect(action?.keyTest?.(event, appState, [box], {}), `${id} ${key}`).toBe(true)
-        expect(action?.keyTest?.(event, { ...appState, editingTextElement: box }, [box], {}), `${id} ${key} in edit`).toBe(false)
-        expect(action?.keyTest?.(event, appState, [{ ...box, type: 'rectangle' }], {}), `${id} ${key} on a shape`).toBe(false)
+        expect(action?.keyTest?.(event, appState, [box], app), `${id} ${key}`).toBe(true)
+        expect(action?.keyTest?.(event, { ...appState, editingTextElement: box }, [box], app), `${id} ${key} in edit`).toBe(false)
+        expect(action?.keyTest?.(event, appState, [{ ...box, type: 'rectangle' }], app), `${id} ${key} on a shape`).toBe(false)
+        // YAZ-4401 2E: folding off (Settings or the board ⚙), the fold keys do nothing
+        expect(action?.keyTest?.(event, appState, [box], { isFoldingOff: () => true }), `${id} ${key} folding off`).toBe(false)
       }
     }
   })
