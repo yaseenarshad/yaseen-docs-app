@@ -1,9 +1,9 @@
 /**
  * The highlight ▾ panel of the selection toolbar (YAZ-4348 demo round 2): the board's (Excalidraw) colour popup,
  * rebuilt for the note (`engine/…/ColorPicker/Picker.tsx` is the look and the order). Top to bottom:
- *  - **Most used custom colors** — the custom colours picked most (`highlightUsed.ts`, the setting
+ *  - **Most used custom colours** — the custom colours picked most (`highlightUsed.ts`, the setting
  *    `highlightCustomColors`); the row is gone while there are none.
- *  - **Colors** — the 8 highlight colours (yellow, green, blue, pink, orange, purple, red, gray; each its wash
+ *  - **Colours** — the 8 highlight colours (yellow, green, blue, pink, orange, purple, red, gray; each its wash
  *    token, `<mark class="highlight-<name>">` on disk) and **None**, a checkerboard square that removes the
  *    highlight.
  *  - **Shades** — 5 steps, lighter to darker, of the colour picked; a shade is a custom colour.
@@ -182,10 +182,10 @@ class HighlightPanel {
     el.hidden = true
     this.#used = div('highlight-panel__section')
     this.#usedRow = div('highlight-panel__grid')
-    this.#used.append(heading('Most used custom colors'), this.#usedRow)
+    this.#used.append(heading('Most used custom colours'), this.#usedRow)
     const colours = div('highlight-panel__section')
     this.#colours = div('highlight-panel__grid')
-    colours.append(heading('Colors'), this.#colours)
+    colours.append(heading('Colours'), this.#colours)
     const shades = div('highlight-panel__section')
     this.#shades = div('highlight-panel__grid')
     shades.append(heading('Shades'), this.#shades)
@@ -306,7 +306,7 @@ class HighlightPanel {
       if (this.#noShades === null) {
         this.#noShades = this.view.dom.ownerDocument.createElement('div')
         this.#noShades.className = 'highlight-panel__no-shades'
-        this.#noShades.textContent = 'No shades available for this color'
+        this.#noShades.textContent = 'No shades available for this colour'
       }
       HighlightPanel.#fill(this.#shades, [this.#noShades])
     } else {

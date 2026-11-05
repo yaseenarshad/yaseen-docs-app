@@ -123,7 +123,7 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     expect(must('highlight-more').classList.contains('active')).toBe(false)
   })
 
-  it('the ▾ opens the panel on the body: Colors (None and the 8), Shades, Hex code — and keeps the selection and the focus', async () => {
+  it('the ▾ opens the panel on the body: Colours (None and the 8), Shades, Hex code — and keeps the selection and the focus', async () => {
     const { view } = await mount('hello world\n')
     await select(view, 'world')
     const before = view.state.selection
@@ -131,15 +131,15 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     expect(isOpen()).toBe(true)
     expect(panel()!.closest('.milkdown-toolbar')).toBeNull()
     expect(panel()!.getAttribute('role')).toBe('dialog')
-    // No custom colour used yet: no "Most used custom colors" row.
-    expect(headings()).toEqual(['Colors', 'Shades', 'Hex code'])
+    // No custom colour used yet: no "Most used custom colours" row.
+    expect(headings()).toEqual(['Colours', 'Shades', 'Hex code'])
     expect(labels(1)).toEqual(['None', 'Highlight yellow', 'Highlight green', 'Highlight blue', 'Highlight pink', 'Highlight orange', 'Highlight purple', 'Highlight red', 'Highlight gray'])
     expect(swatch('None').classList.contains('is-none')).toBe(true)
     expect(swatch('Highlight pink').style.getPropertyValue('--swatch')).toBe('var(--mark-bg-pink)')
     expect(swatch('Highlight yellow').style.getPropertyValue('--swatch')).toBe('var(--mark-bg)')
     // Nothing highlighted: None wears the ring, no shades, an empty hex.
     expect(ringed()).toEqual(['None'])
-    expect(panel()!.querySelector('.highlight-panel__no-shades')?.textContent).toBe('No shades available for this color')
+    expect(panel()!.querySelector('.highlight-panel__no-shades')?.textContent).toBe('No shades available for this colour')
     expect(hexInput().value).toBe('')
     expect(view.state.selection.eq(before)).toBe(true)
     expect(view.hasFocus()).toBe(true)
@@ -198,7 +198,7 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     expect(swatch('Highlight blue').classList.contains('active')).toBe(false)
     expect(saved).toHaveBeenLastCalledWith([{ color: row[3], uses: 1 }])
     // The row of most used custom colours shows it now.
-    expect(headings()).toEqual(['Most used custom colors', 'Colors', 'Shades', 'Hex code'])
+    expect(headings()).toEqual(['Most used custom colours', 'Colours', 'Shades', 'Hex code'])
     expect(labels(0)).toEqual([row[3]])
   })
 
@@ -368,7 +368,7 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     watch.disconnect()
   })
 
-  it('a pick moves the ring, not the nodes: the Colors row is never rebuilt, the same pick again and a second open make nothing', async () => {
+  it('a pick moves the ring, not the nodes: the Colours row is never rebuilt, the same pick again and a second open make nothing', async () => {
     const { view } = await mount('hello world\n')
     await select(view, 'world')
     await press('highlight-more')

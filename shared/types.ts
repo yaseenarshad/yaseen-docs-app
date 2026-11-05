@@ -1197,7 +1197,7 @@ export interface HighlightCustomColor {
 }
 /** How many custom highlight colours the settings keep: more than the row shows, so a new colour can climb into it. */
 export const HIGHLIGHT_CUSTOM_COLORS_KEPT = 10
-/** How many the highlight panel's "Most used custom colors" row shows: one row of its grid. */
+/** How many the highlight panel's "Most used custom colours" row shows: one row of its grid. */
 export const HIGHLIGHT_CUSTOM_COLORS_SHOWN = 5
 /** A kept entry: a lowercase `#rrggbb` and a whole count of one or more. */
 export const isHighlightCustomColor = (v: unknown): v is HighlightCustomColor =>
@@ -1796,7 +1796,7 @@ export interface SettingsState {
   selectionToolbar: ToolbarPrefs
   /**
    * The custom highlight colours picked in the note's highlight panel (YAZ-4348 demo round 2), most used first: its
-   * "Most used custom colors" row shows the first `HIGHLIGHT_CUSTOM_COLORS_SHOWN`. Travels with the settings.
+   * "Most used custom colours" row shows the first `HIGHLIGHT_CUSTOM_COLORS_SHOWN`. Travels with the settings.
    */
   highlightCustomColors: HighlightCustomColor[]
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
