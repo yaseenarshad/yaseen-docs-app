@@ -580,10 +580,14 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   /**
    * The items you added, starred or gave a word during this search (YAZ-4348 demo round 2: "if im in the web and then
    * i click it or i add a word to it it jumps to best matches … where did the image go"). They stay where they were
-   * — in From the web, or Hand-drawn — until the search changes; then they rank in Best matches as usual.
+   * — in From the web, or Hand-drawn — until the search changes; then they rank in Best matches as usual. An item
+   * already in Best matches is not one: it stays there too, and does not jump to From the web (YAZ-4366 audit 66).
    */
   const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set())
-  const touch = (itemKey: string) => setTouched((now) => (now.has(itemKey) ? now : new Set(now).add(itemKey)))
+  const touch = (itemKey: string) => {
+    if (yourKeys.has(itemKey)) return
+    setTouched((now) => (now.has(itemKey) ? now : new Set(now).add(itemKey)))
+  }
   useEffect(() => setTouched(new Set()), [query, chip])
   const ranked = useMemo(
     () => (typed ? rankItems(pool.filter((item) => inChip(chip, item, favoriteKeys)), usedByKey, query, aliases) : []),

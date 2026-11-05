@@ -339,6 +339,18 @@ describe('typing: Best matches, then From the web (D3, D4, D7)', () => {
     expect(tileNames(section(host, 'From the web'))).toEqual(['rocket launch'])
   })
 
+  it('an item in Best matches that is also a web result stays in Best matches when you add or star it (YAZ-4366 audit 66)', async () => {
+    library = libraryOf({ favorites: [stored(icon('rocket'))], used: [usedRow(icon('rocket launch'))] })
+    media.search.mockResolvedValue({ items: [icon('rocket'), icon('rocket launch'), icon('rocket ship')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    const { host } = await mount()
+    await search(host, 'rocket')
+    expect(tileNames(section(host, 'Best matches'))).toEqual(['rocket', 'rocket launch'])
+    await click(section(host, 'Best matches')!.querySelector('[aria-label="Add rocket"]'))
+    await click(section(host, 'Best matches')!.querySelector('[aria-label="Add rocket launch to favorites"]'))
+    expect(tileNames(section(host, 'Best matches'))).toEqual(['rocket', 'rocket launch'])
+    expect(tileNames(section(host, 'From the web'))).toEqual(['rocket ship'])
+  })
+
   it('a web icon you give a word stays in From the web until the search changes (YAZ-4348 demo round 2)', async () => {
     library = libraryOf()
     media.search.mockResolvedValue({ items: [icon('rocket launch')], nextCursor: null, pixabayAvailable: false, warnings: [] })
