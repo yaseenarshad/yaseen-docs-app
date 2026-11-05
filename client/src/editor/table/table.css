@@ -1039,8 +1039,9 @@
   color: var(--fg);
 }
 
-/* A read-only note: the block makes no note (`goLive` declines), so it shows no invitation. */
-.milkdown .ProseMirror[contenteditable='false'] :is(.cell-note-time-empty, .cell-note-block__line) {
+/* A read-only note: the block makes no note (`goLive` declines), so it shows no invitation. A note that keeps its caret
+   (`data-read-only`, YAZ-4433 D30) too. */
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) :is(.cell-note-time-empty, .cell-note-block__line) {
   cursor: default;
 }
 
