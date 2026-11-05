@@ -156,7 +156,7 @@ describe('YAZ-4401 2E: a board opened with folding off', () => {
     const shown = restoreElements((last().initialData as { elements: never[] }).elements, null)
     report(shown)
     expect(foldsIn(snapshots.at(-1)!.serialize().json)).toEqual({ t: [0], open: undefined, r: undefined })
-    expect(JSON.stringify(foldsIn(snapshots.at(-1)!.serialize().json).t)).toBe(JSON.stringify(SCENE.elements[0].foldedLines))
+    expect(JSON.stringify(foldsIn(snapshots.at(-1)!.serialize().json).t)).toBe(JSON.stringify((SCENE.elements[0] as El).foldedLines))
   })
 
   it('opening writes nothing: the open-time baseline is the scene the engine mounts, so its first report has the same version and content', async () => {
