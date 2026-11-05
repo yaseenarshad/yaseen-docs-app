@@ -140,7 +140,7 @@ const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpe
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
 const EDITOR_GROUPS = ['Outline', 'Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents', 'Outside changes', 'Tables', 'Cell notes', 'Calendar tables']
 /** Settings › Drawings (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
-const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`)
+const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`)
 /** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
 const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
@@ -546,6 +546,36 @@ describe('Settings › Drawings (YAZ-3037; ported from Draw\'s 🔒 YAZ-1775 D9)
       type(input, bad)
       expect(onChange, bad).not.toHaveBeenCalled()
     }
+  })
+
+  it('YAZ-4404 4H and YAZ-4406 4J: "New shapes match the zoom" and "Text color follows the fill" are On · Off switches, on by default; Off writes only that key', () => {
+    for (const [key, label] of [['newShapesMatchZoom', 'New shapes match the zoom'], ['fillSetsTextColor', 'Text color follows the fill']] as const) {
+      const { el, onChange } = mountCanvas()
+      expect(row(el, `canvas.${key}`)?.querySelector('.setting__label')?.textContent).toBe(label)
+      expect(rowButtons(el, `canvas.${key}`).map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
+      act(() => rowButtons(el, `canvas.${key}`)[1].click())
+      expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, [key]: false } })
+      unmount()
+    }
+  })
+
+  it('YAZ-4404 4H and YAZ-4406 4J: the search finds each new switch by a word its label does not have', () => {
+    const { el } = mount()
+    for (const word of ['contrast', 'white text', 'readable']) {
+      type(searchInput(el), word)
+      expect(rowIds(el), word).toContain('canvas.fillSetsTextColor')
+    }
+    for (const word of ['arrowhead', 'corner', 'radius', 'thick']) {
+      type(searchInput(el), word)
+      expect(rowIds(el), word).toContain('canvas.newShapesMatchZoom')
+    }
+  })
+
+  it('YAZ-4401 2E: Fold arrows has a fourth choice, "Off (no folding)", which writes `off`', () => {
+    const { el, onChange } = mountCanvas()
+    expect(rowButtons(el, 'canvas.foldArrowsOpen').map((b) => b.textContent)).toEqual(['On hover', 'Always', 'Off (no folding)'])
+    act(() => rowButtons(el, 'canvas.foldArrowsOpen')[2].click())
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, canvas: { ...DEFAULT_SETTINGS.canvas, foldArrowsOpen: 'off' } })
   })
 
   it('Appearance › draw.io diagrams › In dark mode writes `diagramDarkColors` (YAZ-3037)', () => {
@@ -1378,8 +1408,9 @@ describe('SettingsDialog search (D6)', () => {
     type(searchInput(el), 'dark')
     // On Hotkeys each hit is under its key's card (YAZ-3564): draw.io's ⌘⇧6, and the canvas's no-key row.
     // And the guide lines' darkness (YAZ-4094 G3) and the calendar tables' shade darkness (YAZ-4163 demo), on the Editor page.
-    expect(headings(el)).toEqual(['Appearance', 'Appearance › draw.io diagrams', 'Editor › Outline', 'Editor › Calendar tables', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
-    expect(rowIds(el)).toEqual(['theme', 'diagramDarkColors', 'guideLineDarkness', 'tableShadeDarkness', 'hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme'])
+    // And "Text color follows the fill" (YAZ-4404 4H) on the Drawings page: its hint says "A dark fill".
+    expect(headings(el)).toEqual(['Appearance', 'Appearance › draw.io diagrams', 'Editor › Outline', 'Editor › Calendar tables', 'Drawings › New elements', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
+    expect(rowIds(el)).toEqual(['theme', 'diagramDarkColors', 'guideLineDarkness', 'tableShadeDarkness', 'canvas.fillSetsTextColor', 'hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme'])
     expect(sections(el)).toEqual([]) // the page is gone while the query stands
     act(() => rowButtons(el, 'theme')[2].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, theme: 'dark' })
@@ -1427,6 +1458,8 @@ describe('SettingsDialog search (D6)', () => {
         'tableCellBulletGap',
         'tableCellNoteTemplate',
         ...['foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
+        // ⌘\ in notes (YAZ-4420): its hint says "bullets, lists, quotes and links stay".
+        'hotkey-note-clearFormatting',
         ...['bulletList', 'cycleTask', 'indent', 'outdent', 'foldHere', 'unfoldHere', 'foldAll', 'unfoldAll', 'zoomIn', 'copyVisible', 'enter', 'tab'].map((r) => `hotkey-note-${r}`),
         ...['thisTab', 'newTab', 'backgroundTab'].map((r) => `hotkey-bullets-${r}`),
         // A built-in click is found by its place too: "Bullet lines".

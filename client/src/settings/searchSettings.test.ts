@@ -93,7 +93,7 @@ describe('settingCandidates', () => {
       'codeMinimap',
       'codeLanguageHelpers',
       // Settings › Drawings (YAZ-3037; "Excalidraw canvas" before the YAZ-3818 demo).
-      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
+      ...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
       // Settings › Images (YAZ-3038).
       'pixabayApiKey',
       'libraryFolder',
@@ -192,7 +192,8 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'system'))).toEqual(['theme'])
     // "dark" is also the draw.io row's word (YAZ-3037), and draw.io's own key for its dark colours (YAZ-3564).
     // And the guide lines' darkness (YAZ-4094 G3), and the calendar tables' shade darkness (YAZ-4163 demo).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme', 'theme', 'diagramDarkColors', 'guideLineDarkness', 'tableShadeDarkness'])
+    // And "Text color follows the fill" (YAZ-4404 4H): its hint says "A dark fill turns dark text white".
+    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme', 'theme', 'diagramDarkColors', 'guideLineDarkness', 'tableShadeDarkness', 'canvas.fillSetsTextColor'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'readable line'))).toEqual(['contentWidth'])
     // The sounds of Settings › Notifications (YAZ-3303) say "the Trash" in their hints.
     // "trash" is also the word of ⌘⌫ in the Window hotkeys (YAZ-3272 D20).
