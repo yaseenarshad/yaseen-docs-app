@@ -12,6 +12,7 @@
  * Smoothness: a drag draws at most once a frame (the latest pointer wins), reads the layout before it writes, moves
  * the handles with `transform` only, and writes only what changed.
  */
+import { hexOfRgb, rgbOf, solidHex } from '../lib/colour'
 import type { CustomHighlight } from './marks/highlight'
 
 /** What the box tells the panel. */
@@ -33,13 +34,6 @@ const eyeDropperOf = (doc: Document): EyeDropperCtor | null =>
 
 const clamp = (n: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, n))
 
-const rgbOf = (hex: string): [number, number, number] => {
-  const n = parseInt(hex.slice(1), 16)
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-}
-
-const hexOfRgb = (rgb: readonly number[]): CustomHighlight => `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, '0')).join('')}`
-
 export function toHsv(hex: string): Hsv {
   const [r, g, b] = rgbOf(hex).map((c) => c / 255)
   const max = Math.max(r, g, b)
@@ -55,14 +49,6 @@ export function fromHsv({ h, s, v }: Hsv): CustomHighlight {
     return (v - v * s * Math.max(0, Math.min(k, 4 - k, 1))) * 255
   }
   return hexOfRgb([f(5), f(3), f(1)])
-}
-
-/** The eyedropper's answer, `#rrggbb` or `rgb(r, g, b)`: lowercase `#rrggbb`, else null. */
-function readColour(text: string): CustomHighlight | null {
-  const t = text.trim().toLowerCase()
-  if (/^#[0-9a-f]{6}$/.test(t)) return t as CustomHighlight
-  const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(t)
-  return m === null ? null : hexOfRgb(m.slice(1, 4).map((c) => clamp(Number(c), 0, 255)))
 }
 
 /** A typed channel, 0 to 255, else null. */
@@ -291,7 +277,8 @@ export class ColourBox {
     this.#dropping = true
     this.#dropper.classList.add('is-active')
     try {
-      const hex = readColour((await new EyeDropper().open()).sRGBHex)
+      // `#rrggbb`, or `rgb(r, g, b)` in some builds.
+      const hex = solidHex((await new EyeDropper().open()).sRGBHex)
       if (hex === null || !this.open) return
       this.set(hex)
       this.hooks.preview(hex)

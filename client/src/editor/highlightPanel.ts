@@ -43,6 +43,7 @@ import {
   type CustomHighlight,
   type HighlightColor,
 } from './marks/highlight'
+import { hexOfRgb, rgbOf } from '../lib/colour'
 import { ColourBox } from './highlightColourBox'
 import { mostUsedHighlightColors, noteHighlightColorUse } from './highlightUsed'
 
@@ -61,10 +62,8 @@ const hexOf = (color: HighlightColor): CustomHighlight => (isCustomHighlight(col
 
 /** `hex` mixed toward `to` (`#ffffff` or `#000000`) by `amount`. */
 function mix(hex: string, to: string, amount: number): CustomHighlight {
-  const a = parseInt(hex.slice(1), 16)
-  const b = parseInt(to.slice(1), 16)
-  const part = (shift: number) => Math.round(((a >> shift) & 255) * (1 - amount) + ((b >> shift) & 255) * amount)
-  return `#${[16, 8, 0].map((s) => part(s).toString(16).padStart(2, '0')).join('')}`
+  const toward = rgbOf(to)
+  return hexOfRgb(rgbOf(hex).map((c, i) => c * (1 - amount) + toward[i] * amount))
 }
 
 /** The Shades row: lighter to darker, `base` in the middle. Narrow steps: each is shown, and saved, as a 40% wash. */

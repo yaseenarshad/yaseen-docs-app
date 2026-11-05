@@ -27,6 +27,8 @@ import { splice } from 'micromark-util-chunked'
 import { classifyCharacter } from 'micromark-util-classify-character'
 import { resolveAll } from 'micromark-util-resolve-all'
 import type { Event, Extension, Resolver, State, Token, TokenizeContext, Tokenizer } from 'micromark-util-types'
+import { isHighlightHex } from '@shared/types'
+import { rgbOf, solidHex } from '../../lib/colour'
 import { visibleRangeHasMark, visibleRanges } from '../lineSelection'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
 
@@ -41,8 +43,8 @@ export type HighlightName = (typeof HIGHLIGHT_COLORS)[number]
 export type CustomHighlight = `#${string}`
 export type HighlightColor = HighlightName | CustomHighlight | null
 
-/** A custom colour as the mark keeps it: exactly lowercase `#rrggbb`. */
-export const isCustomHighlight = (value: unknown): value is CustomHighlight => typeof value === 'string' && /^#[0-9a-f]{6}$/.test(value)
+/** A custom colour as the mark keeps it: exactly lowercase `#rrggbb` (the setting's own test, `@shared/types`). */
+export const isCustomHighlight: (value: unknown) => value is CustomHighlight = isHighlightHex
 
 /** How strong a custom colour's wash is: the named colours' 0.35–0.4, so text on it stays readable in both themes. */
 export const CUSTOM_WASH = 0.4
@@ -64,8 +66,8 @@ export const HIGHLIGHT_HEX: Record<HighlightName | 'yellow', CustomHighlight> = 
 
 /** A custom colour's see-through wash, `rgba(r, g, b, 0.4)`. */
 export function customWash(hex: CustomHighlight): string {
-  const n = parseInt(hex.slice(1), 16)
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${CUSTOM_WASH})`
+  const [r, g, b] = rgbOf(hex)
+  return `rgba(${r}, ${g}, ${b}, ${CUSTOM_WASH})`
 }
 
 /** mdast node for a highlight; registered with mdast so remark-stringify's `Handlers` knows the type. */
@@ -227,13 +229,6 @@ export const highlightRemark = $remark('mdapp-highlight', () => function highlig
   return (tree) => wrapHtmlPairs(tree, HIGHLIGHT_PAIRS)
 })
 
-/** `rgb(r, g, b)` / `rgba(…)` as `#rrggbb` (its alpha dropped), else null. */
-function hexOfRgb(value: string): CustomHighlight | null {
-  const match = /^rgba?\(\s*(\d+),\s*(\d+),\s*(\d+)/.exec(value)
-  if (match === null) return null
-  return `#${match.slice(1, 4).map((n) => Math.min(255, Number(n)).toString(16).padStart(2, '0')).join('')}`
-}
-
 /**
  * The element's colour: our own `data-highlight` (a custom colour, from the editor's DOM and the copy-out), a
  * `highlight-<known>` class, or a pasted `<mark style="background-color: …">` as a custom colour; else null (a
@@ -244,7 +239,7 @@ function colorOf(dom: HTMLElement): HighlightColor {
   if (isCustomHighlight(own)) return own
   const named = HIGHLIGHT_COLORS.find((c) => dom.classList.contains(`highlight-${c}`))
   if (named !== undefined) return named
-  return hexOfRgb(dom.style.backgroundColor)
+  return solidHex(dom.style.backgroundColor)
 }
 
 /** A highlight's DOM: a named colour's class; a custom colour's wash inline, with its exact value to read back. */
