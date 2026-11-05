@@ -701,7 +701,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
   it('in this order: Read only, Link preview on hover, the count and size of the pictures in words (YAZ-4110 5B), the moves to the other places, then the two exports', async () => {
     surface.pictures = { bytes: 3.3 * MB, count: 6, missing: 0 }
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows: app setting✓', 'Fold arrows: on hover', 'Fold arrows: always', '6 pictures in this file (3.3 MB)', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows:', '6 pictures in this file (3.3 MB)', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     // YAZ-4277 D5: a line above the fold arrow rows too.
     expect(container.querySelectorAll('.page-settings__menu > .page-settings__divider')).toHaveLength(3)
     expect(row('6 pictures in this file (3.3 MB)')!.className).not.toContain('warn')
@@ -709,7 +709,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
 
   it('no picture: no size row and no move; from 20 MB the size is amber; a "pictures out" board says where they are: the assets folder, or its own folder by its last name with the whole path on hover', async () => {
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows: app setting✓', 'Fold arrows: on hover', 'Fold arrows: always', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows:', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     act(() => cog().click())
     surface.pictures = { bytes: 20 * MB, count: 2, missing: 0 }
     act(() => cog().click())
@@ -719,12 +719,12 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
 
     surface.pictures = { bytes: 1000, count: 1, missing: 0 }
     await openCog({ json: withBlock({ pictures: 'assets' }) })
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows: app setting✓', 'Fold arrows: on hover', 'Fold arrows: always', '1 picture in the assets folder (1000 B)', 'Keep pictures inside', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows:', '1 picture in the assets folder (1000 B)', 'Keep pictures inside', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     act(() => root?.unmount())
     root = createRoot(container)
 
     await openCog({ json: withBlock({ pictures: 'assets', picturesFolder: 'Projects/Board pictures' }) })
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows: app setting✓', 'Fold arrows: on hover', 'Fold arrows: always', '1 picture in Board pictures (1000 B)', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows:', '1 picture in Board pictures (1000 B)', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     expect(row('1 picture in Board pictures (1000 B)')!.title).toBe('Projects/Board pictures')
   })
 
@@ -807,12 +807,12 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
   it('YAZ-3943 1F: pictures in neither the file, its folder nor assets/ are an amber row after the size, with the moves after them; all missing: the row alone', async () => {
     surface.pictures = { bytes: 1000, count: 1, missing: 3 }
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows: app setting✓', 'Fold arrows: on hover', 'Fold arrows: always', '1 picture in this file (1000 B)', '3 pictures are missing', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows:', '1 picture in this file (1000 B)', '3 pictures are missing', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     expect(row('3 pictures are missing')!.className).toContain('page-settings__warn')
     act(() => cog().click())
     surface.pictures = { bytes: 0, count: 0, missing: 1 }
     act(() => cog().click())
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows: app setting✓', 'Fold arrows: on hover', 'Fold arrows: always', '1 picture is missing', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows:', '1 picture is missing', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
   })
 
   it('YAZ-4074 6A item 2: with a used picture missing, a move says why and opens no box and no folder window', async () => {
@@ -847,7 +847,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     expect(sheet()).toBeNull()
     expect(allow).not.toHaveBeenCalled()
     act(() => cog().click())
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows: app setting✓', 'Fold arrows: on hover', 'Fold arrows: always', '1 picture in Boards (1000 B)', 'Folder not allowed on this Mac', 'Allow…', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows:', '1 picture in Boards (1000 B)', 'Folder not allowed on this Mac', 'Allow…', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
     expect(row('Folder not allowed on this Mac')!.className).toContain('page-settings__warn')
     act(() => row('Allow…')!.click())
     await act(async () => sheetButton('Allow').click())
@@ -887,6 +887,10 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     expect(preview.mock.lastCall?.[0]).toBe(false)
   })
 
+  /** The pills of the one "Fold arrows" row (YAZ-4402 3A): text, pressed, disabled, tooltip. */
+  const pills = () => [...container.querySelectorAll<HTMLButtonElement>('.page-settings__menu .page-settings__choices button')]
+  const pill = (label: string) => pills().find((b) => b.textContent === label)!
+
   it('YAZ-4277 D5: "Fold arrows" is the board\'s own choice: a pick writes beside the autosave and reaches the canvas; a board whose file says one opens with it', async () => {
     vi.mocked(api.setBoardFoldArrows).mockResolvedValue({ path: PATH, mtime: 300, size: 10 })
     load.mockResolvedValue(loaded())
@@ -895,11 +899,12 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     emit(1)
     expect(surface.props?.foldArrows).toBeUndefined()
     act(() => cog().click())
-    await act(async () => row('Fold arrows: always')!.click())
+    await act(async () => pill('Always').click())
     await flush()
     expect(api.setBoardFoldArrows).toHaveBeenCalledWith({ root: ROOT, path: PATH, value: 'always', expectedMtime: 100 })
     expect(surface.props?.foldArrows).toBe('always')
-    expect(row('Fold arrows: always✓')).toBeDefined()
+    // YAZ-4402 3A: the menu stays open, the new choice pressed
+    expect(pills().map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['App', 'false'], ['Hover', 'false'], ['Always', 'true'], ['Off', 'false']])
     act(() => root?.unmount())
     root = createRoot(container)
 
@@ -907,6 +912,56 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     render()
     await flush()
     expect(surface.props?.foldArrows).toBe('hover')
+  })
+
+  it('YAZ-4402 3A: ONE "Fold arrows (app: …)" row with the pills App, Hover, Always and Off, each with its tooltip; the board\'s choice pressed; the label names the app\'s mode', async () => {
+    load.mockResolvedValue(loaded())
+    render({ canvasPrefs: { ...DEFAULT_CANVAS_PREFS, foldArrowsOpen: 'always' } })
+    await flush()
+    emit(1)
+    act(() => cog().click())
+    expect(rows().map((r) => r.textContent).filter((t) => t?.startsWith('Fold arrows'))).toEqual(['Fold arrows (app: always):'])
+    expect(container.querySelector('.page-settings__choices')?.getAttribute('aria-label')).toBe('Fold arrows (app: always)')
+    expect(pills().map((b) => [b.textContent, b.getAttribute('aria-pressed'), b.title])).toEqual([
+      ['App', 'true', 'The app setting: Always'],
+      ['Hover', 'false', 'Arrows show on hover'],
+      ['Always', 'false', 'Arrows always show'],
+      ['Off', 'false', 'No folding: every line shows, the folds stay saved'],
+    ])
+    act(() => root?.unmount())
+    root = createRoot(container)
+    // a board with its own "off" (YAZ-4401 2E): Off pressed; the app's own mode still named
+    load.mockResolvedValue(loaded({ json: withBlock({ foldArrows: 'off' }) }))
+    render({ canvasPrefs: { ...DEFAULT_CANVAS_PREFS, foldArrowsOpen: 'hover' } })
+    await flush()
+    emit(1)
+    expect(surface.props?.foldArrows).toBe('off')
+    act(() => cog().click())
+    expect(rows().map((r) => r.textContent)).toContain('Fold arrows (app: hover):')
+    expect(pills().filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent)).toEqual(['Off'])
+  })
+
+  it('YAZ-4401 2E, YAZ-4402 3A: the Off pill writes `off` to the board and the canvas gets `off`', async () => {
+    vi.mocked(api.setBoardFoldArrows).mockResolvedValue({ path: PATH, mtime: 300, size: 10 })
+    load.mockResolvedValue(loaded())
+    render()
+    await flush()
+    emit(1)
+    act(() => cog().click())
+    await act(async () => pill('Off').click())
+    await flush()
+    expect(api.setBoardFoldArrows).toHaveBeenCalledWith({ root: ROOT, path: PATH, value: 'off', expectedMtime: 100 })
+    expect(surface.props?.foldArrows).toBe('off')
+    expect(pill('Off').getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('YAZ-4402 3A: Read only greys out every pill (a pick writes the file); a click writes nothing', async () => {
+    await openCog({ json: withBlock({ readonly: true }) })
+    expect(pills().map((b) => b.disabled)).toEqual([true, true, true, true])
+    for (const b of pills()) act(() => b.click())
+    await flush()
+    expect(api.setBoardFoldArrows).not.toHaveBeenCalled()
+    expect(container.querySelector('.page-settings__menu')).not.toBeNull()
   })
 
   it('YAZ-3943 1F: a board whose pictures are missing says so once when it opens, and not again on a reload; a board with all its pictures says nothing', async () => {
