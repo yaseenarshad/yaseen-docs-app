@@ -1536,14 +1536,14 @@ describe('hover zoom on a picture tile (YAZ-4447, D34)', () => {
     expect(shown()).toBe(false)
   })
 
-  it('is 5 times the tile, 440 px at most (demo round 2: "much bigger"), on the side with more room, inside the window', async () => {
+  it('is 8 times the tile, 640 px at most (demo round 2: "even bigger"), on the side with more room, inside the window', async () => {
     const { tile } = await mountTile()
     await over(tile)
     await wait(400)
     const box = zoom()!
     const [left, top, size] = [parseFloat(box.style.left), parseFloat(box.style.top), parseFloat(box.style.width)]
-    // the test tile is 84 px: 5 × 84 = 420, under the 440 px cap
-    expect(size).toBe(420)
+    // the test tile is 84 px: 8 × 84 = 672, past the 640 px cap; the window may cap it further
+    expect(size).toBe(Math.min(640, window.innerWidth - 16, window.innerHeight - 16))
     expect(size).toBeLessThanOrEqual(TILE_ZOOM_MAX)
     expect(left + size).toBeLessThanOrEqual(700) // left of the tile: the room is there
     expect(left).toBeGreaterThanOrEqual(0)

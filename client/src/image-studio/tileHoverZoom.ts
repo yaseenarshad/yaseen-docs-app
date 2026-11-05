@@ -18,8 +18,8 @@
 /** How long the pointer rests on a tile before its zoom opens: a little quicker than the sidebar's 400 ms. */
 export const TILE_ZOOM_DWELL_MS = 350
 /** The zoom is this many times the tile, and at most `TILE_ZOOM_MAX` px. */
-export const TILE_ZOOM_SCALE = 5
-export const TILE_ZOOM_MAX = 440
+export const TILE_ZOOM_SCALE = 8
+export const TILE_ZOOM_MAX = 640
 /** The room between the zoom and its tile, and between the zoom and the window's edges. */
 const GAP = 8
 
