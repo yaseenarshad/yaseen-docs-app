@@ -2,7 +2,10 @@ import React from "react";
 
 import { ROUNDNESS } from "@excalidraw/common";
 
-import { getDefaultCornerRadiusForElementType } from "@excalidraw/element";
+import {
+  getCornerRadius,
+  getDefaultCornerRadiusForElementType,
+} from "@excalidraw/element";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
@@ -11,11 +14,18 @@ import {
   actionChangeStrokeWidth,
   actionChangeVectorStrokeWidth,
 } from "../actions/actionProperties";
+import { actionCopyStyles, actionPasteStyles } from "../actions/actionStyles";
 import { Excalidraw } from "../index";
 
 import { API } from "./helpers/api";
 import { Keyboard, Pointer, UI } from "./helpers/ui";
-import { act, render, unmountComponent } from "./test-utils";
+import {
+  act,
+  queryByTestId,
+  render,
+  togglePopover,
+  unmountComponent,
+} from "./test-utils";
 
 import type { ExcalidrawProps } from "../types";
 
@@ -111,6 +121,21 @@ describe("new shapes match the zoom (YAZ-4406)", () => {
     },
   );
 
+  it("a rectangle made at 1% draws its corner at its size on screen (YAZ-4312 S7)", async () => {
+    await renderBoard({ newShapesMatchZoom: true });
+    API.setAppState({ currentItemRoundness: "round" });
+    const atOne = draw("rectangle");
+    setZoom(0.01);
+    const atOnePercent = draw("rectangle");
+    expect(atOnePercent.customData).toEqual({ styleScale: 0.01 });
+    const side = (element: ExcalidrawElement) =>
+      Math.min(element.width, element.height);
+    // the same corner on screen: board radius × zoom
+    expect(
+      getCornerRadius(side(atOnePercent), atOnePercent) * 0.01,
+    ).toBeCloseTo(getCornerRadius(side(atOne), atOne), 10);
+  });
+
   it("with the switch off, a shape made at 10,000% keeps the board px", async () => {
     await renderBoard();
     const atOne = draw("rectangle");
@@ -170,6 +195,30 @@ describe("the width and corner pickers speak screen px (YAZ-4406)", () => {
     });
   });
 
+  it.each([
+    [100, 0.08],
+    [0.01, 800],
+  ])(
+    "the corner picker at %s× shows the corner of a shape made there in screen px (YAZ-4312 S7)",
+    async (zoom, value) => {
+      await renderBoard({ newShapesMatchZoom: true });
+      select({
+        ...API.createElement({
+          type: "rectangle",
+          width: 1000 / zoom,
+          height: 1000 / zoom,
+          roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value },
+        }),
+        customData: { styleScale: zoom },
+      });
+      setZoom(zoom);
+      togglePopover("More properties");
+      expect(queryByTestId(document.body, "corner-radius-input")).toHaveValue(
+        8,
+      );
+    },
+  );
+
   it("at zoom 1 the pickers write board px, as before", async () => {
     await renderBoard({ newShapesMatchZoom: true });
     const rect = API.createElement({ type: "rectangle", strokeWidth: 2 });
@@ -206,5 +255,62 @@ describe("the width and corner pickers speak screen px (YAZ-4406)", () => {
       getDefaultCornerRadiusForElementType("rectangle") / 100,
       10,
     );
+  });
+});
+
+/**
+ * YAZ-4312 S8: paste styles copies the line width and the corner in screen
+ * px: each converts through the two shapes' style scales.
+ */
+describe("paste styles across style scales (YAZ-4312 S8)", () => {
+  const rect = (strokeWidth: number, corner: number, styleScale?: number) => ({
+    ...API.createElement({
+      type: "rectangle",
+      strokeWidth,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: corner },
+    }),
+    ...(styleScale ? { customData: { styleScale } } : {}),
+  });
+  const copyThenPaste = (from: ExcalidrawElement, to: ExcalidrawElement) => {
+    API.setElements([from, to]);
+    API.setSelectedElements([from]);
+    act(() => {
+      h.app.actionManager.executeAction(actionCopyStyles);
+    });
+    API.setSelectedElements([to]);
+    act(() => {
+      h.app.actionManager.executeAction(actionPasteStyles);
+    });
+    return h.app.scene.getElement(to.id)!;
+  };
+
+  it("a style from a shape made at 10,000% keeps its screen size on a shape made at 100%", async () => {
+    await renderBoard({ newShapesMatchZoom: true });
+    const pasted = copyThenPaste(rect(0.02, 0.08, 100), rect(4, 32));
+    expect(pasted.strokeWidth).toBe(2);
+    expect(pasted.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 8,
+    });
+    // the target keeps its own style scale
+    expect(pasted.customData).toBeUndefined();
+  });
+
+  it("a style from a shape made at 100% keeps its screen size on a shape made at 10,000%", async () => {
+    await renderBoard({ newShapesMatchZoom: true });
+    const pasted = copyThenPaste(rect(2, 8), rect(0.04, 0.32, 100));
+    expect(pasted.strokeWidth).toBe(0.02);
+    expect(pasted.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 0.08,
+    });
+    expect(pasted.customData).toEqual({ styleScale: 100 });
+  });
+
+  it("two shapes at the same scale copy the numbers as they are", async () => {
+    await renderBoard({ newShapesMatchZoom: true });
+    const pasted = copyThenPaste(rect(2.5, 16), rect(4, 32));
+    expect(pasted.strokeWidth).toBe(2.5);
+    expect(pasted.roundness?.value).toBe(16);
   });
 });

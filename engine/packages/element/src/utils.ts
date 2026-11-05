@@ -497,12 +497,17 @@ export const isPathALoop = (
 export const getCornerRadius = (x: number, element: ExcalidrawElement) => {
   if (element.roundness?.value !== undefined) {
     // YAZ-4277 demo: a radius picked zoomed in is a fraction of a board px
-    // (`screenScale.ts`), so it is kept, not rounded to whole px
+    // (`screenScale.ts`), so it is kept, not rounded to whole px.
+    // YAZ-4312 S7: the cap is 100 px on screen at the shape's own scale.
     const value = element.roundness.value;
+    const scale = getElementStyleScale(element);
     return Math.min(
       Number.isFinite(value)
-        ? Math.min(CORNER_RADIUS.max, Math.max(CORNER_RADIUS.min, value))
-        : CORNER_RADIUS.default,
+        ? Math.min(
+            CORNER_RADIUS.max / scale,
+            Math.max(CORNER_RADIUS.min, value),
+          )
+        : CORNER_RADIUS.default / scale,
       x / 2,
     );
   }
@@ -542,14 +547,33 @@ export const normalizeCornerRadius = (value: number) => {
   );
 };
 
+/**
+ * YAZ-4312 S7: a stored corner of a shape made at `scale` (`screenScale.ts`):
+ * exact, 0 to 100 px on screen. At scale 1 it is `normalizeCornerRadius`.
+ */
+const normalizeScaledCornerRadius = (value: number, scale: number) => {
+  if (scale === 1) {
+    return normalizeCornerRadius(value);
+  }
+  if (!Number.isFinite(value)) {
+    return Number((CORNER_RADIUS.default / scale).toPrecision(4));
+  }
+  return Math.min(
+    Number((CORNER_RADIUS.max / scale).toPrecision(4)),
+    Math.max(CORNER_RADIUS.min, Number(value.toPrecision(4))),
+  );
+};
+
 export const getRequestedCornerRadius = (element: ExcalidrawElement) => {
   if (!element.roundness) {
     return CORNER_RADIUS.min;
   }
 
+  // YAZ-4312 S7: in board px at the shape's own scale (the picker shows it in screen px)
+  const scale = getElementStyleScale(element);
   return element.roundness.value === undefined
-    ? CORNER_RADIUS.default
-    : normalizeCornerRadius(element.roundness.value);
+    ? normalizeScaledCornerRadius(CORNER_RADIUS.default / scale, scale)
+    : normalizeScaledCornerRadius(element.roundness.value, scale);
 };
 
 export const getDefaultCornerRadiusForElementType = (type: string) => {
@@ -572,12 +596,17 @@ export const getRelativeImageCornerRadius = (width: number, height: number) =>
 
 export const normalizeElementRoundness = (
   roundness: ExcalidrawElement["roundness"],
+  /** YAZ-4312 S7: the shape, for its style scale */
+  element?: Pick<ExcalidrawElement, "customData">,
 ): ExcalidrawElement["roundness"] => {
   if (!roundness || roundness.value === undefined) {
     return roundness;
   }
 
-  const value = normalizeCornerRadius(roundness.value);
+  const value = normalizeScaledCornerRadius(
+    roundness.value,
+    element ? getElementStyleScale(element) : 1,
+  );
 
   return value === CORNER_RADIUS.min ? null : { ...roundness, value };
 };
@@ -590,7 +619,8 @@ export const normalizeElementRoundness = (
  */
 export const materializeElementRoundnessValue = (
   roundness: ExcalidrawElement["roundness"],
-  element: Pick<ExcalidrawElement, "type" | "width" | "height">,
+  element: Pick<ExcalidrawElement, "type" | "width" | "height"> &
+    Partial<Pick<ExcalidrawElement, "customData">>,
 ): ExcalidrawElement["roundness"] => {
   if (
     !roundness ||
@@ -606,9 +636,11 @@ export const materializeElementRoundnessValue = (
     return roundness;
   }
 
-  // getCornerRadius only reads `roundness` off the element
-  const value = normalizeCornerRadius(
-    getCornerRadius(shortest, { roundness } as ExcalidrawElement),
+  // getCornerRadius only reads `roundness` and (YAZ-4312 S7) the style scale
+  const scaleOf = { customData: element.customData };
+  const value = normalizeScaledCornerRadius(
+    getCornerRadius(shortest, { roundness, ...scaleOf } as ExcalidrawElement),
+    getElementStyleScale(scaleOf),
   );
 
   return value === CORNER_RADIUS.min ? null : { ...roundness, value };

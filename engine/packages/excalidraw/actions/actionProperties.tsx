@@ -1775,7 +1775,7 @@ export const actionChangeTextBackgroundPadding =
     },
   });
 
-/** YAZ-3943 demo 2: the exact field's range (1 to 512); the slider runs 8 to 128. */
+/** YAZ-3943 demo 2: the exact field's range (`MIN_FONT_SIZE` 0.01 to 512); the slider runs 8 to 128. */
 const FONT_SIZE_MAX = 512;
 const SLIDER_FONT_SIZE_MIN = 8;
 const SLIDER_FONT_SIZE_MAX = 128;
@@ -1962,13 +1962,37 @@ const FontSizeSlider = ({
   );
 };
 
-/** YAZ-3943 demo 2: a whole size as it is, any other with one decimal (19.33 → "19.3"). */
+/**
+ * YAZ-3943 demo 2, YAZ-4312 M1: a size as the field keeps it: tenths from 1 up
+ * (19.33 → 19.3), 2 significant digits below 1 (text made at a high zoom:
+ * 0.1375 → 0.14).
+ */
+const roundFontSize = (value: number) =>
+  value >= 1 ? Math.round(value * 10) / 10 : Number(value.toPrecision(2));
+
+const clampFontSize = (value: number) =>
+  Math.min(FONT_SIZE_MAX, Math.max(MIN_FONT_SIZE, roundFontSize(value)));
+
 export const formatFontSize = (value: number | null) =>
-  value === null
-    ? ""
-    : Number.isInteger(value)
-    ? `${value}`
-    : `${Math.round(value * 10) / 10}`;
+  value === null ? "" : `${roundFontSize(value)}`;
+
+/** YAZ-4312 M1: below 1 px, a step multiplies or divides by this. */
+const FONT_SIZE_STEP_FACTOR = 1.25;
+
+/**
+ * YAZ-4312 M1: one − or + step (also the field's arrow keys): ±1 from 1 px up,
+ * ×/÷ 1.25 below, so a step never jumps past 1 px or under `MIN_FONT_SIZE`.
+ */
+export const stepFontSize = (current: number, direction: 1 | -1) =>
+  clampFontSize(
+    direction > 0
+      ? current >= 1
+        ? current + 1
+        : current * FONT_SIZE_STEP_FACTOR
+      : current - 1 >= 1
+      ? current - 1
+      : current / FONT_SIZE_STEP_FACTOR,
+  );
 
 const ExactFontSizeInput = ({
   value,
@@ -1988,27 +2012,33 @@ const ExactFontSizeInput = ({
     setInputValue(formatFontSize(value));
   }, [value]);
 
-  const commit = () => {
+  /** YAZ-4312 M1: what the user typed, or null when the field shows the size as it is. */
+  const typedValue = () => {
+    if (inputValue === formatFontSize(value) || inputValue.trim() === "") {
+      return null;
+    }
     const parsed = Number(inputValue);
-    if (!Number.isFinite(parsed)) {
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const commit = () => {
+    const typed = typedValue();
+    // YAZ-4312 M1: no change typed (or an empty, mixed field): write nothing
+    if (typed === null) {
       setInputValue(formatFontSize(value));
       return;
     }
-    const nextValue = Math.min(
-      FONT_SIZE_MAX,
-      Math.max(MIN_FONT_SIZE, Math.round(parsed * 10) / 10),
-    );
-    setInputValue(nextValue.toString());
+    const nextValue = clampFontSize(typed);
+    setInputValue(formatFontSize(nextValue));
     onChange(nextValue);
   };
 
-  const nudge = (amount: number) => {
-    const currentValue = Number(inputValue || value || DEFAULT_FONT_SIZE);
-    const nextValue = Math.min(
-      512,
-      Math.max(1, Math.round((currentValue + amount) * 10) / 10),
+  const nudge = (direction: 1 | -1) => {
+    const nextValue = stepFontSize(
+      typedValue() ?? value ?? DEFAULT_FONT_SIZE,
+      direction,
     );
-    setInputValue(nextValue.toString());
+    setInputValue(formatFontSize(nextValue));
     onChange(nextValue);
   };
 
@@ -2037,9 +2067,9 @@ const ExactFontSizeInput = ({
         <input
           aria-label="Exact font size"
           type="number"
-          min="1"
-          max="512"
-          step="0.1"
+          min={MIN_FONT_SIZE}
+          max={FONT_SIZE_MAX}
+          step="any"
           value={inputValue}
           placeholder="Mixed"
           onChange={(event) => setInputValue(event.target.value)}
@@ -2049,6 +2079,13 @@ const ExactFontSizeInput = ({
             if (event.key === KEYS.ENTER) {
               event.preventDefault();
               commit();
+            } else if (
+              event.key === KEYS.ARROW_UP ||
+              event.key === KEYS.ARROW_DOWN
+            ) {
+              // YAZ-4312 M1: the native step (by 1, floored at `min`) makes tiny text bigger
+              event.preventDefault();
+              nudge(event.key === KEYS.ARROW_UP ? 1 : -1);
             } else if (event.key === KEYS.ESCAPE) {
               setInputValue(formatFontSize(value));
             }

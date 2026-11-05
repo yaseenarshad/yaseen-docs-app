@@ -22,7 +22,11 @@ import {
   withStyleScale,
 } from "../src/screenScale";
 import { generateRoughOptions } from "../src/shape";
-import { getCornerRadius } from "../src/utils";
+import {
+  getCornerRadius,
+  materializeElementRoundnessValue,
+  normalizeElementRoundness,
+} from "../src/utils";
 
 import type { Drawable } from "roughjs/bin/core";
 import type { ExcalidrawElement, ExcalidrawLinearElement } from "../src/types";
@@ -286,5 +290,71 @@ describe("a resize keeps the border and the style scale in proportion (YAZ-4408)
       strokeWidth: 2.7,
       roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 21 },
     });
+  });
+});
+
+/**
+ * YAZ-4312 S7: a corner keeps its look at the shape's own style scale. The
+ * cap of 100 px and the whole-px rounding are screen px at that scale, so a
+ * corner made at 1% is not cut to 1 px, and one made at 10,000% is not squared.
+ */
+describe("corners at the shape's style scale (YAZ-4312 S7)", () => {
+  const ADAPTIVE = ROUNDNESS.ADAPTIVE_RADIUS;
+  const rect = (value: number | undefined, styleScale?: number, size = 5000) =>
+    withData(
+      API.createElement({
+        type: "rectangle",
+        width: size,
+        height: size,
+        roundness:
+          value === undefined ? { type: ADAPTIVE } : { type: ADAPTIVE, value },
+      }),
+      styleScale ? { styleScale } : undefined,
+    );
+
+  it("caps a picked corner at 100 px on screen, not 100 board px", () => {
+    // 8 px on screen made at 1% is 800 board px
+    expect(getCornerRadius(5000, rect(800, 0.01))).toBe(800);
+    expect(getCornerRadius(50000, rect(20000, 0.01))).toBe(10000);
+    // made at 10,000%: the cap is 1 board px
+    expect(getCornerRadius(10, rect(5, 100))).toBe(1);
+    // made at 100%: the cap stays 100
+    expect(getCornerRadius(5000, rect(800))).toBe(100);
+  });
+
+  it("normalizes a stored corner in screen px at the shape's scale", () => {
+    const at = (value: number, styleScale: number) =>
+      normalizeElementRoundness(
+        { type: ADAPTIVE, value },
+        { customData: { styleScale } },
+      );
+    expect(at(0.08, 100)).toEqual({ type: ADAPTIVE, value: 0.08 });
+    expect(at(800, 0.01)).toEqual({ type: ADAPTIVE, value: 800 });
+    expect(at(20000, 0.01)).toEqual({ type: ADAPTIVE, value: 10000 });
+    expect(at(5, 100)).toEqual({ type: ADAPTIVE, value: 1 });
+    expect(at(0, 100)).toBeNull();
+    // with no scale, as before: whole px, 0 to 100
+    expect(
+      normalizeElementRoundness({ type: ADAPTIVE, value: 0.08 }),
+    ).toBeNull();
+    expect(
+      normalizeElementRoundness({ type: ADAPTIVE, value: 800 }, {}),
+    ).toEqual({ type: ADAPTIVE, value: 100 });
+  });
+
+  it("materializes a corner with no value at the shape's scale", () => {
+    // the adaptive default is 32 ÷ 100 at 10,000%, not 32 board px
+    expect(
+      materializeElementRoundnessValue(
+        { type: ADAPTIVE },
+        rect(undefined, 100, 10),
+      ),
+    ).toEqual({ type: ADAPTIVE, value: 0.32 });
+    expect(
+      materializeElementRoundnessValue(
+        { type: ADAPTIVE },
+        rect(undefined, 1, 1000),
+      ),
+    ).toEqual({ type: ADAPTIVE, value: 32 });
   });
 });
