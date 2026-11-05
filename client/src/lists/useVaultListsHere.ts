@@ -5,11 +5,12 @@
  * before); the sidebar and the tab menu reach the SAME lists, through the one writer (6C).
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { MAX_FOCUS, rootOfPath, type ListScope, type WorkspaceLists } from '@shared/types'
+import { MAX_FOCUS, rootOfPath, type FocusFolder, type ListScope, type WorkspaceLists } from '@shared/types'
 import { api } from '../api'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { storage } from '../lib/storage'
 import { favoriteOrder } from '../lib/treeState'
+import { itemOf, mergeFolders, resolveItem, sameItem, upsert, type FolderItem } from './focusFolders'
 
 export const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
@@ -105,10 +106,71 @@ function useVaultLists(kind: ListKind, scope: ListScope, live: { readonly curren
   return [byRoot, lists]
 }
 
+/**
+ * Each vault's copy of the focus folders (YAZ-4460 F1, F2), by `useVaultLists`' rule: read once when the vault joins,
+ * again on `focusFolders:changed` of the scope the window shows, dropped when it leaves; a new scope reads again. `save`
+ * writes one folder into EVERY vault of the window (F2), optimistic, and puts a vault's copy back when main refuses.
+ */
+function useFolderCopies(scope: ListScope, live: { readonly current: { roots: readonly string[] } }, onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void) {
+  const [byRoot, setByRoot] = useState<Readonly<Record<string, readonly FocusFolder[]>>>({})
+  const held = useRef(byRoot)
+  held.current = byRoot
+  const notice = useRef(onNotice)
+  notice.current = onNotice
+  const scopeNow = useRef(scope)
+  scopeNow.current = scope
+  const copies = useMemo(
+    () => ({
+      held,
+      load(vault: string) {
+        void api.focusFolders.get(vault, scope).then((next) => {
+          if (scopeNow.current === scope && live.current.roots.includes(vault)) setByRoot((prev) => ({ ...prev, [vault]: next }))
+        })
+      },
+      drop: (vault: string) => setByRoot(({ [vault]: _left, ...rest }) => rest),
+      /** False, with nothing written, while a vault of the window has no copy read yet: a write would replace it. */
+      save(folder: FocusFolder): boolean {
+        const vaults = live.current.roots
+        if (vaults.some((vault) => held.current[vault] === undefined)) return false
+        const before = held.current
+        const next = Object.fromEntries(vaults.map((vault) => [vault, upsert(before[vault] ?? [], folder)]))
+        held.current = { ...before, ...next }
+        setByRoot(held.current)
+        for (const vault of vaults)
+          api.focusFolders.set(vault, scope, next[vault]).catch((err: unknown) => {
+            if (scopeNow.current === scope && live.current.roots.includes(vault)) setByRoot((all) => ({ ...all, [vault]: before[vault] ?? [] }))
+            notice.current(`Can't save the focus folder: ${err instanceof Error ? err.message : String(err)}`, 'error')
+          })
+        return true
+      },
+    }),
+    [scope, live],
+  )
+  const shown = useRef(scope)
+  useLayoutEffect(() => {
+    if (shown.current === scope) return
+    shown.current = scope
+    held.current = {}
+    setByRoot({})
+    for (const vault of live.current.roots) copies.load(vault)
+  }, [scope, live, copies])
+  useEffect(
+    () =>
+      api.focusFolders.onChanged((c) => {
+        if (c.scope === scope && live.current.roots.includes(c.root)) copies.load(c.root)
+      }),
+    [scope, live, copies],
+  )
+  return [byRoot, copies] as const
+}
+
 /** A path's place in the two lists, as a menu reads it when it opens (YAZ-3264 D2). */
 export interface ListState {
   focus: boolean
   favorite: boolean
+  /** The focus folders, and the door into one (YAZ-4460 F4): the tab menu's "Add to focus ▸" reads them here. */
+  folders?: readonly { id: string; name: string }[]
+  intoFolder?: (paths: string[], id: string | null) => void
 }
 
 export type VaultListsHere = ReturnType<typeof useVaultListsHere>
@@ -139,6 +201,11 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
   // holds what it read and writes nothing back on its own: a vault that leaves takes its rows off
   // the tab and keeps its file (S9).
   const [focusByRoot, focus] = useVaultLists('focus', focusScope, live, onNotice)
+  // The focus folders (YAZ-4460), in the scope of the Focus tab: each vault's copy, and the window's folders out of them.
+  const [folderCopies, folders] = useFolderCopies(focusScope, live, onNotice)
+  const focusFolders = useMemo(() => mergeFolders(Object.values(folderCopies)), [folderCopies])
+  const foldersNow = useRef(focusFolders)
+  foldersNow.current = focusFolders
 
   // Each vault's first read of both lists, for as long as the vault is in the window (YAZ-2631 D1;
   // focus: YAZ-2702): a vault that joins is read, one that leaves is dropped, and a vault that stays
@@ -151,14 +218,16 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
       held.delete(vault)
       favorites.drop(vault)
       focus.drop(vault)
+      folders.drop(vault)
     }
     for (const vault of roots) {
       if (held.has(vault)) continue
       held.add(vault)
       favorites.load(vault)
       focus.load(vault)
+      folders.load(vault)
     }
-  }, [roots, favorites, focus])
+  }, [roots, favorites, focus, folders])
 
   // The Focus tab's items (YAZ-2619 D2): ONE flat list across the vaults of the window (YAZ-2602 A1, A4),
   // in ITS order, never the tree's. `focusList` is every focus item in the tab's order — the store's
@@ -233,6 +302,23 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
    * own (`useVaultTree`); the tab menu jumps nowhere (YAZ-3264 D3). Answers false, after its toast,
    * while a vault's list is still on its way; else true.
    */
+  /** The focus folder that holds `path`, an absolute path of the window (YAZ-4460 F5: one place for each item). */
+  const folderOf = useCallback((path: string): FocusFolder | undefined => {
+    const item = itemOf(path, live.current.roots)
+    return item === null ? undefined : foldersNow.current.find((f) => f.items.some((i) => sameItem(i, item)))
+  }, [])
+  /** `paths` out of every focus folder but `keep`: one write for each folder that held one. */
+  const stripFolders = useCallback(
+    (paths: readonly string[], keep: string | null = null): void => {
+      const items = paths.map((p) => itemOf(p, live.current.roots)).filter((i): i is FolderItem => i !== null)
+      for (const f of foldersNow.current) {
+        if (f.id === keep || !f.items.some((i) => items.some((x) => sameItem(i, x)))) continue
+        folders.save({ ...f, items: f.items.filter((i) => !items.some((x) => sameItem(i, x))), at: Date.now() })
+      }
+    },
+    [folders],
+  )
+
   const toggleFocus = useCallback(
     (paths: string[], isOn: boolean): boolean => {
       const full = toggleIn(focus, paths, isOn, MAX_FOCUS)
@@ -240,6 +326,8 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
         onNotice('Focus is still loading. Try again.', 'error')
         return false
       }
+      // "Remove from focus" takes an item out of its focus folder too (YAZ-4460 F5).
+      if (isOn) stripFolders(paths)
       const n = paths.length > 1 ? `${paths.length} ` : ''
       if (isOn) onNotice(`Removed ${n}from focus`, 'info', 'lists')
       else if (full) onNotice(`Focus limit reached: ${MAX_FOCUS} items`, 'error')
@@ -252,7 +340,7 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
       }
       return true
     },
-    [focus, focusList, toggleIn, onNotice],
+    [focus, focusList, toggleIn, onNotice, stripFolders],
   )
   /**
    * "Clear" (YAZ-2619; YAZ-2702 S4): the list of each vault of the window that has items becomes
@@ -288,13 +376,82 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
       const vault = rootOfPath(live.current.roots, path)
       if (vault === null) return null
       const [inFocus, inFavorites] = [focus.held.current[vault], favorites.held.current[vault]]
-      return inFocus === undefined || inFavorites === undefined ? null : { focus: inFocus.includes(path), favorite: inFavorites.includes(path) }
+      return inFocus === undefined || inFavorites === undefined
+        ? null
+        : { focus: inFocus.includes(path) || folderOf(path) !== undefined, favorite: inFavorites.includes(path), folders: foldersNow.current, intoFolder: (paths, id) => void intoRef.current(paths, id) }
     },
-    [focus, favorites],
+    [focus, favorites, folderOf],
+  )
+  // `addToFocusFolder` comes below; the menu's door reads it at the click.
+  const intoRef = useRef<(paths: string[], id: string | null) => unknown>(() => undefined)
+
+  /**
+   * Into a focus folder (YAZ-4460 F4, F5): `paths` leave the top level and every other folder, then go last in folder
+   * `id` — or, with `id` null, in a new folder "New focus folder". Answers the folder's id, or null when a vault's
+   * lists are still on their way (the toast says so and nothing is written).
+   */
+  const addToFocusFolder = useCallback(
+    (paths: string[], id: string | null): string | null => {
+      const roots = live.current.roots
+      const items = paths.map((p) => itemOf(p, roots)).filter((i): i is FolderItem => i !== null)
+      const target = id === null ? undefined : foldersNow.current.find((f) => f.id === id)
+      if (roots.some((vault) => folders.held.current[vault] === undefined || focus.held.current[vault] === undefined) || (id !== null && target === undefined)) {
+        onNotice('Focus is still loading. Try again.', 'error')
+        return null
+      }
+      if (paths.some((p) => focusList.includes(p))) toggleIn(focus, paths.filter((p) => focusList.includes(p)), true)
+      stripFolders(paths, id)
+      const now = Date.now()
+      const base: FocusFolder = target ?? { id: crypto.randomUUID(), name: 'New focus folder', created: now, at: now, items: [] }
+      const next = { ...base, items: [...base.items, ...items.filter((x) => !base.items.some((i) => sameItem(i, x)))], at: now }
+      folders.save(next)
+      if (items.length > 0) onNotice(`Added ${items.length > 1 ? `${items.length} ` : ''}to ${next.name}`, 'info', 'lists')
+      return next.id
+    },
+    [focus, focusList, folders, toggleIn, stripFolders, onNotice],
+  )
+  intoRef.current = addToFocusFolder
+  const renameFocusFolder = useCallback(
+    (id: string, name: string): void => {
+      const f = foldersNow.current.find((x) => x.id === id)
+      const clean = name.trim()
+      if (f !== undefined && clean !== '' && clean !== f.name) folders.save({ ...f, name: clean, at: Date.now() })
+    },
+    [folders],
+  )
+  /** F3: the folder goes (a tombstone, so no older copy brings it back); its items that this window shows go back to the top level. */
+  const deleteFocusFolder = useCallback(
+    (id: string): void => {
+      const f = foldersNow.current.find((x) => x.id === id)
+      if (f === undefined) return
+      const back = f.items.map((i) => resolveItem(i, live.current.roots)).flatMap((r) => ('path' in r ? [r.path] : []))
+      if (!folders.save({ ...f, deleted: true, items: [], at: Date.now() })) return onNotice('Focus is still loading. Try again.', 'error')
+      if (back.length > 0) toggleIn(focus, back.filter((p) => !focusList.includes(p)), false, MAX_FOCUS)
+    },
+    [focus, focusList, folders, toggleIn, onNotice],
+  )
+  /** F5: a drag out of a folder to the top level: the item leaves its folder and goes last on the top level. */
+  const moveOutOfFocusFolder = useCallback(
+    (path: string): void => {
+      stripFolders([path])
+      if (!focusList.includes(path)) toggleIn(focus, [path], false, MAX_FOCUS)
+    },
+    [focus, focusList, stripFolders, toggleIn],
+  )
+  /** F5: a drag inside a folder: its items in the new order (absolute paths of the window; ghosts keep their places at the end). */
+  const reorderFocusFolder = useCallback(
+    (id: string, paths: readonly string[]): void => {
+      const f = foldersNow.current.find((x) => x.id === id)
+      if (f === undefined) return
+      const shown = paths.map((p) => itemOf(p, live.current.roots)).filter((i): i is FolderItem => i !== null && f.items.some((x) => sameItem(i, x)))
+      const rest = f.items.filter((i) => !shown.some((x) => sameItem(i, x)))
+      folders.save({ ...f, items: [...shown, ...rest], at: Date.now() })
+    },
+    [folders],
   )
 
   return useMemo(
-    () => ({ favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope }),
-    [favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope],
+    () => ({ favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope, focusFolders, folderOf, addToFocusFolder, renameFocusFolder, deleteFocusFolder, moveOutOfFocusFolder, reorderFocusFolder }),
+    [favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope, focusFolders, folderOf, addToFocusFolder, renameFocusFolder, deleteFocusFolder, moveOutOfFocusFolder, reorderFocusFolder],
   )
 }

@@ -18,6 +18,7 @@ import { registerFavoritesIpc } from './favorites'
 import { registerIconsIpc } from './icons'
 import { registerNewPlacesIpc } from './newPlaces'
 import { registerFocusIpc } from './focus'
+import { registerFocusFoldersIpc } from './focusFolders'
 import { registerFsIpc } from './fs'
 import { registerGithubIpc } from './github'
 import { registerHomeIpc } from './home'
@@ -71,6 +72,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerIconsIpc(store)
   registerNewPlacesIpc(store)
   registerFocusIpc(store)
+  registerFocusFoldersIpc(store)
   registerPropertiesIpc(store)
   registerWindowIpc(store, windows)
   registerStorageIpc(store)

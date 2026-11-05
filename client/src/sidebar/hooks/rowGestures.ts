@@ -181,6 +181,11 @@ export function useTreeDrag(
    * dropped into a folder (YAZ-3253 D3), and App's box for rows dragged out (YAZ-3254 D9B).
    */
   finder: { nameOf: (path: string) => string; onImport: (dir: string, paths: string[]) => void; onDraggedOut: (paths: string[]) => void },
+  /**
+   * The Focus tab's focus folders (YAZ-4460 F5): a release of a reorder first asks here, with the row under it and the
+   * focus folder row under it (`data-focus-folder`); true means it is done, false gives the tab's own reorder.
+   */
+  focusDrop?: (from: string, over: ReorderOver | null, folder: string | null) => boolean,
 ) {
   // Drag-to-move (E1b; folders and the selection since YAZ-3251): the dragged paths and the lit
   // target live in REFS (D2), so a hover renders nothing — the lit row wears its class by DOM.
@@ -198,8 +203,8 @@ export function useTreeDrag(
   // The lift of a row whose `dragstart` came, while its pointer is not LIFT_PX from the press yet. Null: none.
   const armed = useRef<(() => void) | null>(null)
   // What the callbacks read at the moment of the gesture, so the `move` they make keeps ONE identity.
-  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder })
-  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder }
+  const live = useRef({ onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop })
+  live.current = { onRenameFile, onMoveEntries, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finder, saveOrder, focusDrop }
   // Drag-to-reorder (YAZ-2631 D3), ONE for the tab that is shown. Since YAZ-3467 D2 it is mouse events, not the
   // page's HTML5 drag: the dragged top row, the hovered row and edge, and the pill live in refs. The hovered row
   // and edge are state too, ONLY to draw the line: they change when the row or the edge does, not at each move.
@@ -325,7 +330,17 @@ export function useTreeDrag(
       const path = row?.dataset.path
       return row === null || path === undefined ? null : { path, edge: edgeOf(e.clientY, row) }
     }
+    /** The focus folder row under the pointer (YAZ-4460 F5): it lights as a drop target, by DOM. */
+    let folderLit: HTMLElement | null = null
+    const folderAt = (e: MouseEvent): HTMLElement | null => (e.target instanceof Element ? e.target.closest<HTMLElement>('[data-focus-folder]') : null)
+    const lightFolder = (el: HTMLElement | null) => {
+      if (folderLit === el) return
+      folderLit?.classList.remove('focus-folder--drop')
+      el?.classList.add('focus-folder--drop')
+      folderLit = el
+    }
     const end = () => {
+      lightFolder(null)
       reorderFrom.current = null
       pill.current?.remove()
       pill.current = null
@@ -346,6 +361,7 @@ export function useTreeDrag(
         if (e.buttons === 0) return end()
         // The row's box is read before the pill moves, so a move costs one layout, not two.
         show(overAt(e))
+        if (live.current.focusDrop !== undefined) lightFolder(folderAt(e))
         pill.current?.style.setProperty('transform', `translate(${e.clientX + 12}px, ${e.clientY + 8}px)`)
       },
       /** The release drops on the row under IT, not on the last move's (audit 3): a release off the list saves nothing. */
@@ -353,7 +369,9 @@ export function useTreeDrag(
         show(overAt(e))
         const from = reorderFrom.current
         const over = reorderAt.current
+        const folder = folderAt(e)?.dataset.focusFolder ?? null
         end()
+        if (from !== null && live.current.focusDrop?.(from, over, folder) === true) return
         if (from === null || over === null || over.path === from) return
         const order = orderRef.current
         if (!order.includes(from)) return // not a row of the shown tab's list (YAZ-2631 R24): nothing is written

@@ -115,6 +115,8 @@ export interface MenuHandlers {
   onReveal: (path: string) => void
   /** "Add to focus" / "Remove N from focus" (YAZ-2619 D3): the paths and the direction the menu read. */
   onToggleFocus: (paths: string[], isOn: boolean) => void
+  /** "Add to focus ▸ <folder>" (YAZ-4460 F4): into that focus folder, or with null into a new one. */
+  onFocusInFolder?: (paths: string[], id: string | null) => void
   /** Cut / Copy (YAZ-1674): the paths go to main's ONE app-wide clipboard (🔒 D1); the caller reports. */
   onCut: (paths: string[]) => void
   onCopy: (paths: string[]) => void
@@ -226,13 +228,19 @@ const showInSidebar: Leaf = (t, h) => {
  * is counted, and a mixed one reads as Add (R9). A VIEW verb, so it closes the Open group (R6): it
  * changes what the Focus tab shows, never what is on disk.
  */
-const focus: Leaf = (t, h) => {
+const focus: Item = (t, h) => {
   const paths = t.focusPaths
   if (paths === null) return null
   const isOn = t.focusIsOn
   const n = paths.length > 1 ? `${paths.length} ` : ''
   // The Focus tab's own glyph (YAZ-3264 D6), so the row reads at a glance.
-  return { id: 'focus', label: isOn ? `Remove ${n}from focus` : `Add ${n}to focus`, icon: createElement(EyeIcon), onSelect: () => h.onToggleFocus(paths, isOn) }
+  const item = { id: 'focus', label: isOn ? `Remove ${n}from focus` : `Add ${n}to focus`, icon: createElement(EyeIcon), onSelect: () => h.onToggleFocus(paths, isOn) }
+  const into = h.onFocusInFolder
+  if (isOn || into === undefined) return item
+  // YAZ-4460 F4, the New note pattern (YAZ-3085 D1): a click adds at the top level as before; the flyout names each
+  // focus folder, then "New focus folder…".
+  const folders = (t.focusFolders ?? []).map((f) => ({ id: `focus-in-${f.id}`, label: f.name, onSelect: () => into(paths, f.id) }))
+  return { ...item, children: [...(folders.length > 0 ? [folders] : []), [{ id: 'focus-new-folder', label: 'New focus folder…', onSelect: () => into(paths, null) }]] }
 }
 
 // ---- (2) Clipboard: the file clipboard (YAZ-1674), then the text clipboard ----

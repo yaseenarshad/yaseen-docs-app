@@ -4,6 +4,7 @@ import { LIST_SCOPES, MAX_FOCUS, VAULT_CONFIG_DIR, type FocusConfig, type ListSc
 import { isRecord, isStringArray } from '@shared/guards'
 import { deletedAt, isSafeRel, owningRoot, remap, renamedTo, toAbs, toRel, under } from './favorites'
 import { BridgeFailure, createRootChain, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
+import { repairFolders } from './focusFolders'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
 import { macId } from './vaultIndex/mint'
 
@@ -128,7 +129,7 @@ function repair(roots: readonly string[], p: string, map: (abs: string) => strin
       const next = held === null ? null : remap(root, held.rels, map)
       if (next !== null) await save(root, scope, clean(next), held)
     }
-  })
+  }).then(() => repairFolders(root, map)) // the vault's focus folders follow too (YAZ-4460)
 }
 
 /** R10: a focus item follows its rename, one inside a renamed folder too; one moved out of the vault is dropped. */

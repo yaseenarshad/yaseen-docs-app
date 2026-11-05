@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { dailyNoteName } from '@shared/dailyNote'
 import { IDS_FILE } from '@shared/noteId'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FocusFolder, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -552,6 +552,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     newPlaces: { get: vi.fn(async (_root: string) => [null, null, null]), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     icons: { get: vi.fn(async (_root: string) => ({ paths: {} })), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     focus: { get: vi.fn(async (_root: string): Promise<string[]> => []), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
+    // The focus folders (YAZ-4460): none unless a test seeds them.
+    focusFolders: { get: vi.fn(async (_root: string, _scope?: unknown): Promise<FocusFolder[]> => []), set: vi.fn(async (_root: string, _scope: unknown, _folders: readonly FocusFolder[]) => undefined), onChanged: vi.fn((_listener: (change: { root: string; scope: ListScope }) => void) => () => undefined) },
     // No update (YAZ-2976): App reads the state once and follows its pushes; nothing to show here.
     update: {
       state: vi.fn(async (): Promise<UpdateState> => ({ kind: 'idle' })),

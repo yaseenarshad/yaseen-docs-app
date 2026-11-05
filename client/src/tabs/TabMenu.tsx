@@ -98,7 +98,20 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     ],
     [
       { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => onShowInSidebar?.(menu.path) },
-      ...(lists === null || onToggleFocus === undefined ? [] : [{ id: 'focus', label: lists.focus ? 'Remove from focus' : 'Add to focus', icon: <EyeIcon />, onSelect: () => onToggleFocus([menu.path], lists.focus) }]),
+      ...(lists === null || onToggleFocus === undefined
+        ? []
+        : [
+            {
+              id: 'focus',
+              label: lists.focus ? 'Remove from focus' : 'Add to focus',
+              icon: <EyeIcon />,
+              onSelect: () => onToggleFocus([menu.path], lists.focus),
+              // YAZ-4460 F4: the focus folders, as the sidebar row's menu has them; a click on the item still adds at the top level.
+              ...(lists.focus || lists.intoFolder === undefined
+                ? {}
+                : { children: [...((lists.folders ?? []).length > 0 ? [(lists.folders ?? []).map((f) => ({ id: `focus-in-${f.id}`, label: f.name, onSelect: () => lists.intoFolder?.([menu.path], f.id) }))] : []), [{ id: 'focus-new-folder', label: 'New focus folder…', onSelect: () => lists.intoFolder?.([menu.path], null) }]] }),
+            },
+          ]),
       { id: 'copy-path', label: 'Copy path', icon: <CopyIcon />, onSelect: () => void navigator.clipboard.writeText(menu.path) },
     ],
     [

@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type ListScope, type OpenStat, type TreeNode, type WindowIdentity } from '@shared/types'
+import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FocusFolder, type ListScope, type OpenStat, type TreeNode, type WindowIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
 import { useVaultListsHere } from '../lists/useVaultListsHere'
 import { StartPage as Page, type StartPageProps } from './StartPage'
@@ -57,6 +57,8 @@ function installBridge({ trees, opens = {}, closed = {}, favorites = {}, favorit
     tree: vi.fn(async (vaultRoot: string) => ({ root: vaultRoot, tree: trees[vaultRoot] ?? [], generatedAt: 1 })),
     // App's reader of the window's lists asks for focus too (`useVaultListsHere`); this page shows none of it.
     focus: { get: vi.fn(async () => [] as string[]), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
+    // The focus folders (YAZ-4460): none unless a test seeds them.
+    focusFolders: { get: vi.fn(async (_root: string, _scope?: unknown): Promise<FocusFolder[]> => []), set: vi.fn(async (_root: string, _scope: unknown, _folders: readonly FocusFolder[]) => undefined), onChanged: vi.fn((_listener: (change: { root: string; scope: ListScope }) => void) => () => undefined) },
     favorites: {
       get: vi.fn(async (vaultRoot: string, _scope?: ListScope): Promise<string[]> => favorites[vaultRoot] ?? []),
       onChanged: vi.fn((listener: (change: { root: string; scope: ListScope }) => void) => {

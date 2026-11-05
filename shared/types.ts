@@ -3272,6 +3272,37 @@ export interface FocusConfig {
   focus: string[]
 }
 
+/** A vault keeps this many focus folders of a scope at most, tombstones included (YAZ-4460). */
+export const MAX_FOCUS_FOLDERS = 100
+
+/**
+ * One focus folder (YAZ-4460 F1, F2): a named group of focus items, in the user's order, that moves nothing on disk.
+ * Each item names its vault by the vault's FOLDER NAME and the path inside it, so a copy reads the same on each Mac.
+ * `at` (ms) is the folder's last change: of two copies the later wins. `deleted` keeps a deleted folder as a tombstone.
+ */
+export interface FocusFolder {
+  id: string
+  name: string
+  /** When it was made (ms): the order of the folders on the tab. */
+  created: number
+  at: number
+  items: { vault: string; path: string }[]
+  deleted?: true
+}
+
+export const isFocusFolder = (v: unknown): v is FocusFolder => {
+  if (typeof v !== 'object' || v === null) return false
+  const f = v as Record<string, unknown>
+  return typeof f.id === 'string' && f.id !== '' && typeof f.name === 'string' && typeof f.created === 'number' && typeof f.at === 'number' && (f.deleted === undefined || f.deleted === true) && Array.isArray(f.items) && f.items.every((i) => typeof i === 'object' && i !== null && typeof (i as Record<string, unknown>).vault === 'string' && typeof (i as Record<string, unknown>).path === 'string')
+}
+
+/** One Mac's focus folders file of a vault (YAZ-4460 F1), by `FocusConfig`'s rule: the latest `at` is the set. */
+export interface FocusFoldersConfig {
+  version: 1
+  at: string
+  folders: FocusFolder[]
+}
+
 // ---------- Bridge payloads: `window.yaseenDocs` itself is `CONTRACT` in shared/ipc.ts (GRO-2153, YAZ-2200) ----------
 
 /**

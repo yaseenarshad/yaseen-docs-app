@@ -14,7 +14,7 @@ import { storage } from '../lib/storage'
 import { countLinkReferences, linkingNotes } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind, type Move } from '../links/shortcuts'
 import type { MovedGesture } from '../lib/moveHistory'
-import { ancestorDirs, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
+import { ancestorDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP } from '../search/searchCandidates'
 import { filterOn, filterSection, NO_FILTER, type SearchFilter } from '../search/searchFilter'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -37,6 +37,8 @@ import { UpdatePill } from '../update/UpdatePill'
 import { ZoomMenu } from './ZoomMenu'
 import { buildMenuSections } from './menuSections'
 import type { ListFold } from './listFold'
+import { FocusFolderList } from './FocusFolderList'
+import { resolveItem } from '../lists/focusFolders'
 import { RecentList } from './RecentList'
 import { recentSections } from './recents'
 import { RowDateTip } from './RowDateTip'
@@ -44,7 +46,7 @@ import { FilterChips, SearchFilterBar } from './SearchFilterBar'
 import { SessionList } from './SessionList'
 import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind, NoticeType } from '../lib/notice'
-import { dropOn, hasFiles, leftTarget, Tree, type TreeFileMove } from './Tree'
+import { dropOn, hasFiles, leftTarget, Tree, type ReorderOver, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
@@ -223,6 +225,11 @@ interface SidebarProps {
   onZoomMenu?: (open: boolean) => void
   /** A Files window's hover preview (YAZ-3357 D9): its floating popup, or `'overlay'` where there is none. Absent: beside the sidebar. */
   previewFloat?: PreviewPopup | 'overlay'
+  /** A click on a focus folder's ghost (YAZ-4460 F6): the item of a vault the window does not show, by that vault's folder name. */
+  onAddVaultFor?: (vault: string, rel: string) => void
+  /** "Hide all others" (YAZ-4460 F8): App's, for the window's session — the one focus folder the Focus tab shows; null shows all. */
+  focusOnly?: string | null
+  onFocusOnly?: (id: string | null) => void
   /** The Recents tab's vault filter (YAZ-4450 D5, D6): App's, for the window's session; null is All vaults. */
   recentVault?: string | null
   onRecentVault?: (root: string | null) => void
@@ -447,6 +454,8 @@ export interface MenuTargets {
   focusPaths: string[] | null
   /** True only when EVERY `focusPaths` entry is already in the focus list — a mixed selection reads as Add (R9). */
   focusIsOn: boolean
+  /** The focus folders of the tab, for "Add to focus ▸" (YAZ-4460 F4); none or absent: the item has no flyout. */
+  focusFolders?: readonly { id: string; name: string }[]
   /**
    * "Add to favorites" / "Remove from favorites" (YAZ-1766 D3): the row, or the ordered 2+
    * selection holding it — files and folders alike, every lens; null on blank space. Its OWN field.
@@ -616,6 +625,9 @@ export function Sidebar({
   sessionNameRequest,
   recentVault = null,
   onRecentVault,
+  onAddVaultFor,
+  focusOnly = null,
+  onFocusOnly,
   onSessionNameConsumed,
   onRootMissing,
   onFileMissing,
@@ -706,6 +718,14 @@ export function Sidebar({
   const [sortMenu, setSortMenu] = useState<{ tab: SortMenuTab | 'recents'; x: number; y: number } | null>(null)
   // The open sort menu's tab, while it is the tab that shows (a tab switch leaves it unmounted).
   const sortTab = sortMenu !== null && sortMenu.tab !== 'recents' && sortMenu.tab === sortedTab ? sortMenu.tab : null
+  /** The focus folder whose name field is open (YAZ-4460 F3): "+ Folder" opens a new one's at once. */
+  const [editingFolder, setEditingFolder] = useState<string | null>(null)
+  // "Hide all others" (F8): the folder shown alone, while it still exists.
+  const onlyFolder = focusOnly === null ? undefined : lists.focusFolders.find((folder) => folder.id === focusOnly)
+  const newFocusFolder = (): void => {
+    const id = lists.addToFocusFolder([], null)
+    if (id !== null) setEditingFolder(id)
+  }
   /** One list's "Separate list for workspaces" row in its sort menu (YAZ-4450 D4): a click is one settings write. */
   const workspaceRow = (tab: 'focus' | 'favorites') => ({ on: settings.workspaceLists[tab], set: (on: boolean) => onChangeSettings({ ...settings, workspaceLists: { ...settings.workspaceLists, [tab]: on } }) })
   /**
@@ -1191,7 +1211,8 @@ export function Sidebar({
         // Focus (YAZ-2619 D3): the row or its ordered selection, any kind, any lens, any vault of the
         // window — the favorites rule below. A vault row is no item of the list (YAZ-2602 A2, A3).
         focusPaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
-        focusIsOn: node !== null && (plural ?? [node.path]).every((p) => focusList.includes(p)),
+        focusIsOn: node !== null && (plural ?? [node.path]).every((p) => focusList.includes(p) || lists.folderOf(p) !== undefined),
+        focusFolders: lists.focusFolders,
         // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
         favoritePaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
         iconPaths,
@@ -1383,7 +1404,43 @@ export function Sidebar({
   orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : roots.map(stripSlash)
   const saveOrder = lens === 'favorites' ? saveFavoriteOrder : lens === 'focus' ? reorderFocus : onReorderVaults
   const finderDrag = useMemo(() => ({ nameOf, onImport: importFiles, onDraggedOut }), [nameOf, importFiles, onDraggedOut])
-  const { fileMove, reorder } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finderDrag)
+  /**
+   * The Focus tab's drag with focus folders (YAZ-4460 F5): a drop on a folder row puts the item in it; a folder's item
+   * dropped on a row of its folder reorders the folder, on another folder's row joins that folder, and on a top row
+   * goes back to the top level; a top item dropped on a folder's item joins that folder. Anything else is the tab's
+   * own reorder. An item is in one place only.
+   */
+  const focusDrop =
+    lens !== 'focus'
+      ? undefined
+      : (from: string, over: ReorderOver | null, folder: string | null): boolean => {
+          const src = lists.folderOf(from)
+          if (folder !== null) {
+            if (src?.id !== folder) lists.addToFocusFolder([from], folder)
+            return true
+          }
+          const dst = over === null ? undefined : lists.folderOf(over.path)
+          if (src === undefined) {
+            if (dst === undefined) return false
+            lists.addToFocusFolder([from], dst.id)
+            return true
+          }
+          if (over === null || over.path === from) return true
+          if (dst === undefined) {
+            if (focusList.includes(over.path)) lists.moveOutOfFocusFolder(from)
+            return true
+          }
+          if (dst.id !== src.id) {
+            lists.addToFocusFolder([from], dst.id)
+            return true
+          }
+          const shown = src.items.map((item) => resolveItem(item, roots)).flatMap((r) => ('path' in r ? [r.path] : []))
+          const without = shown.filter((p) => p !== from)
+          const i = without.indexOf(over.path)
+          if (i >= 0) lists.reorderFocusFolder(src.id, [...without.slice(0, over.edge === 'before' ? i : i + 1), from, ...without.slice(over.edge === 'before' ? i : i + 1)])
+          return true
+        }
+  const { fileMove, reorder } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finderDrag, focusDrop)
 
   // YAZ-1801 D3 (YAZ-3039): every vault's held-back files as tree paths, one Set that keeps its
   // identity until a list really changes — the memoised levels compare it by identity.
@@ -1759,20 +1816,49 @@ export function Sidebar({
           <>
             {errorLines}
             {!loaded && focusNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
-            {loaded && focusNodes.length === 0 && <p className="sidebar__msg">{lists.focusScope === 'workspace' ? 'Nothing in focus in this workspace.' : 'Nothing in focus.'} Right-click a file or folder → Add to focus.</p>}
-            {focusNodes.length > 0 && (
-              <>
-                <div className="sidebar__focus-bar">
-                  <span>
-                    {focusNodes.length} in focus{lists.focusScope === 'workspace' ? ' · workspace list' : ''}
-                  </span>
-                  <button type="button" className="sidebar__focus-clear" onClick={clearFocus}>
-                    Clear
-                  </button>
-                </div>
-                <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />
-              </>
+            {loaded && onlyFolder !== undefined && (
+              // "Hide all others" (YAZ-4460 F8): the one folder, and the way back.
+              <div className="sidebar__focus-bar">
+                <span>Only {onlyFolder.name}</span>
+                <button type="button" className="sidebar__focus-clear" onClick={() => onFocusOnly?.(null)}>
+                  Show all
+                </button>
+              </div>
             )}
+            {loaded && onlyFolder === undefined && (
+              // The bar stands whenever the tab can make a focus folder (YAZ-4460 F3); the count is top items and folders (F7).
+              <div className="sidebar__focus-bar">
+                <span>
+                  {focusNodes.length + lists.focusFolders.length} in focus{lists.focusScope === 'workspace' ? ' · workspace list' : ''}
+                </span>
+                <span className="sidebar__focus-actions">
+                  <button type="button" className="sidebar__focus-clear" onClick={newFocusFolder}>
+                    + Folder
+                  </button>
+                  {focusNodes.length > 0 && (
+                    <button type="button" className="sidebar__focus-clear" onClick={clearFocus}>
+                      Clear
+                    </button>
+                  )}
+                </span>
+              </div>
+            )}
+            {loaded && onlyFolder === undefined && focusNodes.length === 0 && lists.focusFolders.length === 0 && <p className="sidebar__msg">{lists.focusScope === 'workspace' ? 'Nothing in focus in this workspace.' : 'Nothing in focus.'} Right-click a file or folder → Add to focus.</p>}
+            {lists.focusFolders.length > 0 && forest !== null && (
+              <FocusFolderList
+                folders={onlyFolder === undefined ? lists.focusFolders : [onlyFolder]}
+                only={onlyFolder?.id ?? null}
+                onHideOthers={(id) => onFocusOnly?.(id)}
+                roots={roots}
+                renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest, paths)} move={fileMove} reorder={reorder} sort={sort} copies />}
+                editing={editingFolder}
+                onEdit={setEditingFolder}
+                onRename={lists.renameFocusFolder}
+                onDelete={lists.deleteFocusFolder}
+                onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
+              />
+            )}
+            {onlyFolder === undefined && focusNodes.length > 0 && <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
           </>
         ) : (
           <>
@@ -1868,6 +1954,13 @@ export function Sidebar({
               onToggleFocus: (paths, isOn) => {
                 toggleFocus(paths, isOn)
                 if (!isOn && !searching && lens !== 'focus') onLensChange('focus')
+              },
+              // YAZ-4460 F4: into a focus folder — a new one opens its name field — and the Focus tab shows, as an add does.
+              onFocusInFolder: (paths, id) => {
+                const into = lists.addToFocusFolder(paths, id)
+                if (into === null) return
+                if (id === null) setEditingFolder(into)
+                if (!searching && lens !== 'focus') onLensChange('focus')
               },
               onCut: (paths) => clipTo(paths, 'cut'),
               onCopy: (paths) => clipTo(paths, 'copy'),

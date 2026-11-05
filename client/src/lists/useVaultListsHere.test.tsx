@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MAX_FOCUS, defaultAppState, defaultRightPanelIdentity, type AppState, type ListScope, type WindowIdentity, type WorkspaceLists } from '@shared/types'
+import { MAX_FOCUS, defaultAppState, defaultRightPanelIdentity, type AppState, type FocusFolder, type ListScope, type WindowIdentity, type WorkspaceLists } from '@shared/types'
 import { storage } from '../lib/storage'
 import { useVaultListsHere, type VaultListsHere } from './useVaultListsHere'
 
@@ -22,6 +22,8 @@ const listBridge = (files: Record<string, string[]>) => ({
 function installBridge(focus: Record<string, string[]> = {}, favorites: Record<string, string[]> = {}) {
   const bridge = {
     focus: listBridge(focus),
+    // The focus folders (YAZ-4460): none unless a test seeds them.
+    focusFolders: { get: vi.fn(async (_root: string, _scope?: unknown): Promise<FocusFolder[]> => []), set: vi.fn(async (_root: string, _scope: unknown, _folders: readonly FocusFolder[]) => undefined), onChanged: vi.fn((_listener: (change: { root: string; scope: ListScope }) => void) => () => undefined) },
     favorites: listBridge(favorites),
     state: {
       get: vi.fn(async (): Promise<AppState> => defaultAppState()),

@@ -453,6 +453,15 @@ export function App() {
     setAddAsk({ root, path, background })
     return true
   }, [])
+  /**
+   * A focus folder's ghost (YAZ-4460 F6): an item of a vault this window does not show, by that vault's folder name. A
+   * vault this Mac knows by that name gets the link pills' sheet, "Add vault to this window"; an unknown one a notice.
+   */
+  const addVaultFor = useCallback((vault: string, rel: string): void => {
+    const root = storage.listVaults().map((known) => known.path).find((path) => path.slice(path.lastIndexOf('/') + 1) === vault)
+    if (root === undefined) return notify(`This item is in the vault "${vault}", which this Mac does not know. Open that folder first.`, 'error')
+    setAddAsk({ root, path: `${root}/${rel}`, background: false })
+  }, [notify])
   /** The name of the window's vault that holds `path`, as the sidebar shows it, or null (YAZ-3609 D22): a pill into another vault says which. */
   const vaultOf = useCallback((path: string) => {
     const now = live.current
@@ -1518,6 +1527,9 @@ export function App() {
   // when it is hidden — and never written: a new window starts on All vaults. null is All vaults. A vault that leaves drops it,
   // and so does a window left with one vault, so a vault that joins later never brings back a filter nobody sees.
   const [recentVault, setRecentVault] = useState<string | null>(null)
+  // "Hide all others" on a focus folder (YAZ-4460 F8): the one folder the Focus tab shows, by the Recents filter's rule —
+  // this window's session only, never written. A folder that goes ends it (the sidebar checks it is still there).
+  const [focusOnly, setFocusOnly] = useState<string | null>(null)
   const recentPick = recentVault !== null && roots.length > 1 && roots.includes(recentVault) ? recentVault : null
   useEffect(() => {
     if (recentVault !== null && recentPick === null) setRecentVault(null)
@@ -3209,6 +3221,9 @@ export function App() {
           icons={vaultIcons}
           recentVault={recentPick}
           onRecentVault={setRecentVault}
+          focusOnly={focusOnly}
+          onFocusOnly={setFocusOnly}
+          onAddVaultFor={addVaultFor}
           closedVaults={closedVaults}
           onSetVaultOpen={setVaultOpen}
           onAddVault={addVault}

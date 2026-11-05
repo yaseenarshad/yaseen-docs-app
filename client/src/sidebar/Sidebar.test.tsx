@@ -13,7 +13,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { copyFoldKey } from '@shared/foldKey'
 import { parseFrontmatter } from '@shared/frontmatter'
-import { CLIP_CHANGED, DEFAULT_ROW_DATES, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type ImportResponse, type IndexRecord, type ListScope, type PasteRequest, type PasteResponse, type SettingsState, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity, type SidebarTabsPrefs } from '@shared/types'
+import { CLIP_CHANGED, DEFAULT_ROW_DATES, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type ImportResponse, type FocusFolder, type IndexRecord, type ListScope, type PasteRequest, type PasteResponse, type SettingsState, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity, type SidebarTabsPrefs } from '@shared/types'
 import appCss from '../app.css?inline'
 import { formatDateTime } from '../lib/format'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -166,6 +166,8 @@ function installBridge() {
       set: vi.fn(async (_root: string, _paths: readonly string[], _scope?: ListScope) => undefined),
       onChanged: vi.fn((_listener: (change: { root: string; scope: ListScope }) => void) => () => undefined),
     },
+    // The focus folders (YAZ-4460): none unless a test seeds them.
+    focusFolders: { get: vi.fn(async (_root: string, _scope?: unknown): Promise<FocusFolder[]> => []), set: vi.fn(async (_root: string, _scope: unknown, _folders: readonly FocusFolder[]) => undefined), onChanged: vi.fn((_listener: (change: { root: string; scope: ListScope }) => void) => () => undefined) },
     // The sounds of a gesture (YAZ-3267 D15): a Paste of a Copy and a copy in from another disk ask here; a move asks through App (`onMoved`).
     app: { sound: vi.fn(async (_kind: 'land' | 'trash') => undefined) },
     // Reveal in Finder (GRO-2274) goes through the shell namespace.
