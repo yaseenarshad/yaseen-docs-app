@@ -26,10 +26,10 @@ export default defineConfig({
     css: true,
     setupFiles: ['src/test-setup.ts'],
     include: ['src/**/*.perf.test.{ts,tsx}'],
+    // the real engine's typing test runs in its own last group (`vitest.perf-engine.config.ts`)
+    exclude: ['src/drawings/textBoxTyping.perf.test.ts'],
     testTimeout: 30_000,
     sequence: { groupOrder: 1 },
     fileParallelism: false,
-    // as the client project: a perf test of the REAL engine (`textBoxTyping.perf.test.ts`) needs its dist inlined
-    server: { deps: { inline: [/@excalidraw\//] } },
   },
 })
