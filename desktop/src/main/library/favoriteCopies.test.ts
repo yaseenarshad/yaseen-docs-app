@@ -4,7 +4,7 @@
  * there is not one real request here.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { LIBRARY_FAVORITES_DIR, type MediaBytesRequest, type MediaImportResponse, type StoredMediaItem } from '@shared/types'
@@ -23,6 +23,7 @@ const jpg: MediaImportResponse = { mimeType: 'image/jpeg', dataURL: `data:image/
 let dir: string
 let library: string
 let favorites: StoredMediaItem[]
+let removed: string[]
 let hasKey: boolean
 let copies: FavoriteCopies
 let fetchOriginal: ReturnType<typeof vi.fn<(req: MediaBytesRequest) => Promise<MediaImportResponse>>>
@@ -35,6 +36,7 @@ beforeEach(async () => {
   dir = await mkdtemp(path.join(tmpdir(), 'yd-fav-copies-'))
   library = path.join(dir, 'library')
   favorites = []
+  removed = []
   hasKey = true
   waits.length = 0
   fetchOriginal = vi.fn(async (req: MediaBytesRequest) => (req.provider === 'pixabay' ? jpg : svg(req.id.split(':')[1])))
@@ -43,6 +45,7 @@ beforeEach(async () => {
   componentFiles = new Map()
   copies = createFavoriteCopies(library, {
     favorites: async () => favorites,
+    removedKeys: async () => removed,
     hasPixabayKey: async () => hasKey,
     readComponent: async (slug) => {
       const file = componentFiles.get(slug)
@@ -90,6 +93,25 @@ describe('favorite copies (YAZ-4363)', () => {
     await copies.remove('iconify:mdi:home')
     expect(await files()).toEqual([`${favoriteCopyHash('pixabay:7')}.jpg`])
     expect(await copies.preview({ provider: 'iconify', id: 'mdi:home' })).toBeNull()
+  })
+
+  it('a pass removes the copy of a favorite that left without its removal here (another Mac); a copy with no note stays (YAZ-4366)', async () => {
+    favorites = [icon('a'), icon('b')]
+    await copies.start(fetchers)
+    expect(await files()).toHaveLength(2)
+    // Mac B removed "b": its merge took the favorite off here, but this Mac never ran `remove`, so the copy stayed.
+    favorites = [icon('a')]
+    removed = ['iconify:mdi:b']
+    // A copy that came before its favorite (a sync, a move): no removal names it, so it stays.
+    const early = `${favoriteCopyHash('iconify:mdi:early')}.svg`
+    await writeFile(path.join(copyDir(), early), '<svg id="early"/>')
+    await copies.backfill()
+    expect(await files()).toEqual([`${favoriteCopyHash('iconify:mdi:a')}.svg`, early].sort())
+    expect((await copies.status()).bytes).toBe('<svg id="a"/>'.length + '<svg id="early"/>'.length)
+    // A favorite added again after its removal keeps its copy.
+    favorites = [icon('a'), icon('b')]
+    await copies.backfill()
+    expect(await files()).toContain(`${favoriteCopyHash('iconify:mdi:b')}.svg`)
   })
 
   it('a failed copy is tried again by the next backfill; no network stops the pass', async () => {

@@ -80,6 +80,7 @@ function launch(macId: string, userData: string, withSettings: boolean, now?: ()
   media = createMediaStore(folder, { macId: async () => macId, now })
   copies = createFavoriteCopies(folder, {
     favorites: () => media.favorites({ op: 'list' }),
+    removedKeys: async () => Object.keys((await media.used({ op: 'list' })).removed),
     hasPixabayKey: async () => true,
     readComponent: (slug) => components.read({ slug }),
     wait: async () => undefined,

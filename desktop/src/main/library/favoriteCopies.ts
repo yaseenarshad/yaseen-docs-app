@@ -20,7 +20,10 @@
  *    once, then one each second. Pixabay waits until a key exists. A pass that finds the network gone stops; a copy
  *    that failed is tried again by the next pass. A change during a pass runs one more pass after it.
  *  - A REMOVAL DELETES THE COPY (`remove`, after `media:favorites` remove). The copy is a copy, not the user's data:
- *    `rm`, not the trash, so an unfavorite does not fill the Trash with hashed files.
+ *    `rm`, not the trash, so an unfavorite does not fill the Trash with hashed files. A favorite that left through a
+ *    merge (another Mac removed it) never ran `remove` here: each pass first deletes the copy of every removed
+ *    itemKey that is not a favorite again (YAZ-4366). A copy that no removal names stays, as one that came before its
+ *    favorite (a sync, a move: the copies move before the media) is not an orphan.
  *  - A LIBRARY THAT MOVES (YAZ-4364): `copyFrom` copies the copies the new folder lacks; it never writes over one.
  *    Each lands whole or not at all (YAZ-4379): `createDurable`, a fsynced tmp file linked onto the name. A copy that
  *    failed fails the move, so the next launch copies it again from the old folder. A component that moved to another
@@ -75,6 +78,8 @@ export const copyMimeType = (ext: string): string => (ext === 'svg' ? 'image/svg
 export interface FavoriteCopiesDeps {
   /** The favorites as `media.json` holds them now (every Mac's, after YAZ-4364). */
   favorites: () => Promise<StoredMediaItem[]>
+  /** The itemKeys of the library's removal notes (`media.json`'s `removed`): a pass deletes their copies. */
+  removedKeys?: () => Promise<readonly string[]>
   /** Whether this Mac has a Pixabay key: a Pixabay copy waits until it does. */
   hasPixabayKey: () => Promise<boolean>
   /** A saved component's file, by slug (`componentStore.read`); it throws when the component is gone. */
@@ -222,11 +227,29 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
     await write(item.itemKey, ELEMENTS_COPY_EXT, fragment, library)
   }
 
+  /** The copies of removed favorites that are not favorites again (YAZ-4366), on the chain with the writes. */
+  function dropRemoved(library: string): Promise<void> {
+    return chain.run(async () => {
+      if (library !== folder || deps.removedKeys === undefined) return
+      const keep = new Set((await deps.favorites()).map((f) => favoriteCopyHash(f.itemKey)))
+      const dir = dirOf(library)
+      const files = await listing(dir)
+      for (const itemKey of await deps.removedKeys()) {
+        const hash = favoriteCopyHash(itemKey)
+        const hit = files.get(hash)
+        if (hit === undefined || keep.has(hash)) continue
+        await rm(path.join(dir, hit.name), { force: true })
+        scan = null
+      }
+    })
+  }
+
   /** One pass over the favorites of the folder it started in. */
   async function pass(): Promise<void> {
     const library = folder
     const fetch = fetchers
     if (fetch === null) return
+    await dropRemoved(library)
     const favorites = (await deps.favorites()).filter((item) => !madeByPanel(item))
     let hasKey: boolean | null = null
     let first = true
