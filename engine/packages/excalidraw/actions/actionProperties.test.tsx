@@ -1913,7 +1913,11 @@ describe("element locking", () => {
 
     // YAZ-4366: the empty "Mixed" field read as 0 and set every selected text to size 1
     it("should change no size when the empty field of mixed sizes loses the focus", () => {
-      const small = API.createElement({ type: "text", text: "a", fontSize: 20 });
+      const small = API.createElement({
+        type: "text",
+        text: "a",
+        fontSize: 20,
+      });
       const big = API.createElement({
         type: "text",
         text: "b",
