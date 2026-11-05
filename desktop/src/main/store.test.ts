@@ -3,10 +3,10 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, HIGHLIGHT_CUSTOM_COLORS_KEPT, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
-import { createStore, isCanvasPanel, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs, sanitizeToolbarPrefs } from './store'
+import { createStore, isCanvasPanel, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs, sanitizeToolbarPrefs, sanitizeHighlightCustomColors } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -323,11 +323,13 @@ describe('createStore: loading', () => {
     expect(DEFAULT_SETTINGS.outsideChangeGlow).toBe('until-checked')
     await seed(valid({ settings: legacySettings }))
     expect(createStore(file).get().settings.outsideChangeGlow).toBe('until-checked')
-    for (const outsideChangeGlow of ['10s', '60s', 'off'] as const) {
+    for (const outsideChangeGlow of ['60s', '5m', 'off'] as const) {
       await seed(valid({ settings: { ...DEFAULT_SETTINGS, outsideChangeGlow } }))
       expect(createStore(file).get().settings.outsideChangeGlow).toBe(outsideChangeGlow)
     }
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, outsideChangeGlow: '30s' }).outsideChangeGlow).toBe('until-checked')
+    // 10 seconds went in the YAZ-4272 demo: a file that still has it reads the default.
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, outsideChangeGlow: '10s' }).outsideChangeGlow).toBe('until-checked')
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, outsideChangeGlow: true }).outsideChangeGlow).toBe('until-checked')
     expect(isSettings({ ...DEFAULT_SETTINGS, outsideChangeGlow: 'forever' })).toBe(false)
   })
@@ -439,7 +441,7 @@ describe('createStore: loading', () => {
     await seed(valid({ settings: legacySettings }))
     expect(createStore(file).get().settings.selectionToolbar).toEqual(DEFAULT_TOOLBAR)
 
-    const set = { groups: ['lists', 'lineType', 'insert', 'textStyle'], buttons: ['link', ...DEFAULT_TOOLBAR.buttons.filter((b) => b !== 'link')], hidden: ['bold', 'highlight-pink'] }
+    const set = { groups: ['lists', 'lineType', 'insert', 'textStyle'], buttons: ['link', ...DEFAULT_TOOLBAR.buttons.filter((b) => b !== 'link')], hidden: ['bold', 'highlight-blue'] }
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, selectionToolbar: set } }))
     expect(createStore(file).get().settings.selectionToolbar).toEqual(set)
     expect(isSettings({ ...DEFAULT_SETTINGS, selectionToolbar: set })).toBe(true)
@@ -457,6 +459,40 @@ describe('createStore: loading', () => {
       expect(createStore(file).get().settings.selectionToolbar).toEqual(fixed)
       expect(sanitizeToolbarPrefs(bad)).toEqual(fixed)
       expect(isSettings({ ...DEFAULT_SETTINGS, selectionToolbar: bad })).toBe(false) // the IPC boundary refuses it whole
+    }
+  })
+
+  it('selectionToolbar (YAZ-4348 demo round 2): a file that still lists the pink button, which went into the highlight panel, loads without it', async () => {
+    const textStyle = ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', 'highlight-more']
+    const old = { groups: DEFAULT_TOOLBAR.groups, buttons: DEFAULT_TOOLBAR.buttons.flatMap((b) => (b === 'bold' ? textStyle : (textStyle as string[]).includes(b) ? [] : [b])), hidden: ['highlight-pink', 'italic'] }
+    expect(old.buttons).toContain('highlight-pink')
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, selectionToolbar: old } }))
+    expect(createStore(file).get().settings.selectionToolbar).toEqual({ ...DEFAULT_TOOLBAR, hidden: ['italic'] })
+    expect(DEFAULT_TOOLBAR.buttons).not.toContain('highlight-pink')
+  })
+
+  it('highlightCustomColors (YAZ-4348 demo round 2): empty by default; a set list survives a restart; the repair drops what does not read, a colour twice, and past the cap', async () => {
+    const { highlightCustomColors: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.highlightCustomColors).toEqual([])
+
+    const set = [{ color: '#3366ff', uses: 4 }, { color: '#00aa00', uses: 1 }]
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, highlightCustomColors: set } }))
+    expect(createStore(file).get().settings.highlightCustomColors).toEqual(set)
+    expect(isSettings({ ...DEFAULT_SETTINGS, highlightCustomColors: set })).toBe(true)
+
+    const many = Array.from({ length: HIGHLIGHT_CUSTOM_COLORS_KEPT + 3 }, (_, i) => ({ color: `#0000${i.toString(16).padStart(2, '0')}`, uses: 1 }))
+    const repaired: [unknown, unknown][] = [
+      ['red', []],
+      [[{ color: '#3366FF', uses: 2 }, { color: '#3366ff', uses: 0 }, { color: '#3366ff', uses: 1.5 }, { color: 'red', uses: 1 }, null, { color: '#00aa00', uses: 2, extra: true }], [{ color: '#00aa00', uses: 2 }]],
+      [[{ color: '#3366ff', uses: 2 }, { color: '#3366ff', uses: 5 }], [{ color: '#3366ff', uses: 2 }]],
+      [many, many.slice(0, HIGHLIGHT_CUSTOM_COLORS_KEPT)],
+    ]
+    for (const [bad, fixed] of repaired) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, highlightCustomColors: bad } }))
+      expect(createStore(file).get().settings.highlightCustomColors).toEqual(fixed)
+      expect(sanitizeHighlightCustomColors(bad)).toEqual(fixed)
+      expect(isSettings({ ...DEFAULT_SETTINGS, highlightCustomColors: bad })).toBe(false) // the IPC boundary refuses it whole
     }
   })
 
@@ -488,6 +524,8 @@ describe('createStore: loading', () => {
       noteBulletGap: [1, 21, 10.5, true],
       tableCellNoteTemplate: ['x'.repeat(2001), 3, null],
       tableCellNotePinned: ['yes', 1],
+      typingArrows: ['on', 0],
+      tableAllNotesOpensAt: ['here', '', true],
       tableBandColour: ['', 'magenta', '#12345', '#12345g', 4],
       tableBandStrength: [0, 61, 10.5, '10', Infinity],
       tableBandRows: ['row', '', 2],

@@ -151,6 +151,17 @@ export const createIdLinkCaret = () => {
               return false
             },
           },
+          // A letter the browser types inside a closed link goes to the edge the caret is at (YAZ-4275): at a line's end,
+          // after ⌘→, the editor's caret is at the link's end, but the browser types at the end of the shown name, before the
+          // hidden `.excalidraw]]`. Normal typing lands where the caret is, and pays this one comparison.
+          handleTextInput: (view, from, to, text) => {
+            const { head, empty } = view.state.selection
+            if (from !== to || !empty || head === from || view.composing) return false
+            const link = linkAround(view.state, from)
+            if (link === null || (head !== link.from && head !== link.to)) return false
+            view.dispatch(view.state.tr.insertText(text, head).scrollIntoView())
+            return true
+          },
           handleKeyDown: (view, event) => {
             arrow = event.key === 'ArrowLeft' || event.key === 'ArrowRight'
             // ⌥⌫ and ⌃H delete back too, ⌥⌦ and ⌃D forward (macOS): left to the browser, they would cut the hidden text (YAZ-3747 checker).

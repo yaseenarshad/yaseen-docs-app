@@ -61,7 +61,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -973,6 +973,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
+        // YAZ-4273 D8: text that the editor changes as you type.
+        title: 'Typing',
+        items: [
+          {
+            id: 'typingArrows',
+            label: 'Arrows',
+            hint: 'Typing -> makes →, => makes ⇒, <- makes ←, <= makes ⇐, and <-> makes ↔. ⌘Z or Backspace right after gives back what you typed. Never in code.',
+            keywords: ['arrow', 'arrows', 'auto', 'replace', 'typing', 'symbol', 'convert', '->', '=>', '<-', 'right arrow', 'left arrow'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.typingArrows ?? true} onChange={(typingArrows) => onChange({ ...settings, typingArrows })} ariaLabel="Arrows while typing" />
+            ),
+          },
+        ],
+      },
+      {
         // "Table of contents default" (YAZ-3558 D2) is a default: each page's cog can turn its own on or off.
         // "Pin default" (YAZ-2700, named by YAZ-3558 D2a) is the same field the table of contents' own "Pin" and "Unpin" buttons write.
         // "Level lines" (YAZ-2762) says when the lines of its names show.
@@ -1129,6 +1144,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['pin', 'pinned', 'cell note', 'keep open', 'sticky', 'close', 'click outside', 'table'],
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.tableCellNotePinned ?? true} onChange={(tableCellNotePinned) => onChange({ ...settings, tableCellNotePinned })} ariaLabel="Keep cell notes open (pinned)" />
+            ),
+          },
+          {
+            // YAZ-4276 A1: where a calendar table's "All notes" opens.
+            id: 'tableAllNotesOpensAt',
+            label: 'All notes opens at',
+            hint: 'In a calendar table, "All notes" shows every time block of the column in the card. It opens at the time block of the cell you came from, or at now.',
+            keywords: ['all notes', 'calendar', 'time block', 'now', 'open', 'cell note', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ALL_NOTES_OPENS_AT_OPTIONS} value={settings.tableAllNotesOpensAt ?? 'cell'} onChange={(tableAllNotesOpensAt) => onChange({ ...settings, tableAllNotesOpensAt })} ariaLabel="All notes opens at" />
             ),
           },
         ],

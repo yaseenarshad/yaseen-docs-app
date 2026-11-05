@@ -6,8 +6,10 @@
  * copy / paste, the pop-up keys) are built in. `drawingKeys.test.ts` reads the engine's real actions and tools and
  * fails on one with no row.
  *
- * Built-in rows that the engine splits by the selection never repeat a key: the colour letters (with a selection)
- * are the tool letters (without one), so their row names the letters in its hint and has no keys.
+ * The keys that act only while something is selected (YAZ-4348) are built-in rows of their own, one per key, flagged
+ * `withSelection`: each colour letter (R is Red with a selection, Rectangle without one; R the line, ⇧R the fill: YAZ-4277 D16) and each size
+ * digit. Their key card shows them beside the tool on the same letter, and they clash with no row (`clashesOf`).
+ * `drawingKeys.test.ts` reads the engine's letter and digit tables and fails when these rows drift from them.
  */
 import type { KeyRow } from './types'
 
@@ -17,7 +19,69 @@ const key = (id: string, label: string, keys: readonly string[], hint?: string):
 const fixed = (id: string, label: string, keys: readonly string[], hint?: string): KeyRow => ({ ...key(id, label, keys, hint), changeable: false })
 
 const ARROWS = ['Up', 'Down', 'Left', 'Right']
-const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
+
+/** A built-in drawing key that acts only while something is selected (YAZ-4348): its letter is a tool's the rest of the time. */
+const selected = (id: string, label: string, keys: readonly string[], hint: string): KeyRow => ({ ...fixed(id, label, keys, hint), withSelection: true })
+
+/** The engine's colour letters (`SEMANTIC_COLOR_HOTKEYS`, `components/ColorPicker/colorPickerUtils.ts`), in its order. */
+export const SELECTION_COLOURS: readonly (readonly [letter: string, name: string])[] = [
+  ['T', 'Transparent'],
+  ['B', 'Black'],
+  ['W', 'White'],
+  ['D', 'Gray'],
+  ['R', 'Red'],
+  ['P', 'Pink'],
+  ['A', 'Grape'],
+  ['V', 'Violet'],
+  ['U', 'Blue'],
+  ['C', 'Cyan'],
+  ['E', 'Teal'],
+  ['G', 'Green'],
+  ['Y', 'Yellow'],
+  ['O', 'Orange'],
+  ['N', 'Bronze'],
+]
+
+/** The engine's size digits (`SELECTION_SIZE_PRESETS`, `selectionSizePresets.ts`): a text's font size, and anything else's long side. */
+export const SELECTION_SIZES: readonly (readonly [digit: string, text: number, other: number])[] = [
+  ['1', 12, 48],
+  ['2', 16, 64],
+  ['3', 20, 96],
+  ['4', 24, 128],
+  ['5', 32, 192],
+  ['6', 40, 256],
+  ['7', 56, 384],
+  ['8', 72, 512],
+  ['9', 96, 768],
+  ['0', 128, 1024],
+]
+
+/**
+ * The ⇧ letters that keep their own action with a selection (YAZ-4348 demo, Yasin: "Flip and eyedropper win"), so they
+ * colour no fill (YAZ-4277 D16: ⇧ is the fill): the engine's `SHIFT_KEYS_KEPT_FROM_COLORS`. Violet and green fills come
+ * from the picker.
+ */
+export const SHIFT_KEPT: Readonly<Record<string, string>> = { V: 'Flip vertical', G: 'the eyedropper' }
+
+/**
+ * A colour letter's row. On a one-colour icon the letter and its ⇧ both colour the icon itself, and T and ⇧T both
+ * take off its outline (the engine's `actionApplySelectedSemanticColor`, YAZ-4353 1C; Yasin, audit 42: the text says
+ * so, the key stays). No em dash in a label (YAZ-4421). The letter colours the line, ⇧ the fill (YAZ-4277 D16).
+ */
+const colourRow = ([letter, name]: readonly [string, string]): KeyRow =>
+  letter === 'T'
+    ? selected('colorTransparent', 'Transparent, with a selection (on an icon: takes off the outline)', ['T', 'Shift+T'], 'Colours the selection: no outline on a shape, no colour on a line or a text; ⇧T no fill on a shape, or no background on a free text')
+    : SHIFT_KEPT[letter] !== undefined
+    ? selected(`color${name}`, `${name}, with a selection`, [letter], `Colours the selection ${name.toLowerCase()}: a shape's outline, a line's or a text's colour, a picture's border, a one-colour icon. ⇧${letter} stays ${SHIFT_KEPT[letter]}; the fill's ${name.toLowerCase()} is in the picker`)
+    : selected(
+        `color${name}`,
+        `${name}, with a selection (⇧${letter}: the fill)`,
+        [letter, `Shift+${letter}`],
+        `Colours the selection ${name.toLowerCase()}: a shape's outline, a line's or a text's colour, a picture's border, a one-colour icon. ⇧${letter} colours a shape's fill, or a free text's background; on a one-colour icon ${letter} and ⇧${letter} both colour the icon`,
+      )
+
+const sizeRow = ([digit, text, other]: readonly [string, number, number]): KeyRow =>
+  selected(`size${digit}`, `Size: text ${text}, anything else ${other} on its long side, with a selection`, [digit], 'Sizes the selection as you see it at this zoom; a locked one keeps its size')
 
 export const DRAWING_KEYS: readonly KeyRow[] = [
   // The tools (the engine's `TOOLS`, `components/Tools.tsx`); a tool with no letter can still get one.
@@ -105,8 +169,9 @@ export const DRAWING_KEYS: readonly KeyRow[] = [
   fixed('selectAll', 'Select all', ['CmdOrCtrl+A']),
   fixed('help', 'Keyboard shortcuts', ['Shift+/']),
   fixed('toolLock', 'Keep the tool after drawing', ['Q']),
-  fixed('colors', 'Colour the selection', [], "T B W D R P A V U C E G Y O N: transparent, black, white, gray, red, pink, grape, violet, blue, cyan, teal, green, yellow, orange, bronze. The letter colors the line (a shape's outline, a text's letters, an arrow or a pen line); with ⇧ the fill (a shape's fill, a text box's fill). The tool letters, while something is selected"),
-  fixed('sizes', 'Size the selection', DIGITS, 'Text 12 to 128; anything else 48 to 1024 on its long side'),
+  // With a selection (YAZ-4348): the colour letters and the size digits, one row per key.
+  ...SELECTION_COLOURS.map(colourRow),
+  ...SELECTION_SIZES.map(sizeRow),
   fixed('backgroundColors', 'Open the background colours', ['G'], 'With a shape tool and nothing selected'),
   fixed('strokeColors', 'Open the stroke colours', ['S'], 'With a shape tool and nothing selected'),
   fixed('fonts', 'Open the fonts', ['Shift+F'], 'With the text tool, or a text selected'),

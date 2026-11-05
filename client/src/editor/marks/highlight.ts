@@ -7,12 +7,17 @@
  *    and stringify `unsafe` rules that write `\=` for any `=` touching another `=`.
  *  - A named colour has no Markdown syntax, so — like underline's `<u>` — it is inline HTML
  *    `<mark class="highlight-<name>">`, read back through the shared `htmlPairs.ts` walk.
- *  - `setHighlightCommand(color)` is the one command behind the four toolbar swatches,
+ *  - A custom colour (YAZ-4348 demo round 2, the ▾ panel's shades, hex code and picker) is `color: '#rrggbb'`, inline
+ *    HTML `<mark style="background-color: #rrggbb">`: the one form that renders in any Markdown
+ *    viewer without our CSS. Only that exact spelling (lowercase hex) is read, so any other
+ *    `<mark style>` stays HTML with its bytes. The note paints it as a translucent wash, as the
+ *    named colours, so the text keeps its own colour and stays readable in both themes.
+ *  - `setHighlightCommand(color)` is the one command behind the toolbar's highlight buttons,
  *    `Mod-Shift-h` (yellow) and the `==x==` typing rule (yellow) — Bold's toggle rule (🔒 D5).
  */
 import { commandsCtx } from '@milkdown/kit/core'
 import { markRule } from '@milkdown/kit/prose'
-import type { MarkType } from '@milkdown/kit/prose/model'
+import type { Mark, MarkType } from '@milkdown/kit/prose/model'
 import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $command, $inputRule, $markSchema, $remark, $useKeymap } from '@milkdown/kit/utils'
 import type { Parent, PhrasingContent } from 'mdast'
@@ -22,12 +27,48 @@ import { splice } from 'micromark-util-chunked'
 import { classifyCharacter } from 'micromark-util-classify-character'
 import { resolveAll } from 'micromark-util-resolve-all'
 import type { Event, Extension, Resolver, State, Token, TokenizeContext, Tokenizer } from 'micromark-util-types'
+import { isHighlightHex } from '@shared/types'
+import { rgbOf, solidHex } from '../../lib/colour'
 import { visibleRangeHasMark, visibleRanges } from '../lineSelection'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
 
-/** The named colours; yellow is `null` (the default, and the only one with Markdown syntax). */
-export const HIGHLIGHT_COLORS = ['green', 'blue', 'pink'] as const
-export type HighlightColor = (typeof HIGHLIGHT_COLORS)[number] | null
+/** The named colours that are toolbar buttons after yellow (YAZ-4348 demo round 2: pink went into the ▾ panel). */
+export const QUICK_HIGHLIGHTS = ['green', 'blue'] as const
+/** The named colours only the toolbar's ▾ panel has (YAZ-4348 demo round 2). */
+export const MORE_HIGHLIGHTS = ['pink', 'orange', 'purple', 'red', 'gray'] as const
+/** Every named colour, each `<mark class="highlight-<name>">`; yellow is `null` (the default, and the only one with Markdown syntax). */
+export const HIGHLIGHT_COLORS = [...QUICK_HIGHLIGHTS, ...MORE_HIGHLIGHTS] as const
+export type HighlightName = (typeof HIGHLIGHT_COLORS)[number]
+/** A custom colour: lowercase `#rrggbb` (YAZ-4348 demo round 2). */
+export type CustomHighlight = `#${string}`
+export type HighlightColor = HighlightName | CustomHighlight | null
+
+/** A custom colour as the mark keeps it: exactly lowercase `#rrggbb` (the setting's own test, `@shared/types`). */
+export const isCustomHighlight: (value: unknown) => value is CustomHighlight = isHighlightHex
+
+/** How strong a custom colour's wash is: the named colours' 0.35–0.4, so text on it stays readable in both themes. */
+export const CUSTOM_WASH = 0.4
+
+/**
+ * Each colour's solid hue, the `rgb` of its app.css wash token: what the panel's Hex code field shows for it, and
+ * where its Shades start (YAZ-4348 demo round 2). A shade or a typed hex is a custom colour.
+ */
+export const HIGHLIGHT_HEX: Record<HighlightName | 'yellow', CustomHighlight> = {
+  yellow: '#ffd500',
+  green: '#50c878',
+  blue: '#50a0ff',
+  pink: '#ff78b4',
+  orange: '#ff9632',
+  purple: '#a06eff',
+  red: '#ff5a50',
+  gray: '#969696',
+}
+
+/** A custom colour's see-through wash, `rgba(r, g, b, 0.4)`. */
+export function customWash(hex: CustomHighlight): string {
+  const [r, g, b] = rgbOf(hex)
+  return `rgba(${r}, ${g}, ${b}, ${CUSTOM_WASH})`
+}
 
 /** mdast node for a highlight; registered with mdast so remark-stringify's `Handlers` knows the type. */
 export interface Highlight extends Parent {
@@ -140,18 +181,23 @@ const fromMarkdown: FromMarkdownExtension = {
   },
 }
 
+/** A coloured highlight's opening tag on disk: the class form for a named colour, the style form for a custom one. */
+const openTag = (color: Exclude<HighlightColor, null>): string =>
+  isCustomHighlight(color) ? `<mark style="background-color: ${color}">` : `<mark class="highlight-${color}">`
+
 const highlightHandle: Handle & { peek?: Handle } = (node: Highlight, _parent, state, info) =>
   node.color
-    ? `<mark class="highlight-${node.color}">${state.containerPhrasing(node, { ...info, before: '>', after: '<' })}</mark>`
+    ? `${openTag(node.color)}${state.containerPhrasing(node, { ...info, before: '>', after: '<' })}</mark>`
     : `==${state.containerPhrasing(node, { ...info, before: '=', after: '=' })}==`
 highlightHandle.peek = (node: Highlight) => (node.color ? '<' : '=')
 
-/** The coloured half: inline HTML, read through the same walk underline uses. */
+/** The coloured half: inline HTML, read through the same walk underline uses. Each form only exactly as written, so it reads back byte for byte. */
 const MARK_OPEN = new RegExp(`^<mark class="highlight-(${HIGHLIGHT_COLORS.join('|')})">$`)
+const MARK_CUSTOM_OPEN = /^<mark style="background-color: (#[0-9a-f]{6})">$/
 const HIGHLIGHT_PAIRS: HtmlPairSpec<{ color: HighlightColor }> = {
   open: (value) => {
     if (value === '<mark>') return { color: null }
-    const match = MARK_OPEN.exec(value)
+    const match = MARK_OPEN.exec(value) ?? MARK_CUSTOM_OPEN.exec(value)
     return match === null ? null : { color: match[1] as HighlightColor }
   },
   close: '</mark>',
@@ -183,13 +229,27 @@ export const highlightRemark = $remark('mdapp-highlight', () => function highlig
   return (tree) => wrapHtmlPairs(tree, HIGHLIGHT_PAIRS)
 })
 
-/** The element's `highlight-<known>` class, else null (a bare `<mark>` is yellow). */
-const colorOf = (dom: HTMLElement): HighlightColor => HIGHLIGHT_COLORS.find((c) => dom.classList.contains(`highlight-${c}`)) ?? null
+/**
+ * The element's colour: our own `data-highlight` (a custom colour, from the editor's DOM and the copy-out), a
+ * `highlight-<known>` class, or a pasted `<mark style="background-color: …">` as a custom colour; else null (a
+ * bare `<mark>` is yellow).
+ */
+function colorOf(dom: HTMLElement): HighlightColor {
+  const own = dom.getAttribute('data-highlight')
+  if (isCustomHighlight(own)) return own
+  const named = HIGHLIGHT_COLORS.find((c) => dom.classList.contains(`highlight-${c}`))
+  if (named !== undefined) return named
+  return solidHex(dom.style.backgroundColor)
+}
+
+/** A highlight's DOM: a named colour's class; a custom colour's wash inline, with its exact value to read back. */
+const domAttrs = (color: HighlightColor): Record<string, string> =>
+  color === null ? {} : isCustomHighlight(color) ? { 'data-highlight': color, style: `background-color: ${customWash(color)}` } : { class: `highlight-${color}` }
 
 export const highlightSchema = $markSchema('highlight', () => ({
   attrs: { color: { default: null } },
   parseDOM: [{ tag: 'mark', getAttrs: (dom) => ({ color: colorOf(dom as HTMLElement) }) }],
-  toDOM: (mark) => ['mark', mark.attrs.color ? { class: `highlight-${mark.attrs.color}` } : {}, 0],
+  toDOM: (mark) => ['mark', domAttrs((mark.attrs.color ?? null) as HighlightColor), 0],
   parseMarkdown: {
     match: (node) => node.type === 'highlight',
     runner: (state, node, markType) => {
@@ -238,11 +298,11 @@ const markApplies = (state: EditorState, type: MarkType): boolean => {
  * Over hidden lines only the visible ones change (YAZ-3209 `visibleRanges`); nothing visible
  * selected declines.
  */
-const setHighlight = (type: MarkType, color: HighlightColor): Command => (state, dispatch) => {
+const setHighlight = (type: MarkType, color: HighlightColor, always = false): Command => (state, dispatch) => {
   const ranges = visibleRanges(state)
   if (!markApplies(state, type) || (!state.selection.empty && ranges.length === 0)) return false
   const mark = type.create({ color })
-  const lit = rangeHasHighlight(state, type, color)
+  const lit = !always && rangeHasHighlight(state, type, color)
   const tr = state.tr
   if (state.selection.empty) lit ? tr.removeStoredMark(mark) : tr.addStoredMark(mark)
   else
@@ -260,10 +320,66 @@ const setHighlight = (type: MarkType, color: HighlightColor): Command => (state,
   return true
 }
 
-/** ONE command: the four toolbar swatches and the shortcut all go through it. */
+/** ONE command: the toolbar's highlight buttons and the shortcut go through it. */
 export const setHighlightCommand = $command('SetHighlight', (ctx) => (color: HighlightColor = null) =>
   setHighlight(highlightSchema.type(ctx), color),
 )
+
+/**
+ * The ▾ panel's pick (YAZ-4348 demo round 2): the same rules as a button press, but never a toggle — a lit
+ * colour picked again stays, as in the board's colour panel, which stays open for the next pick.
+ */
+export const applyHighlight = (type: MarkType, color: HighlightColor): Command => setHighlight(type, color, true)
+
+/**
+ * The ▾ panel's None (YAZ-4348 demo round 2): every colour off the visible selection, and off the marks a
+ * caret would type with. Declines where there is no highlight to remove.
+ */
+export const removeHighlight = (type: MarkType): Command => (state, dispatch) => {
+  if (state.selection.empty) {
+    if (type.isInSet(state.storedMarks ?? state.selection.$from.marks()) === undefined) return false
+    dispatch?.(state.tr.removeStoredMark(type))
+    return true
+  }
+  if (!visibleRangeHasMark(state, type)) return false
+  const tr = state.tr
+  for (const { from, to } of visibleRanges(state)) tr.removeMark(from, to, type)
+  dispatch?.(tr.scrollIntoView())
+  return true
+}
+
+/** Every highlight colour on the visible selection (at a caret: the marks it would type with), in no set order. */
+export function highlightColorsIn(state: EditorState, type: MarkType): HighlightColor[] {
+  const found = new Set<HighlightColor>()
+  const add = (marks: readonly Mark[]) => {
+    for (const mark of marks) if (mark.type === type) found.add((mark.attrs.color ?? null) as HighlightColor)
+  }
+  if (state.selection.empty) add(state.storedMarks ?? state.selection.$from.marks())
+  else
+    for (const { from, to } of visibleRanges(state))
+      state.doc.nodesBetween(from, to, (node) => {
+        if (node.isText) add(node.marks)
+      })
+  return [...found]
+}
+
+/**
+ * Whether a highlight on the visible selection (at a caret: the marks it would type with) has a colour that passes
+ * `test`. The walk stops at the first one: the toolbar's ▾ asks on each update, also after ⌘A on a long note.
+ */
+export function someHighlightColor(state: EditorState, type: MarkType, test: (color: HighlightColor) => boolean): boolean {
+  const hit = (marks: readonly Mark[]) => marks.some((mark) => mark.type === type && test((mark.attrs.color ?? null) as HighlightColor))
+  if (state.selection.empty) return hit(state.storedMarks ?? state.selection.$from.marks())
+  let found = false
+  for (const { from, to } of visibleRanges(state)) {
+    state.doc.nodesBetween(from, to, (node) => {
+      if (!found && node.isText) found = hit(node.marks)
+      return !found
+    })
+    if (found) return true
+  }
+  return false
+}
 
 /** A `$useKeymap` (not `$shortcut`) so Crepe's `keymapRef` can label the yellow swatch from it. Priority above Crepe's 50, like underline.ts. */
 export const highlightKeymap = $useKeymap('highlightKeymap', {

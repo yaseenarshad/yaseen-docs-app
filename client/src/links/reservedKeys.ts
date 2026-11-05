@@ -3,11 +3,11 @@ import { COMMENTS_KEY } from '@shared/comments'
 import { FOLDER_VALUES_KEY } from '@shared/folderValues'
 import { NOTE_ID_KEY } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
-import { PAGE_SWITCH_KEYS } from '@shared/pageSwitches'
+import { OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS } from '@shared/pageSwitches'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { REVIEWS_KEY } from '@shared/reviews'
 
-const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS])
+const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY])
 const ID_VAULT: ReadonlySet<string> = new Set([...PLAIN, NOTE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY])
 
 /**
@@ -17,7 +17,7 @@ const ID_VAULT: ReadonlySet<string> = new Set([...PLAIN, NOTE_ID_KEY, TITLE_KEY,
  * set from the folder's own menu) and the folders' values (D19 — `in`, written by each folder's
  * views) and the read-only switch (YAZ-3076 D1 — set from the page cog and the chip, so the panel
  * cannot turn it off behind the "Allow edits?" box), and the page cog's on/off rows (YAZ-4094 G4 — `toc`, `section-indent`,
- * `guide-lines`, `folding`, `bullet-threading`, set from the cog) — keys whose VALUE is the app's, not the user's — and the title (YAZ-2420 🔒 D14), which is the
+ * `guide-lines`, `folding`, `bullet-threading`, and `outside-glow` (YAZ-4272), set from the cog) — keys whose VALUE is the app's, not the user's — and the title (YAZ-2420 🔒 D14), which is the
  * user's but is written only by a title edit, because that edit also names the file. None is a name a property can be added
  * under, and none is deleted as a column: `deleteColumn.ts` refuses them. The properties panel
  * shows them as "Reserved" with no editor — `in` as no row at all: its blocks are the panel's

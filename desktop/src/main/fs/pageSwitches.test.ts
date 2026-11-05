@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { notePageSwitches, PAGE_SWITCH_KEYS, setNotePageSwitch } from '@shared/pageSwitches'
+import { noteOutsideGlow, notePageSwitches, PAGE_SWITCH_KEYS, setNoteOutsideGlow, setNotePageSwitch } from '@shared/pageSwitches'
+import { OUTSIDE_CHANGE_GLOWS } from '@shared/types'
 
 /**
  * The page cog's on/off rows IN the note (YAZ-4094 G4): read, write, and a note with no choice. The
@@ -43,5 +44,30 @@ describe('the page switches in the frontmatter', () => {
       const on = setNotePageSwitch(NOTE, key, true)
       expect(setNotePageSwitch(on, key, true)).toBe(on)
     }
+  })
+})
+
+describe("the page's own glow for outside changes (YAZ-4272 D2)", () => {
+  it('no key, a value that is not a glow, or a block that does not parse follow the app setting', () => {
+    expect(noteOutsideGlow('# Body\n')).toBeNull()
+    expect(noteOutsideGlow(NOTE)).toBeNull()
+    for (const value of ['true', 'false', '10', '"5s"', '[10s]', '10s', '']) expect(noteOutsideGlow(`---\noutside-glow: ${value}\n---\n`), value).toBeNull()
+    expect(noteOutsideGlow('---\noutside-glow: 10s\n  bad: [\n---\n')).toBeNull()
+  })
+
+  it('each value round-trips as plain text, `off` too (YAML 1.2: a bare `off` is text, not false)', () => {
+    for (const glow of OUTSIDE_CHANGE_GLOWS) {
+      const set = setNoteOutsideGlow(NOTE, glow)
+      expect(set).toBe(`---\n# the owner's comment\ntags: [a, b]\nstatus: "draft"\noutside-glow: ${glow}\n---\n# Body\n\ntext\n`)
+      expect(noteOutsideGlow(set)).toBe(glow)
+      // The same value again is the SAME string, so the caller writes nothing.
+      expect(setNoteOutsideGlow(set, glow)).toBe(set)
+    }
+    expect(noteOutsideGlow(setNoteOutsideGlow('# Body\n', 'off'))).toBe('off')
+  })
+
+  it('null takes the key away, every other byte kept: the page follows the app setting again', () => {
+    expect(setNoteOutsideGlow(setNoteOutsideGlow(NOTE, '60s'), null)).toBe(NOTE)
+    expect(setNoteOutsideGlow(NOTE, null)).toBe(NOTE)
   })
 })

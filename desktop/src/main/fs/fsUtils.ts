@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { link, open, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { link, mkdir, open, readdir, readFile, rename, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { folderSettingsPath, type BridgeError, type FileKind, type TreeNode } from '@shared/types'
 import { ASSETS_DIR } from '@shared/drawingAssets'
@@ -195,6 +195,16 @@ export async function writeDurable(file: string, content: string | Uint8Array, f
   } finally {
     await fh.close()
   }
+}
+
+/**
+ * Make `dir` itself, never a parent that is missing (YAZ-4383): a folder on a drive that is out, or in a settings folder
+ * that is gone, fails with ENOENT and does not come back on the boot disk. One that is there already is no failure.
+ */
+export async function mkdirLeaf(dir: string): Promise<void> {
+  await mkdir(dir).catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== 'EEXIST') throw err
+  })
 }
 
 /** The sibling a write lands in before it takes `file`'s name: same dir, so the rename or link is atomic. */

@@ -182,7 +182,7 @@ export async function importDrawAppData(deps: { drawDir: string; userData: strin
     result.settings.push('libraryFolder')
   } else {
     const librarySrc = drawCustom ?? path.join(drawDir, DEFAULT_LIBRARY_DIR)
-    const libraryDst = resolveLibraryFolder(store.get().settings.libraryFolder, userData)
+    const libraryDst = resolveLibraryFolder(store.get().settings.libraryFolder, userData, store.get().settingsFolder)
     if (path.resolve(librarySrc) !== path.resolve(libraryDst)) {
       for (const rel of await listFiles(librarySrc)) {
         const dst = path.join(libraryDst, ...rel.split('/'))

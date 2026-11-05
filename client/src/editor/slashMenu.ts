@@ -12,7 +12,8 @@
  *    checkbox).
  * Every other row does there what Crepe's command does (a heading, a quote, code or a table inside
  * the item; Task List makes the item a task) — except Text, which runs T's command (YAZ-3806 T4):
- * the item becomes a plain line, out of every list level, as T and ⌘⌥0 make it.
+ * the line becomes a plain line in the same item, as T and ⌘⌥0 make it; the list never changes
+ * (YAZ-4369, which replaces T4's "out of every list level").
  *
  * In a table cell and a cell note (YAZ-3818 D1) the menu shows only the rows for lines and lists (`HIDDEN_IN_CELL`);
  * a header cell holds one line, so it hides the list rows too (D7). A block put there anyway becomes lines
@@ -141,7 +142,7 @@ export const currentTimeRow: SlashRow = {
   },
 }
 
-/** The Text row (YAZ-3806 T4): the stock clear of the `/query`, then T's command — Crepe's own row sets a paragraph, which a bullet already is. */
+/** The Text row (YAZ-3806 T4, YAZ-4369): the stock clear of the `/query`, then T's command, so the row and T keep one rule. */
 const textRowRun = (ctx: Ctx): void => {
   const commands = ctx.get(commandsCtx)
   commands.call(clearTextInCurrentBlockCommand.key)

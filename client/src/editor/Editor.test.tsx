@@ -1029,7 +1029,7 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
 
   it('the one-line note of outside changes sits in the conflict bar\'s place and hides while that bar shows (YAZ-3704 D6)', async () => {
     const el = await mount(FM + BODY)
-    act(() => outsideChannel().sync({ count: 2, wholeNote: false }))
+    act(() => outsideChannel().sync({ count: 2, wholeNote: false, fadesAt: null }))
     expect(el.querySelector('.outside-changes-bar')?.textContent).toContain('2 outside changes in this note')
     type('# Hello\n\nunsaved edit\n')
     diskHas(FM + '# Someone else\n', 2)
@@ -1070,15 +1070,32 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     const props = { root: '/vault', path: PATH, watch, onOpenFile: openFile, commentsOrder: 'oldest' as const, onChangeCommentsOrder: noop, wikilinks: createWikilinkResolveSource(), onRetitle: noop }
-    act(() => root?.render(<Editor {...props} outsideChangeGlow="10s" />))
+    act(() => root?.render(<Editor {...props} outsideChangeGlow="5m" />))
     await settle()
     await settle()
     expect(createCrepeMock).toHaveBeenCalledTimes(1)
-    expect(outsideChannel().getGlow()).toBe('10s')
+    expect(outsideChannel().getGlow()).toBe('5m')
     act(() => root?.render(<Editor {...props} outsideChangeGlow="off" />))
     await settle()
     expect(createCrepeMock).toHaveBeenCalledTimes(1)
     expect(outsideChannel().getGlow()).toBe('off')
+  })
+
+  it('a page’s own glow wins over the Glow setting; Keep in the bar writes `outside-glow: until-checked` IN the note (YAZ-4272 D2, demo)', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 2, size: body.content.length }))
+    const PAGE = '---\noutside-glow: 5m\n---\n'
+    const el = await mount(PAGE + BODY)
+    expect(outsideChannel().getGlow()).toBe('5m')
+    act(() => outsideChannel().sync({ count: 1, wholeNote: false, fadesAt: Date.now() + 300_000 }))
+    expect(el.querySelector('.outside-changes-bar__fade')?.textContent).toBe('fades in 5:00')
+    diskHas(PAGE + BODY, 1)
+    await act(async () => {
+      ;[...el.querySelectorAll<HTMLButtonElement>('.outside-changes-bar button')].find((b) => b.textContent === 'Keep')?.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual(['---\noutside-glow: until-checked\n---\n' + BODY])
+    await settle()
+    expect(outsideChannel().getGlow()).toBe('until-checked')
   })
 
   it('a real body change on disk while clean still reloads the document', async () => {

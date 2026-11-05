@@ -7,22 +7,22 @@
  * WHAT IT SHOWS (D7). An empty field shows Favorites, Recent, Components and Shapes, one row each. A typed field shows
  * "Best matches" — every local item, in the ONE order of `rankItems` (D4) — then "Hand-drawn" (the library items, ranked
  * the same way as you type, demo 6K), then "From the web", one tile per icon with its variants on request (demo 6J).
- * The chips (D8) narrow them.
+ * Filter › Show (the old chips, D8) narrows them.
  *
  * WHAT IT LEARNS (D1, D5, D9). Each add is one `media:used` write: the MRU, the count, the text it was found by as a
  * word, and at the third add a favorite — said once, quietly, with Undo. A removed favorite starts its count again:
- * three more adds bring it back (demo 6A). "Add a word…" (a right-click on a tile) teaches a word by hand.
+ * three more adds bring it back (demo 6A). "Search words…" (a right-click on a tile) teaches a word by hand.
  *
  * A PREVIEW IS ASKED FOR, NOT LINKED TO. Every media tile asks `media:preview` for its bytes as a dataURL, because the
  * renderer may not fetch from a provider; a favorite's stored `previewUrl` is never read. A component's picture is
  * `components:preview`, and a Hand-drawn item's is drawn here from its elements. The caches are bounded
  * (`lib/previewCache.tsx`).
  *
- * NO KEY IS NOT AN ERROR (🔒 YAZ-1775 D4): with no Pixabay key there is no Photos chip, and nothing explains why.
+ * NO KEY IS NOT AN ERROR (🔒 YAZ-1775 D4): with no Pixabay key there is no Filter › Show › Photos, and nothing explains why.
  * OFFLINE IS A STATE, NOT A BANNER: the web half says so in one line; everything local keeps working.
  *
  * THE SMART SHAPES ARRIVE LATE ON PURPOSE. `@excalidraw/element` is a second ~300 kB download (`engine.ts`'s lazy
- * rule), so the seven basic shapes render immediately and the twelve Smart Shapes join when it lands.
+ * rule), so the seven basic shapes render immediately and the 20 Smart Shapes join when it lands.
  *
  * WHAT IT REMEMBERS LIVES ELSEWHERE (🔒 YAZ-1990). Closing the canvas panel unmounts this tab, so the chip, the query,
  * the results and the scroll are `imageStudioSession.ts`'s; this component renders them and keeps what one click has
@@ -30,8 +30,10 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { MAX_COMPONENT_NAME_LENGTH, MAX_ITEM_WORD_LENGTH, PIXABAY_SECRET, type ComponentItem, type MediaBytesProvider, type MediaLibraryFile, type StudioItem } from '@shared/types'
-import { normalizeWord } from '@shared/mediaLibrary'
+import { DEFAULT_MEDIA_FILTERS, needsCredit, sanitizeMediaFilters, type IconPackInfo, type MediaFilters } from '@shared/iconPacks'
+import { parseComponentFragment } from '@shared/savedComponents'
 import { api } from '../api'
+import { storage } from '../lib/storage'
 import { createPreviewCache } from '../lib/previewCache'
 import { createScenePreviewPng, type PreviewBounds, type PreviewEngine } from '../lib/scenePreview'
 import { loadExcalidrawElement } from '../drawings/engine'
@@ -42,10 +44,21 @@ import { componentItem, componentPreviews, useComponentLibrary } from '../compon
 import { insertImage, insertShape, fileFromImport, type InsertEngine, type InsertTarget } from './insertShape'
 import { buildShapeCatalog, getShape, shapeAliases, type ShapeCatalogItem, type ShapePreview, type SmartShapeApi } from './shapes'
 import { groupResults } from './groupResults'
+import { FilterMenu } from './FilterMenu'
+import { IconPacksFooter } from './IconPacksFooter'
+import { PackView } from './PackView'
+import { useIconPacks } from './useIconPacks'
 import { rankItems } from './rankItems'
 import {
   MIN_QUERY,
   chipSource,
+  clearShowAndFilters,
+  closePack,
+  OFFLINE_WITH_PACKS_NOTICE,
+  openPack,
+  setFilters,
+  setPackInfo,
+  typePackQuery,
   getErrorMessage,
   imageStudioSession,
   OFFLINE_NOTICE,
@@ -54,23 +67,41 @@ import {
   scrollTops,
   searchNow,
   STUDIO_CHIPS,
+  STUDIO_CHIP_LABELS,
   typeQuery,
   wasRequested,
   type StudioChip,
 } from './imageStudioSession'
 import './imageStudio.css'
 
-const CHIP_LABELS: Record<StudioChip, string> = { all: 'All', favorites: 'Favorites', components: 'Components', shapes: 'Shapes', icons: 'Icons', photos: 'Photos' }
 
-/** One row of the 4-column grid: what a section shows before "Show all" (D7). */
-const ROW = 4
+/**
+ * One row of the grid: what a section shows before "Show all" (D7). Four at the panel's usual width; a wider panel
+ * (YAZ-4348 demo round 2: "one would expect more icons to show up instead of only getting them bigger") fits one
+ * more column for each `TILE_MIN_WIDTH + TILE_GAP` (90 px) it gains.
+ */
+const MIN_ROW = 4
+const TILE_MIN_WIDTH = 84
+const TILE_GAP = 6
+/** The columns a list of this width holds. */
+const rowFor = (width: number): number => Math.max(MIN_ROW, Math.floor((width + TILE_GAP) / (TILE_MIN_WIDTH + TILE_GAP)))
 /** How many of your own matches a typed field shows at a time; "Show more" grows it. */
 const MATCH_PAGE = 48
 /** How to save a copied picture at full size (demo 6M), under Components. */
 const PASTE_HINT = 'Copy a picture anywhere, then press ⌘V here to save it to your library at full size. You can drop a picture file here too.'
 
+/** No item touched during this search: one empty set, so `shownElsewhere` keeps its identity. */
+const NOTHING_TOUCHED: ReadonlySet<string> = new Set()
+
 /** What an add says on a read-only board, where it puts nothing. */
 export const READ_ONLY_NOTICE = 'This board is read only. Click “Allow edits” on its Read only chip to add to it.'
+/**
+ * How many tiles the pack page shows before "Show more" (YAZ-4366 audit 70). A big pack scrolled whole put thousands
+ * of tiles in the list, and each panel change (an add, an open menu) built every one again. The infinite scroll goes
+ * on up to the cap; "Show more" lifts it by the same step. Every shown tile stays in the DOM, so the arrow keys still
+ * walk all of them.
+ */
+const PACK_PAGE = 240
 /** How many hand-drawn matches show at first (demo 6K): two rows; "Show more" adds `MATCH_PAGE`. */
 const DRAWING_PAGE = 8
 
@@ -149,8 +180,47 @@ const drawingPreviews = createPreviewCache(async (key) => {
   return createScenePreviewPng(engine, { elements: restored, appState: { ...drawingCanvas.appState(), theme }, files: {} }, DRAWING_TILE_BOUNDS)
 }, { limit: 300, maxBytes: 16 * 1024 * 1024 })
 
+/**
+ * The tile picture of an elements favorite from its own copy (YAZ-4370): a component that was deleted, a shape that
+ * left the catalog, a library item (its copy first, else the network). Keyed `<theme>|<itemKey>`.
+ */
+const copyPreviews = createPreviewCache(async (key) => {
+  if (drawingCanvas === null) throw new Error('No board to draw with')
+  const { engine } = drawingCanvas
+  const [theme, itemKey] = [key.slice(0, key.indexOf('|')), key.slice(key.indexOf('|') + 1)]
+  const copy = await api.media.favoriteElements(itemKey)
+  const fragment = copy !== null ? parseComponentFragment(copy) : itemKey.startsWith('excalidraw:') ? { elements: (await api.media.drawing({ id: itemKey.slice('excalidraw:'.length) })).elements, files: {} } : null
+  if (fragment === null) throw new Error('No copy to draw')
+  const restored = engine.restoreElements(fragment.elements as never, null) as unknown as unknown[]
+  return createScenePreviewPng(engine, { elements: restored, appState: { ...drawingCanvas.appState(), theme }, files: fragment.files }, DRAWING_TILE_BOUNDS)
+}, { limit: 300, maxBytes: 16 * 1024 * 1024 })
+
+/**
+ * Every pack the panel can name (Filter › Packs, the pack page, YAZ-4360 / YAZ-4361): asked once a window, when first
+ * needed — main answers the Mac's packs or Iconify's list. A failure is forgotten, so the next ask retries.
+ */
+let packList: Promise<IconPackInfo[]> | null = null
+export function loadPackList(): Promise<IconPackInfo[]> {
+  if (packList !== null) return packList
+  const asked = api.media.packList()
+  packList = asked
+  asked.catch(() => {
+    if (packList === asked) packList = null
+  })
+  return asked
+}
+
+/** The settings' filters and pins, read where the panel has no settings prop (`storage`, which a test may not have). */
+const settingsFilters = (): MediaFilters => sanitizeMediaFilters(storage.getSettings()?.mediaFilters ?? DEFAULT_MEDIA_FILTERS)
+const settingsPins = (): string[] => storage.getSettings()?.mediaPinnedPacks ?? []
+const settingsGroupSimilar = (): boolean => storage.getSettings()?.mediaGroupSimilar ?? true
+/** The pins as they are now, or the same array when they hold the same packs, so a settings broadcast renders nothing. */
+const samePins = (now: string[], next: string[]): string[] => (now.length === next.length && now.every((p, i) => p === next[i]) ? now : next)
+
 export const clearPreviewMemo = () => {
+  packList = null
   previews.clear()
+  copyPreviews.clear()
   drawingPreviews.clear()
   componentPreviews.clear()
 }
@@ -197,6 +267,91 @@ function ShapeTile({ preview }: { preview: ShapePreview }) {
   )
 }
 
+interface InlineFormProps {
+  item: StudioItem
+  /** Rename (a component's name), else "Search words…". */
+  renaming: boolean
+  initial: string
+  /** The words that find the item now, after its name. */
+  words: readonly string[]
+  /** The search text as a one-click word, or '' (`wordToOffer`). */
+  offer: string
+  notch: CSSProperties
+  onWord: (word: string) => void
+  onRemoveWord: (word: string) => void
+  onRename: (name: string) => void
+  onClose: () => void
+}
+
+/**
+ * The full-width row that "Search words…" or Rename opens under the tile's row. Its own component, so a key typed in
+ * its field renders this row only, not the whole panel with every grid and tile (YAZ-4366 audit 68).
+ */
+function InlineForm({ item, renaming, initial, words, offer, notch, onWord, onRemoveWord, onRename, onClose }: InlineFormProps) {
+  const [draft, setDraft] = useState(initial)
+  // YAZ-4348 demo round 2: the field empties for the next word; the row stays open, with the new chip in it.
+  const addWord = (word: string) => {
+    if (word.trim() === '') return
+    setDraft('')
+    onWord(word)
+  }
+  return (
+    <form
+      className={renaming ? 'image-studio__inline is-pointing' : 'image-studio__inline is-pointing image-studio__word-form'}
+      style={notch}
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (renaming) onRename(draft)
+        else addWord(draft)
+      }}
+    >
+      {!renaming && (
+        // YAZ-4348 demo round 2: every word that finds it shows (its name first), and a new one is ADDED to them
+        <div className="image-studio__word-head">
+          <span>
+            Search words for <b>{item.title}</b>
+          </span>
+          <span className="image-studio__word-chips" aria-label={`Words that find ${item.title}`}>
+            <span className="image-studio__word-chip is-name" title="Its name always finds it">
+              {item.title.toLowerCase()}
+            </span>
+            {words.map((w) => (
+              <span className="image-studio__word-chip" key={w}>
+                {w}
+                <button type="button" className="image-studio__word-remove" aria-label={`Remove the word “${w}”`} title="Remove this word" onClick={() => onRemoveWord(w)}>
+                  ×
+                </button>
+              </span>
+            ))}
+          </span>
+        </div>
+      )}
+      {/* Autofocused: the menu item above is the only way here. */}
+      <input
+        autoFocus
+        value={draft}
+        maxLength={renaming ? MAX_COMPONENT_NAME_LENGTH : MAX_ITEM_WORD_LENGTH}
+        aria-label={renaming ? `Rename ${item.title}` : `A word for ${item.title}`}
+        placeholder={renaming ? 'Name' : 'A new word, like “person”'}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => event.key === 'Escape' && onClose()}
+      />
+      <button type="submit">{renaming ? 'Save' : 'Add word'}</button>
+      <button type="button" onClick={onClose}>
+        Cancel
+      </button>
+      {offer !== '' && (
+        <span className="image-studio__word-offer">
+          Your search:
+          <button type="button" onClick={() => addWord(offer)}>
+            + {offer}
+          </button>
+        </span>
+      )}
+    </form>
+  )
+}
+
 /** Where a tile's menu opens: at the pointer, or at the tile's corner from the keyboard. `right` keeps it in the panel. */
 type MenuAt = { top: number; left?: number; right?: number }
 /**
@@ -204,8 +359,10 @@ type MenuAt = { top: number; left?: number; right?: number }
  * in two sections at once (a favorite component is in Favorites and in Components), and only the tile that was
  * right-clicked opens (demo 6B).
  */
-type OpenTile = { key: string; mode: 'menu'; at: MenuAt } | { key: string; mode: 'word' | 'rename' | 'confirm' | 'variants' } | null
+type OpenTile = { key: string; mode: 'menu'; at: MenuAt } | { key: string; mode: 'word' | 'rename' | 'confirm' } | null
 const slotOf = (where: string, item: StudioItem) => `${where}|${item.itemKey}`
+/** Where the focus goes after a favorite change: the tile's own button, else the one that took its place, else the field. */
+type FocusPlan = { slot: string; section: Element | null; index: number; fromMenu: boolean }
 
 /** Where an item comes from, in words (demo 6H): the tile's tooltip and the first line of its menu. */
 export function sourceLabel(item: StudioItem): string {
@@ -215,11 +372,17 @@ export function sourceLabel(item: StudioItem): string {
   return item.provider === 'component' ? 'Your component' : 'Built-in shape'
 }
 
+/** The line an add of a CC-BY icon shows (extra 16): its pack's license asks for a credit where the work is published. */
+export const creditReminder = (item: StudioItem): string =>
+  `Credit needed: ${item.collectionName ?? 'this pack'} is ${item.licenseName}. Name its author where you publish this board.`
+
 /** Google Images for the text in the field (demo 6I): opened in the browser, never fetched by the app. */
 export const googleImagesUrl = (query: string) => `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query.trim())}`
 
 /** About the menu's drawn width: a menu that would pass the list's right edge opens to the left instead. */
 const MENU_WIDTH = 150
+/** The room a menu keeps from the list's bottom edge when it moves up to fit (YAZ-302, checked for YAZ-4365). */
+const MENU_EDGE_GAP = 4
 
 /** The quiet line under the field (D9): one sentence, and the item Undo takes back out of the favorites. */
 type Line = { text: string; undo?: StudioItem } | null
@@ -228,7 +391,7 @@ type Line = { text: string; undo?: StudioItem } | null
  * Arrow keys between tiles (D7). Left and right walk the tiles in reading order; up and down keep the column, and
  * cross into the next or the previous section. ArrowUp from the first row goes back to the field.
  */
-function moveBetweenTiles(event: KeyboardEvent<HTMLElement>, list: HTMLElement | null, field: HTMLInputElement | null) {
+function moveBetweenTiles(event: KeyboardEvent<HTMLElement>, list: HTMLElement | null, field: HTMLInputElement | null, ROW: number) {
   const from = event.target as HTMLElement
   if (list === null || !from.classList.contains('image-studio__add')) return
   const grids = [...list.querySelectorAll<HTMLElement>('.image-studio__grid')]
@@ -260,8 +423,51 @@ function moveBetweenTiles(event: KeyboardEvent<HTMLElement>, list: HTMLElement |
 export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPending = false, onSearchFocused, saveRequestPending = false, onSaveRequestTaken, readOnly = false, theme = 'light' }: ImageStudioProps) {
   // The session outlives this component (🔒 YAZ-1990 D2): closing the panel unmounts it, reopening reads it back.
   const session = useSyncExternalStore(imageStudioSession.subscribe, imageStudioSession.getState)
-  const { chip, query, searchedQuery, results, cursor, warnings, isSearching, waiting, offline, pageError, error, pixabayAvailable, favorites, recent, used, components, drawings, recentOpen, smart } = session
+  const { chip, query, searchedQuery, results, cursor, warnings, isSearching, waiting, offline, pageError, error, pixabayAvailable, favorites, recent, used, components, drawings, recentOpen, smart, filters, pack } = session
   const { set } = imageStudioSession
+  const packsStatus = useIconPacks()
+  // The filters, the pins and Similar icons live in the settings (they travel); the session holds a copy of the
+  // filters for the search to send. A change from another window searches again, as a pick in the menu does
+  // (YAZ-4384); the same filters ask nothing. `read` runs on each settings broadcast (a tab click too), so the same
+  // values keep the same state and render nothing (YAZ-4366 audit 67, 69).
+  const [pinned, setPinned] = useState<string[]>(settingsPins)
+  // Filter › Similar icons (YAZ-4348 demo round 2): the "+N" groups, or every icon as its own tile.
+  const [groupSimilar, setGroupSimilar] = useState<boolean>(settingsGroupSimilar)
+  useEffect(() => {
+    const read = () => {
+      setFilters(settingsFilters())
+      setPinned((now) => samePins(now, settingsPins()))
+      setGroupSimilar(settingsGroupSimilar())
+    }
+    read()
+    return storage.subscribe(read)
+  }, [])
+  const changeFilters = (next: MediaFilters) => {
+    setFilters(next)
+    storage.patchSettings({ mediaFilters: next })
+  }
+  const clearFilters = () => {
+    clearShowAndFilters()
+    storage.patchSettings({ mediaFilters: DEFAULT_MEDIA_FILTERS })
+  }
+  const togglePin = (prefix: string) => {
+    const now = settingsPins()
+    const next = now.includes(prefix) ? now.filter((p) => p !== prefix) : [...now, prefix]
+    setPinned(next)
+    storage.patchSettings({ mediaPinnedPacks: next })
+  }
+  /** "More from this pack" (YAZ-4361): the page opens at once; its name, count and license follow from the pack list. */
+  const explorePack = (prefix: string) => {
+    setOpenTile(null)
+    void loadPackList().then(
+      (list) => {
+        const info = list.find((p) => p.prefix === prefix)
+        if (info !== undefined) setPackInfo(info)
+      },
+      () => undefined,
+    )
+    openPack(prefix, null)
+  }
   useEffect(() => {
     drawingCanvas = { engine, appState: () => excalidrawAPI.getAppState() as unknown as Record<string, unknown> }
   }, [engine, excalidrawAPI])
@@ -281,12 +487,21 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   const [insertingKey, setInsertingKey] = useState<string | null>(null)
   const [busyFavoriteKey, setBusyFavoriteKey] = useState<string | null>(null)
   const [openTile, setOpenTile] = useState<OpenTile>(null)
-  const [draft, setDraft] = useState('')
+  // The open "+N" group, apart from `openTile` (YAZ-4348 demo round 2): a right-click on a tile inside the group opens
+  // that tile's menu and the group stays open; one shared state closed the group, and the menu with its tile.
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
+  // A change of Similar icons, here or from another window, closes the open group: its tile may no longer have one.
+  useEffect(() => setOpenGroup(null), [groupSimilar])
+  const changeGroupSimilar = (on: boolean) => {
+    setGroupSimilar(on)
+    storage.patchSettings({ mediaGroupSimilar: on })
+  }
   const [line, setLine] = useState<Line>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [componentName, setComponentName] = useState('')
   const [shownMatches, setShownMatches] = useState(MATCH_PAGE)
   const [shownDrawings, setShownDrawings] = useState(DRAWING_PAGE)
+  const [shownPack, setShownPack] = useState(PACK_PAGE)
   const [importMenuOpen, setImportMenuOpen] = useState(false)
   const importMenuRef = useRef<HTMLSpanElement>(null)
   // The Components ⋯ menu behaves as a tile's menu does (6B, polish audit 10): its item takes the focus, and a click
@@ -303,6 +518,15 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
 
   const fieldRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  // The columns follow the list's width (`rowFor`): the grids and a section's one row use the same count.
+  const [ROW, setRow] = useState(MIN_ROW)
+  useEffect(() => {
+    const list = listRef.current
+    if (list === null || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => setRow(rowFor(entry.contentRect.width)))
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [])
   const menuRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
@@ -416,6 +640,12 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   useLayoutEffect(() => {
     if (listRef.current) listRef.current.scrollTop = scrollTops[chip]
   }, [chip])
+  // The pack page starts at its top; Back lands where the search was left (YAZ-4361).
+  const packOpen = pack !== null
+  useEffect(() => setShownPack(PACK_PAGE), [pack?.prefix, pack?.query])
+  useLayoutEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = packOpen ? 0 : scrollTops[chip]
+  }, [packOpen])
 
   const catalog = useMemo(() => buildShapeCatalog(smart), [smart])
   const shapes = useMemo(() => catalog.map(shapeItem), [catalog])
@@ -434,7 +664,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   }, [componentsBySlug])
   const liveList = (items: readonly StudioItem[]) => items.flatMap((item) => live(item) ?? [])
 
-  const favoriteItems = useMemo(() => liveList(favorites), [favorites, live])
+  // A favorite component that was deleted stays, by its stored name: its copy adds it (YAZ-4370). Elsewhere it is gone (D2).
+  const favoriteItems = useMemo(() => favorites.flatMap((item) => live(item) ?? (item.provider === 'component' ? [item] : [])), [favorites, live])
   const recentItems = useMemo(() => liveList(recent), [recent, live])
   /** Everything local, once each: the pool "Best matches" ranks. */
   const pool = useMemo(() => {
@@ -449,11 +680,31 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     const shape = getShape(catalog, item.providerId)
     return shape ? shapeAliases(shape) : []
   }
-  const yours = useMemo(
+  /**
+   * The items you added, starred or gave a word during this search (YAZ-4348 demo round 2: "if im in the web and then
+   * i click it or i add a word to it it jumps to best matches … where did the image go"). They stay where they were
+   * — in From the web, or Hand-drawn — until the search changes; then they rank in Best matches as usual. An item
+   * already in Best matches is not one: it stays there too, and does not jump to From the web (YAZ-4366 audit 66).
+   */
+  const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set())
+  const touch = (itemKey: string) => {
+    if (yourKeys.has(itemKey)) return
+    setTouched((now) => (now.has(itemKey) ? now : new Set(now).add(itemKey)))
+  }
+  // The same empty set when nothing was touched, so a typed key costs no second render (YAZ-4366 audit 71).
+  useEffect(() => setTouched((now) => (now.size === 0 ? now : new Set())), [query, chip])
+  const ranked = useMemo(
     () => (typed ? rankItems(pool.filter((item) => inChip(chip, item, favoriteKeys)), usedByKey, query, aliases) : []),
     // `aliases` reads `catalog`, which is listed.
     [typed, pool, chip, favoriteKeys, usedByKey, query, catalog],
   )
+  // A touched item that is still on screen elsewhere (the web results, the hand-drawn list) is not in Best matches too.
+  // With nothing touched (most searches) it walks nothing, also on each page of results (YAZ-4366 audit 72).
+  const shownElsewhere = useMemo(
+    () => (touched.size === 0 ? NOTHING_TOUCHED : new Set([...results, ...(drawings ?? [])].map((item) => item.itemKey).filter((key) => touched.has(key)))),
+    [results, drawings, touched],
+  )
+  const yours = useMemo(() => (shownElsewhere.size === 0 ? ranked : ranked.filter((item) => !shownElsewhere.has(item.itemKey))), [ranked, shownElsewhere])
   useEffect(() => {
     setShownMatches(MATCH_PAGE)
     setShownDrawings(DRAWING_PAGE)
@@ -468,8 +719,13 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   const webOn = chipSource(chip) !== null
   // One tile per icon; its copies from other sets and its styles are its variants, shown on request (demo 6J).
   const webGroups = useMemo(
-    () => (typed && webOn ? groupResults(results.filter((item) => !yourKeys.has(item.itemKey)), searchedQuery || query) : []),
-    [typed, webOn, results, yourKeys, searchedQuery, query],
+    // Not on the pack page (YAZ-4361): its results are the pack's own, shown whole.
+    () => {
+      if (!(typed && webOn && pack === null)) return []
+      const web = results.filter((item) => !yourKeys.has(item.itemKey))
+      return groupSimilar ? groupResults(web, searchedQuery || query) : web.map((head) => ({ head, variants: [] }))
+    },
+    [typed, webOn, results, yourKeys, searchedQuery, query, pack, groupSimilar],
   )
   const variantsOf = useMemo(() => new Map(webGroups.map((group) => [group.head.itemKey, group.variants])), [webGroups])
 
@@ -477,7 +733,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   // moves. It is never armed for a cursor already asked for, so a page cannot load twice.
   useEffect(() => {
     const sentinel = sentinelRef.current
-    if (!typed || !webOn || !cursor || pageError || isSearching || wasRequested(cursor) || !sentinel || typeof IntersectionObserver === 'undefined') return
+    if (!(packOpen || (typed && webOn)) || !cursor || pageError || isSearching || wasRequested(cursor) || !sentinel || typeof IntersectionObserver === 'undefined') return
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) void runSearch({ append: true })
@@ -486,12 +742,14 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [typed, webOn, cursor, isSearching, pageError, chip])
+    // `shownPack`: on the pack page the sentinel comes back after "Show more"
+  }, [typed, webOn, cursor, isSearching, pageError, chip, packOpen, shownPack])
 
   // The tile buttons are disabled while one is in flight; these re-check the same fact, because a keyboard
   // activation can land in the frame before React has re-rendered them.
   const addItem = async (item: StudioItem) => {
     if (insertingKey !== null) return
+    touch(item.itemKey)
     // A read-only board takes no element, so nothing is added and no use is counted (polish, audit Must 2).
     if (readOnly) {
       setNotice(READ_ONLY_NOTICE)
@@ -503,7 +761,11 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     setNotice(null)
     try {
       let recorded = item
-      if (item.provider === 'shape') {
+      // A favorite's own copy first (YAZ-4370): it adds offline, and after its library, shape or component is gone.
+      const copy = item.provider !== 'iconify' && item.provider !== 'pixabay' && favoriteKeys.has(item.itemKey) ? await api.media.favoriteElements(item.itemKey).catch(() => null) : null
+      if (copy !== null) {
+        insertComponent(engine, excalidrawAPI, copy)
+      } else if (item.provider === 'shape') {
         const shape = getShape(catalog, item.providerId)
         if (shape === undefined) throw new Error('That shape is not available yet.')
         insertShape(engine, excalidrawAPI, shape)
@@ -526,6 +788,9 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       const row = lib.used.find((u) => u.itemKey === item.itemKey)
       if (!wasFavorite && row !== undefined && lib.favorites.some((f) => f.itemKey === item.itemKey)) {
         setLine({ text: `${item.title} is now a favorite. You added it ${row.count} times.`, undo: item })
+      } else if (recorded.provider === 'iconify' && needsCredit(recorded.licenseName)) {
+        // Extra 16: a CC-BY icon asks for a credit where the work is published.
+        setLine({ text: creditReminder(recorded) })
       }
     } catch (cause) {
       set({ error: getErrorMessage(cause, `${item.title || 'That item'} could not be added`) })
@@ -534,14 +799,22 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     }
   }
 
-  const toggleFavorite = async (item: StudioItem) => {
+  /**
+   * `slot` is the tile the change came from; `fromMenu` when its menu asked. A tile that leaves its section (a favorite
+   * taken out of Favorites) would take the focus with it to the page (YAZ-302, checked for YAZ-4365): `refocusAfter`
+   * says where it goes instead, once the list has changed.
+   */
+  const toggleFavorite = async (item: StudioItem, slot?: string, fromMenu = false) => {
     if (busyFavoriteKey !== null) return
+    touch(item.itemKey)
     setBusyFavoriteKey(item.itemKey)
     set({ error: null })
     setLine(null)
+    if (slot !== undefined) refocusAfter.current = focusPlan(slot, fromMenu)
     try {
       set({ favorites: favoriteKeys.has(item.itemKey) ? await api.media.favorites({ op: 'remove', itemKey: item.itemKey }) : await api.media.favorites({ op: 'add', item }) })
     } catch (cause) {
+      refocusAfter.current = null
       set({ error: getErrorMessage(cause, 'Could not change favorites') })
     } finally {
       setBusyFavoriteKey(null)
@@ -557,20 +830,37 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     }
   }
 
-  const saveWord = async (item: StudioItem) => {
-    const word = draft
-    setOpenTile(null)
+  // YAZ-4348 demo round 2: the row stays open after an add, with the new chip in it, and no line above the list (it
+  // pushed the list down, so the tile and its row jumped).
+  const saveWord = async (item: StudioItem, word: string) => {
     if (word.trim() === '') return
+    touch(item.itemKey)
     try {
       setLibrary(await api.media.used({ op: 'add-word', item, word }))
-      setLine({ text: `“${item.title}” now comes first for “${normalizeWord(word) ?? word.trim()}”.` })
     } catch (cause) {
       set({ error: getErrorMessage(cause, 'Could not add the word') })
     }
   }
 
-  const openRow = (key: string, mode: 'word' | 'rename' | 'confirm' | 'variants', value = '') => {
-    setDraft(value)
+  /** The × on a word chip (YAZ-4348 demo round 2): the word stops finding the item; the row stays open to show it. */
+  const removeWord = async (item: StudioItem, word: string) => {
+    try {
+      setLibrary(await api.media.used({ op: 'remove-word', itemKey: item.itemKey, word }))
+    } catch (cause) {
+      set({ error: getErrorMessage(cause, 'Could not remove the word') })
+    }
+  }
+
+  /**
+   * The search text, offered as a one-click word (YAZ-4157 D5), unless the icon is already found by it. YAZ-4348 demo
+   * round 2: the field itself starts empty; "man" typed in it for the icon Mana read as a change of its words.
+   */
+  const wordToOffer = (item: StudioItem): string => {
+    const typedWord = query.trim()
+    const known = [...item.title.toLowerCase().split(/\s+/), ...(usedByKey.get(item.itemKey)?.words ?? [])]
+    return typedWord === '' || known.includes(typedWord.toLowerCase()) ? '' : typedWord
+  }
+  const openRow = (key: string, mode: 'word' | 'rename' | 'confirm') => {
     setOpenTile({ key, mode })
   }
 
@@ -591,7 +881,61 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     setOpenTile(null)
     if (refocus && key !== undefined) listRef.current?.querySelector<HTMLElement>(`[data-slot="${CSS.escape(key)}"] .image-studio__add`)?.focus()
   }
+  const refocusAfter = useRef<FocusPlan | null>(null)
+  const focusPlan = (slot: string, fromMenu: boolean): FocusPlan => {
+    const card = listRef.current?.querySelector(`[data-slot="${CSS.escape(slot)}"]`) ?? null
+    const section = card?.closest('section') ?? null
+    return { slot, section, index: section === null || card === null ? 0 : [...section.querySelectorAll('[data-slot]')].indexOf(card), fromMenu }
+  }
+  useEffect(() => {
+    const plan = refocusAfter.current
+    if (plan === null) return
+    refocusAfter.current = null
+    const list = listRef.current
+    const own = list?.querySelector<HTMLElement>(`[data-slot="${CSS.escape(plan.slot)}"] .image-studio__add`)
+    // A tile that stays keeps the focus where it was; its menu, which is gone, hands it back to the tile.
+    if (own) {
+      if (plan.fromMenu) own.focus()
+      return
+    }
+    const adds = plan.section?.isConnected ? [...plan.section.querySelectorAll<HTMLElement>('[data-slot] .image-studio__add')] : []
+    ;(adds[plan.index] ?? adds[plan.index - 1] ?? fieldRef.current)?.focus()
+  }, [favorites])
+
+  // The shape favorites' copies (YAZ-4370): only this renderer has the catalog and the engine that make a shape, so it
+  // saves the ones main says are missing — when the panel opens, and on each change of the favorites.
+  useEffect(() => {
+    let live = true
+    if (!favorites.some((item) => item.provider === 'shape')) return
+    void api.media.favoritesForPanel().then(
+      async (keys) => {
+        for (const key of keys) {
+          const shape = key.startsWith('shape:') ? getShape(catalog, key.slice('shape:'.length)) : undefined
+          if (!live || shape === undefined) continue
+          const elements = engine.convertToExcalidrawElements(shape.create(0, 0))
+          await api.media.saveFavoriteElements({ itemKey: key, fragmentJson: componentFragmentJson({ elements, files: {} }) }).catch(() => undefined)
+        }
+      },
+      () => undefined,
+    )
+    return () => {
+      live = false
+    }
+  }, [favorites, catalog, engine])
+
   const menuKey = openTile?.mode === 'menu' ? openTile.key : null
+  // A menu near the bottom of the list moves up so all of it shows (YAZ-302, checked for YAZ-4365): the list scrolls,
+  // so a menu that ran past its bottom edge would be cut off. Never above the list's top.
+  useLayoutEffect(() => {
+    const menu = menuRef.current
+    const list = listRef.current
+    if (menuKey === null || menu === null || list === null) return
+    const m = menu.getBoundingClientRect()
+    const l = list.getBoundingClientRect()
+    const shift = Math.min(m.bottom - l.bottom + MENU_EDGE_GAP, m.top - l.top)
+    if (shift <= 0) return
+    setOpenTile((open) => (open?.mode === 'menu' && open.key === menuKey ? { ...open, at: { ...open.at, top: open.at.top - shift } } : open))
+  }, [menuKey])
   useEffect(() => {
     if (menuKey === null) return
     menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
@@ -623,10 +967,17 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     const favorited = favoriteKeys.has(item.itemKey)
     const menuAt = openTile?.key === slot && openTile.mode === 'menu' ? openTile.at : null
     const variants = variantsOf.get(item.itemKey) ?? []
-    const variantsOpen = openTile?.key === slot && openTile.mode === 'variants'
+    const variantsOpen = openGroup === slot
     const busy = insertingKey !== null || (component !== undefined && library.busySlug === component.slug)
     return (
-      <article className="image-studio__card" key={item.itemKey} data-slot={slot} aria-busy={busy || undefined} onContextMenu={(event) => openMenu(event, slot)}>
+      <article
+        // The tile whose row is open (Search words, Rename, Delete) is ringed, so the row says whose it is (YAZ-4348 demo round 2)
+        className={openTile?.key === slot && openTile.mode !== 'menu' ? 'image-studio__card is-editing' : 'image-studio__card'}
+        key={item.itemKey}
+        data-slot={slot}
+        aria-busy={busy || undefined}
+        onContextMenu={(event) => openMenu(event, slot)}
+      >
         <button
           type="button"
           className="image-studio__add"
@@ -638,10 +989,13 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           title={`${item.title} — ${sourceLabel(item)}`}
         >
           <span className="image-studio__preview">
-            {item.provider === 'shape' ? (
-              shape ? <ShapeTile preview={shape.preview} /> : <span className="image-studio__placeholder" />
-            ) : item.provider === 'component' ? (
+            {item.provider === 'shape' && shape ? (
+              <ShapeTile preview={shape.preview} />
+            ) : item.provider === 'component' && component ? (
               <componentPreviews.Preview cacheKey={item.providerId} placeholderClass="image-studio__placeholder" />
+            ) : item.provider === 'shape' || item.provider === 'component' || (item.provider === 'excalidraw' && favorited) ? (
+              // Its source is gone, or it is a library favorite: the picture comes from the copy (YAZ-4370).
+              <copyPreviews.Preview cacheKey={`${theme}|${item.itemKey}`} placeholderClass="image-studio__placeholder" />
             ) : item.provider === 'excalidraw' ? (
               <drawingPreviews.Preview cacheKey={`${theme}|${item.providerId}`} placeholderClass="image-studio__placeholder" />
             ) : (
@@ -657,7 +1011,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           aria-label={favorited ? `Remove ${item.title} from favorites` : `Add ${item.title} to favorites`}
           aria-pressed={favorited}
           disabled={busyFavoriteKey !== null}
-          onClick={() => void toggleFavorite(item)}
+          onClick={() => void toggleFavorite(item, slot)}
         >
           {favorited ? '★' : '☆'}
         </button>
@@ -667,7 +1021,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
             className="image-studio__variants-toggle"
             aria-label={`${variantsOpen ? 'Hide' : 'Show'} ${variants.length} more like ${item.title}`}
             aria-expanded={variantsOpen}
-            onClick={() => (variantsOpen ? setOpenTile(null) : openRow(slot, 'variants'))}
+            onClick={() => setOpenGroup(variantsOpen ? null : slot)}
           >
             +{variants.length}
           </button>
@@ -688,26 +1042,38 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
               </button>
             )}
             {variants.length > 0 && (
-              <button type="button" role="menuitem" onClick={() => openRow(slot, 'variants')}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpenTile(null)
+                  setOpenGroup(slot)
+                }}
+              >
                 Show {variants.length} more like this
               </button>
             )}
-            <button type="button" role="menuitem" onClick={() => openRow(slot, 'word', query.trim())}>
-              Add a word…
+            {item.provider === 'iconify' && pack?.prefix !== item.providerId.slice(0, item.providerId.indexOf(':')) && (
+              <button type="button" role="menuitem" onClick={() => explorePack(item.providerId.slice(0, item.providerId.indexOf(':')))}>
+                More from this pack
+              </button>
+            )}
+            <button type="button" role="menuitem" onClick={() => openRow(slot, 'word')}>
+              Search words…
             </button>
             <button
               type="button"
               role="menuitem"
               onClick={() => {
                 setOpenTile(null)
-                void toggleFavorite(item)
+                void toggleFavorite(item, slot, true)
               }}
             >
               {favorited ? 'Remove from favorites' : 'Add to favorites'}
             </button>
             {component !== undefined && (
               <>
-                <button type="button" role="menuitem" onClick={() => openRow(slot, 'rename', component.name)}>
+                <button type="button" role="menuitem" onClick={() => openRow(slot, 'rename')}>
                   Rename
                 </button>
                 <button
@@ -731,20 +1097,23 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     )
   }
 
-  /** The full-width row that "Add a word…", Rename, Delete or "more like this" opens under the tile's row. */
-  const inlineRow = (item: StudioItem, where: string): ReactNode => {
+  /** The full-width row of a tile's "+N" look-alikes (demo 6J), open under the tile's row while its group is open. */
+  const variantsRow = (item: StudioItem, where: string): ReactNode =>
+    openGroup === slotOf(where, item) && (
+      <div className="image-studio__inline image-studio__variants" key={`${item.itemKey}:group`} role="group" aria-label={`More like ${item.title}`}>
+        <div className="image-studio__variants-grid">{(variantsOf.get(item.itemKey) ?? []).map((variant) => tile(variant, `${where}:variants`))}</div>
+      </div>
+    )
+
+  /** The full-width row that "Search words…", Rename or Delete opens under the tile's row. */
+  const inlineRow = (item: StudioItem, where: string, column = 0): ReactNode => {
+    // A notch over the tile's column points up at the ringed tile (`is-pointing` draws it)
+    const notch = { '--notch': `${((column + 0.5) / ROW) * 100}%` } as CSSProperties
     if (openTile?.key !== slotOf(where, item) || openTile.mode === 'menu') return null
-    if (openTile.mode === 'variants') {
-      return (
-        <div className="image-studio__inline image-studio__variants" key={`${item.itemKey}:row`} role="group" aria-label={`More like ${item.title}`}>
-          <div className="image-studio__variants-grid">{(variantsOf.get(item.itemKey) ?? []).map((variant) => tile(variant, `${where}:variants`))}</div>
-        </div>
-      )
-    }
     const component = item.provider === 'component' ? componentsBySlug.get(item.providerId) : undefined
     if (openTile.mode === 'confirm' && component) {
       return (
-        <div className="image-studio__inline" key={`${item.itemKey}:row`} role="alertdialog" aria-label={`Delete ${component.name}?`}>
+        <div className="image-studio__inline is-pointing" style={notch} key={`${item.itemKey}:row`} role="alertdialog" aria-label={`Delete ${component.name}?`}>
           <span>Delete “{component.name}”?</span>
           <button
             type="button"
@@ -764,32 +1133,23 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     }
     const renaming = openTile.mode === 'rename'
     return (
-      <form
-        className="image-studio__inline"
-        key={`${item.itemKey}:row`}
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (renaming && component) {
-            setOpenTile(null)
-            library.rename(component, draft)
-          } else void saveWord(item)
+      <InlineForm
+        // The mode in the key: Rename after Search words starts from the name, not from the typed word
+        key={`${item.itemKey}:row:${openTile.mode}`}
+        item={item}
+        renaming={renaming}
+        initial={renaming && component ? component.name : ''}
+        words={usedByKey.get(item.itemKey)?.words ?? []}
+        offer={renaming ? '' : wordToOffer(item)}
+        notch={notch}
+        onWord={(word) => void saveWord(item, word)}
+        onRemoveWord={(word) => void removeWord(item, word)}
+        onRename={(name) => {
+          setOpenTile(null)
+          if (component) library.rename(component, name)
         }}
-      >
-        {/* Autofocused: the menu item above is the only way here. */}
-        <input
-          autoFocus
-          value={draft}
-          maxLength={renaming ? MAX_COMPONENT_NAME_LENGTH : MAX_ITEM_WORD_LENGTH}
-          aria-label={renaming ? `Rename ${item.title}` : `A word for ${item.title}`}
-          placeholder={renaming ? 'Name' : 'A word that finds it'}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => event.key === 'Escape' && setOpenTile(null)}
-        />
-        <button type="submit">Save</button>
-        <button type="button" onClick={() => setOpenTile(null)}>
-          Cancel
-        </button>
-      </form>
+        onClose={() => setOpenTile(null)}
+      />
     )
   }
 
@@ -799,9 +1159,13 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     items.forEach((item, i) => {
       cells.push(tile(item, where))
       const rowEnd = i % ROW === ROW - 1 || i === items.length - 1
-      if (rowEnd) for (const other of items.slice(i - (i % ROW), i + 1)) cells.push(inlineRow(other, where))
+      if (rowEnd) items.slice(i - (i % ROW), i + 1).forEach((other, column) => cells.push(variantsRow(other, where), inlineRow(other, where, column)))
     })
-    return <div className="image-studio__grid">{cells}</div>
+    return (
+      <div className="image-studio__grid" style={{ '--studio-cols': ROW } as CSSProperties}>
+        {cells}
+      </div>
+    )
   }
 
   /** A section: its title, its one row (or all of it), and "Show all" — which picks the chip that shows the rest. */
@@ -855,11 +1219,55 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     </span>
   )
 
-  const chipTitle = CHIP_LABELS[chip]
+  const chipTitle = STUDIO_CHIP_LABELS[chip]
   /** The web half shows once the web is asked or is waiting to be: during the pause, a search, offline, a result. */
   const webShown = webOn && (waiting || isSearching || offline || searchedQuery !== '' || pageError !== null)
   let body: ReactNode
-  if (typed) {
+  if (pack !== null) {
+    // The pack page (YAZ-4361): every icon of the pack, as Iconify or the Mac lists them — no folding of look-alikes,
+    // the user came to see them all.
+    body = (
+      <PackView
+        pack={pack}
+        pinned={pinned.includes(pack.prefix)}
+        onBack={closePack}
+        onPin={() => togglePin(pack.prefix)}
+        onType={typePackQuery}
+        onSearchNow={searchNow}
+      >
+        {offline && (
+          <div className="image-studio__notice" role="status">
+            {packsStatus?.state === 'complete' ? OFFLINE_WITH_PACKS_NOTICE : OFFLINE_NOTICE}
+          </div>
+        )}
+        {results.length > 0 && grid(results.slice(0, shownPack), 'pack')}
+        {(waiting || (isSearching && results.length === 0)) && (
+          <div className="image-studio__state" role="status">
+            Loading the pack…
+          </div>
+        )}
+        {!waiting && !isSearching && !offline && cursor === null && results.length === 0 && pageError === null && (
+          <div className="image-studio__state">{pack.query.trim() === '' ? 'This pack has no icons to show.' : `No icon in this pack matches “${pack.query.trim()}”`}</div>
+        )}
+        {cursor && results.length > 0 && results.length < shownPack && <div className="image-studio__search-sentinel" ref={sentinelRef} aria-hidden="true" />}
+        {(results.length > shownPack || (cursor !== null && results.length >= shownPack)) && (
+          <button type="button" className="image-studio__show-all image-studio__pack-more" onClick={() => setShownPack(shownPack + PACK_PAGE)}>
+            Show more
+          </button>
+        )}
+        {pageError && cursor && (
+          <button type="button" className="image-studio__retry" disabled={isSearching} onClick={() => void runSearch({ append: true, retry: true })}>
+            {isSearching ? 'Retrying…' : 'Retry loading icons'}
+          </button>
+        )}
+        {isSearching && results.length > 0 && (
+          <div className="image-studio__loading-more" role="status">
+            Loading more…
+          </div>
+        )}
+      </PackView>
+    )
+  } else if (typed) {
     const mine = yours.slice(0, shownMatches)
     body = (
       <>
@@ -874,7 +1282,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
             </header>
             {offline && (
               <div className="image-studio__notice" role="status">
-                {OFFLINE_NOTICE}
+                {packsStatus?.state === 'complete' ? OFFLINE_WITH_PACKS_NOTICE : OFFLINE_NOTICE}
               </div>
             )}
             {warnings.length > 0 && <div className="image-studio__warning">{warnings.join(' ')}</div>}
@@ -963,7 +1371,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       }}
       onDrop={(event) => takeFrom(event, event.dataTransfer)}
     >
-      <div className="image-studio__search" inert={saving}>
+      <div className="image-studio__search" inert={saving} hidden={pack !== null}>
         <input
           ref={fieldRef}
           type="search"
@@ -983,6 +1391,18 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
               }
             }
           }}
+        />
+        <FilterMenu
+          show={chip}
+          shows={STUDIO_CHIPS.filter((c) => c !== 'photos' || pixabayAvailable)}
+          onShow={pickChip}
+          filters={filters}
+          onChange={changeFilters}
+          onClear={clearFilters}
+          pinned={pinned}
+          loadPacks={loadPackList}
+          groupSimilar={groupSimilar}
+          onGroupSimilar={changeGroupSimilar}
         />
         {hasSelection && library.canCapture && (
           <button
@@ -1029,14 +1449,6 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       )}
 
       <div className={saving ? 'image-studio__rest is-dimmed' : 'image-studio__rest'} inert={saving}>
-        <div className="image-studio__chips" role="group" aria-label="Show">
-          {STUDIO_CHIPS.filter((c) => c !== 'photos' || pixabayAvailable).map((c) => (
-            <button type="button" key={c} className={chip === c ? 'is-active' : undefined} aria-pressed={chip === c} onClick={() => pickChip(c)}>
-              {CHIP_LABELS[c]}
-            </button>
-          ))}
-        </div>
-
         {line !== null && (
           <div className="image-studio__line" role="status">
             <span>{line.text}</span>
@@ -1057,18 +1469,24 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
         <div
           className="image-studio__list"
           ref={listRef}
-          onKeyDown={(event) => moveBetweenTiles(event, listRef.current, fieldRef.current)}
+          onKeyDown={(event) => moveBetweenTiles(event, listRef.current, fieldRef.current, ROW)}
           onScroll={(event) => {
-            scrollTops[chip] = event.currentTarget.scrollTop
+            // The pack page has its own scroll; the search under it keeps the place Back returns to.
+            if (imageStudioSession.getState().pack === null) scrollTops[chip] = event.currentTarget.scrollTop
           }}
         >
           {body}
         </div>
         <footer className="image-studio__footer">
           <span>Graphics via Pixabay · icons via Iconify · drawings from Excalidraw libraries.</span>
-          <button type="button" className="image-studio__google" disabled={query.trim() === ''} onClick={() => void api.shell.openLink({ href: googleImagesUrl(query) })} title="Search Google Images for this text, in your browser">
-            Search Google Images ↗
-          </button>
+          {/* YAZ-4348 demo: the packs download sits in the footer, beside Google Images */}
+          <IconPacksFooter
+            google={
+              <button type="button" className="image-studio__google" disabled={query.trim() === ''} onClick={() => void api.shell.openLink({ href: googleImagesUrl(query) })} title="Search Google Images for this text, in your browser">
+                Google Images ↗
+              </button>
+            }
+          />
         </footer>
       </div>
     </div>

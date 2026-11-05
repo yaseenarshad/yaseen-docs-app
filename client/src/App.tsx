@@ -56,8 +56,10 @@ import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
 import { setCalendarDaySetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
 import { requestGoToNow } from './editor/table/goToNowRequest'
-import { setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
+import { setAllNotesOpensAt, setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
+import { setTypingArrows } from './editor/typingArrows'
 import { toolbarPrefs } from './editor/toolbarPrefs'
+import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmMove } from './sidebar/ConfirmMove'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
@@ -591,12 +593,18 @@ export function App() {
   useEffect(() => setCellNoteTemplate(settings.tableCellNoteTemplate ?? ''), [settings.tableCellNoteTemplate])
   // A new tab's cell note card starts pinned (round 3 of the demo); an open tab keeps its own pin.
   useEffect(() => setCellNotePinnedAtStart(settings.tableCellNotePinned ?? true), [settings.tableCellNotePinned])
+  // Arrows while typing (YAZ-4273 D8): an open note reads it at its next keystroke. Absent from an older main process.
+  useEffect(() => setTypingArrows(settings.typingArrows ?? true), [settings.typingArrows])
+  // Where a calendar table's "All notes" opens (YAZ-4276 A1). Absent from an older main process.
+  useEffect(() => setAllNotesOpensAt(settings.tableAllNotesOpensAt ?? 'cell'), [settings.tableAllNotesOpensAt])
   // The past rows' shade (YAZ-4163 demo), read by table.css.
   useEffect(() => document.documentElement.style.setProperty('--table-past-shade', `${settings.tableShadeDarkness}%`), [settings.tableShadeDarkness])
   // The selection toolbar's order and hidden buttons (YAZ-3806 T6): every open note's toolbar follows at once.
   useEffect(() => {
     toolbarPrefs.value = settings.selectionToolbar
   }, [settings.selectionToolbar])
+  // The highlight panel's most used custom colours (YAZ-4348 demo round 2): read by every note's panel, absent from an older main process.
+  useEffect(() => setUsedHighlightColors(settings.highlightCustomColors ?? []), [settings.highlightCustomColors])
 
   // A Files window's own sidebar zoom (YAZ-3389 D13): only this window writes it, so a local copy stays true.
   const [filesZoom, setFilesZoomState] = useState(() => (filesWindow ? storage.getFilesZoom() : 100))
@@ -653,6 +661,8 @@ export function App() {
   // The outside changes list's Pin and Unpin (YAZ-3704 demo): the same stable door.
   const changeOutsideListPinned = useCallback((pinned: boolean) => changeSettings({ ...newNoteFolderInputs.current.settings, outsideListPinned: pinned }), [changeSettings])
   const changeTableOfContentsWidth = useCallback((width: number) => changeSettings({ ...newNoteFolderInputs.current.settings, tableOfContentsWidth: width }), [changeSettings])
+  // A custom pick in a note's highlight panel (YAZ-4348 demo round 2): the same stable door.
+  useEffect(() => setUsedHighlightColorsSaver((next) => changeSettings({ ...newNoteFolderInputs.current.settings, highlightCustomColors: next })), [changeSettings])
   // The table of contents' zoom (YAZ-3939 D9): the same value writes nothing, as for the sidebar zoom.
   const changeTocZoom = useCallback(
     (tocZoom: number) => {

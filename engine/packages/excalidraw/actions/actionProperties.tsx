@@ -145,6 +145,7 @@ import { ColorPicker } from "../components/ColorPicker/ColorPicker";
 import { FontPicker } from "../components/FontPicker/FontPicker";
 import { IconPicker } from "../components/IconPicker";
 import { Range } from "../components/Range";
+import { DraftSlider } from "../components/SizeControls";
 import {
   ArrowheadArrowIcon,
   ArrowheadBarIcon,
@@ -210,6 +211,7 @@ import {
 import { getShortcutKey } from "../shortcut";
 
 import { register } from "./register";
+import { getIconTargets, oneColorRecipe, paintIcons } from "./actionIconColors";
 
 import type { Action } from "./types";
 import type { AppClassProperties, AppState, Primitive } from "../types";
@@ -670,14 +672,21 @@ export const actionApplySelectedSemanticColor = register<{
   name: "applySelectedSemanticColor",
   label: "labels.stroke",
   trackEvent: false,
-  perform: (elements, appState, value) => {
+  perform: (elements, appState, value, app) => {
     if (!value) {
       return false;
     }
 
     let supportedElementCount = 0;
     const paletteValue = COLOR_PALETTE[value.colorName];
+    // YAZ-4353 1C (D4): a one-color icon's hotkey colors the icon itself;
+    // many-color icons and photos keep the box border (YAZ-189)
+    const icons = getIconTargets(elements, appState, app, "one");
+    const iconIds = new Set(icons.map((icon) => icon.id));
     const updatedElements = changeProperty(elements, appState, (element) => {
+      if (iconIds.has(element.id)) {
+        return element;
+      }
       // `target: "stroke"` is the ⇧ key (the name is the old one)
       const property = getColorLetterProperty(
         element,
@@ -711,6 +720,43 @@ export const actionApplySelectedSemanticColor = register<{
           : null),
       });
     });
+
+    if (icons.length) {
+      const iconColor = Array.isArray(paletteValue)
+        ? paletteValue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX]
+        : paletteValue;
+      const changed = new Map(
+        updatedElements
+          .filter((element, index) => element !== elements[index])
+          .map((element) => [element.id, element]),
+      );
+      // YAZ-4348 demo (Yasin: "Yes, that rule"): T never hides a one-color
+      // icon; it removes the icon's outline. With no outline it changes nothing.
+      const removeOutline = isTransparent(iconColor);
+      return paintIcons(
+        app,
+        icons,
+        (icon, recipe) =>
+          removeOutline
+            ? recipe.outline
+              ? { ...recipe, outline: null }
+              : null
+            : oneColorRecipe(app, icon, recipe, iconColor),
+        CaptureUpdateAction.IMMEDIATELY,
+      ).then((result) =>
+        result
+          ? {
+              ...result,
+              elements: result.elements!.map(
+                (element) => changed.get(element.id) ?? element,
+              ),
+            }
+          : {
+              elements: updatedElements,
+              captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+            },
+      );
+    }
 
     if (!supportedElementCount) {
       return {
@@ -1779,12 +1825,6 @@ export const actionChangeTextBackgroundPadding =
 const FONT_SIZE_MAX = 512;
 const SLIDER_FONT_SIZE_MIN = 8;
 const SLIDER_FONT_SIZE_MAX = 128;
-/** A size outside the slider's range shows the slider at its end. */
-const sliderFontSize = (value: number | null) =>
-  Math.min(
-    SLIDER_FONT_SIZE_MAX,
-    Math.max(SLIDER_FONT_SIZE_MIN, Math.round(value ?? DEFAULT_FONT_SIZE)),
-  );
 
 export const actionChangeFontSize = register<
   // `preview`: a size slider being dragged (YAZ-3943 demo 2): shown, and one undo step at its release
@@ -1914,7 +1954,7 @@ export const actionChangeFontSize = register<
 
 /**
  * YAZ-3943 demo 2: the size slider. Dragging shows each size (`onPreview`, no undo step); the release
- * commits the last one (`onChange`), so a drag is one undo step.
+ * commits the last one (`onChange`), so a drag is one undo step. YAZ-4366: the shared `DraftSlider`.
  */
 const FontSizeSlider = ({
   value,
@@ -1924,43 +1964,17 @@ const FontSizeSlider = ({
   value: number | null;
   onPreview: (value: number) => void;
   onChange: (value: number) => void;
-}) => {
-  const [draft, setDraft] = useState(sliderFontSize(value));
-  const moved = useRef<number | null>(null);
-  useEffect(() => {
-    if (moved.current === null) {
-      setDraft(sliderFontSize(value));
-    }
-  }, [value]);
-  const commit = () => {
-    if (moved.current !== null) {
-      const size = moved.current;
-      moved.current = null;
-      onChange(size);
-    }
-  };
-  return (
-    <input
-      type="range"
-      className="font-size-slider"
-      aria-label="Font size"
-      min={SLIDER_FONT_SIZE_MIN}
-      max={SLIDER_FONT_SIZE_MAX}
-      step={1}
-      value={draft}
-      onChange={(event) => {
-        const size = Number(event.target.value);
-        setDraft(size);
-        moved.current = size;
-        onPreview(size);
-      }}
-      onPointerUp={commit}
-      onKeyUp={commit}
-      onBlur={commit}
-      onKeyDown={(event) => event.stopPropagation()}
-    />
-  );
-};
+}) => (
+  <DraftSlider
+    label="Font size"
+    value={value}
+    min={SLIDER_FONT_SIZE_MIN}
+    max={SLIDER_FONT_SIZE_MAX}
+    fallback={DEFAULT_FONT_SIZE}
+    onPreview={onPreview}
+    onChange={onChange}
+  />
+);
 
 /**
  * YAZ-3943 demo 2, YAZ-4312 M1: a size as the field keeps it: tenths from 1 up
@@ -1994,6 +2008,10 @@ export const stepFontSize = (current: number, direction: 1 | -1) =>
       : current / FONT_SIZE_STEP_FACTOR,
   );
 
+/**
+ * YAZ-4312 M1: its own field, not the shared `ExactNumberInput` (YAZ-4366): tiny
+ * text keeps 2 significant digits and a step below 1 px multiplies.
+ */
 const ExactFontSizeInput = ({
   value,
   onChange,

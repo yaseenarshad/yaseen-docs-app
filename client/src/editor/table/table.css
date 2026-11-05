@@ -9,21 +9,21 @@
  */
 
 /* The ten cell colours (YAZ-3817), each in light and dark. Fills are see-through washes, so the
-   text stays readable; in light, yellow, green, blue and pink are the highlight washes (YAZ-1480,
-   app.css `--mark-bg*`), as before. Text colours are darker shades in light and lighter in dark.
+   text stays readable; in light, yellow, green, blue, pink, orange, purple, red and grey are the
+   highlight washes (YAZ-1480, YAZ-4366, app.css `--mark-bg*`). Text colours are darker shades in light and lighter in dark.
    `clipboardCopyOut.ts` holds the light shades as they show over white (a copy to Docs).
    `--table-fill-wash` is a custom fill's strength, in both themes: `colours.ts` `FILL_WASH` for a copy. */
 :root {
   --table-fill-wash: 35%;
-  --table-fill-red: rgba(255, 90, 80, 0.35);
-  --table-fill-orange: rgba(255, 150, 50, 0.35);
+  --table-fill-red: var(--mark-bg-red);
+  --table-fill-orange: var(--mark-bg-orange);
   --table-fill-yellow: var(--mark-bg);
   --table-fill-green: var(--mark-bg-green);
   --table-fill-teal: rgba(40, 190, 180, 0.35);
   --table-fill-blue: var(--mark-bg-blue);
-  --table-fill-purple: rgba(160, 110, 255, 0.35);
+  --table-fill-purple: var(--mark-bg-purple);
   --table-fill-pink: var(--mark-bg-pink);
-  --table-fill-grey: rgba(150, 150, 150, 0.35);
+  --table-fill-grey: var(--mark-bg-gray);
   --table-fill-brown: rgba(170, 120, 70, 0.35);
   --table-text-red: #c0392b;
   --table-text-orange: #b45309;
@@ -507,18 +507,44 @@
   background: var(--crepe-color-selected);
 }
 
-/* The system colour picker's input (`colours.ts` `pickCustomColour`, on the page's body): hidden, but not
-   `display: none`, so its `click()` opens the picker. */
-.table-colour-input {
+/* "Custom colour…"'s colour box (YAZ-4366, `colours.ts`; the box's own rules are app.css `.colour-box`). In the cell
+   toolbar's palette: right under the item, as wide as the palette. From the table menu: on the page's body, fixed
+   under the target cells, in the highlight panel's look (app.css `.highlight-panel`). */
+.milkdown .cell-toolbar__palette .colour-box {
+  margin: 4px 5px 3px;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__custom[aria-expanded='true'] {
+  background: var(--bg-hover);
+}
+
+.table-colour-box {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  padding: 0;
-  border: 0;
-  opacity: 0;
-  pointer-events: none;
+  z-index: 1000;
+  width: 190px;
+  box-sizing: border-box;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  box-shadow:
+    0 0 1px 0 rgba(0, 0, 0, 0.17),
+    0 0 3px 0 rgba(0, 0, 0, 0.08),
+    0 7px 14px 0 rgba(0, 0, 0, 0.05);
+  font-family: var(--font);
+  color: var(--fg);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+[data-theme='dark'] .table-colour-box {
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 0 3px 0 rgba(0, 0, 0, 0.3),
+    0 7px 14px 0 rgba(0, 0, 0, 0.3);
+}
+
+.table-colour-box[hidden] {
+  display: none;
 }
 
 /* The palette: the app's menu look (`.ctx-menu`, app.css), hung under the split button. */
@@ -851,6 +877,171 @@
 .cell-note-card__close:focus-visible {
   outline: 2px solid var(--crepe-color-primary);
   outline-offset: 1px;
+}
+
+/* "All notes" of a calendar table (YAZ-4276, `cellNoteCard.ts`): IN the card (round 1 of the demo). The card is the live
+   time block's own note; the column's other blocks stand above and below it (`.cell-note-blocks`), each a time heading
+   and its lines; a click on a line makes that block live. A wider card by default: the head holds more. */
+.milkdown .ProseMirror .cell-note.cell-note--open.cell-note--calendar {
+  width: var(--cell-note-card-width, 440px);
+}
+
+/* The head: the title row (title, back to the card, pin, ×), then the tools row (columns, Now, Only filled, Copy all). */
+.milkdown .ProseMirror .cell-note--open > .cell-note-card__head.cell-note-all-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.cell-note-all-head__row,
+.cell-note-all-head__tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cell-note-all-head__tools {
+  flex-wrap: wrap;
+  padding-bottom: 1px;
+}
+
+/* The column buttons (A2): one frame, the shown column pressed. Each rule carries the editor's prefix: Crepe's
+   `.milkdown button` reset (no border, no background) would win over a bare class. */
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__columns {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__column,
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__now,
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__filled,
+.milkdown .ProseMirror .cell-note-all-head .cell-note-card__copy {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.milkdown .ProseMirror .cell-note-all-head :is(.cell-note-all-head__now, .cell-note-all-head__filled, .cell-note-card__copy) {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__column + .cell-note-all-head__column {
+  border-left: 1px solid var(--border);
+}
+
+.milkdown .ProseMirror .cell-note-all-head :is(.cell-note-all-head__column, .cell-note-all-head__now, .cell-note-all-head__filled):hover {
+  color: var(--fg);
+}
+
+.milkdown .ProseMirror .cell-note-all-head :is(.cell-note-all-head__column, .cell-note-all-head__filled)[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--fg);
+}
+
+.milkdown .ProseMirror .cell-note-all-head button:focus-visible {
+  outline: 2px solid var(--crepe-color-primary);
+  outline-offset: 1px;
+}
+
+/* The blocks around the live note: a time heading, then the block's lines, read-only and quiet. */
+.milkdown .ProseMirror .cell-note-blocks {
+  font-size: 0.92em;
+  line-height: 1.45;
+  user-select: none;
+}
+
+.milkdown .ProseMirror .cell-note-block {
+  margin: 0 0 6px;
+}
+
+.milkdown .ProseMirror .cell-note-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 1px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* The live block's time: the accent, so you see where you type. */
+.milkdown .ProseMirror .cell-note-block--live .cell-note-time {
+  color: var(--accent);
+}
+
+.milkdown .ProseMirror .cell-note-time--now {
+  color: var(--fg);
+}
+
+.cell-note-time__now {
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--table-text-red);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+/* The dark theme's red is light (#ff7b72): dark text keeps the tag readable (white on it was 2.5:1). */
+[data-theme='dark'] .cell-note-time__now {
+  color: #1f1f1f;
+}
+
+/* A line of another block: a click there makes the block live, the caret on that line. */
+.milkdown .ProseMirror .cell-note-block__line {
+  min-height: 1.45em;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: color-mix(in srgb, var(--fg) 80%, transparent);
+  white-space: pre-wrap;
+  cursor: text;
+}
+
+.milkdown .ProseMirror .cell-note-block__line:hover {
+  background: var(--bg-hover);
+}
+
+/* Past blocks dim as the table's past rows do (A4), with Settings › Calendar tables › Dim past rows; the live note too. */
+:is([data-table-dim-past='text'], [data-table-dim-past='shade']) .milkdown .ProseMirror :is(.cell-note-block--past:not(.cell-note-block--live), .cell-note--calendar.cell-note--past > :not(.cell-note-card__head, .cell-note-blocks)) {
+  opacity: 0.55;
+}
+
+/* An empty time block (B): a small, quiet line that a click turns into the block's note. */
+.milkdown .ProseMirror .cell-note-time-empty {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: color-mix(in srgb, var(--fg-muted) 75%, transparent);
+  font: inherit;
+  font-size: 12px;
+  font-style: italic;
+  text-align: left;
+  cursor: text;
+}
+
+.milkdown .ProseMirror .cell-note-time-empty:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+/* A read-only note: the block makes no note (`goLive` declines), so it shows no invitation. */
+.milkdown .ProseMirror[contenteditable='false'] :is(.cell-note-time-empty, .cell-note-block__line) {
+  cursor: default;
 }
 
 /* A cell note's mark (YAZ-3818 D8): a small triangle in the cell's top-right corner, as in Google Sheets. The label

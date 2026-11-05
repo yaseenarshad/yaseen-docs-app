@@ -391,10 +391,11 @@ app.whenReady().then(() => {
     fontsDir: excalidrawFontsDir({ isPackaged: app.isPackaged, mainDir: __dirname, appPath: app.getAppPath(), exists: existsSync }),
     isPackaged: app.isPackaged,
     appPath: app.getAppPath(),
+    macId: () => macId(),
   }, settingsFolder)
   // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
   // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
-  void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'))
+  void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'), store.get().settingsFolder)
   gitSync = sync
   registerUpdateIpc(updater, {
     openExternal: (url) => void shell.openExternal(url),

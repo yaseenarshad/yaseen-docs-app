@@ -7,9 +7,10 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MediaSearchResponse, StudioItem } from '@shared/types'
+import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from '@shared/iconPacks'
 import { BridgeFailure } from '../fs/fsUtils'
 import type { MediaCache } from './cache'
-import { decodeCursor } from './curation'
+import { decodeCursor, SEARCH_LIMIT } from './curation'
 import { createMediaProviders, PROVIDER_BUSY, type MediaProviders } from './providers'
 
 /** The disk cache's contract, in a Map — `cache.test.ts` owns the disk half. */
@@ -116,7 +117,11 @@ describe('the Pixabay key, which never leaves main (🔒 YAZ-1775 D4)', () => {
 
 describe('search over both providers', () => {
   it('runs only the requested provider and returns an opaque cursor while there is more', async () => {
-    const fetchMock = vi.fn(async () => json(iconifyPayload(['fluent-color:rocket-24'], { total: 100, start: 0, limit: 64 })))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      const icons = url.searchParams.has('prefixes') ? ['fluent-color:rocket-24'] : Array.from({ length: 30 }, (_, i) => `lucide:rocket-${i}`)
+      return json(iconifyPayload(icons, { total: icons.length, start: 0, limit: 128 }))
+    })
     const response = await build(fetchMock as unknown as typeof globalThis.fetch, null).search({ q: 'rocket', source: 'iconify' })
     expect(response.items.every(({ provider }) => provider === 'iconify')).toBe(true)
     expect(response.nextCursor).not.toBeNull()
@@ -125,6 +130,7 @@ describe('search over both providers', () => {
     const decoded = decodeCursor(response.nextCursor, 'rocket', 'iconify')
     expect(decoded.query).toBe('rocket')
     expect(decoded.iconify.colorStart).toBeGreaterThan(0)
+    expect(decoded.iconify.generalStart).toBe(17)
   })
 
   it('exhausts both providers independently without skipping or repeating a result', async () => {
@@ -505,5 +511,216 @@ describe('the bytes, and the guards 🔒 YAZ-1775 D4 put on them', () => {
 
   it('is PROVIDER_FAILED for a Pixabay import with no key at all', async () => {
     await expect(code(build(vi.fn() as unknown as typeof globalThis.fetch, null).import({ provider: 'pixabay', id: '101' }))).resolves.toBe('PROVIDER_FAILED')
+  })
+})
+
+describe('past Iconify`s 128 (YAZ-4358): one pack at a time, biggest first', () => {
+  /**
+   * Iconify, as measured: each query answers its whole window at once (at most 128). The general answer mixes the
+   * packs; a pack's own answer is that pack's first 128. `/collections` lists the packs and their sizes.
+   */
+  function iconifyWithPacks(packs: Record<string, string[]>, color = ['noto:arrow-a', 'noto:arrow-b']) {
+    const mixed: string[] = []
+    for (let i = 0; mixed.length < Object.values(packs).flat().length; i++) for (const list of Object.values(packs)) if (i < list.length) mixed.push(list[i])
+    const answer = (icons: string[]) => json(iconifyPayload(icons.slice(0, 128), { total: Math.min(icons.length, 128), start: 0, limit: 128 }))
+    return vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.pathname === '/collections') return json(Object.fromEntries(Object.entries(packs).map(([prefix, icons]) => [prefix, { name: prefix, total: 1000 - Object.keys(packs).indexOf(prefix) * 100 + icons.length * 0 }])))
+      expect(url.searchParams.get('start')).toBe('0')
+      const prefix = url.searchParams.get('prefix')
+      if (prefix !== null) return answer(packs[prefix] ?? [])
+      if (url.searchParams.has('prefixes')) return answer(color)
+      return answer(mixed)
+    })
+  }
+
+  const icons = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}:arrow-${i}`)
+
+  async function everyPage(providers: MediaProviders) {
+    const pages: StudioItem[][] = []
+    let cursor: string | null = null
+    do {
+      const page: MediaSearchResponse = await providers.search({ q: 'arrow', source: 'iconify', cursor })
+      pages.push(page.items)
+      cursor = page.nextCursor
+    } while (cursor && pages.length < 100)
+    return { pages, cursor }
+  }
+
+  it('after the general pass, pages come from one pack at a time, biggest first, with nothing twice and nothing skipped of what Iconify answers', async () => {
+    const packs = { big: icons('big', 100), mid: icons('mid', 70), small: icons('small', 20), empty: [] }
+    const fetchMock = iconifyWithPacks(packs)
+    const { pages, cursor } = await everyPage(build(fetchMock as unknown as typeof globalThis.fetch, null))
+    const seen = pages.flat().map(({ providerId }) => providerId)
+
+    expect(cursor).toBeNull()
+    expect(new Set(seen)).toEqual(new Set(['noto:arrow-a', 'noto:arrow-b', ...packs.big, ...packs.mid, ...packs.small]))
+    expect(seen).toHaveLength(new Set(seen).size)
+    // The general pass showed 128 of the 190; the pack passes bring the rest, all of big before any of mid.
+    const afterGeneral = seen.slice(2 + 128)
+    expect(afterGeneral.length).toBe(190 - 128)
+    const lastBig = afterGeneral.map((id) => id.split(':')[0]).lastIndexOf('big')
+    expect(afterGeneral.slice(0, lastBig + 1).every((id) => id.startsWith('big:'))).toBe(true)
+    expect(afterGeneral.slice(lastBig + 1).every((id) => id.startsWith('mid:'))).toBe(true)
+    // Every pass is ONE request, however many pages it fills; small (all shown) and empty cost their one request too.
+    const asked = fetchMock.mock.calls.map(([url]) => String(url))
+    expect(asked).toHaveLength(new Set(asked).size)
+    expect(asked.filter((url) => url.includes('prefix=')).map((url) => new URL(url).searchParams.get('prefix'))).toEqual(['big', 'mid', 'small', 'empty'])
+  })
+
+  it('resumes in the middle of a pack from the cursor alone', async () => {
+    const packs = { big: icons('big', 120), small: icons('small', 30) }
+    const warm = build(iconifyWithPacks(packs) as unknown as typeof globalThis.fetch, null)
+    let cursor: string | null = null
+    let decoded = decodeCursor(null, 'arrow', 'iconify')
+    for (let pages = 0; decoded.iconify.setStart === 0 && pages < 30; pages++) {
+      const page: MediaSearchResponse = await warm.search({ q: 'arrow', source: 'iconify', cursor })
+      cursor = page.nextCursor
+      decoded = decodeCursor(cursor, 'arrow', 'iconify')
+    }
+    expect(decoded.iconify).toMatchObject({ setIndex: 0, colorExhausted: true, generalExhausted: true })
+    expect(decoded.iconify.setStart).toBeGreaterThan(0)
+    const expected = (await warm.search({ q: 'arrow', source: 'iconify', cursor })).items
+    // A fresh main (an empty cache) goes on from exactly that place.
+    cache = memoryCache()
+    const next = await build(iconifyWithPacks(packs) as unknown as typeof globalThis.fetch, null).search({ q: 'arrow', source: 'iconify', cursor })
+    expect(next.items.map(({ itemKey }) => itemKey)).toEqual(expected.map(({ itemKey }) => itemKey))
+    expect(next.items[0].providerId).toBe(`big:arrow-${decoded.iconify.setStart}`)
+  })
+
+  it('asks no pack at all when the first passes were not cut, and then has no next page', async () => {
+    const fetchMock = iconifyWithPacks({ big: icons('big', 20), small: icons('small', 5) })
+    const { pages, cursor } = await everyPage(build(fetchMock as unknown as typeof globalThis.fetch, null))
+    expect(cursor).toBeNull()
+    expect(pages.flat()).toHaveLength(27)
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('prefix=') || String(url).includes('/collections'))).toBe(false)
+  })
+
+  it('fills each page from the colour pass once the general pass has no more, with no request more (YAZ-4384)', async () => {
+    // The general pass has 10 icons, the colour pass 60: before, every page after the first held only the 6 colour icons.
+    const fetchMock = iconifyWithPacks({ big: icons('big', 10) }, icons('noto', 60))
+    const { pages, cursor } = await everyPage(build(fetchMock as unknown as typeof globalThis.fetch, null))
+    expect(cursor).toBeNull()
+    expect(pages.flat()).toHaveLength(70)
+    expect(pages.slice(0, -1).every((page) => page.length === SEARCH_LIMIT)).toBe(true)
+    // The first page still opens with at most 6 colour icons, then the general ones.
+    expect(pages[0].slice(0, 16).map(({ providerId }) => providerId.split(':')[0])).toEqual([...Array(6).fill('noto'), ...Array(10).fill('big')])
+    const asked = fetchMock.mock.calls.map(([url]) => String(url))
+    expect(asked).toHaveLength(new Set(asked).size)
+  })
+
+  it('fills each page in a one-pack search of a colour pack (the pack page, YAZ-4384)', async () => {
+    const fetchMock = iconifyWithPacks({}, icons('noto', 50))
+    const providers = build(fetchMock as unknown as typeof globalThis.fetch, null)
+    const pages: StudioItem[][] = []
+    let cursor: string | null = null
+    do {
+      const page: MediaSearchResponse = await providers.search({ q: 'arrow', source: 'iconify', cursor, filters: { ...DEFAULT_MEDIA_FILTERS, packs: ['noto'] } })
+      pages.push(page.items)
+      cursor = page.nextCursor
+    } while (cursor && pages.length < 20)
+    expect(pages.map((page) => page.length)).toEqual([18, 18, 14])
+    expect(new Set(pages.flat().map(({ providerId }) => providerId)).size).toBe(50)
+  })
+
+  it('sends no request at all before a search', async () => {
+    const fetchMock = vi.fn()
+    build(fetchMock as unknown as typeof globalThis.fetch)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('the filters, in main (YAZ-4360)', () => {
+  const facts = { mdi: { name: 'MDI', total: 7000, palette: false, license: { spdx: 'Apache-2.0' } }, noto: { name: 'Noto', total: 3000, palette: true, category: 'Emoji', license: { spdx: 'Apache-2.0' } }, cbi: { name: 'CBI', total: 900, palette: false, license: { spdx: 'CC-BY-NC-SA-4.0' } } }
+  function iconify() {
+    return vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.hostname !== 'api.iconify.design') return json({ hits: [{ id: 1, type: 'vector', previewURL: 'https://x/p.png', tags: 'arrow' }], totalHits: 1 })
+      if (url.pathname === '/collections') return json(facts)
+      const all = ['mdi:arrow', 'mdi:arrow-outline', 'noto:arrow', 'cbi:arrow', 'cbi:arrow-outline']
+      const allowed = url.searchParams.get('prefixes')?.split(',') ?? Object.keys(facts)
+      const icons = all.filter((id) => allowed.includes(id.split(':')[0]))
+      return json(iconifyPayload(icons, { total: icons.length, limit: 128 }))
+    })
+  }
+  const ids = (page: MediaSearchResponse) => page.items.map(({ providerId }) => providerId).sort()
+  const f = (over: Partial<MediaFilters>): MediaFilters => ({ ...DEFAULT_MEDIA_FILTERS, ...over })
+
+  it('sends Iconify the allowed packs, and every result matches', async () => {
+    const fetchMock = iconify()
+    const providers = build(fetchMock as unknown as typeof globalThis.fetch, null)
+    expect(ids(await providers.search({ q: 'arrow', source: 'iconify', filters: f({ colors: 'one', license: 'business' }) }))).toEqual(['mdi:arrow', 'mdi:arrow-outline'])
+    const sent = fetchMock.mock.calls.map(([url]) => new URL(String(url))).filter((url) => url.pathname === '/search')
+    expect(sent.every((url) => url.searchParams.get('prefixes') === 'mdi')).toBe(true)
+    expect(ids(await providers.search({ q: 'arrow', source: 'iconify', filters: f({ style: 'emoji' }) }))).toEqual(['noto:arrow'])
+    expect(ids(await providers.search({ q: 'arrow', source: 'iconify', filters: f({ style: 'outline' }) }))).toEqual(['cbi:arrow-outline', 'mdi:arrow-outline'])
+  })
+
+  it('asks for no pack list with Packs alone, and a filtered search shows icons only', async () => {
+    const fetchMock = iconify()
+    const page = await build(fetchMock as unknown as typeof globalThis.fetch, 'key').search({ q: 'arrow', source: 'all', filters: f({ packs: ['cbi'] }) })
+    expect(ids(page)).toEqual(['cbi:arrow', 'cbi:arrow-outline'])
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/collections') || String(url).includes('pixabay'))).toBe(false)
+    expect(page.nextCursor).toBeNull()
+  })
+
+  it('caches each filter set apart', async () => {
+    const providers = build(iconify() as unknown as typeof globalThis.fetch, null)
+    await providers.search({ q: 'arrow', source: 'iconify', filters: f({ colors: 'one' }) })
+    const many = await providers.search({ q: 'arrow', source: 'iconify', filters: f({ colors: 'many' }) })
+    expect(ids(many)).toEqual(['noto:arrow'])
+  })
+})
+
+describe('a favorite`s tile (YAZ-4385): the copy at tile size, the add the whole copy', () => {
+  const photo = { mimeType: 'image/jpeg', dataURL: `data:image/jpeg;base64,${Buffer.alloc(3000, 7).toString('base64')}` }
+  const small = { mimeType: 'image/jpeg', dataURL: 'data:image/jpeg;base64,c21hbGw=' }
+  const item = { itemKey: 'pixabay:5', provider: 'pixabay', providerId: '5', kind: 'photo', title: 'Tree' } as StudioItem
+  const copyOf = (image: { mimeType: string; dataURL: string }) => ({
+    find: vi.fn(async () => ({ mimeType: image.mimeType, size: Buffer.from(image.dataURL.split(',')[1], 'base64').byteLength })),
+    preview: vi.fn(async () => image),
+    import: vi.fn(async () => ({ ...image, item })),
+  })
+  const offline = vi.fn(async () => {
+    throw new TypeError('fetch failed')
+  })
+
+  it('a photo copy gives a tile made once and kept in the cache; the add still gets the whole copy; no network', async () => {
+    const tilePicture = vi.fn(() => small)
+    const favoriteCopy = copyOf(photo)
+    const providers = createMediaProviders({ fetch: offline as unknown as typeof globalThis.fetch, readPixabayKey: async () => 'secret', cache, favoriteCopy, tilePicture })
+    expect(await providers.preview({ provider: 'pixabay', id: '5' })).toEqual(small)
+    expect(await providers.preview({ provider: 'pixabay', id: '5' })).toEqual(small)
+    expect(tilePicture).toHaveBeenCalledTimes(1)
+    // The kept tile answers before the copy is read (YAZ-4366): a 20 MB photo is not read again each time its tile shows.
+    expect(favoriteCopy.preview).toHaveBeenCalledTimes(1)
+    expect(await providers.import({ provider: 'pixabay', id: '5' })).toMatchObject({ dataURL: photo.dataURL, item })
+    expect(offline).not.toHaveBeenCalled()
+  })
+
+  it('an icon`s SVG copy goes as it is', async () => {
+    const svg = { mimeType: 'image/svg+xml', dataURL: 'data:image/svg+xml;base64,PHN2Zy8+' }
+    const tilePicture = vi.fn(() => small)
+    const providers = createMediaProviders({ fetch: offline as unknown as typeof globalThis.fetch, readPixabayKey: async () => null, cache, favoriteCopy: copyOf(svg), tilePicture })
+    expect(await providers.preview({ provider: 'iconify', id: 'mdi:star' })).toEqual(svg)
+    expect(tilePicture).not.toHaveBeenCalled()
+  })
+
+  it('a copy main cannot make smaller takes the provider`s preview; offline, the tile still shows from the copy', async () => {
+    const tilePicture = vi.fn(() => null)
+    const online = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('https://pixabay.com/api/')) return json({ hits: [{ id: 5, type: 'illustration', previewURL: 'https://cdn.pixabay.com/p.jpg', largeImageURL: 'https://cdn.pixabay.com/l.jpg', tags: 'tree' }] })
+      return new Response(Buffer.from('tiny'), { headers: { 'Content-Type': 'image/jpeg' } })
+    })
+    const providers = createMediaProviders({ fetch: online as unknown as typeof globalThis.fetch, readPixabayKey: async () => 'secret', cache, favoriteCopy: copyOf(photo), tilePicture })
+    const tile = await providers.preview({ provider: 'pixabay', id: '5' })
+    expect(Buffer.from(tile.dataURL.split(',')[1], 'base64').toString()).toBe('tiny')
+    expect(online.mock.calls.map(([u]) => String(u))).toContain('https://cdn.pixabay.com/p.jpg')
+
+    cache.store.clear()
+    const away = createMediaProviders({ fetch: offline as unknown as typeof globalThis.fetch, readPixabayKey: async () => 'secret', cache, favoriteCopy: copyOf(photo), tilePicture })
+    expect(await away.preview({ provider: 'pixabay', id: '5' })).toEqual(photo)
   })
 })

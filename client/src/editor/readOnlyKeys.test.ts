@@ -153,6 +153,8 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     const { crepe, root } = await mount()
     crepe.setReadonly(true)
     clickIn(root, 'L2 a')
+    // On a bullet the first ⌘A selects its line (YAZ-4348 demo round 2); the second the note.
+    expect(press('a').defaultPrevented).toBe(true)
     expect(press('a').defaultPrevented).toBe(true)
     const selection = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.selection)
     expect(selection.from).toBe(0)
@@ -443,6 +445,9 @@ describe('a read-only note keeps its caret and keys (YAZ-4433)', () => {
 
   it('⌘A then ⌘C copies the note’s text; ⌘X copies nothing and cuts nothing', async () => {
     const { crepe, view, saves } = await locked('L2 a', 1)
+    // On a bullet the first ⌘A selects its line, the second the note (YAZ-4387, YAZ-4348 demo round 2): read only too.
+    expect(key(view, 'a', { mod: true }).defaultPrevented).toBe(true)
+    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe('L2 a')
     expect(key(view, 'a', { mod: true }).defaultPrevented).toBe(true)
     expect(view.state.selection.from).toBe(0)
     const copy = clipboard('copy')

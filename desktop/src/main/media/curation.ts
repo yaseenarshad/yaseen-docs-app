@@ -16,6 +16,7 @@
  *   three `replace`s. Same bytes, same alphabet, same stripped padding — Node has the encoder.
  */
 import type { MediaItemKind, MediaSearchSource, StudioItem } from '@shared/types'
+import { isNonCommercial, type MediaFilters, type MediaStyleFilter } from '@shared/iconPacks'
 
 /** How many results ONE page of a search answers with. */
 export const SEARCH_LIMIT = 18
@@ -31,9 +32,21 @@ export const MAX_IMPORT_BYTES = 20 * 1024 * 1024
 /** Search JSON and previews live this long on disk; bump `SEARCH_CACHE_VERSION` to orphan them early. */
 export const CACHE_SECONDS = 24 * 60 * 60
 /** Part of every search cache key: changing the curation changes this, and yesterday's answers stop counting. */
-export const SEARCH_CACHE_VERSION = '2'
+export const SEARCH_CACHE_VERSION = '3'
 export const PIXABAY_API = 'https://pixabay.com/api/'
 export const ICONIFY_API = 'https://api.iconify.design'
+/**
+ * What one Iconify search asks for (YAZ-4358, measured 2026-11-03): Iconify clamps `limit` to 32–128 and refuses a
+ * `start` past that window, so one request with the largest limit and `start=0` IS the whole answer of that query —
+ * at most 128 matches. The app keeps it 24 h and pages through it with no further request.
+ */
+export const ICONIFY_ASK_LIMIT = 999
+/** The window Iconify answers when it names none. */
+export const ICONIFY_WINDOW = 128
+/** The most pass answers one page looks up (the Worker's ceiling of eight requests). */
+export const MAX_PASS_LOOKUPS = 8
+/** Iconify's pack list: about 110 KB today; more than this is not read. */
+export const MAX_COLLECTIONS_BYTES = 4 * 1024 * 1024
 
 /**
  * The icon sets that are COLOURED, best first. They are asked for in their own batch before the
@@ -76,8 +89,14 @@ export interface PixabayHit {
 
 export interface IconifyCollection {
   name?: string
+  /** How many icons the pack has (`/collections` only). */
+  total?: number
   category?: string
   license?: { title?: string; url?: string; spdx?: string }
+  /** True: many-color icons. False: one color (`currentColor`). */
+  palette?: boolean
+  /** Iconify hides a pack that is gone or replaced (`/collections` leaves most of them out already). */
+  hidden?: boolean
 }
 
 export interface IconifySearchPayload {
@@ -87,12 +106,24 @@ export interface IconifySearchPayload {
   limit?: number
 }
 
-/** Where the Iconify walk has got to: a colour pass and a general pass, each with its own start. */
+/**
+ * Where the Iconify walk has got to: a colour pass and a general pass, each with its own start, then (YAZ-4358) one
+ * pass for each pack, biggest first — `setIndex` is the pack in that list, `setStart` the place in its answer. The
+ * pack passes run only when a first pass was cut at Iconify's window of 128; otherwise `setsExhausted` is set at once.
+ */
 export interface IconifyCursor {
   colorStart: number
   generalStart: number
   colorExhausted: boolean
   generalExhausted: boolean
+  setIndex: number
+  setStart: number
+  setsExhausted: boolean
+  /**
+   * The walk is over the downloaded packs (YAZ-4359): `generalStart` is then the place in the ranked matches, and the
+   * other passes are spent. A local cursor whose packs went away starts streaming from the start.
+   */
+  local: boolean
 }
 
 /** Where the Pixabay walk has got to: a page per image type, whose turn it is, and what was already shown. */
@@ -225,7 +256,7 @@ export function initialCursor(query: string, source: MediaSearchSource): SearchC
     version: 1,
     query,
     source,
-    iconify: { colorStart: 0, generalStart: 0, colorExhausted: false, generalExhausted: false },
+    iconify: { colorStart: 0, generalStart: 0, colorExhausted: false, generalExhausted: false, setIndex: 0, setStart: 0, setsExhausted: false, local: false },
     pixabay: { vectorPage: 1, illustrationPage: 1, nextType: 'vector', vectorExhausted: false, illustrationExhausted: false, seenIds: [] },
   }
 }
@@ -235,6 +266,8 @@ export function encodeCursor(cursor: SearchCursor): string {
   return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url')
 }
 
+/** Iconify has about 280 packs; a cursor past this many is not one the app made. */
+const MAX_SET_INDEX = 2000
 const validInteger = (candidate: unknown, minimum: number) => typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= minimum
 const validBoolean = (candidate: unknown) => typeof candidate === 'boolean'
 
@@ -255,6 +288,12 @@ export function decodeCursor(value: string | null | undefined, query: string, so
       !validInteger(cursor.iconify?.generalStart, 0) ||
       !validBoolean(cursor.iconify?.colorExhausted) ||
       !validBoolean(cursor.iconify?.generalExhausted) ||
+      !validInteger(cursor.iconify?.setIndex, 0) ||
+      cursor.iconify.setIndex > MAX_SET_INDEX ||
+      !validInteger(cursor.iconify?.setStart, 0) ||
+      cursor.iconify.setStart > ICONIFY_ASK_LIMIT ||
+      !validBoolean(cursor.iconify?.setsExhausted) ||
+      !validBoolean(cursor.iconify?.local) ||
       !validInteger(cursor.pixabay?.vectorPage, 1) ||
       !validInteger(cursor.pixabay?.illustrationPage, 1) ||
       (cursor.pixabay?.nextType !== 'vector' && cursor.pixabay?.nextType !== 'illustration') ||
@@ -282,12 +321,19 @@ export function providersFor(source: MediaSearchSource): SearchProvider[] {
   return source === 'all' ? ['iconify', 'pixabay'] : [source]
 }
 
-/**
- * Whether the page just consumed was the last one. Iconify answers `total` when it feels like it;
- * without one, a short page (fewer icons than the limit it echoed) is the end.
- */
-export function iconifyPageExhausted(start: number, consumedCount: number, page: { fetchedCount: number; responseLimit: number; total?: number }): boolean {
-  return page.total !== undefined ? start + consumedCount >= page.total : consumedCount === page.fetchedCount && page.fetchedCount < page.responseLimit
+/** Whether Iconify cut this answer at its window: then more matches may exist than it named (YAZ-4358). */
+export function iconifyAnswerCapped(payload: { icons?: string[]; total?: number; limit?: number }): boolean {
+  const count = payload.icons?.length ?? 0
+  const window = finiteNumber(payload.limit) ?? ICONIFY_WINDOW
+  return count > 0 && (finiteNumber(payload.total) ?? count) >= window
+}
+
+/** The packs, biggest first (YAZ-4358): the order of the pack passes. A hidden pack is left out; a tie keeps the name order. */
+export function iconifySetsBySize(collections: Record<string, IconifyCollection>, allowed: ReadonlySet<string> | null = null): string[] {
+  return Object.entries(collections)
+    .filter(([prefix, info]) => !info.hidden && (allowed === null || allowed.has(prefix)))
+    .sort(([a, x], [b, y]) => (finiteNumber(y.total) ?? 0) - (finiteNumber(x.total) ?? 0) || a.localeCompare(b))
+    .map(([prefix]) => prefix)
 }
 
 export const oppositePixabayType = (type: PixabayImageType): PixabayImageType => (type === 'vector' ? 'illustration' : 'vector')
@@ -299,10 +345,13 @@ export function nextPixabayType(cursor: PixabayCursor): PixabayImageType | null 
   return cursor[`${alternate}Exhausted`] ? null : alternate
 }
 
+/** Whether the Iconify half still has a pass with icons in it. */
+export const iconifyHasMore = (cursor: IconifyCursor): boolean => !cursor.colorExhausted || !cursor.generalExhausted || !cursor.setsExhausted
+
 /** Whether a cursor still has a page in it — what decides `nextCursor: null` and stops the scroll. */
 export function hasMorePages(cursor: SearchCursor, source: MediaSearchSource): boolean {
   return providersFor(source).some((provider) =>
-    provider === 'iconify' ? !cursor.iconify.colorExhausted || !cursor.iconify.generalExhausted : !cursor.pixabay.vectorExhausted || !cursor.pixabay.illustrationExhausted,
+    provider === 'iconify' ? iconifyHasMore(cursor.iconify) : !cursor.pixabay.vectorExhausted || !cursor.pixabay.illustrationExhausted,
   )
 }
 
@@ -320,13 +369,17 @@ export function pixabaySearchUrl(query: string, page: number, imageType: Pixabay
   return url
 }
 
-/** Iconify's search URL; `prefixes` is what makes the colour pass a colour pass. */
-export function iconifySearchUrl(query: string, start: number, limit: number, prefixes?: string[]): URL {
+/**
+ * Iconify's search URL for one whole pass (YAZ-4358): `prefixes` is what makes the colour pass a colour pass (and a
+ * filter a filter, YAZ-4360); `prefix` is one pack's own pass. Always from the start, with the largest limit.
+ */
+export function iconifySearchUrl(query: string, scope: { prefixes?: readonly string[]; prefix?: string } = {}): URL {
   const url = new URL(`${ICONIFY_API}/search`)
   url.searchParams.set('query', query)
-  url.searchParams.set('limit', String(limit))
-  url.searchParams.set('start', String(start))
-  if (prefixes?.length) url.searchParams.set('prefixes', prefixes.join(','))
+  url.searchParams.set('limit', String(ICONIFY_ASK_LIMIT))
+  url.searchParams.set('start', '0')
+  if (scope.prefix !== undefined) url.searchParams.set('prefix', scope.prefix)
+  else if (scope.prefixes?.length) url.searchParams.set('prefixes', scope.prefixes.join(','))
   return url
 }
 
@@ -356,4 +409,63 @@ export function iconifyItemFromId(providerId: string): StudioItem | null {
   }
   if (kind === 'logo') item.trademarkNotice = true
   return item
+}
+
+// ---------- The filters (YAZ-4360, round 3 decision 4) ----------
+
+/** What a filter reads of a pack: Iconify's `/collections` entry, or a downloaded pack's own `info`. */
+export type PackFacts = Pick<IconifyCollection, 'palette' | 'category' | 'license'>
+
+/** Whether a filter needs the pack facts at all: Packs alone does not (and costs no `/collections` request). */
+export const filtersNeedPackFacts = (filters: MediaFilters | undefined): boolean =>
+  filters !== undefined && (filters.colors !== 'any' || filters.style === 'emoji' || filters.license !== 'any')
+
+/**
+ * The packs a search may show, or null for every pack. Colors read the pack's `palette` (one color = `currentColor`),
+ * Emoji its category, Business-safe its license (no `-NC`, extra 16), Packs names them. A pack the facts do not know
+ * passes a Packs-only filter (a downloaded pack Iconify no longer lists) but no other.
+ */
+export function allowedPrefixes(facts: Record<string, PackFacts>, filters: MediaFilters | undefined): Set<string> | null {
+  if (filters === undefined) return null
+  const needFacts = filtersNeedPackFacts(filters)
+  if (!needFacts && filters.packs.length === 0) return null
+  const candidates = filters.packs.length > 0 ? filters.packs : Object.keys(facts)
+  return new Set(
+    candidates.filter((prefix) => {
+      if (!needFacts) return true
+      const pack = facts[prefix]
+      if (pack === undefined) return false
+      if (filters.colors === 'one' && pack.palette !== false) return false
+      if (filters.colors === 'many' && pack.palette !== true) return false
+      if (filters.style === 'emoji' && pack.category !== 'Emoji') return false
+      if (filters.license === 'business' && isNonCommercial(pack.license ?? {})) return false
+      return true
+    }),
+  )
+}
+
+/**
+ * The words that end an icon name in each style, and that end a pack's own prefix (`icon-park-outline`, `fa6-solid`).
+ * A number after them (`arrow-up-24-filled` has it before) is a size, not a style, and is skipped.
+ */
+const STYLE_WORDS: Record<Exclude<MediaStyleFilter, 'any' | 'emoji'>, ReadonlySet<string>> = {
+  outline: new Set(['outline', 'outlined', 'line', 'linear', 'stroke', 'regular']),
+  filled: new Set(['fill', 'filled', 'solid', 'glyph']),
+  duotone: new Set(['duotone', 'twotone', 'duo', 'duocolor', 'bulk']),
+}
+
+const lastWord = (dashed: string): string => {
+  const words = dashed.toLowerCase().split('-')
+  while (words.length > 1 && /^\d+$/.test(words[words.length - 1])) words.pop()
+  // `two-tone` is one word.
+  if (words.length > 1 && words[words.length - 1] === 'tone' && words[words.length - 2] === 'two') return 'twotone'
+  return words[words.length - 1]
+}
+
+/** Whether `prefix:name` is in `style`: by the name's ending, or by the pack's ending. Any and Emoji (a pack rule) pass. */
+export function matchesStyle(providerId: string, style: MediaStyleFilter): boolean {
+  if (style === 'any' || style === 'emoji') return true
+  const at = providerId.indexOf(':')
+  const words = STYLE_WORDS[style]
+  return words.has(lastWord(providerId.slice(at + 1))) || (at > 0 && providerId.slice(0, at).includes('-') && words.has(lastWord(providerId.slice(0, at))))
 }

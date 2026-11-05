@@ -30,9 +30,12 @@
  *  - Highlight mark (YAZ-1480, `marks/highlight.ts`): ONE mark with an optional `color`. Yellow
  *    (Mod-Shift-h / typing `==x==` / the first toolbar swatch) is Obsidian's `==text==` on disk —
  *    a vendored micromark tokenizer (gfm-strikethrough's attention run, `=` and exactly two) plus
- *    its stringify escape. Green/blue/pink are click-only and store inline HTML
- *    `<mark class="highlight-<name>">`, read back through the shared `marks/htmlPairs.ts` walk.
- *    Four toolbar swatches after Strikethrough; one click applies, re-clicking the lit one removes.
+ *    its stringify escape. The named colours are click-only and store inline HTML
+ *    `<mark class="highlight-<name>">`, read back through the shared `marks/htmlPairs.ts` walk; a
+ *    custom colour stores `<mark style="background-color: #rrggbb">` (YAZ-4348 demo round 2).
+ *    Three toolbar buttons after Strikethrough (yellow, green, blue), each a bold "A" on its colour;
+ *    one click applies, re-clicking the lit one removes. Their ▾ opens the board-style colour panel:
+ *    most used custom colours, every colour and None, shades, a hex code (`highlightPanel.ts`).
  *  - Inline breaks (YAZ-1452, `inlineBreaks.ts`): inline `<br>` ↔ hardbreak, registered BEFORE
  *    Milkdown's `remarkPreserveEmptyLinePlugin` (which otherwise deletes it); table cells save
  *    a hardbreak back as `<br>`, and Shift-Enter inside a cell always inserts one. A `<br>` at a
@@ -274,7 +277,8 @@ import {
 } from './listItemRoundTrip'
 import { toggleUnderline, underline, underlineSchema } from './marks/underline'
 import { clearFormattingKeymap } from './marks/clearFormatting'
-import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
+import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, QUICK_HIGHLIGHTS, type HighlightColor } from './marks/highlight'
+import { hasPanelColour, highlightPanel, MORE_KEY, toggleHighlightPanel } from './highlightPanel'
 import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
 import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
 import { arrangeToolbar, toolbarPrefs } from './toolbarPrefs'
@@ -286,6 +290,7 @@ import { cellBlocksOnly } from './table/cellBlocks'
 import { cellNotes, withoutEmptyCellNotes } from './table/cellNotes'
 import { cellNoteButton } from './table/cellNoteButton'
 import { cellNoteCard, cellNoteCardKeymap } from './table/cellNoteCard'
+import { bulletSelectAllKeymap } from './bulletSelectAll'
 import { cellNoteDeleteGuard } from './table/cellNoteGuard'
 import { cellNoteClipboard } from './table/cellNoteClipboard'
 import { cellNotePreview } from './table/cellNotePreview'
@@ -326,6 +331,7 @@ import { caretReveal, foldHistory } from './outline/foldReveal'
 import { enterTracker, outlinerKeymap } from './outline/listCommands'
 import { listMarkers } from './outline/listMarkers'
 import { listMarkerTyping, undoListMarker, wrapInTaskListInputRule } from './listMarkerTyping'
+import { typingArrows, undoTypingArrow } from './typingArrows'
 import { createFoldingSwitch } from './outline/foldingSwitch'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
@@ -453,21 +459,26 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  *
  * THE STRIP, by default, left to right (YAZ-3806): the Heading group (H1, H2, H3, T), the Lists
  * group (Checklist, Bullet list, Numbered list), Crepe's own Formatting group (Bold, Italic,
- * Underline, Strikethrough, the four swatches), then Crepe's code and link. The user reorders and
- * hides groups and buttons in Settings (`toolbarPrefs.ts`); the tab order is the strip's order.
+ * Underline, Strikethrough, the highlight buttons and their ▾), then Crepe's code and link. The user
+ * reorders and hides groups and buttons in Settings (`toolbarPrefs.ts`); the tab order is the strip's order.
  *
- * The four highlight swatches (YAZ-1480 — yellow, green, blue, pink) join Crepe's OWN Formatting
+ * The highlight swatches (YAZ-1480; since YAZ-4348 demo round 2 yellow, green, blue — pink lives in
+ * the ▾ panel with the other colours) join Crepe's OWN Formatting
  * group right after Strikethrough: `getGroup('formatting')` reaches it because `buildToolbar`
  * runs AFTER Crepe has added that group. Bold's toggle semantics (🔒 D5): a dot is lit when ANY of
  * the selection carries its colour, so a partly highlighted line still shows it; clicking a lit dot
  * removes that colour, an unlit one applies it — through the mark's single command, which
  * `Mod-Shift-h` (yellow) and the `==x==` typing rule share. Yellow is the Markdown `==…==` on
- * disk; a colour is `<mark class="highlight-<name>">`.
+ * disk; a colour is `<mark class="highlight-<name>">`. YAZ-4348 demo round 2: each swatch is a bold
+ * "A" on its colour, a lit one ringed (app.css), and a ▾ after them opens the colour panel, `highlightPanel.ts`.
  *
  * The Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what block is
  * this?" — the invisible `##` made visible — and whose click switches it, through the same
  * commands the typed markdown runs. `T` is the way back to plain text without backspacing hashes
- * you cannot see, and out of a list too (YAZ-3806 T4): it lights only for plain text outside a list.
+ * you cannot see. It changes only the line's text type, never the list (YAZ-4369, which replaces
+ * YAZ-3806 T4's "out of a list too"): a heading in a bullet becomes a plain line in the same
+ * bullet, and T lights when every line is a paragraph, in a list or not. The lit list button
+ * takes a line out of a list.
  *
  * The Lists group (YAZ-3806 T1, T3): one rule for the three buttons, in `listButtons.ts`. Numbers
  * stay a deliberate act (T2): the Numbered button is a click, like the block handle's command.
@@ -488,8 +499,8 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  */
 function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = [], extend?: (builder: ToolbarBuilder) => void): void {
   const formatting = builder.getGroup('formatting')
-  for (const color of [null, ...HIGHLIGHT_COLORS] as HighlightColor[]) {
-    const id = color === null ? 'highlight' : (`highlight-${color}` as const)
+  for (const color of [null, ...QUICK_HIGHLIGHTS] as HighlightColor[]) {
+    const id = color === null ? 'highlight' : (`highlight-${color}` as 'highlight-green' | 'highlight-blue')
     formatting.addItem(id, {
       icon: ownIcon(id),
       label: TOOLBAR_LABELS[id],
@@ -498,6 +509,13 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       onRun: (ctx) => ctx.get(commandsCtx).call(setHighlightCommand.key, color),
     })
   }
+  // YAZ-4348 demo round 2: the ▾ of the colour panel; lit when the selection has a colour that is not a button.
+  formatting.addItem(MORE_KEY, {
+    icon: ownIcon(MORE_KEY),
+    label: TOOLBAR_LABELS[MORE_KEY],
+    active: (ctx) => hasPanelColour(viewState(ctx), highlightSchema.type(ctx)),
+    onRun: (ctx) => toggleHighlightPanel(ctx.get(editorViewCtx)),
+  })
   formatting.addItem('underline', {
     icon: ownIcon('underline'),
     label: TOOLBAR_LABELS.underline,
@@ -604,6 +622,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
   crepe.editor.use(clearFormattingKeymap)
+  // The toolbar's highlight ▾ colour panel and its colour box (YAZ-4348 demo round 2, YAZ-4388).
+  crepe.editor.use(highlightPanel)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
   // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment.
@@ -616,7 +636,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // YAZ-3209: over hidden lines, Bold, Italic, Strikethrough, code and H1-H3 / T change the visible
   // ones only, and the toolbar lights for visible lines only. After the presets, by `EditorViewReady`.
   crepe.editor.use(visibleFormatting)
-  // T / ⌘⌥0 out of every list level, ⌘⌥8 = the Bullet button (YAZ-3806 T3, T4). After visibleFormatting: it replaces T.
+  // T / ⌘⌥0 = a paragraph in place, the list kept (YAZ-4369); ⌘⌥8 = the Bullet button (YAZ-3806 T3). After visibleFormatting: it replaces T.
   crepe.editor.use(listButtons)
   // Milkdown's empty-line plugin deletes every inline <br> on parse (YAZ-1452). Ours must run
   // first; re-registering Milkdown's AFTER keeps its id resolvable so empty paragraphs still
@@ -677,7 +697,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(cellNotePreview)
   crepe.editor.use(cellNoteCard)
   crepe.editor.use(cellNoteCardKeymap)
-  // A custom colour pick's target cells (YAZ-3817), kept through edits while the system picker is open.
+  // ⌘A on a bullet (YAZ-4348 demo round 2): its line first, then the whole note; priority 80, under the cell's 90.
+  crepe.editor.use(bulletSelectAllKeymap)
+  // The table menu's Custom colour… box and its target cells (YAZ-3817, YAZ-4366), kept through edits while it is open.
   crepe.editor.use(customColourPick)
   // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.
   crepe.editor.use(tableFreeze)
@@ -744,6 +766,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // path; Mod-Alt-7 and the slash-menu row stay absent. GFM's `[ ] ` rule reached past a table cell (YAZ-3818).
   void crepe.editor.remove([wrapInOrderedListInputRule, wrapInBulletListInputRule, gfmTaskListInputRule, ...orderedListKeymap])
   crepe.editor.use(listMarkerTyping).use(undoListMarker).use(wrapInTaskListInputRule)
+  // Arrows while typing (YAZ-4273): `->` → `→` and the rest, off from Settings › Editor › Typing.
+  crepe.editor.use(typingArrows).use(undoTypingArrow)
   // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its kind (the toolbar's list
   // buttons and T in one strip, YAZ-3727 D13, D14), its children (Number children, when it has any), its
   // own numbered list as bullets with written numbers (YAZ-3727 D12),

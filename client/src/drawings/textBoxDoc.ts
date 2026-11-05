@@ -209,6 +209,25 @@ export function docToBox(
   return { text, textRuns: helpers.normalizeTextRuns([...visible, ...kept], text.length) }
 }
 
+/** The note highlight names a box draws by name (the engine's `TEXT_HIGHLIGHT_FILLS`); yellow is the note's `null`. */
+const BOX_HIGHLIGHT_NAMES = new Set(['green', 'blue', 'pink'])
+
+/**
+ * The ▾ panel's other names (YAZ-4388) as their hex: `HIGHLIGHT_HEX` of `editor/marks/highlight.ts`, copied so this
+ * file loads no editor module (an import cycle); `textBoxPopups.test.ts` fails when the two differ.
+ */
+export const PANEL_HIGHLIGHT_HEX: Readonly<Record<string, string>> = { orange: '#ff9632', purple: '#a06eff', red: '#ff5a50', gray: '#969696' }
+
+/**
+ * A note highlight as a box run keeps it. A panel name that is no box name would be dropped by the engine, so it
+ * becomes its own hex, which a box draws (a custom highlight).
+ */
+function boxHighlight(color: string | null): string {
+  if (color === null) return 'yellow'
+  if (BOX_HIGHLIGHT_NAMES.has(color)) return color
+  return PANEL_HIGHLIGHT_HEX[color] ?? color
+}
+
 function styleOf(marks: readonly Mark[]): Omit<MutableRun, 'start' | 'end'> {
   const style: Omit<MutableRun, 'start' | 'end'> = {}
   for (const mark of marks) {
@@ -217,7 +236,7 @@ function styleOf(marks: readonly Mark[]): Omit<MutableRun, 'start' | 'end'> {
     else if (name === 'emphasis') style.italic = true
     else if (name === 'underline') style.underline = true
     else if (name === 'strike_through') style.strikethrough = true
-    else if (name === 'highlight') style.highlight = (mark.attrs.color as string | null) ?? 'yellow'
+    else if (name === 'highlight') style.highlight = boxHighlight(mark.attrs.color as string | null)
     else if (name === 'text_color' && mark.attrs.color) style.color = mark.attrs.color as string
   }
   return style

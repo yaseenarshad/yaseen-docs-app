@@ -47,6 +47,16 @@ export type StaticCanvasRenderConfig = {
   gifPlayer?: GifPlayer;
   /** YAZ-4277 D5, D7: the board's fold arrows; absent, `getFoldArrowPrefs()` */
   foldArrows?: FoldArrowPrefs;
+  /** YAZ-4354 1D: Edit colors' faded preview of one icon (a loaded picture, never page SVG) */
+  colorEditPreview?: ColorEditPreview;
+};
+
+/**
+ * YAZ-4366: a stable holder, so a new preview repaints only the static canvas (`repaint`, set by it), not the App.
+ */
+export type ColorEditPreview = {
+  current: { elementId: string; image: HTMLImageElement } | null;
+  repaint?: () => void;
 };
 
 export type SVGRenderConfig = {

@@ -3,7 +3,8 @@
  * release it opens on for each state, a row click and ↑ / ↓, only the selected release in the
  * document, the notes as sanitised HTML with lazy images (S16), a picture that opens the lightbox with
  * the release's pictures (D12), links through `window.open` (S17), the failure text (S18), the
- * buttons for each state (S13–S15), and the ways to close it, Esc layered under the lightbox (S19).
+ * buttons for each state (S13–S15), the update from the Latest row (YAZ-4371), and the ways to close it,
+ * Esc layered under the lightbox (S19).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -30,15 +31,15 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function installBridge(notes: () => Promise<ReleaseNotes>) {
-  const bridge = { update: { state: vi.fn(), onState: vi.fn(), notes: vi.fn(notes), restart: vi.fn(async () => undefined) } }
+function installBridge(notes: () => Promise<ReleaseNotes>, check: () => Promise<UpdateState>) {
+  const bridge = { update: { state: vi.fn(), onState: vi.fn(), notes: vi.fn(notes), check: vi.fn(check), restart: vi.fn(async () => undefined) } }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge
 }
 
 /** Mounts the sheet; the app runs `current` (1.0.13 by default: one release behind). */
-async function render(update: UpdateState, notes: () => Promise<ReleaseNotes> = async () => ({ current: '1.0.13', releases: RELEASES })) {
-  const bridge = installBridge(notes)
+async function render(update: UpdateState, notes: () => Promise<ReleaseNotes> = async () => ({ current: '1.0.13', checks: true, releases: RELEASES }), check: () => Promise<UpdateState> = () => new Promise(() => undefined)) {
+  const bridge = installBridge(notes, check)
   const onClose = vi.fn()
   host = document.body.appendChild(document.createElement('div'))
   root = createRoot(host)
@@ -47,7 +48,10 @@ async function render(update: UpdateState, notes: () => Promise<ReleaseNotes> = 
   const buttons = () => [...el.querySelectorAll<HTMLButtonElement>('.whats-new__actions button')]
   const rows = () => [...el.querySelectorAll<HTMLElement>('.whats-new__row')]
   const selected = () => el.querySelector('.whats-new__row[aria-selected="true"]')?.getAttribute('data-version')
-  return { el, bridge, onClose, buttons, rows, selected, labels: () => buttons().map((b) => b.textContent) }
+  /** Main's push of a new state: App renders the sheet again with it. */
+  const push = (next: UpdateState) => act(() => root?.render(<WhatsNewSheet update={next} onClose={onClose} />))
+  const line = () => el.querySelector('.whats-new__check-line')?.textContent ?? null
+  return { el, bridge, onClose, buttons, rows, selected, push, line, labels: () => buttons().map((b) => b.textContent) }
 }
 
 const tagsOf = (row: Element) => [...row.querySelectorAll('.whats-new__tag')].map((t) => t.textContent)
@@ -94,12 +98,12 @@ describe('WhatsNewSheet: the list of releases (D10)', () => {
   })
 
   it('up to date: the newest row has both tags', async () => {
-    const { rows } = await render({ kind: 'idle' }, async () => ({ current: '1.0.14', releases: RELEASES }))
+    const { rows } = await render({ kind: 'idle' }, async () => ({ current: '1.0.14', checks: true, releases: RELEASES }))
     expect(rows().map(tagsOf)).toEqual([['Latest', 'Your current version'], [], []])
   })
 
   it('a running version that is not in the list (a dev build) has no tag of its own', async () => {
-    const { rows } = await render({ kind: 'idle' }, async () => ({ current: '0.0.1', releases: RELEASES }))
+    const { rows } = await render({ kind: 'idle' }, async () => ({ current: '0.0.1', checks: true, releases: RELEASES }))
     expect(rows().map(tagsOf)).toEqual([['Latest'], [], []])
   })
 
@@ -142,7 +146,7 @@ describe('WhatsNewSheet: the release it opens on (D11)', () => {
   })
 
   it('a current version that is not in the list opens on the latest', async () => {
-    const { selected } = await render({ kind: 'idle' }, async () => ({ current: '0.0.1', releases: RELEASES }))
+    const { selected } = await render({ kind: 'idle' }, async () => ({ current: '0.0.1', checks: true, releases: RELEASES }))
     expect(selected()).toBe('1.0.14')
   })
 })
@@ -179,7 +183,7 @@ describe('WhatsNewSheet: the notes', () => {
   })
 
   it('an empty list says so', async () => {
-    const { el, rows } = await render({ kind: 'idle' }, async () => ({ current: '1.0.13', releases: [] }))
+    const { el, rows } = await render({ kind: 'idle' }, async () => ({ current: '1.0.13', checks: true, releases: [] }))
     expect(el.querySelector('.whats-new__msg')?.textContent).toBe('No release notes.')
     expect(rows()).toHaveLength(0)
   })
@@ -278,6 +282,97 @@ describe('WhatsNewSheet: the buttons', () => {
     act(() => root?.render(null))
     expect(document.activeElement).toBe(opener)
     opener.remove()
+  })
+})
+
+describe('WhatsNewSheet: update from the Latest row (YAZ-4371)', () => {
+  const enabled = (b: HTMLButtonElement) => !b.disabled
+
+  it('idle on a newer Latest row: "Update to v1.0.14" asks main for one check, and the button then follows the pushed state', async () => {
+    let answer!: (s: UpdateState) => void
+    const { bridge, rows, buttons, labels, push } = await render({ kind: 'idle' }, undefined, () => new Promise((r) => (answer = r)))
+    act(() => rows()[0].click())
+    expect(labels()).toEqual(['Later', 'Update to v1.0.14'])
+    act(() => buttons()[1].click())
+    expect(bridge.update.check).toHaveBeenCalledTimes(1)
+    expect(buttons()[1].disabled).toBe(true) // one click is one check: not clickable until it answers
+    act(() => buttons()[1].click())
+    expect(bridge.update.check).toHaveBeenCalledTimes(1)
+    // `downloading` is pushed before the check answers it (S6)
+    push({ kind: 'downloading', version: '1.0.14' })
+    await act(async () => answer({ kind: 'downloading', version: '1.0.14' }))
+    expect(labels()).toEqual(['Close', 'Downloading v1.0.14…'])
+    expect(buttons().map(enabled)).toEqual([true, false])
+    push({ kind: 'ready', version: '1.0.14' })
+    expect(labels()).toEqual(['Later', 'Restart to update'])
+    act(() => buttons()[1].click())
+    expect(bridge.update.restart).toHaveBeenCalledTimes(1)
+    push({ kind: 'manual', version: '1.0.14' })
+    expect(labels()).toEqual(['Later', 'Download'])
+  })
+
+  it('no update button on another row, when up to date, or in a dev run with no feed (S7); ready and manual keep theirs on every row', async () => {
+    const behind = await render({ kind: 'idle' })
+    expect(behind.selected()).toBe('1.0.13')
+    expect(behind.labels()).toEqual(['Close'])
+    behind.push({ kind: 'downloading', version: '1.0.14' })
+    expect(behind.labels()).toEqual(['Close'])
+    act(() => behind.rows()[2].click())
+    behind.push({ kind: 'ready', version: '1.0.14' })
+    expect(behind.labels()).toEqual(['Later', 'Restart to update'])
+    act(() => root?.unmount())
+    host?.remove()
+
+    const upToDate = await render({ kind: 'idle' }, async () => ({ current: '1.0.14', checks: true, releases: RELEASES }))
+    expect(upToDate.selected()).toBe('1.0.14')
+    expect(upToDate.labels()).toEqual(['Close'])
+    act(() => root?.unmount())
+    host?.remove()
+
+    const dev = await render({ kind: 'idle' }, async () => ({ current: '1.0.13', checks: false, releases: RELEASES }))
+    act(() => dev.rows()[0].click())
+    expect(dev.labels()).toEqual(['Close'])
+    dev.push({ kind: 'downloading', version: '1.0.14' })
+    expect(dev.labels()).toEqual(['Close'])
+    expect(dev.bridge.update.check).not.toHaveBeenCalled()
+  })
+
+  it('a failed check says so in one line, and the button stays to try again; a check with no download yet (S2) says that', async () => {
+    const answers: Array<() => Promise<UpdateState>> = [async () => Promise.reject(new Error('offline')), async () => ({ kind: 'idle' })]
+    const { bridge, rows, buttons, labels, line, push } = await render({ kind: 'idle' }, undefined, () => answers.shift()!())
+    act(() => rows()[0].click())
+    expect(line()).toBeNull()
+    await act(async () => buttons()[1].click())
+    expect(line()).toBe("Can't check for updates. Check your connection.")
+    expect(labels()).toEqual(['Later', 'Update to v1.0.14'])
+    expect(enabled(buttons()[1])).toBe(true)
+    await act(async () => buttons()[1].click())
+    expect(bridge.update.check).toHaveBeenCalledTimes(2)
+    expect(line()).toBe('v1.0.14 is not ready to download yet. Try again in a few minutes.')
+    expect(enabled(buttons()[1])).toBe(true)
+    // The line belongs to the button: another row, or a download, has neither.
+    push({ kind: 'downloading', version: '1.0.14' })
+    expect(line()).toBeNull()
+  })
+
+  it('a download that fails after Update to v… says so in one line, and the button stays to try again (YAZ-4384)', async () => {
+    const { bridge, rows, buttons, labels, line, push } = await render({ kind: 'idle' }, undefined, async () => ({ kind: 'downloading', version: '1.0.14' }))
+    act(() => rows()[0].click())
+    await act(async () => buttons()[1].click())
+    push({ kind: 'downloading', version: '1.0.14' })
+    expect(line()).toBeNull()
+    // Main puts the state back (S9: a wrong sha256, or a stalled download) and names the version.
+    push({ kind: 'idle', failed: '1.0.14' })
+    expect(line()).toBe('The download of v1.0.14 failed. Click Update to try again.')
+    expect(labels()).toEqual(['Later', 'Update to v1.0.14'])
+    expect(enabled(buttons()[1])).toBe(true)
+    await act(async () => buttons()[1].click())
+    expect(bridge.update.check).toHaveBeenCalledTimes(2)
+    push({ kind: 'downloading', version: '1.0.14' })
+    expect(line()).toBeNull()
+    // A failure of an older version is not this row's.
+    push({ kind: 'idle', failed: '1.0.12' })
+    expect(line()).toBeNull()
   })
 })
 

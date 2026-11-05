@@ -308,6 +308,20 @@ export const isTransparent = (color: string) => {
   return tinycolor(color).getAlpha() === 0;
 };
 
+/** Yaseen Docs (YAZ-4366): a color's hue in degrees, saturation and lightness (0 to 1); null when not valid. */
+export const colorToHsl = (color: string) => {
+  const tc = tinycolor(color);
+  if (!tc.isValid()) {
+    return null;
+  }
+  const { h, s, l } = tc.toHsl();
+  return { h, s, l };
+};
+
+/** Yaseen Docs (YAZ-4366): `#rrggbb` of a hue in degrees, a saturation and a lightness (0 to 1). */
+export const hslToHex = (h: number, s: number, l: number) =>
+  tinycolor({ h, s, l }).toHexString();
+
 // -----------------------------------------------------------------------------
 // color contract helpers
 // -----------------------------------------------------------------------------

@@ -60,7 +60,7 @@ function mount(pinned: boolean) {
   )
   const show = (next: OutsideChangeRow[]): void => {
     rows = next
-    act(() => channel.sync({ count: next.length, wholeNote: false }, channel.getVersion() + 1))
+    act(() => channel.sync({ count: next.length, wholeNote: false, fadesAt: null }, channel.getVersion() + 1))
   }
   const list = () => section?.querySelector<HTMLElement>('.outside-list:not(.outside-list--dropdown)') ?? null
   const dropdown = () => section?.querySelector<HTMLElement>('.outside-list--dropdown') ?? null
@@ -150,8 +150,8 @@ describe('OutsideChangesList, unpinned: the dropdown (4J)', () => {
     show(ROWS)
     expect(dropdown()).toBeNull()
     act(() => count()?.click())
-    act(() => channel.sync({ count: 0, wholeNote: true }, channel.getVersion() + 1))
-    act(() => channel.sync({ count: 0, wholeNote: false }, channel.getVersion() + 1))
+    act(() => channel.sync({ count: 0, wholeNote: true, fadesAt: null }, channel.getVersion() + 1))
+    act(() => channel.sync({ count: 0, wholeNote: false, fadesAt: null }, channel.getVersion() + 1))
     show(ROWS)
     expect(dropdown()).toBeNull()
   })
@@ -168,7 +168,7 @@ describe('the channel: a new editor on the same channel (4K)', () => {
       channel.bind(stubController(() => rows))
     })
     rows = [{ id: 9, number: 1, active: false, parts: [{ kind: 'ins', text: 'New' }] }]
-    act(() => channel.sync({ count: 1, wholeNote: false }, 1))
+    act(() => channel.sync({ count: 1, wholeNote: false, fadesAt: null }, 1))
     expect(numbers(list())).toEqual(['1'])
     expect(list()?.querySelector('ins')?.textContent).toBe('New')
   })

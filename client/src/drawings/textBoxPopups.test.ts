@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TextSelection } from '@milkdown/kit/prose/state'
-import { docToBox } from './textBoxDoc'
+import { docToBox, PANEL_HIGHLIGHT_HEX } from './textBoxDoc'
 import { helpers, mountBox, typeText, unmountAll } from './textBoxTestKit'
+// After the kit, which loads the editor first: this module alone would start an import cycle
+import { HIGHLIGHT_HEX } from '../editor/marks/highlight'
 
 vi.mock('../editor/createCrepe', async (load) => {
   const real = await load<typeof import('../editor/createCrepe')>()
@@ -33,7 +35,8 @@ describe('the pop-up toolbar and the / menu of a text box (YAZ-4277 1C, D4, D8)'
     expect(toolbar!.dataset.show).toBe('true')
     const buttons = [...toolbar!.querySelectorAll<HTMLElement>('[data-toolbar-item]')]
     expect(buttons.map((button) => button.dataset.toolbarItem)).toEqual([
-      'text', 'checklist', 'bulletList', 'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink',
+      // YAZ-4388 (main): pink moved into the highlight ▾ panel, `highlight-more`
+      'text', 'checklist', 'bulletList', 'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more',
       'text-color-black', 'text-color-red', 'text-color-blue', 'text-color-box',
     ])
     // 1E: a color button colors the selected letters, and the box color takes it off
@@ -46,6 +49,24 @@ describe('the pop-up toolbar and the / menu of a text box (YAZ-4277 1C, D4, D8)'
     const checklist = buttons.find((button) => button.dataset.toolbarItem === 'checklist')!
     checklist.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
     expect(boxText(view)).toBe('☐ pick these words')
+  })
+
+  it('maps every note highlight name a box has no name for to the note’s own hex (YAZ-4388)', () => {
+    const { yellow, green, blue, pink, ...others } = HIGHLIGHT_HEX
+    void [yellow, green, blue, pink]
+    expect(PANEL_HIGHLIGHT_HEX).toEqual(others)
+  })
+
+  it.each([
+    ['pink', 'pink'],
+    ['orange', '#ff9632'],
+    ['gray', '#969696'],
+    ['#123abc', '#123abc'],
+  ])('keeps a %s highlight from the ▾ panel (YAZ-4388) on the box letters, as %s', async (color, run) => {
+    const { view } = await mountBox('pick these words')
+    view.dispatch(view.state.tr.addMark(1, 5, view.state.schema.marks.highlight.create({ color })))
+    // the box keeps the four note names it draws; any other panel colour is its own hex, which a box draws too
+    expect(docToBox(view.state.doc, { text: '', textRuns: undefined }, helpers).textRuns).toEqual([{ start: 0, end: 4, highlight: run }])
   })
 
   it('shows the / menu outside the root, with the checklist row and no heading, quote, code or numbered row', async () => {

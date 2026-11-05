@@ -107,11 +107,14 @@ const POSITION = new Map(ALL_KEYS.map((row, i) => [row, i]))
  * The rows that keep `row` from firing with `key` (K3): a row of the same place with the same key; an App row with
  * it, or with its first step, since the editor lets it go to the menu (unless that App key steps aside in this place, K9);
  * and, for an App `key`, every row of a place that holds it, or begins with it. A Mac standard key blocks every place.
+ * A row that acts only with a selection (`withSelection`) clashes with none.
  */
 export function clashesOf(row: KeyRow, key: string, overrides: HotkeyOverrides | undefined, aside: HotkeyAside | undefined, rows?: readonly KeyRow[]): KeyRow[] {
   // Only the rows on this key or its first step can clash; the order stays the list's.
   return (rows ?? rowsNear(key, overrides)).filter((other) => {
     if (other.id === row.id) return false
+    // A key that acts only with a selection (the colour letters, the size digits) shares its key with a tool by design.
+    if (other.withSelection === true || row.withSelection === true) return false
     const theirs = keysOf(other, overrides)
     if (other.scope === row.scope) return theirs.some((k) => sameKey(k, key))
     if (other.scope === 'app') return (other.onlyIn === undefined || other.onlyIn.includes(row.scope)) && menuWinsIn(other, row.scope) && !stepsAside(other, row.scope, aside) && theirs.some((k) => sameKey(k, firstStep(key)))

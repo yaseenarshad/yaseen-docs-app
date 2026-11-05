@@ -79,6 +79,8 @@ const caretAt = (view: EditorView, text: string, offset = text.length) => {
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)))
 }
 const click = (el: Element) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+/** A key as the browser sends it, a `keydown` on the editor: every DOM handler and keymap sees it. True when one took it. */
+const domKey = (view: EditorView, key: string, shiftKey = false): boolean => !view.dom.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }))
 /** A pointer event in the cell at (row, col), at its top-right corner (the mark's triangle, 5A-18) or at `x`, `y`. */
 const inCell = (view: EditorView, type: string, row = 1, col = 1, x = 197, y = 33) => {
   const cell = view.nodeDOM(cellPos(view, row, col)) as HTMLElement
@@ -302,6 +304,23 @@ describe('round 3 of the demo', () => {
     // Again: the page's own select all.
     pressKey(crepe, 'a', { mod: true })
     expect(view.state.selection.from).toBeLessThan(5)
+  })
+
+  it('↓ on the card\'s last line and ⇧↑ on it stay in the card, with a hidden note right after it: no gap cursor (YAZ-4395)', async () => {
+    const { view } = await mount(TWO, zoomOpts())
+    inCell(view, 'click', 1, 0)
+    expect(openCellNoteLabel(view.state)).toBe('cell-2')
+    // jsdom has no line boxes: every line is a textblock's edge, where Crepe's gap cursor would take the key.
+    view.endOfTextblock = () => true
+    caretAt(view, 'first', 2)
+    expect(domKey(view, 'ArrowDown')).toBe(true)
+    expect(view.state.selection.constructor.name).toBe('TextSelection')
+    expect([view.state.selection.$head.parent.textContent, view.state.selection.$head.parentOffset]).toEqual(['first', 5])
+    expect(domKey(view, 'ArrowDown')).toBe(true)
+    expect([view.state.selection.$head.parent.textContent, view.state.selection.$head.parentOffset]).toEqual(['first', 5])
+    expect(domKey(view, 'ArrowUp', true)).toBe(true)
+    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe('first')
+    expect(openCellNoteLabel(view.state)).toBe('cell-2')
   })
 
   it('a new tab\'s card starts pinned when the setting is on', async () => {

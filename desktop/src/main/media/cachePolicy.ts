@@ -16,6 +16,7 @@
  */
 import { createHash } from 'node:crypto'
 import type { MediaBytesProvider } from '@shared/types'
+import { filtersKey, type MediaFilters } from '@shared/iconPacks'
 import { CACHE_SECONDS, SEARCH_CACHE_VERSION, type PixabayImageType } from './curation'
 
 /** The cache's folder under userData. */
@@ -36,8 +37,10 @@ export function cacheFileName(key: string): string {
  * The whole search answer's key. `_iscv` is the Worker's cache-version parameter under its own
  * name, so bumping `SEARCH_CACHE_VERSION` orphans every stored answer at once.
  */
-export function searchCacheKey(query: string, source: string, cursor: string | null | undefined, pixabayAvailable: boolean): string {
-  return `search?_iscv=${SEARCH_CACHE_VERSION}&q=${encodeURIComponent(query)}&source=${source}&pixabay=${pixabayAvailable ? '1' : '0'}&cursor=${encodeURIComponent(cursor ?? '')}`
+export function searchCacheKey(query: string, source: string, cursor: string | null | undefined, pixabayAvailable: boolean, filters?: MediaFilters): string {
+  // YAZ-4360: the filters are part of the answer. No filter adds nothing, so the key is the same as before them.
+  const filtered = filtersKey(filters)
+  return `search?_iscv=${SEARCH_CACHE_VERSION}&q=${encodeURIComponent(query)}&source=${source}&pixabay=${pixabayAvailable ? '1' : '0'}&cursor=${encodeURIComponent(cursor ?? '')}${filtered === '' ? '' : `&filters=${encodeURIComponent(filtered)}`}`
 }
 
 /** One Pixabay result page — the Worker's `pixabay/search/<q>/<type>/<page>/<perPage>`. */

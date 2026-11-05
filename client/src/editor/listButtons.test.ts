@@ -1,16 +1,17 @@
 /**
- * The toolbar's list buttons and T (YAZ-3806 T3, T4): one table for the rule, through a REAL editor. Each row
- * selects some lines, runs a button's command, and reads the markdown out. The scenario table is on the working log
- * (YAZ-3807, "Decision and scenario record, final"); the buttons themselves are pressed in `headingToolbar.test.ts`.
+ * The toolbar's list buttons (YAZ-3806 T3) and T (YAZ-4369, which replaces T4): one table for the rules, through a
+ * REAL editor. Each row selects some lines, runs a button's command, and reads the markdown out. The scenario table is
+ * on the working log (YAZ-3807, "Decision and scenario record, final"); the buttons themselves are pressed in
+ * `headingToolbar.test.ts`.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
-import { turnIntoTextCommand, wrapInBulletListCommand } from '@milkdown/kit/preset/commonmark'
+import { turnIntoTextCommand, wrapInBulletListCommand, wrapInHeadingCommand } from '@milkdown/kit/preset/commonmark'
 import { undo } from '@milkdown/kit/prose/history'
-import { endOf, md, mount, posOf, pressKey, runCommand, select, unmountAll } from './marks/markTestKit'
+import { endOf, IS_MAC, md, mount, posOf, pressKey, runCommand, select, unmountAll } from './marks/markTestKit'
 import { allLinesAre, LIST_KINDS, type ListKind, toggleListKind } from './listButtons'
-import { toggleOutlineFold } from './outline/outlineFolding'
+import { isOutlineItemCollapsed, toggleOutlineFold } from './outline/outlineFolding'
 import { getZoomedItemPos, zoomKeyAt, zoomToKey } from './outline/zoom'
 import { openCellNote } from './table/cellNoteCard'
 import { cellPos } from './table/tableTestKit'
@@ -49,69 +50,73 @@ interface Row {
 }
 
 const ROWS: Row[] = [
-  { name: 'a plain line, Bullet: a bullet, Bullet lit', doc: 'a\n', from: 'a', before: ['text'], press: 'bulletList', out: '* a\n', after: ['bulletList'] },
-  { name: 'a bullet, the lit Bullet: plain text', doc: '* a\n', from: 'a', before: ['bulletList'], press: 'bulletList', out: 'a\n', after: ['text'] },
-  { name: 'three plain lines, Numbered: one item per line', doc: 'a\n\nb\n\nc\n', from: 'a', to: 'c', before: ['text'], press: 'numberedList', out: '1. a\n2. b\n3. c\n', after: ['numberedList'] },
-  { name: 'a bullet, Checklist: `[ ]`', doc: '* a\n', from: 'a', before: ['bulletList'], press: 'checklist', out: '* [ ] a\n', after: ['checklist'] },
-  { name: 'a checklist line, the lit Checklist: plain text, not a bullet', doc: '* [x] a\n', from: 'a', before: ['checklist'], press: 'checklist', out: 'a\n', after: ['text'] },
+  { name: 'a plain line, Bullet: a bullet, Bullet lit', doc: 'a\n', from: 'a', before: ['text'], press: 'bulletList', out: '* a\n', after: ['text', 'bulletList'] },
+  { name: 'a bullet, the lit Bullet: plain text', doc: '* a\n', from: 'a', before: ['text', 'bulletList'], press: 'bulletList', out: 'a\n', after: ['text'] },
+  { name: 'three plain lines, Numbered: one item per line', doc: 'a\n\nb\n\nc\n', from: 'a', to: 'c', before: ['text'], press: 'numberedList', out: '1. a\n2. b\n3. c\n', after: ['text', 'numberedList'] },
+  { name: 'a bullet, Checklist: `[ ]`', doc: '* a\n', from: 'a', before: ['text', 'bulletList'], press: 'checklist', out: '* [ ] a\n', after: ['text', 'checklist'] },
+  { name: 'a checklist line, the lit Checklist: plain text, not a bullet', doc: '* [x] a\n', from: 'a', before: ['text', 'checklist'], press: 'checklist', out: 'a\n', after: ['text'] },
   { name: 'a heading, Bullet: a heading inside a bullet', doc: '## h\n', from: 'h', before: [], press: 'bulletList', out: '* ## h\n', after: ['bulletList'] },
   { name: 'a heading in a bullet, the lit Bullet: the heading stays a heading', doc: '* ## h\n', from: 'h', before: ['bulletList'], press: 'bulletList', out: '## h\n', after: [] },
-  { name: 'a heading in a bullet, T: plain text', doc: '* ## h\n', from: 'h', before: ['bulletList'], press: 'text', out: 'h\n', after: ['text'] },
+  // YAZ-4369: T changes only the line's text type, never the list (it replaces YAZ-3806 T4's "out of a list too").
+  { name: 'a heading in a bullet, T: a plain bullet', doc: '* ## h\n', from: 'h', before: ['bulletList'], press: 'text', out: '* h\n', after: ['text', 'bulletList'] },
+  { name: 'a heading outside a list, T: plain text', doc: '## h\n', from: 'h', before: [], press: 'text', out: 'h\n', after: ['text'] },
+  { name: 'a plain bullet: T is lit and changes nothing', doc: '* a\n', from: 'a', before: ['text', 'bulletList'], press: 'text', out: '* a\n', after: ['text', 'bulletList'] },
+  { name: 'a heading in a numbered item, T: the same number, plain', doc: '1. a\n2. ### b\n3. c\n', from: 'b', before: ['numberedList'], press: 'text', out: '1. a\n2. b\n3. c\n', after: ['text', 'numberedList'] },
   {
     name: 'the middle line of a bullet list, Numbered: the list splits',
     doc: '* a\n* b\n* c\n',
     from: 'b',
-    before: ['bulletList'],
+    before: ['text', 'bulletList'],
     press: 'numberedList',
     out: '* a\n\n1. b\n\n* c\n',
-    after: ['numberedList'],
+    after: ['text', 'numberedList'],
   },
   {
     name: 'a numbered line after a bullet list, Bullet: it joins the list above',
     doc: '* a\n\n1. b\n',
     from: 'b',
-    before: ['numberedList'],
+    before: ['text', 'numberedList'],
     press: 'bulletList',
     out: '* a\n* b\n',
-    after: ['bulletList'],
+    after: ['text', 'bulletList'],
   },
   {
-    name: 'a bullet and a plain line: nothing lit; Bullet makes both bullets',
+    name: 'a bullet and a plain line: only T lit; Bullet makes both bullets',
     doc: '* a\n\nb\n',
     from: 'a',
     to: 'b',
-    before: [],
+    before: ['text'],
     press: 'bulletList',
     out: '* a\n* b\n',
-    after: ['bulletList'],
+    after: ['text', 'bulletList'],
   },
   {
     name: 'a ticked line and a bullet, Checklist: the tick stays',
     doc: '* [x] a\n* b\n',
     from: 'a',
     to: 'b',
-    before: [],
+    before: ['text'],
     press: 'checklist',
     out: '* [x] a\n* [ ] b\n',
-    after: ['checklist'],
+    after: ['text', 'checklist'],
   },
   {
-    name: 'a nested bullet, T: out of every level; its children and the siblings after it stay a list below',
+    name: 'a nested bullet, the lit Bullet: out of every level; its children and the siblings after it stay a list below',
     doc: '* A\n  * B\n    * C\n  * D\n',
     from: 'B',
-    before: ['bulletList'],
-    press: 'text',
-    out: '* A\n\nB\n\n* C\n* D\n',
-    after: ['text'],
-  },
-  {
-    name: 'a nested bullet, the lit Bullet: the same as T',
-    doc: '* A\n  * B\n    * C\n  * D\n',
-    from: 'B',
-    before: ['bulletList'],
+    before: ['text', 'bulletList'],
     press: 'bulletList',
     out: '* A\n\nB\n\n* C\n* D\n',
     after: ['text'],
+  },
+  {
+    name: 'a nested heading bullet, T: plain, at the same level; its children and siblings stay',
+    doc: '* A\n  * ## B\n    * C\n  * D\n',
+    from: 'B',
+    before: ['bulletList'],
+    press: 'text',
+    out: '* A\n  * B\n    * C\n  * D\n',
+    after: ['text', 'bulletList'],
   },
   {
     name: 'a selection over a folded bullet, Numbered: the hidden lines keep their kind',
@@ -119,10 +124,10 @@ const ROWS: Row[] = [
     fold: 'A',
     from: 'A',
     to: 'B',
-    before: ['bulletList'],
+    before: ['text', 'bulletList'],
     press: 'numberedList',
     out: '1. A\n   * a1\n2. B\n',
-    after: ['numberedList'],
+    after: ['text', 'numberedList'],
   },
   {
     name: 'a selection over a folded bullet, the lit Bullet: only the visible lines leave the list',
@@ -130,15 +135,27 @@ const ROWS: Row[] = [
     fold: 'A',
     from: 'A',
     to: 'B',
-    before: ['bulletList'],
+    before: ['text', 'bulletList'],
     press: 'bulletList',
     out: 'A\n\n* a1\n\nB\n',
-    // A is no bullet now, so its fold is gone: a1 shows, and the selection holds two kinds.
-    after: [],
+    // A is no bullet now, so its fold is gone: a1 shows, and the selection holds two list kinds.
+    after: ['text'],
+  },
+  {
+    name: 'a selection over a folded heading bullet, T: only the visible lines change; the hidden heading stays',
+    doc: '* ## A\n  * ## a1\n* ## B\n',
+    fold: 'A',
+    from: 'A',
+    to: 'B',
+    before: ['bulletList'],
+    press: 'text',
+    out: '* A\n  * ## a1\n* B\n',
+    // A is still a bullet with its child, so its fold stays: a1 is still hidden.
+    after: ['text', 'bulletList'],
   },
 ]
 
-describe('the list buttons and T (YAZ-3806 T3, T4)', () => {
+describe('the list buttons and T (YAZ-3806 T3, YAZ-4369)', () => {
   it.each(ROWS)('$name', async (row) => {
     const { crepe } = await mount(row.doc)
     if (row.fold !== undefined) foldItem(crepe, row.fold)
@@ -176,12 +193,6 @@ describe('the list buttons and T (YAZ-3806 T3, T4)', () => {
     expect(md(crepe)).toBe('a\n\nb\n')
   })
 
-  it('⌘⌥0 on a bullet: plain text', async () => {
-    const { crepe } = await mount('* a\n')
-    select(crepe, posOf(crepe, 'a') + 1)
-    expect(press(crepe, 'text')).toBe(true)
-    expect(md(crepe)).toBe('a\n')
-  })
 
   it('inside a zoom, a line leaves the lists down to the zoomed bullet only, so it stays in view', async () => {
     const { crepe, view } = await mount('* A\n  * B\n  * C\n')
@@ -205,6 +216,81 @@ describe('the list buttons and T (YAZ-3806 T3, T4)', () => {
   })
 })
 
+describe('T changes only the line\'s text type, never the list (YAZ-4369)', () => {
+  it('an H3 bullet with children and siblings, T: a plain line in the same item; nothing moves', async () => {
+    const doc = '* Before\n* ### Production steps\n  * Candidate review\n  * Edit\n  * Layout\n* After\n'
+    const { crepe } = await mount(doc)
+    select(crepe, posOf(crepe, 'Production') + 1)
+    expect(lit(crepe)).toEqual(['bulletList'])
+    expect(press(crepe, 'text')).toBe(true)
+    expect(md(crepe)).toBe('* Before\n* Production steps\n  * Candidate review\n  * Edit\n  * Layout\n* After\n')
+    expect(lit(crepe)).toEqual(['text', 'bulletList'])
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      undo(view.state, view.dispatch)
+    })
+    expect(md(crepe)).toBe(doc)
+  })
+
+  it('a heading in a checklist item, T: a plain line; the item keeps its tick', async () => {
+    const { crepe, view } = await mount('* [x] a\n* [ ] b\n')
+    select(crepe, posOf(crepe, 'b') + 1)
+    expect(crepe.editor.action((ctx) => ctx.get(commandsCtx).call(wrapInHeadingCommand.key, 3))).toBe(true)
+    expect(view.state.doc.child(0).child(1).firstChild!.type.name).toBe('heading')
+    select(crepe, posOf(crepe, 'a'), endOf(crepe, 'b'))
+    expect(lit(crepe)).toEqual(['checklist'])
+    expect(press(crepe, 'text')).toBe(true)
+    expect(md(crepe)).toBe('* [x] a\n* [ ] b\n')
+    expect(lit(crepe)).toEqual(['text', 'checklist'])
+  })
+
+  it('⌘⌥0 (the real key) does the same as T: the heading bullet stays a bullet', async () => {
+    const { crepe, view } = await mount('* a\n* ### b\n  * kid\n')
+    select(crepe, posOf(crepe, 'b') + 1)
+    const event = new KeyboardEvent('keydown', { key: '0', altKey: true, ...(IS_MAC ? { metaKey: true } : { ctrlKey: true }), bubbles: true, cancelable: true })
+    expect(view.someProp('handleKeyDown', (handler) => handler(view, event))).toBe(true)
+    expect(md(crepe)).toBe('* a\n* b\n  * kid\n')
+  })
+
+  it('a selection over several lines, headings in bullets and outside: each a paragraph where it is, one ⌘Z', async () => {
+    const doc = '# Title\n\n* ## one\n  * kid\n* two\n\n  ### more\n\n### Three\n\n1. ### four\n'
+    const { crepe, view } = await mount(doc)
+    select(crepe, posOf(crepe, 'Title'), endOf(crepe, 'four'))
+    expect(lit(crepe)).toEqual([])
+    expect(press(crepe, 'text')).toBe(true)
+    // The bullet's later heading ("more") stays its later block, as a paragraph: T makes no item of it.
+    expect(md(crepe)).toBe('Title\n\n* one\n  * kid\n* two\n\n  more\n\nThree\n\n1. four\n')
+    // The selection keeps the same text, so the toolbar re-lights over it.
+    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to, '|')).toBe('Title|one|kid|two|more|Three|four')
+    expect(lit(crepe)).toEqual(['text'])
+    undo(view.state, view.dispatch)
+    expect(md(crepe)).toBe(doc)
+  })
+
+  it('a folded heading bullet, T: its children stay folded below it', async () => {
+    const { crepe, view } = await mount('* ### A\n  * a1\n  * a2\n* B\n')
+    const itemPos = posOf(crepe, 'A') - 2
+    foldItem(crepe, 'A')
+    expect(isOutlineItemCollapsed(view.state, itemPos)).toBe(true)
+    select(crepe, posOf(crepe, 'A') + 1)
+    expect(press(crepe, 'text')).toBe(true)
+    expect(md(crepe)).toBe('* A\n  * a1\n  * a2\n* B\n')
+    expect(posOf(crepe, 'A') - 2).toBe(itemPos)
+    expect(isOutlineItemCollapsed(view.state, itemPos)).toBe(true)
+  })
+
+  it('inside a zoom, T: the zoomed bullet\'s own line and its children become plain; the zoom stays; hidden lines keep their heading', async () => {
+    const { crepe, view } = await mount('* ## X\n* R\n  * ## A\n    * ## B\n    * C\n* ## Y\n')
+    const itemPos = posOf(crepe, 'A') - 2
+    expect(runCommand(crepe, zoomToKey(zoomKeyAt(view.state.doc, itemPos)))).toBe(true)
+    // Over the whole note: X and Y are outside the zoom, so hidden.
+    select(crepe, posOf(crepe, 'X'), endOf(crepe, 'Y'))
+    expect(press(crepe, 'text')).toBe(true)
+    expect(md(crepe)).toBe('* ## X\n* R\n  * A\n    * B\n    * C\n* ## Y\n')
+    expect(getZoomedItemPos(view.state)).toBe(itemPos)
+  })
+})
+
 describe('a plain line of a body cell and of a cell note card (YAZ-3818 D1, 5A-14)', () => {
   it.each([
     ['bulletList', '<ul><li>a</li></ul>', '[^cell-1]: * a'],
@@ -217,7 +303,8 @@ describe('a plain line of a body cell and of a cell note card (YAZ-3818 D1, 5A-1
     expect(press(inCell.crepe, button)).toBe(true)
     expect(md(inCell.crepe)).toContain(`| ${cell} |`)
     select(inCell.crepe, posOf(inCell.crepe, 'a'), endOf(inCell.crepe, 'a'))
-    expect(lit(inCell.crepe)).toEqual([button])
+    // Its line is still a paragraph, so T stays lit beside the list button (YAZ-4369).
+    expect(lit(inCell.crepe)).toEqual(['text', button])
     select(inCell.crepe, posOf(inCell.crepe, 'h'), endOf(inCell.crepe, 'h'))
     expect(press(inCell.crepe, button)).toBe(false)
 
@@ -261,21 +348,20 @@ describe('checker round 1 (PR #220)', () => {
     expect(md(crepe)).toBe(out)
   })
 
-  it('4C: a bullet\'s second paragraph: T does not light, or T makes it a plain line outside the list', async () => {
+  it('4C, under YAZ-4369: a bullet\'s second paragraph is a paragraph, so T is lit and changes nothing', async () => {
     const { crepe } = await mount('* a\n\n  cont\n')
     select(crepe, posOf(crepe, 'cont'), endOf(crepe, 'cont'))
-    const lit = allLinesAre(crepe.editor.action((ctx) => ctx.get(editorViewCtx).state), 'text')
-    press(crepe, 'text')
-    expect(lit === false || md(crepe) !== '* a\n\n  cont\n').toBe(true)
+    expect(allLinesAre(crepe.editor.action((ctx) => ctx.get(editorViewCtx).state), 'text')).toBe(true)
+    expect(press(crepe, 'text')).toBe(true)
+    expect(md(crepe)).toBe('* a\n\n  cont\n')
   })
 })
 
 describe('checker round 2 (PR #220)', () => {
   it.each([
     ['1. a\n2. b\n3. c\n', 'b', 'numberedList', '1. a\n\nb\n\n3. c\n'],
-    ['1. a\n2. b\n3. c\n', 'b', 'text', '1. a\n\nb\n\n3. c\n'],
     ['1. a\n2. b\n3. c\n', 'a', 'numberedList', 'a\n\n2. b\n3. c\n'],
-  ] as const)('4F: %j, the lit button or T on %s: the numbered lines after it keep their numbers', async (doc, line, button, out) => {
+  ] as const)('4F: %j, the lit button on %s: the numbered lines after it keep their numbers', async (doc, line, button, out) => {
     const { crepe } = await mount(doc)
     select(crepe, posOf(crepe, line), endOf(crepe, line))
     expect(press(crepe, button)).toBe(true)

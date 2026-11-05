@@ -310,6 +310,15 @@
   background: color-mix(in srgb, var(--accent) 85%, #000);
 }
 
+/* YAZ-4371: the one line a failed check, or one with no download yet, leaves; on the left, the buttons stay right. */
+.whats-new__check-line {
+  margin: 0 auto 0 0;
+  align-self: center;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
 /* A narrow window (YAZ-3357 D14, a Files window): the list stands above the notes, shorter, so the notes keep the width. */
 @media (max-width: 560px) {
   .whats-new__columns {

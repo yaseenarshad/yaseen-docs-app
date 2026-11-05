@@ -34,6 +34,73 @@
   outline: none;
 }
 
+/* YAZ-4348 demo round 2: the Search words row: its words as chips over the field, so a new word reads as added. */
+.image-studio__word-head {
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  font-size: 11px;
+  gap: 1px;
+  padding: 0 2px 2px;
+}
+
+/* The row's own words are chips, not the row's one stretched label (`.image-studio__inline span`). */
+.image-studio__inline .image-studio__word-head span {
+  flex: none;
+  overflow: visible;
+  white-space: normal;
+}
+
+.image-studio__word-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 3px;
+}
+
+.image-studio__word-chip {
+  align-items: center;
+  background: var(--color-primary-light);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 10px;
+  gap: 2px;
+  padding: 1px 7px;
+}
+
+/* The × beside an added word: quiet until pointed at. The name's chip has none: its name always finds it. */
+.image-studio__inline .image-studio__word-remove {
+  background: transparent;
+  border-radius: 999px;
+  color: var(--text-secondary-color);
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.image-studio__inline .image-studio__word-remove:hover {
+  color: var(--color-danger);
+}
+
+.image-studio__word-chip.is-name {
+  background: var(--button-gray-1);
+  color: var(--text-secondary-color);
+}
+
+/* The search text, one click from being a word (YAZ-4157 D5): beside the field, never in it. */
+.image-studio__word-offer {
+  align-items: center;
+  color: var(--text-secondary-color);
+  display: inline-flex;
+  flex-basis: 100%;
+  font-size: 10px;
+  gap: 4px;
+}
+
+.image-studio__word-form input {
+  flex: 1;
+}
+
 /* The one strong button: it is there only while the board has a selection, so it may stand out. */
 .image-studio__save,
 .image-studio__retry {
@@ -135,29 +202,6 @@
   opacity: 0.55;
 }
 
-/* The chips (D8): one quiet row; the picked one is the only filled one. */
-.image-studio__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.image-studio__chips button {
-  background: transparent;
-  border: 1px solid var(--default-border-color);
-  border-radius: 999px;
-  color: var(--text-secondary-color);
-  cursor: pointer;
-  font-size: 11px;
-  padding: 3px 9px;
-}
-
-.image-studio__chips button.is-active {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: var(--island-bg-color);
-}
-
 /* The quiet line (D9): the auto-favorite and its Undo, or a word just taught. */
 .image-studio__line {
   align-items: center;
@@ -217,11 +261,12 @@
   position: relative;
 }
 
-/* Four tiles a row (D7): a section's "one row" is exactly four, at any panel width. */
+/* Four tiles a row at the usual width (D7); a wider panel gets more columns (`rowFor`, YAZ-4348 demo round 2), and a
+   section's "one row" is that many. */
 .image-studio__grid {
   display: grid;
   gap: 6px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--studio-cols, 4), minmax(0, 1fr));
 }
 
 /* One-pixel tail of the web results the observer watches; `overflow-anchor` keeps the scroll from jumping
@@ -239,6 +284,30 @@
   min-width: 0;
   overflow-anchor: auto;
   position: relative;
+}
+
+/* YAZ-4348 demo round 2: the tile whose row is open, and the notch of its row that points up at it. */
+.image-studio__card.is-editing {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.image-studio__inline.is-pointing {
+  border-color: var(--color-primary);
+  position: relative;
+}
+
+.image-studio__inline.is-pointing::before {
+  background: var(--island-bg-color);
+  border-left: 1px solid var(--color-primary);
+  border-top: 1px solid var(--color-primary);
+  content: '';
+  height: 8px;
+  left: var(--notch);
+  position: absolute;
+  top: -5px;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
 }
 
 .image-studio__card:hover,
@@ -313,13 +382,18 @@
   transform: translate(-50%, -50%);
 }
 
+/* YAZ-4348 demo round 2 ("the names are cut off"): a name gets two lines before it is cut; the tile's tooltip has
+   the whole name and its source. */
 .image-studio__name {
-  display: block;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
   font-size: 10px;
+  line-height: 1.25;
   overflow: hidden;
+  overflow-wrap: anywhere;
   padding: 3px 4px 4px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: center;
 }
 
 /* A provider's title is often lower case ("money bag"); a name the user typed keeps its own case. */
@@ -438,10 +512,10 @@
   display: grid;
   flex: 1 1 100%;
   gap: 6px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--studio-cols, 4), minmax(0, 1fr));
 }
 
-/* "Add a word…", Rename and Delete open a full-width row under the tile's row: a 4-column tile is too small for a field. */
+/* "Search words…", Rename and Delete open a full-width row under the tile's row: a 4-column tile is too small for a field. */
 .image-studio__inline {
   align-items: center;
   background: var(--island-bg-color);
@@ -528,4 +602,353 @@
   color: var(--text-secondary-color);
   cursor: default;
   opacity: 0.6;
+}
+
+/* The pack page (YAZ-4361) hides the search row: `hidden` must win over its `display: flex`. */
+.image-studio__search[hidden] {
+  display: none;
+}
+
+/* The Filter button (YAZ-4360): right of the field, a funnel; filled with a badge while a filter is on. */
+.image-studio__filter {
+  display: flex;
+  position: relative;
+}
+
+.image-studio__filter-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--default-border-color);
+  border-radius: 9px;
+  color: var(--text-secondary-color);
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  padding: 0 9px;
+  position: relative;
+}
+
+.image-studio__filter-button svg {
+  fill: none;
+  height: 16px;
+  stroke: currentColor;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  width: 16px;
+}
+
+.image-studio__filter-button.is-on {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.image-studio__filter-badge {
+  background: var(--color-primary);
+  border-radius: 999px;
+  color: var(--island-bg-color);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  min-width: 14px;
+  position: absolute;
+  right: -5px;
+  text-align: center;
+  top: -5px;
+}
+
+.image-studio__filter-menu {
+  background: var(--island-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 10px;
+  box-shadow: var(--shadow-island);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 10px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  width: 250px;
+  z-index: 4;
+}
+
+.image-studio__filter-label {
+  color: var(--text-secondary-color);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.image-studio__filter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.image-studio__filter-options button {
+  background: transparent;
+  border: 1px solid var(--default-border-color);
+  border-radius: 999px;
+  color: var(--text-primary-color);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 9px;
+}
+
+.image-studio__filter-options button.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--island-bg-color);
+}
+
+/* YAZ-4348 demo round 2: "Clear filters" sits at the top right, on the Show line, so it is one short reach from the
+   button; it stays LAST in the keys' order (the arrow keys still walk Show → Similar icons → Clear filters). */
+.image-studio__filter-clear {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 4px;
+  position: absolute;
+  right: 6px;
+  top: 7px;
+}
+
+.image-studio__filter-clear:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.image-studio__filter-clear:disabled {
+  color: var(--text-secondary-color);
+  cursor: default;
+  font-weight: 400;
+  opacity: 0.5;
+}
+
+.image-studio__filter-chosen,
+.image-studio__filter-note {
+  color: var(--text-secondary-color);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.image-studio__filter-packs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.image-studio__filter-packs input {
+  background: var(--input-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 7px;
+  color: var(--text-primary-color);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 7px;
+}
+
+.image-studio__filter-pack-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.image-studio__filter-pack-list button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-primary-color);
+  cursor: pointer;
+  display: grid;
+  font-size: 12px;
+  gap: 6px;
+  grid-template-columns: 12px 1fr auto auto;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.image-studio__filter-pack-list button:hover,
+.image-studio__filter-pack-list button:focus-visible,
+.image-studio__filter-options button:focus-visible {
+  background: var(--button-hover-bg);
+  outline: none;
+}
+
+.image-studio__filter-pack-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-studio__filter-pin,
+.image-studio__filter-pack-count {
+  color: var(--text-secondary-color);
+  font-size: 10px;
+}
+
+/* A failed packs request, in the footer (YAZ-4359). */
+.image-studio__packs-error {
+  color: var(--color-danger);
+}
+
+/* The pack page (YAZ-4361). */
+.image-studio__pack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The pack page's "Show more" (YAZ-4366 audit 70), under its grid. */
+.image-studio__pack-more {
+  align-self: center;
+}
+
+.image-studio__pack-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.image-studio__pack-back,
+.image-studio__pack-pin {
+  background: transparent;
+  border: 1px solid var(--default-border-color);
+  border-radius: 999px;
+  color: var(--text-primary-color);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.image-studio__pack-pin.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--island-bg-color);
+}
+
+.image-studio__pack-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.image-studio__pack-title h3 {
+  color: var(--text-primary-color);
+  font-size: 13px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-studio__pack-facts {
+  color: var(--text-secondary-color);
+  font-size: 10px;
+}
+
+.image-studio__pack-search {
+  background: var(--input-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 9px;
+  color: var(--text-primary-color);
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.image-studio__pack-search:focus {
+  border-color: var(--color-primary);
+  outline: none;
+}
+
+/* YAZ-4348 demo: the footer row: the packs download on the left, Google Images on the right; centred alone.
+   Both are quiet text links on one line (demo round 1: "more discrete and inconspicuous"). */
+.image-studio__footer-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.image-studio__footer-actions.is-centered {
+  justify-content: center;
+}
+
+.image-studio__footer-actions .image-studio__google,
+.image-studio__footer-download,
+.image-studio__footer-packs button {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-secondary-color);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 2px;
+  white-space: nowrap;
+}
+
+.image-studio__footer-actions .image-studio__google:hover:not(:disabled),
+.image-studio__footer-download:hover,
+.image-studio__footer-packs button:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.image-studio__footer-packs {
+  align-items: center;
+  color: var(--text-secondary-color);
+  display: inline-flex;
+  font-size: 10px;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* YAZ-4348 demo: the packs confirm box above the board's side panel (see PacksConfirm). */
+.image-studio__sheet-layer {
+  inset: 0;
+  position: fixed;
+  z-index: 1000;
+}
+
+/* YAZ-4348 demo round 2: the running download is one quiet line too: a word, a thin bar, its percent, Cancel. */
+.image-studio__footer-packs.is-busy {
+  flex: 1;
+}
+
+.image-studio__footer-bar {
+  background: var(--default-border-color);
+  border-radius: 999px;
+  display: block;
+  flex: 1 1 auto;
+  height: 3px;
+  max-width: 120px;
+  min-width: 40px;
+  overflow: hidden;
+}
+
+.image-studio__footer-share {
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: right;
+}
+
+.image-studio__footer-bar i {
+  background: var(--color-primary);
+  display: block;
+  height: 100%;
+  transition: width 0.3s ease;
 }

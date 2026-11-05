@@ -442,6 +442,23 @@ describe('createWindowManager: the memory reload (YAZ-3737 D4, D6, S22)', () => 
     expect(w1.webContents.reload).toHaveBeenCalledOnce()
   })
 
+  it('appNotice (YAZ-4364): with no window yet it waits for the first; then it goes to the window focused last, held until it listens; none is raised', () => {
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.appNotice('Copied your library.')
+    store.upsertWindow({ id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 40, y: 40, width: 800, height: 600 } })
+    manager.restore('all')
+    const [w1, w2] = created.map((c) => c.win)
+    const told = (w: typeof w1) => w.webContents.send.mock.calls.filter(([ch]) => ch === CONTRACT.link.onNotice.channel).map(([, m]) => m)
+    manager.handleLinkReady(w1.webContents)
+    manager.handleLinkReady(w2.webContents)
+    expect([told(w1), told(w2)]).toEqual([['Copied your library.'], []])
+    w2.emit('focus')
+    manager.appNotice('Second')
+    expect([told(w1), told(w2)]).toEqual([['Copied your library.'], ['Second']])
+  })
+
   it('a reload holds the link pushes again until the new page says link:ready (S22)', async () => {
     const { manager, w1 } = seedTwo()
     manager.handleLinkReady(w1.webContents)

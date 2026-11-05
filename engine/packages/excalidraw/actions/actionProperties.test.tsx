@@ -1945,6 +1945,40 @@ describe("element locking", () => {
       expect(slider).toHaveValue("128");
     });
 
+    // YAZ-4366: the empty "Mixed" field read as 0 and set every selected text to size 1
+    it("should change no size when the empty field of mixed sizes loses the focus", () => {
+      const small = API.createElement({
+        type: "text",
+        text: "a",
+        fontSize: 20,
+      });
+      const big = API.createElement({
+        type: "text",
+        text: "b",
+        x: 100,
+        fontSize: 40,
+      });
+      API.setElements([small, big]);
+      API.setSelectedElements([small, big]);
+      const exact = exactFontSizeInput();
+      expect(exact).toHaveValue(null);
+      expect(exact).toHaveAttribute("placeholder", "Mixed");
+      fireEvent.focus(exact);
+      fireEvent.blur(exact);
+      fireEvent.keyDown(exact, { key: KEYS.ENTER });
+      const sizes = () =>
+        [small, big].map(
+          (text) =>
+            (window.h.app.scene.getElement(text.id) as ExcalidrawTextElement)
+              .fontSize,
+        );
+      expect(sizes()).toEqual([20, 40]);
+      // a typed size still sets both
+      fireEvent.change(exact, { target: { value: "30" } });
+      fireEvent.blur(exact);
+      expect(sizes()).toEqual([30, 30]);
+    });
+
     it("should keep free-text background rounding proportional to font size", () => {
       const text = {
         ...API.createElement({

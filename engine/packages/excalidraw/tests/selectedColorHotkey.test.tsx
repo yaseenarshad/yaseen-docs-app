@@ -12,7 +12,10 @@ import {
 import { newElementWith } from "@excalidraw/element";
 
 import { Excalidraw } from "../index";
-import { SEMANTIC_COLOR_HOTKEYS } from "../components/ColorPicker/colorPickerUtils";
+import {
+  SEMANTIC_COLOR_HOTKEYS,
+  SHIFT_KEYS_KEPT_FROM_COLORS,
+} from "../components/ColorPicker/colorPickerUtils";
 import { getTextBackgroundRadiusForFontSize } from "../textCreation";
 
 import { API } from "./helpers/api";
@@ -20,6 +23,11 @@ import { Keyboard, UI } from "./helpers/ui";
 import { act, fireEvent, render, togglePopover } from "./test-utils";
 
 const h = window.h;
+
+// YAZ-4348 demo: ⇧V (Flip vertical) and ⇧G (the eyedropper) keep their actions, so they color no fill (YAZ-4277 D16)
+const SHIFT_COLOR_HOTKEYS = Object.entries(SEMANTIC_COLOR_HOTKEYS).filter(
+  ([, hotkey]) => !SHIFT_KEYS_KEPT_FROM_COLORS.has(hotkey),
+);
 
 describe("selected-element semantic color hotkeys", () => {
   beforeEach(async () => {
@@ -114,7 +122,7 @@ describe("selected-element semantic color hotkeys", () => {
     },
   );
 
-  it.each(Object.entries(SEMANTIC_COLOR_HOTKEYS))(
+  it.each(SHIFT_COLOR_HOTKEYS)(
     "applies Shift+%s = %s to the fill while keeping the line (YAZ-4277 D16)",
     (colorName, hotkey) => {
       const rectangle = API.createElement({
@@ -143,7 +151,7 @@ describe("selected-element semantic color hotkeys", () => {
     },
   );
 
-  it.each(Object.entries(SEMANTIC_COLOR_HOTKEYS))(
+  it.each(SHIFT_COLOR_HOTKEYS)(
     "applies Shift+%s = %s to a free-text background while preserving glyph color",
     (colorName, hotkey) => {
       const text = API.createElement({
@@ -197,19 +205,19 @@ describe("selected-element semantic color hotkeys", () => {
     API.setSelectedElements([text, rectangle]);
 
     Keyboard.withModifierKeys({ shift: true }, () => {
-      Keyboard.keyPress(KEYS.G);
+      Keyboard.keyPress("u");
     });
 
     expect(h.app.scene.getElement(text.id)).toMatchObject({
       strokeColor: "#111111",
       backgroundColor:
-        COLOR_PALETTE.green[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+        COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
     });
     // YAZ-4277 D16: ⇧ colors the fill of a shape too
     expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
       strokeColor: "#222222",
       backgroundColor:
-        COLOR_PALETTE.green[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+        COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
     });
   });
 
@@ -249,17 +257,17 @@ describe("selected-element semantic color hotkeys", () => {
     API.setSelectedElements([rectangle, image, iframe]);
 
     Keyboard.withModifierKeys({ shift: true }, () => {
-      Keyboard.keyPress(KEYS.G);
+      Keyboard.keyPress("u");
     });
 
     // YAZ-4277 D16: the rectangle's fill; a picture has no fill, so its line as before
     expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
       strokeColor: rectangle.strokeColor,
       backgroundColor:
-        COLOR_PALETTE.green[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+        COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
     });
     expect(h.app.scene.getElement(image.id)).toMatchObject({
-      strokeColor: COLOR_PALETTE.green[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+      strokeColor: COLOR_PALETTE.blue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
       backgroundColor: image.backgroundColor,
     });
     expect(h.app.scene.getElement(iframe.id)).toMatchObject(iframe);
@@ -276,13 +284,13 @@ describe("selected-element semantic color hotkeys", () => {
     API.setSelectedElements([container]);
 
     Keyboard.withModifierKeys({ shift: true }, () => {
-      Keyboard.keyPress(KEYS.G.toUpperCase());
+      Keyboard.keyPress("U");
     });
 
     expect(h.app.scene.getElement(container.id)).toMatchObject({
       strokeColor: container.strokeColor,
       backgroundColor:
-        COLOR_PALETTE.green[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+        COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
       boundElements: container.boundElements,
     });
     expect(h.app.scene.getElement(text.id)).toMatchObject({
@@ -304,6 +312,22 @@ describe("selected-element semantic color hotkeys", () => {
     expect(h.state.toast?.message).toBe(
       "The selected elements have no fill for ⇧ + a color letter.",
     );
+  });
+
+  it("keeps Shift+V for Flip vertical and Shift+G for the eyedropper with a selection (YAZ-4348 demo)", () => {
+    const image = API.createElement({ type: "image", scale: [1, 1] });
+    API.setElements([image]);
+    API.setSelectedElements([image]);
+    const stroke = image.strokeColor;
+
+    fireEvent.keyDown(document, { key: "V", code: "KeyV", shiftKey: true });
+    expect(h.app.scene.getElement(image.id)).toMatchObject({
+      strokeColor: stroke,
+      scale: [1, -1],
+    });
+
+    fireEvent.keyDown(document, { key: "G", code: "KeyG", shiftKey: true });
+    expect(h.app.scene.getElement(image.id)?.strokeColor).toBe(stroke);
   });
 
   it("does not use Shift color aliases as drawing tools without a selection", () => {

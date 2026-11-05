@@ -557,7 +557,7 @@ export function ExcalidrawSurface({
       if (Object.keys((appState.selectedElementIds ?? {}) as Record<string, unknown>).length > 0) return
       event.preventDefault()
       event.stopPropagation()
-      // ⌘C on the open tab moves it to the Components chip; only a second ⌘C, already there, closes the panel.
+      // ⌘C on the open tab sets its Filter › Show to Components; only a second ⌘C, already there, closes the panel.
       const open = rail.getState().activeTab === 'image-studio'
       const there = imageStudioSession.getState().chip === 'components'
       pickChip('components')
@@ -888,6 +888,7 @@ const BUSY_APP_STATE_KEYS = [
   'selectedLinearElement',
   'editingFrame',
   'croppingElementId',
+  'colorEditingElementId',
   'selectedElementsAreBeingDragged',
   'isResizing',
   'isRotating',

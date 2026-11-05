@@ -59,6 +59,7 @@ let manager: {
   handleFlushed: ReturnType<typeof vi.fn>
   handleLinkReady: ReturnType<typeof vi.fn>
   vaultNotice: ReturnType<typeof vi.fn>
+  appNotice: ReturnType<typeof vi.fn>
   takeStartView: ReturnType<typeof vi.fn<(id: string) => StartView | undefined>>
   takeReload: ReturnType<typeof vi.fn<(id: string) => { views: (StartView | null)[]; mb: number } | undefined>>
   takeStartEmpty: ReturnType<typeof vi.fn<(id: string) => boolean>>
@@ -81,7 +82,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), tearOff: vi.fn((): TearOffResult => 'opened'), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), addVaultAndTake: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), raise: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeReload: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), tearOff: vi.fn((): TearOffResult => 'opened'), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), addVaultAndTake: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), raise: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), appNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeReload: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {

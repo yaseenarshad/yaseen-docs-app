@@ -134,15 +134,15 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'co
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
+const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'typingArrows', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'outsideChangeGlow', 'outsideListPinned', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
-const EDITOR_GROUPS = ['Outline', 'Bullet threading', 'Section indent', 'Selection toolbar', 'Table of contents', 'Outside changes', 'Tables', 'Cell notes', 'Calendar tables']
+const EDITOR_GROUPS = ['Outline', 'Bullet threading', 'Section indent', 'Selection toolbar', 'Typing', 'Table of contents', 'Outside changes', 'Tables', 'Cell notes', 'Calendar tables']
 /** Settings › Drawings (YAZ-3037): one row per `CanvasPrefs` key the page shows, in its three groups. */
 const CANVAS_ROWS = ['gridModeEnabled', 'objectsSnapModeEnabled', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`)
-/** Settings › Images (YAZ-3038): the Pixabay key, then the library folder. */
-const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder']
+/** Settings › Images (YAZ-3038): the Pixabay key, the library folder and the favorites (YAZ-4363), then the icon packs (YAZ-4359). */
+const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder', 'favoriteCopies', 'iconPacks']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
 // Daily notes (YAZ-3607 D12): off by default, so its group shows the switch alone.
 // New boards keep pictures and Allowed picture folders (YAZ-3943 demo 2, round 3); Links in drawings (demo 2).
@@ -743,16 +743,17 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(group?.querySelector('.settings-group__title')?.textContent).toBe('Outside changes')
     expect(group?.querySelector('.settings-group__hint')?.textContent).toBe(OUTSIDE_CHANGES_HINT)
     expect(row(el, 'outsideChangeGlow')?.querySelector('.setting__label')?.textContent).toBe('Glow')
+    // The YAZ-4272 demo: 1 minute, 5 minutes, Until I check it, Off (10 seconds went: too quick to read).
     expect(rowButtons(el, 'outsideChangeGlow').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
-      ['Until I check it', 'true'],
-      ['10 seconds', 'false'],
       ['1 minute', 'false'],
+      ['5 minutes', 'false'],
+      ['Until I check it', 'true'],
       ['Off', 'false'],
     ])
-    act(() => rowButtons(el, 'outsideChangeGlow')[2].click())
+    act(() => rowButtons(el, 'outsideChangeGlow')[1].click())
     act(() => rowButtons(el, 'outsideChangeGlow')[3].click())
     expect(onChange.mock.calls.map((call) => call[0])).toEqual([
-      { ...DEFAULT_SETTINGS, outsideChangeGlow: '60s' },
+      { ...DEFAULT_SETTINGS, outsideChangeGlow: '5m' },
       { ...DEFAULT_SETTINGS, outsideChangeGlow: 'off' },
     ])
   })
@@ -1469,7 +1470,7 @@ describe('SettingsDialog search (D6)', () => {
         ...['foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`),
         // ⌘\ in notes (YAZ-4420): its hint says "bullets, lists, quotes and links stay".
         'hotkey-note-clearFormatting',
-        ...['bulletList', 'cycleTask', 'indent', 'outdent', 'foldHere', 'unfoldHere', 'foldAll', 'unfoldAll', 'zoomIn', 'copyVisible', 'enter', 'tab'].map((r) => `hotkey-note-${r}`),
+        ...['bulletList', 'cycleTask', 'indent', 'outdent', 'foldHere', 'unfoldHere', 'foldAll', 'unfoldAll', 'zoomIn', 'copyVisible', 'enter', 'tab', 'selectAll'].map((r) => `hotkey-note-${r}`),
         ...['thisTab', 'newTab', 'backgroundTab'].map((r) => `hotkey-bullets-${r}`),
         // A built-in click is found by its place too: "Bullet lines".
         ...['fold-unfold-that-bullet-or-heading-secti', 'collapse-direct-children-fully-expand-th'].map((r) => `hotkey-mouse-${r}`),

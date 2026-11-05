@@ -56,6 +56,8 @@ import type {
 } from "@excalidraw/element";
 import type { GlobalPoint } from "@excalidraw/math";
 import type { FoldArrowPrefs, HostLinkResolver } from "@excalidraw/element";
+import type { IconKind } from "@excalidraw/element";
+
 import type { NewElementStyle } from "./newElementStyle";
 
 import type { Action } from "./actions/types";
@@ -556,6 +558,8 @@ export interface AppState {
   /** image cropping */
   isCropping: boolean;
   croppingElementId: ExcalidrawElement["id"] | null;
+  /** YAZ-4354 1D: the many-color icon in "Edit colors"; not saved */
+  colorEditingElementId: ExcalidrawElement["id"] | null;
 
   /** null if no search matches found / search closed */
   searchMatches: Readonly<{
@@ -1317,6 +1321,8 @@ export type AppClassProperties = {
     {
       image: HTMLImageElement | Promise<HTMLImageElement>;
       mimeType: ValueOf<typeof IMAGE_MIME_TYPES>;
+      /** Yaseen Docs (YAZ-4355 1E): an SVG's icon kind, read once when it loads */
+      iconKind?: IconKind;
     }
   >;
   files: BinaryFiles;
@@ -1333,6 +1339,7 @@ export type AppClassProperties = {
   onExportImage: App["onExportImage"];
   viewport: App["viewport"];
   addFiles: App["addFiles"];
+  dropUnusedFiles: App["dropUnusedFiles"];
   addElementsFromPasteOrLibrary: App["addElementsFromPasteOrLibrary"];
   togglePenMode: App["togglePenMode"];
   toggleLock: App["toggleLock"];

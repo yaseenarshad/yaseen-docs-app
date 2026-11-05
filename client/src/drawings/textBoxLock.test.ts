@@ -54,10 +54,20 @@ describe('the block lock of a text box (YAZ-4277 1B, D4)', () => {
       .map((plugin) => (plugin as unknown as { key: string }).key.replace(/\$\d*$/, ''))
     expect(keys).toEqual([
       'mdapp-cell-note-card', // only inside a cell note card: a box has none
+      // YAZ-4275 (main): a letter typed inside a closed `[[link]]` goes to its edge; the box keeps links as one unit
+      'mdapp-id-link-caret',
       'YAZ_LIST_MARKER_TYPING', // `- ` / `* ` makes a bullet; `1. ` stays text (below)
+      // YAZ-4273 (main): `->` → `→` and the other arrows, plain letters a box draws (below)
+      'YAZ_TYPING_ARROWS',
       'mdapp-visible-type-over', // typing over a selection that spans folded lines
       'MILKDOWN_CUSTOM_INPUTRULES',
     ])
+  })
+
+  it('makes an arrow of a typed `->`, as in a note (YAZ-4273), and the box keeps it as a letter', async () => {
+    const { view } = await mountBox('')
+    typeText(view, 'a -> b')
+    expect(boxText(view)).toBe('a → b')
   })
 
   it.each([

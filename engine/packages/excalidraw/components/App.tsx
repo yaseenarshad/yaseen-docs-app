@@ -192,6 +192,8 @@ import {
   getInitializedImageElements,
   GifPlayer,
   normalizeSVG,
+  paintIcon,
+  readIconInfo,
   updateImageCache as _updateImageCache,
   getBoundTextElement,
   getContainerCenter,
@@ -327,6 +329,7 @@ import type {
 } from "@excalidraw/element/types";
 
 import type { ArrowEndpoint } from "@excalidraw/element";
+import type { IconRecipe } from "@excalidraw/element";
 
 import type { Mutable, ValueOf } from "@excalidraw/common/utility-types";
 
@@ -378,6 +381,7 @@ import {
   actionToggleArrowBinding,
   actionToggleMidpointSnapping,
   actionToggleCropEditor,
+  actionToggleColorEditor,
   actionToggleGifPlayback,
 } from "../actions";
 import { actionWrapTextInContainer } from "../actions/actionBoundText";
@@ -484,6 +488,7 @@ import {
   getViewportForZoomWithScrollConstraints,
 } from "../viewport";
 import { ElementCanvasButtons } from "../components/ElementCanvasButtons";
+import { IconColorEditor } from "../components/IconColorEditor";
 import { LASER_STREAMLINE, LaserTrails } from "../laserTrails";
 import { withBatchedUpdates, withBatchedUpdatesThrottled } from "../reactUtils";
 import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
@@ -526,13 +531,17 @@ import { MagicIcon, copyIcon, fullscreenIcon } from "./icons";
 import { AppStateObserver, type OnStateChange } from "./AppStateObserver";
 
 import { findShapeByKey, TOGGLE_TOOLS } from "./Tools";
-import { getSemanticColorNameForHotkey } from "./ColorPicker/colorPickerUtils";
+import {
+  getSemanticColorNameForHotkey,
+  SHIFT_KEYS_KEPT_FROM_COLORS,
+} from "./ColorPicker/colorPickerUtils";
 
 import UnlockPopup from "./UnlockPopup";
 
 import type { ExcalidrawLibraryIds } from "../data/types";
 
 import type {
+  ColorEditPreview,
   RenderInteractiveSceneCallback,
   ScrollBars,
 } from "../scene/types";
@@ -540,6 +549,7 @@ import type {
 import type { ClipboardData, PastedMixedContent } from "../clipboard";
 import type { ExportedElements } from "../data";
 import type { ContextMenuItems } from "./ContextMenu";
+import type { IconColorEditorHandlers } from "./IconColorEditor";
 
 import type {
   AppClassProperties,
@@ -728,6 +738,14 @@ class App extends React.Component<AppProps, AppState> {
 
   public files: BinaryFiles = {};
   public imageCache: AppClassProperties["imageCache"] = new Map();
+  /** YAZ-4354 1D: the Edit colors mode's hooks for canvas clicks and keys */
+  public iconColorEditor: IconColorEditorHandlers = {
+    pick: null,
+    escape: null,
+    digit: null,
+  };
+  /** YAZ-4354 1D: the faded preview of the icon in Edit colors (static canvas; YAZ-4366: one stable holder) */
+  private colorEditPreview: ColorEditPreview = { current: null };
   /** YAZ-3944 D2: this board's GIF frames */
   public gifPlayer = new GifPlayer((id) => this.files[id]);
 
@@ -2635,6 +2653,16 @@ class App extends React.Component<AppProps, AppState> {
             this.state.cursorButton === "down");
 
     const firstSelectedElement = selectedElements[0];
+    // YAZ-4354 1D: the icon in Edit colors
+    const colorEditingCandidate = this.state.colorEditingElementId
+      ? this.scene
+          .getNonDeletedElementsMap()
+          .get(this.state.colorEditingElementId)
+      : null;
+    const colorEditingElement =
+      colorEditingCandidate && isInitializedImageElement(colorEditingCandidate)
+        ? colorEditingCandidate
+        : null;
 
     const showShapeSwitchPanel =
       editorJotaiStore.get(convertElementTypePopupAtom)?.type === "panel";
@@ -2846,6 +2874,18 @@ class App extends React.Component<AppProps, AppState> {
                               </ElementCanvasButtons>
                             )}
 
+                          {this.isDefaultUIEnabled() && colorEditingElement && (
+                            <IconColorEditor
+                              key={colorEditingElement.id}
+                              app={this}
+                              actionManager={this.actionManager}
+                              appState={this.state}
+                              element={colorEditingElement}
+                              handlers={this.iconColorEditor}
+                              onPreview={this.setColorEditPreview}
+                              onDone={this.finishIconColorEditing}
+                            />
+                          )}
                           {this.isDefaultUIEnabled() && this.state.contextMenu && (
                             <ContextMenu
                               items={this.state.contextMenu.items}
@@ -2888,6 +2928,7 @@ class App extends React.Component<AppProps, AppState> {
                                 this.flowchart.pendingNodes,
                               theme: this.state.theme,
                               foldArrows: this.getFoldArrowPrefs(),
+                              colorEditPreview: this.colorEditPreview,
                             }}
                           />
                           {newElementCanvasElement && (
@@ -4492,6 +4533,29 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   componentDidUpdate(prevProps: AppProps, prevState: AppState) {
+    // YAZ-4348 demo: the top bar's Edit colors button unmounts with the bar, and the focus falls to the page,
+    // where a board without handleKeyboardGlobally (the app's) hears no key: the mode takes the focus, so
+    // 1 to 9, Esc and Enter work at once
+    if (
+      this.state.colorEditingElementId &&
+      !prevState.colorEditingElementId &&
+      !this.excalidrawContainerRef.current?.contains(document.activeElement)
+    ) {
+      this.focusContainer();
+    }
+    // YAZ-4354 1D: Edit colors ends when its icon is deleted or not selected
+    if (this.state.colorEditingElementId) {
+      const element = this.scene.getElement(this.state.colorEditingElementId);
+      if (
+        !element ||
+        element.isDeleted ||
+        !this.state.selectedElementIds[element.id] ||
+        this.state.viewModeEnabled
+      ) {
+        this.finishIconColorEditing();
+      }
+    }
+
     // must be updated *before* state change listeners are triggered below
     if (!this._initialized && !this.state.isLoading) {
       this._initialized = true;
@@ -5752,7 +5816,13 @@ class App extends React.Component<AppProps, AppState> {
    *   still in it) and what undo falls back to for an element the scene lacks. It keeps every
    *   element it ever saw as a deleted one, so a deleted one counts only when a step changes it.
    */
-  public pruneFiles = () => {
+  public pruneFiles = () => this.dropUnusedFiles();
+
+  /**
+   * YAZ-4366: `pruneFiles` for only the files in `only` (all when absent), so a drag's previews can go at once
+   * (`paintIcons`) while every other file waits for the host's next prune.
+   */
+  public dropUnusedFiles = (only?: ReadonlySet<string>) => {
     const used = new Set<string>();
     const keep = (element: object) => {
       if ("fileId" in element && typeof element.fileId === "string") {
@@ -5782,14 +5852,14 @@ class App extends React.Component<AppProps, AppState> {
     const nextFiles: BinaryFiles = {};
     let dropped = false;
     for (const [id, fileData] of Object.entries(this.files)) {
-      if (used.has(id)) {
+      if (used.has(id) || (only && !only.has(id))) {
         nextFiles[id] = fileData;
       } else {
         dropped = true;
       }
     }
     for (const id of this.imageCache.keys()) {
-      if (!used.has(id)) {
+      if (!used.has(id) && (!only || only.has(id))) {
         this.imageCache.delete(id);
         dropped = true;
       }
@@ -6021,6 +6091,10 @@ class App extends React.Component<AppProps, AppState> {
       event.ctrlKey ||
       event.altKey ||
       event.metaKey ||
+      // YAZ-4348 demo (Yasin: "Flip and eyedropper win"): ⇧V stays Flip vertical and ⇧G the eyedropper, so
+      // violet and green have no fill letter (YAZ-4277 D16: ⇧ is the fill); the picker still sets them
+      (event.shiftKey &&
+        SHIFT_KEYS_KEPT_FROM_COLORS.has(event.key.toLowerCase())) ||
       isInteractive(event.target) ||
       isContentEditable
     ) {
@@ -6256,6 +6330,31 @@ class App extends React.Component<AppProps, AppState> {
           this.state.croppingElementId
         ) {
           this.finishImageCropping();
+          return;
+        }
+
+        // YAZ-4354 1D: Esc closes the palette first; Esc or Enter leave Edit colors
+        if (
+          (event.key === KEYS.ESCAPE || event.key === KEYS.ENTER) &&
+          this.state.colorEditingElementId
+        ) {
+          if (!this.iconColorEditor.escape?.()) {
+            this.finishIconColorEditing();
+          }
+          event.preventDefault();
+          return;
+        }
+
+        // YAZ-4348 demo: in Edit colors a digit opens that number's palette; no digit sizes the icon there
+        if (
+          this.state.colorEditingElementId &&
+          /^[0-9]$/.test(event.key) &&
+          !event[KEYS.CTRL_OR_CMD] &&
+          !event.altKey &&
+          !event.shiftKey
+        ) {
+          this.iconColorEditor.digit?.(Number(event.key));
+          event.preventDefault();
           return;
         }
 
@@ -8018,6 +8117,24 @@ class App extends React.Component<AppProps, AppState> {
     });
   };
 
+  /** YAZ-4366: a hover on a number paints only the static canvas; the App does not render again (the design bar). */
+  private setColorEditPreview = (image: HTMLImageElement | null) => {
+    const id = this.state.colorEditingElementId;
+    const next = image && id ? { elementId: id, image } : null;
+    if (next?.image !== this.colorEditPreview.current?.image) {
+      this.colorEditPreview.current = next;
+      this.colorEditPreview.repaint?.();
+    }
+  };
+
+  /** YAZ-4354 1D: Done, Esc, Enter or a click outside. Each pick is already applied. */
+  public finishIconColorEditing = () => {
+    if (this.state.colorEditingElementId) {
+      this.colorEditPreview.current = null;
+      this.setState({ colorEditingElementId: null });
+    }
+  };
+
   private finishImageCropping = () => {
     if (this.state.croppingElementId) {
       this.store.scheduleCapture();
@@ -8258,7 +8375,11 @@ class App extends React.Component<AppProps, AppState> {
       }
     }
 
-    if (selectedElements.length === 1 && isImageElement(selectedElements[0])) {
+    if (
+      selectedElements.length === 1 &&
+      isImageElement(selectedElements[0]) &&
+      !this.state.colorEditingElementId
+    ) {
       this.startImageCropping(selectedElements[0]);
       return;
     }
@@ -10148,6 +10269,22 @@ class App extends React.Component<AppProps, AppState> {
     // panning
     if (this.handleCanvasPanUsingWheelOrSpaceDrag(event)) {
       return;
+    }
+
+    // YAZ-4354 1D: in Edit colors a click on the picture finds its part; a click
+    // outside leaves the mode and goes on as normal (as crop)
+    if (this.state.colorEditingElementId) {
+      if (
+        event.button === POINTER_BUTTON.MAIN &&
+        this.iconColorEditor.pick?.(
+          scenePointer,
+          { x: event.clientX, y: event.clientY },
+          event.altKey,
+        )
+      ) {
+        return;
+      }
+      this.finishIconColorEditing();
     }
 
     // YAZ-4277 D5: a click on a fold arrow folds or unfolds its item. It
@@ -14360,12 +14497,27 @@ class App extends React.Component<AppProps, AppState> {
 
     this.cursor.set("wait");
 
+    // YAZ-4352 (extra 5): a new one-color icon arrives in the current stroke
+    // color, as a shape does, unless that color is the default black
+    let iconRecipe: IconRecipe | null = null;
     if (mimeType === MIME_TYPES.svg) {
       try {
-        imageFile = SVGStringToFile(
-          normalizeSVG(await imageFile.text()),
-          imageFile.name,
-        );
+        let svg = normalizeSVG(await imageFile.text());
+        const strokeColor = this.state.currentItemStrokeColor;
+        if (
+          strokeColor !== COLOR_PALETTE.black &&
+          !isTransparent(strokeColor)
+        ) {
+          const info = readIconInfo(svg);
+          if (info.kind === "one") {
+            iconRecipe = {
+              colors: { [info.colors[0]]: strokeColor },
+              outline: null,
+            };
+            svg = normalizeSVG(paintIcon(svg, iconRecipe));
+          }
+        }
+        imageFile = SVGStringToFile(svg, imageFile.name);
       } catch (error: any) {
         console.warn(error);
         throw new Error(t("errors.svgImageInsertError"));
@@ -14507,6 +14659,14 @@ class App extends React.Component<AppProps, AppState> {
             });
           }
 
+          if (iconRecipe) {
+            Object.assign(initializedImageElement, {
+              customData: {
+                ...initializedImageElement.customData,
+                yaseenIcon: iconRecipe,
+              },
+            });
+          }
           resolve(initializedImageElement);
         } catch (error: any) {
           console.error(error);
@@ -15687,6 +15847,7 @@ class App extends React.Component<AppProps, AppState> {
       actionWrapSelectionInFrame,
       CONTEXT_MENU_SEPARATOR,
       actionToggleCropEditor,
+      actionToggleColorEditor, // YAZ-4354 1D
       actionToggleGifPlayback, // YAZ-3944 D4
       CONTEXT_MENU_SEPARATOR,
       ...options,

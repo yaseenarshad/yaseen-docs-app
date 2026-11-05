@@ -19,7 +19,8 @@ import { handle } from './envelope'
  */
 export const RENDERER_WRITABLE_SECRETS: readonly string[] = [PIXABAY_SECRET]
 
-export function registerSecretsIpc(userData: string): Secrets {
+/** `onSet` hears each name a renderer set or cleared: a new Pixabay key starts the favorites' backfill (YAZ-4363). */
+export function registerSecretsIpc(userData: string, onSet: (name: string) => void = () => undefined): Secrets {
   const secrets = createSecrets(join(userData, SECRETS_FILE))
   handle(CONTRACT.secrets.set, async (req: unknown) => {
     const r = requireRequest(req)
@@ -28,6 +29,7 @@ export function registerSecretsIpc(userData: string): Secrets {
     // `''` is not a value: storing it would make `has` say yes to a key that is not there.
     if (r.value !== null && (typeof r.value !== 'string' || r.value === '')) throw new BridgeFailure('BAD_REQUEST', "'value' must be a non-empty string or null")
     await secrets.set(name, r.value)
+    onSet(name)
   })
   handle(CONTRACT.secrets.has, async (req: unknown) => {
     return secrets.has(str(requireRequest(req).name, 'name'))
