@@ -439,14 +439,18 @@ export {
   getAllFoldedLines,
   getFoldableLines,
   getFoldedLines,
+  getFoldsAside,
+  getFoldsToPutBack,
   getHiddenLines,
   getToggledFoldedLines,
   isFoldableLine,
   isLineFolded,
   normalizeFoldedLines,
+  takeFoldsAside,
   TEXT_LIST_CHECK_MARKERS,
+  withFoldsPutBack,
 } from "@excalidraw/element";
-export type { FoldArrowPrefs } from "@excalidraw/element";
+export type { FoldArrowPrefs, FoldsAside } from "@excalidraw/element";
 
 export { defaultLang, useI18n, languages } from "./i18n";
 export {

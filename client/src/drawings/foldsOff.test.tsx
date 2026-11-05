@@ -1,11 +1,12 @@
 /**
- * YAZ-4401 2E (D18): folding off, at the host. The surface keeps each folded box's folds aside (`foldsAside`), so the
- * engine shows every line, and writes them back on a save (`foldsBack`): the file keeps its `foldedLines`. A switch at
+ * YAZ-4401 2E (D18): folding off, at the host. The surface keeps each folded box's folds aside (the engine's
+ * `takeFoldsAside` / `getFoldsAside`), so the engine shows every line, and writes them back on a save
+ * (`withFoldsPutBack`): the file keeps its `foldedLines`. A box edited while folding is off loses them (YAZ-4312 M2). A switch at
  * runtime opens the folds and keeps them; switched on again, they come back. A reload from disk (`replaceScene`) with
  * folding off keeps the new scene's folds aside too.
  *
- * The engine's own `restoreElements` and `serializeAsJSON` run here (its restore guard is what drops the `[-1]` fold the
- * host gives a box); only `<Excalidraw>` is a stand-in that records its props.
+ * The engine's own `restoreElements`, fold switch point and `serializeAsJSON` run here; only `<Excalidraw>` is a
+ * stand-in that records its props.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -136,12 +137,15 @@ describe('YAZ-4401 2E: a board opened with folding off', () => {
     ['the app setting', { prefs: { foldArrowsOpen: 'off' as const } }],
     ["the board's own mode", { board: 'off' as const }],
   ] as const) {
-    it(`(${how}) mounts every line: no fold reaches the engine, and the restore guard drops the host's [-1]`, async () => {
+    it(`(${how}) mounts every line: no fold reaches the engine, and the folded box is measured to all its lines (no sentinel fold)`, async () => {
       await mount(opts)
-      const mounted = (last().initialData as { elements: El[] }).elements
-      expect(mounted.map((e) => [e.id, e.foldedLines])).toEqual([['t', [-1]], ['open', undefined], ['r', undefined]])
+      const mounted = (last().initialData as { elements: (El & { height: number })[] }).elements
+      expect(mounted.map((e) => [e.id, e.foldedLines])).toEqual([['t', undefined], ['open', undefined], ['r', undefined]])
+      // the engine's fold switch point measured it (`takeFoldsAside`), not the restore guard: all 3 lines, 20 px × 1.25
+      expect(mounted[0].height).toBe(75)
+      // folded, the same box is its 2 visible lines
       const { restoreElements } = await import('@excalidraw/excalidraw')
-      expect((restoreElements(mounted as never, null) as unknown as El[]).map((e) => e.foldedLines)).toEqual([undefined, undefined, undefined])
+      expect((restoreElements([box('t', [0])] as never, null) as unknown as { height: number }[])[0].height).toBe(50)
       // the engine is told the mode, so its arrows, keys and clicks stay off
       expect((last().foldArrows as { openArrows: string }).openArrows).toBe('off')
     })
@@ -219,6 +223,47 @@ describe('YAZ-4401 2E: folding switched at runtime', () => {
     const { render } = await mount({ prefs: { foldArrowsOpen: 'off' } })
     const { api } = rawApi([box('t'), box('open'), rect])
     await render({ foldArrowsOpen: 'always' })
+    expect(api.setTextFolds.mock.calls).toEqual([['t', [0]]])
+  })
+})
+
+describe('YAZ-4312 M2: a box edited while folding is off loses its aside folds', () => {
+  // a bullet with a child goes in above the folded one: line 0 is now ANOTHER bullet that can fold
+  const EDITED = `• Zero\n    ○ z\n${OUTLINE}`
+  const edit = (elements: El[]) => elements.map((e) => (e.id === 't' ? { ...e, text: EDITED, originalText: EDITED } : e))
+
+  it('switched off at runtime: the save and the switch back on give no fold to another bullet; an unchanged box keeps its folds', async () => {
+    const { snapshots, render } = await mount()
+    const { api, scene } = rawApi([box('t', [0]), box('same', [0]), rect])
+    await render({ foldArrowsOpen: 'off' })
+    scene.elements = edit(scene.elements)
+    report(scene.elements)
+    expect(foldsIn(snapshots.at(-1)!.serialize().json)).toEqual({ t: undefined, same: [0], r: undefined })
+    api.setTextFolds.mockClear()
+    await render({ foldArrowsOpen: 'hover' })
+    expect(api.setTextFolds.mock.calls).toEqual([['same', [0]]])
+  })
+
+  it('opened with folding off: the same', async () => {
+    const { snapshots, render } = await mount({ prefs: { foldArrowsOpen: 'off' }, scene: { elements: [box('t', [0]), box('same', [0]), rect], appState: {}, files: {} } })
+    const { api, scene } = rawApi([box('t'), box('same'), rect])
+    scene.elements = edit(scene.elements)
+    report(scene.elements)
+    expect(foldsIn(snapshots.at(-1)!.serialize().json)).toEqual({ t: undefined, same: [0], r: undefined })
+    await render({ foldArrowsOpen: 'hover' })
+    expect(api.setTextFolds.mock.calls).toEqual([['same', [0]]])
+  })
+
+  it('a box edited back to its old text gets its folds back', async () => {
+    const { snapshots, render } = await mount()
+    const { api, scene } = rawApi([box('t', [0]), rect])
+    await render({ foldArrowsOpen: 'off' })
+    scene.elements = edit(scene.elements)
+    scene.elements = scene.elements.map((e) => (e.id === 't' ? { ...e, text: OUTLINE, originalText: OUTLINE } : e))
+    report(scene.elements)
+    expect(foldsIn(snapshots.at(-1)!.serialize().json).t).toEqual([0])
+    api.setTextFolds.mockClear()
+    await render({ foldArrowsOpen: 'hover' })
     expect(api.setTextFolds.mock.calls).toEqual([['t', [0]]])
   })
 })

@@ -90,6 +90,9 @@ type ExcalidrawProps = ComponentProps<ExcalidrawModule['Excalidraw']>
 type ChangeArgs = Parameters<NonNullable<ExcalidrawProps['onChange']>>
 type ImperativeApi = NonNullable<Parameters<NonNullable<ExcalidrawProps['onExcalidrawAPI']>>[0]>
 type EngineAppState = ChangeArgs[1]
+/** YAZ-4277 D18: the folds kept aside while folding is off; only the engine's fold switch point reads them. */
+type FoldsAside = ReturnType<ExcalidrawModule['getFoldsAside']>
+const NO_FOLDS_ASIDE: FoldsAside = new Map()
 
 /** What a host learns about the canvas; deliberately engine-free (a number and two thunks). */
 export interface DrawingSnapshot {
@@ -244,29 +247,6 @@ const UI_OPTIONS = {
  * The file's own loose shape as the engine's arguments. `drawingScene.ts` validates only the
  * OUTLINE because the file is user data; the engine's `restore()` decides the rest.
  */
-/**
- * YAZ-4277 demo, folding off: each folded box's folds go into `aside` (by id) and the box gets a fold the restore
- * guard drops (`restore.ts`), so the engine measures all its lines again. No fold reaches the engine.
- */
-function foldsAside(elements: readonly unknown[], aside: Map<string, readonly number[]>): unknown[] {
-  return elements.map((element) => {
-    const box = element as { type?: unknown; id?: unknown; foldedLines?: unknown }
-    if (box.type !== 'text' || typeof box.id !== 'string' || !Array.isArray(box.foldedLines) || box.foldedLines.length === 0) return element
-    aside.set(box.id, box.foldedLines as number[])
-    return { ...box, foldedLines: [-1] }
-  })
-}
-
-/** `foldsAside` undone for the file: a box still open in the engine is saved with its folds. */
-function foldsBack(elements: ChangeArgs[0], aside: ReadonlyMap<string, readonly number[]>): ChangeArgs[0] {
-  if (aside.size === 0) return elements
-  return elements.map((element) => {
-    const lines = aside.get(element.id)
-    const own = (element as { foldedLines?: readonly number[] }).foldedLines
-    return lines === undefined || element.type !== 'text' || own?.length ? element : ({ ...element, foldedLines: lines } as typeof element)
-  }) as ChangeArgs[0]
-}
-
 function engineScene(scene: DrawingScene, canvasAppState: Record<string, unknown>): { elements: ChangeArgs[0]; appState: EngineAppState; files: ChangeArgs[2] } {
   return {
     elements: scene.elements as ChangeArgs[0],
@@ -631,15 +611,20 @@ export function ExcalidrawSurface({
     if (keys.includes('framesVisible')) applyFramesVisibility(api, canvasPrefs.framesVisible)
   }, [canvasPrefs, rail])
 
-  // YAZ-4277 demo: folding off: each folded box's folds, by id, kept aside (`foldsAside`) so the file keeps them.
-  const hiddenFolds = useRef(new Map<string, readonly number[]>())
-  const [mountScene] = useState(() =>
-    foldArrowsOf(canvasPrefs, boardFoldArrows).openArrows === 'off' ? { ...scene, elements: foldsAside(scene.elements, hiddenFolds.current) } : scene,
-  )
+  // YAZ-4277 D18: folding off: each folded box's folds, by id, with the text they belong to, kept aside by the
+  // engine's fold switch point (`takeFoldsAside`, `getFoldsAside`) so the file keeps them (`withFoldsPutBack`).
+  const hiddenFolds = useRef<FoldsAside>(NO_FOLDS_ASIDE)
 
-  // The scene and the prefs are read ONCE, at mount, by the effect below; a ref keeps them out of
-  // its dependency list without lying to the linter about what it uses.
-  const openedOn = useRef({ scene: mountScene, canvasPrefs })
+  // The scene, the prefs and the start view are read ONCE, at mount, by the effect below; a ref keeps them out
+  // of its dependency list without lying to the linter about what it uses.
+  const openedOn = useRef({ scene, canvasPrefs, startCanvas })
+  // Built ONCE, when the engine has loaded, from the mount-time scene and prefs: the engine reads `initialData`
+  // only at mount, and a fresh identity on every settings write would re-render the memoized `<Excalidraw>` for
+  // nothing (the #185 rule). The saved scene may sit far from the origin, so open on ALL of it (Draw's 🔒
+  // YAZ-1855 D1, fit-on-open) — `initialState.viewport`, resolved once the canvas is measured. A woken tab or a
+  // copy opens where it was (YAZ-3737 D13): its pan and zoom over the file's, and no fit. Pan and zoom are never
+  // written into the file, so they are no edit (`boardAppState.ts`).
+  const [initialData, setInitialData] = useState<ReturnType<typeof engineScene> | null>(null)
 
   useEffect(() => {
     let live = true
@@ -656,10 +641,20 @@ export function ExcalidrawSurface({
         engineRef.current = mod
         setTextEditor(box.createTextBoxEditor(mod))
         countEdits.current = appStateEdits(boardAppStateKeys(mod))
+        // Folding off (D18): no fold reaches the engine, and each folded box shows all its lines.
+        const opened = openedOn.current
+        let mounted = opened.scene
+        if (foldsOffAt.current) {
+          const { elements, aside } = mod.takeFoldsAside(mod.restoreElements(opened.scene.elements as ChangeArgs[0], null))
+          hiddenFolds.current = aside
+          mounted = { ...opened.scene, elements }
+        }
+        const start = opened.startCanvas
+        setInitialData(engineScene(mounted, { ...prefsToAppState(opened.canvasPrefs), ...(start !== undefined && { scrollX: start.scrollX, scrollY: start.scrollY, zoom: { value: start.zoom } }) }))
         setEngine(mod)
         // The baseline, before the engine has said anything — through the engine's own restore,
         // because restored elements are what it mounts (see the module doc).
-        const { elements, appState, files } = engineScene(openedOn.current.scene, prefsToAppState(openedOn.current.canvasPrefs))
+        const { elements, appState, files } = engineScene(mounted, prefsToAppState(opened.canvasPrefs))
         emitRef.current(snapshotOf(countVersion.current, mod, mod.restoreElements(elements, null) as ChangeArgs[0], appState, files, 0, hiddenFolds.current))
       },
       () => {
@@ -671,13 +666,6 @@ export function ExcalidrawSurface({
     }
   }, [])
 
-  // Built ONCE, from the mount-time scene and prefs: the engine reads `initialData` only at mount,
-  // and a fresh identity on every settings write would re-render the memoized `<Excalidraw>` for
-  // nothing (the #185 rule). The saved scene may sit far from the origin, so open on ALL of it
-  // (Draw's 🔒 YAZ-1855 D1, fit-on-open) — `initialState.viewport`, resolved once the canvas is measured.
-  // A woken tab or a copy opens where it was (YAZ-3737 D13): its pan and zoom over the file's, and no fit. Pan and
-  // zoom are never written into the file, so they are no edit (`boardAppState.ts`).
-  const [initialData] = useState(() => engineScene(mountScene, { ...prefsToAppState(canvasPrefs), ...(startCanvas !== undefined && { scrollX: startCanvas.scrollX, scrollY: startCanvas.scrollY, zoom: { value: startCanvas.zoom } }) }))
   const [initialState] = useState(() => (startCanvas === undefined ? openViewport(scene) : undefined) as ExcalidrawProps['initialState'])
 
   const onChange = useCallback(
@@ -739,9 +727,13 @@ export function ExcalidrawSurface({
         }),
       pictures: () => picturesSize(api.getSceneElements() as readonly unknown[], api.getFiles() as unknown as Record<string, unknown>),
       replaceScene: (next) => {
-        if (foldsOffAt.current) hiddenFolds.current.clear()
-        const incoming = foldsOffAt.current ? foldsAside(next.elements as readonly unknown[], hiddenFolds.current) : next.elements
-        const restored = mod.restoreElements(incoming as ChangeArgs[0], null)
+        let restored = mod.restoreElements(next.elements as ChangeArgs[0], null)
+        // Folding off (D18): the new scene's folds go aside; the old scene's are gone.
+        if (foldsOffAt.current) {
+          const taken = mod.takeFoldsAside(restored)
+          restored = taken.elements as typeof restored
+          hiddenFolds.current = taken.aside
+        }
         // A new scene, a new count: computed BEFORE the engine reports it, so its first `onChange` agrees.
         countVersion.current = contentVersion()
         const version = countVersion.current(restored)
@@ -806,23 +798,23 @@ export function ExcalidrawSurface({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the four fold rows only, not every canvas pref
     [boardFoldArrows, canvasPrefs.foldArrowsOpen, canvasPrefs.foldArrowSize, canvasPrefs.foldArrowThickness, canvasPrefs.foldArrowMinSize],
   )
-  // YAZ-4277 demo: folding turned off opens every fold and keeps it aside; turned on, puts them back. No undo step
-  // (a fold never is, D3); the board saves the new sizes, and the file keeps the folds either way.
+  // YAZ-4277 D18: folding turned off opens every fold and keeps it aside; turned on, puts back the folds of each box
+  // whose text did not change (an edit moves the lines, so an edited box loses them: `getFoldsToPutBack`). No undo
+  // step (a fold never is, D3); the board saves the new sizes, and the file keeps the folds either way.
   const foldsOff = foldArrows.openArrows === 'off'
   useEffect(() => {
     const api = rawApiRef.current
-    if (api === null || foldsOffAt.current === foldsOff) return
+    const mod = engineRef.current
+    if (api === null || mod === null || foldsOffAt.current === foldsOff) return
     foldsOffAt.current = foldsOff
-    const aside = hiddenFolds.current
+    const elements = api.getSceneElements() as ChangeArgs[0]
     if (foldsOff) {
-      for (const element of api.getSceneElements() as readonly { id: string; type: string; isDeleted?: boolean; foldedLines?: readonly number[] }[]) {
-        if (element.type !== 'text' || element.isDeleted || !element.foldedLines?.length) continue
-        aside.set(element.id, element.foldedLines)
-        api.setTextFolds(element.id, [])
-      }
+      hiddenFolds.current = mod.getFoldsAside(elements)
+      for (const id of hiddenFolds.current.keys()) api.setTextFolds(id, [])
     } else {
-      for (const [id, lines] of aside) api.setTextFolds(id, lines)
-      aside.clear()
+      const back = mod.getFoldsToPutBack(elements, hiddenFolds.current)
+      hiddenFolds.current = NO_FOLDS_ASIDE
+      for (const [id, lines] of back) api.setTextFolds(id, lines)
     }
   }, [foldsOff])
 
@@ -834,7 +826,7 @@ export function ExcalidrawSurface({
   )
 
   // The frame held while the engine chunk is arriving; the host's canvas frame sizes it.
-  if (engine === null) return <div className="drawing-surface__loading" />
+  if (engine === null || initialData === null) return <div className="drawing-surface__loading" />
   const { Excalidraw } = engine
   return (
     // The surface's own element, so ⌘F / ⌘C are heard here and nowhere else in the shell (the tab only).
@@ -911,7 +903,7 @@ function snapshotOf(
   appState: EngineAppState,
   files: ChangeArgs[2],
   appStateEditCount: number,
-  hiddenFolds: ReadonlyMap<string, readonly number[]>,
+  hiddenFolds: FoldsAside,
 ): DrawingSnapshot {
   return {
     version: countVersion(elements) + appStateEditCount,
@@ -925,7 +917,7 @@ function snapshotOf(
       return {
         // An EMPTY files map on purpose: main embeds the pictures (YAZ-3943 D5) or keeps them in
         // `assets/`, so a save never stringifies them here. A text file in a git vault ends with a newline.
-        json: `${engine.serializeAsJSON(foldsBack(elements, hiddenFolds), appState, {}, 'local')}\n`,
+        json: `${engine.serializeAsJSON(engine.withFoldsPutBack(elements, hiddenFolds) as ChangeArgs[0], appState, {}, 'local')}\n`,
         files: live,
         referenced: referencedFileIds(elements),
       }
