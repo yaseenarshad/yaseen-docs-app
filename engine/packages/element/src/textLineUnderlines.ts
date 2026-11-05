@@ -278,8 +278,6 @@ export const getStyledVisualLines = (args: {
   wholeElementItalic: boolean;
   wholeElementUnderlined: boolean;
   wholeElementStrikethrough: boolean;
-  /** YAZ-4277 D3: the lines a fold hides (`textFolds.ts`); they get no visual line. */
-  hiddenLines?: ReadonlySet<number> | null;
 }): StyledVisualLine[] => {
   const lines: StyledVisualLine[] = [];
   const fonts: FontString[] = [];
@@ -298,10 +296,6 @@ export const getStyledVisualLines = (args: {
   for (const [logicalLine, originalLine] of args.originalText
     .split("\n")
     .entries()) {
-    if (args.hiddenLines?.has(logicalLine)) {
-      sourceOffset += originalLine.length + 1;
-      continue;
-    }
     const lineStart = sourceOffset;
     const lineEnd = lineStart + originalLine.length;
     while (runIndex < runs.length && runs[runIndex].end <= sourceOffset) {
@@ -657,15 +651,37 @@ const getTextElementStyledLinesArgs = (
   wholeElementItalic: element.fontStyle === "italic",
   wholeElementUnderlined: element.textDecoration === "underline",
   wholeElementStrikethrough: element.strikethrough === true,
-  hiddenLines: getHiddenLines(element, originalText),
 });
+
+/**
+ * One layout of all the lines of a text box. Each line lays out alone, so the
+ * lines a fold hides (YAZ-4277 D3) are left out after it: they get no visual
+ * line. `text` keeps them (null: no line is hidden, the lines' own text).
+ * YAZ-4312 S6: a change of a folded box lays out its lines once, not twice.
+ */
+const layOutTextElement = (
+  element: TextElementLayoutStyle,
+  maxWidth: number,
+  originalText: string,
+) => {
+  const all = getStyledVisualLines(
+    getTextElementStyledLinesArgs(element, maxWidth, originalText),
+  );
+  const hidden = getHiddenLines(element, originalText);
+  return hidden
+    ? {
+        lines: all.filter((line) => !hidden.has(line.logicalLine)),
+        text: all.map((line) => line.text).join("\n"),
+      }
+    : { lines: all, text: null };
+};
 
 /** YAZ-4074 6A item 16: the most text boxes the styled-lines memo holds. */
 export const STYLED_LINES_MEMO_MAX = 1000;
 
 /**
- * YAZ-3718 D1: one layout for each text box with runs or links, keyed by its
- * text, runs, font, folds (YAZ-4277 D3) and width. `refreshTextDimensions`, the canvas and the
+ * YAZ-3718 D1: one layout for each text box with runs, links or folds (YAZ-4277
+ * D3), keyed by its text, runs, font, folds and width. `refreshTextDimensions`, the canvas and the
  * editor overlay ask for the same layout on a keystroke, so only the first one
  * measures. The memo is for the whole window: a box that was deleted, or whose
  * board closed, keeps its entry until the memo is full. Then the box changed
@@ -683,18 +699,22 @@ const styledLinesMemo = new Map<
     maxWidth: number;
     linksVersion: number;
     lines: StyledVisualLine[];
+    text: string | null;
   }
 >();
 
-/** The visual lines of a text box laid out from its source text. */
-export const getTextElementStyledLines = (
+/** The layout of a text box from its source text, from the memo when it can. */
+const getTextElementLayout = (
   element: TextElementLayoutStyle & Pick<ExcalidrawTextElement, "id">,
   maxWidth: number,
   originalText: string,
-) => {
-  const args = getTextElementStyledLinesArgs(element, maxWidth, originalText);
-  if (!element.textRuns && !hasHostLinks(originalText)) {
-    return getStyledVisualLines(args);
+): { lines: StyledVisualLine[]; text: string | null } => {
+  if (
+    !element.textRuns &&
+    !element.foldedLines?.length &&
+    !hasHostLinks(originalText)
+  ) {
+    return layOutTextElement(element, maxWidth, originalText);
   }
   const font = getFontString(element);
   const memo = styledLinesMemo.get(element.id);
@@ -711,9 +731,9 @@ export const getTextElementStyledLines = (
     memo.maxWidth === maxWidth &&
     memo.linksVersion === linksVersion
   ) {
-    return memo.lines;
+    return memo;
   }
-  const lines = getStyledVisualLines(args);
+  const { lines, text } = layOutTextElement(element, maxWidth, originalText);
   // a changed box goes to the end; a full memo drops the box changed longest ago
   styledLinesMemo.delete(element.id);
   if (styledLinesMemo.size >= STYLED_LINES_MEMO_MAX) {
@@ -729,9 +749,17 @@ export const getTextElementStyledLines = (
     maxWidth,
     linksVersion,
     lines,
+    text,
   });
-  return lines;
+  return { lines, text };
 };
+
+/** The visual lines of a text box laid out from its source text. */
+export const getTextElementStyledLines = (
+  element: TextElementLayoutStyle & Pick<ExcalidrawTextElement, "id">,
+  maxWidth: number,
+  originalText: string,
+) => getTextElementLayout(element, maxWidth, originalText).lines;
 
 /**
  * The size of a text box comes from its visible lines (YAZ-4277 D6). Its
@@ -744,16 +772,7 @@ export const getTextElementStyledLayout = (
   maxWidth: number,
   originalText = element.originalText,
 ) => {
-  const layout = getStyledTextLayoutFromLines(
-    getTextElementStyledLines(element, maxWidth, originalText),
-    element,
-  );
-  if (!getHiddenLines(element, originalText)) {
-    return layout;
-  }
-  const allLines = getStyledVisualLines({
-    ...getTextElementStyledLinesArgs(element, maxWidth, originalText),
-    hiddenLines: null,
-  });
-  return { ...layout, text: allLines.map((line) => line.text).join("\n") };
+  const { lines, text } = getTextElementLayout(element, maxWidth, originalText);
+  const layout = getStyledTextLayoutFromLines(lines, element);
+  return text === null ? layout : { ...layout, text };
 };
