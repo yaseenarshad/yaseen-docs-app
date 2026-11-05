@@ -95,6 +95,13 @@ const NOTHING_TOUCHED: ReadonlySet<string> = new Set()
 
 /** What an add says on a read-only board, where it puts nothing. */
 export const READ_ONLY_NOTICE = 'This board is read only. Click “Allow edits” on its Read only chip to add to it.'
+/**
+ * How many tiles the pack page shows before "Show more" (YAZ-4366 audit 70). A big pack scrolled whole put thousands
+ * of tiles in the list, and each panel change (an add, an open menu) built every one again. The infinite scroll goes
+ * on up to the cap; "Show more" lifts it by the same step. Every shown tile stays in the DOM, so the arrow keys still
+ * walk all of them.
+ */
+const PACK_PAGE = 240
 /** How many hand-drawn matches show at first (demo 6K): two rows; "Show more" adds `MATCH_PAGE`. */
 const DRAWING_PAGE = 8
 
@@ -494,6 +501,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   const [componentName, setComponentName] = useState('')
   const [shownMatches, setShownMatches] = useState(MATCH_PAGE)
   const [shownDrawings, setShownDrawings] = useState(DRAWING_PAGE)
+  const [shownPack, setShownPack] = useState(PACK_PAGE)
   const [importMenuOpen, setImportMenuOpen] = useState(false)
   const importMenuRef = useRef<HTMLSpanElement>(null)
   // The Components ⋯ menu behaves as a tile's menu does (6B, polish audit 10): its item takes the focus, and a click
@@ -634,6 +642,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   }, [chip])
   // The pack page starts at its top; Back lands where the search was left (YAZ-4361).
   const packOpen = pack !== null
+  useEffect(() => setShownPack(PACK_PAGE), [pack?.prefix, pack?.query])
   useLayoutEffect(() => {
     if (listRef.current) listRef.current.scrollTop = packOpen ? 0 : scrollTops[chip]
   }, [packOpen])
@@ -733,7 +742,8 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [typed, webOn, cursor, isSearching, pageError, chip, packOpen])
+    // `shownPack`: on the pack page the sentinel comes back after "Show more"
+  }, [typed, webOn, cursor, isSearching, pageError, chip, packOpen, shownPack])
 
   // The tile buttons are disabled while one is in flight; these re-check the same fact, because a keyboard
   // activation can land in the frame before React has re-rendered them.
@@ -1230,7 +1240,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
             {packsStatus?.state === 'complete' ? OFFLINE_WITH_PACKS_NOTICE : OFFLINE_NOTICE}
           </div>
         )}
-        {results.length > 0 && grid(results, 'pack')}
+        {results.length > 0 && grid(results.slice(0, shownPack), 'pack')}
         {(waiting || (isSearching && results.length === 0)) && (
           <div className="image-studio__state" role="status">
             Loading the pack…
@@ -1239,7 +1249,12 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
         {!waiting && !isSearching && !offline && cursor === null && results.length === 0 && pageError === null && (
           <div className="image-studio__state">{pack.query.trim() === '' ? 'This pack has no icons to show.' : `No icon in this pack matches “${pack.query.trim()}”`}</div>
         )}
-        {cursor && results.length > 0 && <div className="image-studio__search-sentinel" ref={sentinelRef} aria-hidden="true" />}
+        {cursor && results.length > 0 && results.length < shownPack && <div className="image-studio__search-sentinel" ref={sentinelRef} aria-hidden="true" />}
+        {(results.length > shownPack || (cursor !== null && results.length >= shownPack)) && (
+          <button type="button" className="image-studio__show-all image-studio__pack-more" onClick={() => setShownPack(shownPack + PACK_PAGE)}>
+            Show more
+          </button>
+        )}
         {pageError && cursor && (
           <button type="button" className="image-studio__retry" disabled={isSearching} onClick={() => void runSearch({ append: true, retry: true })}>
             {isSearching ? 'Retrying…' : 'Retry loading icons'}

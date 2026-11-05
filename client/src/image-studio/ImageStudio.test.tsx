@@ -1421,6 +1421,32 @@ describe('More from this pack (YAZ-4361)', () => {
     expect(imageStudioSession.getState()).toMatchObject({ pack: null, cursor: 'MORE', searchedQuery: 'arrow' })
   })
 
+  it('shows 240 tiles of a big pack, then Show more; the infinite scroll goes on up to the cap (YAZ-4366 audit 70)', async () => {
+    const big = Array.from({ length: 300 }, (_, i) => icon(`icon-${i}`, 'tabler'))
+    media.packList.mockResolvedValue([tabler])
+    media.search.mockImplementation(async (req) =>
+      req.filters?.packs[0] === 'tabler'
+        ? req.cursor === null
+          ? { items: big.slice(0, 240), nextCursor: 'P2', pixabayAvailable: false, warnings: [] }
+          : { items: big.slice(240), nextCursor: null, pixabayAvailable: false, warnings: [] }
+        : { items: [icon('arrow-up', 'tabler')], nextCursor: null, pixabayAvailable: false, warnings: [] },
+    )
+    const { host } = await mount()
+    await search(host, 'arrow')
+    await rightClick(host, 'arrow up')
+    await click(byText(host, 'More from this pack'))
+    await settle()
+    const page = () => byLabel(host, 'Pack: Tabler Icons')!
+    expect(tileNames(page())).toHaveLength(240)
+    // At the cap the sentinel is gone, so the scroll asks no next page until Show more
+    expect(page().querySelector('.image-studio__search-sentinel')).toBeNull()
+    await click(byText(host, 'Show more'))
+    expect(page().querySelector('.image-studio__search-sentinel')).not.toBeNull()
+    await act(async () => imageStudioSession.set({ results: big, cursor: null }))
+    expect(tileNames(page())).toHaveLength(300)
+    expect(byText(host, 'Show more')).toBeUndefined()
+  })
+
   it('Pin pack saves the pin in the settings, and a second press takes it off', async () => {
     const { host } = await openTablerPack()
     await click(byText(host, 'Pin pack'))

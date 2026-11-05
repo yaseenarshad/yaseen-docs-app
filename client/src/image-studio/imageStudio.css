@@ -812,6 +812,11 @@
   gap: 8px;
 }
 
+/* The pack page's "Show more" (YAZ-4366 audit 70), under its grid. */
+.image-studio__pack-more {
+  align-self: center;
+}
+
 .image-studio__pack-head {
   align-items: center;
   display: flex;
