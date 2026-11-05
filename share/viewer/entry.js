@@ -9,8 +9,9 @@
 import './assetPath.js'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { Excalidraw, exportToBlob } from '@excalidraw/excalidraw'
+import { DEFAULT_FOLD_ARROW_PREFS, Excalidraw, exportToBlob, restoreElements, takeFoldsAside } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
+import { BOARD_META_KEY, boardFoldArrowsOf } from '../../shared/drawingAssets'
 import { board, loadBoard, note, safeName, save, wireDownload } from './board.js'
 
 const { allowDownload, name } = board
@@ -20,7 +21,12 @@ async function main() {
   const text = await loadBoard('drawing')
   if (text === null) return
   const scene = JSON.parse(text)
-  const elements = (scene.elements ?? []).filter((el) => !el.isDeleted)
+  const live = (scene.elements ?? []).filter((el) => !el.isDeleted)
+  // YAZ-4277 D5, D18: the board's own "Fold arrows", as the app reads it. Off: every folded box opens to all its lines
+  // (the engine's fold switch point), here and in the PNG; the `.excalidraw` download is the file, folds and all.
+  const foldMode = boardFoldArrowsOf(scene[BOARD_META_KEY])
+  const elements = foldMode === 'off' ? takeFoldsAside(restoreElements(live, null)).elements : live
+  const foldArrows = foldMode === null ? undefined : { ...DEFAULT_FOLD_ARROW_PREFS, openArrows: foldMode }
   const files = scene.files ?? {}
   const viewBackgroundColor = scene.appState?.viewBackgroundColor ?? '#ffffff'
 
@@ -57,6 +63,7 @@ async function main() {
       viewModeEnabled: true,
       zenModeEnabled: false,
       gridModeEnabled: false,
+      foldArrows,
       name,
       // Open fitted to the drawing (never past 100%), like the desktop app does.
       onExcalidrawAPI: (api) => fit(api, elements),

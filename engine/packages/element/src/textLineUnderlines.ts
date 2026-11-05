@@ -11,7 +11,6 @@ import {
   getHostLinksVersion,
   getLinkPillWidth,
   getTextLinks,
-  hasHostLinks,
 } from "./textLinks";
 
 import type { TextLinkMatch } from "./textLinks";
@@ -680,10 +679,11 @@ const layOutTextElement = (
 export const STYLED_LINES_MEMO_MAX = 1000;
 
 /**
- * YAZ-3718 D1: one layout for each text box with runs, links or folds (YAZ-4277
- * D3), keyed by its text, runs, font, folds and width. `refreshTextDimensions`, the canvas and the
- * editor overlay ask for the same layout on a keystroke, so only the first one
- * measures. The memo is for the whole window: a box that was deleted, or whose
+ * YAZ-3718 D1: one layout for each text box, keyed by its text, runs, font,
+ * folds (YAZ-4277 D3) and width. `refreshTextDimensions`, the canvas, the
+ * editor overlay and the fold arrows ask for the same layout on a keystroke, so
+ * only the first one measures. YAZ-4435: a plain box (no runs, folds or links)
+ * is kept too, as it is the most common box. The memo is for the whole window: a box that was deleted, or whose
  * board closed, keeps its entry until the memo is full. Then the box changed
  * longest ago goes out (YAZ-4074 6A item 16); it measures again if it comes back.
  */
@@ -709,13 +709,6 @@ const getTextElementLayout = (
   maxWidth: number,
   originalText: string,
 ): { lines: StyledVisualLine[]; text: string | null } => {
-  if (
-    !element.textRuns &&
-    !element.foldedLines?.length &&
-    !hasHostLinks(originalText)
-  ) {
-    return layOutTextElement(element, maxWidth, originalText);
-  }
   const font = getFontString(element);
   const memo = styledLinesMemo.get(element.id);
   // YAZ-4039 D7: a box with links is memoized too; a label change moves the version

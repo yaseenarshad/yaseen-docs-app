@@ -204,6 +204,17 @@ export interface DrawingSurfaceProps {
   foldArrows?: FoldArrowMode
 }
 
+/**
+ * The app's drawing settings, as both hosts take them (YAZ-4277 3A1, YAZ-4436). Every Settings › Drawings row is a
+ * `CanvasPrefs` key, and `Editor` builds this pair once for the tab (`DrawingEditor`) and the note embed's modal
+ * (`DrawingModal`). So a new row reaches both. The keys are required, so a host cannot leave them out; a value may be
+ * absent (the defaults, no writes).
+ */
+export interface DrawingAppSettings {
+  canvasPrefs: DrawingSurfaceProps['canvasPrefs']
+  onCanvasPrefsChange: DrawingSurfaceProps['onCanvasPrefsChange']
+}
+
 /** One arrow key on the canvas panel's edge (YAZ-4157 demo 6C). */
 const PANEL_KEY_STEP = 16
 const clampPanelWidth = (width: number) => Math.round(Math.min(CANVAS_PANEL_MAX_W, Math.max(CANVAS_PANEL_MIN_W, width)))

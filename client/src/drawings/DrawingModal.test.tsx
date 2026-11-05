@@ -24,7 +24,11 @@ import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BROKEN_DRAWING_MESSAGE, DISCARD_PROMPT, DrawingModal } from './DrawingModal'
 import { ALLOW_FOLDER_TITLE, allowFolderBody } from './usePicturesFolderAllow'
-import type { DrawingSurfaceProps } from './ExcalidrawSurface'
+import type { DrawingAppSettings, DrawingSurfaceProps } from './ExcalidrawSurface'
+import { DEFAULT_CANVAS_PREFS, type CanvasPrefs } from '@shared/types'
+
+/** The app's drawing settings when a test sets none (YAZ-4436): the defaults, and no door that writes them. */
+const NO_SETTINGS: DrawingAppSettings = { canvasPrefs: undefined, onCanvasPrefsChange: undefined }
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -118,7 +122,7 @@ async function open(read: 'ok' | 'broken' = 'ok', mtime = 100, linkProps: Partia
   document.body.appendChild(outside)
   root = createRoot(container)
   await act(async () => {
-    root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" feed={feed} onClose={onClose} {...linkProps} />)
+    root?.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" feed={feed} onClose={onClose} {...linkProps} />)
   })
   const overlay = container.querySelector<HTMLElement>('.drawing-modal-overlay')
   if (overlay === null) throw new Error('missing .drawing-modal-overlay')
@@ -206,7 +210,7 @@ describe('read only (YAZ-3076 S28)', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     await act(async () => {
-      root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={onClose} />)
+      root?.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" onClose={onClose} />)
     })
     expect(seam.props?.readOnly).toBe(true)
     expect(label()).toBeNull()
@@ -673,6 +677,20 @@ describe('the engine seam (🔒 one file, YAZ-868 swaps it)', () => {
   })
 })
 
+/** YAZ-4436 (3A1): the Settings › Drawings rows reach the note embed's popup, as they reach a drawing tab. */
+describe('the app drawing settings in the popup', () => {
+  it('hands the canvas the canvas prefs (fold arrows Off, fill and zoom rows, new shapes) and the door that writes them', async () => {
+    const canvasPrefs: CanvasPrefs = { ...DEFAULT_CANVAS_PREFS, foldArrowsOpen: 'off', foldArrowSize: 150, foldArrowThickness: 'thin', foldArrowMinSize: 20, newElementStyle: 'keep', fillSetsTextColor: false, newShapesMatchZoom: false }
+    const onCanvasPrefsChange = vi.fn()
+    await open('ok', 100, { canvasPrefs, onCanvasPrefsChange })
+    expect(seam.props?.canvasPrefs).toBe(canvasPrefs)
+    // a pref the popup's engine moves (a tool lock, the grid) is the app's setting too, as in a tab
+    const moved = { ...canvasPrefs, toolLock: !canvasPrefs.toolLock }
+    seam.props?.onCanvasPrefsChange?.(moved)
+    expect(onCanvasPrefsChange).toHaveBeenCalledWith(moved)
+  })
+})
+
 /** YAZ-4039: the note embed's popup has the page links a drawing tab has (pills, hover, clicks, menu, picker, paste). */
 describe('page links in the popup', () => {
   const linkSource = () => {
@@ -718,7 +736,7 @@ describe('the popup saves through drawing:save (YAZ-3943 1A1)', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    await act(async () => root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={() => undefined} onNotice={onNotice} />))
+    await act(async () => root?.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" onClose={() => undefined} onNotice={onNotice} />))
     snap(1, { old: png('b2xk') })
     drawingSave.mockResolvedValueOnce({ path: PATH, mtime: 200, size: 1, persisted: ['new', 'old'], movedOut: true })
     snap(2, { old: png('b2xk'), new: png('bmV3') })
@@ -735,7 +753,7 @@ describe('the popup saves through drawing:save (YAZ-3943 1A1)', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    await act(async () => root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={() => undefined} />))
+    await act(async () => root?.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" onClose={() => undefined} />))
     snap(1, { pic: png('cGlj') })
     drawingSave.mockRejectedValueOnce(new BridgeRequestError('CONFLICT', 'drawing changed on disk', 555))
     snap(2, { pic: png('cGlj') })
@@ -750,7 +768,7 @@ describe('the popup saves through drawing:save (YAZ-3943 1A1)', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    await act(async () => root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={() => undefined} />))
+    await act(async () => root?.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" onClose={() => undefined} />))
     snap(1, { a: png('YQ=='), b: png('Yg==') })
     drawingSave.mockResolvedValueOnce({ path: PATH, mtime: 200, size: 1, persisted: ['a'], movedOut: true })
     snap(2, { a: png('YQ==') })
@@ -770,7 +788,7 @@ describe('missing pictures in the popup', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    await act(async () => root?.render(<DrawingModal root={ROOT} target={TARGET} theme="light" onClose={() => undefined} onNotice={onNotice} />))
+    await act(async () => root?.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" onClose={() => undefined} onNotice={onNotice} />))
     await act(async () => undefined)
     expect(onNotice).toHaveBeenCalledTimes(1)
     expect(onNotice).toHaveBeenCalledWith('2 pictures of this board are missing', 'error')
@@ -789,7 +807,7 @@ describe('the outside pictures folder in the popup', () => {
       container = document.createElement('div')
       document.body.appendChild(container)
       root = createRoot(container)
-      root.render(<DrawingModal root={ROOT} target={TARGET} theme="light" feed={createDrawingFeed()} onClose={vi.fn()} />)
+      root.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" feed={createDrawingFeed()} onClose={vi.fn()} />)
     })
     await act(async () => undefined)
     expect(container?.querySelector('.confirm__text')?.textContent).toBe(`${ALLOW_FOLDER_TITLE}${allowFolderBody('~/Pictures/Boards')}`)
@@ -805,7 +823,7 @@ describe('the outside pictures folder in the popup', () => {
       container = document.createElement('div')
       document.body.appendChild(container)
       root = createRoot(container)
-      root.render(<DrawingModal root={ROOT} target={TARGET} theme="light" feed={createDrawingFeed()} onClose={vi.fn()} />)
+      root.render(<DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} theme="light" feed={createDrawingFeed()} onClose={vi.fn()} />)
     })
     expect(list).not.toHaveBeenCalled()
     expect(container?.querySelector('.confirm__text')).toBeNull()

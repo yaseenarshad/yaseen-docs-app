@@ -54,7 +54,7 @@ import { SaveIndicator } from '../editor/SaveIndicator'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 import type { MutableDrawingFeed } from './drawingFeed'
 import { openDrawing, type LoadedDrawing } from './drawingScene'
-import type { DrawingSnapshot } from './ExcalidrawSurface'
+import type { DrawingAppSettings, DrawingSnapshot } from './ExcalidrawSurface'
 import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing'
 import { missingPicturesNotice, picturesFolderOutside, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
 import type { NoticeKind } from '../lib/notice'
@@ -77,7 +77,7 @@ export const BROKEN_DRAWING_MESSAGE = "This drawing can't be opened: its file is
 export const DISCARD_PROMPT = 'Changes are not saved. Discard them?'
 
 /** Page links in the drawing's text (YAZ-4039): the props the note's own `[[links]]` get, as a drawing tab has them. */
-interface DrawingModalProps extends DrawingLinkProps {
+interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings {
   /** Vault root; with the target it is all `openDrawing` needs. */
   root: string
   /** The embed's raw target, exactly as the note spells it — the resolution rule is the pipe's. */
@@ -96,7 +96,7 @@ interface DrawingModalProps extends DrawingLinkProps {
   onNotice?: (message: string, icon?: NoticeKind) => void
 }
 
-export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside, onNotice, ...linkProps }: DrawingModalProps) {
+export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotkeysAside, onNotice, canvasPrefs, onCanvasPrefsChange, ...linkProps }: DrawingModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   /** The sheet: the link menu, the Edit link box and the `[[` picker go in it, so a click on them is not a click-away. */
   const sheetRef = useRef<HTMLDivElement>(null)
@@ -366,7 +366,7 @@ export function DrawingModal({ root, target, theme, feed, onClose, hotkeys, hotk
         <div className="drawing-modal__canvas">
           {loaded !== null && (
             <Suspense fallback={null}>
-              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} foldArrows={loaded.scene.foldArrows} />
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} foldArrows={loaded.scene.foldArrows} />
             </Suspense>
           )}
         </div>

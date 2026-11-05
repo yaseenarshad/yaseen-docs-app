@@ -11,7 +11,17 @@ import { viewerPage } from '../share/viewer/page.js'
  */
 const exportToBlob = vi.fn(async () => new Blob(['png']))
 const render = vi.fn()
-vi.mock('@excalidraw/excalidraw', () => ({ Excalidraw: 'Excalidraw', exportToBlob }))
+/**
+ * The engine's fold switch point (YAZ-4277 D18), stubbed as the engine's own tests pin it: `restoreElements` passes the
+ * elements on, and `takeFoldsAside` opens each folded box and keeps its folds aside.
+ */
+const restoreElements = vi.fn((elements) => elements)
+const takeFoldsAside = vi.fn((elements) => ({
+  elements: elements.map(({ foldedLines: _folds, ...open }) => open),
+  aside: new Map(elements.filter((el) => el.foldedLines?.length).map((el) => [el.id, { text: el.originalText, lines: el.foldedLines }])),
+}))
+const DEFAULT_FOLD_ARROW_PREFS = { openArrows: 'hover', size: 100, thickness: 'thick', minScreenSize: 14 }
+vi.mock('@excalidraw/excalidraw', () => ({ Excalidraw: 'Excalidraw', exportToBlob, restoreElements, takeFoldsAside, DEFAULT_FOLD_ARROW_PREFS }))
 vi.mock('@excalidraw/excalidraw/index.css', () => ({}))
 vi.mock('react-dom/client', () => ({ createRoot: () => ({ render }) }))
 
@@ -25,6 +35,7 @@ beforeEach(() => {
   vi.resetModules()
   render.mockClear()
   exportToBlob.mockClear()
+  takeFoldsAside.mockClear()
   saved = []
   fetches = []
   URL.createObjectURL = () => 'blob:board'
@@ -117,5 +128,44 @@ describe('the shared drawing viewer', () => {
     } finally {
       process.off('unhandledRejection', rejected)
     }
+  })
+
+  describe('a board with folds (YAZ-4277 D18)', () => {
+    const LIST = '• A\n    ○ a1\n• B\n    ○ b1'
+    const box = { id: 't', type: 'text', x: 0, y: 0, width: 80, height: 25, text: LIST, originalText: LIST, foldedLines: [2], isDeleted: false }
+
+    it('Off on the board: every line shows and no fold arrow, in the canvas and in the PNG; the folds stay in the file', async () => {
+      const scene = { ...SCENE, elements: [box], yaseendraw: { foldArrows: 'off' } }
+      const { el, rendered } = await open({ scene })
+      await rendered()
+      const { props } = render.mock.calls[0][0]
+      expect(props.foldArrows).toEqual({ ...DEFAULT_FOLD_ARROW_PREFS, openArrows: 'off' })
+      expect(takeFoldsAside).toHaveBeenCalledOnce()
+      expect(props.initialData.elements).toHaveLength(1)
+      expect(props.initialData.elements[0]).not.toHaveProperty('foldedLines')
+      await el('dl-png').onclick()
+      expect(exportToBlob.mock.calls[0][0].elements[0]).not.toHaveProperty('foldedLines')
+      // the download is the shared file itself, folds and all
+      el('dl-excalidraw').click()
+      await vi.waitFor(() => expect(fetches.at(-1)).toBe(`/raw/${ID}?download=1`))
+    })
+
+    it('a board on its own "Always" draws the open arrows always; its folds stay folded', async () => {
+      const { rendered } = await open({ scene: { ...SCENE, elements: [box], yaseendraw: { foldArrows: 'always' } } })
+      await rendered()
+      const { props } = render.mock.calls[0][0]
+      expect(props.foldArrows).toEqual({ ...DEFAULT_FOLD_ARROW_PREFS, openArrows: 'always' })
+      expect(takeFoldsAside).not.toHaveBeenCalled()
+      expect(props.initialData.elements[0].foldedLines).toEqual([2])
+    })
+
+    it('a board with no mode of its own keeps its folds and the engine\'s default arrows', async () => {
+      const { rendered } = await open({ scene: { ...SCENE, elements: [box] } })
+      await rendered()
+      const { props } = render.mock.calls[0][0]
+      expect(props.foldArrows).toBeUndefined()
+      expect(takeFoldsAside).not.toHaveBeenCalled()
+      expect(props.initialData.elements[0].foldedLines).toEqual([2])
+    })
   })
 })
