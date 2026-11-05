@@ -37,6 +37,7 @@ import { clearPreviewMemo, ImageStudio, READ_ONLY_NOTICE, type ImageStudioProps 
 import { imageStudioSession, OFFLINE_NOTICE, OFFLINE_WITH_PACKS_NOTICE, resetImageStudioSession, SEARCH_PAUSE_MS } from './imageStudioSession'
 import type { SmartShapeApi } from './shapes'
 import { resetIconPacks } from './useIconPacks'
+import { TILE_ZOOM_MAX } from './tileHoverZoom'
 
 const media = vi.mocked(api.media)
 const components = vi.mocked(api.components)
@@ -1535,13 +1536,15 @@ describe('hover zoom on a picture tile (YAZ-4447, D34)', () => {
     expect(shown()).toBe(false)
   })
 
-  it('is 3 times the tile, 240 px at most, on the side with more room, inside the window', async () => {
+  it('is 5 times the tile, 440 px at most (demo round 2: "much bigger"), on the side with more room, inside the window', async () => {
     const { tile } = await mountTile()
     await over(tile)
     await wait(400)
     const box = zoom()!
     const [left, top, size] = [parseFloat(box.style.left), parseFloat(box.style.top), parseFloat(box.style.width)]
-    expect(size).toBe(240)
+    // the test tile is 84 px: 5 × 84 = 420, under the 440 px cap
+    expect(size).toBe(420)
+    expect(size).toBeLessThanOrEqual(TILE_ZOOM_MAX)
     expect(left + size).toBeLessThanOrEqual(700) // left of the tile: the room is there
     expect(left).toBeGreaterThanOrEqual(0)
     expect(top).toBeGreaterThanOrEqual(0)
