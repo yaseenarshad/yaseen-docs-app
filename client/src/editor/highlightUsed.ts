@@ -1,6 +1,6 @@
 /**
  * The custom highlight colours the user picks, most used first (YAZ-4348 demo round 2): the highlight panel's
- * "Most used custom colors" row, kept in the setting `highlightCustomColors`, which travels with the settings.
+ * "Most used custom colours" row, kept in the setting `highlightCustomColors`, which travels with the settings.
  *
  * `App.tsx` hands the setting in and gives the door that saves it; the panel counts each custom pick here. The
  * count lands here at once, so an open panel shows it before the setting comes back. No editor import: App reads

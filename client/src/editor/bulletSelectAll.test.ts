@@ -7,14 +7,16 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe } from './createCrepe'
+import { createCrepe, type CreateCrepeOptions } from './createCrepe'
+import { openCellNote } from './table/cellNoteCard'
+import { cellPos } from './table/tableTestKit'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-async function mount(markdown: string) {
+async function mount(markdown: string, options: Omit<CreateCrepeOptions, 'root' | 'defaultValue'> = {}) {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown })
+  const crepe = createCrepe({ root, defaultValue: markdown, ...options })
   await crepe.create()
   mounted.push({ crepe, root })
   const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
@@ -41,6 +43,7 @@ function caretIn(view: EditorView, text: string): void {
 }
 
 const selected = (view: EditorView): string => view.state.doc.textBetween(view.state.selection.from, view.state.selection.to, '\n')
+const wholeNote = (view: EditorView): boolean => view.state.selection.from <= 1 && view.state.selection.to === view.state.doc.content.size
 
 afterEach(async () => {
   for (const m of mounted.splice(0)) {
@@ -75,5 +78,50 @@ describe('⌘A on a bullet (YAZ-4348 demo round 2)', () => {
     caretIn(view, 'plain')
     selectAll(view)
     expect(view.state.selection.to).toBe(view.state.doc.content.size)
+  })
+
+  it('an empty bullet has nothing to select: ⌘A is the whole note at once', async () => {
+    const view = await mount('Intro line\n\n- First bullet\n-\n- Third bullet\n')
+    let empty = -1
+    view.state.doc.descendants((node, pos) => {
+      if (empty === -1 && node.type.name === 'list_item' && node.textContent === '') empty = pos + 2
+    })
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, empty)))
+    expect(view.state.selection.$from.parent.content.size).toBe(0)
+    selectAll(view)
+    expect(wholeNote(view)).toBe(true)
+  })
+
+  it('a selection across two bullets is not one line: ⌘A is the whole note at once', async () => {
+    const view = await mount('Intro line\n\n- First bullet\n- Second bullet\n')
+    let first = -1
+    let second = -1
+    view.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === 'First bullet') first = pos + 2
+      if (node.isText && node.text === 'Second bullet') second = pos + 3
+    })
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, first, second)))
+    selectAll(view)
+    expect(wholeNote(view)).toBe(true)
+  })
+
+  it('a bullet in a table cell keeps the cell’s ⌘A (priority 90 over 80): the cell first, then the note', async () => {
+    const view = await mount('| Day | Plan |\n| --- | --- |\n| Tuesday | <ul><li>Museum</li><li>Park</li></ul> |\n')
+    caretIn(view, 'Park')
+    expect(view.state.selection.$from.node(-1).type.name).toBe('list_item')
+    selectAll(view)
+    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to, '|')).toBe('Museum|Park')
+    selectAll(view)
+    expect(wholeNote(view)).toBe(true)
+  })
+
+  it('a bullet in an open cell note keeps the card’s ⌘A: the whole cell note, not the bullet', async () => {
+    const note = ['| Day | Plan |', '| --- | --- |', '| Monday | Flights[^cell-1] |', '', '[^cell-1]: Book the window seat.', '', '    * bullet a', '    * bullet b', ''].join('\n')
+    const view = await mount(note, { zoom: { title: () => 'Notes', onZoom: () => {} } })
+    openCellNote(view, cellPos(view, 1, 1))
+    caretIn(view, 'bullet a')
+    expect(view.state.selection.$from.node(-1).type.name).toBe('list_item')
+    selectAll(view)
+    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to, '|')).toBe('Book the window seat.|bullet a|bullet b')
   })
 })

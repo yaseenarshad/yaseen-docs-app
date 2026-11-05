@@ -4,6 +4,7 @@ import { DOMSerializer, Fragment, type Node as ProseNode, Slice } from '@milkdow
 import { type Command, type EditorState, Plugin, PluginKey, type Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import { hexOfRgb, rgbOf } from '../lib/colour'
 import { APP_CLIPBOARD } from './clipboardNumbers'
 import { clipboardPlainText } from './clipboardPlainText'
 import { eachVisibleTextblock } from './lineSelection'
@@ -162,8 +163,7 @@ const COPY_TEXT: Record<TableColor, string> = {
   blue: '#1d5fbf', purple: '#7b3fbf', pink: '#c2185b', grey: '#6b6b6b', brown: '#8b5a2b',
 }
 /** `#rrggbb` at its wash (`FILL_WASH`, table.css `--table-fill-wash`) over white. */
-const washOverWhite = (hex: string): string =>
-  `#${[1, 3, 5].map((i) => Math.round(255 - (255 - parseInt(hex.slice(i, i + 2), 16)) * FILL_WASH).toString(16).padStart(2, '0')).join('')}`
+const washOverWhite = (hex: string): string => hexOfRgb(rgbOf(hex).map((c) => 255 - (255 - c) * FILL_WASH))
 const copyFill = (fill: string | null) => (fill === null ? undefined : fill.startsWith('#') ? washOverWhite(fill) : COPY_FILL[fill as TableColor])
 const copyText = (color: string | null) => (color === null ? undefined : color.startsWith('#') ? color : COPY_TEXT[color as TableColor])
 

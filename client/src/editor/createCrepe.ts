@@ -276,7 +276,7 @@ import {
   restoreItemLine,
 } from './listItemRoundTrip'
 import { toggleUnderline, underline, underlineSchema } from './marks/underline'
-import { highlight, highlightColorsIn, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, QUICK_HIGHLIGHTS, type HighlightColor } from './marks/highlight'
+import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, QUICK_HIGHLIGHTS, type HighlightColor } from './marks/highlight'
 import { hasPanelColour, highlightPanel, MORE_KEY, toggleHighlightPanel } from './highlightPanel'
 import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
 import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
@@ -504,7 +504,7 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
   formatting.addItem(MORE_KEY, {
     icon: ownIcon(MORE_KEY),
     label: TOOLBAR_LABELS[MORE_KEY],
-    active: (ctx) => hasPanelColour(highlightColorsIn(viewState(ctx), highlightSchema.type(ctx))),
+    active: (ctx) => hasPanelColour(viewState(ctx), highlightSchema.type(ctx)),
     onRun: (ctx) => toggleHighlightPanel(ctx.get(editorViewCtx)),
   })
   formatting.addItem('underline', {
@@ -608,7 +608,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(slashMenu.inListWatch)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
-  // The toolbar's highlight ▾ colour panel and its system picker's target (YAZ-4348 demo round 2).
+  // The toolbar's highlight ▾ colour panel and its colour box (YAZ-4348 demo round 2, YAZ-4388).
   crepe.editor.use(highlightPanel)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
@@ -685,7 +685,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(cellNoteCardKeymap)
   // ⌘A on a bullet (YAZ-4348 demo round 2): its line first, then the whole note; priority 80, under the cell's 90.
   crepe.editor.use(bulletSelectAllKeymap)
-  // A custom colour pick's target cells (YAZ-3817), kept through edits while the system picker is open.
+  // The table menu's Custom colour… box and its target cells (YAZ-3817, YAZ-4366), kept through edits while it is open.
   crepe.editor.use(customColourPick)
   // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.
   crepe.editor.use(tableFreeze)

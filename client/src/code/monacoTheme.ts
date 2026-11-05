@@ -6,6 +6,7 @@
  * box, the suggest list, the hover and the peek box are Monaco's widgets, so they take these colours too.
  */
 import type { editor } from 'monaco-editor'
+import { toHex } from '../lib/colour'
 
 export type AppTheme = 'light' | 'dark'
 
@@ -14,24 +15,6 @@ export const monacoThemeName = (theme: AppTheme): string => `yaseen-${theme}`
 
 /** An app.css token as a colour the browser resolved; `''` when it has none. */
 export type ReadToken = (name: string) => string
-
-/**
- * `rgb(…)` / `rgba(…)` / `#rgb` / `#rrggbb(aa)` as Monaco's `#rrggbb` or `#rrggbbaa`; `undefined` for
- * anything else (Monaco then keeps its own colour for that key, never a broken one).
- */
-export function toHex(color: string): string | undefined {
-  const c = color.trim()
-  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(c)
-  if (short !== null) return `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}`.toLowerCase()
-  if (/^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(c)) return c.toLowerCase()
-  const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+%?))?\s*\)$/i.exec(c)
-  if (rgb === null) return undefined
-  const byte = (v: number): string => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')
-  const hex = `#${byte(Number(rgb[1]))}${byte(Number(rgb[2]))}${byte(Number(rgb[3]))}`
-  if (rgb[4] === undefined) return hex
-  const alpha = rgb[4].endsWith('%') ? Number(rgb[4].slice(0, -1)) / 100 : Number(rgb[4])
-  return alpha >= 1 ? hex : `${hex}${byte(alpha * 255)}`
-}
 
 /**
  * Reads each token through a probe element's computed `color`, so whatever app.css says (hex,

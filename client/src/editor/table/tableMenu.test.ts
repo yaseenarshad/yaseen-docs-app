@@ -149,16 +149,6 @@ describe('Align ▸, Fill ▸, Text colour ▸ and Sort (YAZ-3820)', () => {
     expect(getMarkdownForSave(crepe)).not.toContain('<!--')
   })
 
-  it('Custom colour… goes to the clicked cell even after an edit above it moved it', async () => {
-    const { view } = await mount(TABLE)
-    row(view, 2, 1, 'table-fill-custom').onSelect()
-    view.dispatch(view.state.tr.insertText('more ', cellPos(view, 0, 0) + 2))
-    const input = document.querySelector<HTMLInputElement>('input.table-colour-input')!
-    input.value = '#00aa55'
-    input.dispatchEvent(new Event('change', { bubbles: true }))
-    expect([1, 2].map((r) => [0, 1].map((c) => view.state.doc.nodeAt(cellPos(view, r, c))!.attrs.fill))).toEqual([[null, null], [null, '#00aa55']])
-  })
-
   it('Text colour ▸ a name, then Default colour', async () => {
     const { crepe, view } = await mount(TABLE)
     const before = getMarkdownForSave(crepe)
@@ -168,19 +158,81 @@ describe('Align ▸, Fill ▸, Text colour ▸ and Sort (YAZ-3820)', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
-  it('Custom colour… opens the system picker; its change sets the clicked cell, one undo step', async () => {
+  /** The table menu's colour box, on the page's body. */
+  const menuBox = () => document.querySelector<HTMLElement>('body > .table-colour-box')
+  /** Type `color` into the box's R G B fields and press Enter: one finished pick. */
+  const pickInBox = (color: string) => {
+    const fields = ['Red', 'Green', 'Blue'].map((name) => menuBox()!.querySelector<HTMLInputElement>(`input[aria-label="${name}"]`)!)
+    const rgb = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16))
+    fields.forEach((field, i) => {
+      field.value = String(rgb[i])
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    fields[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  }
+
+  it('Custom colour… opens the colour box under the clicked cell, never the system picker; each pick sets that cell, one undo step', async () => {
     const { crepe, view } = await mount(TABLE)
     const before = getMarkdownForSave(crepe)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 2, 0) + 3)))
+    const caret = view.state.selection
+    const cell = view.nodeDOM(cellPos(view, 1, 1)) as HTMLElement
+    cell.getBoundingClientRect = () => new DOMRect(100, 30, 100, 30)
     const opened = vi.spyOn(HTMLInputElement.prototype, 'click')
     row(view, 1, 1, 'table-fill-custom').onSelect()
-    expect(opened).toHaveBeenCalledOnce()
+    expect(opened).not.toHaveBeenCalled()
     opened.mockRestore()
-    const input = document.querySelector<HTMLInputElement>('input.table-colour-input')!
-    input.value = '#00aa55'
-    input.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(document.querySelector('input[type="color"]')).toBeNull()
+    expect(menuBox()!.hidden).toBe(false)
+    expect([menuBox()!.style.top, menuBox()!.style.left]).toEqual(['64px', '100px'])
+    pickInBox('#00aa55')
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill B2 #00aa55 -->\n`)
+    // The box stays open for the next pick; the note keeps its own selection.
+    expect(menuBox()!.hidden).toBe(false)
+    expect(view.state.selection.eq(caret)).toBe(true)
+    pickInBox('#112233')
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill B2 #112233 -->\n`)
+    undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill B2 #00aa55 -->\n`)
     undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('Custom colour… goes to the clicked cell even after an edit above it moved it', async () => {
+    const { view } = await mount(TABLE)
+    row(view, 2, 1, 'table-fill-custom').onSelect()
+    view.dispatch(view.state.tr.insertText('more ', cellPos(view, 0, 0) + 2))
+    pickInBox('#00aa55')
+    expect([1, 2].map((r) => [0, 1].map((c) => view.state.doc.nodeAt(cellPos(view, r, c))!.attrs.fill))).toEqual([[null, null], [null, '#00aa55']])
+  })
+
+  it('the box opens on the cells\' own custom colour; Escape and a mousedown outside close it; with its cells gone it goes', async () => {
+    const { view } = await mount(`${TABLE}\n<!-- table: color B2 #1a2b3c -->\n`)
+    row(view, 1, 1, 'table-color-custom').onSelect()
+    const red = menuBox()!.querySelector<HTMLInputElement>('input[aria-label="Red"]')!
+    expect(red.value).toBe(String(0x1a))
+    red.focus()
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    red.dispatchEvent(escape)
+    expect(escape.defaultPrevented).toBe(true)
+    expect(menuBox()!.hidden).toBe(true)
+    expect(view.hasFocus()).toBe(true)
+    row(view, 1, 1, 'table-color-custom').onSelect()
+    menuBox()!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(menuBox()!.hidden).toBe(false)
+    view.dom.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(menuBox()!.hidden).toBe(true)
+    // A pick once closed does nothing.
+    const after = view.state.doc
+    pickInBox('#445566')
+    expect(view.state.doc).toBe(after)
+    row(view, 1, 1, 'table-color-custom').onSelect()
+    let table = -1
+    view.state.doc.forEach((node, pos) => {
+      if (node.type.name === 'table') table = pos
+    })
+    view.dispatch(view.state.tr.delete(table, table + view.state.doc.nodeAt(table)!.nodeSize))
+    expect(menuBox()!.hidden).toBe(true)
   })
 
   const SORT = '| Fruit | Id |\n| --- | --- |\n| pear | 10 |\n|  | 2 |\n| apple | 9 |\n| Pear | 100 |\n| banana |  |\n'

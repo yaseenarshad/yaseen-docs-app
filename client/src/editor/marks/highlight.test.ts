@@ -14,6 +14,9 @@ import type { Crepe } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import appCss from '../../app.css?inline'
+import tableCss from '../table/table.css?inline'
+import { hexOfRgb } from '../../lib/colour'
 import {
   caretIn,
   marksOn,
@@ -28,13 +31,12 @@ import {
 import {
   CUSTOM_WASH,
   HIGHLIGHT_COLORS,
+  HIGHLIGHT_HEX,
   highlightColorsIn,
-  highlightRange,
   highlightSchema,
   rangeHasHighlight,
-  removeHighlightCommand,
+  removeHighlight,
   setHighlightCommand,
-  type CustomHighlight,
   type HighlightColor,
   type HighlightName,
 } from './highlight'
@@ -605,17 +607,6 @@ describe('coloured highlights (YAZ-1480)', () => {
  * `<mark style>` keeps its bytes; the old forms read and write exactly as before.
  */
 describe('custom highlights (YAZ-4348 demo round 2)', () => {
-  /** Run `highlightRange` (the custom pick) over `text` and dispatch it. */
-  function pickOver(crepe: Crepe, text: string, color: CustomHighlight): boolean {
-    return crepe.editor.action((ctx) => {
-      const view = ctx.get(editorViewCtx)
-      const from = posOf(crepe, text)
-      const tr = highlightRange(view.state, highlightSchema.type(ctx), from, from + text.length, color)
-      if (tr !== null) view.dispatch(tr)
-      return tr !== null
-    })
-  }
-
   it('loads `<mark style="background-color: #rrggbb">` as that colour, paints its wash, and saves identical bytes', async () => {
     const src = 'a <mark style="background-color: #ff8800">b</mark> c\n'
     const { crepe, root } = await mount(src)
@@ -663,21 +654,6 @@ describe('custom highlights (YAZ-4348 demo round 2)', () => {
     expect(md(crepe)).toBe(src)
   })
 
-  it('the custom pick: `highlightRange` colours the given text, keeps the selection, and never toggles off', async () => {
-    const { crepe, view } = await mount('hello world\n')
-    selectText(crepe, 'hello')
-    const before = view.state.selection
-    expect(pickOver(crepe, 'world', '#3366ff')).toBe(true)
-    expect(view.state.selection.eq(before)).toBe(true)
-    expect(md(crepe)).toBe('hello <mark style="background-color: #3366ff">world</mark>\n')
-    // A pick means "this colour": the same colour again keeps it, another replaces it.
-    pickOver(crepe, 'world', '#3366ff')
-    expect(md(crepe)).toBe('hello <mark style="background-color: #3366ff">world</mark>\n')
-    pickOver(crepe, 'world', '#00aa00')
-    expect(md(crepe)).toBe('hello <mark style="background-color: #00aa00">world</mark>\n')
-    expect(highlightRuns(crepe)).toBe(1)
-  })
-
   it('a custom colour toggles like a named one through the one command, and lights for its own value only', async () => {
     const { crepe } = await mount('hello <mark style="background-color: #3366ff">world</mark>\n')
     selectText(crepe, 'world')
@@ -690,7 +666,11 @@ describe('custom highlights (YAZ-4348 demo round 2)', () => {
 
   it('Remove highlight takes every colour off the selection, and declines with nothing to remove', async () => {
     const { crepe } = await mount('==a== <mark class="highlight-orange">b</mark> <mark style="background-color: #3366ff">c</mark> d\n')
-    const remove = () => crepe.editor.action((ctx) => ctx.get(commandsCtx).call(removeHighlightCommand.key))
+    const remove = () =>
+      crepe.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx)
+        return removeHighlight(highlightSchema.type(ctx))(view.state, view.dispatch)
+      })
     selectAcross(crepe, 'a', 'd')
     const colours = crepe.editor.action((ctx) => highlightColorsIn(ctx.get(editorViewCtx).state, highlightSchema.type(ctx)))
     expect(new Set(colours)).toEqual(new Set([null, 'orange', '#3366ff']))
@@ -718,5 +698,32 @@ describe('custom highlights (YAZ-4348 demo round 2)', () => {
     paste(again.view, out)
     expect(colorOn(again.crepe, 'y')).toBe('#00ff00')
     expect(md(again.crepe)).toContain('<mark style="background-color: #00ff00">y</mark>')
+  })
+})
+
+/**
+ * Each colour's solid hue (`HIGHLIGHT_HEX`: the panel's Hex code value and where its Shades start) is the `rgb` of its
+ * app.css wash token, and the table's light fills for the same colours are those tokens (YAZ-4366): a CSS change
+ * that moved one would silently move the other.
+ */
+describe('the wash tokens (YAZ-4366)', () => {
+  /** A custom property of `:root` (the light theme). */
+  const rootVar = (css: string, name: string) => {
+    const root = css.slice(css.indexOf(':root'), css.indexOf("[data-theme='dark']"))
+    return new RegExp(`${name}:\\s*([^;]+);`).exec(root)![1].trim()
+  }
+  const token = (name: string) => (name === 'yellow' ? '--mark-bg' : `--mark-bg-${name}`)
+
+  it('each HIGHLIGHT_HEX value is the rgb of its --mark-bg token', () => {
+    for (const [name, hex] of Object.entries(HIGHLIGHT_HEX)) {
+      const rgba = /^rgba\((\d+), (\d+), (\d+), [\d.]+\)$/.exec(rootVar(appCss, token(name)))
+      expect(rgba, name).not.toBeNull()
+      expect(hexOfRgb(rgba!.slice(1, 4).map(Number)), name).toBe(hex)
+    }
+  })
+
+  it('the table\'s light fills of the shared colours are the highlight washes', () => {
+    const shared: Array<[string, string]> = [['yellow', 'yellow'], ['green', 'green'], ['blue', 'blue'], ['pink', 'pink'], ['orange', 'orange'], ['purple', 'purple'], ['red', 'red'], ['grey', 'gray']]
+    for (const [cell, mark] of shared) expect(rootVar(tableCss, `--table-fill-${cell}`), cell).toBe(`var(${token(mark)})`)
   })
 })

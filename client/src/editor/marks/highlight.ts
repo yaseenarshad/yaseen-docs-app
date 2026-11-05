@@ -18,7 +18,7 @@
 import { commandsCtx } from '@milkdown/kit/core'
 import { markRule } from '@milkdown/kit/prose'
 import type { Mark, MarkType } from '@milkdown/kit/prose/model'
-import { TextSelection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
+import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $command, $inputRule, $markSchema, $remark, $useKeymap } from '@milkdown/kit/utils'
 import type { Parent, PhrasingContent } from 'mdast'
 import type { Extension as FromMarkdownExtension } from 'mdast-util-from-markdown'
@@ -27,6 +27,8 @@ import { splice } from 'micromark-util-chunked'
 import { classifyCharacter } from 'micromark-util-classify-character'
 import { resolveAll } from 'micromark-util-resolve-all'
 import type { Event, Extension, Resolver, State, Token, TokenizeContext, Tokenizer } from 'micromark-util-types'
+import { isHighlightHex } from '@shared/types'
+import { rgbOf, solidHex } from '../../lib/colour'
 import { visibleRangeHasMark, visibleRanges } from '../lineSelection'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
 
@@ -41,8 +43,8 @@ export type HighlightName = (typeof HIGHLIGHT_COLORS)[number]
 export type CustomHighlight = `#${string}`
 export type HighlightColor = HighlightName | CustomHighlight | null
 
-/** A custom colour as the mark keeps it: exactly lowercase `#rrggbb`. */
-export const isCustomHighlight = (value: unknown): value is CustomHighlight => typeof value === 'string' && /^#[0-9a-f]{6}$/.test(value)
+/** A custom colour as the mark keeps it: exactly lowercase `#rrggbb` (the setting's own test, `@shared/types`). */
+export const isCustomHighlight: (value: unknown) => value is CustomHighlight = isHighlightHex
 
 /** How strong a custom colour's wash is: the named colours' 0.35–0.4, so text on it stays readable in both themes. */
 export const CUSTOM_WASH = 0.4
@@ -56,16 +58,16 @@ export const HIGHLIGHT_HEX: Record<HighlightName | 'yellow', CustomHighlight> = 
   green: '#50c878',
   blue: '#50a0ff',
   pink: '#ff78b4',
-  orange: '#ff9628',
+  orange: '#ff9632',
   purple: '#a06eff',
-  red: '#ff5050',
+  red: '#ff5a50',
   gray: '#969696',
 }
 
 /** A custom colour's see-through wash, `rgba(r, g, b, 0.4)`. */
 export function customWash(hex: CustomHighlight): string {
-  const n = parseInt(hex.slice(1), 16)
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${CUSTOM_WASH})`
+  const [r, g, b] = rgbOf(hex)
+  return `rgba(${r}, ${g}, ${b}, ${CUSTOM_WASH})`
 }
 
 /** mdast node for a highlight; registered with mdast so remark-stringify's `Handlers` knows the type. */
@@ -227,13 +229,6 @@ export const highlightRemark = $remark('mdapp-highlight', () => function highlig
   return (tree) => wrapHtmlPairs(tree, HIGHLIGHT_PAIRS)
 })
 
-/** `rgb(r, g, b)` / `rgba(…)` as `#rrggbb` (its alpha dropped), else null. */
-function hexOfRgb(value: string): CustomHighlight | null {
-  const match = /^rgba?\(\s*(\d+),\s*(\d+),\s*(\d+)/.exec(value)
-  if (match === null) return null
-  return `#${match.slice(1, 4).map((n) => Math.min(255, Number(n)).toString(16).padStart(2, '0')).join('')}`
-}
-
 /**
  * The element's colour: our own `data-highlight` (a custom colour, from the editor's DOM and the copy-out), a
  * `highlight-<known>` class, or a pasted `<mark style="background-color: …">` as a custom colour; else null (a
@@ -244,7 +239,7 @@ function colorOf(dom: HTMLElement): HighlightColor {
   if (isCustomHighlight(own)) return own
   const named = HIGHLIGHT_COLORS.find((c) => dom.classList.contains(`highlight-${c}`))
   if (named !== undefined) return named
-  return hexOfRgb(dom.style.backgroundColor)
+  return solidHex(dom.style.backgroundColor)
 }
 
 /** A highlight's DOM: a named colour's class; a custom colour's wash inline, with its exact value to read back. */
@@ -337,26 +332,10 @@ export const setHighlightCommand = $command('SetHighlight', (ctx) => (color: Hig
 export const applyHighlight = (type: MarkType, color: HighlightColor): Command => setHighlight(type, color, true)
 
 /**
- * A custom pick (YAZ-4348 demo round 2): the colour goes on `from`–`to`, the text that was selected when the
- * system colour picker opened, never toggled off — picking a colour means "this colour". The same edge and
- * hidden-line rules as a button press. Null when nothing there can take the mark.
- */
-export function highlightRange(state: EditorState, type: MarkType, from: number, to: number, color: CustomHighlight): Transaction | null {
-  const max = state.doc.content.size
-  const at = state.apply(state.tr.setSelection(TextSelection.create(state.doc, Math.min(from, max), Math.min(to, max))))
-  const made: Transaction[] = []
-  if (!setHighlight(type, color, true)(at, (tr) => made.push(tr)) || made.length === 0) return null
-  // Replay the steps on the real state, so the selection the user has now stays where it is.
-  const real = state.tr
-  for (const step of made[0].steps) real.step(step)
-  return real
-}
-
-/**
  * The ▾ panel's None (YAZ-4348 demo round 2): every colour off the visible selection, and off the marks a
  * caret would type with. Declines where there is no highlight to remove.
  */
-export const removeHighlight =(type: MarkType): Command => (state, dispatch) => {
+export const removeHighlight = (type: MarkType): Command => (state, dispatch) => {
   if (state.selection.empty) {
     if (type.isInSet(state.storedMarks ?? state.selection.$from.marks()) === undefined) return false
     dispatch?.(state.tr.removeStoredMark(type))
@@ -368,8 +347,6 @@ export const removeHighlight =(type: MarkType): Command => (state, dispatch) => 
   dispatch?.(tr.scrollIntoView())
   return true
 }
-
-export const removeHighlightCommand = $command('RemoveHighlight', (ctx) => () => removeHighlight(highlightSchema.type(ctx)))
 
 /** Every highlight colour on the visible selection (at a caret: the marks it would type with), in no set order. */
 export function highlightColorsIn(state: EditorState, type: MarkType): HighlightColor[] {
@@ -386,6 +363,24 @@ export function highlightColorsIn(state: EditorState, type: MarkType): Highlight
   return [...found]
 }
 
+/**
+ * Whether a highlight on the visible selection (at a caret: the marks it would type with) has a colour that passes
+ * `test`. The walk stops at the first one: the toolbar's ▾ asks on each update, also after ⌘A on a long note.
+ */
+export function someHighlightColor(state: EditorState, type: MarkType, test: (color: HighlightColor) => boolean): boolean {
+  const hit = (marks: readonly Mark[]) => marks.some((mark) => mark.type === type && test((mark.attrs.color ?? null) as HighlightColor))
+  if (state.selection.empty) return hit(state.storedMarks ?? state.selection.$from.marks())
+  let found = false
+  for (const { from, to } of visibleRanges(state)) {
+    state.doc.nodesBetween(from, to, (node) => {
+      if (!found && node.isText) found = hit(node.marks)
+      return !found
+    })
+    if (found) return true
+  }
+  return false
+}
+
 /** A `$useKeymap` (not `$shortcut`) so Crepe's `keymapRef` can label the yellow swatch from it. Priority above Crepe's 50, like underline.ts. */
 export const highlightKeymap = $useKeymap('highlightKeymap', {
   ToggleHighlight: {
@@ -399,4 +394,4 @@ export const highlightKeymap = $useKeymap('highlightKeymap', {
 export const highlightInputRule = $inputRule((ctx) => markRule(/(?<![\w=])==(\S(?:[^=]*\S)?)==$/, highlightSchema.type(ctx)))
 
 /** Register with `editor.use(highlight)`. */
-export const highlight = [highlightRemark, highlightSchema, setHighlightCommand, removeHighlightCommand, highlightKeymap, highlightInputRule].flat()
+export const highlight = [highlightRemark, highlightSchema, setHighlightCommand, highlightKeymap, highlightInputRule].flat()

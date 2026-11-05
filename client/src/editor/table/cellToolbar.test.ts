@@ -9,6 +9,7 @@ import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import { hexOfRgb, rgbOf } from '../../lib/colour'
 import { getMarkdownForSave } from '../createCrepe'
 import { TABLE_HANDLE_MENU } from './tableMenu'
 import { cellPos, mountNote as mount, unmountAll } from './tableTestKit'
@@ -104,8 +105,25 @@ describe('when the toolbar shows', () => {
 })
 
 const NAMES = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey', 'brown']
-/** The custom colour input: what the system picker writes into (one per page, made on the first pick). */
-const customInput = () => document.querySelector<HTMLInputElement>('input.table-colour-input')!
+/** The colour box in the palette of `arrow` (made on its first Custom colour…), or null. */
+const boxOf = (view: EditorView, arrow: string) => paletteOf(view, arrow).querySelector<HTMLElement>('.colour-box')
+/** Open the palette of `arrow` and click its Custom colour…: the palette stays open, with the box under the item. */
+function openCustom(view: EditorView, arrow: string) {
+  if (!isOpen(view, arrow)) button(view, arrow).click()
+  paletteOf(view, arrow).querySelector<HTMLButtonElement>('button[aria-label="Custom colour…"]')!.click()
+}
+const fields = (box: HTMLElement) => ['Red', 'Green', 'Blue'].map((name) => box.querySelector<HTMLInputElement>(`input[aria-label="${name}"]`)!)
+/** Type `color` into the box's R G B fields, and (by default) press Enter in the last: one finished pick. */
+function pickInBox(box: HTMLElement, color: string, enter = true) {
+  const rgb = rgbOf(color)
+  fields(box).forEach((field, i) => {
+    field.value = String(rgb[i])
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  if (enter) fields(box)[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+}
+/** The colour the box stands on, from its R G B fields. */
+const boxColour = (box: HTMLElement) => hexOfRgb(fields(box).map((f) => Number(f.value)))
 
 describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
   it('three fixed quick swatches each, in their colours; each click is one undo step', async () => {
@@ -172,25 +190,31 @@ describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
     expect(getMarkdownForSave(crepe)).toContain('color A2:B3 #ff8800')
   })
 
-  it('Custom colour… opens the system picker; its change saves `#rrggbb`, in one undo step, and reloads', async () => {
+  it('Custom colour… opens the colour box in the palette, under the item, never the system picker; each pick is one undo step and reloads', async () => {
     const { crepe, view } = await mount(TABLE)
     const before = getMarkdownForSave(crepe)
     await select(view, [1, 0], [2, 1])
     const opened = vi.spyOn(HTMLInputElement.prototype, 'click')
-    pick(view, 'Fill colours', 'Custom colour…')
-    expect(opened).toHaveBeenCalledOnce()
+    openCustom(view, 'Fill colours')
+    expect(opened).not.toHaveBeenCalled()
     opened.mockRestore()
-    const input = customInput()
-    expect(isOpen(view, 'Fill colours')).toBe(false)
-    // The picker's live `input` events change nothing; its `change` is the pick.
-    input.value = '#FF8800'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(document.querySelector('input[type="color"]')).toBeNull()
+    const box = boxOf(view, 'Fill colours')!
+    expect(box.hidden).toBe(false)
+    expect(box.previousElementSibling!.getAttribute('aria-label')).toBe('Custom colour…')
+    expect(box.previousElementSibling!.getAttribute('aria-expanded')).toBe('true')
+    expect(isOpen(view, 'Fill colours')).toBe(true)
+    // Typing previews in the box only; Enter is the pick.
+    pickInBox(box, '#ff8800', false)
     expect(getMarkdownForSave(crepe)).toBe(before)
-    input.dispatchEvent(new Event('change', { bubbles: true }))
-    pick(view, 'Text colours', 'Custom colour…')
-    const text = customInput()
-    text.value = '#1a2b3c'
-    text.dispatchEvent(new Event('change', { bubbles: true }))
+    pickInBox(box, '#ff8800')
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #ff8800 -->\n`)
+    // The box stays open for the next pick, on the same cells, still selected.
+    expect(box.hidden).toBe(false)
+    expect(view.state.selection).toBeInstanceOf(CellSelection)
+    openCustom(view, 'Text colours')
+    expect(isOpen(view, 'Fill colours')).toBe(false)
+    pickInBox(boxOf(view, 'Text colours')!, '#1a2b3c')
     const saved = getMarkdownForSave(crepe)
     expect(saved).toBe(`${before}\n<!-- table: fill A2:B3 #ff8800, color A2:B3 #1a2b3c -->\n`)
     const again = await mount(saved)
@@ -203,70 +227,95 @@ describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
-  /** Open Custom colour… of `arrow` on the selected cells, and pick `color` in the system picker. */
-  function pickCustom(view: EditorView, arrow: string, color: string) {
-    pick(view, arrow, 'Custom colour…')
-    customInput().value = color
-    customInput().dispatchEvent(new Event('change', { bubbles: true }))
-  }
+  it('a drag in the box\'s square previews in the box only; its release is one pick, one undo step', async () => {
+    const { crepe, view } = await mount(TABLE)
+    const before = getMarkdownForSave(crepe)
+    await select(view, [1, 0], [2, 1])
+    openCustom(view, 'Fill colours')
+    const box = boxOf(view, 'Fill colours')!
+    const square = box.querySelector<HTMLElement>('[aria-label="Saturation and brightness"]')!
+    square.getBoundingClientRect = () => new DOMRect(0, 0, 100, 100)
+    const at = (type: string, x: number, y: number, target: EventTarget) =>
+      target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }))
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    square.dispatchEvent(down)
+    // The selection and the focus stay in the note.
+    expect(down.defaultPrevented).toBe(true)
+    at('pointerdown', 50, 50, square)
+    at('pointermove', 80, 20, document)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+    // The release at the square's top right: full saturation and brightness, on the hue it stood on (red).
+    at('pointerup', 100, 0, document)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #ff0000 -->\n`)
+    expect(view.state.selection).toBeInstanceOf(CellSelection)
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
 
-  it('the picker opens on the cells\' own custom colour, else on black, so the same colour picked again still applies', async () => {
+  it('the box opens on the cells\' own custom colour, else on black, and the same colour picked for other cells applies', async () => {
     const { view } = await mount(TABLE)
     await select(view, [1, 0], [2, 1])
-    pick(view, 'Fill colours', 'Custom colour…')
-    expect(customInput().value).toBe('#000000')
-    customInput().value = '#ff8800'
-    customInput().dispatchEvent(new Event('change', { bubbles: true }))
+    openCustom(view, 'Fill colours')
+    expect(boxColour(boxOf(view, 'Fill colours')!)).toBe('#000000')
+    pickInBox(boxOf(view, 'Fill colours')!, '#ff8800')
+    button(view, 'Fill colours').click()
     await select(view, [1, 0], [1, 1])
-    pick(view, 'Fill colours', 'Custom colour…')
-    expect(customInput().value).toBe('#ff8800')
-    // Other cells: the picker starts on black again, so the same pick is a change and applies.
+    openCustom(view, 'Fill colours')
+    expect(boxColour(boxOf(view, 'Fill colours')!)).toBe('#ff8800')
+    button(view, 'Fill colours').click()
     await select(view, [0, 0], [0, 1])
-    pickCustom(view, 'Fill colours', '#ff8800')
+    openCustom(view, 'Fill colours')
+    expect(boxColour(boxOf(view, 'Fill colours')!)).toBe('#000000')
+    pickInBox(boxOf(view, 'Fill colours')!, '#ff8800')
     expect([cellAttr(view, 0, 0, 'fill'), cellAttr(view, 0, 1, 'fill')]).toEqual(['#ff8800', '#ff8800'])
   })
 
-  it('a pick goes to the cells chosen when the picker opened, through later edits and a new selection', async () => {
+  it('Escape closes the box first, then the palette; the item again closes the box; the cells stay selected', async () => {
     const { view } = await mount(TABLE)
-    await select(view, [1, 0], [1, 1])
-    pick(view, 'Text colours', 'Custom colour…')
-    // While the system picker is open: an edit above the cells moves them, and the user selects other cells.
-    view.dispatch(view.state.tr.insertText('more ', cellPos(view, 0, 0) + 2))
-    await select(view, [2, 0], [2, 1])
-    customInput().value = '#1a2b3c'
-    customInput().dispatchEvent(new Event('change', { bubbles: true }))
-    expect([1, 2].map((r) => [0, 1].map((c) => cellAttr(view, r, c, 'color')))).toEqual([['#1a2b3c', '#1a2b3c'], [null, null]])
-    // The pick is spent: a second change applies nothing.
-    const after = view.state.doc
-    customInput().value = '#445566'
-    customInput().dispatchEvent(new Event('change', { bubbles: true }))
-    expect(view.state.doc).toBe(after)
+    await select(view, [1, 0], [2, 1])
+    openCustom(view, 'Fill colours')
+    const box = boxOf(view, 'Fill colours')!
+    // Escape from a box field: the box closes, the focus goes back to the note, the palette stays.
+    const red = box.querySelector<HTMLInputElement>('input[aria-label="Red"]')!
+    red.focus()
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    red.dispatchEvent(escape)
+    expect(escape.defaultPrevented).toBe(true)
+    expect(box.hidden).toBe(true)
+    expect(isOpen(view, 'Fill colours')).toBe(true)
+    expect(view.hasFocus()).toBe(true)
+    view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(isOpen(view, 'Fill colours')).toBe(false)
+    expect(view.state.selection).toBeInstanceOf(CellSelection)
+    // The item toggles the box; closing the palette closes it too.
+    openCustom(view, 'Fill colours')
+    expect(box.hidden).toBe(false)
+    paletteOf(view, 'Fill colours').querySelector<HTMLButtonElement>('button[aria-label="Custom colour…"]')!.click()
+    expect(box.hidden).toBe(true)
+    openCustom(view, 'Fill colours')
+    button(view, 'Fill colours').click()
+    expect(box.hidden).toBe(true)
   })
 
-  it('a pick does nothing when its cells are gone or the note is closed, with no error; a removed input comes back', async () => {
+  it('an edit while the box is open moves the cells and their selection: the pick lands on them', async () => {
+    const { view } = await mount(TABLE)
+    await select(view, [1, 0], [1, 1])
+    openCustom(view, 'Text colours')
+    view.dispatch(view.state.tr.insertText('more ', cellPos(view, 0, 0) + 2))
+    pickInBox(boxOf(view, 'Text colours')!, '#1a2b3c')
+    expect([1, 2].map((r) => [0, 1].map((c) => cellAttr(view, r, c, 'color')))).toEqual([['#1a2b3c', '#1a2b3c'], [null, null]])
+  })
+
+  it('a pick after ⌘W does nothing, with no error', async () => {
     const errors: unknown[] = []
     const onError = (e: ErrorEvent) => errors.push(e.error)
     window.addEventListener('error', onError)
-    const { view } = await mount(`para\n\n${TABLE}`)
+    const { view } = await mount(TABLE)
     await select(view, [1, 0], [1, 1])
-    pick(view, 'Fill colours', 'Custom colour…')
-    let table = -1
-    view.state.doc.forEach((node, pos) => { if (node.type.name === 'table') table = pos })
-    view.dispatch(view.state.tr.delete(table, table + view.state.doc.nodeAt(table)!.nodeSize))
-    const gone = view.state.doc
-    customInput().value = '#ff8800'
-    customInput().dispatchEvent(new Event('change', { bubbles: true }))
-    expect(view.state.doc).toBe(gone)
-    // The input left the page: the next open puts it back.
-    customInput().remove()
-    const other = await mount(TABLE)
-    await select(other.view, [1, 0], [1, 1])
-    pick(other.view, 'Fill colours', 'Custom colour…')
-    expect(customInput().isConnected).toBe(true)
-    // ⌘W while the picker is open: the view is destroyed, and the pick is dropped.
-    other.view.destroy()
-    customInput().value = '#ff8800'
-    customInput().dispatchEvent(new Event('change', { bubbles: true }))
+    openCustom(view, 'Fill colours')
+    const box = boxOf(view, 'Fill colours')!
+    view.destroy()
+    pickInBox(box, '#ff8800')
     window.removeEventListener('error', onError)
     expect(errors).toEqual([])
   })
