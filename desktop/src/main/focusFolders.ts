@@ -19,9 +19,15 @@ import { macId } from './vaultIndex/mint'
  * folder winning, and a deleted folder stays as a tombstone (`deleted`) so an older copy cannot bring it back.
  */
 
-const PREFIX: Record<ListScope, string> = { vault: 'focus-folders', workspace: 'focus-folders-workspace' }
-const FILE_RE: Record<ListScope, RegExp> = { vault: new RegExp(`^${PREFIX.vault}\\.[0-9a-z]{12}\\.json$`), workspace: new RegExp(`^${PREFIX.workspace}\\.[0-9a-z]{12}\\.json$`) }
-export const foldersFile = (mac: string, scope: ListScope): string => `${PREFIX[scope]}.${mac}.json`
+/** Whose folders: the Focus tab's, or the Favorites tab's — the same rules, files of their own (YAZ-4460 demo). */
+export type FolderKind = 'focus' | 'favorites'
+const KINDS: readonly FolderKind[] = ['focus', 'favorites']
+const PREFIX: Record<FolderKind, Record<ListScope, string>> = {
+  focus: { vault: 'focus-folders', workspace: 'focus-folders-workspace' },
+  favorites: { vault: 'favorite-folders', workspace: 'favorite-folders-workspace' },
+}
+const fileRe = (kind: FolderKind, scope: ListScope): RegExp => new RegExp(`^${PREFIX[kind][scope]}\\.[0-9a-z]{12}\\.json$`)
+export const foldersFile = (mac: string, scope: ListScope, kind: FolderKind = 'focus'): string => `${PREFIX[kind][scope]}.${mac}.json`
 /** A read looks at this many files of a scope at most, as `focus.ts`'s MAX_FOCUS_FILES. */
 const MAX_FILES = 64
 /** A tombstone older than this leaves the file: by then every copy a sync could still bring is newer. */
@@ -44,14 +50,14 @@ interface Held {
 }
 
 /** The newest valid file of `scope`, or null when there is none. Never an error for another Mac's bad file. */
-async function readNewest(root: string, scope: ListScope): Promise<Held | null> {
+async function readNewest(root: string, scope: ListScope, kind: FolderKind): Promise<Held | null> {
   const dir = path.join(root, VAULT_CONFIG_DIR)
   const names = await readdir(dir).catch((err: unknown) => {
     const code = (err as NodeJS.ErrnoException).code
     if (code === 'ENOENT' || code === 'ENOTDIR') return [] as string[]
     throw toBridgeFailure(err, dir)
   })
-  const files = names.filter((name) => FILE_RE[scope].test(name)).sort().slice(0, MAX_FILES)
+  const files = names.filter((name) => fileRe(kind, scope).test(name)).sort().slice(0, MAX_FILES)
   const reads = await Promise.all(files.map((name) => readConfigDetailed(root, name).catch(() => undefined)))
   let newest: Held | null = null
   for (const res of reads) {
@@ -67,30 +73,30 @@ async function readNewest(root: string, scope: ListScope): Promise<Held | null> 
 
 const chained = createRootChain()
 
-async function save(root: string, scope: ListScope, folders: FocusFolder[], held: Held | null): Promise<void> {
+async function save(root: string, scope: ListScope, kind: FolderKind, folders: FocusFolder[], held: Held | null): Promise<void> {
   const now = Date.now()
   const kept = clean(folders.filter((f) => !f.deleted || now - f.at < TOMBSTONE_MS))
   if (held !== null && JSON.stringify(kept) === JSON.stringify(held.folders)) return
   const value: FocusFoldersConfig = { version: 1, at: new Date(Math.max(now, (held?.at ?? 0) + 1)).toISOString(), folders: kept }
-  await writeConfig(root, foldersFile(await macId(root), scope), value)
+  await writeConfig(root, foldersFile(await macId(root), scope, kind), value)
 }
 
 /** The vault's folders of `scope` as stored, tombstones too; no file → `[]`. Never creates anything. */
-export async function getFocusFolders(root: string, scope: ListScope): Promise<FocusFolder[]> {
-  return (await readNewest(requireAbsPath(root, 'root'), scope))?.folders ?? []
+export async function getFocusFolders(root: string, scope: ListScope, kind: FolderKind = 'focus'): Promise<FocusFolder[]> {
+  return (await readNewest(requireAbsPath(root, 'root'), scope, kind))?.folders ?? []
 }
 
 /** Replace the vault's folders of `scope`: this Mac's file only, and nothing when they did not change. */
-export async function setFocusFolders(root: string, scope: ListScope, folders: readonly unknown[]): Promise<void> {
+export async function setFocusFolders(root: string, scope: ListScope, folders: readonly unknown[], kind: FolderKind = 'focus'): Promise<void> {
   const r = requireAbsPath(root, 'root')
-  await chained(r, async () => save(r, scope, clean(folders), await readNewest(r, scope)))
+  await chained(r, async () => save(r, scope, kind, clean(folders), await readNewest(r, scope, kind)))
 }
 
 /** Fires after any change to a focus folders file of the vault, with its scope. Returns an unsubscribe. */
-export function subscribeFocusFolders(root: string, listener: (change: { root: string; scope: ListScope }) => void): () => void {
+export function subscribeFocusFolders(root: string, listener: (change: { root: string; scope: ListScope }) => void, kind: FolderKind = 'focus'): () => void {
   const r = requireAbsPath(root, 'root')
   return subscribeConfig(r, (c) => {
-    const scope = (['vault', 'workspace'] as const).find((s) => FILE_RE[s].test(c.name))
+    const scope = (['vault', 'workspace'] as const).find((s) => fileRe(kind, s).test(c.name))
     if (scope !== undefined) listener({ root: r, scope })
   })
 }
@@ -103,8 +109,8 @@ export function subscribeFocusFolders(root: string, listener: (change: { root: s
 export function repairFolders(root: string, map: (abs: string) => string | null): Promise<void> {
   const vault = path.basename(root)
   return chained(root, async () => {
-    for (const scope of ['vault', 'workspace'] as const) {
-      const held = await readNewest(root, scope)
+    for (const [kind, scope] of KINDS.flatMap((k) => (['vault', 'workspace'] as const).map((s) => [k, s] as const))) {
+      const held = await readNewest(root, scope, kind)
       if (held === null) continue
       let changed = false
       const now = Date.now()
@@ -122,7 +128,7 @@ export function repairFolders(root: string, map: (abs: string) => string | null)
         changed = true
         return { ...folder, items, at: now }
       })
-      if (changed) await save(root, scope, next, held)
+      if (changed) await save(root, scope, kind, next, held)
     }
   })
 }

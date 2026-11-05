@@ -645,6 +645,12 @@ export const CONTRACT = {
     /** Fired in every window after any change to a focus folders file of a vault; filter by `root` and `scope`. */
     onChanged: push<{ root: string; scope: ListScope }>('focusFolders:changed'),
   },
+  /** A vault's favorite folders (YAZ-4460 demo), by the focus folders' rules: `.yaseendocs/favorite-folders[-workspace].<mac id>.json`. */
+  favoriteFolders: {
+    get: invoke<[root: string, scope: ListScope], FocusFolder[]>('favoriteFolders:get', 2),
+    set: invoke<[root: string, scope: ListScope, folders: readonly FocusFolder[]], void>('favoriteFolders:set', 3),
+    onChanged: push<{ root: string; scope: ListScope }>('favoriteFolders:changed'),
+  },
   /** Per-vault GitHub sync, off by default (YAZ-1081); every call answers the same status the push carries. */
   github: {
     /** This root's current status, from the manager's last broadcast; for a root whose sync is OFF, a read-only inspection (remote + branch). Never a failure. */

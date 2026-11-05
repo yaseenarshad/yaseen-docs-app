@@ -9,6 +9,15 @@ import { ContextMenu } from './ContextMenu'
 /** Two clicks on a name inside this gap rename it, as on a session (YAZ-3147, YAZ-4460 F3). */
 const RENAME_CLICK_GAP_MS = 300
 
+/** A ghost, one stroke in the text color (YAZ-4460 demo): it reads in light and dark as the tree's other glyphs do. */
+const GhostIcon = () => (
+  <svg className="tree__ghost-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" aria-hidden>
+    <path d="M3 14V7a5 5 0 0 1 10 0v7l-1.7-1.3L9.6 14 8 12.7 6.4 14l-1.7-1.3L3 14Z" />
+    <circle cx="6.2" cy="7.2" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="9.8" cy="7.2" r="0.9" fill="currentColor" stroke="none" />
+  </svg>
+)
+
 /** The stack glyph of a focus folder (YAZ-4460 F5): never a real folder's icon, so a drop on it never reads as a move on disk. */
 const StackIcon = () => (
   <svg className="focus-folder__icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden>
@@ -19,6 +28,8 @@ const StackIcon = () => (
 )
 
 interface FocusFolderListProps {
+  /** Whose folders: the Focus tab's, or the Favorites tab's (YAZ-4460 demo) — the words differ, nothing else. */
+  kind: 'focus' | 'favorites'
   folders: readonly FocusFolder[]
   roots: readonly string[]
   /** The rows of one folder's items that this window shows: the Focus tab's Tree, with the drag of the tab. */
@@ -43,7 +54,7 @@ interface FocusFolderListProps {
  * to add their vault. A drop on a folder row puts the dragged item in it (`data-focus-folder`, read by the drag).
  * The folds live while the tab shows, as the Sessions tab's do.
  */
-export function FocusFolderList({ folders, roots, renderItems, editing, onEdit, onRename, onDelete, onGhost, onHideOthers, only }: FocusFolderListProps) {
+export function FocusFolderList({ kind, folders, roots, renderItems, editing, onEdit, onRename, onDelete, onGhost, onHideOthers, only }: FocusFolderListProps) {
   const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set())
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   // "Delete focus folder" asks first (YAZ-4460 demo): two clicks, as "Delete session".
@@ -65,7 +76,7 @@ export function FocusFolderList({ folders, roots, renderItems, editing, onEdit, 
   }
   return (
     <>
-      <ul className="tree focus-folders" aria-label="Focus folders">
+      <ul className="tree focus-folders" aria-label={kind === 'focus' ? 'Focus folders' : 'Favorite folders'}>
         {folders.map((folder) => {
           const open = folder.id === only || !shut.has(folder.id)
           const resolved = folder.items.map((item) => ({ item, at: resolveItem(item, roots) }))
@@ -75,7 +86,7 @@ export function FocusFolderList({ folders, roots, renderItems, editing, onEdit, 
             <li key={folder.id}>
               {editing === folder.id ? (
                 <div className="create-inline" style={{ paddingLeft: 8 }}>
-                  <TextField className="create-inline__input" value={folder.name} aria-label="Focus folder name" autoFocus selectOnMount maxLength={MAX_VAULT_NAME} normalize={cleanVaultName} onCommit={(next) => onRename(folder.id, next)} onDone={() => onEdit(null)} />
+                  <TextField className="create-inline__input" value={folder.name} aria-label={kind === 'focus' ? 'Focus folder name' : 'Favorite folder name'} autoFocus selectOnMount maxLength={MAX_VAULT_NAME} normalize={cleanVaultName} onCommit={(next) => onRename(folder.id, next)} onDone={() => onEdit(null)} />
                 </div>
               ) : (
                 <button type="button" className="tree__row focus-folder" data-focus-folder={folder.id} aria-expanded={open} onClick={(e) => click(e, folder.id)} onContextMenu={(e) => {
@@ -99,10 +110,8 @@ export function FocusFolderList({ folders, roots, renderItems, editing, onEdit, 
                         <li key={`${item.vault}/${item.path}`}>
                           <button type="button" className="tree__row tree__row--ghost" style={{ paddingLeft: 26 }} title={`In "${at.ghost}", which is not in this window`} onClick={() => onGhost(at.ghost, item.path)} onContextMenu={(e) => (e.preventDefault(), e.stopPropagation())}>
                             <span className="tree__label">
-                              {/* A ghost reads as one at a glance (YAZ-4460 demo): 👻 where its file icon would be. */}
-                              <span className="tree__ghost-icon" aria-hidden>
-                                👻
-                              </span>
+                              {/* A ghost reads as one at a glance (YAZ-4460 demo): a ghost glyph where its file icon would be, in the row's color. */}
+                              <GhostIcon />
                               {item.path.slice(item.path.lastIndexOf('/') + 1).replace(/\.md$/, '')}
                             </span>
                             <span className="tree__vault">{at.ghost}</span>
@@ -111,7 +120,11 @@ export function FocusFolderList({ folders, roots, renderItems, editing, onEdit, 
                       ))}
                     </ul>
                   )}
-                  {folder.items.length === 0 && <p className="sidebar__msg focus-folder__empty">Empty. Drag items here, or right-click a file → Add to focus ▸ {folder.name}.</p>}
+                  {folder.items.length === 0 && (
+                    <p className="sidebar__msg focus-folder__empty">
+                      Empty. Drag items here, or right-click a file → {kind === 'focus' ? 'Add to focus' : 'Add to favorites'} ▸ {folder.name}.
+                    </p>
+                  )}
                 </div>
               )}
             </li>
@@ -123,7 +136,7 @@ export function FocusFolderList({ folders, roots, renderItems, editing, onEdit, 
           <ContextMenu
             x={menu.x}
             y={menu.y}
-            sections={[[{ id: 'focus-folder-rename', label: 'Rename', onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], [{ id: 'focus-folder-delete', label: 'Delete focus folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}
+            sections={[[{ id: 'focus-folder-rename', label: 'Rename', onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], [{ id: 'focus-folder-delete', label: kind === 'focus' ? 'Delete focus folder' : 'Delete favorite folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}
             onClose={() => setMenu(null)}
           />,
           document.body,
@@ -136,10 +149,12 @@ export function FocusFolderList({ folders, roots, renderItems, editing, onEdit, 
               const away = deleting.items.filter((item) => 'ghost' in resolveItem(item, roots)).length
               return (
                 <>
-                  <strong>Delete the focus folder &quot;{deleting.name}&quot;?</strong>
+                  <strong>
+                    Delete the {kind === 'focus' ? 'focus' : 'favorite'} folder &quot;{deleting.name}&quot;?
+                  </strong>
                   <br />
-                  {deleting.items.length === 0 ? 'It is empty.' : 'Its items go back to the top level of Focus.'}
-                  {away > 0 && ` ${away === 1 ? 'One item is' : `${away} items are`} in a vault that is not in this window, and ${away === 1 ? 'it leaves' : 'they leave'} focus.`} Your files do not change.
+                  {deleting.items.length === 0 ? 'It is empty.' : `Its items go back to the top level of ${kind === 'focus' ? 'Focus' : 'Favorites'}.`}
+                  {away > 0 && ` ${away === 1 ? 'One item is' : `${away} items are`} in a vault that is not in this window, and ${away === 1 ? 'it leaves' : 'they leave'} ${kind === 'focus' ? 'focus' : 'favorites'}.`} Your files do not change.
                 </>
               )
             })()}

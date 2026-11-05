@@ -119,6 +119,10 @@ export interface MenuHandlers {
   onToggleFocus: (paths: string[], isOn: boolean) => void
   /** "Add to focus ▸ <folder>" (YAZ-4460 F4): into that focus folder, with null into a new one, with 'top' to the top level. */
   onFocusInFolder?: (paths: string[], id: FocusPlace) => void
+  /** "Add to favorites ▸ <folder>" (YAZ-4460 demo), as `onFocusInFolder`. */
+  onFavoriteInFolder?: (paths: string[], id: FocusPlace) => void
+  /** A flyout's "Workspace" / "Vault" check (YAZ-4460 demo): the rows into or out of that scope's list. */
+  onSetScope?: (kind: 'focus' | 'favorites', paths: string[], scope: 'vault' | 'workspace', on: boolean) => void
   /** Cut / Copy (YAZ-1674): the paths go to main's ONE app-wide clipboard (🔒 D1); the caller reports. */
   onCut: (paths: string[]) => void
   onCopy: (paths: string[]) => void
@@ -241,7 +245,18 @@ const focus: Item = (t, h) => {
   if (into === undefined) return item
   // YAZ-4460 F4, the New note pattern (YAZ-3085 D1): a click adds (or removes) as before; the flyout moves the rows
   // into a focus folder — also when they are in focus already (YAZ-4460 demo).
-  return { ...item, children: focusPlaces(t.focusFolders ?? [], isOn ? (t.focusFolderOf ?? null) : undefined, (to) => into(paths, to)) }
+  return { ...item, children: [...focusPlaces(t.focusFolders ?? [], isOn ? (t.focusFolderOf ?? null) : undefined, (to) => into(paths, to)), ...scopeRows('focus', t.focusScopes, paths, h)] }
+}
+
+/**
+ * The flyouts' last group (YAZ-4460 demo): "Workspace" and "Vault", each ✓ while the rows are in that list — the
+ * workspace list, or each vault's own — and each a toggle, so a row can be in both. At the bottom: it is the rare choice.
+ */
+function scopeRows(kind: 'focus' | 'favorites', scopes: { vault: boolean; workspace: boolean } | null | undefined, paths: string[], h: MenuHandlers): MenuAction[][] {
+  const set = h.onSetScope
+  if (scopes === null || scopes === undefined || set === undefined) return []
+  const row = (scope: 'workspace' | 'vault', label: string) => ({ id: `${kind}-scope-${scope}`, label, hint: scopes[scope] ? '✓' : undefined, onSelect: () => set(kind, paths, scope, !scopes[scope]) })
+  return [[row('workspace', 'Workspace'), row('vault', 'Vault')]]
 }
 
 /** Where "Add to focus ▸" / "Remove from focus ▸" puts rows (YAZ-4460): a focus folder, a new one, or back to the top level. */
@@ -252,10 +267,10 @@ export type FocusPlace = string | null | 'top'
  * one that holds the row — then, for rows in focus, "Top level" (✓ when they are there), then "New focus folder…".
  * `current` undefined: the rows are not in focus yet.
  */
-export function focusPlaces(folders: readonly { id: string; name: string }[], current: string | null | undefined, to: (place: FocusPlace) => void): MenuAction[][] {
-  const rows = folders.map((f) => ({ id: `focus-in-${f.id}`, label: f.name, hint: current === f.id ? '✓' : undefined, onSelect: () => to(f.id) }))
-  const top = current === undefined ? [] : [{ id: 'focus-top', label: 'Top level', hint: current === null ? '✓' : undefined, onSelect: () => to('top') }]
-  return [...(rows.length > 0 ? [rows] : []), ...(top.length > 0 ? [top] : []), [{ id: 'focus-new-folder', label: 'New focus folder…', onSelect: () => to(null) }]]
+export function focusPlaces(folders: readonly { id: string; name: string }[], current: string | null | undefined, to: (place: FocusPlace) => void, kind: 'focus' | 'favorites' = 'focus'): MenuAction[][] {
+  const rows = folders.map((f) => ({ id: `${kind}-in-${f.id}`, label: f.name, hint: current === f.id ? '✓' : undefined, onSelect: () => to(f.id) }))
+  const top = current === undefined ? [] : [{ id: `${kind}-top`, label: 'Top level', hint: current === null ? '✓' : undefined, onSelect: () => to('top') }]
+  return [...(rows.length > 0 ? [rows] : []), ...(top.length > 0 ? [top] : []), [{ id: `${kind}-new-folder`, label: kind === 'focus' ? 'New focus folder…' : 'New favorite folder…', onSelect: () => to(null) }]]
 }
 
 // ---- (2) Clipboard: the file clipboard (YAZ-1674), then the text clipboard ----
@@ -439,13 +454,17 @@ const changeIcon: Item = (t, h) => {
  * mixed selection reads as Add and the handler adds the missing ones. Leads the "Open in ▸"
  * group (Yasin, demo 2026-09-21): a place-verb beside the OS place-verbs, one hairline above Delete.
  */
-const toggleFavorite: Leaf = (t, h) => {
+const toggleFavorite: Item = (t, h) => {
   const paths = t.favoritePaths
   if (paths === null) return null
   const isOn = t.favoriteIsOn
   const n = paths.length > 1 ? `${paths.length} ` : ''
   // The Favorites tab's own glyph (YAZ-3264 D6).
-  return { id: 'toggle-favorite', label: isOn ? `Remove ${n}from favorites` : `Add ${n}to favorites`, icon: createElement(HeartIcon), onSelect: () => h.onToggleFavorite(paths, isOn) }
+  const item = { id: 'toggle-favorite', label: isOn ? `Remove ${n}from favorites` : `Add ${n}to favorites`, icon: createElement(HeartIcon), onSelect: () => h.onToggleFavorite(paths, isOn) }
+  const into = h.onFavoriteInFolder
+  if (into === undefined) return item
+  // YAZ-4460 demo: the Focus item's flyout, for the Favorites tab's folders.
+  return { ...item, children: [...focusPlaces(t.favoriteFolders ?? [], isOn ? (t.favoriteFolderOf ?? null) : undefined, (to) => into(paths, to), 'favorites'), ...scopeRows('favorites', t.favoriteScopes, paths, h)] }
 }
 
 /**

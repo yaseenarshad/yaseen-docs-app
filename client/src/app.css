@@ -2307,15 +2307,11 @@ body.drag-held iframe {
   font-style: italic;
 }
 
-/* Its 👻 (YAZ-4460 demo) stands in the file icon's slot, full color, so a ghost reads as one at a glance. */
+/* Its ghost glyph (YAZ-4460 demo) stands in the file icon's slot, in the row's color: it reads in light and dark alike. */
 .tree__ghost-icon {
-  display: inline-flex;
-  justify-content: center;
-  min-width: 20px;
-  margin-right: 3px;
-  font-style: normal;
-  font-size: 13px;
-  line-height: 1;
+  flex: none;
+  width: 14px;
+  margin: 0 6px 0 3px;
 }
 
 /* One line at any sidebar width (YAZ-4462): the words cut with an ellipsis ("2 in focus · workspace li…"), the button stays whole. */
