@@ -1145,7 +1145,8 @@ describe("Test Linear Elements", () => {
       createTwoPointerLinearElement("arrow");
       Keyboard.keyPress(KEYS.ENTER);
       const editor = await getTextEditor();
-      // YAZ-4277 1D: the engine's root over the label: its place, size and zoom
+      // YAZ-4277 1D: the engine's root over the label: its place, size and zoom;
+      // YAZ-4396 (1F): `position: fixed`, so a caret reveal scrolls no layer
       expect(
         (editor.closest(".excalidraw-host-text-editor") as HTMLElement).style
           .cssText,

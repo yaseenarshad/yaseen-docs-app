@@ -39,6 +39,7 @@ import { getTextEditor, updateTextEditor } from "../tests/queries/dom";
 import {
   GlobalTestState,
   act,
+  createEvent,
   exactFontSizeInput,
   openTextToolbarPopover,
   render,
@@ -113,6 +114,21 @@ const rootOf = (editor: HTMLElement) =>
   editor.closest<HTMLElement>(".excalidraw-host-text-editor")!;
 const caretOf = () =>
   document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret");
+/**
+ * YAZ-4396 (1F): the caret and each selection rectangle are a 1 px node
+ * placed by `translate() scale()`; this reads back their box in board px.
+ */
+const overlayBox = (node: HTMLElement) => {
+  const match =
+    /translate\((-?[\d.e-]+)px, (-?[\d.e-]+)px\) scale\((-?[\d.e-]+), (-?[\d.e-]+)\)/.exec(
+      node.style.transform,
+    );
+  if (!match) {
+    throw new Error(`not placed by a transform: "${node.style.transform}"`);
+  }
+  const [left, top, width, height] = match.slice(1).map(Number);
+  return { left, top, width, height };
+};
 
 describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () => {
   describe("start text editing", () => {
@@ -489,10 +505,10 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
 
       expect(editor.value).toBe(originalText);
       expect(layout.lines.length).toBeGreaterThan(1);
-      expect(parseFloat(caretOf()!.style.left)).toBeCloseTo(
+      expect(overlayBox(caretOf()!).left).toBeCloseTo(
         getStyledVisualLineStart(layout.lines[1], text.width, text.textAlign),
       );
-      expect(parseFloat(caretOf()!.style.left)).toBeGreaterThan(0);
+      expect(overlayBox(caretOf()!).left).toBeGreaterThan(0);
       expect((h.elements[0] as ExcalidrawTextElement).originalText).toBe(
         originalText,
       );
@@ -523,10 +539,10 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
       // a caret on the last line: its place in the box, from the canvas layout
       editor.setSelectionRange(originalText.length, originalText.length);
       fireEvent(document, new Event("selectionchange"));
-      const initialCaret = [caretOf()!.style.left, caretOf()!.style.top];
+      const initialCaret = caretOf()!.style.transform;
 
       expect(root.style.width).toBe(`${text.width}px`);
-      expect(parseFloat(initialCaret[1])).toBeGreaterThan(0);
+      expect(overlayBox(caretOf()!).top).toBeGreaterThan(0);
 
       act(() => {
         h.app.setState({ scrollX: 500 });
@@ -534,9 +550,7 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
       await waitFor(() => expect(root.style.left).not.toBe(initialLeft));
 
       expect(root.style.width).toBe(`${text.width}px`);
-      expect([caretOf()!.style.left, caretOf()!.style.top]).toEqual(
-        initialCaret,
-      );
+      expect(caretOf()!.style.transform).toBe(initialCaret);
       expect(editor.value).toBe(originalText);
       expect((h.elements[0] as ExcalidrawTextElement).width).toBe(text.width);
     });
@@ -610,10 +624,10 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
       fireEvent.select(editor);
       const continuationSelection = Array.from(
         document.querySelectorAll<HTMLElement>(".excalidraw-wysiwyg-selection"),
-      ).find((selection) => parseFloat(selection.style.top) === lineHeight);
+      ).find((selection) => overlayBox(selection).top === lineHeight);
 
       expect(continuationSelection).toBeDefined();
-      expect(parseFloat(continuationSelection!.style.left)).toBeCloseTo(
+      expect(overlayBox(continuationSelection!).left).toBeCloseTo(
         continuationX,
       );
 
@@ -624,8 +638,8 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
       );
 
       expect(caret).not.toBeNull();
-      expect(parseFloat(caret!.style.left)).toBeCloseTo(continuationX);
-      expect(parseFloat(caret!.style.top)).toBe(lineHeight);
+      expect(overlayBox(caret!).left).toBeCloseTo(continuationX);
+      expect(overlayBox(caret!).top).toBe(lineHeight);
     });
 
     it("repaints the visual caret when the native textarea selection changes", async () => {
@@ -649,17 +663,15 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
 
       editor.setSelectionRange(0, 0);
       fireEvent(document, new Event("selectionchange"));
-      const initialCaretLeft = parseFloat(
-        document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!.style
-          .left,
-      );
+      const initialCaretLeft = overlayBox(
+        document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!,
+      ).left;
 
       editor.setSelectionRange(4, 4);
       fireEvent(document, new Event("selectionchange"));
-      const movedCaretLeft = parseFloat(
-        document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!.style
-          .left,
-      );
+      const movedCaretLeft = overlayBox(
+        document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!,
+      ).left;
 
       expect(movedCaretLeft).toBeGreaterThan(initialCaretLeft);
     });
@@ -692,16 +704,15 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
 
       // YAZ-4277 D1: the canvas draws the box, its fill and its letters
       expect(colorToHex(caret.style.backgroundColor)).toBe("#ffffff");
-      const initialCaretLeft = parseFloat(caret.style.left);
+      const initialCaretLeft = overlayBox(caret).left;
 
       // Some browser/host combinations do not reliably emit the document
       // selectionchange event for native textarea navigation.
       editor.setSelectionRange(1, 1);
       fireEvent.keyUp(editor, { key: KEYS.ARROW_RIGHT });
-      const movedCaretLeft = parseFloat(
-        document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!.style
-          .left,
-      );
+      const movedCaretLeft = overlayBox(
+        document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!,
+      ).left;
 
       expect(movedCaretLeft).toBeGreaterThan(initialCaretLeft);
     });
@@ -729,17 +740,15 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
 
         editor.setSelectionRange(0, 0);
         fireEvent(document, new Event("selectionchange"));
-        const initialCaretLeft = parseFloat(
-          document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!
-            .style.left,
-        );
+        const initialCaretLeft = overlayBox(
+          document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!,
+        ).left;
 
         editor.setSelectionRange(1, 1);
         fireEvent(document, new Event("selectionchange"));
-        const movedCaretLeft = parseFloat(
-          document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!
-            .style.left,
-        );
+        const movedCaretLeft = overlayBox(
+          document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!,
+        ).left;
         expect(movedCaretLeft).toBeGreaterThan(initialCaretLeft);
 
         editor.setSelectionRange(0, 6, "forward");
@@ -861,8 +870,8 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
           ),
         ).some(
           (selection) =>
-            parseFloat(selection.style.top) === lineHeight * 2 &&
-            parseFloat(selection.style.left) === nextContinuationX,
+            overlayBox(selection).top === lineHeight * 2 &&
+            overlayBox(selection).left === nextContinuationX,
         ),
       ).toBe(true);
       fireEvent.pointerUp(editor, { button: 0, pointerId: 1 });
@@ -890,52 +899,46 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
         h.state,
       );
 
-      // As in Chromium: pointerdown has `detail: 0`; only `click` counts.
-      fireEvent.pointerDown(editor, {
-        button: 0,
-        buttons: 1,
-        clientX: x,
-        clientY: y,
-        pointerId: 1,
-        detail: 0,
-      });
-      fireEvent.pointerUp(editor, {
-        button: 0,
-        clientX: x,
-        clientY: y,
-        pointerId: 1,
-      });
-      fireEvent.click(editor, { clientX: x, clientY: y, detail: 2 });
+      // YAZ-4397 (1G, D25): Chromium's pointerdown has `detail: 0`, so the
+      // engine counts the presses (500 ms, 4 px) and selects at the press
+      const press = (timeStamp: number, at = x) => {
+        const event = createEvent.pointerDown(editor, {
+          button: 0,
+          buttons: 1,
+          clientX: at,
+          clientY: y,
+          pointerId: 1,
+          detail: 0,
+        });
+        Object.defineProperty(event, "timeStamp", { value: timeStamp });
+        fireEvent(editor, event);
+      };
+      const release = () =>
+        fireEvent.pointerUp(window, { button: 0, pointerId: 1 });
+
+      press(1000);
+      release();
+      press(1100);
+      // the word, before any release or click
       expect([editor.selectionStart, editor.selectionEnd]).toEqual([0, 4]);
-
-      // Each press of a triple click comes before its own `click`.
-      fireEvent.pointerDown(editor, {
-        button: 0,
-        buttons: 1,
-        clientX: x,
-        clientY: y,
-        pointerId: 1,
-        detail: 0,
-      });
-      fireEvent.pointerUp(editor, { button: 0, pointerId: 1 });
-      fireEvent.click(editor, { clientX: x, clientY: y, detail: 3 });
+      release();
+      press(1200);
+      // the line, without its newline
       expect([editor.selectionStart, editor.selectionEnd]).toEqual([0, 12]);
+      release();
 
-      // A drag after the second press: its release still sends `detail: 2`,
-      // and the range that the drag made stays.
-      fireEvent.pointerDown(editor, {
-        button: 0,
-        buttons: 1,
-        clientX: x,
-        clientY: y,
-        pointerId: 1,
-        detail: 0,
-      });
-      editor.setSelectionRange(0, 7, "forward");
-      fireEvent(document, new Event("selectionchange"));
-      fireEvent.pointerUp(editor, { button: 0, pointerId: 1 });
-      fireEvent.click(editor, { clientX: x, clientY: y, detail: 2 });
-      expect([editor.selectionStart, editor.selectionEnd]).toEqual([0, 7]);
+      // a drag after the second press grows by whole words
+      press(3000);
+      release();
+      press(3100);
+      const nurture = sceneCoordsToViewportCoords(
+        // past the end of "Nurture": the line's end
+        { sceneX: text.x + text.width - 1, sceneY: text.y + lineHeight * 0.5 },
+        h.state,
+      );
+      fireEvent.pointerMove(window, { clientX: nurture.x, clientY: y });
+      release();
+      expect([editor.selectionStart, editor.selectionEnd]).toEqual([0, 12]);
     });
 
     // YAZ-4277 1D: ↑ and ↓ move by the lines the canvas draws, keep their x,
@@ -1017,7 +1020,7 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
       const caretLeftAt = (offset: number) => {
         editor.setSelectionRange(offset, offset);
         fireEvent(document, new Event("selectionchange"));
-        return parseFloat(caretOf()!.style.left);
+        return overlayBox(caretOf()!).left;
       };
 
       expect(editor.value).toBe(originalText);
@@ -1198,11 +1201,11 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
         const selectionLeft = (start: number, end: number) => {
           textarea.setSelectionRange(start, end);
           fireEvent(document, new Event("selectionchange"));
-          return parseFloat(
+          return overlayBox(
             document.querySelector<HTMLElement>(
               ".excalidraw-wysiwyg-selection",
-            )!.style.left,
-          );
+            )!,
+          ).left;
         };
         // the first word, bold, is on the right
         expect(selectionLeft(0, 5)).toBeGreaterThan(selectionLeft(6, 13));
@@ -1485,27 +1488,28 @@ describe("text editing (YAZ-4277 1D: the host editor; the tests' textarea)", () 
     });
 
     it("zooming via keyboard should zoom canvas", () => {
+      // YAZ-4405 (4I, D27): each step multiplies the zoom by 1.1
       expect(h.state.zoom.value).toBe(1);
       fireEvent.keyDown(textarea, {
         code: CODES.MINUS,
         ctrlKey: true,
       });
-      expect(h.state.zoom.value).toBe(0.9);
+      expect(h.state.zoom.value).toBeCloseTo(1 / 1.1, 5);
       fireEvent.keyDown(textarea, {
         code: CODES.NUM_SUBTRACT,
         ctrlKey: true,
       });
-      expect(h.state.zoom.value).toBe(0.8);
+      expect(h.state.zoom.value).toBeCloseTo(1 / 1.21, 5);
       fireEvent.keyDown(textarea, {
         code: CODES.NUM_ADD,
         ctrlKey: true,
       });
-      expect(h.state.zoom.value).toBe(0.9);
+      expect(h.state.zoom.value).toBeCloseTo(1 / 1.1, 5);
       fireEvent.keyDown(textarea, {
         code: CODES.EQUAL,
         ctrlKey: true,
       });
-      expect(h.state.zoom.value).toBe(1);
+      expect(h.state.zoom.value).toBeCloseTo(1, 5);
     });
 
     it("text should never go beyond max width", async () => {
