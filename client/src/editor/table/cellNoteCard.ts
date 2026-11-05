@@ -31,20 +31,32 @@
  * The state is meta-only (`cellNoteCardKey`, cellNotes.ts): a typed key only maps it. The card's place is set as two
  * custom properties on the editor's `.milkdown` box (outside the editable DOM, so ProseMirror's DOM observer never
  * sees it): on open, after a doc change, a scroll, a window resize, a drag and a resize, and only while a card is open.
+ *
+ * "All notes" of a CALENDAR table (YAZ-4276) stays in the card: the live time block's real note, which you type in, with
+ * every other block of the column as its lines (one document, one undo, one save). An empty time block says "Empty.
+ * Click to write."; a click makes its note. The head switches the column, jumps to now, hides the empty blocks, copies
+ * the filled ones, and goes back to the cell note. Leaving a block removes the note it made there while it is empty.
+ * Every other table keeps the read-only list of every note of the page.
  */
 import { parserCtx, serializerCtx } from '@milkdown/kit/core'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, Selection, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
+import type { ReplaceStep } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import type { AllNotesOpensAt } from '@shared/types'
 import { rowShortcuts } from '../noteKeys'
+import { wikilinkPickerOpen } from '../wikilink/wikilinkPicker'
 import { cellPosAround } from '../outline/listNodes'
 import { cellBlocksOf } from './cellBlocks'
 import { cellNotePreviewLines } from './cellNotePreview'
 import {
   addCellNote,
+  type CalendarAll,
+  cellNoteAround,
   cellNoteCardKey,
   type CellNoteCardState,
+  cellNoteLabelsIn,
   cellNoteCornerAt,
   cellNoteNameParts,
   cellNoteOf,
@@ -60,6 +72,8 @@ import {
   tableAround,
   touchesNotes,
 } from './cellNotes'
+import { calendarKey, minutesOf, nowPlace } from './tableCalendar'
+import { changedTables, typingOnly } from './tableStyle'
 
 /** The class of the open cell note: table.css draws it as the card. */
 export const CELL_NOTE_OPEN_CLASS = 'cell-note--open'
@@ -83,7 +97,7 @@ export function cellNoteOrder(doc: ProseNode): string[] {
   return marks.filter((label) => notes.has(label))
 }
 
-const CLOSED: CellNoteCardState = { label: null, pos: null, cell: null, all: false, set: DecorationSet.empty }
+const CLOSED: CellNoteCardState = { label: null, pos: null, cell: null, all: false, calendar: null, set: DecorationSet.empty }
 
 /** The class of the open note's card in "All notes" (round 4 of the demo): table.css hides the note, shows the list. */
 export const CELL_NOTE_ALL_CLASS = 'cell-note--all'
@@ -145,9 +159,418 @@ const allList = (view: EditorView) => {
   return list
 }
 
-/** Turn "All notes" on or off (round 4 of the demo); off goes back to the last note. */
+/**
+ * Turn "All notes" on or off (round 4 of the demo); off goes back to the last note. A calendar's view (YAZ-4276) opens
+ * where Settings says (A1); off, it removes the notes it made that are still empty, and the caret goes back to the card.
+ */
 export function setAllCellNotes(view: EditorView, all: boolean): void {
-  if (openLabel(view.state) !== null) view.dispatch(view.state.tr.setMeta(cellNoteCardKey, { all }))
+  const card = cellNoteCardKey.getState(view.state)
+  if (card?.label == null) return
+  const tr = view.state.tr.setMeta(cellNoteCardKey, { all, ...(all ? { onlyFilled: onlyFilledOf.get(view) ?? false } : {}) })
+  if (!all && card.calendar !== null) {
+    if (view.editable) removeMadeEmpty(tr, card)
+    const note = notePosOf(tr.doc, card.label)
+    if (note !== null) tr.setSelection(Selection.near(tr.doc.resolve(note + tr.doc.nodeAt(note)!.nodeSize - 1), -1))
+  }
+  view.dispatch(tr)
+  if (all) revealOpening(view)
+}
+
+/* ---------- "All notes" of a calendar table (YAZ-4276) ---------- */
+
+/**
+ * The open card in a calendar's "All notes" (demo feedback: in the card, not under the table). The card is the LIVE
+ * time block's real note, and you type in it; every other block of the column stands above and below it, as its lines.
+ * A click on a line makes that block live, the caret on that line; "Empty. Click to write." makes the block's note.
+ */
+export const CELL_NOTE_CALENDAR_CLASS = 'cell-note--calendar'
+
+/** Settings › Editor › Cell notes › All notes opens at (A1): the cell you came from, or now. App sets it. */
+let allOpensAt: AllNotesOpensAt = 'cell'
+
+/** "Only filled" (A3), kept for each editor (a tab) while it lives: the view opens with it as it was left. */
+const onlyFilledOf = new WeakMap<EditorView, boolean>()
+
+/** How many times a calendar view was built: typing in the live note must only map it. */
+export const calendarBuilds = { count: 0 }
+
+/** Set where a calendar's "All notes" opens: App, when the setting changes. */
+export function setAllNotesOpensAt(at: AllNotesOpensAt): void {
+  allOpensAt = at
+}
+
+/** One time block of the view: a body row of the calendar table, in the view's column. */
+interface TimeBlock {
+  /** The row's index in the table (the header row is 0). */
+  row: number
+  /** The row's time: the text of its first cell. */
+  time: string
+  /** The row's cell in the view's column. */
+  cell: number
+  /** The label of that cell's mark, or null. */
+  label: string | null
+  /** That cell's note, or null. */
+  note: number | null
+}
+
+type TableAt = ReturnType<typeof tableAround>
+
+/** The calendar table that holds the cell at `cell`, or null: a table that is no calendar table keeps the list (D4). */
+function calendarAround(doc: ProseNode, cell: number): TableAt | null {
+  const $cell = doc.resolve(cell)
+  if ($cell.depth < 2 || $cell.node(-1).type.name !== 'table') return null
+  const table = tableAround(doc, cell)
+  return (table.node.attrs.calendar as number) > 0 ? table : null
+}
+
+/** The time blocks of `table` in `column`. The notes follow the table (`notesFollowTables`): one pass finds them by label. */
+function timeBlocks(doc: ProseNode, table: TableAt, column: number): TimeBlock[] {
+  const notes = new Map<string, number>()
+  const $end = doc.resolve(table.end)
+  let at = table.end
+  for (let index = $end.index(); index < $end.parent.childCount && isCellNote($end.parent.child(index)); index++) {
+    notes.set($end.parent.child(index).attrs.label as string, at)
+    at += $end.parent.child(index).nodeSize
+  }
+  const blocks: TimeBlock[] = []
+  let rowPos = table.pos + 1
+  table.node.forEach((row, _offset, r) => {
+    if (r > 0 && column < row.childCount) {
+      let cell = rowPos + 1
+      for (let c = 0; c < column; c++) cell += row.child(c).nodeSize
+      const label = cellNoteLabelsIn(row.child(column))[0] ?? null
+      blocks.push({ row: r, time: row.firstChild!.textContent.trim(), cell, label, note: label === null ? null : (notes.get(label) ?? null) })
+    }
+    rowPos += row.nodeSize
+  })
+  return blocks
+}
+
+/** The columns a view can show (A2): each one but the first, which holds the times, with its header's words. */
+function calendarColumns(table: ProseNode): Array<{ column: number; name: string }> {
+  const columns: Array<{ column: number; name: string }> = []
+  table.firstChild!.forEach((cell, _offset, c) => {
+    if (c > 0) columns.push({ column: c, name: cell.textBetween(0, cell.content.size, ' ').trim() || `Column ${c + 1}` })
+  })
+  return columns
+}
+
+/**
+ * Typing in a table's body cells that hold no time: the view reads only the times and the header row, so it maps.
+ * Typing in a time or a column's name, or any other change of the table, builds it again.
+ */
+const typingInBodyCells = (tr: Transaction): boolean =>
+  typingOnly(tr) &&
+  tr.steps.every((step, i) => {
+    const cell = cellPosAround(tr.docs[i]!.resolve((step as ReplaceStep).from))
+    if (cell === null) return true
+    const $cell = tr.docs[i]!.resolve(cell)
+    return $cell.index(-1) > 0 && $cell.index() > 0
+  })
+
+/** A change in a cell note other than the live one (an undo, an outside edit): its lines in the card are built again. */
+const changesOtherNotes = (tr: Transaction, live: string): boolean =>
+  tr.steps.some((step, i) => {
+    const from = (step as { from?: number }).from
+    if (from === undefined) return true
+    const note = cellNoteAround(tr.docs[i]!.resolve(Math.min(from, tr.docs[i]!.content.size)))
+    return note !== null && tr.docs[i]!.nodeAt(note)!.attrs.label !== live
+  })
+
+/** The view as the document stands: its card, its table and its blocks; null when no calendar view is open. */
+function openView(state: EditorState): { card: CellNoteCardState & { calendar: CalendarAll; cell: number; label: string; pos: number }; table: TableAt; blocks: TimeBlock[] } | null {
+  const card = cellNoteCardKey.getState(state)
+  if (card?.calendar == null || card.cell === null || card.label === null || card.pos === null) return null
+  const table = calendarAround(state.doc, card.cell)
+  if (table === null) return null
+  return { card: card as CellNoteCardState & { calendar: CalendarAll; cell: number; label: string; pos: number }, table, blocks: timeBlocks(state.doc, table, card.calendar.column) }
+}
+
+/** The row of the live note's cell. */
+const originRow = (state: EditorState, cell: number): number => state.doc.resolve(cell).index(-1)
+
+/** What the card draws for one block: its time, Now (A1), past (A4), and its lines, or null for an empty block. */
+interface BlockView {
+  row: number
+  time: string
+  now: boolean
+  past: boolean
+  lines: string[] | null
+}
+
+/** The blocks above (`live` is the last one: its heading only) or below the live note, as one widget in the card. */
+const blockList = (rows: readonly BlockView[], live: number | null, onlyFilled: boolean) => (view: EditorView) => {
+  const list = document.createElement('div')
+  list.className = 'cell-note-blocks'
+  list.contentEditable = 'false'
+  for (const block of rows) {
+    const isLive = block.row === live
+    if (onlyFilled && block.lines === null && !isLive) continue
+    const wrap = document.createElement('div')
+    wrap.className = `cell-note-block${isLive ? ' cell-note-block--live' : ''}${block.past ? ' cell-note-block--past' : ''}`
+    wrap.dataset.row = String(block.row)
+    const heading = document.createElement('div')
+    heading.className = `cell-note-time${block.now ? ' cell-note-time--now' : ''}`
+    heading.textContent = block.time === '' ? '—' : block.time
+    if (block.now) {
+      const tag = document.createElement('span')
+      tag.className = 'cell-note-time__now'
+      tag.textContent = 'Now'
+      heading.appendChild(tag)
+    }
+    wrap.appendChild(heading)
+    if (!isLive && block.lines === null) {
+      // No `disabled`: a read-only switch rebuilds no widget. `goLive` declines in a read-only note (table.css quiets it).
+      const empty = headButton('cell-note-time-empty', 'Empty. Click to write.', 'Write in this time block', () => void goLive(view, block.row, null, empty))
+      wrap.appendChild(empty)
+    } else if (!isLive) {
+      block.lines!.forEach((text, line) => {
+        const row = document.createElement('div')
+        row.className = 'cell-note-block__line'
+        row.textContent = text
+        row.addEventListener('mousedown', (event) => event.preventDefault())
+        row.addEventListener('click', (event) => {
+          event.preventDefault()
+          goLive(view, block.row, line, row)
+        })
+        wrap.appendChild(row)
+      })
+    }
+    list.appendChild(wrap)
+  }
+  return list
+}
+
+/** How many block lists were drawn: each build draws them again, as their lines may have changed. */
+let blockListBuilds = 0
+
+/** The view's head (C), the card's title bar: its title, the columns, Now, Only filled, Copy all, back to the card, Close. */
+const calendarHead = (title: string, column: number, onlyFilled: boolean, options: ReadonlyArray<{ column: number; name: string }>) => (view: EditorView) => {
+  const head = document.createElement('div')
+  head.className = 'cell-note-card__head cell-note-all-head'
+  head.contentEditable = 'false'
+  // The card's own title bar: a drag moves it, a double click puts it back (as `cardHead`).
+  const onButton = (event: Event) => event.target instanceof Element && event.target.closest('button') !== null
+  head.addEventListener('mousedown', (event) => {
+    if (event.button !== 0 || onButton(event)) return
+    event.preventDefault()
+    controls.get(view)?.drag(event)
+  })
+  head.addEventListener('dblclick', (event) => {
+    if (onButton(event)) return
+    event.preventDefault()
+    controls.get(view)?.reset()
+  })
+  const name = document.createElement('span')
+  name.className = 'cell-note-card__title cell-note-all-head__title'
+  name.textContent = `All notes: ${title}`
+  name.title = name.textContent
+  const columns = document.createElement('span')
+  columns.className = 'cell-note-all-head__columns'
+  columns.setAttribute('role', 'group')
+  columns.setAttribute('aria-label', 'Column')
+  for (const option of options) {
+    const button = headButton('cell-note-all-head__column', option.name, `Show the notes of ${option.name}`, () => setCalendarColumn(view, option.column))
+    button.setAttribute('aria-pressed', String(option.column === column))
+    columns.appendChild(button)
+  }
+  const now = headButton('cell-note-all-head__now', 'Now', 'Go to now', () => void goNow(view))
+  const filled = headButton('cell-note-all-head__filled', 'Only filled', 'Show only the time blocks with notes', () => setOnlyFilled(view, !onlyFilled))
+  filled.setAttribute('aria-pressed', String(onlyFilled))
+  const copy = headButton('cell-note-card__copy', 'Copy all', 'Copy the filled time blocks as Markdown', () => void navigator.clipboard?.writeText(calendarMarkdown(view)))
+  const back = headButton('cell-note-card__all-toggle', '', 'Back to this cell note', () => setAllCellNotes(view, false))
+  back.innerHTML = ALL_ICON
+  back.setAttribute('aria-pressed', 'true')
+  const pin = headButton('cell-note-card__pin', '', 'Pin cell note', () => showPin(pin, controls.get(view)?.togglePin() ?? false))
+  pin.innerHTML = PIN_ICON
+  showPin(pin, controls.get(view)?.pinned() ?? false)
+  const close = headButton('cell-note-card__close', '×', 'Close all notes', () => closeCellNote(view))
+  const row = document.createElement('span')
+  row.className = 'cell-note-all-head__row'
+  row.append(name, back, pin, close)
+  const tools = document.createElement('span')
+  tools.className = 'cell-note-all-head__tools'
+  tools.append(columns, now, filled, copy)
+  head.append(row, tools)
+  return head
+}
+
+/** "Only filled" (A3): the view built again, and the choice kept for the tab. */
+function setOnlyFilled(view: EditorView, onlyFilled: boolean): void {
+  onlyFilledOf.set(view, onlyFilled)
+  view.dispatch(view.state.tr.setMeta(cellNoteCardKey, { all: true, onlyFilled }))
+}
+
+/** The calendar view of `cell`'s table with the note `label` live, or null when that table is no calendar table (D4). */
+function calendarState(doc: ProseNode, label: string, pos: number, cell: number, carry: Partial<CalendarAll>): CellNoteCardState | null {
+  const table = calendarAround(doc, cell)
+  if (table === null) return null
+  // The live note is in the view's column: a column button makes a note of that column live first.
+  const column = doc.resolve(cell).index()
+  const onlyFilled = carry.onlyFilled ?? false
+  calendarBuilds.count++
+  const blocks = timeBlocks(doc, table, column)
+  const place = nowPlace(table.node, minutesOf(new Date()))
+  const options = calendarColumns(table.node)
+  const title = options.find((option) => option.column === column)?.name ?? 'Notes'
+  const rows: BlockView[] = blocks.map((block) => ({
+    row: block.row,
+    time: block.time,
+    now: place?.row === block.row,
+    past: place !== null && block.row < place.pastEnd,
+    lines: block.note === null ? null : cellNotePreviewLines(doc.nodeAt(block.note)!, Number.POSITIVE_INFINITY).map(plainLinks),
+  }))
+  const live = blocks.findIndex((block) => block.note === pos)
+  const liveRow = rows[live]?.row ?? null
+  const note = doc.nodeAt(pos)!
+  const lists = ++blockListBuilds
+  const set = DecorationSet.create(doc, [
+    Decoration.node(pos, pos + note.nodeSize, { class: `${CELL_NOTE_OPEN_CLASS} ${CELL_NOTE_CALENDAR_CLASS}${rows[live]?.past === true ? ' cell-note--past' : ''}` }),
+    Decoration.widget(pos + 1, calendarHead(title, column, onlyFilled, options), {
+      side: -3,
+      key: `cell-note-all-head:${column}:${onlyFilled}:${table.node.firstChild!.textContent}`,
+      ignoreSelection: true,
+      stopEvent: () => true,
+    }),
+    Decoration.widget(pos + 1, blockList(rows.slice(0, live + 1), liveRow, onlyFilled), { side: -2, key: `cell-note-before:${lists}`, ignoreSelection: true, stopEvent: () => true }),
+    Decoration.widget(pos + note.nodeSize - 1, blockList(rows.slice(live + 1), null, onlyFilled), { side: 1, key: `cell-note-after:${lists}`, ignoreSelection: true, stopEvent: () => true }),
+    Decoration.node(cell, cell + doc.nodeAt(cell)!.nodeSize, { class: CELL_NOTE_CELL_OPEN_CLASS }),
+  ])
+  return { label, pos, cell, all: true, calendar: { column, shown: [pos], made: carry.made ?? [], onlyFilled, anchor: carry.anchor ?? cell }, set }
+}
+
+/** Removes, in `tr`, the notes the view made that are still empty (A9). A note left empty another way stays. */
+function removeMadeEmpty(tr: Transaction, card: CellNoteCardState): void {
+  for (const label of card.calendar?.made ?? []) {
+    const note = notePosOf(tr.doc, label)
+    if (note !== null && label !== card.label && isEmptyCellNote(tr.doc.nodeAt(note)!)) removeCellNote(tr, label)
+  }
+}
+
+/** The card, scrolled so the live block's heading is at its top; or, given `y`, so the caret stands at that window row. */
+function scrollCard(view: EditorView, y: number | null = null, row: number | null = null): void {
+  const card = cellNoteCardKey.getState(view.state)
+  const note = card?.pos == null ? null : (view.nodeDOM(card.pos) as HTMLElement | null)
+  if (note == null || typeof note.getBoundingClientRect !== 'function') return
+  try {
+    if (y !== null) {
+      note.scrollTop += view.coordsAtPos(view.state.selection.head).top - y
+      return
+    }
+    const target = note.querySelector(row === null ? '.cell-note-block--live' : `.cell-note-block[data-row="${row}"]`)
+    const head = note.querySelector('.cell-note-card__head')?.getBoundingClientRect().height ?? 0
+    if (target !== null) note.scrollTop += target.getBoundingClientRect().top - note.getBoundingClientRect().top - head
+  } catch {
+    // No layout (a test's DOM): nothing to scroll.
+  }
+}
+
+/** The view just opened (A1): at the block of the cell it came from; or at now's, its note live when it has one. */
+function revealOpening(view: EditorView): void {
+  if (allOpensAt === 'now' && goNow(view)) return
+  scrollCard(view)
+}
+
+/** "Now" (A1): now's block, live when it has a note; else its heading at the card's top. False with no now in the table. */
+function goNow(view: EditorView): boolean {
+  const open = openView(view.state)
+  const row = open === null ? null : (nowPlace(open.table.node, minutesOf(new Date()))?.row ?? null)
+  const block = row === null ? undefined : open!.blocks.find((candidate) => candidate.row === row)
+  if (block === undefined) return false
+  if (block.note !== null) return goLive(view, block.row, null)
+  scrollCard(view, null, block.row)
+  return true
+}
+
+/**
+ * Make the block of `row` live (B): its note becomes the card, the caret on its line `line` (-1: its last line; null: a
+ * new note's first line, else the note's end). A block with no note gets one first (the new note template, as
+ * `openCellNote` makes one), kept in `made`; the live note this view made and left empty goes as the caret leaves it.
+ * One transaction, one undo step. `column` switches the view to that column's block of `row`. `from`, the element
+ * clicked: the caret then stands where it was, so the card does not jump.
+ */
+function goLive(view: EditorView, row: number, line: number | null, from: Element | null = null, column?: number): boolean {
+  const open = openView(view.state)
+  if (open === null) return false
+  const blocks = column === undefined ? open.blocks : timeBlocks(view.state.doc, open.table, column)
+  const block = blocks.find((candidate) => candidate.row === row)
+  if (block === undefined || (block.note === null && !view.editable)) return false
+  const y = from?.getBoundingClientRect().top ?? null
+  const tr = view.state.tr
+  let made = open.card.calendar.made
+  const old = open.card.label
+  if (block.note !== open.card.pos && made.includes(old) && isEmptyCellNote(view.state.doc.nodeAt(open.card.pos)!)) {
+    removeCellNote(tr, old)
+    made = made.filter((label) => label !== old)
+  }
+  let label = block.label
+  const fresh = block.note === null
+  if (fresh) {
+    const cell = tr.mapping.map(block.cell)
+    if (label === null) {
+      insertCellNote(tr, cell, templateBlocks(view))
+      label = cellNoteOf(tr.doc, cell)!
+    } else {
+      // A mark with no note: its note, under the table (`notesFollowTables` puts it in order).
+      tr.insert(tr.mapping.map(open.table.end), view.state.schema.nodes.cell_note.createAndFill({ label })!)
+    }
+    made = [...made, label]
+  }
+  tr.setMeta(cellNoteCardKey, { all: true, label: label!, made })
+  const note = notePosOf(tr.doc, label!)!
+  const node = tr.doc.nodeAt(note)!
+  const ends: number[] = []
+  node.descendants((child, offset) => {
+    if (child.isTextblock) ends.push(note + 1 + offset + child.nodeSize - 1)
+    return !child.isTextblock
+  })
+  const at = line === null ? (fresh ? ends[0] : undefined) : line < 0 ? ends[ends.length - 1] : ends[line]
+  tr.setSelection(at === undefined ? Selection.near(tr.doc.resolve(note + node.nodeSize - 1), -1) : TextSelection.create(tr.doc, at))
+  view.dispatch(tr)
+  view.focus()
+  scrollCard(view, y)
+  return true
+}
+
+/** A column button (A2): that column's note of the live row live, else its nearest note, else a new note at the row. */
+function setCalendarColumn(view: EditorView, column: number): void {
+  const open = openView(view.state)
+  if (open === null || column === open.card.calendar.column) return
+  const row = originRow(view.state, open.card.cell)
+  const blocks = timeBlocks(view.state.doc, open.table, column)
+  const filled = blocks.filter((block) => block.note !== null)
+  const target = filled.length === 0 ? row : filled.reduce((best, block) => (Math.abs(block.row - row) < Math.abs(best.row - row) ? block : best)).row
+  goLive(view, target, null, null, column)
+}
+
+/**
+ * ⌥↓ / ⌥↑, and Next and Previous cell note, in the view (A5): the next or the previous time block live, its note made
+ * when empty. `filled`: only blocks with a note (↑ and ↓ at the card's edges), the caret on the near line.
+ */
+function goTimeBlock(view: EditorView, dir: -1 | 1, filled = false): boolean {
+  const open = openView(view.state)
+  if (open === null) return false
+  const list = filled || open.card.calendar.onlyFilled ? open.blocks.filter((block) => block.note !== null || block.note === open.card.pos) : open.blocks
+  const at = list.findIndex((block) => block.note === open.card.pos)
+  const target = list[at + dir]
+  // At the first or the last block the key is still the view's: the caret stays.
+  return target === undefined || goLive(view, target.row, filled ? (dir > 0 ? 0 : -1) : null)
+}
+
+/** "Copy all" in the view (A7): each filled block, its time on a line, then its note as Markdown. */
+function calendarMarkdown(view: EditorView): string {
+  const open = openView(view.state)
+  if (open === null) return ''
+  const serialize = serializers.get(view)
+  const { doc } = view.state
+  return open.blocks
+    .flatMap(({ time, note }) => {
+      if (note === null) return []
+      const node = doc.nodeAt(note)!
+      const body = serialize === undefined ? node.textBetween(0, node.content.size, '\n') : serialize(doc.type.create(null, node.content)).trim()
+      return [`${time}\n\n${body}`]
+    })
+    .join('\n\n')
 }
 
 /** How many "All notes" lists were built: each build draws a new one. */
@@ -292,6 +715,8 @@ const cardHead = (title: string, index: number, total: number, all: boolean) => 
 export function stepCellNote(view: EditorView, dir: -1 | 1): boolean {
   const label = cellNoteCardKey.getState(view.state)?.label ?? null
   if (label === null) return false
+  // In a calendar's "All notes" (YAZ-4276 A5): the next or the previous time block.
+  if (cellNoteCardKey.getState(view.state)?.calendar != null) return goTimeBlock(view, dir)
   const order = cellNoteOrder(view.state.doc)
   const target = order[order.indexOf(label) + dir]
   const mark = target === undefined ? null : markPosOf(view.state.doc, target)
@@ -301,11 +726,14 @@ export function stepCellNote(view: EditorView, dir: -1 | 1): boolean {
 }
 
 /** The card's state for the note labelled `label` in `doc`: closed when no such note is there. */
-function cardState(doc: ProseNode, label: string | null, all = false): CellNoteCardState {
+function cardState(doc: ProseNode, label: string | null, all = false, carry: Partial<CalendarAll> = {}): CellNoteCardState {
   const pos = label === null ? null : notePosOf(doc, label)
   if (label === null || pos === null) return CLOSED
   const mark = markPosOf(doc, label)
   const cell = mark === null ? null : cellPosAround(doc.resolve(mark))
+  // A calendar table's "All notes" is its own view, in the card (YAZ-4276); every other table's is the list.
+  const calendar = all && cell !== null ? calendarState(doc, label, pos, cell, carry) : null
+  if (calendar !== null) return calendar
   const note = doc.nodeAt(pos)!
   const order = cellNoteOrder(doc)
   const title = all ? `All cell notes (${order.length})` : cellNoteTitle(doc, label)
@@ -316,7 +744,7 @@ function cardState(doc: ProseNode, label: string | null, all = false): CellNoteC
     ...(all ? [Decoration.widget(pos + 1, allList, { side: -1, key: `cell-note-all:${++allBuilds}`, ignoreSelection: true, stopEvent: () => true })] : []),
     ...(cell === null ? [] : [Decoration.node(cell, cell + doc.nodeAt(cell)!.nodeSize, { class: CELL_NOTE_CELL_OPEN_CLASS })]),
   ])
-  return { label, pos, cell, all, set }
+  return { label, pos, cell, all, calendar: null, set }
 }
 
 /**
@@ -336,9 +764,13 @@ export function closeCellNote(view: EditorView, moveCaret = true): Transaction |
   const { state } = view
   const label = cellNoteCardKey.getState(state)?.label ?? null
   if (label === null) return null
+  const card = cellNoteCardKey.getState(state)!
   const tr = state.tr.setMeta(cellNoteCardKey, null)
   const pos = notePosOf(state.doc, label)
-  const mark = markPosOf(state.doc, label)
+  // In a calendar's "All notes" (YAZ-4276 A5), the caret goes to the cell of the note it is in.
+  const here = card.calendar === null ? null : cellNoteAround(state.selection.$head)
+  const mark = markPosOf(state.doc, here === null ? label : (state.doc.nodeAt(here)!.attrs.label as string))
+  if (view.editable) removeMadeEmpty(tr, card)
   if (view.editable && pos !== null && isEmptyCellNote(state.doc.nodeAt(pos)!)) removeCellNote(tr, label)
   if (moveCaret && mark !== null) tr.setSelection(Selection.near(tr.doc.resolve(tr.mapping.map(mark + 1)), -1))
   view.dispatch(tr)
@@ -433,6 +865,8 @@ interface CardMemory {
   height: number | null
   /** The content's height at the last placement: growth after a resize that cut the content off is counted from it. */
   lastContent: number | null
+  /** A calendar's "All notes" height from a resize, in layout px; null to fit its list. Apart from `height` (YAZ-4416). */
+  allHeight: number | null
   /** Pinned: a mousedown outside the card does not close it. One for the editor, across notes; starts as the setting says. */
   pinned: boolean
 }
@@ -514,31 +948,40 @@ export function openCellNoteByLabel(view: EditorView, label: string): boolean {
   return true
 }
 
-/** The first (`dir` -1) or last (1) caret place of the open note, or null. */
-const cardEdge = (state: EditorState, dir: -1 | 1): Selection | null => {
+/** The first (`dir` -1) or last (1) caret place of the note at `note`, or null. */
+const noteEdge = (state: EditorState, note: number, dir: -1 | 1): Selection | null => {
+  const end = note + state.doc.nodeAt(note)!.nodeSize - 1
+  return Selection.findFrom(state.doc.resolve(dir < 0 ? note + 1 : end), -dir, true)
+}
+
+/** "All notes" (the list) is on and the caret is in the open (hidden) note: a key must not write there. A calendar's view is editable. */
+const readOnlyAll = (state: EditorState): boolean => {
+  const card = cellNoteCardKey.getState(state)
+  return card?.all === true && card.calendar === null && inCard(state, state.selection.head)
+}
+
+/** The note that holds `pos`: the open note, or in a calendar's "All notes" one of the notes it shows; else null. */
+const cardNoteAt = (state: EditorState, pos: number): number | null => {
   const card = cellNoteCardKey.getState(state)
   if (card?.pos == null) return null
-  const end = card.pos + state.doc.nodeAt(card.pos)!.nodeSize - 1
-  return Selection.findFrom(state.doc.resolve(dir < 0 ? card.pos + 1 : end), -dir, true)
+  const notes = card.calendar === null ? [card.pos] : card.calendar.shown
+  return notes.find((note) => pos > note && pos < note + state.doc.nodeAt(note)!.nodeSize) ?? null
 }
 
-/** "All notes" is on and the caret is in the open (hidden) note: a key must not write there. */
-const readOnlyAll = (state: EditorState): boolean => cellNoteCardKey.getState(state)?.all === true && inCard(state, state.selection.head)
-
-/** Is `pos` inside the open note? */
-const inCard = (state: EditorState, pos: number): boolean => {
-  const card = cellNoteCardKey.getState(state)
-  return card?.pos != null && pos > card.pos && pos < card.pos + state.doc.nodeAt(card.pos)!.nodeSize
-}
+/** Is `pos` inside the open note (or a note the calendar view shows)? */
+const inCard = (state: EditorState, pos: number): boolean => cardNoteAt(state, pos) !== null
 
 /** ArrowUp on the card's first line, ArrowDown on its last: to that line's start or end, not out of the card. */
 const stayInCard =
   (dir: -1 | 1, extend: boolean): Command =>
   (state, dispatch, view) => {
     const { selection } = state
-    if (view === undefined || !inCard(state, selection.head) || !view.endOfTextblock(dir < 0 ? 'up' : 'down')) return false
-    const edge = cardEdge(state, dir)
+    const note = cardNoteAt(state, selection.head)
+    if (view === undefined || note === null || !view.endOfTextblock(dir < 0 ? 'up' : 'down')) return false
+    const edge = noteEdge(state, note, dir)
     if (edge === null || edge.$head.start() !== selection.$head.start()) return false
+    // In a calendar's "All notes" (YAZ-4276): on to the next or the previous block that has a note, its near line.
+    if (!extend && cellNoteCardKey.getState(state)?.calendar != null) return dispatch === undefined || goTimeBlock(view, dir, true)
     dispatch?.(state.tr.setSelection(extend ? TextSelection.create(state.doc, selection.anchor, edge.head) : edge))
     return true
   }
@@ -549,15 +992,16 @@ const stayInCard =
  */
 const selectCard: Command = (state, dispatch, view) => {
   const { from, to } = state.selection
-  if (!inCard(state, from) || !inCard(state, to)) return false
+  const note = cardNoteAt(state, from)
+  if (note === null || cardNoteAt(state, to) !== note) return false
   // "All notes" (round 4 of the demo): the list, as the page's own selection (ProseMirror leaves a widget's alone).
-  if (cellNoteCardKey.getState(state)?.all === true) {
+  if (cellNoteCardKey.getState(state)?.all === true && cellNoteCardKey.getState(state)?.calendar === null) {
     const list = view?.dom.querySelector('.cell-note-card__all')
     if (list != null && dispatch !== undefined) window.getSelection()?.selectAllChildren(list)
     return list != null
   }
-  const first = cardEdge(state, -1)
-  const last = cardEdge(state, 1)
+  const first = noteEdge(state, note, -1)
+  const last = noteEdge(state, note, 1)
   if (first === null || last === null) return false
   dispatch?.(state.tr.setSelection(TextSelection.create(state.doc, first.head, last.head)))
   return true
@@ -608,6 +1052,10 @@ const visibleBox = (scroller: HTMLElement | null): { left: number; top: number; 
 /** The smallest card a resize leaves, in px. */
 const MIN_WIDTH = 240
 const MIN_HEIGHT = 120
+/** prosemirror-history's meta on an undo or a redo (its `PluginKey('history')`). */
+const HISTORY_META = 'history$'
+/** The least height of a calendar's "All notes" card under its cell: room for its head and a few time blocks (YAZ-4410). */
+const CALENDAR_MIN_HEIGHT = 360
 
 /** The eight resize grips: an edge or a corner, its sides (-1 left/top, 1 right/bottom) and its cursor. */
 const GRIPS: ReadonlyArray<{ name: string; x: -1 | 0 | 1; y: -1 | 0 | 1; cursor: string }> = [
@@ -633,9 +1081,11 @@ function cardView(view: EditorView) {
   let frameId = 0
   let listening = false
   // The card's spot, size and pin, kept per editor (`memories`): a rebuilt state (a reload from disk) keeps them.
-  const memory = memories.get(view) ?? { placed: null, width: null, height: null, lastContent: null, pinned: pinnedAtStart }
+  const memory = memories.get(view) ?? { placed: null, width: null, height: null, lastContent: null, allHeight: null, pinned: pinnedAtStart }
   memories.set(view, memory)
   let shownHeight = ''
+  /** The height last written was a calendar's "All notes" (YAZ-4411): the next plain card is measured afresh. */
+  let calendarShown = false
   /** The cap on the card's height last set: the visible area below its top. */
   let cap = ''
   /** The scroller, found on open, and the visible area, read again after a scroll or a window resize. */
@@ -665,7 +1115,8 @@ function cardView(view: EditorView) {
     const card = cellNoteCardKey.getState(view.state)
     if (card?.pos == null || card.cell === null || card.label === null) return null
     const note = view.nodeDOM(card.pos) as HTMLElement | null
-    const cell = view.nodeDOM(card.cell) as HTMLElement | null
+    // A calendar's "All notes" (YAZ-4276) stays under the cell it opened from while the live block changes.
+    const cell = view.nodeDOM(card.calendar?.anchor ?? card.cell) as HTMLElement | null
     const parent = note?.offsetParent as HTMLElement | null | undefined
     if (note == null || cell === null || parent == null) return null
     const box = cell.getBoundingClientRect()
@@ -691,7 +1142,8 @@ function cardView(view: EditorView) {
       return null
     }
     const { note, base, scale, area: box } = m
-    grow(note)
+    const calendar = cellNoteCardKey.getState(view.state)?.calendar != null
+    grow(note, calendar)
     const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max))
     const minTop = (box.top - base.top) / scale
     const maxBottom = (box.bottom - base.top) / scale
@@ -704,6 +1156,14 @@ function cardView(view: EditorView) {
       top = clamp((box.top + memory.placed.y - base.top) / scale, minTop, Math.max(minTop, maxBottom - MIN_HEIGHT))
       left = inArea((box.left + memory.placed.x - base.left) / scale)
       setCap(maxBottom - top)
+    } else if (calendar) {
+      // A calendar's "All notes" under its cell (YAZ-4410): as tall as the area below its top, so the live block can
+      // scroll into the card. While its cell shows with less than `CALENDAR_MIN_HEIGHT` below it, it moves up to have
+      // that much; else it stands under its cell and scrolls away with it, as a plain card does (DM7).
+      const cellShows = m.spotTop - 4 > minTop && m.spotTop - 4 <= maxBottom
+      top = cellShows && m.spotTop > maxBottom - CALENDAR_MIN_HEIGHT ? Math.max(minTop, maxBottom - CALENDAR_MIN_HEIGHT) : m.spotTop
+      setCap(maxBottom - Math.max(top, minTop))
+      left = inArea(m.spotLeft)
     } else {
       // Under its cell (change AQ of the demo): its spot in the page, so it scrolls with the page and leaves the view
       // with its cell. No clamp from top to bottom. As tall as the visible area at most.
@@ -725,10 +1185,29 @@ function cardView(view: EditorView) {
   /**
    * The height only grows (round 3 of the demo): to fit content that grew past it; after a resize that cut content off,
    * by as much as the content grew. The content's height is the card's scroll height (its box when the content is
-   * shorter). Written only when it changes.
+   * shorter). Written only when it changes. A calendar's "All notes" fits its content, or its own resized height
+   * (`allHeight`), and leaves `height` alone: its long list must not make every later card tall (YAZ-4411, YAZ-4416).
    */
-  const grow = (note: HTMLElement) => {
+  const grow = (note: HTMLElement, calendar: boolean) => {
     const content = note.scrollHeight + note.offsetHeight - note.clientHeight
+    if (calendar) {
+      calendarShown = true
+      const value = `${Math.ceil(memory.allHeight ?? content)}px`
+      if (value === shownHeight) return
+      shownHeight = value
+      host.style.setProperty('--cell-note-card-height', value)
+      return
+    }
+    if (calendarShown) {
+      // Back from "All notes": the card still stands at its height, so this frame's content is not the note's. The
+      // card's own height first; the next frame measures the note.
+      calendarShown = false
+      shownHeight = memory.height === null ? '' : `${Math.ceil(memory.height)}px`
+      if (memory.height === null) host.style.removeProperty('--cell-note-card-height')
+      else host.style.setProperty('--cell-note-card-height', shownHeight)
+      schedule()
+      return
+    }
     if (memory.height === null) memory.height = content
     else if (memory.lastContent !== null && content > memory.lastContent && content > memory.height) memory.height = memory.lastContent <= memory.height ? content : memory.height + content - memory.lastContent
     memory.lastContent = content
@@ -801,10 +1280,11 @@ function cardView(view: EditorView) {
     const areaRight = (box.right - base.left) / scale
     const areaBottom = (box.bottom - base.top) / scale
     const span = (value: number, max: number, min: number) => Math.max(Math.min(min, max), Math.min(value, max))
+    const calendar = cellNoteCardKey.getState(view.state)?.calendar != null
     track(grip.cursor, (dx, dy) => {
       let { left, top } = from
       let w = memory.width
-      let h = memory.height
+      let h = calendar ? memory.allHeight : memory.height
       if (grip.x === 1) w = span(w0 + dx / scale, areaRight - from.left, MIN_WIDTH)
       if (grip.x === -1) {
         w = span(w0 - dx / scale, right0 - areaLeft, MIN_WIDTH)
@@ -816,7 +1296,8 @@ function cardView(view: EditorView) {
         top = bottom0 - h
       }
       memory.width = w
-      memory.height = h
+      if (calendar) memory.allHeight = h
+      else memory.height = h
       applyWidth()
       placeHere(left, top)
       place()
@@ -831,6 +1312,7 @@ function cardView(view: EditorView) {
       memory.width = null
       memory.height = null
       memory.lastContent = null
+      memory.allHeight = null
       applyWidth()
       place()
     },
@@ -901,13 +1383,47 @@ export const cellNoteCard = $prose(
       state: {
         init: () => CLOSED,
         apply: (tr, card) => {
-          const meta: string | null | { all: boolean } | undefined = tr.getMeta(cellNoteCardKey)
-          if (meta !== undefined && meta !== null && typeof meta === 'object') return cardState(tr.doc, card.label, meta.all)
+          const meta: string | null | ({ all: boolean; label?: string } & Partial<CalendarAll>) | undefined = tr.getMeta(cellNoteCardKey)
+          const anchor = card.calendar === null ? undefined : tr.mapping.map(card.calendar.anchor)
+          const carry: Partial<CalendarAll> = { onlyFilled: card.calendar?.onlyFilled, made: card.calendar?.made, anchor }
+          if (meta !== undefined && meta !== null && typeof meta === 'object')
+            return cardState(tr.doc, meta.label ?? card.label, meta.all, { onlyFilled: meta.onlyFilled ?? carry.onlyFilled, made: meta.made ?? carry.made, anchor })
           if (meta !== undefined) return cardState(tr.doc, meta)
-          if (card.label === null || !tr.docChanged) return card
-          if (touchesNotes(tr)) return cardState(tr.doc, card.label, card.all)
-          return { ...card, pos: tr.mapping.map(card.pos!), cell: card.cell === null ? null : tr.mapping.map(card.cell), set: card.set.map(tr.mapping, tr.doc) }
+          // An undo or a redo puts the caret back where it was, so the card follows it and the next key goes where the
+          // caret shows. In a cell note other than the open one, or with no card open, that note's card opens (in "All
+          // notes", its block goes live: YAZ-4409, YAZ-4415, YAZ-4427). In the page, the card closes: it would hide the
+          // caret (YAZ-4426).
+          if (tr.getMeta(HISTORY_META) !== undefined) {
+            const at = cellNoteAround(tr.selection.$head)
+            const label = at === null ? null : (tr.doc.nodeAt(at)!.attrs.label as string)
+            if (label !== null && label !== card.label) return cardState(tr.doc, label, card.label !== null && card.all, carry)
+            if (label === null && card.label !== null) return CLOSED
+          }
+          if (card.label === null) return card
+          // A calendar's view moves its Now tag with the table's minute tick (YAZ-4276).
+          if (!tr.docChanged) return card.calendar !== null && tr.getMeta(calendarKey) !== undefined ? cardState(tr.doc, card.label, card.all, carry) : card
+          if (touchesNotes(tr)) return cardState(tr.doc, card.label, card.all, carry)
+          const cell = card.cell === null ? null : tr.mapping.map(card.cell)
+          // A calendar's view is built again when its table changes (a row, a time) or another note does (its lines);
+          // typing in the live note only maps it.
+          if (card.calendar !== null && cell !== null) {
+            const table = calendarAround(tr.doc, cell)
+            if (table === null || (changedTables(tr).has(table.pos) && !typingInBodyCells(tr)) || changesOtherNotes(tr, card.label)) return cardState(tr.doc, card.label, card.all, carry)
+          }
+          const calendar = card.calendar === null ? null : { ...card.calendar, shown: card.calendar.shown.map((note) => tr.mapping.map(note)), anchor: anchor! }
+          return { ...card, pos: tr.mapping.map(card.pos!), cell, calendar, set: card.set.map(tr.mapping, tr.doc) }
         },
+      },
+      // A calendar view that closed by any route (Back, ×, Esc, another note's card, its table no longer a calendar
+      // table, its note gone): the notes it made that are still empty go, with their marks (A9). Back, × and Esc already
+      // removed theirs, so this finds none there.
+      appendTransaction: (_trs, before, state) => {
+        const was = cellNoteCardKey.getState(before)?.calendar
+        const now = cellNoteCardKey.getState(state)
+        if (was == null || was.made.length === 0 || now?.calendar != null) return null
+        const tr = state.tr
+        removeMadeEmpty(tr, { ...now!, calendar: was })
+        return tr.docChanged ? tr : null
       },
       view: (view) => {
         parsers.set(view, (markdown) => ctx.get(parserCtx)(markdown))
@@ -924,8 +1440,9 @@ export const cellNoteCard = $prose(
           readOnlyAll(view.state) && !event.metaKey && !event.ctrlKey && (event.key.length === 1 || ['Backspace', 'Delete', 'Enter', 'Tab'].includes(event.key)),
         // A mouse selection that starts in the card ends in it.
         createSelectionBetween: (view, $anchor, $head) => {
-          if (!inCard(view.state, $anchor.pos) || inCard(view.state, $head.pos)) return null
-          const edge = cardEdge(view.state, $head.pos < $anchor.pos ? -1 : 1)
+          const note = cardNoteAt(view.state, $anchor.pos)
+          if (note === null || cardNoteAt(view.state, $head.pos) === note) return null
+          const edge = noteEdge(view.state, note, $head.pos < $anchor.pos ? -1 : 1)
           return edge === null ? null : TextSelection.create(view.state.doc, $anchor.pos, edge.head)
         },
         handleDOMEvents: {
@@ -936,6 +1453,17 @@ export const cellNoteCard = $prose(
             if (cell === null) return false
             event.preventDefault()
             return openCellNote(view, cell)
+          },
+          // ↑ / ↓ (and ⇧) at the card's edges, as a DOM handler: Crepe's gap cursor reads the arrows in its
+          // `handleKeyDown` before any keymap, and at the card's last line it put a gap cursor after the note; a second ↓
+          // went into a hidden note (YAZ-4395). A menu that took the key (the slash menu, in the capture phase) and the
+          // `[[` picker go first.
+          keydown: (view, event) => {
+            if ((event.key !== 'ArrowUp' && event.key !== 'ArrowDown') || event.altKey || event.metaKey || event.ctrlKey) return false
+            if (event.defaultPrevented || wikilinkPickerOpen(view.state)) return false
+            if (!stayInCard(event.key === 'ArrowUp' ? -1 : 1, event.shiftKey)(view.state, view.dispatch, view)) return false
+            event.preventDefault()
+            return true
           },
         },
       },
@@ -950,6 +1478,33 @@ const whileOpen =
     return dispatch === undefined ? true : run(view)
   }
 
+/** A command while the caret is in a note that a calendar's "All notes" shows (YAZ-4276): `run` on the view. */
+const inCalendar =
+  (run: (view: EditorView) => boolean): Command =>
+  (state, dispatch, view) => {
+    if (cellNoteCardKey.getState(state)?.calendar == null || view === undefined || !inCard(state, state.selection.head)) return false
+    return dispatch === undefined ? true : run(view)
+  }
+
+/**
+ * The "All notes" row of Settings › Hotkeys (YAZ-4276 A6, no key by default): from a table cell, or from its open card,
+ * "All notes" of that cell's note (made when the cell has none); in "All notes", back to the card.
+ */
+const toggleAllAtCaret: Command = (state, dispatch, view) => {
+  if (view === undefined) return false
+  const card = cellNoteCardKey.getState(state)
+  if (card?.all === true) {
+    if (dispatch) setAllCellNotes(view, false)
+    return true
+  }
+  const cell = card?.label != null && inCard(state, state.selection.head) ? card.cell : cellPosAround(state.selection.$from)
+  if (cell === null || !canOpenCellNote(view, cell)) return false
+  if (dispatch === undefined) return true
+  if (card?.cell !== cell && !openCellNote(view, cell)) return false
+  setAllCellNotes(view, true)
+  return true
+}
+
 /** Open the cell note of the caret's cell (round 4 of the demo, the "Open cell note" row): made when it has none. */
 const openAtCaret: Command = (state, dispatch, view) => {
   const cell = cellPosAround(state.selection.$from)
@@ -958,8 +1513,9 @@ const openAtCaret: Command = (state, dispatch, view) => {
 }
 
 /**
- * Esc, ⌘A (in the card, or in a cell), and ArrowUp and ArrowDown at the card's edges (priority 90: the `[[` picker at
- * 100 first); and the rows of Settings › Hotkeys for the cell notes (round 4 of the demo, `shared/keys/note.ts`).
+ * Esc and ⌘A (in the card, or in a cell; priority 90: the `[[` picker at 100 first); and the rows of Settings › Hotkeys
+ * for the cell notes (round 4 of the demo, `shared/keys/note.ts`). ArrowUp and ArrowDown at the card's edges are the
+ * plugin's `keydown` DOM handler (YAZ-4395).
  */
 export const cellNoteCardKeymap = $shortcut((ctx) => ({
   ...rowShortcuts(ctx, 'note.openCellNote', 'OpenCellNote', { priority: 90, onRun: () => openAtCaret }),
@@ -967,10 +1523,9 @@ export const cellNoteCardKeymap = $shortcut((ctx) => ({
   ...rowShortcuts(ctx, 'note.previousCellNote', 'PreviousCellNote', { priority: 90, onRun: () => whileOpen((view) => stepCellNote(view, -1)) }),
   ...rowShortcuts(ctx, 'note.cellNoteBack', 'CellNoteBack', { priority: 90, onRun: () => whileOpen((view) => goCellNoteHistory(view, -1)) }),
   ...rowShortcuts(ctx, 'note.cellNoteForward', 'CellNoteForward', { priority: 90, onRun: () => whileOpen((view) => goCellNoteHistory(view, 1)) }),
+  ...rowShortcuts(ctx, 'note.allCellNotes', 'AllCellNotes', { priority: 90, onRun: () => toggleAllAtCaret }),
+  ...rowShortcuts(ctx, 'note.nextTimeBlock', 'NextTimeBlock', { priority: 90, onRun: () => inCalendar((view) => goTimeBlock(view, 1)) }),
+  ...rowShortcuts(ctx, 'note.previousTimeBlock', 'PreviousTimeBlock', { priority: 90, onRun: () => inCalendar((view) => goTimeBlock(view, -1)) }),
   CloseCellNote: { key: 'Escape', priority: 90, onRun: () => closeCard },
   CellNoteSelectAll: { key: 'Mod-a', priority: 90, onRun: () => (state, dispatch, view) => selectCard(state, dispatch, view) || selectCell(state, dispatch, view) },
-  CellNoteCardUp: { key: 'ArrowUp', priority: 90, onRun: () => stayInCard(-1, false) },
-  CellNoteCardDown: { key: 'ArrowDown', priority: 90, onRun: () => stayInCard(1, false) },
-  CellNoteCardShiftUp: { key: 'Shift-ArrowUp', priority: 90, onRun: () => stayInCard(-1, true) },
-  CellNoteCardShiftDown: { key: 'Shift-ArrowDown', priority: 90, onRun: () => stayInCard(1, true) },
 }))

@@ -1863,6 +1863,10 @@ export interface SettingsState {
   newNoteTitleTemplate: string
   /** Settings › Editor › Cell notes › Keep cell notes open (round 3 of the YAZ-3818 demo): a new tab's cell note card starts pinned (a click outside does not close it). Its pin button still toggles it for that tab. */
   tableCellNotePinned: boolean
+  /** Settings › Editor › Cell notes › All notes opens at (YAZ-4276 A1): a calendar table's "All notes" opens at the time block of the cell you came from, or at now. */
+  tableAllNotesOpensAt: AllNotesOpensAt
+  /** Settings › Editor › Typing › Arrows (YAZ-4273 D8): `->`, `==>`, `<-`, `<->` and the rest become one arrow character as you type (`typingArrows.ts`). */
+  typingArrows: boolean
   /** Settings › Editor › Calendar tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mm a`, for new tables, new times in a table with none, and "Current time". */
   tableTimeFormat: string
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
@@ -2074,8 +2078,12 @@ export type TocLines = 'hover' | 'always' | 'off'
 export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
 
 /** Outside changes (YAZ-3704 D5): a glow stays until you check it, ends after 10 s or 1 min, or never shows. */
-export type OutsideChangeGlow = 'until-checked' | '10s' | '60s' | 'off'
-export const OUTSIDE_CHANGE_GLOWS: readonly OutsideChangeGlow[] = ['until-checked', '10s', '60s', 'off']
+/** The glow of outside changes (YAZ-3704 D5): timed, until checked, or off. 10 seconds went in the YAZ-4272 demo: too quick to read. */
+export type OutsideChangeGlow = 'until-checked' | '60s' | '5m' | 'off'
+export const OUTSIDE_CHANGE_GLOWS: readonly OutsideChangeGlow[] = ['until-checked', '60s', '5m', 'off']
+/** Where a calendar table's "All notes" opens (YAZ-4276 A1): the time block of the cell you came from, or now's. */
+export type AllNotesOpensAt = 'cell' | 'now'
+export const ALL_NOTES_OPENS_AT: readonly AllNotesOpensAt[] = ['cell', 'now']
 
 /** Daily notes (YAZ-4164 D11): the button opens the note, or the note at the now row of its calendar table. */
 export type DailyNoteOpens = 'note' | 'now'
@@ -2309,6 +2317,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableCellNoteTemplate: '',
   newNoteTitleTemplate: '{MM}_{DD}- ',
   tableCellNotePinned: true,
+  tableAllNotesOpensAt: 'cell',
+  typingArrows: true,
   tableDayStart: DEFAULT_CALENDAR_DAY.start,
   tableDayEnd: DEFAULT_CALENDAR_DAY.end,
   tableTimeFormat: DEFAULT_TIME_FORMAT,

@@ -36,6 +36,11 @@
  * (⌘Z panic-undo untouched) and fold again when Next moves on. Mark all checked, or a list that empties,
  * leaves the folds that hide the active change open: the landing. Outside the zoomed bullet, the page
  * zooms out first and the host tells the tab.
+ *
+ * Cell notes (YAZ-4319): a change inside a cell note glows in a block the page hides until the note's card opens. So its
+ * cell's note mark glows too (`OUTSIDE_CELL_CLASS` on the cell), and Next opens the note as a card beside its cell, as
+ * find does (YAZ-3818 D19), with the caret where it was. Next closes the card it opened when it moves on; Mark all
+ * checked leaves it open: the landing.
  */
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, Selection, type Transaction } from '@milkdown/kit/prose/state'
@@ -44,8 +49,11 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { $prose } from '@milkdown/kit/utils'
 import type { OutsideChangeGlow } from '@shared/types'
 import { collapsedHeadingsHiding, setHeadingFoldSet } from '../outline/headingFolding'
+import { cellPosAround } from '../outline/listNodes'
 import { collapsedItemsHiding, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos, zoomToKey } from '../outline/zoom'
+import { closeCellNote, openCellNote } from '../table/cellNoteCard'
+import { cellNoteAround, cellNoteCardKey, isCellNoteHidden, isCellNoteMark, markPosOf } from '../table/cellNotes'
 import { FLASH_FRAMES, FLASH_MS, reducedMotion } from '../toc/tocMotion'
 import { EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, REWRITE_SHARE, replaceTracked, withTrailingParagraphOf, type OutsideRange } from './applyExternalMarkdown'
 import { diffDocs, isDerivedAttr } from './diffDocs'
@@ -59,6 +67,8 @@ export const OUTSIDE_REMOVED_CLASS = 'outside-removed'
 /** On each changed textblock: its hover shows the Checked button (outsideChanges.css). */
 export const OUTSIDE_BLOCK_CLASS = 'outside-change-block'
 export const OUTSIDE_CHECKED_CLASS = 'outside-checked'
+/** A table cell whose cell note holds a change (YAZ-4319): its note mark glows, since the note itself is hidden. */
+export const OUTSIDE_CELL_CLASS = 'outside-change-cell'
 /** On a glow or a removed mark: the mouse on it shows the box. Its value is the box's text in short ("Before: …"). */
 export const OUTSIDE_TIP_ATTR = 'data-outside-tip'
 /** The word-by-word box (YAZ-3989): one for each editor, on the body, hidden while the mouse is on no change. */
@@ -128,7 +138,7 @@ const NONE: ReadonlySet<number> = new Set()
 
 let nextId = 1
 
-const endsAt = (glow: OutsideChangeGlow, now: number): number | null => (glow === '10s' ? now + 10_000 : glow === '60s' ? now + 60_000 : null)
+const endsAt = (glow: OutsideChangeGlow, now: number): number | null => (glow === '60s' ? now + 60_000 : glow === '5m' ? now + 300_000 : null)
 
 /** The textblock nearest `pos` (a bullet removed leaves a range between blocks): the one after it, else the one before. */
 const textblockNear = (doc: ProseNode, pos: number): number | null => {
@@ -470,12 +480,22 @@ const checkedButton = (id: number) => (view: EditorView): HTMLElement => {
   return button
 }
 
+/** The label of the cell note that holds the block at `pos`, or null. */
+const noteLabelAt = (doc: ProseNode, pos: number): string | null => {
+  const note = cellNoteAround(doc.resolve(pos))
+  return note === null ? null : (doc.nodeAt(note)!.attrs.label as string)
+}
+
 const buildDecorations = (doc: ProseNode, changes: readonly OutsideChange[], activeId: number | null): DecorationSet => {
   if (changes.length === 0) return DecorationSet.empty
   const decorations: Decoration[] = []
+  // The cell notes that hold a change: one walk finds their marks, only when there are any (YAZ-4319).
+  const notes = new Set<string>()
   for (const change of changes) {
     const block = doc.nodeAt(change.pos)
     if (block === null) continue
+    const label = noteLabelAt(doc, change.pos)
+    if (label !== null) notes.add(label)
     const active = change.id === activeId
     // A change with nothing to glow and no mark (an empty bullet added) wears the ring on its block.
     const ringOnBlock = active && change.glow.length === 0 && change.removed.length === 0
@@ -493,10 +513,23 @@ const buildDecorations = (doc: ProseNode, changes: readonly OutsideChange[], act
       Decoration.widget(change.pos + 1 + block.content.size, checkedButton(change.id), { side: 1, ignoreSelection: true, stopEvent: () => true, key: `outside-checked-${change.id}` }),
     )
   }
+  if (notes.size > 0) {
+    doc.descendants((node, pos) => {
+      if (!isCellNoteMark(node) || !notes.has(node.attrs.label as string)) return true
+      const cell = cellPosAround(doc.resolve(pos))
+      if (cell !== null) decorations.push(Decoration.node(cell, cell + doc.nodeAt(cell)!.nodeSize, { class: OUTSIDE_CELL_CLASS }))
+      return false
+    })
+  }
   return DecorationSet.create(doc, decorations)
 }
 
-const snapshotOf = ({ changes, wholeNote }: OutsideState): OutsideChangesSnapshot => ({ count: changes.length, wholeNote })
+/** The bar's view of the list: the count, whole-note mode, and when the last timed glow goes (null while any waits for a check). */
+const snapshotOf = ({ changes, wholeNote, wholeNoteEnds }: OutsideState): OutsideChangesSnapshot => ({
+  count: changes.length,
+  wholeNote,
+  fadesAt: wholeNote ? wholeNoteEnds : changes.length > 0 && changes.every((change) => change.ends !== null) ? Math.max(...changes.map((change) => change.ends!)) : null,
+})
 
 const applyMeta = (meta: OutsideMeta, state: Omit<OutsideState, 'decorations'>): { next: Omit<OutsideState, 'decorations'>; redraw: boolean } => {
   switch (meta.type) {
@@ -570,10 +603,20 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
   const foldHeadings = (positions: Iterable<number>, collapsed: boolean): void => {
     setHeadingFoldSet([...positions], collapsed, { silent: true })(view.state, view.dispatch)
   }
+  /** The cell note Next opened as a card (YAZ-4319), by label: a label outlives every edit. */
+  let opened: string | null = null
   /** Next and a row's click (D9, YAZ-3998): the ring on `target`, its folds opened, scrolled into view. */
-  const goTo = (target: OutsideChange): void => {
-    const state = current()
-    if (state === undefined) return
+  const goTo = (to: OutsideChange): void => {
+    let target = to
+    if (current() === undefined) return
+    // Moving on: the card Next opened closes, unless the reader closed it or the next change is in it too.
+    const openNow = cellNoteCardKey.getState(view.state)?.label ?? null
+    if (opened !== null && openNow === opened && noteLabelAt(view.state.doc, target.pos) !== opened) {
+      closeCellNote(view, false)
+      target = current()?.changes.find((change) => change.id === to.id) ?? target
+    }
+    opened = null
+    const state = current()!
     // Moving on: what Next opened for the last change folds again first.
     fold(state.revealed, true)
     foldHeadings(state.revealedHeadings, true)
@@ -586,6 +629,15 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
     const revealedHeadings = new Set(collapsedHeadingsHiding(view.state, inside))
     fold(revealed, false)
     foldHeadings(revealedHeadings, false)
+    // A change inside a hidden cell note: its card opens beside its cell, the caret where it was (find's D19).
+    const note = cellNoteAround(view.state.doc.resolve(target.pos))
+    if (note !== null && isCellNoteHidden(view.state, note)) {
+      const label = view.state.doc.nodeAt(note)!.attrs.label as string
+      const mark = markPosOf(view.state.doc, label)
+      const cell = mark === null ? null : cellPosAround(view.state.doc.resolve(mark))
+      if (cell !== null && openCellNote(view, cell, false)) opened = label
+    }
+    target = current()?.changes.find((change) => change.id === to.id) ?? target
     dispatchMeta({ type: 'active', id: target.id, revealed, revealedHeadings })
     // The ring, not the caret: the selection stays where the reader left it. jsdom has no scrollIntoView.
     const { node } = view.domAtPos(inside)
@@ -624,6 +676,8 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
         fold(collapsedItemsHiding(view.state, active.pos + 1), false)
         foldHeadings(collapsedHeadingsHiding(view.state, active.pos + 1), false)
       }
+      // The card Next opened stays: it is part of the landing.
+      opened = null
       dispatchMeta({ type: 'clear' })
     },
     markWholeNote: () => dispatchMeta({ type: 'whole', now: Date.now() }),

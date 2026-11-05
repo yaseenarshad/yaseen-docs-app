@@ -65,6 +65,8 @@ describe('settingCandidates', () => {
       'sectionStep',
       'sectionLines',
       'selectionToolbar',
+      // Settings › Editor › Typing (YAZ-4273 D8).
+      'typingArrows',
       'tocOnByDefault',
       'tableOfContents',
       'tocLines',
@@ -81,6 +83,7 @@ describe('settingCandidates', () => {
       'tableCellBulletGap',
       'tableCellNoteTemplate',
       'tableCellNotePinned',
+      'tableAllNotesOpensAt',
       'tableNowMark',
       'tableNowButton',
       'tableDimPast',

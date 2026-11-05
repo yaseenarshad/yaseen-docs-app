@@ -323,11 +323,13 @@ describe('createStore: loading', () => {
     expect(DEFAULT_SETTINGS.outsideChangeGlow).toBe('until-checked')
     await seed(valid({ settings: legacySettings }))
     expect(createStore(file).get().settings.outsideChangeGlow).toBe('until-checked')
-    for (const outsideChangeGlow of ['10s', '60s', 'off'] as const) {
+    for (const outsideChangeGlow of ['60s', '5m', 'off'] as const) {
       await seed(valid({ settings: { ...DEFAULT_SETTINGS, outsideChangeGlow } }))
       expect(createStore(file).get().settings.outsideChangeGlow).toBe(outsideChangeGlow)
     }
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, outsideChangeGlow: '30s' }).outsideChangeGlow).toBe('until-checked')
+    // 10 seconds went in the YAZ-4272 demo: a file that still has it reads the default.
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, outsideChangeGlow: '10s' }).outsideChangeGlow).toBe('until-checked')
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, outsideChangeGlow: true }).outsideChangeGlow).toBe('until-checked')
     expect(isSettings({ ...DEFAULT_SETTINGS, outsideChangeGlow: 'forever' })).toBe(false)
   })
@@ -522,6 +524,8 @@ describe('createStore: loading', () => {
       noteBulletGap: [1, 21, 10.5, true],
       tableCellNoteTemplate: ['x'.repeat(2001), 3, null],
       tableCellNotePinned: ['yes', 1],
+      typingArrows: ['on', 0],
+      tableAllNotesOpensAt: ['here', '', true],
       tableBandColour: ['', 'magenta', '#12345', '#12345g', 4],
       tableBandStrength: [0, 61, 10.5, '10', Infinity],
       tableBandRows: ['row', '', 2],

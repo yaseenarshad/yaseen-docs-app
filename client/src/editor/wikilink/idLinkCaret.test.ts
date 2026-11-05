@@ -303,3 +303,101 @@ describe('a double-click on a word next to a link selects only that word (YAZ-39
     expect([view.state.selection.from, view.state.selection.to]).toEqual([1, 16])
   })
 })
+
+/**
+ * YAZ-4275: text typed at a link's edge goes to that edge, never inside the link. At a line's end, after ⌘→, the editor's
+ * caret is at the link's end, but the browser keeps its own caret at the end of the shown name, before the hidden
+ * `.excalidraw]]`, and types there. In the vault a note link is an ID link, whose title is a widget AT the link's end, so
+ * that caret is already outside: why only drawing and diagram links broke. A name link (`[[Named]]`) has hidden text after
+ * its shown name too, so it is pinned here as well.
+ */
+describe('a letter the browser types inside a closed link goes to its edge (YAZ-4275)', () => {
+  /** What the browser does: its text lands at `at`. The editor's own handlers first, else ProseMirror's default insert. */
+  const typeAt = (view: EditorView, at: number, text: string) => {
+    const handled = view.someProp('handleTextInput', (f) => f(view, at, at, text, () => view.state.tr.insertText(text, at, at)))
+    if (handled !== true) view.dispatch(view.state.tr.insertText(text, at, at))
+  }
+  const DRAWING = 'Plan.excalidraw'
+  const markdown = async (crepe: Crepe) => (await getMarkdownForSave(crepe)).trim()
+
+  it('⌘→ to the end of a line that ends in a drawing link, then a space and a word: they go after the link', async () => {
+    PATHS[DRAWING] = '/v/Plan.excalidraw'
+    const { crepe, view } = await mount(`pad [[${DRAWING}]]\n`)
+    const end = view.state.doc.firstChild!.nodeSize - 1 // the link's end, the line's end
+    arrow(view, 'ArrowRight', end) // ⌘→: the editor's caret is at the link's end
+    typeAt(view, 5 + 2 + 'Plan'.length, ' ') // the browser's caret: after the shown "Plan", before the hidden ".excalidraw]]"
+    typeAt(view, view.state.selection.head, 'x')
+    expect(await markdown(crepe)).toBe(`pad [[${DRAWING}]] x`)
+  })
+
+  it('a name link to a note breaks the same way, and is fixed the same way', async () => {
+    const { crepe, view } = await mount('pad [[Named]]\n')
+    arrow(view, 'ArrowRight', 14)
+    typeAt(view, 12, ' ') // after the shown "Named", before the hidden `]]`
+    typeAt(view, view.state.selection.head, 'x')
+    expect(await markdown(crepe)).toBe('pad [[Named]] x')
+  })
+
+  it('⌘← to the start of a line that starts with a link: the letter goes before it', async () => {
+    PATHS[DRAWING] = '/v/Plan.excalidraw'
+    const { crepe, view } = await mount(`[[${DRAWING}]] tail\n`)
+    arrow(view, 'ArrowLeft', 1)
+    typeAt(view, 3, 'x') // after the hidden `[[`, before the shown name
+    expect(await markdown(crepe)).toBe(`x[[${DRAWING}]] tail`)
+  })
+
+  it('between two links, the letter goes between them', async () => {
+    PATHS[DRAWING] = '/v/Plan.excalidraw'
+    const { crepe, view } = await mount(`[[${DRAWING}]][[Named]]\n`)
+    const between = 1 + `[[${DRAWING}]]`.length
+    select(view, between)
+    typeAt(view, 1 + 2 + 'Plan'.length, 'x') // the end of the first link's shown name
+    expect(await markdown(crepe)).toBe(`[[${DRAWING}]]x[[Named]]`)
+  })
+
+  it('in a bullet, a table cell and a cell note too', async () => {
+    PATHS[DRAWING] = '/v/Plan.excalidraw'
+    const bullet = await mount(`- pad [[${DRAWING}]]\n`)
+    let end = 0
+    bullet.view.state.doc.descendants((node, pos) => {
+      if (node.isTextblock) end = pos + node.nodeSize - 1
+    })
+    arrow(bullet.view, 'ArrowRight', end)
+    typeAt(bullet.view, end - '.excalidraw]]'.length, ' ')
+    typeAt(bullet.view, bullet.view.state.selection.head, 'x')
+    expect(await markdown(bullet.crepe)).toBe(`* pad [[${DRAWING}]] x`)
+
+    const table = await mount(`| a | b |\n| --- | --- |\n| [[${DRAWING}]] | z |\n`)
+    let cellEnd = 0
+    table.view.state.doc.descendants((node, pos) => {
+      if (node.isTextblock && node.textContent.includes(DRAWING)) cellEnd = pos + node.nodeSize - 1
+    })
+    arrow(table.view, 'ArrowRight', cellEnd)
+    typeAt(table.view, cellEnd - '.excalidraw]]'.length, 'x')
+    expect(await markdown(table.crepe)).toContain(`[[${DRAWING}]]x`)
+
+    // A cell note: a footnote block under the table, hidden until its card opens; its lines are textblocks too.
+    const note = await mount(`| a |\n| --- |\n| b[^cell-1] |\n\n[^cell-1]: pad [[${DRAWING}]]\n`)
+    let noteEnd = 0
+    note.view.state.doc.descendants((node, pos) => {
+      if (node.isTextblock && node.textContent.includes(DRAWING)) noteEnd = pos + node.nodeSize - 1
+    })
+    expect(noteEnd).toBeGreaterThan(0)
+    arrow(note.view, 'ArrowRight', noteEnd)
+    typeAt(note.view, noteEnd - '.excalidraw]]'.length, ' ')
+    typeAt(note.view, note.view.state.selection.head, 'x')
+    expect(await markdown(note.crepe)).toContain(`[^cell-1]: pad [[${DRAWING}]] x`)
+  })
+
+  it('a caret where the browser types (all normal typing), an open link, and a composition stay the browser\'s', async () => {
+    PATHS[DRAWING] = '/v/Plan.excalidraw'
+    const { crepe, view } = await mount(`pad [[${DRAWING}]] tail\n`)
+    select(view, 3)
+    typeAt(view, 3, 'x')
+    expect(await markdown(crepe)).toBe(`paxd [[${DRAWING}]] tail`)
+    // "Edit link" opens it: the caret is strictly inside, and the letter goes where it is typed.
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 12)).setMeta(OPEN_ID_LINK, true))
+    typeAt(view, 12, 'y')
+    expect(await markdown(crepe)).toBe(`paxd [[Plany.excalidraw]] tail`)
+  })
+})

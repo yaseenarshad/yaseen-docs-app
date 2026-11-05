@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react'
 import type { ReviewSettings } from '@shared/reviews'
-import { DEFAULT_SETTINGS, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
+import { DEFAULT_SETTINGS, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, HotkeyAside } from '@shared/keys'
@@ -45,7 +45,7 @@ import './outline/bulletThreading.css'
 import './outline/sectionIndent.css'
 import './softBreaks.css'
 import { splitFrontmatter } from '@shared/frontmatter'
-import { notePageSwitches, setNotePageSwitch, type PageSwitchKey } from '@shared/pageSwitches'
+import { noteOutsideGlow, notePageSwitches, setNoteOutsideGlow, setNotePageSwitch, type PageSwitchKey } from '@shared/pageSwitches'
 import { isNoteReadOnly, setNoteReadOnly } from '@shared/readOnly'
 import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
@@ -649,6 +649,8 @@ function CrepeHost({
   const tableOfContentsOn = pageSwitches.toc ?? tocOnByDefault
   const guideLinesOn = pageSwitches['guide-lines'] ?? guideLinesOnByDefault
   const foldingOn = pageSwitches.folding ?? foldingOnByDefault
+  // This page's glow for outside changes (YAZ-4272 D2), else Settings'. Read when the note on disk changes, never per key.
+  const pageGlow = useMemo(() => noteOutsideGlow(disk), [disk])
   // Read by the editor's mount (createCrepe), which must not re-run when the switch turns: the effect below sends the change.
   const foldingOnRef = useRef(foldingOn)
   foldingOnRef.current = foldingOn
@@ -692,7 +694,7 @@ function CrepeHost({
   )
   // The Glow setting goes through the channel, never the Crepe effect's deps: a change rebuilds no editor (D5).
   // Declared before that effect, so the first state already has it.
-  useEffect(() => outsideChanges.setGlow(outsideChangeGlow), [outsideChanges, outsideChangeGlow])
+  useEffect(() => outsideChanges.setGlow(pageGlow ?? outsideChangeGlow), [outsideChanges, pageGlow, outsideChangeGlow])
   /**
    * The table of contents wiring (YAZ-2700), ONE per host on the same terms: the engine publishes
    * the note's rows (its headings or its bullets) to this channel and answers its jump and its
@@ -1040,6 +1042,7 @@ function CrepeHost({
   const toggleTableOfContents = () => void setPageSwitch('toc', 'Table of contents', !tableOfContentsOn)
   const toggleGuideLines = () => void setPageSwitch('guide-lines', 'Guide lines', !guideLinesOn)
   const toggleFolding = () => void setPageSwitch('folding', 'Folding', !foldingOn)
+  const changeOutsideGlow = (glow: OutsideChangeGlow | null) => void writeOwnKey((content) => setNoteOutsideGlow(content, glow), 'Outside changes glow')
 
   // Line numbers (YAZ-2643) count lines of the file ON DISK. So the gutter is rebuilt only when
   // the page and the disk agree: on turn-on, when a save settles, when an outside change lands.
@@ -1176,7 +1179,7 @@ function CrepeHost({
           subscribe={subscribeFolds}
           keys={{ collapse: 'note.foldAll', expand: 'note.unfoldAll' }}
         />}
-        <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} guideLines={guideLinesOn} onToggleGuideLines={toggleGuideLines} folding={foldingOn} onToggleFolding={toggleFolding} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContentsOn ? changeTocSource : undefined} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
+        <PageSettings readOnly={readOnly} onToggleReadOnly={() => (readOnly ? setAskingUnlock(true) : void setReadOnly(true))} lineNumbers={lineNumbersOn} onToggleLineNumbers={() => setLineNumbersOn((on) => !on)} sectionIndent={sectionIndentOn} onToggleSectionIndent={toggleSectionIndent} guideLines={guideLinesOn} onToggleGuideLines={toggleGuideLines} folding={foldingOn} onToggleFolding={toggleFolding} headingLevels={headingLevelsOn} onToggleHeadingLevels={() => setHeadingLevelsOn((on) => !on)} tableOfContents={tableOfContentsOn} onToggleTableOfContents={toggleTableOfContents} tocSource={tocSource} onChangeTocSource={tableOfContentsOn ? changeTocSource : undefined} outsideGlow={pageGlow} appGlow={outsideChangeGlow} onChangeOutsideGlow={changeOutsideGlow} readText={() => (readyCrepe !== null && crepeRef.current === readyCrepe ? getPlainText(readyCrepe) : '')} />
         <DocumentZoom value={documentZoom} onChange={changeZoom} />
         {readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={() => setAskingUnlock(true)} onAllow={() => { setAskingUnlock(false); void setReadOnly(false) }} onCancel={() => setAskingUnlock(false)} />}
         {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
@@ -1194,7 +1197,7 @@ function CrepeHost({
           </button>
         </div>
       ) : (
-        <OutsideChangesBar channel={outsideChanges} pinned={outsideListPinned} onPin={onChangeOutsideListPinned} />
+        <OutsideChangesBar channel={outsideChanges} pinned={outsideListPinned} onPin={onChangeOutsideListPinned} onKeep={() => changeOutsideGlow('until-checked')} />
       )}
       {/* The scroller holds SIX stacked blocks, in this order. Block ZERO is the page title
           (⚡ YAZ-888) — the file's own name, React-side and never a ProseMirror node; block ONE is
