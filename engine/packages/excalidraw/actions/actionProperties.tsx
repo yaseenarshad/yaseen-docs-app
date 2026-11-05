@@ -958,6 +958,7 @@ export const actionChangeBackgroundColor = register<
               : undefined
           }
           pickLabels={data?.textToolbar ? TEXT_TOOLBAR_FILL_LABELS : undefined}
+          swatchLetter={data?.textToolbar ? "box" : undefined}
           palette={DEFAULT_ELEMENT_BACKGROUND_COLOR_PALETTE}
           type="elementBackground"
           label={t("labels.background")}

@@ -1198,15 +1198,16 @@ describe("element locking", () => {
         document.querySelector(".contextual-properties-toolbar"),
       ).not.toBeNull();
       // YAZ-4277 1E (D8): in edit the bar keeps the whole-box controls; the
-      // letters' colors are in the box editor's pop-up toolbar
+      // letters' colors are in the box editor's pop-up toolbar. Demo round 2:
+      // the fill is the same box-tile group as outside the edit
       expect(textColorGroup()).toBeNull();
-      openTextToolbarPopover("Background");
-      expect(
-        queryByTestId(
-          document.body,
-          `color-top-pick-${DEFAULT_ELEMENT_BACKGROUND_PICKS[1]}`,
-        ),
-      ).not.toBeNull();
+      expect(fillGroup()).not.toBeNull();
+      expect(picksIn(fillGroup())).toEqual(TEXT_TOOLBAR_FILL_PICKS);
+      for (const swatch of fillGroup()!.querySelectorAll(
+        ".color-picker__top-picks .color-picker__button",
+      )) {
+        expect(swatch.querySelector(".color-picker__box")).not.toBeNull();
+      }
     });
 
     it("should expose and apply image border controls", () => {
@@ -2928,10 +2929,13 @@ describe("the color groups on a selected text box (YAZ-4403)", () => {
     expect(white).toHaveAccessibleName("Text white");
   });
 
-  it("offers the fill picks yellow, blue and black as plain tiles, the others and None under its ▾", () => {
+  it("offers the fill picks yellow, blue and black as box tiles, the others and None under its ▾", () => {
     expect(picksIn(fillGroup())).toEqual(TEXT_TOOLBAR_FILL_PICKS);
     for (const swatch of swatches(fillGroup())) {
+      // demo round 2: a small box in the color, never an "A" (the highlight's)
       expect(swatch.querySelector(".color-picker__letter")).toBeNull();
+      expect(swatch.querySelector(".color-picker__box")).not.toBeNull();
+      expect(swatch).toHaveClass("color-picker__button--letter-box");
     }
     expect(swatches(fillGroup()).map((swatch) => swatch.title)).toEqual([
       "Fill yellow",

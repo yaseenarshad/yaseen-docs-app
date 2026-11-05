@@ -90,8 +90,25 @@
     justify-content: center;
   }
 
-  .color-picker__button.color-picker__button--letter-color {
+  .color-picker__button.color-picker__button--letter-color,
+  .color-picker__button.color-picker__button--letter-box {
     background-color: #ffffff;
+  }
+
+  .color-picker__button--letter-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  // the box's fill: a small rounded box in the color (YAZ-4277 demo round 2)
+  .color-picker__box {
+    width: 0.875rem;
+    height: 0.625rem;
+    border-radius: 3px;
+    background-color: var(--swatch-color);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
   }
 
   .color-picker__letter {

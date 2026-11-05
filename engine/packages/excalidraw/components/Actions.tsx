@@ -63,7 +63,6 @@ import {
   TextSizeIcon,
   adjustmentsIcon,
   DotsHorizontalIcon,
-  bucketFillIcon,
   pencilIcon,
   TextAlignCenterIcon,
   TextAlignLeftIcon,
@@ -582,14 +581,20 @@ export const ContextualPropertiesToolbar = ({
           <ContextualToolbarDivider />
           {textAlignMenu()}
           {lineSpacing()}
+          {/* demo round 2: the same fill group as outside the edit */}
           {predicates.backgroundColor && (
             <>
               <ContextualToolbarDivider />
-              <ToolbarPopover label="Background" icon={bucketFillIcon}>
+              <div
+                className="contextual-properties-toolbar__group"
+                role="group"
+                aria-label="Fill"
+              >
                 {renderAction("changeBackgroundColor", {
                   contextToolbar: true,
+                  textToolbar: true,
                 })}
-              </ToolbarPopover>
+              </div>
             </>
           )}
         </>

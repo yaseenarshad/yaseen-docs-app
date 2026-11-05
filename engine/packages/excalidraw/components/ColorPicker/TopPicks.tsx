@@ -27,13 +27,14 @@ interface TopPicksProps {
   /** YAZ-4074 6B: a swatch's name for a screen reader, by color (the highlight's "Highlight yellow"). */
   labels?: Readonly<Record<string, string>>;
   /**
-   * YAZ-4277 demo: an "A" on each swatch says what the color is for: in the
-   * color on white (text color), or dark on the color (highlight).
+   * YAZ-4277 demo: a mark on each swatch says what the color is for: an "A"
+   * in the color on white (text color), a dark "A" on the color (highlight),
+   * or a small box in the color on white (the box's fill).
    */
   letter?: SwatchLetter;
 }
 
-export type SwatchLetter = "color" | "on-color";
+export type SwatchLetter = "color" | "on-color" | "box";
 
 export const TopPicks = ({
   onChange,
@@ -90,6 +91,7 @@ export const TopPicks = ({
               "is-canonical-white": color === COLOR_PALETTE.white,
               "has-outline":
                 letter === "color" ||
+                letter === "box" ||
                 !isColorDark(color, COLOR_OUTLINE_CONTRAST_THRESHOLD),
               [`color-picker__button--letter-${letter}`]: !!letter,
             })}
@@ -102,10 +104,14 @@ export const TopPicks = ({
             onClick={() => onChange(color)}
             data-testid={`color-top-pick-${color}`}
           >
-            {letter && (
-              <span className="color-picker__letter" aria-hidden="true">
-                A
-              </span>
+            {letter === "box" ? (
+              <span className="color-picker__box" aria-hidden="true" />
+            ) : (
+              letter && (
+                <span className="color-picker__letter" aria-hidden="true">
+                  A
+                </span>
+              )
             )}
             <div className="color-picker__button-outline" />
           </button>
