@@ -508,18 +508,7 @@ button {
 .milkdown .ProseMirror mark.highlight-red { background: var(--mark-bg-red); }
 .milkdown .ProseMirror mark.highlight-gray { background: var(--mark-bg-gray); }
 
-/* The ▾ after the highlight buttons (YAZ-4348 demo round 2): narrow, as the cell toolbar's; lit as a pressed button
-   when the selection has one of its menu's colours. */
-.milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] {
-  width: 16px;
-  padding: 4px 0;
-}
-.milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] svg {
-  width: 16px;
-}
-.milkdown .milkdown-toolbar .toolbar-item.active[data-toolbar-item='highlight-more'] {
-  background: var(--crepe-color-selected);
-}
+/* The highlight buttons and their ▾ are the board toolbar's tiles (YAZ-4445): `editor/swatchTile.css`. */
 
 /* The note's selection toolbar, tighter (YAZ-4348 demo round 2, Yasin: "everything so spaced out … decently spaced
    out but not so close together"): Crepe gives each 32 px button 6 px on every side (12 px between two) and each
@@ -533,22 +522,22 @@ button {
 .milkdown .milkdown-toolbar .divider {
   margin: 10px 6px;
 }
-.milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] {
-  margin-left: -2px;
-}
 /* A lit button wears a ring in the accent (🔒 D5; YAZ-4348 demo round 2). It began on the highlight buttons, whose "A"
    square's fill IS its colour, so a pressed-button background would hide behind it (and Crepe's "active =
    primary-coloured icon" cue only reached the square's faint outline); Yasin: "i like this box … add that for the
-   other ones also": T on a plain line, B on bold text, a list button on its list. The ▾ keeps its pressed background. */
-.milkdown .milkdown-toolbar .toolbar-item.active:not([data-toolbar-item='highlight-more']) {
+   other ones also": T on a plain line, B on bold text, a list button on its list. YAZ-4445: the color tiles and their
+   ▾ have the board's own lit look instead (`editor/swatchTile.css`). */
+.milkdown .milkdown-toolbar .toolbar-item.active:not(:has(.swatch-tile, .swatch-more)) {
   box-shadow: inset 0 0 0 2px var(--crepe-color-primary);
 }
 
 /* The highlight ▾ panel (YAZ-4348 demo round 2, `editor/highlightPanel.ts`): the board's colour popup in the note's
    own tokens, its values ported from `engine/…/ColorPicker/ColorPicker.scss`, `Island.scss` (the popup: 0.75rem
    padding, 8 px radius, the island shadow, at most 13rem wide) and `EyeDropper.scss` (the Hex code's trailing button)
-   (YAZ-4388). On the body, fixed under the ▾, so the toolbar's `overflow: hidden` cannot cut it off. */
-.highlight-panel {
+   (YAZ-4388). On the body, fixed under the ▾, so the toolbar's `overflow: hidden` cannot cut it off. The text box's
+   text color ▾ panel (YAZ-4445, `drawings/textColorPanel.ts`) is the same popup. */
+.highlight-panel,
+.text-color-panel {
   position: fixed;
   z-index: 1000;
   display: flex;
@@ -571,11 +560,13 @@ button {
 }
 /* A quick fade and scale in from the ▾'s side (opacity and transform only, so the compositor runs it); usable at once. */
 @media (prefers-reduced-motion: no-preference) {
-  .highlight-panel {
+  .highlight-panel,
+  .text-color-panel {
     transform-origin: top left;
     animation: highlight-panel-in 100ms ease-out;
   }
-  .highlight-panel.is-above {
+  .highlight-panel.is-above,
+  .text-color-panel.is-above {
     transform-origin: bottom left;
   }
   .colour-box {
@@ -593,14 +584,42 @@ button {
     opacity: 0;
   }
 }
+/* The text color ▾ panel (YAZ-4445): as the board's ▾ popover (`ColorPicker.scss` `.color-picker__more-popover`):
+   one row of tiles, then None (`.color-picker__custom`). As wide as its row. */
+.text-color-panel {
+  width: auto;
+  gap: 0;
+}
+.text-color-panel__tiles {
+  display: flex;
+  gap: var(--swatch-tile-gap);
+}
+.text-color-panel__none {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.3rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+.text-color-panel__none:hover {
+  background: var(--bg-hover);
+}
 /* A dark note is the panel's own colour: a hairline keeps its edge, where the board's darker canvas needs none. */
-[data-theme='dark'] .highlight-panel {
+[data-theme='dark'] .highlight-panel,
+[data-theme='dark'] .text-color-panel {
   box-shadow:
     0 0 0 1px var(--border),
     0 0 3px 0 rgba(0, 0, 0, 0.3),
     0 7px 14px 0 rgba(0, 0, 0, 0.3);
 }
 .highlight-panel[hidden],
+.text-color-panel[hidden],
 .highlight-panel__section[hidden],
 .colour-box[hidden],
 .colour-box__eyedropper[hidden] {

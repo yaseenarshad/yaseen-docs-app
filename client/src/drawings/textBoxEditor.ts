@@ -14,10 +14,12 @@
  */
 import type { ComponentProps } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import { undo } from '@milkdown/kit/prose/history'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { createCrepe, type ToolbarBuilder } from '../editor/createCrepe'
+import { moreIcon, swatchTile } from '../editor/toolbarButtons'
+import { setPopupLayer, showMoreColour } from '../editor/toolbarHost'
 import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
 import { addOutlineFoldSetMeta, outlineCollapsedPositions } from '../editor/outline/outlineFolding'
@@ -26,6 +28,7 @@ import { storage } from '../lib/storage'
 import type { ExcalidrawModule } from './engine'
 import { boxToDoc, docToBox, itemLines, itemPositions, offsetAt, posAt, type BoxHelpers, type TextRuns } from './textBoxDoc'
 import { BOX_MARKS, lockToTextBox } from './textBoxLock'
+import { moreTextColor, selectionTextColor, setTextColor, TEXT_BOX_COLORS, TEXT_COLOR_MORE_KEY, textColorPanel, toggleTextColorPanel } from './textColorPanel'
 import './textBoxEditor.css'
 
 type HostTextEditor = NonNullable<ComponentProps<ExcalidrawModule['Excalidraw']>['textEditor']>
@@ -47,58 +50,33 @@ export const TEXT_BOX_HIDDEN = {
 } as const
 
 /**
- * The letter colors of the pop-up toolbar (YAZ-4277 1E, D8): the top bar's three, then the box color (no run color).
- * They set the box's `text_color` mark, `textRuns[].color` on the box.
+ * The letter colors of the pop-up toolbar (YAZ-4277 1E, D8): the board toolbar's three tiles, then its ▾ with the
+ * others and None (YAZ-4445, `textColorPanel.ts`).
  */
-export const TEXT_BOX_COLORS = [
-  { key: 'text-color-black', label: 'Text color: black', color: '#1e1e1e' },
-  { key: 'text-color-red', label: 'Text color: red', color: '#e03131' },
-  { key: 'text-color-blue', label: 'Text color: blue', color: '#1971c2' },
-  { key: 'text-color-box', label: 'Text color: the box color', color: null },
-] as const
-
-const swatch = (color: string | null) =>
-  color
-    ? `<svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="7" fill="${color}"/></svg>`
-    : '<svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 17 17 7" stroke="currentColor" stroke-width="1.5"/></svg>'
-
-/** The selection's letters all have `color` (null: none has a color). */
-const rangeHasColor = (state: EditorState, color: string | null) => {
-  const { from, to, empty } = state.selection
-  const type = state.schema.marks.text_color
-  if (empty) return (type.isInSet(state.storedMarks ?? state.selection.$from.marks())?.attrs.color ?? null) === color
-  let all = true
-  state.doc.nodesBetween(from, to, (node) => {
-    if (node.isText && (type.isInSet(node.marks)?.attrs.color ?? null) !== color) all = false
-  })
-  return all
-}
-
-/** Colors the selected letters, or the next ones at a caret; null takes the color off. */
-const setTextColor = (color: string | null) => (state: EditorState, dispatch: (tr: Transaction) => void) => {
-  const type = state.schema.marks.text_color
-  const { from, to, empty } = state.selection
-  if (empty) {
-    dispatch(color ? state.tr.addStoredMark(type.create({ color })) : state.tr.removeStoredMark(type))
-    return
-  }
-  const tr = state.tr.removeMark(from, to, type)
-  dispatch(color ? tr.addMark(from, to, type.create({ color })) : tr)
-}
-
 const textColorButtons = (builder: ToolbarBuilder) => {
   const group = builder.addGroup('textColor', 'Text color')
-  for (const { key, label, color } of TEXT_BOX_COLORS) {
+  for (const { key, name, color } of TEXT_BOX_COLORS) {
     group.addItem(key, {
-      icon: swatch(color),
-      label,
-      active: (ctx) => rangeHasColor(ctx.get(editorViewCtx).state, color),
+      icon: swatchTile('color', color),
+      label: name,
+      active: (ctx) => selectionTextColor(ctx.get(editorViewCtx).state) === color,
       onRun: (ctx) => {
         const view = ctx.get(editorViewCtx)
         setTextColor(color)(view.state, view.dispatch)
       },
     })
   }
+  group.addItem(TEXT_COLOR_MORE_KEY, {
+    icon: moreIcon,
+    label: 'More text colors',
+    active: (ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const color = moreTextColor(view.state)
+      showMoreColour(view, TEXT_COLOR_MORE_KEY, color)
+      return color !== null
+    },
+    onRun: (ctx) => toggleTextColorPanel(ctx.get(editorViewCtx)),
+  })
 }
 
 /** The pop-ups Crepe puts beside its view; they move out of the root, which is invisible and zoomed (1C). */
@@ -174,7 +152,7 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
       // the note keys as the user set them (YAZ-3564 K4), read as a note reads them: once, as the edit opens
       const crepe = createCrepe({ root, defaultValue: '', features: textBoxFeatures, hidden: TEXT_BOX_HIDDEN, extendToolbar: textColorButtons, hotkeys: storage.getSettings()?.hotkeys })
       lockToTextBox(crepe)
-      crepe.editor.use(endKeys).use(plainUndo).use(noScroll).use(report)
+      crepe.editor.use(endKeys).use(plainUndo).use(noScroll).use(textColorPanel).use(report)
 
       // The toolbar and the `/` menu draw at screen size, over the board: in a layer of their own on the page, with
       // Crepe's look (`milkdown`). Floating UI places them from the selection's box on screen, as in a note.
@@ -199,6 +177,8 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
         const view = crepe.editor.ctx.get(editorViewCtx)
         popupWatch.observe(view.dom.parentElement ?? root, { childList: true })
         movePopups()
+        // the ▾ panels find their ▾ in this layer (YAZ-4445)
+        setPopupLayer(view, popups)
         // The pop-up toolbar and the `/` menu ask the view where a position is on screen. The view is invisible and its
         // layout drifts from the canvas (demo round 1: far right at 3000%, lost at a low zoom), so the canvas answers.
         const ownCoords = view.coordsAtPos.bind(view)

@@ -21,6 +21,24 @@ vi.mock('../editor/createCrepe', async (load) => {
 afterEach(unmountAll)
 
 const settle = () => new Promise((r) => setTimeout(r, 80))
+/** The text color ▾'s panel (YAZ-4445), in the pop-ups' layer. */
+const colorPanel = () => document.querySelector<HTMLElement>('.excalidraw-text-box-popups .text-color-panel')
+/** A real click on a panel button: the mousedown it cancels (the selection stays), then the click. */
+const clickInPanel = (label: string) => {
+  const el = colorPanel()!.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+  if (el === null) throw new Error(`no panel button: ${label}`)
+  const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+  el.dispatchEvent(down)
+  expect(down.defaultPrevented).toBe(true)
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+}
+const pressItem = (key: string) =>
+  document.querySelector<HTMLElement>(`.excalidraw-text-box-popups .milkdown-toolbar [data-toolbar-item="${key}"]`)!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
+/** The ▾'s None: the letters take the box color again (YAZ-4445: the ⊘ button moved into the ▾). */
+const pickNone = () => {
+  pressItem('text-color-more')
+  clickInPanel('Text color: none')
+}
 const boxText = (view: Awaited<ReturnType<typeof mountBox>>['view']) => docToBox(view.state.doc, { text: '', textRuns: undefined }, helpers).text
 
 describe('the pop-up toolbar and the / menu of a text box (YAZ-4277 1C, D4, D8)', () => {
@@ -37,13 +55,13 @@ describe('the pop-up toolbar and the / menu of a text box (YAZ-4277 1C, D4, D8)'
     expect(buttons.map((button) => button.dataset.toolbarItem)).toEqual([
       // YAZ-4388 (main): pink moved into the highlight ▾ panel, `highlight-more`
       'text', 'checklist', 'bulletList', 'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more',
-      'text-color-black', 'text-color-red', 'text-color-blue', 'text-color-box',
+      'text-color-black', 'text-color-red', 'text-color-blue', 'text-color-more',
     ])
-    // 1E: a color button colors the selected letters, and the box color takes it off
+    // 1E: a color button colors the selected letters, and the ▾'s None takes it off (YAZ-4445)
     const color = (key: string) => buttons.find((button) => button.dataset.toolbarItem === key)!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
     color('text-color-red')
     expect(docToBox(view.state.doc, { text: '', textRuns: undefined }, helpers).textRuns).toEqual([{ start: 0, end: 4, color: '#e03131' }])
-    color('text-color-box')
+    pickNone()
     expect(docToBox(view.state.doc, { text: '', textRuns: undefined }, helpers).textRuns).toBeUndefined()
     // the Checklist button makes the line a checklist item
     const checklist = buttons.find((button) => button.dataset.toolbarItem === 'checklist')!
@@ -194,8 +212,9 @@ describe('⌘A shows the pop-up toolbar (YAZ-4440)', () => {
     ] as const) {
       button(key)
       expect(runs()).toEqual(all(style))
-      // the box color and a second click take the style off again
-      button(key === 'text-color-red' ? 'text-color-box' : key)
+      // the ▾'s None and a second click take the style off again
+      if (key === 'text-color-red') pickNone()
+      else button(key)
       expect(runs()).toBeUndefined()
     }
     button('highlight')
@@ -239,5 +258,113 @@ describe('the text box editor never scrolls (YAZ-4396 1F)', () => {
     const coords = vi.spyOn(view, 'coordsAtPos')
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 5)).scrollIntoView())
     expect(coords).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * YAZ-4445 (1H3, Yaseen: "can we make this look the same also so its 1 design language?"): the pop-up toolbar's text
+ * colors are the board toolbar's tiles: a colored "A" on white (black, red, blue), then a ▾ with the board's other
+ * colors and None, which replaced the ⊘ button. The names are the board's: "Text red".
+ */
+describe('the text colors are the board toolbar tiles (YAZ-4445)', () => {
+  const toolbarItem = (key: string) => document.querySelector<HTMLElement>(`.excalidraw-text-box-popups .milkdown-toolbar [data-toolbar-item="${key}"]`)!
+  const runs = (view: Awaited<ReturnType<typeof mountBox>>['view']) => docToBox(view.state.doc, { text: '', textRuns: undefined }, helpers).textRuns
+  const selectWord = async () => {
+    const box = await mountBox('pick these words')
+    box.view.focus()
+    box.view.dispatch(box.view.state.tr.setSelection(TextSelection.create(box.view.state.doc, 1, 5)))
+    await settle()
+    return box
+  }
+  /** A tile as the board draws it: its kind, its color and its letter. */
+  const tile = (button: Element) => {
+    const el = button.querySelector<HTMLElement>('.swatch-tile')
+    return el && { kinds: [...el.classList].filter((c) => c !== 'swatch-tile'), color: el.style.getPropertyValue('--swatch-color'), letter: el.querySelector('.swatch-tile__letter')?.textContent }
+  }
+
+  it('three tiles with a colored "A" on white, named as on the board, then the ▾', async () => {
+    await selectWord()
+    for (const [key, color, name] of [
+      ['text-color-black', '#1e1e1e', 'Text black'],
+      ['text-color-red', '#e03131', 'Text red'],
+      ['text-color-blue', '#1971c2', 'Text blue'],
+    ]) {
+      expect(tile(toolbarItem(key))).toEqual({ kinds: ['swatch-tile--color'], color, letter: 'A' })
+      expect(toolbarItem(key).title).toBe(name)
+    }
+    // the board's ▾: the glyph, no tile
+    expect(toolbarItem('text-color-more').querySelector('.swatch-more')?.textContent).toBe('▾')
+    expect(tile(toolbarItem('text-color-more'))).toBeNull()
+  })
+
+  it('the ▾ holds the board’s other colors and None; a pick colors the letters, None takes the color off', async () => {
+    const { view } = await selectWord()
+    const before = view.state.selection
+    pressItem('text-color-more')
+    expect(colorPanel()).not.toBeNull()
+    expect(colorPanel()!.hidden).toBe(false)
+    // it takes neither the selection nor the focus
+    expect(view.state.selection.eq(before)).toBe(true)
+    const buttons = [...colorPanel()!.querySelectorAll<HTMLButtonElement>('button')]
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Text green', 'Text white', 'Text orange', 'Text violet', 'Text gray', 'Text color: none'])
+    expect(buttons.slice(0, 5).map((b) => tile(b)?.color)).toEqual(['#2f9e44', '#ffffff', '#e8590c', '#6741d9', '#343a40'])
+    expect(buttons.slice(0, 5).every((b) => tile(b)?.letter === 'A')).toBe(true)
+    expect(buttons[5].textContent).toBe('None')
+
+    clickInPanel('Text green')
+    expect(runs(view)).toEqual([{ start: 0, end: 4, color: '#2f9e44' }])
+    // as on the board, the ▾ stays open for the next pick, its pick ringed
+    expect(colorPanel()!.hidden).toBe(false)
+    expect(colorPanel()!.querySelector('button[aria-label="Text green"]')!.getAttribute('aria-pressed')).toBe('true')
+    await settle()
+    // the ▾ marks a color of its own with a bar of that color, as the board's
+    expect(toolbarItem('text-color-more').classList.contains('active')).toBe(true)
+    expect(document.querySelector<HTMLElement>('.excalidraw-text-box-popups .milkdown-toolbar')!.style.getPropertyValue('--text-color-more-colour')).toBe('#2f9e44')
+    expect(toolbarItem('text-color-red').classList.contains('active')).toBe(false)
+
+    clickInPanel('Text color: none')
+    expect(runs(view)).toBeUndefined()
+    expect(colorPanel()!.hidden).toBe(true)
+    await settle()
+    expect(toolbarItem('text-color-more').classList.contains('active')).toBe(false)
+  })
+
+  it('the white text color is a white "A" on a dark tile', async () => {
+    const { view } = await selectWord()
+    pressItem('text-color-more')
+    const white = colorPanel()!.querySelector<HTMLButtonElement>('button[aria-label="Text white"]')!
+    expect(tile(white)).toEqual({ kinds: ['swatch-tile--color', 'is-canonical-white'], color: '#ffffff', letter: 'A' })
+    clickInPanel('Text white')
+    expect(runs(view)).toEqual([{ start: 0, end: 4, color: '#ffffff' }])
+  })
+
+  it('Escape, a click outside or a new selection closes the ▾', async () => {
+    const { view } = await selectWord()
+    pressItem('text-color-more')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(colorPanel()!.hidden).toBe(true)
+    pressItem('text-color-more')
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
+    expect(colorPanel()!.hidden).toBe(true)
+    pressItem('text-color-more')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 6, 11)))
+    expect(colorPanel()!.hidden).toBe(true)
+    // the ▾ again closes it too
+    pressItem('text-color-more')
+    pressItem('text-color-more')
+    expect(colorPanel()!.hidden).toBe(true)
+  })
+
+  it('the highlight ▾ panel finds its ▾ in the pop-ups’ layer: placed under it, and it stays on a scroll', async () => {
+    await selectWord()
+    const arrow = toolbarItem('highlight-more')
+    arrow.getBoundingClientRect = () => ({ left: 200, right: 216, top: 268, bottom: 300, width: 16, height: 32, x: 200, y: 268, toJSON: () => ({}) })
+    pressItem('highlight-more')
+    const panel = document.querySelector<HTMLElement>('body > .highlight-panel')!
+    expect(panel.hidden).toBe(false)
+    expect([panel.style.left, panel.style.top]).toEqual(['200px', '304px'])
+    document.dispatchEvent(new Event('scroll'))
+    expect(panel.hidden).toBe(false)
+    panel.remove()
   })
 })
