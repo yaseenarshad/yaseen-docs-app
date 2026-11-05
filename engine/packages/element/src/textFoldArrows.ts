@@ -62,6 +62,15 @@ let foldArrowPrefs = DEFAULT_FOLD_ARROW_PREFS;
 /**
  * The prefs for a render that has none of its own: an export, a thumbnail,
  * the share viewer. The board sets them from its `foldArrows` prop.
+ *
+ * YAZ-4312 N3: this is one value for the whole window. The last board that
+ * mounted or changed its prop sets it. That is safe, because an export (a
+ * render with no zoom) reads only `size` and `thickness`, and the host makes
+ * both from app-wide rows (`foldArrowsOf` in `shared/canvasPrefs.ts`): each
+ * board in a window has the same two. The board's own `openArrows` and the
+ * screen-only `minScreenSize` never change an export. A board on screen
+ * passes its own prefs (`renderConfig.foldArrows`). If a board ever gets its
+ * own size or thickness, pass the prefs in the export config instead.
  */
 export const setFoldArrowPrefs = (prefs: FoldArrowPrefs) => {
   foldArrowPrefs = prefs;

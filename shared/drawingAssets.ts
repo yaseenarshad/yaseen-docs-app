@@ -412,8 +412,9 @@ export function withHoverLinks(scene: Record<string, unknown>, on: boolean, born
 // ---------- Fold arrows, per board (YAZ-4277 D5) ----------
 
 /**
- * The `yaseendraw` block key of the board's "Fold arrows": `"foldArrows": "hover"` or `"always"` overrides the app's
- * "Fold arrows on open bullets". No key: the app setting.
+ * The `yaseendraw` block key of the board's "Fold arrows": `"foldArrows": "hover"`, `"always"` or `"off"` (YAZ-4277
+ * D18: no folding on this board; the saved folds stay in the file) overrides the app's "Fold arrows on open bullets".
+ * No key: the app setting.
  */
 export const FOLD_ARROWS_KEY = 'foldArrows'
 
