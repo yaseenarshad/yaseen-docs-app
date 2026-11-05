@@ -46,6 +46,13 @@ export interface MenuAction extends MenuItemBase {
   children?: undefined
   /** A small grey heading over its group, not a button (YAZ-4460 demo: "Show it in"); its `onSelect` never runs. */
   heading?: true
+  /** The row's tooltip (YAZ-4460 demo: what "No folder" means). */
+  tip?: string
+  /**
+   * A two-click row (YAZ-4460 demo, the tab board's Close, YAZ-3343): the first click turns it red with these words
+   * and keeps the menu open; the second runs it. The pointer leaving the row puts it back.
+   */
+  confirm?: string
   /** A glyph before the label (YAZ-3279: the tab row's menu): an SVG, or a `FileIcon` (the Search menu's Type list, YAZ-3511 D13). It holds no text, so `textContent` stays the bare label. Only a leaf draws one. */
   icon?: ReactNode
   /** Rendered but inert — Paste with an empty clipboard, for discoverability (🔒 D5, YAZ-1674). Only a leaf can be. */
@@ -276,7 +283,8 @@ export type FocusPlace = string | null | 'top'
  */
 export function focusPlaces(folders: readonly { id: string; name: string }[], current: string | null | undefined, to: (place: FocusPlace) => void, kind: 'focus' | 'favorites' = 'focus'): MenuAction[][] {
   const rows = folders.map((f) => ({ id: `${kind}-in-${f.id}`, label: f.name, hint: current === f.id ? '✓' : undefined, onSelect: () => to(f.id) }))
-  const top = current === undefined ? [] : [{ id: `${kind}-top`, label: 'Top level', hint: current === null ? '✓' : undefined, onSelect: () => to('top') }]
+  const tab = kind === 'focus' ? 'Focus' : 'Favorites'
+  const top = current === undefined ? [] : [{ id: `${kind}-top`, label: 'No folder', tip: `Show it on its own on the ${tab} tab, outside every folder`, hint: current === null ? '✓' : undefined, onSelect: () => to('top') }]
   return [...(rows.length > 0 ? [rows] : []), ...(top.length > 0 ? [top] : []), [{ id: `${kind}-new-folder`, label: kind === 'focus' ? 'New focus folder…' : 'New favorite folder…', onSelect: () => to(null) }]]
 }
 

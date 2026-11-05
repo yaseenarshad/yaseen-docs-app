@@ -2,9 +2,19 @@ import { useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { MAX_VAULT_NAME, cleanVaultName, type FocusFolder } from '@shared/types'
 import { resolveItem, type FolderItem } from '../lists/focusFolders'
-import { ConfirmSheet } from '../components/ConfirmSheet'
 import { TextField } from '../views/view/TextField'
 import { ContextMenu } from './ContextMenu'
+
+/**
+ * "Delete focus folder" asks with a second click (YAZ-4460 demo, the tab board's Close): red "Click again to delete" first.
+ * Its tooltip says where the items go — and which leave, the items of a vault that is not in this window.
+ */
+function deleteRow(folder: FocusFolder | undefined, kind: 'focus' | 'favorites', roots: readonly string[], run: () => void) {
+  const away = folder === undefined ? 0 : folder.items.filter((item) => 'ghost' in resolveItem(item, roots)).length
+  const tab = kind === 'focus' ? 'Focus' : 'Favorites'
+  const tip = `Its items stay on the ${tab} tab, outside any folder.${away > 0 ? ` ${away === 1 ? 'One item of a vault' : `${away} items of vaults`} not in this window leave ${tab.toLowerCase()}.` : ''} Your files do not change.`
+  return { id: 'focus-folder-delete', label: kind === 'focus' ? 'Delete focus folder' : 'Delete favorite folder', danger: true, confirm: 'Click again to delete', tip, onSelect: run }
+}
 
 /** Two clicks on a name inside this gap rename it, as on a session (YAZ-3147, YAZ-4460 F3). */
 const RENAME_CLICK_GAP_MS = 300
@@ -57,8 +67,6 @@ interface FocusFolderListProps {
 export function FocusFolderList({ kind, folders, roots, renderItems, editing, onEdit, onRename, onDelete, onGhost, onHideOthers, only }: FocusFolderListProps) {
   const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set())
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
-  // "Delete focus folder" asks first (YAZ-4460 demo): two clicks, as "Delete session".
-  const [deleting, setDeleting] = useState<FocusFolder | null>(null)
   const lastNameClick = useRef<{ id: string; at: number }>({ id: '', at: -Infinity })
   const toggle = (id: string) =>
     setShut((was) => {
@@ -136,35 +144,8 @@ export function FocusFolderList({ kind, folders, roots, renderItems, editing, on
           <ContextMenu
             x={menu.x}
             y={menu.y}
-            sections={[[{ id: 'focus-folder-rename', label: 'Rename', onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], [{ id: 'focus-folder-delete', label: kind === 'focus' ? 'Delete focus folder' : 'Delete favorite folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}
+            sections={[[{ id: 'focus-folder-rename', label: 'Rename', onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], [deleteRow(folders.find((f) => f.id === menu.id), kind, roots, () => onDelete(menu.id))]]}
             onClose={() => setMenu(null)}
-          />,
-          document.body,
-        )}
-      {deleting !== null &&
-        createPortal(
-          <ConfirmSheet
-            labelId="confirm-delete-focus-folder-text"
-            text={(() => {
-              const away = deleting.items.filter((item) => 'ghost' in resolveItem(item, roots)).length
-              return (
-                <>
-                  <strong>
-                    Delete the {kind === 'focus' ? 'focus' : 'favorite'} folder &quot;{deleting.name}&quot;?
-                  </strong>
-                  <br />
-                  {deleting.items.length === 0 ? 'It is empty.' : `Its items go back to the top level of ${kind === 'focus' ? 'Focus' : 'Favorites'}.`}
-                  {away > 0 && ` ${away === 1 ? 'One item is' : `${away} items are`} in a vault that is not in this window, and ${away === 1 ? 'it leaves' : 'they leave'} ${kind === 'focus' ? 'focus' : 'favorites'}.`} Your files do not change.
-                </>
-              )
-            })()}
-            confirmLabel="Delete"
-            danger
-            onConfirm={() => {
-              setDeleting(null)
-              onDelete(deleting.id)
-            }}
-            onCancel={() => setDeleting(null)}
           />,
           document.body,
         )}

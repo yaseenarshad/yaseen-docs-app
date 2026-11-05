@@ -62,33 +62,44 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
   useEffect(() => () => {
     if (previewing.current) preview.current?.(false)
   }, [])
+  // A two-click row (`confirm`, YAZ-4460 demo): armed after the first click, until the pointer or the focus leaves.
+  const [armed, setArmed] = useState(false)
+  const label = armed && item.confirm !== undefined ? item.confirm : item.label
   return (
     <button
       type="button"
       role="menuitem"
-      className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}`}
+      className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}${armed ? ' ctx-menu__item--armed' : ''}`}
       disabled={item.disabled}
-      data-hint={item.hint}
+      data-hint={armed ? undefined : item.hint}
+      title={item.tip}
       onMouseEnter={() => {
         onMouseEnter?.()
         setPreview(true)
       }}
-      onMouseLeave={() => setPreview(false)}
+      onMouseLeave={() => {
+        setPreview(false)
+        setArmed(false)
+      }}
       onFocus={() => setPreview(true)}
-      onBlur={() => setPreview(false)}
+      onBlur={() => {
+        setPreview(false)
+        setArmed(false)
+      }}
       // An item whose handler already closes the menu (the create group's inline input) just
       // sets the same null twice — harmless.
       onClick={() => {
+        if (item.confirm !== undefined && !armed) return setArmed(true)
         item.onSelect()
         onClose()
       }}
     >
       {item.icon === undefined ? (
-        item.label
+        label
       ) : (
         <span className="ctx-menu__label">
           {item.icon}
-          {item.label}
+          {label}
         </span>
       )}
     </button>
