@@ -2265,12 +2265,22 @@ body.drag-held iframe {
 .sidebar__focus-bar {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   padding: 4px 14px;
   font-size: 12px;
   color: var(--fg-muted);
 }
 
+/* One line at any sidebar width (YAZ-4462): the words cut with an ellipsis ("2 in focus · workspace li…"), the button stays whole. */
+.sidebar__focus-bar > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .sidebar__focus-clear {
+  flex: none;
   color: var(--accent);
 }
 

@@ -4,6 +4,7 @@
  * the table is wired. A refactor that drops a `register*` call or a preload line fails here instead
  * of as a renderer that waits forever. `preload/surface.test.ts` pins what each exposure does.
  */
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -14,6 +15,7 @@ import { registerIpc } from './main/ipc'
 import { registerClipboardIpc } from './main/ipc/clipboard'
 import { registerUpdateIpc } from './main/ipc/update'
 import { registerMemoryIpc } from './main/ipc/memory'
+import { LIBRARY_MARKER_FILE } from './main/library/copyLibrary'
 import { createStore } from './main/store'
 import type { WindowManagerIpc } from './main/windows'
 
@@ -41,17 +43,26 @@ const PUSHES = [...doors.filter((d) => d.kind === 'push').map((d) => d.channel),
 const SENDS = [SPECIAL.watchSubscribe, SPECIAL.watchUnsubscribe, SPECIAL.appFlushed, SPECIAL.memoryHeapReply, SPECIAL.windowViewsReply, SPECIAL.windowTabsReply].sort()
 
 const dir = await mkdtemp(path.join(tmpdir(), 'yd-contract-'))
-// A registration can still be writing into its data folder at the end (seen once on CI: ENOTEMPTY): `rm` tries again.
-afterAll(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+// The library mover writes its marker into the data folder after registration (YAZ-4463): the folder goes only after it settled.
+let registered: ReturnType<typeof registerIpc> | undefined
+afterAll(async () => {
+  await registered?.libraryMoves.settled()
+  await rm(dir, { recursive: true, force: true })
+})
 
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
   // The four registrations `main/index.ts` makes on `ready`.
   registerMemoryIpc({ report: vi.fn() })
   registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', checks: true, releases: [] }), check: async () => ({ kind: 'idle' }), checks: true }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
   registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), write: vi.fn(), readText: vi.fn(), readHTML: vi.fn(), revealImage: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
-  registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc, { userData: dir, viewerAssetsDir: dir, drawioDir: dir, fontsDir: dir, isPackaged: true, macId: async () => 'contracttest' }, { missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined })
+  registered = registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc, { userData: dir, viewerAssetsDir: dir, drawioDir: dir, fontsDir: dir, isPackaged: true, macId: async () => 'contracttest' }, { missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined })
   expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()).toEqual(INVOKES)
   expect(vi.mocked(ipcMain.on).mock.calls.map(([ch]) => ch).sort()).toEqual(SENDS)
+})
+
+it('YAZ-4463: the library mover\'s write into the data folder is done once `libraryMoves.settled()` answers — what the folder\'s removal waits on', async () => {
+  await registered?.libraryMoves.settled()
+  expect(existsSync(path.join(dir, LIBRARY_MARKER_FILE))).toBe(true)
 })
 
 it('the preload reaches every channel through exactly one exposure, of the right kind', async () => {

@@ -8,7 +8,7 @@ import type { SettingsFolder } from '../settingsFolder'
 import type { LspPool } from '../lsp/pool'
 import type { Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
-import { copyLibrary, followLibraryMoves } from '../library/copyLibrary'
+import { copyLibrary, followLibraryMoves, type LibraryMoves } from '../library/copyLibrary'
 import { libraryFolderOf } from '../library/folder'
 import { registerBoardIpc } from './board'
 import { registerComponentsIpc } from './components'
@@ -56,7 +56,7 @@ export type IpcPlaces = ShareIpcPlaces & {
   appPath?: string
 }
 
-export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets; lsp: LspPool } {
+export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves } {
   const { userData } = places
   registerFsIpc(store, windows)
   // The folder window's pick of an outside pictures folder is what lets the app write there (YAZ-3943 demo round 3).
@@ -102,11 +102,12 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // The store also carries the icon packs' folder setting (YAZ-4359).
   registerMediaStudioIpc(userData, secrets, globalThis.fetch, store, library.copies)
   // A library that moves (YAZ-4364): after the stores re-pointed, the old folder copies and merges into the new one.
-  followLibraryMoves(store, userData, {
+  const libraryMoves = followLibraryMoves(store, userData, {
     copy: (from) => copyLibrary(from, { media: library.media, components, copies: library.copies }),
     notice: (message) => windows.appNotice(message),
   })
   registerShareIpc(userData, secrets, places)
   // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
-  return { sync: registerGithubIpc(store), secrets, lsp }
+  // `libraryMoves.settled()`: the launch's copy and its marker write are done — what a caller waits on before it lets go of `userData`.
+  return { sync: registerGithubIpc(store), secrets, lsp, libraryMoves }
 }
