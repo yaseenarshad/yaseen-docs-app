@@ -193,6 +193,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
         onOpen: onLensChange,
         // "Sort…" opens the sort menu at the ⋯ button (S15); with ⋯ off, where the menu was.
         onSort: () => onSort(anchor() ?? { x, y }),
+        sortLabel,
         onFold,
         iconOf: rowGlyph,
         // "Edit tab row…" opens the panel where the menu was, the right-clicked tab lit (S17).
