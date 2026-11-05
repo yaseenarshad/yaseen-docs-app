@@ -204,3 +204,15 @@ describe('the keys of a text box (YAZ-4277 1D)', () => {
     expect(box(view).textRuns).toEqual(runs)
   })
 })
+
+/** YAZ-4420: the note's ⌘\ command also clears a text box's own letter color (the `text_color` mark), and keeps its bullets. */
+describe('clearFormatting on a text box (YAZ-4420)', () => {
+  it('removes the color, bold and highlight runs; the bullet lines stay', async () => {
+    const { clearFormatting } = await import('../editor/marks/clearFormatting')
+    const runs: TextRuns = [{ start: 0, end: 5, bold: true, color: '#e03131', highlight: 'green' }]
+    const { view } = await mountBox('Hello\n• item', runs)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posAt(view.state.doc, 0, helpers), posAt(view.state.doc, 5, helpers))))
+    expect(clearFormatting(view.state, view.dispatch)).toBe(true)
+    expect(box(view)).toEqual({ text: 'Hello\n• item', textRuns: undefined })
+  })
+})
