@@ -147,6 +147,89 @@ describe('the pop-ups are placed from the canvas (YAZ-4398 1H)', () => {
   })
 })
 
+/**
+ * YAZ-4440 (1H1, demo round 2): ⌘A in a box makes ProseMirror's `AllSelection` (the keymap's select all), not a
+ * `TextSelection`. The toolbar shows on it as on a drag over all the words, and its buttons act on all the text.
+ */
+describe('⌘A shows the pop-up toolbar (YAZ-4440)', () => {
+  const at = (left: number, top: number) => ({ left, right: left + 1, top, bottom: top + 20 })
+  /** ⌘A as ProseMirror's keymap reads it here ("Mod" is ⌘ on a Mac, Ctrl elsewhere). */
+  const selectAll = (view: Awaited<ReturnType<typeof mountBox>>['view']) => {
+    const mac = /Mac|iP(hone|[oa]d)/.test(navigator.platform)
+    const event = new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', keyCode: 65, metaKey: mac, ctrlKey: !mac, bubbles: true, cancelable: true })
+    expect(view.someProp('handleKeyDown', (f) => f(view, event))).toBe(true)
+  }
+  const button = (key: string) =>
+    document.querySelector<HTMLElement>(`.excalidraw-text-box-popups .milkdown-toolbar [data-toolbar-item="${key}"]`)!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
+
+  it('after ⌘A the toolbar shows, placed from the canvas at the ends of the text', async () => {
+    const clientRectAt = vi.fn((offset: number) => at(500 + offset * 10, 300))
+    const { view } = await mountBox('pick these\nwords', undefined, { anchor: 2, head: 2 }, [], clientRectAt)
+    view.focus()
+    selectAll(view)
+    expect(view.state.selection.from).toBe(0)
+    expect(view.state.selection.to).toBe(view.state.doc.content.size)
+    await settle()
+    const toolbar = document.querySelector<HTMLElement>('.excalidraw-text-box-popups .milkdown-toolbar')!
+    expect(toolbar.dataset.show).toBe('true')
+    // the toolbar's place comes from the canvas: the first and the last offset of the box's text
+    expect(clientRectAt).toHaveBeenCalledWith(0)
+    expect(clientRectAt).toHaveBeenCalledWith('pick these\nwords'.length)
+  })
+
+  it('after ⌘A each button acts on all the text', async () => {
+    const text = 'pick these\nwords'
+    const { view } = await mountBox(text)
+    view.focus()
+    selectAll(view)
+    await settle()
+    const runs = () => docToBox(view.state.doc, { text: '', textRuns: undefined }, helpers).textRuns
+    const all = (style: Record<string, unknown>) => [{ start: 0, end: 10, ...style }, { start: 11, end: 16, ...style }]
+    for (const [key, style] of [
+      ['bold', { bold: true }],
+      ['italic', { italic: true }],
+      ['underline', { underline: true }],
+      ['strikethrough', { strikethrough: true }],
+      ['text-color-red', { color: '#e03131' }],
+    ] as const) {
+      button(key)
+      expect(runs()).toEqual(all(style))
+      // the box color and a second click take the style off again
+      button(key === 'text-color-red' ? 'text-color-box' : key)
+      expect(runs()).toBeUndefined()
+    }
+    button('highlight')
+    expect(runs()?.every((run) => run.highlight !== undefined)).toBe(true)
+    expect(runs()?.map((run) => [run.start, run.end])).toEqual([[0, 10], [11, 16]])
+    button('checklist')
+    expect(boxText(view)).toBe('☐ pick these\n☐ words')
+  })
+})
+
+/**
+ * YAZ-4442 (1H2): a box's list item holds one line (`paragraph bullet_list?`, `textBoxLock.ts`). The list buttons
+ * wrapped all the selected plain lines in ONE item, which a box cannot hold: the click threw and nothing changed.
+ */
+describe('the list buttons on several plain lines of a box (YAZ-4442)', () => {
+  const click = (key: string) =>
+    document.querySelector<HTMLElement>(`.excalidraw-text-box-popups .milkdown-toolbar [data-toolbar-item="${key}"]`)!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
+
+  it.each([
+    ['checklist', '☐ one\n☐ two\n☐ three'],
+    ['bulletList', '• one\n• two\n• three'],
+  ])('%s makes each selected plain line an item, and a second click makes them plain lines again', async (key, items) => {
+    const { view } = await mountBox('before\none\ntwo\nthree')
+    view.focus()
+    // a drag from inside "one" to inside "three"
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 10, 22)))
+    await settle()
+    click(key)
+    expect(boxText(view)).toBe(`before\n${items}`)
+    click(key)
+    expect(boxText(view)).toBe('before\none\ntwo\nthree')
+  })
+})
+
 /** YAZ-4396 1F: the editor is invisible and zoomed, so ProseMirror never scrolls to show its selection (the board did move). */
 describe('the text box editor never scrolls (YAZ-4396 1F)', () => {
   it('its scroll-to-selection handler answers "done", so ProseMirror scrolls no layer', async () => {
