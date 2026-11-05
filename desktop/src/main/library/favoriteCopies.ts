@@ -6,7 +6,7 @@
  *
  *  - TWO KINDS OF COPY. A picture (Iconify, Pixabay) is its bytes, `.<svg|jpg|png|…>`; `providers.ts`'s
  *    `favoriteCopy` asks for it. Elements (an Excalidraw library item, a shape, a component) are one
- *    `.excalidraw` file in a component file's shape, image bytes inside; the Add panel reads it (`media:favorite-copy`).
+ *    `.excalidraw` file in a component file's shape, image bytes inside; the Add panel reads it (`media:favorite-elements`).
  *  - WHO MAKES IT. Main: the pictures, a library item (`media:drawing` without the copy step) and a component (its
  *    own file). The Add panel: a shape, which only the renderer's catalog and engine can build (`missingForPanel`,
  *    `saveElements`).

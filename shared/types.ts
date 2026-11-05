@@ -1516,7 +1516,7 @@ export const LIBRARY_COMPONENTS_DIR = 'components'
 /** The components index beside that folder: `<library>/components.json` (🔒 YAZ-1775 D5, YAZ-1819). */
 export const COMPONENTS_INDEX_FILE = 'components.json'
 /**
- * `<library>/favorites/` (YAZ-4363): one full-quality copy of each Iconify or Pixabay favorite, named
+ * `<library>/favorites/` (YAZ-4363): one full-quality copy of each favorite, of every kind (YAZ-4370), named
  * `<sha1(itemKey)>.<ext>` — the name comes from the id, so no field in `media.json` can lose it.
  * Favorites have NO cap (YAZ-4363, round 2 decision 7): a list the user builds by hand never deletes itself.
  */

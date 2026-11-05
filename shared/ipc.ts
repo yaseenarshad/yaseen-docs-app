@@ -142,7 +142,7 @@ export const CONTRACT = {
     favorites: invoke<[req: MediaFavoritesRequest], StoredMediaItem[]>('media:favorites', 1),
     /** List, record an add, or add a word (YAZ-4157); every verb answers the whole library. */
     used: invoke<[req: MediaUsedRequest], MediaLibraryFile>('media:used', 1),
-    /** `media.json` changed — any vault, any writer. */
+    /** A library file changed (any `media-*.json`, or the old `media.json`): any vault, any writer, any Mac. */
     onChanged: push('media:changed'),
     /** The favorites' own copies (YAZ-4363): how many favorites, how many saved, how many still saving, and their size. */
     favoriteCopies: invoke<[], FavoriteCopiesStatus>('media:favorite-copies', 0),
