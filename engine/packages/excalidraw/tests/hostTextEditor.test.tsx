@@ -17,6 +17,7 @@ import { Keyboard, Pointer } from "./helpers/ui";
 import {
   act,
   fireEvent,
+  GlobalTestState,
   render,
   unmountComponent,
   waitFor,
@@ -412,6 +413,78 @@ describe("folds in edit (YAZ-4306)", () => {
       expect(h.state.editingTextElement).not.toBe(null);
     } finally {
       hit.mockRestore();
+    }
+  });
+});
+
+/**
+ * YAZ-4430: a board that closes during an edit (a reload, a tab switch) ends
+ * the edit. Its window listener went on: a press near the old box on the next
+ * board was the old edit's, and the new board never saw it.
+ */
+describe("an edit open when its board closes (YAZ-4430)", () => {
+  it("ends the edit, and a press on the next board near the old box is the new board's", async () => {
+    mounted = [];
+    const first = await render(
+      <Excalidraw handleKeyboardGlobally={true} textEditor={textEditor} />,
+    );
+    await startEdit("abcdef");
+    const { x, y } = sceneCoordsToViewportCoords(
+      { sceneX: box().x, sceneY: box().y },
+      h.state,
+    );
+    // the window listener is armed a frame after the edit starts
+    await nextFrame();
+    const old = last();
+    first.unmount();
+    expect(old.session.destroy).toHaveBeenCalledTimes(1);
+
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+    const seen = vi.fn();
+    const canvas = GlobalTestState.interactiveCanvas;
+    canvas.addEventListener("pointerdown", seen);
+    fireEvent.pointerDown(canvas, {
+      button: 0,
+      clientX: x + 5,
+      clientY: y + 5,
+    });
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(old.session.setSelection).not.toHaveBeenCalled();
+  });
+
+  it("takes a press near the box only on its own board", async () => {
+    mounted = [];
+    await render(
+      <Excalidraw handleKeyboardGlobally={true} textEditor={textEditor} />,
+    );
+    await startEdit("abcdef");
+    const { x, y } = sceneCoordsToViewportCoords(
+      { sceneX: box().x, sceneY: box().y },
+      h.state,
+    );
+    await nextFrame();
+    // a canvas of another board on the same page, under the box
+    const other = document.createElement("canvas");
+    document.body.appendChild(other);
+    try {
+      const seen = vi.fn();
+      other.addEventListener("pointerdown", seen);
+      fireEvent.pointerDown(other, {
+        button: 0,
+        clientX: x + 5,
+        clientY: y + 5,
+      });
+      expect(seen).toHaveBeenCalledTimes(1);
+      expect(last().session.setSelection).not.toHaveBeenCalled();
+      // a press on this board's own canvas just past the box is still the edit's
+      fireEvent.pointerDown(GlobalTestState.interactiveCanvas, {
+        button: 0,
+        clientX: x + 5,
+        clientY: y + 5,
+      });
+      expect(last().session.setSelection).toHaveBeenCalledTimes(1);
+    } finally {
+      other.remove();
     }
   });
 });
