@@ -314,6 +314,9 @@ const insertSelected = (links: WikilinkResolveSource, nav?: WikilinkNav): Comman
   return insertRow(state, dispatch, session, row, links, nav, view)
 }
 
+/** Is the `[[` picker open? Its ↑ / ↓ go first: the cell note card's own arrows wait (`cellNoteCard.ts`). */
+export const wikilinkPickerOpen = (state: EditorState): boolean => pickerKey.getState(state)?.session != null
+
 const move = (delta: 1 | -1): Command => (state, dispatch) => {
   if (pickerKey.getState(state)?.session == null) return false
   if (dispatch) dispatch(state.tr.setMeta(pickerKey, { type: 'move', delta } satisfies PickerMeta))

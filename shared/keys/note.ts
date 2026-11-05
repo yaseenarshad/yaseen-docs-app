@@ -50,6 +50,10 @@ export const NOTE_KEYS: readonly KeyRow[] = [
   note('previousCellNote', 'Previous cell note', ['CmdOrCtrl+Alt+Up'], { hint: 'While a cell note is open: the one before' }),
   note('cellNoteBack', 'Back in the cell note', ['CmdOrCtrl+Alt+['], { hint: 'While a cell note is open: the note you opened before it' }),
   note('cellNoteForward', 'Forward in the cell note', ['CmdOrCtrl+Alt+]'], { hint: 'Again, after Back' }),
+  // YAZ-4276 A6: no key by default.
+  note('allCellNotes', 'All notes of a calendar table', [], { hint: 'From a cell: every time block of its column, in the card. Again: back to the cell note' }),
+  note('nextTimeBlock', 'Next time block', ['Alt+Down'], { hint: 'In a calendar table\'s All notes: makes its note when it has none' }),
+  note('previousTimeBlock', 'Previous time block', ['Alt+Up'], { hint: 'In a calendar table\'s All notes' }),
   // YAZ-3653: Edit › Copy as › Without folded lines; no key by default, every free one is some editor's.
   note('copyVisible', 'Copy without folded lines', [], { hint: 'With nothing selected: the bullet at the caret' }),
   // The note's panels.

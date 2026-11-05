@@ -59,8 +59,38 @@ function RowsDropdown({ channel, onClose, opener, onPin }: { channel: OutsideCha
   )
 }
 
-export function OutsideChangesBar({ channel, pinned = false, onPin }: { channel: OutsideChangesChannel; pinned?: boolean; onPin?: (pinned: boolean) => void }) {
-  const { count, wholeNote } = useSyncExternalStore(channel.subscribe, channel.getState)
+/** The time left until a timed glow goes, as "42s" or "1:05". */
+const left = (ms: number): string => {
+  const seconds = Math.max(0, Math.ceil(ms / 1000))
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+/**
+ * The countdown of a timed Glow (the YAZ-4272 demo): "fades in 42s", ticking once a second until the last glow goes. Only
+ * while a timed glow shows: an untimed one (until checked) has no countdown, and nothing ticks.
+ */
+function FadeCountdown({ at, onKeep }: { at: number; onKeep?: () => void }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [at])
+  return (
+    <>
+      <span className="outside-changes-bar__fade">fades in {left(at - now)}</span>
+      {/* Catch it before it goes: this page's glow becomes "Until I check it", saved in the note as the cog saves it. */}
+      {onKeep !== undefined && (
+        <button type="button" className="outside-changes-bar__keep" title="Keep the changes lit until you check them: this page's glow becomes Until I check it" onMouseDown={hold} onClick={onKeep}>
+          Keep
+        </button>
+      )}
+    </>
+  )
+}
+
+export function OutsideChangesBar({ channel, pinned = false, onPin, onKeep }: { channel: OutsideChangesChannel; pinned?: boolean; onPin?: (pinned: boolean) => void; onKeep?: () => void }) {
+  const { count, wholeNote, fadesAt } = useSyncExternalStore(channel.subscribe, channel.getState)
   const [open, setOpen] = useState(false)
   const opener = useRef<HTMLButtonElement>(null)
   const close = useRef(() => setOpen(false)).current
@@ -73,6 +103,7 @@ export function OutsideChangesBar({ channel, pinned = false, onPin }: { channel:
       {wholeNote ? (
         <>
           <span>Whole note changed outside the app</span>
+          {fadesAt !== null && <FadeCountdown at={fadesAt} onKeep={onKeep} />}
           <button type="button" onMouseDown={hold} onClick={() => channel.clear()}>
             Dismiss
           </button>
@@ -86,6 +117,7 @@ export function OutsideChangesBar({ channel, pinned = false, onPin }: { channel:
               {words} ▾
             </button>
           )}
+          {fadesAt !== null && <FadeCountdown at={fadesAt} onKeep={onKeep} />}
           <button type="button" onMouseDown={hold} onClick={() => channel.next()}>
             Next change
           </button>

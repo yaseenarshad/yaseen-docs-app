@@ -17,6 +17,8 @@ export interface OutsideChangesSnapshot {
   count: number
   /** The note changed as a whole (a rebuild, or more than the limit): no glow, the bar says so. */
   wholeNote: boolean
+  /** When the last glow goes, with a timed Glow (ms since the epoch): the bar counts down to it. Null: until checked. */
+  fadesAt: number | null
 }
 
 /** One row of the numbered list (YAZ-3998): what a change is, word by word, as the mouse-over box says it. */
@@ -76,7 +78,7 @@ export interface OutsideChangesMemory {
   read(): SavedOutsideChanges | null
 }
 
-const EMPTY: OutsideChangesSnapshot = { count: 0, wholeNote: false }
+const EMPTY: OutsideChangesSnapshot = { count: 0, wholeNote: false, fadesAt: null }
 
 export function createOutsideChangesChannel(onZoomOut: () => void = () => undefined, memory: OutsideChangesMemory | null = null): OutsideChangesChannel {
   let controller: OutsideChangesController | null = null
@@ -133,7 +135,7 @@ export function createOutsideChangesChannel(onZoomOut: () => void = () => undefi
         seen = nextVersion
         rowsChanged()
       }
-      if (next.count === snapshot.count && next.wholeNote === snapshot.wholeNote) return
+      if (next.count === snapshot.count && next.wholeNote === snapshot.wholeNote && next.fadesAt === snapshot.fadesAt) return
       snapshot = next
       listeners.forEach((listener) => listener())
     },

@@ -846,7 +846,11 @@ button {
   flex-shrink: 0;
   justify-content: flex-end;
   padding: 5px 16px;
-  z-index: 2;
+  /* The bar's menus (the page cog's, the zoom pill's) drop over the note (YAZ-4271): above every layer in it — a frozen
+     table row (2), the calendar's "Now" chip (3), the cell note card (5) and its grips (6). At 2, a frozen row, later
+     in the page, rose over the cog's menu. The note itself gets no stacking level of its own: the table of contents
+     (1) and the card must keep their order. */
+  z-index: 7;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -3778,6 +3782,29 @@ body.drag-held iframe {
 .page-settings__menu .page-settings__label {
   padding: 6px 7px 3px;
   font-size: 11px;
+}
+
+/* "Outside changes glow" (YAZ-4272 D5): the same small label, then one native dropdown the menu's width. */
+.page-settings__menu label.page-settings__label {
+  display: block;
+  color: var(--fg-muted);
+}
+
+.page-settings__select {
+  display: block;
+  width: calc(100% - 14px);
+  margin: 0 7px 4px;
+  padding: 3px 4px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.page-settings__select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /* The small "i" beside the label: a quiet glyph, not one more row of the menu. */
