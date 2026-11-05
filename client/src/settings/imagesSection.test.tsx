@@ -77,6 +77,36 @@ function type(input: HTMLInputElement, value: string) {
   })
 }
 
+describe('Settings › Images › Add panel › Hover zoom (YAZ-4447, D34)', () => {
+  const choice = () => rowButtons('mediaHoverZoom').map((b) => [b.textContent, b.getAttribute('aria-checked') ?? b.getAttribute('aria-pressed')])
+  it("shows the value the Add panel's Filter menu writes: On by default, Off when it is off", async () => {
+    await mountImages()
+    expect(choice()).toEqual([
+      ['On', 'true'],
+      ['Off', 'false'],
+    ])
+    act(() => root?.unmount())
+    el.remove()
+    await mountImages({ ...DEFAULT_SETTINGS, mediaHoverZoom: false })
+    expect(choice()).toEqual([
+      ['On', 'false'],
+      ['Off', 'true'],
+    ])
+  })
+
+  it('Off writes the same setting', async () => {
+    await mountImages()
+    act(() => rowButtons('mediaHoverZoom')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, mediaHoverZoom: false })
+  })
+
+  it('the search finds it as "hover zoom" and as "zoom"', async () => {
+    const { searchSettings, settingCandidates } = await import('./searchSettings')
+    const candidates = settingCandidates({ settings: { ...DEFAULT_SETTINGS }, onChange })
+    for (const words of ['hover zoom', 'zoom', 'bigger']) expect(searchSettings(candidates, words).map((h) => h.item.id)).toContain('mediaHoverZoom')
+  })
+})
+
 describe('Settings › Images › Library folder', () => {
   it('shows the default main resolved, marked as the default; Reset is off while it IS the default', async () => {
     await mountImages()

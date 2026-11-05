@@ -6,9 +6,10 @@
  *  - Style: Any, Outline, Filled, Duotone, Emoji;
  *  - Packs: every pack, or "Choose packs…" with the pinned packs first (YAZ-4361);
  *  - License: Any, Business-safe;
- *  - Similar icons: "Group them (+N)" or "Show each one" (YAZ-4348 demo round 2), a view choice, not a filter.
- * "Clear filters" sits at the top right, on the Show line; Show goes back to All too, and Similar icons stays. It is
- * the last item in the keys' order. A badge on the button counts what is on: each filter, and Show when it is not All.
+ *  - Similar icons: "Group them (+N)" or "Show each one" (YAZ-4348 demo round 2), a view choice, not a filter;
+ *  - Hover zoom: On or Off (YAZ-4447, D34), a view choice too; Settings › Images › Add panel is the same switch.
+ * "Clear filters" sits at the top right, on the Show line; Show goes back to All too, and the two view choices stay. It
+ * is the last item in the keys' order. A badge on the button counts what is on: each filter, and Show when it is not All.
  *
  * MAIN applies the filters (`MediaSearchRequest.filters`); this menu only picks them. The caller keeps them in the
  * settings (`mediaFilters`, which travel; Show stays in the window's session) and searches again at once. With the
@@ -57,6 +58,9 @@ export interface FilterMenuProps {
   /** Similar icons (YAZ-4348 demo round 2): true groups look-alikes behind "+N". A view choice: no badge, Clear keeps it. */
   groupSimilar: boolean
   onGroupSimilar: (on: boolean) => void
+  /** Hover zoom (YAZ-4447, D34): a resting pointer shows a tile bigger. A view choice like Similar icons. */
+  hoverZoom: boolean
+  onHoverZoom: (on: boolean) => void
 }
 
 /** The packs in the chooser's order: pinned first (in pin order), then by name. */
@@ -68,7 +72,7 @@ export function packOrder(packs: readonly IconPackInfo[], pinned: readonly strin
   return [...packs].sort((a, b) => at(a.prefix) - at(b.prefix) || a.name.localeCompare(b.name))
 }
 
-export function FilterMenu({ show, shows, onShow, filters, onChange, onClear, pinned, loadPacks, groupSimilar, onGroupSimilar }: FilterMenuProps) {
+export function FilterMenu({ show, shows, onShow, filters, onChange, onClear, pinned, loadPacks, groupSimilar, onGroupSimilar, hoverZoom, onHoverZoom }: FilterMenuProps) {
   const [open, setOpen] = useState(false)
   const [choosing, setChoosing] = useState(false)
   const [packs, setPacks] = useState<IconPackInfo[] | null>(null)
@@ -219,6 +223,15 @@ export function FilterMenu({ show, shows, onShow, filters, onChange, onClear, pi
             ],
             groupSimilar ? 'group' : 'each',
             (choice) => onGroupSimilar(choice === 'group'),
+          )}
+          {radios<'on' | 'off'>(
+            'Hover zoom',
+            [
+              ['on', 'On'],
+              ['off', 'Off'],
+            ],
+            hoverZoom ? 'on' : 'off',
+            (choice) => onHoverZoom(choice === 'on'),
           )}
           <button type="button" role="menuitem" className="image-studio__filter-clear" disabled={count === 0} onClick={onClear}>
             Clear filters

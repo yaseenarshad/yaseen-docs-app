@@ -945,3 +945,35 @@
   height: 100%;
   transition: width 0.3s ease;
 }
+
+/* The hover zoom (YAZ-4447, D34; `tileHoverZoom.ts`): one floating picture on the body, beside the tile the pointer
+   rests on. Its place, size and background (the tile's own, with its auto light or dark tone) are set inline. It
+   never takes the pointer, so the tile under it keeps its hover. */
+.image-studio__zoom {
+  align-items: center;
+  border: 1px solid rgb(127 127 127 / 25%);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 28%);
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+  position: fixed;
+  z-index: 1000;
+}
+
+.image-studio__zoom[hidden] {
+  display: none;
+}
+
+.image-studio__zoom img {
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+.image-studio__zoom svg {
+  height: 70%;
+  width: 70%;
+}
