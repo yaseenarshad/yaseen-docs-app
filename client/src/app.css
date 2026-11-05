@@ -36,10 +36,11 @@
   --mark-bg-green: rgba(80, 200, 120, 0.35);
   --mark-bg-blue: rgba(80, 160, 255, 0.35);
   --mark-bg-pink: rgba(255, 120, 180, 0.35);
-  /* The highlight ▾ panel's colours (YAZ-4348 demo round 2): translucent too, one value for both themes. */
-  --mark-bg-orange: rgba(255, 150, 40, 0.35);
+  /* The highlight ▾ panel's colours (YAZ-4348 demo round 2): translucent too, one value for both themes; the table's
+     light fills of the same names are these tokens (`table.css`). */
+  --mark-bg-orange: rgba(255, 150, 50, 0.35);
   --mark-bg-purple: rgba(160, 110, 255, 0.35);
-  --mark-bg-red: rgba(255, 80, 80, 0.35);
+  --mark-bg-red: rgba(255, 90, 80, 0.35);
   --mark-bg-gray: rgba(150, 150, 150, 0.35);
   /* Amber notice family: conflict bar + rename banner — the two that ask for a decision. (The
      link-notice toast left it for the context menu's surface tokens, YAZ-1674: it confirms as

@@ -58,9 +58,9 @@ export const HIGHLIGHT_HEX: Record<HighlightName | 'yellow', CustomHighlight> = 
   green: '#50c878',
   blue: '#50a0ff',
   pink: '#ff78b4',
-  orange: '#ff9628',
+  orange: '#ff9632',
   purple: '#a06eff',
-  red: '#ff5050',
+  red: '#ff5a50',
   gray: '#969696',
 }
 

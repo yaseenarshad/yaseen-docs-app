@@ -14,6 +14,9 @@ import type { Crepe } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import appCss from '../../app.css?inline'
+import tableCss from '../table/table.css?inline'
+import { hexOfRgb } from '../../lib/colour'
 import {
   caretIn,
   marksOn,
@@ -28,6 +31,7 @@ import {
 import {
   CUSTOM_WASH,
   HIGHLIGHT_COLORS,
+  HIGHLIGHT_HEX,
   highlightColorsIn,
   highlightSchema,
   rangeHasHighlight,
@@ -694,5 +698,32 @@ describe('custom highlights (YAZ-4348 demo round 2)', () => {
     paste(again.view, out)
     expect(colorOn(again.crepe, 'y')).toBe('#00ff00')
     expect(md(again.crepe)).toContain('<mark style="background-color: #00ff00">y</mark>')
+  })
+})
+
+/**
+ * Each colour's solid hue (`HIGHLIGHT_HEX`: the panel's Hex code value and where its Shades start) is the `rgb` of its
+ * app.css wash token, and the table's light fills for the same colours are those tokens (YAZ-4366): a CSS change
+ * that moved one would silently move the other.
+ */
+describe('the wash tokens (YAZ-4366)', () => {
+  /** A custom property of `:root` (the light theme). */
+  const rootVar = (css: string, name: string) => {
+    const root = css.slice(css.indexOf(':root'), css.indexOf("[data-theme='dark']"))
+    return new RegExp(`${name}:\\s*([^;]+);`).exec(root)![1].trim()
+  }
+  const token = (name: string) => (name === 'yellow' ? '--mark-bg' : `--mark-bg-${name}`)
+
+  it('each HIGHLIGHT_HEX value is the rgb of its --mark-bg token', () => {
+    for (const [name, hex] of Object.entries(HIGHLIGHT_HEX)) {
+      const rgba = /^rgba\((\d+), (\d+), (\d+), [\d.]+\)$/.exec(rootVar(appCss, token(name)))
+      expect(rgba, name).not.toBeNull()
+      expect(hexOfRgb(rgba!.slice(1, 4).map(Number)), name).toBe(hex)
+    }
+  })
+
+  it('the table\'s light fills of the shared colours are the highlight washes', () => {
+    const shared: Array<[string, string]> = [['yellow', 'yellow'], ['green', 'green'], ['blue', 'blue'], ['pink', 'pink'], ['orange', 'orange'], ['purple', 'purple'], ['red', 'red'], ['grey', 'gray']]
+    for (const [cell, mark] of shared) expect(rootVar(tableCss, `--table-fill-${cell}`), cell).toBe(`var(${token(mark)})`)
   })
 })

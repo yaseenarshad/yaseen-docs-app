@@ -9,21 +9,21 @@
  */
 
 /* The ten cell colours (YAZ-3817), each in light and dark. Fills are see-through washes, so the
-   text stays readable; in light, yellow, green, blue and pink are the highlight washes (YAZ-1480,
-   app.css `--mark-bg*`), as before. Text colours are darker shades in light and lighter in dark.
+   text stays readable; in light, yellow, green, blue, pink, orange, purple, red and grey are the
+   highlight washes (YAZ-1480, YAZ-4366, app.css `--mark-bg*`). Text colours are darker shades in light and lighter in dark.
    `clipboardCopyOut.ts` holds the light shades as they show over white (a copy to Docs).
    `--table-fill-wash` is a custom fill's strength, in both themes: `colours.ts` `FILL_WASH` for a copy. */
 :root {
   --table-fill-wash: 35%;
-  --table-fill-red: rgba(255, 90, 80, 0.35);
-  --table-fill-orange: rgba(255, 150, 50, 0.35);
+  --table-fill-red: var(--mark-bg-red);
+  --table-fill-orange: var(--mark-bg-orange);
   --table-fill-yellow: var(--mark-bg);
   --table-fill-green: var(--mark-bg-green);
   --table-fill-teal: rgba(40, 190, 180, 0.35);
   --table-fill-blue: var(--mark-bg-blue);
-  --table-fill-purple: rgba(160, 110, 255, 0.35);
+  --table-fill-purple: var(--mark-bg-purple);
   --table-fill-pink: var(--mark-bg-pink);
-  --table-fill-grey: rgba(150, 150, 150, 0.35);
+  --table-fill-grey: var(--mark-bg-gray);
   --table-fill-brown: rgba(170, 120, 70, 0.35);
   --table-text-red: #c0392b;
   --table-text-orange: #b45309;
