@@ -51,7 +51,7 @@ export interface PageSwitch {
  * A drawing (YAZ-3943 D5, D13) passes `rows`, read while the menu is open and never while it is closed:
  * the pictures' size, "Move pictures out" or "Keep pictures inside", and the two exports.
  */
-export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, switches, switchesHeading, rows, readText }: {
+export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, bulletThreading = false, onToggleBulletThreading, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, switches, switchesHeading, rows, readText }: {
   /** The file's read-only switch (YAZ-3076 D1): a note, a drawing and a diagram have it. */
   readOnly?: boolean
   /** Off → the host turns it on; on → the host opens the "Allow edits?" box (this menu closes first). Absent → no row (a file with no switch, YAZ-3448). */
@@ -68,6 +68,9 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
   /** This page's bullets and headings fold (YAZ-4094 F1): its own choice, else Settings' "Folding default". Absent handler → no row. */
   folding?: boolean
   onToggleFolding?: () => void
+  /** This page's bullet threading (YAZ-4432): its own choice, else Settings' "Bullet threading default". Absent handler → no row. */
+  bulletThreading?: boolean
+  onToggleBulletThreading?: () => void
   /** Every heading wears its level, "H2", after its text (YAZ-2700). Without the switch on, only the heading in hand does. */
   headingLevels?: boolean
   onToggleHeadingLevels?: () => void
@@ -184,6 +187,9 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         </button>}
         {onToggleFolding !== undefined && <button type="button" aria-pressed={folding} onClick={onToggleFolding}>
           <span>Folding</span><span aria-hidden="true">{folding ? '✓' : ''}</span>
+        </button>}
+        {onToggleBulletThreading !== undefined && <button type="button" aria-pressed={bulletThreading} onClick={onToggleBulletThreading}>
+          <span>Bullet threading</span><span aria-hidden="true">{bulletThreading ? '✓' : ''}</span>
         </button>}
         {onToggleHeadingLevels !== undefined && <button type="button" aria-pressed={headingLevels} onClick={onToggleHeadingLevels}>
           <span>Heading levels</span><span aria-hidden="true">{headingLevels ? '✓' : ''}</span>

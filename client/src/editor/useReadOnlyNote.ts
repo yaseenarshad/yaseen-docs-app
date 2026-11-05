@@ -8,8 +8,8 @@
  * It does take the window's wikilink resolve source (YAZ-2293): a `[[<id>]]` link has no readable
  * text of its own, so without the source a preview would show bare ids where the note shows titles.
  *
- * The note's own "Guide lines" and "Folding" (YAZ-4094 G4) go on its `.editor-instance`, as a note's host
- * carries them, and win over the app defaults on `:root` (guideLines.css). Folding is set at mount, from the
+ * The note's own "Guide lines", "Folding" (YAZ-4094 G4) and "Bullet threading" (YAZ-4432) go on its `.editor-instance`,
+ * as a note's host carries them, and win over the app defaults on `:root` (guideLines.css, bulletThreading.css). Folding is set at mount, from the
  * note's key, else Settings › "Folding default": a preview is read once and never redrawn (C26).
  */
 import { useEffect, type RefObject } from 'react'
@@ -37,6 +37,7 @@ export function useReadOnlyNote(host: RefObject<HTMLElement | null>, body: strin
     el.className = 'editor-instance'
     if (switches['guide-lines'] !== undefined) el.dataset.guideLines = switches['guide-lines'] ? 'on' : 'off'
     if (switches.folding !== undefined) el.dataset.folding = switches.folding ? 'on' : 'off'
+    if (switches['bullet-threading'] !== undefined) el.dataset.threading = switches['bullet-threading'] ? 'on' : 'off'
     parent.appendChild(el)
     // No `image` options (YAZ-1656): the caller knows the note's path but not the vault root, and a
     // vault-relative src has nothing to resolve against without it — images stay Crepe's stock `<img>`.

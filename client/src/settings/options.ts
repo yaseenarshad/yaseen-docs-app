@@ -97,12 +97,6 @@ export const THREAD_WIDTH_OPTIONS: readonly Option<number>[] = THREAD_WIDTHS.map
 /** Shown in the colour swatch while the thread uses the app accent (`--accent` in app.css). */
 export const DEFAULT_THREAD_SWATCH = '#5b6cff'
 
-/** Bullet threading on/off (GRO-2094); the editor reads it as `data-threading` on `.app`. */
-export const THREADING_OPTIONS: readonly Option<boolean>[] = [
-  { label: 'Off', value: false },
-  { label: 'On', value: true },
-]
-
 /** Section indent (YAZ-2709): the width of one step; `SECTION_STEPS` validates the field, and the editor reads it as `--section-step-setting`. */
 export const SECTION_STEP_OPTIONS: readonly Option<number>[] = SECTION_STEPS.map((value) => ({ label: `${value}px`, value }))
 
