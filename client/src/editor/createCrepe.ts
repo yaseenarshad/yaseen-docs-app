@@ -276,7 +276,7 @@ import {
   restoreItemLine,
 } from './listItemRoundTrip'
 import { toggleUnderline, underline, underlineSchema } from './marks/underline'
-import { highlight, highlightColorsIn, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, QUICK_HIGHLIGHTS, type HighlightColor } from './marks/highlight'
+import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, QUICK_HIGHLIGHTS, type HighlightColor } from './marks/highlight'
 import { hasPanelColour, highlightPanel, MORE_KEY, toggleHighlightPanel } from './highlightPanel'
 import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
 import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
@@ -504,7 +504,7 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
   formatting.addItem(MORE_KEY, {
     icon: ownIcon(MORE_KEY),
     label: TOOLBAR_LABELS[MORE_KEY],
-    active: (ctx) => hasPanelColour(highlightColorsIn(viewState(ctx), highlightSchema.type(ctx))),
+    active: (ctx) => hasPanelColour(viewState(ctx), highlightSchema.type(ctx)),
     onRun: (ctx) => toggleHighlightPanel(ctx.get(editorViewCtx)),
   })
   formatting.addItem('underline', {

@@ -363,6 +363,24 @@ export function highlightColorsIn(state: EditorState, type: MarkType): Highlight
   return [...found]
 }
 
+/**
+ * Whether a highlight on the visible selection (at a caret: the marks it would type with) has a colour that passes
+ * `test`. The walk stops at the first one: the toolbar's ▾ asks on each update, also after ⌘A on a long note.
+ */
+export function someHighlightColor(state: EditorState, type: MarkType, test: (color: HighlightColor) => boolean): boolean {
+  const hit = (marks: readonly Mark[]) => marks.some((mark) => mark.type === type && test((mark.attrs.color ?? null) as HighlightColor))
+  if (state.selection.empty) return hit(state.storedMarks ?? state.selection.$from.marks())
+  let found = false
+  for (const { from, to } of visibleRanges(state)) {
+    state.doc.nodesBetween(from, to, (node) => {
+      if (!found && node.isText) found = hit(node.marks)
+      return !found
+    })
+    if (found) return true
+  }
+  return false
+}
+
 /** A `$useKeymap` (not `$shortcut`) so Crepe's `keymapRef` can label the yellow swatch from it. Priority above Crepe's 50, like underline.ts. */
 export const highlightKeymap = $useKeymap('highlightKeymap', {
   ToggleHighlight: {

@@ -28,6 +28,7 @@
 import type { Ctx } from '@milkdown/kit/ctx'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import { Plugin, PluginKey, type Command, type EditorState } from '@milkdown/kit/prose/state'
+import type { MarkType } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import {
@@ -40,6 +41,7 @@ import {
   isCustomHighlight,
   QUICK_HIGHLIGHTS,
   removeHighlight,
+  someHighlightColor,
   type CustomHighlight,
   type HighlightColor,
 } from './marks/highlight'
@@ -51,8 +53,8 @@ import { mostUsedHighlightColors, noteHighlightColorUse } from './highlightUsed'
 export const MORE_KEY = 'highlight-more'
 
 /** Whether the selection has a colour that is not a toolbar button: the ▾ lights for it. */
-export const hasPanelColour = (colours: readonly HighlightColor[]): boolean =>
-  colours.some((c) => c !== null && !(QUICK_HIGHLIGHTS as readonly string[]).includes(c))
+export const hasPanelColour = (state: EditorState, type: MarkType): boolean =>
+  someHighlightColor(state, type, (c) => c !== null && !(QUICK_HIGHLIGHTS as readonly string[]).includes(c))
 
 /** A colour's name in the panel: yellow is the mark's `null`. */
 const nameOf = (color: HighlightColor): string => (color === null ? 'yellow' : color)
