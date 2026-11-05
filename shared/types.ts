@@ -10,6 +10,7 @@ import type { IconRule } from './vaultIcons'
 import type { ReviewEntry } from './reviews'
 import type { HotkeyOverrides } from './hotkeyBindings'
 import { DEFAULT_DAILY_NOTE_FORMAT } from './dailyNote'
+import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from './iconPacks'
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
 
 // ---------- Errors ----------
@@ -1168,7 +1169,10 @@ export const DEFAULT_SIDEBAR_TABS: SidebarTabsPrefs = { order: [...SIDEBAR_TABS]
 export const TOOLBAR_LAYOUT = {
   lineType: ['h1', 'h2', 'h3', 'text'],
   lists: ['checklist', 'bulletList', 'numberedList'],
-  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink'],
+  // `highlight-more` (YAZ-4348 demo round 2): the ▾ of the highlight colour panel. Last, so a saved order (the loader
+  // appends a new button) puts it right after the highlight buttons too. Pink left the strip for the panel (demo round
+  // 2, Yasin): a saved setting that still names `highlight-pink` loses it on load, as any unknown name.
+  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more'],
   insert: ['code', 'link'],
 } as const
 export type ToolbarGroupId = keyof typeof TOOLBAR_LAYOUT
@@ -1186,6 +1190,21 @@ export interface ToolbarPrefs {
   hidden: ToolbarButtonId[]
 }
 export const DEFAULT_TOOLBAR: ToolbarPrefs = { groups: [...TOOLBAR_GROUPS], buttons: [...TOOLBAR_BUTTONS], hidden: [] }
+/** A custom highlight colour (lowercase `#rrggbb`) and how many times it was picked (YAZ-4348 demo round 2). */
+export interface HighlightCustomColor {
+  color: string
+  uses: number
+}
+/** How many custom highlight colours the settings keep: more than the row shows, so a new colour can climb into it. */
+export const HIGHLIGHT_CUSTOM_COLORS_KEPT = 10
+/** How many the highlight panel's "Most used custom colours" row shows: one row of its grid. */
+export const HIGHLIGHT_CUSTOM_COLORS_SHOWN = 5
+/** A custom highlight colour exactly as the note's mark and this setting keep it: lowercase `#rrggbb`. */
+export const isHighlightHex = (v: unknown): v is `#${string}` => typeof v === 'string' && /^#[0-9a-f]{6}$/.test(v)
+/** A kept entry: a lowercase `#rrggbb` and a whole count of one or more. */
+export const isHighlightCustomColor = (v: unknown): v is HighlightCustomColor =>
+  typeof v === 'object' && v !== null && isHighlightHex((v as HighlightCustomColor).color) &&
+  Number.isInteger((v as HighlightCustomColor).uses) && (v as HighlightCustomColor).uses >= 1
 /** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites; Files has none. `best` is Search's alone (YAZ-3511 D12). */
 export type SortBy = 'manual' | 'name' | 'updated' | 'best'
 /** One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first. */
@@ -1467,20 +1486,30 @@ export type StoredMediaItem = MediaItem & { updatedAt: number }
 export type UsedMediaItem = StoredMediaItem & { count: number; words: string[] }
 
 /**
- * `<library>/media.json` (🔒 YAZ-1775 D5): the cross-vault media library, ONE file for the whole account.
+ * The cross-vault media library (🔒 YAZ-1775 D5): ONE library for the whole account.
  * The lists are newest-first and de-duplicated by `itemKey`; `favorites` is the user's pinned
  * set, `recent` is an MRU of what they actually placed on a board, `used` is what the Add tab learned from
- * those adds (YAZ-4157 D1). Still version 1: a build from before drops `used` and reads the rest.
+ * those adds (YAZ-4157 D1). Still version 1: a build from before drops `used` and `removed` and reads the rest.
+ *
+ * Two Macs (YAZ-4364, round 3 decision 2): each Mac writes only `<library>/media-<macId>.json`, and a read merges
+ * every Mac's file and an old `media.json` (`mergeMediaLibraries`). `removed` is each favorite taken out (itemKey →
+ * when), so a merge does not bring it back.
  */
 export interface MediaLibraryFile {
   version: 1
   favorites: StoredMediaItem[]
   recent: StoredMediaItem[]
   used: UsedMediaItem[]
+  removed: Record<string, number>
 }
 
-/** The library file's name inside the library folder. */
+/** The library file of a build from before YAZ-4364, inside the library folder: still read, never written. */
 export const MEDIA_LIBRARY_FILE = 'media.json'
+/**
+ * The removals a library keeps, the newest first (YAZ-4364): older ones drop, but never one that still holds back a
+ * favorite in another library file (YAZ-4366, `mergeMediaLibraries`).
+ */
+export const MAX_MEDIA_REMOVED = 2000
 /**
  * `<library>/components/` (🔒 YAZ-1775 D5): where YAZ-1819 writes a saved component's `.excalidraw` + `.png`.
  * Named here so nothing else claims it; YAZ-1817 creates NOTHING — the folder appears on YAZ-1819's first write.
@@ -1488,8 +1517,12 @@ export const MEDIA_LIBRARY_FILE = 'media.json'
 export const LIBRARY_COMPONENTS_DIR = 'components'
 /** The components index beside that folder: `<library>/components.json` (🔒 YAZ-1775 D5, YAZ-1819). */
 export const COMPONENTS_INDEX_FILE = 'components.json'
-/** Favorites are capped at the web app's `listFavorites` ceiling; the oldest fall off the end. */
-export const MAX_MEDIA_FAVORITES = 500
+/**
+ * `<library>/favorites/` (YAZ-4363): one full-quality copy of each favorite, of every kind (YAZ-4370), named
+ * `<sha1(itemKey)>.<ext>` — the name comes from the id, so no field in `media.json` can lose it.
+ * Favorites have NO cap (YAZ-4363, round 2 decision 7): a list the user builds by hand never deletes itself.
+ */
+export const LIBRARY_FAVORITES_DIR = 'favorites'
 /** The MRU's length, the web app's `RECENT_LIMIT` exactly. */
 export const RECENT_LIMIT = 60
 /** The `used` rows kept; the one used longest ago falls off (YAZ-4157 D1). */
@@ -1507,7 +1540,37 @@ export type MediaFavoritesRequest = { op: 'list' } | { op: 'add'; item: MediaIte
  * `media:used` (YAZ-4157 D1) — every verb answers the whole library: `record` is one add (the MRU, the count, the
  * word `query`, and the favorite at the third), `add-word` is "Add a word…" (the item, so a row can start at 0).
  */
-export type MediaUsedRequest = { op: 'list' } | { op: 'record'; item: MediaItem; query: string } | { op: 'add-word'; item: MediaItem; word: string }
+export type MediaUsedRequest =
+  | { op: 'list' }
+  | { op: 'record'; item: MediaItem; query: string }
+  | { op: 'add-word'; item: MediaItem; word: string }
+  // YAZ-4348 demo round 2: the × on a word chip in Search words…
+  | { op: 'remove-word'; itemKey: string; word: string }
+
+/**
+ * `media:favorite-copies` (YAZ-4363, YAZ-4370): Settings › Images' line about the favorites' own copies. Every favorite
+ * needs one, whatever its kind. Each is `saved`, `saving` (the backfill has it still to do), `waitingForKey` (Pixabay,
+ * with no key on this Mac), `waitingForPanel` (a shape: the Add panel makes its copy when it opens) or `failed` (the
+ * last try could not get it). `bytes` is the size of every copy in the folder.
+ */
+export interface FavoriteCopiesStatus {
+  favorites: number
+  saved: number
+  saving: number
+  waitingForKey: number
+  waitingForPanel: number
+  failed: number
+  bytes: number
+}
+
+/**
+ * `media:save-favorite-elements` (YAZ-4370): the Add panel's copy of a shape favorite, a component fragment's text.
+ * Main keeps it only for a favorite with no copy yet.
+ */
+export interface FavoriteElementsSaveRequest {
+  itemKey: string
+  fragmentJson: string
+}
 
 // ---------- Image Studio: the provider doors (🔒 YAZ-1775 D4, YAZ-1818) ----------
 
@@ -1538,6 +1601,11 @@ export interface MediaSearchRequest {
   source: MediaSearchSource
   /** The `nextCursor` of the previous page; absent or null starts over. Opaque: main minted it, main reads it. */
   cursor?: string | null
+  /**
+   * The Filter menu's choices (YAZ-4360, `shared/iconPacks.ts`); main applies them to the icons. Absent = no filter.
+   * With exactly one pack in `packs`, `q` may be empty: that is the pack page's every icon (YAZ-4361).
+   */
+  filters?: MediaFilters
 }
 
 /**
@@ -1731,6 +1799,11 @@ export interface SettingsState {
   sidebarTabs: SidebarTabsPrefs
   /** The selection toolbar's group order, button order and hidden buttons (YAZ-3806 T5). Travels with the settings. */
   selectionToolbar: ToolbarPrefs
+  /**
+   * The custom highlight colours picked in the note's highlight panel (YAZ-4348 demo round 2), most used first: its
+   * "Most used custom colours" row shows the first `HIGHLIGHT_CUSTOM_COLORS_SHOWN`. Travels with the settings.
+   */
+  highlightCustomColors: HighlightCustomColor[]
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
   /** What a vault opens on (YAZ-3487 D15): every vault open reads it — main's new windows, `openRoot`, `bootTabs`, the empty-window door. */
@@ -1844,6 +1917,20 @@ export interface SettingsState {
   libraryFolder: string | null
   /** The canvas panel's last tab and dock preference (YAZ-3038). See `CanvasPanelState`. */
   canvasPanel: CanvasPanelState
+  /** The Add panel's Filter menu (YAZ-4360): Colors, Style, Packs, License. Travels with the settings. */
+  mediaFilters: MediaFilters
+  /** The packs "Pin pack" pinned (YAZ-4361), by prefix, first pinned first: they lead Filter › Packs. Travels. */
+  mediaPinnedPacks: string[]
+  /**
+   * The Add panel's "+41" groups (YAZ-4348 demo round 2): true shows one tile per icon with its look-alikes behind
+   * "+N"; false shows every icon as its own tile. Filter › Similar icons. Travels; Clear filters keeps it.
+   */
+  mediaGroupSimilar: boolean
+  /**
+   * Where the downloaded icon packs live (YAZ-4359, D5 update): ONE folder for every vault and window of this Mac.
+   * null = `<userData>/icon-packs`, which only main can resolve. Stays on this Mac (`LOCAL_SETTINGS`).
+   */
+  iconPacksFolder: string | null
   /** How long a toast stays (YAZ-3303 D5). A toast with Undo stays at least `UNDO_NOTICE_MS`. */
   noticeLength: NoticeLength
   /** The toasts of a move, a rename or a delete, with Undo (YAZ-3303 D6). Off: no toast; ⌘Z still works. */
@@ -1947,7 +2034,7 @@ export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
  * and a drag width each fit one Mac only, like `AppState.sidebarWidth`. So does the code tab's helper switch
  * (YAZ-3500): its helpers are a download on this Mac. Every other field travels.
  */
-export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers']
+export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers', 'iconPacksFolder']
 
 /** The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover. */
 export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'links' | 'drawings'
@@ -2203,6 +2290,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   rowDates: DEFAULT_ROW_DATES,
   sidebarTabs: DEFAULT_SIDEBAR_TABS,
   selectionToolbar: DEFAULT_TOOLBAR,
+  highlightCustomColors: [],
   startupWindows: 'last',
   vaultOpensOn: 'blank',
   sectionStep: 30,
@@ -2249,6 +2337,10 @@ export const DEFAULT_SETTINGS: SettingsState = {
   diagramDarkColors: 'adapt',
   libraryFolder: null,
   canvasPanel: DEFAULT_CANVAS_PANEL,
+  mediaFilters: DEFAULT_MEDIA_FILTERS,
+  mediaPinnedPacks: [],
+  mediaGroupSimilar: true,
+  iconPacksFolder: null,
   noticeLength: '4s',
   noticeUndo: true,
   noticeClipboard: true,
@@ -3463,9 +3555,11 @@ export interface MemoryReport {
  * The updater's state (YAZ-2976), owned by main and pushed to every window. `downloading` and `ready`
  * name the new version; `manual` = a newer version exists but this copy cannot replace itself (Windows,
  * an unpackaged run, a read-only or translocated folder, an ad-hoc build — S13). The first launch after
- * the swap is `idle` (YAZ-3698): the user read the notes before the install.
+ * the swap is `idle` (YAZ-3698): the user read the notes before the install. `idle` with `failed` = the download
+ * of that version failed (S9: a wrong sha256, or a stalled download) and the next check tries again; What's New says
+ * so in one line (YAZ-4384).
  */
-export type UpdateState = { kind: 'idle' } | { kind: 'downloading' | 'ready' | 'manual'; version: string }
+export type UpdateState = { kind: 'idle'; failed?: string } | { kind: 'downloading' | 'ready' | 'manual'; version: string }
 
 /** One GitHub release for the "What's new" window (YAZ-2976 D5): `body` is the release's Markdown as GitHub holds it. */
 export interface ReleaseNote {
@@ -3483,5 +3577,7 @@ export interface ReleaseNote {
  */
 export interface ReleaseNotes {
   current: string
+  /** False in a dev run with no update feed (S7): the sheet then offers no update from the **Latest** row (YAZ-4371). */
+  checks: boolean
   releases: ReleaseNote[]
 }

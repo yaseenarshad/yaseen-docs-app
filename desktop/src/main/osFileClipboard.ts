@@ -41,15 +41,23 @@ export function parseFilenamesPlist(xml: string): string[] {
 const e2e = globalThis as { e2eOsFiles?: string }
 const inE2E = (): boolean => process.env.YASEEN_DOCS_FAKE_CLIPBOARD === '1'
 
-/** The files on the system clipboard, absolute and in order; empty off macOS, when it holds no files (text, say), or when the read fails. */
-export function readOsFiles(): string[] {
-  if (process.platform !== 'darwin') return []
+/**
+ * The files on the system clipboard, absolute and in order; empty when it holds no files (text or a picture, say).
+ * Null when the app cannot know (YAZ-4372): off macOS, or when the read fails. Then the app's own clip stands.
+ */
+export function osFiles(): string[] | null {
+  if (process.platform !== 'darwin') return null
   try {
     return parseFilenamesPlist(inE2E() ? (e2e.e2eOsFiles ?? '') : clipboard.read(FILENAMES_TYPE))
   } catch (err) {
     console.warn(`[osFileClipboard] read failed: ${String(err)}`)
-    return []
+    return null
   }
+}
+
+/** The files on the system clipboard, absolute and in order; empty off macOS, when it holds no files (text, say), or when the read fails. */
+export function readOsFiles(): string[] {
+  return osFiles() ?? []
 }
 
 /**
@@ -67,14 +75,19 @@ export function clearOsFiles(paths: readonly string[]): void {
   }
 }
 
-/** Puts `paths` on the system clipboard as Finder's Copy would, in place of what was there. */
-export function writeOsFiles(paths: readonly string[]): void {
-  if (process.platform !== 'darwin') return
+/**
+ * Puts `paths` on the system clipboard as Finder's Copy would, in place of what was there. Answers whether the
+ * system clipboard now holds them (YAZ-4372): false off macOS and when the write fails.
+ */
+export function writeOsFiles(paths: readonly string[]): boolean {
+  if (process.platform !== 'darwin') return false
   const plist = filenamesPlist(paths)
   try {
     if (inE2E()) e2e.e2eOsFiles = plist
     else clipboard.writeBuffer(FILENAMES_TYPE, Buffer.from(plist, 'utf8'))
+    return true
   } catch (err) {
     console.warn(`[osFileClipboard] write failed: ${String(err)}`)
+    return false
   }
 }

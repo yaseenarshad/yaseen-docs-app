@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { SEARCH_CACHE_VERSION } from './curation'
+import { DEFAULT_MEDIA_FILTERS } from '@shared/iconPacks'
 import { CACHE_TTL_MS, cacheFileName, isFresh, MEDIA_CACHE_DIR, pixabayItemCacheKey, pixabayPageCacheKey, planCacheSweep, previewCacheKey, searchCacheKey } from './cachePolicy'
 
 describe('cache file names', () => {
@@ -26,6 +27,18 @@ describe('cache file names', () => {
 })
 
 describe('the key scheme', () => {
+  it('changes with the filters, and stays the same with none (YAZ-4360)', () => {
+    const plain = searchCacheKey('arrow', 'iconify', null, false)
+    expect(searchCacheKey('arrow', 'iconify', null, false, DEFAULT_MEDIA_FILTERS)).toBe(plain)
+    const one = searchCacheKey('arrow', 'iconify', null, false, { ...DEFAULT_MEDIA_FILTERS, colors: 'one' })
+    const many = searchCacheKey('arrow', 'iconify', null, false, { ...DEFAULT_MEDIA_FILTERS, colors: 'many' })
+    expect(new Set([plain, one, many]).size).toBe(3)
+    // The same packs in another order are the same answer.
+    expect(searchCacheKey('arrow', 'iconify', null, false, { ...DEFAULT_MEDIA_FILTERS, packs: ['mdi', 'noto'] })).toBe(
+      searchCacheKey('arrow', 'iconify', null, false, { ...DEFAULT_MEDIA_FILTERS, packs: ['noto', 'mdi'] }),
+    )
+  })
+
   it('carries SEARCH_CACHE_VERSION, so bumping it orphans every stored answer', () => {
     expect(searchCacheKey('money bag', 'all', null, true)).toContain(`_iscv=${SEARCH_CACHE_VERSION}`)
   })

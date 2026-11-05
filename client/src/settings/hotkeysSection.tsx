@@ -789,10 +789,11 @@ const pickItem = (app: KeyRow, place: AsidePlace, rows: readonly KeyRow[]): Sett
   ),
 })
 
-/** A card's head: the key, and what kind of key it is. */
+/** A card's head: the key, and what kind of key it is. A drawing's R (Rectangle, and Red with a selection) is one tab's. */
 function KeyCardHead({ card }: { card: KeyCard }) {
+  const tabs = new Set(card.rows.map((r) => r.scope)).size
   const what =
-    card.kind === 'shared' ? (card.picks > 0 ? 'Shared: each tab picks what it does.' : 'Used by the app and by tabs: built in.') : card.kind === 'app' ? 'Works in every tab.' : card.rows.length > 1 ? 'Each tab has its own action.' : `Works in ${PLACE_WORDS[card.rows[0].scope]}.`
+    card.kind === 'shared' ? (card.picks > 0 ? 'Shared: each tab picks what it does.' : 'Used by the app and by tabs: built in.') : card.kind === 'app' ? 'Works in every tab.' : tabs > 1 ? 'Each tab has its own action.' : `Works in ${PLACE_WORDS[card.rows[0].scope]}.`
   return (
     <div className="hotkeys__card-head">
       <h3 className="settings-group__title hotkeys__cap-key">{keyText(card.key)}</h3>

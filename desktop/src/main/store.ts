@@ -143,6 +143,9 @@ import {
   type ToolbarPrefs,
   TOOLBAR_BUTTONS,
   TOOLBAR_GROUPS,
+  HIGHLIGHT_CUSTOM_COLORS_KEPT,
+  isHighlightCustomColor,
+  type HighlightCustomColor,
   type StartupWindows,
   type VaultOpensOn,
   type StoredTab,
@@ -179,6 +182,7 @@ import { isValidPicturesFolder } from '@shared/drawingAssets'
 import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
+import { isMediaFilters, isPinnedPacks, sanitizeMediaFilters } from '@shared/iconPacks'
 import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId, keyFor, sameKey, scopedId, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, asideId, gestureRow, isDefaultGesture, isGestureEntry, isUsableFor, keyRow, withAside, type HotkeyAside } from '@shared/keys'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
@@ -420,6 +424,19 @@ export function sanitizeToolbarPrefs(raw: unknown): ToolbarPrefs {
   }
 }
 
+/** The highlight panel's custom colours (YAZ-4348 demo round 2), strict — the IPC boundary's check: kept entries, each colour once, at most the cap. */
+const isHighlightCustomColors = (v: unknown): v is HighlightCustomColor[] =>
+  Array.isArray(v) && v.length <= HIGHLIGHT_CUSTOM_COLORS_KEPT && v.every(isHighlightCustomColor) && new Set(v.map((c) => c.color)).size === v.length
+/** The custom colours on load: an entry that does not read, or a colour a second time, is dropped; past the cap, the rest. */
+export function sanitizeHighlightCustomColors(raw: unknown): HighlightCustomColor[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  return raw
+    .filter((c): c is HighlightCustomColor => isHighlightCustomColor(c) && !seen.has(c.color) && Boolean(seen.add(c.color)))
+    .map(({ color, uses }) => ({ color, uses }))
+    .slice(0, HIGHLIGHT_CUSTOM_COLORS_KEPT)
+}
+
 /** Each place's hover switch (YAZ-3403), strict — the IPC boundary's check: every place, each a boolean. */
 const isHoverPreviewIn = (v: unknown): v is Record<HoverPlace, boolean> => isRecord(v) && HOVER_PLACES.every((place) => typeof v[place] === 'boolean')
 /** The sidebar's icon colours (YAZ-3440 D4), strict: each entry a known kind and a `#rrggbb`. */
@@ -569,6 +586,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   rowDates: (v): v is RowDates => isRecord(v) && SORT_MENU_TABS.every((tab) => typeof v[tab] === 'boolean'),
   sidebarTabs: isSidebarTabs,
   selectionToolbar: isToolbarPrefs,
+  highlightCustomColors: isHighlightCustomColors,
   startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
   vaultOpensOn: (v): v is VaultOpensOn => typeof v === 'string' && (VAULT_OPENS_ON as readonly string[]).includes(v),
   sectionStep: (v): v is number => isFiniteNumber(v) && SECTION_STEPS.includes(v),
@@ -618,6 +636,12 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   // `''` — an empty string would resolve to the process cwd, which is not a place for a user's library.
   libraryFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),
   canvasPanel: isCanvasPanel,
+  // YAZ-4360 / YAZ-4361: the Add panel's filters and pinned packs; `sanitizeSettings` repairs the filters part by part.
+  mediaFilters: isMediaFilters,
+  mediaPinnedPacks: isPinnedPacks,
+  mediaGroupSimilar: (v): v is boolean => typeof v === 'boolean',
+  // YAZ-4359: an absolute folder, or null for `<userData>/icon-packs` (never `''`, the `libraryFolder` rule).
+  iconPacksFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),
   noticeLength: (v): v is NoticeLength => typeof v === 'string' && (NOTICE_LENGTHS as readonly string[]).includes(v),
   noticeUndo: (v): v is boolean => typeof v === 'boolean',
   noticeClipboard: (v): v is boolean => typeof v === 'boolean',
@@ -661,8 +685,10 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   // A store written before a canvas pref existed keeps every pref it does have, instead of resetting the lot.
   out.canvas = sanitizeCanvasPrefs(src.canvas)
   out.canvasPanel = sanitizeCanvasPanel(src.canvasPanel)
+  out.mediaFilters = sanitizeMediaFilters(src.mediaFilters)
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
   out.selectionToolbar = sanitizeToolbarPrefs(src.selectionToolbar)
+  out.highlightCustomColors = sanitizeHighlightCustomColors(src.highlightCustomColors)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
   out.hotkeysAside = sanitizeHotkeyAside(src.hotkeysAside)

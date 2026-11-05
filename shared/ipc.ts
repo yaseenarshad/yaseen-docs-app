@@ -12,9 +12,10 @@
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardHeadResponse, BoardHoverLinksRequest, BoardPicturesRequest, BoardPicturesResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageResponse, IndexResponse, MediaDrawingIndexResponse, MediaDrawingRequest, MediaDrawingResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaLibraryFile, MediaUsedRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PickPicturesFolderRequest, PickPicturesFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SavePdfRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult, MemoryReport, StartView } from './types'
 import type { FoundNote } from './noteBirth'
-import type { CopyAsMode, CopyAsRich, NoteMenuAction, NoteMenuArg, MemoryTabFacts } from './types'
+import type { CopyAsMode, CopyAsRich, FavoriteCopiesStatus, FavoriteElementsSaveRequest, NoteMenuAction, NoteMenuArg, MemoryTabFacts } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
+import type { IconPackInfo, IconPacksRequest, IconPacksStatus } from './iconPacks'
 import type { SystemHotkey } from './macosHotkeys'
 import type { VaultIcons } from './vaultIcons'
 
@@ -141,8 +142,16 @@ export const CONTRACT = {
     favorites: invoke<[req: MediaFavoritesRequest], StoredMediaItem[]>('media:favorites', 1),
     /** List, record an add, or add a word (YAZ-4157); every verb answers the whole library. */
     used: invoke<[req: MediaUsedRequest], MediaLibraryFile>('media:used', 1),
-    /** `media.json` changed — any vault, any writer. */
+    /** A library file changed (any `media-*.json`, or the old `media.json`): any vault, any writer, any Mac. */
     onChanged: push('media:changed'),
+    /** The favorites' own copies (YAZ-4363): how many favorites, how many saved, how many still saving, and their size. */
+    favoriteCopies: invoke<[], FavoriteCopiesStatus>('media:favorite-copies', 0),
+    /** A favorite's elements copy (YAZ-4370: a library item, a shape, a component), as a component fragment's text; null = none. */
+    favoriteElements: invoke<[itemKey: string], string | null>('media:favorite-elements', 1),
+    /** Keep the Add panel's copy of a shape favorite with none yet (YAZ-4370); answers whether it was kept. */
+    saveFavoriteElements: invoke<[req: FavoriteElementsSaveRequest], boolean>('media:save-favorite-elements', 1),
+    /** The shape favorites with no copy yet: the Add panel builds and saves them (YAZ-4370). */
+    favoritesForPanel: invoke<[], string[]>('media:favorites-for-panel', 0),
     /** Federated search: main fetches, curates and caches, so the renderer never holds a key or reaches a provider. */
     search: invoke<[req: MediaSearchRequest], MediaSearchResponse>('media:search', 1),
     /** One tile's picture as a dataURL, from main's 24 h disk cache when it is there. */
@@ -153,6 +162,16 @@ export const CONTRACT = {
     drawingIndex: invoke<[], MediaDrawingIndexResponse>('media:drawing-index', 0),
     /** One library item's elements, to draw its tile and to put it on the board. */
     drawing: invoke<[req: MediaDrawingRequest], MediaDrawingResponse>('media:drawing', 1),
+    /**
+     * The downloaded icon packs (YAZ-4359, `main/media/iconPacks.ts`): `status`, `download` (also "Download the rest"),
+     * `stop`, `check` ("Check for new icons"), `remove`. Each answers the status after it; `download` and `check`
+     * resolve when their run ends and never reject for a failed download (the status says why).
+     */
+    packs: invoke<[req: IconPacksRequest], IconPacksStatus>('media:packs', 1),
+    /** Every status change of the packs, to every window: each pack done, a run starting or ending. */
+    onPacksProgress: push<IconPacksStatus>('media:packs-progress'),
+    /** Every pack the Add panel can name (YAZ-4360 Filter › Packs, YAZ-4361 the pack page): the Mac's, else Iconify's list. */
+    packList: invoke<[], IconPackInfo[]>('media:pack-list', 0),
   },
   /** The canvas panel's cross-vault saved-component library over `<library>/components/` (YAZ-3038; Draw's 🔒 YAZ-1775 D5). */
   components: {
@@ -679,6 +698,12 @@ export const CONTRACT = {
     onState: push<UpdateState>('update:state-changed'),
     /** The GitHub release notes for "What's new" (D5): every published release, newest first, up to 100, and this app's version (YAZ-2988 D13). Rejects when GitHub cannot be reached. */
     notes: invoke<[], ReleaseNotes>('update:notes', 0),
+    /**
+     * "Update to v<latest>" in "What's new" (YAZ-4371): one check now, the same as the timer's, and the state
+     * it finds (`downloading` as soon as a download starts). A call during a check joins it (S6). Rejects when
+     * GitHub cannot be reached. A dev run with no feed (S7) answers the state and fetches nothing.
+     */
+    check: invoke<[], UpdateState>('update:check', 0),
     /** "Restart to update" (D6): quit through the quit sequence, swap, open again. For `manual` (S13) it opens the GitHub release page instead. */
     restart: invoke<[], void>('update:restart', 0),
   },

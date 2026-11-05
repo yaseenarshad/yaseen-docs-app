@@ -36,6 +36,12 @@
   --mark-bg-green: rgba(80, 200, 120, 0.35);
   --mark-bg-blue: rgba(80, 160, 255, 0.35);
   --mark-bg-pink: rgba(255, 120, 180, 0.35);
+  /* The highlight ▾ panel's colours (YAZ-4348 demo round 2): translucent too, one value for both themes; the table's
+     light fills of the same names are these tokens (`table.css`). */
+  --mark-bg-orange: rgba(255, 150, 50, 0.35);
+  --mark-bg-purple: rgba(160, 110, 255, 0.35);
+  --mark-bg-red: rgba(255, 90, 80, 0.35);
+  --mark-bg-gray: rgba(150, 150, 150, 0.35);
   /* Amber notice family: conflict bar + rename banner — the two that ask for a decision. (The
      link-notice toast left it for the context menu's surface tokens, YAZ-1674: it confirms as
      often as it warns.) */
@@ -497,11 +503,373 @@ button {
 .milkdown .ProseMirror mark.highlight-green { background: var(--mark-bg-green); }
 .milkdown .ProseMirror mark.highlight-blue { background: var(--mark-bg-blue); }
 .milkdown .ProseMirror mark.highlight-pink { background: var(--mark-bg-pink); }
+.milkdown .ProseMirror mark.highlight-orange { background: var(--mark-bg-orange); }
+.milkdown .ProseMirror mark.highlight-purple { background: var(--mark-bg-purple); }
+.milkdown .ProseMirror mark.highlight-red { background: var(--mark-bg-red); }
+.milkdown .ProseMirror mark.highlight-gray { background: var(--mark-bg-gray); }
 
-/* A lit swatch (🔒 D5) reads as a pressed button, one step darker than hover — the dot's fill IS its colour,
-   so Crepe's "active = primary-coloured icon" cue only reached the 0.35-opacity outline and was too easy to miss. */
-.milkdown .milkdown-toolbar .toolbar-item.active[data-toolbar-item^='highlight'] {
+/* The ▾ after the highlight buttons (YAZ-4348 demo round 2): narrow, as the cell toolbar's; lit as a pressed button
+   when the selection has one of its menu's colours. */
+.milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] {
+  width: 16px;
+  padding: 4px 0;
+}
+.milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] svg {
+  width: 16px;
+}
+.milkdown .milkdown-toolbar .toolbar-item.active[data-toolbar-item='highlight-more'] {
   background: var(--crepe-color-selected);
+}
+
+/* The note's selection toolbar, tighter (YAZ-4348 demo round 2, Yasin: "everything so spaced out … decently spaced
+   out but not so close together"): Crepe gives each 32 px button 6 px on every side (12 px between two) and each
+   divider 10 px; now 4 px between buttons, 6 px either side of a divider, the same height. */
+.milkdown .milkdown-toolbar {
+  padding: 0 4px;
+}
+.milkdown .milkdown-toolbar .toolbar-item {
+  margin: 6px 2px;
+}
+.milkdown .milkdown-toolbar .divider {
+  margin: 10px 6px;
+}
+.milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] {
+  margin-left: -2px;
+}
+/* A lit button wears a ring in the accent (🔒 D5; YAZ-4348 demo round 2). It began on the highlight buttons, whose "A"
+   square's fill IS its colour, so a pressed-button background would hide behind it (and Crepe's "active =
+   primary-coloured icon" cue only reached the square's faint outline); Yasin: "i like this box … add that for the
+   other ones also": T on a plain line, B on bold text, a list button on its list. The ▾ keeps its pressed background. */
+.milkdown .milkdown-toolbar .toolbar-item.active:not([data-toolbar-item='highlight-more']) {
+  box-shadow: inset 0 0 0 2px var(--crepe-color-primary);
+}
+
+/* The highlight ▾ panel (YAZ-4348 demo round 2, `editor/highlightPanel.ts`): the board's colour popup in the note's
+   own tokens, its values ported from `engine/…/ColorPicker/ColorPicker.scss`, `Island.scss` (the popup: 0.75rem
+   padding, 8 px radius, the island shadow, at most 13rem wide) and `EyeDropper.scss` (the Hex code's trailing button)
+   (YAZ-4388). On the body, fixed under the ▾, so the toolbar's `overflow: hidden` cannot cut it off. */
+.highlight-panel {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* The board's popup is as wide as its rows: 5 swatches of 30 px, 4 px gaps, 8 px round the row, 12 px padding. */
+  width: 206px;
+  box-sizing: border-box;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  box-shadow:
+    0 0 1px 0 rgba(0, 0, 0, 0.17),
+    0 0 3px 0 rgba(0, 0, 0, 0.08),
+    0 7px 14px 0 rgba(0, 0, 0, 0.05);
+  font-family: var(--font);
+  color: var(--fg);
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* A quick fade and scale in from the ▾'s side (opacity and transform only, so the compositor runs it); usable at once. */
+@media (prefers-reduced-motion: no-preference) {
+  .highlight-panel {
+    transform-origin: top left;
+    animation: highlight-panel-in 100ms ease-out;
+  }
+  .highlight-panel.is-above {
+    transform-origin: bottom left;
+  }
+  .colour-box {
+    animation: colour-box-in 80ms ease-out;
+  }
+}
+@keyframes highlight-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes colour-box-in {
+  from {
+    opacity: 0;
+  }
+}
+/* A dark note is the panel's own colour: a hairline keeps its edge, where the board's darker canvas needs none. */
+[data-theme='dark'] .highlight-panel {
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 0 3px 0 rgba(0, 0, 0, 0.3),
+    0 7px 14px 0 rgba(0, 0, 0, 0.3);
+}
+.highlight-panel[hidden],
+.highlight-panel__section[hidden],
+.colour-box[hidden],
+.colour-box__eyedropper[hidden] {
+  display: none;
+}
+.highlight-panel__heading {
+  padding: 0 8px;
+  font-size: 12px;
+  text-align: left;
+}
+.highlight-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(5, 30px);
+  gap: 4px;
+  padding: 8px;
+  border-radius: 4px;
+}
+/* A swatch (`color-picker__button--large has-outline`): a rounded square of its colour (`--swatch`) with a faint
+   inset outline; hover rings it in gray, the selection's colours in the accent (the board's `active` outline), and
+   the keyboard's place gets the board's wide, soft focus ring. */
+.highlight-panel__swatch {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
+  box-sizing: border-box;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 15%, var(--bg));
+  cursor: pointer;
+}
+.highlight-panel__swatch::before,
+.highlight-panel__swatch::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 8px;
+  pointer-events: none;
+}
+.highlight-panel__swatch:hover:not(.active)::after {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 18%, var(--bg));
+}
+.highlight-panel__swatch.active::before {
+  z-index: 1;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.highlight-panel__swatch.is-current::after {
+  inset: -4px;
+  border: 3px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 9px;
+  box-shadow: none;
+}
+.highlight-panel__swatch.is-current.active::before {
+  display: none;
+}
+/* None: the board's transparent checkerboard. */
+.highlight-panel__swatch.is-none {
+  background: repeating-conic-gradient(color-mix(in srgb, var(--fg) 16%, var(--bg)) 0 25%, var(--bg) 0 50%) 0 0 / 10px 10px;
+}
+.highlight-panel__no-shades {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  font-size: 12px;
+  text-align: center;
+}
+/* Hex code (`color-picker__input-label`): `#`, the field, a divider and the pencil, in one rounded box. */
+.highlight-panel__hex {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  margin: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+.highlight-panel__hex:focus-within {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.highlight-panel__hash {
+  padding: 0 4px;
+}
+.highlight-panel__hex-input {
+  user-select: text;
+  -webkit-user-select: text;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0.4px;
+}
+.highlight-panel__hex-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+/* The trailing button (`excalidraw-eye-dropper-trigger`): it opens the colour box, and is lit while the box is open. */
+.highlight-panel__pencil {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  padding: 4px;
+  margin: 0 -4px 0 -2px;
+  box-sizing: content-box;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.highlight-panel__pencil svg {
+  width: 100%;
+  height: 100%;
+}
+.highlight-panel__pencil:hover {
+  background: var(--bg-hover);
+}
+.highlight-panel__pencil[aria-expanded='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+/* The keyboard's place on the field and the pencil. */
+.highlight-panel__hex.is-current,
+.highlight-panel__pencil.is-current {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The colour box (YAZ-4388, `editor/highlightColourBox.ts`), the look of Chromium's colour popup: the
+   saturation/brightness square on its hue (`--hue`), the eyedropper, the colour (`--pick`) and the hue slider, then
+   R G B. A handle rides a carrier as big as its track, moved by `transform` alone, so a drag never lays out. It sits
+   right under the highlight panel's Hex code field, and under a table palette's "Custom colour…" (YAZ-4366,
+   `table/colours.ts`, `table.css`): as wide as what holds it. */
+.colour-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.highlight-panel .colour-box {
+  margin: 0 8px 4px;
+}
+.colour-box__sv {
+  position: relative;
+  height: 120px;
+  border-radius: 6px;
+  background:
+    linear-gradient(to top, #000, transparent),
+    linear-gradient(to right, #fff, transparent),
+    var(--hue, red);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+  cursor: crosshair;
+  touch-action: none;
+}
+.colour-box__thumb {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+.colour-box__sv-handle,
+.colour-box__hue-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  box-sizing: border-box;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--pick);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+.colour-box__row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 8px;
+  align-items: center;
+}
+.colour-box__eyedropper {
+  display: flex;
+  width: 18px;
+  height: 18px;
+  padding: 4px;
+  box-sizing: content-box;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.colour-box__eyedropper svg {
+  width: 100%;
+  height: 100%;
+}
+.colour-box__eyedropper:hover {
+  background: var(--bg-hover);
+}
+.colour-box__eyedropper.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.colour-box__swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--pick);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 15%, transparent);
+}
+.colour-box__hue {
+  position: relative;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(to right, #f00, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00);
+  cursor: pointer;
+  touch-action: none;
+}
+.colour-box__hue-handle {
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+}
+.colour-box__rgb {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.colour-box__rgb label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.colour-box__rgb input {
+  user-select: text;
+  -webkit-user-select: text;
+  box-sizing: border-box;
+  width: 100%;
+  height: 26px;
+  margin: 0;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: center;
+}
+.colour-box__rgb input:focus {
+  border-color: var(--accent);
 }
 
 /* Crepe's reset gives paragraphs line-height 1.5 and 4px vertical padding; the padding is

@@ -45,6 +45,16 @@ export type StaticCanvasRenderConfig = {
   theme: AppState["theme"];
   /** YAZ-3944 D2: the board's GIF frames; absent (exports), a GIF shows its first frame */
   gifPlayer?: GifPlayer;
+  /** YAZ-4354 1D: Edit colors' faded preview of one icon (a loaded picture, never page SVG) */
+  colorEditPreview?: ColorEditPreview;
+};
+
+/**
+ * YAZ-4366: a stable holder, so a new preview repaints only the static canvas (`repaint`, set by it), not the App.
+ */
+export type ColorEditPreview = {
+  current: { elementId: string; image: HTMLImageElement } | null;
+  repaint?: () => void;
 };
 
 export type SVGRenderConfig = {

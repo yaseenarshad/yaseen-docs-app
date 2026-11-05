@@ -299,6 +299,27 @@ describe('one card per key (YAZ-3564)', () => {
     expect(button(row('hotkey-code-addCommentLine'), 'Change it on ⌘K')).toBeDefined()
   })
 
+  it('YAZ-4348: a tool letter\'s card shows its colour with a selection, a digit\'s card its size; both built in, found by "red" and "size"', async () => {
+    await mount()
+    const rows = (key: string) => [...card(key).querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting)
+    const action = (id: string) => row(`hotkey-${id}`).querySelector('.hotkeys__box-action')?.textContent
+    expect(rows('R').slice(0, 2)).toEqual(['hotkey-drawing-rectangle', 'hotkey-drawing-colorRed'])
+    expect(action('drawing-colorRed')).toBe("Red, with a selection (⇧R: a shape's outline)")
+    expect(row('hotkey-drawing-colorRed').querySelector('.hotkeys__box-foot')?.textContent).toBe('R / ⇧RBuilt in')
+    expect(row('hotkey-drawing-colorRed').querySelector('.hotkeys__lost')).toBeNull()
+    expect(rows('T').slice(0, 2)).toEqual(['hotkey-drawing-text', 'hotkey-drawing-colorTransparent'])
+    expect(action('drawing-colorTransparent')).toBe('Transparent, with a selection (on an icon: takes off the outline)')
+    expect(rows('1')).toEqual(['hotkey-drawing-size1', 'hotkey-diagram-size'])
+    expect(action('drawing-size1')).toBe('Size: text 12, anything else 48 on its long side, with a selection')
+    expect(action('drawing-size0')).toBe('Size: text 128, anything else 1024 on its long side, with a selection')
+    // Neither is a clash: Rectangle's key is a button with no "Blocked" line.
+    expect(lines('drawing-rectangle')).toEqual([])
+    type(hotkeyBox(), 'red')
+    expect(shownRows()).toContain('hotkey-drawing-colorRed')
+    type(hotkeyBox(), 'size')
+    expect(shownRows()).toContain('hotkey-drawing-size5')
+  })
+
   it('a pick asks first (Take it); taking ⌘D for Show in sidebar in drawings leaves Duplicate no key there, and giving it back writes nothing', async () => {
     await mount()
     expect(picked('⌘D', 'drawings')).toBe('Duplicate')

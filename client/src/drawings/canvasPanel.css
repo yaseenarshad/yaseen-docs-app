@@ -49,14 +49,33 @@
   padding: 12px;
 }
 
+/* The quiet text of both tabs (filter labels, footer links, pack counts, notices). Nothing defined it, so it showed in
+   the full text colour (YAZ-4366 audit 111). The engine's greys, which have no dark values of their own: 6.7:1 on the
+   light panel, 5.5:1 on the dark one. */
+.image-studio,
+.presentation-sidebar {
+  --text-secondary-color: var(--color-gray-70);
+}
+
+.excalidraw.theme--dark .image-studio,
+.excalidraw.theme--dark .presentation-sidebar {
+  --text-secondary-color: var(--color-gray-50);
+}
+
 /* A tile's picture sits on a chequerboard: these are transparent graphics, and a flat white tile
    would hide a white icon. One board, one square size. */
 .image-studio__preview {
   align-items: center;
-  background:
-    linear-gradient(45deg, var(--color-gray-10) 25%, transparent 25%) 0 0 / 12px 12px,
-    linear-gradient(-45deg, var(--color-gray-10) 25%, transparent 25%) 0 0 / 12px 12px,
-    var(--island-bg-color);
+  /* YAZ-4348 demo: a real chequerboard (two offset layers, not the half pattern that drew a zigzag), and faint:
+     its squares are the panel's own text colour at 6 %, so it follows the theme instead of a light grey that
+     shouted on a dark board. */
+  --image-studio-check: color-mix(in srgb, var(--text-primary-color) 6%, transparent);
+  background-color: var(--island-bg-color);
+  background-image:
+    linear-gradient(45deg, var(--image-studio-check) 25%, transparent 25%, transparent 75%, var(--image-studio-check) 75%),
+    linear-gradient(45deg, var(--image-studio-check) 25%, transparent 25%, transparent 75%, var(--image-studio-check) 75%);
+  background-position: 0 0, 6px 6px;
+  background-size: 12px 12px;
   display: flex;
   justify-content: center;
   overflow: hidden;

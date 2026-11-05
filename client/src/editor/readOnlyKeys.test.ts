@@ -153,6 +153,8 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     const { crepe, root } = await mount()
     crepe.setReadonly(true)
     clickIn(root, 'L2 a')
+    // On a bullet the first ⌘A selects its line (YAZ-4348 demo round 2); the second the note.
+    expect(press('a').defaultPrevented).toBe(true)
     expect(press('a').defaultPrevented).toBe(true)
     const selection = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.selection)
     expect(selection.from).toBe(0)

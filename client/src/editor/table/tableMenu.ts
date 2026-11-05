@@ -286,7 +286,7 @@ function setFreeze(view: EditorView, tableStart: number, attr: 'freezeRows' | 'f
   view.dispatch(closeHistory(view.state.tr).setNodeAttribute(pos, attr, count))
 }
 
-/** Custom colour… on the target cells of this moment: the pick goes to them (`colours.ts`). */
+/** Custom colour… on the target cells of this moment: the colour box opens under them, and its picks go to them (`colours.ts`). */
 function customColour(view: EditorView, pointer: number, attr: 'fill' | 'color'): void {
   const cell = clickedCell(view.state.doc, pointer)
   if (cell !== null) pickCustomColour(view, targetSelection(view.state, cell), attr)

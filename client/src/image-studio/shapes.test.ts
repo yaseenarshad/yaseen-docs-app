@@ -1,6 +1,6 @@
 /**
  * The shapes catalog (YAZ-1818). Pure: the Smart Shapes' half of the engine comes in as a stand-in,
- * so the seven basics, the twelve smart entries, the search and the precomputed tile geometry are
+ * so the seven basics, the smart entries, the search and the precomputed tile geometry are
  * all provable with no package loaded and no DOM.
  */
 import { describe, expect, it, vi } from 'vitest'
@@ -19,6 +19,7 @@ const definition = (over: Partial<SmartShapeDefinition> = {}): SmartShapeDefinit
   closed: true,
   roundness: null,
   defaults: { shaftRatio: 0.5 },
+  limits: { shaftRatio: [0.1, 0.9] },
   handles: ['shaft'],
   ...over,
 })
@@ -104,7 +105,7 @@ describe('the smart shapes, which need the element package', () => {
   })
 
   it('has a set of aliases for every smart kind', () => {
-    for (const kind of ['filled-arrow', 'chevron', 'brace', 'bracket', 'parenthesis', 'callout'] as const) {
+    for (const kind of ['filled-arrow', 'curved-arrow', 'u-turn-arrow', 'double-arrow', 'circle-arrow', 'chevron', 'brace', 'bracket', 'parenthesis', 'callout'] as const) {
       expect(smartShapeAliases(kind).length).toBeGreaterThan(0)
     }
   })

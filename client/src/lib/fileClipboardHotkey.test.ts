@@ -110,6 +110,45 @@ describe('fileClipboardVerb (YAZ-1674, D6)', () => {
     expect(fileClipboardVerb(event(document.body, { key: 'Backspace' }))).toBeNull()
   })
 
+  /** A board's ⌘V pastes the system clipboard's picture, never a copied sidebar file (YAZ-4372). */
+  it('⌘V with the focus on a board answers no file verb (YAZ-4372)', () => {
+    const page = document.createElement('section')
+    page.className = 'editor editor--drawing'
+    const container = document.createElement('div') // the engine's `.excalidraw` container: `tabIndex=0`, the focus after a click on the canvas
+    container.className = 'excalidraw'
+    container.tabIndex = 0
+    page.append(container)
+    document.body.append(page)
+    expect(fileClipboardVerb(event(container, { key: 'v' }))).toBeNull()
+  })
+
+  it('a board and a diagram keep ⌘C, ⌘X and ⌘V; a sidebar row and ordinary chrome still get them; a note page keeps today\u2019s rules (YAZ-4372)', () => {
+    const inside = (kind: string): HTMLElement => {
+      const page = document.createElement('section')
+      if (kind === 'data-page') page.setAttribute('data-page', 'note')
+      else page.className = `editor ${kind}`
+      const el = document.createElement('div') // focusable, not editable: the engine's container, the diagram's host, a note page's margin
+      el.tabIndex = 0
+      page.append(el)
+      document.body.append(page)
+      return el
+    }
+    const board = inside('editor--drawing')
+    const diagram = inside('editor--diagram')
+    const noteMargin = inside('data-page')
+    const row = document.createElement('button')
+    row.className = 'tree__row'
+    document.body.append(row)
+    for (const [key, verb] of [['c', 'copy'], ['x', 'cut'], ['v', 'paste']] as const) {
+      expect(fileClipboardVerb(event(board, { key })), `board ${key}`).toBeNull()
+      expect(fileClipboardVerb(event(diagram, { key })), `diagram ${key}`).toBeNull()
+      expect(fileClipboardVerb(event(row, { key })), `row ${key}`).toBe(verb)
+      expect(fileClipboardVerb(event(document.body, { key })), `body ${key}`).toBe(verb)
+      // Today's rule for a note page: a focused margin with no text selection in it is no page text, so the sidebar keeps the chord (D6, YAZ-3140).
+      expect(fileClipboardVerb(event(noteMargin, { key })), `note ${key}`).toBe(verb)
+    }
+  })
+
   it('leaves the editor its own copy/paste: a contenteditable target is never ours', () => {
     const editor = document.createElement('div')
     editor.setAttribute('contenteditable', 'true')

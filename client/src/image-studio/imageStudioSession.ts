@@ -13,13 +13,18 @@
  * pause, so the tab can say the web is coming from the first key (YAZ-4157 demo).
  */
 import type { ComponentItem, MediaSearchSource, StoredMediaItem, StudioItem, UsedMediaItem } from '@shared/types'
+import { DEFAULT_MEDIA_FILTERS, type IconPackInfo, type MediaFilters } from '@shared/iconPacks'
 import { api, BridgeRequestError } from '../api'
 import { createStore } from '../lib/store'
 import type { SmartShapeApi } from './shapes'
 
-/** The chips (YAZ-4157 D8): what the tab shows. Icons are Iconify's, Photos are Pixabay's. */
+/**
+ * What the tab shows (YAZ-4157 D8): once a row of chips, now the Filter menu's first section, "Show" (YAZ-4348 demo:
+ * "yes move the chips to filter"). Icons are Iconify's, Photos are Pixabay's. The code keeps the word "chip".
+ */
 export type StudioChip = 'all' | 'favorites' | 'components' | 'shapes' | 'icons' | 'photos'
 export const STUDIO_CHIPS: readonly StudioChip[] = ['all', 'favorites', 'components', 'shapes', 'icons', 'photos']
+export const STUDIO_CHIP_LABELS: Record<StudioChip, string> = { all: 'All', favorites: 'Favorites', components: 'Components', shapes: 'Shapes', icons: 'Icons', photos: 'Photos' }
 
 /** Which providers a chip asks; null is a chip that never reaches the web. */
 export const chipSource = (chip: StudioChip): MediaSearchSource | null =>
@@ -30,6 +35,18 @@ export const SEARCH_PAUSE_MS = 400
 
 /** What the web half says when the machine could not reach a provider (🔒 YAZ-1775 D4's offline half). */
 export const OFFLINE_NOTICE = "You're offline. Your favorites, components and shapes still work."
+/** The same line with every icon pack on the Mac (YAZ-4359, extra 17): icon search works offline too. */
+export const OFFLINE_WITH_PACKS_NOTICE = "You're offline. Icon search still works from your downloaded packs, and so do your favorites, components and shapes."
+
+/**
+ * The pack page (YAZ-4361): one pack in the Add panel, with its own search field. `query` empty = every icon of it.
+ * `info` is what the panel knew when it opened (from Iconify's list or the Mac's packs); null until it is known.
+ */
+export interface PackPage {
+  prefix: string
+  info: IconPackInfo | null
+  query: string
+}
 
 export interface StudioSession {
   chip: StudioChip
@@ -56,6 +73,10 @@ export interface StudioSession {
   /** The Recent section shows every row (it has no chip of its own to show them with). */
   recentOpen: boolean
   smart: SmartShapeApi | null
+  /** The Filter menu's choices (YAZ-4360): a copy of `SettingsState.mediaFilters`, sent with each web search. */
+  filters: MediaFilters
+  /** The pack page, when it is open (YAZ-4361); the search above it waits underneath, as it was. */
+  pack: PackPage | null
 }
 
 const EMPTY: StudioSession = {
@@ -78,6 +99,8 @@ const EMPTY: StudioSession = {
   drawings: null,
   recentOpen: false,
   smart: null,
+  filters: DEFAULT_MEDIA_FILTERS,
+  pack: null,
 }
 
 export const imageStudioSession = createStore<StudioSession>(EMPTY)
@@ -96,6 +119,7 @@ export function resetImageStudioSession() {
   clearTimeout(pauseTimer)
   searchRequestId++
   requestedCursors.clear()
+  underPack = null
   for (const chip of STUDIO_CHIPS) scrollTops[chip] = 0
   imageStudioSession.set(EMPTY)
 }
@@ -121,9 +145,12 @@ const MIN_PAUSE_QUERY = 3
 export async function runSearch({ append = false, retry = false }: { append?: boolean; retry?: boolean } = {}) {
   const { set, getState } = imageStudioSession
   const state = getState()
-  const source = chipSource(state.chip)
-  const askedQuery = append ? state.searchedQuery : state.query.trim()
-  if (source === null || askedQuery.length < MIN_QUERY) return
+  // The pack page asks Iconify for its one pack: every icon with an empty field, else its own search (YAZ-4361).
+  const pack = state.pack
+  const source = pack !== null ? 'iconify' : chipSource(state.chip)
+  const askedQuery = append ? state.searchedQuery : pack !== null ? pack.query.trim() : state.query.trim()
+  if (source === null || (pack === null && askedQuery.length < MIN_QUERY) || (pack !== null && askedQuery.length === 1)) return
+  const filters = pack !== null ? { ...DEFAULT_MEDIA_FILTERS, packs: [pack.prefix] } : state.filters
   const requestedCursor = append ? state.cursor : null
   if (append && (requestedCursor === null || state.isSearching || (!retry && requestedCursors.has(requestedCursor)))) return
   const requestId = append ? searchRequestId : ++searchRequestId
@@ -135,7 +162,7 @@ export async function runSearch({ append = false, retry = false }: { append?: bo
     set({ isSearching: true, waiting: false, error: null, pageError: null, offline: false, results: [], cursor: null, warnings: [], searchedQuery: askedQuery })
   }
   try {
-    const response = await api.media.search({ q: askedQuery, source, cursor: requestedCursor })
+    const response = await api.media.search({ q: askedQuery, source, cursor: requestedCursor, filters })
     if (requestId !== searchRequestId) return
     const results = dedupeItems(append ? [...getState().results, ...response.items] : response.items)
     set({ results, cursor: response.nextCursor, warnings: response.warnings, pixabayAvailable: response.pixabayAvailable, offline: false })
@@ -187,4 +214,88 @@ export function pickChip(chip: StudioChip) {
   requestedCursors.clear()
   set({ results: [], cursor: null, warnings: [], searchedQuery: '', isSearching: false, waiting: false, pageError: null })
   void runSearch()
+}
+
+/**
+ * A choice in the Filter menu (YAZ-4360): kept, remembered in the settings by the caller, and asked AT ONCE — a click is
+ * no typing, so there is no pause. With the packs on the Mac the answer is instant (round 3 decision 4).
+ */
+export function setFilters(filters: MediaFilters) {
+  const { set, getState } = imageStudioSession
+  if (JSON.stringify(getState().filters) === JSON.stringify(filters)) return
+  set({ filters })
+  if (getState().pack !== null) return
+  clearTimeout(pauseTimer)
+  searchRequestId++
+  requestedCursors.clear()
+  set({ results: [], cursor: null, warnings: [], searchedQuery: '', isSearching: false, waiting: false, pageError: null })
+  void runSearch()
+}
+
+/** The Filter menu's "Clear filters": Show goes back to All and the filters off, with ONE search for both. */
+export function clearShowAndFilters() {
+  const { chip, filters } = imageStudioSession.getState()
+  const filtersOff = JSON.stringify(filters) === JSON.stringify(DEFAULT_MEDIA_FILTERS)
+  if (filtersOff) return pickChip('all')
+  // setFilters asks the web, under Show = All.
+  if (chip !== 'all') imageStudioSession.set({ chip: 'all' })
+  setFilters(DEFAULT_MEDIA_FILTERS)
+}
+
+/** What the search under a pack page was, so Back puts it back as it was, with no new request (YAZ-4361). */
+type Underneath = Pick<StudioSession, 'query' | 'searchedQuery' | 'results' | 'cursor' | 'warnings' | 'offline' | 'pageError'> & { asked: string[] }
+let underPack: Underneath | null = null
+
+/** "More from this pack" (YAZ-4361): the pack page opens on every icon of `prefix`. */
+export function openPack(prefix: string, info: IconPackInfo | null) {
+  const { set, getState } = imageStudioSession
+  const state = getState()
+  clearTimeout(pauseTimer)
+  if (state.pack === null) {
+    underPack = { query: state.query, searchedQuery: state.searchedQuery, results: state.results, cursor: state.cursor, warnings: state.warnings, offline: state.offline, pageError: state.pageError, asked: [...requestedCursors] }
+  }
+  searchRequestId++
+  requestedCursors.clear()
+  set({ pack: { prefix, info, query: '' }, results: [], cursor: null, warnings: [], searchedQuery: '', isSearching: false, waiting: false, pageError: null, error: null, offline: false })
+  void runSearch()
+}
+
+/** The pack page learnt its pack's facts after it opened. */
+export function setPackInfo(info: IconPackInfo) {
+  const { set, getState } = imageStudioSession
+  const pack = getState().pack
+  if (pack !== null && pack.prefix === info.prefix) set({ pack: { ...pack, info } })
+}
+
+/** The pack page's own field: every icon when empty, a search in the pack from two letters, after the same pause. */
+export function typePackQuery(query: string) {
+  const { set, getState } = imageStudioSession
+  const pack = getState().pack
+  if (pack === null) return
+  clearTimeout(pauseTimer)
+  set({ pack: { ...pack, query }, waiting: false })
+  const trimmed = query.trim()
+  if (trimmed.length === 1 || trimmed === getState().searchedQuery) return
+  searchRequestId++
+  requestedCursors.clear()
+  set({ results: [], cursor: null, searchedQuery: '', pageError: null, waiting: trimmed !== '' })
+  if (trimmed === '') void runSearch()
+  else pauseTimer = setTimeout(() => void runSearch(), SEARCH_PAUSE_MS)
+}
+
+/** Back: the search under the pack page, as it was — its results, its next page, its scroll (the caller's). */
+export function closePack() {
+  const { set } = imageStudioSession
+  clearTimeout(pauseTimer)
+  searchRequestId++
+  requestedCursors.clear()
+  const under = underPack
+  underPack = null
+  if (under === null) {
+    set({ pack: null, results: [], cursor: null, searchedQuery: '', isSearching: false, waiting: false })
+    return
+  }
+  for (const cursor of under.asked) requestedCursors.add(cursor)
+  const { asked: _asked, ...rest } = under
+  set({ ...rest, pack: null, isSearching: false, waiting: false, error: null })
 }

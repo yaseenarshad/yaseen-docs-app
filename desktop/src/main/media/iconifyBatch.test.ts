@@ -31,6 +31,17 @@ describe('iconSvg', () => {
     expect(iconSvg(set, 'flipped')).toBeNull()
     expect(iconSvg(set, 'loop')).toBeNull()
   })
+
+  it('builds a turned or flipped icon itself when asked (a downloaded pack, YAZ-4359), as Iconify`s own iconToSVG does', () => {
+    const square = { width: 24, height: 24, icons: { arrow: { body: '<path d="A"/>' }, wide: { body: '<path d="W"/>', width: 32 } }, aliases: { down: { parent: 'arrow', rotate: 1 }, left: { parent: 'arrow', hFlip: true }, both: { parent: 'left', vFlip: true }, side: { parent: 'wide', rotate: 1 } } }
+    expect(iconSvg(square, 'down', { transforms: true })).toContain('<g transform="rotate(90 12 12)"><path d="A"/></g>')
+    expect(iconSvg(square, 'left', { transforms: true })).toContain('<g transform="translate(24 0) scale(-1 1)"><path d="A"/></g>')
+    // Two flips are a half turn.
+    expect(iconSvg(square, 'both', { transforms: true })).toContain('<g transform="rotate(180 12 12)">')
+    // A quarter turn swaps the box's sides.
+    expect(iconSvg(square, 'side', { transforms: true })).toContain('viewBox="0 0 24 32"')
+    expect(iconSvg(square, 'arrow', { transforms: true })).toBe(iconSvg(square, 'arrow'))
+  })
 })
 
 describe('createIconifyBatcher', () => {

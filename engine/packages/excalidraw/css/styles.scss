@@ -504,6 +504,30 @@ body.excalidraw-cursor-resize * {
     width: auto;
   }
 
+  // YAZ-4352 1B: an icon's box border in More properties: its label, color and width in one row
+  .contextual-properties-toolbar__image-border {
+    align-items: center;
+    display: flex;
+    gap: 0.35rem;
+  }
+
+  // YAZ-4354 1D: the top bar's "Edit colors" button keeps the bar's own size
+  .contextual-properties-toolbar__text-button {
+    background: transparent;
+    border: 1px solid var(--default-border-color);
+    border-radius: var(--border-radius-md);
+    color: var(--text-primary-color);
+    cursor: pointer;
+    font-size: 0.75rem;
+    height: 2rem;
+    padding: 0 0.6rem;
+    white-space: nowrap;
+
+    &:hover {
+      background: var(--button-hover-bg);
+    }
+  }
+
   // the size popover: the slider, then the exact field
   .font-size-popover {
     align-items: center;

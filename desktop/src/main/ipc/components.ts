@@ -38,13 +38,21 @@ function requireRenameRequest(v: unknown): ComponentRenameRequest {
   return { slug: str(r.slug, 'slug'), name: str(r.name, 'name') }
 }
 
-/** Returns the store so a test can close its watcher; `main/index.ts` lets the process end take it. */
-export function registerComponentsIpc(store: Store, userData: string, trash: (p: string) => Promise<void> = (p) => shell.trashItem(p)): ComponentStore {
+/**
+ * Returns the store so a test can close its watcher; `main/index.ts` lets the process end take it. `slugHeld` says a
+ * favorite holds a slug (YAZ-4366): a new component skips it.
+ */
+export function registerComponentsIpc(
+  store: Store,
+  userData: string,
+  trash: (p: string) => Promise<void> = (p) => shell.trashItem(p),
+  slugHeld?: (slug: string) => Promise<boolean>,
+): ComponentStore {
   const folder = followLibraryFolder(store, userData, (next) => {
     components.setFolder(next)
     broadcastAll(CONTRACT.components.onChanged.channel)
   })
-  const components = createComponentStore(folder, { trash })
+  const components = createComponentStore(folder, { trash, slugHeld })
   components.onChanged(() => broadcastAll(CONTRACT.components.onChanged.channel))
   handle(CONTRACT.components.list, async () => components.list())
   handle(CONTRACT.components.save, async (req: unknown) => components.save(requireSaveRequest(req)))

@@ -1,17 +1,22 @@
 /**
  * THE DRAWING KEY LIST AGAINST THE REAL ENGINE (YAZ-3564 K1, K5). The drift test reads the vendored engine's
  * registered actions and its `TOOLS` table: an action with a key, or a tool, that has no row fails here, and so
- * does a row whose default keys the engine's own `keyTest` would not answer (the remap presents those keys).
+ * does a row whose default keys the engine's own `keyTest` would not answer (the remap presents those keys). The
+ * colour letters and size digits with a selection (YAZ-4348) are checked against the engine's source tables.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { sameKey } from '@shared/hotkeyBindings'
-import { ALL_KEYS, keysOf } from '@shared/keys'
-import { DRAWING_ACTIONS, DRAWING_KEYS } from '@shared/keys/drawing'
+import { ALL_KEYS, clashesOf, keysOf } from '@shared/keys'
+import { DRAWING_ACTIONS, DRAWING_KEYS, SELECTION_COLOURS, SELECTION_SIZES, SHIFT_KEPT } from '@shared/keys/drawing'
 import { drawingKeyBindings, pressed, toEngineChord } from './drawingKeys'
 
 type EngineAction = { name: string; keyTest?: (event: KeyboardEvent, appState: unknown, elements: unknown[], app: unknown) => boolean }
 const engine = async () => (await import('@excalidraw/excalidraw')) as unknown as { registeredActions: readonly EngineAction[]; TOOLS: Record<string, { letterKey?: string | readonly string[]; shiftKey?: boolean }>; restoreAppState: (a: null, b: null) => Record<string, unknown> }
 const rowOf = (id: string) => DRAWING_KEYS.find((row) => row.id === id)
+/** The vendored engine's own source (the built copy the tests import can be an older build). */
+const engineSource = (file: string): string => readFileSync(join(__dirname, '../../../engine/packages/excalidraw', file), 'utf8')
 const namesOf = (id: string): readonly string[] => [DRAWING_ACTIONS[id] ?? []].flat()
 
 describe('the drawing key list vs the vendored engine (drift)', () => {
@@ -52,24 +57,73 @@ describe('the drawing key list vs the vendored engine (drift)', () => {
       }
     }
   })
+
+  it("YAZ-4348: the colour letters and the size digits with a selection are the engine's own tables", () => {
+    // `SEMANTIC_COLOR_HOTKEYS`: transparent: "t", black: "b", …
+    const colours = [...engineSource('components/ColorPicker/colorPickerUtils.ts').matchAll(/^\s+(\w+): "([a-z])",$/gm)].map(([, name, letter]) => [letter.toUpperCase(), name[0].toUpperCase() + name.slice(1)])
+    expect(colours).toHaveLength(15)
+    expect(SELECTION_COLOURS).toEqual(colours)
+    // `SELECTION_SIZE_PRESETS`: text { "1": 12, … }, visual { "1": 48, … }
+    const presets = engineSource('selectionSizePresets.ts')
+    // In the engine's order (an object would put "0" first).
+    const table = (kind: string) => [...(new RegExp(`${kind}: \\{([^}]*)\\}`).exec(presets)?.[1] ?? '').matchAll(/"(\d)": (\d+)/g)].map(([, d, n]) => [d, Number(n)] as const)
+    const text = table('text')
+    const visual = new Map(table('visual'))
+    expect(text).toHaveLength(10)
+    expect(SELECTION_SIZES).toEqual(text.map(([d, n]) => [d, n, visual.get(d)]))
+  })
 })
 
 describe('the drawing rows (K1, K6)', () => {
   it('no two drawing rows share a default key, but ⌘C: Copy with a selection, the Add tab’s Components chip without one', () => {
+    // The keys that act only with a selection (YAZ-4348) share theirs with a tool or a ⇧ key by design: the next case.
+    const rows = DRAWING_KEYS.filter((row) => row.withSelection !== true)
     const owners = new Map<string, string[]>()
-    for (const row of DRAWING_KEYS) for (const key of row.keys) owners.set(key, [...(owners.get(key) ?? []), row.id])
+    for (const row of rows) for (const key of row.keys) owners.set(key, [...(owners.get(key) ?? []), row.id])
     const shared = [...owners].filter(([, ids]) => ids.length > 1)
     expect(shared).toEqual([['CmdOrCtrl+C', ['drawing.componentsPanel', 'drawing.copyPaste']]])
     // Spelled differently, the same key: none either.
-    const all = DRAWING_KEYS.flatMap((row) => row.keys.map((key) => ({ key, id: row.id })))
+    const all = rows.flatMap((row) => row.keys.map((key) => ({ key, id: row.id })))
     const twins = all.filter((a, i) => all.some((b, j) => j > i && a.id !== b.id && a.key !== b.key && sameKey(a.key, b.key)))
     expect(twins).toEqual([])
+  })
+
+  it('YAZ-4348: one built-in row per colour letter (and its ⇧) and per size digit, with a selection; none is a clash', () => {
+    const picked = DRAWING_KEYS.filter((row) => row.withSelection === true)
+    // ⇧V and ⇧G stay Flip vertical and the eyedropper (YAZ-4348 demo): their colour rows have the bare letter only
+    expect(picked.map((row) => row.keys)).toEqual([...SELECTION_COLOURS.map(([l]) => (SHIFT_KEPT[l] === undefined ? [l, `Shift+${l}`] : [l])), ...SELECTION_SIZES.map(([d]) => [d])])
+    expect(Object.keys(SHIFT_KEPT).map((l) => l.toLowerCase())).toEqual([...engineSource('components/ColorPicker/colorPickerUtils.ts').matchAll(/SHIFT_KEYS_KEPT_FROM_COLORS[^\]]*\]/g)].flatMap(([m]) => [...m.matchAll(/"([a-z])"/g)].map(([, l]) => l)))
+    for (const row of picked) expect(row.changeable, row.id).toBe(false)
+    const keys = picked.flatMap((row) => row.keys)
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(rowOf('drawing.colorRed')?.label).toBe("Red, with a selection (⇧R: a shape's outline)")
+    expect(rowOf('drawing.colorTransparent')?.label).toBe('Transparent, with a selection (on an icon: takes off the outline)')
+    expect(rowOf('drawing.size0')?.label).toBe('Size: text 128, anything else 1024 on its long side, with a selection')
+    // R is Rectangle and Red: neither is the other's clash, and a tool can still move onto a colour letter.
+    expect(clashesOf(rowOf('drawing.rectangle')!, 'R', {}, {}).map((r) => r.id)).toEqual([])
+    expect(clashesOf(rowOf('drawing.colorRed')!, 'R', {}, {}).map((r) => r.id)).toEqual([])
+    expect(clashesOf(rowOf('drawing.diamond')!, 'N', {}, {}).map((r) => r.id)).toEqual([])
+    expect(clashesOf(rowOf('drawing.diamond')!, 'R', {}, {}).map((r) => r.id)).toEqual(['drawing.rectangle'])
+  })
+
+  it('YAZ-4418: the colour letter and size digit rows use no em dash in their labels', () => {
+    const picked = DRAWING_KEYS.filter((row) => row.withSelection === true)
+    expect(picked.filter((row) => row.label.includes('—')).map((row) => row.id)).toEqual([])
+  })
+
+  it('YAZ-4366 (audit 42, 62): a ⇧letter colours a one-colour icon itself, as the letter does; T says once that it takes off the outline', () => {
+    // The engine's `actionApplySelectedSemanticColor` paints a one-colour icon whatever `value.target` is
+    expect(rowOf('drawing.colorRed')?.hint).toBe(
+      "Colours the selection red: a shape's fill, a line's or a text's colour, a picture's border, a one-colour icon. ⇧R colours a shape's outline, or a free text's background; on a one-colour icon R and ⇧R both colour the icon",
+    )
+    expect(rowOf('drawing.colorTransparent')?.hint).toBe('Colours the selection: no fill on a shape, no colour on a line or a text; ⇧T no outline, or no background on a free text')
+    expect(rowOf('drawing.colorViolet')?.hint).toBe("Colours the selection violet: a shape's fill, a line's or a text's colour, a picture's border, a one-colour icon. ⇧V stays Flip vertical; the outline's violet is in the picker")
   })
 
   it('is every action key, every tool and the app’s own canvas keys changeable; the rest built in', () => {
     const changeable = DRAWING_KEYS.filter((r) => r.changeable).map((r) => r.id)
     for (const id of ['drawing.duplicate', 'drawing.rectangle', 'drawing.zenMode', 'drawing.saveNow', 'drawing.imagesPanel', 'drawing.componentsPanel']) expect(changeable).toContain(id)
-    for (const id of ['drawing.escape', 'drawing.copyPaste', 'drawing.colors', 'drawing.sizes', 'drawing.nudge', 'drawing.pan']) expect(changeable).not.toContain(id)
+    for (const id of ['drawing.escape', 'drawing.copyPaste', 'drawing.colorRed', 'drawing.size1','drawing.nudge', 'drawing.pan']) expect(changeable).not.toContain(id)
     // One engine name per changeable row: that is what the remap moves.
     for (const id of changeable) expect(Array.isArray(DRAWING_ACTIONS[id]), id).toBe(false)
   })

@@ -1,33 +1,39 @@
 /**
- * The toolbar's list buttons and T (YAZ-3806 T3, T4): one rule, Google Docs style.
+ * The toolbar's list buttons (YAZ-3806 T3) and T (YAZ-4369): two rules, Google Docs style. The list buttons change
+ * the list; T changes only the line's text type.
  *
  * A LINE is a visible textblock the selection covers (`coveredLines`, `eachVisibleTextblock`): an item line (the
  * first block of a list item) has the item's kind — `checklist` (its `checked` is a boolean), `numberedList` or
- * `bulletList`; any other line in the page or a quote is `text` (a paragraph) or `other` (a heading, a code block).
- * An item's later block is in a list but has no marker: `other`, so nothing lights, and a click first makes it an
- * item of its own (a split; checker 4C). The zoomed bullet's later blocks are the page inside the zoom: `text`.
+ * `bulletList`; any other line in the page or a quote has no list kind. An item's later block is in a list but has no
+ * marker: no kind, so no list button lights, and a click first makes it an item of its own (a split; checker 4C). The
+ * zoomed bullet's later blocks are the page inside the zoom. Each line also records whether it is a paragraph.
  *
- *  - A button LIGHTS when every line is its kind (`allLinesAre`). T lights for plain paragraphs outside a list.
+ *  - A list button LIGHTS when every line is its kind (`allLinesAre`).
  *  - Not lit, a click makes each line its own item of that kind (`toggleListKind`): a line outside a list is
  *    wrapped (a heading becomes `* ## x`); an item changes kind, its list split around it when bullet ↔ numbered —
  *    a numbered part after the split keeps its numbers (checker 4B); a list that ends up beside one of the same kind
  *    joins it. Lines side by side change as one RUN: one wrap per line and one list round them, or one markup per
  *    item and one split each side, so a click over 1,000 lines is about one step per line (checker 4D).
  *  - Lit, a click takes each line out of EVERY list level (`liftOut`): its children stay a list right below it, and
- *    the siblings after it follow in that list. Its heading stays a heading; T also makes it a paragraph.
+ *    the siblings after it follow in that list. Its heading stays a heading. Leaving a list is this button's job alone:
+ *    T no longer does it (YAZ-4369).
  *  - Inside a zoom, a line leaves the lists only down to the zoomed bullet, so it stays in view (a block of that
  *    bullet); the zoomed bullet's own line does not leave its list, which would end the zoom.
- *  - Hidden lines (fold, zoom) keep their kind. A click is one transaction, so one ⌘Z.
+ *  - T (`turnLinesIntoText`) makes each line a paragraph where it is: a heading in a bullet becomes a plain line in the
+ *    same item, and the item, its children and its siblings do not move. T LIGHTS when every line is a paragraph, in a
+ *    list or not, so on a plain bullet it is lit and changes nothing. This replaces YAZ-3806 T4, where T also took
+ *    each line out of every list level (Yasin: T "only fix the text and not the bullet level").
+ *  - Hidden lines (fold, zoom) keep their kind and their text type. A click is one transaction, so one ⌘Z.
  *
- * Every change is a lift, a wrap, a split, a join or a markup change — never a replace of the lines — so the fold
- * and zoom positions, and the selection, ride the mapping.
+ * Every change is a lift, a wrap, a split, a join, a markup change or a block type change — never a replace of the
+ * lines — so the fold and zoom positions, and the selection, ride the mapping.
  *
  * `listButtons` re-registers Milkdown's `turnIntoTextCommand` (T, ⌘⌥0, and the slash menu's Text row through
  * `slashMenu.ts`) and `wrapInBulletListCommand` (⌘⌥8) under their own keys, as `visibleFormatting.ts` does for the
  * marks. Register it AFTER `visibleFormatting`: this rule already keeps to the visible lines.
  *
- * A line in a table cell is no line here, so T does not light in a cell (it never changed one: a cell holds
- * paragraphs only).
+ * A line in a header cell is no line here, so nothing lights there and nothing changes (it holds one line, YAZ-3818
+ * D7). A body cell and a cell note hold lines and lists, as the page does (D1).
  */
 import { commandsCtx, EditorViewReady } from '@milkdown/kit/core'
 import type { MilkdownPlugin } from '@milkdown/kit/ctx'
@@ -40,12 +46,13 @@ import { getZoomedItemPos } from './outline/zoom'
 
 export const LIST_KINDS = ['checklist', 'bulletList', 'numberedList'] as const
 export type ListKind = (typeof LIST_KINDS)[number]
-type LineKind = ListKind | 'text' | 'other'
-
 interface Line {
   /** The textblock's position. */
   readonly pos: number
-  readonly kind: LineKind
+  /** The item's kind on an item line; null for any other line. */
+  readonly kind: ListKind | null
+  /** The textblock is a paragraph (T's lit rule, YAZ-4369). */
+  readonly paragraph: boolean
 }
 
 /** The lines a button acts on: the selection's (the toolbar), or a list's item lines (the block menu, YAZ-3727 D14). */
@@ -72,13 +79,11 @@ const selectedLines: LinePick = (state) => {
     if (node.type.name === 'list_item' && parent !== null) items.set(pos, kindOfItem(node, parent))
     return !node.isTextblock
   })
-  const zoomed = getZoomedItemPos(state)
   const lines: Line[] = []
   eachVisibleTextblock(state, from, to, (block, pos, parent, index) => {
-    if (parent.type.name === 'list_item' && index === 0) lines.push({ pos, kind: items.get(pos - 1)! })
-    else if (!CONTAINERS.has(parent.type.name)) return
-    else if (parent.type.name === 'list_item' && (zoomed === null || state.doc.resolve(pos).before() !== zoomed)) lines.push({ pos, kind: 'other' })
-    else lines.push({ pos, kind: block.type.name === 'paragraph' ? 'text' : 'other' })
+    const paragraph = block.type.name === 'paragraph'
+    if (parent.type.name === 'list_item' && index === 0) lines.push({ pos, kind: items.get(pos - 1)!, paragraph })
+    else if (CONTAINERS.has(parent.type.name)) lines.push({ pos, kind: null, paragraph })
   })
   linesByState.set(state, lines)
   return lines
@@ -92,15 +97,15 @@ export const listLines = (listPos: number): LinePick => (state) => {
   const list = state.doc.nodeAt(listPos)!
   const lines: Line[] = []
   list.forEach((item, offset) => {
-    if (item.firstChild?.isTextblock) lines.push({ pos: listPos + 2 + offset, kind: kindOfItem(item, list) })
+    if (item.firstChild?.isTextblock) lines.push({ pos: listPos + 2 + offset, kind: kindOfItem(item, list), paragraph: item.firstChild.type.name === 'paragraph' })
   })
   return lines
 }
 
-/** Lit: EVERY line `pick` gives (the selection's) is `kind` (T asks for `text`). */
+/** Lit: EVERY line `pick` gives (the selection's) is `kind`; T asks for `text`: every line is a paragraph, in a list or not. */
 export const allLinesAre = (state: EditorState, kind: ListKind | 'text', pick: LinePick = selectedLines): boolean => {
   const lines = pick(state)
-  return lines.length > 0 && lines.every((line) => line.kind === kind)
+  return lines.length > 0 && lines.every((line) => (kind === 'text' ? line.paragraph : line.kind === kind))
 }
 
 interface Types {
@@ -304,12 +309,9 @@ const onLines =
     return true
   }
 
-/** Take each line out of every list level, an item's later block made an item first; `after` gets each line where it is then. */
-const liftEach = (tr: Transaction, types: Types, lines: readonly Line[], zoomed: number | null, after?: (pos: number) => void): void => {
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const at = liftOut(tr, types, ownItem(tr, types, lines[i].pos, zoomed), zoomed)
-    after?.(at)
-  }
+/** Take each line out of every list level, an item's later block made an item first. */
+const liftEach = (tr: Transaction, types: Types, lines: readonly Line[], zoomed: number | null): void => {
+  for (let i = lines.length - 1; i >= 0; i--) liftOut(tr, types, ownItem(tr, types, lines[i].pos, zoomed), zoomed)
 }
 
 /** A list button (T3): lit → every line leaves its lists; not lit → every line becomes an item of `kind`. */
@@ -320,15 +322,20 @@ export const toggleListKind = (kind: ListKind, pick: LinePick = selectedLines): 
     for (let i = runs.length - 1; i >= 0; i--) setKind(tr, types, runs[i], kind, zoomed)
   }, pick)(state, dispatch, view)
 
-/** T on the lines `pick` gives: every line out of every list level, then a paragraph. */
+/**
+ * T on the lines `pick` gives (YAZ-4369): every line that is no paragraph becomes one where it is — its item, list and
+ * neighbours stay. One block type change per line, only over that line, so a hidden line keeps its type.
+ */
 export const turnLinesIntoText = (pick: LinePick = selectedLines): Command =>
-  onLines((tr, types, lines, zoomed) =>
-    liftEach(tr, types, lines, zoomed, (at) => {
-      const block = tr.doc.nodeAt(at)!
-      if (block.type !== types.paragraph) tr.setBlockType(at, at + block.nodeSize, types.paragraph)
-    }), pick)
+  onLines((tr, types, lines) => {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].paragraph) continue
+      const { pos } = lines[i]
+      tr.setBlockType(pos, pos + tr.doc.nodeAt(pos)!.nodeSize, types.paragraph)
+    }
+  }, pick)
 
-/** T and ⌘⌥0 (T4): every line of the selection out of every list level, then a paragraph. */
+/** T, ⌘⌥0 and the slash menu's Text row: every line of the selection a paragraph, the lists unchanged (YAZ-4369). */
 export const turnIntoText: Command = turnLinesIntoText()
 
 /** Register with `editor.use(listButtons)`, after `visibleFormatting`. */

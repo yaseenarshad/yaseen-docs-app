@@ -5,15 +5,17 @@
  * the chips, what one add teaches the library, what it never asks for (a stored `previewUrl`), what it hides with no
  * key, and what still works with no network.
  */
+import { DEFAULT_MEDIA_FILTERS } from '@shared/iconPacks'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { IconPacksStatus } from '@shared/iconPacks'
 import { DEFAULT_SETTINGS, type ComponentItem, type MediaLibraryFile, type StoredMediaItem, type StudioItem, type UsedMediaItem } from '@shared/types'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: {
-    media: { favorites: vi.fn(), recent: vi.fn(), used: vi.fn(), onChanged: vi.fn(), search: vi.fn(), preview: vi.fn(), import: vi.fn(), drawingIndex: vi.fn(), drawing: vi.fn() },
+    media: { favorites: vi.fn(), recent: vi.fn(), used: vi.fn(), onChanged: vi.fn(), search: vi.fn(), preview: vi.fn(), import: vi.fn(), drawingIndex: vi.fn(), drawing: vi.fn(), packs: vi.fn(), onPacksProgress: vi.fn(), packList: vi.fn(), favoriteElements: vi.fn(), saveFavoriteElements: vi.fn(), favoritesForPanel: vi.fn() },
     components: { list: vi.fn(), save: vi.fn(), read: vi.fn(), rename: vi.fn(), delete: vi.fn(), preview: vi.fn(), onChanged: vi.fn() },
     dialog: { openDrawing: vi.fn() },
     secrets: { has: vi.fn(), set: vi.fn() },
@@ -26,14 +28,15 @@ vi.mock('../components-library/pastedImage', async (importOriginal) => ({
   // jsdom draws no pictures; `pastedImage.test.ts` tests the real one.
   captureImageFile: vi.fn(async () => ({ elements: [{ id: 'img-1', type: 'image', fileId: 'f1' }], files: { f1: { id: 'f1', mimeType: 'image/png', dataURL: 'data:image/png;base64,AQID' } } })),
 }))
-vi.mock('../lib/storage', () => ({ storage: { getSettings: vi.fn(), subscribe: vi.fn() } }))
+vi.mock('../lib/storage', () => ({ storage: { getSettings: vi.fn(), subscribe: vi.fn(), patchSettings: vi.fn() } }))
 
 import { api, BridgeRequestError } from '../api'
 import { loadExcalidrawElement } from '../drawings/engine'
 import { storage } from '../lib/storage'
 import { clearPreviewMemo, ImageStudio, READ_ONLY_NOTICE, type ImageStudioProps } from './ImageStudio'
-import { imageStudioSession, OFFLINE_NOTICE, resetImageStudioSession, SEARCH_PAUSE_MS } from './imageStudioSession'
+import { imageStudioSession, OFFLINE_NOTICE, OFFLINE_WITH_PACKS_NOTICE, resetImageStudioSession, SEARCH_PAUSE_MS } from './imageStudioSession'
 import type { SmartShapeApi } from './shapes'
+import { resetIconPacks } from './useIconPacks'
 
 const media = vi.mocked(api.media)
 const components = vi.mocked(api.components)
@@ -47,7 +50,7 @@ const stored = (over: Partial<StudioItem & { updatedAt: number }> = {}): StoredM
 const usedRow = (over: Partial<UsedMediaItem> = {}): UsedMediaItem => ({ ...stored(), count: 1, words: [], ...over })
 const icon = (name: string, set = 'set') => item({ itemKey: `iconify:${set}:${name}`, providerId: `${set}:${name}`, title: name.replace(/-/g, ' ') })
 const component = (over: Partial<ComponentItem> = {}): ComponentItem => ({ slug: 'pricing-card', name: 'Pricing card', elementCount: 2, createdAt: 1, updatedAt: 1, ...over })
-const libraryOf = (over: Partial<MediaLibraryFile> = {}): MediaLibraryFile => ({ version: 1, favorites: [], recent: [], used: [], ...over })
+const libraryOf = (over: Partial<MediaLibraryFile> = {}): MediaLibraryFile => ({ version: 1, favorites: [], recent: [], used: [], removed: {}, ...over })
 const rect = (id: string) => ({ id, type: 'rectangle' })
 
 const smart: SmartShapeApi = {
@@ -97,6 +100,10 @@ function fakeCanvas() {
   }
 }
 
+/** The icon packs as main reports them (YAZ-4359): none on the Mac unless a test says otherwise. */
+const packsStatus = (over: Partial<IconPacksStatus> = {}): IconPacksStatus => ({ state: 'none', folder: '/u/icon-packs', version: null, packs: 0, total: 281, bytes: 0, totalBytes: 135 * 1024 * 1024, checkedAt: null, message: null, failed: false, ...over })
+let packsListener: ((status: IconPacksStatus) => void) | null = null
+
 let root: Root | null = null
 let container: HTMLElement | null = null
 let library = libraryOf()
@@ -115,6 +122,9 @@ beforeEach(() => {
   media.preview.mockReset().mockResolvedValue({ mimeType: 'image/svg+xml', dataURL: 'data:image/svg+xml;base64,PREVIEW' })
   media.drawingIndex.mockReset().mockResolvedValue({ items: [] })
   media.drawing.mockReset().mockResolvedValue({ elements: [{ id: 'line-1', type: 'line', isDeleted: false }] })
+  media.favoriteElements.mockReset().mockResolvedValue(null)
+  media.saveFavoriteElements.mockReset().mockResolvedValue(true)
+  media.favoritesForPanel.mockReset().mockResolvedValue([])
   media.import.mockReset().mockResolvedValue({ mimeType: 'image/svg+xml', dataURL: `data:image/svg+xml;base64,${btoa('<svg/>')}`, item: item({ width: 48, height: 48 }) })
   components.list.mockReset().mockResolvedValue([])
   components.save.mockReset().mockResolvedValue(component({ slug: 'new-one', name: 'New one' }))
@@ -128,6 +138,14 @@ beforeEach(() => {
   loadElement.mockReset().mockResolvedValue(elementPackage as unknown as Awaited<ReturnType<typeof loadExcalidrawElement>>)
   store.getSettings.mockReset().mockReturnValue(DEFAULT_SETTINGS)
   store.subscribe.mockReset().mockReturnValue(() => undefined)
+  store.patchSettings.mockReset()
+  resetIconPacks()
+  media.packs.mockReset().mockResolvedValue(packsStatus())
+  media.onPacksProgress.mockReset().mockImplementation((listener) => {
+    packsListener = listener as (status: IconPacksStatus) => void
+    return () => undefined
+  })
+  media.packList.mockReset().mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -162,7 +180,11 @@ const buttons = (host: HTMLElement) => [...host.querySelectorAll('button')]
 const byText = (host: HTMLElement, text: string) => buttons(host).find((button) => button.textContent?.trim() === text)
 const byLabel = (host: HTMLElement, label: string) => host.querySelector<HTMLElement>(`[aria-label="${label}"]`)
 const field = (host: HTMLElement) => byLabel(host, 'Search shapes, icons, and components') as HTMLInputElement
-const chipButton = (host: HTMLElement, label: string) => [...host.querySelectorAll('.image-studio__chips button')].find((b) => b.textContent === label) as HTMLButtonElement | undefined
+/** A choice of Filter › Show (the old chips, YAZ-4348 demo): opens the menu when it is closed. */
+const showOption = async (host: HTMLElement, label: string) => {
+  if (host.querySelector('.image-studio__filter-menu') === null) await click(host.querySelector('.image-studio__filter-button'))
+  return [...host.querySelectorAll('.image-studio__filter-menu [aria-label="Show"] button')].find((b) => b.textContent === label) as HTMLButtonElement | undefined
+}
 const section = (host: HTMLElement, title: string) => host.querySelector<HTMLElement>(`section[aria-label="${title}"]`)
 const tileNames = (host: HTMLElement | null) => [...(host?.querySelectorAll('.image-studio__name') ?? [])].map((n) => n.textContent)
 const click = async (element: Element | null | undefined) => {
@@ -224,16 +246,58 @@ describe('the empty field: Favorites, Recent, Components, Shapes (D7)', () => {
     expect(section(again.host, 'Components')).toBeNull()
   })
 
-  it('Show all picks the chip that shows the rest; Recent, which has no chip, opens in place', async () => {
+  it('fits four columns at least, and one more for each 90 px of list width (YAZ-4348 demo round 2)', async () => {
+    // jsdom has no ResizeObserver: this one hands the test the panel's callback, so a width is one call.
+    let resize: ((entries: { contentRect: { width: number } }[]) => void) | null = null
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: typeof resize) {
+          resize = callback
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    try {
+      library = libraryOf({ favorites: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((n) => stored(icon(n))) })
+      const { host } = await mount()
+      const columnsAt = async (width: number) => {
+        await act(async () => resize!([{ contentRect: { width } }]))
+        const grid = section(host, 'Favorites')!.querySelector<HTMLElement>('.image-studio__grid')!
+        expect(grid.style.getPropertyValue('--studio-cols')).toBe(String(tileNames(section(host, 'Favorites')).length))
+        return tileNames(section(host, 'Favorites')).length
+      }
+      // 4 tiles of 84 px and 3 gaps of 6 px are 354 px; each next column needs one more tile and gap, 90 px
+      expect(await columnsAt(200)).toBe(4)
+      expect(await columnsAt(443)).toBe(4)
+      expect(await columnsAt(444)).toBe(5)
+      expect(await columnsAt(534)).toBe(6)
+      expect(await columnsAt(354)).toBe(4)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('Show all picks the Show choice that shows the rest; Recent, which has no chip, opens in place', async () => {
     library = libraryOf({ recent: ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => stored(icon(n))) })
     const { host } = await mount()
     await click(section(host, 'Shapes')!.querySelector('.image-studio__show-all'))
-    expect(chipButton(host, 'Shapes')?.getAttribute('aria-pressed')).toBe('true')
+    expect((await showOption(host, 'Shapes'))?.getAttribute('aria-checked')).toBe('true')
     expect(tileNames(section(host, 'Shapes')).length).toBeGreaterThan(4)
-    await click(chipButton(host, 'All'))
+    await click(await showOption(host, 'All'))
     await click(section(host, 'Recent')!.querySelector('.image-studio__show-all'))
     expect(tileNames(section(host, 'Recent'))).toHaveLength(6)
     expect(section(host, 'Recent')!.querySelector('.image-studio__show-all')?.textContent).toBe('Show less')
+  })
+
+  it('the Filter menu stays open after a Show pick, so several picks are one trip (YAZ-4348 demo round 2)', async () => {
+    const { host } = await mount()
+    await click(await showOption(host, 'Shapes'))
+    expect(host.querySelector('.image-studio__filter-menu')).not.toBeNull()
+    await click([...host.querySelectorAll('.image-studio__filter-menu [aria-label="Colors"] button')].find((b) => b.textContent === 'One color'))
+    expect(host.querySelector('.image-studio__filter-menu')).not.toBeNull()
+    expect((await showOption(host, 'Shapes'))?.getAttribute('aria-checked')).toBe('true')
   })
 
   it('re-lists the library on media:changed and the components on components:changed', async () => {
@@ -257,7 +321,7 @@ describe('the empty field: Favorites, Recent, Components, Shapes (D7)', () => {
     let land: (value: never) => void = () => {}
     loadElement.mockReturnValue(new Promise((resolve) => (land = resolve)))
     const { host } = await mount()
-    await click(chipButton(host, 'Shapes'))
+    await click(await showOption(host, 'Shapes'))
     const before = tileNames(section(host, 'Shapes')).length
     await act(async () => land(elementPackage as never))
     expect(tileNames(section(host, 'Shapes'))).toHaveLength(before + 1)
@@ -273,6 +337,37 @@ describe('typing: Best matches, then From the web (D3, D4, D7)', () => {
     await search(host, 'rocket')
     expect(tileNames(section(host, 'Best matches'))).toEqual(['rocket', 'Rocket ship'])
     expect(tileNames(section(host, 'From the web'))).toEqual(['rocket launch'])
+  })
+
+  it('an item in Best matches that is also a web result stays in Best matches when you add or star it (YAZ-4366 audit 66)', async () => {
+    library = libraryOf({ favorites: [stored(icon('rocket'))], used: [usedRow(icon('rocket launch'))] })
+    media.search.mockResolvedValue({ items: [icon('rocket'), icon('rocket launch'), icon('rocket ship')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    const { host } = await mount()
+    await search(host, 'rocket')
+    expect(tileNames(section(host, 'Best matches'))).toEqual(['rocket', 'rocket launch'])
+    await click(section(host, 'Best matches')!.querySelector('[aria-label="Add rocket"]'))
+    await click(section(host, 'Best matches')!.querySelector('[aria-label="Add rocket launch to favorites"]'))
+    expect(tileNames(section(host, 'Best matches'))).toEqual(['rocket', 'rocket launch'])
+    expect(tileNames(section(host, 'From the web'))).toEqual(['rocket ship'])
+  })
+
+  it('a web icon you give a word stays in From the web until the search changes (YAZ-4348 demo round 2)', async () => {
+    library = libraryOf()
+    media.search.mockResolvedValue({ items: [icon('rocket launch')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    media.used.mockImplementation(async (req) => (req.op === 'add-word' ? (library = libraryOf({ used: [usedRow({ ...icon('rocket launch'), words: [req.word] })] })) : library))
+    const { host } = await mount()
+    await search(host, 'rocket')
+    await rightClick(host, 'rocket launch')
+    await click(byText(host, 'Search words…'))
+    const input = byLabel(host, 'A word for rocket launch') as HTMLInputElement
+    await type(input, 'liftoff')
+    await act(async () => input.form!.requestSubmit())
+    await settle()
+    expect(tileNames(section(host, 'From the web'))).toEqual(['rocket launch'])
+    expect(section(host, 'Best matches')).toBeNull()
+    // A new search ranks it with your own items
+    await search(host, 'rocket l')
+    expect(tileNames(section(host, 'Best matches'))).toEqual(['rocket launch'])
   })
 
   it('a word you taught an item puts it first (the Emoji app`s learned pick)', async () => {
@@ -315,7 +410,7 @@ describe('typing: Best matches, then From the web (D3, D4, D7)', () => {
     expect(section(host, 'From the web')?.textContent).toContain('Searching the web…')
     await act(async () => vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS))
     expect(media.search).toHaveBeenCalledTimes(1)
-    expect(media.search).toHaveBeenCalledWith({ q: 'money', source: 'all', cursor: null })
+    expect(media.search).toHaveBeenCalledWith({ q: 'money', source: 'all', cursor: null, filters: DEFAULT_MEDIA_FILTERS })
   })
 
   it('says which query found nothing on the web', async () => {
@@ -349,16 +444,16 @@ describe('typing: Best matches, then From the web (D3, D4, D7)', () => {
   })
 })
 
-describe('the chips (D8)', () => {
+describe('Filter › Show, the old chips (D8; moved into the Filter menu in the YAZ-4348 demo)', () => {
   it('Icons asks Iconify alone and shows only icons of yours; Shapes asks the web nothing', async () => {
     library = libraryOf({ favorites: [stored(icon('star icon'))] })
     const { host } = await mount()
-    await click(chipButton(host, 'Icons'))
+    await click(await showOption(host, 'Icons'))
     await search(host, 'star')
-    expect(media.search).toHaveBeenLastCalledWith({ q: 'star', source: 'iconify', cursor: null })
+    expect(media.search).toHaveBeenLastCalledWith({ q: 'star', source: 'iconify', cursor: null, filters: DEFAULT_MEDIA_FILTERS })
     expect(tileNames(section(host, 'Best matches'))).toEqual(['star icon'])
     media.search.mockClear()
-    await click(chipButton(host, 'Shapes'))
+    await click(await showOption(host, 'Shapes'))
     expect(media.search).not.toHaveBeenCalled()
     expect(tileNames(section(host, 'Best matches'))).toEqual(['Star'])
     expect(section(host, 'From the web')).toBeNull()
@@ -366,15 +461,15 @@ describe('the chips (D8)', () => {
 
   it('offers Photos only when a Pixabay key is set, and follows the search answer when the key changes', async () => {
     const { host } = await mount()
-    expect(chipButton(host, 'Photos')).toBeUndefined()
+    expect(await showOption(host, 'Photos')).toBeUndefined()
     media.search.mockResolvedValue({ items: [], nextCursor: null, pixabayAvailable: true, warnings: [] })
     await search(host)
-    expect(chipButton(host, 'Photos')).toBeDefined()
+    expect(await showOption(host, 'Photos')).toBeDefined()
   })
 
   it('Icons and Photos with an empty field ask you to type', async () => {
     const { host } = await mount()
-    await click(chipButton(host, 'Icons'))
+    await click(await showOption(host, 'Icons'))
     expect(host.querySelector('.image-studio__state')?.textContent).toBe('Type to search icons.')
   })
 })
@@ -400,8 +495,8 @@ describe('previews', () => {
   it('asks for one preview once, however often its tile re-mounts', async () => {
     library = libraryOf({ favorites: [stored()] })
     const { host } = await mount()
-    await click(chipButton(host, 'Shapes'))
-    await click(chipButton(host, 'All'))
+    await click(await showOption(host, 'Shapes'))
+    await click(await showOption(host, 'All'))
     expect(media.preview).toHaveBeenCalledTimes(1)
   })
 
@@ -415,10 +510,10 @@ describe('previews', () => {
   it('keeps at most 300 tile pictures: past that the least recently seen goes (YAZ-2073 5J)', async () => {
     library = libraryOf({ favorites: Array.from({ length: 301 }, (_, i) => stored(icon(`i${i}`))) })
     const { host } = await mount()
-    await click(chipButton(host, 'Favorites'))
+    await click(await showOption(host, 'Favorites'))
     expect(media.preview).toHaveBeenCalledTimes(301)
-    await click(chipButton(host, 'Shapes'))
-    await click(chipButton(host, 'Favorites'))
+    await click(await showOption(host, 'Shapes'))
+    await click(await showOption(host, 'Favorites'))
     expect(media.preview).toHaveBeenCalledTimes(302)
     expect(media.preview).toHaveBeenLastCalledWith({ provider: 'iconify', id: 'set:i0' })
   })
@@ -485,6 +580,55 @@ describe('one tile per icon, its copies on request (demo 6J)', () => {
     expect(tileNames(byLabel(host, 'More like nail polish'))).toEqual(['nail polish', 'nail polish medium dark'])
     await click(byLabel(host, 'Hide 2 more like nail polish'))
     expect(byLabel(host, 'More like nail polish')).toBeNull()
+  })
+
+  const nails = () =>
+    media.search.mockResolvedValue({
+      items: [icon('nail-polish', 'noto'), icon('nail-polish', 'twemoji'), icon('nail-polish-medium-dark', 'fluent-emoji-flat'), icon('hammer-and-nail', 'pinhead')],
+      nextCursor: null,
+      pixabayAvailable: false,
+      warnings: [],
+    })
+
+  it('a right-click on a tile inside an open group opens its menu, and the group stays open (YAZ-4348 demo round 2)', async () => {
+    nails()
+    const { host } = await mount()
+    await search(host, 'nail')
+    await click(byLabel(host, 'Show 2 more like nail polish'))
+    const inGroup = byLabel(host, 'More like nail polish')!.querySelector<HTMLElement>('[aria-label="Add nail polish medium dark"]')!
+    await act(async () => {
+      inGroup.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+    })
+    await settle(2)
+    expect(byLabel(host, 'More like nail polish')).not.toBeNull()
+    expect(byLabel(host, 'More like nail polish')!.querySelector('[role="menu"]')).not.toBeNull()
+  })
+
+  it('Filter › Similar icons › Show each one shows every icon as its own tile, and is kept in the settings (YAZ-4348 demo round 2)', async () => {
+    nails()
+    const filterButton = (host: HTMLElement) => host.querySelector<HTMLButtonElement>('.image-studio__filter-button')!
+    const option = (host: HTMLElement, group: string, text: string) =>
+      [...host.querySelectorAll<HTMLButtonElement>(`.image-studio__filter-menu [aria-label="${group}"] button`)].find((b) => b.textContent === text)
+    const { host } = await mount()
+    await search(host, 'nail')
+    expect(tileNames(section(host, 'From the web'))).toEqual(['nail polish', 'hammer and nail'])
+    await click(filterButton(host))
+    await click(option(host, 'Similar icons', 'Show each one'))
+    expect(tileNames(section(host, 'From the web'))).toEqual(['nail polish', 'nail polish', 'nail polish medium dark', 'hammer and nail'])
+    expect(byLabel(host, 'Show 2 more like nail polish')).toBeNull()
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaGroupSimilar: false })
+    // A view choice, not a filter: no badge, and Clear filters keeps it
+    expect(filterButton(host)?.getAttribute('aria-label')).toBe('Filter')
+  })
+
+  it('Similar icons changed in another window (the settings sync) applies here at once (YAZ-4366 audit 67)', async () => {
+    nails()
+    const { host } = await mount()
+    await search(host, 'nail')
+    expect(tileNames(section(host, 'From the web'))).toEqual(['nail polish', 'hammer and nail'])
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaGroupSimilar: false })
+    await act(async () => store.subscribe.mock.calls.forEach(([fn]) => (fn as () => void)()))
+    expect(tileNames(section(host, 'From the web'))).toEqual(['nail polish', 'nail polish', 'nail polish medium dark', 'hammer and nail'])
   })
 })
 
@@ -592,20 +736,58 @@ describe('the star and the right-click menu (D5, D10, demo 6B)', () => {
     expect(media.favorites).toHaveBeenLastCalledWith({ op: 'remove', itemKey: 'iconify:noto:money-bag' })
   })
 
-  it('Add a word… saves the word, starting from the text in the field', async () => {
+  it('Search words… saves a typed word', async () => {
     library = libraryOf({ favorites: [stored()] })
     media.used.mockImplementation(async (req) => (req.op === 'add-word' ? libraryOf({ ...library, used: [usedRow({ words: [req.word.trim().toLowerCase()] })] }) : library))
     const { host } = await mount()
     await rightClick(host, 'money bag')
-    await click(byText(host, 'Add a word…'))
+    await click(byText(host, 'Search words…'))
     const input = byLabel(host, 'A word for money bag') as HTMLInputElement
     await type(input, 'Cash')
     await act(async () => input.form!.requestSubmit())
     await settle()
     expect(media.used).toHaveBeenCalledWith({ op: 'add-word', item: expect.objectContaining({ itemKey: 'iconify:noto:money-bag' }), word: 'Cash' })
-    expect(host.querySelector('.image-studio__line')?.textContent).toContain('now comes first for “cash”')
+    // The row stays open with the new chip, the field empty for the next word, and no line above the list (YAZ-4348 demo round 2)
+    expect([...host.querySelectorAll('.image-studio__word-chip')].map((c) => c.firstChild?.textContent)).toEqual(['money bag', 'cash'])
+    expect((byLabel(host, 'A word for money bag') as HTMLInputElement).value).toBe('')
+    expect(host.querySelector('.image-studio__line')).toBeNull()
+    // The tile whose row is open is ringed
+    expect(byLabel(host, 'Add money bag')!.closest('.image-studio__card')?.classList.contains('is-editing')).toBe(true)
     await type(field(host), 'cash')
     expect(tileNames(section(host, 'Best matches'))).toEqual(['money bag'])
+  })
+
+  it('Search words… lists every word that finds it, starts empty, and offers the search as a one-click word (YAZ-4348 demo round 2)', async () => {
+    library = libraryOf({ favorites: [stored()], used: [usedRow({ words: ['cash'] })] })
+    media.used.mockImplementation(async (req) => (req.op === 'add-word' ? libraryOf({ ...library, used: [usedRow({ words: [req.word, 'cash'] })] }) : library))
+    const { host } = await mount()
+    await type(field(host), 'money')
+    await rightClick(host, 'money bag')
+    await click(byText(host, 'Search words…'))
+    const chips = () => [...host.querySelectorAll('.image-studio__word-chip')].map((c) => c.firstChild?.textContent)
+    expect(chips()).toEqual(['money bag', 'cash'])
+    expect((byLabel(host, 'A word for money bag') as HTMLInputElement).value).toBe('')
+    // "money" is in its name already: no offer
+    expect(host.querySelector('.image-studio__word-offer')).toBeNull()
+    // "mon" finds it, but is no word of it: one click adds it
+    await type(field(host), 'mon')
+    await rightClick(host, 'money bag')
+    await click(byText(host, 'Search words…'))
+    expect((byLabel(host, 'A word for money bag') as HTMLInputElement).value).toBe('')
+    await click(byText(host, '+ mon'))
+    expect(media.used).toHaveBeenCalledWith({ op: 'add-word', item: expect.objectContaining({ itemKey: 'iconify:noto:money-bag' }), word: 'mon' })
+  })
+
+  it('the × on a word chip removes that word; the name has no × (YAZ-4348 demo round 2)', async () => {
+    library = libraryOf({ favorites: [stored()], used: [usedRow({ words: ['cash', 'loot'] })] })
+    media.used.mockImplementation(async (req) => (req.op === 'remove-word' ? libraryOf({ ...library, used: [usedRow({ words: ['loot'] })] }) : library))
+    const { host } = await mount()
+    await rightClick(host, 'money bag')
+    await click(byText(host, 'Search words…'))
+    expect(host.querySelector('.image-studio__word-chip.is-name button')).toBeNull()
+    await click(byLabel(host, 'Remove the word “cash”'))
+    expect(media.used).toHaveBeenCalledWith({ op: 'remove-word', itemKey: 'iconify:noto:money-bag', word: 'cash' })
+    expect([...host.querySelectorAll('.image-studio__word-chip')].map((c) => c.firstChild?.textContent)).toEqual(['money bag', 'loot'])
   })
 
   it('a media item`s menu has no Rename or Delete; a component`s has both', async () => {
@@ -627,7 +809,10 @@ describe('the tile menu (D10, demo 6B)', () => {
     expect(byLabel(host, 'More for money bag')).toBeNull()
     expect(await rightClick(host, 'money bag')).toBe(false)
     const menu = byLabel(host, 'Actions for money bag')!
-    expect(document.activeElement?.textContent).toBe('Add a word…')
+    // An Iconify icon's menu leads with its pack (YAZ-4361).
+    expect(document.activeElement?.textContent).toBe('More from this pack')
+    await key(menu, 'ArrowDown')
+    expect(document.activeElement?.textContent).toBe('Search words…')
     await key(menu, 'ArrowDown')
     expect(document.activeElement?.textContent).toBe('Remove from favorites')
     await key(menu, 'Escape')
@@ -659,9 +844,9 @@ describe('the tile menu (D10, demo 6B)', () => {
     expect(byLabel(host, 'Actions for money bag')).toBeNull()
   })
 
-  it('Search Google Images opens the field`s text in the browser; with no text it is off (demo 6I)', async () => {
+  it('Google Images opens the field`s text in the browser; with no text it is off (demo 6I)', async () => {
     const { host } = await mount()
-    const google = byText(host, 'Search Google Images ↗') as HTMLButtonElement
+    const google = byText(host, 'Google Images ↗') as HTMLButtonElement
     expect(google.disabled).toBe(true)
     await type(field(host), 'hammer and nail')
     await click(google)
@@ -679,6 +864,59 @@ describe('the tile menu (D10, demo 6B)', () => {
       field(host).dispatchEvent(new Event('pointerdown', { bubbles: true }))
     })
     expect(byLabel(host, 'Actions for money bag')).toBeNull()
+  })
+})
+
+describe('two old favorites bugs, checked in today`s panel (YAZ-4365: YAZ-286, YAZ-302)', () => {
+  it('YAZ-286: the star of a Recent tile favorites the row as the library holds it; the board gets nothing', async () => {
+    library = libraryOf({ recent: [stored({ updatedAt: 7 })] })
+    const { host, canvas } = await mount()
+    await click(section(host, 'Recent')!.querySelector('[aria-label="Add money bag to favorites"]'))
+    // The row goes as it is, `updatedAt` too: main's validator drops it (`ipc/mediaLibrary.test.ts`).
+    expect(media.favorites).toHaveBeenCalledExactlyOnceWith({ op: 'add', item: expect.objectContaining({ itemKey: 'iconify:noto:money-bag', updatedAt: 7 }) })
+    expect(section(host, 'Recent')!.querySelector('[aria-label="Remove money bag from favorites"]')).not.toBeNull()
+    expect(tileNames(section(host, 'Favorites'))).toEqual(['money bag'])
+    expect(media.import).not.toHaveBeenCalled()
+    expect(canvas.insertImages).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-302: a tile menu opened near the bottom of the list moves up, so none of it is cut off', async () => {
+    library = libraryOf({ favorites: [stored()] })
+    const { host } = await mount()
+    // The list shows 0–400 px; the tile is at 300–380; the menu is 180 px tall and starts `top` below the tile's top.
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const box = (top: number, bottom: number, left = 0, right = 300) => ({ top, bottom, left, right, x: left, y: top, width: right - left, height: bottom - top, toJSON: () => ({}) })
+      if (this.classList.contains('image-studio__list')) return box(0, 400)
+      if (this.classList.contains('image-studio__card')) return box(300, 380, 0, 100)
+      if (this.classList.contains('image-studio__menu')) {
+        const top = 300 + parseFloat(this.style.top || '0')
+        return box(top, top + 180, 10, 160)
+      }
+      return box(0, 0, 0, 0)
+    })
+    await act(async () => {
+      byLabel(host, 'Add money bag')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 390 }))
+    })
+    await settle(2)
+    const menu = byLabel(host, 'Actions for money bag')!
+    const box = menu.getBoundingClientRect()
+    rect.mockRestore()
+    expect(box.bottom).toBeLessThanOrEqual(400)
+    expect(box.top).toBeGreaterThanOrEqual(0)
+  })
+
+  it('YAZ-302: "Remove from favorites" on a Favorites tile moves the focus to the tile that takes its place, not to the page', async () => {
+    const other = stored({ itemKey: 'iconify:noto:rocket', providerId: 'noto:rocket', title: 'rocket' })
+    library = libraryOf({ favorites: [stored(), other] })
+    const { host } = await mount()
+    await rightClick(host, 'money bag')
+    await click(byText(host, 'Remove from favorites'))
+    expect(tileNames(section(host, 'Favorites'))).toEqual(['rocket'])
+    expect(document.activeElement).toBe(section(host, 'Favorites')!.querySelector('[aria-label="Add rocket"]'))
+    // The star does the same.
+    ;(section(host, 'Favorites')!.querySelector('[aria-label="Remove rocket from favorites"]') as HTMLElement).focus()
+    await click(section(host, 'Favorites')!.querySelector('[aria-label="Remove rocket from favorites"]'))
+    expect(document.activeElement).toBe(field(host))
   })
 })
 
@@ -792,7 +1030,7 @@ describe('components in the Add tab (D2, D6)', () => {
 
   it('imports a file from the Components ⋯; a file that is not a component is a passive notice and nothing is saved', async () => {
     const { host } = await mount()
-    await click(chipButton(host, 'Components'))
+    await click(await showOption(host, 'Components'))
     expect(host.querySelector('.image-studio__state')?.textContent).toContain('No saved components yet')
     dialog.openDrawing.mockResolvedValue({ name: 'broken.excalidraw', content: 'not json' } as never)
     await click(byLabel(host, 'More for Components'))
@@ -837,12 +1075,53 @@ describe('components in the Add tab (D2, D6)', () => {
     expect(components.delete).toHaveBeenCalledTimes(2)
   })
 
-  it('a favorite component shows its live name, and one that was deleted is not shown at all', async () => {
+  it('a favorite component shows its live name; one that was deleted stays in Favorites by its stored name (YAZ-4370), and nowhere else', async () => {
     const fav = (slug: string, title: string) => stored({ itemKey: `component:${slug}`, provider: 'component', providerId: slug, kind: 'component', title })
-    library = libraryOf({ favorites: [fav('pricing-card', 'Old name'), fav('gone', 'Gone')] })
+    library = libraryOf({ favorites: [fav('pricing-card', 'Old name'), fav('gone', 'Gone')], recent: [fav('gone', 'Gone')] })
     components.list.mockResolvedValue([component({ name: 'New name' })])
     const { host } = await mount()
-    expect(tileNames(section(host, 'Favorites'))).toEqual(['New name'])
+    expect(tileNames(section(host, 'Favorites'))).toEqual(['New name', 'Gone'])
+    expect(tileNames(section(host, 'Recent'))).toEqual([])
+  })
+})
+
+describe('every favorite keeps a copy (YAZ-4370)', () => {
+  const fragment = (id: string) => JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id, type: 'line' }], files: {} })
+
+  it('an add of a favorite library item, shape or component uses its copy first, also when the source is gone', async () => {
+    const drawn = stored({ itemKey: 'excalidraw:lib#3', provider: 'excalidraw', providerId: 'lib#3', kind: 'drawing', title: 'Hammer' })
+    const renamed = stored({ itemKey: 'shape:old-star', provider: 'shape', providerId: 'old-star', kind: 'shape', title: 'Old star' })
+    const deleted = stored({ itemKey: 'component:gone', provider: 'component', providerId: 'gone', kind: 'component', title: 'Gone card' })
+    library = libraryOf({ favorites: [drawn, renamed, deleted] })
+    media.favoriteElements.mockImplementation(async (itemKey) => fragment(`copy-of-${itemKey}`))
+    media.drawing.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'that item is no longer in its library'))
+    const { host, canvas } = await mount()
+    for (const title of ['Hammer', 'Old star', 'Gone card']) await click(section(host, 'Favorites')!.querySelector(`[aria-label="Add ${title}"]`))
+    expect(media.favoriteElements.mock.calls.filter(([key]) => key !== undefined).map(([key]) => key)).toEqual(expect.arrayContaining([drawn.itemKey, renamed.itemKey, deleted.itemKey]))
+    expect(canvas.insertElements.mock.calls.map(([elements]) => (elements as { id: string }[])[0].id)).toEqual([`copy-of-${drawn.itemKey}`, `copy-of-${renamed.itemKey}`, `copy-of-${deleted.itemKey}`])
+    expect(components.read).not.toHaveBeenCalled()
+    expect(host.querySelector('.image-studio__error')).toBeNull()
+  })
+
+  it('with no copy, an add works as before; a tile that is not a favorite never asks for one', async () => {
+    library = libraryOf({ favorites: [stored({ itemKey: 'shape:rectangle', provider: 'shape', providerId: 'rectangle', kind: 'shape', title: 'Rectangle' })] })
+    const { host, canvas } = await mount()
+    await click(section(host, 'Favorites')!.querySelector('[aria-label="Add Rectangle"]'))
+    expect(canvas.updateScene).toHaveBeenCalled()
+    media.favoriteElements.mockClear()
+    await click(section(host, 'Shapes')!.querySelector('[aria-label="Add Rounded rectangle"]'))
+    expect(media.favoriteElements).not.toHaveBeenCalled()
+  })
+
+  it('the panel saves the copy of each shape favorite that main asks for, built by the engine', async () => {
+    library = libraryOf({ favorites: [stored({ itemKey: 'shape:rectangle', provider: 'shape', providerId: 'rectangle', kind: 'shape', title: 'Rectangle' })] })
+    media.favoritesForPanel.mockResolvedValue(['shape:rectangle', 'shape:not-in-the-catalog'])
+    await mount()
+    await settle()
+    expect(media.saveFavoriteElements).toHaveBeenCalledOnce()
+    const [{ itemKey, fragmentJson }] = media.saveFavoriteElements.mock.calls[0]
+    expect(itemKey).toBe('shape:rectangle')
+    expect(JSON.parse(fragmentJson).elements).toEqual([expect.objectContaining({ id: 'new-0', type: 'rectangle' })])
   })
 })
 
@@ -871,14 +1150,321 @@ describe('closing and reopening the panel (🔒 YAZ-1990)', () => {
   it('comes back with the chip, the query and the results it had', async () => {
     media.search.mockResolvedValue({ items: [icon('star')], nextCursor: null, pixabayAvailable: false, warnings: [] })
     const first = await mount()
-    await click(chipButton(first.host, 'Icons'))
+    await click(await showOption(first.host, 'Icons'))
     await search(first.host, 'star')
     act(() => root?.unmount())
     media.search.mockClear()
     const { host } = await mount()
-    expect(chipButton(host, 'Icons')?.getAttribute('aria-pressed')).toBe('true')
+    expect((await showOption(host, 'Icons'))?.getAttribute('aria-checked')).toBe('true')
     expect(field(host).value).toBe('star')
     expect(tileNames(section(host, 'From the web'))).toEqual(['star'])
     expect(media.search).not.toHaveBeenCalled()
+  })
+})
+
+describe('the Filter button and menu (YAZ-4360)', () => {
+  const filterButton = (host: HTMLElement) => host.querySelector<HTMLButtonElement>('.image-studio__filter-button')!
+  const option = (host: HTMLElement, group: string, text: string) =>
+    [...(host.querySelector(`.image-studio__filter-menu [aria-label="${group}"]`)?.querySelectorAll('button') ?? [])].find((b) => b.textContent === text) as HTMLButtonElement
+
+  it('sits right of the field; a pick searches again AT ONCE with the filters, and is remembered in the settings', async () => {
+    media.search.mockResolvedValue({ items: [icon('arrow')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    const { host } = await mount()
+    expect(field(host).nextElementSibling?.querySelector('.image-studio__filter-button')).not.toBeNull()
+    await search(host, 'arrow')
+    media.search.mockClear()
+    await click(filterButton(host))
+    await click(option(host, 'Colors', 'One color'))
+    expect(media.search).toHaveBeenCalledTimes(1)
+    expect(media.search).toHaveBeenCalledWith({ q: 'arrow', source: 'all', cursor: null, filters: { ...DEFAULT_MEDIA_FILTERS, colors: 'one' } })
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaFilters: { ...DEFAULT_MEDIA_FILTERS, colors: 'one' } })
+    expect(option(host, 'Colors', 'One color').getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('a filter change from another window (the settings sync) searches again, so the results match the badge (YAZ-4384)', async () => {
+    media.search.mockResolvedValue({ items: [icon('arrow')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    const { host } = await mount()
+    await search(host, 'arrow')
+    media.search.mockClear()
+    const listener = () => store.subscribe.mock.calls.forEach(([fn]) => (fn as () => void)())
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaFilters: { ...DEFAULT_MEDIA_FILTERS, colors: 'one' } })
+    await act(async () => listener())
+    expect(media.search).toHaveBeenCalledTimes(1)
+    expect(media.search).toHaveBeenCalledWith({ q: 'arrow', source: 'all', cursor: null, filters: { ...DEFAULT_MEDIA_FILTERS, colors: 'one' } })
+    expect(filterButton(host).querySelector('.image-studio__filter-badge')?.textContent).toBe('1')
+    // The same filters again (any other settings change) asks nothing.
+    await act(async () => listener())
+    expect(media.search).toHaveBeenCalledTimes(1)
+  })
+
+  it('counts the filters that are on in a badge, and Clear filters turns them all off', async () => {
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaFilters: { colors: 'many', style: 'outline', packs: [], license: 'business' } })
+    const { host } = await mount()
+    expect(filterButton(host).querySelector('.image-studio__filter-badge')?.textContent).toBe('3')
+    expect(filterButton(host).getAttribute('aria-label')).toBe('Filter, 3 on')
+    await click(filterButton(host))
+    await click(byText(host, 'Clear filters'))
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaFilters: DEFAULT_MEDIA_FILTERS })
+    expect(filterButton(host).querySelector('.image-studio__filter-badge')).toBeNull()
+    expect(byText(host, 'Clear filters')?.disabled).toBe(true)
+  })
+
+  it('Show is the first section and the panel has no chips row; the badge counts Show when it is not All, and Clear filters puts it back to All', async () => {
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaFilters: { ...DEFAULT_MEDIA_FILTERS, colors: 'one' } })
+    const { host } = await mount()
+    expect(host.querySelector('.image-studio__chips')).toBeNull()
+    expect(filterButton(host).getAttribute('aria-label')).toBe('Filter, 1 on')
+    await click(filterButton(host))
+    const groups = [...host.querySelectorAll('.image-studio__filter-menu [role="group"]')].map((g) => g.getAttribute('aria-label'))
+    expect(groups[0]).toBe('Show')
+    expect([...host.querySelectorAll('.image-studio__filter-menu [aria-label="Show"] button')].map((b) => b.textContent)).toEqual(['All', 'Favorites', 'Components', 'Shapes', 'Icons'])
+    expect(option(host, 'Show', 'All').getAttribute('aria-checked')).toBe('true')
+    await click(option(host, 'Show', 'Shapes'))
+    expect(imageStudioSession.getState().chip).toBe('shapes')
+    expect(section(host, 'Shapes')).not.toBeNull()
+    expect(filterButton(host).getAttribute('aria-label')).toBe('Filter, 2 on')
+    await click(byText(host, 'Clear filters'))
+    expect(imageStudioSession.getState().chip).toBe('all')
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaFilters: DEFAULT_MEDIA_FILTERS })
+    expect(filterButton(host).querySelector('.image-studio__filter-badge')).toBeNull()
+  })
+
+  it('Clear filters with a query asks the web once, under All and no filters', async () => {
+    media.search.mockResolvedValue({ items: [icon('arrow')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaFilters: { ...DEFAULT_MEDIA_FILTERS, style: 'filled' } })
+    const { host } = await mount()
+    await click(await showOption(host, 'Icons'))
+    await search(host, 'arrow')
+    media.search.mockClear()
+    await click(byText(host, 'Clear filters'))
+    expect(media.search).toHaveBeenCalledTimes(1)
+    expect(media.search).toHaveBeenCalledWith({ q: 'arrow', source: 'all', cursor: null, filters: DEFAULT_MEDIA_FILTERS })
+  })
+
+  it('the arrow keys walk from Show into the filters', async () => {
+    const { host } = await mount()
+    await click(filterButton(host))
+    expect(document.activeElement).toBe(option(host, 'Show', 'All'))
+    await key(host.querySelector('.image-studio__filter-menu')!, 'ArrowDown')
+    expect(document.activeElement).toBe(option(host, 'Show', 'Favorites'))
+    await key(host.querySelector('.image-studio__filter-menu')!, 'ArrowUp')
+    await key(host.querySelector('.image-studio__filter-menu')!, 'ArrowUp')
+    // Up from All wraps to the last item that is on (Clear filters is off with nothing on): Similar icons' last choice.
+    expect(document.activeElement?.textContent).toBe('Show each one')
+  })
+
+  it('Esc closes the menu back to its button; a click outside closes it too', async () => {
+    const { host } = await mount()
+    await click(filterButton(host))
+    expect(document.activeElement?.getAttribute('role')).toBe('menuitemradio')
+    await key(host.querySelector('.image-studio__filter-menu')!, 'Escape')
+    expect(host.querySelector('.image-studio__filter-menu')).toBeNull()
+    expect(document.activeElement).toBe(filterButton(host))
+    await click(filterButton(host))
+    await act(async () => {
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    })
+    expect(host.querySelector('.image-studio__filter-menu')).toBeNull()
+  })
+
+  it('Choose packs… lists the pinned packs first, and a pick adds the pack to the filter', async () => {
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaPinnedPacks: ['tabler'] })
+    const pack = (prefix: string, name: string) => ({ prefix, name, total: 10, license: { title: 'MIT' }, palette: false })
+    media.packList.mockResolvedValue([pack('mdi', 'Material Design'), pack('tabler', 'Tabler'), pack('akar', 'Akar')])
+    const { host } = await mount()
+    await click(filterButton(host))
+    await click(byText(host, 'Choose packs…'))
+    const rows = [...host.querySelectorAll('.image-studio__filter-pack-name')].map((n) => n.textContent)
+    expect(rows).toEqual(['Tabler', 'Akar', 'Material Design'])
+    await click(host.querySelector('[role="menuitemcheckbox"][title^="Akar"]'))
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaFilters: { ...DEFAULT_MEDIA_FILTERS, packs: ['akar'] } })
+  })
+})
+
+describe('Download all icon packs (YAZ-4359), in the footer since the YAZ-4348 demo', () => {
+  const footerActions = (host: HTMLElement) => host.querySelector<HTMLElement>('.image-studio__footer-actions')!
+
+  it('offers the download in the footer beside Google Images, asks first above the panel, and starts only on Download', async () => {
+    media.search.mockResolvedValue({ items: [icon('arrow')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    const { host } = await mount()
+    await search(host, 'arrow')
+    const footer = footerActions(host)
+    expect([...footer.children].map((child) => child.textContent)).toEqual(['↓ All icon packs', 'Google Images ↗'])
+    await click(byText(host, '↓ All icon packs'))
+    // The box opens on `document.body`, in the layer over the board's side panel, and a click on it is not a click outside the panel
+    const layer = document.body.querySelector(':scope > .image-studio__sheet-layer')!
+    expect(layer.hasAttribute('data-prevent-outside-click')).toBe(true)
+    const sheet = layer.querySelector('[role="dialog"]')!
+    expect(sheet.textContent).toContain('All 281 free icon packs from Iconify come to this Mac: about 135 MB.')
+    expect(media.packs).not.toHaveBeenCalledWith({ op: 'download' })
+    await click(byText(document.body, 'Download'))
+    expect(media.packs).toHaveBeenCalledWith({ op: 'download' })
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('shows the progress in the footer with Cancel; a stop then offers the rest; with every pack only Google Images shows', async () => {
+    media.search.mockResolvedValue({ items: [icon('arrow')], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    const { host } = await mount()
+    await search(host, 'arrow')
+    await act(async () => packsListener?.(packsStatus({ state: 'downloading', packs: 37, bytes: 17 * 1024 * 1024 })))
+    // One quiet line: a word, a bar, the percent, Cancel; the full count is the tooltip and what a screen reader hears
+    const busy = footerActions(host).querySelector<HTMLElement>('[role="status"]')!
+    expect(busy.textContent).toBe('Downloading icons13%Cancel')
+    expect(busy.querySelector<HTMLElement>('.image-studio__footer-bar i')?.style.width).toBe('13%')
+    expect(busy.getAttribute('aria-label')).toBe('Downloading icon packs: 37 of 281 (17 MB of 135 MB)')
+    expect(busy.title).toBe('Downloading icon packs: 37 of 281 (17 MB of 135 MB)')
+    await click(byText(host, 'Cancel'))
+    expect(media.packs).toHaveBeenCalledWith({ op: 'stop' })
+    await act(async () => packsListener?.(packsStatus({ state: 'partial', packs: 37 })))
+    media.packs.mockClear()
+    await click(byText(host, '↓ The rest of the icon packs'))
+    // The rest needs no new confirm: the user said yes already.
+    expect(media.packs).toHaveBeenCalledWith({ op: 'download' })
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    await act(async () => packsListener?.(packsStatus({ state: 'complete', packs: 281 })))
+    expect([...footerActions(host).children].map((child) => child.textContent)).toEqual(['Google Images ↗'])
+    expect(footerActions(host).classList.contains('is-centered')).toBe(true)
+  })
+
+  it('Try again repeats the request that failed; a download that never started asks first again (YAZ-4366 audit 65)', async () => {
+    const { host } = await mount()
+    // A download that failed before any pack came: Try again is the first download again, so the box asks first
+    await act(async () => packsListener?.(packsStatus({ state: 'downloading' })))
+    await act(async () => packsListener?.(packsStatus({ state: 'none', failed: true, message: "You're offline. Connect to the internet to download icon packs." })))
+    media.packs.mockClear()
+    await click(byText(host, 'Try again'))
+    expect(media.packs).not.toHaveBeenCalled()
+    expect(document.querySelector('.image-studio__sheet-layer [role="dialog"]')).not.toBeNull()
+    await click(byText(document.body, 'Cancel'))
+    // A Check that failed checks again; it does not start the download
+    await act(async () => packsListener?.(packsStatus({ state: 'checking', packs: 200 })))
+    await act(async () => packsListener?.(packsStatus({ state: 'partial', packs: 200, failed: true, message: '3 packs could not download (timeout). Try again.' })))
+    await click(byText(host, 'Try again'))
+    expect(media.packs.mock.calls).toEqual([[{ op: 'check' }]])
+    // A download that failed part way downloads the rest at once: the user said yes already
+    await act(async () => packsListener?.(packsStatus({ state: 'downloading', packs: 37 })))
+    await act(async () => packsListener?.(packsStatus({ state: 'partial', packs: 37, failed: true, message: '1 pack could not download (timeout). Try again.' })))
+    media.packs.mockClear()
+    await click(byText(host, 'Try again'))
+    expect(media.packs.mock.calls).toEqual([[{ op: 'download' }]])
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('a download request that the bridge refused, with no pack on the Mac, asks first on Try again (YAZ-4366 audit 65)', async () => {
+    const { host } = await mount()
+    await click(byText(host, '↓ All icon packs'))
+    media.packs.mockRejectedValueOnce(new Error('no bridge'))
+    await click(byText(document.body, 'Download'))
+    expect(footerActions(host).textContent).toContain("The download couldn't start. Try again.")
+    media.packs.mockClear()
+    await click(byText(host, 'Try again'))
+    expect(media.packs).not.toHaveBeenCalled()
+    expect(document.querySelector('.image-studio__sheet-layer [role="dialog"]')).not.toBeNull()
+  })
+
+  it('offline with every pack on the Mac, the line says icon search still works (extra 17)', async () => {
+    media.packs.mockResolvedValue(packsStatus({ state: 'complete', packs: 281 }))
+    media.search.mockRejectedValue(new BridgeRequestError('OFFLINE', 'no network'))
+    secrets.has.mockResolvedValue(true)
+    const { host } = await mount()
+    await click(await showOption(host, 'Photos'))
+    await search(host, 'arrow')
+    expect(host.textContent).toContain(OFFLINE_WITH_PACKS_NOTICE)
+  })
+})
+
+describe('More from this pack (YAZ-4361)', () => {
+  const tabler = { prefix: 'tabler', name: 'Tabler Icons', total: 5900, license: { title: 'MIT' }, palette: false }
+
+  async function openTablerPack() {
+    media.packList.mockResolvedValue([tabler])
+    media.search.mockImplementation(async (req) =>
+      req.filters?.packs[0] === 'tabler'
+        ? { items: req.q === '' ? [icon('arrow-up', 'tabler'), icon('star', 'tabler')] : [icon('arrow-up', 'tabler')], nextCursor: null, pixabayAvailable: false, warnings: [] }
+        : { items: [icon('arrow-up', 'tabler'), icon('arrow', 'mdi')], nextCursor: 'MORE', pixabayAvailable: false, warnings: [] },
+    )
+    const mounted = await mount()
+    await search(mounted.host, 'arrow')
+    await rightClick(mounted.host, 'arrow up')
+    await click(byText(mounted.host, 'More from this pack'))
+    await settle()
+    return mounted
+  }
+
+  it('the tile menu opens the right pack: its name, count and license, and every icon of it', async () => {
+    const { host } = await openTablerPack()
+    expect(media.search).toHaveBeenLastCalledWith({ q: '', source: 'iconify', cursor: null, filters: { ...DEFAULT_MEDIA_FILTERS, packs: ['tabler'] } })
+    const page = byLabel(host, 'Pack: Tabler Icons')!
+    expect(page.textContent).toContain('5,900 icons · MIT')
+    expect(tileNames(page)).toEqual(['arrow up', 'star'])
+    expect(document.activeElement?.textContent).toBe('‹ Back')
+    // The main field and the chips wait underneath.
+    expect(host.querySelector('.image-studio__search')?.hasAttribute('hidden')).toBe(true)
+  })
+
+  it('its own search asks only that pack', async () => {
+    const { host } = await openTablerPack()
+    vi.useFakeTimers()
+    await type(byLabel(host, 'Search Tabler Icons') as HTMLInputElement, 'arrow')
+    await act(async () => vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS))
+    expect(media.search).toHaveBeenLastCalledWith({ q: 'arrow', source: 'iconify', cursor: null, filters: { ...DEFAULT_MEDIA_FILTERS, packs: ['tabler'] } })
+    expect(tileNames(byLabel(host, 'Pack: Tabler Icons'))).toEqual(['arrow up'])
+  })
+
+  it('Back returns to the same search, results and next page, with no new request', async () => {
+    const { host } = await openTablerPack()
+    const asked = media.search.mock.calls.length
+    await click(byText(host, '‹ Back'))
+    expect(media.search.mock.calls.length).toBe(asked)
+    expect(field(host).value).toBe('arrow')
+    expect(tileNames(section(host, 'From the web'))).toEqual(['arrow up', 'arrow'])
+    expect(imageStudioSession.getState()).toMatchObject({ pack: null, cursor: 'MORE', searchedQuery: 'arrow' })
+  })
+
+  it('shows 240 tiles of a big pack, then Show more; the infinite scroll goes on up to the cap (YAZ-4366 audit 70)', async () => {
+    const big = Array.from({ length: 300 }, (_, i) => icon(`icon-${i}`, 'tabler'))
+    media.packList.mockResolvedValue([tabler])
+    media.search.mockImplementation(async (req) =>
+      req.filters?.packs[0] === 'tabler'
+        ? req.cursor === null
+          ? { items: big.slice(0, 240), nextCursor: 'P2', pixabayAvailable: false, warnings: [] }
+          : { items: big.slice(240), nextCursor: null, pixabayAvailable: false, warnings: [] }
+        : { items: [icon('arrow-up', 'tabler')], nextCursor: null, pixabayAvailable: false, warnings: [] },
+    )
+    const { host } = await mount()
+    await search(host, 'arrow')
+    await rightClick(host, 'arrow up')
+    await click(byText(host, 'More from this pack'))
+    await settle()
+    const page = () => byLabel(host, 'Pack: Tabler Icons')!
+    expect(tileNames(page())).toHaveLength(240)
+    // At the cap the sentinel is gone, so the scroll asks no next page until Show more
+    expect(page().querySelector('.image-studio__search-sentinel')).toBeNull()
+    await click(byText(host, 'Show more'))
+    expect(page().querySelector('.image-studio__search-sentinel')).not.toBeNull()
+    await act(async () => imageStudioSession.set({ results: big, cursor: null }))
+    expect(tileNames(page())).toHaveLength(300)
+    expect(byText(host, 'Show more')).toBeUndefined()
+  })
+
+  it('Pin pack saves the pin in the settings, and a second press takes it off', async () => {
+    const { host } = await openTablerPack()
+    await click(byText(host, 'Pin pack'))
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaPinnedPacks: ['tabler'] })
+    expect(byText(host, 'Pinned')?.getAttribute('aria-pressed')).toBe('true')
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaPinnedPacks: ['tabler'] })
+    await click(byText(host, 'Pinned'))
+    expect(store.patchSettings).toHaveBeenLastCalledWith({ mediaPinnedPacks: [] })
+  })
+})
+
+describe('the credit reminder (YAZ-4360, extra 16)', () => {
+  it('a CC-BY icon says that it needs a credit when it is added', async () => {
+    media.search.mockResolvedValue({ items: [item({ collectionName: 'Font Awesome', licenseName: 'CC BY 4.0' })], nextCursor: null, pixabayAvailable: false, warnings: [] })
+    media.import.mockResolvedValue({ mimeType: 'image/svg+xml', dataURL: `data:image/svg+xml;base64,${btoa('<svg/>')}`, item: item() })
+    const { host } = await mount()
+    await search(host)
+    await click(byLabel(host, 'Add money bag'))
+    expect(host.querySelector('.image-studio__line')?.textContent).toBe('Credit needed: Font Awesome is CC BY 4.0. Name its author where you publish this board.')
   })
 })

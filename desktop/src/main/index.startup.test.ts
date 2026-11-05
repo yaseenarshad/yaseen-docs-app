@@ -63,6 +63,7 @@ const h = vi.hoisted(() => {
     kind: 'idle' as string,
     start: vi.fn(log('updater.start')),
     check: vi.fn(async (): Promise<{ kind: string }> => ({ kind: 'idle' })),
+    checks: true,
     state: vi.fn(() => ({ kind: updater.kind })),
     notes: vi.fn(async () => []),
     installOnExit: vi.fn((reopen: boolean) => void s.order.push(`installOnExit:${String(reopen)}`)),
@@ -349,11 +350,11 @@ describe('the updater in index.ts (YAZ-2976)', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith('update:state-changed', { kind: 'ready', version: '1.0.13' })
   })
 
-  it('on ready registers the three update doors (and the memory meter\'s, YAZ-3737 D1) before the windows restore, then starts the timer (D7)', async () => {
+  it('on ready registers the four update doors (and the memory meter\'s, YAZ-3737 D1) before the windows restore, then starts the timer (D7)', async () => {
     expect([...h.handles.keys()]).toEqual([])
     h.s.ready()
     await settle()
-    expect([...h.handles.keys()].sort()).toEqual(['memory:report', 'update:notes', 'update:restart', 'update:state'])
+    expect([...h.handles.keys()].sort()).toEqual(['memory:report', 'update:check', 'update:notes', 'update:restart', 'update:state'])
     expect(h.s.order.indexOf('updater.start')).toBeLessThan(h.s.order.indexOf('restore:none'))
     h.updater.kind = 'manual'
     await expect(invoke('update:state')).resolves.toEqual({ ok: true, value: { kind: 'manual' } })

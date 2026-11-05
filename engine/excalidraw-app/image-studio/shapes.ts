@@ -176,6 +176,14 @@ function getSmartShapeAliases(
   switch (smartShape.kind) {
     case "filled-arrow":
       return ["arrow", "pointer", "filled"];
+    case "curved-arrow":
+      return ["arrow", "curve", "bend", "turn"];
+    case "u-turn-arrow":
+      return ["arrow", "u turn", "uturn", "return", "back"];
+    case "double-arrow":
+      return ["arrow", "two way", "both ways", "bidirectional"];
+    case "circle-arrow":
+      return ["arrow", "circular", "refresh", "rotate", "cycle", "loop"];
     case "chevron":
       return ["arrowhead", "direction"];
     case "brace":

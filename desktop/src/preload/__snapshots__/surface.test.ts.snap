@@ -99,10 +99,17 @@ lsp.references/1: invoke lsp:references ["a0"]; => "answer"; !> {"code":"NOT_FOU
 makeDailyNote/1: invoke fs:make-daily-note ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.drawing/1: invoke media:drawing ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.drawingIndex/0: invoke media:drawing-index []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+media.favoriteCopies/0: invoke media:favorite-copies []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+media.favoriteElements/1: invoke media:favorite-elements ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.favorites/1: invoke media:favorites ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+media.favoritesForPanel/0: invoke media:favorites-for-panel []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.import/1: invoke media:import ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.onChanged/1: on media:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off media:changed
+media.onPacksProgress/1: on media:packs-progress -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off media:packs-progress
+media.packList/0: invoke media:pack-list []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+media.packs/1: invoke media:packs ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.preview/1: invoke media:preview ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+media.saveFavoriteElements/1: invoke media:save-favorite-elements ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.search/1: invoke media:search ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.used/1: invoke media:used ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 memory.report/0: invoke memory:report []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -198,6 +205,7 @@ state.systemHotkeys/0: invoke state:system-hotkeys []; => "answer"; !> {"code":"
 storage.shrink/2: invoke storage:shrink ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 storage.stats/1: invoke storage:stats ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 tree/1: invoke fs:tree ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+update.check/0: invoke update:check []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 update.notes/0: invoke update:notes []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 update.onState/1: on update:state-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off update:state-changed
 update.restart/0: invoke update:restart []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

@@ -170,3 +170,32 @@ describe('insertComponent — an INDEPENDENT copy, at the viewport centre', () =
     expect(() => insertComponent(engine, fakeCanvas().api, JSON.stringify({ elements: [image('a', 'f1')], files: {} }))).toThrow(/image data is missing/)
   })
 })
+
+describe('a recolored icon saved as a component keeps its colors (YAZ-4350, extra 10)', () => {
+  it('the painted file and the recipe travel with it, through the real engine restore', async () => {
+    const { restoreElements } = await import('@excalidraw/excalidraw')
+    const { paintIcon, svgToDataURL, svgOfDataURL, iconSource } = await import('@excalidraw/element')
+    const original =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M0 0h24v24H0z"/></svg>'
+    const recipe = { colors: { currentColor: '#e03131' }, outline: { color: '#ffffff', width: 2 } }
+    const painted = paintIcon(original, recipe, 1)
+    const icon = {
+      ...(restoreElements([{ id: 'icon', type: 'image', fileId: 'painted', x: 0, y: 0, width: 26, height: 26 } as never], null)[0] as object),
+      customData: { yaseenIcon: recipe },
+    }
+    const files = { painted: { mimeType: 'image/svg+xml', id: 'painted', dataURL: svgToDataURL(painted), created: 1 } }
+
+    const captured = captureComponentSelection(fakeElementApi([icon]), fakeCanvas({ files }).api)
+    const canvas = fakeCanvas()
+    const realEngine = { restoreElements } as unknown as ComponentEngine
+    const [inserted] = insertComponent(realEngine, canvas.api, componentFragmentJson(captured)) as { fileId: string; customData: unknown }[]
+
+    expect(inserted.customData).toEqual({ yaseenIcon: recipe })
+    expect(inserted.fileId).toBe('painted')
+    const [added] = canvas.addFiles.mock.calls[0][0] as { id: string; dataURL: string }[]
+    const svg = svgOfDataURL(added.dataURL)
+    expect(svg).toContain('fill="#e03131"')
+    expect(svg).toContain('feMorphology')
+    expect(iconSource(svg)).toBe(original)
+  })
+})

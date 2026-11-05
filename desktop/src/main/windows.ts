@@ -266,6 +266,12 @@ export interface WindowManager extends WindowLookup {
   linkNotice(message: string): void
   /** A notice about ONE vault (YAZ-2677 S45): `link:notice` to each live window that shows `root`, held like any link push until its page listens. No window is raised, and none opens for it. */
   vaultNotice(root: string, message: string): void
+  /**
+   * A notice about the app (YAZ-4364: the library was copied): `link:notice` to the window focused last, else the first
+   * live one, held like any link push until its page listens. No window is raised, and none opens for it: with no
+   * live window yet (a launch), the notice waits for the first window that opens.
+   */
+  appNotice(message: string): void
   /** `link:ready` arrived from this renderer (wired in `ipc/window.ts`): it listens now, so the link pushes held for it go out (YAZ-2589 A2). */
   handleLinkReady(sender: { id: number }): void
   /** `app:flushed` arrived from this renderer (wired in `ipc/window.ts`): `clean` is its ack's `{ clean }` (YAZ-3737 D2). */
@@ -348,7 +354,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'raise' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'raise' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'appNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -588,6 +594,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
    * held until the renderer says `link:ready`; from then on the window has no entry here.
    */
   const heldLinks = new Map<number, Array<() => void>>()
+  /** App notices said while no window was live (`appNotice`): the first window that opens hears them. */
+  const waitingNotices: string[] = []
   /** The window each window's "Move to ▸" row lights up (YAZ-3091 D8), by source id. One at most per source. */
   const lit = new Map<string, string>()
   const glow = (id: string, on: boolean): void => {
@@ -668,6 +676,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     const unregister = register(win, id)
     live.set(id, win)
     heldLinks.set(wcId, [])
+    if (!hidden && !isFilesWindow(entry)) for (const message of waitingNotices.splice(0)) sendLink(win, CONTRACT.link.onNotice.channel, message)
     blurredSince.set(id, Date.now())
 
     let boundsTimer: ReturnType<typeof setTimeout> | null = null
@@ -1205,6 +1214,15 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       for (const [id, win] of live) {
         if (!win.isDestroyed() && entryOf(id)?.roots.includes(root) === true) sendLink(win, CONTRACT.link.onNotice.channel, message)
       }
+    },
+
+    appNotice(message) {
+      // A Files window and a hidden window (the tab board's) never show a notice.
+      const shows = (id: string | undefined): boolean => id !== undefined && !hiddenWins.has(id) && entryOf(id)?.kind !== 'files' && live.get(id)?.isDestroyed() === false
+      const id = [focusOrder[0], ...live.keys()].find(shows)
+      const win = id === undefined ? undefined : live.get(id)
+      if (win === undefined) waitingNotices.push(message)
+      else sendLink(win, CONTRACT.link.onNotice.channel, message)
     },
 
     handleLinkReady(sender) {

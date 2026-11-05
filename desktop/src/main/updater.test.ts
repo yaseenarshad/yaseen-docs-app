@@ -206,14 +206,14 @@ describe('check', () => {
     expect(existsSync(mount)).toBe(false)
   })
 
-  it('S9: a wrong sha256 → back to idle, the file is gone, and nothing is mounted', async () => {
+  it('S9: a wrong sha256 → back to idle (naming the version whose download failed, YAZ-4384), the file is gone, and nothing is mounted', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { updater, calls, states } = fake({ body: () => new TextEncoder().encode('tampered bytes') })
     await updater.check()
     await until(updater, 'idle')
     expect(String(error.mock.calls[0][0])).toContain('sha256')
     expect(existsSync(join(userData, 'update-refused'))).toBe(false) // a second download can succeed
-    expect(states).toEqual([{ kind: 'downloading', version: '1.0.13' }, { kind: 'idle' }])
+    expect(states).toEqual([{ kind: 'downloading', version: '1.0.13' }, { kind: 'idle', failed: '1.0.13' }])
     expect(calls.map(([f, a]) => `${f} ${a[0]}`)).toEqual(['/usr/bin/codesign -d']) // no hdiutil, no ditto
     expect(existsSync(join(userData, 'updates'))).toBe(false)
     error.mockRestore()
@@ -301,7 +301,7 @@ describe('check', () => {
     expect(signal?.aborted).toBe(true)
     await until(updater, 'idle')
     expect(String(error.mock.calls[0][0])).toContain('stalled')
-    expect(states.at(-1)).toEqual({ kind: 'idle' })
+    expect(states.at(-1)).toEqual({ kind: 'idle', failed: '1.0.13' })
     expect(existsSync(join(userData, 'updates'))).toBe(false)
     error.mockRestore()
   })
@@ -433,7 +433,7 @@ describe('notes (D5, D8, YAZ-2988 D13)', () => {
 
   it('a null name or body has a fallback', async () => {
     const { updater } = fake({ list: [{ ...release('v1.0.7'), name: null, body: null, published_at: null }] })
-    await expect(updater.notes()).resolves.toEqual({ current: '1.0.12', releases: [{ version: '1.0.7', title: 'v1.0.7', date: '', body: '' }] })
+    await expect(updater.notes()).resolves.toEqual({ current: '1.0.12', checks: true, releases: [{ version: '1.0.7', title: 'v1.0.7', date: '', body: '' }] })
   })
 
   it('rejects when GitHub cannot be reached (S18)', async () => {
@@ -470,6 +470,11 @@ describe('start (D7, S3, S7)', () => {
     await vi.advanceTimersByTimeAsync(10_000)
     expect(e2e.fetched).toEqual([`${FEED}/latest`])
     expect(e2e.updater.state()).toEqual({ kind: 'manual', version: '1.0.13' }) // an unpackaged run cannot replace itself (S13)
+    // YAZ-4371: the "What's new" sheet learns it from the notes, and offers no update in the dev run
+    // (the dev run reads the real feed's notes: here any URL answers an empty list)
+    const devNotes = fake({ overrides: { isPackaged: false, feed: undefined, fetch: async () => Response.json([]) } })
+    expect([dev.updater.checks, (await devNotes.updater.notes()).checks]).toEqual([false, false])
+    expect([e2e.updater.checks, (await e2e.updater.notes()).checks]).toEqual([true, true])
   })
 })
 

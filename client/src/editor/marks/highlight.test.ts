@@ -14,6 +14,9 @@ import type { Crepe } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import appCss from '../../app.css?inline'
+import tableCss from '../table/table.css?inline'
+import { hexOfRgb } from '../../lib/colour'
 import {
   caretIn,
   marksOn,
@@ -26,11 +29,16 @@ import {
   unmountAll,
 } from './markTestKit'
 import {
+  CUSTOM_WASH,
   HIGHLIGHT_COLORS,
+  HIGHLIGHT_HEX,
+  highlightColorsIn,
   highlightSchema,
   rangeHasHighlight,
+  removeHighlight,
   setHighlightCommand,
   type HighlightColor,
+  type HighlightName,
 } from './highlight'
 
 afterEach(unmountAll)
@@ -72,7 +80,7 @@ function lit(crepe: Crepe, color: HighlightColor): boolean {
   return crepe.editor.action((ctx) => rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), color))
 }
 
-/** Which of the four dots are lit, in swatch order — the toolbar's own `[null, ...HIGHLIGHT_COLORS]`. */
+/** Which colours are lit, in the order `[null, ...HIGHLIGHT_COLORS]` (yellow, then every named colour). */
 const litDots = (crepe: Crepe): HighlightColor[] =>
   ([null, ...HIGHLIGHT_COLORS] as HighlightColor[]).filter((c) => lit(crepe, c))
 
@@ -343,11 +351,12 @@ describe('highlight mark', () => {
 })
 
 describe('coloured highlights (YAZ-1480)', () => {
-  it('loads every `<mark class="highlight-…">` as its colour and saves identical bytes', async () => {
-    const letterFor: Record<Exclude<HighlightColor, null>, string> = { green: 'g', blue: 'b', pink: 'p' }
+  it('loads every `<mark class="highlight-…">` as its colour and saves identical bytes — the ▾ menu\'s four too (YAZ-4348 demo round 2)', async () => {
+    const letterFor: Record<HighlightName, string> = { green: 'g', blue: 'b', pink: 'p', orange: 'o', purple: 'u', red: 'r', gray: 'y' }
     const src = `${HIGHLIGHT_COLORS.map((c) => `<mark class="highlight-${c}">${letterFor[c]}</mark>`).join(' ')}\n`
     expect(src).toBe(
-      '<mark class="highlight-green">g</mark> <mark class="highlight-blue">b</mark> <mark class="highlight-pink">p</mark>\n',
+      '<mark class="highlight-green">g</mark> <mark class="highlight-blue">b</mark> <mark class="highlight-pink">p</mark> ' +
+        '<mark class="highlight-orange">o</mark> <mark class="highlight-purple">u</mark> <mark class="highlight-red">r</mark> <mark class="highlight-gray">y</mark>\n',
     )
     const { crepe, root } = await mount(src)
     for (const color of HIGHLIGHT_COLORS) {
@@ -355,7 +364,7 @@ describe('coloured highlights (YAZ-1480)', () => {
       expect(root.querySelector(`.milkdown mark.highlight-${color}`)?.textContent).toBe(letter)
       expect(colorOn(crepe, letter)).toBe(color)
     }
-    expect(markEls(root)).toEqual(['g', 'b', 'p'])
+    expect(markEls(root)).toEqual(['g', 'b', 'p', 'o', 'u', 'r', 'y'])
     expect(md(crepe)).toBe(src)
   })
 
@@ -589,5 +598,132 @@ describe('coloured highlights (YAZ-1480)', () => {
     selectText(crepe, 'world')
     expect(pressModShiftH(crepe)).toBe(true)
     expect(md(crepe)).toBe('hello world\n')
+  })
+})
+
+/**
+ * The custom colour (YAZ-4348 demo round 2): `color: '#rrggbb'`, on disk exactly
+ * `<mark style="background-color: #rrggbb">`. Only that spelling is the mark, so every other
+ * `<mark style>` keeps its bytes; the old forms read and write exactly as before.
+ */
+describe('custom highlights (YAZ-4348 demo round 2)', () => {
+  it('loads `<mark style="background-color: #rrggbb">` as that colour, paints its wash, and saves identical bytes', async () => {
+    const src = 'a <mark style="background-color: #ff8800">b</mark> c\n'
+    const { crepe, root } = await mount(src)
+    expect(colorOn(crepe, 'b')).toBe('#ff8800')
+    const el = root.querySelector<HTMLElement>('.milkdown mark')!
+    expect(el.textContent).toBe('b')
+    expect(el.getAttribute('data-highlight')).toBe('#ff8800')
+    // A see-through wash, as the named colours: the text keeps its own colour in both themes.
+    expect(el.style.backgroundColor).toBe(`rgba(255, 136, 0, ${CUSTOM_WASH})`)
+    expect(el.className).toBe('')
+    expect(md(crepe)).toBe(src)
+  })
+
+  it('round-trips inside bold, a list item and a heading, and beside the old forms, byte for byte', async () => {
+    const src =
+      '# Title <mark style="background-color: #123abc">h</mark>\n\n' +
+      '* **<mark style="background-color: #00ff7f">x</mark>** and ==yellow== and <mark class="highlight-green">green</mark>\n' +
+      '  * <u><mark style="background-color: #a0a0a0">child</mark></u>\n'
+    const { crepe } = await mount(src)
+    expect(marksOn(crepe, 'x')).toEqual(['highlight', 'strong'])
+    expect(colorOn(crepe, 'h')).toBe('#123abc')
+    expect(colorOn(crepe, 'x')).toBe('#00ff7f')
+    expect(colorOn(crepe, 'yellow')).toBe(null)
+    expect(colorOn(crepe, 'green')).toBe('green')
+    expect(colorOn(crepe, 'child')).toBe('#a0a0a0')
+    expect(md(crepe)).toBe(src)
+  })
+
+  it('every other spelling of a styled <mark> stays inline HTML with its bytes', async () => {
+    const src =
+      '<mark style="background-color: #FF8800">upper</mark> ' +
+      '<mark style="background-color:#ff8800">tight</mark> ' +
+      '<mark style="background-color: #f80">short</mark> ' +
+      '<mark style="background-color: red">named</mark> ' +
+      '<mark style="background-color: #ff8800;">semi</mark>\n'
+    const { crepe, root } = await mount(src)
+    for (const text of ['upper', 'tight', 'short', 'named', 'semi']) expect(colorOn(crepe, text)).toBe('none')
+    expect(root.querySelectorAll('.milkdown [data-type="html"]').length).toBe(10)
+    expect(md(crepe)).toBe(src)
+  })
+
+  it('a file with only the old forms saves exactly as before', async () => {
+    const src = '==a== <mark class="highlight-green">b</mark> <mark class="highlight-blue">c</mark> <mark class="highlight-pink">d</mark>\n'
+    const { crepe } = await mount(src)
+    expect(md(crepe)).toBe(src)
+  })
+
+  it('a custom colour toggles like a named one through the one command, and lights for its own value only', async () => {
+    const { crepe } = await mount('hello <mark style="background-color: #3366ff">world</mark>\n')
+    selectText(crepe, 'world')
+    expect(lit(crepe, '#3366ff')).toBe(true)
+    expect(lit(crepe, '#3366fe')).toBe(false)
+    expect(lit(crepe, 'blue')).toBe(false)
+    setHighlight(crepe, 'blue')
+    expect(md(crepe)).toBe('hello <mark class="highlight-blue">world</mark>\n')
+  })
+
+  it('Remove highlight takes every colour off the selection, and declines with nothing to remove', async () => {
+    const { crepe } = await mount('==a== <mark class="highlight-orange">b</mark> <mark style="background-color: #3366ff">c</mark> d\n')
+    const remove = () =>
+      crepe.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx)
+        return removeHighlight(highlightSchema.type(ctx))(view.state, view.dispatch)
+      })
+    selectAcross(crepe, 'a', 'd')
+    const colours = crepe.editor.action((ctx) => highlightColorsIn(ctx.get(editorViewCtx).state, highlightSchema.type(ctx)))
+    expect(new Set(colours)).toEqual(new Set([null, 'orange', '#3366ff']))
+    expect(remove()).toBe(true)
+    expect(md(crepe)).toBe('a b c d\n')
+    selectText(crepe, 'b')
+    expect(remove()).toBe(false)
+  })
+
+  it('pasted `<mark style="background-color: …">` HTML is a custom colour; the copy-out reads back as the same colour', async () => {
+    const paste = (view: EditorView, html: string) =>
+      view.pasteHTML(html, {
+        clipboardData: { getData: (t: string) => (t === 'text/html' ? html : '') },
+        preventDefault() {},
+      } as unknown as ClipboardEvent)
+    const { crepe, view } = await mount('\n')
+    paste(view, '<p>x <mark style="background-color: #00ff00">y</mark> z</p>')
+    expect(colorOn(crepe, 'y')).toBe('#00ff00')
+    expect(md(crepe)).toBe('x <mark style="background-color: #00ff00">y</mark> z\n')
+
+    selectText(crepe, 'y')
+    const out = view.serializeForClipboard(view.state.selection.content()).dom.innerHTML
+    expect(out).toContain('data-highlight="#00ff00"')
+    const again = await mount('\n')
+    paste(again.view, out)
+    expect(colorOn(again.crepe, 'y')).toBe('#00ff00')
+    expect(md(again.crepe)).toContain('<mark style="background-color: #00ff00">y</mark>')
+  })
+})
+
+/**
+ * Each colour's solid hue (`HIGHLIGHT_HEX`: the panel's Hex code value and where its Shades start) is the `rgb` of its
+ * app.css wash token, and the table's light fills for the same colours are those tokens (YAZ-4366): a CSS change
+ * that moved one would silently move the other.
+ */
+describe('the wash tokens (YAZ-4366)', () => {
+  /** A custom property of `:root` (the light theme). */
+  const rootVar = (css: string, name: string) => {
+    const root = css.slice(css.indexOf(':root'), css.indexOf("[data-theme='dark']"))
+    return new RegExp(`${name}:\\s*([^;]+);`).exec(root)![1].trim()
+  }
+  const token = (name: string) => (name === 'yellow' ? '--mark-bg' : `--mark-bg-${name}`)
+
+  it('each HIGHLIGHT_HEX value is the rgb of its --mark-bg token', () => {
+    for (const [name, hex] of Object.entries(HIGHLIGHT_HEX)) {
+      const rgba = /^rgba\((\d+), (\d+), (\d+), [\d.]+\)$/.exec(rootVar(appCss, token(name)))
+      expect(rgba, name).not.toBeNull()
+      expect(hexOfRgb(rgba!.slice(1, 4).map(Number)), name).toBe(hex)
+    }
+  })
+
+  it('the table\'s light fills of the shared colours are the highlight washes', () => {
+    const shared: Array<[string, string]> = [['yellow', 'yellow'], ['green', 'green'], ['blue', 'blue'], ['pink', 'pink'], ['orange', 'orange'], ['purple', 'purple'], ['red', 'red'], ['grey', 'gray']]
+    for (const [cell, mark] of shared) expect(rootVar(tableCss, `--table-fill-${cell}`), cell).toBe(`var(${token(mark)})`)
   })
 })
