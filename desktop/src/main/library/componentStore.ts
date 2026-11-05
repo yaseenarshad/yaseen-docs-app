@@ -37,6 +37,10 @@
  * answers each component that has another slug here (YAZ-4378), also when its bytes were already here under a number:
  * the old folder's favorites of it follow it there (`renameMovedComponents`), so a favorite keeps meaning the
  * component that was favorited.
+ *
+ * A SLUG THAT A FAVORITE HOLDS IS NOT FREE (YAZ-4366): a deleted component's favorite and its copy stay, by design. A
+ * new component (a save, or a copy in a move) on that slug would show its name on the old tile, while an add inserts
+ * the old copy and the new one never gets its own. So `save` and a move skip such a slug: the new "Logo" is `logo-2`.
  */
 import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
@@ -103,9 +107,17 @@ export interface ComponentStore {
   close(): Promise<void>
 }
 
-export function createComponentStore(initialFolder: string, deps: { now?: () => number; trash: (p: string) => Promise<void> }): ComponentStore {
+export interface ComponentStoreDeps {
+  now?: () => number
+  trash: (p: string) => Promise<void>
+  /** A favorite or a favorite's copy holds `component:<slug>` (`favoriteCopies.holds`); absent = none does. */
+  slugHeld?: (slug: string) => Promise<boolean>
+}
+
+export function createComponentStore(initialFolder: string, deps: ComponentStoreDeps): ComponentStore {
   const now = deps.now ?? Date.now
   const trash = deps.trash
+  const held = deps.slugHeld ?? (async () => false)
   const listeners = new Set<() => void>()
   const chain = createChain()
   let folder = initialFolder
@@ -230,6 +242,7 @@ export function createComponentStore(initialFolder: string, deps: { now?: () => 
       const candidate = n === 1 ? slug : uniqueComponentSlug(slug, taken)
       taken.add(candidate)
       const here = await readFile(fragmentPath(candidate)).catch(() => null)
+      if (here === null && (await held(candidate))) continue
       if (here === null) return isValidComponentSlug(candidate) ? { slug: candidate, n, here: false } : null
       if (here.equals(bytes)) return { slug: candidate, n, here: true }
     }
@@ -281,10 +294,17 @@ export function createComponentStore(initialFolder: string, deps: { now?: () => 
       const bytes = Buffer.from(preview.base64, 'base64')
       return mutate(async (index) => {
         const taken = new Set(index.items.map((item) => item.slug))
+        const base = slugForComponentName(name)
+        let free = uniqueComponentSlug(base, taken)
+        // A deleted component's favorite still holds its slug (YAZ-4366).
+        while (await held(free)) {
+          taken.add(free)
+          free = uniqueComponentSlug(base, taken)
+        }
         // `requireSlug`'s own rule, applied BEFORE anything is written: a name that only produces
         // an over-long slug is refused here rather than becoming a tile that can never be read,
         // previewed or deleted.
-        const slug = requireSlug(uniqueComponentSlug(slugForComponentName(name), taken))
+        const slug = requireSlug(free)
         const at = now()
         // The fragment's own bytes, as the renderer serialised them: a component IS an Excalidraw
         // document, and re-spelling it here would only make the two disagree.

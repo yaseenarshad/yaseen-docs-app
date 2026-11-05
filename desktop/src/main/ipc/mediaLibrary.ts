@@ -91,6 +91,7 @@ export function registerMediaLibraryIpc(store: Store, userData: string, deps: Me
   const media = createMediaStore(folder, { macId: deps.macId })
   const copies = createFavoriteCopies(folder, {
     favorites: () => media.favorites({ op: 'list' }),
+    removedKeys: async () => Object.keys((await media.used({ op: 'list' })).removed),
     hasPixabayKey: deps.hasPixabayKey ?? (async () => false),
     intervalMs: deps.copyIntervalMs,
     readComponent: deps.readComponent,

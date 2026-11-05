@@ -4,6 +4,7 @@
  * move. Then the local half through the providers: a search over every pack, and tiles and adds built from a pack.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -13,6 +14,29 @@ import type { MediaSearchResponse, StudioItem } from '@shared/types'
 import type { MediaCache } from './cache'
 import { createIconPacks, gitBlobSha, GITHUB_LIMIT_MESSAGE, newestTag, PACK_GZIP_RATIO, plannedBytes, sha256Of, visibleNames } from './iconPacks'
 import { createMediaProviders } from './providers'
+import { atomicWrite } from '../fs/fsUtils'
+
+/**
+ * The crash points (YAZ-4366): `beforeWrite` runs before each `atomicWrite` and may throw, as a crash there would stop
+ * the run; `renameFails` makes a `rename` fail as it does across two disks (EXDEV).
+ */
+const crash = vi.hoisted(() => ({ beforeWrite: null as ((file: string) => void) | null, renameFails: null as ((from: string, to: string) => boolean) | null, removed: null as string[] | null }))
+vi.mock('../fs/fsUtils', async (original) => {
+  const real = await original<typeof import('../fs/fsUtils')>()
+  return { ...real, atomicWrite: vi.fn(async (file: string, ...rest: [string | Uint8Array]) => (crash.beforeWrite?.(file), real.atomicWrite(file, ...rest))) }
+})
+vi.mock('node:fs/promises', async (original) => {
+  const real = await original<typeof import('node:fs/promises')>()
+  const rename = async (from: string, to: string) => {
+    if (crash.renameFails?.(String(from), String(to))) throw Object.assign(new Error('EXDEV: cross-device link not permitted'), { code: 'EXDEV' })
+    return real.rename(from, to)
+  }
+  const rm: typeof real.rm = async (file, options) => {
+    crash.removed?.push(path.basename(String(file)))
+    return real.rm(file, options)
+  }
+  return { ...real, default: { ...real, rename, rm }, rename, rm }
+})
 
 /** One pack file as `@iconify/json` has it. */
 const packFile = (prefix: string, names: string[], over: Record<string, unknown> = {}) =>
@@ -77,6 +101,10 @@ beforeEach(async () => {
   folder = await mkdtemp(path.join(tmpdir(), 'yd-icon-packs-'))
 })
 afterEach(async () => {
+  crash.beforeWrite = null
+  crash.renameFails = null
+  crash.removed = null
+  vi.mocked(atomicWrite).mockClear()
   await rm(folder, { recursive: true, force: true })
 })
 
@@ -361,6 +389,123 @@ describe('the download (round 2 decisions 4 and 8)', () => {
   })
 })
 
+describe('crash and data safety (YAZ-4366)', () => {
+  /** The manifest on disk now, as a new main would read it. */
+  const diskManifest = (dir = folder) => JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8')) as { packs: Record<string, { sha: string; parts?: number }> }
+
+  it('an update that stops between its files never leaves the manifest naming a mixed pack', async () => {
+    const split = { above: 1000, part: 600 }
+    const v1 = { big: packFile('big', Array.from({ length: 40 }, (_, i) => `icon-${i}`)), mdi: V1.mdi }
+    const v2 = { big: packFile('big', Array.from({ length: 90 }, (_, i) => `icon-${i}`)), mdi: V1.mdi }
+    await createIconPacks({ folder, fetch: network({ '2.2.1': v1 }).fetch, split }).download()
+    // The crash point: the new parts and main file are written, the names file is next.
+    let atCrash: ReturnType<typeof diskManifest> | null = null
+    crash.beforeWrite = (file) => {
+      if (path.basename(file) !== 'big.names.gz') return
+      atCrash = diskManifest()
+      throw new Error('the Mac lost power')
+    }
+    const updater = createIconPacks({ folder, fetch: network({ '2.2.1': v1, '2.2.2': v2 }).fetch, split })
+    const after = await updater.check()
+    crash.beforeWrite = null
+    // What a crash there leaves: the manifest does not name the pack whose files are half old, half new.
+    expect(atCrash).not.toBeNull()
+    expect(atCrash!.packs.big).toBeUndefined()
+    // The run that saw the failure agrees with the disk: the pack is not on the Mac, and nothing reads its files.
+    expect(after).toMatchObject({ state: 'partial', packs: 1, failed: true })
+    expect(updater.has('big')).toBe(false)
+    expect(diskManifest().packs.big).toBeUndefined()
+    // A new main reads no mixed pack; "Download the rest" brings the new version whole.
+    const restarted = createIconPacks({ folder, fetch: network({ '2.2.1': v1, '2.2.2': v2 }).fetch, split })
+    expect(await restarted.status()).toMatchObject({ state: 'partial' })
+    expect(await restarted.download()).toMatchObject({ state: 'complete' })
+    for (let n = 0; n < 90; n++) expect(await restarted.svg(`big:icon-${n}`)).toContain(`<path d="big-icon-${n}"/>`)
+  })
+
+  it('a move across two disks writes each copy durably before the old file goes', async () => {
+    const from = path.join(folder, 'from')
+    const next = path.join(folder, 'next')
+    const packs = createIconPacks({ folder: from, fetch: network({ '2.2.1': V1 }).fetch })
+    await packs.download()
+    // Across two disks a rename fails with EXDEV, so every pack file is copied.
+    crash.renameFails = (src, dst) => path.dirname(src) === from && path.dirname(dst) === next
+    vi.mocked(atomicWrite).mockClear()
+    expect(await packs.moveTo(next)).toMatchObject({ state: 'complete', folder: next, packs: 3 })
+    // Each copy went through `atomicWrite` (fsynced before its rename), so a power loss after the old file went
+    // cannot leave the only copy unflushed.
+    const durable = vi.mocked(atomicWrite).mock.calls.map(([file]) => path.relative(next, file))
+    for (const file of ['mdi.json.gz', 'mdi.names.gz', 'noto.json.gz', 'noto.names.gz', 'tabler.json.gz', 'tabler.names.gz', 'manifest.json']) expect(durable).toContain(file)
+    expect(existsSync(from)).toBe(false)
+    expect(await packs.svg('mdi:home')).toContain('mdi-home')
+  })
+
+  it('a folder on a drive that is gone fails plainly, and makes nothing on the boot disk', async () => {
+    const drive = path.join(folder, 'Volumes', 'Icons')
+    const packs = createIconPacks({ folder: path.join(drive, 'icon-packs'), fetch: network({ '2.2.1': V1 }).fetch })
+    const done = await packs.download()
+    expect(done).toMatchObject({ state: 'none', failed: true, message: `The icon packs folder is not there: ${path.join(drive, 'icon-packs')}. Connect its drive, or choose another folder in Settings.` })
+    expect(existsSync(path.join(folder, 'Volumes'))).toBe(false)
+    // The drive is back: Try again downloads (a failed manifest write does not block the next one).
+    await mkdir(drive, { recursive: true })
+    expect(await packs.download()).toMatchObject({ state: 'complete', failed: false })
+
+    // A move to a folder on a gone drive: the packs stay, and nothing is made there.
+    const here = createIconPacks({ folder: path.join(folder, 'here'), fetch: network({ '2.2.1': V1 }).fetch })
+    await here.download()
+    await rm(path.join(folder, 'Volumes'), { recursive: true })
+    const moved = await here.moveTo(path.join(drive, 'icon-packs'))
+    expect(moved).toMatchObject({ state: 'complete', folder: path.join(folder, 'here'), failed: true })
+    expect(moved.message).toBe(`The icon packs folder is not there: ${path.join(drive, 'icon-packs')}. The icon packs stay in ${path.join(folder, 'here')}.`)
+    expect(existsSync(path.join(folder, 'Volumes'))).toBe(false)
+  })
+
+  it('"Check for new icons" saves the manifest without a pack that left before it removes that pack`s files', async () => {
+    await createIconPacks({ folder, fetch: network({ '2.2.1': V1 }).fetch }).download()
+    // At the first manifest write of the check, a crash: whatever the manifest on disk names must still be whole.
+    let named: string[] | null = null
+    let missing: string[] = []
+    crash.beforeWrite = (file) => {
+      if (path.basename(file) !== 'manifest.json' || named !== null) return
+      named = Object.keys(diskManifest().packs)
+      missing = named.filter((prefix) => !existsSync(path.join(folder, `${prefix}.json.gz`)) || !existsSync(path.join(folder, `${prefix}.names.gz`)))
+    }
+    const v2 = { mdi: V1.mdi, noto: V1.noto }
+    expect(await createIconPacks({ folder, fetch: network({ '2.2.1': V1, '2.2.2': v2 }).fetch }).check()).toMatchObject({ state: 'complete', packs: 2 })
+    expect(named).toContain('tabler')
+    expect(missing).toEqual([])
+    expect((await readdir(folder)).filter((f) => f.startsWith('tabler'))).toEqual([])
+  })
+
+  it('Remove also takes the parts and tmp files a stopped first download left, so the folder goes', async () => {
+    // tabler fails from both sources: planned, never stored.
+    const net = network({ '2.2.1': V1 })
+    const fetchBoth = (async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith('/tabler.json') ? new Response('down', { status: 500 }) : net.fetch(input, init)) as typeof globalThis.fetch
+    const partial = await createIconPacks({ folder, fetch: fetchBoth }).download()
+    expect(partial).toMatchObject({ state: 'partial', packs: 2 })
+    // What a stop or a crash in a split pack's first download leaves: its first parts, and a tmp file of a write.
+    await writeFile(path.join(folder, 'tabler.part-0.json.gz'), 'part')
+    await writeFile(path.join(folder, 'tabler.part-1.json.gz.tmp-0123456789ab'), 'tmp')
+    await writeFile(path.join(folder, 'manifest.json.tmp-0123456789ab'), 'tmp')
+    await writeFile(path.join(folder, 'my-notes.txt'), 'mine')
+    expect(await createIconPacks({ folder, fetch: fetchBoth }).remove()).toMatchObject({ state: 'none' })
+    expect(await readdir(folder)).toEqual(['my-notes.txt'])
+    await rm(path.join(folder, 'my-notes.txt'))
+    expect(await createIconPacks({ folder, fetch: fetchBoth }).remove()).toMatchObject({ state: 'none' })
+    expect(existsSync(folder)).toBe(false)
+  })
+
+  it('Remove takes the manifest first: a crash on the way leaves no manifest that names a pack with no files', async () => {
+    await createIconPacks({ folder, fetch: network({ '2.2.1': V1 }).fetch }).download()
+    const packs = createIconPacks({ folder, fetch: network({ '2.2.1': V1 }).fetch })
+    await packs.status()
+    crash.removed = []
+    await packs.remove()
+    expect(crash.removed[0]).toBe('manifest.json')
+    expect(crash.removed).toContain('mdi.json.gz')
+  })
+})
+
 describe('the packs answer search, tiles and adds (decision 5)', () => {
   function memoryCache(): MediaCache {
     const store = new Map<string, unknown>()
@@ -414,12 +559,26 @@ describe('the packs answer search, tiles and adds (decision 5)', () => {
     await expect(providers.preview({ provider: 'iconify', id: 'lucide:arrow' })).rejects.toMatchObject({ code: 'OFFLINE' })
   })
 
+  it('a search after "Check for new icons" finds the new names, not the matches kept from before (YAZ-4366)', async () => {
+    const versions: Record<string, Record<string, string>> = { '2.2.1': V1 }
+    const packs = createIconPacks({ folder, fetch: network(versions).fetch })
+    await packs.download()
+    const providers = createMediaProviders({ fetch: network({}).fetch, readPixabayKey: async () => null, cache: memoryCache(), packs })
+    expect(ids(await providers.search({ q: 'arrow', source: 'iconify' }))).toContain('mdi:arrow-left')
+    versions['2.2.2'] = { ...V1, mdi: packFile('mdi', ['arrow-down', 'home']) }
+    expect(await packs.check()).toMatchObject({ state: 'complete', version: '2.2.2' })
+    const after = ids(await providers.search({ q: 'arrow', source: 'iconify' }))
+    expect(after).toContain('mdi:arrow-down')
+    expect(after).not.toContain('mdi:arrow-left')
+  })
+
   it("a favorite's own copy (YAZ-4363) answers before the pack; with no copy, the pack answers", async () => {
     const { packs, offline } = await withPacks()
     const copyImage = { mimeType: 'image/svg+xml', dataURL: 'data:image/svg+xml;base64,Y29weQ==' }
     const copyItem = { itemKey: 'iconify:tabler:star', provider: 'iconify', providerId: 'tabler:star' } as StudioItem
     const has = (id: string) => id === 'tabler:star'
     const favoriteCopy = {
+      find: vi.fn(async ({ id }: { id: string }) => (has(id) ? { mimeType: copyImage.mimeType, size: 4 } : null)),
       preview: vi.fn(async ({ id }: { id: string }) => (has(id) ? copyImage : null)),
       import: vi.fn(async ({ id }: { id: string }) => (has(id) ? { ...copyImage, item: copyItem } : null)),
     }

@@ -20,6 +20,8 @@
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { mkdirLeaf } from '../fs/fsUtils'
+import type { AppState } from '@shared/types'
 import type { Store } from '../store'
 
 /** The folder's name under the settings folder, or under userData, when the setting is null. */
@@ -32,13 +34,25 @@ export function resolveLibraryFolder(setting: string | null, userData: string, s
 }
 
 /**
+ * The folder for one state of the store (YAZ-4366): the media and component stores and the library move each follow
+ * the setting, and the look at the settings folder is a sync `stat` on the main thread for each settings write, also
+ * during a drag. So each state is resolved once; the next state looks again, so a drive that went is still seen.
+ */
+const resolved = new WeakMap<object, { userData: string; folder: string }>()
+export function libraryFolderOf(state: Pick<AppState, 'settings' | 'settingsFolder'>, userData: string, exists?: (dir: string) => boolean): string {
+  const known = resolved.get(state)
+  if (known !== undefined && known.userData === userData) return known.folder
+  const folder = resolveLibraryFolder(state.settings.libraryFolder, userData, state.settingsFolder, exists)
+  resolved.set(state, { userData, folder })
+  return folder
+}
+
+/**
  * Make the library folder (and `sub` inside it) for a write, but never a parent of it that is missing (YAZ-4383): a
  * settings folder or a drive that is gone fails the write with ENOENT, and does not come back as a stray empty copy.
  */
 export async function makeLibraryDir(library: string, sub?: string): Promise<void> {
-  await mkdir(library).catch((err: NodeJS.ErrnoException) => {
-    if (err.code !== 'EEXIST') throw err
-  })
+  await mkdirLeaf(library)
   if (sub !== undefined) await mkdir(join(library, sub), { recursive: true })
 }
 
@@ -48,10 +62,9 @@ export async function makeLibraryDir(library: string, sub?: string): Promise<voi
  * change of the library, since what a window can offer is different now.
  */
 export function followLibraryFolder(store: Pick<Store, 'get' | 'onChange'>, userData: string, moved: (folder: string) => void): string {
-  const { settings, settingsFolder } = store.get()
-  let folder = resolveLibraryFolder(settings.libraryFolder, userData, settingsFolder)
+  let folder = libraryFolderOf(store.get(), userData)
   store.onChange((state) => {
-    const next = resolveLibraryFolder(state.settings.libraryFolder, userData, state.settingsFolder)
+    const next = libraryFolderOf(state, userData)
     if (next === folder) return
     folder = next
     moved(next)

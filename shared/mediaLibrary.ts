@@ -101,7 +101,7 @@ export function sanitizeMediaLibrary(raw: unknown): MediaLibraryFile | null {
   const list = (rows: unknown, cap: number) => cleanList(rows, normalizeStoredMediaItem, (item) => item.itemKey, cap)
   // A library from before YAZ-4157 has no `used`: it reads as none, and nothing else changes.
   const used = cleanList(raw.used, normalizeUsedItem, (item) => item.itemKey, MAX_MEDIA_USED)
-  return { version: 1, favorites: list(raw.favorites, Infinity), recent: list(raw.recent, RECENT_LIMIT), used, removed: cleanRemoved(raw.removed) }
+  return { version: 1, favorites: list(raw.favorites, Infinity), recent: list(raw.recent, RECENT_LIMIT), used, removed: cleanRemoved(raw.removed, Infinity) }
 }
 
 /** The web app's `addFavorite`: a new key goes to the head, an existing one changes nothing. Nothing falls off (YAZ-4363). */
@@ -129,7 +129,8 @@ export function removeFavorite(lib: MediaLibraryFile, itemKey: string, now: numb
     ...lib,
     favorites: lib.favorites.filter((f) => f !== row),
     used: lib.used.map((u) => (u.itemKey === itemKey ? { ...u, count: 0, updatedAt: after(now, u.updatedAt) } : u)),
-    removed: cleanRemoved({ ...lib.removed, [itemKey]: after(now, row.updatedAt, lib.removed[itemKey]) }),
+    // Not capped here: the next read's merge caps it, and knows which old notes still hold a favorite back.
+    removed: { ...lib.removed, [itemKey]: after(now, row.updatedAt, lib.removed[itemKey]) },
   }
 }
 
@@ -200,11 +201,14 @@ export const MEDIA_FILE_RE = /^media-[0-9a-z]{12}\.json$/
 
 export const mediaFileName = (macId: string): string => `media-${macId}.json`
 
-/** `removed` as the file holds it: a bad entry drops; the newest `MAX_MEDIA_REMOVED` stay. */
-function cleanRemoved(raw: unknown): Record<string, number> {
+/**
+ * `removed` without a bad entry, newest first: the newest `cap`, and every note in `held` past the cap. A file is read
+ * whole (`Infinity`); the merge caps (YAZ-4366).
+ */
+function cleanRemoved(raw: unknown, cap: number, held: ReadonlySet<string> = new Set()): Record<string, number> {
   if (!isRecord(raw)) return {}
   const rows = Object.entries(raw).filter((e): e is [string, number] => e[0] !== '' && isFiniteNumber(e[1]))
-  return Object.fromEntries(rows.sort((a, b) => b[1] - a[1]).slice(0, MAX_MEDIA_REMOVED))
+  return Object.fromEntries(rows.sort((a, b) => b[1] - a[1]).filter(([key], i) => i < cap || held.has(key)))
 }
 
 /** Per itemKey the row with the newest `updatedAt` (a tie keeps the one seen first), newest first, capped. */
@@ -228,19 +232,24 @@ function newestRows<T extends StoredMediaItem>(lists: readonly (readonly T[])[],
  * Every Mac's file as ONE library (decision 2). Per itemKey the newest `updatedAt` wins. A removal is kept in
  * `removed` (itemKey → when), so a merge does not bring back a favorite that is older than its removal; a favorite
  * added again after it is newer, and stays. The first library wins a tie: the caller puts this Mac's own file first.
- * One library is answered as it is.
+ *
+ * The newest `MAX_MEDIA_REMOVED` notes stay, and past the cap every note that still holds back a favorite of an input
+ * (YAZ-4366): the old `media.json` and the file of a Mac that no longer runs are never written again, so the favorite
+ * they hold would come back the day its note dropped. One library within the cap is answered as it is.
  */
 export function mergeMediaLibraries(libs: readonly MediaLibraryFile[]): MediaLibraryFile {
   if (libs.length === 0) return EMPTY_MEDIA_LIBRARY
-  if (libs.length === 1) return libs[0]
+  if (libs.length === 1 && Object.keys(libs[0].removed).length <= MAX_MEDIA_REMOVED) return libs[0]
   const removed: Record<string, number> = {}
   for (const lib of libs) for (const [key, at] of Object.entries(lib.removed)) if (!(at <= (removed[key] ?? -Infinity))) removed[key] = at
+  const isRemoved = (row: StoredMediaItem) => row.updatedAt <= (removed[row.itemKey] ?? -Infinity)
+  const held = new Set(libs.flatMap((l) => l.favorites.filter(isRemoved).map((row) => row.itemKey)))
   return {
     version: 1,
-    favorites: newestRows(libs.map((l) => l.favorites), Infinity, (row) => !(row.updatedAt <= (removed[row.itemKey] ?? -Infinity))),
+    favorites: newestRows(libs.map((l) => l.favorites), Infinity, (row) => !isRemoved(row)),
     recent: newestRows(libs.map((l) => l.recent), RECENT_LIMIT),
     used: newestRows(libs.map((l) => l.used), MAX_MEDIA_USED),
-    removed: cleanRemoved(removed),
+    removed: cleanRemoved(removed, MAX_MEDIA_REMOVED, held),
   }
 }
 

@@ -1,7 +1,8 @@
 /**
- * THE IMAGE STUDIO'S THREE DOORS (🔒 YAZ-1775 D4, YAZ-1818): `media:search`, `media:preview`,
- * `media:import`. The guard layer only — every decision is `main/media/`'s, every request is
- * validated whole here first, because a sandboxed renderer's arguments are input.
+ * THE IMAGE STUDIO'S DOORS (🔒 YAZ-1775 D4, YAZ-1818): `media:search`, `media:preview`, `media:import`, the
+ * Excalidraw libraries' `media:drawing-index` and `media:drawing`, `media:pack-list` and `media:packs`. The guard
+ * layer only — every decision is `main/media/`'s, every request is validated whole here first, because a sandboxed
+ * renderer's arguments are input.
  *
  * WHY THE SECRETS INSTANCE IS PASSED IN: `registerSecretsIpc` owns `userData/secrets.json` and
  * returns the one object that can `read` it. Threading it here is what lets the providers build a

@@ -14,7 +14,9 @@
  * packs that Iconify hides (`collections.json` at the tag) are left out: its search never searches them (YAZ-4384).
  *
  * ON DISK: `<prefix>.json.gz` (the pack, Node's own gzip) and `<prefix>.names.gz` (its visible names, one a line), each
- * written with `atomicWrite`, then `manifest.json`. A pack counts only once the manifest names it, so a crash or a Stop
+ * written with `atomicWrite`, then `manifest.json`. A pack counts only once the manifest names it, and the manifest
+ * names only whole packs (YAZ-4366): an update first saves a manifest without the pack, then writes over its files;
+ * a pack that leaves goes from the manifest before its files go; Remove takes the manifest first. So a crash or a Stop
  * in the middle never leaves half a pack. The manifest keeps the plan, so "Download the rest" asks GitHub nothing.
  * Both hashes are computed from the bytes, so "Check for new icons" compares with whichever source answers, and
  * downloads only the packs whose hash changed.
@@ -25,7 +27,7 @@
  * Electron-free: the folder, `fetch` and the clock come in as arguments.
  */
 import { createHash } from 'node:crypto'
-import { mkdir, readdir, readFile, rename, rm, rmdir, copyFile, stat } from 'node:fs/promises'
+import { readdir, readFile, rename, rm, rmdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { gunzip, gzip } from 'node:zlib'
 import { promisify } from 'node:util'
@@ -36,8 +38,10 @@ import {
   type IconPackInfo,
   type IconPacksStatus,
 } from '@shared/iconPacks'
-import { atomicWrite } from '../fs/fsUtils'
-import { iconSvg, type IconifySetData } from './iconifyBatch'
+import { compareVersions } from '@shared/versions'
+import { isAtomicTmp } from '@shared/fileKind'
+import { atomicWrite, mkdirLeaf } from '../fs/fsUtils'
+import { iconSvg, MAX_ALIAS_DEPTH, type IconifySetData } from './iconifyBatch'
 import { COLOR_COLLECTION_PRIORITY } from './curation'
 
 const gzipAsync = promisify(gzip)
@@ -53,11 +57,15 @@ export const GITHUB_RAW = 'https://raw.githubusercontent.com/iconify/icon-sets'
 export const UNPKG = 'https://unpkg.com/@iconify/json'
 const USER_AGENT = 'Yaseen Docs Image Studio'
 
-/** The biggest pack today (`fluent-emoji`, measured 2026-11-03) is 99 MB of JSON; more than this is not one. */
+/**
+ * More than this is not a pack. The biggest visible pack (`noto` at 2.2.553, measured 2026-11-04 from GitHub's tree) is
+ * 24 MB of JSON; the biggest file, `fluent-emoji` (99 MB), is hidden and never downloads (YAZ-4384).
+ */
 export const MAX_PACK_BYTES = 256 * 1024 * 1024
 /**
  * A pack bigger than this is stored in parts (`<prefix>.part-<n>.json.gz`, each about `PART_BYTES` of icons; its
- * aliases and box stay in `<prefix>.json.gz`), so a tile opens one part, never 99 MB, and the memory bound holds.
+ * aliases and box stay in `<prefix>.json.gz`), so a tile opens one part, never a whole 24 MB pack, and the memory
+ * bound holds. At 2.2.553 only `noto` is this big (4 parts).
  */
 export const SPLIT_BYTES = 16 * 1024 * 1024
 export const PART_BYTES = 8 * 1024 * 1024
@@ -135,16 +143,11 @@ const emptyManifest = (): IconPacksManifest => ({ version: 1, tag: null, source:
 export const gitBlobSha = (bytes: Uint8Array): string => createHash('sha1').update(`blob ${bytes.byteLength}\0`).update(bytes).digest('hex')
 export const sha256Of = (bytes: Uint8Array): string => `sha256-${createHash('sha256').update(bytes).digest('base64')}`
 
-/** The newest version among tag names, by number (`2.2.99` < `2.2.553`). */
+/** The newest version among tag names, by number (`2.2.99` < `2.2.553`); a name that is not a version is not one. */
 export function newestTag(names: readonly string[]): string | null {
-  const parts = (name: string) => name.replace(/^v/, '').split('.').map((n) => Number(n))
   const numeric = names.filter((name) => /^v?\d+(\.\d+)*$/.test(name))
   if (numeric.length === 0) return null
-  return numeric.reduce((best, name) => {
-    const [a, b] = [parts(name), parts(best)]
-    for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0) ? name : best
-    return best
-  })
+  return numeric.reduce((best, name) => (compareVersions(name, best) > 0 ? name : best))
 }
 
 /** A stored manifest, part by part: a pack entry that does not read is dropped (its files are fetched again). */
@@ -173,20 +176,24 @@ export function parseManifest(raw: unknown): IconPacksManifest {
 export const isCurrent = (stored: StoredPack | undefined, planned: PlannedPack): boolean =>
   stored !== undefined && (planned.sha !== null ? stored.sha === planned.sha : planned.sha256 !== null ? stored.sha256 === planned.sha256 : stored.bytes === planned.size)
 
-/** What a pack's own `info` says, in the app's words. */
-export function packInfo(prefix: string, data: Record<string, unknown>, iconCount: number): IconPackInfo {
-  const info = (typeof data.info === 'object' && data.info !== null ? data.info : {}) as Record<string, unknown>
+/**
+ * A pack's facts in the app's words, from Iconify's info about it: a pack file's own `info`, or its row of the API's
+ * `/collections` (the same shape). `iconCount` is the total when the info has none.
+ */
+export function packInfo(prefix: string, raw: unknown, iconCount: number): IconPackInfo {
+  const info = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
   const license = (typeof info.license === 'object' && info.license !== null ? info.license : {}) as Record<string, unknown>
+  const text = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null)
   const out: IconPackInfo = {
     prefix,
-    name: typeof info.name === 'string' && info.name.trim() !== '' ? info.name : prefix,
-    total: typeof info.total === 'number' ? info.total : iconCount,
-    license: { title: typeof license.title === 'string' ? license.title : typeof license.spdx === 'string' ? license.spdx : 'Open source' },
+    name: text(info.name) ?? prefix,
+    total: typeof info.total === 'number' && Number.isFinite(info.total) ? info.total : iconCount,
+    license: { title: text(license.title) ?? text(license.spdx) ?? 'Open source' },
     palette: info.palette === true,
   }
-  if (typeof license.spdx === 'string') out.license.spdx = license.spdx
-  if (typeof license.url === 'string') out.license.url = license.url
-  if (typeof info.category === 'string') out.category = info.category
+  if (text(license.spdx) !== null) out.license.spdx = license.spdx as string
+  if (text(license.url) !== null) out.license.url = license.url as string
+  if (text(info.category) !== null) out.category = info.category as string
   return out
 }
 
@@ -203,6 +210,28 @@ class PackFailure extends Error {}
 class GithubLimit extends Error {}
 /** The machine reached nothing. */
 class Unreachable extends Error {}
+/** The packs' folder cannot be made: its parent is gone (a drive that is out, a folder moved away). Its message is the folder. */
+class FolderGone extends Error {}
+
+/** Make the packs' folder, but never a missing parent (YAZ-4366): a drive that is out fails, not the boot disk filling. */
+async function makeFolder(dir: string): Promise<void> {
+  try {
+    await mkdirLeaf(dir)
+  } catch (cause) {
+    throw (cause as NodeJS.ErrnoException).code === 'ENOENT' ? new FolderGone(dir) : cause
+  }
+}
+const folderGoneText = (dir: string): string => `The icon packs folder is not there: ${dir}.`
+
+/** A copy whose bytes are on the disk (fsynced) before it takes its name: across two disks the source goes after it. */
+const copyDurable = async (from: string, to: string): Promise<void> => void (await atomicWrite(to, await readFile(from)))
+
+/** A file a pack run writes: a pack's file of a known prefix, or a tmp file of one or of the manifest. */
+function isRunFile(name: string, prefixes: ReadonlySet<string>): boolean {
+  const base = isAtomicTmp(name) ? name.slice(0, name.lastIndexOf('.tmp-')) : name
+  const match = /^([a-z0-9-]+)\.(?:json|names|part-\d+\.json)\.gz$/.exec(base)
+  return base === MANIFEST_FILE || (match !== null && prefixes.has(match[1]))
+}
 
 export interface IconPacksDeps {
   folder: string
@@ -283,16 +312,25 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
   }
   const tell = () => onStatus?.(status())
 
-  /** The manifest, written after each pack. Writes queue: each one writes the manifest as it is THEN. */
+  /** The packs whose files an update is writing over: the manifest on disk leaves them out until they are whole. */
+  const rewriting = new Set<string>()
+  /**
+   * The manifest, written after each pack. Writes queue: each one writes the manifest as it is THEN. A write that
+   * failed fails only its caller; the next one still runs.
+   */
   let writing: Promise<void> = Promise.resolve()
   function saveManifest(): Promise<void> {
     const at = folder
     // The folder first: the default one does not exist before the first download, nor a chosen one that was emptied.
-    writing = writing.then(async () => {
-      await mkdir(at, { recursive: true })
-      await atomicWrite(join(at, MANIFEST_FILE), JSON.stringify(manifest))
-    })
-    return writing
+    const next = writing
+      .catch(() => undefined)
+      .then(async () => {
+        await makeFolder(at)
+        const packs = rewriting.size === 0 ? manifest.packs : Object.fromEntries(Object.entries(manifest.packs).filter(([prefix]) => !rewriting.has(prefix)))
+        await atomicWrite(join(at, MANIFEST_FILE), JSON.stringify({ ...manifest, packs }))
+      })
+    writing = next
+    return next
   }
 
   // ---------- The network ----------
@@ -445,6 +483,7 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
     const github = `${GITHUB_RAW}/${encodeURIComponent(tag)}/json/${prefix}.json`
     const unpkg = `${UNPKG}@${encodeURIComponent(tag)}/json/${prefix}.json`
     let bytes: Uint8Array | null = null
+    let hashes = { sha: '', sha256: '' }
     let lastError: Error = new PackFailure(`${prefix} did not download`)
     for (const url of source === 'github' ? [github, unpkg] : [unpkg, github]) {
       try {
@@ -453,11 +492,14 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
           lastError = new PackFailure(`${prefix}: the server answered ${got.status}`)
           continue
         }
-        if ((plannedPack.sha !== null && gitBlobSha(got.bytes) !== plannedPack.sha) || (plannedPack.sha256 !== null && sha256Of(got.bytes) !== plannedPack.sha256)) {
+        // Both hashes once: one checks the file, and the manifest keeps both (a pack is up to 256 MB).
+        const sums = { sha: gitBlobSha(got.bytes), sha256: sha256Of(got.bytes) }
+        if ((plannedPack.sha !== null && sums.sha !== plannedPack.sha) || (plannedPack.sha256 !== null && sums.sha256 !== plannedPack.sha256)) {
           lastError = new PackFailure(`${prefix} did not match its checksum`)
           continue
         }
         bytes = got.bytes
+        hashes = sums
         break
       } catch (cause) {
         if (signal.aborted) throw cause
@@ -480,14 +522,29 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
     const main = parts > 0 ? Buffer.from(JSON.stringify({ ...data, icons: {} }), 'utf8') : bytes
     const [json, list, ...pieces] = await Promise.all([gzipAsync(main), gzipAsync(Buffer.from(visible.join('\n'), 'utf8')), ...buckets.map((icons) => gzipAsync(Buffer.from(JSON.stringify({ icons }), 'utf8')))])
     if (signal.aborted) return
-    await mkdir(folder, { recursive: true })
-    for (const [n, piece] of pieces.entries()) await atomicWrite(join(folder, `${prefix}.part-${n}.json.gz`), piece)
-    await atomicWrite(fileOf(prefix, 'json'), json)
-    await atomicWrite(fileOf(prefix, 'names'), list)
+    await makeFolder(folder)
     const before = manifest.packs[prefix]
-    manifest.packs[prefix] = { sha: gitBlobSha(bytes), sha256: sha256Of(bytes), bytes: bytes.byteLength, stored: [json, list, ...pieces].reduce((sum, b) => sum + b.byteLength, 0), info: packInfo(prefix, data, visible.length) }
+    // An update writes over files the manifest names, so the manifest on disk leaves the pack out first (YAZ-4366): a
+    // crash between the writes loses the pack, never mixes two versions under the old `parts`. Search and tiles keep
+    // the old version in memory until the new one is whole.
+    if (before !== undefined) {
+      rewriting.add(prefix)
+      await saveManifest()
+    }
+    try {
+      for (const [n, piece] of pieces.entries()) await atomicWrite(join(folder, `${prefix}.part-${n}.json.gz`), piece)
+      await atomicWrite(fileOf(prefix, 'json'), json)
+      await atomicWrite(fileOf(prefix, 'names'), list)
+    } catch (cause) {
+      // Half written: the pack is not on the Mac any more, here as in the manifest on disk.
+      forget(prefix)
+      throw cause
+    } finally {
+      rewriting.delete(prefix)
+    }
+    manifest.packs[prefix] = { ...hashes, bytes: bytes.byteLength, stored: [json, list, ...pieces].reduce((sum, b) => sum + b.byteLength, 0), info: packInfo(prefix, data.info, visible.length) }
     if (parts > 0) manifest.packs[prefix].parts = parts
-    for (const key of [...open.keys()]) if (key === prefix || key.startsWith(`${prefix}#`)) open.delete(key)
+    closePack(prefix)
     await saveManifest()
     // An update with fewer parts than before: the old extra parts go.
     for (let n = parts; n < (before?.parts ?? 0); n++) await rm(join(folder, `${prefix}.part-${n}.json.gz`), { force: true })
@@ -500,30 +557,38 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
     const source = manifest.source ?? 'github'
     let failed = 0
     let firstError: Error | null = null
+    /** The folder went (its drive is out): every pack would fail the same way, so the run ends and says so. */
+    let gone: FolderGone | null = null
     let next = 0
     const worker = async () => {
-      while (next < todo.length && !signal.aborted) {
+      while (next < todo.length && !signal.aborted && gone === null) {
         const prefix = todo[next++]
         try {
           await downloadPack(prefix, tag, source, manifest.plan[prefix], signal)
           tell()
         } catch (cause) {
           if (signal.aborted) return
+          if (cause instanceof FolderGone) gone = cause
           failed++
           firstError ??= cause as Error
         }
       }
     }
     await Promise.all(Array.from({ length: DOWNLOAD_CONCURRENCY }, worker))
+    if (gone !== null) throw gone
     return { failed, firstError }
   }
 
-  /** Files of a pack that left the plan, and their manifest entry. */
-  async function dropPack(prefix: string): Promise<void> {
-    const parts = manifest.packs[prefix]?.parts ?? 0
-    delete manifest.packs[prefix]
+  /** A pack's opened files leave the memory (its files changed or went). */
+  const closePack = (prefix: string): void => {
     for (const key of [...open.keys()]) if (key === prefix || key.startsWith(`${prefix}#`)) open.delete(key)
-    await Promise.all(packFiles(prefix, parts).map((file) => rm(join(folder, file), { force: true })))
+  }
+  /** A pack off the manifest in memory; answers its files, for the caller to remove once a manifest without it is saved. */
+  function forget(prefix: string): string[] {
+    const files = packFiles(prefix, manifest.packs[prefix]?.parts)
+    delete manifest.packs[prefix]
+    closePack(prefix)
+    return files
   }
 
   function startRun(kind: 'downloading' | 'checking' | 'removing' | 'moving', body: (signal: AbortSignal) => Promise<void>): Promise<IconPacksStatus> {
@@ -558,7 +623,9 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
       ? `${GITHUB_LIMIT_MESSAGE.replace(', so the app used unpkg.', ', and unpkg could not be reached.')} Try again later.`
       : cause instanceof Unreachable
         ? "You're offline. Connect to the internet to download icon packs."
-        : `The icon packs could not download: ${cause instanceof Error ? cause.message : String(cause)}.`
+        : cause instanceof FolderGone
+          ? `${folderGoneText(cause.message)} Connect its drive, or choose another folder in Settings.`
+          : `The icon packs could not download: ${cause instanceof Error ? cause.message : String(cause)}.`
 
   /** After a run, one sentence about what it did. */
   const summary = (failed: number, firstError: Error | null, limited: boolean, done: string): void => {
@@ -582,10 +649,10 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
           const text = (await gunzipAsync(await readFile(join(at, `${prefix}.names.gz`)))).toString('utf8')
           return [prefix, text === '' ? [] : text.split('\n')] as const
         } catch {
-          return [prefix, []] as const
+          return [prefix, [] as string[]] as const
         }
       }),
-    ).then((entries) => new Map<string, string[]>(entries.map(([p, n]) => [p, [...n]])))
+    ).then((entries) => new Map<string, string[]>(entries))
     names = value
     value.catch(() => {
       if (names === value) names = null
@@ -625,7 +692,7 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
     if (main === null || parts === 0) return main
     // The alias steps first (they live in the main file), then the part of the icon they end on.
     let at = name
-    for (let depth = 0; depth < 8 && main.aliases?.[at] !== undefined; depth++) at = main.aliases[at].parent
+    for (let depth = 0; depth <= MAX_ALIAS_DEPTH && main.aliases?.[at] !== undefined; depth++) at = main.aliases[at].parent
     const part = await openFile(`${prefix}#${partOf(at, parts)}`, `${prefix}.part-${partOf(at, parts)}.json.gz`, share)
     return part === null ? null : { ...main, icons: part.icons }
   }
@@ -663,9 +730,11 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
         const { next, limited } = await makePlan(signal)
         const changed = Object.keys(next.plan).filter((prefix) => !isCurrent(manifest.packs[prefix], next.plan[prefix]))
         const gone = Object.keys(manifest.packs).filter((prefix) => next.plan[prefix] === undefined)
-        for (const prefix of gone) await dropPack(prefix)
+        const goneFiles = gone.flatMap(forget)
         Object.assign(manifest, next)
         await saveManifest()
+        // Only once the manifest on disk no longer names them (YAZ-4366): a crash between leaves files, never a pack with none.
+        await Promise.all(goneFiles.map((file) => rm(join(folder, file), { force: true })))
         tell()
         const { failed, firstError } = await downloadMissing(signal)
         if (signal.aborted) return
@@ -684,18 +753,23 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
       return current.done
     },
 
-    /** Remove (after the confirm): only the files the manifest names, and the manifest; an empty folder goes too. */
+    /**
+     * Remove (after the confirm): the manifest first, then every file of a pack it named or planned (its parts, and a
+     * tmp file a stopped run left, YAZ-4366); an empty folder goes too. Anything else in the folder is the user's.
+     */
     async remove(): Promise<IconPacksStatus> {
       if (run !== null && run.kind !== 'removing') {
         run.abort.abort()
         await run.done
       }
       return startRun('removing', async () => {
-        for (const prefix of Object.keys(manifest.packs)) await dropPack(prefix)
-        for (const prefix of planned()) await Promise.all(packFiles(prefix).map((file) => rm(join(folder, file), { force: true })))
-        await writing.catch(() => undefined)
-        await rm(join(folder, MANIFEST_FILE), { force: true })
+        const prefixes = new Set([...Object.keys(manifest.packs), ...planned()])
         manifest = emptyManifest()
+        open.clear()
+        await writing.catch(() => undefined)
+        // The manifest first: a crash on the way leaves files that no manifest names, never a manifest naming files that are gone.
+        await rm(join(folder, MANIFEST_FILE), { force: true })
+        for (const name of await readdir(folder).catch(() => [] as string[])) if (isRunFile(name, prefixes)) await rm(join(folder, name), { force: true })
         await rmdir(folder).catch(() => undefined)
         message = { text: 'The icon packs were removed. Icons stream from Iconify again.', failed: false }
       })
@@ -729,23 +803,30 @@ export function createIconPacks({ folder: startFolder, fetch, onStatus, now = Da
         const renamed: string[] = []
         const copied: string[] = []
         try {
-          await mkdir(next, { recursive: true })
+          await makeFolder(next)
           for (const file of files) {
             try {
               await rename(join(from, file), join(next, file))
               renamed.push(file)
             } catch {
-              await copyFile(join(from, file), join(next, file))
+              // Across two disks (YAZ-4366): fsynced before the source goes, so a power loss cannot take the only copy.
+              await copyDurable(join(from, file), join(next, file))
               copied.push(file)
             }
           }
           await writing.catch(() => undefined)
           await atomicWrite(join(next, MANIFEST_FILE), JSON.stringify(manifest))
         } catch (cause) {
-          for (const file of renamed) await rename(join(next, file), join(from, file)).catch(() => copyFile(join(next, file), join(from, file)).then(() => rm(join(next, file), { force: true }))).catch(() => undefined)
+          for (const file of renamed) await rename(join(next, file), join(from, file)).catch(() => copyDurable(join(next, file), join(from, file)).then(() => rm(join(next, file), { force: true }))).catch(() => undefined)
           for (const file of copied) await rm(join(next, file), { force: true }).catch(() => undefined)
           if ((await readdir(next).catch(() => ['?'])).length === 0) await rmdir(next).catch(() => undefined)
-          message = { text: `The icon packs could not move to the new folder, so they stay in ${from}. (${cause instanceof Error ? cause.message : String(cause)})`, failed: true }
+          message = {
+            text:
+              cause instanceof FolderGone
+                ? `${folderGoneText(next)} The icon packs stay in ${from}.`
+                : `The icon packs could not move to the new folder, so they stay in ${from}. (${cause instanceof Error ? cause.message : String(cause)})`,
+            failed: true,
+          }
           return
         }
         for (const file of copied) await rm(join(from, file), { force: true })

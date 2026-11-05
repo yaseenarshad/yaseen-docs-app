@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { MEDIA_LIBRARY_FILE, type MediaItem } from '@shared/types'
+import { MAX_MEDIA_REMOVED, MEDIA_LIBRARY_FILE, type MediaItem } from '@shared/types'
 import { createMediaStore, type MediaStore } from './mediaStore'
 
 const item = (over: Partial<MediaItem> = {}): MediaItem => ({ itemKey: 'pixabay:1', provider: 'pixabay', providerId: '1', kind: 'photo', title: 'A tree', ...over })
@@ -148,12 +148,46 @@ describe('createMediaStore — two Macs (YAZ-4364, round 3 decision 2)', () => {
     expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual(['tree'])
   })
 
+  it('a favorite removed long ago stays removed while the old media.json still holds it, past the removals cap (YAZ-4366)', async () => {
+    // X is a favorite in the old file, which no build writes again. This Mac removed X, then 2,000 more favorites.
+    await writeFile(path.join(library, MEDIA_LIBRARY_FILE), lib({ favorites: [row('x', 5)] }))
+    expect(await store.favorites({ op: 'remove', itemKey: 'x' })).toEqual([])
+    const newer = Object.fromEntries(Array.from({ length: MAX_MEDIA_REMOVED }, (_, i) => [`gone-${i}`, 5000 + i]))
+    const own = (await onDisk()) as { removed: Record<string, number> }
+    await writeFile(file(), JSON.stringify({ ...own, favorites: [row('y', 4000)], removed: { ...own.removed, ...newer } }))
+    // One more removal writes the library with the cap applied; X's note must not fall off while media.json holds X.
+    await store.favorites({ op: 'remove', itemKey: 'y' })
+    expect(((await onDisk()) as { removed: Record<string, number> }).removed.x).toBeDefined()
+    expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual([])
+    // The same for a Mac that no longer runs: its file holds X for good.
+    await writeFile(path.join(library, OTHER), lib({ favorites: [row('x', 6)] }))
+    await store.favorites({ op: 'remove', itemKey: 'nothing' })
+    expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual([])
+  })
+
   it('per itemKey the newest row wins, in recent and used too', async () => {
     await writeFile(file(), lib({ recent: [row('a', 10)], used: [{ ...row('a', 10), count: 1, words: ['mine'] }] }))
     await writeFile(path.join(library, OTHER), lib({ recent: [row('a', 20), row('b', 15)], used: [{ ...row('a', 20), count: 2, words: ['theirs'] }] }))
     const out = await store.used({ op: 'list' })
     expect(out.recent.map((r) => [r.itemKey, r.updatedAt])).toEqual([['a', 20], ['b', 15]])
     expect(out.used).toEqual([expect.objectContaining({ itemKey: 'a', count: 2, words: ['theirs'] })])
+  })
+
+  it('a read parses only a file whose mtime or size changed; a file that went leaves the merge (YAZ-4366)', async () => {
+    const other = path.join(library, OTHER)
+    await writeFile(other, lib({ favorites: [row('aa', 5)] }))
+    const at = new Date(2_000_000_000_000)
+    await utimes(other, at, at)
+    expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual(['aa'])
+    // The same size and mtime: the kept parse answers, with no read of the file.
+    await writeFile(other, lib({ favorites: [row('bb', 5)] }))
+    await utimes(other, at, at)
+    expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual(['aa'])
+    // A new mtime: the file is read again.
+    await utimes(other, new Date(2_000_000_001_000), new Date(2_000_000_001_000))
+    expect((await store.favorites({ op: 'list' })).map((f) => f.itemKey)).toEqual(['bb'])
+    await rm(other)
+    expect(await store.favorites({ op: 'list' })).toEqual([])
   })
 
   it('another Mac`s file that does not parse is skipped, never moved aside; a copy like "media-x 2.json" never counts', async () => {

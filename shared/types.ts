@@ -1505,7 +1505,10 @@ export interface MediaLibraryFile {
 
 /** The library file of a build from before YAZ-4364, inside the library folder: still read, never written. */
 export const MEDIA_LIBRARY_FILE = 'media.json'
-/** The removals a library keeps, the newest first (YAZ-4364): older ones drop. */
+/**
+ * The removals a library keeps, the newest first (YAZ-4364): older ones drop, but never one that still holds back a
+ * favorite in another library file (YAZ-4366, `mergeMediaLibraries`).
+ */
 export const MAX_MEDIA_REMOVED = 2000
 /**
  * `<library>/components/` (🔒 YAZ-1775 D5): where YAZ-1819 writes a saved component's `.excalidraw` + `.png`.
@@ -1515,7 +1518,7 @@ export const LIBRARY_COMPONENTS_DIR = 'components'
 /** The components index beside that folder: `<library>/components.json` (🔒 YAZ-1775 D5, YAZ-1819). */
 export const COMPONENTS_INDEX_FILE = 'components.json'
 /**
- * `<library>/favorites/` (YAZ-4363): one full-quality copy of each Iconify or Pixabay favorite, named
+ * `<library>/favorites/` (YAZ-4363): one full-quality copy of each favorite, of every kind (YAZ-4370), named
  * `<sha1(itemKey)>.<ext>` — the name comes from the id, so no field in `media.json` can lose it.
  * Favorites have NO cap (YAZ-4363, round 2 decision 7): a list the user builds by hand never deletes itself.
  */
