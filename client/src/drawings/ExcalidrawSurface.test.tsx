@@ -22,6 +22,8 @@ vi.mock('./engine', () => {
     restoreAppState: () => ({}),
     getSceneVersion: () => 0,
     serializeAsJSON: vi.fn((elements: unknown) => JSON.stringify({ elements, appState: {} })),
+    // YAZ-4277 D18: the fold switch point's save step; with folding on nothing is aside (`foldsOff.test.tsx` runs the real one)
+    withFoldsPutBack: (elements: unknown) => elements,
   }
   const textEditor = { mount: () => ({ setSelection: () => undefined, focus: () => undefined, destroy: () => undefined }) }
   return {
