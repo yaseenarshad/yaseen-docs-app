@@ -685,7 +685,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(cellNoteCardKeymap)
   // ⌘A on a bullet (YAZ-4348 demo round 2): its line first, then the whole note; priority 80, under the cell's 90.
   crepe.editor.use(bulletSelectAllKeymap)
-  // A custom colour pick's target cells (YAZ-3817), kept through edits while the system picker is open.
+  // The table menu's Custom colour… box and its target cells (YAZ-3817, YAZ-4366), kept through edits while it is open.
   crepe.editor.use(customColourPick)
   // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.
   crepe.editor.use(tableFreeze)

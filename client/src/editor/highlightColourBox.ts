@@ -1,27 +1,27 @@
 /**
- * The highlight panel's own colour box (YAZ-4388), drawn in the panel right under its Hex code field. It replaces
- * Chromium's `<input type="color">` popup, which Electron opened at the window's top left whatever the input's
- * place. The look is that popup's: a saturation/brightness square with a round handle, an eyedropper, the colour,
- * a hue slider, and R G B fields.
+ * The note's own colour box (YAZ-4388): the highlight panel's, right under its Hex code field, and the table cells'
+ * (YAZ-4366), under a palette's "Custom colour…" (`table/colours.ts`, `cellToolbar.ts`). It replaces Chromium's
+ * `<input type="color">` popup, which Electron opened at the window's top left whatever the input's place. The look
+ * is that popup's: a saturation/brightness square with a round handle, an eyedropper, the colour, a hue slider, and
+ * R G B fields.
  *
- * The box only chooses; the panel applies (`highlightPanel.ts`). A drag in the square or the slider previews (the
- * handles, the fields, the panel's hex); one finished pick — the pointer up, Enter in a field, the eyedropper's
- * colour — calls `pick` once, so it is one undo step and one use. The square and the slider cancel their
- * mousedown, so the text selection and the note's focus stay; only the R G B fields take the focus, to be typed in.
+ * The box only chooses; what holds it applies. A drag in the square or the slider previews (the handles, the fields,
+ * the panel's hex); one finished pick — the pointer up, Enter in a field, the eyedropper's colour — calls `pick` once,
+ * so it is one undo step (and, for a highlight, one use). The square and the slider cancel their mousedown, so the
+ * note's selection and focus stay; only the R G B fields take the focus, to be typed in.
  *
  * Smoothness: a drag draws at most once a frame (the latest pointer wins), reads the layout before it writes, moves
  * the handles with `transform` only, and writes only what changed.
  */
-import { hexOfRgb, rgbOf, solidHex } from '../lib/colour'
-import type { CustomHighlight } from './marks/highlight'
+import { hexOfRgb, rgbOf, solidHex, type Hex } from '../lib/colour'
 
-/** What the box tells the panel. */
+/** What the box tells what holds it. */
 export interface ColourBoxHooks {
   /** The colour while it is being chosen (a drag, a typed field). */
-  preview: (hex: CustomHighlight) => void
+  preview: (hex: Hex) => void
   /** One finished pick. */
-  pick: (hex: CustomHighlight) => void
-  /** Escape in an R G B field: the box closes, the panel stays. */
+  pick: (hex: Hex) => void
+  /** Escape in an R G B field: the box closes, what holds it stays. */
   close: () => void
 }
 
@@ -43,7 +43,7 @@ export function toHsv(hex: string): Hsv {
   return { h: h * 60, s: max === 0 ? 0 : d / max, v: max }
 }
 
-export function fromHsv({ h, s, v }: Hsv): CustomHighlight {
+export function fromHsv({ h, s, v }: Hsv): Hex {
   const f = (n: number) => {
     const k = (n + h / 60) % 6
     return (v - v * s * Math.max(0, Math.min(k, 4 - k, 1))) * 255
@@ -82,22 +82,22 @@ export class ColourBox {
       el.className = className
       return el
     }
-    this.el = div('highlight-panel__box')
+    this.el = div('colour-box')
     this.el.setAttribute('role', 'group')
     this.el.setAttribute('aria-label', 'Custom colour')
     this.el.hidden = true
 
-    this.#sv = div('highlight-panel__sv')
+    this.#sv = div('colour-box__sv')
     this.#sv.setAttribute('role', 'slider')
     this.#sv.setAttribute('aria-label', 'Saturation and brightness')
-    this.#svThumb = div('highlight-panel__thumb')
-    this.#svThumb.append(div('highlight-panel__sv-handle'))
+    this.#svThumb = div('colour-box__thumb')
+    this.#svThumb.append(div('colour-box__sv-handle'))
     this.#sv.append(this.#svThumb)
     this.#drag(this.#sv, (x, y) => ({ ...this.#hsv, s: x, v: 1 - y }))
 
     const dropper = doc.createElement('button')
     dropper.type = 'button'
-    dropper.className = 'highlight-panel__eyedropper'
+    dropper.className = 'colour-box__eyedropper'
     dropper.tabIndex = -1
     dropper.title = 'Pick a colour from the screen'
     dropper.setAttribute('aria-label', 'Pick a colour from the screen')
@@ -105,17 +105,17 @@ export class ColourBox {
     dropper.addEventListener('mousedown', (e) => e.preventDefault())
     dropper.addEventListener('click', () => void this.#eyedrop())
     this.#dropper = dropper
-    this.#hue = div('highlight-panel__hue')
+    this.#hue = div('colour-box__hue')
     this.#hue.setAttribute('role', 'slider')
     this.#hue.setAttribute('aria-label', 'Hue')
-    this.#hueThumb = div('highlight-panel__thumb')
-    this.#hueThumb.append(div('highlight-panel__hue-handle'))
+    this.#hueThumb = div('colour-box__thumb')
+    this.#hueThumb.append(div('colour-box__hue-handle'))
     this.#hue.append(this.#hueThumb)
     this.#drag(this.#hue, (x) => ({ ...this.#hsv, h: x * 360 }))
-    const row = div('highlight-panel__box-row')
-    row.append(dropper, div('highlight-panel__box-swatch'), this.#hue)
+    const row = div('colour-box__row')
+    row.append(dropper, div('colour-box__swatch'), this.#hue)
 
-    const rgb = div('highlight-panel__rgb')
+    const rgb = div('colour-box__rgb')
     this.#fields = ['Red', 'Green', 'Blue'].map((name) => {
       const label = doc.createElement('label')
       const input = doc.createElement('input')
@@ -141,11 +141,11 @@ export class ColourBox {
     return !this.el.hidden
   }
 
-  get hex(): CustomHighlight {
+  get hex(): Hex {
     return fromHsv(this.#hsv)
   }
 
-  show(hex: CustomHighlight): void {
+  show(hex: Hex): void {
     this.el.hidden = false
     this.#dropper.hidden = eyeDropperOf(this.doc) === null
     this.set(hex)
@@ -156,7 +156,7 @@ export class ColourBox {
   }
 
   /** A colour from outside (the panel's hex field): the box follows, without a preview back. */
-  set(hex: CustomHighlight): void {
+  set(hex: Hex): void {
     const next = toHsv(hex)
     // Gray has no hue and black no saturation: keep the ones the handles stand on.
     if (next.s === 0 || next.v === 0) next.h = this.#hsv.h

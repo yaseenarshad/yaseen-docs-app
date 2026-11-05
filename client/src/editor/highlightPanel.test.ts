@@ -47,7 +47,7 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     at.dispatchEvent(event)
     return event
   }
-  const box = () => panel()!.querySelector<HTMLElement>('.highlight-panel__box')!
+  const box = () => panel()!.querySelector<HTMLElement>('.colour-box')!
   const boxOpen = () => !box().hidden
   const pencil = () => panel()!.querySelector<HTMLButtonElement>('button[aria-label="Custom colour…"]')!
   const clickPencil = () => {
@@ -258,8 +258,8 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     expect(hexField.nextElementSibling).toBe(box())
     expect(pencil().getAttribute('aria-expanded')).toBe('true')
     expect(document.querySelector('input[type="color"]')).toBeNull()
-    expect(box().querySelector('[aria-label="Saturation and brightness"] .highlight-panel__sv-handle')).not.toBeNull()
-    expect(box().querySelector('[aria-label="Hue"] .highlight-panel__hue-handle')).not.toBeNull()
+    expect(box().querySelector('[aria-label="Saturation and brightness"] .colour-box__sv-handle')).not.toBeNull()
+    expect(box().querySelector('[aria-label="Hue"] .colour-box__hue-handle')).not.toBeNull()
     // Nothing on the selection: the box starts on yellow.
     expect([field('Red').value, field('Green').value, field('Blue').value]).toEqual(['255', '213', '0'])
     expect(view.hasFocus()).toBe(true)
@@ -285,8 +285,8 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     await select(view, 'world')
     await press('highlight-more')
     clickPencil()
-    const square = box().querySelector<HTMLElement>('.highlight-panel__sv')!
-    const hue = box().querySelector<HTMLElement>('.highlight-panel__hue')!
+    const square = box().querySelector<HTMLElement>('.colour-box__sv')!
+    const hue = box().querySelector<HTMLElement>('.colour-box__hue')!
     for (const el of [square, hue]) vi.spyOn(el, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 100))
     const frames = holdFrames()
     // The square keeps the selection and the focus.
@@ -331,9 +331,9 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     await select(view, 'world')
     await press('highlight-more')
     clickPencil()
-    const square = box().querySelector<HTMLElement>('.highlight-panel__sv')!
-    const thumb = square.querySelector<HTMLElement>('.highlight-panel__thumb')!
-    const hueThumb = box().querySelector<HTMLElement>('.highlight-panel__hue .highlight-panel__thumb')!
+    const square = box().querySelector<HTMLElement>('.colour-box__sv')!
+    const thumb = square.querySelector<HTMLElement>('.colour-box__thumb')!
+    const hueThumb = box().querySelector<HTMLElement>('.colour-box__hue .colour-box__thumb')!
     vi.spyOn(square, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 100))
     const frames = holdFrames()
     const swatches = [...panel()!.querySelectorAll('.highlight-panel__swatch')]
