@@ -1304,6 +1304,42 @@ describe('Download all icon packs (YAZ-4359), in the footer since the YAZ-4348 d
     expect(footerActions(host).classList.contains('is-centered')).toBe(true)
   })
 
+  it('Try again repeats the request that failed; a download that never started asks first again (YAZ-4366 audit 65)', async () => {
+    const { host } = await mount()
+    // A download that failed before any pack came: Try again is the first download again, so the box asks first
+    await act(async () => packsListener?.(packsStatus({ state: 'downloading' })))
+    await act(async () => packsListener?.(packsStatus({ state: 'none', failed: true, message: "You're offline. Connect to the internet to download icon packs." })))
+    media.packs.mockClear()
+    await click(byText(host, 'Try again'))
+    expect(media.packs).not.toHaveBeenCalled()
+    expect(document.querySelector('.image-studio__sheet-layer [role="dialog"]')).not.toBeNull()
+    await click(byText(document.body, 'Cancel'))
+    // A Check that failed checks again; it does not start the download
+    await act(async () => packsListener?.(packsStatus({ state: 'checking', packs: 200 })))
+    await act(async () => packsListener?.(packsStatus({ state: 'partial', packs: 200, failed: true, message: '3 packs could not download (timeout). Try again.' })))
+    await click(byText(host, 'Try again'))
+    expect(media.packs.mock.calls).toEqual([[{ op: 'check' }]])
+    // A download that failed part way downloads the rest at once: the user said yes already
+    await act(async () => packsListener?.(packsStatus({ state: 'downloading', packs: 37 })))
+    await act(async () => packsListener?.(packsStatus({ state: 'partial', packs: 37, failed: true, message: '1 pack could not download (timeout). Try again.' })))
+    media.packs.mockClear()
+    await click(byText(host, 'Try again'))
+    expect(media.packs.mock.calls).toEqual([[{ op: 'download' }]])
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('a download request that the bridge refused, with no pack on the Mac, asks first on Try again (YAZ-4366 audit 65)', async () => {
+    const { host } = await mount()
+    await click(byText(host, '↓ All icon packs'))
+    media.packs.mockRejectedValueOnce(new Error('no bridge'))
+    await click(byText(document.body, 'Download'))
+    expect(footerActions(host).textContent).toContain("The download couldn't start. Try again.")
+    media.packs.mockClear()
+    await click(byText(host, 'Try again'))
+    expect(media.packs).not.toHaveBeenCalled()
+    expect(document.querySelector('.image-studio__sheet-layer [role="dialog"]')).not.toBeNull()
+  })
+
   it('offline with every pack on the Mac, the line says icon search still works (extra 17)', async () => {
     media.packs.mockResolvedValue(packsStatus({ state: 'complete', packs: 281 }))
     media.search.mockRejectedValue(new BridgeRequestError('OFFLINE', 'no network'))

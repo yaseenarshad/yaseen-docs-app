@@ -10,7 +10,7 @@ import { useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { formatPackBytes, packsBusy, packsProgressText, type IconPacksStatus } from '@shared/iconPacks'
 import { ConfirmSheet } from '../components/ConfirmSheet'
-import { packsDo, useIconPacks } from './useIconPacks'
+import { failedRequest, packsDo, useIconPacks } from './useIconPacks'
 
 /** The confirm box's sentence, in the approved words, with the plan's numbers when there is one. */
 export const packsConfirmText = (status: Pick<IconPacksStatus, 'total' | 'totalBytes'>): string =>
@@ -81,12 +81,17 @@ export function IconPacksFooter({ google }: { google: ReactNode }) {
         </span>
       )
     } else if (status.failed && status.message !== null) {
+      // Try again repeats the request that failed (YAZ-4366 audit 65); a download with no pack on the Mac yet is the
+      // first download again, so it asks first, as "↓ All icon packs" does.
+      const retry = failedRequest()
       packs = (
         <span className="image-studio__footer-packs" role="status">
           <span className="image-studio__packs-error">{status.message}</span>
-          <button type="button" onClick={() => void packsDo('download')}>
-            Try again
-          </button>
+          {retry !== null && (
+            <button type="button" onClick={() => (retry === 'download' && status.state === 'none' ? setAsking(true) : void packsDo(retry))}>
+              Try again
+            </button>
+          )}
         </span>
       )
     } else {
