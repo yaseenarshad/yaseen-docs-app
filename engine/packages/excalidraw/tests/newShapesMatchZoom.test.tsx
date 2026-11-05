@@ -14,6 +14,7 @@ import {
   actionChangeStrokeWidth,
   actionChangeVectorStrokeWidth,
 } from "../actions/actionProperties";
+import { actionCopyStyles, actionPasteStyles } from "../actions/actionStyles";
 import { Excalidraw } from "../index";
 
 import { API } from "./helpers/api";
@@ -254,5 +255,62 @@ describe("the width and corner pickers speak screen px (YAZ-4406)", () => {
       getDefaultCornerRadiusForElementType("rectangle") / 100,
       10,
     );
+  });
+});
+
+/**
+ * YAZ-4312 S8: paste styles copies the line width and the corner in screen
+ * px: each converts through the two shapes' style scales.
+ */
+describe("paste styles across style scales (YAZ-4312 S8)", () => {
+  const rect = (strokeWidth: number, corner: number, styleScale?: number) => ({
+    ...API.createElement({
+      type: "rectangle",
+      strokeWidth,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: corner },
+    }),
+    ...(styleScale ? { customData: { styleScale } } : {}),
+  });
+  const copyThenPaste = (from: ExcalidrawElement, to: ExcalidrawElement) => {
+    API.setElements([from, to]);
+    API.setSelectedElements([from]);
+    act(() => {
+      h.app.actionManager.executeAction(actionCopyStyles);
+    });
+    API.setSelectedElements([to]);
+    act(() => {
+      h.app.actionManager.executeAction(actionPasteStyles);
+    });
+    return h.app.scene.getElement(to.id)!;
+  };
+
+  it("a style from a shape made at 10,000% keeps its screen size on a shape made at 100%", async () => {
+    await renderBoard({ newShapesMatchZoom: true });
+    const pasted = copyThenPaste(rect(0.02, 0.08, 100), rect(4, 32));
+    expect(pasted.strokeWidth).toBe(2);
+    expect(pasted.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 8,
+    });
+    // the target keeps its own style scale
+    expect(pasted.customData).toBeUndefined();
+  });
+
+  it("a style from a shape made at 100% keeps its screen size on a shape made at 10,000%", async () => {
+    await renderBoard({ newShapesMatchZoom: true });
+    const pasted = copyThenPaste(rect(2, 8), rect(0.04, 0.32, 100));
+    expect(pasted.strokeWidth).toBe(0.02);
+    expect(pasted.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 0.08,
+    });
+    expect(pasted.customData).toEqual({ styleScale: 100 });
+  });
+
+  it("two shapes at the same scale copy the numbers as they are", async () => {
+    await renderBoard({ newShapesMatchZoom: true });
+    const pasted = copyThenPaste(rect(2.5, 16), rect(4, 32));
+    expect(pasted.strokeWidth).toBe(2.5);
+    expect(pasted.roundness?.value).toBe(16);
   });
 });
