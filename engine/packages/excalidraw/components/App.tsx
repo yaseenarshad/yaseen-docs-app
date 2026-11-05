@@ -4122,6 +4122,11 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   public componentWillUnmount() {
+    // YAZ-4430: an edit open on a closing board ends with it (its text is in
+    // the scene already), and its window listeners go
+    this.unmounted = true;
+    this.textWysiwygSubmitHandler?.();
+    this.textWysiwygSubmitHandler = null;
     this.unmountHostLinks?.();
     this.unmountHostLinks = null;
     window.removeEventListener(

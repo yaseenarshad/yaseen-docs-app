@@ -1023,6 +1023,10 @@ export const hostTextWysiwyg = ({
     }
     isDestroyed = true;
     cleanup();
+    // YAZ-4430: the board closed; each change is already in its scene
+    if (app.unmounted) {
+      return;
+    }
     const current = getElement();
     if (!current) {
       return;
@@ -1073,9 +1077,15 @@ export const hostTextWysiwyg = ({
     window.addEventListener("blur", handleSubmit);
   };
 
-  /** True when the press is within `NEAR_BOX_PX` on screen of the box. */
+  /**
+   * True when the press is within `NEAR_BOX_PX` on screen of the box, on this
+   * board (YAZ-4430: never a press on another board).
+   */
   const isNearBox = (event: MouseEvent) => {
-    if (!layout) {
+    if (
+      !layout ||
+      !excalidrawContainer?.contains(event.target as Node | null)
+    ) {
       return false;
     }
     const point = viewportCoordsToSceneCoords(event, app.state);
