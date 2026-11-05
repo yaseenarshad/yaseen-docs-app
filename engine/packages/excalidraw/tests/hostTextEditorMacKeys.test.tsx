@@ -276,7 +276,7 @@ const pressShift = (key: string) => {
   return result;
 };
 
-describe("⇧↑ and ⇧↓ select by line, as a note does (YAZ-4399, D37)", () => {
+describe("⇧↑ and ⇧↓ select by line, to a line's end or its text start (YAZ-4399, D37 as amended in demo round 2)", () => {
   beforeEach(async () => {
     mounted = [];
     await render(
@@ -284,7 +284,7 @@ describe("⇧↑ and ⇧↓ select by line, as a note does (YAZ-4399, D37)", () 
     );
   });
 
-  it("from mid-line: first the rest of the line, then whole lines; back the same way, never past the anchor", async () => {
+  it("from mid-line: first the rest of the line, then each next line's end; back by text starts, never past the anchor", async () => {
     await startEdit("hidden 1\nhidden 2\nhidden 3");
     // "hidd|en 1"
     caretAt(4);
@@ -298,10 +298,11 @@ describe("⇧↑ and ⇧↓ select by line, as a note does (YAZ-4399, D37)", () 
       anchor: 4,
       head: 17,
     });
+    // ⇧↑ stops at the start of "hidden 2", never at a line's end
     pressShift(KEYS.ARROW_UP);
     expect(last().session.setSelection).toHaveBeenLastCalledWith({
       anchor: 4,
-      head: 8,
+      head: 9,
     });
     // no line before: back to the anchor, not past it
     pressShift(KEYS.ARROW_UP);
@@ -316,18 +317,18 @@ describe("⇧↑ and ⇧↓ select by line, as a note does (YAZ-4399, D37)", () 
     });
   });
 
-  it("from a line's start: the next line's start each time", async () => {
+  it("from a line's start: that line's end, then the next line's end, never a line's start", async () => {
     await startEdit("one\ntwo\nthree");
     caretAt(0);
     pressShift(KEYS.ARROW_DOWN);
     expect(last().session.setSelection).toHaveBeenLastCalledWith({
       anchor: 0,
-      head: 4,
+      head: 3,
     });
     pressShift(KEYS.ARROW_DOWN);
     expect(last().session.setSelection).toHaveBeenLastCalledWith({
       anchor: 0,
-      head: 8,
+      head: 7,
     });
   });
 
@@ -364,12 +365,12 @@ describe("⇧↑ and ⇧↓ select by line, as a note does (YAZ-4399, D37)", () 
     pressShift(KEYS.ARROW_DOWN);
     expect(last().session.setSelection).toHaveBeenLastCalledWith({
       anchor: 2,
-      head: 8,
+      head: 5,
     });
     pressShift(KEYS.ARROW_DOWN);
     expect(last().session.setSelection).toHaveBeenLastCalledWith({
       anchor: 2,
-      head: 18,
+      head: 11,
     });
     // ⇧↑ from mid "two": to just after its marker
     caretAt(9);
@@ -378,6 +379,22 @@ describe("⇧↑ and ⇧↓ select by line, as a note does (YAZ-4399, D37)", () 
       anchor: 9,
       head: 8,
     });
+  });
+
+  it("the highlight covers letters only: never an item's indent or marker", async () => {
+    await startEdit("• one\n• two\n    ○ three");
+    act(() => last().onSelectionChange({ anchor: 2, head: 23 }));
+    const spans = Array.from(
+      last().root.parentElement!.querySelectorAll<HTMLElement>(
+        ".excalidraw-wysiwyg-selection",
+      ),
+    );
+    const left = (span: HTMLElement) =>
+      parseFloat(/translate\(([-\d.]+)px/.exec(span.style.transform)![1]);
+    expect(spans).toHaveLength(3);
+    // "two" starts after its "• " exactly as "one" does; "three" further in
+    expect(left(spans[1])).toBeCloseTo(left(spans[0]), 6);
+    expect(left(spans[2])).toBeGreaterThan(left(spans[0]));
   });
 
   it("⌘⇧↑ and ⌘⇧↓ do nothing (they belong to another app)", async () => {

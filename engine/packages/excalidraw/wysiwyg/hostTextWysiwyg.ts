@@ -160,6 +160,30 @@ const getLineRange = (text: string, at: number): [number, number] => {
 };
 
 /**
+ * The parts of a selection on letters, one per line: never an item's indent
+ * or marker (demo round 2: "only the text and not all the way to the
+ * bullet"). Empty for a caret.
+ */
+const getLetterRanges = (
+  text: string,
+  from: number,
+  to: number,
+): [number, number][] => {
+  const ranges: [number, number][] = [];
+  let at = from;
+  while (at < to) {
+    const [contentStart, lineEnd] = getLineRange(text, at);
+    const start = Math.max(at, contentStart);
+    const end = Math.min(to, lineEnd);
+    if (end > start) {
+      ranges.push([start, end]);
+    }
+    at = lineEnd + 1;
+  }
+  return ranges;
+};
+
+/**
  * YAZ-4277 D1: a text box edited by the host's editor (`textEditor`). The
  * canvas keeps drawing the box, so no letter moves when the edit starts or
  * ends; the editor in the root is invisible. The caret, the selection, a
@@ -255,15 +279,27 @@ export const hostTextWysiwyg = ({
     if (!layout) {
       return;
     }
-    const geometry = getStyledVisualSelectionGeometry({
-      lines: layout.lines,
-      containerWidth: layout.width,
-      textAlign: layout.textAlign,
-      lineHeightPx: layout.lineHeightPx,
-      selectionStart: selection.anchor,
-      selectionEnd: selection.head,
-    });
-    for (const rectangle of geometry.rectangles) {
+    const geometryOf = (selectionStart: number, selectionEnd: number) =>
+      getStyledVisualSelectionGeometry({
+        lines: layout!.lines,
+        containerWidth: layout!.width,
+        textAlign: layout!.textAlign,
+        lineHeightPx: layout!.lineHeightPx,
+        selectionStart,
+        selectionEnd,
+      });
+    const geometry = geometryOf(selection.anchor, selection.head);
+    // a selection covers letters only: one part per line, from after its
+    // indent and marker (demo round 2)
+    const rectangles =
+      selection.anchor === selection.head
+        ? []
+        : getLetterRanges(
+            text,
+            Math.min(selection.anchor, selection.head),
+            Math.max(selection.anchor, selection.head),
+          ).flatMap(([start, end]) => geometryOf(start, end).rectangles);
+    for (const rectangle of rectangles) {
       const span = document.createElement("span");
       span.className = "excalidraw-wysiwyg-selection";
       placeOverlayRect(span, rectangle);
@@ -872,33 +908,23 @@ export const hostTextWysiwyg = ({
   };
 
   /**
-   * D37: ⇧↑ / ⇧↓ select by line, as a note does (YAZ-1734 `extendByLine`).
-   * A line is the text between two newlines; an item's line starts after its
-   * marker. Only the head moves. From mid-line it goes to its own line's end
-   * (⇧↓) or start (⇧↑); from an edge to the same edge of the next shown line
-   * (an empty line counts as its start for ⇧↓, its end for ⇧↑). A press
-   * toward the anchor never goes past it and, with no line left, stops on it.
-   * At the first or the last line, away from the anchor, nothing changes.
+   * D37, as amended in demo round 2 ("only select the line"): ⇧↓ moves the
+   * head to the end of its line, or, at the end already, to the end of the
+   * next shown line; ⇧↑ to the start of its line's text (after an item's
+   * marker), or, there already, to the start of the previous shown line's
+   * text. A line is the text between two newlines. The head never stops at a
+   * line's start for ⇧↓ nor at its end for ⇧↑, so a selection never takes the
+   * next line's indent or marker. A press toward the anchor never goes past it.
    */
   const extendByLine = (direction: -1 | 1) => {
     const { anchor, head } = selection;
     const [start, end] = getLineRange(text, head);
-    const atStart = head <= start;
-    const atEnd = head === end;
-    const edge =
-      atStart && atEnd
-        ? direction > 0
-          ? "start"
-          : "end"
-        : atStart
-        ? "start"
-        : atEnd
-        ? "end"
-        : null;
     const toward = direction > 0 ? anchor > head : anchor < head;
     let next: number;
-    if (edge === null) {
-      next = direction > 0 ? end : start;
+    if (direction > 0 && head < end) {
+      next = end;
+    } else if (direction < 0 && head > start) {
+      next = start;
     } else {
       const lines = text.split("\n");
       const current = getElement();
@@ -917,7 +943,7 @@ export const hostTextWysiwyg = ({
           .slice(0, line)
           .reduce((sum, value) => sum + value.length + 1, 0);
         const [targetStart, targetEnd] = getLineRange(text, lineStart);
-        next = edge === "start" ? targetStart : targetEnd;
+        next = direction > 0 ? targetEnd : targetStart;
       }
     }
     if (toward && (direction > 0 ? next > anchor : next < anchor)) {
