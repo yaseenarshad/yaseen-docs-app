@@ -2819,6 +2819,15 @@ body.drag-held iframe {
 }
 
 /* A row with a glyph (YAZ-3273): the glyph, then the label, the hint still at the right end. */
+/* A group's heading (YAZ-4460 demo: "Show it in"): small grey words, no hover, no button. */
+.ctx-menu__heading {
+  padding: 4px 12px 2px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  cursor: default;
+  user-select: none;
+}
+
 .ctx-menu__label {
   display: inline-flex;
   align-items: center;

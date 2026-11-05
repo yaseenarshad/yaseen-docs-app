@@ -2,7 +2,7 @@ import { isSupportedFile } from '@shared/fileKind'
 import { osVerbs } from '../lib/osVerbs'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
-import { focusPlaces, type MenuAction, type MenuSection } from '../sidebar/menuSections'
+import { focusPlaces, scopeGroup, type MenuAction, type MenuSection } from '../sidebar/menuSections'
 import type { ListState } from '../lists/useVaultListsHere'
 
 /** An open tab menu: where it stands, the tab it is about, and that tab's review state as it was when the menu opened. */
@@ -94,7 +94,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     const set = lists?.setScope
     if (scopes === undefined || set === undefined) return []
     const row = (scope: 'workspace' | 'vault', label: string) => ({ id: `${kind}-scope-${scope}`, label, hint: scopes[scope] ? '✓' : undefined, onSelect: () => set(kind, [menu.path], scope, !scopes[scope]) })
-    return [[row('workspace', 'Workspace'), row('vault', 'Vault')]]
+    return [scopeGroup(kind, row)]
   }
   const sections: MenuSection[] = [
     leading,

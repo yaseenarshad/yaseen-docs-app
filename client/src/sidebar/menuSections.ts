@@ -44,6 +44,8 @@ interface MenuItemBase {
 export interface MenuAction extends MenuItemBase {
   onSelect: () => void
   children?: undefined
+  /** A small grey heading over its group, not a button (YAZ-4460 demo: "Show it in"); its `onSelect` never runs. */
+  heading?: true
   /** A glyph before the label (YAZ-3279: the tab row's menu): an SVG, or a `FileIcon` (the Search menu's Type list, YAZ-3511 D13). It holds no text, so `textContent` stays the bare label. Only a leaf draws one. */
   icon?: ReactNode
   /** Rendered but inert — Paste with an empty clipboard, for discoverability (🔒 D5, YAZ-1674). Only a leaf can be. */
@@ -256,7 +258,12 @@ function scopeRows(kind: 'focus' | 'favorites', scopes: { vault: boolean; worksp
   const set = h.onSetScope
   if (scopes === null || scopes === undefined || set === undefined) return []
   const row = (scope: 'workspace' | 'vault', label: string) => ({ id: `${kind}-scope-${scope}`, label, hint: scopes[scope] ? '✓' : undefined, onSelect: () => set(kind, paths, scope, !scopes[scope]) })
-  return [[row('workspace', 'Workspace'), row('vault', 'Vault')]]
+  return [scopeGroup(kind, row)]
+}
+
+/** The group's words (YAZ-4460 demo), one place for the row menu and the tab menu: a heading, then the two lists by the window that shows them. */
+export function scopeGroup<R extends MenuAction>(kind: 'focus' | 'favorites', row: (scope: 'workspace' | 'vault', label: string) => R): MenuAction[] {
+  return [{ id: `${kind}-scope-heading`, label: 'Show it in', heading: true, onSelect: () => undefined }, row('workspace', 'This workspace'), row('vault', 'This vault alone')]
 }
 
 /** Where "Add to focus ▸" / "Remove from focus ▸" puts rows (YAZ-4460): a focus folder, a new one, or back to the top level. */

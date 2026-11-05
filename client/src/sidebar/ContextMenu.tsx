@@ -38,6 +38,18 @@ function Groups<T extends MenuEntry>({ sections, render }: { sections: readonly 
 
 /** A leaf: `onSelect()` then `onClose()` — every item closes the WHOLE menu (🔒 D8). */
 function ActionButton({ item, onClose, onMouseEnter }: { item: MenuAction; onClose: () => void; onMouseEnter?: () => void }) {
+  if (item.heading) return <MenuHeading label={item.label} />
+  return <ActionRow item={item} onClose={onClose} onMouseEnter={onMouseEnter} />
+}
+
+/** A group's heading (YAZ-4460 demo): small grey words over the rows, no button, so a key or a click passes it by. */
+const MenuHeading = ({ label }: { label: string }) => (
+  <div className="ctx-menu__heading" role="presentation">
+    {label}
+  </div>
+)
+
+function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose: () => void; onMouseEnter?: () => void }) {
   // The item's preview (YAZ-3091 D8): on while the pointer or the focus is on it, off when both leave or it unmounts.
   const previewing = useRef(false)
   const preview = useRef(item.onPreview)
