@@ -507,20 +507,11 @@ button {
 .milkdown .ProseMirror mark.highlight-purple { background: var(--mark-bg-purple); }
 .milkdown .ProseMirror mark.highlight-red { background: var(--mark-bg-red); }
 .milkdown .ProseMirror mark.highlight-gray { background: var(--mark-bg-gray); }
-/* A custom colour (YAZ-4348 demo round 2) paints its own wash inline (`marks/highlight.ts` `customWash`). */
-
-/* A lit highlight button (🔒 D5; YAZ-4348 demo round 2): a ring in the accent round its "A" square. The square's
-   fill IS its colour, so a pressed-button background would hide behind it, and Crepe's "active = primary-coloured
-   icon" cue only reached the square's faint outline. */
-.milkdown .milkdown-toolbar .toolbar-item.active[data-toolbar-item^='highlight']:not([data-toolbar-item='highlight-more']) {
-  box-shadow: inset 0 0 0 2px var(--crepe-color-primary);
-}
 
 /* The ▾ after the highlight buttons (YAZ-4348 demo round 2): narrow, as the cell toolbar's; lit as a pressed button
    when the selection has one of its menu's colours. */
 .milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] {
   width: 16px;
-  margin-left: -4px;
   padding: 4px 0;
 }
 .milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] svg {
@@ -545,8 +536,10 @@ button {
 .milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='highlight-more'] {
   margin-left: -2px;
 }
-/* Every lit button gets the highlights' ring (YAZ-4348 demo round 2, Yasin: "i like this box … add that for the other
-   ones also"): T on a plain line, B on bold text, a list button on its list. The ▾ keeps its pressed background. */
+/* A lit button wears a ring in the accent (🔒 D5; YAZ-4348 demo round 2). It began on the highlight buttons, whose "A"
+   square's fill IS its colour, so a pressed-button background would hide behind it (and Crepe's "active =
+   primary-coloured icon" cue only reached the square's faint outline); Yasin: "i like this box … add that for the
+   other ones also": T on a plain line, B on bold text, a list button on its list. The ▾ keeps its pressed background. */
 .milkdown .milkdown-toolbar .toolbar-item.active:not([data-toolbar-item='highlight-more']) {
   box-shadow: inset 0 0 0 2px var(--crepe-color-primary);
 }
