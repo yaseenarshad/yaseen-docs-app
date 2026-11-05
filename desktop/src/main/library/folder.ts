@@ -20,6 +20,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { mkdirLeaf } from '../fs/fsUtils'
 import type { Store } from '../store'
 
 /** The folder's name under the settings folder, or under userData, when the setting is null. */
@@ -36,9 +37,7 @@ export function resolveLibraryFolder(setting: string | null, userData: string, s
  * settings folder or a drive that is gone fails the write with ENOENT, and does not come back as a stray empty copy.
  */
 export async function makeLibraryDir(library: string, sub?: string): Promise<void> {
-  await mkdir(library).catch((err: NodeJS.ErrnoException) => {
-    if (err.code !== 'EEXIST') throw err
-  })
+  await mkdirLeaf(library)
   if (sub !== undefined) await mkdir(join(library, sub), { recursive: true })
 }
 

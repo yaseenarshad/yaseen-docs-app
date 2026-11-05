@@ -31,8 +31,11 @@ export interface IconifySetData {
   height?: number
 }
 
-/** How many alias steps are followed before giving up: Iconify's own data never needs more than a few. */
-const MAX_ALIAS_DEPTH = 6
+/**
+ * How many alias steps are followed before giving up: Iconify's own data never needs more than a few. The one limit for
+ * the streamed set data and the downloaded packs (`iconPacks.ts`).
+ */
+export const MAX_ALIAS_DEPTH = 6
 
 /**
  * The SVG for `name` in `set`, as the `.svg` endpoint would answer it, or null when the set data has no such icon.

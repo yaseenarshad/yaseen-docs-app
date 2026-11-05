@@ -31,7 +31,7 @@ import type { MediaCache } from './cache'
 import { CACHE_TTL_MS, pixabayItemCacheKey, pixabayPageCacheKey, previewCacheKey, searchCacheKey } from './cachePolicy'
 import { indexItems, libraryItemElements, LIBRARIES_INDEX_URL, LIBRARIES_ORIGIN, MAX_DRAWING_ELEMENTS_BYTES, MAX_INDEX_BYTES, MAX_LIBRARY_FILE_BYTES, MAX_LIBRARY_FILES_IN_MEMORY, parseDrawingId } from './excalidrawLibraries'
 import { activeFilterCount, isIconPrefix, type IconPackInfo, type MediaFilters } from '@shared/iconPacks'
-import type { IconPacks } from './iconPacks'
+import { packInfo, type IconPacks } from './iconPacks'
 import { rankLocalMatches } from './iconPackSearch'
 import { createIconifyBatcher, type IconifySetData } from './iconifyBatch'
 import {
@@ -735,20 +735,8 @@ export function createMediaProviders({ fetch, readPixabayKey, cache, packs, favo
     async packList() {
       if (packs !== undefined && packs.packs().length > 0) return packs.packs()
       const collections = await iconifyCollections()
-      return Object.entries(collections).flatMap(([prefix, c]): IconPackInfo[] =>
-        c.hidden || !isIconPrefix(prefix)
-          ? []
-          : [
-              {
-                prefix,
-                name: c.name ?? prefix,
-                total: finiteNumber(c.total) ?? 0,
-                license: { title: c.license?.title ?? c.license?.spdx ?? 'Open source', ...(c.license?.spdx ? { spdx: c.license.spdx } : {}), ...(c.license?.url ? { url: c.license.url } : {}) },
-                ...(c.category ? { category: c.category } : {}),
-                palette: c.palette === true,
-              },
-            ],
-      )
+      // A `/collections` row is the same shape as a pack file's `info`: one mapper for both (`packInfo`).
+      return Object.entries(collections).flatMap(([prefix, c]): IconPackInfo[] => (c.hidden || !isIconPrefix(prefix) ? [] : [packInfo(prefix, c, 0)]))
     },
 
     // Excalidraw's public libraries (YAZ-4157 demo 6K, `excalidrawLibraries.ts`): the index and the library files
