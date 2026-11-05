@@ -709,7 +709,7 @@
 }
 
 /* YAZ-4348 demo round 2: "Clear filters" sits at the top right, on the Show line, so it is one short reach from the
-   button; it stays LAST in the keys' order (the arrow keys still walk Show → License → Clear filters). */
+   button; it stays LAST in the keys' order (the arrow keys still walk Show → Similar icons → Clear filters). */
 .image-studio__filter-clear {
   background: transparent;
   border: 0;

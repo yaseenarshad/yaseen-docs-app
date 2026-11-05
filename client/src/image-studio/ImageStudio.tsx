@@ -22,7 +22,7 @@
  * OFFLINE IS A STATE, NOT A BANNER: the web half says so in one line; everything local keeps working.
  *
  * THE SMART SHAPES ARRIVE LATE ON PURPOSE. `@excalidraw/element` is a second ~300 kB download (`engine.ts`'s lazy
- * rule), so the seven basic shapes render immediately and the twelve Smart Shapes join when it lands.
+ * rule), so the seven basic shapes render immediately and the 20 Smart Shapes join when it lands.
  *
  * WHAT IT REMEMBERS LIVES ELSEWHERE (🔒 YAZ-1990). Closing the canvas panel unmounts this tab, so the chip, the query,
  * the results and the scroll are `imageStudioSession.ts`'s; this component renders them and keeps what one click has
@@ -78,7 +78,7 @@ import './imageStudio.css'
 /**
  * One row of the grid: what a section shows before "Show all" (D7). Four at the panel's usual width; a wider panel
  * (YAZ-4348 demo round 2: "one would expect more icons to show up instead of only getting them bigger") fits one
- * more column for each `TILE_MIN_WIDTH` it gains.
+ * more column for each `TILE_MIN_WIDTH + TILE_GAP` (90 px) it gains.
  */
 const MIN_ROW = 4
 const TILE_MIN_WIDTH = 84

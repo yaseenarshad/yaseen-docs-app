@@ -31,8 +31,9 @@
  * follows the state: **Downloading v<latest>…** (not clickable), then **Restart to update**, or **Download**
  * for a copy that cannot replace itself. While the check runs the button is not clickable. A failed check,
  * or one that finds no download yet (S2: CI still builds the `.dmg`), says so in one line, and the button
- * stays. So does a download that fails after it (S9: main answers `idle` with `failed: <version>`, YAZ-4384). Another row, up to date, or a dev run with no feed (`notes.checks`, S7): no such button. `ready`
- * and `manual` keep their button on every row.
+ * stays. So does a download that fails after it (S9: main answers `idle` with `failed: <version>`, YAZ-4384).
+ * Another row, up to date, or a dev run with no feed (`notes.checks`, S7): no such button. `ready` and `manual`
+ * keep their button on every row.
  *
  * The keys are the overlay's, never `window`'s (the SettingsDialog rule, YAZ-888): Esc closes, and
  * a click on the backdrop closes (S19). The lightbox is rendered INSIDE the sheet, so Esc is layered:
