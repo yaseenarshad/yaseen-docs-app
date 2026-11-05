@@ -53,6 +53,14 @@ export interface MenuAction extends MenuItemBase {
    * and keeps the menu open; the second runs it. The pointer leaving the row puts it back.
    */
   confirm?: string
+  /**
+   * A check row that keeps the menu open (YAZ-4460 demo: "Show it in"): its ✓ flips at the click, and `onToggle` gets
+   * the new state; `onSelect` does not run.
+   */
+  checked?: boolean
+  onToggle?: (on: boolean) => void
+  /** A check row that asks with a second click first (YAZ-4460 demo): "Click again to add" / "Click again to remove". */
+  twoClick?: true
   /** A glyph before the label (YAZ-3279: the tab row's menu): an SVG, or a `FileIcon` (the Search menu's Type list, YAZ-3511 D13). It holds no text, so `textContent` stays the bare label. Only a leaf draws one. */
   icon?: ReactNode
   /** Rendered but inert — Paste with an empty clipboard, for discoverability (🔒 D5, YAZ-1674). Only a leaf can be. */
@@ -264,13 +272,16 @@ const focus: Item = (t, h) => {
 function scopeRows(kind: 'focus' | 'favorites', scopes: { vault: boolean; workspace: boolean } | null | undefined, paths: string[], h: MenuHandlers): MenuAction[][] {
   const set = h.onSetScope
   if (scopes === null || scopes === undefined || set === undefined) return []
-  const row = (scope: 'workspace' | 'vault', label: string) => ({ id: `${kind}-scope-${scope}`, label, hint: scopes[scope] ? '✓' : undefined, onSelect: () => set(kind, paths, scope, !scopes[scope]) })
-  return [scopeGroup(kind, row)]
+  return [scopeGroup(kind, scopes, (scope, on) => set(kind, paths, scope, on))]
 }
 
-/** The group's words (YAZ-4460 demo), one place for the row menu and the tab menu: a heading, then the two lists by the window that shows them. */
-export function scopeGroup<R extends MenuAction>(kind: 'focus' | 'favorites', row: (scope: 'workspace' | 'vault', label: string) => R): MenuAction[] {
-  return [{ id: `${kind}-scope-heading`, label: 'Show it in', heading: true, onSelect: () => undefined }, row('workspace', 'This workspace'), row('vault', 'This vault alone')]
+/**
+ * The group (YAZ-4460 demo), one place for the row menu and the tab menu: a heading, then the two lists by the window
+ * that shows them — each a check row that keeps the menu open, so both can be set in one go.
+ */
+export function scopeGroup(kind: 'focus' | 'favorites', scopes: { vault: boolean; workspace: boolean }, set: (scope: 'workspace' | 'vault', on: boolean) => void): MenuAction[] {
+  const row = (scope: 'workspace' | 'vault', label: string): MenuAction => ({ id: `${kind}-scope-${scope}`, label, checked: scopes[scope], twoClick: true, onToggle: (on) => set(scope, on), onSelect: () => undefined })
+  return [{ id: `${kind}-scope-heading`, label: 'Show it in', heading: true, onSelect: () => undefined }, row('workspace', 'Workspace'), row('vault', 'Vault alone')]
 }
 
 /** Where "Add to focus ▸" / "Remove from focus ▸" puts rows (YAZ-4460): a focus folder, a new one, or back to the top level. */

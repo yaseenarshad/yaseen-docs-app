@@ -2819,17 +2819,19 @@ body.drag-held iframe {
 }
 
 /* A row with a glyph (YAZ-3273): the glyph, then the label, the hint still at the right end. */
-/* An armed two-click row (YAZ-4460 demo, as the tab board's Close and the Files window chip): red until the second click. */
+/* An armed two-click row (YAZ-4460 demo, as the tab board's Close): red when the second click removes, accent when it adds. */
 .ctx-menu__item--armed,
-.ctx-menu__item--armed:hover,
-.sidebar__focus-clear--armed {
+.ctx-menu__item--armed:hover {
   color: #fff;
   background: var(--danger);
   border-radius: 4px;
 }
 
-.sidebar__focus-clear--armed {
-  padding: 0 6px;
+.ctx-menu__item--armed-add,
+.ctx-menu__item--armed-add:hover {
+  color: #fff;
+  background: var(--accent);
+  border-radius: 4px;
 }
 
 /* A group's heading (YAZ-4460 demo: "Show it in"): small grey words, no hover, no button. */

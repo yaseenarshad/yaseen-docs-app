@@ -37,7 +37,9 @@ import { UpdatePill } from '../update/UpdatePill'
 import { ZoomMenu } from './ZoomMenu'
 import { buildMenuSections } from './menuSections'
 import type { ListFold } from './listFold'
+import { createPortal } from 'react-dom'
 import { FocusFolderList } from './FocusFolderList'
+import { ConfirmSheet } from '../components/ConfirmSheet'
 import { resolveItem } from '../lists/focusFolders'
 import { RecentList } from './RecentList'
 import { recentSections } from './recents'
@@ -1892,21 +1894,9 @@ export function Sidebar({
                     + Folder
                   </button>
                   {focusNodes.length > 0 && (
-                    // "Clear" takes two clicks (YAZ-4460 demo, the tab board's Close): red "Click again to clear" first, so a
-                    // good list is not lost by one; the pointer leaving puts it back.
-                    <button
-                      type="button"
-                      className={`sidebar__focus-clear${confirmClear ? ' sidebar__focus-clear--armed' : ''}`}
-                      title={`${focusNodes.length === 1 ? 'One item leaves' : `${focusNodes.length} items leave`} focus. Your folders and your files stay.`}
-                      onMouseLeave={() => setConfirmClear(false)}
-                      onBlur={() => setConfirmClear(false)}
-                      onClick={() => {
-                        if (!confirmClear) return setConfirmClear(true)
-                        setConfirmClear(false)
-                        clearFocus()
-                      }}
-                    >
-                      {confirmClear ? 'Click again to clear' : 'Clear'}
+                    // "Clear" asks first (YAZ-4460 demo): two clicks, so a good list is not lost by one.
+                    <button type="button" className="sidebar__focus-clear" onClick={() => setConfirmClear(true)}>
+                      Clear
                     </button>
                   )}
                 </span>
@@ -1928,6 +1918,27 @@ export function Sidebar({
                 onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
               />
             )}
+            {confirmClear &&
+              createPortal(
+                <ConfirmSheet
+                  labelId="confirm-clear-focus-text"
+                  text={
+                    <>
+                      <strong>Clear the top level of Focus?</strong>
+                      <br />
+                      {focusNodes.length === 1 ? 'One item leaves' : `${focusNodes.length} items leave`} focus. Your focus folders and your files do not change.
+                    </>
+                  }
+                  confirmLabel="Clear"
+                  danger
+                  onConfirm={() => {
+                    setConfirmClear(false)
+                    clearFocus()
+                  }}
+                  onCancel={() => setConfirmClear(false)}
+                />,
+                document.body,
+              )}
             {onlyFolder === undefined && focusNodes.length > 0 && <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
           </>
         ) : (

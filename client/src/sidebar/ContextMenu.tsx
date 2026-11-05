@@ -65,13 +65,19 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
   // A two-click row (`confirm`, YAZ-4460 demo): armed after the first click, until the pointer or the focus leaves.
   const [armed, setArmed] = useState(false)
   const label = armed && item.confirm !== undefined ? item.confirm : item.label
+  // A check row (`onToggle`, YAZ-4460 demo): its ✓ is held here, so it flips at the click while the menu stays open.
+  const [checked, setChecked] = useState(item.checked === true)
+  const hint = item.onToggle !== undefined ? (checked ? '✓' : undefined) : item.hint
+  // A two-click check row (`twoClick`): armed, it says what the second click does — add (accent) or remove (red).
+  const shown = armed && item.twoClick === true ? (checked ? 'Click again to remove' : 'Click again to add') : label
+  const armedClass = !armed ? '' : item.twoClick === true && !checked ? ' ctx-menu__item--armed-add' : ' ctx-menu__item--armed'
   return (
     <button
       type="button"
       role="menuitem"
-      className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}${armed ? ' ctx-menu__item--armed' : ''}`}
+      className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}${armedClass}`}
       disabled={item.disabled}
-      data-hint={armed ? undefined : item.hint}
+      data-hint={armed ? undefined : hint}
       title={item.tip}
       onMouseEnter={() => {
         onMouseEnter?.()
@@ -90,16 +96,22 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
       // sets the same null twice — harmless.
       onClick={() => {
         if (item.confirm !== undefined && !armed) return setArmed(true)
+        if (item.onToggle !== undefined) {
+          if (item.twoClick === true && !armed) return setArmed(true)
+          setArmed(false)
+          setChecked(!checked)
+          return item.onToggle(!checked)
+        }
         item.onSelect()
         onClose()
       }}
     >
       {item.icon === undefined ? (
-        label
+        shown
       ) : (
         <span className="ctx-menu__label">
           {item.icon}
-          {label}
+          {shown}
         </span>
       )}
     </button>

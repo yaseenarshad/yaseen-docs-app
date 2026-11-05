@@ -93,8 +93,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     const scopes = lists?.scopes?.[kind]
     const set = lists?.setScope
     if (scopes === undefined || set === undefined) return []
-    const row = (scope: 'workspace' | 'vault', label: string) => ({ id: `${kind}-scope-${scope}`, label, hint: scopes[scope] ? '✓' : undefined, onSelect: () => set(kind, [menu.path], scope, !scopes[scope]) })
-    return [scopeGroup(kind, row)]
+    return [scopeGroup(kind, scopes, (scope, on) => set(kind, [menu.path], scope, on))]
   }
   const sections: MenuSection[] = [
     leading,
