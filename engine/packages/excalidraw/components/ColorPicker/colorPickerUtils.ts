@@ -165,6 +165,27 @@ export const isCustomColor = ({
 };
 
 /**
+ * YAZ-4366: each color an element shows, for the two board color lists: `props` of the element, then, on an icon,
+ * its recipe's painted colors (colors, parts, outline). `icons: false` skips the recipe.
+ */
+const forEachElementColor = (
+  element: ExcalidrawElement,
+  props: readonly ("strokeColor" | "backgroundColor")[],
+  icons: boolean,
+  visit: (color: string | null | undefined) => void,
+) => {
+  for (const prop of props) {
+    visit(element[prop]);
+  }
+  const recipe = icons ? getIconRecipe(element) : null;
+  if (recipe) {
+    Object.values(recipe.colors).forEach(visit);
+    Object.values(recipe.parts ?? {}).forEach(visit);
+    visit(recipe.outline?.color);
+  }
+};
+
+/**
  * The custom colors on the board, most used first. YAZ-4352 (extra 6): an icon's
  * painted colors count in the stroke row too (its recipe: colors, parts, outline),
  * so an icon palette starts with the colors on this board.
@@ -187,13 +208,7 @@ export const getMostUsedCustomColors = (
     if (element.isDeleted) {
       continue;
     }
-    count(element[property]);
-    const recipe = type === "elementStroke" ? getIconRecipe(element) : null;
-    if (recipe) {
-      Object.values(recipe.colors).forEach(count);
-      Object.values(recipe.parts ?? {}).forEach(count);
-      count(recipe.outline?.color);
-    }
+    forEachElementColor(element, [property], type === "elementStroke", count);
   }
 
   return [...colorCountMap.entries()]
@@ -226,14 +241,12 @@ export const getBoardColors = (
     if (element.isDeleted || element.id === exceptId) {
       continue;
     }
-    count(element.strokeColor);
-    count(element.backgroundColor);
-    const recipe = getIconRecipe(element);
-    if (recipe) {
-      Object.values(recipe.colors).forEach(count);
-      Object.values(recipe.parts ?? {}).forEach(count);
-      count(recipe.outline?.color);
-    }
+    forEachElementColor(
+      element,
+      ["strokeColor", "backgroundColor"],
+      true,
+      count,
+    );
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1])
