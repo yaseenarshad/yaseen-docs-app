@@ -281,7 +281,7 @@ function scopeRows(kind: 'focus' | 'favorites', scopes: { vault: boolean; worksp
  */
 export function scopeGroup(kind: 'focus' | 'favorites', scopes: { vault: boolean; workspace: boolean }, set: (scope: 'workspace' | 'vault', on: boolean) => void): MenuAction[] {
   const row = (scope: 'workspace' | 'vault', label: string): MenuAction => ({ id: `${kind}-scope-${scope}`, label, checked: scopes[scope], twoClick: true, onToggle: (on) => set(scope, on), onSelect: () => undefined })
-  return [{ id: `${kind}-scope-heading`, label: 'Show it in', heading: true, onSelect: () => undefined }, row('workspace', 'Workspace'), row('vault', 'Vault alone')]
+  return [{ id: `${kind}-scope-heading`, label: 'Show it in', heading: true, onSelect: () => undefined }, row('workspace', 'Workspace'), row('vault', 'Vault')]
 }
 
 /** Where "Add to focus ▸" / "Remove from focus ▸" puts rows (YAZ-4460): a focus folder, a new one, or back to the top level. */
