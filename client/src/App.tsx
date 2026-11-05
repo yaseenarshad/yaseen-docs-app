@@ -1256,8 +1256,10 @@ export function App() {
     else if (reviewing.current) openBackground(path)
     // "New tab" is always a new tab, a copy when another tab shows the page (YAZ-3943 5B, as browsers do; it was D10's "go to that tab").
     else if (where === 'newTab') openKept(path, true)
+    // A link's "Open in a new window" (YAZ-4444): the link menu's New window.
+    else if (where === 'newWindow') linkActions.openNewWindow?.(path)
     else navigate(path)
-  }, [openBackground, openBackgroundCopy, navigate, openKept])
+  }, [openBackground, openBackgroundCopy, navigate, openKept, linkActions])
   // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
   // A trip to another copy of the same file (YAZ-2940) moves `activeTab` and not `file`, so both are watched.
   const closeReview = useCallback(() => live.current.vaults.forEach((vault) => vault.review.close()), [])
