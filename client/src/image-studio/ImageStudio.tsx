@@ -90,6 +90,9 @@ const MATCH_PAGE = 48
 /** How to save a copied picture at full size (demo 6M), under Components. */
 const PASTE_HINT = 'Copy a picture anywhere, then press ⌘V here to save it to your library at full size. You can drop a picture file here too.'
 
+/** No item touched during this search: one empty set, so `shownElsewhere` keeps its identity. */
+const NOTHING_TOUCHED: ReadonlySet<string> = new Set()
+
 /** What an add says on a read-only board, where it puts nothing. */
 export const READ_ONLY_NOTICE = 'This board is read only. Click “Allow edits” on its Read only chip to add to it.'
 /** How many hand-drawn matches show at first (demo 6K): two rows; "Show more" adds `MATCH_PAGE`. */
@@ -203,6 +206,9 @@ export function loadPackList(): Promise<IconPackInfo[]> {
 /** The settings' filters and pins, read where the panel has no settings prop (`storage`, which a test may not have). */
 const settingsFilters = (): MediaFilters => sanitizeMediaFilters(storage.getSettings()?.mediaFilters ?? DEFAULT_MEDIA_FILTERS)
 const settingsPins = (): string[] => storage.getSettings()?.mediaPinnedPacks ?? []
+const settingsGroupSimilar = (): boolean => storage.getSettings()?.mediaGroupSimilar ?? true
+/** The pins as they are now, or the same array when they hold the same packs, so a settings broadcast renders nothing. */
+const samePins = (now: string[], next: string[]): string[] => (now.length === next.length && now.every((p, i) => p === next[i]) ? now : next)
 
 export const clearPreviewMemo = () => {
   packList = null
@@ -328,13 +334,18 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   const { chip, query, searchedQuery, results, cursor, warnings, isSearching, waiting, offline, pageError, error, pixabayAvailable, favorites, recent, used, components, drawings, recentOpen, smart, filters, pack } = session
   const { set } = imageStudioSession
   const packsStatus = useIconPacks()
-  // The filters and the pins live in the settings (they travel); the session holds a copy for the search to send. A
-  // change from another window searches again, as a pick in the menu does (YAZ-4384); the same filters ask nothing.
+  // The filters, the pins and Similar icons live in the settings (they travel); the session holds a copy of the
+  // filters for the search to send. A change from another window searches again, as a pick in the menu does
+  // (YAZ-4384); the same filters ask nothing. `read` runs on each settings broadcast (a tab click too), so the same
+  // values keep the same state and render nothing (YAZ-4366 audit 67, 69).
   const [pinned, setPinned] = useState<string[]>(settingsPins)
+  // Filter › Similar icons (YAZ-4348 demo round 2): the "+N" groups, or every icon as its own tile.
+  const [groupSimilar, setGroupSimilar] = useState<boolean>(settingsGroupSimilar)
   useEffect(() => {
     const read = () => {
       setFilters(settingsFilters())
-      setPinned(settingsPins())
+      setPinned((now) => samePins(now, settingsPins()))
+      setGroupSimilar(settingsGroupSimilar())
     }
     read()
     return storage.subscribe(read)
@@ -387,11 +398,10 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   // The open "+N" group, apart from `openTile` (YAZ-4348 demo round 2): a right-click on a tile inside the group opens
   // that tile's menu and the group stays open; one shared state closed the group, and the menu with its tile.
   const [openGroup, setOpenGroup] = useState<string | null>(null)
-  // Filter › Similar icons (YAZ-4348 demo round 2): the "+N" groups, or every icon as its own tile.
-  const [groupSimilar, setGroupSimilar] = useState<boolean>(() => storage.getSettings()?.mediaGroupSimilar ?? true)
+  // A change of Similar icons, here or from another window, closes the open group: its tile may no longer have one.
+  useEffect(() => setOpenGroup(null), [groupSimilar])
   const changeGroupSimilar = (on: boolean) => {
     setGroupSimilar(on)
-    setOpenGroup(null)
     storage.patchSettings({ mediaGroupSimilar: on })
   }
   const [draft, setDraft] = useState('')
@@ -588,14 +598,19 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     if (yourKeys.has(itemKey)) return
     setTouched((now) => (now.has(itemKey) ? now : new Set(now).add(itemKey)))
   }
-  useEffect(() => setTouched(new Set()), [query, chip])
+  // The same empty set when nothing was touched, so a typed key costs no second render (YAZ-4366 audit 71).
+  useEffect(() => setTouched((now) => (now.size === 0 ? now : new Set())), [query, chip])
   const ranked = useMemo(
     () => (typed ? rankItems(pool.filter((item) => inChip(chip, item, favoriteKeys)), usedByKey, query, aliases) : []),
     // `aliases` reads `catalog`, which is listed.
     [typed, pool, chip, favoriteKeys, usedByKey, query, catalog],
   )
   // A touched item that is still on screen elsewhere (the web results, the hand-drawn list) is not in Best matches too.
-  const shownElsewhere = useMemo(() => new Set([...results, ...(drawings ?? [])].map((item) => item.itemKey).filter((key) => touched.has(key))), [results, drawings, touched])
+  // With nothing touched (most searches) it walks nothing, also on each page of results (YAZ-4366 audit 72).
+  const shownElsewhere = useMemo(
+    () => (touched.size === 0 ? NOTHING_TOUCHED : new Set([...results, ...(drawings ?? [])].map((item) => item.itemKey).filter((key) => touched.has(key)))),
+    [results, drawings, touched],
+  )
   const yours = useMemo(() => (shownElsewhere.size === 0 ? ranked : ranked.filter((item) => !shownElsewhere.has(item.itemKey))), [ranked, shownElsewhere])
   useEffect(() => {
     setShownMatches(MATCH_PAGE)

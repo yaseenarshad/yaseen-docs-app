@@ -620,6 +620,16 @@ describe('one tile per icon, its copies on request (demo 6J)', () => {
     // A view choice, not a filter: no badge, and Clear filters keeps it
     expect(filterButton(host)?.getAttribute('aria-label')).toBe('Filter')
   })
+
+  it('Similar icons changed in another window (the settings sync) applies here at once (YAZ-4366 audit 67)', async () => {
+    nails()
+    const { host } = await mount()
+    await search(host, 'nail')
+    expect(tileNames(section(host, 'From the web'))).toEqual(['nail polish', 'hammer and nail'])
+    store.getSettings.mockReturnValue({ ...DEFAULT_SETTINGS, mediaGroupSimilar: false })
+    await act(async () => store.subscribe.mock.calls.forEach(([fn]) => (fn as () => void)()))
+    expect(tileNames(section(host, 'From the web'))).toEqual(['nail polish', 'nail polish', 'nail polish medium dark', 'hammer and nail'])
+  })
 })
 
 describe('Excalidraw`s public libraries: the Hand-drawn section (demo 6K)', () => {
