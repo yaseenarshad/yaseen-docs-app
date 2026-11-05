@@ -300,3 +300,8 @@
   border-radius: 5px;
   outline: none;
 }
+
+/* The Read only message (YAZ-4446) opens above the engine's toolbar too, as the cog's menu does (YAZ-4071 7J). */
+.editor--drawing .excalidraw .drawing-editor__chips .read-only-message {
+  z-index: calc(var(--zIndex-ui-top, 100) + 1);
+}

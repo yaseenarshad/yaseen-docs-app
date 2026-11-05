@@ -48,6 +48,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { $prose } from '@milkdown/kit/utils'
 import { NOTE_PAGE, claimPage, isShown, pageSelectionHolder } from '../lib/readOnlyCaret'
 import { noteKeys, noteOverrides } from './noteKeys'
+import { tellReadOnlyEdit } from './readOnlyEdit'
 
 const yes = (): boolean => true
 
@@ -99,6 +100,16 @@ function redrawFromDoc(view: EditorView): void {
 const refuse = (view: EditorView, event: Event): boolean => {
   if (view.editable) return false
   event.preventDefault()
+  return true
+}
+
+/** Native undo and redo are not an edit attempt: ⌘Z is a view action of a locked note (fold, zoom). */
+const VIEW_INPUTS = new Set(['historyUndo', 'historyRedo'])
+
+/** An edit refused: the pane's "Read only" chip says why (YAZ-4446). */
+const refuseEdit = (view: EditorView, event: Event): boolean => {
+  if (!refuse(view, event)) return false
+  if (!VIEW_INPUTS.has((event as Partial<InputEvent>).inputType ?? '')) tellReadOnlyEdit(view.dom, 'note')
   return true
 }
 
@@ -162,11 +173,12 @@ export const readOnlyKeys = $prose(
       key: new PluginKey('mdapp-read-only-keys'),
       props: {
         // Every native edit of a locked body, before the DOM changes (YAZ-4433). Paste and cut stop at their own
-        // event, as before the caret: ⌘X copies nothing in read only, and ⌘C (`copy`) stays ProseMirror's.
+        // event, as before the caret: ⌘X copies nothing in read only, and ⌘C (`copy`) stays ProseMirror's. Each one
+        // tells the pane, and its "Read only" chip shows why nothing happened (YAZ-4446).
         handleDOMEvents: {
-          beforeinput: refuse,
-          paste: refuse,
-          cut: refuse,
+          beforeinput: refuseEdit,
+          paste: refuseEdit,
+          cut: refuseEdit,
           // Tab indents in a normal note, so it never takes the focus out of the body. In a table cell Tab / ⇧Tab go to
           // the next / previous cell, as in a normal note, but straight to the table's own move: a cell bullet's
           // indent (the note's Tab before the table's) never runs, and the last cell adds no row (YAZ-4433).

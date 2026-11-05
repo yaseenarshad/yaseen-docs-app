@@ -11,6 +11,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { focusReadOnlyBody } from './readOnlyKeys'
+import { READ_ONLY_EDIT } from './readOnlyEdit'
 import { pageHoldsKeys } from '../lib/readOnlyCaret'
 import { createCrepe, focusEditor, getMarkdownForSave, getZoomKeyOf } from './createCrepe'
 import { OUTLINE_FOLDED_ATTR } from './outline/outlineFolding'
@@ -546,5 +547,60 @@ describe('a read-only note keeps its caret and keys (YAZ-4433)', () => {
     })
     view.dispatch(view.state.tr.insertText('Agent ', at))
     expect(getMarkdownForSave(crepe)).toContain('Agent L1 a')
+  })
+
+  /** The edit attempts the guard tells its pane (YAZ-4446): what each `READ_ONLY_EDIT` said, from where. */
+  function heard(): Array<{ what: unknown; from: EventTarget | null }> {
+    const told: Array<{ what: unknown; from: EventTarget | null }> = []
+    const listen = (event: Event) => told.push({ what: (event as CustomEvent).detail, from: event.target })
+    document.addEventListener(READ_ONLY_EDIT, listen)
+    listening.push(() => document.removeEventListener(READ_ONLY_EDIT, listen))
+    return told
+  }
+  const listening: Array<() => void> = []
+  afterEach(() => listening.splice(0).forEach((stop) => stop()))
+
+  it('YAZ-4446: typing, Enter, Backspace, IME and the letter styles tell the pane "a note is Read only", from the body', async () => {
+    const { view } = await locked('L2 a', 2)
+    const told = heard()
+    for (const inputType of ['insertText', 'insertParagraph', 'deleteContentBackward', 'insertCompositionText', 'formatBold', 'insertFromDrop']) {
+      view.dom.dispatchEvent(new InputEvent('beforeinput', { inputType, data: inputType.startsWith('insert') ? 'X' : null, bubbles: true, cancelable: true }))
+    }
+    expect(told).toHaveLength(6)
+    expect(told.every((t) => t.what === 'note' && t.from === view.dom)).toBe(true)
+  })
+
+  it('YAZ-4446: a paste and a cut tell it too', async () => {
+    const { view } = await locked('L2 a', 2)
+    const told = heard()
+    view.dom.dispatchEvent(clipboard('paste', { 'text/plain': 'PASTED' }).event)
+    view.dom.dispatchEvent(clipboard('cut').event)
+    expect(told.map((t) => t.what)).toEqual(['note', 'note'])
+  })
+
+  it('YAZ-4446: the caret keys, ⇧ + arrows, ⌘A, ⌘C, the fold keys and native undo / redo tell nothing', async () => {
+    const { view } = await locked('L2 a', 2)
+    const told = heard()
+    for (const k of ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageDown']) {
+      key(view, k)
+      key(view, k, { shift: true })
+      key(view, k, { mod: true })
+    }
+    key(view, 'a', { mod: true })
+    key(view, 'c', { mod: true })
+    view.dom.dispatchEvent(clipboard('copy').event)
+    key(view, 'u', { mod: true, shift: true })
+    key(view, 'Tab')
+    for (const inputType of ['historyUndo', 'historyRedo']) view.dom.dispatchEvent(new InputEvent('beforeinput', { inputType, bubbles: true, cancelable: true }))
+    expect(told).toEqual([])
+  })
+
+  it('YAZ-4446: an editable note tells nothing', async () => {
+    const { crepe, view } = await locked('L2 a', 2)
+    crepe.setReadonly(false)
+    const told = heard()
+    view.dom.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: 'X', bubbles: true, cancelable: true }))
+    view.dom.dispatchEvent(clipboard('paste', { 'text/plain': 'PASTED' }).event)
+    expect(told).toEqual([])
   })
 })
