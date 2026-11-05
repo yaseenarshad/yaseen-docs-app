@@ -758,6 +758,15 @@ export const hostTextWysiwyg = ({
     window.addEventListener("pointercancel", stopDrag);
   };
 
+  /**
+   * YAZ-4429: a click goes no further than the root. The editor's own nodes
+   * (a list label, a fold chevron, a bullet that zooms) are invisible and
+   * laid out at their own size; the press already placed the caret.
+   */
+  const onRootClick = (event: MouseEvent) => {
+    event.stopPropagation();
+  };
+
   /** YAZ-4039 D15: right-click on a pill in the editor gives the link menu. */
   const onRootContextMenu = (event: MouseEvent) => {
     const onContextMenu = app.props.hostLinks?.onContextMenu;
@@ -1023,6 +1032,10 @@ export const hostTextWysiwyg = ({
     }
     isDestroyed = true;
     cleanup();
+    // YAZ-4430: the board closed; each change is already in its scene
+    if (app.unmounted) {
+      return;
+    }
     const current = getElement();
     if (!current) {
       return;
@@ -1073,9 +1086,15 @@ export const hostTextWysiwyg = ({
     window.addEventListener("blur", handleSubmit);
   };
 
-  /** True when the press is within `NEAR_BOX_PX` on screen of the box. */
+  /**
+   * True when the press is within `NEAR_BOX_PX` on screen of the box, on this
+   * board (YAZ-4430: never a press on another board).
+   */
   const isNearBox = (event: MouseEvent) => {
-    if (!layout) {
+    if (
+      !layout ||
+      !excalidrawContainer?.contains(event.target as Node | null)
+    ) {
       return false;
     }
     const point = viewportCoordsToSceneCoords(event, app.state);
@@ -1153,7 +1172,8 @@ export const hostTextWysiwyg = ({
 
   const cleanup = () => {
     stopDrag();
-    root.removeEventListener("pointerdown", onRootPointerDown);
+    root.removeEventListener("pointerdown", onRootPointerDown, true);
+    root.removeEventListener("click", onRootClick, true);
     root.removeEventListener("contextmenu", onRootContextMenu);
     root.removeEventListener("keydown", onRootKeyDown, true);
     root.removeEventListener("paste", onRootPaste, true);
@@ -1176,7 +1196,9 @@ export const hostTextWysiwyg = ({
     overlay.remove();
   };
 
-  root.addEventListener("pointerdown", onRootPointerDown);
+  // YAZ-4429: before the editor's own nodes, which may stop the press
+  root.addEventListener("pointerdown", onRootPointerDown, true);
+  root.addEventListener("click", onRootClick, true);
   root.addEventListener("contextmenu", onRootContextMenu);
   root.addEventListener("keydown", onRootKeyDown, true);
   root.addEventListener("paste", onRootPaste, true);
