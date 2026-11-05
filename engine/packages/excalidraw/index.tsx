@@ -433,20 +433,8 @@ export {
   DEFAULT_NEW_TEXT_SCREEN_SIZE,
 } from "./textCreation";
 export { isInvisiblySmallElement } from "@excalidraw/element";
-// YAZ-4277 D3, D5: the folds of a text box (the `textFolds.ts` switch point) and its fold arrows.
-export {
-  DEFAULT_FOLD_ARROW_PREFS,
-  getAllFoldedLines,
-  getFoldableLines,
-  getFoldedLines,
-  getHiddenLines,
-  getToggledFoldedLines,
-  isFoldableLine,
-  isLineFolded,
-  normalizeFoldedLines,
-  TEXT_LIST_CHECK_MARKERS,
-} from "@excalidraw/element";
-export type { FoldArrowPrefs } from "@excalidraw/element";
+// YAZ-4277 D5: the default fold arrows (the host's cog defaults match them)
+export { DEFAULT_FOLD_ARROW_PREFS } from "@excalidraw/element";
 
 export { defaultLang, useI18n, languages } from "./i18n";
 export {

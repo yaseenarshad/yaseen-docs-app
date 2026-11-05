@@ -44,7 +44,7 @@ import {
   getFormValue,
 } from "../actions/actionProperties";
 
-import { useTextEditorFocus } from "../hooks/useTextEditorFocus";
+import { restoreCaretPosition } from "../hooks/useTextEditorFocus";
 
 import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 
@@ -1082,7 +1082,6 @@ const CombinedTextProperties = ({
   predicates: ShapeActionPredicates;
   container: HTMLDivElement | null;
 }) => {
-  const { saveCaretPosition, restoreCaretPosition } = useTextEditorFocus();
   const isOpen = appState.openPopup === "compactTextProperties";
 
   return (
@@ -1091,9 +1090,6 @@ const CombinedTextProperties = ({
         open={isOpen}
         onOpenChange={(open) => {
           if (open) {
-            if (appState.editingTextElement) {
-              saveCaretPosition();
-            }
             setAppState({ openPopup: "compactTextProperties" });
           } else {
             setAppState({ openPopup: null });
@@ -1117,9 +1113,6 @@ const CombinedTextProperties = ({
               if (isOpen) {
                 setAppState({ openPopup: null });
               } else {
-                if (appState.editingTextElement) {
-                  saveCaretPosition();
-                }
                 setAppState({ openPopup: "compactTextProperties" });
               }
             }}

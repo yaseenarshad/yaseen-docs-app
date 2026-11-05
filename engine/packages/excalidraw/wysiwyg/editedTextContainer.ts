@@ -26,8 +26,8 @@ import type {
 import type App from "../components/App";
 
 /**
- * The place of a text in edit inside its shape (YAZ-4277 D1: the textarea and
- * the host editor share it). The shape grows with the text, and shrinks back
+ * The place of a text in edit inside its shape (YAZ-4277 D1, for the host's
+ * text editor). The shape grows with the text, and shrinks back
  * to its height before the edit. Null: the shape grew, and the scene update
  * that follows places the text again.
  */
@@ -104,8 +104,8 @@ export const fitEditedTextContainer = (
 };
 
 /**
- * The shape of a text whose edit ends (YAZ-4277 D1: the textarea and the host
- * editor share it): it holds the text, or lets an empty one go, and fits it.
+ * The shape of a text whose edit ends (YAZ-4277 D1, in the host's text
+ * editor): it holds the text, or lets an empty one go, and fits it.
  */
 export const submitEditedTextContainer = (
   app: App,

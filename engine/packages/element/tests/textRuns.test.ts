@@ -4,14 +4,8 @@ import {
   getTextHighlightFill,
   getTextRangeColor,
   getTextRangeHighlight,
-  getTextRangeToolbarKey,
-  isTextRangeStyled,
   normalizeTextRuns,
-  getInsertedTextRange,
-  getTextRunsInRange,
   remapTextRunsForTextEdit,
-  setTextRunColor,
-  setTextRunFlag,
   setTextRunHighlight,
   TEXT_HIGHLIGHT_FILLS,
 } from "../src/textRuns";
@@ -100,44 +94,6 @@ describe("YAZ-3718 D1: convertLineStylesToTextRuns", () => {
     ).toEqual([
       { start: 0, end: 5, bold: true, underline: true },
       { start: 6, end: 14, bold: true },
-    ]);
-  });
-});
-
-describe("YAZ-3718 D10: styles on a selection", () => {
-  it("styles a selection and removes the style when all of it has it", () => {
-    const bold = setTextRunFlag(undefined, 11, 6, 11, "bold", true);
-    expect(bold).toEqual([{ start: 6, end: 11, bold: true }]);
-    expect(isTextRangeStyled(bold, 6, 11, "bold")).toBe(true);
-    expect(isTextRangeStyled(bold, 5, 11, "bold")).toBe(false);
-    expect(setTextRunFlag(bold, 11, 6, 11, "bold", false)).toBeUndefined();
-  });
-
-  it("un-styles a part of a run and keeps the other styles there", () => {
-    const runs = [{ start: 0, end: 10, bold: true, italic: true } as const];
-
-    expect(setTextRunFlag(runs, 10, 3, 6, "bold", false)).toEqual([
-      { start: 0, end: 3, bold: true, italic: true },
-      { start: 3, end: 6, italic: true },
-      { start: 6, end: 10, bold: true, italic: true },
-    ]);
-  });
-
-  it("colors only the selected letters", () => {
-    const runs = setTextRunColor(
-      [{ start: 0, end: 4, bold: true }],
-      10,
-      2,
-      6,
-      "#e03131",
-    );
-    expect(runs).toEqual([
-      { start: 0, end: 2, bold: true },
-      { start: 2, end: 4, bold: true, color: "#e03131" },
-      { start: 4, end: 6, color: "#e03131" },
-    ]);
-    expect(setTextRunColor(runs, 10, 0, 10, undefined)).toEqual([
-      { start: 0, end: 4, bold: true },
     ]);
   });
 });
@@ -255,24 +211,6 @@ describe("YAZ-3718 D10: remapTextRunsForTextEdit", () => {
     ).toEqual([{ start: 10, end: 13, bold: true }]);
   });
 
-  it("YAZ-4071 7L: getInsertedTextRange finds the letters an undo brought back, and getTextRunsInRange gives their runs from 0", () => {
-    expect(getInsertedTextRange(" cd", "ab cd")).toEqual({ start: 0, end: 2 });
-    expect(getInsertedTextRange("XcdY", "XY")).toEqual({ start: 1, end: 1 });
-    expect(
-      getTextRunsInRange(
-        [
-          { start: 0, end: 3, bold: true },
-          { start: 4, end: 6, italic: true },
-        ],
-        2,
-        5,
-      ),
-    ).toEqual([
-      { start: 0, end: 1, bold: true },
-      { start: 2, end: 3, italic: true },
-    ]);
-  });
-
   it("uses the caret to tell Enter at a line end from Enter at the next line start", () => {
     const lineRuns = [{ start: 0, end: 5, bold: true as const }];
     expect(
@@ -367,7 +305,9 @@ describe("YAZ-4102 3E: highlight runs", () => {
     ]);
     expect(setTextRunHighlight(yellow, 11, 6, 11, undefined)).toBeUndefined();
     // a part of it, and the other styles stay
-    const bold = setTextRunFlag(yellow, 11, 6, 11, "bold", true);
+    const bold = [
+      { start: 6, end: 11, bold: true as const, highlight: "yellow" },
+    ];
     expect(setTextRunHighlight(bold, 11, 8, 11, undefined)).toEqual([
       { start: 6, end: 8, bold: true, highlight: "yellow" },
       { start: 8, end: 11, bold: true },
@@ -441,35 +381,5 @@ describe("YAZ-4101: the last run removed is a change", () => {
     expect(element.version).toBe(version + 1);
     mutateElement(element, new Map(), { textRuns: undefined });
     expect(element.version).toBe(version + 1);
-  });
-});
-
-describe("YAZ-4101 3D: the toolbar's key for a selection", () => {
-  const text = "Hello red world";
-  const runs = [
-    { start: 0, end: 5, bold: true as const },
-    { start: 6, end: 9, color: "#e03131" },
-  ];
-  const key = (start: number, end: number) =>
-    getTextRangeToolbarKey(runs, text, start, end);
-
-  it("is the same for letters, and a caret, that show the same toolbar", () => {
-    expect(key(1, 4)).toBe(key(0, 5));
-    expect(key(2, 2)).toBe(key(0, 5));
-    expect(key(10, 15)).toBe(key(11, 11));
-  });
-
-  it("differs for another flag, color or highlight, and tells the box color from mixed", () => {
-    expect(key(0, 5)).not.toBe(key(10, 15));
-    expect(key(6, 9)).not.toBe(key(10, 15));
-    expect(key(4, 8)).not.toBe(key(10, 15));
-    expect(
-      getTextRangeToolbarKey(
-        [{ start: 0, end: 5, highlight: "yellow" }],
-        text,
-        0,
-        5,
-      ),
-    ).not.toBe(getTextRangeToolbarKey(undefined, text, 0, 5));
   });
 });
