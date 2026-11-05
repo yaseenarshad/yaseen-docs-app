@@ -969,10 +969,7 @@ const renderElementToSvg = (
                 );
                 icon.setAttribute("fill", "none");
                 icon.setAttribute("stroke", colors.text);
-                icon.setAttribute(
-                  "stroke-width",
-                  `${Math.max(1, pill.iconSize / 10)}`,
-                );
+                icon.setAttribute("stroke-width", `${pill.iconSize / 10}`);
                 if (image === undefined) {
                   node.appendChild(icon);
                 }

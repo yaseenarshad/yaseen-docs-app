@@ -702,9 +702,9 @@ const drawElementOnCanvas = (
               if (segment.underlined) {
                 context.fillRect(
                   x,
-                  baseline + Math.max(1, element.fontSize * 0.08),
+                  baseline + element.fontSize * 0.08,
                   segment.width,
-                  Math.max(1, element.fontSize / 16),
+                  element.fontSize / 16,
                 );
               }
               if (segment.strikethrough || done) {
@@ -712,7 +712,7 @@ const drawElementOnCanvas = (
                   x,
                   baseline - element.fontSize * 0.3,
                   segment.width,
-                  Math.max(1, element.fontSize / 16),
+                  element.fontSize / 16,
                 );
               }
             }
@@ -734,9 +734,9 @@ const drawElementOnCanvas = (
             if (lines[index].underlined) {
               context.fillRect(
                 underlineX,
-                baseline + Math.max(1, element.fontSize * 0.08),
+                baseline + element.fontSize * 0.08,
                 lineWidth,
-                Math.max(1, element.fontSize / 16),
+                element.fontSize / 16,
               );
             }
             if (lines[index].strikethrough) {
@@ -744,7 +744,7 @@ const drawElementOnCanvas = (
                 underlineX,
                 baseline - element.fontSize * 0.3,
                 lineWidth,
-                Math.max(1, element.fontSize / 16),
+                element.fontSize / 16,
               );
             }
           }
@@ -829,7 +829,7 @@ const drawLinkPill = (
     );
   } else if (link.icon === undefined) {
     context.strokeStyle = colors.text;
-    context.lineWidth = Math.max(1, pill.iconSize / 10);
+    context.lineWidth = pill.iconSize / 10;
     context.beginPath();
     for (const [index, [px, py]] of getLinkPillIconOutline(
       pill.iconSize,
