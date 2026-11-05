@@ -347,6 +347,13 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, outsideListPinned: 1 })).toBe(false)
   })
 
+  it('YAZ-4450 D4, D7: workspaceLists and recentsByVault — a file without them loads them on; a value kept; junk falls back', () => {
+    const { workspaceLists: _w, recentsByVault: _r, ...legacy } = DEFAULT_SETTINGS
+    expect(sanitizeSettings(legacy)).toMatchObject({ workspaceLists: { focus: true, favorites: true }, recentsByVault: true })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, workspaceLists: { focus: false, favorites: true }, recentsByVault: false })).toMatchObject({ workspaceLists: { focus: false, favorites: true }, recentsByVault: false })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, workspaceLists: { focus: 'no' }, recentsByVault: 'yes' })).toMatchObject({ workspaceLists: { focus: true, favorites: true }, recentsByVault: true })
+  })
+
   it('commentsOrder: a pre-1515 file without the key sanitizes to oldest; both orders survive; junk falls back (YAZ-1515)', async () => {
     const { commentsOrder: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))

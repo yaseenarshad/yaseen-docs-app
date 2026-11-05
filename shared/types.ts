@@ -1225,6 +1225,12 @@ export const DEFAULT_SEARCH_SORT: TabSort = { by: 'best', reverse: false }
 /** Which tabs show the last updated date at the right end of each row (YAZ-3511 D10): one switch for each tab, on for Search only. */
 export type RowDates = Record<SortMenuTab, boolean>
 export const DEFAULT_ROW_DATES: RowDates = { files: false, focus: false, favorites: false, search: true }
+/** Which list of a vault the window shows (YAZ-4450 D1): its own, or its list for a window with two or more vaults. */
+export type ListScope = 'vault' | 'workspace'
+export const LIST_SCOPES: readonly ListScope[] = ['vault', 'workspace']
+/** "Separate list for workspaces" (YAZ-4450 D4): one switch for Focus, one for Favorites. On by default: a workspace shows its own lists. */
+export type WorkspaceLists = Record<'focus' | 'favorites', boolean>
+export const DEFAULT_WORKSPACE_LISTS: WorkspaceLists = { focus: true, favorites: true }
 
 /**
  * `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. The max is only a
@@ -1795,6 +1801,10 @@ export interface SettingsState {
   searchSort: TabSort
   /** Which tabs show each row's Last updated at the right end (YAZ-3511 D7, D10): one switch for each tab of the sort menu. */
   rowDates: RowDates
+  /** Each tab's "Separate list for workspaces" (YAZ-4450 D4): a window with two or more vaults shows each vault's workspace list. Travels with the settings. */
+  workspaceLists: WorkspaceLists
+  /** Recents in a window with two or more vaults splits each day by vault (YAZ-4450 D7). Travels with the settings. */
+  recentsByVault: boolean
   /** The tab row's order, its hidden tabs and its hidden buttons (YAZ-3273 D8): global to this Mac, never part of a vault. */
   sidebarTabs: SidebarTabsPrefs
   /** The selection toolbar's group order, button order and hidden buttons (YAZ-3806 T5). Travels with the settings. */
@@ -2288,6 +2298,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarSort: DEFAULT_SIDEBAR_SORT,
   searchSort: DEFAULT_SEARCH_SORT,
   rowDates: DEFAULT_ROW_DATES,
+  workspaceLists: DEFAULT_WORKSPACE_LISTS,
+  recentsByVault: true,
   sidebarTabs: DEFAULT_SIDEBAR_TABS,
   selectionToolbar: DEFAULT_TOOLBAR,
   highlightCustomColors: [],

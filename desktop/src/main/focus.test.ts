@@ -285,7 +285,7 @@ describe('subscribeFocus (R12)', () => {
     const off = subscribeFocus(root, heard)
     try {
       await setFocus(root, [path.join(root, 'top.md')])
-      expect(heard.mock.calls).toEqual([[{ root }]])
+      expect(heard.mock.calls).toEqual([[{ root, scope: 'vault' }]])
       await sleep(300) // let the watcher settle on the just-created dotfolder
       await seed(root, 'favorites.json', { version: 1, favorites: [] })
       await seed(root, 'focus.json', { version: 1, at: '2099-01-01T00:00:00.000Z', focus: [] })
@@ -293,8 +293,59 @@ describe('subscribeFocus (R12)', () => {
       expect(heard).toHaveBeenCalledTimes(1)
       await seed(root, focusFile(B), { version: 1, at: '2099-01-01T00:00:00.000Z', focus: ['Notes'] })
       await vi.waitFor(() => expect(heard.mock.calls.length).toBeGreaterThan(1), { timeout: 3000 })
-      expect(heard).toHaveBeenLastCalledWith({ root })
+      expect(heard).toHaveBeenLastCalledWith({ root, scope: 'vault' })
       expect(await getFocus(root)).toEqual([path.join(root, 'Notes')])
+    } finally {
+      off()
+    }
+  })
+})
+
+describe('the workspace list (YAZ-4450 D1, D3)', () => {
+  it('each list reads and writes only its own file; no workspace file is an EMPTY list, never the vault\'s own (D3)', async () => {
+    const root = await makeVault()
+    const [top, notes] = [path.join(root, 'top.md'), path.join(root, 'Notes')]
+    await setFocus(root, [top])
+    expect(await getFocus(root, 'workspace')).toEqual([])
+    await setFocus(root, [notes], 'workspace')
+    expect((await names(root)).sort()).toEqual([focusFile(A, 'workspace'), focusFile(A)].sort())
+    expect(focusFile(A, 'workspace')).toBe(`focus-workspace.${A}.json`)
+    expect(await getFocus(root)).toEqual([top])
+    expect(await getFocus(root, 'workspace')).toEqual([notes])
+    const own = await bytes(root, A)
+    await setFocus(root, [], 'workspace')
+    expect(await getFocus(root, 'workspace')).toEqual([])
+    expect(await bytes(root, A)).toBe(own) // the vault's own file never moved
+  })
+
+  it('a workspace file never counts as the vault\'s own list: an old build\'s read sees only focus.<mac id>.json', async () => {
+    const root = await makeVault()
+    await seed(root, focusFile(B, 'workspace'), { version: 1, at: '2099-01-01T00:00:00.000Z', focus: ['Notes'] })
+    expect(await getFocus(root)).toEqual([])
+    expect(await getFocus(root, 'workspace')).toEqual([path.join(root, 'Notes')])
+  })
+
+  it('a rename and a delete repair BOTH lists of the vault, each written only when it changed', async () => {
+    const root = await makeVault()
+    const [p, deep] = [path.join(root, 'Projects', 'p.md'), path.join(root, 'Projects', 'Alpha', 'deep.md')]
+    await setFocus(root, [p, path.join(root, 'top.md')])
+    await setFocus(root, [deep, p], 'workspace')
+    await renamePath([root], path.join(root, 'Projects'), path.join(root, 'Work'))
+    expect(await getFocus(root)).toEqual([path.join(root, 'Work', 'p.md'), path.join(root, 'top.md')])
+    expect(await getFocus(root, 'workspace')).toEqual([path.join(root, 'Work', 'Alpha', 'deep.md'), path.join(root, 'Work', 'p.md')])
+    const own = await bytes(root, A)
+    await removePath([root], path.join(root, 'Work', 'Alpha'))
+    expect(await getFocus(root, 'workspace')).toEqual([path.join(root, 'Work', 'p.md')])
+    expect(await bytes(root, A)).toBe(own) // nothing of the own list was under the deleted folder
+  })
+
+  it('subscribeFocus names the list that changed', async () => {
+    const root = await makeVault()
+    const heard = vi.fn()
+    const off = subscribeFocus(root, heard)
+    try {
+      await setFocus(root, [path.join(root, 'top.md')], 'workspace')
+      expect(heard.mock.calls).toEqual([[{ root, scope: 'workspace' }]])
     } finally {
       off()
     }

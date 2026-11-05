@@ -224,6 +224,16 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect(JSON.parse(a.read('.yaseendocs/favorites.json')).favorites).toEqual(['a.excalidraw', 'sam.md', 'me.md'])
   })
 
+  it('YAZ-4450 D1: favorites-workspace.json merges per entry by the favorites.json rule, silently', async () => {
+    const favs = (list: string[]) => `${JSON.stringify({ version: 1, favorites: list }, null, 2)}\n`
+    const { a, b } = await twoMachines({ '.yaseendocs/favorites-workspace.json': favs(['a.md', 'b.md']) })
+    await b.write('.yaseendocs/favorites-workspace.json', favs(['a.md', 'sam.md']))
+    await a.write('.yaseendocs/favorites-workspace.json', favs(['b.md', 'a.md', 'me.md']))
+    const status = await meet(a, b)
+    expect(status.merged).toBeUndefined()
+    expect(JSON.parse(a.read('.yaseendocs/favorites-workspace.json')).favorites).toEqual(['a.md', 'sam.md', 'me.md'])
+  })
+
   it('S15: a board that will not parse on one side keeps both copies instead of writing a broken merge', async () => {
     const { a, b } = await twoMachines({ 'b.excalidraw': board([r1]) })
     await b.write('b.excalidraw', '{ not a scene')

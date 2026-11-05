@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { MAX_FAVORITES, VAULT_CONFIG_DIR } from '@shared/types'
 import { failure } from './fs/testFixture'
-import { FAVORITES_FILE, getFavorites, mergeFavoritesFile, isSafeRel, removePath, renamePath, setFavorites, toAbs, toRel } from './favorites'
+import { FAVORITES_FILE, FAVORITES_WORKSPACE_FILE, getFavorites, subscribeFavorites, mergeFavoritesFile, isSafeRel, removePath, renamePath, setFavorites, toAbs, toRel } from './favorites'
 
 /**
  * The Favorites list in the vault (YAZ-1766 6A, D11–D14): `.yaseendocs/favorites.json` holds
@@ -205,5 +205,57 @@ describe('mergeFavoritesFile (YAZ-1897)', () => {
 
   it('refuses a side that is not a favorites file', () => {
     expect(mergeFavoritesFile(null, '{"version": 2, "favorites": []}', file([]))).toBeNull()
+  })
+})
+
+describe('the workspace list (YAZ-4450 D1, D3)', () => {
+  const wsFile = (root: string) => path.join(root, VAULT_CONFIG_DIR, FAVORITES_WORKSPACE_FILE)
+
+  it('each list reads and writes only its own file; no workspace file is an EMPTY list, never the vault\'s own (D3)', async () => {
+    const root = await makeVault()
+    const [top, notes] = [path.join(root, 'top.md'), path.join(root, 'Notes')]
+    await setFavorites(root, [top])
+    expect(await getFavorites(root, 'workspace')).toEqual([])
+    await setFavorites(root, [notes, top], 'workspace')
+    expect(JSON.parse(await readFile(wsFile(root), 'utf8'))).toEqual({ version: 1, favorites: ['Notes', 'top.md'] })
+    expect(await onDisk(root)).toEqual({ version: 1, favorites: ['top.md'] })
+    expect(await getFavorites(root)).toEqual([top])
+    expect(await getFavorites(root, 'workspace')).toEqual([notes, top])
+  })
+
+  it('a malformed workspace file reads [] and refuses its own writes, and leaves the vault\'s own list alone', async () => {
+    const root = await makeVault()
+    await setFavorites(root, [path.join(root, 'top.md')])
+    await writeFile(wsFile(root), '{ nope')
+    expect(await getFavorites(root, 'workspace')).toEqual([])
+    expect(await failure(setFavorites(root, [path.join(root, 'Notes')], 'workspace'))).toMatchObject({ code: 'INVALID_CONFIG', message: expect.stringContaining('favorites-workspace.json') })
+    await setFavorites(root, [path.join(root, 'Notes')])
+    expect(await getFavorites(root)).toEqual([path.join(root, 'Notes')])
+  })
+
+  it('a rename and a delete repair BOTH files of the vault', async () => {
+    const root = await makeVault()
+    const p = path.join(root, 'Projects', 'p.md')
+    await setFavorites(root, [p])
+    await setFavorites(root, [path.join(root, 'Projects', 'Alpha'), p], 'workspace')
+    await renamePath([root], path.join(root, 'Projects'), path.join(root, 'Work'))
+    expect(await getFavorites(root)).toEqual([path.join(root, 'Work', 'p.md')])
+    expect(await getFavorites(root, 'workspace')).toEqual([path.join(root, 'Work', 'Alpha'), path.join(root, 'Work', 'p.md')])
+    await removePath([root], path.join(root, 'Work', 'p.md'))
+    expect(await getFavorites(root)).toEqual([])
+    expect(await getFavorites(root, 'workspace')).toEqual([path.join(root, 'Work', 'Alpha')])
+  })
+
+  it('subscribeFavorites names the list that changed', async () => {
+    const root = await makeVault()
+    const heard = vi.fn()
+    const off = subscribeFavorites(root, heard)
+    try {
+      await setFavorites(root, [path.join(root, 'top.md')], 'workspace')
+      await setFavorites(root, [path.join(root, 'top.md')])
+      expect(heard.mock.calls).toEqual([[{ root, scope: 'workspace' }], [{ root, scope: 'vault' }]])
+    } finally {
+      off()
+    }
   })
 })
