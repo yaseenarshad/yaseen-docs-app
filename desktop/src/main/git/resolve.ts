@@ -232,7 +232,7 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy } }
 }
 
-/** Whether sync may settle a conflict on `rel` at all (YAZ-3028 D4): a board, or one of the two per-entry list files. Never a note. */
+/** Whether sync may settle a conflict on `rel` at all (YAZ-3028 D4): a board, or one of the per-entry list files. Never a note. */
 const settles = (rel: string): boolean => isBoard(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH
 
 /**

@@ -63,8 +63,10 @@ interface RecentListProps {
   onFold?: OnListFold
   /** The trees of the window's vaults: a logged file draws a row only while its vault's tree has it (S7, S22). */
   trees: ReadonlyMap<string, TreeResponse>
-  /** The window's vaults: their save logs make one list (S14). The vault filter (YAZ-4450 D5) hands one. */
+  /** The window's vaults: their save logs make one list (S14). */
   roots: readonly string[]
+  /** The vault filter (YAZ-4450 D5): only the files of this vault; null for all. */
+  only?: string | null
   /** Each day split by vault (YAZ-4450 D7), with each vault's name; undefined draws each day as one list. */
   groups?: { nameOf: (root: string) => string }
   /** The names of the pages (YAZ-2420 D14): a row shows its page's name, as a Files row does. */
@@ -89,14 +91,15 @@ interface RecentListProps {
  * the tab shows. Memo: App draws again on each app-state broadcast; the list draws only when its own
  * props, a save log or the day change.
  */
-export const RecentList = memo(function RecentList({ trees, roots, groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold }: RecentListProps) {
+export const RecentList = memo(function RecentList({ trees, roots, only = null, groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold }: RecentListProps) {
   const edits = useEdits(roots)
   const today = useToday()
-  const files = useMemo(() => recentFiles(trees, roots, edits), [trees, roots, edits])
+  const files = useMemo(() => recentFiles(trees, roots, edits, only), [trees, roots, edits, only])
   const days = useMemo(() => recentDays(files, new Date()), [files, today]) // eslint-disable-line react-hooks/exhaustive-deps -- a new day draws the headings again (S16)
   // Each day's vault groups (YAZ-4450 D7), cut once per list: 200 rows at most.
   const grouped = groups !== undefined
   const dayGroups = useMemo(() => (grouped ? new Map(days.map((day) => [day.key, byVault(day.files, roots)])) : null), [grouped, days, roots])
+  const nameOf = groups?.nameOf
   // The days folded shut (D5), and the vault groups (YAZ-4450 D7) as `<day>|<vault>`: all open at mount, never stored. By
   // date, so a fold stays when "Today" becomes "Yesterday".
   const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set())
@@ -136,15 +139,15 @@ export const RecentList = memo(function RecentList({ trees, roots, groups, title
               </button>
               {open && (
                 <ul className="tree">
-                  {groups !== undefined
-                    ? (dayGroups?.get(day.key) ?? []).map((group) => {
+                  {dayGroups !== null && nameOf !== undefined
+                    ? (dayGroups.get(day.key) ?? []).map((group) => {
                         const key = groupKey(day.key, group)
                         const groupOpen = !shut.has(key)
                         return (
                           <li key={group.root}>
                             <button type="button" className="tree__row recents__vault" style={{ paddingLeft: 26 }} aria-expanded={groupOpen} onClick={() => toggle(key)}>
                               <span className={`tree__chevron${groupOpen ? ' tree__chevron--open' : ''}`} />
-                              <span className="tree__label">{groups.nameOf(group.root)}</span>
+                              <span className="tree__label">{nameOf(group.root)}</span>
                               <span className="tree__count">{group.files.length}</span>
                             </button>
                             {groupOpen && (

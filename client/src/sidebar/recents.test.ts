@@ -26,6 +26,22 @@ describe('recentFiles (YAZ-3235 D3, S14, S22)', () => {
     expect(recentFiles(trees, ['/w'], [{ '/w/y.md': 25, '/gone/z.md': 99 }])).toEqual([{ path: '/w/y.md', edited: 25 }])
   })
 
+  it('YAZ-4450 D5: `only` keeps the files of that vault, the most specific one — the rule of its Recents group — before the 200 cut', () => {
+    const trees = new Map([
+      ['/a', tree('/a', [note('/a/x.md'), dir('/a/b', [note('/a/b/n.md')])])],
+      ['/a/b', tree('/a/b', [note('/a/b/n.md')])],
+      ['/w', tree('/w', [note('/w/y.md')])],
+    ])
+    // `/a` logged `/a/b/n.md` while it was open alone: that file is the nested vault's, in its filter and in its group.
+    const logs: Record<string, number>[] = [{ '/a/x.md': 10, '/a/b/n.md': 20 }, {}, { '/w/y.md': 25 }]
+    expect(recentFiles(trees, ['/a', '/a/b', '/w'], logs, '/a')).toEqual([{ path: '/a/x.md', edited: 10 }])
+    expect(recentFiles(trees, ['/a', '/a/b', '/w'], logs, '/a/b')).toEqual([{ path: '/a/b/n.md', edited: 20 }])
+    expect(byVault(recentFiles(trees, ['/a', '/a/b', '/w'], logs), ['/a', '/a/b', '/w']).map((g) => [g.root, g.files.map((f) => f.path)])).toEqual([['/a', ['/a/x.md']], ['/a/b', ['/a/b/n.md']], ['/w', ['/w/y.md']]])
+    const many = Object.fromEntries(Array.from({ length: MAX_RECENTS + 5 }, (_, i) => [`/w/n${i}.md`, 1000 + i]))
+    const big = new Map([...trees, ['/w', tree('/w', Object.keys(many).map((p) => note(p)))]])
+    expect(recentFiles(big, ['/a', '/w'], [{ '/a/x.md': 1 }, many], '/a')).toEqual([{ path: '/a/x.md', edited: 1 }]) // never cut away by the other vault's 200
+  })
+
   it('S7, S22: a logged file that the tree no longer has, a folder, and a file that the app cannot open (kind null) draw no row; a vault with no tree yet adds nothing', () => {
     const trees = new Map([['/v', tree('/v', [note('/v/a.md'), note('/v/b.zip', null), dir('/v/sub', [])])]])
     expect(recentFiles(trees, ['/v', '/w'], [{ '/v/a.md': 1, '/v/b.zip': 2, '/v/sub': 3, '/v/moved.md': 4 }, { '/w/a.md': 5 }])).toEqual([{ path: '/v/a.md', edited: 1 }])

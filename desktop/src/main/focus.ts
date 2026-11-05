@@ -38,8 +38,9 @@ import { macId } from './vaultIndex/mint'
  * `focus.<mac id>.json` is the vault's own list, `focus-workspace.<mac id>.json` its workspace list (YAZ-4450 D1). The Mac ID
  * has `mint.ts`'s shape. Any other name in the dotfolder is not a focus file; an old build reads the first name only.
  */
-const FOCUS_FILE_RE: Record<ListScope, RegExp> = { vault: /^focus\.[0-9a-z]{12}\.json$/, workspace: /^focus-workspace\.[0-9a-z]{12}\.json$/ }
-export const focusFile = (mac: string, scope: ListScope = 'vault'): string => `${scope === 'vault' ? 'focus' : 'focus-workspace'}.${mac}.json`
+const PREFIX: Record<ListScope, string> = { vault: 'focus', workspace: 'focus-workspace' }
+const FOCUS_FILE_RE: Record<ListScope, RegExp> = { vault: new RegExp(`^${PREFIX.vault}\\.[0-9a-z]{12}\\.json$`), workspace: new RegExp(`^${PREFIX.workspace}\\.[0-9a-z]{12}\\.json$`) }
+export const focusFile = (mac: string, scope: ListScope = 'vault'): string => `${PREFIX[scope]}.${mac}.json`
 /** A read looks at this many focus files at most, the first by name (R13): a folder full of them must not make a read slow. */
 export const MAX_FOCUS_FILES = 64
 

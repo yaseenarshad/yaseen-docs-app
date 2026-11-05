@@ -687,9 +687,8 @@ export function Sidebar({
   // The Recents tab's button (YAZ-4450 D5): its vault filter, in a window with two or more vaults only. Its menu stands where
   // a sort menu would: one menu at a time.
   const menuTab: SortMenuTab | 'recents' | null = sortedTab ?? (lens === 'recents' && multi ? 'recents' : null)
-  // The list the filter leaves (D5), and each day split by vault while all vaults show (D7, D8). Kept by value: the vaults'
-  // array is new on each App render, and RecentList is a memo.
-  const recentRoots = useMemo(() => (recentVault === null ? roots : [recentVault]), [roots, recentVault])
+  // Each day split by vault while all vaults show (D7, D8). Kept by value: the vaults' array is new on each App render, and
+  // RecentList is a memo.
   const vaultNames = vaults.map((vault) => vault.name).join('\0')
   const recentGroups = useMemo(
     () => (multi && recentVault === null && settings.recentsByVault ? { nameOf: (at: string) => vaultsRef.current.find((vault) => vault.root === at)?.name ?? at } : undefined),
@@ -1738,7 +1737,7 @@ export function Sidebar({
           <SessionList onFold={setListFold} titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} renameRequest={sessionNameRequest} onRenameConsumed={onSessionNameConsumed} />
         ) : lens === 'recents' ? (
           // The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window, by day.
-          <RecentList onFold={setListFold} trees={trees} roots={recentRoots} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+          <RecentList onFold={setListFold} trees={trees} roots={roots} only={recentVault} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and

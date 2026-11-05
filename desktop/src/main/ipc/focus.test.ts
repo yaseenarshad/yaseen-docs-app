@@ -95,7 +95,7 @@ describe('registerFocusIpc (YAZ-2702)', () => {
     expect(await registered(CONTRACT.focus.set.channel)({ sender }, vault, [a], undefined)).toEqual(bad('BAD_REQUEST'))
   })
 
-  it('broadcasts focus:changed { root } to every live window on an own write and on another Mac\'s file from a sync — and not on a write that changed nothing (R8, R12)', async () => {
+  it('broadcasts focus:changed { root, scope } to every live window on an own write and on another Mac\'s file from a sync — and not on a write that changed nothing (R8, R12)', async () => {
     const a = fakeWindow()
     const b = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([a, b] as unknown as BrowserWindow[])

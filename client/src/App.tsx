@@ -397,6 +397,8 @@ export function App() {
   // Focus and Favorites of the window's vaults (YAZ-3264 D1): here, not in the sidebar, which unmounts
   // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
   const lists = useVaultListsHere(roots, notify, settings.workspaceLists)
+  // The new tab page's Favorites column (YAZ-4450): the tab's own list, kept by value so the page cuts its columns only on a change.
+  const startFavorites = useMemo(() => ({ byRoot: lists.favoritesByRoot, paths: lists.favoritePaths, scope: lists.favoritesScope }), [lists.favoritesByRoot, lists.favoritePaths, lists.favoritesScope])
   // The vaults' own icons (YAZ-3440 D8, D9; D11, YAZ-3471): here too, so the tabs, the search results and Recents show a
   // row's icon with the sidebar hidden. The sidebar's tree reads the same object.
   const vaultIcons = useVaultIcons(roots, settings.sidebarIconRules, settings.sidebarFolderIcons === 'named', notify)
@@ -1513,9 +1515,10 @@ export function App() {
    */
   const [sessionNameRequest, setSessionNameRequest] = useState<string | null>(null)
   // The Recents tab's vault filter (YAZ-4450 D5, D6): for this window's session only — here, not in the sidebar, which unmounts
-  // when it is hidden — and never written: a new window starts on All vaults. null is All vaults; a vault that leaves drops it.
+  // when it is hidden — and never written: a new window starts on All vaults. null is All vaults. A vault that leaves drops it,
+  // and so does a window left with one vault, so a vault that joins later never brings back a filter nobody sees.
   const [recentVault, setRecentVault] = useState<string | null>(null)
-  const recentPick = recentVault !== null && roots.includes(recentVault) ? recentVault : null
+  const recentPick = recentVault !== null && roots.length > 1 && roots.includes(recentVault) ? recentVault : null
   useEffect(() => {
     if (recentVault !== null && recentPick === null) setRecentVault(null)
   }, [recentVault, recentPick])
@@ -3390,7 +3393,7 @@ export function App() {
           )}
           <div className="tabstack">
             {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden, until it sleeps (YAZ-3737 5A). Mounted only while it shows (R1). */}
-            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} favoritesScope={lists.favoritesScope} openTabs={tabPaths} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
+            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} favorites={startFavorites} openTabs={tabPaths} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
             {mounted.map((id) => {
               const path = pathOf.get(id)
               if (path === undefined) return null

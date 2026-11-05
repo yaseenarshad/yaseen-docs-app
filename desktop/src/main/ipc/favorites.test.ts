@@ -103,7 +103,7 @@ describe('registerFavoritesIpc (YAZ-1766 6A)', () => {
     await until(() => activeConfigWatcherRoots().length === 0)
   })
 
-  it('broadcasts favorites:changed { root } to every live window on an own write and on an external edit', async () => {
+  it('broadcasts favorites:changed { root, scope } to every live window on an own write and on an external edit', async () => {
     const a = fakeWindow()
     const b = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([a, b] as unknown as BrowserWindow[])

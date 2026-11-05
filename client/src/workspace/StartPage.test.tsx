@@ -8,7 +8,8 @@ import { act, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type ListScope, type OpenStat, type TreeNode, type WindowIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
-import { StartPage, type StartPageProps } from './StartPage'
+import { useVaultListsHere } from '../lists/useVaultListsHere'
+import { StartPage as Page, type StartPageProps } from './StartPage'
 import { recentlyClosed } from './recentlyClosed'
 import startCss from './startPage.css?inline'
 import { HOVER_PREVIEW_DWELL_MS } from '../sidebar/HoverPreviewHost'
@@ -54,6 +55,8 @@ function installBridge({ trees, opens = {}, closed = {}, favorites = {}, favorit
   const state: AppState = { ...defaultAppState(), favoritesOrder, folders: Object.fromEntries(roots.map((vaultRoot, at) => [vaultRoot, { ...defaultFolderState(), opens: opens[vaultRoot] ?? {}, closed: closed[vaultRoot] ?? {}, name: ['Notes', 'Work'][at] ?? null }])) }
   const bridge = {
     tree: vi.fn(async (vaultRoot: string) => ({ root: vaultRoot, tree: trees[vaultRoot] ?? [], generatedAt: 1 })),
+    // App's reader of the window's lists asks for focus too (`useVaultListsHere`); this page shows none of it.
+    focus: { get: vi.fn(async () => [] as string[]), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     favorites: {
       get: vi.fn(async (vaultRoot: string, _scope?: ListScope): Promise<string[]> => favorites[vaultRoot] ?? []),
       onChanged: vi.fn((listener: (change: { root: string; scope: ListScope }) => void) => {
@@ -83,18 +86,31 @@ function installBridge({ trees, opens = {}, closed = {}, favorites = {}, favorit
   }
 }
 
+/** The page's props with no Favorites: the test's `StartPage` reads them as App does. */
+type Props = Omit<StartPageProps, 'favorites'> & Partial<Pick<StartPageProps, 'favorites'>>
+const NO_SWITCH = { focus: false, favorites: false }
+const quiet = (): void => undefined
+/**
+ * The page as App draws it (YAZ-4450): its Favorites come from App's one reader of the window's lists, `useVaultListsHere`,
+ * over the same bridge — one read for each vault when it joins, and one more on each `favorites:changed`.
+ */
+function StartPage(props: Props) {
+  const lists = useVaultListsHere(props.roots, quiet, NO_SWITCH)
+  return <Page {...props} favorites={props.favorites ?? { byRoot: lists.favoritesByRoot, paths: lists.favoritePaths, scope: lists.favoritesScope }} />
+}
+
 /** The doors of App, each a spy; `focusRef` is the box that the page fills with its way in (S33). */
-const doors = (roots: readonly string[]): StartPageProps => ({ roots, titles: new Map(), onOpen: vi.fn(), onOpenBackground: vi.fn(), onShowInFiles: vi.fn(), onRowMenu: vi.fn(), onBack: vi.fn(), onBackToSearch: vi.fn(), focusRef: { current: null }, onNotice: vi.fn() })
+const doors = (roots: readonly string[]): Props => ({ roots, titles: new Map(), onOpen: vi.fn(), onOpenBackground: vi.fn(), onShowInFiles: vi.fn(), onRowMenu: vi.fn(), onBack: vi.fn(), onBackToSearch: vi.fn(), focusRef: { current: null }, onNotice: vi.fn() })
 
 /** `Page` is what draws the page: the page itself, or a part that holds state for it, as App does. */
-async function mount(fixture: Fixture, over: Partial<StartPageProps> = {}, Page: (props: StartPageProps) => ReactNode = StartPage) {
+async function mount(fixture: Fixture, over: Partial<Props> = {}, Shown: (props: Props) => ReactNode = StartPage) {
   const b = installBridge(fixture)
   await storage.init()
-  const props: StartPageProps = { ...doors(Object.keys(fixture.trees)), ...over }
+  const props: Props = { ...doors(Object.keys(fixture.trees)), ...over }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  await act(async () => root?.render(<Page {...props} />))
+  await act(async () => root?.render(<Shown {...props} />))
   return { ...b, el: container, props }
 }
 
@@ -255,6 +271,16 @@ describe('StartPage', () => {
     expect(paths(el, 'recent')).toEqual([`${v}/here.md`])
     expect(paths(el, 'closed')).toEqual([`${v}/here.md`])
     expect(errors).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4450 D2, D3: the column shows the list it is handed — the Favorites tab\'s — and an empty workspace list names the workspace', async () => {
+    const [v, w] = [vault(), vault()]
+    const trees = { [v]: [file(`${v}/a.md`)], [w]: [file(`${w}/x.md`)] }
+    const { el, bridge } = await mount({ trees, favorites: { [v]: [`${v}/a.md`] } }, { favorites: { byRoot: { [v]: [], [w]: [] }, paths: [], scope: 'workspace' } })
+    expect(emptyLine(el, 'favorites')).toBe('No favorites in this workspace yet. Right-click a file or folder → Add to favorites.')
+    await act(async () => root?.render(<StartPage {...doors([v, w])} favorites={{ byRoot: { [v]: [], [w]: [`${w}/x.md`] }, paths: [`${w}/x.md`], scope: 'workspace' }} />))
+    expect(paths(el, 'favorites')).toEqual([`${w}/x.md`])
+    void bridge
   })
 
   it('S19: an empty column shows its one grey line, and only after its tree and its favorites answered', async () => {
@@ -526,7 +552,7 @@ describe('StartPage', () => {
     /** What App's door was told, in order. App holds the path, and hands it back. */
     const told: (string | null)[] = []
     let close: () => void = () => undefined
-    const WithPanel = (props: StartPageProps) => {
+    const WithPanel = (props: Props) => {
       const [path, setPath] = useState<string | null>(null)
       close = () => setPath(null)
       return <StartPage {...props} previewPath={path} onPreview={(next) => (told.push(next), setPath(next))} />

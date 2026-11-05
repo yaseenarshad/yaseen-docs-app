@@ -11117,6 +11117,18 @@ describe('several vaults in one window (YAZ-2602)', () => {
       act(() => sortButton(el)?.click())
       expect(menuRows(el)).toEqual(['All vaults', 'Notes', 'Work✓'])
     })
+
+    it('D5, D7: all vaults show each day split into vault groups; a picked vault shows its files alone, with no group heading', async () => {
+      const at = pair()
+      const saves = (state: AppState): AppState => ({ ...state, folders: { [at.a]: { ...defaultFolderState(), edits: { [`${at.a}/a.md`]: Date.now() - 1000 } }, [at.b]: { ...defaultFolderState(), edits: { [`${at.b}/b.md`]: Date.now() - 2000 } } } })
+      const recentRows = (el: HTMLElement) => [...el.querySelectorAll('[aria-label="Recents"] .tree__row')].map((r) => r.classList.contains('recents__vault') ? `[${r.querySelector('.tree__label')?.textContent}]` : (r as HTMLElement).title || r.textContent)
+      const { el, rerender } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], { lens: 'recents' }, (bridge) => bridge.state.get.mockResolvedValue(saves(defaultAppState())))
+      expect(recentRows(el)).toEqual(['Today', '[Notes]', `${at.a}/a.md`, '[Work]', `${at.b}/b.md`])
+      await rerender({ recentVault: at.b })
+      expect(recentRows(el)).toEqual(['Today', `${at.b}/b.md`])
+      await rerender({ recentVault: null, settings: { ...TEST_SETTINGS, recentsByVault: false } })
+      expect(recentRows(el)).toEqual(['Today', `${at.a}/a.md`, `${at.b}/b.md`])
+    })
   })
 })
 

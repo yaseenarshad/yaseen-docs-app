@@ -30,6 +30,9 @@ interface SidebarStubProps {
   vaults: { root: string; name: string; watch: unknown; index: unknown; upkeep: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[] }[]
   /** Right-click → "Share" on a board row (YAZ-3040). */
   onShareFile?: (path: string) => void
+  /** The Recents vault filter (YAZ-4450 D6): App's, for the window's session. */
+  recentVault?: string | null
+  onRecentVault?: (root: string | null) => void
   /** A Files window's header button (YAZ-3357 D8): Tabs Mission Control. */
   onShowAllTabs?: () => void
   onToNormalWindow?: () => void
@@ -1899,6 +1902,21 @@ describe('App tab board across windows (YAZ-3343)', () => {
     busy.bridge.window.setIdentity.mockClear()
     act(() => busy.emitSetRoots(['/w']))
     expect(busy.bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ roots: ['/w'] }))
+  })
+
+  it('YAZ-4450 D6: the Recents vault filter lasts for the window\'s session — it stays while the sidebar hides and shows — and a window left with one vault drops it, so it never comes back with the second vault', async () => {
+    const { emitToggleSidebar, emitSetRoots, el } = await mount(withWindows(), { id: 'w9', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], startEmpty: true as const, sidebarLens: 'recents' })
+    expect(captured.sidebar?.recentVault).toBeNull()
+    act(() => captured.sidebar?.onRecentVault?.('/w'))
+    expect(captured.sidebar?.recentVault).toBe('/w')
+    act(() => emitToggleSidebar())
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    act(() => emitToggleSidebar())
+    expect(captured.sidebar?.recentVault).toBe('/w')
+    await act(async () => emitSetRoots(['/v']))
+    expect(captured.sidebar?.recentVault).toBeNull()
+    await act(async () => emitSetRoots(['/v', '/w']))
+    expect(captured.sidebar?.recentVault).toBeNull()
   })
 
   it('YAZ-3487: a NEW window on two vaults starts with each vault row closed, as "Collapse all" leaves them; any other window has them open', async () => {

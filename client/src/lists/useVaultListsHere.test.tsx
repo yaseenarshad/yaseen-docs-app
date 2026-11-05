@@ -176,8 +176,9 @@ describe('the workspace list (YAZ-4450 D2, D4)', () => {
     expect(here().stateOf('/a/own.md')).toEqual({ focus: false, favorite: false })
     await act(async () => void here().toggleFocus(['/b/new.md'], false))
     expect(bridge.focus.set.mock.calls).toEqual([['/b', ['/b/new.md'], 'workspace']])
-    await rerender(['/a'])
-    expect(here().focusList).toEqual(['/a/own.md'])
+    // The vault the add went to, alone: its own list, without the workspace's add.
+    await rerender(['/b'])
+    expect(here().focusList).toEqual(['/b/own.md'])
   })
 
   it('the switch picks the list per tab, and a flip reads each vault again with no list held meanwhile', async () => {

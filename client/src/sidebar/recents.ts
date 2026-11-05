@@ -29,7 +29,7 @@ export interface RecentGroup {
  */
 export function byVault(files: readonly RecentFile[], roots: readonly string[]): RecentGroup[] {
   const groups = roots.map((root) => ({ root, files: [] as RecentFile[] }))
-  for (const file of files) groups[Math.max(0, roots.indexOf(rootOfPath(roots, file.path) ?? roots[0]))]?.files.push(file)
+  for (const file of files) groups[roots.indexOf(rootOfPath(roots, file.path) ?? roots[0])].files.push(file)
   return groups.filter((group) => group.files.length > 0)
 }
 
@@ -65,8 +65,10 @@ function filesOf(landed: TreeResponse): ReadonlySet<string> {
  * Pure (YAZ-3235 D3, S14, S22): the logged files that the tree of their vault still has as a file the
  * app opens. `edits[i]` is the save log of `roots[i]`; a vault with no tree yet adds nothing. A file
  * that two nested vaults logged is one row, at its newest save. Newest save first, then by path; 200 at most.
+ * `only` (YAZ-4450 D5) keeps the files that vault holds, the most specific one — the rule of its Recents group (D7) —
+ * before the cut, so a picked vault shows its own 200.
  */
-export function recentFiles(trees: ReadonlyMap<string, TreeResponse>, roots: readonly string[], edits: readonly Readonly<Record<string, number>>[]): RecentFile[] {
+export function recentFiles(trees: ReadonlyMap<string, TreeResponse>, roots: readonly string[], edits: readonly Readonly<Record<string, number>>[], only: string | null = null): RecentFile[] {
   const newest = new Map<string, number>()
   roots.forEach((root, i) => {
     const landed = trees.get(root)
@@ -74,7 +76,7 @@ export function recentFiles(trees: ReadonlyMap<string, TreeResponse>, roots: rea
     if (landed === undefined || log === undefined) return
     const files = filesOf(landed)
     for (const [path, edited] of Object.entries(log)) {
-      if (!files.has(path)) continue
+      if (!files.has(path) || (only !== null && rootOfPath(roots, path) !== only)) continue
       const held = newest.get(path)
       if (held === undefined || edited > held) newest.set(path, edited)
     }

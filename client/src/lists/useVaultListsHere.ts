@@ -4,7 +4,7 @@
  * per vault when it joins and dropped when it leaves (the sidebar's `useVaultTree` did this
  * before); the sidebar and the tab menu reach the SAME lists, through the one writer (6C).
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { MAX_FOCUS, rootOfPath, type ListScope, type WorkspaceLists } from '@shared/types'
 import { api } from '../api'
 import type { NoticeKind, NoticeType } from '../lib/notice'
@@ -16,7 +16,8 @@ export const sameList = (a: readonly string[], b: readonly string[]) => a.length
 /**
  * The two lists a vault keeps IN the vault, each with one namespace on the bridge that has the same
  * three calls (`get`, `set`, `onChanged`): Favorites (`.yaseendocs/favorites.json`, YAZ-1766 D11)
- * and focus (`.yaseendocs/focus.<mac id>.json`, YAZ-2702 Decisions 1 and 2).
+ * and focus (`.yaseendocs/focus.<mac id>.json`, YAZ-2702 Decisions 1 and 2). Each in two scopes since
+ * YAZ-4450 (D1): the vault's own, and its list in a workspace (`favorites-workspace.json`, `focus-workspace.<mac id>.json`).
  */
 type ListKind = 'favorites' | 'focus'
 type ListsByRoot = Readonly<Record<string, readonly string[]>>
@@ -86,7 +87,8 @@ function useVaultLists(kind: ListKind, scope: ListScope, live: { readonly curren
     [kind, scope, live],
   )
   const shown = useRef(scope)
-  useEffect(() => {
+  // Before paint, so the other scope's rows never show for a frame.
+  useLayoutEffect(() => {
     if (shown.current === scope) return
     shown.current = scope
     held.current = {}
@@ -128,7 +130,7 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
   /** The vault that holds `path`, the most specific one; a path in no vault of the window gets the first. */
   const rootOf = useCallback((path: string): string => rootOfPath(live.current.roots, path) ?? live.current.roots[0], [])
   // Favorites (YAZ-1766 D2, in the vault since 6A/D11): each vault's pinned files and folders in the
-  // user's order, from ITS `.yaseendocs/favorites.json`, kept by its root (`useVaultLists`).
+  // user's order, from ITS `.yaseendocs/favorites.json` — or, in a workspace, `favorites-workspace.json` — kept by its root (`useVaultLists`).
   const [favoritesByRoot, favorites] = useVaultLists('favorites', favoritesScope, live, onNotice)
   // Focus (YAZ-2619 D1): the files and folders the Focus tab shows. ONE list for each VAULT, kept in
   // the vault, since YAZ-2702 (Decision 1) — no longer one for each window (YAZ-1628): each window
