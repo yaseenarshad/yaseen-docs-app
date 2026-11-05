@@ -29,12 +29,10 @@ import {
   CUSTOM_WASH,
   HIGHLIGHT_COLORS,
   highlightColorsIn,
-  highlightRange,
   highlightSchema,
   rangeHasHighlight,
-  removeHighlightCommand,
+  removeHighlight,
   setHighlightCommand,
-  type CustomHighlight,
   type HighlightColor,
   type HighlightName,
 } from './highlight'
@@ -605,17 +603,6 @@ describe('coloured highlights (YAZ-1480)', () => {
  * `<mark style>` keeps its bytes; the old forms read and write exactly as before.
  */
 describe('custom highlights (YAZ-4348 demo round 2)', () => {
-  /** Run `highlightRange` (the custom pick) over `text` and dispatch it. */
-  function pickOver(crepe: Crepe, text: string, color: CustomHighlight): boolean {
-    return crepe.editor.action((ctx) => {
-      const view = ctx.get(editorViewCtx)
-      const from = posOf(crepe, text)
-      const tr = highlightRange(view.state, highlightSchema.type(ctx), from, from + text.length, color)
-      if (tr !== null) view.dispatch(tr)
-      return tr !== null
-    })
-  }
-
   it('loads `<mark style="background-color: #rrggbb">` as that colour, paints its wash, and saves identical bytes', async () => {
     const src = 'a <mark style="background-color: #ff8800">b</mark> c\n'
     const { crepe, root } = await mount(src)
@@ -663,21 +650,6 @@ describe('custom highlights (YAZ-4348 demo round 2)', () => {
     expect(md(crepe)).toBe(src)
   })
 
-  it('the custom pick: `highlightRange` colours the given text, keeps the selection, and never toggles off', async () => {
-    const { crepe, view } = await mount('hello world\n')
-    selectText(crepe, 'hello')
-    const before = view.state.selection
-    expect(pickOver(crepe, 'world', '#3366ff')).toBe(true)
-    expect(view.state.selection.eq(before)).toBe(true)
-    expect(md(crepe)).toBe('hello <mark style="background-color: #3366ff">world</mark>\n')
-    // A pick means "this colour": the same colour again keeps it, another replaces it.
-    pickOver(crepe, 'world', '#3366ff')
-    expect(md(crepe)).toBe('hello <mark style="background-color: #3366ff">world</mark>\n')
-    pickOver(crepe, 'world', '#00aa00')
-    expect(md(crepe)).toBe('hello <mark style="background-color: #00aa00">world</mark>\n')
-    expect(highlightRuns(crepe)).toBe(1)
-  })
-
   it('a custom colour toggles like a named one through the one command, and lights for its own value only', async () => {
     const { crepe } = await mount('hello <mark style="background-color: #3366ff">world</mark>\n')
     selectText(crepe, 'world')
@@ -690,7 +662,11 @@ describe('custom highlights (YAZ-4348 demo round 2)', () => {
 
   it('Remove highlight takes every colour off the selection, and declines with nothing to remove', async () => {
     const { crepe } = await mount('==a== <mark class="highlight-orange">b</mark> <mark style="background-color: #3366ff">c</mark> d\n')
-    const remove = () => crepe.editor.action((ctx) => ctx.get(commandsCtx).call(removeHighlightCommand.key))
+    const remove = () =>
+      crepe.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx)
+        return removeHighlight(highlightSchema.type(ctx))(view.state, view.dispatch)
+      })
     selectAcross(crepe, 'a', 'd')
     const colours = crepe.editor.action((ctx) => highlightColorsIn(ctx.get(editorViewCtx).state, highlightSchema.type(ctx)))
     expect(new Set(colours)).toEqual(new Set([null, 'orange', '#3366ff']))

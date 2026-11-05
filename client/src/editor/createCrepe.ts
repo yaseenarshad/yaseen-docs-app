@@ -608,7 +608,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(slashMenu.inListWatch)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
-  // The toolbar's highlight ▾ colour panel and its system picker's target (YAZ-4348 demo round 2).
+  // The toolbar's highlight ▾ colour panel and its colour box (YAZ-4348 demo round 2, YAZ-4388).
   crepe.editor.use(highlightPanel)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)

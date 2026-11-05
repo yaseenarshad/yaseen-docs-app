@@ -20,8 +20,7 @@
  * Only the Hex code field and the box's R G B fields take the focus, to be typed in; a pick from them gives the
  * focus back to the note first. A click outside or a new selection closes the panel; a scroll moves it with the ▾.
  *
- * The box's pick goes to the text that was selected when it opened: that text is kept in this plugin's state and
- * mapped through each change, as `customColourPick` does for cells; a pick on text that was deleted does nothing.
+ * The box's pick goes to the selection, as a swatch's does: any new selection closes the panel and the box with it.
  *
  * Speed: each swatch is made once and kept by its colour, so a pick moves the rings and leaves the nodes; a pick
  * renders once; the panel is placed before its first paint, with one layout read.
@@ -37,7 +36,6 @@ import {
   HIGHLIGHT_COLORS,
   HIGHLIGHT_HEX,
   highlightColorsIn,
-  highlightRange,
   highlightSchema,
   isCustomHighlight,
   QUICK_HIGHLIGHTS,
@@ -50,10 +48,6 @@ import { mostUsedHighlightColors, noteHighlightColorUse } from './highlightUsed'
 
 /** The ▾'s toolbar key. */
 export const MORE_KEY = 'highlight-more'
-
-/** The text the colour box's pick goes to while it is open, or null. */
-type Target = { from: number; to: number } | null
-const pickKey = new PluginKey<Target>('mdapp-highlight-pick')
 
 /** Whether the selection has a colour that is not a toolbar button: the ▾ lights for it. */
 export const hasPanelColour = (colours: readonly HighlightColor[]): boolean =>
@@ -512,12 +506,9 @@ class HighlightPanel {
     else this.#openBox()
   }
 
-  /** The colour box under the Hex code field, on the field's colour; its pick goes to the text selected now. */
+  /** The colour box under the Hex code field, on the field's colour. */
   #openBox(): void {
-    const { view } = this
-    const { from, to, empty } = view.state.selection
-    if (empty || !this.open) return
-    view.dispatch(view.state.tr.setMeta(pickKey, { from, to }))
+    if (this.view.state.selection.empty || !this.open) return
     this.#box.show(readHex(this.#hexInput.value) ?? HIGHLIGHT_HEX.yellow)
     this.#pencil.setAttribute('aria-expanded', 'true')
     this.#place()
@@ -533,20 +524,13 @@ class HighlightPanel {
     if (this.open) this.#place()
   }
 
-  /** One finished pick in the box: one undo step, one use. The box stays open for the next. */
+  /** One finished pick in the box: on the selection, as a swatch (one undo step, one use). The box stays open for the next. */
   #pickBox = (color: CustomHighlight): void => {
     const { view } = this
     if (view.isDestroyed || !this.open || !this.#box.open) return
     // Back in the note before the change lands, so its toolbar (and the ▾ under the panel) stays.
     if (this.#el!.contains(view.dom.ownerDocument.activeElement)) view.focus()
-    const target = pickKey.getState(view.state) ?? null
-    const marked = target === null ? null : highlightRange(view.state, this.#type(), target.from, target.to, color)
-    if (marked === null) return
-    noteHighlightColorUse(color)
-    this.#base = color
-    const since = this.#renders
-    view.dispatch(closeHistory(marked))
-    this.#renderOnce(since)
+    this.#apply(color)
   }
 
   update(view: EditorView, prev: EditorState): void {
@@ -564,22 +548,5 @@ class HighlightPanel {
   }
 }
 
-/** The panel of each note, and the colour box's target text, mapped through each change. */
-export const highlightPanel = $prose(
-  (ctx) =>
-    new Plugin<Target>({
-      key: pickKey,
-      state: {
-        init: () => null,
-        apply: (tr, target) => {
-          const meta = tr.getMeta(pickKey) as Target | undefined
-          if (meta !== undefined) return meta
-          if (target === null || !tr.docChanged) return target
-          const from = tr.mapping.map(target.from, 1)
-          const to = tr.mapping.map(target.to, -1)
-          return from < to ? { from, to } : null
-        },
-      },
-      view: (view) => new HighlightPanel(ctx, view),
-    }),
-)
+/** The panel of each note. */
+export const highlightPanel = $prose((ctx) => new Plugin({ key: new PluginKey('mdapp-highlight-panel'), view: (view) => new HighlightPanel(ctx, view) }))

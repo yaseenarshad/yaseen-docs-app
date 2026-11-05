@@ -18,7 +18,7 @@
 import { commandsCtx } from '@milkdown/kit/core'
 import { markRule } from '@milkdown/kit/prose'
 import type { Mark, MarkType } from '@milkdown/kit/prose/model'
-import { TextSelection, type Command, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
+import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $command, $inputRule, $markSchema, $remark, $useKeymap } from '@milkdown/kit/utils'
 import type { Parent, PhrasingContent } from 'mdast'
 import type { Extension as FromMarkdownExtension } from 'mdast-util-from-markdown'
@@ -337,26 +337,10 @@ export const setHighlightCommand = $command('SetHighlight', (ctx) => (color: Hig
 export const applyHighlight = (type: MarkType, color: HighlightColor): Command => setHighlight(type, color, true)
 
 /**
- * A custom pick (YAZ-4348 demo round 2): the colour goes on `from`–`to`, the text that was selected when the
- * system colour picker opened, never toggled off — picking a colour means "this colour". The same edge and
- * hidden-line rules as a button press. Null when nothing there can take the mark.
- */
-export function highlightRange(state: EditorState, type: MarkType, from: number, to: number, color: CustomHighlight): Transaction | null {
-  const max = state.doc.content.size
-  const at = state.apply(state.tr.setSelection(TextSelection.create(state.doc, Math.min(from, max), Math.min(to, max))))
-  const made: Transaction[] = []
-  if (!setHighlight(type, color, true)(at, (tr) => made.push(tr)) || made.length === 0) return null
-  // Replay the steps on the real state, so the selection the user has now stays where it is.
-  const real = state.tr
-  for (const step of made[0].steps) real.step(step)
-  return real
-}
-
-/**
  * The ▾ panel's None (YAZ-4348 demo round 2): every colour off the visible selection, and off the marks a
  * caret would type with. Declines where there is no highlight to remove.
  */
-export const removeHighlight =(type: MarkType): Command => (state, dispatch) => {
+export const removeHighlight = (type: MarkType): Command => (state, dispatch) => {
   if (state.selection.empty) {
     if (type.isInSet(state.storedMarks ?? state.selection.$from.marks()) === undefined) return false
     dispatch?.(state.tr.removeStoredMark(type))
@@ -368,8 +352,6 @@ export const removeHighlight =(type: MarkType): Command => (state, dispatch) => 
   dispatch?.(tr.scrollIntoView())
   return true
 }
-
-export const removeHighlightCommand = $command('RemoveHighlight', (ctx) => () => removeHighlight(highlightSchema.type(ctx)))
 
 /** Every highlight colour on the visible selection (at a caret: the marks it would type with), in no set order. */
 export function highlightColorsIn(state: EditorState, type: MarkType): HighlightColor[] {
@@ -399,4 +381,4 @@ export const highlightKeymap = $useKeymap('highlightKeymap', {
 export const highlightInputRule = $inputRule((ctx) => markRule(/(?<![\w=])==(\S(?:[^=]*\S)?)==$/, highlightSchema.type(ctx)))
 
 /** Register with `editor.use(highlight)`. */
-export const highlight = [highlightRemark, highlightSchema, setHighlightCommand, removeHighlightCommand, highlightKeymap, highlightInputRule].flat()
+export const highlight = [highlightRemark, highlightSchema, setHighlightCommand, highlightKeymap, highlightInputRule].flat()
