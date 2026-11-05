@@ -145,6 +145,7 @@ import {
   DEFAULT_FOLD_ARROW_PREFS,
   getFoldArrowAt,
   getFoldArrowSize,
+  hasTextList,
   getToggledFoldedLines,
   isLineFolded,
   setFoldArrowPrefs,
@@ -852,6 +853,19 @@ class App extends React.Component<AppProps, AppState> {
   hitLinkElement?: NonDeletedExcalidrawElement;
   /** YAZ-4039 D11: the link pill under the pointer, as last reported. */
   private hostLinkHover: HostLinkHit | null = null;
+  /**
+   * YAZ-4312 N4: the text boxes with list lines, in z-order, for one scene
+   * nonce; and each box's answer, for its version. A pointer move looks at
+   * these boxes only.
+   */
+  private listBoxes: {
+    sceneNonce: number | undefined;
+    boxes: readonly ExcalidrawTextElement[];
+  } | null = null;
+  private readonly listBoxMemo = new WeakMap<
+    ExcalidrawTextElement,
+    { version: number; hasList: boolean }
+  >();
   /** YAZ-4277 D5: the open item whose ▾ shows on hover. */
   private foldArrowHover: Readonly<{
     elementId: ExcalidrawElement["id"];
@@ -4180,7 +4194,6 @@ class App extends React.Component<AppProps, AppState> {
     this.retainGifs.cancel();
     this.gifViewObserver?.disconnect();
     this.resizeObserver?.disconnect();
-    this.unmounted = true;
     this.viewport.destroy();
     this.removeEventListeners();
     this.library.destroy();
@@ -8570,10 +8583,37 @@ class App extends React.Component<AppProps, AppState> {
   /** YAZ-4277 demo: folding is off on this board: no arrow, no fold. */
   public isFoldingOff = () => this.getFoldArrowPrefs().openArrows === "off";
 
+  /** YAZ-4312 N4: the text boxes with list lines, made again after a scene change. */
+  private getListBoxes = () => {
+    const sceneNonce = this.scene.getSceneNonce();
+    if (this.listBoxes?.sceneNonce === sceneNonce) {
+      return this.listBoxes.boxes;
+    }
+    const boxes: ExcalidrawTextElement[] = [];
+    for (const element of this.scene.getNonDeletedElements()) {
+      if (!isTextElement(element)) {
+        continue;
+      }
+      let memo = this.listBoxMemo.get(element);
+      if (memo?.version !== element.version) {
+        memo = {
+          version: element.version,
+          hasList: hasTextList(element.originalText),
+        };
+        this.listBoxMemo.set(element, memo);
+      }
+      if (memo.hasList) {
+        boxes.push(element);
+      }
+    }
+    this.listBoxes = { sceneNonce, boxes };
+    return boxes;
+  };
+
   /**
    * YAZ-4277 D5: the fold arrow, or the rest of an item's line, under a
-   * scene point. The topmost text box wins. A box is looked at only when the
-   * point is near it, so a pointer move costs a bounds check for each box.
+   * scene point. The topmost text box wins. Only a box with list lines is
+   * looked at (YAZ-4312 N4), and only when the point is near it.
    */
   public getFoldArrowTargetAt = (
     scenePointer: Readonly<{ x: number; y: number }>,
@@ -8584,12 +8624,12 @@ class App extends React.Component<AppProps, AppState> {
     }
     const zoom = this.state.zoom.value;
     const elementsMap = this.scene.getNonDeletedElementsMap();
-    const elements = this.scene.getNonDeletedElements();
+    const elements = this.getListBoxes();
     for (let index = elements.length - 1; index >= 0; index--) {
       const element = elements[index];
       // YAZ-4306: a box in edit too: the canvas draws it, and a click on its
       // arrow folds and keeps the edit (`hostTextWysiwyg.ts`)
-      if (!isTextElement(element) || element.locked) {
+      if (element.locked) {
         continue;
       }
       const reach =
