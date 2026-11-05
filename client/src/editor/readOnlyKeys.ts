@@ -2,9 +2,9 @@
  * THE KEYBOARD VIEW ACTIONS OF A READ-ONLY NOTE (YAZ-3076 D8 — "the document is completely normal
  * except the ability to edit" — YAZ-3125, S25).
  *
- * A read-only note has no keyboard path to its own keymaps: `setReadonly(true)` makes the editor
- * `contenteditable="false"`, so a click in its body leaves the focus on `<body>`, and ProseMirror runs
- * no `keydown` handler in a view that is not editable anyway (`keydown` is one of its edit handlers).
+ * A read-only note has no keyboard path to its own keymaps: `setReadonly(true)` makes the view not
+ * editable, and ProseMirror runs no `keydown` handler in a view that is not editable (`keydown` is one
+ * of its edit handlers). The note editor's body keeps a caret all the same (below, YAZ-4433).
  * So while the view is NOT editable this plugin listens on `document` and answers the view-action
  * chords itself, through the editor's OWN keymaps (`handleKeyDown`) — the same commands, at the same
  * priorities — with `view.dispatch` guarded: a transaction that changes the document is dropped. An
@@ -27,6 +27,17 @@
  *
  * And the focus comes BACK here: after the find bar, the table of contents or any other
  * `view.focus()` (YAZ-3130, `focusReadOnlyBody`).
+ *
+ * THE CARET (YAZ-4433, D30 of YAZ-4278 — "the caret to work as normal, just can't type"): ProseMirror keeps
+ * `view.editable` false, so every check of it (the pop-up toolbar, the `/` menu, the block handle, the task boxes, the
+ * code blocks, the links, the tables) still means read only. Only the DOM changes: while locked the body is
+ * `contenteditable="true"` with `data-read-only`, so the browser draws the caret and moves it, and ProseMirror reads the
+ * new selection. The navigation keys (`NAVIGATION_KEYS`, any modifier) go through the note's own keymaps like the view
+ * actions (⇧↑ / ⇧↓ select by line); a key no keymap takes moves the caret natively. Nothing can edit, at the root: a
+ * non-editable view runs none of ProseMirror's edit handlers and ignores DOM changes, `beforeinput` is cancelled for
+ * every input type (typing, Enter, delete, paste, drop, spell replace, the native ⌘B / ⌘Z), and a change that cannot be
+ * cancelled (IME composition) is drawn again from the document at its `input` event. No `filterTransaction`: a read-only
+ * note still takes outside changes from disk by a transaction (`applyExternalMarkdown.ts`).
  */
 import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
@@ -69,6 +80,26 @@ export function focusReadOnlyBody(view: EditorView, focus: () => void): void {
  */
 const VIEW_ACTIONS = ['note.foldAll', 'note.unfoldAll', 'note.foldHere', 'note.unfoldHere', 'note.zoomIn', 'note.zoomOut', 'note.undo', 'note.selectAll']
 
+/** The keys that move the caret (YAZ-4433), with any modifier: the note's keymaps first, else the browser's own move. */
+const NAVIGATION_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'])
+
+/**
+ * Draws the whole body again from the document (YAZ-4433): the one DOM change `beforeinput` cannot cancel is an IME
+ * composition, and a non-editable view never reads DOM changes back. ProseMirror's own repair of a DOM change is the
+ * same: mark its view tree dirty, then update (`NODE_DIRTY` = 3 rebuilds the tree and drops any node it did not draw).
+ */
+function redrawFromDoc(view: EditorView): void {
+  ;(view as unknown as { docView: { dirty: number } }).docView.dirty = 3
+  view.updateState(view.state)
+}
+
+/** A locked body cancels the event: it would change the DOM or the clipboard's source, never the note. */
+const refuse = (view: EditorView, event: Event): boolean => {
+  if (view.editable) return false
+  event.preventDefault()
+  return true
+}
+
 /** Whether a keydown is one of the view-action keys — matched the way the keymaps match them. */
 const viewActionMatcher = (ctx: Ctx): ((view: EditorView, event: KeyboardEvent) => boolean) => {
   const overrides = noteOverrides(ctx)
@@ -92,7 +123,7 @@ function holdsReader(view: EditorView): boolean {
   const doc = view.dom.ownerDocument
   if (!isShown(view.dom)) return false
   const active = doc.activeElement
-  if (active === null || active === doc.body) return true
+  if (active === null || active === doc.body || view.dom.contains(active)) return true
   const section = view.dom.closest('section.editor')
   return section !== null && section.contains(active) && !(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
 }
@@ -113,13 +144,44 @@ export const readOnlyKeys = $prose(
   (ctx) =>
     new Plugin({
       key: new PluginKey('mdapp-read-only-keys'),
+      props: {
+        // Every native edit of a locked body, before the DOM changes (YAZ-4433). Paste and cut stop at their own
+        // event, as before the caret: ⌘X copies nothing in read only, and ⌘C (`copy`) stays ProseMirror's.
+        handleDOMEvents: {
+          beforeinput: refuse,
+          paste: refuse,
+          cut: refuse,
+          // Tab indents in a normal note, so it never takes the focus out of the body.
+          keydown: (view, event) => event.key === 'Tab' && refuse(view, event),
+          input: (view) => {
+            if (view.editable) return false
+            redrawFromDoc(view)
+            return true
+          },
+        },
+      },
       view: (view) => {
         const isViewAction = viewActionMatcher(ctx)
         // A read-only body holds the keyboard itself (YAZ-3127): focusable while it is not editable, so
-        // a click in it puts the focus there and the window's chrome keys leave it alone.
+        // a click in it puts the focus there and the window's chrome keys leave it alone. And it has the caret
+        // (YAZ-4433): `contenteditable="true"` for the browser, `data-read-only` for the CSS and the window's key
+        // rules, no spellcheck marks. ProseMirror writes `contenteditable` only when its own value changes, and
+        // again on a rebuild, so this runs after each update; an editable note pays one boolean.
+        let locked = false
         const focusable = (): void => {
-          if (view.editable) view.dom.removeAttribute('tabindex')
-          else view.dom.setAttribute('tabindex', '-1')
+          if (view.editable) {
+            if (!locked) return
+            locked = false
+            for (const name of ['tabindex', 'data-read-only', 'spellcheck']) view.dom.removeAttribute(name)
+            return
+          }
+          if (!locked) {
+            locked = true
+            view.dom.setAttribute('tabindex', '-1')
+            view.dom.setAttribute('data-read-only', 'true')
+            view.dom.setAttribute('spellcheck', 'false')
+          }
+          if (view.dom.getAttribute('contenteditable') !== 'true') view.dom.setAttribute('contenteditable', 'true')
         }
         focusable()
         // Every "give the focus back to the note" call goes through `view.focus` (YAZ-3130).
@@ -127,12 +189,15 @@ export const readOnlyKeys = $prose(
         const focus = view.focus.bind(view)
         view.focus = () => focusReadOnlyBody(view, focus)
         const onKeyDown = (event: KeyboardEvent): void => {
-          if (view.editable || event.defaultPrevented || !isViewAction(view, event) || !holdsReader(view)) return
+          if (view.editable || event.defaultPrevented) return
+          const navigation = NAVIGATION_KEYS.has(event.key)
+          if ((!navigation && !isViewAction(view, event)) || !holdsReader(view)) return
           // The reader is in this note: the focus is in its body (YAZ-3127), or on `<body>` with their
           // DOM selection here. With the focus in the body the editor's own selection stands, even when
-          // the DOM has none left (an arrow key in a non-editable body can drop it).
+          // the DOM has none left. A caret key moves only a caret in the body, never one in the title around it.
           const caret = domCaret(view)
-          if (caret === null && !view.dom.contains(view.dom.ownerDocument.activeElement) && !inOwnPage(view)) return
+          const inBody = view.dom.contains(view.dom.ownerDocument.activeElement)
+          if (caret === null && !inBody && (navigation || !inOwnPage(view))) return
           // ProseMirror draws a non-editable view's selection only where a DOM selection already is
           // (`editorOwnsSelection`), so the body takes the focus with the editor's own selection
           // drawn first (`focusReadOnlyBody`): then ⌘A shows, and the next key starts in the note.
@@ -158,7 +223,8 @@ export const readOnlyKeys = $prose(
           update: focusable,
           destroy: () => {
             doc.removeEventListener('keydown', onKeyDown)
-            view.dom.removeAttribute('tabindex')
+            for (const name of ['tabindex', 'data-read-only', 'spellcheck']) view.dom.removeAttribute(name)
+            if (!view.editable) view.dom.setAttribute('contenteditable', 'false')
             if (ownFocus) view.focus = focus
             else delete (view as { focus?: () => void }).focus
           },

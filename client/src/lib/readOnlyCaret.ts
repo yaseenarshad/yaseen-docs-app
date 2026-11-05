@@ -9,8 +9,11 @@
  * `visibility: hidden`, and the DOM selection stays there after the switch.
  */
 
-/** A ProseMirror root that is not editable: a read-only note's body (or a preview of one). */
-const READ_ONLY_BODY = '.ProseMirror[contenteditable="false"]'
+/**
+ * A ProseMirror root that is not editable: a read-only preview's body, or a read-only note editor's body, which keeps
+ * its caret as `contenteditable="true"` and says it is locked with `data-read-only` (YAZ-4433, `editor/readOnlyKeys.ts`).
+ */
+const READ_ONLY_BODY = '.ProseMirror[contenteditable="false"], .ProseMirror[data-read-only]'
 
 /**
  * A note PAGE: the scroller `Editor.tsx` draws for a note, in a tab or the right panel — its title,

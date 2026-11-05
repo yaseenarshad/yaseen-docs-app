@@ -78,7 +78,7 @@
 }
 
 /* A read-only editor (the outline's seed guard, a hover preview) has no resize gesture — and no handles to promise one. */
-.milkdown .ProseMirror[contenteditable='false'] .image-view__handle {
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .image-view__handle {
   display: none;
 }
 

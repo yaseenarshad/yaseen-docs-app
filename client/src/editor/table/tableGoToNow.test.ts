@@ -252,9 +252,9 @@ describe('the "Now" chip (D12, D22)', () => {
     expect(off?.body).toMatch(/display:\s*none/)
   })
 
-  it('a read-only note shows no chip, as it shows no zoom pill (YAZ-4176)', () => {
+  it('a read-only note shows no chip, as it shows no zoom pill (YAZ-4176) — a preview, and a note editor that keeps its caret (`data-read-only`, YAZ-4433)', () => {
     const rules = [...tableCalendarCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.trim(), body }))
-    const off = rules.find(({ selector }) => selector.includes(".ProseMirror[contenteditable='false'] .table-now-chip-anchor"))
+    const off = rules.find(({ selector }) => selector.includes(".ProseMirror:is([contenteditable='false'], [data-read-only]) .table-now-chip-anchor"))
     expect(off?.body).toMatch(/display:\s*none/)
   })
 

@@ -301,3 +301,245 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     }
   })
 })
+
+/**
+ * YAZ-4433 (D30 of YAZ-4278): a read-only NOTE EDITOR keeps its caret — "the caret to work as normal, just can't type
+ * or change anything". The view stays not editable for ProseMirror (so the toolbar, the `/` menu, the block handle and
+ * the task boxes stay off); only its DOM is `contenteditable="true"`. jsdom moves no native caret, so these tests pin
+ * the parts the app owns: the body the browser can put a caret in, the caret keys through the note's own keymaps, and
+ * every path that could change the note. The keys land IN the focused body, where a real press lands now.
+ */
+describe('a read-only note keeps its caret and keys (YAZ-4433)', () => {
+  /** A locked note editor with the focus in its body and the DOM caret at `offset` in `text`; `saves` counts Markdown updates. */
+  async function locked(text = 'L1 a', offset = 0) {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const saves: string[] = []
+    const crepe = createCrepe({ root, defaultValue: NOTE, readOnlyKeys: true, onMarkdownUpdated: (md) => saves.push(md) })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    crepe.setReadonly(true)
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    // A click: the focus in the body, the DOM caret and the editor's selection at the spot.
+    view.dom.focus()
+    let at = -1
+    view.state.doc.descendants((node, pos) => {
+      if (at < 0 && node.isText && node.text === text) at = pos + offset
+    })
+    const { node, offset: domOffset } = view.domAtPos(at)
+    document.getSelection()!.setBaseAndExtent(node, domOffset, node, domOffset)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at)))
+    expect(view.state.selection.head).toBe(at)
+    return { crepe, root, view, saves }
+  }
+
+  /** One key press in the focused body. */
+  function key(view: { dom: HTMLElement }, k: string, mods: { mod?: boolean; shift?: boolean; alt?: boolean } = {}): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', {
+      key: k,
+      keyCode: KEY_CODES[k] ?? (k.length === 1 ? k.toUpperCase().charCodeAt(0) : 0),
+      ...(mods.mod === true ? (IS_MAC ? { metaKey: true } : { ctrlKey: true }) : {}),
+      shiftKey: mods.shift === true,
+      altKey: mods.alt === true,
+      bubbles: true,
+      cancelable: true,
+    } as KeyboardEventInit)
+    view.dom.dispatchEvent(event)
+    return event
+  }
+
+  it('the locked body has a caret: `contenteditable="true"` with `data-read-only` and no spellcheck, while ProseMirror keeps it not editable; unlocked, it is a plain body again', async () => {
+    const { crepe, view } = await locked()
+    expect(view.editable).toBe(false)
+    expect(view.dom.getAttribute('contenteditable')).toBe('true')
+    expect(view.dom.getAttribute('data-read-only')).toBe('true')
+    expect(view.dom.getAttribute('spellcheck')).toBe('false')
+    expect(document.activeElement).toBe(view.dom)
+    // A rebuild of the view's attributes (any update) keeps the caret.
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 3)))
+    expect(view.dom.getAttribute('contenteditable')).toBe('true')
+    crepe.setReadonly(false)
+    expect(view.editable).toBe(true)
+    expect(view.dom.getAttribute('contenteditable')).toBe('true')
+    for (const name of ['data-read-only', 'spellcheck', 'tabindex']) expect(view.dom.hasAttribute(name), name).toBe(false)
+    crepe.setReadonly(true)
+    expect(view.dom.getAttribute('contenteditable')).toBe('true')
+    expect(view.dom.getAttribute('data-read-only')).toBe('true')
+  })
+
+  it('a read-only preview (no `readOnlyKeys`) keeps no caret: `contenteditable="false"`, and the window still sees a read-only body', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: NOTE })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    crepe.setReadonly(true)
+    const dom = root.querySelector('.ProseMirror')!
+    expect(dom.getAttribute('contenteditable')).toBe('false')
+    expect(dom.hasAttribute('data-read-only')).toBe(false)
+    expect(pageHoldsKeys(dom)).toBe(true)
+  })
+
+  it('the window key rules still see the locked note editor body as read only (`data-read-only`)', async () => {
+    const { view } = await locked()
+    expect(pageHoldsKeys(view.dom)).toBe(true)
+  })
+
+  it('⇧↓ / ⇧↑ go through the note’s own keymaps: they select by line from the caret, and change nothing', async () => {
+    const { crepe, view, saves } = await locked('L1 a', 0)
+    const start = view.state.selection.head
+    expect(key(view, 'ArrowDown', { shift: true }).defaultPrevented).toBe(true)
+    expect(view.state.selection.anchor).toBe(start)
+    expect(view.state.doc.textBetween(view.state.selection.head, view.state.selection.head + 4)).toBe('L2 a')
+    key(view, 'ArrowUp', { shift: true })
+    expect(view.state.selection.head).toBe(start)
+    expect(getMarkdownForSave(crepe)).toBe(NOTE)
+    expect(saves).toEqual([])
+  })
+
+  it('the other caret keys are left to the browser’s own caret: not cancelled, nothing changes', async () => {
+    const { crepe, view, saves } = await locked('L2 a', 1)
+    const keys: Array<[string, { mod?: boolean; shift?: boolean; alt?: boolean }]> = [
+      ['ArrowDown', {}], ['ArrowUp', {}], ['ArrowLeft', {}], ['ArrowRight', {}],
+      ['ArrowLeft', { mod: true }], ['ArrowRight', { mod: true }], ['ArrowLeft', { alt: true }], ['ArrowRight', { alt: true, shift: true }],
+      ['Home', {}], ['End', { shift: true }], ['PageDown', {}], ['PageUp', {}],
+    ]
+    for (const [k, mods] of keys) expect(key(view, k, mods).defaultPrevented, `${k} ${JSON.stringify(mods)}`).toBe(false)
+    expect(getMarkdownForSave(crepe)).toBe(NOTE)
+    expect(saves).toEqual([])
+  })
+
+  it('⌘↑ / ⌘↓ fold and unfold at the caret the keys moved, with the focus in the body', async () => {
+    const { crepe, root, view, saves } = await locked('L1 a', 0)
+    key(view, 'ArrowDown', { shift: true })
+    const head = view.state.selection.head
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, head)))
+    expect(key(view, 'ArrowUp', { mod: true }).defaultPrevented).toBe(true)
+    // L2 a folds: the folded list is its child L3 a, not L1 a's children (L2 b stays out of it).
+    expect(folded(root)).toBe(1)
+    expect(root.querySelector(`[${OUTLINE_FOLDED_ATTR}="true"]`)?.textContent).toContain('L3 a')
+    expect(root.querySelector(`[${OUTLINE_FOLDED_ATTR}="true"]`)?.textContent).not.toContain('L2 b')
+    key(view, 'ArrowDown', { mod: true })
+    expect(folded(root)).toBe(0)
+    expect(getMarkdownForSave(crepe)).toBe(NOTE)
+    expect(saves).toEqual([])
+  })
+
+  /** A clipboard event with a DataTransfer the test can read back. */
+  function clipboard(type: 'copy' | 'cut' | 'paste', data: Record<string, string> = {}): { event: Event; data: Record<string, string> } {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        get types() { return Object.keys(data) },
+        getData: (t: string) => data[t] ?? '',
+        setData: (t: string, v: string) => { data[t] = v },
+        clearData: () => { for (const t of Object.keys(data)) delete data[t] },
+        files: [],
+        items: [],
+      },
+    })
+    return { event, data }
+  }
+
+  it('⌘A then ⌘C copies the note’s text; ⌘X copies nothing and cuts nothing', async () => {
+    const { crepe, view, saves } = await locked('L2 a', 1)
+    expect(key(view, 'a', { mod: true }).defaultPrevented).toBe(true)
+    expect(view.state.selection.from).toBe(0)
+    const copy = clipboard('copy')
+    view.dom.dispatchEvent(copy.event)
+    expect(copy.data['text/plain']).toContain('L1 a')
+    expect(copy.data['text/plain']).toContain('L3 a')
+    const cut = clipboard('cut')
+    view.dom.dispatchEvent(cut.event)
+    expect(cut.event.defaultPrevented).toBe(true)
+    expect(cut.data).toEqual({})
+    expect(getMarkdownForSave(crepe)).toBe(NOTE)
+    expect(saves).toEqual([])
+  })
+
+  it('`beforeinput` is cancelled for every input type — typing, Enter, delete, paste, drop, cut, spell replace, the native styles and undo — and nothing changes', async () => {
+    const { crepe, view, saves } = await locked('L2 a', 2)
+    const types = [
+      'insertText', 'insertReplacementText', 'insertParagraph', 'insertLineBreak', 'insertFromPaste', 'insertFromPasteAsQuotation', 'insertFromDrop',
+      'insertTranspose', 'insertOrderedList', 'insertUnorderedList', 'insertLink',
+      'deleteContentBackward', 'deleteContentForward', 'deleteWordBackward', 'deleteWordForward', 'deleteSoftLineBackward', 'deleteHardLineForward',
+      'deleteByCut', 'deleteByDrag', 'historyUndo', 'historyRedo', 'formatBold', 'formatItalic', 'formatUnderline', 'formatStrikeThrough', 'formatRemove', 'formatIndent',
+    ]
+    for (const inputType of types) {
+      const event = new InputEvent('beforeinput', { inputType, data: inputType.startsWith('insert') ? 'X' : null, bubbles: true, cancelable: true })
+      view.dom.dispatchEvent(event)
+      expect(event.defaultPrevented, inputType).toBe(true)
+    }
+    expect(getMarkdownForSave(crepe)).toBe(NOTE)
+    expect(saves).toEqual([])
+  })
+
+  it('a paste and a drop change nothing', async () => {
+    const { crepe, view, saves } = await locked('L2 a', 2)
+    const paste = clipboard('paste', { 'text/plain': 'PASTED', 'text/html': '<p>PASTED</p>' })
+    view.dom.dispatchEvent(paste.event)
+    expect(paste.event.defaultPrevented).toBe(true)
+    const drop = clipboard('paste', { 'text/plain': 'DROPPED' }).event
+    const dropEvent = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(dropEvent, 'dataTransfer', { value: (drop as unknown as { clipboardData: unknown }).clipboardData })
+    Object.assign(dropEvent, { clientX: 5, clientY: 5 })
+    view.dom.dispatchEvent(dropEvent)
+    // The drop indicator hides itself 30 ms after a drop: let it, before the editor goes.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(getMarkdownForSave(crepe)).toBe(NOTE)
+    expect(view.dom.textContent).not.toContain('PASTED')
+    expect(view.dom.textContent).not.toContain('DROPPED')
+    expect(saves).toEqual([])
+  })
+
+  it('the keys that edit change nothing: letters, Enter, Backspace, Delete, ⌘B, ⌘\\, ⌘], ⌘⏎, ⌘⇧Z; Tab keeps the focus in the body', async () => {
+    const { crepe, view, saves } = await locked('L2 a', 2)
+    const keys: Array<[string, { mod?: boolean; shift?: boolean; alt?: boolean }]> = [
+      ['x', {}], ['Enter', {}], ['Enter', { shift: true }], ['Backspace', {}], ['Delete', {}], ['Backspace', { mod: true }],
+      ['b', { mod: true }], ['i', { mod: true }], ['\\', { mod: true }], [']', { mod: true }], ['[', { mod: true }], ['Enter', { mod: true }],
+      ['z', { mod: true, shift: true }], ['8', { mod: true, alt: true }],
+    ]
+    for (const [k, mods] of keys) key(view, k, mods)
+    expect(key(view, 'Tab').defaultPrevented).toBe(true)
+    expect(key(view, 'Tab', { shift: true }).defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(view.dom)
+    expect(view.state.storedMarks).toBeNull()
+    expect(getMarkdownForSave(crepe)).toBe(NOTE)
+    expect(saves).toEqual([])
+  })
+
+  it('a DOM change the browser makes anyway (an IME composition) is drawn again from the note at its `input` event', async () => {
+    const { crepe, root, view, saves } = await locked('L2 a', 2)
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    let text: Text | null = null
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) if (node.textContent === 'L2 a') text = node as Text
+    text!.textContent = 'L2 éa'
+    const stray = document.createElement('p')
+    stray.textContent = 'STRAY'
+    view.dom.appendChild(stray)
+    view.dom.dispatchEvent(new InputEvent('input', { inputType: 'insertCompositionText', data: 'é', bubbles: true }))
+    expect(view.dom.textContent).not.toContain('éa')
+    expect(view.dom.textContent).not.toContain('STRAY')
+    expect(view.dom.textContent).toContain('L2 a')
+    expect(view.dom.getAttribute('contenteditable')).toBe('true')
+    expect(getMarkdownForSave(crepe)).toBe(NOTE)
+    expect(saves).toEqual([])
+  })
+
+  it('the pop-up toolbar stays off for a selection in the focused locked body', async () => {
+    const { view } = await locked('L2 a', 0)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from, view.state.selection.from + 4)))
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(document.querySelector('.milkdown-toolbar[data-show="true"]')).toBeNull()
+  })
+
+  it('a change from disk still lands in a locked note (no transaction filter): the read-only tab shows an agent’s edit', async () => {
+    const { crepe, view } = await locked()
+    let at = -1
+    view.state.doc.descendants((node, pos) => {
+      if (at < 0 && node.isText && node.text === 'L1 a') at = pos
+    })
+    view.dispatch(view.state.tr.insertText('Agent ', at))
+    expect(getMarkdownForSave(crepe)).toContain('Agent L1 a')
+  })
+})
