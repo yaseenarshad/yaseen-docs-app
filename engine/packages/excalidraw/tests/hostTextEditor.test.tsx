@@ -16,6 +16,7 @@ import { API } from "./helpers/api";
 import { Keyboard, Pointer } from "./helpers/ui";
 import {
   act,
+  createEvent,
   fireEvent,
   GlobalTestState,
   render,
@@ -90,6 +91,22 @@ const startEdit = async (text = "Our main Moat:\n• one") => {
   return element;
 };
 
+/**
+ * YAZ-4396 (1F): the board-px rectangle an overlay node is placed on, read
+ * back from its `transform: translate() scale()` (a 1 px node).
+ */
+const overlayRect = (node: HTMLElement) => {
+  const match =
+    /translate\((-?[\d.e-]+)px, (-?[\d.e-]+)px\) scale\((-?[\d.e-]+), (-?[\d.e-]+)\)/.exec(
+      node.style.transform,
+    );
+  if (!match) {
+    throw new Error(`not placed by a transform: "${node.style.transform}"`);
+  }
+  const [left, top, width, height] = match.slice(1).map(Number);
+  return { left, top, width, height };
+};
+
 /** The blur that ends the edit is armed a task after the edit starts, the click outside a frame after. */
 const nextFrame = () => act(() => new Promise((r) => setTimeout(r, 20)));
 
@@ -127,8 +144,11 @@ describe("the host text editor (textEditor)", () => {
       { sceneX: element.x, sceneY: element.y },
       h.state,
     );
-    expect(root.style.left).toBe(`${x - h.state.offsetLeft}px`);
-    expect(root.style.top).toBe(`${y - h.state.offsetTop}px`);
+    // YAZ-4396 (1F): the root is fixed, so it sits at the box's place in the
+    // window; the browser's caret reveal then scrolls none of the board's layers
+    expect(root.style.position).toBe("fixed");
+    expect(root.style.left).toBe(`${x}px`);
+    expect(root.style.top).toBe(`${y}px`);
     expect(root.style.height).toBe(`${element.height}px`);
     expect(root.style.transform).toContain("scale(2)");
     expect(root.style.whiteSpace).toBe("pre");
@@ -233,7 +253,7 @@ describe("the host text editor (textEditor)", () => {
     expect(box().isDeleted).toBe(true);
   });
 
-  it.each([0.1, 1, 16.93])(
+  it.each([0.1, 1, 16.93, 100])(
     "draws the caret 1.5 px on screen at zoom %s",
     async (zoom) => {
       API.setAppState({ zoom: { value: zoom as any } });
@@ -242,7 +262,10 @@ describe("the host text editor (textEditor)", () => {
       const caret = last().root.parentElement!.querySelector<HTMLElement>(
         ".excalidraw-host-text-editor-overlay .excalidraw-wysiwyg-caret",
       )!;
-      expect(caret.style.width).toBe(`${CARET_SCREEN_PX / zoom}px`);
+      // YAZ-4396 (1F): a 1 px node scaled by a transform: layout would snap
+      // a 0.05 px width to 0 or to 1 board px (30 px on screen at 3000%)
+      expect(caret.style.width).toBe("1px");
+      expect(overlayRect(caret).width).toBeCloseTo(CARET_SCREEN_PX / zoom, 10);
       expect(getCaretWidth(zoom) * zoom).toBeCloseTo(1.5, 10);
     },
   );
@@ -465,6 +488,286 @@ describe("folds in edit (YAZ-4306)", () => {
       hit.mockRestore();
     }
   });
+});
+
+/** The box's top left on screen (the tests' canvas: 10 px a letter, 25 px a line). */
+const boxOnScreen = () =>
+  sceneCoordsToViewportCoords({ sceneX: box().x, sceneY: box().y }, h.state);
+
+/** A press at a set time (Chromium's pointerdown has `detail: 0`: the engine counts). */
+const pressAt = (
+  target: Element,
+  clientX: number,
+  clientY: number,
+  timeStamp: number,
+  init: Record<string, unknown> = {},
+) => {
+  const event = createEvent.pointerDown(target, {
+    button: 0,
+    clientX,
+    clientY,
+    ...init,
+  });
+  Object.defineProperty(event, "timeStamp", { value: timeStamp });
+  fireEvent(target, event);
+};
+const release = () => fireEvent.pointerUp(window);
+const lastSelectionSet = () =>
+  last().session.setSelection.mock.calls.at(-1)?.[0];
+
+/** YAZ-4396 (1F): edit a text box at any zoom: the caret, no jump. */
+describe("the caret, the selection and the board at any zoom (YAZ-4396)", () => {
+  beforeEach(async () => {
+    mounted = [];
+    await render(
+      <Excalidraw handleKeyboardGlobally={true} textEditor={textEditor} />,
+    );
+  });
+
+  it("places each selection rectangle by a transform, at the canvas geometry", async () => {
+    API.setAppState({ zoom: { value: 30 as any } });
+    await startEdit("abcdef");
+    act(() => last().onSelectionChange({ anchor: 1, head: 4 }));
+    const [span] = last().root.parentElement!.querySelectorAll<HTMLElement>(
+      ".excalidraw-wysiwyg-selection",
+    );
+    expect(span.style.width).toBe("1px");
+    expect(span.style.height).toBe("1px");
+    expect(span.style.transformOrigin).toBe("0 0");
+    // "bcd": from 10 to 40 board px, the whole line high
+    const rect = overlayRect(span);
+    expect(rect.left).toBeCloseTo(10, 6);
+    expect(rect.width).toBeCloseTo(30, 6);
+    expect(rect.height).toBeCloseTo(25, 6);
+  });
+
+  it("puts a board layer that scrolls during the edit back, and lets it go after", async () => {
+    const layer = document.querySelector<HTMLElement>(".excalidraw-container")!;
+    // the app's stylesheet gives it `overflow: hidden`
+    layer.style.overflowX = "hidden";
+    layer.style.overflowY = "hidden";
+    let scrollTop = 0;
+    Object.defineProperty(layer, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+      },
+    });
+    await startEdit("abcdef");
+    expect(layer.contains(last().root)).toBe(true);
+
+    // the browser reveals the hidden editor's caret: 493 px on a key
+    scrollTop = 493;
+    fireEvent.scroll(layer);
+    expect(layer.scrollTop).toBe(0);
+
+    fireEvent.keyDown(last().input, { key: KEYS.ESCAPE });
+    scrollTop = 120;
+    fireEvent.scroll(layer);
+    expect(layer.scrollTop).toBe(120);
+  });
+});
+
+/** YAZ-4397 (1G, D25): double and triple click, counted on the press. */
+describe("double and triple click in edit (YAZ-4397)", () => {
+  beforeEach(async () => {
+    mounted = [];
+    await render(
+      <Excalidraw handleKeyboardGlobally={true} textEditor={textEditor} />,
+    );
+  });
+
+  it("selects the word on the second press, with no click event", async () => {
+    await startEdit("one two three");
+    const { x, y } = boxOnScreen();
+    pressAt(last().root, x + 52, y + 5, 1000);
+    release();
+    expect(lastSelectionSet()).toEqual({ anchor: 5, head: 5 });
+    pressAt(last().root, x + 52, y + 5, 1200);
+    expect(lastSelectionSet()).toEqual({ anchor: 4, head: 7 });
+  });
+
+  it("selects the item's text without its indent and bullet on the third press", async () => {
+    await startEdit("• one\n    ○ two");
+    const { x, y } = boxOnScreen();
+    for (const time of [1000, 1100, 1200]) {
+      pressAt(last().root, x + 70, y + 30, time);
+      release();
+    }
+    // "    ○ two" starts at 6; its text "two" is 12..15
+    expect(lastSelectionSet()).toEqual({ anchor: 12, head: 15 });
+  });
+
+  it("selects a plain line without its newline on the third press", async () => {
+    await startEdit("one two\nthree");
+    const { x, y } = boxOnScreen();
+    for (const time of [1000, 1100, 1200]) {
+      pressAt(last().root, x + 12, y + 5, time);
+      release();
+    }
+    expect(lastSelectionSet()).toEqual({ anchor: 0, head: 7 });
+  });
+
+  it("counts a press 4 px away as the same click, and one 6 px away or 600 ms later as a new click", async () => {
+    await startEdit("one two three");
+    const { x, y } = boxOnScreen();
+    pressAt(last().root, x + 52, y + 5, 1000);
+    release();
+    pressAt(last().root, x + 54, y + 8, 1100);
+    release();
+    // 3.6 px away: a double click
+    expect(lastSelectionSet()).toEqual({ anchor: 4, head: 7 });
+
+    pressAt(last().root, x + 52, y + 5, 3000);
+    release();
+    pressAt(last().root, x + 58, y + 5, 3100);
+    release();
+    // 6 px away: a caret
+    expect(lastSelectionSet()).toEqual({ anchor: 6, head: 6 });
+
+    pressAt(last().root, x + 52, y + 5, 5000);
+    release();
+    pressAt(last().root, x + 52, y + 5, 5600);
+    // 600 ms later: a caret
+    expect(lastSelectionSet()).toEqual({ anchor: 5, head: 5 });
+  });
+
+  it("a drag after a double click grows by whole words, both ways", async () => {
+    await startEdit("one two three");
+    const { x, y } = boxOnScreen();
+    pressAt(last().root, x + 52, y + 5, 1000);
+    release();
+    pressAt(last().root, x + 52, y + 5, 1100);
+    // a small move inside "two" keeps the word
+    fireEvent.pointerMove(window, { clientX: x + 61, clientY: y + 6 });
+    expect(lastSelectionSet()).toEqual({ anchor: 4, head: 7 });
+    // into "three": up to its end
+    fireEvent.pointerMove(window, { clientX: x + 101, clientY: y + 5 });
+    expect(lastSelectionSet()).toEqual({ anchor: 4, head: 13 });
+    // back into "one": from the end of "two" to the start of "one"
+    fireEvent.pointerMove(window, { clientX: x + 12, clientY: y + 5 });
+    expect(lastSelectionSet()).toEqual({ anchor: 7, head: 0 });
+    release();
+  });
+
+  it("a drag after a triple click grows by whole lines", async () => {
+    await startEdit("one\ntwo\nthree");
+    const { x, y } = boxOnScreen();
+    for (const time of [1000, 1100, 1200]) {
+      pressAt(last().root, x + 12, y + 5, time);
+      if (time < 1200) {
+        release();
+      }
+    }
+    expect(lastSelectionSet()).toEqual({ anchor: 0, head: 3 });
+    fireEvent.pointerMove(window, { clientX: x + 5, clientY: y + 55 });
+    expect(lastSelectionSet()).toEqual({ anchor: 0, head: 13 });
+    release();
+  });
+
+  it("a press on the board within 8 screen px of the box goes to the edit", async () => {
+    API.setAppState({ zoom: { value: 0.5 as any } });
+    await startEdit("abcdef");
+    // the board press listener is armed a frame after the edit starts
+    await nextFrame();
+    const { x, y } = boxOnScreen();
+    const canvas = GlobalTestState.interactiveCanvas;
+    // the box is 60 × 25 board px: 30 × 12.5 on screen
+    pressAt(canvas, x + 30 + 6, y + 5, 1000);
+    release();
+    expect(lastSelectionSet()).toEqual({ anchor: 6, head: 6 });
+    expect(h.state.editingTextElement).not.toBe(null);
+
+    last().session.setSelection.mockClear();
+    pressAt(canvas, x + 30 + 12, y + 5, 3000);
+    release();
+    expect(last().session.setSelection).not.toHaveBeenCalled();
+  });
+});
+
+/** YAZ-4398 (1H): the host's pop-up toolbar anchors on the canvas caret. */
+describe("clientRectAt on the mount seam (YAZ-4398)", () => {
+  beforeEach(async () => {
+    mounted = [];
+    await render(
+      <Excalidraw handleKeyboardGlobally={true} textEditor={textEditor} />,
+    );
+  });
+
+  it("gives the screen box of the canvas caret at an offset, and leaves no node behind", async () => {
+    API.setAppState({ zoom: { value: 30 as any } });
+    await startEdit("abcdef");
+    // the tests' DOM has no layout: a placed node's box is its transform's
+    const rects = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const { left, top, width, height } = overlayRect(this);
+        return {
+          left,
+          top,
+          right: left + width,
+          bottom: top + height,
+        } as DOMRect;
+      });
+    try {
+      act(() => last().onSelectionChange({ anchor: 3, head: 3 }));
+      const overlay = last().root.parentElement!.querySelector(
+        ".excalidraw-host-text-editor-overlay",
+      )!;
+      const caret = overlay.querySelector<HTMLElement>(
+        ".excalidraw-wysiwyg-caret",
+      )!;
+      const drawn = overlayRect(caret);
+      const at3 = last().clientRectAt(3)!;
+      expect(at3).toEqual({
+        left: drawn.left,
+        top: drawn.top,
+        right: drawn.left + drawn.width,
+        bottom: drawn.top + drawn.height,
+      });
+      expect(last().clientRectAt(6)!.left - at3.left).toBeCloseTo(30, 6);
+      // the probe is gone; the drawn caret stays
+      expect(overlay.children).toHaveLength(1);
+      expect(overlay.firstElementChild).toBe(caret);
+    } finally {
+      rects.mockRestore();
+    }
+  });
+});
+
+/** YAZ-4401 (2E, D18): folding off: the note's ⌘↑ in the box folds nothing. */
+describe("folding off in edit (YAZ-4401)", () => {
+  const OFF = {
+    openArrows: "off",
+    size: 100,
+    thickness: "thick",
+    minScreenSize: 14,
+  } as const;
+
+  it.each([
+    { state: "off", result: "undone", foldArrows: OFF, written: undefined },
+    { state: "on", result: "written", foldArrows: undefined, written: [0] },
+  ] as const)(
+    "folding $state: a fold the editor reports is $result",
+    async ({ foldArrows, written }) => {
+      mounted = [];
+      await render(
+        <Excalidraw
+          handleKeyboardGlobally={true}
+          textEditor={textEditor}
+          foldArrows={foldArrows}
+        />,
+      );
+      await startEdit("• a\n    ○ b");
+      act(() => last().onFoldsChange([0]));
+      expect(box().foldedLines).toEqual(written);
+      if (!written) {
+        // the editor's fold is undone
+        expect(last().session.setFolds).toHaveBeenLastCalledWith([]);
+      }
+    },
+  );
 });
 
 /**

@@ -3,6 +3,7 @@ import { act, fireEvent, queryByTestId, waitFor } from "@testing-library/react";
 import {
   CODES,
   COLOR_PALETTE,
+  DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX,
   DEFAULT_ELEMENT_BACKGROUND_PICKS,
   DEFAULT_ELEMENT_STROKE_COLOR_INDEX,
   DEFAULT_ELEMENT_STROKE_PICKS,
@@ -35,7 +36,10 @@ import {
   togglePopover,
 } from "../tests/test-utils";
 
-import { actionChangeFontFamily } from "./actionProperties";
+import {
+  actionChangeBackgroundColor,
+  actionChangeFontFamily,
+} from "./actionProperties";
 
 /** The text toolbar's three fixed text colors (YAZ-3943 demo 2), then its ▾'s five. */
 const TEXT_TOOLBAR_COLOR_PICKS = [
@@ -55,6 +59,23 @@ const picksIn = (scope: ParentNode) =>
   Array.from(
     scope.querySelectorAll<HTMLElement>('[data-testid^="color-top-pick-"]'),
   ).map((element) => element.dataset.testid?.replace("color-top-pick-", ""));
+/** YAZ-4404 (4H, D21): the text toolbar's three fill picks, then its ▾'s four. */
+const TEXT_TOOLBAR_FILL_PICKS = [
+  COLOR_PALETTE.yellow[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+  COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+  COLOR_PALETTE.black,
+];
+const TEXT_TOOLBAR_MORE_FILLS = [
+  COLOR_PALETTE.green[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+  COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.gray[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+  COLOR_PALETTE.violet[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+];
+const groupOf = (label: string) =>
+  document.querySelector<HTMLElement>(
+    `.contextual-properties-toolbar [role="group"][aria-label="${label}"]`,
+  )!;
+const fillGroup = () => groupOf("Fill");
 const textColorGroup = () =>
   document.querySelector<HTMLElement>(
     '.contextual-properties-toolbar [role="group"][aria-label="Text color"]',
@@ -920,13 +941,13 @@ describe("element locking", () => {
         COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
         COLOR_PALETTE.blue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
       ]);
-      // the swatches have no tooltip: it would cover the popover
+      // YAZ-4403 (4G, D20): a lettered swatch names its job in its tooltip
       expect(
         queryByTestId(
           textColorGroup(),
           `color-top-pick-${COLOR_PALETTE.black}`,
         ),
-      ).not.toHaveAttribute("title");
+      ).toHaveAttribute("title", "Text black");
       // the ▾ has the other text colors, then "Custom…"; the old text picks are all there
       openTextToolbarPopover("Stroke: more");
       const more = document.querySelector<HTMLElement>(
@@ -983,7 +1004,8 @@ describe("element locking", () => {
         `color-top-pick-${COLOR_PALETTE.white}`,
       );
       expect(whiteSwatch).toHaveClass("is-canonical-white", "has-outline");
-      expect(whiteSwatch).toHaveAccessibleName("White");
+      // YAZ-4403 (4G, D20): a lettered swatch says it colors the text
+      expect(whiteSwatch).toHaveAccessibleName("Text white");
       expect(whiteSwatch).toHaveAttribute("aria-pressed", "true");
 
       API.setAppState({ theme: THEME.DARK });
@@ -1657,8 +1679,10 @@ describe("element locking", () => {
       );
     });
 
-    it("should expose native free-text background and rounding in the text overflow", () => {
-      const backgroundColor = DEFAULT_ELEMENT_BACKGROUND_PICKS[1];
+    // YAZ-4403 (4G, D20): the box fill is on the main bar, no longer under ⋯;
+    // its rounding stays under ⋯
+    it("should expose native free-text background on the main bar and rounding in the text overflow", () => {
+      const backgroundColor = TEXT_TOOLBAR_FILL_PICKS[0];
       const text = API.createElement({
         type: "text",
         text: "Native background",
@@ -1675,16 +1699,17 @@ describe("element locking", () => {
 
       expect(
         document.querySelector(
-          `.contextual-properties-toolbar__popover [data-testid="color-top-pick-${backgroundColor}"]`,
+          `.contextual-properties-toolbar__popover [data-testid^="color-top-pick-"]`,
         ),
-      ).not.toBeNull();
+      ).toBeNull();
       expect(queryByTestId(document.body, "corner-radius-slider")).toBeNull();
 
       fireEvent.click(
-        document.querySelector(
-          `.contextual-properties-toolbar__popover [data-testid="color-top-pick-${backgroundColor}"]`,
-        )!,
+        queryByTestId(fillGroup(), `color-top-pick-${backgroundColor}`)!,
       );
+      if (!queryByTestId(document.body, "corner-radius-slider")) {
+        togglePopover("More properties");
+      }
 
       expect(API.getSelectedElement()).toMatchObject({
         strokeColor: "#123456",
@@ -1821,12 +1846,14 @@ describe("element locking", () => {
       });
       API.setAppState({ editingTextElement: null });
       API.setSelectedElements([text.get() as any]);
-      togglePopover("More properties");
+      // YAZ-4403 (4G, D20): the box fill is on the main bar
       fireEvent.click(
-        document.querySelector(
-          `.contextual-properties-toolbar__popover [data-testid="color-top-pick-${DEFAULT_ELEMENT_BACKGROUND_PICKS[1]}"]`,
+        queryByTestId(
+          fillGroup(),
+          `color-top-pick-${TEXT_TOOLBAR_FILL_PICKS[0]}`,
         )!,
       );
+      togglePopover("More properties");
       const undoEntriesBefore = API.getUndoStack().length;
       expect(
         (
@@ -2795,5 +2822,246 @@ describe("text properties on compact layouts", () => {
     expect(
       document.querySelector('[aria-label="Distribute horizontally"]'),
     ).toBeNull();
+  });
+});
+
+/** YAZ-4403 (4G, D20): text color, highlight and fill on a text box's main bar. */
+describe("the color groups on a selected text box (YAZ-4403)", () => {
+  beforeEach(async () => {
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+    const text = API.createElement({ type: "text", text: "Hello" });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+  });
+
+  const swatches = (scope: ParentNode) =>
+    Array.from(
+      scope.querySelectorAll<HTMLElement>('[data-testid^="color-top-pick-"]'),
+    );
+
+  it("shows text color, highlight and fill as three groups, each with a ▾", () => {
+    for (const [group, more] of [
+      ["Text color", "Stroke: more"],
+      ["Highlight", "Highlight: more"],
+      ["Fill", "Background: more"],
+    ]) {
+      expect(groupOf(group)).not.toBeNull();
+      expect(
+        groupOf(group).querySelector(`[aria-label="${more}"]`),
+      ).not.toBeNull();
+    }
+    // the fill comes after the highlight
+    const groups = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        ".contextual-properties-toolbar [role='group']",
+      ),
+    ).map((group) => group.getAttribute("aria-label"));
+    expect(groups.indexOf("Fill")).toBe(groups.indexOf("Highlight") + 1);
+  });
+
+  it("letters the text color swatches (a colored A) and the highlight ones (a dark A on the color)", () => {
+    for (const swatch of swatches(textColorGroup())) {
+      expect(swatch).toHaveClass("color-picker__button--letter-color");
+      expect(swatch.querySelector(".color-picker__letter")).toHaveTextContent(
+        "A",
+      );
+    }
+    expect(swatches(textColorGroup()).map((swatch) => swatch.title)).toEqual([
+      "Text black",
+      "Text red",
+      "Text blue",
+    ]);
+    for (const swatch of swatches(groupOf("Highlight"))) {
+      expect(swatch).toHaveClass("color-picker__button--letter-on-color");
+    }
+    expect(
+      swatches(groupOf("Highlight")).map((swatch) => swatch.title),
+    ).toEqual(["Highlight yellow", "Highlight green", "Highlight blue"]);
+  });
+
+  it("shows the white text swatch as a lettered white swatch (a white A on a dark tile)", () => {
+    openTextToolbarPopover("Stroke: more");
+    const white = queryByTestId(
+      document.querySelector(".color-picker__more-popover")!,
+      `color-top-pick-${COLOR_PALETTE.white}`,
+    )!;
+    expect(white).toHaveClass(
+      "is-canonical-white",
+      "color-picker__button--letter-color",
+    );
+    expect(white).toHaveAccessibleName("Text white");
+  });
+
+  it("offers the fill picks yellow, blue and black as plain tiles, the others and None under its ▾", () => {
+    expect(picksIn(fillGroup())).toEqual(TEXT_TOOLBAR_FILL_PICKS);
+    for (const swatch of swatches(fillGroup())) {
+      expect(swatch.querySelector(".color-picker__letter")).toBeNull();
+    }
+    expect(swatches(fillGroup()).map((swatch) => swatch.title)).toEqual([
+      "Fill yellow",
+      "Fill blue",
+      "Fill black",
+    ]);
+    fireEvent.click(
+      queryByTestId(fillGroup(), `color-top-pick-${COLOR_PALETTE.black}`)!,
+    );
+    expect(API.getSelectedElement().backgroundColor).toBe(COLOR_PALETTE.black);
+
+    openTextToolbarPopover("Background: more");
+    const more = document.querySelector<HTMLElement>(
+      ".color-picker__more-popover",
+    )!;
+    expect(picksIn(more)).toEqual(TEXT_TOOLBAR_MORE_FILLS);
+    expect(
+      swatches(more).map((swatch) => swatch.getAttribute("aria-label")),
+    ).toEqual(["Fill green", "Fill red", "Fill gray", "Fill violet"]);
+    fireEvent.click(
+      Array.from(more.querySelectorAll("button")).find(
+        (button) => button.textContent === "None",
+      )!,
+    );
+    expect(API.getSelectedElement().backgroundColor).toBe(
+      COLOR_PALETTE.transparent,
+    );
+  });
+});
+
+/**
+ * YAZ-4404 (4H, D21): "Text color follows the fill". A dark fill turns dark
+ * text white; a light fill (or none) turns white text black; any other text
+ * color, and the letters' own colors, stay. One undo step with the fill.
+ */
+describe("the text color follows the fill (YAZ-4404)", () => {
+  const RED = COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX];
+  const YELLOW = TEXT_TOOLBAR_FILL_PICKS[0];
+
+  const renderWith = async (fillSetsTextColor: boolean) => {
+    await render(
+      <Excalidraw
+        handleKeyboardGlobally={true}
+        fillSetsTextColor={fillSetsTextColor}
+      />,
+    );
+  };
+  const fill = (color: string) =>
+    act(() => {
+      window.h.app.actionManager.executeAction(
+        actionChangeBackgroundColor,
+        "ui",
+        { currentItemBackgroundColor: color },
+      );
+    });
+  const select = (
+    overrides: Partial<ExcalidrawTextElement> = {},
+  ): ExcalidrawTextElement => {
+    const text = {
+      ...API.createElement({ type: "text", text: "Hello" }),
+      ...overrides,
+    } as ExcalidrawTextElement;
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+    return text;
+  };
+  const current = (id: string) =>
+    window.h.app.scene.getElement(id) as ExcalidrawTextElement;
+
+  it.each([
+    [
+      "a black fill turns black text white",
+      COLOR_PALETTE.black,
+      COLOR_PALETTE.black,
+      COLOR_PALETTE.white,
+    ],
+    [
+      "a red fill turns black text white",
+      RED,
+      COLOR_PALETTE.black,
+      COLOR_PALETTE.white,
+    ],
+    [
+      "a yellow fill turns white text black",
+      YELLOW,
+      COLOR_PALETTE.white,
+      COLOR_PALETTE.black,
+    ],
+    [
+      "no fill turns white text black",
+      COLOR_PALETTE.transparent,
+      COLOR_PALETTE.white,
+      COLOR_PALETTE.black,
+    ],
+    ["a yellow fill keeps red text", YELLOW, RED, RED],
+    [
+      "a yellow fill keeps black text",
+      YELLOW,
+      COLOR_PALETTE.black,
+      COLOR_PALETTE.black,
+    ],
+  ])("%s", async (_, fillColor, from, to) => {
+    await renderWith(true);
+    const text = select({ strokeColor: from });
+    fill(fillColor);
+    expect(current(text.id)).toMatchObject({
+      backgroundColor: fillColor,
+      strokeColor: to,
+    });
+  });
+
+  it("keeps the letters' own colors", async () => {
+    await renderWith(true);
+    const text = select({
+      textRuns: [{ start: 0, end: 2, color: RED }],
+    });
+    fill(COLOR_PALETTE.black);
+    expect(current(text.id).strokeColor).toBe(COLOR_PALETTE.white);
+    expect(current(text.id).textRuns).toEqual([
+      { start: 0, end: 2, color: RED },
+    ]);
+  });
+
+  it("changes a shape's label with the shape's fill", async () => {
+    await renderWith(true);
+    const [container, label] = API.createTextContainer();
+    API.setElements([container, label]);
+    API.setSelectedElements([container]);
+    fill(COLOR_PALETTE.black);
+    expect(window.h.app.scene.getElement(container.id)?.backgroundColor).toBe(
+      COLOR_PALETTE.black,
+    );
+    expect(current(label.id).strokeColor).toBe(COLOR_PALETTE.white);
+  });
+
+  it("is one undo step with the fill", async () => {
+    await renderWith(true);
+    // made through the UI, so the history knows the box before the fill
+    const created = UI.createElement("text");
+    await UI.editText(created, "Undo fill");
+    const text = created.get() as ExcalidrawTextElement;
+    API.setSelectedElements([text]);
+    expect(text.strokeColor).toBe(COLOR_PALETTE.black);
+    fireEvent.click(
+      queryByTestId(fillGroup(), `color-top-pick-${COLOR_PALETTE.black}`)!,
+    );
+    await act(async () => {});
+    expect(current(text.id)).toMatchObject({
+      backgroundColor: COLOR_PALETTE.black,
+      strokeColor: COLOR_PALETTE.white,
+    });
+    Keyboard.undo();
+    await act(async () => {});
+    expect(current(text.id)).toMatchObject({
+      backgroundColor: text.backgroundColor,
+      strokeColor: COLOR_PALETTE.black,
+    });
+  });
+
+  it("does nothing to the text while the setting is off", async () => {
+    await renderWith(false);
+    const text = select({ strokeColor: COLOR_PALETTE.black });
+    fill(COLOR_PALETTE.black);
+    expect(current(text.id)).toMatchObject({
+      backgroundColor: COLOR_PALETTE.black,
+      strokeColor: COLOR_PALETTE.black,
+    });
   });
 });

@@ -187,14 +187,15 @@ describe("⌘\\ resets the selection to the default style (YAZ-4277 D15)", () =>
       endArrowhead: "arrow",
     });
 
-    // a free text: letters black, no fill, no letter styles, the default font
-    // and align; its words, size and checkbox letters stay
+    // a free text: letters black, no fill, no letter styles, the default
+    // font; its words, size and checkbox letters stay. It holds a checkbox
+    // line, so it reads from the left (D22, YAZ-4345)
     const text = byId("free") as ExcalidrawTextElement;
     expect(text).toMatchObject({
       strokeColor: "#1e1e1e",
       backgroundColor: "transparent",
       opacity: 100,
-      textAlign: h.state.currentItemTextAlign,
+      textAlign: "left",
       fontFamily: h.state.currentItemFontFamily,
       originalText: "Bold red\n☑ done",
       fontSize: (before.get("free") as ExcalidrawTextElement).fontSize,
@@ -259,6 +260,31 @@ describe("⌘\\ resets the selection to the default style (YAZ-4277 D15)", () =>
     expect(byId("frame").strokeColor).toBe("#e03131");
     expect(byId("other").strokeColor).toBe("#e03131");
   });
+
+  // D22 (YAZ-4345): ⌘\ set every box to center, which undid the list rule
+  it.each([
+    { kind: "a bullet", words: "• one\n• two", align: "left" },
+    { kind: "a checkbox", words: "☐ to do", align: "left" },
+    { kind: "a numbered line", words: "Steps:\n1. first", align: "left" },
+    { kind: "no list line", words: "Plain words", align: "center" },
+  ] as const)(
+    "a free box with $kind gets the align $align (D22)",
+    ({ words, align }) => {
+      const box = API.createElement({
+        type: "text",
+        id: "box",
+        text: words,
+        textAlign: "right",
+      });
+      act(() => {
+        API.updateScene({ elements: [box], captureUpdate: "NEVER" });
+      });
+      API.setSelectedElements([byId("box")] as any);
+      expect(h.state.currentItemTextAlign).toBe("center");
+      pressReset();
+      expect((byId("box") as ExcalidrawTextElement).textAlign).toBe(align);
+    },
+  );
 
   it("the row is still the ⌘\\ action, with the new name", () => {
     expect(h.app.actionManager.actions.clearSelectedTextFormatting.label).toBe(

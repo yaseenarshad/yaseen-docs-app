@@ -487,3 +487,121 @@ describe("box fill of a fixed-width box (YAZ-4284, YAZ-4277 D11)", () => {
     expect((await fill()).getAttribute("width")).toBe("610.4");
   });
 });
+
+/**
+ * YAZ-4400 (2D, D17): in view mode (Read only, the share viewer) a press
+ * pans, so a fold arrow takes its click first. The fold is no undo step and
+ * nothing else changes. Checkboxes stay locked.
+ */
+describe("fold arrows in view mode (YAZ-4400)", () => {
+  const renderViewMode = async (text = MOAT) => {
+    mouse.reset();
+    await render(
+      <Excalidraw handleKeyboardGlobally={true} viewModeEnabled={true} />,
+    );
+    act(() =>
+      API.updateScene({
+        elements: [createMoat({ text, x: 100, y: 100 })],
+        captureUpdate: CaptureUpdateAction.NEVER,
+      }),
+    );
+  };
+
+  it("a click on the arrow folds and unfolds, with no selection and no undo step", async () => {
+    await renderViewMode();
+    const { scrollX, scrollY } = h.state;
+    mouse.clickAt(ARROW.x, ARROW.y);
+    expect(getText().foldedLines).toEqual([1]);
+    expect(API.getSelectedElements()).toEqual([]);
+    expect(h.history.isUndoStackEmpty).toBe(true);
+    // the press on the arrow did not pan
+    expect([h.state.scrollX, h.state.scrollY]).toEqual([scrollX, scrollY]);
+
+    mouse.clickAt(ARROW.x, ARROW.y);
+    expect(getText().foldedLines).toBeUndefined();
+  });
+
+  it("a press away from an arrow still pans and folds nothing", async () => {
+    await renderViewMode();
+    const { scrollX, scrollY } = h.state;
+    mouse.downAt(LINE.x, LINE.y);
+    mouse.moveTo(LINE.x + 40, LINE.y + 30);
+    mouse.up();
+    expect(h.state.scrollX).toBeCloseTo(scrollX + 40);
+    expect(h.state.scrollY).toBeCloseTo(scrollY + 30);
+    expect(getText().foldedLines).toBeUndefined();
+  });
+
+  it("the hover ▾ shows in view mode", async () => {
+    await renderViewMode();
+    mouse.moveTo(LINE.x, LINE.y);
+    expect(h.app.getFoldArrowHover()).toEqual({ elementId: "moat", line: 1 });
+  });
+
+  it("a click on a checkbox ticks nothing", async () => {
+    await renderViewMode(LIST);
+    mouse.clickAt(BOX.x, BOX.y);
+    expect(getText().originalText).toBe(LIST);
+  });
+});
+
+/**
+ * YAZ-4401 (2E, D18): folding off. No arrow takes a click, no fold can be
+ * set, and the fold keys do nothing. A box can still open.
+ */
+describe("folding off (YAZ-4401)", () => {
+  const OFF = {
+    openArrows: "off",
+    size: 100,
+    thickness: "thick",
+    minScreenSize: 14,
+  } as const;
+
+  beforeEach(async () => {
+    mouse.reset();
+    await render(<Excalidraw handleKeyboardGlobally={true} foldArrows={OFF} />);
+    act(() =>
+      API.updateScene({
+        elements: [createMoat({ x: 100, y: 100 })],
+        captureUpdate: CaptureUpdateAction.NEVER,
+      }),
+    );
+  });
+
+  it("says folding is off, and an arrow is no hit", () => {
+    expect(h.app.isFoldingOff()).toBe(true);
+    expect(h.app.getFoldArrowTargetAt(ARROW)).toBeNull();
+    mouse.clickAt(ARROW.x, ARROW.y);
+    expect(getText().foldedLines).toBeUndefined();
+    mouse.moveTo(LINE.x, LINE.y);
+    expect(h.app.getFoldArrowHover()).toBeNull();
+  });
+
+  it("setTextFolds refuses a fold, and still opens a box", () => {
+    let result: boolean | undefined;
+    act(() => {
+      result = h.app.setTextFolds("moat", [1]);
+    });
+    expect(result).toBe(false);
+    expect(getText().foldedLines).toBeUndefined();
+    // a box folded before folding went off can open
+    act(() =>
+      API.updateScene({
+        elements: [{ ...getText(), foldedLines: [1] }],
+        captureUpdate: CaptureUpdateAction.NEVER,
+      }),
+    );
+    act(() => {
+      h.app.setTextFolds("moat", []);
+    });
+    expect(getText().foldedLines).toBeUndefined();
+  });
+
+  it("the fold keys do nothing", () => {
+    API.setAppState({ selectedElementIds: { moat: true } });
+    Keyboard.withModifierKeys({ ctrl: true }, () => {
+      Keyboard.keyPress(KEYS.ARROW_UP);
+    });
+    expect(getText().foldedLines).toBeUndefined();
+  });
+});
