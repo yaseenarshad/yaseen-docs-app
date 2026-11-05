@@ -678,6 +678,7 @@ describe('a favorite`s tile (YAZ-4385): the copy at tile size, the add the whole
   const small = { mimeType: 'image/jpeg', dataURL: 'data:image/jpeg;base64,c21hbGw=' }
   const item = { itemKey: 'pixabay:5', provider: 'pixabay', providerId: '5', kind: 'photo', title: 'Tree' } as StudioItem
   const copyOf = (image: { mimeType: string; dataURL: string }) => ({
+    find: vi.fn(async () => ({ mimeType: image.mimeType, size: Buffer.from(image.dataURL.split(',')[1], 'base64').byteLength })),
     preview: vi.fn(async () => image),
     import: vi.fn(async () => ({ ...image, item })),
   })
@@ -687,10 +688,13 @@ describe('a favorite`s tile (YAZ-4385): the copy at tile size, the add the whole
 
   it('a photo copy gives a tile made once and kept in the cache; the add still gets the whole copy; no network', async () => {
     const tilePicture = vi.fn(() => small)
-    const providers = createMediaProviders({ fetch: offline as unknown as typeof globalThis.fetch, readPixabayKey: async () => 'secret', cache, favoriteCopy: copyOf(photo), tilePicture })
+    const favoriteCopy = copyOf(photo)
+    const providers = createMediaProviders({ fetch: offline as unknown as typeof globalThis.fetch, readPixabayKey: async () => 'secret', cache, favoriteCopy, tilePicture })
     expect(await providers.preview({ provider: 'pixabay', id: '5' })).toEqual(small)
     expect(await providers.preview({ provider: 'pixabay', id: '5' })).toEqual(small)
     expect(tilePicture).toHaveBeenCalledTimes(1)
+    // The kept tile answers before the copy is read (YAZ-4366): a 20 MB photo is not read again each time its tile shows.
+    expect(favoriteCopy.preview).toHaveBeenCalledTimes(1)
     expect(await providers.import({ provider: 'pixabay', id: '5' })).toMatchObject({ dataURL: photo.dataURL, item })
     expect(offline).not.toHaveBeenCalled()
   })

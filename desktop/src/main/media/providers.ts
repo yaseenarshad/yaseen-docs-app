@@ -106,6 +106,8 @@ export interface MediaProvidersDeps {
    * favorite shows and adds with no network and no key. Null = no copy; a copy that cannot be read is no copy.
    */
   favoriteCopy?: {
+    /** The copy's type and size with no read of its bytes (one `stat` of the folder): null = no picture copy. */
+    find(req: MediaBytesRequest): Promise<{ mimeType: string; size: number } | null>
     preview(req: MediaBytesRequest): Promise<MediaPreviewResponse | null>
     import(req: MediaBytesRequest): Promise<MediaImportResponse | null>
   }
@@ -118,6 +120,8 @@ export interface MediaProvidersDeps {
 
 /** The largest SVG copy a tile takes as it is (YAZ-4385): 1 MB of dataURL. An icon's SVG is a few KB. */
 const MAX_TILE_SVG_CHARS = 1024 * 1024
+/** The dataURL length of `size` bytes of SVG, as `readCopy` builds it. */
+const svgDataUrlLength = (size: number): number => 'data:image/svg+xml;base64,'.length + Math.ceil(size / 3) * 4
 
 /** What the providers read of the downloaded packs. */
 export type LocalIconPacks = Pick<IconPacks, 'searchReady' | 'has' | 'packs' | 'info' | 'names' | 'svg'>
@@ -398,14 +402,22 @@ export function createMediaProviders({ fetch, readPixabayKey, cache, packs, favo
 
   /**
    * The last few local searches' ranked matches, with no filter: the next page is a slice, and a filter change only
-   * filters the kept list — a click in the Filter menu costs milliseconds, not another walk over every name.
+   * filters the kept list — a click in the Filter menu costs milliseconds, not another walk over every name. They are
+   * kept for one set of names (YAZ-4366): `names()` answers a new one after a Check, a Remove or a move, and the kept
+   * matches go with the old one.
    */
   const localMatches = new Map<string, Promise<string[]>>()
+  let matchesOf: Promise<Map<string, string[]>> | null = null
   const MAX_LOCAL_SEARCHES = 4
   async function rankedLocally(query: string, filters: MediaFilters | undefined, scope: IconifyScope): Promise<string[]> {
+    const byPack = (packs as LocalIconPacks).names()
+    if (byPack !== matchesOf) {
+      localMatches.clear()
+      matchesOf = byPack
+    }
     let ranked = localMatches.get(query)
     if (ranked === undefined) {
-      const value = (packs as LocalIconPacks).names().then((byPack) => rankLocalMatches([...byPack], query, null, () => true))
+      const value = byPack.then((byPack) => rankLocalMatches([...byPack], query, null, () => true))
       ranked = value
       localMatches.set(query, value)
       for (const oldest of localMatches.keys()) {
@@ -682,15 +694,20 @@ export function createMediaProviders({ fetch, readPixabayKey, cache, packs, favo
 
     async preview(req) {
       // A favorite's own copy first (YAZ-4363), then a downloaded pack draws its own tile (YAZ-4359): no network.
-      const copy = await fromCopy(favoriteCopy?.preview, req)
       const cacheKey = previewCacheKey(req.provider, req.id)
+      const found = await fromCopy(favoriteCopy?.find, req)
       // An SVG copy is sharp at any size, and an icon's is small. A photo copy is the full picture, up to 20 MB: the tile
-      // gets it at tile size (YAZ-4385), made once from the copy and kept in the cache, so it needs no network either.
-      // A big SVG (a Pixabay vector) cannot be made smaller here: it takes the provider's preview, as other types do.
-      if (copy !== null && copy.mimeType === 'image/svg+xml' && copy.dataURL.length <= MAX_TILE_SVG_CHARS) return copy
-      if (copy !== null) {
+      // gets it at tile size (YAZ-4385), made once from the copy and kept in the cache, so it needs no network either;
+      // the kept tile answers before the copy's bytes are read (YAZ-4366). A big SVG (a Pixabay vector) cannot be made
+      // smaller here: it takes the provider's preview, as other types do.
+      const asItIs = found !== null && found.mimeType === 'image/svg+xml' && svgDataUrlLength(found.size) <= MAX_TILE_SVG_CHARS
+      if (found !== null && !asItIs) {
         const made = await cache.read<MediaPreviewResponse>(cacheKey)
         if (made !== null) return made
+      }
+      const copy = found === null ? null : await fromCopy(favoriteCopy?.preview, req)
+      if (copy !== null && asItIs) return copy
+      if (copy !== null) {
         let tile: MediaPreviewResponse | null = null
         try {
           tile = tilePicture?.(copy) ?? null

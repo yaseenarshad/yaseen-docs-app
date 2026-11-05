@@ -146,7 +146,7 @@ export function formatPackBytes(bytes: number): string {
   return `${mb < 10 ? (Math.round(mb * 10) / 10).toString() : Math.round(mb).toString()} MB`
 }
 
-/** The progress line of a running download: "Downloading icon packs: 37 of 281 (17 MB of 130 MB)". */
+/** The progress line of a running download: "Downloading icon packs: 37 of 260 (17 MB of 112 MB)". */
 export function packsProgressText(s: Pick<IconPacksStatus, 'state' | 'packs' | 'total' | 'bytes' | 'totalBytes'>): string {
   const counts = `${s.packs} of ${s.total} (${formatPackBytes(s.bytes)} of ${formatPackBytes(Math.max(s.bytes, s.totalBytes))})`
   if (s.state === 'checking') return `Checking for new icons: ${counts}`

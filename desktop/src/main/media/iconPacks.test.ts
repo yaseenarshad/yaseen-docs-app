@@ -559,12 +559,26 @@ describe('the packs answer search, tiles and adds (decision 5)', () => {
     await expect(providers.preview({ provider: 'iconify', id: 'lucide:arrow' })).rejects.toMatchObject({ code: 'OFFLINE' })
   })
 
+  it('a search after "Check for new icons" finds the new names, not the matches kept from before (YAZ-4366)', async () => {
+    const versions: Record<string, Record<string, string>> = { '2.2.1': V1 }
+    const packs = createIconPacks({ folder, fetch: network(versions).fetch })
+    await packs.download()
+    const providers = createMediaProviders({ fetch: network({}).fetch, readPixabayKey: async () => null, cache: memoryCache(), packs })
+    expect(ids(await providers.search({ q: 'arrow', source: 'iconify' }))).toContain('mdi:arrow-left')
+    versions['2.2.2'] = { ...V1, mdi: packFile('mdi', ['arrow-down', 'home']) }
+    expect(await packs.check()).toMatchObject({ state: 'complete', version: '2.2.2' })
+    const after = ids(await providers.search({ q: 'arrow', source: 'iconify' }))
+    expect(after).toContain('mdi:arrow-down')
+    expect(after).not.toContain('mdi:arrow-left')
+  })
+
   it("a favorite's own copy (YAZ-4363) answers before the pack; with no copy, the pack answers", async () => {
     const { packs, offline } = await withPacks()
     const copyImage = { mimeType: 'image/svg+xml', dataURL: 'data:image/svg+xml;base64,Y29weQ==' }
     const copyItem = { itemKey: 'iconify:tabler:star', provider: 'iconify', providerId: 'tabler:star' } as StudioItem
     const has = (id: string) => id === 'tabler:star'
     const favoriteCopy = {
+      find: vi.fn(async ({ id }: { id: string }) => (has(id) ? { mimeType: copyImage.mimeType, size: 4 } : null)),
       preview: vi.fn(async ({ id }: { id: string }) => (has(id) ? copyImage : null)),
       import: vi.fn(async ({ id }: { id: string }) => (has(id) ? { ...copyImage, item: copyItem } : null)),
     }

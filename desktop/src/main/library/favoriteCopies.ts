@@ -92,6 +92,8 @@ export interface CopyFetchers {
 }
 
 export interface FavoriteCopies {
+  /** The picture copy's type and size, with no read of its bytes: a kept tile can answer first (YAZ-4366). */
+  find(req: MediaBytesRequest): Promise<{ mimeType: string; size: number } | null>
   /**
    * The copy for a request, as a tile picture; null when there is none. `import` also answers the favorite's own
    * item (`media.json`'s row), so an add works with no network; that needs the item to be a favorite still.
@@ -262,6 +264,12 @@ export function createFavoriteCopies(initialFolder: string, deps: FavoriteCopies
   }
 
   return {
+    async find(req) {
+      const hit = (await listing()).get(favoriteCopyHash(`${req.provider}:${req.id}`))
+      const ext = hit === undefined ? undefined : COPY_NAME_RE.exec(hit.name)?.[2]
+      return hit === undefined || ext === undefined || ext === ELEMENTS_COPY_EXT ? null : { mimeType: copyMimeType(ext), size: hit.size }
+    },
+
     preview: (req) => readCopy(`${req.provider}:${req.id}`),
 
     async import(req) {
