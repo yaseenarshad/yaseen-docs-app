@@ -121,8 +121,14 @@ const RUNS = (() => {
   return runs
 })()
 
+/**
+ * YAZ-4435: the most common box, with no runs and no folds. A box of bullets (no fold), and a box of plain lines with
+ * no list. 200 lines too.
+ */
+const PLAIN = Array.from({ length: GROUPS * 4 }, (_, n) => `Line ${n} of the long box with some words`).join('\n')
+
 /** Mounts the engine on the box, opens it for edit (Enter on the selected box) and waits for the editor's document. */
-async function openBox(textRuns: typeof RUNS | undefined) {
+async function openBox(textRuns: typeof RUNS | undefined, text = TEXT, foldedLines: readonly number[] = FOLDED) {
   host = document.createElement('div')
   host.style.width = '1200px'
   host.style.height = '800px'
@@ -151,7 +157,7 @@ async function openBox(textRuns: typeof RUNS | undefined) {
   await React.act(() => new Promise((r) => setTimeout(r, 50)))
   if (api === null) throw new Error('the engine did not mount')
   const live: Api = api
-  const raw = { id: 'box', type: 'text', x: 0, y: 0, width: 400, height: 25 * 200, text: TEXT, originalText: TEXT, fontSize: 20, fontFamily: 5, lineHeight: 1.25, textAlign: 'left', verticalAlign: 'top', containerId: null, autoResize: true, foldedLines: FOLDED, ...(textRuns && { textRuns }) }
+  const raw = { id: 'box', type: 'text', x: 0, y: 0, width: 400, height: 25 * 200, text, originalText: text, fontSize: 20, fontFamily: 5, lineHeight: 1.25, textAlign: 'left', verticalAlign: 'top', containerId: null, autoResize: true, foldedLines, ...(textRuns && { textRuns }) }
   await React.act(() => live.updateScene({ elements: engine.restoreElements([raw], null), appState: { selectedElementIds: { box: true } } }))
   const container = host.querySelector<HTMLElement>('.excalidraw-container')!
   const crepes = ((globalThis as { __textBoxCrepes?: Crepe[] }).__textBoxCrepes ??= [])
@@ -166,7 +172,7 @@ async function openBox(textRuns: typeof RUNS | undefined) {
   await React.act(() => new Promise((r) => setTimeout(r, 0)))
   const edited = view as unknown as EditorView
   // the caret at the end of line 101's letters, in the middle of the box
-  const offset = TEXT.split('\n').slice(0, 102).join('\n').length
+  const offset = text.split('\n').slice(0, 102).join('\n').length
   edited.dispatch(edited.state.tr.setSelection(TextSelection.create(edited.state.doc, posAt(edited.state.doc, offset, helpers))))
   return { api: live, view: edited }
 }
@@ -207,20 +213,28 @@ const format = (r: Awaited<ReturnType<typeof timeKeys>>) =>
   `sync median ${r.syncMedian.toFixed(2)} / p95 ${r.syncP95.toFixed(2)} ms, all median ${r.median.toFixed(2)} / p95 ${r.p95.toFixed(2)} ms, ` +
   `${r.measures.toFixed(0)} measures, ${r.walks.toFixed(0)} glyph asks, ${r.carets.toFixed(0)} carets drawn, ${r.popupScans.toFixed(0)} pop-up scans`
 
-describe('typing in a 200-line text box with folds (YAZ-4277 scenario 14)', () => {
-  for (const [name, runs] of [['no runs', undefined], ['bold runs', RUNS]] as const) {
+describe('typing in a 200-line text box (YAZ-4277 scenario 14)', () => {
+  // YAZ-4312: a key lays the box out once (200 lines; 470 to 882 measures before). YAZ-4435: the plain boxes too
+  // (801 and 601 before; 400 on main's textarea).
+  const cases = [
+    { name: '10 folds, no runs', runs: undefined, text: TEXT, folded: FOLDED },
+    { name: '10 folds, bold runs', runs: RUNS, text: TEXT, folded: FOLDED },
+    { name: 'no folds, no runs', runs: undefined, text: TEXT, folded: [] },
+    { name: 'plain lines, no list, no runs', runs: undefined, text: PLAIN, folded: [] },
+  ] as const
+  for (const { name, runs, text, folded } of cases) {
     it(`types a key and moves the caret fast: ${name}`, async () => {
-      const { api, view } = await openBox(runs)
+      const { api, view } = await openBox(runs, text, folded)
       const typed = await timeKeys(60, () => typeText(view, 'x'))
       const moved = await timeKeys(60, () => {
         const { head } = view.state.selection
         view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, head - 1)))
       })
       // the engine has each letter: the box's text grew by 70 letters
-      expect(api.getSceneElements()[0].originalText).toHaveLength(TEXT.length + 70)
-      console.log(`text box typing, 200 lines, 10 folds, ${name}: key ${format(typed)} · caret move ${format(moved)} (jsdom)`)
-      // YAZ-4312, load-free: a key walks the editor's document once (200 items ask their glyph), lays the box out once
-      // (200 lines; 470 to 882 measures before), draws one caret and scans for no pop-up; a caret move walks nothing
+      expect(api.getSceneElements()[0].originalText).toHaveLength(text.length + 70)
+      console.log(`text box typing, 200 lines, ${name}: key ${format(typed)} · caret move ${format(moved)} (jsdom)`)
+      // load-free: a key walks the editor's document at most once (200 items ask their glyph), lays the box out once,
+      // draws one caret and scans for no pop-up; a caret move walks nothing
       expect(typed.walks).toBeLessThanOrEqual(200)
       expect(typed.measures).toBeLessThan(300)
       expect(typed.carets).toBeLessThan(1.5)
