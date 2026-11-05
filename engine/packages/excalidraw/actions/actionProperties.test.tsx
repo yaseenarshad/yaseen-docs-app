@@ -11,6 +11,7 @@ import {
   FREEDRAW_STROKE_WIDTH,
   FONT_FAMILY,
   KEYS,
+  MIN_FONT_SIZE,
   ROUNDNESS,
   VECTOR_STROKE_WIDTH,
   STROKE_WIDTH,
@@ -39,6 +40,7 @@ import {
 import {
   actionChangeBackgroundColor,
   actionChangeFontFamily,
+  stepFontSize,
 } from "./actionProperties";
 
 /** The text toolbar's three fixed text colors (YAZ-3943 demo 2), then its ▾'s five. */
@@ -3063,5 +3065,96 @@ describe("the text color follows the fill (YAZ-4404)", () => {
       backgroundColor: COLOR_PALETTE.black,
       strokeColor: COLOR_PALETTE.black,
     });
+  });
+});
+
+/**
+ * YAZ-4312 M1: the exact font size field with text made at a high zoom
+ * (MIN_FONT_SIZE 0.01; new text at 10,000% is 0.14 board px).
+ */
+describe("the exact font size field with very small text (YAZ-4312 M1)", () => {
+  const sizeOf = (id: string) =>
+    (window.h.app.scene.getElement(id) as ExcalidrawTextElement).fontSize;
+  const select = (...fontSizes: number[]) => {
+    const texts = fontSizes.map((fontSize, index) =>
+      API.createElement({
+        type: "text",
+        text: "Tiny",
+        fontSize,
+        y: index * 10,
+      }),
+    );
+    API.setElements(texts);
+    API.setSelectedElements(texts);
+    return texts.map((text) => text.id);
+  };
+
+  beforeEach(async () => {
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+  });
+
+  it("shows a size below 1 with 2 significant digits", () => {
+    select(0.1375);
+    expect(exactFontSizeInput()).toHaveValue(0.14);
+    expect(
+      document.querySelector('[aria-label="Font size 0.14"]'),
+    ).not.toBeNull();
+  });
+
+  it("keeps the size when the field gets the focus and loses it with no change", () => {
+    const [id] = select(0.1375);
+    const field = exactFontSizeInput();
+    const undoEntries = API.getUndoStack().length;
+    fireEvent.focus(field);
+    fireEvent.blur(field);
+    expect(sizeOf(id)).toBe(0.1375);
+    fireEvent.keyDown(field, { key: KEYS.ENTER });
+    expect(sizeOf(id)).toBe(0.1375);
+    expect(API.getUndoStack()).toHaveLength(undoEntries);
+  });
+
+  it("keeps a mixed selection's sizes when the empty field loses the focus", () => {
+    const ids = select(0.14, 20);
+    const field = exactFontSizeInput();
+    expect(field).toHaveValue(null);
+    fireEvent.focus(field);
+    fireEvent.blur(field);
+    expect(ids.map(sizeOf)).toEqual([0.14, 20]);
+  });
+
+  it("writes a typed size below 1 with 2 significant digits", () => {
+    const [id] = select(0.14);
+    const field = exactFontSizeInput();
+    fireEvent.change(field, { target: { value: "0.05" } });
+    fireEvent.blur(field);
+    expect(sizeOf(id)).toBe(0.05);
+    fireEvent.change(field, { target: { value: "0.0123" } });
+    fireEvent.blur(field);
+    expect(sizeOf(id)).toBe(0.012);
+    fireEvent.change(field, { target: { value: "0.001" } });
+    fireEvent.blur(field);
+    expect(sizeOf(id)).toBe(MIN_FONT_SIZE);
+  });
+
+  it("steps with the arrow keys relative to the size: down makes tiny text smaller", () => {
+    const [id] = select(0.1375);
+    const field = exactFontSizeInput();
+    fireEvent.keyDown(field, { key: KEYS.ARROW_DOWN });
+    expect(sizeOf(id)).toBe(0.11);
+    fireEvent.keyDown(field, { key: KEYS.ARROW_UP });
+    fireEvent.keyDown(field, { key: KEYS.ARROW_UP });
+    expect(sizeOf(id)).toBe(0.18);
+  });
+
+  it("steps by 1 from 1 px up, by a factor of 1.25 below, never under MIN_FONT_SIZE", () => {
+    expect(stepFontSize(16, 1)).toBe(17);
+    expect(stepFontSize(16, -1)).toBe(15);
+    expect(stepFontSize(2, -1)).toBe(1);
+    expect(stepFontSize(1, -1)).toBe(0.8);
+    expect(stepFontSize(0.8, 1)).toBe(1);
+    expect(stepFontSize(0.14, -1)).toBe(0.11);
+    expect(stepFontSize(0.14, 1)).toBe(0.18);
+    expect(stepFontSize(MIN_FONT_SIZE, -1)).toBe(MIN_FONT_SIZE);
+    expect(stepFontSize(512, 1)).toBe(512);
   });
 });
