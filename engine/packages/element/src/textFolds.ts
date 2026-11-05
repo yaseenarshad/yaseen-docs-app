@@ -1,8 +1,9 @@
 /**
  * YAZ-4277 D3: the switch point for the folds of a text box. This module is
  * the only code that reads or writes `foldedLines`. The layout, the
- * renderers, the fold arrows, the keys, restore and the host editor all ask
- * it. A later per-tab mode (YAZ-4297) changes only this module.
+ * renderers, the fold arrows, the keys, restore, the host editor and the
+ * host's folding off (D18: `takeFoldsAside`, `withFoldsPutBack`) all ask it.
+ * A later per-tab mode (YAZ-4297) changes only this module.
  *
  * `foldedLines` holds the indexes (in `originalText.split("\n")`) of the
  * folded list items. Absent or empty: no fold.
@@ -20,12 +21,20 @@
  * list item with children hides nothing: after an outside edit the worst case
  * is a fold that opens. No text is hidden by mistake and none is lost.
  */
+import { arrayToMap } from "@excalidraw/common";
+
 import { updateBoundElements } from "./binding";
+import { refreshTextDimensions } from "./newElement";
 import { getContainerElement, redrawTextBoundingBox } from "./textElement";
 import { parseTextListLine } from "./textList";
+import { isTextElement } from "./typeChecks";
 
 import type { Scene } from "./Scene";
-import type { ExcalidrawTextElement, NonDeleted } from "./types";
+import type {
+  ExcalidrawElement,
+  ExcalidrawTextElement,
+  NonDeleted,
+} from "./types";
 
 /** A box as the readers need it; the layout passes its own text. */
 type FoldedElement = Pick<ExcalidrawTextElement, "foldedLines"> &
@@ -197,4 +206,113 @@ export const setFoldedLines = (
   );
   updateBoundElements(element, scene);
   return true;
+};
+
+/**
+ * YAZ-4277 D18, folding off: the folds a host keeps aside, by box id. Each
+ * entry keeps the box's `originalText` too: the line numbers belong to that
+ * text only.
+ */
+export type FoldsAside = ReadonlyMap<
+  string,
+  Readonly<{ text: string; lines: readonly number[] }>
+>;
+
+/** The folds of each live box in `elements`, to keep aside (folding off). */
+export const getFoldsAside = (
+  elements: readonly ExcalidrawElement[],
+): FoldsAside => {
+  const aside = new Map<string, { text: string; lines: readonly number[] }>();
+  for (const element of elements) {
+    if (!isTextElement(element) || element.isDeleted) {
+      continue;
+    }
+    const lines = getFoldedLines(element);
+    if (lines.length) {
+      aside.set(element.id, { text: element.originalText, lines });
+    }
+  }
+  return aside;
+};
+
+/**
+ * Folding off at load (a board opens, or loads again from disk): `elements`
+ * (restored) with no fold, and the folds they had. Each box that had a fold
+ * is measured again to all its lines, so it shows every line. The input is
+ * not changed.
+ */
+export const takeFoldsAside = (
+  elements: readonly ExcalidrawElement[],
+): { elements: ExcalidrawElement[]; aside: FoldsAside } => {
+  const aside = getFoldsAside(elements);
+  if (!aside.size) {
+    return { elements: [...elements], aside };
+  }
+  const elementsMap = arrayToMap(elements);
+  return {
+    elements: elements.map((element) => {
+      if (!isTextElement(element) || !aside.has(element.id)) {
+        return element;
+      }
+      const open = { ...element } as ExcalidrawTextElement;
+      delete (open as { foldedLines?: unknown }).foldedLines;
+      return {
+        ...open,
+        ...refreshTextDimensions(
+          open,
+          getContainerElement(open, elementsMap),
+          elementsMap,
+        ),
+      };
+    }),
+    aside,
+  };
+};
+
+/**
+ * The aside folds that can go back, by box id: only a live box whose text is
+ * the same as when its folds went aside, and that has no folds of its own.
+ * A box edited while folding was off loses its aside folds: the edit can
+ * move its lines, and an old number could fold another bullet.
+ */
+export const getFoldsToPutBack = (
+  elements: readonly ExcalidrawElement[],
+  aside: FoldsAside,
+): Map<string, readonly number[]> => {
+  const back = new Map<string, readonly number[]>();
+  if (!aside.size) {
+    return back;
+  }
+  for (const element of elements) {
+    const entry = aside.get(element.id);
+    if (
+      entry &&
+      isTextElement(element) &&
+      !element.isDeleted &&
+      element.originalText === entry.text &&
+      !element.foldedLines?.length
+    ) {
+      back.set(element.id, entry.lines);
+    }
+  }
+  return back;
+};
+
+/**
+ * `elements` for the file while folding is off: each box that can take its
+ * aside folds back (`getFoldsToPutBack`) is saved with them. The size stays
+ * as the board shows it; a load with folding on measures it again (D6).
+ */
+export const withFoldsPutBack = <T extends ExcalidrawElement>(
+  elements: readonly T[],
+  aside: FoldsAside,
+): readonly T[] => {
+  const back = getFoldsToPutBack(elements, aside);
+  if (!back.size) {
+    return elements;
+  }
+  return elements.map((element) => {
+    const lines = back.get(element.id);
+    return lines ? { ...element, foldedLines: lines } : element;
+  });
 };

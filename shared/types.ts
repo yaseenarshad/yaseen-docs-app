@@ -622,8 +622,8 @@ export interface BoardHoverLinksRequest {
 }
 
 /**
- * `board:set-fold-arrows` (YAZ-4277 D5): the cog's "Fold arrows" on a drawing: `'app'` (no key: the app setting), or
- * `"foldArrows": "hover"` / `"always"` in the board's `yaseendraw` block. One read, one atomic write, as Read only.
+ * `board:set-fold-arrows` (YAZ-4277 D5, D18, D19): the cog's "Fold arrows" on a drawing: `'app'` (no key: the app
+ * setting), or `"foldArrows": "hover"` / `"always"` / `"off"` in the board's `yaseendraw` block. One read, one atomic write, as Read only.
  */
 export interface BoardFoldArrowsRequest {
   root: string
@@ -1404,6 +1404,12 @@ export type FoldArrowMode = (typeof FOLD_ARROW_MODES)[number]
 /** YAZ-4277 D7: the fold arrow's line, thin to thick. */
 export const FOLD_ARROW_THICKNESSES = ['thin', 'normal', 'thick'] as const
 export type FoldArrowThickness = (typeof FOLD_ARROW_THICKNESSES)[number]
+/**
+ * YAZ-4277 D5, D7: what the engine's `foldArrows` prop gets (`foldArrowsOf`). The engine has its own copy of these
+ * three types (`FoldArrowPrefs` in `engine/packages/element/src/textFoldArrows.ts`), because `shared/` never imports
+ * the engine and the engine never imports `shared/`. `client/src/drawings/foldArrowTypes.test.ts` keeps them equal.
+ */
+export type FoldArrowPrefs = Readonly<{ openArrows: FoldArrowMode; size: number; thickness: FoldArrowThickness; minScreenSize: number }>
 /** YAZ-4277 D7: the fold arrow's size, % of the text size. */
 export const FOLD_ARROW_SIZE_MIN = 50
 export const FOLD_ARROW_SIZE_MAX = 300

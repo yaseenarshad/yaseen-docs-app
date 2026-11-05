@@ -31,7 +31,7 @@
  */
 
 import { isRecord } from './guards'
-import { DEFAULT_CANVAS_PREFS, NEW_ELEMENT_STYLE_MODES, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_MODES, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FOLD_ARROW_THICKNESSES, LASER_COLORS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, LASER_SIZES, LASER_TRAIL_MODES, ROUGHNESS_LEVELS, SELECT_ON_MODES, TEXT_ALIGNS, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type LaserColor, type LaserSize, type LaserTrailMode, type Roughness, type SelectOn, type TextAlign } from './types'
+import { DEFAULT_CANVAS_PREFS, NEW_ELEMENT_STYLE_MODES, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_MODES, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FOLD_ARROW_THICKNESSES, LASER_COLORS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, LASER_SIZES, LASER_TRAIL_MODES, ROUGHNESS_LEVELS, SELECT_ON_MODES, TEXT_ALIGNS, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowPrefs, type FoldArrowThickness, type LaserColor, type LaserSize, type LaserTrailMode, type Roughness, type SelectOn, type TextAlign } from './types'
 
 /** Every pref key, in declaration order — the order `changedPrefKeys` reports in. */
 export const CANVAS_PREF_KEYS = Object.keys(DEFAULT_CANVAS_PREFS) as ReadonlyArray<keyof CanvasPrefs>
@@ -246,7 +246,7 @@ export function changedPrefKeys(prev: CanvasPrefs, next: CanvasPrefs): Array<key
  * YAZ-4277 D5, D7: what the engine's `foldArrows` prop gets: the board's own mode (its cog, `"foldArrows"` in its
  * `yaseendraw` block) over the app's "Fold arrows on open bullets", and the app's size, thickness and smallest size.
  */
-export function foldArrowsOf(prefs: CanvasPrefs, board: FoldArrowMode | undefined): { openArrows: FoldArrowMode; size: number; thickness: FoldArrowThickness; minScreenSize: number } {
+export function foldArrowsOf(prefs: CanvasPrefs, board: FoldArrowMode | undefined): FoldArrowPrefs {
   return { openArrows: board ?? prefs.foldArrowsOpen, size: prefs.foldArrowSize, thickness: prefs.foldArrowThickness, minScreenSize: prefs.foldArrowMinSize }
 }
 

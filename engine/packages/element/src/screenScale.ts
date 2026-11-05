@@ -12,7 +12,9 @@
  *   shape roughness rule, the dashed-line widening, the arrowheads, the
  *   adaptive corner cap) divide by the scale the element was made at,
  *   `customData.styleScale`. Other Excalidraw apps keep that field and
- *   ignore it.
+ *   ignore it. Thus a shape made far from 100% looks different there: its
+ *   line width is right, but its arrowheads, its rough wobble and its
+ *   binding gap are drawn at board size (YAZ-4312 S11).
  *
  * At zoom 1, or with the switch off, nothing changes: no field, the same
  * numbers.

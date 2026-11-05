@@ -1,6 +1,7 @@
 /**
- * `board:set-fold-arrows` (YAZ-4277 D5): a drawing's own "Fold arrows" choice, written as `"foldArrows": "hover"` or
- * `"always"` in the board's `yaseendraw` block (`withBoardFoldArrows`); `'app'` removes the key. The rules of the link
+ * `board:set-fold-arrows` (YAZ-4277 D5, D18, D19): a drawing's own "Fold arrows" choice, written as
+ * `"foldArrows": "hover"`, `"always"` or `"off"` in the board's `yaseendraw` block (`withBoardFoldArrows`); `'app'`
+ * removes the key. The rules of the link
  * preview switch (`fs/boardHoverLinks.ts`): one read, one atomic write; a stale `expectedMtime` is `CONFLICT` with the
  * disk mtime and writes nothing; the same state again writes nothing.
  */
