@@ -19,13 +19,12 @@ import {
   iconGeometryOf,
   iconSource,
   makeIconReader,
-  parseIconSvg,
   readIconPartList,
   setIconGeometry,
   walkIcon,
 } from "./iconColors";
 
-import type { IconInfo, IconPaint, IconRecipe } from "./iconColors";
+import type { IconInfo, IconPaint, IconPart, IconRecipe } from "./iconColors";
 import type { ExcalidrawImageElement } from "./types";
 
 export type IconPaintTarget = {
@@ -54,18 +53,19 @@ const targetOf = (
       }
     : null;
 
-/** The paint targets of an SVG's original, in document order (fill, then stroke). */
-export const buildIconParts = (svgText: string): IconPaintTarget[] => {
-  const reader = makeIconReader(iconSource(svgText));
-  if (!reader) {
-    return [];
-  }
-  return readIconPartList(reader).flatMap((part) =>
+/** The paint targets of some parts, in document order (fill, then stroke). */
+const targetsOfParts = (parts: readonly IconPart[]): IconPaintTarget[] =>
+  parts.flatMap((part) =>
     [
       targetOf(part.index, "fill", part.fill),
       targetOf(part.index, "stroke", part.stroke),
     ].filter((target): target is IconPaintTarget => !!target),
   );
+
+/** The paint targets of an SVG's original, in document order (fill, then stroke). */
+export const buildIconParts = (svgText: string): IconPaintTarget[] => {
+  const reader = makeIconReader(iconSource(svgText));
+  return reader ? targetsOfParts(readIconPartList(reader)) : [];
 };
 
 /** The colors a target shows with this recipe (a part color wins). */
@@ -301,7 +301,7 @@ export const matchBoardIconColors = (
 export const PICK_MAP_SIZE = 512;
 
 /** A unique, spread-out color for target `index` (a blend of two never lands on a third). */
-export const pickColorOf = (index: number) => {
+const pickColorOf = (index: number) => {
   // a multiply by an odd constant is one-to-one on 32 bits; the top 24 bits spread the ids
   const value = (Math.imul(index + 1, 0x9e3779b1) >>> 8) & 0xffffff;
   return `#${value.toString(16).padStart(6, "0")}`;
@@ -340,7 +340,8 @@ export const iconPickMapSvg = (svgText: string, outlineUnits: number) => {
   const { svg } = reader;
   const geometry = iconGeometryOf(svg);
   const parts = readIconPartList(reader);
-  const targets = buildIconParts(svgText);
+  // YAZ-4366: the targets from the same parse
+  const targets = targetsOfParts(parts);
   const colors = pickColors(targets.length);
   const colorOf = new Map(targets.map((t, i) => [t.key, colors[i]]));
 
@@ -553,7 +554,7 @@ export const loadIconPickMap = async (
   outlineUnits: number,
 ): Promise<{ map: IconPickMap; targets: IconPaintTarget[] } | null> => {
   const pick = iconPickMapSvg(svgText, outlineUnits);
-  if (!pick || !parseIconSvg(pick.svg)) {
+  if (!pick) {
     return null;
   }
   const image = new Image();

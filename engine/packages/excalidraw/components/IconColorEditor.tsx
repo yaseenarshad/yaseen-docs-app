@@ -142,7 +142,7 @@ const shadesTip = (name: string) =>
   `${name}: every color turns ${name.toLowerCase()}. Light and dark shades stay, and so do black, white and grey.`;
 
 /** The variations of an icon whose original colors are `originals`. */
-export const iconVariations = (
+const iconVariations = (
   originals: readonly string[],
   boardColors: readonly string[],
 ): IconVariation[] => [

@@ -100,8 +100,6 @@ export const getIconTargets = (
     return kind ? info.kind === kind : info.kind !== "photo";
   });
 
-const EMPTY_RECIPE: IconRecipe = { colors: {}, outline: null };
-
 /**
  * A copy of the element's recipe, or an empty one. The outline width is the one
  * the board shows now: it scales with a resize after the paint.
@@ -112,7 +110,7 @@ export const currentIconRecipe = (
 ): IconRecipe => {
   const recipe = getIconRecipe(element);
   if (!recipe) {
-    return { ...EMPTY_RECIPE, colors: {} };
+    return { colors: {}, outline: null };
   }
   const width = recipe.outline
     ? iconOutlineWidth(element, getIconInfo(files[element.fileId]))
@@ -388,7 +386,7 @@ export const actionChangeIconColors = register<IconColorsChange>({
 });
 
 /** The color a one-color icon shows now (`currentColor` draws black in a picture). */
-export const shownIconColor = (
+const shownIconColor = (
   app: Pick<AppClassProperties, "files">,
   icon: IconTarget,
 ) => {
@@ -407,10 +405,10 @@ export type IconOutlineChange = {
 };
 
 /** A new outline's width: about a twelfth of the icon's smaller side, at least 1 px. */
-export const defaultIconOutlineWidth = (element: IconTarget) =>
+const defaultIconOutlineWidth = (element: IconTarget) =>
   Math.max(1, Math.round(Math.min(element.width, element.height) / 12));
 
-export const DEFAULT_ICON_OUTLINE_COLOR = "#ffffff";
+const DEFAULT_ICON_OUTLINE_COLOR = "#ffffff";
 
 export const actionChangeIconOutline = register<IconOutlineChange>({
   name: "changeIconOutline",
@@ -464,7 +462,7 @@ export const actionChangeIconOutline = register<IconOutlineChange>({
 });
 
 /** A drag paints at most this often (extra 27). */
-export const ICON_PREVIEW_INTERVAL_MS = 100;
+const ICON_PREVIEW_INTERVAL_MS = 100;
 const OUTLINE_SLIDER_MAX = 32;
 const OUTLINE_MAX = 256;
 

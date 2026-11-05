@@ -44,7 +44,7 @@ export const ICON_MAX_BYTES = 256 * 1024;
 /** The info cache keeps this many files (by file id). */
 const ICON_INFO_CACHE_SIZE = 200;
 
-export const ICON_SOURCE_ID = "yaseen-icon-source";
+const ICON_SOURCE_ID = "yaseen-icon-source";
 const OUTLINE_FILTER_ID = "yaseen-icon-outline";
 /** The faded parts of the Edit colors preview (YAZ-4354 1D). */
 const FADED_OPACITY = 0.15;
@@ -52,7 +52,7 @@ const FADED_OPACITY = 0.15;
 const EM_PX = 16;
 
 /** The shapes that are parts (round 2, decision 1). */
-export const ICON_SHAPE_TAGS = new Set([
+const ICON_SHAPE_TAGS = new Set([
   "path",
   "circle",
   "ellipse",
@@ -192,8 +192,7 @@ export const svgToDataURL = (svg: string) =>
 // parse
 // -----------------------------------------------------------------------------
 
-/** @private for `iconParts.ts` */
-export const parseIconSvg = (svgText: string) => {
+const parseIconSvg = (svgText: string) => {
   const doc = new DOMParser().parseFromString(svgText, MIME_TYPES.svg);
   const svg = doc.documentElement;
   if (
@@ -235,8 +234,10 @@ export const iconSource = (svgText: string) => {
   }
 };
 
-/** Every element under `root`, in document order. */
-/** @private for `iconParts.ts` */
+/**
+ * Every element under `root`, in document order.
+ * @private for `iconParts.ts`
+ */
 export const walkIcon = (root: Element, visit: (element: Element) => void) => {
   for (const child of Array.from(root.children)) {
     visit(child);
@@ -292,10 +293,7 @@ const findRef = (svg: Element, href: string) => {
  * `hosts` gets each `<use>` target → its `<use>`: the target inherits its paint
  * from the `<use>`, as in a browser.
  */
-export const iconShapes = (
-  svg: Element,
-  hosts: Map<Element, Element> = new Map(),
-) => {
+const iconShapes = (svg: Element, hosts: Map<Element, Element> = new Map()) => {
   const shapes: Element[] = [];
   const seen = new Set<Element>();
   const add = (element: Element) => {
@@ -409,7 +407,7 @@ const safeMatches = (element: Element, selector: string) => {
   }
 };
 
-export class IconCascade {
+class IconCascade {
   /** `hosts`: a `<use>` target → its `<use>`, where the target inherits from (`iconShapes`) */
   constructor(
     private rules: StyleRule[],
@@ -569,7 +567,7 @@ export const readIconPartList = (reader: IconReader): IconPart[] =>
       reader.cascade.inherited(element, "fill", reader.svg) === undefined,
   }));
 
-export const paintColors = (paint: IconPaint | null): string[] =>
+const paintColors = (paint: IconPaint | null): string[] =>
   !paint
     ? []
     : "color" in paint
@@ -596,11 +594,13 @@ export const readIconParts = (svgText: string) => {
 /** Each color of the original, most used first (D2: what the user sees, also inside `<style>` rules). */
 export const readIconColors = (svgText: string): string[] => {
   const read = readIconParts(svgText);
-  if (!read) {
-    return [];
-  }
+  return read ? colorsOfParts(read.parts) : [];
+};
+
+/** The colors of some parts, most used first. */
+const colorsOfParts = (parts: readonly IconPart[]): string[] => {
   const counts = new Map<string, number>();
-  for (const part of read.parts) {
+  for (const part of parts) {
     for (const color of [
       ...paintColors(part.fill),
       ...paintColors(part.stroke),
@@ -677,7 +677,7 @@ export const iconGeometryOf = (svg: Element, outline = 0): IconGeometry => {
 };
 
 /** "one": only `currentColor`, or one color; "many": more; "photo": every other picture. */
-export const iconKindOfColors = (colors: readonly string[]): IconKind =>
+const iconKindOfColors = (colors: readonly string[]): IconKind =>
   colors.length === 0 ? "photo" : colors.length === 1 ? "one" : "many";
 
 /** The kind, colors and geometry of an original, with a painted copy's outline (SVG units). */
@@ -685,10 +685,12 @@ const iconInfoOfSource = (source: string, outline: number): IconInfo => {
   if (new TextEncoder().encode(source).length > ICON_MAX_BYTES) {
     return PHOTO;
   }
-  const svg = parseIconSvg(source);
-  if (!svg) {
+  // YAZ-4366: one parse for the picture check, the colors and the geometry
+  const reader = makeIconReader(source);
+  if (!reader) {
     return PHOTO;
   }
+  const { svg } = reader;
   let hasPicture = false;
   walkIcon(svg, (element) => {
     hasPicture ||= element.localName === "image";
@@ -696,7 +698,7 @@ const iconInfoOfSource = (source: string, outline: number): IconInfo => {
   if (hasPicture) {
     return PHOTO;
   }
-  const colors = readIconColors(source);
+  const colors = colorsOfParts(readIconPartList(reader));
   const kind = iconKindOfColors(colors);
   if (kind === "photo") {
     return PHOTO;
@@ -802,10 +804,6 @@ export const getIconInfo = (
   return info;
 };
 
-export const iconKind = (
-  file: Pick<BinaryFileData, "id" | "mimeType" | "dataURL"> | null | undefined,
-) => getIconInfo(file).kind;
-
 /**
  * YAZ-4355 1E: dark mode keeps a many-color icon's colors (extra 21). Every
  * other SVG inverts, as before this work: a one-color icon, and an SVG that is
@@ -817,10 +815,6 @@ export const isDarkInvertedImage = (
   mimeType: string | undefined,
   kind: IconKind | undefined,
 ) => mimeType === MIME_TYPES.svg && kind !== "many";
-
-export const isRecolorableIcon = (
-  file: Pick<BinaryFileData, "id" | "mimeType" | "dataURL"> | null | undefined,
-) => iconKind(file) !== "photo";
 
 /** The recipe on an element, if it has one. */
 export const getIconRecipe = (element: {
@@ -907,8 +901,10 @@ const wrapChildren = (svg: Element, keep: (child: Element) => boolean) => {
   return g;
 };
 
-/** The root's size and view box with an outline of `units` on each side. */
-/** @private for `iconParts.ts` */
+/**
+ * The root's size and view box with an outline of `units` on each side.
+ * @private for `iconParts.ts`
+ */
 export const setIconGeometry = (
   svg: Element,
   geometry: IconGeometry,
