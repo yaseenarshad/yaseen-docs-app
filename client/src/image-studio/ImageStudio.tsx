@@ -260,6 +260,91 @@ function ShapeTile({ preview }: { preview: ShapePreview }) {
   )
 }
 
+interface InlineFormProps {
+  item: StudioItem
+  /** Rename (a component's name), else "Search words…". */
+  renaming: boolean
+  initial: string
+  /** The words that find the item now, after its name. */
+  words: readonly string[]
+  /** The search text as a one-click word, or '' (`wordToOffer`). */
+  offer: string
+  notch: CSSProperties
+  onWord: (word: string) => void
+  onRemoveWord: (word: string) => void
+  onRename: (name: string) => void
+  onClose: () => void
+}
+
+/**
+ * The full-width row that "Search words…" or Rename opens under the tile's row. Its own component, so a key typed in
+ * its field renders this row only, not the whole panel with every grid and tile (YAZ-4366 audit 68).
+ */
+function InlineForm({ item, renaming, initial, words, offer, notch, onWord, onRemoveWord, onRename, onClose }: InlineFormProps) {
+  const [draft, setDraft] = useState(initial)
+  // YAZ-4348 demo round 2: the field empties for the next word; the row stays open, with the new chip in it.
+  const addWord = (word: string) => {
+    if (word.trim() === '') return
+    setDraft('')
+    onWord(word)
+  }
+  return (
+    <form
+      className={renaming ? 'image-studio__inline' : 'image-studio__inline image-studio__word-form'}
+      style={notch}
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (renaming) onRename(draft)
+        else addWord(draft)
+      }}
+    >
+      {!renaming && (
+        // YAZ-4348 demo round 2: every word that finds it shows (its name first), and a new one is ADDED to them
+        <div className="image-studio__word-head">
+          <span>
+            Search words for <b>{item.title}</b>
+          </span>
+          <span className="image-studio__word-chips" aria-label={`Words that find ${item.title}`}>
+            <span className="image-studio__word-chip is-name" title="Its name always finds it">
+              {item.title.toLowerCase()}
+            </span>
+            {words.map((w) => (
+              <span className="image-studio__word-chip" key={w}>
+                {w}
+                <button type="button" className="image-studio__word-remove" aria-label={`Remove the word “${w}”`} title="Remove this word" onClick={() => onRemoveWord(w)}>
+                  ×
+                </button>
+              </span>
+            ))}
+          </span>
+        </div>
+      )}
+      {/* Autofocused: the menu item above is the only way here. */}
+      <input
+        autoFocus
+        value={draft}
+        maxLength={renaming ? MAX_COMPONENT_NAME_LENGTH : MAX_ITEM_WORD_LENGTH}
+        aria-label={renaming ? `Rename ${item.title}` : `A word for ${item.title}`}
+        placeholder={renaming ? 'Name' : 'A new word, like “person”'}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => event.key === 'Escape' && onClose()}
+      />
+      <button type="submit">{renaming ? 'Save' : 'Add word'}</button>
+      <button type="button" onClick={onClose}>
+        Cancel
+      </button>
+      {offer !== '' && (
+        <span className="image-studio__word-offer">
+          Your search:
+          <button type="button" onClick={() => addWord(offer)}>
+            + {offer}
+          </button>
+        </span>
+      )}
+    </form>
+  )
+}
+
 /** Where a tile's menu opens: at the pointer, or at the tile's corner from the keyboard. `right` keeps it in the panel. */
 type MenuAt = { top: number; left?: number; right?: number }
 /**
@@ -404,7 +489,6 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     setGroupSimilar(on)
     storage.patchSettings({ mediaGroupSimilar: on })
   }
-  const [draft, setDraft] = useState('')
   const [line, setLine] = useState<Line>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [componentName, setComponentName] = useState('')
@@ -737,11 +821,10 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
   }
 
   // YAZ-4348 demo round 2: the row stays open after an add, with the new chip in it, and no line above the list (it
-  // pushed the list down, so the tile and its row jumped); the field empties for the next word.
-  const saveWord = async (item: StudioItem, word = draft) => {
+  // pushed the list down, so the tile and its row jumped).
+  const saveWord = async (item: StudioItem, word: string) => {
     if (word.trim() === '') return
     touch(item.itemKey)
-    setDraft('')
     try {
       setLibrary(await api.media.used({ op: 'add-word', item, word }))
     } catch (cause) {
@@ -767,8 +850,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     const known = [...item.title.toLowerCase().split(/\s+/), ...(usedByKey.get(item.itemKey)?.words ?? [])]
     return typedWord === '' || known.includes(typedWord.toLowerCase()) ? '' : typedWord
   }
-  const openRow = (key: string, mode: 'word' | 'rename' | 'confirm', value = '') => {
-    setDraft(value)
+  const openRow = (key: string, mode: 'word' | 'rename' | 'confirm') => {
     setOpenTile({ key, mode })
   }
 
@@ -981,7 +1063,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
             </button>
             {component !== undefined && (
               <>
-                <button type="button" role="menuitem" onClick={() => openRow(slot, 'rename', component.name)}>
+                <button type="button" role="menuitem" onClick={() => openRow(slot, 'rename')}>
                   Rename
                 </button>
                 <button
@@ -1040,64 +1122,24 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
       )
     }
     const renaming = openTile.mode === 'rename'
-    const words = usedByKey.get(item.itemKey)?.words ?? []
     return (
-      <form
-        className={renaming ? 'image-studio__inline' : 'image-studio__inline image-studio__word-form'}
-        style={notch}
-        key={`${item.itemKey}:row`}
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (renaming && component) {
-            setOpenTile(null)
-            library.rename(component, draft)
-          } else void saveWord(item)
+      <InlineForm
+        // The mode in the key: Rename after Search words starts from the name, not from the typed word
+        key={`${item.itemKey}:row:${openTile.mode}`}
+        item={item}
+        renaming={renaming}
+        initial={renaming && component ? component.name : ''}
+        words={usedByKey.get(item.itemKey)?.words ?? []}
+        offer={renaming ? '' : wordToOffer(item)}
+        notch={notch}
+        onWord={(word) => void saveWord(item, word)}
+        onRemoveWord={(word) => void removeWord(item, word)}
+        onRename={(name) => {
+          setOpenTile(null)
+          if (component) library.rename(component, name)
         }}
-      >
-        {!renaming && (
-          // YAZ-4348 demo round 2: every word that finds it shows (its name first), and a new one is ADDED to them
-          <div className="image-studio__word-head">
-            <span>
-              Search words for <b>{item.title}</b>
-            </span>
-            <span className="image-studio__word-chips" aria-label={`Words that find ${item.title}`}>
-              <span className="image-studio__word-chip is-name" title="Its name always finds it">
-                {item.title.toLowerCase()}
-              </span>
-              {words.map((w) => (
-                <span className="image-studio__word-chip" key={w}>
-                  {w}
-                  <button type="button" className="image-studio__word-remove" aria-label={`Remove the word “${w}”`} title="Remove this word" onClick={() => void removeWord(item, w)}>
-                    ×
-                  </button>
-                </span>
-              ))}
-            </span>
-          </div>
-        )}
-        {/* Autofocused: the menu item above is the only way here. */}
-        <input
-          autoFocus
-          value={draft}
-          maxLength={renaming ? MAX_COMPONENT_NAME_LENGTH : MAX_ITEM_WORD_LENGTH}
-          aria-label={renaming ? `Rename ${item.title}` : `A word for ${item.title}`}
-          placeholder={renaming ? 'Name' : 'A new word, like “person”'}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => event.key === 'Escape' && setOpenTile(null)}
-        />
-        <button type="submit">{renaming ? 'Save' : 'Add word'}</button>
-        <button type="button" onClick={() => setOpenTile(null)}>
-          Cancel
-        </button>
-        {!renaming && wordToOffer(item) !== '' && (
-          <span className="image-studio__word-offer">
-            Your search:
-            <button type="button" onClick={() => void saveWord(item, wordToOffer(item))}>
-              + {wordToOffer(item)}
-            </button>
-          </span>
-        )}
-      </form>
+        onClose={() => setOpenTile(null)}
+      />
     )
   }
 
