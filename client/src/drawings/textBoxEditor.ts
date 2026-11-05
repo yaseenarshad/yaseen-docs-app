@@ -121,8 +121,14 @@ const plainUndo = $shortcut(() => ({
  */
 const noScroll = $prose(() => new Plugin({ key: new PluginKey('textBoxNoScroll'), props: { handleScrollToSelection: () => true } }))
 
-/** Same text, same runs: nothing to tell the engine. */
-const sameRuns = (a: TextRuns, b: TextRuns) => JSON.stringify(a ?? []) === JSON.stringify(b ?? [])
+type Fields = Readonly<Record<string, unknown>>
+/** Two runs with the same fields (an absent field and an undefined one are the same, as in JSON). */
+const sameRun = (a: Fields, b: Fields) => Object.keys(a).every((key) => a[key] === b[key]) && Object.keys(b).every((key) => a[key] === b[key])
+/** Same runs, field by field, with no JSON made on each change (YAZ-4312 N6): nothing to tell the engine. */
+const sameRuns = (a: TextRuns, b: TextRuns) => {
+  const [x, y] = [a ?? [], b ?? []]
+  return x.length === y.length && x.every((run, index) => sameRun(run, y[index]))
+}
 
 export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
   return {
@@ -151,8 +157,10 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
                 const changed = next.text !== reported.text || !sameRuns(next.textRuns, reported.textRuns)
                 const moved = anchor !== reported.anchor || head !== reported.head
                 reported = { ...next, anchor, head }
-                // the note's fold state, mapped through each change: the folded items' lines now (YAZ-4306)
-                const folds = itemLines(doc, outlineCollapsedPositions(view.state), helpers)
+                // the note's fold state, mapped through each change: the folded items' lines now (YAZ-4306); a caret
+                // move keeps the same document and the same fold state, so no fold can move
+                const collapsed = outlineCollapsedPositions(view.state)
+                const folds = doc === prev.doc && collapsed === outlineCollapsedPositions(prev) ? reportedFolds : itemLines(doc, collapsed, helpers)
                 const foldsMoved = folds.length !== reportedFolds.length || folds.some((line, index) => line !== reportedFolds[index])
                 if (foldsMoved) reportedFolds = folds
                 if (changed) onChange(next.text, next.textRuns, { anchor, head })
@@ -176,8 +184,9 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
       const movePopups = () => {
         for (const popup of root.querySelectorAll(POPUPS)) popups.appendChild(popup)
       }
+      // Crepe adds them beside the view (in the view's parent), on the view's first update: only that element's own
+      // children are watched, so a key, which changes the view's nodes, runs no watch (YAZ-4312 S3)
       const popupWatch = new MutationObserver(movePopups)
-      popupWatch.observe(root, { childList: true, subtree: true })
 
       const select = (sel: Selection) => {
         const view = crepe.editor.ctx.get(editorViewCtx)
@@ -188,6 +197,8 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
       const ready = crepe.create().then(() => {
         if (destroyed) return
         const view = crepe.editor.ctx.get(editorViewCtx)
+        popupWatch.observe(view.dom.parentElement ?? root, { childList: true })
+        movePopups()
         // The pop-up toolbar and the `/` menu ask the view where a position is on screen. The view is invisible and its
         // layout drifts from the canvas (demo round 1: far right at 3000%, lost at a low zoom), so the canvas answers.
         const ownCoords = view.coordsAtPos.bind(view)
@@ -205,6 +216,8 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
         isReady = true
         if (wantsFocus) view.focus()
       })
+      // a failed setup leaves the editor not ready, so each call below does nothing, and `destroy` still runs (YAZ-4312 S12)
+      .catch((err: unknown) => console.error('[text-box-editor] create failed:', err))
 
       return {
         replaceText(start, end, text) {
@@ -256,7 +269,7 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
           destroyed = true
           popupWatch.disconnect()
           popups.remove()
-          void ready.then(() => crepe.destroy())
+          void ready.then(() => crepe.destroy()).catch((err: unknown) => console.error('[text-box-editor] destroy failed:', err))
         },
       }
     },

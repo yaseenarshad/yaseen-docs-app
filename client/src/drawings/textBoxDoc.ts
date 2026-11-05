@@ -130,7 +130,15 @@ export function boxToDoc(schema: Schema, text: string, runs: TextRuns, helpers: 
 /** Each text block of the document, the box line it is, and where its letters start in the document. */
 type DocLine = { pos: number; node: ProseNode; prefix: string; item: boolean }
 
+/**
+ * The last walk of each document (YAZ-4312 S2). A document never changes, and one key asks for its lines up to four
+ * times (the caret's two offsets, the box text, the folds); a caret move asks again for the same document.
+ */
+const walked = new WeakMap<ProseNode, { helpers: BoxHelpers; lines: DocLine[] }>()
+
 function docLines(doc: ProseNode, helpers: BoxHelpers): DocLine[] {
+  const known = walked.get(doc)
+  if (known?.helpers === helpers) return known.lines
   const out: DocLine[] = []
   const walk = (node: ProseNode, pos: number, depth: number) => {
     node.forEach((child, offset) => {
@@ -152,6 +160,7 @@ function docLines(doc: ProseNode, helpers: BoxHelpers): DocLine[] {
     })
   }
   walk(doc, 0, 0)
+  walked.set(doc, { helpers, lines: out })
   return out
 }
 
