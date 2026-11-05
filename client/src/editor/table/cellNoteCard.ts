@@ -1389,14 +1389,17 @@ export const cellNoteCard = $prose(
           if (meta !== undefined && meta !== null && typeof meta === 'object')
             return cardState(tr.doc, meta.label ?? card.label, meta.all, { onlyFilled: meta.onlyFilled ?? carry.onlyFilled, made: meta.made ?? carry.made, anchor })
           if (meta !== undefined) return cardState(tr.doc, meta)
-          if (card.label === null) return card
-          // An undo or a redo puts the caret back where it was (YAZ-4409, YAZ-4415). In a cell note other than the open
-          // one, that note's card opens (in "All notes", its block goes live), so the next key goes where the caret shows.
+          // An undo or a redo puts the caret back where it was, so the card follows it and the next key goes where the
+          // caret shows. In a cell note other than the open one, or with no card open, that note's card opens (in "All
+          // notes", its block goes live: YAZ-4409, YAZ-4415, YAZ-4427). In the page, the card closes: it would hide the
+          // caret (YAZ-4426).
           if (tr.getMeta(HISTORY_META) !== undefined) {
             const at = cellNoteAround(tr.selection.$head)
             const label = at === null ? null : (tr.doc.nodeAt(at)!.attrs.label as string)
-            if (label !== null && label !== card.label) return cardState(tr.doc, label, card.all, carry)
+            if (label !== null && label !== card.label) return cardState(tr.doc, label, card.label !== null && card.all, carry)
+            if (label === null && card.label !== null) return CLOSED
           }
+          if (card.label === null) return card
           // A calendar's view moves its Now tag with the table's minute tick (YAZ-4276).
           if (!tr.docChanged) return card.calendar !== null && tr.getMeta(calendarKey) !== undefined ? cardState(tr.doc, card.label, card.all, carry) : card
           if (touchesNotes(tr)) return cardState(tr.doc, card.label, card.all, carry)

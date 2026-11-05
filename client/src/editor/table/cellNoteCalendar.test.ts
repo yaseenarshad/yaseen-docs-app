@@ -471,4 +471,26 @@ describe('⌘Z and ⌘⇧Z keep the caret in the card (YAZ-4415)', () => {
     expect(cellNoteCardKey.getState(view.state)?.calendar).toBeNull()
     expect(card(root)!.contains(view.domAtPos(view.state.selection.head).node)).toBe(true)
   })
+
+  it('⌘Z of a page edit made before All notes: the card closes, so the next key goes where it shows (YAZ-4426)', async () => {
+    const { root, view } = await mount(DAY)
+    caretIn(view, 'after')
+    view.dispatch(view.state.tr.insertText('Z'))
+    openCellNote(view, cellPos(view, 1, 1))
+    click(root.querySelector('.cell-note-card__all-toggle')!)
+    undo(view.state, view.dispatch)
+    expect(card(root)).toBeNull()
+    expect(view.state.selection.$head.parent.textContent).toBe('after')
+  })
+
+  it('a closed card: typing in a note, Esc, then ⌘Z: that note\'s card opens with the caret in it (YAZ-4427)', async () => {
+    const { root, view } = await mount(DAY)
+    openCellNote(view, cellPos(view, 1, 1))
+    view.dispatch(view.state.tr.insertText('Q'))
+    view.dispatch(view.state.tr.setMeta(cellNoteCardKey, null))
+    undo(view.state, view.dispatch)
+    expect(openCellNoteLabel(view.state)).toBe('cell-1')
+    expect(cellNoteCardKey.getState(view.state)?.all).toBe(false)
+    expect(card(root)!.contains(view.domAtPos(view.state.selection.head).node)).toBe(true)
+  })
 })
