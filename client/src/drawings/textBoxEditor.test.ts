@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { docToBox, offsetAt, posAt, type TextRuns } from './textBoxDoc'
+import { createTextBoxEditor } from './textBoxEditor'
 import { created, helpers, mountBox, typeText, unmountAll } from './textBoxTestKit'
 
 vi.mock('../editor/createCrepe', async (load) => {
@@ -11,6 +12,7 @@ vi.mock('../editor/createCrepe', async (load) => {
     createCrepe: (...args: Parameters<typeof real.createCrepe>) => {
       const crepe = real.createCrepe(...args)
       list.push(crepe)
+      ;(globalThis as { __onTextBoxCrepe?: (crepe: unknown) => void }).__onTextBoxCrepe?.(crepe)
       return crepe
     },
   }
@@ -174,5 +176,32 @@ describe('textBoxEditor: box ↔ editor with no loss (YAZ-4277 1B)', () => {
     const before = created.length
     await mountBox('a')
     expect(created.length).toBe(before + 1)
+  })
+
+  it('tears the editor down after a failed setup, and logs the failure (YAZ-4312 S12)', async () => {
+    const failure = new Error('no editor')
+    const destroy = vi.fn(async () => undefined)
+    const hook = globalThis as { __onTextBoxCrepe?: (crepe: { create: () => Promise<unknown>; destroy: () => Promise<unknown> }) => void }
+    // the next Crepe fails to create
+    hook.__onTextBoxCrepe = (crepe) => {
+      crepe.create = () => Promise.reject(failure)
+      crepe.destroy = destroy
+    }
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const root = document.createElement('div')
+      const session = createTextBoxEditor(helpers).mount({
+        root, text: 'a', textRuns: undefined, foldedLines: [], selection: { anchor: 0, head: 0 },
+        onChange: vi.fn(), onSelectionChange: vi.fn(), onFoldsChange: vi.fn(), clientRectAt: () => null,
+      })
+      // the session does nothing while the editor is not ready
+      session.setSelection({ anchor: 1, head: 1 })
+      session.destroy()
+      await vi.waitFor(() => expect(destroy).toHaveBeenCalledTimes(1))
+      expect(error).toHaveBeenCalledWith('[text-box-editor] create failed:', failure)
+    } finally {
+      hook.__onTextBoxCrepe = undefined
+      error.mockRestore()
+    }
   })
 })
