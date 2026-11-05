@@ -22,6 +22,11 @@ export const sameList = (a: readonly string[], b: readonly string[]) => a.length
  */
 type ListKind = 'favorites' | 'focus'
 type ListsByRoot = Readonly<Record<string, readonly string[]>>
+/** The window's toast, with its optional button: "Undo" on each change of a list (YAZ-4460 demo). */
+type Notice = (message: string, kind?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void
+type NoticeAction = { label: string; run: () => void; fades?: true }
+/** The "Undo" of a toast (YAZ-4460 demo): it fades with the toast, as a move's Undo does. */
+const undoAction = (run: () => void): NoticeAction => ({ label: 'Undo', run, fades: true })
 /** Each kind's order ACROSS the vaults of a window, in the store (YAZ-2631 D1; focus: YAZ-2702 Decision 3). */
 const ORDER: Record<ListKind, { get: () => string[]; set: (roots: readonly string[], paths: readonly string[]) => void }> = {
   favorites: { get: () => storage.getFavoritesOrder(), set: (roots, paths) => storage.setFavoritesOrder(roots, paths) },
@@ -57,7 +62,7 @@ interface VaultLists {
  * A new scope drops every held list at once — so no toggle writes one list into the other's file —
  * and reads each vault of the window again; an answer or a change of the other scope is dropped.
  */
-function useVaultLists(kind: ListKind, scope: ListScope, live: { readonly current: { roots: readonly string[] } }, onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void): [ListsByRoot, VaultLists] {
+function useVaultLists(kind: ListKind, scope: ListScope, live: { readonly current: { roots: readonly string[] } }, onNotice: Notice): [ListsByRoot, VaultLists] {
   const [byRoot, setByRoot] = useState<ListsByRoot>({})
   const held = useRef(byRoot)
   held.current = byRoot
@@ -111,7 +116,7 @@ function useVaultLists(kind: ListKind, scope: ListScope, live: { readonly curren
  * again on `focusFolders:changed` of the scope the window shows, dropped when it leaves; a new scope reads again. `save`
  * writes one folder into EVERY vault of the window (F2), optimistic, and puts a vault's copy back when main refuses.
  */
-function useFolderCopies(kind: ListKind, scope: ListScope, live: { readonly current: { roots: readonly string[] } }, onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void) {
+function useFolderCopies(kind: ListKind, scope: ListScope, live: { readonly current: { roots: readonly string[] } }, onNotice: Notice) {
   const door = kind === 'focus' ? api.focusFolders : api.favoriteFolders
   const [byRoot, setByRoot] = useState<Readonly<Record<string, readonly FocusFolder[]>>>({})
   const held = useRef(byRoot)
@@ -165,7 +170,7 @@ function useFolderCopies(kind: ListKind, scope: ListScope, live: { readonly curr
   return [byRoot, copies] as const
 }
 
-type Notice = (message: string, kind?: NoticeKind, type?: NoticeType) => void
+
 type ToggleIn = (lists: VaultLists, paths: string[], isOn: boolean, max?: number) => boolean | null
 
 /**
@@ -210,13 +215,15 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, list
       }
     }
     /** Into folder `id`, or with null a new one; the paths leave the top level and every other folder. Null while loading. */
-    const addTo = (paths: string[], id: string | null): string | null => {
+    const addTo = (paths: string[], id: string | null, quiet = false): string | null => {
       const roots = live.current.roots
       const target = id === null ? undefined : now.current.find((f) => f.id === id)
       if (roots.some((vault) => store.held.current[vault] === undefined || lists.held.current[vault] === undefined) || (id !== null && target === undefined)) {
         loading()
         return null
       }
+      // Where each path was, for the toast's Undo: a folder, the top level, or not in the list.
+      const before = paths.map((p) => ({ p, folder: folderOf(p)?.id ?? null, top: top.current.includes(p) }))
       const atTop = paths.filter((p) => top.current.includes(p))
       if (atTop.length > 0) toggleIn(lists, atTop, true)
       strip(paths, id)
@@ -225,7 +232,24 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, list
       const items = itemsOf(paths)
       const next = { ...base, items: [...base.items, ...items.filter((x) => !base.items.some((i) => sameItem(i, x)))], at }
       save(next)
-      if (items.length > 0) notice.current(`Added ${items.length > 1 ? `${items.length} ` : ''}to ${next.name}`, kind === 'focus' ? 'info' : 'favorite', 'lists')
+      if (items.length > 0 && !quiet)
+        notice.current(
+          `Added ${items.length > 1 ? `${items.length} ` : ''}to ${next.name}`,
+          kind === 'focus' ? 'info' : 'favorite',
+          'lists',
+          undoAction(() => {
+            // Each path back where it was; a folder this add made goes again.
+            for (const b of before) {
+              if (b.folder !== null && b.folder !== next.id) addTo([b.p], b.folder, true)
+              else if (b.top) moveOut(b.p)
+              else if (b.folder === null) strip([b.p])
+            }
+            if (target === undefined) {
+              const made = now.current.find((f) => f.id === next.id)
+              if (made !== undefined) save({ ...made, deleted: true, items: [], at: Date.now() })
+            }
+          }),
+        )
       return next.id
     }
     const rename = (id: string, name: string): void => {
@@ -309,7 +333,7 @@ export type VaultListsHere = ReturnType<typeof useVaultListsHere>
  * order. App calls it once and hands it to the sidebar (`useVaultTree`) and to the tab menu
  * (`stateOf`, `toggleFocus`, `toggleFavorite`).
  */
-export function useVaultListsHere(roots: readonly string[], onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void, separate: WorkspaceLists) {
+export function useVaultListsHere(roots: readonly string[], onNotice: Notice, separate: WorkspaceLists) {
   // What the callbacks below ask at call time, so each keeps its identity.
   const live = useRef({ roots })
   live.current = { roots }
@@ -439,7 +463,9 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
 
 
   const toggleFocus = useCallback(
-    (paths: string[], isOn: boolean): boolean => {
+    (paths: string[], isOn: boolean, quiet = false): boolean => {
+      // Where each path was, for the toast's Undo (YAZ-4460 demo): its focus folder, the top level, or not in focus.
+      const before = paths.map((p) => ({ p, folder: focusTab.folderOf(p)?.id ?? null, top: focusList.includes(p) }))
       const full = toggleIn(focus, paths, isOn, MAX_FOCUS)
       if (full === null) {
         onNotice('Focus is still loading. Try again.', 'error')
@@ -448,19 +474,30 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
       // "Remove from focus" takes an item out of its focus folder too (YAZ-4460 F5).
       if (isOn) focusTab.strip(paths)
       const n = paths.length > 1 ? `${paths.length} ` : ''
-      if (isOn) onNotice(`Removed ${n}from focus`, 'info', 'lists')
+      const undoRemove = undoAction(() => {
+        for (const b of before) {
+          if (b.folder !== null) focusTab.addTo([b.p], b.folder, true)
+          else if (b.top) toggleFocusRef.current([b.p], false, true)
+        }
+      })
+      const added = before.filter((b) => !b.top && b.folder === null).map((b) => b.p)
+      if (quiet) return true
+      if (isOn) onNotice(`Removed ${n}from focus`, 'info', 'lists', undoRemove)
       else if (full) onNotice(`Focus limit reached: ${MAX_FOCUS} items`, 'error')
       else {
         // With two or more vaults the new items go LAST on the tab, "the order added" (YAZ-2619 D1), as
         // before the lists were the vaults': the order across vaults takes them. Favorites writes no order
         // on an add (YAZ-2631 R13), so there a new favorite stands with its vault.
         if (live.current.roots.length > 1) storage.setFocusOrder(live.current.roots.filter((vault) => focus.held.current[vault] !== undefined), [...focusList, ...paths.filter((p) => !focusList.includes(p))])
-        onNotice(`Added ${n}to focus`, 'info', 'lists')
+        onNotice(`Added ${n}to focus`, 'info', 'lists', undoAction(() => toggleFocusRef.current(added, true, true)))
       }
       return true
     },
     [focus, focusList, toggleIn, onNotice, focusTab],
   )
+  // The Undo of a toast calls the toggle again, quietly, through this ref: the toast outlives the render that made it.
+  const toggleFocusRef = useRef(toggleFocus)
+  toggleFocusRef.current = toggleFocus
   /**
    * "Clear" (YAZ-2619; YAZ-2702 S4): the list of each vault of the window that has items becomes
    * empty — one write for each such vault, so the change goes to each window and each Mac — and
@@ -477,14 +514,27 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
    * confirms with its own glyph and counts every row; `favorites.save` persists.
    */
   const toggleFavorite = useCallback(
-    (paths: string[], isOn: boolean) => {
+    (paths: string[], isOn: boolean, quiet = false) => {
+      const before = paths.map((p) => ({ p, folder: favoritesTab.folderOf(p)?.id ?? null, top: favoritePaths.includes(p) }))
       if (toggleIn(favorites, paths, isOn) === null) return onNotice('Favorites are still loading. Try again.', 'error')
       if (isOn) favoritesTab.strip(paths) // out of its favorite folder too (YAZ-4460 demo)
+      if (quiet) return
       const n = paths.length > 1 ? `${paths.length} ` : ''
-      onNotice(isOn ? `Removed ${n}from favorites` : `Added ${n}to favorites`, 'favorite', 'lists')
+      // The toast's Undo (YAZ-4460 demo): a remove puts each favorite back in its folder or at the top; an add takes the new ones out.
+      const undo = isOn
+        ? undoAction(() => {
+            for (const b of before) {
+              if (b.folder !== null) favoritesTab.addTo([b.p], b.folder, true)
+              else if (b.top) toggleFavoriteRef.current([b.p], false, true)
+            }
+          })
+        : undoAction(() => toggleFavoriteRef.current(before.filter((b) => !b.top && b.folder === null).map((b) => b.p), true, true))
+      onNotice(isOn ? `Removed ${n}from favorites` : `Added ${n}to favorites`, 'favorite', 'lists', undo)
     },
-    [favorites, toggleIn, onNotice, favoritesTab],
+    [favorites, favoritePaths, toggleIn, onNotice, favoritesTab],
   )
+  const toggleFavoriteRef = useRef(toggleFavorite)
+  toggleFavoriteRef.current = toggleFavorite
 
   /**
    * Where `path` stands in the two lists (YAZ-3264 D2), read when a tab's menu opens (S14). Null
@@ -514,7 +564,7 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
       const done = toggleIn(other, paths, !on, kind === 'focus' ? MAX_FOCUS : Infinity)
       if (done === null) return onNotice(kind === 'focus' ? 'Focus is still loading. Try again.' : 'Favorites are still loading. Try again.', 'error')
       const where = scope === 'workspace' ? 'workspace' : 'vault'
-      onNotice(`${on ? 'Added to' : 'Removed from'} the ${where} ${kind === 'focus' ? 'focus' : 'favorites'}`, kind === 'focus' ? 'info' : 'favorite', 'lists')
+      onNotice(`${on ? 'Added to' : 'Removed from'} the ${where} ${kind === 'focus' ? 'focus' : 'favorites'}`, kind === 'focus' ? 'info' : 'favorite', 'lists', undoAction(() => void toggleIn(other, paths, on, kind === 'focus' ? MAX_FOCUS : Infinity)))
     },
     [focusScope, favoritesScope, focusOther, favoritesOther, toggleFocus, toggleFavorite, toggleIn, onNotice],
   )

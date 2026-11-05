@@ -394,7 +394,7 @@ export function App() {
   }, [])
   // The one door every surface uses (D10 amended, YAZ-1674): text, an optional glyph kind (`'info'`
   // unless the caller names one) and an optional type (YAZ-3303 D2) — so `onNotice(text)` still works.
-  const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType) => showNotice({ text, icon, type }), [showNotice])
+  const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType, action?: Notice['action']) => showNotice({ text, icon, type, ...(action !== undefined && { action }) }), [showNotice])
   // Focus and Favorites of the window's vaults (YAZ-3264 D1): here, not in the sidebar, which unmounts
   // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
   const lists = useVaultListsHere(roots, notify, settings.workspaceLists)
