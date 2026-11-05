@@ -117,8 +117,8 @@ export interface MenuHandlers {
   onReveal: (path: string) => void
   /** "Add to focus" / "Remove N from focus" (YAZ-2619 D3): the paths and the direction the menu read. */
   onToggleFocus: (paths: string[], isOn: boolean) => void
-  /** "Add to focus ▸ <folder>" (YAZ-4460 F4): into that focus folder, or with null into a new one. */
-  onFocusInFolder?: (paths: string[], id: string | null) => void
+  /** "Add to focus ▸ <folder>" (YAZ-4460 F4): into that focus folder, with null into a new one, with 'top' to the top level. */
+  onFocusInFolder?: (paths: string[], id: FocusPlace) => void
   /** Cut / Copy (YAZ-1674): the paths go to main's ONE app-wide clipboard (🔒 D1); the caller reports. */
   onCut: (paths: string[]) => void
   onCopy: (paths: string[]) => void
@@ -238,11 +238,24 @@ const focus: Item = (t, h) => {
   // The Focus tab's own glyph (YAZ-3264 D6), so the row reads at a glance.
   const item = { id: 'focus', label: isOn ? `Remove ${n}from focus` : `Add ${n}to focus`, icon: createElement(EyeIcon), onSelect: () => h.onToggleFocus(paths, isOn) }
   const into = h.onFocusInFolder
-  if (isOn || into === undefined) return item
-  // YAZ-4460 F4, the New note pattern (YAZ-3085 D1): a click adds at the top level as before; the flyout names each
-  // focus folder, then "New focus folder…".
-  const folders = (t.focusFolders ?? []).map((f) => ({ id: `focus-in-${f.id}`, label: f.name, onSelect: () => into(paths, f.id) }))
-  return { ...item, children: [...(folders.length > 0 ? [folders] : []), [{ id: 'focus-new-folder', label: 'New focus folder…', onSelect: () => into(paths, null) }]] }
+  if (into === undefined) return item
+  // YAZ-4460 F4, the New note pattern (YAZ-3085 D1): a click adds (or removes) as before; the flyout moves the rows
+  // into a focus folder — also when they are in focus already (YAZ-4460 demo).
+  return { ...item, children: focusPlaces(t.focusFolders ?? [], isOn ? (t.focusFolderOf ?? null) : undefined, (to) => into(paths, to)) }
+}
+
+/** Where "Add to focus ▸" / "Remove from focus ▸" puts rows (YAZ-4460): a focus folder, a new one, or back to the top level. */
+export type FocusPlace = string | null | 'top'
+
+/**
+ * The flyout of the focus item (YAZ-4460 F4, demo), for the row menu and the tab menu: each focus folder — ✓ on the
+ * one that holds the row — then, for rows in focus, "Top level" (✓ when they are there), then "New focus folder…".
+ * `current` undefined: the rows are not in focus yet.
+ */
+export function focusPlaces(folders: readonly { id: string; name: string }[], current: string | null | undefined, to: (place: FocusPlace) => void): MenuAction[][] {
+  const rows = folders.map((f) => ({ id: `focus-in-${f.id}`, label: f.name, hint: current === f.id ? '✓' : undefined, onSelect: () => to(f.id) }))
+  const top = current === undefined ? [] : [{ id: 'focus-top', label: 'Top level', hint: current === null ? '✓' : undefined, onSelect: () => to('top') }]
+  return [...(rows.length > 0 ? [rows] : []), ...(top.length > 0 ? [top] : []), [{ id: 'focus-new-folder', label: 'New focus folder…', onSelect: () => to(null) }]]
 }
 
 // ---- (2) Clipboard: the file clipboard (YAZ-1674), then the text clipboard ----

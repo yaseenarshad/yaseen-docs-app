@@ -37,7 +37,9 @@ import { UpdatePill } from '../update/UpdatePill'
 import { ZoomMenu } from './ZoomMenu'
 import { buildMenuSections } from './menuSections'
 import type { ListFold } from './listFold'
+import { createPortal } from 'react-dom'
 import { FocusFolderList } from './FocusFolderList'
+import { ConfirmSheet } from '../components/ConfirmSheet'
 import { resolveItem } from '../lists/focusFolders'
 import { RecentList } from './RecentList'
 import { recentSections } from './recents'
@@ -459,6 +461,8 @@ export interface MenuTargets {
   focusIsOn: boolean
   /** The focus folders of the tab, for "Add to focus ▸" (YAZ-4460 F4); none or absent: the item has no flyout. */
   focusFolders?: readonly { id: string; name: string }[]
+  /** The focus folder that holds the one right-clicked row, null at the top level (YAZ-4460 demo): its ✓ in the flyout. */
+  focusFolderOf?: string | null
   /**
    * "Add to favorites" / "Remove from favorites" (YAZ-1766 D3): the row, or the ordered 2+
    * selection holding it — files and folders alike, every lens; null on blank space. Its OWN field.
@@ -727,6 +731,7 @@ export function Sidebar({
   const sortTab = sortMenu !== null && sortMenu.tab !== 'recents' && sortMenu.tab === sortedTab ? sortMenu.tab : null
   /** The focus folder whose name field is open (YAZ-4460 F3): "+ Folder" opens a new one's at once. */
   const [editingFolder, setEditingFolder] = useState<string | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
   // "Hide all others" (F8): the folder shown alone, while it still exists.
   const onlyFolder = focusOnly === null ? undefined : lists.focusFolders.find((folder) => folder.id === focusOnly)
   const newFocusFolder = (): void => {
@@ -1220,6 +1225,7 @@ export function Sidebar({
         focusPaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
         focusIsOn: node !== null && (plural ?? [node.path]).every((p) => focusList.includes(p) || lists.folderOf(p) !== undefined),
         focusFolders: lists.focusFolders,
+        focusFolderOf: node === null || plural !== null ? null : (lists.folderOf(node.path)?.id ?? null),
         // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
         favoritePaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
         iconPaths,
@@ -1849,7 +1855,8 @@ export function Sidebar({
                     + Folder
                   </button>
                   {focusNodes.length > 0 && (
-                    <button type="button" className="sidebar__focus-clear" onClick={clearFocus}>
+                    // "Clear" asks first (YAZ-4460 demo): two clicks, so a good list is not lost by one.
+                    <button type="button" className="sidebar__focus-clear" onClick={() => setConfirmClear(true)}>
                       Clear
                     </button>
                   )}
@@ -1871,6 +1878,27 @@ export function Sidebar({
                 onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
               />
             )}
+            {confirmClear &&
+              createPortal(
+                <ConfirmSheet
+                  labelId="confirm-clear-focus-text"
+                  text={
+                    <>
+                      <strong>Clear the top level of Focus?</strong>
+                      <br />
+                      {focusNodes.length === 1 ? 'One item leaves' : `${focusNodes.length} items leave`} focus. Your focus folders and your files do not change.
+                    </>
+                  }
+                  confirmLabel="Clear"
+                  danger
+                  onConfirm={() => {
+                    setConfirmClear(false)
+                    clearFocus()
+                  }}
+                  onCancel={() => setConfirmClear(false)}
+                />,
+                document.body,
+              )}
             {onlyFolder === undefined && focusNodes.length > 0 && <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
           </>
         ) : (
@@ -1970,7 +1998,7 @@ export function Sidebar({
               },
               // YAZ-4460 F4: into a focus folder — a new one opens its name field — and the Focus tab shows, as an add does.
               onFocusInFolder: (paths, id) => {
-                const into = lists.addToFocusFolder(paths, id)
+                const into = lists.moveInFocus(paths, id)
                 if (into === null) return
                 if (id === null) setEditingFolder(into)
                 if (!searching && lens !== 'focus') onLensChange('focus')

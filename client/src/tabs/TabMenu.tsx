@@ -2,7 +2,7 @@ import { isSupportedFile } from '@shared/fileKind'
 import { osVerbs } from '../lib/osVerbs'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
-import type { MenuAction, MenuSection } from '../sidebar/menuSections'
+import { focusPlaces, type MenuAction, type MenuSection } from '../sidebar/menuSections'
 import type { ListState } from '../lists/useVaultListsHere'
 
 /** An open tab menu: where it stands, the tab it is about, and that tab's review state as it was when the menu opened. */
@@ -106,10 +106,8 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
               label: lists.focus ? 'Remove from focus' : 'Add to focus',
               icon: <EyeIcon />,
               onSelect: () => onToggleFocus([menu.path], lists.focus),
-              // YAZ-4460 F4: the focus folders, as the sidebar row's menu has them; a click on the item still adds at the top level.
-              ...(lists.focus || lists.intoFolder === undefined
-                ? {}
-                : { children: [...((lists.folders ?? []).length > 0 ? [(lists.folders ?? []).map((f) => ({ id: `focus-in-${f.id}`, label: f.name, onSelect: () => lists.intoFolder?.([menu.path], f.id) }))] : []), [{ id: 'focus-new-folder', label: 'New focus folder…', onSelect: () => lists.intoFolder?.([menu.path], null) }]] }),
+              // YAZ-4460 F4: the focus folders, as the sidebar row's menu has them — in focus too, to move the page; a click still adds or removes.
+              ...(lists.intoFolder === undefined ? {} : { children: focusPlaces(lists.folders ?? [], lists.focus ? (lists.folderId ?? null) : undefined, (to) => lists.intoFolder?.([menu.path], to)) }),
             },
           ]),
       { id: 'copy-path', label: 'Copy path', icon: <CopyIcon />, onSelect: () => void navigator.clipboard.writeText(menu.path) },

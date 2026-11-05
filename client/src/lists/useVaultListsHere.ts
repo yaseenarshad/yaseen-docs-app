@@ -170,7 +170,10 @@ export interface ListState {
   favorite: boolean
   /** The focus folders, and the door into one (YAZ-4460 F4): the tab menu's "Add to focus ▸" reads them here. */
   folders?: readonly { id: string; name: string }[]
-  intoFolder?: (paths: string[], id: string | null) => void
+  /** The focus folder that holds the path, null at the top level (YAZ-4460 demo). */
+  folderId?: string | null
+  /** Into a folder, a new one (null), or back to the top level ('top'). */
+  intoFolder?: (paths: string[], id: string | null | 'top') => void
 }
 
 export type VaultListsHere = ReturnType<typeof useVaultListsHere>
@@ -378,12 +381,12 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
       const [inFocus, inFavorites] = [focus.held.current[vault], favorites.held.current[vault]]
       return inFocus === undefined || inFavorites === undefined
         ? null
-        : { focus: inFocus.includes(path) || folderOf(path) !== undefined, favorite: inFavorites.includes(path), folders: foldersNow.current, intoFolder: (paths, id) => void intoRef.current(paths, id) }
+        : { focus: inFocus.includes(path) || folderOf(path) !== undefined, favorite: inFavorites.includes(path), folders: foldersNow.current, folderId: folderOf(path)?.id ?? null, intoFolder: (paths, id) => void intoRef.current(paths, id) }
     },
     [focus, favorites, folderOf],
   )
   // `addToFocusFolder` comes below; the menu's door reads it at the click.
-  const intoRef = useRef<(paths: string[], id: string | null) => unknown>(() => undefined)
+  const intoRef = useRef<(paths: string[], id: string | null | 'top') => unknown>(() => undefined)
 
   /**
    * Into a focus folder (YAZ-4460 F4, F5): `paths` leave the top level and every other folder, then go last in folder
@@ -410,7 +413,6 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
     },
     [focus, focusList, folders, toggleIn, stripFolders, onNotice],
   )
-  intoRef.current = addToFocusFolder
   const renameFocusFolder = useCallback(
     (id: string, name: string): void => {
       const f = foldersNow.current.find((x) => x.id === id)
@@ -438,6 +440,16 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
     },
     [focus, focusList, stripFolders, toggleIn],
   )
+  /** The menus' one door (YAZ-4460 F4, demo): into a folder, a new one (null), or out of any folder to the top level ('top'). */
+  const moveInFocus = useCallback(
+    (paths: string[], to: string | null | 'top'): string | null => {
+      if (to !== 'top') return addToFocusFolder(paths, to)
+      for (const path of paths) moveOutOfFocusFolder(path)
+      return 'top'
+    },
+    [addToFocusFolder, moveOutOfFocusFolder],
+  )
+  intoRef.current = moveInFocus
   /** F5: a drag inside a folder: its items in the new order (absolute paths of the window; ghosts keep their places at the end). */
   const reorderFocusFolder = useCallback(
     (id: string, paths: readonly string[]): void => {
@@ -451,7 +463,7 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
   )
 
   return useMemo(
-    () => ({ favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope, focusFolders, folderOf, addToFocusFolder, renameFocusFolder, deleteFocusFolder, moveOutOfFocusFolder, reorderFocusFolder }),
-    [favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope, focusFolders, folderOf, addToFocusFolder, renameFocusFolder, deleteFocusFolder, moveOutOfFocusFolder, reorderFocusFolder],
+    () => ({ favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope, focusFolders, folderOf, addToFocusFolder, moveInFocus, renameFocusFolder, deleteFocusFolder, moveOutOfFocusFolder, reorderFocusFolder }),
+    [favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope, focusFolders, folderOf, addToFocusFolder, moveInFocus, renameFocusFolder, deleteFocusFolder, moveOutOfFocusFolder, reorderFocusFolder],
   )
 }

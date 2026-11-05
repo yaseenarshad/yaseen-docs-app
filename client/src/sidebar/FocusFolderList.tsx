@@ -2,6 +2,7 @@ import { useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { MAX_VAULT_NAME, cleanVaultName, type FocusFolder } from '@shared/types'
 import { resolveItem, type FolderItem } from '../lists/focusFolders'
+import { ConfirmSheet } from '../components/ConfirmSheet'
 import { TextField } from '../views/view/TextField'
 import { ContextMenu } from './ContextMenu'
 import { FileIcon } from './FileIcon'
@@ -46,6 +47,8 @@ interface FocusFolderListProps {
 export function FocusFolderList({ folders, roots, renderItems, editing, onEdit, onRename, onDelete, onGhost, onHideOthers, only }: FocusFolderListProps) {
   const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set())
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+  // "Delete focus folder" asks first (YAZ-4460 demo): two clicks, as "Delete session".
+  const [deleting, setDeleting] = useState<FocusFolder | null>(null)
   const lastNameClick = useRef<{ id: string; at: number }>({ id: '', at: -Infinity })
   const toggle = (id: string) =>
     setShut((was) => {
@@ -118,8 +121,33 @@ export function FocusFolderList({ folders, roots, renderItems, editing, onEdit, 
           <ContextMenu
             x={menu.x}
             y={menu.y}
-            sections={[[{ id: 'focus-folder-rename', label: 'Rename', onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], [{ id: 'focus-folder-delete', label: 'Delete focus folder', danger: true, onSelect: () => onDelete(menu.id) }]]}
+            sections={[[{ id: 'focus-folder-rename', label: 'Rename', onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], [{ id: 'focus-folder-delete', label: 'Delete focus folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}
             onClose={() => setMenu(null)}
+          />,
+          document.body,
+        )}
+      {deleting !== null &&
+        createPortal(
+          <ConfirmSheet
+            labelId="confirm-delete-focus-folder-text"
+            text={(() => {
+              const away = deleting.items.filter((item) => 'ghost' in resolveItem(item, roots)).length
+              return (
+                <>
+                  <strong>Delete the focus folder &quot;{deleting.name}&quot;?</strong>
+                  <br />
+                  {deleting.items.length === 0 ? 'It is empty.' : 'Its items go back to the top level of Focus.'}
+                  {away > 0 && ` ${away === 1 ? 'One item is' : `${away} items are`} in a vault that is not in this window, and ${away === 1 ? 'it leaves' : 'they leave'} focus.`} Your files do not change.
+                </>
+              )
+            })()}
+            confirmLabel="Delete"
+            danger
+            onConfirm={() => {
+              setDeleting(null)
+              onDelete(deleting.id)
+            }}
+            onCancel={() => setDeleting(null)}
           />,
           document.body,
         )}
