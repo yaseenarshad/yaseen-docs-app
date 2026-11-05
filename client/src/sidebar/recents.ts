@@ -1,4 +1,5 @@
-import type { TreeNode, TreeResponse } from '@shared/types'
+import { rootOfPath, type TreeNode, type TreeResponse } from '@shared/types'
+import type { MenuSection } from './menuSections'
 
 /** The Recents tab shows this many files at most (YAZ-3235 D3): a fixed draw cost at any vault size. */
 export const MAX_RECENTS = 200
@@ -14,6 +15,32 @@ export interface RecentDay {
   key: string
   label: string
   files: RecentFile[]
+}
+
+/** One vault's files inside one day of the Recents tab (YAZ-4450 D7). */
+export interface RecentGroup {
+  root: string
+  files: RecentFile[]
+}
+
+/**
+ * Pure (YAZ-4450 D7, D8): a day's files (newest first) cut by the vault that holds each — the most specific one, as
+ * everywhere — in the window's vault order; each group stays newest first, and a vault with no file that day has none.
+ */
+export function byVault(files: readonly RecentFile[], roots: readonly string[]): RecentGroup[] {
+  const groups = roots.map((root) => ({ root, files: [] as RecentFile[] }))
+  for (const file of files) groups[Math.max(0, roots.indexOf(rootOfPath(roots, file.path) ?? roots[0]))]?.files.push(file)
+  return groups.filter((group) => group.files.length > 0)
+}
+
+/**
+ * The Recents menu (YAZ-4450 D5, D7): "All vaults" apart, then each vault of the window by its name, ✓ on the pick; then
+ * "Group by vault", only while all vaults show — one vault has nothing to split.
+ */
+export function recentSections(vaults: readonly { root: string; name: string }[], pick: string | null, onPick: (root: string | null) => void, grouped: { on: boolean; set: (on: boolean) => void }): MenuSection[] {
+  const row = (root: string | null, label: string) => ({ id: `recents-vault-${root ?? 'all'}`, label, hint: pick === root ? '✓' : undefined, onSelect: () => onPick(root) })
+  const group = pick === null ? [[{ id: 'recents-group', label: 'Group by vault', hint: grouped.on ? '✓' : undefined, onSelect: () => grouped.set(!grouped.on) }]] : []
+  return [[row(null, 'All vaults')], vaults.map((vault) => row(vault.root, vault.name)), ...group]
 }
 
 // The files of each tree that the app opens (`kind !== null`), read once per tree: a new tree is a new object.

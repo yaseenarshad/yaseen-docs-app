@@ -1512,6 +1512,13 @@ export function App() {
    * and only after the save. A refusal closes nothing. Past MAX_SESSION_TABS a notice says the first ones are saved.
    */
   const [sessionNameRequest, setSessionNameRequest] = useState<string | null>(null)
+  // The Recents tab's vault filter (YAZ-4450 D5, D6): for this window's session only — here, not in the sidebar, which unmounts
+  // when it is hidden — and never written: a new window starts on All vaults. null is All vaults; a vault that leaves drops it.
+  const [recentVault, setRecentVault] = useState<string | null>(null)
+  const recentPick = recentVault !== null && roots.includes(recentVault) ? recentVault : null
+  useEffect(() => {
+    if (recentVault !== null && recentPick === null) setRecentVault(null)
+  }, [recentVault, recentPick])
   const clearSessionNameRequest = useCallback(() => setSessionNameRequest(null), [])
   // One save at a time: a second press of "Save open tabs" (⏎ on the focused button) before main answers is no second session.
   const savingSession = useRef(false)
@@ -3197,6 +3204,8 @@ export function App() {
           vaults={vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? '', watch: vault.watch, index: vault.wikilinks, upkeep: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge }))}
           lists={lists}
           icons={vaultIcons}
+          recentVault={recentPick}
+          onRecentVault={setRecentVault}
           closedVaults={closedVaults}
           onSetVaultOpen={setVaultOpen}
           onAddVault={addVault}

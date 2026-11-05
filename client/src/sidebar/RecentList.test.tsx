@@ -137,6 +137,25 @@ describe('RecentList (YAZ-3235 D3 to D7)', () => {
     expect(rows().map((r) => r.title)).toEqual(['/v/a.md', '/v/b.md'])
   })
 
+  it('YAZ-4450 D7, D8: with groups, each day holds one fold row for each vault, in the window\'s order, with its count; a group folds on its own, and the expand-all button folds the groups too', async () => {
+    const names: Record<string, string> = { '/v': 'Notes', '/w': 'Work' }
+    let fold: Parameters<NonNullable<Parameters<typeof RecentList>[0]['onFold']>>[0] = null
+    await mount(stateWith({ '/v': { '/v/a.md': at(2026, 10, 23, 9), '/v/b.md': at(2026, 10, 22, 9) }, '/w': { '/w/d.md': at(2026, 10, 23, 14) } }), { groups: { nameOf: (r) => names[r] ?? r }, onFold: (f) => (fold = f) })
+    const files = () => [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Recents"] .tree__row[title]')]
+    const groups = () => [...el.querySelectorAll<HTMLButtonElement>('.recents__vault')].map((g) => text(g).join(' '))
+    expect(dayLabels()).toEqual(['Today', 'Yesterday'])
+    expect(groups()).toEqual([' Notes 1', ' Work 1', ' Notes 1']) // the window's order, not the newest save (D8)
+    expect(files().map((r) => r.title)).toEqual(['/v/a.md', '/w/d.md', '/v/b.md'])
+    expect(files()[0].style.paddingLeft).toBe('46px')
+    fire(el.querySelectorAll('.recents__vault')[1], 'click')
+    expect(files().map((r) => r.title)).toEqual(['/v/a.md', '/v/b.md']) // Today's Work folded, Yesterday's Notes still open
+    act(() => fold?.setAll(false))
+    expect(el.querySelectorAll('.recents__vault')).toHaveLength(0) // every day shut, so no group shows
+    act(() => fold?.setAll(true))
+    expect(groups()).toHaveLength(3)
+    expect(files()).toHaveLength(3)
+  })
+
   it('S19, S20: a click previews, a ⌘-click opens a background tab, a double-click keeps the tab; a right-click hands the path and the event to the menu', async () => {
     await mount(stateWith({ '/v': { '/v/a.md': at(2026, 10, 23, 9) } }))
     const [row] = rows()

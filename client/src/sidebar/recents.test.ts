@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode, TreeResponse } from '@shared/types'
-import { MAX_RECENTS, recentDays, recentFiles, timeOf, type RecentFile } from './recents'
+import { byVault, MAX_RECENTS, recentDays, recentFiles, recentSections, timeOf, type RecentFile } from './recents'
 
 const note = (path: string, kind: 'markdown' | null = 'markdown'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind })
 const dir = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
@@ -79,5 +79,34 @@ describe('recentDays and timeOf (YAZ-3235 D5, D6, S15)', () => {
   it('D6: the time of a save is hour and minute', () => {
     expect(timeOf(at(2026, 10, 23, 15, 42))).toBe(new Date(at(2026, 10, 23, 15, 42)).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }))
     expect(timeOf(at(2026, 10, 23, 15, 42))).toMatch(/42/)
+  })
+})
+
+describe('byVault and the Recents menu (YAZ-4450 D5, D7, D8)', () => {
+  const f = (path: string, edited: number): RecentFile => ({ path, edited })
+
+  it('byVault cuts a day by the vault that holds each file, the most specific one, in the window\'s vault order, each group newest first', () => {
+    const files = [f('/w/x.md', 9), f('/v/sub/n.md', 8), f('/v/a.md', 7), f('/w/y.md', 6)]
+    expect(byVault(files, ['/v', '/w'])).toEqual([
+      { root: '/v', files: [f('/v/sub/n.md', 8), f('/v/a.md', 7)] },
+      { root: '/w', files: [f('/w/x.md', 9), f('/w/y.md', 6)] },
+    ])
+    // D8: the window's order, not the newest save; a vault with no file that day has no group; a nested vault takes its own files.
+    expect(byVault(files, ['/w', '/v', '/v/sub', '/empty']).map((g) => [g.root, g.files.length])).toEqual([['/w', 2], ['/v', 1], ['/v/sub', 1]])
+  })
+
+  it('the menu: "All vaults" apart, then each vault, ✓ on the pick; "Group by vault" last, only while all vaults show', () => {
+    const vaults = [{ root: '/v', name: 'Notes' }, { root: '/w', name: 'Work' }]
+    const picks: (string | null)[] = []
+    const grouped = { on: true, set: (on: boolean) => picks.push(on ? 'on' : 'off') }
+    const all = recentSections(vaults, null, (root) => picks.push(root), grouped)
+    expect(all.map((group) => group.map((item) => `${item.label}${'hint' in item && item.hint !== undefined ? item.hint : ''}`))).toEqual([['All vaults✓'], ['Notes', 'Work'], ['Group by vault✓']])
+    const work = all[1][1]
+    if ('onSelect' in work) work.onSelect?.()
+    const group = all[2][0]
+    if ('onSelect' in group) group.onSelect?.()
+    expect(picks).toEqual(['/w', 'off'])
+    const one = recentSections(vaults, '/w', () => undefined, grouped)
+    expect(one.map((g) => g.map((item) => `${item.label}${'hint' in item && item.hint !== undefined ? item.hint : ''}`))).toEqual([['All vaults'], ['Notes', 'Work✓']])
   })
 })

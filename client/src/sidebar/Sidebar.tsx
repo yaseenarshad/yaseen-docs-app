@@ -38,8 +38,9 @@ import { ZoomMenu } from './ZoomMenu'
 import { buildMenuSections } from './menuSections'
 import type { ListFold } from './listFold'
 import { RecentList } from './RecentList'
+import { recentSections } from './recents'
 import { RowDateTip } from './RowDateTip'
-import { SearchFilterBar } from './SearchFilterBar'
+import { FilterChips, SearchFilterBar } from './SearchFilterBar'
 import { SessionList } from './SessionList'
 import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind, NoticeType } from '../lib/notice'
@@ -222,6 +223,9 @@ interface SidebarProps {
   onZoomMenu?: (open: boolean) => void
   /** A Files window's hover preview (YAZ-3357 D9): its floating popup, or `'overlay'` where there is none. Absent: beside the sidebar. */
   previewFloat?: PreviewPopup | 'overlay'
+  /** The Recents tab's vault filter (YAZ-4450 D5, D6): App's, for the window's session; null is All vaults. */
+  recentVault?: string | null
+  onRecentVault?: (root: string | null) => void
   /** A save just made this session (YAZ-3147 D5): the Sessions tab opens its name field once; then `onSessionNameConsumed`. */
   sessionNameRequest: string | null
   onSessionNameConsumed: () => void
@@ -610,6 +614,8 @@ export function Sidebar({
   onZoomMenu,
   previewFloat,
   sessionNameRequest,
+  recentVault = null,
+  onRecentVault,
   onSessionNameConsumed,
   onRootMissing,
   onFileMissing,
@@ -678,6 +684,17 @@ export function Sidebar({
   }
   const vaultsRef = useRef(vaults)
   vaultsRef.current = vaults
+  // The Recents tab's button (YAZ-4450 D5): its vault filter, in a window with two or more vaults only. Its menu stands where
+  // a sort menu would: one menu at a time.
+  const menuTab: SortMenuTab | 'recents' | null = sortedTab ?? (lens === 'recents' && multi ? 'recents' : null)
+  // The list the filter leaves (D5), and each day split by vault while all vaults show (D7, D8). Kept by value: the vaults'
+  // array is new on each App render, and RecentList is a memo.
+  const recentRoots = useMemo(() => (recentVault === null ? roots : [recentVault]), [roots, recentVault])
+  const vaultNames = vaults.map((vault) => vault.name).join('\0')
+  const recentGroups = useMemo(
+    () => (multi && recentVault === null && settings.recentsByVault ? { nameOf: (at: string) => vaultsRef.current.find((vault) => vault.root === at)?.name ?? at } : undefined),
+    [multi, recentVault, settings.recentsByVault, vaultNames], // eslint-disable-line react-hooks/exhaustive-deps -- a renamed vault draws the headings again
+  )
   /** The vaults that have an Inbox row (YAZ-2602 R5): the ones with upkeep on. */
   const inboxes = vaults.filter((vault) => vault.upkeep)
   /**
@@ -687,7 +704,9 @@ export function Sidebar({
   const vaultOf = useCallback((path: string): SidebarVault => vaultsRef.current.find((vault) => vault.root === rootOf(path)) ?? vaultsRef.current[0], [rootOf])
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   /** The sort menu (YAZ-3227 D4): the tab it sorts and where its button is, while it is open. */
-  const [sortMenu, setSortMenu] = useState<{ tab: SortMenuTab; x: number; y: number } | null>(null)
+  const [sortMenu, setSortMenu] = useState<{ tab: SortMenuTab | 'recents'; x: number; y: number } | null>(null)
+  // The open sort menu's tab, while it is the tab that shows (a tab switch leaves it unmounted).
+  const sortTab = sortMenu !== null && sortMenu.tab !== 'recents' && sortMenu.tab === sortedTab ? sortMenu.tab : null
   /** One list's "Separate list for workspaces" row in its sort menu (YAZ-4450 D4): a click is one settings write. */
   const workspaceRow = (tab: 'focus' | 'favorites') => ({ on: settings.workspaceLists[tab], set: (on: boolean) => onChangeSettings({ ...settings, workspaceLists: { ...settings.workspaceLists, [tab]: on } }) })
   /**
@@ -984,10 +1003,10 @@ export function Sidebar({
   const storedTabs = settings.sidebarTabs
   const tabPrefs = useMemo(() => storedTabs, [storedTabs.order.join(), storedTabs.hidden.join(), storedTabs.hiddenButtons.join()])
   // The row's doors to the sort menu and the fold (YAZ-3227 D4, YAZ-862; YAZ-3273 S15): stable, read through refs, so the row stays drawn.
-  const sortedTabRef = useRef(sortedTab)
-  sortedTabRef.current = sortedTab
+  const menuTabRef = useRef(menuTab)
+  menuTabRef.current = menuTab
   const openSort = useCallback((at: { x: number; y: number } | null) => {
-    const tab = sortedTabRef.current
+    const tab = menuTabRef.current
     setSortMenu(at === null || tab === null ? null : { tab, ...at })
   }, [])
   const foldRef = useRef(() => {})
@@ -1519,9 +1538,10 @@ export function Sidebar({
         onLensChange={onLensChange}
         prefs={tabPrefs}
         onChangePrefs={changeTabs}
-        sortShows={sortedTab !== null}
-        sortOpen={sortMenu !== null && sortMenu.tab === sortedTab}
-        sortFiltered={searching && filterOn(searchFilter)}
+        sortShows={menuTab !== null}
+        sortOpen={sortMenu !== null && sortMenu.tab === menuTab}
+        sortFiltered={(searching && filterOn(searchFilter)) || (menuTab === 'recents' && recentVault !== null)}
+        sortLabel={menuTab === 'recents' ? 'Filter by vault' : undefined}
         onSort={openSort}
         foldShows
         foldDisabled={foldDisabled}
@@ -1569,6 +1589,7 @@ export function Sidebar({
         </div>
       )}
       {searching && <SearchFilterBar filter={searchFilter} onFilter={setSearchFilter} />}
+      {menuTab === 'recents' && recentVault !== null && <FilterChips chips={[{ key: 'vault', label: vaultOf(recentVault).name }]} onRemove={() => onRecentVault?.(null)} />}
       {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
           Search tab has no such target, so right-clicking its blank space offers nothing (YAZ-803)
           — not even Electron's text menu, which leaked through until YAZ-2050. Its ROWS get the
@@ -1717,7 +1738,7 @@ export function Sidebar({
           <SessionList onFold={setListFold} titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} renameRequest={sessionNameRequest} onRenameConsumed={onSessionNameConsumed} />
         ) : lens === 'recents' ? (
           // The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window, by day.
-          <RecentList onFold={setListFold} trees={trees} roots={roots} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+          <RecentList onFold={setListFold} trees={trees} roots={recentRoots} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
@@ -1801,20 +1822,29 @@ export function Sidebar({
       </div>
       <RowDateTip body={bodyRef} />
       {/* The sort menu (YAZ-3227 D4): it sorts the tab it opened on, and a tab switch leaves it unmounted. */}
-      {sortMenu !== null && sortMenu.tab === sortedTab && sort !== undefined && (
+      {sortMenu !== null && sortTab !== null && sort !== undefined && (
         <ContextMenu
           x={sortMenu.x}
           y={sortMenu.y}
           sections={sortSections(
-            sortMenu.tab,
+            sortTab,
             sort,
-            (next) => onChangeSettings(sortMenu.tab === 'search' ? { ...settings, searchSort: next } : { ...settings, sidebarSort: { ...settings.sidebarSort, [sortMenu.tab]: next } }),
+            (next) => onChangeSettings(sortTab === 'search' ? { ...settings, searchSort: next } : { ...settings, sidebarSort: { ...settings.sidebarSort, [sortTab]: next } }),
             // The tab's date switch (YAZ-3511 D7, D10), and on Search its filters (D13, D14).
-            { on: settings.rowDates[sortMenu.tab], set: (on) => onChangeSettings({ ...settings, rowDates: { ...settings.rowDates, [sortMenu.tab]: on } }) },
-            sortMenu.tab === 'search' ? filterSection(searchFilter, setSearchFilter) : undefined,
+            { on: settings.rowDates[sortTab], set: (on) => onChangeSettings({ ...settings, rowDates: { ...settings.rowDates, [sortTab]: on } }) },
+            sortTab === 'search' ? filterSection(searchFilter, setSearchFilter) : undefined,
             // YAZ-4450 D4: each list's own switch, in a window with two or more vaults only.
-            multi && (sortMenu.tab === 'focus' || sortMenu.tab === 'favorites') ? workspaceRow(sortMenu.tab) : undefined,
+            multi && (sortTab === 'focus' || sortTab === 'favorites') ? workspaceRow(sortTab) : undefined,
           )}
+          onClose={() => setSortMenu(null)}
+        />
+      )}
+      {/* The Recents menu (YAZ-4450 D5, D7): the vault filter, then "Group by vault". */}
+      {sortMenu !== null && sortMenu.tab === 'recents' && menuTab === 'recents' && (
+        <ContextMenu
+          x={sortMenu.x}
+          y={sortMenu.y}
+          sections={recentSections(vaults, recentVault, (pick) => onRecentVault?.(pick), { on: settings.recentsByVault, set: (on) => onChangeSettings({ ...settings, recentsByVault: on }) })}
           onClose={() => setSortMenu(null)}
         />
       )}

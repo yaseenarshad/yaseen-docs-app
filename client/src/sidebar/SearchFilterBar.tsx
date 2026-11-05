@@ -2,7 +2,9 @@
  * The bar under the search box while a filter is on (YAZ-3511 D24): a funnel, then each filter that is on as a chip whose
  * ✕ takes it off, and with two on, "Clear". The lit sort button alone was too quiet (Yaseen, demo). With no filter it is
  * not drawn, so a search with none takes no more height. A press takes no focus: the caret stays in the search box.
+ * The Recents vault filter (YAZ-4450 D5) draws the same bar with its one chip (`FilterChips`).
  */
+import type { ReactNode } from 'react'
 import { filterChips, NO_FILTER, type SearchFilter } from '../search/searchFilter'
 
 const FunnelIcon = () => (
@@ -12,21 +14,25 @@ const FunnelIcon = () => (
 )
 
 export function SearchFilterBar({ filter, onFilter }: { filter: SearchFilter; onFilter: (next: SearchFilter) => void }) {
-  const chips = filterChips(filter)
+  return <FilterChips chips={filterChips(filter)} onRemove={(key) => onFilter({ ...filter, [key]: NO_FILTER[key as keyof SearchFilter] })} onClear={() => onFilter(NO_FILTER)} />
+}
+
+/** The bar itself, for any tab's filters: Search's type and time, and Recents' vault (YAZ-4450 D5). None on: not drawn. */
+export function FilterChips({ chips, onRemove, onClear }: { chips: readonly { key: string; label: string; icon?: ReactNode }[]; onRemove: (key: string) => void; onClear?: () => void }) {
   if (chips.length === 0) return null
   const keepCaret = (e: { preventDefault: () => void }) => e.preventDefault()
   return (
     <div className="sidebar__filters" role="group" aria-label="Filters on">
       <FunnelIcon />
       {chips.map((chip) => (
-        <button key={chip.key} type="button" className="sidebar__filter-chip" title={`Remove the ${chip.label} filter`} aria-label={`Remove the ${chip.label} filter`} onMouseDown={keepCaret} onClick={() => onFilter({ ...filter, [chip.key]: NO_FILTER[chip.key] })}>
+        <button key={chip.key} type="button" className="sidebar__filter-chip" title={`Remove the ${chip.label} filter`} aria-label={`Remove the ${chip.label} filter`} onMouseDown={keepCaret} onClick={() => onRemove(chip.key)}>
           {chip.icon}
           {chip.label}
           <span className="sidebar__filter-x" aria-hidden />
         </button>
       ))}
-      {chips.length > 1 && (
-        <button type="button" className="sidebar__filter-clear" onMouseDown={keepCaret} onClick={() => onFilter(NO_FILTER)}>
+      {chips.length > 1 && onClear !== undefined && (
+        <button type="button" className="sidebar__filter-clear" onMouseDown={keepCaret} onClick={onClear}>
           Clear
         </button>
       )}

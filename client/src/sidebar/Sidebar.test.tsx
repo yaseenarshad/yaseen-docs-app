@@ -11084,6 +11084,40 @@ describe('several vaults in one window (YAZ-2602)', () => {
       expect(bridge.focus.get.mock.calls.filter(([root]) => root === a).map(([, scope]) => scope)).toContain('vault')
     })
   })
+
+  describe('the Recents vault filter and groups (YAZ-4450 D5 to D7)', () => {
+    const sortButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__sort')
+    const menuRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)
+
+    it('D5: the button shows on Recents with two vaults only, named "Filter by vault"; the menu lists All vaults, each vault, then "Group by vault"; a pick hands the vault to App', async () => {
+      const onRecentVault = vi.fn()
+      const { el, b, props } = await two({ lens: 'recents', onRecentVault })
+      expect(sortButton(el)?.title).toBe('Filter by vault')
+      act(() => sortButton(el)?.click())
+      expect(menuRows(el)).toEqual(['All vaults✓', 'Notes', 'Work', 'Group by vault✓'])
+      await act(async () => itemByLabel(el, 'Work')?.click())
+      expect(onRecentVault).toHaveBeenLastCalledWith(b)
+      act(() => sortButton(el)?.click())
+      await act(async () => itemByLabel(el, 'Group by vault')?.click())
+      expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...TEST_SETTINGS, recentsByVault: false })
+      const one = await mountVaults([vault(pair().a, 'Solo')], { lens: 'recents' })
+      expect(sortButton(one.el)).toBeNull()
+    })
+
+    it('D5, D7: with a vault picked, the button is lit, a chip names the vault and its ✕ hands back All vaults; the menu ticks the vault and has no group row', async () => {
+      const onRecentVault = vi.fn()
+      const at = pair()
+      const { el } = await mountVaults([vault(at.a, 'Notes'), vault(at.b, 'Work')], { lens: 'recents', recentVault: at.b, onRecentVault })
+      expect(sortButton(el)?.classList.contains('sidebar__sort--filtered')).toBe(true)
+      expect(sortButton(el)?.title).toBe('Filter by vault · Filters on')
+      const chip = el.querySelector<HTMLButtonElement>('.sidebar__filter-chip')
+      expect(chip?.textContent).toBe('Work')
+      act(() => chip?.click())
+      expect(onRecentVault).toHaveBeenLastCalledWith(null)
+      act(() => sortButton(el)?.click())
+      expect(menuRows(el)).toEqual(['All vaults', 'Notes', 'Work✓'])
+    })
+  })
 })
 
 describe('Sidebar: the Files window chip (YAZ-3357 D13)', () => {

@@ -5,7 +5,7 @@ import type { OnListFold } from './listFold'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
 import { FileIcon, NameEnding } from './FileIcon'
-import { MAX_RECENTS, recentDays, recentFiles, timeOf, type RecentFile } from './recents'
+import { byVault, MAX_RECENTS, recentDays, recentFiles, timeOf, type RecentFile, type RecentGroup } from './recents'
 
 type Log = Readonly<Record<string, number>>
 
@@ -32,6 +32,9 @@ function useEdits(roots: readonly string[]): readonly Log[] {
   }, [roots])
   return useSyncExternalStore(storage.subscribe, read)
 }
+
+/** A vault group's fold key (YAZ-4450 D7): its day and its vault. */
+const groupKey = (day: string, group: RecentGroup): string => `${day}|${group.root}`
 
 /** The ms from `now` to the next local midnight. */
 const toMidnight = (now: Date): number => new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime()
@@ -60,8 +63,10 @@ interface RecentListProps {
   onFold?: OnListFold
   /** The trees of the window's vaults: a logged file draws a row only while its vault's tree has it (S7, S22). */
   trees: ReadonlyMap<string, TreeResponse>
-  /** The window's vaults: their save logs make one list (S14). */
+  /** The window's vaults: their save logs make one list (S14). The vault filter (YAZ-4450 D5) hands one. */
   roots: readonly string[]
+  /** Each day split by vault (YAZ-4450 D7), with each vault's name; undefined draws each day as one list. */
+  groups?: { nameOf: (root: string) => string }
   /** The names of the pages (YAZ-2420 D14): a row shows its page's name, as a Files row does. */
   titles: PathTitles
   /** The open page: its row lights (S18). */
@@ -84,19 +89,23 @@ interface RecentListProps {
  * the tab shows. Memo: App draws again on each app-state broadcast; the list draws only when its own
  * props, a save log or the day change.
  */
-export const RecentList = memo(function RecentList({ trees, roots, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold }: RecentListProps) {
+export const RecentList = memo(function RecentList({ trees, roots, groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold }: RecentListProps) {
   const edits = useEdits(roots)
   const today = useToday()
   const files = useMemo(() => recentFiles(trees, roots, edits), [trees, roots, edits])
   const days = useMemo(() => recentDays(files, new Date()), [files, today]) // eslint-disable-line react-hooks/exhaustive-deps -- a new day draws the headings again (S16)
-  // The days folded shut (D5): all open at mount, never stored. By date, so a fold stays when "Today" becomes "Yesterday".
+  // Each day's vault groups (YAZ-4450 D7), cut once per list: 200 rows at most.
+  const grouped = groups !== undefined
+  const dayGroups = useMemo(() => (grouped ? new Map(days.map((day) => [day.key, byVault(day.files, roots)])) : null), [grouped, days, roots])
+  // The days folded shut (D5), and the vault groups (YAZ-4450 D7) as `<day>|<vault>`: all open at mount, never stored. By
+  // date, so a fold stays when "Today" becomes "Yesterday".
   const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set())
-  // The days' fold for the expand-all button (YAZ-3511 D19).
+  // The fold for the expand-all button (YAZ-3511 D19): the days, and their vault groups too.
   useEffect(() => {
     if (onFold === undefined) return
-    const keys = days.map((day) => day.key)
+    const keys = days.flatMap((day) => [day.key, ...(dayGroups?.get(day.key) ?? []).map((group) => groupKey(day.key, group))])
     onFold({ open: keys.some((key) => !shut.has(key)), any: keys.length > 0, setAll: (all) => setShut(all ? new Set() : new Set(keys)) })
-  }, [onFold, days, shut])
+  }, [onFold, days, dayGroups, shut])
   useEffect(() => (onFold === undefined ? undefined : () => onFold(null)), [onFold])
   const toggle = useCallback(
     (key: string) =>
@@ -127,9 +136,30 @@ export const RecentList = memo(function RecentList({ trees, roots, titles, activ
               </button>
               {open && (
                 <ul className="tree">
-                  {day.files.map((file) => (
-                    <RecentRow key={file.path} file={file} active={file.path === activeFile} titles={titles} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} onHoverFile={onHoverFile} />
-                  ))}
+                  {groups !== undefined
+                    ? (dayGroups?.get(day.key) ?? []).map((group) => {
+                        const key = groupKey(day.key, group)
+                        const groupOpen = !shut.has(key)
+                        return (
+                          <li key={group.root}>
+                            <button type="button" className="tree__row recents__vault" style={{ paddingLeft: 26 }} aria-expanded={groupOpen} onClick={() => toggle(key)}>
+                              <span className={`tree__chevron${groupOpen ? ' tree__chevron--open' : ''}`} />
+                              <span className="tree__label">{groups.nameOf(group.root)}</span>
+                              <span className="tree__count">{group.files.length}</span>
+                            </button>
+                            {groupOpen && (
+                              <ul className="tree">
+                                {group.files.map((file) => (
+                                  <RecentRow key={file.path} indent={46} file={file} active={file.path === activeFile} titles={titles} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} onHoverFile={onHoverFile} />
+                                ))}
+                              </ul>
+                            )}
+                          </li>
+                        )
+                      })
+                    : day.files.map((file) => (
+                        <RecentRow key={file.path} indent={26} file={file} active={file.path === activeFile} titles={titles} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} onHoverFile={onHoverFile} />
+                      ))}
                 </ul>
               )}
             </li>
@@ -145,10 +175,12 @@ export const RecentList = memo(function RecentList({ trees, roots, titles, activ
 interface RecentRowProps extends Pick<RecentListProps, 'titles' | 'onOpenFile' | 'onKeepFile' | 'onOpenFileBackground' | 'onMenu' | 'onHoverFile'> {
   file: RecentFile
   active: boolean
+  /** The row's left padding: under a day, or one step deeper under a vault group (YAZ-4450 D7). */
+  indent: number
 }
 
 /** One file (D6, S18): its page name, and the time of its save on the right; the path is the tooltip. */
-function RecentRow({ file, active, titles, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile }: RecentRowProps) {
+function RecentRow({ file, active, indent, titles, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile }: RecentRowProps) {
   const { path, edited } = file
   // A board or note row's hover handlers, as a Files row's (YAZ-3403): pointer and focus alike. The item's `data-path`
   // puts a Files window's floating panel level with the row (`previewRowRect`); the button has none, for the keys.
@@ -158,7 +190,7 @@ function RecentRow({ file, active, titles, onOpenFile, onKeepFile, onOpenFileBac
       <button
         type="button"
         className={'tree__row' + (active ? ' tree__row--active' : '')}
-        style={{ paddingLeft: 26 }}
+        style={{ paddingLeft: indent }}
         title={path}
         // As a Files row (S19): a click previews, ⌘ opens a background tab, the second click of a double-click keeps the tab.
         onClick={(e) => (e.metaKey ? onOpenFileBackground(path) : onOpenFile(path))}
