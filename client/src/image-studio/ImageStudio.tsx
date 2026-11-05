@@ -35,6 +35,7 @@ import { parseComponentFragment } from '@shared/savedComponents'
 import { api } from '../api'
 import { storage } from '../lib/storage'
 import { createPreviewCache } from '../lib/previewCache'
+import { clearToneMemo, PictureTile } from '../lib/pictureTone'
 import { createScenePreviewPng, type PreviewBounds, type PreviewEngine } from '../lib/scenePreview'
 import { loadExcalidrawElement } from '../drawings/engine'
 import type { ComponentEngine, ComponentTarget } from '../components-library/componentData'
@@ -223,6 +224,19 @@ export const clearPreviewMemo = () => {
   copyPreviews.clear()
   drawingPreviews.clear()
   componentPreviews.clear()
+  clearToneMemo()
+}
+
+/**
+ * The key a tile's tone is cached by (YAZ-4443): its picture's own preview-cache key, named by cache, so the same id in
+ * two caches (or a drawing in the other theme) is two pictures. It follows the branches of the tile's picture below.
+ */
+const toneKeyOf = (item: StudioItem, { hasSource, favorited, theme }: { hasSource: boolean; favorited: boolean; theme: string }): string => {
+  if (item.provider === 'shape' && hasSource) return `shape:${item.providerId}`
+  if (item.provider === 'component' && hasSource) return `component:${item.providerId}`
+  if (item.provider === 'shape' || item.provider === 'component' || (item.provider === 'excalidraw' && favorited)) return `copy:${theme}|${item.itemKey}`
+  if (item.provider === 'excalidraw') return `drawing:${theme}|${item.providerId}`
+  return `${item.provider}:${item.providerId}`
 }
 
 /** A shape tile's picture: one of six stock outlines, or the engine's own generated path. */
@@ -988,7 +1002,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           aria-keyshortcuts="Shift+F10"
           title={`${item.title} — ${sourceLabel(item)}`}
         >
-          <span className="image-studio__preview">
+          <PictureTile className="image-studio__preview" toneKey={toneKeyOf(item, { hasSource: shape !== undefined || component !== undefined, favorited, theme })}>
             {item.provider === 'shape' && shape ? (
               <ShapeTile preview={shape.preview} />
             ) : item.provider === 'component' && component ? (
@@ -1002,7 +1016,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
               <previews.Preview cacheKey={`${item.provider}:${item.providerId}`} placeholderClass="image-studio__placeholder" />
             )}
             {insertingKey === item.itemKey && <span className="image-studio__adding">Adding…</span>}
-          </span>
+          </PictureTile>
           <span className={item.provider === 'component' ? 'image-studio__name' : 'image-studio__name image-studio__name--title'}>{item.title}</span>
         </button>
         <button
@@ -1434,7 +1448,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           }}
         >
           <h3 className="image-studio__naming-title">Save to your library</h3>
-          <div className="image-studio__naming-preview">{savingPreview !== null ? <img src={savingPreview} alt="" /> : <span className="image-studio__placeholder" />}</div>
+          <PictureTile className="image-studio__naming-preview">{savingPreview !== null ? <img src={savingPreview} alt="" /> : <span className="image-studio__placeholder" />}</PictureTile>
           {/* Autofocused: the button that opened this form is the only way here. */}
           <input autoFocus value={componentName} maxLength={MAX_COMPONENT_NAME_LENGTH} required aria-label="Component name" placeholder="Name this component" onChange={(event) => setComponentName(event.target.value)} />
           <div className="image-studio__naming-actions">

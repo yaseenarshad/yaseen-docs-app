@@ -138,17 +138,10 @@
   margin: 0;
 }
 
+/* Its chequerboard and its tile that suits the picture are the grid tiles' own (`drawings/canvasPanel.css`, YAZ-4443). */
 .image-studio__naming-preview {
-  align-items: center;
-  background:
-    linear-gradient(45deg, var(--picture-tile-check, var(--color-gray-10)) 25%, transparent 25%) 0 0 / 12px 12px,
-    linear-gradient(-45deg, var(--picture-tile-check, var(--color-gray-10)) 25%, transparent 25%) 0 0 / 12px 12px,
-    var(--island-bg-color);
   border-radius: 8px;
-  display: flex;
   height: 120px;
-  justify-content: center;
-  overflow: hidden;
 }
 
 .image-studio__naming-preview img {

@@ -483,6 +483,29 @@ describe('previews', () => {
     expect(host.innerHTML).not.toContain('/api/image-studio/preview')
   })
 
+  it('gives a favorite with a dark picture a light tile once the picture loads (YAZ-4443)', async () => {
+    // jsdom has no canvas: this one answers every read with black pixels.
+    const black = new Uint8ClampedArray(24 * 24 * 4).map((_, i) => (i % 4 === 3 ? 255 : 0))
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockImplementation(() => ({ clearRect: () => {}, drawImage: () => {}, getImageData: () => ({ data: black }) }) as never)
+    try {
+      library = libraryOf({ favorites: [stored()] })
+      const { host } = await mount()
+      const tile = section(host, 'Favorites')?.querySelector('.image-studio__preview') as HTMLElement
+      const img = tile.querySelector('img') as HTMLImageElement
+      expect(tile.classList.contains('is-light-tile')).toBe(false)
+      Object.defineProperty(img, 'naturalWidth', { configurable: true, value: 64 })
+      Object.defineProperty(img, 'complete', { configurable: true, value: true })
+      await act(async () => {
+        img.dispatchEvent(new Event('load'))
+      })
+      expect(tile.classList.contains('is-light-tile')).toBe(true)
+    } finally {
+      getContext.mockRestore()
+    }
+  })
+
   it('draws a placeholder rather than an error when the preview cannot be had, and the tile still adds', async () => {
     media.preview.mockRejectedValue(new BridgeRequestError('OFFLINE', 'could not reach api.iconify.design'))
     library = libraryOf({ favorites: [stored()] })
