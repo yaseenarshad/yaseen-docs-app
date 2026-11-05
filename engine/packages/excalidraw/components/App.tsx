@@ -8586,8 +8586,9 @@ class App extends React.Component<AppProps, AppState> {
   /** YAZ-4312 N4: the text boxes with list lines, made again after a scene change. */
   private getListBoxes = () => {
     const sceneNonce = this.scene.getSceneNonce();
-    if (this.listBoxes?.sceneNonce === sceneNonce) {
-      return this.listBoxes.boxes;
+    const cached = this.listBoxes;
+    if (cached && cached.sceneNonce === sceneNonce) {
+      return cached.boxes;
     }
     const boxes: ExcalidrawTextElement[] = [];
     for (const element of this.scene.getNonDeletedElements()) {
