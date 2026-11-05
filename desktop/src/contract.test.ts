@@ -41,7 +41,8 @@ const PUSHES = [...doors.filter((d) => d.kind === 'push').map((d) => d.channel),
 const SENDS = [SPECIAL.watchSubscribe, SPECIAL.watchUnsubscribe, SPECIAL.appFlushed, SPECIAL.memoryHeapReply, SPECIAL.windowViewsReply, SPECIAL.windowTabsReply].sort()
 
 const dir = await mkdtemp(path.join(tmpdir(), 'yd-contract-'))
-afterAll(() => rm(dir, { recursive: true, force: true }))
+// A registration can still be writing into its data folder at the end (seen once on CI: ENOTEMPTY): `rm` tries again.
+afterAll(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
 
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
   // The four registrations `main/index.ts` makes on `ready`.
