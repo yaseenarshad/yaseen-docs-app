@@ -2819,19 +2819,16 @@ body.drag-held iframe {
 }
 
 /* A row with a glyph (YAZ-3273): the glyph, then the label, the hint still at the right end. */
-/* An armed two-click row (YAZ-4460 demo, as the tab board's Close): red when the second click removes, accent when it adds. */
-.ctx-menu__item--armed,
-.ctx-menu__item--armed:hover {
-  color: #fff;
-  background: var(--danger);
-  border-radius: 4px;
+/* An armed two-click row (YAZ-4460 demo, as the tab board's Close): its words in red when the second click removes, in
+   the accent when it adds — colored words, not a fill, so they read over the row's hover in light and dark. */
+.ctx-menu .ctx-menu__item.ctx-menu__item--armed {
+  color: var(--danger);
+  font-weight: 500;
 }
 
-.ctx-menu__item--armed-add,
-.ctx-menu__item--armed-add:hover {
-  color: #fff;
-  background: var(--accent);
-  border-radius: 4px;
+.ctx-menu .ctx-menu__item.ctx-menu__item--armed-add {
+  color: var(--accent);
+  font-weight: 500;
 }
 
 /* A group's heading (YAZ-4460 demo: "Show it in"): small grey words, no hover, no button. */
