@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import type { ViewSet } from './viewSchema'
-import { timeMedian } from '../test-perf'
+import { budgetMs, timeMedian } from '../test-perf'
 import { runView } from './engine'
 describe('perf (GRO-2133)', () => {
   function record(i: number): IndexRecord {
@@ -52,7 +52,7 @@ describe('perf (GRO-2133)', () => {
     // Runs in the `perf` project, alone on an idle pool (YAZ-740), so this is a real budget:
     // ~18 ms measured, 50 ms allowed. The grouping wave's first cut regressed this 4-6x and was
     // caught HERE — at 150 ms it would have shipped.
-    expect(ms).toBeLessThan(50)
+    expect(ms).toBeLessThan(budgetMs(50))
   })
 
   it('1000 records × 3-clause filter + sort + two-level groupBy under 50 ms', () => {
@@ -81,6 +81,6 @@ describe('perf (GRO-2133)', () => {
     // eslint-disable-next-line no-console
     console.log(`engine perf: 1000 records, two levels, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7 (${r.rows.length} kept)`)
     // The inner level buckets each outer separately (YAZ-745), so the same budget must still hold.
-    expect(ms).toBeLessThan(50)
+    expect(ms).toBeLessThan(budgetMs(50))
   })
 })

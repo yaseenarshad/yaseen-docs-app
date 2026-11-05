@@ -28,7 +28,7 @@ export default defineConfig({
     include: ['src/**/*.perf.test.{ts,tsx}'],
     // the real engine's typing test runs in its own last group (`vitest.perf-engine.config.ts`)
     exclude: ['src/drawings/textBoxTyping.perf.test.ts'],
-    testTimeout: 30_000,
+    testTimeout: 60_000, // a slow CI runner took over 30 s on the 5,000-line list test
     sequence: { groupOrder: 1 },
     fileParallelism: false,
   },

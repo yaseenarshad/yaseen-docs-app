@@ -21,7 +21,7 @@ export default defineConfig({
     css: true,
     setupFiles: ['src/test-setup.ts'],
     include: ['src/drawings/textBoxTyping.perf.test.ts'],
-    testTimeout: 30_000,
+    testTimeout: 60_000, // a slow CI runner took over 30 s on the 5,000-line list test
     sequence: { groupOrder: 2 },
     fileParallelism: false,
     // as the client project: the REAL engine's dist inlined

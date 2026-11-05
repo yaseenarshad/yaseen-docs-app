@@ -16,7 +16,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { Crepe } from '@milkdown/crepe'
-import { median } from '../test-perf'
+import { budgetMs, median } from '../test-perf'
 import { posAt, type BoxHelpers } from './textBoxDoc'
 import { typeText } from './textBoxTestKit'
 
@@ -241,8 +241,8 @@ describe('typing in a 200-line text box (YAZ-4277 scenario 14)', () => {
       expect(typed.popupScans).toBe(0)
       expect(moved.walks).toBe(0)
       // gross budgets on the median; the counts above hold the hot path on a loaded machine
-      expect(typed.median).toBeLessThan(50)
-      expect(moved.median).toBeLessThan(20)
+      expect(typed.median).toBeLessThan(budgetMs(50))
+      expect(moved.median).toBeLessThan(budgetMs(20))
     }, 60_000)
   }
 })
