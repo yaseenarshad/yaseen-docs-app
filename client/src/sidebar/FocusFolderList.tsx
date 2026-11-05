@@ -5,6 +5,7 @@ import { resolveItem, type FolderItem } from '../lists/focusFolders'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { TextField } from '../views/view/TextField'
 import { ContextMenu } from './ContextMenu'
+import { scopeGroup } from './menuSections'
 
 /** Two clicks on a name inside this gap rename it, as on a session (YAZ-3147, YAZ-4460 F3). */
 const RENAME_CLICK_GAP_MS = 300
@@ -45,6 +46,9 @@ interface FocusFolderListProps {
   onHideOthers: (id: string) => void
   /** The folder shown alone, if one is (F8). */
   only: string | null
+  /** Where a folder shows, and the door of its "Show it in ▸ Workspace / Vault" rows (YAZ-4460 demo). */
+  scopesOf: (id: string) => { vault: boolean; workspace: boolean }
+  onSetScope: (id: string, scope: 'workspace' | 'vault', on: boolean) => void
 }
 
 /**
@@ -54,7 +58,7 @@ interface FocusFolderListProps {
  * to add their vault. A drop on a folder row puts the dragged item in it (`data-focus-folder`, read by the drag).
  * The folds live while the tab shows, as the Sessions tab's do.
  */
-export function FocusFolderList({ kind, folders, roots, renderItems, editing, onEdit, onRename, onDelete, onGhost, onHideOthers, only }: FocusFolderListProps) {
+export function FocusFolderList({ kind, folders, roots, renderItems, editing, onEdit, onRename, onDelete, onGhost, onHideOthers, only, scopesOf, onSetScope }: FocusFolderListProps) {
   const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set())
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   // "Delete focus folder" asks first (YAZ-4460 demo): two clicks, as "Delete session".
@@ -136,7 +140,7 @@ export function FocusFolderList({ kind, folders, roots, renderItems, editing, on
           <ContextMenu
             x={menu.x}
             y={menu.y}
-            sections={[[{ id: 'focus-folder-rename', label: 'Rename', onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], [{ id: 'focus-folder-delete', label: kind === 'focus' ? 'Delete focus folder' : 'Delete favorite folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}
+            sections={[[{ id: 'focus-folder-rename', label: 'Rename', onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], scopeGroup(kind, scopesOf(menu.id), (scope, on) => onSetScope(menu.id, scope, on)), [{ id: 'focus-folder-delete', label: kind === 'focus' ? 'Delete focus folder' : 'Delete favorite folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}
             onClose={() => setMenu(null)}
           />,
           document.body,

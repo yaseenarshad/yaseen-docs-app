@@ -1860,6 +1860,8 @@ export function Sidebar({
                 onEdit={setEditingFolder}
                 onRename={lists.favoritesTab.rename}
                 onDelete={lists.favoritesTab.remove}
+                scopesOf={lists.favoritesTab.scopesOfFolder}
+                onSetScope={lists.favoritesTab.setFolderScope}
                 onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
               />
             )}
@@ -1915,6 +1917,8 @@ export function Sidebar({
                 onEdit={setEditingFolder}
                 onRename={lists.focusTab.rename}
                 onDelete={lists.focusTab.remove}
+                scopesOf={lists.focusTab.scopesOfFolder}
+                onSetScope={lists.focusTab.setFolderScope}
                 onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
               />
             )}
