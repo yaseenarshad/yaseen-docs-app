@@ -396,7 +396,7 @@ export function App() {
   const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType) => showNotice({ text, icon, type }), [showNotice])
   // Focus and Favorites of the window's vaults (YAZ-3264 D1): here, not in the sidebar, which unmounts
   // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
-  const lists = useVaultListsHere(roots, notify)
+  const lists = useVaultListsHere(roots, notify, settings.workspaceLists)
   // The vaults' own icons (YAZ-3440 D8, D9; D11, YAZ-3471): here too, so the tabs, the search results and Recents show a
   // row's icon with the sidebar hidden. The sidebar's tree reads the same object.
   const vaultIcons = useVaultIcons(roots, settings.sidebarIconRules, settings.sidebarFolderIcons === 'named', notify)
@@ -3381,7 +3381,7 @@ export function App() {
           )}
           <div className="tabstack">
             {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden, until it sleeps (YAZ-3737 5A). Mounted only while it shows (R1). */}
-            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} openTabs={tabPaths} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
+            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} favoritesScope={lists.favoritesScope} openTabs={tabPaths} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
             {mounted.map((id) => {
               const path = pathOf.get(id)
               if (path === undefined) return null

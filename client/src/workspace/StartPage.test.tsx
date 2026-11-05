@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type OpenStat, type TreeNode, type WindowIdentity } from '@shared/types'
+import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type ListScope, type OpenStat, type TreeNode, type WindowIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
 import { StartPage, type StartPageProps } from './StartPage'
 import { recentlyClosed } from './recentlyClosed'
@@ -48,15 +48,15 @@ interface Fixture {
 
 function installBridge({ trees, opens = {}, closed = {}, favorites = {}, favoritesOrder = [] }: Fixture) {
   const stateChanged = new Set<(next: AppState) => void>()
-  const favoritesChanged = new Set<(change: { root: string }) => void>()
+  const favoritesChanged = new Set<(change: { root: string; scope: ListScope }) => void>()
   const roots = Object.keys(trees)
   // The first two vaults have a name of their own: what the app calls them, and what a row's tag says (S20).
   const state: AppState = { ...defaultAppState(), favoritesOrder, folders: Object.fromEntries(roots.map((vaultRoot, at) => [vaultRoot, { ...defaultFolderState(), opens: opens[vaultRoot] ?? {}, closed: closed[vaultRoot] ?? {}, name: ['Notes', 'Work'][at] ?? null }])) }
   const bridge = {
     tree: vi.fn(async (vaultRoot: string) => ({ root: vaultRoot, tree: trees[vaultRoot] ?? [], generatedAt: 1 })),
     favorites: {
-      get: vi.fn(async (vaultRoot: string): Promise<string[]> => favorites[vaultRoot] ?? []),
-      onChanged: vi.fn((listener: (change: { root: string }) => void) => {
+      get: vi.fn(async (vaultRoot: string, _scope?: ListScope): Promise<string[]> => favorites[vaultRoot] ?? []),
+      onChanged: vi.fn((listener: (change: { root: string; scope: ListScope }) => void) => {
         favoritesChanged.add(listener)
         return () => favoritesChanged.delete(listener)
       }),
@@ -79,7 +79,7 @@ function installBridge({ trees, opens = {}, closed = {}, favorites = {}, favorit
     favorites,
     favoritesChanged,
     emitState: (next: AppState) => act(async () => stateChanged.forEach((listener) => listener(next))),
-    emitFavorites: (vaultRoot: string) => act(async () => favoritesChanged.forEach((listener) => listener({ root: vaultRoot }))),
+    emitFavorites: (vaultRoot: string) => act(async () => favoritesChanged.forEach((listener) => listener({ root: vaultRoot, scope: 'vault' }))),
   }
 }
 
@@ -346,13 +346,13 @@ describe('StartPage', () => {
       trees: { [v]: [file(`${v}/a.md`), file(`${v}/b.md`)], [w]: [file(`${w}/x.md`)] },
       opens: { [v]: { [`${v}/a.md`]: used(5, HOUR), [`${v}/b.md`]: used(1, 2 * HOUR) } },
     })
-    expect(bridge.favorites.get.mock.calls).toEqual([[v], [w]])
+    expect(bridge.favorites.get.mock.calls).toEqual([[v, 'vault'], [w, 'vault']])
     // "Add to favorites" in any window (S28 of YAZ-2673): the row shows in "Favorites".
     favorites[v] = [`${v}/a.md`]
     await emitFavorites('/another-window')
     expect(bridge.favorites.get).toHaveBeenCalledTimes(2)
     await emitFavorites(v)
-    expect(bridge.favorites.get.mock.calls).toEqual([[v], [w], [v]])
+    expect(bridge.favorites.get.mock.calls).toEqual([[v, 'vault'], [w, 'vault'], [v, 'vault']])
     expect(paths(el, 'favorites')).toEqual([`${v}/a.md`])
     // A use that the main process added (a page came on show in any window) is on the page at once.
     await emitState({ ...state, folders: { ...state.folders, [w]: { ...defaultFolderState(), opens: { [`${w}/x.md`]: used(1) } } } })

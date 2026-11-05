@@ -688,6 +688,8 @@ export function Sidebar({
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   /** The sort menu (YAZ-3227 D4): the tab it sorts and where its button is, while it is open. */
   const [sortMenu, setSortMenu] = useState<{ tab: SortMenuTab; x: number; y: number } | null>(null)
+  /** One list's "Separate list for workspaces" row in its sort menu (YAZ-4450 D4): a click is one settings write. */
+  const workspaceRow = (tab: 'focus' | 'favorites') => ({ on: settings.workspaceLists[tab], set: (on: boolean) => onChangeSettings({ ...settings, workspaceLists: { ...settings.workspaceLists, [tab]: on } }) })
   /**
    * The Files window chip, clicked once (YAZ-3357 D13: "a two click … kinda how in mission control we have for closing
    * a tab"): red "Make full window" until the second click converts, or a move off, Esc or a press elsewhere lets it go.
@@ -1725,7 +1727,7 @@ export function Sidebar({
           <>
             {errorLines}
             {!loaded && favoriteNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
-            {loaded && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
+            {loaded && favoriteNodes.length === 0 && <p className="sidebar__msg">{lists.favoritesScope === 'workspace' ? 'No favorites in this workspace yet.' : 'No favorites yet.'} Right-click a file or folder → Add to favorites.</p>}
             {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
           </>
         ) : lens === 'focus' ? (
@@ -1737,11 +1739,13 @@ export function Sidebar({
           <>
             {errorLines}
             {!loaded && focusNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
-            {loaded && focusNodes.length === 0 && <p className="sidebar__msg">Nothing in focus. Right-click a file or folder → Add to focus.</p>}
+            {loaded && focusNodes.length === 0 && <p className="sidebar__msg">{lists.focusScope === 'workspace' ? 'Nothing in focus in this workspace.' : 'Nothing in focus.'} Right-click a file or folder → Add to focus.</p>}
             {focusNodes.length > 0 && (
               <>
                 <div className="sidebar__focus-bar">
-                  <span>{focusNodes.length} in focus</span>
+                  <span>
+                    {focusNodes.length} in focus{lists.focusScope === 'workspace' ? ' · workspace list' : ''}
+                  </span>
                   <button type="button" className="sidebar__focus-clear" onClick={clearFocus}>
                     Clear
                   </button>
@@ -1808,6 +1812,8 @@ export function Sidebar({
             // The tab's date switch (YAZ-3511 D7, D10), and on Search its filters (D13, D14).
             { on: settings.rowDates[sortMenu.tab], set: (on) => onChangeSettings({ ...settings, rowDates: { ...settings.rowDates, [sortMenu.tab]: on } }) },
             sortMenu.tab === 'search' ? filterSection(searchFilter, setSearchFilter) : undefined,
+            // YAZ-4450 D4: each list's own switch, in a window with two or more vaults only.
+            multi && (sortMenu.tab === 'focus' || sortMenu.tab === 'favorites') ? workspaceRow(sortMenu.tab) : undefined,
           )}
           onClose={() => setSortMenu(null)}
         />

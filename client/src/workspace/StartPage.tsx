@@ -9,7 +9,7 @@
  *   - what is on the disk, and whether it is a file or a folder, off the window's one tree feed.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
-import { rootOfPath, stripSlash, type DiagramDarkColors, type OpenStat, type TreeNode } from '@shared/types'
+import { rootOfPath, stripSlash, type DiagramDarkColors, type ListScope, type OpenStat, type TreeNode } from '@shared/types'
 import { api } from '../api'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import type { NoticeKind } from '../lib/notice'
@@ -81,6 +81,8 @@ const NO_DIRS: ReadonlySet<string> = new Set()
 export interface StartPageProps {
   /** The window's vaults, in the window's order (YAZ-2602 D1). */
   roots: readonly string[]
+  /** Which Favorites list of each vault the window shows (YAZ-4450 D2): the Favorites tab's. */
+  favoritesScope?: ListScope
   /** The notes this window's tabs show (YAZ-3487 D10): no row of "Recently closed". One array while the tabs stay the same. */
   openTabs?: readonly string[]
   titles: PathTitles
@@ -117,7 +119,7 @@ export interface StartPageProps {
   diagramDarkColors?: DiagramDarkColors
 }
 
-export function StartPage({ roots, openTabs = NO_TABS, titles, onOpen, onOpenBackground, onShowInFiles, onRowMenu, onBack, onBackToSearch, focusRef, previewPath = null, onPreview, onNotice, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: StartPageProps) {
+export function StartPage({ roots, favoritesScope = 'vault', openTabs = NO_TABS, titles, onOpen, onOpenBackground, onShowInFiles, onRowMenu, onBack, onBackToSearch, focusRef, previewPath = null, onPreview, onNotice, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: StartPageProps) {
   // What is on the disk (S18) is the Files tree's to say: it alone knows a folder from a file, and
   // holds the pages that are no notes. The window's one feed keeps the newest tree of each vault
   // with the sidebar hidden too, but then nothing reads a new one when a note goes. So the page
@@ -148,12 +150,18 @@ export function StartPage({ roots, openTabs = NO_TABS, titles, onOpen, onOpenBac
   })
   const openNow = useMemo(() => new Set([...openTabs, ...otherTabs]), [openTabs, otherTabs])
   // Each vault's favorites (R1), as the sidebar reads them (`useVaultTree`): one read when the page
-  // shows, and one more on each `favorites:changed` for a vault of the window.
+  // shows, and one more on each `favorites:changed` for a vault of the window. The list of `favoritesScope`
+  // (YAZ-4450 D2): a new scope starts from no list, so the other scope's rows never stand in.
   const [favoritesByRoot, setFavoritesByRoot] = useState<Readonly<Record<string, readonly string[]>>>({})
+  const readScope = useRef(favoritesScope)
   useEffect(() => {
     let shown = true
+    if (readScope.current !== favoritesScope) {
+      readScope.current = favoritesScope
+      setFavoritesByRoot({})
+    }
     const read = (vault: string): void =>
-      void api.favorites.get(vault).then(
+      void api.favorites.get(vault, favoritesScope).then(
         (list) => {
           if (shown) setFavoritesByRoot((held) => ({ ...held, [vault]: list }))
         },
@@ -161,13 +169,13 @@ export function StartPage({ roots, openTabs = NO_TABS, titles, onOpen, onOpenBac
       )
     roots.forEach(read)
     const off = api.favorites.onChanged((change) => {
-      if (roots.includes(change.root)) read(change.root)
+      if (change.scope === favoritesScope && roots.includes(change.root)) read(change.root)
     })
     return () => {
       shown = false
       off()
     }
-  }, [roots])
+  }, [roots, favoritesScope])
 
   // The columns are cut when what they read changes (R5), not on each render: App renders on each
   // broadcast of the app state, on each resize of the window and through a drag of the sidebar edge.

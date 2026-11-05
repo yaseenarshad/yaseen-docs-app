@@ -5,7 +5,7 @@
  * before); the sidebar and the tab menu reach the SAME lists, through the one writer (6C).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { MAX_FOCUS, rootOfPath } from '@shared/types'
+import { MAX_FOCUS, rootOfPath, type ListScope, type WorkspaceLists } from '@shared/types'
 import { api } from '../api'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { storage } from '../lib/storage'
@@ -50,41 +50,55 @@ interface VaultLists {
  * `<kind>:changed` for a vault of the window reads it again (YAZ-2602 S27; focus: S7, S12) — an own
  * write's echo, another window's, or a file that a sync brought. So two windows on one vault, and
  * two Macs, show one list.
+ *
+ * `scope` (YAZ-4450 D2) is WHICH list of each vault the window shows: its own, or its workspace list.
+ * A new scope drops every held list at once — so no toggle writes one list into the other's file —
+ * and reads each vault of the window again; an answer or a change of the other scope is dropped.
  */
-function useVaultLists(kind: ListKind, live: { readonly current: { roots: readonly string[] } }, onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void): [ListsByRoot, VaultLists] {
+function useVaultLists(kind: ListKind, scope: ListScope, live: { readonly current: { roots: readonly string[] } }, onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void): [ListsByRoot, VaultLists] {
   const [byRoot, setByRoot] = useState<ListsByRoot>({})
   const held = useRef(byRoot)
   held.current = byRoot
   const notice = useRef(onNotice)
   notice.current = onNotice
+  const scopeNow = useRef(scope)
+  scopeNow.current = scope
   const lists = useMemo<VaultLists>(
     () => ({
       kind,
       held,
       load(vault) {
-        void api[kind].get(vault).then((next) => {
-          if (live.current.roots.includes(vault)) setByRoot((prev) => (prev[vault] !== undefined && sameList(prev[vault], next) ? prev : { ...prev, [vault]: next }))
+        void api[kind].get(vault, scope).then((next) => {
+          if (scopeNow.current === scope && live.current.roots.includes(vault)) setByRoot((prev) => (prev[vault] !== undefined && sameList(prev[vault], next) ? prev : { ...prev, [vault]: next }))
         })
       },
       drop: (vault) => setByRoot(({ [vault]: _left, ...rest }) => rest),
       save(vault, next) {
         const prev = held.current[vault] ?? []
         setByRoot((all) => ({ ...all, [vault]: next }))
-        api[kind].set(vault, next).catch((err: unknown) => {
+        api[kind].set(vault, next, scope).catch((err: unknown) => {
           // Only for a vault still in the window: one that left must not come back with a list this window did not read (YAZ-2702 S6).
-          if (live.current.roots.includes(vault)) setByRoot((all) => ({ ...all, [vault]: prev }))
+          if (scopeNow.current === scope && live.current.roots.includes(vault)) setByRoot((all) => ({ ...all, [vault]: prev }))
           notice.current(`Can't save ${kind}: ${err instanceof Error ? err.message : String(err)}`, 'error')
         })
       },
     }),
-    [kind, live],
+    [kind, scope, live],
   )
+  const shown = useRef(scope)
+  useEffect(() => {
+    if (shown.current === scope) return
+    shown.current = scope
+    held.current = {}
+    setByRoot({})
+    for (const vault of live.current.roots) lists.load(vault)
+  }, [scope, live, lists])
   useEffect(
     () =>
       api[kind].onChanged((c) => {
-        if (live.current.roots.includes(c.root)) lists.load(c.root)
+        if (c.scope === scope && live.current.roots.includes(c.root)) lists.load(c.root)
       }),
-    [kind, live, lists],
+    [kind, scope, live, lists],
   )
   return [byRoot, lists]
 }
@@ -102,22 +116,27 @@ export type VaultListsHere = ReturnType<typeof useVaultListsHere>
  * order. App calls it once and hands it to the sidebar (`useVaultTree`) and to the tab menu
  * (`stateOf`, `toggleFocus`, `toggleFavorite`).
  */
-export function useVaultListsHere(roots: readonly string[], onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void) {
+export function useVaultListsHere(roots: readonly string[], onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void, separate: WorkspaceLists) {
   // What the callbacks below ask at call time, so each keeps its identity.
   const live = useRef({ roots })
   live.current = { roots }
+  // YAZ-4450 D2, D4: a window with two or more vaults is a workspace. With a tab's switch on (the default), each vault
+  // shows its ONE workspace list there, the same in every workspace; a vault alone always shows its own list.
+  const multi = roots.length > 1
+  const favoritesScope: ListScope = multi && separate.favorites ? 'workspace' : 'vault'
+  const focusScope: ListScope = multi && separate.focus ? 'workspace' : 'vault'
   /** The vault that holds `path`, the most specific one; a path in no vault of the window gets the first. */
   const rootOf = useCallback((path: string): string => rootOfPath(live.current.roots, path) ?? live.current.roots[0], [])
   // Favorites (YAZ-1766 D2, in the vault since 6A/D11): each vault's pinned files and folders in the
   // user's order, from ITS `.yaseendocs/favorites.json`, kept by its root (`useVaultLists`).
-  const [favoritesByRoot, favorites] = useVaultLists('favorites', live, onNotice)
+  const [favoritesByRoot, favorites] = useVaultLists('favorites', favoritesScope, live, onNotice)
   // Focus (YAZ-2619 D1): the files and folders the Focus tab shows. ONE list for each VAULT, kept in
   // the vault, since YAZ-2702 (Decision 1) — no longer one for each window (YAZ-1628): each window
   // on a vault shows the same list, as does each Mac that syncs the vault, and it stays after a
   // quit, a closed window, and a change to a different vault and back (S7, S8, S10, S12). This hook
   // holds what it read and writes nothing back on its own: a vault that leaves takes its rows off
   // the tab and keeps its file (S9).
-  const [focusByRoot, focus] = useVaultLists('focus', live, onNotice)
+  const [focusByRoot, focus] = useVaultLists('focus', focusScope, live, onNotice)
 
   // Each vault's first read of both lists, for as long as the vault is in the window (YAZ-2631 D1;
   // focus: YAZ-2702): a vault that joins is read, one that leaves is dropped, and a vault that stays
@@ -273,7 +292,7 @@ export function useVaultListsHere(roots: readonly string[], onNotice: (message: 
   )
 
   return useMemo(
-    () => ({ favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf }),
-    [favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf],
+    () => ({ favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope }),
+    [favoritesByRoot, focusList, favoritePaths, toggleFocus, toggleFavorite, clearFocus, reorderFocus, saveFavoriteOrder, stateOf, focusScope, favoritesScope],
   )
 }
