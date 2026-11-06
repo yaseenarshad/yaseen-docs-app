@@ -889,6 +889,8 @@ class App extends React.Component<AppProps, AppState> {
     elementId: ExcalidrawElement["id"];
     line: number;
   }> | null = null;
+  /** YAZ-4469: the element a click would pick, outlined faintly on hover. */
+  private selectionHover: ExcalidrawElement["id"] | null = null;
   /** The scene's fonts are loaded: a pill's box can be measured. */
   private hostLinkFontsReady = false;
   /** YAZ-4101 3D: moves when the text editor's selection shows another style. */
@@ -2604,6 +2606,7 @@ class App extends React.Component<AppProps, AppState> {
 
   private handlePointerLeave = (event: React.PointerEvent) => {
     this.setHostLinkHover(null);
+    this.updateSelectionHover(null);
     this.toggleOverscrollBehavior(event);
   };
 
@@ -2973,6 +2976,7 @@ class App extends React.Component<AppProps, AppState> {
                             }
                             foldArrowHover={this.foldArrowHover}
                             foldArrows={this.getFoldArrowPrefs()}
+                            selectionHover={this.selectionHover}
                             editorInterface={this.editorInterface}
                             interactionEnabled={this.isInteractionEnabled()}
                             navigationEnabled={this.isNavigationEnabled()}
@@ -4574,6 +4578,11 @@ class App extends React.Component<AppProps, AppState> {
     if (prevProps.foldArrows !== this.props.foldArrows) {
       setFoldArrowPrefs(this.getFoldArrowPrefs());
       this.foldArrowHover = null;
+    }
+
+    // YAZ-4469: another tool picks nothing on a click; the renderer skips it too
+    if (prevState.activeTool.type !== this.state.activeTool.type) {
+      this.selectionHover = null;
     }
 
     if (prevProps.hostLinks !== this.props.hostLinks) {
@@ -8858,6 +8867,29 @@ class App extends React.Component<AppProps, AppState> {
 
   public getFoldArrowHover = () => this.foldArrowHover;
 
+  /**
+   * YAZ-4469: outlines the element a click would pick. Renders again only when
+   * that element changes, never on a move over the same one; the renderer
+   * skips it while something is drawn, dragged, selected or written.
+   */
+  private updateSelectionHover = (
+    element: NonDeleted<ExcalidrawElement> | null,
+  ) => {
+    // none while a button is down: a drag, a resize or a marquee
+    const next =
+      element &&
+      this.state.activeTool.type === "selection" &&
+      this.state.cursorButton !== "down"
+        ? element.id
+        : null;
+    if (next !== this.selectionHover) {
+      this.selectionHover = next;
+      this.triggerRender();
+    }
+  };
+
+  public getSelectionHover = () => this.selectionHover;
+
   /** YAZ-4277 D4: the checklist box of the text box under a point, if any. */
   private getTextCheckboxTargetAt = (
     scenePointer: Readonly<{ x: number; y: number }>,
@@ -9810,6 +9842,7 @@ class App extends React.Component<AppProps, AppState> {
     } else {
       hitElement = hitElementMightBeLocked;
     }
+    this.updateSelectionHover(hitElement);
 
     // YAZ-4039 D11: the preview of a link pill, also with the box not in edit mode
     if (this.props.hostLinks?.onHover) {

@@ -969,6 +969,9 @@ const renderBindingHighlightForBindableElement = (
   context.restore();
 };
 
+/** YAZ-4469: how strong the hover outline is, against the selection's own border. */
+const SELECTION_HOVER_ALPHA = 0.35;
+
 type ElementSelectionBorder = {
   angle: number;
   x1: number;
@@ -1727,6 +1730,43 @@ const _renderInteractiveScene = ({
 
   if (appState.elementsToHighlight) {
     renderElementsBoxHighlight(context, appState, appState.elementsToHighlight);
+  }
+
+  // YAZ-4469: a faint outline on the element a click would pick, while the
+  // selection tool hovers and nothing is being drawn, dragged or written
+  const hovered = renderConfig.selectionHover
+    ? elementsMap.get(renderConfig.selectionHover)
+    : undefined;
+  if (
+    hovered &&
+    appState.activeTool.type === "selection" &&
+    !appState.selectedElementIds[hovered.id] &&
+    !appState.viewModeEnabled &&
+    !appState.editingTextElement &&
+    !appState.newElement &&
+    !appState.selectionElement &&
+    !appState.multiElement &&
+    !appState.selectedLinearElement?.isEditing
+  ) {
+    const [x1, y1, x2, y2, cx, cy] = getElementAbsoluteCoords(
+      hovered,
+      elementsMap,
+      true,
+    );
+    context.save();
+    context.globalAlpha = SELECTION_HOVER_ALPHA;
+    renderSelectionBorder(context, appState, {
+      angle: hovered.angle,
+      x1,
+      y1,
+      x2,
+      y2,
+      cx,
+      cy,
+      selectionColors: [renderConfig.selectionColor],
+      activeEmbeddable: false,
+    });
+    context.restore();
   }
 
   if (appState.activeLockedId) {

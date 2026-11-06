@@ -364,12 +364,17 @@ describe("fold arrows (YAZ-4277 D5)", () => {
     const renders = vi.spyOn(h.app, "triggerRender");
     mouse.moveTo(LINE.x, LINE.y);
     expect(h.app.getFoldArrowHover()).toEqual({ elementId: "moat", line: 1 });
+    // YAZ-4469: the board's hover outline (on the text box) asks one render of its own
+    expect(renders).toHaveBeenCalledTimes(2);
     mouse.moveTo(LINE.x + 40, LINE.y + 5);
+    expect(renders).toHaveBeenCalledTimes(2);
+    // the arrow folds on a click and picks nothing: only the outline goes
     mouse.moveTo(ARROW.x, ARROW.y);
-    expect(renders).toHaveBeenCalledTimes(1);
+    expect(h.app.getFoldArrowHover()).toEqual({ elementId: "moat", line: 1 });
+    expect(renders).toHaveBeenCalledTimes(3);
     mouse.moveTo(LINE.x, 112);
     expect(h.app.getFoldArrowHover()).toBeNull();
-    expect(renders).toHaveBeenCalledTimes(2);
+    expect(renders).toHaveBeenCalledTimes(5);
   });
 
   it("no hover mark in Always mode, or on a folded item", async () => {

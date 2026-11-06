@@ -593,6 +593,30 @@ describe("drawn elements beat transparent interiors", () => {
     assertSelectedElements([text.id]);
   });
 
+  it("outlines what a click would pick, and renders again only when it changes", () => {
+    const { text, box, cx, cy } = boxOver();
+    const app = window.h.app as unknown as {
+      getSelectionHover: () => string | null;
+      triggerRender: () => void;
+    };
+    const renders = vi.spyOn(app, "triggerRender");
+
+    mouse.moveTo(cx, cy);
+    expect(app.getSelectionHover()).toBe(text.id);
+    for (let step = 0; step < 20; step++) {
+      mouse.moveTo(cx + (step % 2), cy);
+    }
+    mouse.moveTo(180, 110);
+    expect(app.getSelectionHover()).toBe(box.id);
+    expect(renders).toHaveBeenCalledTimes(2);
+
+    mouse.clickAt(180, 110);
+    assertSelectedElements([box.id]);
+    UI.clickTool("rectangle");
+    mouse.moveTo(cx, cy);
+    expect(app.getSelectionHover()).toBeNull();
+  });
+
   it("selects text inside a locked transparent box", () => {
     const { text, cx, cy } = boxOver({ locked: true });
 
