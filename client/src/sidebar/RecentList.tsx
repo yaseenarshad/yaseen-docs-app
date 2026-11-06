@@ -1,10 +1,11 @@
-import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type MouseEvent } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type MouseEvent } from 'react'
 import { hasHoverPreview } from './hoverPreviewKinds'
 import type { TreeResponse } from '@shared/types'
 import type { OnListFold } from './listFold'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
 import { FileIcon, NameEnding } from './FileIcon'
+import { rowArrows } from './Tree'
 import { typeOf, type SearchType } from '../search/searchFilter'
 import { byVault, MAX_RECENTS, recentDays, recentFiles, timeOf, type RecentFile, type RecentGroup } from './recents'
 
@@ -131,33 +132,34 @@ export const RecentList = memo(function RecentList({ trees, roots, only = null, 
   }
   return (
     <>
-      {/* The tree's row styles, but no tree for the keys: the sidebar's arrow keys walk `.tree__row[data-path]` rows only, so these rows are buttons that Tab reaches. */}
-      <ul className="tree" aria-label="Recents">
+      {/* The tree's row styles, but no tree for the keys: the sidebar's arrow keys walk `.tree__row[data-path]` rows only, so these rows are buttons that Tab reaches, and the arrows walk them too (`data-walk`, YAZ-4470, 4).
+          The tree's levels (YAZ-4450 demo): a day is a level-0 folder, a vault group level 1, and the indents are the tree's,
+          so the sidebar's level lines, thread, sticky rows and arrow setting reach them as they reach the Files tab. */}
+      <ul className="tree" role="tree" aria-label="Recents" onKeyDown={(e) => rowArrows(e, () => undefined)}>
         {days.map((day) => {
           const open = !shut.has(day.key)
           return (
-            <li key={day.key}>
-              <button type="button" className="tree__row recents__day" aria-expanded={open} onClick={() => toggle(day.key)}>
+            <li key={day.key} role="treeitem" aria-expanded={open}>
+              <button type="button" className="tree__row tree__row--sticky recents__day" data-walk="" aria-expanded={open} onClick={() => toggle(day.key)}>
                 <span className={`tree__chevron${open ? ' tree__chevron--open' : ''}`} />
                 <span className="tree__label">{day.label}</span>
               </button>
               {open && (
-                <ul className="tree">
+                <ul className="tree" role="group" style={{ '--tree-depth': 1 } as CSSProperties}>
                   {dayGroups !== null && nameOf !== undefined
                     ? (dayGroups.get(day.key) ?? []).map((group) => {
                         const key = groupKey(day.key, group)
                         const groupOpen = !shut.has(key)
                         return (
-                          <li key={group.root}>
-                            <button type="button" className="tree__row recents__vault" style={{ paddingLeft: 26 }} aria-expanded={groupOpen} onClick={() => toggle(key)}>
+                          <li key={group.root} role="treeitem" aria-expanded={groupOpen}>
+                            <button type="button" className="tree__row tree__row--sticky recents__vault" data-walk="" style={{ paddingLeft: 22 }} aria-expanded={groupOpen} onClick={() => toggle(key)}>
                               <span className={`tree__chevron${groupOpen ? ' tree__chevron--open' : ''}`} />
                               <span className="tree__label">{nameOf(group.root)}</span>
-                              <span className="tree__count">{group.files.length}</span>
                             </button>
                             {groupOpen && (
-                              <ul className="tree">
+                              <ul className="tree" role="group" style={{ '--tree-depth': 2 } as CSSProperties}>
                                 {group.files.map((file) => (
-                                  <RecentRow key={file.path} indent={46} file={file} active={file.path === activeFile} titles={titles} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} onHoverFile={onHoverFile} />
+                                  <RecentRow key={file.path} indent={50} file={file} active={file.path === activeFile} titles={titles} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} onHoverFile={onHoverFile} />
                                 ))}
                               </ul>
                             )}
@@ -165,7 +167,7 @@ export const RecentList = memo(function RecentList({ trees, roots, only = null, 
                         )
                       })
                     : day.files.map((file) => (
-                        <RecentRow key={file.path} indent={26} file={file} active={file.path === activeFile} titles={titles} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} onHoverFile={onHoverFile} />
+                        <RecentRow key={file.path} indent={36} file={file} active={file.path === activeFile} titles={titles} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} onHoverFile={onHoverFile} />
                       ))}
                 </ul>
               )}
@@ -190,13 +192,14 @@ interface RecentRowProps extends Pick<RecentListProps, 'titles' | 'onOpenFile' |
 function RecentRow({ file, active, indent, titles, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile }: RecentRowProps) {
   const { path, edited } = file
   // A board or note row's hover handlers, as a Files row's (YAZ-3403): pointer and focus alike. The item's `data-path`
-  // puts a Files window's floating panel level with the row (`previewRowRect`); the button has none, for the keys.
+  // puts a Files window's floating panel level with the row (`previewRowRect`); the button has none, for the keys: it walks by `data-walk`.
   const hover = onHoverFile === undefined || !hasHoverPreview(path) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
   return (
-    <li data-path={path}>
+    <li data-path={path} role="treeitem">
       <button
         type="button"
         className={'tree__row' + (active ? ' tree__row--active' : '')}
+        data-walk=""
         style={{ paddingLeft: indent }}
         title={path}
         // As a Files row (S19): a click previews, ⌘ opens a background tab, the second click of a double-click keeps the tab.

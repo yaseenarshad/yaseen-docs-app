@@ -9,7 +9,7 @@ import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { pageName, useAllPathTitles } from '../lib/pageLabel'
-import { absFrom, relTo } from '../lib/paths'
+import { absFrom, basename, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences, linkingNotes } from '../links/renameLinks'
 import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind, type Move } from '../links/shortcuts'
@@ -35,7 +35,7 @@ import { datedSeed, targetDirFor, type EntryKind, type MenuRow } from './createE
 import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
 import { ZoomMenu } from './ZoomMenu'
-import { buildMenuSections } from './menuSections'
+import { buildMenuSections, SCOPE_TIPS } from './menuSections'
 import type { ListFold } from './listFold'
 import { createPortal } from 'react-dom'
 import { FocusFolderList } from './FocusFolderList'
@@ -121,6 +121,8 @@ interface SidebarProps {
   onKeepFile: (path: string) => void
   /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes the workspace's openBackground. */
   onOpenFileBackground: (path: string) => void
+  /** A tab behind the current one with no copy: a file already in a tab stays as it is (YAZ-4470, 17: "Open all in tabs"). Absent: `onOpenFileBackground`. */
+  onOpenFileTab?: (path: string) => void
   /**
    * A search row's menu item that draws into the tree was chosen (🔒 D2, YAZ-2050), or "Show in
    * sidebar" on a row of Search, Focus or Favorites (YAZ-2638 D1, D3): App flips the lens to Files
@@ -601,6 +603,7 @@ export function Sidebar({
   onOpenFile,
   onKeepFile,
   onOpenFileBackground,
+  onOpenFileTab,
   onRevealInFiles,
   previewPath,
   pagePreviewShown = false,
@@ -738,6 +741,8 @@ export function Sidebar({
   /** The focus folder whose name field is open (YAZ-4460 F3): "+ Folder" opens a new one's at once. */
   const [editingFolder, setEditingFolder] = useState<string | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
+  // A "Show it in" check, off, that takes rows out of the list on screen (YAZ-4460 demo): a box asks first.
+  const [askScope, setAskScope] = useState<{ kind: 'focus' | 'favorites'; paths: string[]; scope: 'vault' | 'workspace' } | null>(null)
   // The folders of the tab that shows (YAZ-4460; Favorites' since the demo): the Focus tab's, or the Favorites tab's.
   const shownTab = lens === 'favorites' ? lists.favoritesTab : lists.focusTab
   // "Hide all others" (F8): the folder shown alone, while it still exists in the tab that shows (folder ids are unique).
@@ -1220,7 +1225,8 @@ export function Sidebar({
         // Both plural fields read the ONE ordered list above and stay separate fields, as the
         // doctrine asks. A folder is a tab too (YAZ-2290 D3), so the open item counts every row.
         copyPaths: pluralRows,
-        openTabPaths: pluralRows,
+        // One row too (YAZ-4470): a file or folder row; not a vault row, a shortcut row or blank space.
+        openTabPaths: pluralRows ?? (node === null || vaultRow !== null || shortcutIn !== null ? null : [node.path]),
         clipPaths: shortcutIn !== null || vaultRow !== null || holdsVault ? null : plural ?? (node === null ? null : [node.path]),
         newWindowPath: filePath,
         renamePath: shortcutIn !== null || vaultRow !== null ? null : node?.path ?? null,
@@ -1841,7 +1847,8 @@ export function Sidebar({
               // Favorite folders (YAZ-4460 demo), by the Focus tab's rules: the bar with "+ Folder" — or, while one folder
               // shows alone, its name and "Show all".
               <div className="sidebar__focus-bar">
-                <span>{onlyFolder !== undefined ? `Only ${onlyFolder.name}` : `${favoriteNodes.length + lists.favoritesTab.folders.length} ${favoriteNodes.length + lists.favoritesTab.folders.length === 1 ? 'favorite' : 'favorites'}${lists.favoritesScope === 'workspace' ? ' · workspace list' : ''}`}</span>
+                {/* No count (YAZ-4470, 10): which list shows, and on hover what that means. */}
+                <span title={onlyFolder !== undefined ? undefined : lists.favoritesScope === 'workspace' ? SCOPE_TIPS.barWorkspace : SCOPE_TIPS.barVault}>{onlyFolder !== undefined ? `Only ${onlyFolder.name}` : lists.favoritesScope === 'workspace' ? 'Workspace list' : 'Vault list'}</span>
                 <button type="button" className="sidebar__focus-clear" onClick={onlyFolder !== undefined ? () => onFocusOnly?.(null) : newFolder}>
                   {onlyFolder !== undefined ? 'Show all' : '+ Folder'}
                 </button>
@@ -1855,13 +1862,17 @@ export function Sidebar({
                 only={onlyFolder?.id ?? null}
                 onHideOthers={(id) => onFocusOnly?.(id)}
                 roots={roots}
-                renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest, paths)} move={fileMove} reorder={reorder} sort={sort} copies />}
+                renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest, paths)} move={fileMove} reorder={reorder} sort={sort} copies shift={1} />}
                 editing={editingFolder}
                 onEdit={setEditingFolder}
                 onRename={lists.favoritesTab.rename}
                 onDelete={lists.favoritesTab.remove}
                 scopesOf={lists.favoritesTab.scopesOfFolder}
                 onSetScope={lists.favoritesTab.setFolderScope}
+                onReorderFolders={lists.favoritesTab.reorderFolders}
+                scope={lists.favoritesScope}
+                openableOf={(paths) => paths.filter((path) => findNode(forest ?? [], path) !== null)}
+                onOpenAll={(paths) => paths.forEach((path) => (onOpenFileTab ?? onOpenFileBackground)(path))}
                 onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
               />
             )}
@@ -1886,11 +1897,9 @@ export function Sidebar({
               </div>
             )}
             {loaded && onlyFolder === undefined && (
-              // The bar stands whenever the tab can make a focus folder (YAZ-4460 F3); the count is top items and folders (F7).
+              // The bar stands whenever the tab can make a focus folder (YAZ-4460 F3). No count (YAZ-4470, 10): which list shows.
               <div className="sidebar__focus-bar">
-                <span>
-                  {focusNodes.length + lists.focusTab.folders.length} in focus{lists.focusScope === 'workspace' ? ' · workspace list' : ''}
-                </span>
+                <span title={lists.focusScope === 'workspace' ? SCOPE_TIPS.barWorkspace : SCOPE_TIPS.barVault}>{lists.focusScope === 'workspace' ? 'Workspace list' : 'Vault list'}</span>
                 <span className="sidebar__focus-actions">
                   <button type="button" className="sidebar__focus-clear" onClick={newFolder}>
                     + Folder
@@ -1912,13 +1921,17 @@ export function Sidebar({
                 only={onlyFolder?.id ?? null}
                 onHideOthers={(id) => onFocusOnly?.(id)}
                 roots={roots}
-                renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest, paths)} move={fileMove} reorder={reorder} sort={sort} copies />}
+                renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest, paths)} move={fileMove} reorder={reorder} sort={sort} copies shift={1} />}
                 editing={editingFolder}
                 onEdit={setEditingFolder}
                 onRename={lists.focusTab.rename}
                 onDelete={lists.focusTab.remove}
                 scopesOf={lists.focusTab.scopesOfFolder}
                 onSetScope={lists.focusTab.setFolderScope}
+                onReorderFolders={lists.focusTab.reorderFolders}
+                scope={lists.focusScope}
+                openableOf={(paths) => paths.filter((path) => findNode(forest ?? [], path) !== null)}
+                onOpenAll={(paths) => paths.forEach((path) => (onOpenFileTab ?? onOpenFileBackground)(path))}
                 onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
               />
             )}
@@ -1991,6 +2004,38 @@ export function Sidebar({
         <UpdatePill update={update} onOpen={onOpenWhatsNew} />
       </div>
       <RowDateTip body={bodyRef} />
+      {askScope !== null &&
+        createPortal(
+          (() => {
+            const { kind, paths, scope } = askScope
+            const list = kind === 'focus' ? 'focus' : 'favorites'
+            const other = scope === 'workspace' ? 'vault' : 'workspace'
+            const stays = lists.scopesOf(kind, paths)[other]
+            const what = paths.length === 1 ? `"${basename(paths[0]).replace(/\.md$/i, '')}"` : `${paths.length} items`
+            return (
+              <ConfirmSheet
+                labelId="confirm-scope-off-text"
+                text={
+                  <>
+                    <strong>
+                      Remove {what} from the {scope} {list}?
+                    </strong>
+                    <br />
+                    {paths.length === 1 ? 'It leaves' : 'They leave'} this list. {stays ? `${paths.length === 1 ? 'It stays' : 'They stay'} in the ${other} ${list}.` : `${paths.length === 1 ? 'It is' : 'They are'} in no other ${list} list.`} Your files do not change.
+                  </>
+                }
+                confirmLabel="Remove"
+                danger
+                onConfirm={() => {
+                  setAskScope(null)
+                  lists.setScope(kind, paths, scope, false)
+                }}
+                onCancel={() => setAskScope(null)}
+              />
+            )
+          })(),
+          document.body,
+        )}
       {/* The sort menu (YAZ-3227 D4): it sorts the tab it opened on, and a tab switch leaves it unmounted. */}
       {sortMenu !== null && sortTab !== null && sort !== undefined && (
         <ContextMenu
@@ -2056,6 +2101,8 @@ export function Sidebar({
                 }
               },
               onSetScope: (kind, paths, scope, on) => lists.setScope(kind, paths, scope, on),
+              shownScope: (kind) => (menu.lens !== kind ? null : kind === 'focus' ? lists.focusScope : lists.favoritesScope),
+              onAskScope: (kind, paths, scope) => setAskScope({ kind, paths, scope }),
               onCut: (paths) => clipTo(paths, 'cut'),
               onCopy: (paths) => clipTo(paths, 'copy'),
               onPaste: () => {

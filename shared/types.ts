@@ -3283,17 +3283,19 @@ export const MAX_FOCUS_FOLDERS = 100
 export interface FocusFolder {
   id: string
   name: string
-  /** When it was made (ms): the order of the folders on the tab. */
+  /** When it was made (ms): the order of the folders on the tab, after the dragged ones. */
   created: number
   at: number
   items: { vault: string; path: string }[]
   deleted?: true
+  /** Its place on the tab once a drag set it (YAZ-4470, 13): 0 first; a folder with none goes after, by `created`. */
+  pos?: number
 }
 
 export const isFocusFolder = (v: unknown): v is FocusFolder => {
   if (typeof v !== 'object' || v === null) return false
   const f = v as Record<string, unknown>
-  return typeof f.id === 'string' && f.id !== '' && typeof f.name === 'string' && typeof f.created === 'number' && typeof f.at === 'number' && (f.deleted === undefined || f.deleted === true) && Array.isArray(f.items) && f.items.every((i) => typeof i === 'object' && i !== null && typeof (i as Record<string, unknown>).vault === 'string' && typeof (i as Record<string, unknown>).path === 'string')
+  return typeof f.id === 'string' && f.id !== '' && typeof f.name === 'string' && typeof f.created === 'number' && typeof f.at === 'number' && (f.deleted === undefined || f.deleted === true) && (f.pos === undefined || (typeof f.pos === 'number' && Number.isFinite(f.pos))) && Array.isArray(f.items) && f.items.every((i) => typeof i === 'object' && i !== null && typeof (i as Record<string, unknown>).vault === 'string' && typeof (i as Record<string, unknown>).path === 'string')
 }
 
 /** One Mac's focus folders file of a vault (YAZ-4460 F1), by `FocusConfig`'s rule: the latest `at` is the set. */
@@ -3301,6 +3303,8 @@ export interface FocusFoldersConfig {
   version: 1
   at: string
   folders: FocusFolder[]
+  /** The vault's folder name when the file was written (YAZ-4470, 2): a read that finds another name heals the vault's items. */
+  self?: string
 }
 
 // ---------- Bridge payloads: `window.yaseenDocs` itself is `CONTRACT` in shared/ipc.ts (GRO-2153, YAZ-2200) ----------

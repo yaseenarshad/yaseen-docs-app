@@ -43,13 +43,13 @@ function Groups<T extends MenuEntry>({ sections, render }: { sections: readonly 
 
 /** A leaf: `onSelect()` then `onClose()` — every item closes the WHOLE menu (🔒 D8). */
 function ActionButton({ item, onClose, onMouseEnter }: { item: MenuAction; onClose: () => void; onMouseEnter?: () => void }) {
-  if (item.heading) return <MenuHeading label={item.label} />
+  if (item.heading) return <MenuHeading label={item.label} tip={item.tip} />
   return <ActionRow item={item} onClose={onClose} onMouseEnter={onMouseEnter} />
 }
 
 /** A group's heading (YAZ-4460 demo): small grey words over the rows, no button, so a key or a click passes it by. */
-const MenuHeading = ({ label }: { label: string }) => (
-  <div className="ctx-menu__heading" role="presentation">
+const MenuHeading = ({ label, tip }: { label: string; tip?: string }) => (
+  <div className="ctx-menu__heading" role="presentation" title={tip}>
     {label}
   </div>
 )

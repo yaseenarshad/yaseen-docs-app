@@ -38,6 +38,7 @@ import { absFrom, basename, dirname, relTo, stripExt } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
+import { resolveItem } from './lists/focusFolders'
 import { useVaultListsHere } from './lists/useVaultListsHere'
 import { readPageView } from './lib/pageView'
 import { buildSetupPrompt } from './lib/syncAttention'
@@ -399,7 +400,12 @@ export function App() {
   // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
   const lists = useVaultListsHere(roots, notify, settings.workspaceLists)
   // The new tab page's Favorites column (YAZ-4450): the tab's own list, kept by value so the page cuts its columns only on a change.
-  const startFavorites = useMemo(() => ({ byRoot: lists.favoritesByRoot, paths: lists.favoritePaths, scope: lists.favoritesScope }), [lists.favoritesByRoot, lists.favoritePaths, lists.favoritesScope])
+  // Its favorite folders too (YAZ-4470, 11): each folder's items that this window shows.
+  const favoriteFolders = lists.favoritesTab.folders
+  const startFavorites = useMemo(
+    () => ({ byRoot: lists.favoritesByRoot, paths: lists.favoritePaths, scope: lists.favoritesScope, folders: favoriteFolders.map((f) => ({ id: f.id, name: f.name, paths: f.items.flatMap((item) => { const at = resolveItem(item, roots); return 'path' in at ? [at.path] : [] }) })) }),
+    [lists.favoritesByRoot, lists.favoritePaths, lists.favoritesScope, favoriteFolders, roots],
+  )
   // The vaults' own icons (YAZ-3440 D8, D9; D11, YAZ-3471): here too, so the tabs, the search results and Recents show a
   // row's icon with the sidebar hidden. The sidebar's tree reads the same object.
   const vaultIcons = useVaultIcons(roots, settings.sidebarIconRules, settings.sidebarFolderIcons === 'named', notify)
@@ -3241,6 +3247,7 @@ export function App() {
           onOpenFile={filesDoors?.open ?? openPage}
           onKeepFile={filesDoors?.keep ?? openKeptPage}
           onOpenFileBackground={filesDoors?.background ?? openBackgroundCopy}
+          onOpenFileTab={filesDoors?.background ?? openBackground}
           onRevealInFiles={revealInFiles}
           previewPath={previewShown}
           onPreview={setPreviewPath}

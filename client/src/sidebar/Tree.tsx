@@ -119,13 +119,20 @@ export interface TreeReorder {
  * They read the rows as drawn, select nothing and open no page. A rename box or a create box is no
  * row, so its arrows stay its own (S64). The browser's `.focus()` scrolls the row into view, and
  * `scroll-margin-top` (app.css) keeps it below the stuck rows (YAZ-3440 D1).
+ *
+ * The walk is the whole list on show (YAZ-4470, 4): the rows of every tree in `.sidebar__body`, and the rows that are
+ * no file — a focus or favorite folder, a day and a vault of Recents — which say so with `data-walk`. Such a row folds
+ * by its own click. The focus folders and Recents call this too (`walkKeys`), so the one nearest the row acts.
  */
-function rowArrows(e: React.KeyboardEvent<HTMLElement>, onToggle: (dir: string) => void, onLeaveToPage?: () => boolean): void {
+const WALK_ROWS = '.tree__row[data-path], .tree__row[data-walk]'
+export function rowArrows(e: React.KeyboardEvent<HTMLElement>, onToggle: (dir: string) => void, onLeaveToPage?: () => boolean): void {
+  if (e.defaultPrevented) return
   const row = e.target instanceof HTMLElement && e.target.matches('.tree__row') ? e.target : null
   const path = row?.dataset.path
-  if (row === null || path === undefined) return
+  const walk = row?.dataset.walk !== undefined
+  if (row === null || (path === undefined && !walk)) return
   const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)
-  const rows = () => [...e.currentTarget.querySelectorAll<HTMLElement>('.tree__row[data-path]')]
+  const rows = () => [...(e.currentTarget.closest('.sidebar__body') ?? e.currentTarget).querySelectorAll<HTMLElement>(WALK_ROWS)]
   // A folder's item says whether it is open; a file's says nothing (null).
   const item = row.closest('[role="treeitem"]')
   const open = item?.getAttribute('aria-expanded') ?? null
@@ -137,19 +144,22 @@ function rowArrows(e: React.KeyboardEvent<HTMLElement>, onToggle: (dir: string) 
     all[e.key === 'Home' ? 0 : all.length - 1]?.focus()
   } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
     // A folder row of a copy (YAZ-3131) folds under its own key, which the row carries in `data-fold`.
-    if (open === String(e.key === 'ArrowLeft')) onToggle(row.dataset.fold ?? path)
+    if (open === String(e.key === 'ArrowLeft')) {
+      if (path === undefined) row.click()
+      else onToggle(row.dataset.fold ?? path)
+    }
     // ← with nothing to close (D12): the row of the folder this row is drawn in — its item's level is a
     // group, and that group's item is the folder's. The tree's own level is no group: a top row stops here.
     else if (e.key === 'ArrowLeft') {
-      if (plain) item?.parentElement?.closest('[role="treeitem"]')?.querySelector<HTMLElement>(':scope > .tree__row[data-path]')?.focus()
+      if (plain) item?.parentElement?.closest('[role="treeitem"]')?.querySelector<HTMLElement>(':scope > .tree__row')?.focus()
     }
     // → on an open folder (D12): its first row, if it holds one.
     else if (open === 'true') {
-      if (plain) item?.querySelector<HTMLElement>(':scope > [role="group"] .tree__row[data-path]')?.focus()
+      if (plain) item?.querySelector<HTMLElement>(':scope [role="group"] .tree__row:is([data-path], [data-walk])')?.focus()
     }
     // → on a file row goes to the new tab page, when it shows and has a row (YAZ-2663 D8). With no such
     // page the key does nothing, as before (S62).
-    else if (plain) onLeaveToPage?.()
+    else if (plain && path !== undefined) onLeaveToPage?.()
   } else return
   e.preventDefault()
 }
@@ -284,6 +294,12 @@ interface TreeProps {
    */
   icons?: RowIcons
   depth?: number
+  /**
+   * The levels this tree sits under that are not its own (YAZ-4450 demo): 1 for the items of a focus or favorite
+   * folder. Only the look reads it — the indents, and the level line, thread and sticky rows of app.css — so the
+   * rows line up under their folder row as a real folder's do; the rest goes by `depth`.
+   */
+  shift?: number
 }
 
 /** A shared board's mark (YAZ-3040, Draw's YAZ-1890): its tone, and its title — the link's status in words. */
@@ -333,8 +349,10 @@ function TreeLevel({
   shareBadges,
   icons,
   depth = 0,
+  shift = 0,
 }: TreeProps) {
-  const recurse = { vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
+  const level = depth + shift
+  const recurse = { shift, vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, titles, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
@@ -416,13 +434,13 @@ function TreeLevel({
     // The arrows, Home and End are the whole tree's, taken once at its top (YAZ-2662 D11, YAZ-3440 D12) — not a search tree's, whose keys are the search bar's.
     // A held Enter is stopped there too, in each tree.
     // A nested level carries its depth (YAZ-3309): app.css draws its level line below the chevron of the folder that holds it.
-    <ul className="tree" role={depth === 0 ? 'tree' : 'group'} style={depth > 0 ? ({ '--tree-depth': depth } as CSSProperties) : undefined} onKeyDownCapture={depth === 0 ? heldEnter : undefined} onKeyDown={depth === 0 && marks === undefined ? (e) => rowArrows(e, onToggle, onLeaveToPage) : undefined}>
+    <ul className="tree" role={level === 0 ? 'tree' : 'group'} style={level > 0 ? ({ '--tree-depth': level } as CSSProperties) : undefined} onKeyDownCapture={depth === 0 ? heldEnter : undefined} onKeyDown={depth === 0 && marks === undefined ? (e) => rowArrows(e, onToggle, onLeaveToPage) : undefined}>
       {pending !== null && createsHere && (
         <li>
           <CreateInline
             kind={pending.kind}
             seed={pending.seed}
-            indent={8 + depth * 14 + (pending.kind === 'dir' ? 0 : 14)}
+            indent={8 + level * 14 + (pending.kind === 'dir' ? 0 : 14)}
             onSubmit={pending.onSubmit}
             onCancel={pending.onCancel}
           />
@@ -435,7 +453,7 @@ function TreeLevel({
             {renaming !== null && renaming.path === node.path && inCopy(renaming.top, node) ? (
               // Inline FOLDER rename (E1b, GRO-2241): same idiom as files, and what it edits is
               // the folder's TITLE (YAZ-2420 🔒 D16).
-              <RenameInline initial={pageLabel(node.path, true, titles)} title={renaming.title} indent={8 + depth * 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
+              <RenameInline initial={pageLabel(node.path, true, titles)} title={renaming.title} indent={8 + level * 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
             ) : (
               <button
                 type="button"
@@ -449,7 +467,7 @@ function TreeLevel({
                 data-path={node.path}
                 data-fold={foldOf(node)}
                 data-kind={vaultRows.has(node.path) ? undefined : 'folder'}
-                {...iconProps(node, 8 + depth * 14)}
+                {...iconProps(node, 8 + level * 14)}
                 // Shift is the SELECTION gesture everywhere (YAZ-1340) and a folder joins the
                 // selection like a file (YAZ-1578, 🔒 D1) — so shift toggles and never folds. A
                 // PLAIN click SELECTS the folder (D9, YAZ-1674 — the Finder rule) and then folds,
@@ -524,7 +542,7 @@ function TreeLevel({
           // The REAL row only: a second input on the note's shortcut row would take the focus,
           // and the first one's blur is its commit (YAZ-1553).
           <li key={node.path} role="treeitem">
-            <RenameInline initial={pageLabel(node.path, false, titles)} title={renaming.title && node.kind === 'markdown'} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
+            <RenameInline initial={pageLabel(node.path, false, titles)} title={renaming.title && node.kind === 'markdown'} indent={8 + level * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
           </li>
         ) : (
           <li key={node.path} role="treeitem" aria-selected={isActive(node) || isSelected(node)}>
@@ -574,7 +592,7 @@ function TreeLevel({
               // kind for the Line set (a file with no viewer in the app is `other`), its Material icon by name (`data-icon`
               // and the inline `--icon`). app.css draws the one the icon set asks for on the label: no node more.
               data-kind={node.kind ?? 'other'}
-              {...iconProps(node, 8 + depth * 14 + 14)}
+              {...iconProps(node, 8 + level * 14 + 14)}
               {...hoverOf(node.path)}
               // A shortcut row never drags (YAZ-2290 D2): the drag would move the note out of the folder it lives in.
               draggable={!noDrag(node)}

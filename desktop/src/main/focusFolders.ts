@@ -47,6 +47,8 @@ const clean = (folders: readonly unknown[]): FocusFolder[] => {
 interface Held {
   at: number
   folders: FocusFolder[]
+  /** The vault's folder name the file was written under; undefined in a file from before YAZ-4470. */
+  self?: string
 }
 
 /** The newest valid file of `scope`, or null when there is none. Never an error for another Mac's bad file. */
@@ -66,7 +68,7 @@ async function readNewest(root: string, scope: ListScope, kind: FolderKind): Pro
     if (!isRecord(v) || v.version !== 1 || typeof v.at !== 'string' || !Array.isArray(v.folders)) continue
     const at = Date.parse(v.at)
     if (Number.isNaN(at)) continue
-    if (newest === null || at >= newest.at) newest = { at, folders: clean(v.folders) }
+    if (newest === null || at >= newest.at) newest = { at, folders: clean(v.folders), self: typeof v.self === 'string' && v.self !== '' ? v.self : undefined }
   }
   return newest
 }
@@ -76,14 +78,29 @@ const chained = createRootChain()
 async function save(root: string, scope: ListScope, kind: FolderKind, folders: FocusFolder[], held: Held | null): Promise<void> {
   const now = Date.now()
   const kept = clean(folders.filter((f) => !f.deleted || now - f.at < TOMBSTONE_MS))
-  if (held !== null && JSON.stringify(kept) === JSON.stringify(held.folders)) return
-  const value: FocusFoldersConfig = { version: 1, at: new Date(Math.max(now, (held?.at ?? 0) + 1)).toISOString(), folders: kept }
+  const self = path.basename(root)
+  if (held !== null && held.self === self && JSON.stringify(kept) === JSON.stringify(held.folders)) return
+  const value: FocusFoldersConfig = { version: 1, at: new Date(Math.max(now, (held?.at ?? 0) + 1)).toISOString(), folders: kept, self }
   await writeConfig(root, foldersFile(await macId(root), scope, kind), value)
 }
 
-/** The vault's folders of `scope` as stored, tombstones too; no file → `[]`. Never creates anything. */
+/**
+ * The vault's folders of `scope` as stored, tombstones too; no file → `[]`. Never creates anything, but heals one thing
+ * (YAZ-4470, 2): a vault whose folder was renamed since the file was written (`self`). Its items name it by the old
+ * name, so each becomes the new name, with a new `at` so the healed folders win over the other vaults' copies, and
+ * the healed file is written.
+ */
 export async function getFocusFolders(root: string, scope: ListScope, kind: FolderKind = 'focus'): Promise<FocusFolder[]> {
-  return (await readNewest(requireAbsPath(root, 'root'), scope, kind))?.folders ?? []
+  const r = requireAbsPath(root, 'root')
+  const held = await readNewest(r, scope, kind)
+  if (held === null) return []
+  const name = path.basename(r)
+  if (held.self === undefined || held.self === name) return held.folders
+  const was = held.self
+  const now = Date.now()
+  const healed = held.folders.map((f) => (f.items.some((i) => i.vault === was) ? { ...f, items: f.items.map((i) => (i.vault === was ? { ...i, vault: name } : i)), at: now } : f))
+  await chained(r, async () => save(r, scope, kind, healed, await readNewest(r, scope, kind)))
+  return healed
 }
 
 /** Replace the vault's folders of `scope`: this Mac's file only, and nothing when they did not change. */

@@ -178,16 +178,16 @@ type ToggleIn = (lists: VaultLists, paths: string[], isOn: boolean, max?: number
  * vault's copy (`useFolderCopies`), the window's folders out of them, and every change. An item is in ONE place of
  * the tab: the top level (`lists`, `list`) or one folder. Every function reads through refs, so each keeps its identity.
  */
-function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, list: readonly string[], max: number, live: { readonly current: { roots: readonly string[] } }, onNotice: Notice, toggleIn: ToggleIn) {
+function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, otherLists: VaultLists, list: readonly string[], max: number, live: { readonly current: { roots: readonly string[] } }, onNotice: Notice, toggleIn: ToggleIn) {
   const [copies, store] = useFolderCopies(kind, scope, live, onNotice)
-  const folders = useMemo(() => mergeFolders(Object.values(copies)), [copies])
+  const folders = useMemo(() => mergeFolders(copies), [copies])
   const now = useRef(folders)
   now.current = folders
   // The OTHER scope's folders (YAZ-4460 demo, "Show it in"): a folder can show in both. It stays ONE folder: each change
   // here goes to its copy there too, while that copy lives.
   const [otherCopies, other] = useFolderCopies(kind, otherScope(scope), live, onNotice)
   const otherNow = useRef<readonly FocusFolder[]>([])
-  otherNow.current = useMemo(() => mergeFolders(Object.values(otherCopies)), [otherCopies])
+  otherNow.current = useMemo(() => mergeFolders(otherCopies), [otherCopies])
   const top = useRef(list)
   top.current = list
   const notice = useRef(onNotice)
@@ -196,9 +196,11 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, list
     /** One folder's change, in this scope and — while it shows there too — in the other. */
     const save = (folder: FocusFolder): boolean => {
       const done = store.save(folder)
-      if (done && otherNow.current.some((f) => f.id === folder.id)) other.save(folder)
+      if (done && inOther(folder.id)) other.save(folder)
       return done
     }
+    /** A copy there, live or not yet merged: by each vault's raw copy too, so a copy written a moment ago (another window's) still counts. */
+    const inOther = (id: string): boolean => otherNow.current.some((f) => f.id === id) || Object.values(other.held.current).some((list) => list.some((f) => f.id === id && !f.deleted))
     const loading = () => notice.current(kind === 'focus' ? 'Focus is still loading. Try again.' : 'Favorites are still loading. Try again.', 'error')
     const itemsOf = (paths: readonly string[]) => paths.map((p) => itemOf(p, live.current.roots)).filter((i): i is FolderItem => i !== null)
     /** The folder that holds `path`, an absolute path of the window. */
@@ -234,8 +236,8 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, list
       save(next)
       if (items.length > 0 && !quiet)
         notice.current(
-          `Added ${items.length > 1 ? `${items.length} ` : ''}to ${next.name}`,
-          kind === 'focus' ? 'info' : 'favorite',
+          `Added ${items.length > 1 ? `${items.length} ` : ''}to ${next.name} (${kind === 'focus' ? 'focus' : 'favorite'} folder)`,
+          kind === 'focus' ? 'focus' : 'favorite',
           'lists',
           undoAction(() => {
             // Each path back where it was; a folder this add made goes again.
@@ -257,14 +259,38 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, list
       const clean = name.trim()
       if (f !== undefined && clean !== '' && clean !== f.name) save({ ...f, name: clean, at: Date.now() })
     }
-    /** F3: the folder goes (a tombstone, so no older copy brings it back); its items that this window shows go back to the top level. */
-    const remove = (id: string): void => {
+    /**
+     * F3: the folder goes (a tombstone, so no older copy brings it back). `keep` (YAZ-4460 demo, the Delete box's choice):
+     * its items that this window shows go back to the top level — of each place it showed; else they leave the list with it.
+     */
+    const remove = (id: string, keep = true): void => {
       const f = now.current.find((x) => x.id === id)
       if (f === undefined) return
-      const back = f.items.map((i) => resolveItem(i, live.current.roots)).flatMap((r) => ('path' in r ? [r.path] : []))
-      if (!save({ ...f, deleted: true, items: [], at: Date.now() })) return loading()
+      const back = keep ? f.items.map((i) => resolveItem(i, live.current.roots)).flatMap((r) => ('path' in r ? [r.path] : [])) : []
+      const gone: FocusFolder = { ...f, deleted: true, items: [], at: Date.now() }
+      const there = inOther(id)
+      const theirs = otherNow.current.find((x) => x.id === id)
+      const inOtherList = (p: string) => (otherLists.held.current[rootOfPath(live.current.roots, p) ?? ''] ?? []).includes(p)
+      const freshThere = there ? back.filter((p) => !inOtherList(p)) : []
+      if (!store.save(gone)) return loading()
+      // A delete is the folder's, in both places: the other scope gets the tombstone too, whether or not this window has seen a copy there.
+      other.save(gone)
       const fresh = back.filter((p) => !top.current.includes(p))
-      if (fresh.length > 0) toggleIn(lists, fresh, false, max)
+      const stuck = (fresh.length > 0 && toggleIn(lists, fresh, false, max) === null) || (freshThere.length > 0 && toggleIn(otherLists, freshThere, false, max) === null)
+      if (stuck) return notice.current(`Couldn't put every item of ${f.name} back: a vault is still loading. Add them again.`, 'error')
+      // Undo (YAZ-4470, 7): the folder again where it showed, with its items; the items it put at the top level leave it.
+      notice.current(
+        `Deleted ${f.name} (${kind === 'focus' ? 'focus' : 'favorite'} folder)`,
+        kind === 'focus' ? 'focus' : 'favorite',
+        'lists',
+        undoAction(() => {
+          if (fresh.length > 0) toggleIn(lists, fresh, true)
+          if (freshThere.length > 0) toggleIn(otherLists, freshThere, true)
+          const at = Date.now()
+          store.save({ ...f, at })
+          if (there && theirs !== undefined) other.save({ ...theirs, at })
+        }),
+      )
     }
     /** F5: out of its folder to the top level, last. */
     const moveOut = (path: string): void => {
@@ -284,6 +310,13 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, list
       const shown = itemsOf(paths).filter((i) => f.items.some((x) => sameItem(i, x)))
       save({ ...f, items: [...shown, ...f.items.filter((i) => !shown.some((x) => sameItem(i, x)))], at: Date.now() })
     }
+    /** A drag of the folders (YAZ-4470, 13): `ids` is the new order; each folder whose place changed is written with it. */
+    const reorderFolders = (ids: readonly string[]): void => {
+      ids.forEach((id, pos) => {
+        const f = now.current.find((x) => x.id === id)
+        if (f !== undefined && f.pos !== pos) save({ ...f, pos, at: Date.now() })
+      })
+    }
     /** Where a folder shows (YAZ-4460 demo): here — it is a folder of this tab — and in the other scope while its copy lives there. */
     const scopesOfFolder = (id: string): ScopeState => ({ [scope]: now.current.some((f) => f.id === id), [otherScope(scope)]: otherNow.current.some((f) => f.id === id) }) as ScopeState
     /**
@@ -296,11 +329,20 @@ function useTabFolders(kind: ListKind, scope: ListScope, lists: VaultLists, list
       const places = scopesOfFolder(id)
       if (!on && places[otherScope(to)] === false) return notice.current('A folder shows in one place at least. To remove it, use Delete.', 'error')
       const target = to === scope ? store : other
-      const next: FocusFolder = on ? { ...f, deleted: undefined, at: Date.now() } : { ...f, deleted: true, at: Date.now() }
-      if (!target.save(on ? (({ deleted: _d, ...rest }) => rest)(next) : next)) loading()
+      const alive = (({ deleted: _d, ...rest }: FocusFolder): FocusFolder => rest)
+      const next: FocusFolder = on ? alive({ ...f, at: Date.now() }) : { ...f, deleted: true, at: Date.now() }
+      if (!target.save(next)) return loading()
+      // Off, with Undo (YAZ-4470, 8): the shown list's off moves the folder to the other; the other's off just leaves it.
+      if (!on)
+        notice.current(
+          to === scope ? `${f.name} moved to the ${otherScope(scope)} list` : `${f.name} left the ${to} list`,
+          kind === 'focus' ? 'focus' : 'favorite',
+          'lists',
+          undoAction(() => void target.save(alive({ ...f, at: Date.now() }))),
+        )
     }
-    return { store, other, folders, folderOf, strip, addTo, rename, remove, moveOut, moveIn, reorder, scopesOfFolder, setFolderScope }
-  }, [kind, scope, max, lists, store, other, folders, live, toggleIn])
+    return { store, other, folders, folderOf, strip, addTo, rename, remove, moveOut, moveIn, reorder, reorderFolders, scopesOfFolder, setFolderScope }
+  }, [kind, scope, max, lists, otherLists, store, other, folders, live, toggleIn])
 }
 
 export type TabFolders = ReturnType<typeof useTabFolders>
@@ -432,8 +474,8 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
    * while a vault's list is still on its way; else true.
    */
   // The folders of each tab (YAZ-4460; Favorites since the demo), in the scope that tab shows.
-  const focusTab = useTabFolders('focus', focusScope, focus, focusList, MAX_FOCUS, live, onNotice, toggleIn)
-  const favoritesTab = useTabFolders('favorites', favoritesScope, favorites, favoritePaths, Infinity, live, onNotice, toggleIn)
+  const focusTab = useTabFolders('focus', focusScope, focus, focusOther, focusList, MAX_FOCUS, live, onNotice, toggleIn)
+  const favoritesTab = useTabFolders('favorites', favoritesScope, favorites, favoritesOther, favoritePaths, Infinity, live, onNotice, toggleIn)
 
   // Each vault's first read of both lists, for as long as the vault is in the window (YAZ-2631 D1;
   // focus: YAZ-2702): a vault that joins is read, one that leaves is dropped, and a vault that stays
@@ -482,14 +524,14 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
       })
       const added = before.filter((b) => !b.top && b.folder === null).map((b) => b.p)
       if (quiet) return true
-      if (isOn) onNotice(`Removed ${n}from focus`, 'info', 'lists', undoRemove)
+      if (isOn) onNotice(`Removed ${n}from focus`, 'focus', 'lists', undoRemove)
       else if (full) onNotice(`Focus limit reached: ${MAX_FOCUS} items`, 'error')
       else {
         // With two or more vaults the new items go LAST on the tab, "the order added" (YAZ-2619 D1), as
         // before the lists were the vaults': the order across vaults takes them. Favorites writes no order
         // on an add (YAZ-2631 R13), so there a new favorite stands with its vault.
         if (live.current.roots.length > 1) storage.setFocusOrder(live.current.roots.filter((vault) => focus.held.current[vault] !== undefined), [...focusList, ...paths.filter((p) => !focusList.includes(p))])
-        onNotice(`Added ${n}to focus`, 'info', 'lists', undoAction(() => toggleFocusRef.current(added, true, true)))
+        onNotice(`Added ${n}to focus`, 'focus', 'lists', undoAction(() => toggleFocusRef.current(added, true, true)))
       }
       return true
     },
@@ -505,9 +547,21 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
    */
   const clearFocus = useCallback(() => {
     const cleared = live.current.roots.filter((vault) => (focus.held.current[vault] ?? []).length > 0)
+    const before = cleared.map((vault) => [vault, focus.held.current[vault] ?? []] as const)
+    const order = storage.getFocusOrder()
     for (const vault of cleared) focus.save(vault, [])
-    if (storage.getFocusOrder().some((p) => rootOfPath(cleared, p) !== null)) storage.setFocusOrder(cleared, [])
-  }, [focus])
+    if (order.some((p) => rootOfPath(cleared, p) !== null)) storage.setFocusOrder(cleared, [])
+    // Undo (YAZ-4470, 7): each vault's top level back, in its order.
+    onNotice(
+      'Cleared the top level of Focus',
+      'focus',
+      'lists',
+      undoAction(() => {
+        for (const [vault, list] of before) focus.save(vault, [...list])
+        if (order.length > 0) storage.setFocusOrder(live.current.roots, order)
+      }),
+    )
+  }, [focus, onNotice])
 
   /**
    * The favorite toggle (YAZ-1766 D3/D6; `toggleIn`). `isOn` arrives with the paths. The toast
@@ -564,7 +618,7 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
       const done = toggleIn(other, paths, !on, kind === 'focus' ? MAX_FOCUS : Infinity)
       if (done === null) return onNotice(kind === 'focus' ? 'Focus is still loading. Try again.' : 'Favorites are still loading. Try again.', 'error')
       const where = scope === 'workspace' ? 'workspace' : 'vault'
-      onNotice(`${on ? 'Added to' : 'Removed from'} the ${where} ${kind === 'focus' ? 'focus' : 'favorites'}`, kind === 'focus' ? 'info' : 'favorite', 'lists', undoAction(() => void toggleIn(other, paths, on, kind === 'focus' ? MAX_FOCUS : Infinity)))
+      onNotice(`${on ? 'Added to' : 'Removed from'} the ${where} ${kind === 'focus' ? 'focus' : 'favorites'}`, kind === 'focus' ? 'focus' : 'favorite', 'lists', undoAction(() => void toggleIn(other, paths, on, kind === 'focus' ? MAX_FOCUS : Infinity)))
     },
     [focusScope, favoritesScope, focusOther, favoritesOther, toggleFocus, toggleFavorite, toggleIn, onNotice],
   )

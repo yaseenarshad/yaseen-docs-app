@@ -2285,6 +2285,15 @@ body.drag-held iframe {
   color: var(--accent);
 }
 
+/* Where a dragged folder row lands (YAZ-4470, 13): a line at the top or the bottom of the folder row under it. */
+.focus-folder--before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.focus-folder--after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
 /* A focus folder under a dragged item (F5): it lights as a drop folder does. */
 .focus-folder--drop {
   border-radius: 4px;
@@ -2292,13 +2301,8 @@ body.drag-held iframe {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
-/* A folder's items sit one step in, under their folder row. */
-.focus-folder__items > .tree {
-  padding-left: 12px;
-}
-
 .focus-folder__empty {
-  padding-left: 34px;
+  padding-left: 36px;
 }
 
 /* An item of a vault this window does not show (F6): grey and italic, its vault named on the right. */
@@ -3190,7 +3194,9 @@ body.drag-held iframe {
 /* An open folder's row can stick (YAZ-3440 D1), so it stands over the thread (z 4 and up): its hover fill would hide
    its own elbow and coloured arrow. While it is not stuck the row draws a copy of both over its fill, laid exactly
    on the li's (`::before` the elbow from the row's top, `::after` the open arrow), with the li's rest and fade.
-   While it is stuck the same two pseudo-elements are its block (above), and the li's own pieces pass behind it. */
+   While it is stuck the same two pseudo-elements are its block (above), and the li's own pieces pass behind it.
+   The arrow's copy shows while the li is on the hover path (YAZ-4470, 12), as the li's own does: the row stands over
+   the li's arrow even with no fill, its grey chevron on top, so a row lower in the folder under the mouse left it grey. */
 @container not scroll-state(stuck: top) {
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::before {
     content: '';
@@ -3228,7 +3234,7 @@ body.drag-held iframe {
     pointer-events: none;
   }
 
-  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::after {
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]):hover > .tree__row--sticky::after {
     opacity: 1;
     transition: opacity 140ms ease 80ms;
   }
@@ -3266,7 +3272,7 @@ body.drag-held iframe {
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::before,
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::before,
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::after,
-  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::after {
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]):hover > .tree__row--sticky::after {
     transition: none;
   }
 
