@@ -128,6 +128,8 @@ describe('tabRowSections (YAZ-3273 D4)', () => {
     for (const item of sections.flat() as MenuAction[]) item.onSelect()
     expect([h.onSort.mock.calls.length, h.onFold.mock.calls.length, h.onEdit.mock.calls.length]).toEqual([1, 1, 1])
     expect(labels(tabRowSections(at(400, p, 'sessions', NONE), p, 'sessions', NONE, 'Collapse all', h))).toEqual([['Edit tab row…']]) // Sessions shows neither (S5)
+    // YAZ-4450 D5: on Recents in a workspace the button is the vault filter, and the item says so.
+    expect(labels(tabRowSections(at(400, p, 'recents'), p, 'recents', BOTH, 'Collapse all', { ...h, sortLabel: 'Filter by vault' }))[0]).toEqual(['Filter by vault…', 'Collapse all'])
   })
 })
 

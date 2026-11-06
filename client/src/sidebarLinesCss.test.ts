@@ -125,7 +125,8 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
       expect(body(GREY_SMOOTH)[0]).toMatch(/transition:\s*transform 0\.12s;/)
       expect(body(CHEVRON_SMOOTH_REST)[0]).toMatch(/transition:\s*transform 0\.12s;/)
       expect(body(CHEVRON_SMOOTH)[0]).toMatch(/transition:\s*transform 0\.12s, opacity 140ms ease 80ms;/)
-      for (const { selectors } of threadRules.filter((rule) => /\b80ms\b/.test(rule.body))) for (const s of selectors) expect(s, s).toContain(':hover')
+      // The rest is on the mouse alone: `:hover`, or the hover path that `threadPath.ts` marks on an open folder row (YAZ-4474).
+      for (const { selectors } of threadRules.filter((rule) => /\b80ms\b/.test(rule.body))) for (const s of selectors) expect(s, s).toMatch(/:hover|\[data-on-path\]/)
     })
 
     it('Reduce motion (D10): the block names every selector of a rule that fades, the grey line\'s too (as toc.css does), so it wins by coming last, and it fades nothing; the arrows turn at once even with "Smooth" (YAZ-3440 D6)', () => {
@@ -202,7 +203,7 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
     ])
   })
 
-  it('Recents and Sessions nest a `.tree` with no role: no rule draws on a `.tree` inside a `.tree` (D4)', () => {
+  it('Sessions nests a `.tree` with no role: no rule draws on a `.tree` inside a `.tree` (D4); Recents has the tree\'s roles since YAZ-4473', () => {
     for (const { selectors } of rules) for (const selector of selectors) expect(selector, selector).not.toMatch(/\.tree\s+\.tree/)
   })
 })

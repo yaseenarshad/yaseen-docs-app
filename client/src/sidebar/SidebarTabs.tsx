@@ -22,8 +22,10 @@ interface SidebarTabsProps {
   /** The sort button shows on this tab (YAZ-3227 D5: Files, Focus and Favorites; Search since YAZ-3511 D3), and whether its menu is open. */
   sortShows: boolean
   sortOpen: boolean
-  /** A Search filter is on (YAZ-3511 D17): the button wears the accent color, and its tooltip says so. */
+  /** A Search filter is on (YAZ-3511 D17), or the Recents vault filter (YAZ-4450 D5): the button wears the accent color, and its tooltip says so. */
   sortFiltered?: boolean
+  /** The button's name where it is no sort: "Filter by vault" on Recents (YAZ-4450 D5). Default "Sort". */
+  sortLabel?: string
   /** The sort menu at a point — from the Sort button, or from "Sort…" in the ⋯ menu (S15) — or `null` to close it. */
   onSort: (at: { x: number; y: number } | null) => void
   /** The fold button shows (YAZ-862: not on Search, and only with something to fold), its label, and its action. */
@@ -64,7 +66,7 @@ const isMenuKey = (e: { key: string; shiftKey: boolean; metaKey: boolean; ctrlKe
  * the row again only when a tab comes or goes (S30). With no observer, or no layout (jsdom), nothing
  * is measured and every tab fits.
  */
-export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs, onChangePrefs, sortShows, sortOpen, sortFiltered = false, onSort, foldShows, foldDisabled = false, foldLabel, foldOpen, onFold }: SidebarTabsProps) {
+export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs, onChangePrefs, sortShows, sortOpen, sortFiltered = false, sortLabel = 'Sort', onSort, foldShows, foldDisabled = false, foldLabel, foldOpen, onFold }: SidebarTabsProps) {
   const buttons: RowButtons = { sort: sortShows, fold: foldShows }
   const [fit, setFit] = useState(Number.POSITIVE_INFINITY)
   const layout = rowLayout(prefs, lens, fit, buttons)
@@ -191,6 +193,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
         onOpen: onLensChange,
         // "Sort…" opens the sort menu at the ⋯ button (S15); with ⋯ off, where the menu was.
         onSort: () => onSort(anchor() ?? { x, y }),
+        sortLabel,
         onFold,
         iconOf: rowGlyph,
         // "Edit tab row…" opens the panel where the menu was, the right-clicked tab lit (S17).
@@ -293,8 +296,8 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
           <button
             type="button"
             className={sortFiltered ? 'sidebar__sort sidebar__sort--filtered' : 'sidebar__sort'}
-            aria-label={sortFiltered ? 'Sort, filters on' : 'Sort'}
-            title={sortFiltered ? 'Sort · Filters on' : 'Sort'}
+            aria-label={sortFiltered ? `${sortLabel}, filters on` : sortLabel}
+            title={sortFiltered ? `${sortLabel} · Filters on` : sortLabel}
             aria-haspopup="menu"
             aria-expanded={sortOpen}
             // The menu closes on any window mousedown; without this a second click would close and reopen it (the vault header's rule).

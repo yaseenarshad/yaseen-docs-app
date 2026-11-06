@@ -44,6 +44,28 @@ interface MenuItemBase {
 export interface MenuAction extends MenuItemBase {
   onSelect: () => void
   children?: undefined
+  /** A small grey heading over its group, not a button (YAZ-4460 demo: "Show it in"); its `onSelect` never runs. */
+  heading?: true
+  /** The row's tooltip (YAZ-4460 demo: what "No folder" means). */
+  tip?: string
+  /**
+   * A two-click row (YAZ-4460 demo, the tab board's Close, YAZ-3343): the first click turns it red with these words
+   * and keeps the menu open; the second runs it. The pointer leaving the row puts it back.
+   */
+  confirm?: string
+  /**
+   * A check row that keeps the menu open (YAZ-4460 demo: "Show it in"): its ✓ flips at the click, and `onToggle` gets
+   * the new state; `onSelect` does not run.
+   */
+  checked?: boolean
+  onToggle?: (on: boolean) => void
+  /**
+   * One of a set where one is picked (YAZ-4460 demo: the folder an item is in): the menu stays open after the click and
+   * the ✓ moves to it. `group` names the set; `on` is the pick when the menu opened.
+   */
+  radio?: { group: string; on: boolean }
+  /** A check row that asks with a second click first (YAZ-4460 demo): "Click again to add" / "Click again to remove". */
+  twoClick?: true
   /** A glyph before the label (YAZ-3279: the tab row's menu): an SVG, or a `FileIcon` (the Search menu's Type list, YAZ-3511 D13). It holds no text, so `textContent` stays the bare label. Only a leaf draws one. */
   icon?: ReactNode
   /** Rendered but inert — Paste with an empty clipboard, for discoverability (🔒 D5, YAZ-1674). Only a leaf can be. */
@@ -65,6 +87,8 @@ export interface MenuAction extends MenuItemBase {
 export interface MenuParent extends MenuItemBase {
   onSelect?: () => void
   children: readonly MenuAction[][]
+  /** A glyph before the label, as a leaf has: "Add to focus ▸" keeps its eye (YAZ-4460 F4). */
+  icon?: ReactNode
 }
 
 /** One button of a strip: its icon, its name as the tooltip and the accessible name, lit when `active`. */
@@ -115,6 +139,18 @@ export interface MenuHandlers {
   onReveal: (path: string) => void
   /** "Add to focus" / "Remove N from focus" (YAZ-2619 D3): the paths and the direction the menu read. */
   onToggleFocus: (paths: string[], isOn: boolean) => void
+  /** "Add to focus ▸ <folder>" (YAZ-4460 F4): into that focus folder, with null into a new one, with 'top' to the top level. */
+  onFocusInFolder?: (paths: string[], id: FocusPlace) => void
+  /** "Add to favorites ▸ <folder>" (YAZ-4460 demo), as `onFocusInFolder`. */
+  onFavoriteInFolder?: (paths: string[], id: FocusPlace) => void
+  /** A flyout's "Workspace" / "Vault" check (YAZ-4460 demo): the rows into or out of that scope's list. */
+  onSetScope?: (kind: 'focus' | 'favorites', paths: string[], scope: 'vault' | 'workspace', on: boolean) => void
+  /**
+   * The scope whose list is on screen under the menu (YAZ-4460 demo): the Focus or Favorites tab, in that tab's scope. Its
+   * check, off, takes the rows out of that list, so it asks with a box (`onAskScope`), not with a second click.
+   */
+  shownScope?: (kind: 'focus' | 'favorites') => 'vault' | 'workspace' | null
+  onAskScope?: (kind: 'focus' | 'favorites', paths: string[], scope: 'vault' | 'workspace') => void
   /** Cut / Copy (YAZ-1674): the paths go to main's ONE app-wide clipboard (🔒 D1); the caller reports. */
   onCut: (paths: string[]) => void
   onCopy: (paths: string[]) => void
@@ -201,12 +237,13 @@ const open: Leaf = (t, h) => {
  * "Open N in new tabs" — every row of a 2+ selection (🔒 D5, YAZ-1337), files and folders alike:
  * the folder itself is a tab (YAZ-2290 D3). It LEADS the menu: when a right-click lands inside a
  * selection, what the user is pointing at is the SELECTION. It leaves the selection standing —
- * acting on it is not the same as ending it.
+ * acting on it is not the same as ending it. One row says "Open in new tab" (YAZ-4470), the
+ * menu's way to ⌘-click, above "Open in new window".
  */
 const openInNewTabs: Leaf = (t, h) => {
   const paths = t.openTabPaths
   if (paths === null) return null
-  return { id: 'open-tabs', label: `Open ${paths.length} in new tabs`, onSelect: () => h.onOpenInNewTabs(paths) }
+  return { id: 'open-tabs', label: paths.length === 1 ? 'Open in new tab' : `Open ${paths.length} in new tabs`, onSelect: () => h.onOpenInNewTabs(paths) }
 }
 
 /**
@@ -226,13 +263,70 @@ const showInSidebar: Leaf = (t, h) => {
  * is counted, and a mixed one reads as Add (R9). A VIEW verb, so it closes the Open group (R6): it
  * changes what the Focus tab shows, never what is on disk.
  */
-const focus: Leaf = (t, h) => {
+const focus: Item = (t, h) => {
   const paths = t.focusPaths
   if (paths === null) return null
   const isOn = t.focusIsOn
   const n = paths.length > 1 ? `${paths.length} ` : ''
   // The Focus tab's own glyph (YAZ-3264 D6), so the row reads at a glance.
-  return { id: 'focus', label: isOn ? `Remove ${n}from focus` : `Add ${n}to focus`, icon: createElement(EyeIcon), onSelect: () => h.onToggleFocus(paths, isOn) }
+  const item = { id: 'focus', label: isOn ? `Remove ${n}from focus` : `Add ${n}to focus`, icon: createElement(EyeIcon), onSelect: () => h.onToggleFocus(paths, isOn) }
+  const into = h.onFocusInFolder
+  if (into === undefined) return item
+  // YAZ-4460 F4, the New note pattern (YAZ-3085 D1): a click adds (or removes) as before; the flyout moves the rows
+  // into a focus folder — also when they are in focus already (YAZ-4460 demo).
+  return { ...item, children: [...focusPlaces(t.focusFolders ?? [], isOn ? (t.focusFolderOf ?? null) : undefined, (to) => into(paths, to)), ...scopeRows('focus', t.focusScopes, paths, h)] }
+}
+
+/**
+ * The flyouts' last group (YAZ-4460 demo): "Workspace" and "Vault", each ✓ while the rows are in that list — the
+ * workspace list, or each vault's own — and each a toggle, so a row can be in both. At the bottom: it is the rare choice.
+ */
+function scopeRows(kind: 'focus' | 'favorites', scopes: { vault: boolean; workspace: boolean } | null | undefined, paths: string[], h: MenuHandlers): MenuAction[][] {
+  const set = h.onSetScope
+  if (scopes === null || scopes === undefined || set === undefined) return []
+  const shown = h.shownScope?.(kind) ?? null
+  const ask = h.onAskScope
+  return [scopeGroup(kind, scopes, (scope, on) => set(kind, paths, scope, on), shown === null || ask === undefined ? undefined : { scope: shown, ask: () => ask(kind, paths, shown) })]
+}
+
+/**
+ * The group (YAZ-4460 demo), one place for the row menu and the tab menu: a heading, then the two lists by the window
+ * that shows them — each a check row that keeps the menu open, so both can be set in one go.
+ */
+/** The words on hover of "Show it in" and its rows (YAZ-4470, 16): what each list is, for someone who never set one. */
+export const SCOPE_TIPS = {
+  heading: 'Which windows show it. Workspace: a window with two or more vaults. Vault: a window with one vault.',
+  workspace: 'Show it in windows with two or more vaults',
+  vault: 'Show it in a window with this vault alone',
+  /** The tab bar's words for the list it shows. */
+  barWorkspace: 'The workspace list: windows with two or more vaults show it. A window with one vault shows that vault\'s own list.',
+  barVault: 'The vault list: a window with this vault alone shows it. Windows with two or more vaults show the workspace list.',
+} as const
+
+export function scopeGroup(kind: 'focus' | 'favorites', scopes: { vault: boolean; workspace: boolean }, set: (scope: 'workspace' | 'vault', on: boolean) => void, leaves?: { scope: 'workspace' | 'vault'; ask: () => void }): MenuAction[] {
+  const row = (scope: 'workspace' | 'vault', label: string): MenuAction =>
+    // Off here takes the rows out of the list on screen (`leaves`): a box asks, so the menu closes. Else two clicks.
+    scopes[scope] && leaves?.scope === scope
+      ? { id: `${kind}-scope-${scope}`, label, tip: SCOPE_TIPS[scope], hint: '✓', onSelect: leaves.ask }
+      : { id: `${kind}-scope-${scope}`, label, tip: SCOPE_TIPS[scope], checked: scopes[scope], twoClick: true, onToggle: (on) => set(scope, on), onSelect: () => undefined }
+  return [{ id: `${kind}-scope-heading`, label: 'Show it in', tip: SCOPE_TIPS.heading, heading: true, onSelect: () => undefined }, row('workspace', 'Workspace'), row('vault', 'Vault')]
+}
+
+/** Where "Add to focus ▸" / "Remove from focus ▸" puts rows (YAZ-4460): a focus folder, a new one, or back to the top level. */
+export type FocusPlace = string | null | 'top'
+
+/**
+ * The flyout of the focus item (YAZ-4460 F4, demo), for the row menu and the tab menu: each focus folder — ✓ on the
+ * one that holds the row — then, for rows in focus, "Top level" (✓ when they are there), then "New focus folder…".
+ * `current` undefined: the rows are not in focus yet.
+ */
+export function focusPlaces(folders: readonly { id: string; name: string }[], current: string | null | undefined, to: (place: FocusPlace) => void, kind: 'focus' | 'favorites' = 'focus'): MenuAction[][] {
+  // The places are one set: the menu stays open on a pick and the ✓ moves (YAZ-4460 demo). "New … folder…" closes it: its name field opens.
+  const group = `${kind}-place`
+  const rows = folders.map((f) => ({ id: `${kind}-in-${f.id}`, label: f.name, radio: { group, on: current === f.id }, onSelect: () => to(f.id) }))
+  const tab = kind === 'focus' ? 'Focus' : 'Favorites'
+  const top = current === undefined ? [] : [{ id: `${kind}-top`, label: 'No folder', tip: `Show it on its own on the ${tab} tab, outside every folder`, radio: { group, on: current === null }, onSelect: () => to('top') }]
+  return [...(rows.length > 0 ? [rows] : []), ...(top.length > 0 ? [top] : []), [{ id: `${kind}-new-folder`, label: kind === 'focus' ? 'New focus folder…' : 'New favorite folder…', onSelect: () => to(null) }]]
 }
 
 // ---- (2) Clipboard: the file clipboard (YAZ-1674), then the text clipboard ----
@@ -416,13 +510,17 @@ const changeIcon: Item = (t, h) => {
  * mixed selection reads as Add and the handler adds the missing ones. Leads the "Open in ▸"
  * group (Yasin, demo 2026-09-21): a place-verb beside the OS place-verbs, one hairline above Delete.
  */
-const toggleFavorite: Leaf = (t, h) => {
+const toggleFavorite: Item = (t, h) => {
   const paths = t.favoritePaths
   if (paths === null) return null
   const isOn = t.favoriteIsOn
   const n = paths.length > 1 ? `${paths.length} ` : ''
   // The Favorites tab's own glyph (YAZ-3264 D6).
-  return { id: 'toggle-favorite', label: isOn ? `Remove ${n}from favorites` : `Add ${n}to favorites`, icon: createElement(HeartIcon), onSelect: () => h.onToggleFavorite(paths, isOn) }
+  const item = { id: 'toggle-favorite', label: isOn ? `Remove ${n}from favorites` : `Add ${n}to favorites`, icon: createElement(HeartIcon), onSelect: () => h.onToggleFavorite(paths, isOn) }
+  const into = h.onFavoriteInFolder
+  if (into === undefined) return item
+  // YAZ-4460 demo: the Focus item's flyout, for the Favorites tab's folders.
+  return { ...item, children: [...focusPlaces(t.favoriteFolders ?? [], isOn ? (t.favoriteFolderOf ?? null) : undefined, (to) => into(paths, to), 'favorites'), ...scopeRows('favorites', t.favoriteScopes, paths, h)] }
 }
 
 /**
@@ -439,7 +537,7 @@ const addShortcut: Leaf = (t, h) => {
 /**
  * "Open by itself" (YAZ-2858 D4) — a VAULT row only, directly above "Open in ▸": the vault alone in
  * its own window, the ⌘O list's item under the same name. A window with one vault has no vault row,
- * so never there; a file row keeps its "Open in ▸ New window".
+ * so never there; a file row keeps its "Open in new window".
  */
 const openAlone: Leaf = (t, h) => {
   const root = t.openAlone
@@ -449,11 +547,14 @@ const openAlone: Leaf = (t, h) => {
 
 // ---- (5) Open in ▸: the OS verbs, one parent in a group of its own (D7 amended) ----
 
-/** "Open in ▸ New window" — FILE rows only (D2, GRO-2168); folders and blank space hide it. */
+/**
+ * "Open in new window" — FILE rows only (D2, GRO-2168); folders and blank space hide it. Out of the "Open in ▸" flyout
+ * since YAZ-4470: at the top, in the open group, where a file row of Files or Search shows it at once.
+ */
 const openInNewWindow: Leaf = (t, h) => {
   const path = t.newWindowPath
   if (path === null) return null
-  return { id: 'open-window', label: 'New window', onSelect: () => h.onOpenNewWindow(path) }
+  return { id: 'open-window', label: 'Open in new window', onSelect: () => h.onOpenNewWindow(path) }
 }
 
 /**
@@ -487,12 +588,12 @@ const revealInFinder: Leaf = (t, h) => {
 /**
  * "Open in ▸" (D7 amended, YAZ-1674): the OS verbs collapse into one parent so the top level reads
  * as verbs about the ROW; it stands in its OWN group between the this-row items and Delete. The
- * flyout keeps every child's own gate — New window is FILE rows only (D2, GRO-2168); VS Code,
- * Default app and Reveal share the root-on-blank-space rule — and a separator (a second section)
- * sets Reveal apart from the three "open" verbs. No child at all → no parent: an empty flyout is a lie.
+ * flyout keeps every child's own gate — VS Code, Default app and Reveal share the root-on-blank-space
+ * rule — and a separator (a second section) sets Reveal apart from the two "open" verbs. New window
+ * left it for the open group (YAZ-4470). No child at all → no parent: an empty flyout is a lie.
  */
 const openIn: Item = (t, h) => {
-  const children = [build([openInNewWindow, openInVsCode, openInDefault], t, h), build([revealInFinder], t, h)]
+  const children = [build([openInVsCode, openInDefault], t, h), build([revealInFinder], t, h)]
   if (children.every((section) => section.length === 0)) return null
   return { id: 'open-in', label: 'Open in', children }
 }
@@ -590,7 +691,7 @@ const forgetClosed: Leaf = (t, h) => {
 const clearClosed: Leaf = (t, h) => (t.forgetClosed === null ? null : { id: 'clear-closed', label: 'Clear Recently closed', onSelect: () => h.onClearClosed() })
 
 const CLOSED_GROUP: readonly Item[] = [forgetClosed, clearClosed]
-const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, focus]
+const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, openInNewWindow, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
 const CREATE_GROUP: readonly Item[] = [newNoteMenu, newDrawingMenu, newFolderMenu]
 const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename, changeIcon]

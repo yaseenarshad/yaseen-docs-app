@@ -1,9 +1,10 @@
 import { readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { MAX_FOCUS, VAULT_CONFIG_DIR, type FocusConfig } from '@shared/types'
+import { LIST_SCOPES, MAX_FOCUS, VAULT_CONFIG_DIR, type FocusConfig, type ListScope } from '@shared/types'
 import { isRecord, isStringArray } from '@shared/guards'
 import { deletedAt, isSafeRel, owningRoot, remap, renamedTo, toAbs, toRel, under } from './favorites'
 import { BridgeFailure, createRootChain, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
+import { repairFolders } from './focusFolders'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
 import { macId } from './vaultIndex/mint'
 
@@ -28,11 +29,19 @@ import { macId } from './vaultIndex/mint'
  * list that did not change writes NOTHING: no byte changes, so no sync starts for nothing.
  * Repair (R10): `renamePath` / `removePath` remap or drop entries in the LONGEST open root that
  * owns the path, by Favorites' rule, and write only when the list changed.
+ *
+ * Two lists for each vault since YAZ-4450 (D1): its own (`scope: 'vault'`), and its list for a
+ * window with two or more vaults (`'workspace'`), in `focus-workspace.<mac id>.json` by the same
+ * rules. A vault with no workspace file has an EMPTY workspace list (D3): never its own list.
  */
 
-/** `focus.<mac id>.json`: the Mac ID has `mint.ts`'s shape. Any other name in the dotfolder is not a focus file. */
-const FOCUS_FILE_RE = /^focus\.[0-9a-z]{12}\.json$/
-export const focusFile = (mac: string): string => `focus.${mac}.json`
+/**
+ * `focus.<mac id>.json` is the vault's own list, `focus-workspace.<mac id>.json` its workspace list (YAZ-4450 D1). The Mac ID
+ * has `mint.ts`'s shape. Any other name in the dotfolder is not a focus file; an old build reads the first name only.
+ */
+const PREFIX: Record<ListScope, string> = { vault: 'focus', workspace: 'focus-workspace' }
+const FOCUS_FILE_RE: Record<ListScope, RegExp> = { vault: new RegExp(`^${PREFIX.vault}\\.[0-9a-z]{12}\\.json$`), workspace: new RegExp(`^${PREFIX.workspace}\\.[0-9a-z]{12}\\.json$`) }
+export const focusFile = (mac: string, scope: ListScope = 'vault'): string => `${PREFIX[scope]}.${mac}.json`
 /** A read looks at this many focus files at most, the first by name (R13): a folder full of them must not make a read slow. */
 export const MAX_FOCUS_FILES = 64
 
@@ -44,15 +53,15 @@ interface Held {
   rels: string[]
 }
 
-/** The vault's list, or null when no focus file is valid — a vault that has no list yet. */
-async function readNewest(root: string): Promise<Held | null> {
+/** The vault's list of `scope`, or null when no focus file of it is valid — a vault that has no such list yet. */
+async function readNewest(root: string, scope: ListScope): Promise<Held | null> {
   const dir = path.join(root, VAULT_CONFIG_DIR)
   const names = await readdir(dir).catch((err: unknown) => {
     const code = (err as NodeJS.ErrnoException).code
     if (code === 'ENOENT' || code === 'ENOTDIR') return [] as string[]
     throw toBridgeFailure(err, dir)
   })
-  const files = names.filter((name) => FOCUS_FILE_RE.test(name)).sort().slice(0, MAX_FOCUS_FILES)
+  const files = names.filter((name) => FOCUS_FILE_RE[scope].test(name)).sort().slice(0, MAX_FOCUS_FILES)
   const reads = await Promise.all(files.map((name) => readConfigDetailed(root, name).catch(() => undefined)))
   let newest: Held | null = null
   for (const res of reads) {
@@ -71,24 +80,24 @@ async function readNewest(root: string): Promise<Held | null> {
 const chained = createRootChain()
 
 /**
- * `rels` becomes the vault's list: this Mac's file, dated after `held`, the newest file this write
+ * `rels` becomes the vault's list of `scope`: this Mac's file, dated after `held`, the newest file this write
  * read (R4). Nothing at all when `rels` is the list already (R8) — an empty list over no list too.
  */
-async function save(root: string, rels: string[], held: Held | null): Promise<void> {
+async function save(root: string, scope: ListScope, rels: string[], held: Held | null): Promise<void> {
   const now = held?.rels ?? []
   if (rels.length === now.length && rels.every((rel, i) => rel === now[i])) return
   const value: FocusConfig = { version: 1, at: new Date(Math.max(Date.now(), (held?.at ?? 0) + 1)).toISOString(), focus: rels }
-  await writeConfig(root, focusFile(await macId(root)), value)
+  await writeConfig(root, focusFile(await macId(root), scope), value)
 }
 
-/** ABSOLUTE paths in stored order; no valid focus file → `[]`. Never creates anything. */
-export async function getFocus(root: string): Promise<string[]> {
+/** ABSOLUTE paths in stored order; no valid focus file of `scope` → `[]` (YAZ-4450 D3). Never creates anything. */
+export async function getFocus(root: string, scope: ListScope = 'vault'): Promise<string[]> {
   const r = requireAbsPath(root, 'root')
-  return ((await readNewest(r))?.rels ?? []).map((rel) => toAbs(r, rel))
+  return ((await readNewest(r, scope))?.rels ?? []).map((rel) => toAbs(r, rel))
 }
 
-/** Replace the list (absolute paths inside `root`); the first write creates the dotfolder and this Mac's file. */
-export async function setFocus(root: string, absPaths: readonly string[]): Promise<void> {
+/** Replace the list of `scope` (absolute paths inside `root`); the first write creates the dotfolder and this Mac's file. */
+export async function setFocus(root: string, absPaths: readonly string[], scope: ListScope = 'vault'): Promise<void> {
   const r = requireAbsPath(root, 'root')
   for (const p of absPaths) {
     if (typeof p !== 'string' || !under(r, p)) throw new BridgeFailure('BAD_REQUEST', 'a focus item must be inside the vault', { path: String(p) })
@@ -97,27 +106,30 @@ export async function setFocus(root: string, absPaths: readonly string[]): Promi
     const unique = [...new Set(absPaths)]
     const alive = await Promise.all(unique.map((p) => stat(p).then(() => true, () => false)))
     const kept = unique.filter((_, i) => alive[i]) // R7, Favorites' D14: an item whose file is gone leaves the list here
-    await save(r, clean(kept.map((p) => toRel(r, p))), await readNewest(r))
+    await save(r, scope, clean(kept.map((p) => toRel(r, p))), await readNewest(r, scope))
   })
 }
 
-/** Fires after any change to a focus file of the vault — an own write, or another Mac's file that a sync brought (R12). Returns an unsubscribe. */
-export function subscribeFocus(root: string, listener: (change: { root: string }) => void): () => void {
+/** Fires after any change to a focus file of the vault, with its list — an own write, or another Mac's file that a sync brought (R12). Returns an unsubscribe. */
+export function subscribeFocus(root: string, listener: (change: { root: string; scope: ListScope }) => void): () => void {
   const r = requireAbsPath(root, 'root')
   return subscribeConfig(r, (c) => {
-    if (FOCUS_FILE_RE.test(c.name)) listener({ root: r })
+    const scope = LIST_SCOPES.find((s) => FOCUS_FILE_RE[s].test(c.name))
+    if (scope !== undefined) listener({ root: r, scope })
   })
 }
 
-/** Read-remap-write on the owning root: the list as it is now, remapped, into this Mac's file. Untouched when nothing changed, or when there is no list. */
+/** Read-remap-write on the owning root, for each of its two lists (YAZ-4450 D1): the list as it is now, remapped, into this Mac's file. Untouched when nothing changed, or when there is no list. */
 function repair(roots: readonly string[], p: string, map: (abs: string) => string | null): Promise<void> {
   const root = owningRoot(roots, p)
   if (root === null) return Promise.resolve()
   return chained(root, async () => {
-    const held = await readNewest(root)
-    const next = held === null ? null : remap(root, held.rels, map)
-    if (next !== null) await save(root, clean(next), held)
-  })
+    for (const scope of LIST_SCOPES) {
+      const held = await readNewest(root, scope)
+      const next = held === null ? null : remap(root, held.rels, map)
+      if (next !== null) await save(root, scope, clean(next), held)
+    }
+  }).then(() => repairFolders(root, map)) // the vault's focus folders follow too (YAZ-4460)
 }
 
 /** R10: a focus item follows its rename, one inside a renamed folder too; one moved out of the vault is dropped. */

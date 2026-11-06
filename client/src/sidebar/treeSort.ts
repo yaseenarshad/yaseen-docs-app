@@ -80,14 +80,16 @@ const BYS: Record<SortMenuTab, readonly SortBy[]> = { files: ['name', 'updated']
  * The sort menu (D4): what to sort by, then, where the sort has two, which way. ✓ marks the current pick (Draw's YAZ-1835 D5).
  * A new sort starts its natural way; the current one keeps its way, and a pick that changes nothing writes nothing.
  * `dates` is the last row of each tab's menu (YAZ-3511 D7, D10): the date at the right end of each row, on or off. `filters`
- * are the Search menu's Type and Time rows (D13, D14), after it.
+ * are the Search menu's Type and Time rows (D13, D14), after it. `workspace` is the Focus and Favorites menus' last row in a
+ * window with two or more vaults (YAZ-4450 D4): "Separate list for workspaces", on or off.
  */
-export function sortSections(tab: SortMenuTab, sort: TabSort, set: (next: TabSort) => void, dates: { on: boolean; set: (on: boolean) => void }, filters?: MenuSection): MenuSection[] {
+export function sortSections(tab: SortMenuTab, sort: TabSort, set: (next: TabSort) => void, dates: { on: boolean; set: (on: boolean) => void }, filters?: MenuSection, workspace?: { on: boolean; set: (on: boolean) => void }): MenuSection[] {
   const pick = (next: TabSort) => () => {
     if (next.by !== sort.by || next.reverse !== sort.reverse) set(next)
   }
   const by = BYS[tab].map((b) => ({ id: `sort-${b}`, label: BY_LABEL[b], hint: sort.by === b ? '✓' : undefined, onSelect: pick(sort.by === b ? sort : { by: b, reverse: false }) }))
   const ways = (WAYS[sort.by] ?? []).map((label, i) => ({ id: `sort-way-${i}`, label, hint: sort.reverse === (i === 1) ? '✓' : undefined, onSelect: pick({ ...sort, reverse: i === 1 }) }))
   const shown = [{ id: 'sort-dates', label: 'Show last updated', hint: dates.on ? '✓' : undefined, onSelect: () => dates.set(!dates.on) }]
-  return [by, ...(ways.length > 0 ? [ways] : []), shown, ...(filters === undefined ? [] : [filters])]
+  const separate = workspace === undefined ? [] : [[{ id: 'sort-workspace', label: 'Separate list for workspaces', hint: workspace.on ? '✓' : undefined, onSelect: () => workspace.set(!workspace.on) }]]
+  return [by, ...(ways.length > 0 ? [ways] : []), shown, ...(filters === undefined ? [] : [filters]), ...separate]
 }

@@ -74,18 +74,28 @@ describe('registerFocusIpc (YAZ-2702)', () => {
 
   it('get and set round-trip absolute paths through the envelope, into this Mac\'s file; bad arguments answer error envelopes', async () => {
     const a = path.join(vault, 'a.md')
-    expect(await registered(CONTRACT.focus.get.channel)({ sender }, vault)).toEqual(ok([]))
-    expect(await registered(CONTRACT.focus.set.channel)({ sender }, vault, [a])).toEqual(ok(undefined))
-    expect(await registered(CONTRACT.focus.get.channel)({ sender }, vault)).toEqual(ok([a]))
+    expect(await registered(CONTRACT.focus.get.channel)({ sender }, vault, 'vault')).toEqual(ok([]))
+    expect(await registered(CONTRACT.focus.set.channel)({ sender }, vault, [a], 'vault')).toEqual(ok(undefined))
+    expect(await registered(CONTRACT.focus.get.channel)({ sender }, vault, 'vault')).toEqual(ok([a]))
     expect(await readdir(path.join(vault, VAULT_CONFIG_DIR))).toEqual([focusFile(await macId())])
-    expect(await registered(CONTRACT.focus.get.channel)({ sender }, 'rel')).toEqual(bad('NOT_ABSOLUTE'))
-    expect(await registered(CONTRACT.focus.set.channel)({ sender }, vault, 'a.md')).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CONTRACT.focus.set.channel)({ sender }, vault, [1])).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CONTRACT.focus.set.channel)({ sender }, vault, ['/elsewhere/x.md'])).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CONTRACT.focus.get.channel)({ sender }, vault)).toEqual(ok([a])) // none of the refusals wrote
+    expect(await registered(CONTRACT.focus.get.channel)({ sender }, 'rel', 'vault')).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CONTRACT.focus.set.channel)({ sender }, vault, 'a.md', 'vault')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.focus.set.channel)({ sender }, vault, [1], 'vault')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.focus.set.channel)({ sender }, vault, ['/elsewhere/x.md'], 'vault')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.focus.get.channel)({ sender }, vault, 'vault')).toEqual(ok([a])) // none of the refusals wrote
   })
 
-  it('broadcasts focus:changed { root } to every live window on an own write and on another Mac\'s file from a sync — and not on a write that changed nothing (R8, R12)', async () => {
+  it('the scope picks the list (YAZ-4450 D1): a workspace write goes to focus-workspace.<mac id>.json only; a bad scope refuses', async () => {
+    const a = path.join(vault, 'a.md')
+    expect(await registered(CONTRACT.focus.set.channel)({ sender }, vault, [a], 'workspace')).toEqual(ok(undefined))
+    expect(await readdir(path.join(vault, VAULT_CONFIG_DIR))).toEqual([focusFile(await macId(), 'workspace')])
+    expect(await registered(CONTRACT.focus.get.channel)({ sender }, vault, 'workspace')).toEqual(ok([a]))
+    expect(await registered(CONTRACT.focus.get.channel)({ sender }, vault, 'vault')).toEqual(ok([]))
+    expect(await registered(CONTRACT.focus.get.channel)({ sender }, vault, 'window')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.focus.set.channel)({ sender }, vault, [a], undefined)).toEqual(bad('BAD_REQUEST'))
+  })
+
+  it('broadcasts focus:changed { root, scope } to every live window on an own write and on another Mac\'s file from a sync — and not on a write that changed nothing (R8, R12)', async () => {
     const a = fakeWindow()
     const b = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([a, b] as unknown as BrowserWindow[])
@@ -96,16 +106,16 @@ describe('registerFocusIpc (YAZ-2702)', () => {
     const pushes = (w: ReturnType<typeof fakeWindow>) => w.webContents.send.mock.calls.filter(([ch]) => ch === CONTRACT.focus.onChanged.channel)
 
     const list = [path.join(vault, 'a.md'), path.join(vault, 'b.md')]
-    await registered(CONTRACT.focus.set.channel)({ sender }, vault, list)
-    expect(pushes(a)).toEqual([[CONTRACT.focus.onChanged.channel, { root: vault }]])
-    expect(pushes(b)).toEqual([[CONTRACT.focus.onChanged.channel, { root: vault }]])
-    await registered(CONTRACT.focus.set.channel)({ sender }, vault, list)
+    await registered(CONTRACT.focus.set.channel)({ sender }, vault, list, 'vault')
+    expect(pushes(a)).toEqual([[CONTRACT.focus.onChanged.channel, { root: vault, scope: 'vault' }]])
+    expect(pushes(b)).toEqual([[CONTRACT.focus.onChanged.channel, { root: vault, scope: 'vault' }]])
+    await registered(CONTRACT.focus.set.channel)({ sender }, vault, list, 'vault')
     expect(pushes(a)).toHaveLength(1)
 
     await new Promise((r) => setTimeout(r, 300)) // let the watcher settle on the just-created dotfolder
     await writeFile(path.join(vault, VAULT_CONFIG_DIR, focusFile('othermac0000')), JSON.stringify({ version: 1, at: '2099-01-01T00:00:00.000Z', focus: ['b.md'] }))
     await until(() => pushes(a).length > 1)
-    expect(pushes(a).at(-1)).toEqual([CONTRACT.focus.onChanged.channel, { root: vault }])
-    expect(await registered(CONTRACT.focus.get.channel)({ sender }, vault)).toEqual(ok([path.join(vault, 'b.md')]))
+    expect(pushes(a).at(-1)).toEqual([CONTRACT.focus.onChanged.channel, { root: vault, scope: 'vault' }])
+    expect(await registered(CONTRACT.focus.get.channel)({ sender }, vault, 'vault')).toEqual(ok([path.join(vault, 'b.md')]))
   })
 })

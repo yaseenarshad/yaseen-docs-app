@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { dailyNoteName } from '@shared/dailyNote'
 import { IDS_FILE } from '@shared/noteId'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FocusFolder, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -30,6 +30,9 @@ interface SidebarStubProps {
   vaults: { root: string; name: string; watch: unknown; index: unknown; upkeep: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[] }[]
   /** Right-click → "Share" on a board row (YAZ-3040). */
   onShareFile?: (path: string) => void
+  /** The Recents vault filter (YAZ-4450 D6): App's, for the window's session. */
+  recentVault?: string | null
+  onRecentVault?: (root: string | null) => void
   /** A Files window's header button (YAZ-3357 D8): Tabs Mission Control. */
   onShowAllTabs?: () => void
   onToNormalWindow?: () => void
@@ -549,6 +552,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     newPlaces: { get: vi.fn(async (_root: string) => [null, null, null]), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     icons: { get: vi.fn(async (_root: string) => ({ paths: {} })), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
     focus: { get: vi.fn(async (_root: string): Promise<string[]> => []), set: vi.fn(async () => undefined), onChanged: vi.fn(() => () => undefined) },
+    // The focus folders (YAZ-4460): none unless a test seeds them.
+    focusFolders: { get: vi.fn(async (_root: string, _scope?: unknown): Promise<FocusFolder[]> => []), set: vi.fn(async (_root: string, _scope: unknown, _folders: readonly FocusFolder[]) => undefined), onChanged: vi.fn((_listener: (change: { root: string; scope: ListScope }) => void) => () => undefined) },
+    favoriteFolders: { get: vi.fn(async (_root: string, _scope?: unknown): Promise<FocusFolder[]> => []), set: vi.fn(async (_root: string, _scope: unknown, _folders: readonly FocusFolder[]) => undefined), onChanged: vi.fn((_listener: (change: { root: string; scope: ListScope }) => void) => () => undefined) },
     // No update (YAZ-2976): App reads the state once and follows its pushes; nothing to show here.
     update: {
       state: vi.fn(async (): Promise<UpdateState> => ({ kind: 'idle' })),
@@ -1908,6 +1914,21 @@ describe('App tab board across windows (YAZ-3343)', () => {
     busy.bridge.window.setIdentity.mockClear()
     act(() => busy.emitSetRoots(['/w']))
     expect(busy.bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ roots: ['/w'] }))
+  })
+
+  it('YAZ-4450 D6: the Recents vault filter lasts for the window\'s session — it stays while the sidebar hides and shows — and a window left with one vault drops it, so it never comes back with the second vault', async () => {
+    const { emitToggleSidebar, emitSetRoots, el } = await mount(withWindows(), { id: 'w9', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], startEmpty: true as const, sidebarLens: 'recents' })
+    expect(captured.sidebar?.recentVault).toBeNull()
+    act(() => captured.sidebar?.onRecentVault?.('/w'))
+    expect(captured.sidebar?.recentVault).toBe('/w')
+    act(() => emitToggleSidebar())
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    act(() => emitToggleSidebar())
+    expect(captured.sidebar?.recentVault).toBe('/w')
+    await act(async () => emitSetRoots(['/v']))
+    expect(captured.sidebar?.recentVault).toBeNull()
+    await act(async () => emitSetRoots(['/v', '/w']))
+    expect(captured.sidebar?.recentVault).toBeNull()
   })
 
   it('YAZ-3487: a NEW window on two vaults starts with each vault row closed, as "Collapse all" leaves them; any other window has them open', async () => {
@@ -7034,5 +7055,19 @@ describe('App after a memory reload (YAZ-3737 D4, D12)', () => {
   it('a reload with no size from main (⌘R, or any later identity) shows no notice', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     expect(el.textContent).not.toContain('This window reloaded')
+  })
+})
+
+describe('a ghost of a focus folder (YAZ-4460 F6; YAZ-4477)', () => {
+  // The sidebar's FocusFolderList hands a ghost's click to `onAddVaultFor` (FocusFolderList.test.tsx); this is App's half.
+  it('a ghost of a vault this Mac knows asks to add that vault, as a link does; one of a vault it does not know says so', async () => {
+    const { el } = await mount({ ...defaultAppState(), recents: [recent('/v', 2), recent('/o', 1)] }, { id: 'w1', root: '/v', file: null, tabs: [] })
+    const sidebar = captured.sidebar as unknown as { onAddVaultFor?: (vault: string, rel: string) => void }
+    await act(async () => sidebar.onAddVaultFor?.('o', 's.md'))
+    expect(el.querySelector('#confirm-add-vault-for-link-text')?.textContent).toContain('This file (s) is not in this vault. It is in another vault (o)')
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Cancel')?.click())
+    await act(async () => sidebar.onAddVaultFor?.('zz', 'q.md'))
+    expect(el.querySelector('#confirm-add-vault-for-link-text')).toBeNull()
+    expect(el.querySelector('.link-notice')?.textContent).toContain('This item is in the vault "zz", which this Mac does not know. Open that folder first.')
   })
 })
